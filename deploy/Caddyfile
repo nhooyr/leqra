@@ -1,0 +1,6 @@
+# Replace this domain with your own and point its DNS to your server.
+# Run the Go app on 127.0.0.1:8080, not on a publicly exposed interface.
+# Caddy must be able to receive traffic on ports 80 and 443.
+game.example.com {
+    reverse_proxy 127.0.0.1:8080
+}

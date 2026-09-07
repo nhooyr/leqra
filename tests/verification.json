@@ -1,0 +1,36 @@
+{
+  "version": "4.6.0",
+  "go_top_level_passed": 446,
+  "go_skipped_top_level": 2,
+  "go_passes_including_subtests": 838,
+  "race_detector": true,
+  "go_vet": "passed",
+  "javascript_tests": 56,
+  "production_websocket_checks": 9,
+  "browser_assertions": 32,
+  "browser_suites": {
+    "polish46_browser.py": 14,
+    "polish46_regression_browser.py": 18
+  },
+  "compiled_server": "passed",
+  "bugs_fixed": [
+    "Machine gun legacy 22-bounce ceiling could truncate half-perimeter range",
+    "stale unused rapid trail presentation entry"
+  ],
+  "limitations": [
+    "Chromium emulation, not physical phones or Safari/Firefox",
+    "Local Go sockets; no public WAN or real packet-loss run",
+    "Docker and sustained capacity not executed",
+    "No hardware GPU/audio benchmark"
+  ],
+  "source_sha256": {
+    "game.go": "0d766b6075b2054e53aac75d80b8dee3122dce77c1552e53c9ec16698c130e0b",
+    "main.go": "2f3881fea74f0a6f7815192e15c6f5b413a855e87a68f0975e98cca53fe4c251",
+    "hub.go": "0a7426fc9fd947508e51eea5f281043142ec1073fac47dde8087528c12e6de4e",
+    "web/game.js": "f165f42a5dc746c78473d684701bc58d5f9b240094c1b0967bc715a5de965ea7",
+    "web/index.html": "4f98e7fb6d520b2206ec5d4061f959f3cdbf94bf0f000bce0035ac9e2fa72a44",
+    "web/style.css": "ca952025be468032022a19050477a9aabefe26e5ee60fd80a54999643a4ad38e",
+    "web/netcode.js": "a50f637c9f68b065c3b4b0f8865b2143005a36f5ed82174438f9d3a0011c3ded",
+    "web/theme.js": "2b08bf84e178ce4c6484b74ebd204db82cdf8f9a3032be96b0ae52da81755a81"
+  }
+}
