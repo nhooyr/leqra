@@ -1,0 +1,306 @@
+[
+  {
+    "name": "drive reverse turn",
+    "segments": [
+      {
+        "steps": 60,
+        "input": {
+          "forward": true,
+          "reverse": false,
+          "left": false,
+          "right": false,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 0
+        }
+      },
+      {
+        "steps": 50,
+        "input": {
+          "forward": false,
+          "reverse": true,
+          "left": true,
+          "right": false,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 0
+        }
+      },
+      {
+        "steps": 125,
+        "input": {
+          "forward": true,
+          "reverse": false,
+          "left": false,
+          "right": true,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 0
+        }
+      }
+    ],
+    "world": {
+      "width": 756,
+      "height": 672,
+      "walls": [
+        {
+          "x": 336,
+          "y": 160,
+          "w": 8,
+          "h": 352
+        },
+        {
+          "x": 100,
+          "y": 336,
+          "w": 180,
+          "h": 8
+        },
+        {
+          "x": 500,
+          "y": 100,
+          "w": 8,
+          "h": 280
+        }
+      ]
+    },
+    "initial": {
+      "id": 0,
+      "x": 210,
+      "y": 210,
+      "angle": 0,
+      "r": 17,
+      "track": 0,
+      "alive": true
+    },
+    "expected": {
+      "x": 249.10691605878404,
+      "y": 229.83777008332308,
+      "angle": -1.7206853071795811
+    }
+  },
+  {
+    "name": "touch wall and reverse",
+    "segments": [
+      {
+        "steps": 180,
+        "input": {
+          "forward": false,
+          "reverse": false,
+          "left": false,
+          "right": false,
+          "fire": false,
+          "stickX": 1,
+          "stickY": 0
+        }
+      },
+      {
+        "steps": 100,
+        "input": {
+          "forward": false,
+          "reverse": false,
+          "left": false,
+          "right": false,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 1
+        }
+      },
+      {
+        "steps": 135,
+        "input": {
+          "forward": false,
+          "reverse": false,
+          "left": false,
+          "right": false,
+          "fire": false,
+          "stickX": -0.7,
+          "stickY": -0.7
+        }
+      }
+    ],
+    "world": {
+      "width": 756,
+      "height": 672,
+      "walls": [
+        {
+          "x": 336,
+          "y": 160,
+          "w": 8,
+          "h": 352
+        },
+        {
+          "x": 100,
+          "y": 336,
+          "w": 180,
+          "h": 8
+        },
+        {
+          "x": 500,
+          "y": 100,
+          "w": 8,
+          "h": 280
+        }
+      ]
+    },
+    "initial": {
+      "id": 0,
+      "x": 210,
+      "y": 210,
+      "angle": 0,
+      "r": 17,
+      "track": 0,
+      "alive": true
+    },
+    "expected": {
+      "x": 135.12982271014113,
+      "y": 361.002,
+      "angle": -2.356194490192345
+    }
+  },
+  {
+    "name": "angle wrap and stop",
+    "segments": [
+      {
+        "steps": 200,
+        "input": {
+          "forward": true,
+          "reverse": false,
+          "left": true,
+          "right": false,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 0
+        }
+      },
+      {
+        "steps": 75,
+        "input": {
+          "forward": false,
+          "reverse": false,
+          "left": false,
+          "right": false,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 0
+        }
+      },
+      {
+        "steps": 170,
+        "input": {
+          "forward": false,
+          "reverse": true,
+          "left": false,
+          "right": true,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 0
+        }
+      }
+    ],
+    "world": {
+      "width": 756,
+      "height": 672,
+      "walls": [
+        {
+          "x": 336,
+          "y": 160,
+          "w": 8,
+          "h": 352
+        },
+        {
+          "x": 100,
+          "y": 336,
+          "w": 180,
+          "h": 8
+        },
+        {
+          "x": 500,
+          "y": 100,
+          "w": 8,
+          "h": 280
+        }
+      ]
+    },
+    "initial": {
+      "id": 0,
+      "x": 210,
+      "y": 210,
+      "angle": 0,
+      "r": 17,
+      "track": 0,
+      "alive": true
+    },
+    "expected": {
+      "x": 231.42696799480714,
+      "y": 179.09439126040655,
+      "angle": -1.8249999999999997
+    }
+  },
+  {
+    "name": "wall sliding",
+    "segments": [
+      {
+        "steps": 300,
+        "input": {
+          "forward": false,
+          "reverse": false,
+          "left": false,
+          "right": false,
+          "fire": false,
+          "stickX": 0.98,
+          "stickY": 0.14
+        }
+      },
+      {
+        "steps": 200,
+        "input": {
+          "forward": true,
+          "reverse": false,
+          "left": true,
+          "right": false,
+          "fire": false,
+          "stickX": 0,
+          "stickY": 0
+        }
+      }
+    ],
+    "world": {
+      "width": 756,
+      "height": 672,
+      "walls": [
+        {
+          "x": 336,
+          "y": 160,
+          "w": 8,
+          "h": 352
+        },
+        {
+          "x": 100,
+          "y": 336,
+          "w": 180,
+          "h": 8
+        },
+        {
+          "x": 500,
+          "y": 100,
+          "w": 8,
+          "h": 280
+        }
+      ]
+    },
+    "initial": {
+      "id": 0,
+      "x": 210,
+      "y": 210,
+      "angle": 0,
+      "r": 17,
+      "track": 0,
+      "alive": true
+    },
+    "expected": {
+      "x": 266.76581789138083,
+      "y": 295.2368859466571,
+      "angle": 0.5416010022966609
+    }
+  }
+]
