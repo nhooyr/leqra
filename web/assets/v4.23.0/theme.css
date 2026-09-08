@@ -1,0 +1,13 @@
+/* Dark-only appearance tokens. */
+:root{
+ color-scheme:dark;
+ --page:#111619;--surface:#192127;--surface-sunken:#111a1f;--surface-raised:#232e33;--surface-hover:#324249;
+ --border:#34434a;--border-strong:#506d80;
+ --text-main:#f1f7fc;--text-soft:#c6d5df;--text-muted:#9babbb;--text-subtle:#91a6ba;
+ --accent:#00c8ff;--accent-ink:#40d5ff;--on-accent:#002536;--accent-edge:#95eaff;--accent-shade:#087693;
+ --accent-wash:#102e3d;--accent-wash-hover:#194654;
+ --danger:#ff9679;--danger-edge:#ffc2aa;--on-danger:#2b170d;
+ --warning:#ffc46b;--warning-wash:#39291d;--warning-wash-hover:#635036;
+ --info:#73cee4;--violet:#c5a2ff;--buff-ink:#75f0cb;--missile-ink:#ff83bd;
+ --shadow-rgb:0 0 0;--detail-rgb:255 255 255;--overlay-rgb:9 18 24;
+}

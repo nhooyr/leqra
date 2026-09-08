@@ -71,6 +71,8 @@ type Room struct {
 }
 type Client struct {
 	ws                    *wsConn
+	requireVersion        bool // Real WebSocket clients must complete the version handshake.
+	versionOK             bool
 	send                  chan []byte
 	updates               chan []byte // Replaceable snapshots; reliable messages stay in send.
 	done                  chan struct{}
@@ -278,6 +280,14 @@ func validCode(s string) bool {
 }
 func roomError(code, message string) map[string]any {
 	return map[string]any{"type": "error", "code": code, "message": message}
+}
+
+func versionError() map[string]any {
+	v := roomError("version_mismatch", fmt.Sprintf("This leqra page does not match the server. Reload the page to update to v%s.", version))
+	v["action"] = "version"
+	v["serverVersion"] = version
+	v["protocol"] = protocolVersion
+	return v
 }
 func (h *Hub) addClient(c *Client) bool {
 	h.mu.Lock()
@@ -714,6 +724,8 @@ type clientMessage struct {
 	Token      string      `json:"token"`
 	Ready      bool        `json:"ready"`
 	T          float64     `json:"t"`
+	Version    string      `json:"version"`
+	Protocol   int         `json:"protocol"`
 	Input
 }
 
@@ -742,6 +754,19 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 	// Once kicked, an old socket cannot send inputs or rejoin behind the UI.
 	if c.kickedRoom != "" {
 		c.enqueue(kickedMessage(c.kickedRoom))
+		return nil
+	}
+	if m.Type == "client_hello" {
+		if m.Version != version || m.Protocol != protocolVersion {
+			c.enqueue(versionError())
+			return nil
+		}
+		c.versionOK = true
+		c.enqueue(map[string]any{"type": "client_ready", "version": version, "protocol": protocolVersion})
+		return nil
+	}
+	if c.requireVersion && !c.versionOK {
+		c.enqueue(versionError())
 		return nil
 	}
 	if h.guardQueueAction(c, m) {
@@ -1217,6 +1242,25 @@ func (h *Hub) run(done <-chan struct{}) {
 			}
 		}
 	}
+}
+func (h *Hub) notifyShutdown() int {
+	data, ok := encodePacket(map[string]any{"type": "server_shutdown", "message": "The leqra server is shutting down. Returning to the Home Screen."})
+	if !ok {
+		return 0
+	}
+	h.mu.Lock()
+	clients := make([]*Client, 0, len(h.clients))
+	for c := range h.clients {
+		clients = append(clients, c)
+	}
+	h.mu.Unlock()
+	sent := 0
+	for _, c := range clients {
+		if c.enqueueBytes(data) {
+			sent++
+		}
+	}
+	return sent
 }
 func (h *Hub) close() {
 	h.mu.Lock()

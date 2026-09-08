@@ -1,3 +1,16 @@
+# v4.23.0 — PWA, versioned assets, graceful shutdown, and online UX fixes
+
+- Make leqra an installable PWA with a manifest, Apple/Android icons and a versioned service worker that precaches the local app shell while keeping WebSocket/API endpoints network-only.
+- Serve `index.html` as a revalidated shell and every other browser asset under `/assets/v4.23.0/` with immutable caching; legacy root asset URLs are no longer served.
+- Require a server/client version + protocol handshake before accepting online room or matchmaking commands, with explicit reload guidance on mismatch.
+- Broadcast `server_shutdown` on SIGTERM/SIGINT before socket teardown; online clients show the notice and return to local Home instead of entering reconnect.
+- Remove the obsolete New local room action while retaining Leave room for actual online lobbies.
+- Preserve the current preview maze when a host Unshares an online room instead of regenerating it.
+- Restore Leave match in the online pause menu and keep it available on interrupted/reconnecting connections.
+- Evenly distribute active tanks across Team 1/Team 2 when switching from Free-for-all to Teams; manual Team 3/4 assignment remains available afterward.
+- Keep gameplay input active while chat is visible whenever focus is outside the chat panel; focused chat still captures typing and suppresses arena controls.
+- Fix explicit `/index.html` redirect behavior for PWA shell caching and trim the embedded production filesystem so duplicate root developer web assets are not compiled into the server.
+
 # v4.22.0 — Safari audio reliability, integrated match chat, Ghost fixes, and room UX
 
 - Fix Safari native fallback playback being blocked by leqra's own CSP by allowing `media-src 'self' blob:`; strengthen trusted-gesture Web Audio/native Audio activation and make successful Safari priming idempotent.

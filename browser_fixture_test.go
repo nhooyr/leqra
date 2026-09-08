@@ -33,6 +33,11 @@ func TestBrowserFixture(t *testing.T) {
 		t.Fatal("browser fixture must bind a numeric loopback address")
 	}
 	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_fixture/shutdown423" && r.Method == http.MethodPost {
+			app.hub.notifyShutdown()
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if handleArsenal44Fixture(app, w, r) {
 			return
 		}

@@ -166,7 +166,7 @@ func TestHTTPAndUpgradeValidation(t *testing.T) {
 	for _, tt := range []struct {
 		path   string
 		status int
-	}{{"/", 200}, {"/api/config", 200}, {"/healthz", 200}, {"/game.js", 200}, {"/go.mod", 404}, {"/ws", 400}} {
+	}{{"/", 200}, {"/api/config", 200}, {"/healthz", 200}, {"/assets/v" + version + "/game.js", 200}, {"/game.js", 404}, {"/go.mod", 404}, {"/ws", 400}} {
 		r := httptest.NewRequest("GET", "http://game.test"+tt.path, nil)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -236,24 +236,39 @@ func TestRealWebSocketHandshake(t *testing.T) {
 	if !strings.Contains(headers, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") {
 		t.Fatal("incorrect accept hash")
 	}
+	readFrame := func() []byte {
+		var h [2]byte
+		if _, err := io.ReadFull(r, h[:]); err != nil {
+			t.Fatal(err)
+		}
+		if h[0] != 129 {
+			t.Fatalf("expected text frame, opcode byte=%d", h[0])
+		}
+		n := int(h[1] & 0x7f)
+		if n == 126 {
+			var ext [2]byte
+			_, _ = io.ReadFull(r, ext[:])
+			n = int(binary.BigEndian.Uint16(ext[:]))
+		}
+		payload := make([]byte, n)
+		_, _ = io.ReadFull(r, payload)
+		return payload
+	}
+	hello := readFrame()
+	if !bytes.Contains(hello, []byte(`"type":"server_hello"`)) || !bytes.Contains(hello, []byte(`"version":"`+version+`"`)) {
+		t.Fatal(string(hello))
+	}
+	_, _ = c.Write(maskedFrame(1, true, []byte(`{"type":"client_hello","version":"`+version+`","protocol":1}`)))
 	_, _ = c.Write(maskedFrame(1, true, []byte(`{"type":"create","name":"RAW CLIENT"}`)))
-	var h [2]byte
-	_, err = io.ReadFull(r, h[:])
-	if err != nil {
-		t.Fatal(err)
+	foundWelcome := false
+	for i := 0; i < 4; i++ {
+		payload := readFrame()
+		if bytes.Contains(payload, []byte(`"type":"welcome"`)) {
+			foundWelcome = true
+			break
+		}
 	}
-	if h[0] != 129 {
-		t.Fatal("expected text welcome")
-	}
-	n := int(h[1])
-	if n == 126 {
-		var ext [2]byte
-		_, _ = io.ReadFull(r, ext[:])
-		n = int(binary.BigEndian.Uint16(ext[:]))
-	}
-	payload := make([]byte, n)
-	_, _ = io.ReadFull(r, payload)
-	if !bytes.Contains(payload, []byte(`"type":"welcome"`)) {
-		t.Fatal(string(payload))
+	if !foundWelcome {
+		t.Fatal("no welcome after version handshake")
 	}
 }

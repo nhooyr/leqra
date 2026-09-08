@@ -177,6 +177,18 @@ func (g *Game) lineupError(ps [maxTanks]*Player) string {
 
 // Team zero is only the internal FFA sentinel, never a fifth team in Teams mode.
 // Old presets containing independent seats migrate into numbered teams.
+func balanceRoomTeams(r *Room) {
+	n := 0
+	for _, p := range r.Players {
+		if p == nil {
+			continue
+		}
+		p.Team = 1 + n%2
+		p.ColorIndex = nil
+		n++
+	}
+}
+
 func applyFormat(r *Room) {
 	for _, p := range r.members() {
 		if r.Game.settings().TeamMode == "ffa" {
@@ -217,14 +229,7 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 	r.Game.Rules = normalizedRules(rules)
 	r.Game.Clock = float64(rules.TimeLimit)
 	if wasFFA && rules.TeamMode == "teams" {
-		for _, p := range r.Players {
-			if p != nil {
-				p.Team = 2
-				if p.ID == r.Host || p.Kind == "local" && p.Owner == r.Host {
-					p.Team = 1
-				}
-			}
-		}
+		balanceRoomTeams(r)
 	}
 	applyFormat(r)
 	resetReady(r)

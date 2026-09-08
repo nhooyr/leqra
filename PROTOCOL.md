@@ -1,3 +1,29 @@
+# v4.23 connection compatibility and graceful shutdown (protocol 1)
+
+The framing protocol remains version 1, but every real production WebSocket now has an application-version handshake before room or matchmaking actions. Immediately after upgrade the server sends:
+
+```json
+{"type":"server_hello","version":"4.23.0","protocol":1}
+```
+
+A compatible client replies before any normal command:
+
+```json
+{"type":"client_hello","version":"4.23.0","protocol":1}
+```
+
+A matching hello enables the connection and the server answers `client_ready`. Any other action before a successful hello, or a hello with a different app/protocol version, receives `type:error`, `code:"version_mismatch"`, `action:"version"`, the current `serverVersion` and `protocol`, plus reload guidance. This is deliberately stricter than protocol-number checking alone because releases can make coordinated client/server behavior changes while retaining the same JSON framing version.
+
+On intentional process shutdown, before closing client sockets the server broadcasts:
+
+```json
+{"type":"server_shutdown","message":"The leqra server is shutting down. Returning to the Home Screen."}
+```
+
+The v4.23 browser treats this as terminal maintenance rather than a transport failure: it stops reconnecting, leaves online state and returns to local Home. Ordinary unexpected disconnect/reconnect behavior is unchanged.
+
+---
+
 # v4.2 combat presentation metadata (protocol 1)
 
 Update the Go server and browser together. Clients still send logical controls,
@@ -230,7 +256,7 @@ preserves history; room deletion/restart clears it. Remote/local P2 sharing one
 network controller uses that controller's chat identity, and server broadcasts are
 deduplicated per WebSocket so that shared controller renders one copy.
 
-Current v4.22 clients may also send `channel:"opponent"`. Outside matchmaking,
+v4.22 and later clients may also send `channel:"opponent"`. Outside matchmaking,
 the ordinary/default channel is room-wide. Inside a matchmaking battle, the
 default channel is party-scoped: it reaches only travellers whose return reservation
 points to the same private source room. `channel:"opponent"` reaches the sender and

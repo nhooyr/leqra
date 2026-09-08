@@ -20,9 +20,12 @@ import (
 	"time"
 )
 
-const version = "4.22.0"
+const (
+	version         = "4.23.0"
+	protocolVersion = 1
+)
 
-//go:embed web/*
+//go:embed web/index.html web/assets
 var embeddedWeb embed.FS
 
 type ipBudget struct {
@@ -91,10 +94,14 @@ func (a *App) socket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	c := &Client{ws: ws, send: make(chan []byte, 12), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: -1, born: time.Now()}
+	c := &Client{ws: ws, send: make(chan []byte, 12), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: -1, born: time.Now(), requireVersion: true}
 	if !a.hub.addClient(c) {
 		ws.writeClose(1013, "Server full")
 		ws.close()
+		return
+	}
+	if !c.enqueue(map[string]any{"type": "server_hello", "version": version, "protocol": protocolVersion}) {
+		c.stop()
 		return
 	}
 	go c.writeLoop()
@@ -122,27 +129,53 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": 1, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unshareRoom": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
+		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": protocolVersion, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unshareRoom": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
 	})
+	assetPrefix := "/assets/v" + version + "/"
+	assets := map[string]bool{
+		"theme.js": true, "theme.css": true, "style.css": true, "favicon.svg": true,
+		"netcode.js": true, "game.js": true, "pwa.js": true, "manifest.webmanifest": true,
+		"sw.js": true, "icon-192.png": true, "icon-512.png": true,
+		"icon-maskable-512.png": true, "apple-touch-icon.png": true,
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
 			w.WriteHeader(405)
 			return
 		}
-		switch r.URL.Path {
-		case "/", "/index.html", "/game.js", "/netcode.js", "/style.css", "/theme.css", "/theme.js", "/favicon.svg":
-		default:
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			if r.URL.Path == "/index.html" {
+				// http.FileServer redirects an explicit /index.html to ./; serve the
+				// same embedded shell through / instead so PWA precaching has a 200.
+				r = r.Clone(r.Context())
+				u := *r.URL
+				u.Path = "/"
+				r.URL = &u
+			}
+			static.ServeHTTP(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.URL.Path, assetPrefix) {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
+		name := strings.TrimPrefix(r.URL.Path, assetPrefix)
+		if !assets[name] {
+			http.NotFound(w, r)
+			return
+		}
+		if name == "sw.js" {
+			w.Header().Set("Service-Worker-Allowed", "/")
+		}
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		static.ServeHTTP(w, r)
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -195,6 +228,11 @@ func main() {
 	signal.Notify(stopped, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-stopped
+		// Reliable control messages are queued ahead of replaceable snapshots. Give
+		// connected browsers a brief chance to render the shutdown notice before
+		// closing their sockets and stopping the simulation.
+		app.hub.notifyShutdown()
+		time.Sleep(200 * time.Millisecond)
 		close(done)
 		app.hub.close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

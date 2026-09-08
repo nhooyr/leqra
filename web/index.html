@@ -4,13 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111619">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="leqra">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="theme.js"></script>
-<link rel="stylesheet" href="theme.css">
-<link rel="stylesheet" href="style.css">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script src="assets/v4.23.0/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.23.0/theme.css">
+<link rel="stylesheet" href="assets/v4.23.0/style.css">
+<link rel="manifest" href="assets/v4.23.0/manifest.webmanifest">
+<link rel="icon" href="assets/v4.23.0/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/v4.23.0/apple-touch-icon.png">
 </head>
 <body>
 <div class="app">
@@ -51,7 +57,7 @@
       <button class="secondary share-room" id="copyInviteBtn" type="button">SHARE ROOM ONLINE ↗</button>
       <input class="net-input invite-fallback" id="inviteFallback" aria-label="Copy this invite link" readonly hidden>
       <p class="net-status" id="roomStatus" role="status">Local play is ready. Share to invite online friends.</p>
-      <div class="room-utility"><button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button><button class="text-button" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="text-button" id="leaveRoomBtn" type="button">New local room</button></div>
+      <div class="room-utility"><button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button><button class="text-button" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="text-button" id="leaveRoomBtn" type="button" hidden>Leave room</button></div>
       <div class="room-rules">FIRST TO 5 · UP TO 8 TANKS<br><span>Teammates share wins. Friendly fire is off.</span></div>
      </div>
      <div class="net-content">
@@ -65,7 +71,7 @@
       <div class="small-note" id="readyHint">YOU VS. THE BOT SQUAD · START WHEN YOU’RE READY</div>
      </div>
     </section>
-    <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden><div class="online-menu-intro"><div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div><h2 class="compact-title">STAY<br><em>CONNECTED.</em></h2><p id="onlineMenuMessage">The match keeps running. Your tank is still vulnerable while this menu is open.</p><section id="hostControls" class="host-controls" aria-label="Host player controls" hidden><div class="callsign-label">HOST CONTROLS</div><div id="menuKickRoster" class="net-roster"></div></section></div><div class="online-menu-actions"><form class="callsign-editor" id="menuCallsignForm" aria-label="Change your callsign"><label class="callsign-label" for="menuCallsign">YOUR CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuCallsign" name="callsign" maxlength="16" placeholder="PILOT" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="menuCallsignStatus"></div><p class="callsign-status" id="menuCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="menuP2CallsignForm" data-pilot="secondary" aria-label="Change Player 2 callsign" hidden><label class="callsign-label" for="menuP2Callsign">PLAYER 2 CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuP2Callsign" name="callsign" maxlength="16" placeholder="PLAYER 2" autocomplete="off" spellcheck="false" aria-describedby="menuP2CallsignStatus"></div><p class="callsign-status" id="menuP2CallsignStatus" role="status" aria-live="polite" hidden></p></form><button class="primary" id="onlineReturnBtn" type="button"><span>BACK TO THE ARENA</span><span aria-hidden="true">→</span></button><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button><button class="secondary" id="returnRoomBtn" type="button">End match</button></div></section>
+    <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden><div class="online-menu-intro"><div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div><h2 class="compact-title">STAY<br><em>CONNECTED.</em></h2><p id="onlineMenuMessage">The match keeps running. Your tank is still vulnerable while this menu is open.</p><section id="hostControls" class="host-controls" aria-label="Host player controls" hidden><div class="callsign-label">HOST CONTROLS</div><div id="menuKickRoster" class="net-roster"></div></section></div><div class="online-menu-actions"><form class="callsign-editor" id="menuCallsignForm" aria-label="Change your callsign"><label class="callsign-label" for="menuCallsign">YOUR CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuCallsign" name="callsign" maxlength="16" placeholder="PILOT" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="menuCallsignStatus"></div><p class="callsign-status" id="menuCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="menuP2CallsignForm" data-pilot="secondary" aria-label="Change Player 2 callsign" hidden><label class="callsign-label" for="menuP2Callsign">PLAYER 2 CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuP2Callsign" name="callsign" maxlength="16" placeholder="PLAYER 2" autocomplete="off" spellcheck="false" aria-describedby="menuP2CallsignStatus"></div><p class="callsign-status" id="menuP2CallsignStatus" role="status" aria-live="polite" hidden></p></form><button class="primary" id="onlineReturnBtn" type="button"><span>BACK TO THE ARENA</span><span aria-hidden="true">→</span></button><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button><button class="secondary" id="returnRoomBtn" type="button">End match</button><button class="secondary" id="leaveMatchBtn" type="button" hidden>Leave match</button></div></section>
     <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden><div class="eyebrow">TAKE A BREATHER</div><h2 class="compact-title">HOLD YOUR<br><em>FIRE.</em></h2><p>The battle is paused. Your tank is safe.</p><button class="primary" id="resumeBtn" type="button"><span>BACK TO THE BATTLE</span><span aria-hidden="true">→</span></button><button class="secondary" id="quitBtn" type="button">Return to ready room</button><p class="control-note" id="pauseInstructions"></p></section>
     <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode / difficulty</button></section>
    </div>
@@ -104,7 +110,8 @@
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
  <div class="kick-actions"><button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button></div>
 </dialog>
-<script src="netcode.js" defer></script>
-<script src="game.js" defer></script>
+<script src="assets/v4.23.0/netcode.js" defer></script>
+<script src="assets/v4.23.0/game.js" defer></script>
+<script src="assets/v4.23.0/pwa.js" defer></script>
 </body>
 </html>
