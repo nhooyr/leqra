@@ -8,7 +8,7 @@ test('Godlike is selectable everywhere and adds decision skill without extra hul
  const s=boot(),html=readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
  assert.equal(s.tune.godlike.speed,s.tune.hard.speed);assert.equal(s.tune.godlike.turn,s.tune.hard.turn);
  assert.ok(s.tune.godlike.think<s.tune.hard.think);assert.ok(s.tune.godlike.aim<s.tune.hard.aim);
- assert.match(html,/data-difficulty="godlike"/);assert.match(html,/<option value="godlike">Godlike bot/);
+ assert.match(html,/data-difficulty="godlike"/);
  assert.match(declaration('makeRoomPlayerRow'),/\['godlike','Godlike'\]/);
 });
 test('Godlike flees an enemy remote grenade before its long fuse expires',()=>{

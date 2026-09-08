@@ -190,6 +190,7 @@ type Event struct {
 }
 type Game struct {
 	stats                             *matchStatLedger
+	survivalCheckpoint                *survivalWaveCheckpoint
 	matchReport                       *MatchReport
 	matchReportWire                   json.RawMessage
 	spatial                           *wallIndex
@@ -389,6 +390,7 @@ func (g *Game) startRound(players [maxTanks]*Player) {
 	g.initObjectives()
 	if g.survivalMode() {
 		g.spawnSurvivalEnemies(players)
+		g.checkpointSurvivalWave()
 	}
 	g.objectiveEnded = false
 	g.seedPickups()

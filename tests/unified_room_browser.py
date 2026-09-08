@@ -80,9 +80,9 @@ with sync_playwright() as pw:
  press(host,'Space');host.wait_for_timeout(80)
  check(host.evaluate('!__test.bullets.some(b=>b.owner===3&&b.kind==="grenade")'),'Second local player Space detonates final-charge grenade')
  room(host);check(state(host)['mode']=='room' and len(state(host)['room']['players'])==4,'Return to local room retains roster')
- # Remove + re-add specific difficulty, preserving slots and team controls.
- remove(host,2);host.locator('#newBotDifficulty').select_option('normal');host.locator('#addBotBtn').click();waitplayers(host,4)
- check(state(host)['room']['players'][2]['difficulty']=='normal','Add Bot uses selected difficulty')
+ # Remove + re-add using the last remaining bot difficulty.
+ remove(host,2);inherited=next((x['difficulty'] for x in reversed(state(host)['room']['players']) if x['kind']=='bot'),'normal');host.locator('#addBotBtn').click();waitplayers(host,4)
+ check(state(host)['room']['players'][2]['difficulty']==inherited,'Add Bot uses the last roster bot difficulty')
  remove(host,2) # one free seat for guest
  code='Team room '+str(int(time.time()))+' 💥 & +/#'
  host.locator('#localRoomName').fill(code);host.locator('#copyInviteBtn').click();connected(host);waitplayers(host,3)

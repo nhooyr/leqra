@@ -129,7 +129,7 @@ func (h *Hub) guardQueueAction(c *Client, m clientMessage) bool {
 	if r == nil {
 		return false
 	}
-	admin := m.Type == "add" || m.Type == "configure" || m.Type == "rules" || m.Type == "preset" || m.Type == "start" || m.Type == "lobby" || m.Type == "swap" || m.Type == "rename_room"
+	admin := m.Type == "add" || m.Type == "configure" || m.Type == "rules" || m.Type == "preset" || m.Type == "start" || m.Type == "restart_wave" || m.Type == "lobby" || m.Type == "swap" || m.Type == "rename_room"
 	if r.Match != nil {
 		if admin || m.Type == "kick" || m.Type == "ready" || m.Type == "queue_join" || m.Type == "spectate" && m.Spectating != nil && !*m.Spectating {
 			queueError(c, m.Type, "match_locked", "Matchmaking teams and rules are locked. Return to your party to queue again.")

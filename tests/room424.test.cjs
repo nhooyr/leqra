@@ -47,9 +47,17 @@ test('new bot and local P2 fill the least-populated team and preserve manual cho
  }
  const b=boot();b.s.localRoom.players=players(3);b.s.localRoom.players.forEach(p=>p.team=3);b.s.addRoomSeat('bot');assert.deepEqual(teams(b),[3,3,3,1]);
 });
-test('online add leaves the team decision to the server; active matches reject local adds',()=>{
- const b=boot({mode:'online'});b.s.addRoomSeat('bot');assert.equal(b.s.sent.type,'add');assert.equal('team' in b.s.sent,false);
+test('online add leaves team and difficulty inheritance to the server; active matches reject local adds',()=>{
+ const b=boot({mode:'online'});b.s.addRoomSeat('bot');assert.equal(b.s.sent.type,'add');assert.equal('team' in b.s.sent,false);assert.equal('difficulty' in b.s.sent,false);
  b.s.mode='room';b.s.phase='playing';b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players.length,0);
+});
+test('Add Bot inherits the last roster bot through edits and seat reuse, ignoring humans and spectators',()=>{
+ for(const difficulty of ['easy','normal','hard','godlike']){
+  const b=boot();b.s.localRoom.players=[{id:0,kind:'human',name:'P1'},{id:2,kind:'bot',name:'LAST',difficulty},{id:3,kind:'local',name:'P2'},{id:8,kind:'bot',name:'SPECTATOR',difficulty:'easy',spectating:true}];
+  b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players.find(p=>p.id===1).difficulty,difficulty);
+  b.s.localRoom.players.find(p=>p.id===1).difficulty='easy';b.s.localRoom.players.find(p=>p.id===2).difficulty='godlike';b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players.find(p=>p.id===4).difficulty,'godlike');
+ }
+ const b=boot();b.s.localRoom.players=[{id:0,kind:'human',name:'P1'}];b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players[1].difficulty,'normal');
 });
 test('changing to and from CTF rebalances, while other rule edits preserve host assignments',()=>{
  const b=boot();b.s.localRoom.players=players(8);b.s.balanceLocalTeams();
