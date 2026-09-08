@@ -65,7 +65,7 @@ func TestSurvival434BossWaveRetriesRestoreSquadShields(t *testing.T) {
 	}
 	g.Phase = "playing"
 	clearSurvivalWave427(t, r)
-	g.prepareSurvival(4, r.Players)
+	g.prepareSurvival(2, r.Players)
 	for id := 0; id < 2; id++ {
 		if shieldCount(g.Tanks[id]) != 0 {
 			t.Fatal("boss-wave shield leaked into the next ordinary wave")

@@ -27,7 +27,7 @@ function boot(){
  for(const id of ['origin','unshareRoomBtn','roomStatus','presetName','presetSelect','deletePresetBtn']){const node=new Element(id==='origin'?'button':'div');node.id=id;doc.body.append(node);}
  doc.activeElement=$('origin');$('presetName').value='SETUP';$('presetSelect').value='saved:0';
  const own={id:0,member:101,name:'PILOT',hasParty:true},presets=[{name:'SETUP',rules:{scoreTarget:2},roster:[]}];
- const s={console,Promise,mode:'online',phase:'playing',pendingGameConfirmation:null,localMatchStats:{},localRoom:{self:0,players:[own]},
+ const s={console,Promise,setTimeout:()=>1,clearTimeout(){},mode:'online',phase:'playing',pendingGameConfirmation:null,localMatchStats:{},localRoom:{self:0,players:[own]},
   online:{code:'FIRST',socket:{},member:101,generation:3,connected:true,id:0,roomData:{host:0,phase:'playing'},unsharePending:false},
   document:doc,$,watchInvite:false,watchResume:null,savedPresets:presets,
   localStorage:{getItem:()=>s.stored||null,setItem(key,value){s.stored=value;s.storageWrites=(s.storageWrites||0)+1;}},
@@ -38,7 +38,7 @@ function boot(){
   snapshotPreset:()=>({rules:{scoreTarget:5},roster:[]}),validatePreset:p=>p,renderPresets(){s.rendered=(s.rendered||0)+1;},featureNotice(id,message){s.featureMessage=message;},
   confirm(){throw Error('Native confirm must never be used');}};
  vm.createContext(s);
- for(const name of ['captureActionScope','finishGameConfirmation','confirmGameAction','leaveOnlineMatch','unshareOnlineRoom','returnToRoom','openJoinDialog','saveCurrentPreset','deleteSelectedPreset','returnToMatchParty'])vm.runInContext(declaration(name),s);
+ for(const name of ['captureActionScope','captureOnlineRoomActionScope','syncEndMatchAction','clearEndMatchPending','finishGameConfirmation','confirmGameAction','leaveOnlineMatch','unshareOnlineRoom','returnToRoom','openJoinDialog','saveCurrentPreset','deleteSelectedPreset','returnToMatchParty'])vm.runInContext(declaration(name),s);
  return {s,$,own,elements};
 }
 function click($,id){const button=$(id);assert.ok(button,'confirmation button exists');button.onclick();}
@@ -88,11 +88,11 @@ test('online leave, host end, join, unshare and party-return act only after acce
   if(accept&&name==='returnToMatchParty')assert.equal(s.sent[0].type,'return_party');
  }
 });
-test('room transfer, a new generation and lost host privileges invalidate pending online actions',async()=>{
- for(const name of ['leaveOnlineMatch','returnToRoom','openJoinDialog','unshareOnlineRoom','returnToMatchParty'])for(const change of ['room','generation']){
+test('identity and authority changes invalidate actions while End and Leave survive round generations',async()=>{
+ for(const name of ['leaveOnlineMatch','returnToRoom','openJoinDialog','unshareOnlineRoom','returnToMatchParty'])for(const change of ['room','socket','member','generation']){
   const {s,$}=boot();configureAction(s,name);const pending=s[name]();
-  if(change==='room')s.online.code='SECOND';else s.online.generation++;
-  click($,'actionConfirmAccept');await pending;assert.equal(mutations(s),0,name+' '+change);
+  if(change==='room')s.online.code='SECOND';else if(change==='socket')s.online.socket={};else if(change==='member')s.online.member++;else s.online.generation++;
+  click($,'actionConfirmAccept');await pending;assert.equal(mutations(s),change==='generation'&&['leaveOnlineMatch','returnToRoom'].includes(name)?1:0,name+' '+change);
  }
  for(const name of ['returnToRoom','unshareOnlineRoom']){
   const {s,$}=boot();configureAction(s,name);const pending=s[name]();s.online.roomData.host=1;click($,'actionConfirmAccept');await pending;assert.equal(mutations(s),0,name);

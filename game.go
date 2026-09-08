@@ -24,6 +24,7 @@ const (
 	tankRadius         = 17.0
 	goalScore          = 5
 	roundDuration      = 75.0
+	roundEndSeconds    = 2.0
 	tickDT             = 1.0 / 60.0
 	boostDuration      = powerEffectDuration
 	boostSpeedPerStack = .65
@@ -1235,7 +1236,7 @@ func (g *Game) finishRound(winner int) {
 	}
 	g.Winner = winner
 	g.Phase = "roundOver"
-	g.PhaseTime = 2.7
+	g.PhaseTime = roundEndSeconds
 	g.roundClinched = false
 	if winner >= 0 {
 		g.Scores[winner]++
@@ -1271,10 +1272,11 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		}
 		return
 	case "roundOver":
-		g.PhaseTime -= dt
-		if g.PhaseTime > 0 {
+		g.PhaseTime = math.Max(0, g.PhaseTime-dt)
+		if g.PhaseTime > 1e-9 {
 			return
 		}
+		g.PhaseTime = 0
 		if g.roundClinched {
 			g.Phase = "matchOver"
 			g.emit("matchEnd", nil, g.Winner, "")

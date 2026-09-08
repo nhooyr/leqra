@@ -15,8 +15,8 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.34.0';
-const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
+const GAME_VERSION='4.35.0';
+const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
 const MAX_TANKS=8;
@@ -1216,7 +1216,7 @@ function botControl(t,dt){
 function finishRound(winner){
  if(phase!=='playing')return;
  if(mode==='solo'&&winner>0)winner=1;
- roundWinner=winner;phase='roundOver';phaseTime=2.7;clearInput();
+ roundWinner=winner;phase='roundOver';phaseTime=ROUND_END_SECONDS;clearInput();
  if(winner>=0){scores[winner]++;if(mode==='room'){const winning=tanks.find(t=>t.id===winner);if(winning?.team>0)for(const t of tanks)if(t.team===winning.team)scores[t.id]=scores[winner];}if(mode==='solo'&&winner===1)scores[2]=scores[1];
   addLog(winnerName(winner)+' wins round '+round+'.');tone(430,550,.12,.04,'triangle');tone(650,800,.19,.04,'triangle',.13);
  }else{addLog('Round '+round+' is a draw. No points.');tone(230,160,.25,.04,'triangle');}
@@ -1228,7 +1228,7 @@ function finishRound(winner){
  }
  updateHUD(true);
 }
-function finishMatch(winner){if(phase==='matchOver')return;const delay=localMatchResult?0:500;if(localMatchResult)winner=localMatchResult.winner;finishLocalMatchStats(winner);if(mode==='room'){const winning=(localMatchResult?.tanks||tanks).find(t=>t.id===winner),me=roomMember(localPlayerID()),ownResult=localMatchReport?.players.find(p=>resultMemberMatches({...p,id:p.seat},me));if(ownResult?ownResult.winner:winning&&me&&teamKey(winning)===teamKey(me)){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';}phase='matchOver';roundWinner=winner;clearInput();$('announcer').hidden=true;updateHUD(true);const resultTanks=localMatchResult?.tanks||tanks,report=localMatchReport;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(winner,resultTanks,report);},delay);return;}phase='matchOver';$('announcer').hidden=true;const won=winner===0;$('matchTitle').innerHTML=mode==='duel'?`PLAYER ${winner+1}<br><em>WINS.</em>`:won?'CLEAN<br><em>VICTORY.</em>':'GOOD<br><em>FIGHT.</em>';$('matchSubtitle').textContent=mode==='duel'?'One keyboard. One champion. Time for a rematch?':won?'You ruled the maze. The ricochets were on your side.':winnerName(winner)+' takes the arena. Another round of revenge?';$('matchResults').replaceChildren(...scoreboardEntries().map(t=>{const d=document.createElement('div');d.className='match-result';const name=document.createElement('span');name.style.color=paintColor(t.color);name.textContent=t.name;const score=document.createElement('strong');score.textContent=scores[t.id];score.style.color=paintColor(t.color);d.append(name,score);return d;}));if(won){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';}clearInput();updateHUD();queueMatchPresentation(()=>{setScreen('match');$('rematchBtn').focus({preventScroll:true});},delay);}
+function finishMatch(winner){if(phase==='matchOver')return;const delay=localMatchResult?0:ROUND_END_SECONDS*1000;if(localMatchResult)winner=localMatchResult.winner;finishLocalMatchStats(winner);if(mode==='room'){const winning=(localMatchResult?.tanks||tanks).find(t=>t.id===winner),me=roomMember(localPlayerID()),ownResult=localMatchReport?.players.find(p=>resultMemberMatches({...p,id:p.seat},me));if(ownResult?ownResult.winner:winning&&me&&teamKey(winning)===teamKey(me)){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';}phase='matchOver';roundWinner=winner;clearInput();$('announcer').hidden=true;updateHUD(true);const resultTanks=localMatchResult?.tanks||tanks,report=localMatchReport;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(winner,resultTanks,report);},delay);return;}phase='matchOver';$('announcer').hidden=true;const won=winner===0;$('matchTitle').innerHTML=mode==='duel'?`PLAYER ${winner+1}<br><em>WINS.</em>`:won?'CLEAN<br><em>VICTORY.</em>':'GOOD<br><em>FIGHT.</em>';$('matchSubtitle').textContent=mode==='duel'?'One keyboard. One champion. Time for a rematch?':won?'You ruled the maze. The ricochets were on your side.':winnerName(winner)+' takes the arena. Another round of revenge?';$('matchResults').replaceChildren(...scoreboardEntries().map(t=>{const d=document.createElement('div');d.className='match-result';const name=document.createElement('span');name.style.color=paintColor(t.color);name.textContent=t.name;const score=document.createElement('strong');score.textContent=scores[t.id];score.style.color=paintColor(t.color);d.append(name,score);return d;}));if(won){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';}clearInput();updateHUD();queueMatchPresentation(()=>{setScreen('match');$('rematchBtn').focus({preventScroll:true});},delay);}
 function update(dt){
  if(mode==='online'){onlineUpdate(dt);return;}
  // Visual shake must settle even while the local simulation is stopped.
@@ -1241,7 +1241,7 @@ function update(dt){
  if(phase==='matchOver')return;
  time+=dt;phaseTime-=dt;
  if(phase==='countdown'){if(phaseTime<=0){phase='playing';phaseTime=.55;goUntil=performance.now()+550;tone(800,950,.15,.04);if(round===1)showStartingControls();}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
- if(phase==='roundOver'){if(phaseTime<=0){if(localMatchResult||roundWinner>=0&&scores[roundWinner]>=currentRules().scoreTarget)finishMatch(localMatchResult?.winner??roundWinner);else{round++;startRound();}}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
+ if(phase==='roundOver'){if(phaseTime<=1e-9){phaseTime=0;if(localMatchResult||roundWinner>=0&&scores[roundWinner]>=currentRules().scoreTarget)finishMatch(localMatchResult?.winner??roundWinner);else{round++;startRound();}}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
  if(survivalMode()&&survivalBreak()){stepLocalSurvival(dt);uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
  if(survivalMode()){if(roundClock<=0){endLocalSurvival(false);return;}dt=Math.min(dt,roundClock);}
  if(objectiveMode()&&!suddenDeath()){
@@ -1273,6 +1273,14 @@ function update(dt){
 }
 function tankSvg(){return '<svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M6 10v12m16-12v12" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="10" y="9" width="8" height="14" rx="2" fill="currentColor"/><path d="M14 4v10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="14" cy="16" r="2.7" fill="#182229"/></svg>';}
 let lastRoster='';
+function pilotLoadoutTank(id){
+ if(mode!=='online')return tanks.find(t=>t.id===id);
+ const member=online.roomData?.players.find(p=>p.id===id);if(!member)return null;
+ // Lobby snapshots intentionally contain no tank bodies. Keep assigned HUD
+ // slots in the layout, and read live equipment before the next render pass.
+ const tank=online.snapshots.at(-1)?.tankMap?.get(id);if(tank)return tank;
+ return {...member,alive:false,color:member.color||COLORS[id],power:null,powerTime:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,scopeTime:0,ghostTime:0};
+}
 function renderPilotLoadout(player,num,force=false){
  const suffix=num===1?'':'2',panel=$('pilotLoadout'+num),dots=$('ammoDots'+suffix);
  if(!player){panel.hidden=true;return null;}panel.hidden=false;
@@ -1317,7 +1325,7 @@ function renderLineup(force=false){
 function updateHUD(force=false){
  syncPauseButton();
  renderLineup(force);
- const player=controlledTank(),p2=tanks.find(t=>t.id===secondaryID());
+ const player=pilotLoadoutTank(localPlayerID()),p2=pilotLoadoutTank(secondaryID());
  $('localLoadouts').classList.toggle('two-pilots',!!p2);document.body.classList.toggle('two-local-pilots',!!p2);
  const state=renderPilotLoadout(player,1,force);renderPilotLoadout(p2,2,force);
  if(player&&state){const {power,remoteReady}=state;
@@ -1415,12 +1423,16 @@ function drawTankPowerBadges(t,layout){
  layout=layout||tankStatusLayout(t);const positions=tankPowerBadgePositions(t,layout,kinds.length),size=layout.size;
  ctx.save();for(let i=0;i<positions.length;i++)ctx.drawImage(tankPowerBadgeImage(kinds[i]),positions[i].x,positions[i].y,size,size);ctx.restore();
 }
+function protectionRingAlpha(t){
+ // Fade only inside the remaining protection window; never imply extra grace.
+ const fraction=clamp((t.invulnerable||0)/.3,0,1);return fraction*fraction*(3-2*fraction);
+}
 function localSpawnGuideAlpha(t){
  if(!t.alive||!t.human||t.survivalEnemy||!t.spawnProtected||!(t.invulnerable>0))return 0;
  const stage=phase==='paused'?pausedFrom:phase;
  if(stage!=='countdown'&&(stage!=='playing'||survivalBreak()))return 0;
  if(!(t.id===localPlayerID()&&!isSpectating())&&t.id!==secondaryID())return 0;
- return 1;
+ return protectionRingAlpha(t);
 }
 function drawLocalSpawnGuide(t){
  const alpha=localSpawnGuideAlpha(t);if(alpha<=0)return;
@@ -1438,7 +1450,7 @@ function drawTank(t,withLabel=true){
   const count=shieldCount(t),pulse=reduceMotion?0:Math.sin(fxTime*4)*.6;
   for(let ring=0;ring<count;ring++){ctx.globalAlpha=.78;ctx.beginPath();ctx.arc(0,0,26+ring*4+pulse,0,TAU);ctx.stroke();}
   ctx.globalAlpha=.035;ctx.fillStyle=paintColor(POWER.shield.color);ctx.beginPath();ctx.arc(0,0,26+Math.max(0,count-1)*4,0,TAU);ctx.fill();ctx.globalAlpha=1;
- }else if(inv){ctx.strokeStyle=paintColor(theme.protection);ctx.lineWidth=1.5;ctx.globalAlpha=.35;ctx.beginPath();ctx.arc(0,0,27,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+ }else if(inv){ctx.strokeStyle=paintColor(theme.protection);ctx.lineWidth=1.5;ctx.globalAlpha=.35*protectionRingAlpha(t);ctx.beginPath();ctx.arc(0,0,27,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
  drawLocalSpawnGuide(t);
  // Player halo keeps the controlled tank easy to find on a phone.
  if(t.id===localPlayerID()){ctx.strokeStyle=paintColor(t.color);ctx.globalAlpha=.15;ctx.lineWidth=1;ctx.setLineDash([3,6]);ctx.beginPath();ctx.arc(0,0,23,0,TAU);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
@@ -1574,7 +1586,7 @@ function submitRoomRename(e){
  const code=cleanRoomCode($('onlineRoomCode').value);if(!validRoomCode(code)){$('roomStatus').textContent='Use a room name of 1–128 characters on one line.';$('onlineRoomCode').focus();return;}if(code===online.code){$('onlineRoomCode').value=online.code;return;}
  online.roomRenamePending=true;$('onlineRoomCode').disabled=true;$('roomStatus').textContent='Renaming room…';if(!sendOnline({type:'rename_room',code})){online.roomRenamePending=false;$('onlineRoomCode').disabled=false;$('roomStatus').textContent='Connection unavailable. Room was not renamed.';}
 }
-function sendOnline(value){const ws=online.socket;if(!ws||ws.readyState!==WebSocket.OPEN||ws.bufferedAmount>4096)return false;try{ws.send(JSON.stringify(value));return true;}catch(_){return false;}}
+function sendOnline(value){const ws=online.socket;if(!ws||ws.readyState!==WebSocket.OPEN)return false;const busy=ws.bufferedAmount>4096;if(busy&&value.type!=='lobby'&&value.type!=='leave')return false;try{const data=JSON.stringify(value);if(busy&&data.length>128)return false;ws.send(data);return true;}catch(_){return false;}}
 // Host moderation is only UI here: the Go server independently checks identity,
 // host authority, room scope, and the seat incarnation again on every request.
 function cancelKick(){
@@ -1802,6 +1814,22 @@ function openOnline(){
  if(!$('joinDialog').open)$('joinDialog').showModal();netBusy(false);
  setNetStatus(location.protocol==='file:'?'Online sharing needs the Go server. Run go run . and open its webpage.':'Missing rooms are created with you as host.',location.protocol==='file:');
 }
+function showVersionMismatch(message){
+ // Keep local play available after refusing an incompatible online handshake.
+ for(const id of ['joinDialog','queueDialog']){const panel=$(id);if(panel?.open)panel.close();}
+ let dialog=$('versionMismatchDialog');
+ if(!dialog){
+  dialog=document.createElement('dialog');dialog.id='versionMismatchDialog';dialog.className='feature-dialog version-mismatch';dialog.setAttribute('aria-labelledby','versionMismatchTitle');dialog.setAttribute('aria-describedby','versionMismatchMessage');
+  const header=document.createElement('header');header.className='feature-header';
+  const title=document.createElement('h2');title.id='versionMismatchTitle';title.textContent='UPDATE REQUIRED';header.append(title);
+  const body=document.createElement('div');body.className='feature-body';const text=document.createElement('p');text.id='versionMismatchMessage';body.append(text);
+  const footer=document.createElement('footer');footer.className='feature-footer';
+  const reload=document.createElement('button');reload.id='versionReloadBtn';reload.type='button';reload.className='primary';reload.textContent='RELOAD GAME';reload.onclick=()=>location.reload();
+  const offline=document.createElement('button');offline.id='versionOfflineBtn';offline.type='button';offline.className='secondary';offline.textContent='CONTINUE OFFLINE';offline.onclick=()=>dialog.close();
+  footer.append(reload,offline);dialog.append(header,body,footer);document.body.append(dialog);
+ }
+ $('versionMismatchMessage').textContent=message;if(!dialog.open)dialog.showModal();$('versionReloadBtn').focus({preventScroll:true});
+}
 function connectOnline(request,reconnecting=false){
  if(!['http:','https:'].includes(location.protocol)){setNetStatus('Online play needs the Go server. Run go run . and open the address it prints.',true);return;}
  if(online.connecting||online.connected)return;mode='online';phase='menu';document.body.classList.add('online-mode');
@@ -1821,7 +1849,7 @@ function connectOnline(request,reconnecting=false){
   case 'server_hello':
    if(msg.version!==GAME_VERSION||msg.protocol!==1){
     clearTimeout(timeout);const serverVersion=typeof msg.version==='string'?msg.version:'unknown',notice='This page is leqra v'+GAME_VERSION+', but the server is v'+serverVersion+'. Reload the page to update before playing online.';
-    online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.serverVersion=serverVersion;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;toast('UPDATE REQUIRED · RELOAD PAGE',5);break;
+    online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.serverVersion=serverVersion;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;
    }
    online.serverVersion=msg.version;sendOnline({type:'client_hello',version:GAME_VERSION,protocol:1});sendOnline(request);break;
   case 'client_ready':break;
@@ -1856,8 +1884,9 @@ function connectOnline(request,reconnecting=false){
   case 'state':receiveOnlineState(msg);break;
   case 'pong':{const sample=clamp(performance.now()-msg.t,0,5000);online.latency=Math.round(online.latency?online.latency*.7+sample*.3:sample);break;}
   case 'error':
+   if(msg.action==='lobby'){clearEndMatchPending(msg.message);break;}
    if(msg.action==='restart_wave'){clearRestartWavePending(msg.message);break;}
-   if(msg.action==='version'){clearTimeout(timeout);const notice=msg.message||'This leqra page does not match the server. Reload the page before playing online.';online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;toast('UPDATE REQUIRED · RELOAD PAGE',5);break;}
+   if(msg.action==='version'){clearTimeout(timeout);const notice=msg.message||'This leqra page does not match the server. Reload the page before playing online.';online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;}
    if(msg.action==='rematch'){matchmaking.rematchPending=false;syncResultActions();toast(msg.message,3);break;}
    if(msg.action?.startsWith('queue_')||msg.action==='return_party'){matchmakingError(msg.message);break;}
    if(msg.action==='chat'){const channel=msg.channel==='opponent'?'opponent':'room',st=chatState(channel),pending=st.pending;st.pending=null;if(pending?.text&&!roomChat.draft)roomChat.draft=pending.text;st.error=msg.message;if(roomChat.open&&roomChat.sendTarget===channel){$('chatInput').value=roomChat.draft;$('chatError').textContent=st.error;}syncChatStatus();break;}
@@ -1881,6 +1910,7 @@ function connectOnline(request,reconnecting=false){
  ws.onclose=()=>{
   if(online.socket===ws)clearRestartWavePending();
   clearTimeout(timeout);if(online.socket!==ws)return;online.connected=false;online.connecting=false;rolePending=false;clearRoomModePending();syncRoomModePicker();cancelSwap();cancelKick();cancelCallsignSave('Connection lost. Check your callsign after reconnecting.');syncCallsignEditors();netBusy(false);clearInput();
+  clearEndMatchPending();
   syncChatStatus();if(mode!=='online'||online.manual)return;
   if(online.code&&online.token){showReconnecting();scheduleReconnect();}
   else {if(online.publishing){online.publishing=false;mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent='Could not reach the Go server. Local play is still available.';return;}phase='menu';setScreen('online');setNetStatus('Could not reach the Go game server. Start it with go run . and open its webpage.',true);}
@@ -1898,6 +1928,7 @@ function scheduleReconnect(){
  online.retryTimer=setTimeout(()=>{if(mode==='online'&&!online.manual)connectOnline({type:'join',code:online.code,token:online.token,name:$('pilotName').value},true);},delay);
 }
 function leaveOnline(){
+ clearEndMatchPending();
  clearRestartWavePending();
  resetMatchmaking();
  closeChat();clearRoomChat();
@@ -1914,6 +1945,21 @@ let pendingGameConfirmation=null;
 function captureActionScope(){
  const priorMode=mode,code=online.code,socket=online.socket,member=online.member,generation=online.generation,connected=online.connected,priorPhase=phase,players=localRoom.players,self=localRoom.self,match=localMatchStats;
  return()=>mode===priorMode&&phase===priorPhase&&(mode==='online'?online.code===code&&online.socket===socket&&online.member===member&&online.generation===generation&&online.connected===connected:localRoom.players===players&&localRoom.self===self&&localMatchStats===match);
+}
+function captureOnlineRoomActionScope(){
+ // Leaving or ending this room remains the same intent as rounds/countdowns
+ // advance. A different connection, room, or participant still invalidates it.
+ const code=online.code,socket=online.socket,member=online.member;
+ return()=>mode==='online'&&online.code===code&&online.socket===socket&&online.member===member;
+}
+function syncEndMatchAction(){
+ const button=$('returnRoomBtn');if(!button)return;
+ const text=online.endMatchPending?'ENDING…':'End match';if(button.textContent!==text)button.textContent=text;
+ button.disabled=mode==='online'&&(!online.connected||!!online.endMatchPending);
+}
+function clearEndMatchPending(message=''){
+ const pending=online.endMatchPending;if(pending)clearTimeout(pending.timer);online.endMatchPending=null;
+ syncEndMatchAction();if(message){if(mode==='online'&&online.menu&&$('onlineMenuMessage'))$('onlineMenuMessage').textContent=message;toast(message,3);}
 }
 function finishGameConfirmation(accepted){
  const pending=pendingGameConfirmation;if(!pending)return;
@@ -1944,7 +1990,7 @@ function confirmGameAction({title,message,accept='CONTINUE',isCurrent=()=>true})
  return new Promise(resolve=>{pendingGameConfirmation={resolve,origin,isCurrent};try{dialog.showModal();$('actionConfirmCancel').focus({preventScroll:true});}catch(_){finishGameConfirmation(false);}});
 }
 async function leaveOnlineMatch(){
- if(mode!=='online')return;const isCurrent=captureActionScope();
+ if(mode!=='online')return;const isCurrent=captureOnlineRoomActionScope();
  if(!await confirmGameAction({title:'Leave this match?',message:'Return to the Home Screen? Your tanks will leave this online match.',accept:'LEAVE MATCH',isCurrent})||!isCurrent())return;
  leaveOnline();
 }
@@ -1977,7 +2023,7 @@ function renderOnlineRoom(){
  const pending=online.kickPending;if(pending&&!roomMembers(r).some(p=>p.id===pending.id&&p.member===pending.member))cancelKick();
  $('hostControls').hidden=!isOnline||!host||!online.connected;
  renderRoomPlayerRows($('menuKickRoster'),r.players.filter(p=>p.id!==localPlayerID()),r,true);
- $('returnRoomBtn').hidden=!host;$('returnRoomBtn').textContent='End match';$('copyInGameBtn').hidden=!isOnline;$('copyInGameBtn').disabled=false;if(isOnline)$('copyInGameBtn').textContent='Copy invite link';
+ $('returnRoomBtn').hidden=!host||isOnline&&!!(r.matchmaking||r.queue||r.awayMatch);syncEndMatchAction();$('copyInGameBtn').hidden=!isOnline;$('copyInGameBtn').disabled=false;if(isOnline)$('copyInGameBtn').textContent='Copy invite link';
 
  $('readyBtn').hidden=!isOnline||host||!!own?.spectating;$('readyBtn').classList.toggle('is-ready',!!own?.ready);$('readyBtn').textContent=own?.ready?'READY ✓ · CLICK TO UNREADY':'I’M READY';$('readyBtn').disabled=!online.connected;
  const canStart=isOnline?r.canStart:!roomStartError(r);
@@ -2023,6 +2069,7 @@ function receiveOnlineState(s){
  s.received=now;s.tanks=s.tanks.map(t=>netTank(t,priorTanks?.get(t.id),t.invulnerable>0&&s.events?.some(e=>e.type==='shield'&&e.player===t.id&&(e.spawnSerial||0)===(t.spawnSerial||0)&&(e.generation===undefined||e.generation===s.generation))));s.tankMap=new Map(s.tanks.map(t=>[t.id,t]));s.bulletMap=new Map(s.bullets.map(b=>[b.id,b]));
  online.buffer.push(s,now);
  phase=s.phase==='lobby'?'onlineLobby':s.phase;round=s.round;roundClock=s.roundClock;phaseTime=s.phaseTime;roundWinner=s.winner;scores=s.scores;
+ if(phase==='onlineLobby'&&online.endMatchPending)clearEndMatchPending();
  if(phase==='playing'&&previousPhase==='countdown'){goUntil=now+550;if(round===1)showStartingControls();}
  if(s.objectives?.suddenDeath)goUntil=0;
  if(s.objectives?.survival&&(s.objectives.survival.status!==previousSurvival?.status||s.objectives.survival.wave!==previousSurvival?.wave)){clearInput();sendOnlineInput(true);online.localBullets.clear();goUntil=0;}
@@ -2043,7 +2090,7 @@ function receiveOnlineState(s){
   if(phase!==previousPhase||newMap){setScreen('room');renderOnlineRoom();}
  }else if(phase==='matchOver'){online.menu=false;}else if(['onlineLobby','matchOver','menu'].includes(previousPhase)||newMap){online.menu=false;setScreen(null);}
  else if(!online.menu&&phase!==previousPhase)setScreen(null);
- if(phase==='matchOver'&&online.lastMatch!==s.generation){online.lastMatch=s.generation;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(s.winner,s.tanks,s.matchStats);},!newMap&&['playing','countdown','paused'].includes(previousPhase)?500:0);if(s.matchStats?.players?.length?s.matchStats.players.some(p=>p.winner&&resultMemberMatches({...p,id:p.seat},roomMember(online.id))):me&&s.tankMap.get(s.winner)&&teamKey(me)===teamKey(s.tankMap.get(s.winner))){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WINS ON THIS DEVICE';}}
+ if(phase==='matchOver'&&online.lastMatch!==s.generation){online.lastMatch=s.generation;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(s.winner,s.tanks,s.matchStats);},onlineMatchResultDelay(s,previousPhase,newMap));if(s.matchStats?.players?.length?s.matchStats.players.some(p=>p.winner&&resultMemberMatches({...p,id:p.seat},roomMember(online.id))):me&&s.tankMap.get(s.winner)&&teamKey(me)===teamKey(s.tankMap.get(s.winner))){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WINS ON THIS DEVICE';}}
  const events=s.events||[];
  if(!online.eventsInitialized){online.lastEvent=events.at(-1)?.id||0;online.eventsInitialized=true;}
  else for(const e of events){if(e.id<=online.lastEvent)continue;online.lastEvent=e.id;const own=e.player===online.id||e.player===secondaryID();if(!own&&['shot','laser'].includes(e.type)&&phase==='playing'&&Number.isFinite(e.tick)){online.effectQueue.push({e,s});if(online.effectQueue.length>64)online.effectQueue.shift();}else onlineEffect(e,s);}
@@ -2383,9 +2430,12 @@ function restartLocalMatch(){
 }
 async function returnToRoom(){
  if(mode==='online'){
-  const scope=captureActionScope(),isCurrent=()=>scope()&&online.connected&&online.roomData?.host===online.id;
+  if(online.endMatchPending)return;
+  const scope=captureOnlineRoomActionScope(),isCurrent=()=>scope()&&online.connected&&online.roomData?.host===online.id&&!online.roomData?.matchmaking&&!online.roomData?.queue&&!online.roomData?.awayMatch;
   if(!isCurrent()||!await confirmGameAction({title:'End this match?',message:'Everyone will return to the room. Scores will reset.',accept:'END MATCH',isCurrent})||!isCurrent())return;
-  sendOnline({type:'lobby'});return;
+  const pending={timer:0};online.endMatchPending=pending;syncEndMatchAction();
+  if(!sendOnline({type:'lobby'})){clearEndMatchPending('Could not send End match. Check your connection and try again.');return;}
+  pending.timer=setTimeout(()=>{if(online.endMatchPending===pending)clearEndMatchPending('End match was not confirmed. Check the connection before trying again.');},6000);return;
  }
  if(mode==='room'){online.menu=false;readyRoom();}
 }
@@ -2498,9 +2548,12 @@ function syncRoomModePicker(){
  if(format){format.value=rules.teamMode;format.disabled=!editable||teamsOnly;}if(map){map.value=rules.mapSize;map.disabled=!editable;}
  if($('roomFormatHelp')){$('roomFormatHelp').textContent=teamsOnly?(value==='ctf'?'Capture the Flag uses two teams.':'All squad tanks share one team.') :'';$('roomFormatHelp').hidden=!teamsOnly;}
  const notice=roomModeError||(pendingRoomMode?'Applying '+pendingRoomMode.label+'…':rulesPending||presetsPending?'Applying room settings…':mode==='online'&&!online.connected?'Reconnect to change room settings.':!isRoomHost()?'The host chooses room settings.':!isRoomEditable()?'Room settings are fixed until this match ends.':'');
- $('roomModeNotice').textContent=notice;$('roomModeNotice').hidden=!notice;$('roomModeNotice').classList.toggle('error',!!roomModeError);
+ $('roomModeNotice').textContent=notice;$('roomModeNotice').hidden=!notice;$('roomModeNotice').classList.toggle('error',!!roomModeError);$('roomModeNotice').setAttribute('role',roomModeError?'alert':'status');
 }
-function rejectRoomMode(message){clearRoomModePending();roomModeError=message||'Room settings could not be changed.';syncRoomModePicker();syncFeatureSummary();}
+function rejectRoomMode(message){
+ clearRoomModePending();roomModeError=message||'Room settings could not be changed.';syncRoomModePicker();syncFeatureSummary();
+ const notice=$('roomModeNotice');notice?.scrollIntoView?.({block:'nearest'});notice?.focus({preventScroll:true});
+}
 function selectRoomMode(value){return selectRoomSetting('mode',value);}
 function selectRoomSetting(field,value){
  if(!roomModeEditable()){syncRoomModePicker();return false;}
@@ -2532,7 +2585,7 @@ function roomModeKeydown(e){
 }
 function initRoomModePicker(toolbar){
  const picker=document.createElement('section');picker.className='room-mode-picker';picker.setAttribute('aria-label','Match setup');
- picker.innerHTML='<div class="field-label" id="roomModeLabel">GAME MODE</div><div class="room-mode-choices" id="roomModeChoices" role="radiogroup" aria-labelledby="roomModeLabel" aria-describedby="roomModeDescription roomModeNotice">'+ROOM_MODES.map(m=>'<button type="button" class="room-mode-choice" role="radio" data-room-mode="'+m.id+'" tabindex="-1" aria-checked="false"><svg viewBox="0 0 24 24" aria-hidden="true">'+m.icon+'</svg><span>'+m.name+'</span></button>').join('')+'</div><p class="room-mode-help" id="roomModeDescription"></p><div class="room-setup-fields"><label for="roomTeamMode">BATTLE FORMAT</label><select id="roomTeamMode" aria-describedby="roomFormatHelp roomModeNotice"><option value="ffa">Free-for-all</option><option value="teams">Teams</option></select><p class="room-mode-help" id="roomFormatHelp" hidden></p><label for="roomMapSize">MAP SIZE</label><select id="roomMapSize" aria-describedby="roomModeNotice"><option value="compact">Compact · 7 × 7</option><option value="standard">Standard · 9 × 8</option><option value="large">Large · 12 × 10</option><option value="huge">Huge · 14 × 12</option><option value="giant">Giant · 16 × 14</option><option value="ultrawide">Ultra Wide · 24 × 14</option></select></div><p class="room-mode-notice" id="roomModeNotice" role="status" hidden></p>';
+ picker.innerHTML='<div class="field-label" id="roomModeLabel">GAME MODE</div><div class="room-mode-choices" id="roomModeChoices" role="radiogroup" aria-labelledby="roomModeLabel" aria-describedby="roomModeDescription roomModeNotice">'+ROOM_MODES.map(m=>'<button type="button" class="room-mode-choice" role="radio" data-room-mode="'+m.id+'" tabindex="-1" aria-checked="false"><svg viewBox="0 0 24 24" aria-hidden="true">'+m.icon+'</svg><span>'+m.name+'</span></button>').join('')+'</div><p class="room-mode-notice" id="roomModeNotice" role="status" tabindex="-1" hidden></p><p class="room-mode-help" id="roomModeDescription"></p><div class="room-setup-fields"><label for="roomTeamMode">BATTLE FORMAT</label><select id="roomTeamMode" aria-describedby="roomFormatHelp roomModeNotice"><option value="ffa">Free-for-all</option><option value="teams">Teams</option></select><p class="room-mode-help" id="roomFormatHelp" hidden></p><label for="roomMapSize">MAP SIZE</label><select id="roomMapSize" aria-describedby="roomModeNotice"><option value="compact">Compact · 7 × 7</option><option value="standard">Standard · 9 × 8</option><option value="large">Large · 12 × 10</option><option value="huge">Huge · 14 × 12</option><option value="giant">Giant · 16 × 14</option><option value="ultrawide">Ultra Wide · 24 × 14</option></select></div>';
  toolbar.before(picker);
  $('roomTeamMode').onchange=e=>selectRoomSetting('teamMode',e.target.value);$('roomMapSize').onchange=e=>selectRoomSetting('mapSize',e.target.value);
  for(const b of document.querySelectorAll('[data-room-mode]')){b.onclick=()=>selectRoomMode(b.dataset.roomMode);b.onkeydown=roomModeKeydown;}
@@ -2583,9 +2636,9 @@ function updateRuleHelp(){
  $('rule-respawnSeconds').parentElement.hidden=m==='elimination'||m==='survival';
  $('rule-scoreTarget').max=m==='koth'?300:20;$('rule-respawnSeconds').disabled=m==='elimination'||m==='survival'||!isRoomEditable();
  $('ruleTimeLabel').textContent=m==='survival'?'WAVE TIME LIMIT (SECONDS)':'TIME LIMIT (SECONDS)';
- $('ruleScoreLabel').textContent=m==='survival'?'WAVES TO SURVIVE':m==='koth'?'HILL POINTS TO WIN':m==='ctf'?'CAPTURES TO WIN':'ROUND WINS TO WIN';
+ $('ruleScoreLabel').textContent=m==='survival'?'WAVES TO SURVIVE':m==='koth'?'HILL POINTS TO WIN':m==='ctf'?'CAPTURES TO WIN':'ROUNDS TO WIN';
  const [mc,mr]=mapDimensions(currentRules().mapSize);$('rule-pickup-density').textContent=$('rule-pickupRate').value==='off'?'Pickups disabled.':pickupLimitText(currentRules().mapSize)+' Uncollected power-ups expire after '+pickupLifetime(mc,mr)+' seconds.';
- $('rule-help').textContent=m==='survival'?'One to four squad tanks; all-bot squads are welcome. Clear each wave before its timer expires. A squad wipe ends the run. Fallen tanks revive after a four-second break. Normal debuts as the wave 5 boss, Fierce at wave 10, and Godlike at wave 15. Each joins regular waves afterward. The maze stays the same throughout the run.':m==='ctf'?'Two numbered teams. Carry the enemy flag home; your own flag must be at base. Dropped flags return after 12s. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':m==='koth'?'Teams or Free-for-all. Hold the marked hill for 1 point per second. Contested hills give no points. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':'Last side standing wins a round. No respawns until the next round.';
+ $('rule-help').textContent=m==='survival'?'One to four squad tanks; all-bot squads are welcome. Clear each wave before its timer expires. A squad wipe ends the run. Fallen tanks revive after a two-second break. Normal debuts as the wave 5 boss, Fierce at wave 10, and Godlike at wave 15. Each joins regular waves afterward. The maze stays the same throughout the run.':m==='ctf'?'Two numbered teams. Carry the enemy flag home; your own flag must be at base. Dropped flags return after 12s. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':m==='koth'?'Teams or Free-for-all. Hold the marked hill for 1 point per second. Contested hills give no points. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':'Last side standing wins a round. No respawns until the next round.';
 }
 function readRuleTeamSettings(rules){
  const count=activeTeamCount(rules),saved=currentRules();
@@ -2833,10 +2886,10 @@ async function requestRestartSurvivalWave(){
  pending.timer=setTimeout(()=>{if(online.restartWavePending===pending)clearRestartWavePending('No restart confirmation received. Check the current wave before trying again.');},8000);
 }
 function prepareLocalSurvivalBreak(){
- const state=localObjectives.survival;state.status='break';state.breakTime=4;state.boss=false;
+ const state=localObjectives.survival;state.status='break';state.breakTime=ROUND_END_SECONDS;state.boss=false;
  bullets=[];traces=[];pickups=[];clearInput();goUntil=0;
  // Retain defeated enemies for the lineup until startLocalSurvivalWave replaces them.
- addLog('Wave '+state.wave+' cleared. Squad returns in 4 seconds.');
+ addLog('Wave '+state.wave+' cleared. Squad returns in '+ROUND_END_SECONDS+' seconds.');
 }
 function endLocalSurvival(won){
  const state=localObjectives?.survival;if(!state||phase!=='playing'||['won','lost'].includes(state.status))return;
@@ -3049,7 +3102,7 @@ function initFeatures(){
  for(let n=1;n<=2;n++){const p=$('pilotLoadout'+n),warning=document.createElement('span');warning.id='missileWarning'+n;warning.className='lock-status';warning.hidden=true;p.querySelector('.loadout-identity').append(warning);const line=document.createElement('div');line.className='cooldown-line';line.innerHTML='<span id="cooldownText'+n+'">READY</span><div class="cooldown-track" id="cooldownTrack'+n+'" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i id="cooldownFill'+n+'"></i></div>';p.append(line);}
  const dialogs=document.createElement('div');dialogs.innerHTML=`
  <dialog class="feature-dialog" id="rulesDialog" aria-labelledby="rulesTitle"><form id="rulesForm"><header class="feature-header"><div><div class="eyebrow" id="rulesModeName">ELIMINATION</div><h2 id="rulesTitle">Your match. Your rules.</h2></div><button type="button" class="dialog-close" data-close-dialog="rulesDialog" aria-label="Close match rules">×</button></header><div class="feature-body"><fieldset id="rulesFields"><div class="rules-grid">
- <label><span id="ruleScoreLabel">ROUND WINS TO WIN</span><input id="rule-scoreTarget" type="number" min="1" max="20" step="1" required></label>
+ <label><span id="ruleScoreLabel">ROUNDS TO WIN</span><input id="rule-scoreTarget" type="number" min="1" max="20" step="1" required></label>
  <label><span id="ruleTimeLabel">TIME LIMIT (SECONDS)</span><input id="rule-timeLimit" type="number" min="30" max="600" step="1" required></label>
  <div class="team-names-editor" id="teamNamesEditor"><div class="field-label">TEAM NAMES & COLORS · 24 CHARACTERS EACH</div><div class="team-names-grid">${[1,2,3,4].map(i=>'<label>TEAM '+i+'<input id="rule-teamName'+i+'" type="text" autocomplete="off" required aria-label="Team '+i+' name"></label>').join('')}</div><p class="mode-help" id="rule-team-help"></p></div>
  <label>RESPAWN DELAY (SECONDS)<input id="rule-respawnSeconds" type="number" min="1" max="10" step="1" required></label>
@@ -3376,12 +3429,28 @@ function requestQueueRematch(){
  if(!sendOnline({type:'rematch'})){matchmaking.rematchPending=false;syncResultActions();toast('Connection unavailable. Try again after reconnecting.',3);}
 }
 function showServerShutdown(message){let d=$('shutdownDialog');if(!d){d=document.createElement('dialog');d.id='shutdownDialog';d.className='shutdown-dialog';d.setAttribute('aria-labelledby','shutdownTitle');d.innerHTML='<div class="shutdown-mark" aria-hidden="true">!</div><div class="eyebrow">SERVER NOTICE</div><h2 id="shutdownTitle">SERVER SHUTTING DOWN</h2><p id="shutdownMessage"></p><strong>YOU HAVE BEEN RETURNED TO THE HOME SCREEN</strong><button class="shutdown-ack" type="button">OK</button>';document.body.append(d);d.querySelector('.shutdown-ack').onclick=()=>d.close();d.addEventListener('cancel',e=>{e.preventDefault();d.close();});}d.querySelector('#shutdownMessage').textContent=message||'The leqra server is shutting down.';if(!d.open)d.showModal();d.querySelector('.shutdown-ack').focus({preventScroll:true});}
-function queueMatchPresentation(present,delay=500){
+function onlineMatchResultDelay(snapshot,previousPhase,newMap){
+ if(newMap||!['playing','countdown','paused','roundOver'].includes(previousPhase))return 0;
+ // Elimination already holds on the server. Reuse its event clock even when
+ // replaceable snapshots skipped roundOver, so the client never holds twice.
+ const events=snapshot.events||[];let roundEnd=null,matchEnd=null;
+ for(let i=events.length-1;i>=0;i--){const e=events[i];if(e.generation!==snapshot.generation||!Number.isFinite(e.tick))continue;if(e.type==='roundEnd'){roundEnd=e;break;}if(e.type==='matchEnd'&&!matchEnd)matchEnd=e;}
+ const end=roundEnd||matchEnd;
+ if(end)return Math.max(0,ROUND_END_SECONDS*1000-Math.max(0,snapshot.tick-end.tick)*Net.STEP_MS);
+ return previousPhase==='roundOver'?0:ROUND_END_SECONDS*1000;
+}
+function queueMatchPresentation(present,delay=ROUND_END_SECONDS*1000){
  closeVictory();
- if(delay<=0){present();return;}
+ // Even an elapsed impact hold must wait for an open confirmation or End acknowledgement.
+ if(delay<=0&&!$('actionConfirmDialog')?.open&&!(mode==='online'&&online.endMatchPending)){present();return;}
  // Results and scores are already authoritative. Delay only the overlay, so
  // the final impact remains visible without allowing more simulation or input.
- for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();
+ for(const dialog of document.querySelectorAll('dialog[open]')){
+  // A final hit must not cancel a still-valid End/Leave confirmation. The
+  // results presenter already waits until an open dialog has been resolved.
+  if(dialog.id==='actionConfirmDialog'&&pendingGameConfirmation?.isCurrent())continue;
+  dialog.close();
+ }
  clearInput();if(mode==='online')sendOnlineInput(true);setScreen(null);$('announcer').hidden=true;
  pendingMatchPresentation={present,at:performance.now()+delay,mode,report:localMatchReport,objectives:localObjectives,code:online.code,socket:online.socket,generation:online.generation,room:online.roomData,roomPhase:online.roomData?.phase};
 }
@@ -3395,7 +3464,7 @@ function flushMatchPresentation(now=performance.now()){
   const room=online.roomData;if((room!==pending.room||room?.phase!==pending.roomPhase)&&['lobby','countdown'].includes(room?.phase))pendingMatchPresentation=null;
   return;
  }
- if(now<pending.at||document.querySelector?.('dialog[open]'))return;
+ if(now<pending.at||document.querySelector?.('dialog[open]')||mode==='online'&&online.endMatchPending)return;
  pendingMatchPresentation=null;pending.present();
 }
 function closeVictory(){pendingMatchPresentation=null;if($('victoryDialog')?.open)$('victoryDialog').close();}

@@ -38,12 +38,12 @@ func TestIntegration427MachineBudgetPausesDuringBreakAndResetsOnRevival(t *testi
 	if g.fire(tank) {
 		t.Fatal("machine gun fired during intermission")
 	}
-	g.step(2, [maxTanks]Input{{Fire: true, FirePressed: true}}, r.Players)
-	if tank.MachineRounds != 30 || tank.Power != "rapid" || len(g.Bullets) != 0 {
+	g.step(1.9, [maxTanks]Input{{Fire: true, FirePressed: true}}, r.Players)
+	if g.survivalState().Status != "break" || tank.MachineRounds != 30 || tank.Power != "rapid" || len(g.Bullets) != 0 {
 		t.Fatal("intermission consumed machine ammunition or advanced weapons")
 	}
 	tank.Alive = false
-	g.step(2, [maxTanks]Input{}, r.Players)
+	g.step(.1, [maxTanks]Input{}, r.Players)
 	if !tank.Alive || tank.Power != "" || tank.MachineRounds != 0 || g.survivalState().Status != "wave" {
 		t.Fatal("wave revival did not reset the machine gun budget")
 	}
@@ -107,11 +107,11 @@ func TestIntegration427SurvivorLeavingDuringBreakStillRevivesConnectedSquadmate(
 	g.Tanks[0].Alive = false
 	clearSurvivalWave427(t, r)
 	h.expirePlayer(r, 1)
-	g.step(2, [maxTanks]Input{}, r.Players)
+	g.step(1.9, [maxTanks]Input{}, r.Players)
 	if g.Phase != "playing" || g.survivalState().Status != "break" || g.Tanks[0].Alive {
 		t.Fatal("last survivor leaving cancelled an already-earned squad revival")
 	}
-	g.step(2, [maxTanks]Input{}, r.Players)
+	g.step(.1, [maxTanks]Input{}, r.Players)
 	if g.Phase != "playing" || g.survivalState().Wave != 2 || g.survivalState().Status != "wave" || !g.Tanks[0].Alive {
 		t.Fatal("connected squadmate did not revive for the next wave")
 	}

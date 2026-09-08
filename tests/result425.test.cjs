@@ -23,7 +23,7 @@ function boot({teams=false,target=1}={}){
   {id:1,member:102,name:teams?'ALLY':'RIVAL',kind:teams?'local':'bot',owner:0,team:teams?1:0}];
  if(teams)players.push({id:2,member:103,name:'RIVAL',kind:'bot',team:2});
  const rules={mode:'elimination',teamMode:teams?'teams':'ffa',scoreTarget:target};
- const s={mode:'room',phase:'playing',MAX_TANKS:8,localRoom:{players,self:0,nextMember:103,nextViewer:8},
+ const s={ROUND_END_SECONDS:2,mode:'room',phase:'playing',MAX_TANKS:8,localRoom:{players,self:0,nextMember:103,nextViewer:8},
   tanks:players.map(p=>({...p,alive:p.name!=='RIVAL',human:p.kind!=='bot',color:'#fff'})),scores:Array(8).fill(0),
   round:1,roundWinner:-1,phaseTime:0,roundClock:75,bullets:[],particles:[],rings:[],fxTime:0,time:0,toastTime:0,shake:0,uiClock:1,
   localObjectives:null,pendingMatchPresentation:null,now:0,performance:{now:()=>s.now},online:{},localMatchStats:null,localMatchReport:null,localMatchResult:null,goUntil:0,bestWins:0,
@@ -102,7 +102,7 @@ test('restart during a clinched result opens results instead of starting another
  assert.match($('victoryTitle').textContent,/ORIGINAL/);
 });
 
-test('Survival and objective results wait 500 ms while final statistics and combat stay frozen',()=>{
+test('Survival and objective results wait two seconds while final statistics and combat stay frozen',()=>{
  for(const gameMode of ['survival','ctf','koth']){
   const {s,$}=boot();s.currentRules().mode=gameMode;s.now=1000;s.roundClock=12;s.localMatchStats.duration=7;
   if(gameMode==='survival')s.localObjectives={mode:gameMode,survival:{wave:3,wavesCleared:2,waveTarget:15,status:'wave'}};
@@ -111,17 +111,17 @@ test('Survival and objective results wait 500 ms while final statistics and comb
   const report=s.localMatchReport,positions=s.tanks.map(t=>[t.x,t.y]);assert.equal(s.phase,'matchOver',gameMode);assert.equal(s.screen,null,gameMode);assert.equal($('victoryDialog').open,false,gameMode);
   s.finishMatch(0);assert.equal(s.localMatchReport,report,'repeat completion does not replace the final report');assert.equal(s.bestWins,gameMode==='survival'?0:1,'wins are counted once');
   for(let n=0;n<30;n++)s.update(1/120);assert.ok(s.particles[0].x>0);assert.ok(s.particles[0].life<1);assert.ok(s.rings[0].life<1);assert.equal(s.roundClock,12);assert.equal(s.localMatchStats.duration,7);assert.deepEqual(s.tanks.map(t=>[t.x,t.y]),positions);
-  s.flushMatchPresentation(1499);assert.equal($('victoryDialog').open,false,gameMode);s.flushMatchPresentation(1500);assert.equal($('victoryDialog').open,true,gameMode);assert.equal(s.screen,'room');assert.equal(s.pendingMatchPresentation,null);assert.equal(s.localMatchReport,report);
+  s.flushMatchPresentation(2999);assert.equal($('victoryDialog').open,false,gameMode);s.flushMatchPresentation(3000);assert.equal($('victoryDialog').open,true,gameMode);assert.equal(s.screen,'room');assert.equal(s.pendingMatchPresentation,null);assert.equal(s.localMatchReport,report);
  }
 });
 test('legacy solo and local duel result screens receive the same terminal reveal delay',()=>{
  for(const mode of ['solo','duel']){
   const {s,$}=boot();s.mode=mode;s.scoreboardEntries=()=>s.tanks;s.now=100;
-  s.finishMatch(0);assert.equal(s.phase,'matchOver');assert.equal(s.screen,null);s.flushMatchPresentation(599);assert.equal(s.screen,null);s.flushMatchPresentation(600);assert.equal(s.screen,'match');assert.ok($('matchTitle').innerHTML);
+  s.finishMatch(0);assert.equal(s.phase,'matchOver');assert.equal(s.screen,null);s.flushMatchPresentation(2099);assert.equal(s.screen,null);s.flushMatchPresentation(2100);assert.equal(s.screen,'match');assert.ok($('matchTitle').innerHTML);
  }
 });
 test('existing final elimination round delay is not followed by another result delay',()=>{
- const {s,$}=boot();s.finishRound(0);assert.equal(s.phaseTime,2.7);complete(s);assert.equal($('victoryDialog').open,true);assert.equal(s.pendingMatchPresentation,null);assert.equal(s.bestWins,1);
+ const {s,$}=boot();s.finishRound(0);assert.equal(s.phaseTime,2);complete(s);assert.equal($('victoryDialog').open,true);assert.equal(s.pendingMatchPresentation,null);assert.equal(s.bestWins,1);
 });
 test('local result reveal is canceled by navigation, restarting or setup replacement',()=>{
  for(const action of ['close','new match','new phase','setup','room screen']){
@@ -134,10 +134,18 @@ test('local result reveal is canceled by navigation, restarting or setup replace
 
 test('animation frames reveal queued results at the deadline after rendering impact-only updates',()=>{
  const {s,$}=boot();s.currentRules().mode='ctf';s.now=1000;s.lastFrame=1000;s.accumulator=0;s.clamp=(n,min,max)=>Math.max(min,Math.min(max,n));s.updateCombatFeedback=()=>{};s.render=()=>s.renders=(s.renders||0)+1;s.sampleFrame=()=>{};s.requestAnimationFrame=()=>{};
- vm.runInContext(declaration('frame'),s);s.finishMatch(0);s.now=1499;s.frame(1499);assert.equal($('victoryDialog').open,false);s.now=1500;s.frame(1500);assert.equal($('victoryDialog').open,true);assert.equal(s.renders,2);assert.equal(s.pendingMatchPresentation,null);
+ vm.runInContext(declaration('frame'),s);s.finishMatch(0);s.now=2999;s.frame(2999);assert.equal($('victoryDialog').open,false);s.now=3000;s.frame(3000);assert.equal($('victoryDialog').open,true);assert.equal(s.renders,2);assert.equal(s.pendingMatchPresentation,null);
 });
 
 test('opening Controls during the terminal reveal postpones results until the dialog closes',()=>{
  const {s,$}=boot();s.currentRules().mode='ctf';s.finishMatch(0);const pending=s.pendingMatchPresentation;let dialog={open:true};s.document.querySelector=()=>dialog;
- s.flushMatchPresentation(900);assert.equal($('victoryDialog').open,false);assert.equal(s.pendingMatchPresentation,pending,'temporary controls do not discard final results');dialog=null;s.flushMatchPresentation(901);assert.equal($('victoryDialog').open,true);assert.equal(s.pendingMatchPresentation,null);
+ s.flushMatchPresentation(2100);assert.equal($('victoryDialog').open,false);assert.equal(s.pendingMatchPresentation,pending,'temporary controls do not discard final results');dialog=null;s.flushMatchPresentation(2101);assert.equal($('victoryDialog').open,true);assert.equal(s.pendingMatchPresentation,null);
+});
+
+test('local final and nonfinal elimination rounds hold for exactly 240 simulation steps',()=>{
+ for(const target of [1,2]){
+  const {s,$}=boot({target});s.finishRound(0);assert.equal(s.phaseTime,2);
+  for(let tick=1;tick<240;tick++){s.update(1/120);assert.equal(s.phase,'roundOver','tick '+tick);}
+  s.update(1/120);assert.equal(s.phase,target===1?'matchOver':'countdown');if(target===1){assert.equal($('victoryDialog').open,true);assert.equal(s.pendingMatchPresentation,null,'the completed round hold is not repeated');}
+ }
 });

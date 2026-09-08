@@ -16,17 +16,17 @@ function boot(){
  for(const id of ['announcer','origin','restartWaveBtn','victoryRestartWaveBtn','victoryAgainBtn','victoryCloseBtn']){const e=new Element();e.id=id;doc.body.append(e);}doc.activeElement=$('origin');
  const rules={mode:'survival'},own={id:8,member:108,spectating:true,name:'HOST'},room={host:8,canStart:true,canRestartWave:true,phase:'playing',rules,players:[{id:0,member:100,kind:'bot',connected:true}],spectators:[own]};
  const snapshot={tick:10,generation:1,phase:'playing',objectives:{survival:{wave:5,wavesCleared:4,waveTarget:15,status:'wave'}},tanks:[]};
- const s={console,Promise,mode:'online',phase:'playing',pausedFrom:'playing',localMatchStats:{},localRoom:{self:8,players:[]},localSurvivalCheckpoint:null,pendingGameConfirmation:null,pendingMatchPresentation:null,localMatchReport:null,localObjectives:null,
+ const s={console,Promise,ROUND_END_SECONDS:2,mode:'online',phase:'playing',pausedFrom:'playing',localMatchStats:{},localRoom:{self:8,players:[]},localSurvivalCheckpoint:null,pendingGameConfirmation:null,pendingMatchPresentation:null,localMatchReport:null,localObjectives:null,
   online:{code:'ARENA',socket:{},member:108,generation:1,id:8,connected:true,menu:true,roomData:room,snapshots:[snapshot],restartWavePending:null,lastMatch:1,ownedIDs:new Set(),activeIDs:new Set(),localBullets:new Map(),shots:{sync(){},prune(){}},buffer:{push(state){s.online.snapshots.push(state);}}},
   $ ,document:doc,currentRules:()=>rules,roomData:()=>room,localPlayerID:()=>s.online.id,roomMember:()=>own,secondaryMember:()=>null,secondaryID:()=>undefined,secondLocal:()=>null,
   clearInput(){s.clears=(s.clears||0)+1;},sendOnlineInput(){s.releases=(s.releases||0)+1;},toast(message){s.notice=message;},
   sendOnline(message){s.sent.push(message);return s.sendSucceeds;},sent:[],sendSucceeds:true,setTimeout(fn){const id=++timerID;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
   performance:{now:()=>1000},COLORS:['#fff'],particles:[{}],rings:[{}],traces:[{}],bullets:[{}],pickups:[{}],tanks:[],goUntil:99,bestWins:0,
-  Net:{expandMachineBullets:()=>[]},cacheMap(){},resize(){},resetOnlineMotion(){s.online.snapshots=[];},closeVictory(){s.pendingMatchPresentation=null;s.closed=(s.closed||0)+1;},
+  Net:{STEP_MS:1000/60,expandMachineBullets:()=>[]},cacheMap(){},resize(){},resetOnlineMotion(){s.online.snapshots=[];},closeVictory(){s.pendingMatchPresentation=null;s.closed=(s.closed||0)+1;},
   setScreen(screen){s.screen=screen;},showStartingControls(){},showLocalSpawnGuide(){},renderOnlineRoom(){},updateHUD(){},onlineEffect(){},showVictory(){s.results=(s.results||0)+1;},save(){},teamKey:t=>t.team,
   startMatch(){s.newRun=true;},matchmaking:{rematchPending:false},requestQueueRematch(){},confirm(){throw Error('Native confirmation is forbidden');}};
  vm.createContext(s);
- for(const name of ['objectiveState','survivalState','survivalMode','canRestartSurvivalWave','syncRestartWaveActions','clearRestartWavePending','captureActionScope','finishGameConfirmation','confirmGameAction','requestRestartSurvivalWave','syncResultActions','quickReplay','netTank','receiveOnlineState','queueMatchPresentation','flushMatchPresentation'])vm.runInContext(declaration(name),s);
+ for(const name of ['objectiveState','survivalState','survivalMode','canRestartSurvivalWave','syncRestartWaveActions','clearRestartWavePending','captureActionScope','finishGameConfirmation','confirmGameAction','requestRestartSurvivalWave','syncResultActions','quickReplay','netTank','receiveOnlineState','queueMatchPresentation','flushMatchPresentation','onlineMatchResultDelay'])vm.runInContext(declaration(name),s);
  return{s,$,room,own,snapshot,timers};
 }
 function statePacket({generation=2,tick=11,phase='countdown',status='wave'}={}){return{generation,tick,phase,round:5,roundClock:75,phaseTime:2.6,winner:-1,scores:Array(8).fill(0),tanks:[],bullets:[],events:[],objectives:{survival:{wave:5,wavesCleared:4,waveTarget:15,status}},world:{cols:7,rows:7,width:588,height:588,walls:[]}};}
@@ -49,7 +49,7 @@ test('cancel and authoritative state changes invalidate online restart confirmat
 test('fresh authoritative restart state closes the menu after wave one and allows another loss result',async()=>{
  const b=boot(),{s,$}=b;await accept(b);s.receiveOnlineState(statePacket());
  assert.equal(s.phase,'countdown');assert.equal(s.online.generation,2);assert.equal(s.online.menu,false);assert.equal(s.screen,null);assert.equal(s.online.restartWavePending,null);assert.equal(b.timers.size,0);assert.equal($('restartWaveBtn').disabled,false);assert.equal(s.particles.length+s.rings.length+s.traces.length+s.bullets.length+s.pickups.length,0);
- b.room.phase='matchOver';s.receiveOnlineState(statePacket({generation:2,tick:12,phase:'matchOver',status:'lost'}));assert.equal(s.results,undefined);s.flushMatchPresentation(1500);assert.equal(s.results,1);assert.equal(s.online.lastMatch,2);
+ b.room.phase='matchOver';s.receiveOnlineState(statePacket({generation:2,tick:12,phase:'matchOver',status:'lost'}));assert.equal(s.results,undefined);s.flushMatchPresentation(3000);assert.equal(s.results,1);assert.equal(s.online.lastMatch,2);
 });
 test('loss results offer wave retry and full replay for spectating hosts of bot squads',async()=>{
  const b=boot(),{s,$}=b;s.phase='matchOver';b.snapshot.objectives.survival.status='lost';s.syncResultActions();
@@ -75,8 +75,8 @@ test('send failure, rejection and timeout reenable retry without applying a loca
 test('online final state delays results once while duplicate snapshots keep the original deadline',()=>{
  for(const gameMode of ['survival','ctf','koth','elimination']){
   const b=boot(),{s}=b;s.online.lastMatch=-1;b.room.phase='matchOver';b.room.rules.mode=gameMode;
-  s.receiveOnlineState(statePacket({generation:1,tick:11,phase:'matchOver',status:'lost'}));assert.equal(s.phase,'matchOver');assert.equal(s.results,undefined);assert.equal(s.screen,null);const pending=s.pendingMatchPresentation;assert.equal(pending.at,1500);
-  s.receiveOnlineState(statePacket({generation:1,tick:12,phase:'matchOver',status:'lost'}));assert.equal(s.pendingMatchPresentation,pending,'normal snapshots never extend or duplicate the result reveal');s.flushMatchPresentation(1499);assert.equal(s.results,undefined);s.flushMatchPresentation(1500);assert.equal(s.results,1);s.flushMatchPresentation(2000);assert.equal(s.results,1);
+  s.receiveOnlineState(statePacket({generation:1,tick:11,phase:'matchOver',status:'lost'}));assert.equal(s.phase,'matchOver');assert.equal(s.results,undefined);assert.equal(s.screen,null);const pending=s.pendingMatchPresentation;assert.equal(pending.at,3000);
+  s.receiveOnlineState(statePacket({generation:1,tick:12,phase:'matchOver',status:'lost'}));assert.equal(s.pendingMatchPresentation,pending,'normal snapshots never extend or duplicate the result reveal');s.flushMatchPresentation(2999);assert.equal(s.results,undefined);s.flushMatchPresentation(3000);assert.equal(s.results,1);s.flushMatchPresentation(4000);assert.equal(s.results,1);
  }
 });
 test('online round-result delay and joining an already completed match reveal results immediately',()=>{
@@ -89,12 +89,20 @@ test('online result reveal cannot survive a disconnect, room transfer, new gener
   const b=boot(),{s}=b;s.online.lastMatch=-1;b.room.phase='matchOver';s.receiveOnlineState(statePacket({generation:1,tick:11,phase:'matchOver',status:'lost'}));assert.ok(s.pendingMatchPresentation);
   if(action==='disconnect')s.online.connected=false;if(action==='room')s.online.code='ANOTHER';if(action==='socket')s.online.socket={};if(action==='generation')s.online.generation=99;if(action==='room lobby')b.room.phase='lobby';if(action==='room countdown')b.room.phase='countdown';
   if(action==='lobby')s.receiveOnlineState(statePacket({generation:1,tick:12,phase:'lobby',status:'lost'}));if(action==='restart')s.receiveOnlineState(statePacket({generation:2,tick:12,phase:'countdown',status:'wave'}));
-  s.flushMatchPresentation(2000);assert.equal(s.results,undefined,action);assert.equal(s.pendingMatchPresentation,null,action);
+  s.flushMatchPresentation(4000);assert.equal(s.results,undefined,action);assert.equal(s.pendingMatchPresentation,null,action);
  }
 });
 
 test('a final snapshot arriving before room metadata retains its delayed result',()=>{
  const b=boot(),{s}=b;s.online.lastMatch=-1;
  s.receiveOnlineState(statePacket({generation:1,tick:11,phase:'matchOver',status:'lost'}));const pending=s.pendingMatchPresentation;assert.ok(pending);assert.equal(b.room.phase,'playing');
- s.flushMatchPresentation(1500);assert.equal(s.results,undefined);assert.equal(s.pendingMatchPresentation,pending,'older playing metadata cannot discard the result');s.online.roomData={...b.room,phase:'matchOver'};s.flushMatchPresentation(1501);assert.equal(s.results,1);assert.equal(s.pendingMatchPresentation,null);
+ s.flushMatchPresentation(3000);assert.equal(s.results,undefined);assert.equal(s.pendingMatchPresentation,pending,'older playing metadata cannot discard the result');s.online.roomData={...b.room,phase:'matchOver'};s.flushMatchPresentation(3001);assert.equal(s.results,1);assert.equal(s.pendingMatchPresentation,null);
+});
+
+test('online end timing subtracts the authoritative hold even if roundOver snapshots were skipped',()=>{
+ const {s}=boot(),packet={generation:7,tick:220,events:[{generation:6,tick:50,type:'roundEnd'},{generation:7,tick:100,type:'roundEnd'},{generation:7,tick:220,type:'matchEnd'}]};
+ assert.equal(s.onlineMatchResultDelay(packet,'playing',false),0);assert.equal(s.onlineMatchResultDelay(packet,'roundOver',false),0);
+ packet.tick=160;packet.events.pop();assert.ok(Math.abs(s.onlineMatchResultDelay(packet,'roundOver',false)-1000)<1e-9,'only the remaining part of a partial hold is presented');
+ packet.events=[{generation:6,tick:10,type:'roundEnd'},{generation:7,tick:160,type:'matchEnd'}];assert.equal(s.onlineMatchResultDelay(packet,'playing',false),2000,'direct objective, Survival and forfeit finishes start a two-second hold');
+ packet.tick=190;assert.equal(s.onlineMatchResultDelay(packet,'playing',false),1500,'late final snapshots do not restart the full timer');assert.equal(s.onlineMatchResultDelay(packet,'onlineLobby',true),0,'joining an already-finished match does not replay its hold');
 });

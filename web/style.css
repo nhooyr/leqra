@@ -36,6 +36,9 @@ body.touch-landscape .room-badge{min-height:30px;padding:6px 9px}body.touch-land
 .callsign-row .net-input{min-height:38px;padding:8px 10px}
 .screen-card .callsign-status{margin:5px 0 0;font:9px/1.4 var(--mono);color:var(--accent-ink);overflow-wrap:anywhere}
 .screen-card .callsign-status.error{color:var(--orange)}
+/* Blur autosaves must not move the menu buttons between pointerdown and click. */
+body #onlineMenuScreen .callsign-status{min-height:2.8em}
+body #onlineMenuScreen .callsign-status[hidden]{display:block!important;visibility:hidden}
 body.touch-ui .callsign-row .net-input{font-size:16px}
 body.touch-landscape .callsign-editor{margin-bottom:8px}
 body.touch-landscape .callsign-row .net-input{min-height:34px;padding:6px 8px}
@@ -718,3 +721,12 @@ body.touch-landscape #onlineMenuScreen .moderation-row{padding:7px 8px}
 body.touch-landscape .touch-controls{top:0}
 body.has-objective-bar .objective-bar[hidden]{display:flex!important;visibility:hidden}
 body.spectating .spectator-banner[hidden]{display:flex!important;visibility:hidden}
+
+/* Connection incompatibility remains visible until the player chooses a path. */
+.version-mismatch{width:min(520px,calc(100vw - 24px));border:2px solid #ffc46b;box-shadow:0 0 32px rgb(255 196 107 / .25),0 20px 80px rgb(0 0 0 / .6)}
+.version-mismatch .feature-header{background:#30200d;border-color:#785329}
+.version-mismatch .feature-header h2{color:#ffc46b;font-size:clamp(25px,5vw,34px);margin:0;letter-spacing:.2px}
+.version-mismatch .feature-body{background:#21190f}
+.version-mismatch .feature-body p{font-size:14px;line-height:1.65;color:#ffe8c3;margin:0}
+.version-mismatch .primary{background:#ffc46b;color:#281400;border-color:#ffda9e;box-shadow:0 3px 0 #9b671f}
+body #roomScreen.unified-room .room-mode-notice.error{margin:9px 0;padding:10px 12px;border:1px solid var(--danger);border-left-width:4px;border-radius:6px;background:color-mix(in srgb,var(--danger) 12%,var(--surface));color:#ffabb3;font:600 12px/1.5 var(--sans);letter-spacing:0;scroll-margin-block:12px}

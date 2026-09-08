@@ -6,7 +6,7 @@ import (
 )
 
 const survivalMaxPlayers = 4
-const survivalBreakSeconds = 4
+const survivalBreakSeconds = roundEndSeconds
 
 // Wave enemies are simulation entities, never authenticated room members. Their
 // slots cannot be claimed by joins, role changes or client-supplied inputs.
@@ -272,7 +272,8 @@ func (g *Game) prepareSurvival(dt float64, players [maxTanks]*Player) bool {
 	if s.Status == "break" {
 		g.clearSurvivalInput(players)
 		s.BreakTime = math.Max(0, s.BreakTime-dt)
-		if s.BreakTime == 0 {
+		if s.BreakTime <= 1e-9 {
+			s.BreakTime = 0
 			g.nextSurvivalWave(players)
 		}
 		return true
@@ -318,7 +319,7 @@ func (g *Game) stepSurvival(players [maxTanks]*Player) {
 		s.Status, s.BreakTime = "break", survivalBreakSeconds
 		g.Bullets, g.Pickups = []*Bullet{}, []*Pickup{}
 		g.clearSurvivalInput(players)
-		g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d CLEAR · squad revives in 4s", s.Wave))
+		g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d CLEAR · squad revives in %gs", s.Wave, float64(survivalBreakSeconds)))
 	} else if g.Clock <= 0 {
 		g.endSurvival(players, false)
 	}
