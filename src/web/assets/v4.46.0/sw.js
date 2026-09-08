@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.45.1';
+const VERSION = 'v4.46.0';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
@@ -55,9 +55,11 @@ self.addEventListener('fetch', event => {
   };
 
   let response;
-  if (request.mode === 'navigate') {
-    response = fetch(request).then(result => storeResponse('/', result))
-      .catch(() => caches.match('/'));
+  // Keep the installed shell paired with this version's precached assets.
+  // New-release HTML can load online, but must not replace the offline fallback
+  // before its own worker finishes installing the complete replacement.
+  if (request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+    response = fetch(request).catch(() => caches.match('/', {cacheName: CACHE}));
   } else if (url.pathname.startsWith(BASE)) {
     response = caches.match(request).catch(() => undefined).then(cached =>
       cached || fetch(request).then(result => storeResponse(request, result))

@@ -53,3 +53,30 @@ test('maze replacement, count changes and dimension changes invalidate candidate
  s.replaceWorld(replacement,12,10);equalOrder(s.nearbyWalls(...q),expectedCandidates(replacement,q,12,10));
  s.replaceWorld(replacement.slice(0,12),7,7);assert.equal(s.nearbyWalls(...q),s.walls,'small wall lists keep their direct path');
 });
+
+
+test('wall sweeps include endpoint contacts and preserve corner normals',()=>{
+ const s=boot(),wall={x:100,y:100,w:8,h:8};s.replaceWorld([wall]);
+ const cases=[
+  {q:[90,104,10,0,0],nx:-1,ny:0},
+  {q:[118,104,-10,0,0],nx:1,ny:0},
+  {q:[104,90,0,10,0],nx:0,ny:-1},
+  {q:[104,118,0,-10,0],nx:0,ny:1},
+  {q:[90,90,10,10,0],nx:-1,ny:-1},
+  {q:[118,118,-10,-10,0],nx:1,ny:1},
+  {q:[90,104,6.5,0,3.5],nx:-1,ny:0},
+  {q:[118,104,-6.5,0,3.5],nx:1,ny:0},
+  {q:[104,90,0,6.5,3.5],nx:0,ny:-1},
+  {q:[104,118,0,-6.5,3.5],nx:0,ny:1},
+  {q:[90,90,6.5,6.5,3.5],nx:-1,ny:-1}
+ ];
+ for(const {q,nx,ny} of cases){
+  const hit=s.rayWalls(...q);assert.ok(hit,JSON.stringify(q));assert.equal(hit.t,1);assert.equal(hit.nx,nx);assert.equal(hit.ny,ny);assert.equal(hit.wall,wall);
+ }
+ const near=s.rayWalls(90,104,10/(1-5e-8),0);assert.ok(near);assert.ok(Math.abs(near.t-(1-5e-8))<1e-12);
+ assert.equal(s.rayWalls(90,104,10/(1+5e-8),0),null,'a wall beyond the segment remains out of reach');
+ const vertical={x:100,y:80,w:8,h:40},horizontal={x:80,y:100,w:40,h:8};
+ for(const walls of [[vertical,horizontal],[horizontal,vertical]]){
+  s.replaceWorld(walls);const hit=s.rayWalls(90,90,10,10);assert.ok(hit);assert.equal(hit.t,1);assert.equal(hit.nx,-1);assert.equal(hit.ny,-1);assert.equal(hit.wall,walls[0]);
+ }
+});

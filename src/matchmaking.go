@@ -5,7 +5,6 @@ package main
 // including admission, exact team packing, reservations and room transfers.
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	mrand "math/rand"
@@ -755,17 +754,7 @@ func (h *Hub) returnToParty(c *Client, now time.Time) {
 		}
 	}
 	original := p.Return.Original
-	if h.resumeRoutes == nil {
-		h.resumeRoutes = map[resumeRouteKey]resumeRoute{}
-	}
-	// Bound short handoff recovery metadata independently of room churn.
-	if len(h.resumeRoutes) >= 1024 {
-		for key := range h.resumeRoutes {
-			delete(h.resumeRoutes, key)
-			break
-		}
-	}
-	h.resumeRoutes[resumeRouteKey{battle.Code, sha256.Sum256([]byte(p.Token))}] = resumeRoute{home, now.Add(reconnectGrace)}
+	h.rememberResumeRoute(battle.Code, p.Token, home, now)
 	for _, tr := range group {
 		old, n := tr.Original, tr.Pilot
 		if battle.Match != nil && battle.Match.Rematch != nil {

@@ -192,10 +192,12 @@ func (h *Hub) roleChanged(r *Room, now time.Time) {
 	h.electHost(r)
 	// This reliable identity message precedes the roster and forced world state.
 	// It invalidates local input history without issuing a new reconnect token.
-	for _, p := range r.members() {
+	var memberStorage [maxTanks + maxSpectators]*Player
+	members := r.appendMembers(memberStorage[:0])
+	for _, p := range members {
 		if p.Client != nil {
 			localID, localMember := -1, uint64(0)
-			for _, child := range r.members() {
+			for _, child := range members {
 				if child.Kind == "local" && child.Owner == p.ID {
 					localID, localMember = child.ID, child.Member
 					break
@@ -206,11 +208,9 @@ func (h *Hub) roleChanged(r *Room, now time.Time) {
 		}
 	}
 	h.broadcastRoom(r)
-	for _, p := range r.members() {
-		if p.Client != nil {
-			h.sendState(p.Client, r)
-		}
-	}
+	// All controllers need the same forced map. Encode it once while retaining
+	// each socket's reliable identity -> room -> state ordering.
+	h.broadcastState(r)
 }
 func (h *Hub) setSpectating(c *Client, m clientMessage, now time.Time) {
 	fail := func(code, text string) { e := roomError(code, text); e["action"] = "spectate"; c.enqueue(e) }
@@ -250,12 +250,12 @@ func (h *Hub) setSpectating(c *Client, m clientMessage, now time.Time) {
 			return
 		}
 	}
-	h.cancelQueue(r, "A player changed roles. Join the queue again when the party is ready.")
 	if *m.Spectating {
 		if len(r.Spectators) >= maxSpectators {
 			fail("spectators_full", "The spectator gallery is full. Try again after a spectator leaves.")
 			return
 		}
+		h.cancelQueue(r, "A player changed roles. Join the queue again when the party is ready.")
 		r.moveMember(p, r.viewerID(), true)
 	} else {
 		id := r.freeCombatSeat()
@@ -270,6 +270,7 @@ func (h *Hub) setSpectating(c *Client, m clientMessage, now time.Time) {
 				return
 			}
 		}
+		h.cancelQueue(r, "A player changed roles. Join the queue again when the party is ready.")
 		p.Team = joinTeam(r)
 		r.moveMember(p, id, false)
 		r.initializeSeat(p, -1)

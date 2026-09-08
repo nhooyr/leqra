@@ -180,6 +180,24 @@ func (g *Game) godlikeObjective(t *Tank) (float64, float64, bool) {
 	return enemy.X, enemy.Y, true
 }
 
+// Weapon scores are fixed tuning; avoid rebuilding maps for every pickup.
+func godlikeWeaponValue(kind string) float64 {
+	switch kind {
+	case "rapid":
+		return 3.7
+	case "scatter", "grenade":
+		return 3
+	case "homing":
+		return 4.2
+	case "laser":
+		return 5
+	case "cannon":
+		return 5.2
+	default:
+		return 0
+	}
+}
+
 func godlikePickupValue(t *Tank, kind string) float64 {
 	switch kind {
 	case "shield":
@@ -203,9 +221,9 @@ func godlikePickupValue(t *Tank, kind string) float64 {
 		}
 		return .65
 	}
-	value := map[string]float64{"rapid": 3.7, "scatter": 3, "homing": 4.2, "grenade": 3, "laser": 5, "cannon": 5.2}[kind]
+	value := godlikeWeaponValue(kind)
 	if t.Power != "" && t.PowerTime > 3 && t.Charges > 0 && (t.Power != "rapid" || t.MachineRounds >= 120) {
-		current := map[string]float64{"rapid": 3.7, "scatter": 3, "homing": 4.2, "grenade": 3, "laser": 5, "cannon": 5.2}[t.Power]
+		current := godlikeWeaponValue(t.Power)
 		if current >= value {
 			return 0
 		}

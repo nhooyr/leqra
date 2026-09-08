@@ -24,6 +24,7 @@ if name == "go":
     if os.environ.get("DEPLOY_TEST_GO_FAIL") == "1":
         sys.exit(7)
     assert args[0] == "build", args
+    assert "-trimpath" in args, args
     Path(args[args.index("-o") + 1]).write_bytes(b"mock compiled executable")
 elif name == "ssh":
     if os.environ.get("DEPLOY_TEST_SSH_FAIL") == "1":
@@ -113,7 +114,8 @@ class DeployTests(unittest.TestCase):
         self.assertEqual([next(arg for arg in args if not arg.startswith("-"))
                           for args in controls],
                          ["daemon-reload", "enable", "restart", "status"])
-        self.assertIn("--no-pager", controls[-1])
+        self.assertEqual([arg for arg in controls[-1] if not arg.startswith("-")],
+                         ["status", "leqra"])
 
     def test_existing_user(self):
         self.check_success(new_user=False)

@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	version         = "4.45.1"
+	version         = "4.46.0"
 	protocolVersion = 1
 )
 
@@ -47,16 +47,18 @@ func (a *App) reserve(ip string, now time.Time) bool {
 	defer a.mu.Unlock()
 	// Bounded connection budgets. Forwarded client IP headers are deliberately
 	// not trusted; a public reverse proxy should also enforce its own limits.
-	if len(a.ips) > 4096 {
-		for k, v := range a.ips {
-			if v.active == 0 && now.Sub(v.window) > time.Minute {
-				delete(a.ips, k)
-			}
-		}
-	}
 	b := a.ips[ip]
 	if b == nil {
-		if len(a.ips) > 8192 {
+		// Existing addresses already have storage. Only new addresses need to
+		// reclaim capacity, avoiding a full-table scan on every retry.
+		if len(a.ips) > 4096 {
+			for k, v := range a.ips {
+				if v.active == 0 && now.Sub(v.window) >= time.Minute {
+					delete(a.ips, k)
+				}
+			}
+		}
+		if len(a.ips) >= 8192 {
 			return false
 		}
 		b = &ipBudget{window: now}
