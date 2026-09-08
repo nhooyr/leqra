@@ -1,14 +1,14 @@
-# leqra v4.36.0
+# leqra v4.37.0
 
-This update adds compact result previews during the **two-second round-end hold**, gives Survival fresh mazes with the same **three-second countdown** as Elimination, stabilizes lobby sharing and mode-switch layout, remembers rules and roster settings, and adds pink Player 2 rings and left-facing Back arrows.
+This update restores cached Remove buttons after matchmaking, fixes online setup confirmation and departed-player result scores, preserves the final objective scene, reduces room maintenance overhead, and clarifies the shared-room buttons. Survival boss details now appear only during the next wave's three-second countdown; compact results stay focused on the completed wave.
 
-See [UPDATE-v4.36.0.md](UPDATE-v4.36.0.md) for changes and upgrade commands and [TEST-NOTES-v4.36.0.md](TEST-NOTES-v4.36.0.md) for verification. Earlier versioned guides remain available as release history.
+See [UPDATE-v4.37.0.md](UPDATE-v4.37.0.md) for changes and upgrade commands and [TEST-NOTES-v4.37.0.md](TEST-NOTES-v4.37.0.md) for verification. Earlier versioned guides remain available as release history.
 
 ## PWA and online lifecycle
 
 leqra is an installable Progressive Web App with fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.36.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.37.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
 Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
@@ -16,7 +16,7 @@ Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process qu
 
 Retained room/game polish includes the **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams in Elimination/Hill (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
-The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See **UPDATE-v4.26.0.md** for that release and its physical-device testing limits; the current changes and verification are in **UPDATE-v4.36.0.md** and **TEST-NOTES-v4.36.0.md**.
+The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See **UPDATE-v4.26.0.md** for that release and its physical-device testing limits; the current changes and verification are in **UPDATE-v4.37.0.md** and **TEST-NOTES-v4.37.0.md**.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -52,7 +52,7 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.36.0.md** for current behavior and installation and **TEST-NOTES-v4.36.0.md** for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
+statistics remain intact. See **UPDATE-v4.37.0.md** for current behavior and installation and **TEST-NOTES-v4.37.0.md** for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
 
 ## Previous combat improvements (retained)
 
@@ -174,7 +174,7 @@ The default run has **15 waves**, with a configurable target of **1–20** and a
 | 11–15 | Fierce | Wave 15: Godlike |
 | 16–20 | Godlike | Wave 20: Godlike |
 
-Normal bosses start with one shield charge and no speed boost; Fierce bosses get two shield charges and one speed stack; Godlike bosses get three and one. Bosses also receive an enabled Homing/Cannon/Laser weapon selected in rotation. Boss equipment respects disabled pickups. On boss waves, each active squad tank starts with at least one shield charge, including on a wave retry; this squad bonus applies even when shield pickups are disabled. The bonus uses the regular shield duration (10 seconds, or 15 seconds on Huge maps and larger). Before a boss wave, the two-second intermission previews the next wave, its actual boss difficulty and enabled equipment. THE LINEUP includes every squad member and enemy on a separate row, with AI levels and explicit boss markers. Defeated enemies remain listed during the break until the next wave replaces them.
+Normal bosses start with one shield charge and no speed boost; Fierce bosses get two shield charges and one speed stack; Godlike bosses get three and one. Bosses also receive an enabled Homing/Cannon/Laser weapon selected in rotation. Boss equipment respects disabled pickups. On boss waves, each active squad tank starts with at least one shield charge, including on a wave retry; this squad bonus applies even when shield pickups are disabled. The bonus uses the regular shield duration (10 seconds, or 15 seconds on Huge maps and larger). The compact wave-clear result shows only the completed wave. Boss difficulty and enabled equipment appear during the next wave’s three-second countdown, after its new maze arrives. THE LINEUP includes every squad member and enemy on a separate row, with AI levels and explicit boss markers. Defeated enemies remain listed during the break until the next wave replaces them.
 
 Clear the enemies before time runs out. One surviving squad tank can complete a wave for everyone; fallen squadmates return after a two-second round-end hold, with fresh tanks. The completed maze, defeated enemies and uncollected pickups remain visible during the hold. Then a new maze and fresh pickups appear with a full three-second countdown, matching Elimination. Fire and movement are inactive during the hold and countdown. A squad wipe or expired timer ends the run, and mutual destruction counts as a loss. Each cleared wave adds one shared point; surviving the target wave count wins.
 
@@ -200,7 +200,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.36.0.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.37.0.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -237,7 +237,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.36.0**.
+on restart. Both the health endpoint and browser version should show **4.37.0**.
 
 ## Build one standalone server
 

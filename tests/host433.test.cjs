@@ -17,10 +17,10 @@ class Element{
 function boot({host=0,phase='playing',teamMode='teams'}={}){
  const room={host,phase,rules:{mode:'elimination',teamMode,teamNames:['Amber','Cobalt','Jade','Violet']}};
  const changes=[],kicks=[],spectating=[];
- const s={mode:'online',online:{connected:true,kickPending:null},document:{createElement:tag=>new Element(tag)},localPlayerID:()=>0,currentRules:()=>room.rules,
+ const s={mode:'online',online:{connected:true,kickPending:null},document:{createElement:tag=>new Element(tag)},localPlayerID:()=>0,currentRules:()=>room.rules,roomData:()=>room,
   paintColor:color=>color,teamName:(team,rules)=>rules.teamNames[team-1],activeTeamCount:()=>4,
   changeSeat:(player,patch)=>changes.push({player,patch}),requestKick:player=>kicks.push(player),setPlayerSpectating:(player,value)=>spectating.push({player,value})};
- vm.createContext(s);vm.runInContext(['botLevelName','survivalMode','roomPlayerStatus','canEditTankPaint','makeKickButton','makeRoomPlayerRow'].map(declaration).join('\n'),s);
+ vm.createContext(s);vm.runInContext(['botLevelName','survivalMode','roomPlayerStatus','canEditTankPaint','roomKickDisabled','makeKickButton','makeRoomPlayerRow'].map(declaration).join('\n'),s);
  return {s,room,changes,kicks,spectating,row:(player,moderation=true)=>s.makeRoomPlayerRow(player,room,moderation)};
 }
 const bot={id:2,member:42,name:'RICOCHET',kind:'bot',team:2,color:'#58f',difficulty:'hard'};

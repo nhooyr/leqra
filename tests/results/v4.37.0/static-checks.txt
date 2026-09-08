@@ -1,0 +1,7 @@
+6 developer sources match production assets
+5 production JavaScript files pass syntax checks
+68 retained Python scripts parse (not executed)
+9 HTML asset references resolve
+Server, client, HTML, PWA and cache agree on 4.37.0; only current asset directory shipped
+Room action row precedes Copy Invite Link in document order
+git diff --check passes

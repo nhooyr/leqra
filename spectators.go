@@ -17,13 +17,20 @@ func (r *Room) member(id int) *Player {
 }
 func (r *Room) contains(p *Player) bool { return p != nil && r.member(p.ID) == p }
 func (r *Room) members() []*Player {
-	all := make([]*Player, 0, maxTanks+len(r.Spectators))
+	return r.appendMembers(make([]*Player, 0, maxTanks+len(r.Spectators)))
+}
+
+// The tick loop supplies stack storage; other callers retain an independent
+// snapshot. Keep spectator ordering identical without allocating an ID slice
+// for the normal, bounded roster.
+func (r *Room) appendMembers(all []*Player) []*Player {
 	for _, p := range r.Players {
 		if p != nil {
 			all = append(all, p)
 		}
 	}
-	ids := make([]int, 0, len(r.Spectators))
+	var storage [maxSpectators]int
+	ids := storage[:0]
 	for id := range r.Spectators {
 		ids = append(ids, id)
 	}
@@ -33,6 +40,7 @@ func (r *Room) members() []*Player {
 	}
 	return all
 }
+
 func (r *Room) tankFor(p *Player) *Tank {
 	if p == nil || p.Spectating || p.ID < 0 || p.ID >= maxTanks {
 		return nil
@@ -82,6 +90,11 @@ func (r *Room) clearCombatSeat(id int) {
 	}
 	g := r.Game
 	if t := g.Tanks[id]; t != nil && t.stats != nil {
+		// A seat's score may be reset or inherited by its next occupant. Keep
+		// the departed participant's earned result before that identity is lost.
+		if t.stats.Active {
+			t.stats.Score = g.Scores[id]
+		}
 		t.stats.Active = false
 	}
 	g.dropFlags(id)

@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	version         = "4.36.0"
+	version         = "4.37.0"
 	protocolVersion = 1
 )
 
