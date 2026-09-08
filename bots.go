@@ -10,13 +10,14 @@ type BotState struct {
 	Path                              []int
 	LastX, LastY                      float64
 
-	// Reused A* scratch. A bot replans frequently, while the maze size is stable
+	// Reused Dijkstra scratch. A bot replans frequently, while the maze size is stable
 	// for the whole round; keeping these buffers on the bot avoids per-think GC.
 	pathCost       []float64
 	pathPrev       []int
-	pathClosed     []bool
 	pathPenalty    []float64
 	pathScratch    []int
+	pathHeap       []int
+	pathHeapPos    []int
 	dodgeThreats   []botProjectileThreat
 	grenadeThreats []botGrenadeThreat
 }
@@ -60,6 +61,65 @@ func (g *Game) buildNavigation() {
 		}
 	}
 }
+
+// Order equal-cost cells by index, matching the exhaustive search's tie breaks.
+// An indexed heap avoids duplicate queue entries and reuses its storage across
+// plans, reducing cell selection from quadratic scans to logarithmic updates.
+func (a *BotState) pathLess(left, right int) bool {
+	return a.pathCost[left] < a.pathCost[right] || (a.pathCost[left] == a.pathCost[right] && left < right)
+}
+
+func (a *BotState) queuePath(cell int) {
+	at := a.pathHeapPos[cell]
+	if at < 0 {
+		at = len(a.pathHeap)
+		a.pathHeap = append(a.pathHeap, cell)
+	}
+	// New entries and decreased costs can only move toward the root.
+	for at > 0 {
+		parent := (at - 1) / 2
+		other := a.pathHeap[parent]
+		if !a.pathLess(cell, other) {
+			break
+		}
+		a.pathHeap[at] = other
+		a.pathHeapPos[other] = at
+		at = parent
+	}
+	a.pathHeap[at] = cell
+	a.pathHeapPos[cell] = at
+}
+
+func (a *BotState) nextPathCell() int {
+	cell := a.pathHeap[0]
+	last := a.pathHeap[len(a.pathHeap)-1]
+	a.pathHeap = a.pathHeap[:len(a.pathHeap)-1]
+	a.pathHeapPos[cell] = -1
+	if len(a.pathHeap) == 0 {
+		return cell
+	}
+	at := 0
+	for {
+		child := at*2 + 1
+		if child >= len(a.pathHeap) {
+			break
+		}
+		if right := child + 1; right < len(a.pathHeap) && a.pathLess(a.pathHeap[right], a.pathHeap[child]) {
+			child = right
+		}
+		other := a.pathHeap[child]
+		if !a.pathLess(other, last) {
+			break
+		}
+		a.pathHeap[at] = other
+		a.pathHeapPos[other] = at
+		at = child
+	}
+	a.pathHeap[at] = last
+	a.pathHeapPos[last] = at
+	return cell
+}
+
 func (g *Game) botPath(t, enemy *Tank) []int {
 	n := g.World.Cols * g.World.Rows
 	if n == 0 {
@@ -79,20 +139,22 @@ func (g *Game) botPath(t, enemy *Tank) []int {
 	if cap(a.pathCost) < n {
 		a.pathCost = make([]float64, n)
 		a.pathPrev = make([]int, n)
-		a.pathClosed = make([]bool, n)
 		a.pathPenalty = make([]float64, n)
+		a.pathHeap = make([]int, 0, n)
+		a.pathHeapPos = make([]int, n)
 	} else {
 		a.pathCost = a.pathCost[:n]
 		a.pathPrev = a.pathPrev[:n]
-		a.pathClosed = a.pathClosed[:n]
 		a.pathPenalty = a.pathPenalty[:n]
+		a.pathHeap = a.pathHeap[:0]
+		a.pathHeapPos = a.pathHeapPos[:n]
 	}
-	cost, prev, closed, penalty := a.pathCost, a.pathPrev, a.pathClosed, a.pathPenalty
+	cost, prev, penalty := a.pathCost, a.pathPrev, a.pathPenalty
 	for i := 0; i < n; i++ {
 		cost[i] = math.Inf(1)
 		prev[i] = -1
-		closed[i] = false
 		penalty[i] = 0
+		a.pathHeapPos[i] = -1
 	}
 	cost[from] = 0
 	// Allies reserve nearby routes, encouraging a second approach when available.
@@ -106,27 +168,18 @@ func (g *Game) botPath(t, enemy *Tank) []int {
 			penalty[g.cellAt(ally.X, ally.Y)] += 1
 		}
 	}
-	for iteration := 0; iteration < n; iteration++ {
-		at := -1
-		best := math.Inf(1)
-		for i := 0; i < n; i++ {
-			if !closed[i] && cost[i] < best {
-				best = cost[i]
-				at = i
-			}
-		}
-		if at < 0 {
-			break
-		}
+	a.queuePath(from)
+	for len(a.pathHeap) > 0 {
+		at := a.nextPathCell()
 		if at == to {
 			break
 		}
-		closed[at] = true
 		for _, next := range g.Neighbors[at] {
 			v := cost[at] + 1 + penalty[next]
 			if v < cost[next] {
 				cost[next] = v
 				prev[next] = at
+				a.queuePath(next)
 			}
 		}
 	}
@@ -583,6 +636,9 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		for _, b := range g.Bullets {
 			if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && b.Age > .22 && dist(b.X, b.Y, enemy.X, enemy.Y) < blastRadius+enemy.R && !g.rayBlocked(b.X, b.Y, enemy.X-b.X, enemy.Y-b.Y, 0) {
 				g.detonateOwned(t)
+				if !t.Alive {
+					return
+				}
 				a.Shot = d.reaction
 				break
 			}

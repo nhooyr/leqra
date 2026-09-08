@@ -192,6 +192,7 @@ type Game struct {
 	Pickups                           []*Pickup
 	Scores                            [maxTanks]int
 	Phase                             string
+	roundClinched                     bool // Frozen when a round awards the match-winning point.
 	PhaseTime, Clock, SpawnClock      float64
 	Round, Winner, Generation, Tick   int
 	events                            []Event
@@ -350,6 +351,7 @@ func (g *Game) startRound(players [maxTanks]*Player) {
 	g.Phase = "countdown"
 	g.PhaseTime = 2.6
 	g.Winner = -1
+	g.roundClinched = false
 	spots := spawnCells(cols, rows)
 	// Preserve the four-corner distribution for rosters using only legacy seats.
 	highSeat := 0
@@ -1203,6 +1205,7 @@ func (g *Game) finishRound(winner int) {
 	g.Winner = winner
 	g.Phase = "roundOver"
 	g.PhaseTime = 2.7
+	g.roundClinched = false
 	if winner >= 0 {
 		g.Scores[winner]++
 		if t := g.Tanks[winner]; t != nil && t.Team > 0 {
@@ -1211,6 +1214,12 @@ func (g *Game) finishRound(winner int) {
 					g.Scores[id] = g.Scores[winner]
 				}
 			}
+		}
+		g.roundClinched = g.Scores[winner] >= g.settings().ScoreTarget
+		if g.roundClinched {
+			// Seats may be vacated or swapped during the result pause. Freeze
+			// the winners and scores now, before a replacement inherits the slot.
+			g.finishMatchStats(winner)
 		}
 	}
 	g.emit("roundEnd", nil, winner, "")
@@ -1232,8 +1241,7 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		if g.PhaseTime > 0 {
 			return
 		}
-		if g.Winner >= 0 && g.Scores[g.Winner] >= g.settings().ScoreTarget {
-			g.finishMatchStats(g.Winner)
+		if g.roundClinched {
 			g.Phase = "matchOver"
 			g.emit("matchEnd", nil, g.Winner, "")
 			return

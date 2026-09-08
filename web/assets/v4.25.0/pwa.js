@@ -2,6 +2,6 @@
 'use strict';
 if (!('serviceWorker' in navigator) || !['http:', 'https:'].includes(location.protocol)) return;
 window.addEventListener('load', () => {
-  navigator.serviceWorker.register('assets/v4.24.0/sw.js', {scope: '/'}).catch(() => {});
+  navigator.serviceWorker.register('assets/v4.25.0/sw.js', {scope: '/'}).catch(() => {});
 }, {once: true});
 })();

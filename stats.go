@@ -17,6 +17,7 @@ type PlayerMatchStats struct {
 	Name          string  `json:"name"`
 	Color         string  `json:"color"`
 	Team          int     `json:"team"`
+	Score         int     `json:"score"`
 	Kind          string  `json:"kind"`
 	Eliminations  int     `json:"eliminations"`
 	Deaths        int     `json:"deaths"`
@@ -149,6 +150,7 @@ func (g *Game) finishMatchStats(winner int) {
 			if row.Active && tank != nil && tank.stats == row {
 				v.Active = true
 				v.Seat, v.Team = tank.ID, tank.Team
+				v.Score = g.Scores[tank.ID]
 				v.Winner = winning != nil && sideKey(tank.ID, tank.Team) == sideKey(winning.ID, winning.Team)
 				break
 			}
