@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.43.0';
+const GAME_VERSION='4.44.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -1857,9 +1857,9 @@ function acceptCallsign(msg){
  syncCallsignEditors();if(form)callsignStatus(form,'Saved as '+msg.name+'.');
  renderOnlineRoom();updateHUD(true);
 }
-// An invite is an explicit request to join. Expired credentials from an older
-// visit may fall back to a new seat (or create a missing room), but never take
-// over another live pilot. Background reconnects never use this fallback.
+// After the player confirms an invite, expired credentials may fall back to a
+// new seat (or create a missing room), but never take over another live pilot.
+// Background reconnects without a confirmed invite never use this fallback.
 function joinInviteAsNewPilot(ws){
  const code=online.inviteCode,name=$('pilotName').value.trim()||'PILOT';
  online.socket=null;ws.close();clearTimeout(online.retryTimer);cancelCallsignSave();
@@ -1896,7 +1896,7 @@ function sendOnlineInput(force=false,controls=onlineControls(),second=false){
 function openOnline(){
  if(online.connected&&online.code){toggleOnlineMenu();return;}
  if(!$('joinDialog').open)$('joinDialog').showModal();netBusy(false);
- setNetStatus(location.protocol==='file:'?'Online sharing needs the Go server. Run go run . and open its webpage.':'Missing rooms are created with you as host.',location.protocol==='file:');
+ setNetStatus(location.protocol==='file:'?'Online sharing needs the Go server. Run go run ./src and open its webpage.':'Missing rooms are created with you as host.',location.protocol==='file:');
 }
 function showVersionMismatch(message){
  // Keep local play available after refusing an incompatible online handshake.
@@ -1915,7 +1915,7 @@ function showVersionMismatch(message){
  $('versionMismatchMessage').textContent=message;if(!dialog.open)dialog.showModal();$('versionReloadBtn').focus({preventScroll:true});
 }
 function connectOnline(request,reconnecting=false){
- if(!['http:','https:'].includes(location.protocol)){setNetStatus('Online play needs the Go server. Run go run . and open the address it prints.',true);return;}
+ if(!['http:','https:'].includes(location.protocol)){setNetStatus('Online play needs the Go server. Run go run ./src and open the address it prints.',true);return;}
  if(online.connecting||online.connected)return;mode='online';phase='menu';document.body.classList.add('online-mode');
  if(!reconnecting&&!online.inviteCode){try{sessionStorage.removeItem('leqra.kicked');}catch(_){}}
  online.manual=false;online.connecting=true;netBusy(true);
@@ -1943,11 +1943,12 @@ function connectOnline(request,reconnecting=false){
   case 'chat':case 'chat_history':chatPacket(msg);break;
   case 'welcome':
    matchmakingWelcome(msg);matchmaking.rematchPending=false;online.lastMatch=-1;online.roomData=null;clearInput();closeVictory();
-   watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
+   const inviteName=online.inviteName;watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
    if($('joinDialog').open)$('joinDialog').close();
    clearTimeout(timeout);online.connecting=false;online.connected=true;online.code=msg.room;online.id=msg.id;online.member=msg.member;online.spectating=!!msg.spectating;online.token=msg.token;rolePending=false;online.seq=0;online.menu=false;online.retries=0;online.retryAt=0;resetOnlineMotion();online.generation=-1;online.eventsInitialized=false;online.lastEvent=0;online.lastSend=0;online.trails=new Map();
    if(roomChat.code!==online.code)clearRoomChat(online.code);syncChatStatus();
    online.inviteCode='';online.inviteResumeRetries=0;clearTimeout(online.retryTimer);netBusy(false);syncOnlineURL();document.documentElement.style.setProperty('--pilot',paintColor(COLORS[online.id%MAX_TANKS]));storeOnlineSession();$('roomBtn').hidden=false;$('roomCodeDisplay').textContent=online.code;$('joinCode').value=online.code;setScreen('room');
+   if(msg.resumed&&inviteName)sendOnline({type:'rename',name:inviteName});
    sendOnline({type:'ping',t:performance.now()});online.lastPing=performance.now();initAudio();addLog(msg.resumed?'Reconnected. Same pilot, same room.':msg.created?'Room '+online.code+' created. You are the host.':msg.full?'Arena full — joined as a spectator.':msg.spectating?'Spectating room '+online.code+'.':'Online room '+online.code+' connected.');break;
   case 'identity': {
    const local=secondaryMember(),changed=online.id!==msg.id||online.spectating!==!!msg.spectating||(local?.id??-1)!==msg.localId||(local?.member??0)!==msg.localMember;
@@ -1998,7 +1999,7 @@ function connectOnline(request,reconnecting=false){
   online.unsharePending=false;online.unshareSnapshot=null;
   syncChatStatus();if(mode!=='online'||online.manual)return;
   if(online.code&&online.token){showReconnecting();scheduleReconnect();}
-  else {if(online.publishing){online.publishing=false;mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent='Could not reach the Go server. Local play is still available.';return;}phase='menu';setScreen('online');setNetStatus('Could not reach the Go game server. Start it with go run . and open its webpage.',true);}
+  else {if(online.publishing){online.publishing=false;mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent='Could not reach the Go server. Local play is still available.';return;}phase='menu';setScreen('online');setNetStatus('Could not reach the Go game server. Start it with go run ./src and open its webpage.',true);}
  };
 }
 function showReconnecting(){
@@ -2371,10 +2372,8 @@ function initOnlineUI(){
  $('cancelKickBtn').addEventListener('click',cancelKick);
  $('kickDialog').addEventListener('cancel',e=>{e.preventDefault();cancelKick();});
  try{$('pilotName').value=localStorage.getItem('leqra.name')||'';}catch(_){}
- const saveName=()=>{try{localStorage.setItem('leqra.name',$('pilotName').value.trim());}catch(_){}};
  for(const form of callsignForms()){const field=form.elements.callsign;form.addEventListener('submit',e=>{e.preventDefault();initAudio();submitCallsign(form);});field.addEventListener('input',()=>{callsignStatus(form,'');syncCallsignEditors();});field.addEventListener('blur',()=>{if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);});field.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);field.blur();}});}
- const join=()=>{const code=cleanRoomCode($('joinCode').value);if(watchInvite){joinWatchInvite(code);return;}if(!validRoomCode(code)){setNetStatus('Enter a room name of 1–128 characters to join or create it.',true);$('joinCode').focus();return;}initAudio();saveName();connectOnline({type:'join',code,name:$('pilotName').value});};
- $('joinRoomBtn').addEventListener('click',join);$('joinCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();join();}});$('pilotName').addEventListener('keydown',e=>{if(watchInvite&&e.key==='Enter'){e.preventDefault();join();}});
+ $('joinRoomBtn').addEventListener('click',joinOnlineRoom);for(const id of ['joinCode','pilotName'])$(id).addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();joinOnlineRoom();}});
  $('onlineBackBtn').addEventListener('click',()=>{if(online.connecting)return;watchInvite=false;watchResume=null;online.inviteCode='';online.inviteWatch=false;resetWatchDialog();if($('joinDialog').open)$('joinDialog').close();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
  $('joinDialog').addEventListener('cancel',e=>{if(online.connecting){e.preventDefault();return;}watchInvite=false;watchResume=null;online.inviteWatch=false;online.inviteCode='';resetWatchDialog();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
  $('leaveRoomBtn').addEventListener('click',leaveOnline);$('unshareRoomBtn').addEventListener('click',unshareOnlineRoom);
@@ -2391,19 +2390,17 @@ function initOnlineUI(){
  let session=null;try{session=JSON.parse(sessionStorage.getItem('leqra.session')||'null');}catch(_){}
  const validInvite=validRoomCode(invite);
  let lastKicked='';try{lastKicked=sessionStorage.getItem('leqra.kicked')||'';}catch(_){}
- if(validInvite&&lastKicked===invite){openOnline();online.manual=true;$('joinCode').value=invite;setNetStatus('You were removed from this room. Automatic joining has stopped. Joining again requires pressing Join.',true);return;}
+ if(validInvite&&lastKicked===invite){openPilotInvite(invite);online.manual=true;setNetStatus('You were removed from this room. Automatic joining has stopped. Joining again requires pressing Join.',true);return;}
  if(params.has('room')&&!validInvite){openOnline();setNetStatus('This invite needs a room name of 1–128 characters on one line. Enter a name or ask for a new link.',true);return;}
  const canResume=typeof session?.code==='string'&&typeof session?.token==='string'&&session.token&&validRoomCode(session.code)&&Number.isFinite(session.at)&&Date.now()-session.at>=0&&Date.now()-session.at<20000&&(!validInvite||invite===session.code);
  if(validInvite&&params.get('spectate')==='1'){
   openWatchInvite(invite,canResume?session:null);return;
  }
+ if(validInvite){openPilotInvite(invite,canResume?session:null);return;}
  if(canResume){
-  openOnline();online.inviteCode=validInvite?invite:'';online.inviteResumeRetries=0;
+  openOnline();online.inviteCode='';online.inviteResumeRetries=0;
   online.code=session.code;online.token=session.token;online.retryAt=performance.now();$('pilotName').value=typeof session.name==='string'?session.name:$('pilotName').value;
   showReconnecting();connectOnline({type:'join',code:session.code,token:session.token,name:$('pilotName').value},true);
- }else if(validInvite){
-  openOnline();online.inviteCode=invite;$('joinCode').value=invite;
-  connectOnline({type:'join',code:invite,name:$('pilotName').value.trim()||'PILOT'});
  }
 }
 
@@ -3421,10 +3418,34 @@ function initFeatures(){
 
 // v3.3 spectator membership. A spectator is never represented by a hidden tank.
 function resetWatchDialog(){
+ online.inviteResume=null;online.inviteName='';
  if(!$('joinTitle'))return;
  $('joinDialog').querySelector('.eyebrow').textContent='JOIN';$('joinTitle').textContent='Find your room.';$('joinRoomBtn').firstElementChild.textContent='JOIN';$('joinCode').readOnly=false;
 }
+function openPilotInvite(code,session=null){
+ watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
+ online.inviteCode=code;online.inviteResume=session;online.inviteResumeRetries=0;
+ openOnline();$('joinCode').value=code;
+ if(typeof session?.name==='string')$('pilotName').value=session.name;
+ setNetStatus('Choose your callsign, then join this room.');
+ $('pilotName').focus({preventScroll:true});$('pilotName').select();
+}
+function joinOnlineRoom(){
+ if(online.connecting||online.connected)return;
+ const code=cleanRoomCode($('joinCode').value);
+ if(watchInvite){joinWatchInvite(code);return;}
+ if(!validRoomCode(code)){setNetStatus('Enter a room name of 1–128 characters to join or create it.',true);$('joinCode').focus();return;}
+ const name=cleanPilotName($('pilotName').value)||'PILOT';initAudio();rememberCallsign(name);
+ const request={type:'join',code,name};
+ online.inviteCode=online.inviteCode===code?code:'';
+ online.inviteName=online.inviteCode?name:'';
+ if(online.inviteCode&&online.inviteResume?.code===code){request.token=online.inviteResume.token;online.code=code;online.token=request.token;online.retryAt=performance.now();online.retries=0;}
+ else online.inviteResume=null;
+ try{sessionStorage.removeItem('leqra.kicked');}catch(_){}
+ connectOnline(request);
+}
 function openWatchInvite(code,session=null){
+ online.inviteResume=null;online.inviteName='';
  watchInvite=true;watchResume=session;online.inviteCode=code;online.inviteWatch=true;
  openOnline();$('joinDialog').querySelector('.eyebrow').textContent='SPECTATOR INVITE';$('joinTitle').textContent='Spectate this room.';$('joinRoomBtn').firstElementChild.textContent='START SPECTATING';
  $('joinCode').value=code;$('joinCode').readOnly=true;

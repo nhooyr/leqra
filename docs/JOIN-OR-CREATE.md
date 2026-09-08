@@ -1,5 +1,8 @@
 > Historical guide: command paths below reflect its original release. For the current repository layout and commands, use the [setup and development guide](README-verbose.md).
 
+**Current invite behavior (v4.44.0):** Opening an invite shows the join menu with the room prefilled. No connection starts until the player confirms JOIN (or presses Enter). Recent same-tab credentials may recover the existing seat after confirmation, with the chosen callsign. Spectator links likewise wait for START SPECTATING. Background connection recovery remains automatic.
+
+
 > Historical v2.4 guide. **v2.6 now accepts arbitrary room text up to 128 Unicode
 > code points**, not only the six-character alphabet described below. The same
 > join-or-create and host rules apply. See [ROOMS-AND-LASERS.md](ROOMS-AND-LASERS.md) for current use.
