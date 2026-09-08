@@ -28,8 +28,8 @@ func TestAddBot433InheritsLastRosterBotAndDefaultsToNormal(t *testing.T) {
 	}
 	action(t, h, host, map[string]any{"type": "configure", "target": 1, "member": r.Players[1].Member, "difficulty": "easy"})
 	action(t, h, host, map[string]any{"type": "add", "kind": "bot"})
-	if r.Players[4] == nil || r.Players[4].Difficulty != "godlike" {
-		t.Fatal("inheritance follows roster order, not last-created seat")
+	if r.Players[4] == nil || r.Players[4].Difficulty != "easy" {
+		t.Fatal("inheritance must follow the latest bot after its earlier seat is reused")
 	}
 }
 

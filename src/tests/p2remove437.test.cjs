@@ -29,7 +29,7 @@ function boot(){
   rolePending:false,swapPending:null,lastSpectatorUI:'',survivalSeatLocked:()=>false,syncSpectatingHUD(){},cancelSwap(){},paintColor:c=>c,teamName:(n,r)=>r.teamNames[n-1],activeTeamCount:()=>4,changeSeat(){},setPlayerSpectating(){},queueEligibility:()=>'',syncResultActions(){},closeChat(){},clearInput(){},sendOnlineInput(){},clearTimeout(){},toast(){},matchmakingNotice(){}
  };
  $('queueCard').append(Object.assign(new Element(),{className:'queue-count'}));
- vm.createContext(s);
+ vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);
  const names=['survivalMode','roomCapacity','roomPlayerStatus','canEditTankPaint','makeKickButton','makeRoomPlayerRow','renderRoomPlayerRows','realParty','renderMatchmaking','matchmakingPacket','cancelKick','requestKick','spectatorRow','syncSpectators'];
  if(source.includes('function roomKickDisabled('))names.unshift('roomKickDisabled');
  vm.runInContext('const roomRosterCache=new WeakMap();\n'+names.map(declaration).join('\n'),s);

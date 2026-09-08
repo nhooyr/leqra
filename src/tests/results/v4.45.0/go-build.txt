@@ -1,0 +1,1 @@
+PASS: Go 1.23.12 production build (go build -trimpath -o /workspace/scratch/6a805a537a32/leqra-v4.45.0 ./src); exit status 0.

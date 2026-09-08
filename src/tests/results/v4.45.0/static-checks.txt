@@ -1,0 +1,24 @@
+PASS Source/production byte equality game.js
+PASS Source/production byte equality style.css
+PASS Source/production byte equality theme.js
+PASS Source/production byte equality theme.css
+PASS Source/production byte equality netcode.js
+PASS Source/production byte equality favicon.svg
+PASS HTML asset references: 11 current-version references resolve
+PASS Single production asset directory: v4.45.0
+PASS JavaScript syntax src/web/game.js
+PASS JavaScript syntax src/web/netcode.js
+PASS JavaScript syntax src/web/theme.js
+PASS JavaScript syntax src/web/assets/v4.45.0/game.js
+PASS JavaScript syntax src/web/assets/v4.45.0/netcode.js
+PASS JavaScript syntax src/web/assets/v4.45.0/pwa.js
+PASS JavaScript syntax src/web/assets/v4.45.0/sw.js
+PASS JavaScript syntax src/web/assets/v4.45.0/theme.js
+PASS Root contains exactly the five expected files: .gitignore, CHANGELOG.md, MANIFEST.sha256, README.md, go.mod
+PASS Version agreement: server=4.45.0, client=4.45.0, service worker=4.45.0, registration current=True
+PASS PWA manifest icons resolve: 5 references
+PASS Launcher syntax /bin/sh
+PASS Launcher syntax /bin/bash
+
+21 checks; 0 failures.
+Static checks only; no browser or physical-device rendering was performed.

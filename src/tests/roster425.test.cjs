@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
 
 function declaration(name){
  const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);
@@ -46,7 +46,7 @@ function boot(){
    creations.push({id:player.id,member:player.member,row,moderationOnly});return row;
   }
  };
- vm.createContext(s);vm.runInContext('const roomRosterCache=new WeakMap();\n'+declaration('survivalMode')+'\n'+declaration('roomCapacity')+'\n'+declaration('roomPlayerStatus')+'\n'+declaration('renderRoomPlayerRows'),s);
+ vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext('const roomRosterCache=new WeakMap();\n'+declaration('survivalMode')+'\n'+declaration('roomCapacity')+'\n'+declaration('roomPlayerStatus')+'\n'+declaration('renderRoomPlayerRows'),s);
  const render=(r=room,options={})=>s.renderRoomPlayerRows(options.container||container,r.players,r,options.moderationOnly||false,options.showOpenSeats!==false);
  return {s,room,container,creations,render};
 }
@@ -103,18 +103,18 @@ test('editing a tank rebuilds only that tank row and preserves the other control
 test('a removed or reused seat cannot inherit the previous member row or draft',()=>{
  const b=boot();b.render();const original=seatRows(b.container);original[1].querySelector('input').value='OLD MEMBER DRAFT';
  let r=snapshot(b.room);r.players[1].member=99;r.players[1].name='REPLACEMENT';b.render(r);
- const replacement=seatRows(b.container)[1];assert.notEqual(replacement,original[1]);assert.equal(replacement.querySelector('input').value,'REPLACEMENT');
+ const replacement=seatRows(b.container).at(-1);assert.notEqual(replacement,original[1]);assert.equal(replacement.querySelector('input').value,'REPLACEMENT');
  assert.equal(original[1].parentElement,null);
  r.players.splice(1,1);b.render(r);assert.equal(replacement.parentElement,null);
  r.players.splice(1,0,{...b.room.players[1],member:99,name:'RETURNED'});b.render(r);
- assert.notEqual(seatRows(b.container)[1],replacement);assert.equal(seatRows(b.container)[0],original[0]);assert.equal(seatRows(b.container)[2],original[2]);
+ assert.notEqual(seatRows(b.container).at(-1),replacement);assert.equal(seatRows(b.container)[0],original[0]);assert.equal(seatRows(b.container)[1],original[2]);
  assert.equal(b.creations.length,5);
 });
 
-test('roster order changes move existing rows without discarding input nodes or drafts',()=>{
+test('packet seat order cannot reorder members or discard input nodes and drafts',()=>{
  const b=boot();b.render();const original=seatRows(b.container);original[2].querySelector('input').value='DRAFT';
  const r=snapshot(b.room);r.players.reverse();b.render(r);
- assert.deepEqual(seatRows(b.container),[original[2],original[1],original[0]]);assert.equal(b.creations.length,3);
+ assert.deepEqual(seatRows(b.container),original);assert.equal(b.creations.length,3);
  assert.equal(original[2].querySelector('input').value,'DRAFT');assert.equal(freeRows(b.container).length,1);
 });
 
@@ -169,4 +169,19 @@ test('a bot killed by remote grenade detonation stops before movement even when 
  };
  vm.createContext(s);vm.runInContext(declaration('botControl'),s);s.botControl(bot,1/60);
  assert.equal(detonations,1);assert.equal(bot.alive,false);assert.equal(enemy.alive,true);assert.equal(moves,0);assert.equal(bot.x,90);assert.equal(bot.y,210);
+});
+
+
+test('new bots and local P2 append below existing members when a lower combat seat is reused',()=>{
+ for(const mode of ['room','online'])for(const kind of ['bot','local'])for(const moderationOnly of [false,true]){
+  const b=boot();b.s.mode=mode;b.s.selfID=4;b.room.host=4;
+  b.room.players=[{...b.room.players[0],id:4,member:10},{...b.room.players[2],id:5,member:20}];
+  b.render(b.room,{moderationOnly});const original=seatRows(b.container);original[1].querySelector('input').value='UNSAVED EDIT';
+  const added={id:0,member:30,name:'NEW '+kind,kind,owner:4,team:1,difficulty:'easy'};
+  b.room.players.unshift(added);const before=snapshot(b.room);b.render(b.room,{moderationOnly});
+  const rows=seatRows(b.container);assert.equal(rows.at(-1).querySelector('input').value,added.name,mode+' '+kind);
+  assert.equal(rows[0],original[0]);assert.equal(rows[1],original[1]);assert.equal(rows[1].querySelector('input').value,'UNSAVED EDIT');
+  assert.deepEqual(b.room,before,'rendering must not reorder the authoritative seat array');
+  assert.equal(freeRows(b.container).length,1,'the open-seat notice remains below all tanks');
+ }
 });

@@ -1,0 +1,22 @@
+✔ fresh invite shows the callsign menu without connecting until JOIN is clicked (6.642166ms)
+✔ recent matching saved sessions reconnect automatically from an invite (2.520129ms)
+✔ expired, future or unrelated sessions never bypass the menu or supply another room token (9.725562ms)
+✔ Back and Escape cancel a fresh invite without erasing another room’s saved session (5.461631ms)
+✔ Enter in callsign submits manually and invalid room names stay in the join menu (5.383603ms)
+✔ a removed player must explicitly JOIN and is not given the removed session token (2.821773ms)
+✔ fresh spectator invites wait for callsign confirmation and retain spectator intent (2.347109ms)
+✔ background recovery without an invite keeps its existing automatic resume behavior (5.367098ms)
+✔ saved membership restores its own spectator role regardless of invite type (14.029372ms)
+✔ saved names alone cannot bypass JOIN, and a kicked session cannot resume without an invite (10.243961ms)
+✔ automatic saved-session welcomes keep the server callsign without a rename request (3.816678ms)
+✔ rejected saved sessions return to JOIN and require confirmation before taking a new seat (15.032449ms)
+✔ an active saved session retries without allocating a second seat; server kicks stop recovery (5.129431ms)
+✔ real kick teardown clears saved membership and requires an explicit fresh JOIN (11.725178ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 198.768718

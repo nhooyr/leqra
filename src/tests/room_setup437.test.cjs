@@ -17,7 +17,7 @@ function boot(){
   closeFeature(dialog){dialog.close();s.closed.push(dialog.id);},closed:[],
   syncRoomModePicker(){s.syncRoomSetupPending();},syncFeatureSummary(){s.syncRoomModePicker();const editable=s.roomModeEditable();$('applyRulesBtn').disabled=!editable;$('rulesFields').disabled=!editable;},renderOnlineRoom(){s.syncFeatureSummary();},
   selectedPreset:()=>s.preset};
- vm.createContext(s);
+ vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);
  for(const name of ['defaultRoomRules','defaultModeRules','currentRules','cleanPilotName','validateRoomRules','validateTeamNames','survivalMode','roomCapacity','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validatePreset','isRoomHost','isRoomEditable','roomModeEditable','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','featureNotice','fillRulesForm','readRuleTeamSettings','submitRules','setDifficulty','canLoadPreset','applySelectedPreset','connectOnline'])vm.runInContext(declaration(name),s);
  s.connectOnline({type:'join',code:'TEST'},true);timers.clear();Object.assign(s.online,{connected:true,connecting:false,code:'TEST',token:'secret'});s.phase='onlineLobby';
  const players=[{id:0,member:51,kind:'bot',name:'OLD BOT',difficulty:'normal',team:0},{id:3,member:50,kind:'human',name:'HOST',team:0}];

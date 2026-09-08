@@ -170,15 +170,17 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		difficulty := m.Difficulty
 		if m.Kind == "bot" && difficulty == "" {
 			difficulty = "normal"
-			// Roster order is seat order. Resolve against the current roster so
-			// a queued difficulty edit is reflected by the next Add Bot action.
-			for id := len(r.Players) - 1; id >= 0; id-- {
-				if p := r.Players[id]; p != nil && p.Kind == "bot" {
-					if validDifficulty(p.Difficulty) {
-						difficulty = p.Difficulty
-					}
-					break
+			// Members append to the roster even when a lower combat seat is
+			// reused. Resolve the newest bot's current setting so an accepted
+			// difficulty edit is reflected by the next Add Bot action.
+			var lastBot *Player
+			for _, p := range r.Players {
+				if p != nil && p.Kind == "bot" && (lastBot == nil || p.Member >= lastBot.Member) {
+					lastBot = p // Equal legacy members retain the higher-seat tie break.
 				}
+			}
+			if lastBot != nil && validDifficulty(lastBot.Difficulty) {
+				difficulty = lastBot.Difficulty
 			}
 		}
 		if m.Kind == "bot" && !validDifficulty(difficulty) {

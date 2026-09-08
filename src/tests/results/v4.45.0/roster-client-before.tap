@@ -1,0 +1,838 @@
+TAP version 13
+# Subtest: enabling Teams distributes 1–8 tanks across every eligible team, skipping spectators
+ok 1 - enabling Teams distributes 1–8 tanks across every eligible team, skipping spectators
+  ---
+  duration_ms: 60.522906
+  type: 'test'
+  ...
+# Subtest: new bot and local P2 fill the least-populated team and preserve manual choices
+ok 2 - new bot and local P2 fill the least-populated team and preserve manual choices
+  ---
+  duration_ms: 8.824046
+  type: 'test'
+  ...
+# Subtest: online add leaves team and difficulty inheritance to the server; active matches reject local adds
+ok 3 - online add leaves team and difficulty inheritance to the server; active matches reject local adds
+  ---
+  duration_ms: 3.15284
+  type: 'test'
+  ...
+# Subtest: Add Bot inherits the last roster bot through edits and seat reuse, ignoring humans and spectators
+not ok 4 - Add Bot inherits the last roster bot through edits and seat reuse, ignoring humans and spectators
+  ---
+  duration_ms: 5.499488
+  type: 'test'
+  location: '/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/room424.test.cjs:54:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+
+    'godlike' !== 'easy'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'easy'
+  actual: 'godlike'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/room424.test.cjs:58:152)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: changing to and from CTF rebalances, while other rule edits preserve host assignments
+ok 5 - changing to and from CTF rebalances, while other rule edits preserve host assignments
+  ---
+  duration_ms: 2.429242
+  type: 'test'
+  ...
+# Subtest: CTF roster menus contain only first two teams; FFA has no team menu
+ok 6 - CTF roster menus contain only first two teams; FFA has no team menu
+  ---
+  duration_ms: 8.829726
+  type: 'test'
+  ...
+# Subtest: CTF rejects manual Teams 3/4 locally and before sending an online edit
+ok 7 - CTF rejects manual Teams 3/4 locally and before sending an online edit
+  ---
+  duration_ms: 4.168597
+  type: 'test'
+  ...
+# Subtest: legacy CTF presets migrate to two teams; valid manual presets retain their teams
+ok 8 - legacy CTF presets migrate to two teams; valid manual presets retain their teams
+  ---
+  duration_ms: 3.117096
+  type: 'test'
+  ...
+# Subtest: spectators entering play fill an empty side, including after a CTF transition
+ok 9 - spectators entering play fill an empty side, including after a CTF transition
+  ---
+  duration_ms: 2.337595
+  type: 'test'
+  ...
+# Subtest: pause visibility and labels track lobby, match, results, local pause and online connection
+ok 10 - pause visibility and labels track lobby, match, results, local pause and online connection
+  ---
+  duration_ms: 2.343853
+  type: 'test'
+  ...
+# Subtest: rules hide inactive team fields and respawn settings without losing saved team names
+ok 11 - rules hide inactive team fields and respawn settings without losing saved team names
+  ---
+  duration_ms: 2.399497
+  type: 'test'
+  ...
+# Subtest: unchanged room metadata does not rebuild the field manual DOM
+ok 12 - unchanged room metadata does not rebuild the field manual DOM
+  ---
+  duration_ms: 2.38167
+  type: 'test'
+  ...
+# Subtest: lobby score summary names elimination wins and follows each mode’s current target
+ok 13 - lobby score summary names elimination wins and follows each mode’s current target
+  ---
+  duration_ms: 2.362342
+  type: 'test'
+  ...
+# Subtest: inactive team fields cannot block applying FFA or CTF with unfinished hidden names
+ok 14 - inactive team fields cannot block applying FFA or CTF with unfinished hidden names
+  ---
+  duration_ms: 2.376503
+  type: 'test'
+  ...
+# Subtest: survival rules reject oversized squads without losing their roster or changing the old rules
+ok 15 - survival rules reject oversized squads without losing their roster or changing the old rules
+  ---
+  duration_ms: 2.383773
+  type: 'test'
+  ...
+# Subtest: survival roster hides team assignments and presets normalize one cooperative squad
+ok 16 - survival roster hides team assignments and presets normalize one cooperative squad
+  ---
+  duration_ms: 2.36852
+  type: 'test'
+  ...
+# Subtest: local roster difficulty edits ignore inherited object names
+ok 17 - local roster difficulty edits ignore inherited object names
+  ---
+  duration_ms: 2.034729
+  type: 'test'
+  ...
+# Subtest: 100 identical room packets create no new rows or DOM attachments and preserve a name draft
+ok 18 - 100 identical room packets create no new rows or DOM attachments and preserve a name draft
+  ---
+  duration_ms: 7.034331
+  type: 'test'
+  ...
+# Subtest: unrelated ready, connection and score packets patch status without rebuilding another pilot draft
+ok 19 - unrelated ready, connection and score packets patch status without rebuilding another pilot draft
+  ---
+  duration_ms: 6.06985
+  type: 'test'
+  ...
+# Subtest: room status handles host, self, ready, reconnecting, bot, local P2 and away pilots
+ok 20 - room status handles host, self, ready, reconnecting, bot, local P2 and away pilots
+  ---
+  duration_ms: 1.101205
+  type: 'test'
+  ...
+# Subtest: editing a tank rebuilds only that tank row and preserves the other controls
+ok 21 - editing a tank rebuilds only that tank row and preserves the other controls
+  ---
+  duration_ms: 5.924377
+  type: 'test'
+  ...
+# Subtest: a removed or reused seat cannot inherit the previous member row or draft
+not ok 22 - a removed or reused seat cannot inherit the previous member row or draft
+  ---
+  duration_ms: 2.007799
+  type: 'test'
+  location: '/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/roster425.test.cjs:103:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+
+    + 'BOT'
+    - 'REPLACEMENT'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'REPLACEMENT'
+  actual: 'BOT'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/roster425.test.cjs:106:97)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: packet seat order cannot reorder members or discard input nodes and drafts
+not ok 23 - packet seat order cannot reorder members or discard input nodes and drafts
+  ---
+  duration_ms: 9.296046
+  type: 'test'
+  location: '/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/roster425.test.cjs:114:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    ... Skipped lines
+
+      [
+        <ref *1> Element {
+          children: [
+            Element {
+              children: [],
+    ...
+              textContent: '',
+    +         value: 'DRAFT'
+    -         value: 'HOST'
+            },
+            Element {
+              children: [],
+              className: 'seat-kind',
+              insertions: 0,
+    ...
+              tagName: 'SMALL',
+    +         textContent: 'BOT',
+    -         textContent: 'YOU · HOST',
+              value: ''
+            }
+          ],
+          className: 'seat-row',
+          insertions: 2,
+          parentElement: <ref *3> Element {
+            children: [
+    +         [Circular *1],
+              <ref *2> Element {
+                children: [
+                  Element {
+                    children: [],
+                    className: '',
+    ...
+                    textContent: '',
+    +               value: 'GUEST'
+    -               value: 'DRAFT'
+                  },
+                  Element {
+                    children: [],
+                    className: 'seat-kind',
+                    insertions: 0,
+    ...
+                    tagName: 'SMALL',
+    +               textContent: 'PILOT',
+    -               textContent: 'BOT',
+                    value: ''
+                  }
+                ],
+                className: 'seat-row',
+                insertions: 2,
+    ...
+                    textContent: '',
+    +               value: 'HOST'
+    -               value: 'GUEST'
+                  },
+                  Element {
+                    children: [],
+                    className: 'seat-kind',
+                    insertions: 0,
+    ...
+                    tagName: 'SMALL',
+    +               textContent: 'YOU · HOST',
+    -               textContent: 'PILOT',
+                    value: ''
+                  }
+                ],
+                className: 'seat-row',
+                insertions: 2,
+    ...
+              },
+    -         [Circular *1],
+              Element {
+                children: [],
+                className: 'free-seats',
+                insertions: 0,
+                parentElement: [Circular *3],
+    ...
+        },
+    +   <ref *2> Element {
+    -   <ref *4> Element {
+          children: [
+            Element {
+              children: [],
+              className: '',
+              insertions: 0,
+    +         parentElement: [Circular *2],
+    -         parentElement: [Circular *4],
+              removals: 0,
+              tagName: 'INPUT',
+              textContent: '',
+              value: 'GUEST'
+            },
+    ...
+              insertions: 0,
+    +         parentElement: [Circular *2],
+    -         parentElement: [Circular *4],
+              removals: 0,
+              tagName: 'SMALL',
+              textContent: 'PILOT',
+              value: ''
+            }
+    ...
+            children: [
+    +         <ref *1> Element {
+    -         <ref *2> Element {
+                children: [
+                  Element {
+                    children: [],
+                    className: '',
+                    insertions: 0,
+    +               parentElement: [Circular *1],
+    -               parentElement: [Circular *2],
+                    removals: 0,
+                    tagName: 'INPUT',
+                    textContent: '',
+                    value: 'DRAFT'
+                  },
+    ...
+                    insertions: 0,
+    +               parentElement: [Circular *1],
+    -               parentElement: [Circular *2],
+                    removals: 0,
+                    tagName: 'SMALL',
+                    textContent: 'BOT',
+                    value: ''
+                  }
+    ...
+              },
+    +         [Circular *2],
+    +         <ref *4> Element {
+    -         [Circular *4],
+    -         <ref *1> Element {
+                children: [
+                  Element {
+                    children: [],
+                    className: '',
+                    insertions: 0,
+    +               parentElement: [Circular *4],
+    -               parentElement: [Circular *1],
+                    removals: 0,
+                    tagName: 'INPUT',
+                    textContent: '',
+                    value: 'HOST'
+                  },
+    ...
+                    insertions: 0,
+    +               parentElement: [Circular *4],
+    -               parentElement: [Circular *1],
+                    removals: 0,
+                    tagName: 'SMALL',
+                    textContent: 'YOU · HOST',
+                    value: ''
+                  }
+    ...
+        },
+    +   <ref *4> Element {
+    -   <ref *2> Element {
+          children: [
+            Element {
+              children: [],
+              className: '',
+              insertions: 0,
+    +         parentElement: [Circular *4],
+    -         parentElement: [Circular *2],
+              removals: 0,
+              tagName: 'INPUT',
+              textContent: '',
+    +         value: 'HOST'
+    -         value: 'DRAFT'
+            },
+            Element {
+              children: [],
+              className: 'seat-kind',
+              insertions: 0,
+    +         parentElement: [Circular *4],
+    -         parentElement: [Circular *2],
+              removals: 0,
+              tagName: 'SMALL',
+    +         textContent: 'YOU · HOST',
+    -         textContent: 'BOT',
+              value: ''
+            }
+          ],
+          className: 'seat-row',
+          insertions: 2,
+          parentElement: <ref *3> Element {
+            children: [
+    +         <ref *1> Element {
+    -         [Circular *2],
+    -         <ref *4> Element {
+                children: [
+                  Element {
+                    children: [],
+                    className: '',
+                    insertions: 0,
+    +               parentElement: [Circular *1],
+    -               parentElement: [Circular *4],
+                    removals: 0,
+                    tagName: 'INPUT',
+                    textContent: '',
+    +               value: 'DRAFT'
+    -               value: 'GUEST'
+                  },
+                  Element {
+                    children: [],
+                    className: 'seat-kind',
+                    insertions: 0,
+    +               parentElement: [Circular *1],
+    -               parentElement: [Circular *4],
+                    removals: 0,
+                    tagName: 'SMALL',
+    +               textContent: 'BOT',
+    -               textContent: 'PILOT',
+                    value: ''
+                  }
+                ],
+                className: 'seat-row',
+                insertions: 2,
+    ...
+              },
+    +         <ref *2> Element {
+    -         <ref *1> Element {
+                children: [
+                  Element {
+                    children: [],
+                    className: '',
+                    insertions: 0,
+    +               parentElement: [Circular *2],
+    -               parentElement: [Circular *1],
+                    removals: 0,
+                    tagName: 'INPUT',
+                    textContent: '',
+    +               value: 'GUEST'
+    -               value: 'HOST'
+                  },
+                  Element {
+                    children: [],
+                    className: 'seat-kind',
+                    insertions: 0,
+    +               parentElement: [Circular *2],
+    -               parentElement: [Circular *1],
+                    removals: 0,
+                    tagName: 'SMALL',
+    +               textContent: 'PILOT',
+    -               textContent: 'YOU · HOST',
+                    value: ''
+                  }
+                ],
+                className: 'seat-row',
+                insertions: 2,
+    ...
+              },
+    +         [Circular *4],
+              Element {
+                children: [],
+                className: 'free-seats',
+                insertions: 0,
+                parentElement: [Circular *3],
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0:
+      tagName: 'DIV'
+      children:
+        0:
+          tagName: 'INPUT'
+          children:
+          parentElement: <Circular>
+          className: ''
+          textContent: ''
+          value: 'HOST'
+          insertions: 0
+          removals: 0
+        1:
+          tagName: 'SMALL'
+          children:
+          parentElement: <Circular>
+          className: 'seat-kind'
+          textContent: 'YOU · HOST'
+          value: ''
+          insertions: 0
+          removals: 0
+      parentElement:
+        tagName: 'DIV'
+        children:
+          0:
+            tagName: 'DIV'
+            children:
+              0:
+                tagName: 'INPUT'
+                children:
+                parentElement: <Circular>
+                className: ''
+                textContent: ''
+                value: 'DRAFT'
+                insertions: 0
+                removals: 0
+              1:
+                tagName: 'SMALL'
+                children:
+                parentElement: <Circular>
+                className: 'seat-kind'
+                textContent: 'BOT'
+                value: ''
+                insertions: 0
+                removals: 0
+            parentElement: <Circular>
+            className: 'seat-row'
+            textContent: ''
+            value: ''
+            insertions: 2
+            removals: 0
+          1:
+            tagName: 'DIV'
+            children:
+              0:
+                tagName: 'INPUT'
+                children:
+                parentElement: <Circular>
+                className: ''
+                textContent: ''
+                value: 'GUEST'
+                insertions: 0
+                removals: 0
+              1:
+                tagName: 'SMALL'
+                children:
+                parentElement: <Circular>
+                className: 'seat-kind'
+                textContent: 'PILOT'
+                value: ''
+                insertions: 0
+                removals: 0
+            parentElement: <Circular>
+            className: 'seat-row'
+            textContent: ''
+            value: ''
+            insertions: 2
+            removals: 0
+          2: <Circular>
+          3:
+            tagName: 'DIV'
+            children:
+            parentElement: <Circular>
+            className: 'free-seats'
+            textContent: '5 OPEN SEATS · ADD A PILOT, BOT, OR FRIEND'
+            value: ''
+            insertions: 0
+            removals: 0
+        parentElement: ~
+        className: ''
+        textContent: ''
+        value: ''
+        insertions: 6
+        removals: 2
+      className: 'seat-row'
+      textContent: ''
+      value: ''
+      insertions: 2
+      removals: 0
+    1: <Circular>
+    2: <Circular>
+  actual:
+    0:
+      tagName: 'DIV'
+      children:
+        0:
+          tagName: 'INPUT'
+          children:
+          parentElement: <Circular>
+          className: ''
+          textContent: ''
+          value: 'DRAFT'
+          insertions: 0
+          removals: 0
+        1:
+          tagName: 'SMALL'
+          children:
+          parentElement: <Circular>
+          className: 'seat-kind'
+          textContent: 'BOT'
+          value: ''
+          insertions: 0
+          removals: 0
+      parentElement:
+        tagName: 'DIV'
+        children:
+          0: <Circular>
+          1:
+            tagName: 'DIV'
+            children:
+              0:
+                tagName: 'INPUT'
+                children:
+                parentElement: <Circular>
+                className: ''
+                textContent: ''
+                value: 'GUEST'
+                insertions: 0
+                removals: 0
+              1:
+                tagName: 'SMALL'
+                children:
+                parentElement: <Circular>
+                className: 'seat-kind'
+                textContent: 'PILOT'
+                value: ''
+                insertions: 0
+                removals: 0
+            parentElement: <Circular>
+            className: 'seat-row'
+            textContent: ''
+            value: ''
+            insertions: 2
+            removals: 0
+          2:
+            tagName: 'DIV'
+            children:
+              0:
+                tagName: 'INPUT'
+                children:
+                parentElement: <Circular>
+                className: ''
+                textContent: ''
+                value: 'HOST'
+                insertions: 0
+                removals: 0
+              1:
+                tagName: 'SMALL'
+                children:
+                parentElement: <Circular>
+                className: 'seat-kind'
+                textContent: 'YOU · HOST'
+                value: ''
+                insertions: 0
+                removals: 0
+            parentElement: <Circular>
+            className: 'seat-row'
+            textContent: ''
+            value: ''
+            insertions: 2
+            removals: 0
+          3:
+            tagName: 'DIV'
+            children:
+            parentElement: <Circular>
+            className: 'free-seats'
+            textContent: '5 OPEN SEATS · ADD A PILOT, BOT, OR FRIEND'
+            value: ''
+            insertions: 0
+            removals: 0
+        parentElement: ~
+        className: ''
+        textContent: ''
+        value: ''
+        insertions: 6
+        removals: 2
+      className: 'seat-row'
+      textContent: ''
+      value: ''
+      insertions: 2
+      removals: 0
+    1: <Circular>
+    2: <Circular>
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/roster425.test.cjs:117:9)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: permission, host and game-format transitions rebuild controls before displaying the new state
+ok 24 - permission, host and game-format transitions rebuild controls before displaying the new state
+  ---
+  duration_ms: 9.481133
+  type: 'test'
+  ...
+# Subtest: moderation roster caches are independent and switching moderation mode rebuilds controls
+ok 25 - moderation roster caches are independent and switching moderation mode rebuilds controls
+  ---
+  duration_ms: 1.142087
+  type: 'test'
+  ...
+# Subtest: the open-seat notice stays unique, follows capacity, and disappears when full or disabled
+ok 26 - the open-seat notice stays unique, follows capacity, and disappears when full or disabled
+  ---
+  duration_ms: 2.675302
+  type: 'test'
+  ...
+# Subtest: a bot killed by remote grenade detonation stops before movement even when its target survives
+ok 27 - a bot killed by remote grenade detonation stops before movement even when its target survives
+  ---
+  duration_ms: 1.665044
+  type: 'test'
+  ...
+# Subtest: new bots and local P2 append below existing members when a lower combat seat is reused
+not ok 28 - new bots and local P2 append below existing members when a lower combat seat is reused
+  ---
+  duration_ms: 1.241387
+  type: 'test'
+  location: '/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/roster425.test.cjs:175:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    room bot
+    + actual - expected
+
+    + 'UNSAVED EDIT'
+    - 'NEW bot'
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'NEW bot'
+  actual: 'UNSAVED EDIT'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/roster425.test.cjs:182:43)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: each mode remembers its rules through mode changes and a fresh page load, keeping the selected map
+ok 29 - each mode remembers its rules through mode changes and a fresh page load, keeping the selected map
+  ---
+  duration_ms: 15.407373
+  type: 'test'
+  ...
+# Subtest: roster names, bot strengths, teams, local P2, spectator state and owner IDs restore across runs
+ok 30 - roster names, bot strengths, teams, local P2, spectator state and owner IDs restore across runs
+  ---
+  duration_ms: 7.741169
+  type: 'test'
+  ...
+# Subtest: FFA tank colors survive seat reassignment and repeated restarts
+ok 31 - FFA tank colors survive seat reassignment and repeated restarts
+  ---
+  duration_ms: 15.256566
+  type: 'test'
+  ...
+# Subtest: unchanged room renders write once; individual configuration changes persist immediately
+ok 32 - unchanged room renders write once; individual configuration changes persist immediately
+  ---
+  duration_ms: 10.475835
+  type: 'test'
+  ...
+# Subtest: accepted online host settings save only the host, their local P2 and bots
+ok 33 - accepted online host settings save only the host, their local P2 and bots
+  ---
+  duration_ms: 6.741676
+  type: 'test'
+  ...
+# Subtest: legacy rules migrate including mobile map preference and omitted future defaults
+ok 34 - legacy rules migrate including mobile map preference and omitted future defaults
+  ---
+  duration_ms: 6.517459
+  type: 'test'
+  ...
+# Subtest: invalid saved rule profiles and rosters recover independently without loading unsafe seats
+ok 35 - invalid saved rule profiles and rosters recover independently without loading unsafe seats
+  ---
+  duration_ms: 39.884147
+  type: 'test'
+  ...
+# Subtest: spectating pilots do not consume survival seats; saved active overflow is rejected
+ok 36 - spectating pilots do not consume survival seats; saved active overflow is rejected
+  ---
+  duration_ms: 3.314934
+  type: 'test'
+  ...
+# Subtest: storage failure does not interrupt editing and in-session mode memory remains available
+ok 37 - storage failure does not interrupt editing and in-session mode memory remains available
+  ---
+  duration_ms: 3.317037
+  type: 'test'
+  ...
+# Subtest: DEFAULT RULES stages mode defaults, leaves the lobby setup intact and saves only on Apply
+ok 38 - DEFAULT RULES stages mode defaults, leaves the lobby setup intact and saves only on Apply
+  ---
+  duration_ms: 13.038652
+  type: 'test'
+  ...
+# Subtest: DEFAULT RULES is host-only and online Apply waits for authoritative confirmation
+ok 39 - DEFAULT RULES is host-only and online Apply waits for authoritative confirmation
+  ---
+  duration_ms: 3.400432
+  type: 'test'
+  ...
+# Subtest: a rejected oversized Survival mode switch preserves the saved rules and complete roster
+ok 40 - a rejected oversized Survival mode switch preserves the saved rules and complete roster
+  ---
+  duration_ms: 3.489286
+  type: 'test'
+  ...
+# Subtest: denied storage reads use device defaults and an invalid selected profile does not discard other profiles
+ok 41 - denied storage reads use device defaults and an invalid selected profile does not discard other profiles
+  ---
+  duration_ms: 8.628281
+  type: 'test'
+  ...
+# Subtest: saved roster and unshared/preset exports retain insertion order despite reused seat IDs
+not ok 42 - saved roster and unshared/preset exports retain insertion order despite reused seat IDs
+  ---
+  duration_ms: 4.213435
+  type: 'test'
+  location: '/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/settings436.test.cjs:109:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+
+      [
+        'HOST',
+    +   'NEWER',
+        'OLDER',
+    -   'NEWER'
+      ]
+
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'HOST'
+    1: 'OLDER'
+    2: 'NEWER'
+  actual:
+    0: 'HOST'
+    1: 'NEWER'
+    2: 'OLDER'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/6a805a537a32/project/leqra-online/src/tests/settings436.test.cjs:113:9)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+1..42
+# tests 42
+# suites 0
+# pass 37
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 255.492361

@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
 // Execute the shipped functions with small UI/network fixtures; no copied
 // assignment algorithm or browser dependency is used by these regressions.
 function declaration(name){
@@ -23,7 +23,7 @@ function boot(extra={}){
  const rules={mode:'elimination',teamMode:'teams',teamNames:['A','B','C','D'],teamColors:[0,1,2,3],mapSize:'large',weapons:[],scoreTarget:5,timeLimit:75};
  const sandbox={console,escapeHTML:v=>String(v),mode:'room',phase:'menu',MAX_TANKS:8,localRoom:{rules,players:[],self:0,nextMember:10,nextViewer:8},online:{connected:true},rolePending:false,pendingRoomMode:null,rulesPending:false,presetsPending:false,syncRoomModePicker(){},modeLabel:()=>sandbox.localRoom.rules.mode.toUpperCase(),$,document:{createElement:tag=>new Element(tag)},DIFFICULTY:{easy:{},normal:{},hard:{}},toast(message){sandbox.notice=message;},sendOnline(message){sandbox.sent=message;return true;},paintColor:c=>c,teamName:(n,r=rules)=>r.teamNames[n-1],isRoomHost:()=>true,isRoomEditable:()=>sandbox.phase==='menu',currentRules:()=>sandbox.localRoom.rules,localPlayerID:()=>0,roomMembers:r=>r?r.players:sandbox.localRoom.players,roomData:()=>({host:0,players:sandbox.localRoom.players.filter(p=>!p.spectating)}),validateRoomRules:r=>({...r}),defaultRoomRules:()=>({...rules}),persistLocalRoomRules(){},resetPreviewIfLobby(options){sandbox.preview=options||{};},renderOnlineRoom(){},savedLocalCallsign:()=> 'P2',canEditTankPaint:()=>false,makeKickButton:()=>new Element('button'),moveLocalMember(p,id,spectating,team){p.id=id;p.spectating=spectating;p.team=team;},refreshLocalRoles(){},...extra};
  sandbox.syncMatchTouchPolicy=()=>{};
- vm.createContext(sandbox);
+ vm.createContext(sandbox);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),sandbox);
  for(const name of ['survivalMode','roomCapacity','survivalSeatLocked','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
  return {...sandbox,s:sandbox,$,elements};
 }
@@ -55,7 +55,7 @@ test('Add Bot inherits the last roster bot through edits and seat reuse, ignorin
  for(const difficulty of ['easy','normal','hard','godlike']){
   const b=boot();b.s.localRoom.players=[{id:0,kind:'human',name:'P1'},{id:2,kind:'bot',name:'LAST',difficulty},{id:3,kind:'local',name:'P2'},{id:8,kind:'bot',name:'SPECTATOR',difficulty:'easy',spectating:true}];
   b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players.find(p=>p.id===1).difficulty,difficulty);
-  b.s.localRoom.players.find(p=>p.id===1).difficulty='easy';b.s.localRoom.players.find(p=>p.id===2).difficulty='godlike';b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players.find(p=>p.id===4).difficulty,'godlike');
+  b.s.localRoom.players.find(p=>p.id===1).difficulty='easy';b.s.localRoom.players.find(p=>p.id===2).difficulty='godlike';b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players.find(p=>p.id===4).difficulty,'easy');
  }
  const b=boot();b.s.localRoom.players=[{id:0,kind:'human',name:'P1'}];b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players[1].difficulty,'normal');
 });
