@@ -7,7 +7,7 @@ if ! ssh leqra getent passwd leqra; then
 	ssh leqra chown -R leqra:leqra /opt/leqra /var/lib/leqra
 fi
 
-GOOS=linux GOARCH=amd64 go build
+GOOS=linux GOARCH=amd64 go build -o ./leqra ./src
 rsync -avzP leqra leqra:/opt/leqra/leqra-server
 rsync -avzP deploy/leqra.service leqra:/etc/systemd/system/leqra.service
 rsync -avzP deploy/leqra.env leqra:/etc/leqra/leqra.env

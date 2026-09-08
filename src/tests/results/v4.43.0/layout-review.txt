@@ -1,0 +1,62 @@
+Maze layout regression review
+Baseline: 15eab8c
+
+Demonstrated causes fixed
+- Spectating used display:none for touch controls and pilot loadouts, removing
+  reserved space. The P1 spectator banner could also add a separate P2 HUD row.
+- P2 spectating changed the cockpit from two-pilot to one-pilot geometry.
+- Narrow layouts used 64px for one cockpit and 97px for two stacked cockpits;
+  adding/removing P2 changed the space remaining for the canvas.
+- resize() removed a 252px touch-landscape control margin for spectators.
+- Obsolete many-sides header height rules changed arena space at five sides,
+  although the current score strip already keeps all eight scores on one line.
+- Opening a keyboard could make visualViewport shorter than the phone width,
+  falsely activating the landscape control layout without rotating the phone.
+
+Baseline reproduction
+Ran the current regression files against baseline game.js/style.css using
+LEQRA_LAYOUT_SOURCE and LEQRA_LAYOUT_CSS. Nine checks ran: three existing checks
+passed and all six added checks failed. Failures included a changed transform
+for the 844x590 Ultra Wide spectator case, keyboard-induced orientation change,
+collapsing role CSS, many-sides header growth, a visible local Spectators header
+button, and loss of the two-pilot HUD class when P2 began spectating.
+
+Verification after the fix
+Command:
+node --test tests/layout443.test.cjs tests/online_layout435.test.cjs \
+  tests/hud432.test.cjs tests/layout434.test.cjs tests/p2remove437.test.cjs \
+  tests/share436.test.cjs tests/mode428.test.cjs tests/settings436.test.cjs \
+  tests/room_lifecycle438.test.cjs
+
+Result: 59 tests passed, zero failed.
+node --check web/game.js and git diff --check also passed.
+
+Coverage and scope
+- Real resize() calculations: six configured maps, desktop 1440x900, portrait
+  390x844, landscape 844x390, and near-square landscape 844x590 fixtures; switching
+  pilot -> spectator -> pilot must preserve scale, offsets and canvas CSS size.
+  Bounds in this test are fixed fixtures, not browser-computed CSS dimensions.
+- Real setLayout(): keyboard-height changes in portrait and landscape keep the
+  orientation and transform unchanged when the layout viewport is unchanged.
+- Real updateHUD(): local and online sources, P1 active/spectating, P2 active then
+  spectating, through menu, online lobby, countdown, play, pause, round hold and
+  match-over; existing tests also cover P2 removal and empty lobby snapshots.
+- Real syncSpectators()/syncSpectatingHUD(): local, pending publication, accepted
+  online room, disconnected retained room, and local return; header visibility
+  changes without removing local lobby/pause/JOIN PLAY actions.
+- CSS source invariants retain hidden cockpit cells and portrait touch space,
+  reserve the existing maximum narrow cockpit height, put the banner in P1's
+  grid cell outside normal flow, and remove side-count header-height changes.
+- Existing transition regressions exercise actual mode selection/rules changes,
+  map-only maze regeneration, publish handshake/failure, generation-zero preview
+  retention, unshare/disconnect lifecycle, HUD status updates and deferred canvas
+  allocation including WebKit one-pixel resize suppression.
+
+Limitations
+This is source, simulation and stub-DOM validation. It is not computed browser
+layout testing and does not establish that every possible resizing bug is gone.
+The cloud browser rejected the local page under its security policy; no alternate
+browser surface or screenshot route was used. Native desktop/mobile geometry,
+keyboard behavior and appearance still require a browser/device retest. Real
+viewport/orientation changes and selecting a different maze size intentionally
+continue to refit the maze.

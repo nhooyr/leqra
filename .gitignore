@@ -1,7 +1,10 @@
 /leqra
 /leqra.exe
+/bin/
 /*.test
+/src/*.test
 /test-output/
+/src/test-output/
 __pycache__/
 *.log
 .env

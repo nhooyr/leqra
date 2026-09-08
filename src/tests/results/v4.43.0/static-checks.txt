@@ -1,0 +1,10 @@
+PASS: five shipped JavaScript syntax checks
+PASS: 69 retained Python files parse
+PASS: 11 HTML asset references resolve
+PASS: six root/versioned assets are byte-identical
+PASS: server, browser, HTML, PWA and cache use 4.43.0; only current assets ship
+PASS: PLAY follows Join another room and directly precedes the inserted FIND ONLINE BATTLE launcher
+PASS: git diff --check
+PASS: only five files at project root
+PASS: source grouping, launchers and Docker-specific ignore locations
+PASS: root README screenshot reference remains valid (existing staged image; no browser capture)

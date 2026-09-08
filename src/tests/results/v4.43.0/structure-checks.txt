@@ -1,0 +1,5 @@
+PASS: scripts/run.sh -h works from outside project directory using Go 1.23.12
+PASS: 61 current Markdown file/image links resolve
+PASS: existing screenshot bytes unchanged; native browser capture blocked
+PASS: root contains only README.md, CHANGELOG.md, MANIFEST.sha256, .gitignore and go.mod
+PASS: git diff --check

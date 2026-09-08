@@ -1,0 +1,4 @@
+PASS: production binary health reports 4.43.0
+PASS: embedded shell matches src/web/index.html and revalidates
+PASS: 11 embedded assets match current files with immutable cache headers
+PASS: service worker retains root scope

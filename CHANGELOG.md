@@ -1,3 +1,12 @@
+# v4.43.0 — stable maze space, neon lobby actions and organized source tree
+
+- Preserve maze space across spectator/P2 changes, roster side counts and keyboard-only visual-viewport changes.
+- Use neon green PLAY, purple Unshare room and pink Leave room; show the header Spectators button only online.
+- Bind input packets to member identity so delayed commands cannot cross P1/P2 channels after a seat swap.
+- Encode room metadata with typed records while preserving the public wire format.
+- Group code, tests, deployment files, scripts and guides into folders; build with `go build -o bin/leqra ./src`.
+- Current verification and screenshot limitations: [v4.43.0 notes](docs/releases/TEST-NOTES-v4.43.0.md).
+
 # v4.23.2 — mobile compact default and expanded fire keys
 
 - Fresh mobile local rooms now default to the Compact 7×7 maze; an explicitly saved maze-size preference is preserved.
