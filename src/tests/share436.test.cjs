@@ -21,7 +21,7 @@ function boot({spectating=false,p2=true}={}){
   sendOnline(message){s.sent.push(message);},sent:[],
   resetOnlineMotion(){s.online.snapshots=[];s.online.buffer={push(snapshot){s.online.snapshots.push(snapshot);}};s.online.predictor={reconcile:noop};},
   WebSocket:class{constructor(){s.socket=this;this.readyState=1;}close(){this.readyState=3;this.onclose?.();}}};
- vm.createContext(s);
+ vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);
  for(const name of ['roomData','roomMembers','roomMember','localPlayerID','secondaryMember','secondLocal','secondaryID']){const line=source.split('\n').find(line=>line.startsWith('const '+name+'='));vm.runInContext(line+'\nglobalThis.'+name+'='+name+';',s);}
  for(const name of ['shareLocalRoom','connectOnline','currentRules','applyOnlineTankEffects','liveFeedbackTank','pilotLoadoutTank','receiveOnlineState','netTank','showVersionMismatch'])vm.runInContext(declaration(name),s);
  return{s,$,players,rules,receive:packet=>s.socket.onmessage({data:JSON.stringify(packet)}),snapshot:(extra={})=>({type:'state',tick:0,generation:0,phase:'lobby',round:1,roundClock:75,phaseTime:0,winner:-1,scores:Array(8).fill(0),tanks:[],bullets:[],pickups:[],events:[],rules,objectives:null,...extra})};

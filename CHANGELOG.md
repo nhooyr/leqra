@@ -1,3 +1,11 @@
+# v4.45.0 — appended roster rows and automatic session recovery
+
+- Match Leave room to the outlined neon-red REMOVE/KICK color.
+- Order roster displays and exports by stable member identity, so reused combat seats cannot put new tanks above existing players.
+- Add Bot inherits the newest roster bot’s difficulty locally and online.
+- Restore automatic reconnect for recognized saved sessions, preserving the server’s callsign and role; fresh visitors still confirm JOIN.
+- Require explicit JOIN after a saved membership expires or the host kicks the player; rejected recovery never silently creates a new seat.
+
 # v4.44.0 — outlined neon actions and confirmed invite joining
 
 - Restore outlined Unshare room and Leave room buttons while retaining neon purple and pink.

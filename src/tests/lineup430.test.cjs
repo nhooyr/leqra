@@ -8,7 +8,7 @@ function boot({online=false,survival=false,ffa=false}={}){
  const players=[{id:0,name:'PILOT',kind:'human',team:ffa?0:1,color:'#00ff00'},{id:1,name:'RUST',kind:'bot',difficulty:'hard',team:ffa?0:1,color:'#ff0000'}];
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,{writes:0,html:'',set innerHTML(v){this.html=v;this.writes++;},get innerHTML(){return this.html;}});return elements.get(id);};
  const s={mode:online?'online':'room',phase:'playing',difficulty:'normal',COLORS:['#00ff00','#ff0000'],online:{snapshots:[]},tanks:players.map(p=>({...p,human:p.kind!=='bot',alive:true})),scores:[2,2,0,0,0,0,0,0],lastRoster:'',currentRules:()=>rules,roomData:()=>({rules,players}),teamName:t=>rules.teamNames[t-1],teamColor:(id,t)=>t===1?'#00ff00':'#ff0000',teamKey:p=>p.team?'team'+p.team:'pilot'+p.id,localPlayerID:()=>0,paintColor:c=>c,tankSvg:()=>'<svg></svg>',$,document:{body:{classList:{toggle(k,v){s[k]=v;}}}}};
- vm.createContext(s);vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],s);
+ vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],s);
  for(const name of ['botLevelName','lineupMember','scoreboardEntries','renderLineup'])vm.runInContext(declaration(name),s);
  return {s,$,rules,players};
 }

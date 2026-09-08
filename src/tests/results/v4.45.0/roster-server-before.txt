@@ -1,0 +1,8 @@
+--- FAIL: TestAddBot433InheritsLastRosterBotAndDefaultsToNormal (0.00s)
+    roster433_test.go:32: inheritance must follow the latest bot after its earlier seat is reused
+--- FAIL: TestAddBot445UsesNewestMemberInsteadOfHighestSeat (0.00s)
+    --- FAIL: TestAddBot445UsesNewestMemberInsteadOfHighestSeat/member_order_survives_reused_seats (0.00s)
+        roster445_test.go:25: new bot = &{Away:<nil> Return:<nil> ChatTokens:0 ChatAt:0001-01-01 00:00:00 +0000 UTC Spectating:false Controller:0xc000229b00 Kind:bot Owner:0 ColorIndex:<nil> Team:2 Difficulty:easy ID:1 Member:6 Name:BOT Token: Client:<nil> Ready:false Input:{Seq:0 Forward:false Reverse:false Left:false Right:false Fire:false FirePressed:false StickX:0 StickY:0} FirePending:false InputAt:2026-09-08 11:19:54.570659312 +0900 JST m=+0.001669170 DisconnectedAt:0001-01-01 00:00:00 +0000 UTC}, want member 6 with godlike difficulty
+FAIL
+FAIL	leqra/src	0.004s
+FAIL

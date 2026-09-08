@@ -1,6 +1,6 @@
-# leqra v4.44.0 — current verification
+# leqra v4.45.0 — current verification
 
-See [TEST-NOTES-v4.44.0.md](releases/TEST-NOTES-v4.44.0.md) for the recorded release results and limitations. Current raw logs are in `src/tests/results/v4.44.0/`. Archived reports preserve the paths used when they were written; use the commands below for the current repository layout.
+See [TEST-NOTES-v4.45.0.md](releases/TEST-NOTES-v4.45.0.md) for the recorded release results and limitations. Current raw logs are in `src/tests/results/v4.45.0/`. Archived reports preserve the paths used when they were written; use the commands below for the current repository layout.
 
 ## Current commands
 

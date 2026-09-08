@@ -1,0 +1,262 @@
+TAP version 13
+# Subtest: enabling Teams distributes 1–8 tanks across every eligible team, skipping spectators
+ok 1 - enabling Teams distributes 1–8 tanks across every eligible team, skipping spectators
+  ---
+  duration_ms: 51.086434
+  type: 'test'
+  ...
+# Subtest: new bot and local P2 fill the least-populated team and preserve manual choices
+ok 2 - new bot and local P2 fill the least-populated team and preserve manual choices
+  ---
+  duration_ms: 10.745936
+  type: 'test'
+  ...
+# Subtest: online add leaves team and difficulty inheritance to the server; active matches reject local adds
+ok 3 - online add leaves team and difficulty inheritance to the server; active matches reject local adds
+  ---
+  duration_ms: 1.974118
+  type: 'test'
+  ...
+# Subtest: Add Bot inherits the last roster bot through edits and seat reuse, ignoring humans and spectators
+ok 4 - Add Bot inherits the last roster bot through edits and seat reuse, ignoring humans and spectators
+  ---
+  duration_ms: 9.437659
+  type: 'test'
+  ...
+# Subtest: changing to and from CTF rebalances, while other rule edits preserve host assignments
+ok 5 - changing to and from CTF rebalances, while other rule edits preserve host assignments
+  ---
+  duration_ms: 3.296406
+  type: 'test'
+  ...
+# Subtest: CTF roster menus contain only first two teams; FFA has no team menu
+ok 6 - CTF roster menus contain only first two teams; FFA has no team menu
+  ---
+  duration_ms: 8.251485
+  type: 'test'
+  ...
+# Subtest: CTF rejects manual Teams 3/4 locally and before sending an online edit
+ok 7 - CTF rejects manual Teams 3/4 locally and before sending an online edit
+  ---
+  duration_ms: 7.152644
+  type: 'test'
+  ...
+# Subtest: legacy CTF presets migrate to two teams; valid manual presets retain their teams
+ok 8 - legacy CTF presets migrate to two teams; valid manual presets retain their teams
+  ---
+  duration_ms: 3.187842
+  type: 'test'
+  ...
+# Subtest: spectators entering play fill an empty side, including after a CTF transition
+ok 9 - spectators entering play fill an empty side, including after a CTF transition
+  ---
+  duration_ms: 2.192606
+  type: 'test'
+  ...
+# Subtest: pause visibility and labels track lobby, match, results, local pause and online connection
+ok 10 - pause visibility and labels track lobby, match, results, local pause and online connection
+  ---
+  duration_ms: 2.39432
+  type: 'test'
+  ...
+# Subtest: rules hide inactive team fields and respawn settings without losing saved team names
+ok 11 - rules hide inactive team fields and respawn settings without losing saved team names
+  ---
+  duration_ms: 2.292727
+  type: 'test'
+  ...
+# Subtest: unchanged room metadata does not rebuild the field manual DOM
+ok 12 - unchanged room metadata does not rebuild the field manual DOM
+  ---
+  duration_ms: 2.436042
+  type: 'test'
+  ...
+# Subtest: lobby score summary names elimination wins and follows each mode’s current target
+ok 13 - lobby score summary names elimination wins and follows each mode’s current target
+  ---
+  duration_ms: 2.285797
+  type: 'test'
+  ...
+# Subtest: inactive team fields cannot block applying FFA or CTF with unfinished hidden names
+ok 14 - inactive team fields cannot block applying FFA or CTF with unfinished hidden names
+  ---
+  duration_ms: 2.417444
+  type: 'test'
+  ...
+# Subtest: survival rules reject oversized squads without losing their roster or changing the old rules
+ok 15 - survival rules reject oversized squads without losing their roster or changing the old rules
+  ---
+  duration_ms: 2.327809
+  type: 'test'
+  ...
+# Subtest: survival roster hides team assignments and presets normalize one cooperative squad
+ok 16 - survival roster hides team assignments and presets normalize one cooperative squad
+  ---
+  duration_ms: 2.014679
+  type: 'test'
+  ...
+# Subtest: local roster difficulty edits ignore inherited object names
+ok 17 - local roster difficulty edits ignore inherited object names
+  ---
+  duration_ms: 2.119486
+  type: 'test'
+  ...
+# Subtest: 100 identical room packets create no new rows or DOM attachments and preserve a name draft
+ok 18 - 100 identical room packets create no new rows or DOM attachments and preserve a name draft
+  ---
+  duration_ms: 5.69346
+  type: 'test'
+  ...
+# Subtest: unrelated ready, connection and score packets patch status without rebuilding another pilot draft
+ok 19 - unrelated ready, connection and score packets patch status without rebuilding another pilot draft
+  ---
+  duration_ms: 3.676778
+  type: 'test'
+  ...
+# Subtest: room status handles host, self, ready, reconnecting, bot, local P2 and away pilots
+ok 20 - room status handles host, self, ready, reconnecting, bot, local P2 and away pilots
+  ---
+  duration_ms: 0.870999
+  type: 'test'
+  ...
+# Subtest: editing a tank rebuilds only that tank row and preserves the other controls
+ok 21 - editing a tank rebuilds only that tank row and preserves the other controls
+  ---
+  duration_ms: 5.016192
+  type: 'test'
+  ...
+# Subtest: a removed or reused seat cannot inherit the previous member row or draft
+ok 22 - a removed or reused seat cannot inherit the previous member row or draft
+  ---
+  duration_ms: 0.962046
+  type: 'test'
+  ...
+# Subtest: packet seat order cannot reorder members or discard input nodes and drafts
+ok 23 - packet seat order cannot reorder members or discard input nodes and drafts
+  ---
+  duration_ms: 0.978241
+  type: 'test'
+  ...
+# Subtest: permission, host and game-format transitions rebuild controls before displaying the new state
+ok 24 - permission, host and game-format transitions rebuild controls before displaying the new state
+  ---
+  duration_ms: 9.167092
+  type: 'test'
+  ...
+# Subtest: moderation roster caches are independent and switching moderation mode rebuilds controls
+ok 25 - moderation roster caches are independent and switching moderation mode rebuilds controls
+  ---
+  duration_ms: 0.932211
+  type: 'test'
+  ...
+# Subtest: the open-seat notice stays unique, follows capacity, and disappears when full or disabled
+ok 26 - the open-seat notice stays unique, follows capacity, and disappears when full or disabled
+  ---
+  duration_ms: 2.450805
+  type: 'test'
+  ...
+# Subtest: a bot killed by remote grenade detonation stops before movement even when its target survives
+ok 27 - a bot killed by remote grenade detonation stops before movement even when its target survives
+  ---
+  duration_ms: 1.408978
+  type: 'test'
+  ...
+# Subtest: new bots and local P2 append below existing members when a lower combat seat is reused
+ok 28 - new bots and local P2 append below existing members when a lower combat seat is reused
+  ---
+  duration_ms: 6.444048
+  type: 'test'
+  ...
+# Subtest: each mode remembers its rules through mode changes and a fresh page load, keeping the selected map
+ok 29 - each mode remembers its rules through mode changes and a fresh page load, keeping the selected map
+  ---
+  duration_ms: 11.227229
+  type: 'test'
+  ...
+# Subtest: roster names, bot strengths, teams, local P2, spectator state and owner IDs restore across runs
+ok 30 - roster names, bot strengths, teams, local P2, spectator state and owner IDs restore across runs
+  ---
+  duration_ms: 6.090737
+  type: 'test'
+  ...
+# Subtest: FFA tank colors survive seat reassignment and repeated restarts
+ok 31 - FFA tank colors survive seat reassignment and repeated restarts
+  ---
+  duration_ms: 12.379582
+  type: 'test'
+  ...
+# Subtest: unchanged room renders write once; individual configuration changes persist immediately
+ok 32 - unchanged room renders write once; individual configuration changes persist immediately
+  ---
+  duration_ms: 9.136887
+  type: 'test'
+  ...
+# Subtest: accepted online host settings save only the host, their local P2 and bots
+ok 33 - accepted online host settings save only the host, their local P2 and bots
+  ---
+  duration_ms: 8.084274
+  type: 'test'
+  ...
+# Subtest: legacy rules migrate including mobile map preference and omitted future defaults
+ok 34 - legacy rules migrate including mobile map preference and omitted future defaults
+  ---
+  duration_ms: 6.184648
+  type: 'test'
+  ...
+# Subtest: invalid saved rule profiles and rosters recover independently without loading unsafe seats
+ok 35 - invalid saved rule profiles and rosters recover independently without loading unsafe seats
+  ---
+  duration_ms: 43.614365
+  type: 'test'
+  ...
+# Subtest: spectating pilots do not consume survival seats; saved active overflow is rejected
+ok 36 - spectating pilots do not consume survival seats; saved active overflow is rejected
+  ---
+  duration_ms: 3.067322
+  type: 'test'
+  ...
+# Subtest: storage failure does not interrupt editing and in-session mode memory remains available
+ok 37 - storage failure does not interrupt editing and in-session mode memory remains available
+  ---
+  duration_ms: 3.128403
+  type: 'test'
+  ...
+# Subtest: DEFAULT RULES stages mode defaults, leaves the lobby setup intact and saves only on Apply
+ok 38 - DEFAULT RULES stages mode defaults, leaves the lobby setup intact and saves only on Apply
+  ---
+  duration_ms: 12.400984
+  type: 'test'
+  ...
+# Subtest: DEFAULT RULES is host-only and online Apply waits for authoritative confirmation
+ok 39 - DEFAULT RULES is host-only and online Apply waits for authoritative confirmation
+  ---
+  duration_ms: 3.180431
+  type: 'test'
+  ...
+# Subtest: a rejected oversized Survival mode switch preserves the saved rules and complete roster
+ok 40 - a rejected oversized Survival mode switch preserves the saved rules and complete roster
+  ---
+  duration_ms: 3.291188
+  type: 'test'
+  ...
+# Subtest: denied storage reads use device defaults and an invalid selected profile does not discard other profiles
+ok 41 - denied storage reads use device defaults and an invalid selected profile does not discard other profiles
+  ---
+  duration_ms: 8.745187
+  type: 'test'
+  ...
+# Subtest: saved roster and unshared/preset exports retain insertion order despite reused seat IDs
+ok 42 - saved roster and unshared/preset exports retain insertion order despite reused seat IDs
+  ---
+  duration_ms: 7.84852
+  type: 'test'
+  ...
+1..42
+# tests 42
+# suites 0
+# pass 42
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 220.137723

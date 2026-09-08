@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.44.0';
+const GAME_VERSION='4.45.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -132,13 +132,15 @@ function lineupMember(p,alive=p.alive){
  const bot=p.kind==='bot'||p.bot||p.human===false||p.survivalEnemy;
  return{id:p.id,alive,text:p.name+(bot?' ('+botLevelName(p.difficulty)+(p.survivalBoss?' boss':' bot')+')':'')};
 }
+// Combat seats are reusable; member IDs record when tanks joined this room.
+function orderedRoster(players){return [...players].sort((a,b)=>(a.member||0)-(b.member||0));}
 function scoreboardEntries(){
  if(mode==='room'||mode==='online'){
   // Wave enemies have tank bodies but no room seats. Use the newest server
   // bodies online so an interpolated old wave cannot linger in the lineup.
   const data=roomData(),bodies=mode==='online'?(online.snapshots.at(-1)?.tanks??tanks):tanks;
   const result=[],groups=new Map(),tankMap=new Map(bodies.map(t=>[t.id,t]));
-  for(const p of data?.players||[]){const key=teamKey(p);let entry=groups.get(key);const alive=tankMap.get(p.id)?.alive??true;
+  for(const p of orderedRoster(data?.players||[])){const key=teamKey(p);let entry=groups.get(key);const alive=tankMap.get(p.id)?.alive??true;
    if(!entry){entry={...p,color:p.team>0?teamColor(p.id,p.team):p.color,name:p.team>0?teamName(p.team):p.name,alive:false,meta:'',members:[]};groups.set(key,entry);result.push(entry);}
    entry.alive ||= alive;
    if(p.team>0)entry.members.push(lineupMember(p,alive));
@@ -1746,7 +1748,7 @@ function renderRoomPlayerRows(container,players,r,moderationOnly=false,showOpenS
  let cache=roomRosterCache.get(container);if(!cache){cache={rows:new Map(),free:null};roomRosterCache.set(container,cache);}
  const rules=r.rules||currentRules(),context=JSON.stringify([mode,r.code,localPlayerID(),r.host,r.phase,!!r.queue,!!r.matchmaking,!!r.awayMatch,rules.mode,rules.teamMode,rules.teamNames,rules.teamColors,online.connected,!!online.kickPending,moderationOnly]);
  const next=new Map(),nodes=[];
- for(const player of players){
+ for(const player of orderedRoster(players)){
   const key=player.id+':'+player.member,signature=JSON.stringify([context,player.name,player.kind,player.owner,player.team,player.color,player.colorIndex,player.difficulty]);
   let entry=cache.rows.get(key);
   if(!entry||entry.signature!==signature){const row=makeRoomPlayerRow(player,r,moderationOnly);entry={signature,row,status:row.querySelector('.seat-kind'),kick:row.querySelector('.kick-button')};}
@@ -2392,16 +2394,19 @@ function initOnlineUI(){
  let lastKicked='';try{lastKicked=sessionStorage.getItem('leqra.kicked')||'';}catch(_){}
  if(validInvite&&lastKicked===invite){openPilotInvite(invite);online.manual=true;setNetStatus('You were removed from this room. Automatic joining has stopped. Joining again requires pressing Join.',true);return;}
  if(params.has('room')&&!validInvite){openOnline();setNetStatus('This invite needs a room name of 1–128 characters on one line. Enter a name or ask for a new link.',true);return;}
- const canResume=typeof session?.code==='string'&&typeof session?.token==='string'&&session.token&&validRoomCode(session.code)&&Number.isFinite(session.at)&&Date.now()-session.at>=0&&Date.now()-session.at<20000&&(!validInvite||invite===session.code);
- if(validInvite&&params.get('spectate')==='1'){
-  openWatchInvite(invite,canResume?session:null);return;
- }
- if(validInvite){openPilotInvite(invite,canResume?session:null);return;}
+ const canResume=typeof session?.code==='string'&&typeof session?.token==='string'&&session.token&&validRoomCode(session.code)&&lastKicked!==session.code&&Number.isFinite(session.at)&&Date.now()-session.at>=0&&Date.now()-session.at<20000&&(!validInvite||invite===session.code);
  if(canResume){
-  openOnline();online.inviteCode='';online.inviteResumeRetries=0;
-  online.code=session.code;online.token=session.token;online.retryAt=performance.now();$('pilotName').value=typeof session.name==='string'?session.name:$('pilotName').value;
-  showReconnecting();connectOnline({type:'join',code:session.code,token:session.token,name:$('pilotName').value},true);
+  // A saved token restores existing membership before interpreting invite role.
+  // Keep this separate from a confirmed invite: rejected recovery must show JOIN,
+  // never silently allocate a new seat or replace the server's current callsign.
+  watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
+  online.inviteCode='';online.inviteResumeRetries=0;
+  online.code=session.code;online.token=session.token;online.spectating=!!session.spectating;online.retryAt=performance.now();
+  $('joinCode').value=session.code;$('pilotName').value=typeof session.name==='string'?session.name:$('pilotName').value;
+  showReconnecting();connectOnline({type:'join',code:session.code,token:session.token,name:$('pilotName').value},true);return;
  }
+ if(validInvite&&params.get('spectate')==='1'){openWatchInvite(invite);return;}
+ if(validInvite)openPilotInvite(invite);
 }
 
 // v3: one room model for local play and server-backed sessions.
@@ -2479,7 +2484,7 @@ function addRoomSeat(kind){
  const data=roomData();if(!data||!isRoomEditable()||!['bot','local'].includes(kind))return;
  if(data.players.length>=roomCapacity(data.rules)){toast(survivalMode(data.rules)?'All four squad seats are occupied. Remove a participant first.':'All 8 seats are occupied. Remove a participant first.',3);return;}
  if(kind==='local'&&roomMembers(data).some(p=>p.kind==='local'))return;
- let difficulty='normal';for(let i=data.players.length-1;i>=0;i--){if(data.players[i].kind==='bot'){difficulty=data.players[i].difficulty||'normal';break;}}
+ let difficulty='normal';const ordered=orderedRoster(data.players);for(let i=ordered.length-1;i>=0;i--){if(ordered[i].kind==='bot'){difficulty=ordered[i].difficulty||'normal';break;}}
  const team=nextRoomTeam(data.players);
  const name=kind==='local'?savedLocalCallsign():['RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'].find(n=>!data.players.some(p=>p.name===n))||'BOT';
  // The server inherits from its current roster, including a just-accepted difficulty edit.
@@ -2495,12 +2500,12 @@ function shareLocalRoom(){
  const code=cleanRoomCode($('localRoomName').value);
  if(code&&!validRoomCode(code)){$('roomStatus').textContent='Use a room name of 1–128 characters on one line.';return;}
  localRoom.code=code;online.publishing=true;online.roomData=null;
- const ffa=localRoom.rules.teamMode==='ffa';const roster=[localRoom.players.find(p=>p.id===localRoom.self),...localRoom.players.filter(p=>p.id!==localRoom.self)].map(({name,kind,team,difficulty,spectating,colorIndex})=>({name,kind,team,difficulty,...(ffa?{colorIndex}:{ }),spectating:!!spectating}));
+ const ffa=localRoom.rules.teamMode==='ffa';const roster=[localRoom.players.find(p=>p.id===localRoom.self),...orderedRoster(localRoom.players).filter(p=>p.id!==localRoom.self)].map(({name,kind,team,difficulty,spectating,colorIndex})=>({name,kind,team,difficulty,...(ffa?{colorIndex}:{ }),spectating:!!spectating}));
  $('roomStatus').textContent='Sharing this roster with the Go server…';
  connectOnline({type:'publish',code,roster,rules:localRoom.rules});
 }
 function localSnapshotFromOnline(){
- const r=roomData(),self=localPlayerID();if(!r)return null;const keep=roomMembers(r).filter(p=>p.id===self||p.kind==='bot'||p.kind==='local'&&p.owner===self).map(p=>({id:p.id,member:p.member||0,name:p.name,kind:p.id===self?'human':p.kind,owner:p.id===self?self:p.owner,team:p.team||0,difficulty:p.difficulty,colorIndex:p.colorIndex,spectating:!!p.spectating}));
+ const r=roomData(),self=localPlayerID();if(!r)return null;const keep=orderedRoster(roomMembers(r)).filter(p=>p.id===self||p.kind==='bot'||p.kind==='local'&&p.owner===self).map(p=>({id:p.id,member:p.member||0,name:p.name,kind:p.id===self?'human':p.kind,owner:p.id===self?self:p.owner,team:p.team||0,difficulty:p.difficulty,colorIndex:p.colorIndex,spectating:!!p.spectating}));
  if(!keep.some(p=>p.id===self))return null;const preview=walls.length&&cols>0&&rows>0?{cols,rows,width:W,height:H,walls:walls.map(w=>({...w})),pickups:pickups.map(p=>({...p}))}:null;return{code:r.code||online.code,self,players:keep,nextMember:Math.max(0,...keep.map(p=>p.member||0)),rules:validateRoomRules({...defaultRoomRules(),...(r.rules||{})}),preview};
 }
 function restoreUnsharedPreview(preview){
@@ -2599,7 +2604,7 @@ function rememberedRulesForMode(value){const rules=loadRememberedRoomSetup().mod
 function persistLocalRoomRules(r=localRoom.rules,roster=null){
  try{
   const rules=validateRoomRules(r),setup=loadRememberedRoomSetup();
-  const members=roster||[localRoom.players.find(p=>p.id===localRoom.self),...localRoom.players.filter(p=>p.id!==localRoom.self)];
+  const members=roster||[localRoom.players.find(p=>p.id===localRoom.self),...orderedRoster(localRoom.players).filter(p=>p.id!==localRoom.self)];
   const saved=validateSavedRoster(members.filter(Boolean).map(p=>({...p,colorIndex:rules.teamMode==='ffa'?(p.colorIndex??((p.id%MAX_TANKS+MAX_TANKS)%MAX_TANKS)):undefined})),rules);
   setup.selectedMode=rules.mode;setup.modes[rules.mode]=rules;if(saved)setup.roster=saved;
   const serialized=JSON.stringify(setup);if(serialized!==lastPersistedRoomSetup){localStorage.setItem(ROOM_SETUP_KEY,serialized);lastPersistedRoomSetup=serialized;}
@@ -2611,7 +2616,7 @@ function rememberRenderedRoomSetup(r){
  // rooms, credentials and matchmaking rosters never enter the saved setup.
  if(mode==='room'){persistLocalRoomRules();return;}
  if(mode!=='online'||!online.connected||r.host!==localPlayerID()||r.queue||r.matchmaking||r.awayMatch)return;
- const self=localPlayerID(),members=roomMembers(r),own=members.find(p=>p.id===self);if(!own)return;
+ const self=localPlayerID(),members=orderedRoster(roomMembers(r)),own=members.find(p=>p.id===self);if(!own)return;
  const roster=[{...own,kind:'human'},...members.filter(p=>p.id!==self&&(p.kind==='bot'||p.kind==='local'&&p.owner===self))];
  persistLocalRoomRules(r.rules,roster);
 }
@@ -2848,7 +2853,7 @@ function syncRoomSetupPending(){
   if(roomSetupRulesKey(r.rules)!==request.rulesKey)return;
   if(request.type==='preset'){
    const own=r.players.find(p=>p.id===online.id);if(!own||r.spectators?.length)return;
-   if(roomSetupRosterKey([own,...r.players.filter(p=>p.id!==online.id)],r.rules)!==request.rosterKey)return;
+   if(roomSetupRosterKey([own,...orderedRoster(r.players).filter(p=>p.id!==online.id)],r.rules)!==request.rosterKey)return;
   }
   finishRoomSetupRequest('',true);
  }catch(_){} // An incomplete packet cannot acknowledge an edit.
@@ -3007,7 +3012,7 @@ function validatePreset(p){
  const roster=p.roster.map((s,i)=>{if((i===0?s.kind!=='human':!['bot','local'].includes(s.kind))||!Number.isInteger(s.team)||s.team<0||s.team>4||!cleanPilotName(s.name)||s.kind==='bot'&&!Object.prototype.hasOwnProperty.call(DIFFICULTY,s.difficulty))throw Error('Invalid preset participant.');if(s.kind==='local')local++;if(s.colorIndex!=null&&(!Number.isInteger(s.colorIndex)||s.colorIndex< -1||s.colorIndex>7))throw Error('Invalid tank color.');return{kind:s.kind,name:cleanPilotName(s.name),colorIndex:rules.teamMode==='ffa'?(s.colorIndex??-1):undefined,team:rules.teamMode==='ffa'?0:s.team,...(s.kind==='bot'?{difficulty:s.difficulty}:{})};});
  if(local>1)throw Error('Only one secondary local player is supported.');normalizeRoomTeams(roster,rules);return{rules,roster};
 }
-function snapshotPreset(){const r=roomData(),me=roomMember(localPlayerID(),r);const ffa=currentRules().teamMode==='ffa';return{rules:validateRoomRules(currentRules()),roster:[{name:me.name,kind:'human',team:me.team,...(ffa?{colorIndex:me.colorIndex??-1}:{})},...r.players.filter(p=>p.kind==='bot'||p.kind==='local'&&p.owner===me.id).map(({name,kind,team,difficulty,colorIndex})=>({name,kind,team,difficulty,...(ffa?{colorIndex:colorIndex??-1}:{})}))]};}
+function snapshotPreset(){const r=roomData(),me=roomMember(localPlayerID(),r);const ffa=currentRules().teamMode==='ffa';return{rules:validateRoomRules(currentRules()),roster:[{name:me.name,kind:'human',team:me.team,...(ffa?{colorIndex:me.colorIndex??-1}:{})},...orderedRoster(r.players).filter(p=>p.kind==='bot'||p.kind==='local'&&p.owner===me.id).map(({name,kind,team,difficulty,colorIndex})=>({name,kind,team,difficulty,...(ffa?{colorIndex:colorIndex??-1}:{})}))]};}
 function canLoadPreset(){return roomModeEditable()&&!roomData()?.spectators?.length&&(mode!=='online'||!roomData().players.some(p=>p.id!==online.id&&p.kind!=='bot'&&p.kind!=='local'));}
 function renderPresets(){
  const select=$('presetSelect');const chosen=select.value;select.replaceChildren();const builtins=builtinPresets();for(const [group,items,prefix]of [['QUICK SETUPS',builtins,'builtin'],['SAVED ON THIS DEVICE',savedPresets,'saved']]){const opt=document.createElement('optgroup');opt.label=group;items.forEach((p,i)=>{const o=document.createElement('option');o.value=prefix+':'+i;o.textContent=p.name;opt.append(o);});select.append(opt);}

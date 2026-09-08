@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),{readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 const clone=x=>JSON.parse(JSON.stringify(x));
 function boot(storage=new Map(),touchUI=false){
@@ -9,7 +9,7 @@ function boot(storage=new Map(),touchUI=false){
  const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:{rapid:{},shield:{},laser:{}},DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
  localStorage:{getItem:key=>storage.get(key)||null,setItem(key,value){if(s.storageFails)throw Error('Storage unavailable');storage.set(key,value);s.writes++;}},writes:0,
  $,document:{querySelectorAll:selector=>selector.endsWith(':checked')?toggles.filter(c=>c.checked):toggles},Theme:{colors:['a','b','c','d','e','f','g','h']},teamName:(n,r)=>r.teamNames[n-1],featureNotice(id,message){$(id).textContent=message;},updateRuleHelp(){},renderPowerLegend(){},isRoomEditable:()=>s.editable!==false,roomData:()=>({rules:s.localRoom.rules,players:s.localRoom.players.filter(p=>!p.spectating)}),roomModeEditable:()=>s.editable!==false,rejectRoomMode(message){s.rejected=message;},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>[...r.players,...(r.spectators||[])],setLocalRules(r){s.localRoom.rules=s.validateRoomRules(r);s.persistLocalRoomRules(r);},setTimeout(){return 1;},clearTimeout(){},syncFeatureSummary(){},syncRoomModePicker(){},sendOnline(message){s.sent=message;return !s.sendFails;},closeFeature(){s.closed=true;}};
- vm.createContext(s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
+ vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
  for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.loadLocalRoomRules();return {s,$,storage,toggles};
 }
@@ -103,4 +103,23 @@ test('denied storage reads use device defaults and an invalid selected profile d
  const denied=new Map();denied.get=()=>{throw Error('Storage access denied');};assert.equal(boot(denied,true).s.localRoom.rules.mapSize,'compact');
  const rules={...boot().s.defaultModeRules('koth'),scoreTarget:66},storage=new Map([['leqra.roomSetup.v2',JSON.stringify({version:2,selectedMode:'survival',modes:{survival:{scoreTarget:-1},koth:rules},roster:null})]]),s=boot(storage).s;
  assert.equal(s.localRoom.rules.mode,'elimination');assert.equal(s.rulesForRoomMode('koth').scoreTarget,66);
+});
+
+
+test('saved roster and unshared/preset exports retain insertion order despite reused seat IDs',()=>{
+ const {s,storage}=boot();
+ const host=pilot({id:4,member:10,name:'HOST'}),older=bot({id:5,member:20,name:'OLDER'}),newer=bot({id:0,member:30,name:'NEWER',difficulty:'easy'});
+ s.localRoom.self=4;s.localRoom.players=[newer,host,older];assert.equal(s.persistLocalRoomRules(),true);
+ assert.deepEqual(JSON.parse(storage.get('leqra.roomSetup.v2')).roster.map(p=>p.name),['HOST','OLDER','NEWER']);
+ const restored=boot(storage).s;restored.restoreSavedLocalRoster();assert.deepEqual(Array.from(restored.localRoom.players,p=>p.name),['HOST','OLDER','NEWER']);
+ s.phase='menu';s.location={protocol:'https:'};s.MAX_ROOM_RUNES=128;s.$('localRoomName').value='ROOM';s.connectOnline=request=>s.published=request;
+ for(const name of ['cleanRoomCode','validRoomCode','shareLocalRoom'])vm.runInContext(declaration(name),s);
+ s.shareLocalRoom();assert.deepEqual(Array.from(s.published.roster,p=>p.name),['HOST','OLDER','NEWER']);
+ s.mode='online';s.online.id=4;s.online.code='ROOM';
+ const room={host:4,code:'ROOM',phase:'lobby',rules:s.localRoom.rules,players:[newer,host,older],spectators:[]};
+ s.roomData=()=>room;s.roomMember=id=>room.players.find(p=>p.id===id);s.walls=[];s.cols=0;s.rows=0;
+ for(const name of ['snapshotPreset','localSnapshotFromOnline'])vm.runInContext(declaration(name),s);
+ assert.deepEqual(Array.from(s.snapshotPreset().roster,p=>p.name),['HOST','OLDER','NEWER']);
+ const local=s.localSnapshotFromOnline();assert.deepEqual(Array.from(local.players,p=>p.name),['HOST','OLDER','NEWER']);assert.equal(local.nextMember,30);
+ s.rememberRenderedRoomSetup(room);assert.deepEqual(JSON.parse(storage.get('leqra.roomSetup.v2')).roster.map(p=>p.name),['HOST','OLDER','NEWER']);
 });
