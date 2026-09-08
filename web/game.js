@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.31.0';
+const GAME_VERSION='4.32.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -1309,8 +1309,6 @@ function renderLineup(force=false){
 }
 function updateHUD(force=false){
  syncPauseButton();
- setText('arenaStatus',phase==='menu'?'READY ROOM':phase==='paused'?'PAUSED':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'LIVE ARENA');
- setText('roundLabel','ROUND '+String(round).padStart(2,'0'));const secs=Math.ceil(roundClock);setText('clock',String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0'));$('clock').classList.toggle('urgent',secs<=15);
  renderLineup(force);
  const player=controlledTank(),p2=tanks.find(t=>t.id===secondaryID());
  $('localLoadouts').classList.toggle('two-pilots',!!p2);document.body.classList.toggle('two-local-pilots',!!p2);
@@ -1357,7 +1355,9 @@ function drawCachedTankHull(t){
  }else renderStats.hullHits++;
  ctx.drawImage(image,-24,-24,48,48);
 }
-const tankPowerBadgeCache=new Map(),tankPowerBadgeScratch=[];
+const tankPowerBadgeCache=new Map(),tankPowerBadgeScratch=[],tankPowerBadgePositionScratch=[];
+const tankPowerBadgePositionPool=Array.from({length:5},()=>({x:0,y:0}));
+const tankPowerBadgeDirections=(()=>{const a=Math.SQRT1_2,b=Math.cos(Math.PI/8),c=Math.sin(Math.PI/8);return[[1,0],[b,c],[a,a],[c,b],[0,1],[-c,b],[-a,a],[-b,c],[-1,0],[-b,-c],[-a,-a],[-c,-b],[0,-1],[c,-b],[a,-a],[b,-c]];})();
 function activeTankPowerBadges(t,out=[]){
  out.length=0;
  if(t?.power&&t.powerTime>0&&POWER[t.power])out.push(t.power);
@@ -1373,27 +1373,41 @@ function tankPowerBadgeImage(kind){
  const def=POWER[kind];c.translate(32,32);c.fillStyle='#0b141be8';c.strokeStyle=def.color;c.lineWidth=3;c.beginPath();c.arc(0,0,27,0,TAU);c.fill();c.stroke();c.save();c.scale(1.38,1.38);powerIcon(kind,c);c.restore();
  if(tankPowerBadgeCache.size>=16)tankPowerBadgeCache.delete(tankPowerBadgeCache.keys().next().value);tankPowerBadgeCache.set(kind,image);return image;
 }
-function tankStatusLayout(t,count=0){
- const z=Math.max(1,.82/Math.max(.05,scale)),size=26*z,gap=3*z,font=Math.max(9,7/scale);
- const labelHeight=count?Math.max(13,font*1.25+3):13,labelBaseline=count?font+.5:9.5;
- let labelY=t.y-Math.max(40,shieldCount(t)*4+26),x=t.x;
- if(count){
-  const clearance=Math.max(27,shieldCount(t)*4+26),width=count*size+(count-1)*gap,margin=2*z;
-  labelY=t.y-clearance-labelHeight-gap-size;
-  // Near the top wall, put the whole name/status stack below the hull instead of clipping it.
-  if(labelY<margin)labelY=t.y+clearance;
-  x=Math.max(width/2+margin,Math.min(W-width/2-margin,x));
- }
- return{x,labelY,labelHeight,labelBaseline,badgeY:labelY+labelHeight+gap,size,gap,font};
+function tankStatusLayout(t){
+ const zoom=Math.max(.05,scale),z=Math.max(1,.82/zoom),size=26*z,gap=3*z,font=Math.max(9,7/zoom),labelHeight=Math.max(13,font*1.25+3),margin=2*z;
+ // Reserve the maximum shield-ring clearance even when unshielded. Picking up or
+ // losing effects must never change the name's anchor, dimensions or baseline.
+ ctx.save();ctx.font='bold '+font+'px ui-monospace,SFMono-Regular,Consolas,monospace';const labelWidth=measureLabel(t.name)+10;ctx.restore();
+ const x=clamp(t.x,labelWidth/2+margin,Math.max(labelWidth/2+margin,W-labelWidth/2-margin));
+ let labelY=t.y-46-labelHeight;if(labelY<margin)labelY=t.y+46;
+ labelY=clamp(labelY,margin,Math.max(margin,H-labelHeight-margin));
+ return{x,labelY,labelWidth,labelHeight,labelBaseline:font+.5,size,gap,font,margin};
 }
-function drawTankPowerBadges(t){
+function tankPowerBadgePositions(t,layout,count,out=tankPowerBadgePositionScratch){
+ const {size,gap,margin}=layout,half=size/2,step=size+gap;
+ const radius=Math.max(46+half*Math.SQRT2+gap,Math.SQRT2*step),cy=Math.max(t.y,layout.labelY+layout.labelHeight+gap+half);
+ out.length=0;
+ // Start on the right below the name, then proceed clockwise over the lower arc.
+ // At maze edges, skip clipped or occupied slots and use the next clear orbit.
+ for(let ring=0;ring<8&&out.length<count;ring++)for(let slot=0;slot<(ring?16:8)&&out.length<count;slot++){
+  const direction=tankPowerBadgeDirections[ring?slot:slot*2],dx=direction[0],dy=direction[1];
+  const r=radius+ring*step*Math.SQRT2,x=t.x+dx*r-half,y=cy+dy*r-half;
+  if(x<margin||y<margin||x+size>W-margin||y+size>H-margin)continue;
+  if(x<layout.x+layout.labelWidth/2+gap&&x+size>layout.x-layout.labelWidth/2-gap&&y<layout.labelY+layout.labelHeight+gap&&y+size>layout.labelY-gap)continue;
+  const nearX=Math.max(x-t.x,0,t.x-x-size),nearY=Math.max(y-t.y,0,t.y-y-size);
+  if(nearX*nearX+nearY*nearY<46*46)continue;
+  let occupied=false;for(const p of out)if(x<p.x+step&&x+step>p.x&&y<p.y+step&&y+step>p.y){occupied=true;break;}if(occupied)continue;
+  const point=tankPowerBadgePositionPool[out.length];point.x=x;point.y=y;out.push(point);
+ }
+ return out;
+}
+function drawTankPowerBadges(t,layout){
  if(!t?.alive)return;
  // Local pilots already have the full loadout HUD. Bots and remote online tanks get larger cached on-tank icons.
  const remoteOrBot=mode==='online'?(t.id!==localPlayerID()&&t.id!==secondaryID()):!t.human;if(!remoteOrBot)return;
  const kinds=activeTankPowerBadges(t,tankPowerBadgeScratch);if(!kinds.length)return;
- const layout=tankStatusLayout(t,kinds.length),{size,gap,badgeY}=layout,x=layout.x-(kinds.length*size+(kinds.length-1)*gap)/2;
- // One world-aligned row below the name keeps both the opaque label and the hull clear of every icon.
- ctx.save();for(let i=0;i<kinds.length;i++)ctx.drawImage(tankPowerBadgeImage(kinds[i]),x+i*(size+gap),badgeY,size,size);ctx.restore();return layout;
+ layout=layout||tankStatusLayout(t);const positions=tankPowerBadgePositions(t,layout,kinds.length),size=layout.size;
+ ctx.save();for(let i=0;i<positions.length;i++)ctx.drawImage(tankPowerBadgeImage(kinds[i]),positions[i].x,positions[i].y,size,size);ctx.restore();
 }
 function drawTank(t){
  if(!t.alive){ctx.save();ctx.translate(t.x,t.y);ctx.rotate(t.angle);ctx.globalAlpha=.6;ctx.fillStyle=paintColor('#091116');roundRect(ctx,-18,-16,36,32,5);ctx.fill();ctx.strokeStyle=paintColor('#46545a');ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-8,-8);ctx.lineTo(8,8);ctx.moveTo(8,-8);ctx.lineTo(-8,8);ctx.stroke();ctx.restore();return;}
@@ -1413,8 +1427,8 @@ function drawTank(t){
  drawCachedTankHull(t);
  const recoil=t.recoil*4;ctx.fillStyle=paintColor('#0a121a');roundRect(ctx,4-recoil,-4.5,26,9,2);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.fillRect(5-recoil,-3,23,6);ctx.fillStyle=paintColor('#e4f0d98a');ctx.fillRect(26-recoil,-3.5,3,7);
  ctx.fillStyle=paintColor('#00000042');ctx.beginPath();ctx.arc(0,2,9.5,0,TAU);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.beginPath();ctx.arc(0,0,9,0,TAU);ctx.fill();ctx.strokeStyle=paintColor('#09121970');ctx.lineWidth=2;ctx.stroke();ctx.fillStyle=paintColor('#172124');ctx.beginPath();ctx.arc(-1,0,3.2,0,TAU);ctx.fill();ctx.restore();
- const status=drawTankPowerBadges(t)||tankStatusLayout(t);
- ctx.save();ctx.font='bold '+status.font+'px ui-monospace,SFMono-Regular,Consolas,monospace';ctx.textAlign='center';const label=t.name;const width=measureLabel(label)+10;ctx.fillStyle=paintColor('#0e171ddb');roundRect(ctx,status.x-width/2,status.labelY,width,status.labelHeight,3);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.fillText(label,status.x,status.labelY+status.labelBaseline);ctx.restore();
+ const status=tankStatusLayout(t);drawTankPowerBadges(t,status);
+ ctx.save();ctx.font='bold '+status.font+'px ui-monospace,SFMono-Regular,Consolas,monospace';ctx.textAlign='center';const label=t.name,width=status.labelWidth;ctx.fillStyle=paintColor('#0e171ddb');roundRect(ctx,status.x-width/2,status.labelY,width,status.labelHeight,3);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.fillText(label,status.x,status.labelY+status.labelBaseline);ctx.restore();
 }
 function powerIcon(kind,c=ctx){
  const def=POWER[kind];if(!def)return;c.fillStyle=def.color;c.strokeStyle=def.color;
@@ -2135,7 +2149,6 @@ function renderOnlineMotion(dt,now){
 }
 
 function onlineHUD(){
- setText('arenaStatus',phase==='onlineLobby'?'ROOM LOBBY':phase==='playing'?'ONLINE ARENA':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'ONLINE');
  setText('roomBtn',online.code||'ROOM');$('roomBtn').title='Room '+online.code+' · '+online.latency+' ms';$('roomBtn').hidden=!online.code;
  const stale=performance.now()-(online.snapshots.at(-1)?.received||0)>250;
  setText('bestInline',online.connected?(stale?'WEAK LINK · ':'')+(online.latency||'—')+' MS':'CONNECT');
@@ -2412,7 +2425,7 @@ function roomModeEditable(){return isRoomEditable()&&(mode!=='online'||online.co
 function rulesForRoomMode(value){
  if(!ROOM_MODES.some(m=>m.id===value))throw Error('Choose an available game mode.');
  const r=currentRules();if(value===r.mode)return validateRoomRules(r);
- return validateRoomRules({...r,mode:value,teamMode:value==='ctf'||value==='survival'?'teams':r.teamMode,scoreTarget:value==='survival'?10:value==='koth'?30:value==='ctf'?3:5,timeLimit:value==='elimination'||value==='survival'?75:180});
+ return validateRoomRules({...r,mode:value,teamMode:value==='ctf'||value==='survival'?'teams':r.teamMode,scoreTarget:value==='survival'?15:value==='koth'?30:value==='ctf'?3:5,timeLimit:value==='elimination'||value==='survival'?75:180});
 }
 function clearRoomModePending(){if(pendingRoomMode)clearTimeout(pendingRoomMode.timer);pendingRoomMode=null;}
 function paintRoomModeChoice(value){
@@ -2604,7 +2617,7 @@ function builtinPresets(){
  {name:'4-tank Free-for-all',rules:{...defaultRoomRules(),teamMode:'ffa',mapSize:'large'},roster:[{...human,team:0},...ffaBots.slice(0,3).map(n=>bot(n,0))]},
  {name:'8-tank Free-for-all',rules:{...defaultRoomRules(),teamMode:'ffa',mapSize:'giant'},roster:[{...human,team:0},...ffaBots.map(n=>bot(n,0))]},
  {name:'Two humans vs. bots',rules:{...defaultRoomRules(),teamMode:'teams'},roster:[human,local,bot('RUST',2),bot('VAPOR',2)]},
- {name:'Survival',rules:{...defaultRoomRules(),teamMode:'teams',mode:'survival',scoreTarget:10,timeLimit:75},roster:[human,bot('EMBER',1,'hard')]},
+ {name:'Survival',rules:{...defaultRoomRules(),teamMode:'teams',mode:'survival',scoreTarget:15,timeLimit:75},roster:[human,bot('EMBER',1,'hard')]},
  {name:'Capture the Flag',rules:{...defaultRoomRules(),teamMode:'teams',mode:'ctf',scoreTarget:3,timeLimit:180},roster:[human,bot('EMBER',1),bot('RUST',2),bot('VAPOR',2)]},
  {name:'King of the Hill',rules:{...defaultRoomRules(),mode:'koth',teamMode:'ffa',scoreTarget:30,timeLimit:180},roster:[{...human,team:0},bot('RUST',0),bot('VAPOR',0),bot('EMBER',0)]}];
 }
@@ -2842,13 +2855,19 @@ function drawFlags(){
  }
 }
 function updateObjectiveHUD(){
- const o=objectiveState(),on=(objectiveMode()||survivalMode())&&!['menu','onlineLobby','matchOver'].includes(phase);$('objectiveBar').hidden=!on;
- if(on&&o?.survival){const state=o.survival;$('objectiveModeLabel').textContent='WAVE '+state.wave+' / '+state.waveTarget;$('objectiveStatus').textContent=state.status==='break'?'SQUAD RETURNS IN '+Math.ceil(state.breakTime)+'s':state.enemiesRemaining+' ENEM'+(state.enemiesRemaining===1?'Y':'IES')+' LEFT'+(state.boss?' · '+survivalBossName(state.wave):'');$('roundLabel').textContent='WAVE '+String(state.wave).padStart(2,'0');$('arenaStatus').textContent=state.status==='break'?'BETWEEN WAVES':'SURVIVAL';if(state.status==='break'){$('clock').textContent=Math.ceil(state.breakTime)+'s';$('clock').classList.remove('urgent');}}
- else if(on&&o){$('objectiveModeLabel').textContent=o.mode==='ctf'?'CAPTURE THE FLAG':'KING OF THE HILL';$('objectiveStatus').textContent=o.mode==='ctf'?o.flags.map(f=>shortTeamName(f.team)+': '+(f.home?'HOME':f.carrier>=0?'TAKEN':'DROPPED')).join(' · '):o.contested?'CONTESTED · NO POINTS':o.owner>0?teamName(o.owner)+' CONTROLS':o.owner<0?(tanks.find(t=>t.id===-o.owner-1)?.name||'PILOT')+' CONTROLS':'ENTER THE HILL';}
- if(on&&o?.suddenDeath){$('objectiveModeLabel').textContent='SUDDEN DEATH';$('objectiveStatus').textContent='LAST SIDE STANDING · NO RESPAWNS';$('clock').textContent='SD';$('clock').classList.add('urgent');$('announcer').hidden=true;}
+ const o=objectiveState(),on=(objectiveMode()||survivalMode())&&!['menu','onlineLobby','matchOver'].includes(phase),secs=Math.ceil(roundClock);
+ // Compute the final labels before touching the DOM. Generic and mode-specific
+ // HUD passes used to replace each other's text on every refresh.
+ let status=mode==='online'?(phase==='onlineLobby'?'ROOM LOBBY':phase==='playing'?'ONLINE ARENA':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'ONLINE'):(phase==='menu'?'READY ROOM':phase==='paused'?'PAUSED':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'LIVE ARENA');
+ let label='ROUND '+String(round).padStart(2,'0'),clock=String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0'),urgent=secs<=15;
+ if($('objectiveBar').hidden===on)$('objectiveBar').hidden=!on;
+ if(on&&o?.suddenDeath){setText('objectiveModeLabel','SUDDEN DEATH');setText('objectiveStatus','LAST SIDE STANDING · NO RESPAWNS');clock='SD';urgent=true;$('announcer').hidden=true;}
+ else if(on&&o?.survival){const state=o.survival;setText('objectiveModeLabel','WAVE '+state.wave+' / '+state.waveTarget);setText('objectiveStatus',state.status==='break'?'SQUAD RETURNS IN '+Math.ceil(state.breakTime)+'s':state.enemiesRemaining+' ENEM'+(state.enemiesRemaining===1?'Y':'IES')+' LEFT'+(state.boss?' · '+survivalBossName(state.wave):''));label='WAVE '+String(state.wave).padStart(2,'0');status=phase==='paused'?'PAUSED':state.status==='break'?'BETWEEN WAVES':'SURVIVAL';if(state.status==='break'){clock=Math.ceil(state.breakTime)+'s';urgent=false;}}
+ else if(on&&o){setText('objectiveModeLabel',o.mode==='ctf'?'CAPTURE THE FLAG':'KING OF THE HILL');setText('objectiveStatus',o.mode==='ctf'?o.flags.map(f=>shortTeamName(f.team)+': '+(f.home?'HOME':f.carrier>=0?'TAKEN':'DROPPED')).join(' · '):o.contested?'CONTESTED · NO POINTS':o.owner>0?teamName(o.owner)+' CONTROLS':o.owner<0?(tanks.find(t=>t.id===-o.owner-1)?.name||'PILOT')+' CONTROLS':'ENTER THE HILL');}
  $('objectiveBar').classList.toggle('sudden-death',!!o?.suddenDeath);
- if(mode!=='online')setText('bestInline','');document.querySelector('.sidebar .target').textContent=displayScoreTarget();
- if(objectiveMode()){$('roundLabel').textContent=currentRules().mode==='ctf'?'FLAGS':'HILL';if(phase==='countdown')$('announceSub').textContent=modeInstructions();}
+ if(mode!=='online')setText('bestInline','');const target=document.querySelector('.sidebar .target'),targetText=String(displayScoreTarget());if(target.textContent!==targetText)target.textContent=targetText;
+ if(objectiveMode()){label=currentRules().mode==='ctf'?'FLAGS':'HILL';if(phase==='countdown')setText('announceSub',modeInstructions());}
+ setText('arenaStatus',status);setText('roundLabel',label);setText('clock',clock);$('clock').classList.toggle('urgent',urgent);
 }
 function liveFeedbackTank(t){
  if(mode!=='online')return t;

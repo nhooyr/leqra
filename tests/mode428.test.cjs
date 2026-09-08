@@ -16,7 +16,7 @@ function boot({online=false,count=4}={}){
 }
 test('home selection applies mode defaults while preserving map, power-ups and team identity',()=>{
  const {s,$}=boot();s.localRoom.rules={...s.localRoom.rules,mapSize:'huge',pickupRate:'slow',friendlyFire:true,respawnSeconds:7,teamNames:['A','B','C','D'],weapons:['shield']};
- for(const [mode,score,time,team]of[['ctf',3,180,'teams'],['koth',30,180,'teams'],['survival',10,75,'teams'],['elimination',5,75,'teams']]){
+ for(const [mode,score,time,team]of[['ctf',3,180,'teams'],['koth',30,180,'teams'],['survival',15,75,'teams'],['elimination',5,75,'teams']]){
   assert.equal(s.selectRoomMode(mode),true);const r=s.currentRules();assert.equal(r.mode,mode);assert.equal(r.scoreTarget,score);assert.equal(r.timeLimit,time);assert.equal(r.teamMode,team);assert.equal(r.mapSize,'huge');assert.equal(r.pickupRate,'slow');assert.equal(r.respawnSeconds,7);assert.equal(r.friendlyFire,true);assert.deepEqual(Array.from(r.weapons),['shield']);assert.deepEqual(Array.from(r.teamNames),['A','B','C','D']);assert.equal(s.preview.regenerateMaze,false);assert.equal(s.preview.resetPickups,false);assert.equal(s.persisted.mode,mode);assert.equal(s.choices.find(b=>b.getAttribute('aria-checked')==='true').dataset.roomMode,r.mode);
  }
 });
@@ -114,9 +114,9 @@ test('lobby selectors follow mode in reading order and replace the Rules fields'
  const index=readFileSync(path.join(__dirname,'../web/index.html'),'utf8');assert.match(index,/id="startRoomBtn"[^>]*><span>START BUTTON<\/span>/);assert.match(declaration('renderOnlineRoom'),/firstElementChild.textContent='START BUTTON'/);
 });
 
-test('Hill defaults use 30 points while saved and current custom targets survive setup edits',()=>{
+test('Hill and Survival defaults agree with presets while custom targets survive setup edits',()=>{
  const {s}=boot();Object.assign(s,{roomMember:()=>({name:'P1'}),savedLocalCallsign:()=> 'P2'});vm.runInContext(declaration('builtinPresets'),s);
- assert.equal(s.builtinPresets().find(p=>p.rules.mode==='koth').rules.scoreTarget,30);assert.equal(s.rulesForRoomMode('koth').scoreTarget,30);
+ assert.equal(s.builtinPresets().find(p=>p.rules.mode==='survival').rules.scoreTarget,15);assert.equal(s.builtinPresets().find(p=>p.rules.mode==='koth').rules.scoreTarget,30);assert.equal(s.rulesForRoomMode('koth').scoreTarget,30);
  s.localRoom.rules=s.validateRoomRules({...s.currentRules(),mode:'koth',scoreTarget:88,timeLimit:360});s.selectRoomMode('koth');s.selectRoomSetting('mapSize','huge');s.selectRoomSetting('teamMode','teams');assert.equal(s.currentRules().scoreTarget,88);assert.equal(s.currentRules().timeLimit,360);
  assert.match(source,/key:'koth-3'[^\n]+target:30,seconds:180/);assert.doesNotMatch(source,/First to 60 hill points/);
 });

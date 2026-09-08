@@ -1,0 +1,13 @@
+{
+  "goTopLevelPassed": 559,
+  "goIncludingSubtestsPassed": 1079,
+  "failed": [],
+  "packages": [
+    {
+      "Time": "2026-09-08T00:12:29.207636195+09:00",
+      "Action": "pass",
+      "Package": "leqra",
+      "Elapsed": 13.689
+    }
+  ]
+}
