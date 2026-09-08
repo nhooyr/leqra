@@ -1,0 +1,36 @@
+goos: linux
+goarch: amd64
+pkg: leqra
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkSpatial441/movement/candidates-9         	 3170674	        88.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/candidates-9         	 3059596	        83.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/candidates-9         	 2989825	        87.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/candidates-9         	 3190742	        79.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/candidates-9         	 3035181	        78.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/ray-9                	 1000000	       201.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/ray-9                	 1000000	       227.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/ray-9                	 1090555	       188.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/ray-9                	 1000000	       202.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/movement/ray-9                	  927610	       223.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/candidates-9           	  995596	       231.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/candidates-9           	 1000000	       211.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/candidates-9           	 1000000	       209.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/candidates-9           	 1000000	       206.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/candidates-9           	 1000000	       208.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/ray-9                  	  293864	       744.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/ray-9                  	  315693	       807.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/ray-9                  	  323877	       793.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/ray-9                  	  335371	       744.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/aiming/ray-9                  	  313459	       778.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/candidates-9            	  585564	       464.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/candidates-9            	  587826	       423.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/candidates-9            	  509710	       412.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/candidates-9            	  574292	       459.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/candidates-9            	  482653	       427.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/ray-9                   	   86935	      2895 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/ray-9                   	   82308	      2808 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/ray-9                   	   88836	      2828 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/ray-9                   	   85216	      2881 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSpatial441/laser/ray-9                   	   82782	      2784 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	leqra	7.992s

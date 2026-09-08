@@ -1,0 +1,382 @@
+{
+  "baseline": {
+    "version": "4.40.0",
+    "commit": "de7ec31",
+    "source": "web/game.js"
+  },
+  "updated": {
+    "version": "4.41.0",
+    "source": "web/game.js"
+  },
+  "method": {
+    "sampleRateHz": 22050,
+    "encoding": "Actual production native fallback WAVs, mono signed 16-bit PCM.",
+    "mix": "Decode PCM, divide by 32768 and sum the two death layers at their scheduled 15 ms offset in floating point. No sample clipping, limiter, hardware or browser output processing is applied to this measurement.",
+    "rmsWindow": "Each complete effect uses its own full duration: ricochet 992 samples (~45 ms), explosion 6174 samples (280 ms). RMS ratios compare signal amplitude over those different active windows, not total energy or perceived loudness.",
+    "peakUnits": "Linear full-scale amplitude; combined-layer peak > 1 can overrun native output headroom even if each encoded layer is individually below 1."
+  },
+  "measurements": [
+    {
+      "version": "before",
+      "sliderPercent": 50,
+      "bounce": {
+        "combinedLayerPeak": 0.107391357421875,
+        "rms": 0.03826234082898916,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 1.23046875,
+        "rms": 0.2898399750858197,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 7.575071697292099
+    },
+    {
+      "version": "after",
+      "sliderPercent": 50,
+      "bounce": {
+        "combinedLayerPeak": 0.417572021484375,
+        "rms": 0.1488017608816937,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 0.653472900390625,
+        "rms": 0.15972426059849304,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 1.073403027303443
+    },
+    {
+      "version": "before",
+      "sliderPercent": 75,
+      "bounce": {
+        "combinedLayerPeak": 0.16107177734375,
+        "rms": 0.0573954222927357,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 1.356353759765625,
+        "rms": 0.3112850129063847,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 5.423516379385238
+    },
+    {
+      "version": "after",
+      "sliderPercent": 75,
+      "bounce": {
+        "combinedLayerPeak": 0.623046875,
+        "rms": 0.22202122257422327,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 0.700958251953125,
+        "rms": 0.1713332425914089,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 0.7716975909099454
+    },
+    {
+      "version": "before",
+      "sliderPercent": 99,
+      "bounce": {
+        "combinedLayerPeak": 0.212615966796875,
+        "rms": 0.07576108682524452,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 1.39422607421875,
+        "rms": 0.3183195984597146,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 4.201623970811974
+    },
+    {
+      "version": "after",
+      "sliderPercent": 99,
+      "bounce": {
+        "combinedLayerPeak": 0.713714599609375,
+        "rms": 0.25433231356976876,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 0.71795654296875,
+        "rms": 0.1754918983091937,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 0.6900102304973235
+    },
+    {
+      "version": "before",
+      "sliderPercent": 100,
+      "bounce": {
+        "combinedLayerPeak": 0.214752197265625,
+        "rms": 0.07652612163842688,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 1.395263671875,
+        "rms": 0.3185145964599766,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 4.162168285032198
+    },
+    {
+      "version": "after",
+      "sliderPercent": 100,
+      "bounce": {
+        "combinedLayerPeak": 0.715850830078125,
+        "rms": 0.25508863560727235,
+        "sampleCount": 992,
+        "durationSeconds": 0.04498866213151927,
+        "layers": 1
+      },
+      "death": {
+        "combinedLayerPeak": 0.718475341796875,
+        "rms": 0.17561012326562925,
+        "sampleCount": 6174,
+        "durationSeconds": 0.28,
+        "layers": 2
+      },
+      "deathToBounceRmsRatio": 0.6884278589971915
+    }
+  ],
+  "webAudioRecipeLevels": {
+    "ricochet": {
+      "before": 0.009,
+      "after": 0.035
+    },
+    "deathNoise": {
+      "before": 0.15,
+      "after": 0.065
+    },
+    "deathBass": {
+      "before": 0.06,
+      "after": 0.035
+    },
+    "master50": 2,
+    "master100": 4,
+    "processor": "Existing -3 dB threshold, 20:1 shared peak compressor with makeup compensation is unchanged."
+  },
+  "limits": [
+    "These are generated PCM and recipe-level measurements, not listening tests or real browser Web Audio DSP measurements.",
+    "The native explosion now shares one whole-wave gain budget. Unrelated simultaneous HTML audio elements can still be mixed differently by the browser or operating system.",
+    "No physical Safari/mobile playback verification was available."
+  ],
+  "layeredCueCheck": {
+    "baselineCommit": "04fc809",
+    "method": "Same actual production PCM decode and floating-point summation as above, including each scheduled offset. This additional check compares the v4.41 recipe draft before and after the shared native weapon gain budget; the original v4.40 baseline above remains unchanged.",
+    "measurements": [
+      {
+        "version": "beforeSharedWeaponBudget",
+        "kind": "laser",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 1.33343505859375,
+        "rms": 0.2981325233543843,
+        "layers": 2,
+        "sampleCount": 5071,
+        "durationSeconds": 0.22997732426303855,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "beforeSharedWeaponBudget",
+        "kind": "laser",
+        "local": false,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 1.204071044921875,
+        "rms": 0.27061288963672137,
+        "layers": 2,
+        "sampleCount": 5071,
+        "durationSeconds": 0.22997732426303855,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "beforeSharedWeaponBudget",
+        "kind": "cannon",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 1.117828369140625,
+        "rms": 0.2737443628172872,
+        "layers": 2,
+        "sampleCount": 5292,
+        "durationSeconds": 0.24,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "beforeSharedWeaponBudget",
+        "kind": "cannon",
+        "local": false,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 1.035247802734375,
+        "rms": 0.25522183848646435,
+        "layers": 2,
+        "sampleCount": 5292,
+        "durationSeconds": 0.24,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "beforeSharedWeaponBudget",
+        "kind": "pickup",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.8966064453125,
+        "rms": 0.2973519132244693,
+        "layers": 3,
+        "sampleCount": 6395,
+        "durationSeconds": 0.29002267573696144,
+        "layerOffsetsMs": [
+          0,
+          80,
+          150
+        ]
+      },
+      {
+        "version": "beforeSharedWeaponBudget",
+        "kind": "chat",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.76531982421875,
+        "rms": 0.26555310072580657,
+        "layers": 2,
+        "sampleCount": 3417,
+        "durationSeconds": 0.15496598639455783,
+        "layerOffsetsMs": [
+          0,
+          65
+        ]
+      },
+      {
+        "version": "afterSharedWeaponBudget",
+        "kind": "laser",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.786224365234375,
+        "rms": 0.17721505922947509,
+        "layers": 2,
+        "sampleCount": 5071,
+        "durationSeconds": 0.22997732426303855,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "afterSharedWeaponBudget",
+        "kind": "laser",
+        "local": false,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.77386474609375,
+        "rms": 0.17458343741109522,
+        "layers": 2,
+        "sampleCount": 5071,
+        "durationSeconds": 0.22997732426303855,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "afterSharedWeaponBudget",
+        "kind": "cannon",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.681976318359375,
+        "rms": 0.17056005295946144,
+        "layers": 2,
+        "sampleCount": 5292,
+        "durationSeconds": 0.24,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "afterSharedWeaponBudget",
+        "kind": "cannon",
+        "local": false,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.666778564453125,
+        "rms": 0.16624057475003248,
+        "layers": 2,
+        "sampleCount": 5292,
+        "durationSeconds": 0.24,
+        "layerOffsetsMs": [
+          0,
+          0
+        ]
+      },
+      {
+        "version": "afterSharedWeaponBudget",
+        "kind": "pickup",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.8966064453125,
+        "rms": 0.2973519132244693,
+        "layers": 3,
+        "sampleCount": 6395,
+        "durationSeconds": 0.29002267573696144,
+        "layerOffsetsMs": [
+          0,
+          80,
+          150
+        ]
+      },
+      {
+        "version": "afterSharedWeaponBudget",
+        "kind": "chat",
+        "local": true,
+        "sliderPercent": 100,
+        "combinedLayerPeak": 0.76531982421875,
+        "rms": 0.26555310072580657,
+        "layers": 2,
+        "sampleCount": 3417,
+        "durationSeconds": 0.15496598639455783,
+        "layerOffsetsMs": [
+          0,
+          65
+        ]
+      }
+    ]
+  }
+}

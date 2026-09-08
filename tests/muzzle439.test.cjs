@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {boot:base,tank,declaration}=require('./godlike426-harness.cjs');
 function boot(power=null,offset=[27.2,20.49],wallList=[]){
  const s=base({cols:7,rows:7,wallList}),noop=()=>{};
- Object.assign(s,{time:0,bulletId:0,lastBounceSound:0,reduceMotion:true,mode:'room',shake:0,burst:noop,addRing:noop,tone:noop,toast:noop,boom:noop,updateHUD:noop,shotSound:noop,addLog:noop,blastEffect:noop,impactEffect:noop,objectiveMode:()=>false,survivalBreak:()=>false,clearTankAt:()=>true,recordLocalDeath(t,owner){s.deaths.push([t.id,owner]);},deaths:[]});
+ Object.assign(s,{time:0,bulletId:0,reduceMotion:true,mode:'room',shake:0,burst:noop,addRing:noop,tone:noop,shieldSound:noop,ricochetSound:noop,toast:noop,boom:noop,updateHUD:noop,shotSound:noop,addLog:noop,blastEffect:noop,impactEffect:noop,objectiveMode:()=>false,survivalBreak:()=>false,clearTankAt:()=>true,recordLocalDeath(t,owner){s.deaths.push([t.id,owner]);},deaths:[]});
  s.tanks=[tank(0,100,100,{human:true,power,charges:3,powerTime:10,machineRounds:180}),tank(1,100+offset[0],100+offset[1])];
  vm.createContext(s);for(const name of ['tankHit','powerCapacity','activeAmmo','fire','hurt','detonate','updateBullets','compactNotDead'])vm.runInContext(declaration(name),s);
  if(declaration('fire').includes('projectileTankImpact('))vm.runInContext(declaration('projectileTankImpact'),s);

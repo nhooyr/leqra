@@ -1,10 +1,10 @@
-# leqra v4.40.0 — current game protocol (protocol 1)
+# leqra v4.41.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.40.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.41.0**:
 
 ```json
-{"type":"server_hello","version":"4.40.0","protocol":1}
-{"type":"client_hello","version":"4.40.0","protocol":1}
+{"type":"server_hello","version":"4.41.0","protocol":1}
+{"type":"client_hello","version":"4.41.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.

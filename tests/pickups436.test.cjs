@@ -5,7 +5,7 @@ const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot(phase,breaking){
  const snapshot={generation:1,received:1000,tanks:[],bullets:[],tankMap:new Map(),bulletMap:new Map(),pickups:[{id:9,type:'laser',x:200,y:300,age:29.95,life:.05}],phaseTime:2,roundClock:60};
- const s={phase,tanks:[],bullets:[],pickups:[],phaseTime:0,roundClock:0,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),secondaryID:()=>undefined,survivalBreak:()=>breaking,Net:{STEP_MS:1000/60},moveTank(){},online:{id:0,connected:true,snapshots:[snapshot],buffer:{advance:()=>null},ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set(),shots:{prune(){},previews:new Map()},trails:new Map(),localBullets:new Map(),effectQueue:[]}};
+ const s={updateOnlineBounceSounds(){},phase,tanks:[],bullets:[],pickups:[],phaseTime:0,roundClock:0,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),secondaryID:()=>undefined,survivalBreak:()=>breaking,Net:{STEP_MS:1000/60},moveTank(){},online:{id:0,connected:true,snapshots:[snapshot],buffer:{advance:()=>null},ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set(),shots:{prune(){},previews:new Map()},trails:new Map(),localBullets:new Map(),effectQueue:[]}};
  vm.createContext(s);vm.runInContext(declaration('renderOnlineMotion'),s);return {s,snapshot};
 }
 test('online Survival hold snapshots keep nearly expired pickups visible without visual aging',()=>{
