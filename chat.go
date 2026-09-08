@@ -21,6 +21,7 @@ type ChatMessage struct {
 	Team       int    `json:"team"`
 	At         int64  `json:"at"`
 	Side       int    `json:"-"`
+	Home       *Room  `json:"-"` // Matchmaking party scope for the normal chat channel.
 }
 
 func matchChatSide(r *Room, p *Player) (int, bool) {
@@ -59,6 +60,32 @@ func opponentChatVisible(r *Room, viewer *Player, msg ChatMessage) bool {
 	return ok && side != msg.Side
 }
 
+func roomChatVisible(r *Room, viewer *Player, msg ChatMessage) bool {
+	if r == nil || viewer == nil {
+		return false
+	}
+	if r.Match == nil {
+		return true
+	}
+	return msg.Home != nil && viewer.Return != nil && viewer.Return.Home == msg.Home
+}
+
+func visibleRoomHistory(r *Room, viewer *Player) []ChatMessage {
+	if r == nil {
+		return nil
+	}
+	if r.Match == nil {
+		return r.Chat
+	}
+	rows := make([]ChatMessage, 0, len(r.Chat))
+	for _, msg := range r.Chat {
+		if roomChatVisible(r, viewer, msg) {
+			rows = append(rows, msg)
+		}
+	}
+	return rows
+}
+
 func boundedChat(history []ChatMessage, msg ChatMessage) []ChatMessage {
 	if len(history) < chatHistoryLimit {
 		return append(history, msg)
@@ -69,7 +96,7 @@ func boundedChat(history []ChatMessage, msg ChatMessage) []ChatMessage {
 }
 
 func (h *Hub) sendChatHistory(c *Client, r *Room) {
-	history := r.Chat
+	history := visibleRoomHistory(r, c.player)
 	if history == nil {
 		history = []ChatMessage{}
 	}
@@ -107,11 +134,15 @@ func (h *Hub) chat(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	var side int
+	if channel == "room" && r.Match != nil && p.Return == nil {
+		fail("chat_unavailable", "Party chat is available only to players travelling from a matchmaking party.")
+		return
+	}
 	if channel == "opponent" {
 		var ok bool
 		side, ok = matchChatSide(r, p)
 		if !ok {
-			fail("chat_unavailable", "Opponent chat is available only during a matchmaking match.")
+			fail("chat_unavailable", "Enemy chat is available only during a matchmaking match.")
 			return
 		}
 	}
@@ -160,6 +191,9 @@ func (h *Hub) chat(c *Client, m clientMessage, now time.Time) {
 		id = r.NextChat
 	}
 	msg := ChatMessage{ID: id, Member: p.Member, Name: p.Name, Text: text, Spectating: p.Spectating, Team: p.Team, At: now.UnixMilli(), Side: side}
+	if channel == "room" && r.Match != nil {
+		msg.Home = p.Return.Home
+	}
 	if channel == "opponent" {
 		r.OpponentChat = boundedChat(r.OpponentChat, msg)
 	} else {
@@ -171,21 +205,19 @@ func (h *Hub) chat(c *Client, m clientMessage, now time.Time) {
 	if !ok {
 		return
 	}
-	if channel == "room" {
-		for _, member := range r.members() {
-			if member.Client != nil {
-				member.Client.enqueueBytes(data)
-			}
-		}
-		return
-	}
-	// Opponent chat is deliberately not a team channel: only the sender and the
-	// opposing matchmaking side receive it. A room can have two local pilots on
-	// one socket, so deduplicate without allocating a map on every chat message.
+	// P1 and local P2 can share one socket. Both chat channels deduplicate at the
+	// connection boundary so one logical message renders exactly once per device.
 	var sent [maxTanks + maxSpectators]*Client
 	n := 0
 	for _, member := range r.members() {
-		if member.Client == nil || !opponentChatVisible(r, member, msg) {
+		if member.Client == nil {
+			continue
+		}
+		visible := roomChatVisible(r, member, msg)
+		if channel == "opponent" {
+			visible = opponentChatVisible(r, member, msg)
+		}
+		if !visible {
 			continue
 		}
 		duplicate := false

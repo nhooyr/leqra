@@ -1,0 +1,14 @@
+{
+  "version": "4.21.0",
+  "passed": 7,
+  "checks": [
+    "Default/current audio volume is centered at 50%",
+    "Suspended Safari-style AudioContext does not falsely report immediate playback",
+    "Queued sound begins after asynchronous AudioContext resume completes",
+    "Volume slider snaps to the halfway point near 50%",
+    "Volume changes live and persist on this device",
+    "100% volume scales above the original midpoint while 50% preserves the old level",
+    "No uncaught browser errors in audio controls: []"
+  ],
+  "errors": []
+}

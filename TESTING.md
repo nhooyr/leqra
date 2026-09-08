@@ -1,50 +1,23 @@
-# leqra v4.20 — current verification
+# leqra v4.22 — current verification
 
-Current verification is documented in **TEST-NOTES-v4.20.md**. The final race-enabled Go run records **469 top-level tests**, **870 passing test/subtest events**, **2 opt-in skips**, and **0 failures**. The JavaScript suite remains **56/56**. Browser coverage includes **23/23 Safari/WebKit identity-path checks**, **12/12 branding/migration**, **16/16 desktop gameplay/HUD**, **6/6 narrow-mobile**, **8/8 retained presentation/layout checks**, and **81/81 real-WebSocket matchmaking** checks. Go vet, JavaScript syntax checks, the optimized server benchmarks, and the compiled Go build also pass.
+Current verification is documented in **TEST-NOTES-v4.22.md**. The release specifically adds regression coverage for the served Safari `blob:` audio policy, stronger Safari gesture activation, integrated matchmaking chat, Ghost cross-wall overlap behavior, automatic callsign/room-code editing, Join-only room navigation, and host Unshare.
+
+Representative commands from the extracted source tree:
 
 ```sh
-go test -race -count=1 -json ./...
+go test -race ./...
 go vet ./...
+go build -trimpath -o /tmp/leqra-v4.22 .
 node --check web/theme.js
 node --check web/netcode.js
 node --check web/game.js
 node --test tests/*.test.cjs
-python3 tests/safari419_browser.py --output tests/results/v4.20-safari
-python3 tests/branding417_browser.py --output tests/results/v4.20-branding
-python3 tests/polish415_browser.py --output tests/results/v4.20-desktop
-python3 tests/polish415_mobile_browser.py --output tests/results/v4.20-mobile
-python3 tests/polish418_browser.py --output tests/results/v4.20-polish418
-
-LEQRA_BROWSER_FIXTURE=1 LEQRA_BROWSER_ADDR=127.0.0.1:18041 \
-  go test -run '^TestBrowserFixture$' -count=1 -timeout=0
-python3 tests/matchmaking_browser.py http://127.0.0.1:18041 \
-  --output tests/results/v4.20-matchmaking
-
-go test -run '^$' -bench 'Benchmark(EightBotsHuge35|RoomBroadcast35)$' -benchmem -count=1
-go build -trimpath -o leqra .
+python3 tests/polish421_browser.py --output tests/results/v4.22-audio
+python3 tests/safari419_browser.py --output tests/results/v4.22-safari
+python3 tests/polish422_browser.py --output tests/results/v4.22-polish
+python3 tests/polish418_browser.py --output tests/results/v4.22-polish418
 ```
 
-A native Safari/WebKit runtime is not installed in this build environment. The Safari suite runs the shipped WebKit/iOS detection, CSS, touch, sizing, and fallback paths in system Chromium under Safari/iPhone/iPad identities. Physical Safari on macOS/iPhone/iPad remains the final acceptance target.
+The optional real-WebSocket browser fixture and production matchmaking protocol harness remain available for end-to-end queue/chat/rematch/reconnect checks; see the versioned test notes for what completed in the final run.
 
-Older version-labelled reports remain historical artifacts and are not silently counted as current executions.
-
-## v4.7 local-room rule persistence
-
-Focused browser regression:
-
-```sh
-python3 tests/local_rules47_browser.py --output tests/results/v4.7-local-rules
-```
-
-See `TEST-NOTES-v4.7.md` and `UPDATE-v4.7.md`.
-
-## v4.8 focused grenade motion
-
-```sh
-go test -race -count=1 ./...
-go vet ./...
-node tests/netcode.test.cjs
-python tests/grenade48_browser.py --output tests/results/v4.8/browser
-```
-
-See `TEST-NOTES-v4.8.md`.
+A native Safari/WebKit runtime is not installed in this build environment. The Safari suite runs the shipped WebKit/iOS detection, CSS, touch, sizing, native-audio fallback and delayed-Web-Audio paths under Safari/iPhone/iPad identities in system Chromium. The server test separately verifies the CSP needed by real Safari's generated `blob:` WAV fallback. Physical Safari on macOS/iPhone/iPad remains the final listening/performance acceptance target.

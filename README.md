@@ -1,12 +1,16 @@
-# leqra v4.20 — room polish, opponent chat, and results cleanup
+# leqra v4.22 — Safari audio reliability, integrated match chat, Ghost fixes, and room UX
 
-leqra v4.20 keeps the v4.19 Safari/WebKit performance work and adds a multiplayer communication/results pass. Matchmaking now has a second red opponent-chat button immediately to the right of normal room chat; opponent messages are delivered only to the sender and the opposing matchmaking side, with separate history/unread state. Incoming messages play a short notification when their chat channel is minimized, subject to the normal sound toggle. Normal room chat still reaches everyone in the room.
+leqra v4.22 fixes the remaining Safari audio failure in the served build. The Safari native-audio fallback uses generated WAV `blob:` URLs, but v4.21's Content-Security-Policy did not allow `blob:` media, so WebKit could successfully unlock audio and still have playback blocked by the page policy. The server now explicitly permits `media-src 'self' blob:`. Safari audio activation is also stronger: a real one-frame Web Audio source is started inside the user gesture, native fallback elements are primed once per unlock cycle, and later interactions avoid repeating the expensive compatibility work unless WebKit suspends/interrupts audio again. Desktop Safari again receives a dismissible recommendation to use **Chrome or Firefox** for the most consistent audio and performance.
 
-Online room hosts can rename the room code/name from the lobby. The server changes the live room key atomically, updates every connected member and invite URL, rejects collisions, and preserves reconnects already in flight. Matchmaking/away rooms cannot be renamed until the party is back in its private lobby. The online host action is now simply **End match**.
+The Controls menu retains the persistent **Volume** slider from 0–100. **50% is the original leqra loudness and the default/current midpoint**, values near the middle snap cleanly to 50%, and 100% provides up to twice the old master gain. Mute remains independent.
 
-Queued results place **BACK TO ROOM** on the left and neon-green **REMATCH** on the right. Losing local players see red **DEFEAT** with a defeat icon below the heading instead of the victory star. Desktop Safari no longer receives a recommendation to switch to Chrome; the Safari-specific v4.19 rendering/input optimizations remain enabled.
+Matchmaking now uses **one integrated chat transcript**. Party/room messages and opponent messages appear together, with opponent messages visibly marked **OPPONENT** in red. A compact **Send to opponent** switch beside the composer selects whether your next messages go to the enemy side; leaving it off sends to your travelling party. The server still enforces the two scopes independently, reconnect history is filtered by the same rules, and shared P1/P2 sockets are deduplicated. Ordinary non-match rooms retain room-wide chat.
 
-The audit also fixed a chat-rendering exception caused by accidentally writing a DOM element through the browser's special `window.name` property, aligned the browser chat input limit with the server's 280-character limit, removed duplicate stale WebSocket/sudden-death branches, batched chat-history DOM insertion, and avoided an allocation map when deduplicating opponent-chat sockets.
+Ghost received both presentation and physics fixes. Online Ghost reconciliation no longer carries a stale sideways correction while phasing through walls, and tank-to-tank overlap separation no longer pushes a ghosted tank through an intervening wall when another tank happens to overlap it from the opposite side. Same-side tank collisions remain unchanged.
+
+Room editing is simpler: Join Another Room has one **JOIN** action because an unused code creates a room automatically; callsigns and online room codes save on Enter or blur; hosts can **Unshare room** to take a shared room offline while keeping their local setup/rules/bots/local Player 2; and Rules/Presets and Controls dropdown chevrons have more right-side spacing.
+
+See **UPDATE-v4.22.md** for current behavior and installation, **POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.22.md** for current verification.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -44,8 +48,8 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.20.md** for current behavior and installation,
-**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.20.md** for the current verification.
+statistics remain intact. See **UPDATE-v4.22.md** for current behavior and installation,
+**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.22.md** for the current verification.
 
 ## Previous combat improvements (retained)
 
@@ -154,7 +158,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.20.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.22.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -191,7 +195,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.20.0**.
+on restart. Both the health endpoint and browser version should show **4.22.0**.
 
 ## Build one standalone server
 

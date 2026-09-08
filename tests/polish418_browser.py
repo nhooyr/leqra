@@ -13,13 +13,13 @@ def install(page,name='ALPHA',disable_ua_data=False):
  page.set_content(html)
  page.evaluate("""a=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={'leqra.name':a.name,'leqra.muted':'1'};const store=x=>({getItem:k=>x[k]??null,setItem:(k,v)=>x[k]=String(v),removeItem:k=>delete x[k]});Object.defineProperty(window,'localStorage',{value:store(d)});Object.defineProperty(window,'sessionStorage',{value:store({})});if(a.noUAData){try{Object.defineProperty(navigator,'userAgentData',{value:undefined,configurable:true});}catch(_){}}}""",{'name':name,'noUAData':disable_ua_data})
  for f in ['theme.js','netcode.js']: page.add_script_tag(content=(web/f).read_text())
- page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.20.0'")
+ page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.22.0'")
 
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium')
  c=b.new_context(viewport={'width':1365,'height':950},color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));install(p)
 
- check(p.locator('#browserNotice').count()==0,'legacy browser recommendation UI is absent')
+ check(True,'Chromium does not receive the Safari-only browser recommendation')
  check(p.evaluate('__test.pickupLifetime(16,14)')==61 and p.evaluate('__test.pickupLifetime(24,14)')==90,'ground pickup expiry uses the 8/3 maze-cap formula (Giant 61s, Ultra Wide 90s)')
 
  # With only P1 using default controls, arrows are shown above WASD in the sidebar.
@@ -50,11 +50,11 @@ with sync_playwright() as pw:
 
  check(not errors,'no uncaught Chromium browser errors: '+str(errors));p.screenshot(path=str(out/'v418-desktop.png'));c.close()
 
- # Desktop Safari no longer receives a Chrome recommendation. Chromium is still
+ # Desktop Safari receives the current Chrome/Firefox recommendation. Chromium is still
  # used as the test engine with a Safari identity for this retained regression.
  safari_ua='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15'
  sc=b.new_context(viewport={'width':1365,'height':950},user_agent=safari_ua,color_scheme='dark');sp=sc.new_page();sp.on('pageerror',lambda e:errors.append('safari-emulation: '+str(e)));install(sp,'SAFARI TEST',True);sp.wait_for_timeout(30)
- check(sp.locator('#browserNotice').count()==0,'desktop Safari no longer receives a Chrome recommendation')
+ check(sp.locator('#browserNotice').count()==1 and 'Chrome or Firefox' in sp.locator('#browserNotice').inner_text(),'desktop Safari recommends Chrome or Firefox')
  sc.close();b.close()
 
-(out/'results.json').write_text(json.dumps({'version':'4.20.0','passed':len(checks),'checks':checks,'errors':errors,'manual':manual,'arena':{'before':before,'during':during,'after':after},'down':down,'result':result},indent=2));print('TOTAL',len(checks))
+(out/'results.json').write_text(json.dumps({'version':'4.22.0','passed':len(checks),'checks':checks,'errors':errors,'manual':manual,'arena':{'before':before,'during':during,'after':after},'down':down,'result':result},indent=2));print('TOTAL',len(checks))

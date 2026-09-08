@@ -202,6 +202,10 @@ The normal create/join entry point admits actual network visitors; publishing a
 local setup transfers its default host plus three Normal FFA bots, rather than
 forcing those bots into every empty named room.
 
+### v4.22 take a private room offline
+
+A host in an ordinary private room may send `{"type":"unshare"}` while the room is in the lobby or post-match state and is not queued, transferred to matchmaking, or otherwise away. The server deletes the shared room, clears every member's server-room attachment, and sends the host `{"type":"unshared","room":"..."}`. Remote controllers receive `{"type":"room_offline","room":"..."}`. Shared primary/local-P2 controllers are notified once per WebSocket. The browser keeps the host's local roster, bots, local Player 2, room code and rules; reconnect credentials for the removed server room no longer restore it. Errors use `action:"unshare"` with the normal host/join/state validation.
+
 ### v3.5 chat, eight seats and map sizes
 
 Combat IDs are **0–7** and spectator IDs begin at **8**. Arrays of scores and
@@ -220,11 +224,20 @@ milliseconds and the ID is monotonically increasing **within that room**.
 Name/team/role are captured when sent, not rewritten when a member later changes.
 
 Joining/resuming receives `{"type":"chat_history","room":"name","messages":[]}`
-with up to the last 60 messages. Clients replace/deduplicate by message ID. Chat
-is not included in `state` snapshots. Ending/starting a match preserves history;
-room deletion/restart clears it. There is no client-selected destination/channel.
-Both active and spectating current members may send. Remote/local P2 sharing one
-network controller uses that controller's chat identity.
+with up to the last 60 visible normal-channel messages. Clients replace/deduplicate
+by message ID. Chat is not included in `state` snapshots. Ending/starting a match
+preserves history; room deletion/restart clears it. Remote/local P2 sharing one
+network controller uses that controller's chat identity, and server broadcasts are
+deduplicated per WebSocket so that shared controller renders one copy.
+
+Current v4.22 clients may also send `channel:"opponent"`. Outside matchmaking,
+the ordinary/default channel is room-wide. Inside a matchmaking battle, the
+default channel is party-scoped: it reaches only travellers whose return reservation
+points to the same private source room. `channel:"opponent"` reaches the sender and
+the opposing matchmaking side, not the sender's teammates. History is filtered by
+those same server-authoritative scopes; a client cannot select an arbitrary member
+or destination room. Side-less matchmaking spectators do not get party/opponent
+chat.
 
 Text is valid single-line UTF-8, trimmed, 1–280 Unicode code points; empty,
 invisible-only and control-character text is rejected. The member-owned bucket

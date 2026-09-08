@@ -1,0 +1,16 @@
+{
+  "version": "4.22.0",
+  "passed": 9,
+  "checks": [
+    "Callsign editors no longer require explicit Save buttons",
+    "Local callsign saves automatically when the field loses focus",
+    "Join another room exposes one Join action and no redundant Create Room button",
+    "Online room code editor is auto-save only",
+    "Feature-menu dropdown arrows have extra right-side spacing",
+    "Chat uses one integrated header button",
+    "Opponent sending uses a compact in-chat toggle rather than a second chat button",
+    "Ghost overlap across an interior wall is recognized as wall-separated",
+    "No uncaught browser errors: []"
+  ],
+  "errors": []
+}

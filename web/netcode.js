@@ -92,8 +92,12 @@
    if(error>.025||Math.abs(delta(next.angle,before.angle))>.001)this.metrics.corrections++;
    // Only the *rendered* offset is softened. Physics immediately uses the
    // authoritative state plus unacknowledged inputs, never a blended position.
-   if(!historyOK||!authority.alive||error>64){
-    this.offset={x:0,y:0,angle:0};this.metrics.hardResets++;
+   const ghosting=(before.ghostTime||0)>0||(next.ghostTime||0)>0;
+   if(!historyOK||!authority.alive||error>64||ghosting){
+    // Ghost movement passes through interior walls. Blending an old correction
+    // vector while phasing can visibly tug the tank sideways across a wall even
+    // though replayed physics is correct, so render the replayed trajectory directly.
+    this.offset={x:0,y:0,angle:0};if(!ghosting)this.metrics.hardResets++;
    }else{
     this.offset.x+=before.x-next.x;this.offset.y+=before.y-next.y;
     this.offset.angle=delta(0,this.offset.angle+delta(next.angle,before.angle));

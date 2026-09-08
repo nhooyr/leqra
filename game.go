@@ -388,6 +388,42 @@ func (g *Game) startMatch(players [maxTanks]*Player) {
 
 type RayHit struct{ T, NX, NY float64 }
 
+func (g *Game) wallBetweenCenters(x, y, dx, dy float64) bool {
+	for _, wi := range g.wallCandidates(x, y, dx, dy, 0) {
+		w := g.World.Walls[wi]
+		if math.Max(x, x+dx) < w.X || math.Min(x, x+dx) > w.X+w.W || math.Max(y, y+dy) < w.Y || math.Min(y, y+dy) > w.Y+w.H {
+			continue
+		}
+		enter, exit := math.Inf(-1), math.Inf(1)
+		if math.Abs(dx) < 1e-9 {
+			if x < w.X || x > w.X+w.W {
+				continue
+			}
+		} else {
+			a, b := (w.X-x)/dx, (w.X+w.W-x)/dx
+			if a > b {
+				a, b = b, a
+			}
+			enter, exit = math.Max(enter, a), math.Min(exit, b)
+		}
+		if math.Abs(dy) < 1e-9 {
+			if y < w.Y || y > w.Y+w.H {
+				continue
+			}
+		} else {
+			a, b := (w.Y-y)/dy, (w.Y+w.H-y)/dy
+			if a > b {
+				a, b = b, a
+			}
+			enter, exit = math.Max(enter, a), math.Min(exit, b)
+		}
+		if enter <= exit && exit >= 0 && enter <= 1 {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Game) rayWallsHit(x, y, dx, dy, r float64) (RayHit, bool) {
 	var best RayHit
 	hasBest := false
@@ -1282,6 +1318,9 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 			d := math.Hypot(dx, dy)
 			over := a.R + b.R - d
 			if over > 0 {
+				if (a.GhostTime > 0 || b.GhostTime > 0) && g.wallBetweenCenters(a.X, a.Y, dx, dy) {
+					continue
+				}
 				if d < .001 {
 					dx = 1
 					dy = 0

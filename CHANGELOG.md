@@ -1,3 +1,25 @@
+# v4.22.0 — Safari audio reliability, integrated match chat, Ghost fixes, and room UX
+
+- Fix Safari native fallback playback being blocked by leqra's own CSP by allowing `media-src 'self' blob:`; strengthen trusted-gesture Web Audio/native Audio activation and make successful Safari priming idempotent.
+- Restore the desktop Safari recommendation for Chrome or Firefox while leaving iPhone/iPad without the desktop notice.
+- Replace the second matchmaking chat button with one integrated transcript; visibly mark opponent messages and add a compact **Send to opponent** composer switch while preserving server-authoritative party/enemy privacy.
+- Fix the compact opponent switch hit target so the whole control is reliably clickable/focusable.
+- Fix Ghost cross-wall tank-overlap separation that could intermittently pull a phasing tank sideways; also clear online positional reconciliation while Ghost is active/transitioning.
+- Add host **Unshare room** to take an ordinary shared room offline, disconnect remote players/spectators, and restore the host's local room setup/rules/bots/local P2.
+- Reduce room-edit friction: Join Another Room has one Join action; callsign and room-code changes save on Enter/blur without explicit Save/Rename buttons.
+- Increase custom dropdown-chevron right spacing in Rules/Presets and Controls.
+- Remove obsolete callsign-save CSS and avoid a temporary map allocation when deduplicating Unshare notifications.
+
+# v4.21.0 — Safari audio, volume controls, and reliable chat routing
+
+- Fixed Safari/WebKit audio startup by queuing tones until asynchronous `AudioContext.resume()` actually reaches the running state and retrying unlock from genuine user gestures.
+- Added a persistent 0–100 Controls-menu volume slider. 50% preserves the old output level/default and values near center snap to 50%; the existing mute control remains independent.
+- Fixed the client chat-state helper that incorrectly defaulted to room state while the opponent panel was active.
+- During matchmaking, normal chat is now **Party chat** scoped to the travelling source party; red **Enemy chat** remains sender + opposing side only. Ordinary non-match rooms retain room-wide chat.
+- Added independent per-channel drafts, pending sends, errors and unread/history state so switching channels cannot send or clear text in the wrong destination.
+- Deduplicated room/enemy chat by WebSocket so local P1/P2 sharing one connection receive one message, and filtered party history using the same authoritative scope on reconnect.
+- Minimized-chat notification tones now use the same Safari-safe volume/master-audio path.
+
 # v4.20.0 — opponent chat, room renaming, results polish, and bug fixes
 
 - Put queued **REMATCH** to the right of **BACK TO ROOM** while retaining its neon-green matchmaking treatment.

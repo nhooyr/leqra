@@ -5,11 +5,13 @@ container cannot install Playwright WebKit. These checks validate the shipped
 Safari code/CSS paths, touch classification and release fallbacks; physical
 Safari is still listed separately in the release limits.
 """
-import json,re
+import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-root=Path(__file__).resolve().parents[1]; web=root/'web'; out=root/'tests/results/v4.19-safari';out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1]; web=root/'web'
+parser=argparse.ArgumentParser(); parser.add_argument('--output',default=str(root/'tests/results/v4.19-safari')); args=parser.parse_args()
+out=Path(args.output); out.mkdir(parents=True,exist_ok=True)
 html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
 js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
@@ -17,9 +19,9 @@ def check(ok,label):
     assert ok,label;checks.append(label);print('PASS',label,flush=True)
 def install(page,platform,max_touch):
     page.set_content(html)
-    page.evaluate("""a=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const store={getItem(){return null},setItem(){},removeItem(){}};Object.defineProperty(window,'localStorage',{value:store});Object.defineProperty(window,'sessionStorage',{value:store});try{Object.defineProperty(navigator,'platform',{value:a.platform,configurable:true});Object.defineProperty(navigator,'maxTouchPoints',{value:a.maxTouch,configurable:true});Object.defineProperty(navigator,'userAgentData',{value:undefined,configurable:true});}catch(_){}}""",{'platform':platform,'maxTouch':max_touch})
+    page.evaluate("""a=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const store={getItem(){return null},setItem(){},removeItem(){}};Object.defineProperty(window,'localStorage',{value:store});Object.defineProperty(window,'sessionStorage',{value:store});window.__nativeAudioPlays=0;window.Audio=class{constructor(){this.src='';this.volume=1;this.currentTime=0;this.preload='';this.playsInline=false;this.dataset={};}setAttribute(){}pause(){}load(){}play(){window.__nativeAudioPlays++;return Promise.resolve();}};window.AudioContext=undefined;window.webkitAudioContext=undefined;try{Object.defineProperty(navigator,'platform',{value:a.platform,configurable:true});Object.defineProperty(navigator,'maxTouchPoints',{value:a.maxTouch,configurable:true});Object.defineProperty(navigator,'userAgentData',{value:undefined,configurable:true});}catch(_){}}""",{'platform':platform,'maxTouch':max_touch})
     for f in ['theme.js','netcode.js']:page.add_script_tag(content=(web/f).read_text())
-    page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.20.0'")
+    page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.22.0'")
 
 safari_mac='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15'
 safari_phone='Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
@@ -30,7 +32,8 @@ with sync_playwright() as pw:
     c=browser.new_context(viewport={'width':1365,'height':950},device_scale_factor=2,user_agent=safari_mac,color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append('desktop: '+str(e)));install(p,'MacIntel',0)
     plat=p.evaluate('__test.platform');check(plat=={'webkit':True,'safari':True,'ios':False},'desktop Safari selects the WebKit/Safari optimization path')
     check(p.locator('body').evaluate("e=>e.classList.contains('webkit-engine')&&e.classList.contains('safari-browser')"),'desktop Safari receives WebKit CSS performance class')
-    check(p.locator('#browserNotice').count()==0,'desktop Safari no longer receives the Chrome recommendation')
+    check(p.locator('#browserNotice').count()==1 and 'Chrome or Firefox' in p.locator('#browserNotice').inner_text(),'desktop Safari recommends Chrome or Firefox')
+    before=p.evaluate('__nativeAudioPlays');p.locator('#soundBtn').dispatch_event('pointerdown');p.evaluate('__test.chatNotificationSound()');p.wait_for_timeout(20);after=p.evaluate('__nativeAudioPlays');check(after>before,'desktop Safari sound uses the native-audio fallback even without a usable WebAudio context')
     ratio=p.evaluate('__test.renderPixelRatio(1200,700)');check(1<=ratio<=1.75,'desktop Safari caps adaptive Canvas pixel density at 1.75x')
     blur=p.evaluate("getComputedStyle(document.querySelector('.overlay')).webkitBackdropFilter||getComputedStyle(document.querySelector('.overlay')).backdropFilter")
     check(blur in ('none',''),'Safari path disables full-arena backdrop blur')
@@ -42,6 +45,8 @@ with sync_playwright() as pw:
     # iPhone Safari identity at DPR 3: touch UI, lower pixel budget, release fallback.
     c=browser.new_context(viewport={'width':390,'height':844},device_scale_factor=3,user_agent=safari_phone,is_mobile=True,has_touch=True,color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append('iphone: '+str(e)));install(p,'iPhone',5);p.wait_for_timeout(40)
     plat=p.evaluate('__test.platform');check(plat=={'webkit':True,'safari':True,'ios':True},'iPhone Safari selects iOS WebKit path')
+    check(p.locator('#browserNotice').count()==0,'iPhone Safari does not show the desktop browser recommendation')
+    before=p.evaluate('__nativeAudioPlays');p.locator('#soundBtn').dispatch_event('touchstart');p.evaluate('__test.pickupSound ? __test.pickupSound() : __test.chatNotificationSound()');p.wait_for_timeout(20);check(p.evaluate('__nativeAudioPlays')>before,'iPhone Safari native-audio fallback survives touch-unlock flow')
     st=p.evaluate('leqra.getState()');check(st['touchUI'] is True,'iPhone Safari receives touch controls');p.locator('#startRoomBtn').click();p.wait_for_timeout(80)
     ratio=p.evaluate('__test.renderPixelRatio(390,650)');check(1<=ratio<=1.5,'iPhone Safari caps Canvas density at 1.5x instead of native 3x')
     check(p.evaluate('document.documentElement.scrollWidth<=innerWidth'),'iPhone Safari path has no horizontal page overflow')
@@ -77,5 +82,5 @@ with sync_playwright() as pw:
     c.close();browser.close()
 
 check(not errors,'no JavaScript errors in Safari identity paths: '+str(errors))
-report={'version':'4.20.0','passed':len(checks),'checks':checks,'errors':errors,'note':'Safari identities executed in Chromium because Playwright WebKit could not be installed in this environment.'}
+report={'version':'4.22.0','passed':len(checks),'checks':checks,'errors':errors,'note':'Safari identities executed in Chromium because Playwright WebKit could not be installed in this environment.'}
 (out/'results.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))

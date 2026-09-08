@@ -214,3 +214,10 @@ test('Independent predictors replay Ghost and Super Speed with delayed correctio
  }
  }
 });
+test('Ghost reconciliation never carries a sideways visual correction through walls',()=>{
+ const move=wallMover({width:1008,height:840,cols:12,rows:10,walls:[{x:248,y:0,w:8,h:840}]});
+ const p=new Net.Predictor(move);p.reset(tank({x:270,y:210,ghostTime:5}));
+ p.offset={x:18,y:-11,angle:.2};
+ p.reconcile(tank({x:260,y:210,ghostTime:4.9,ack:0,ackSteps:0}));
+ assert.equal(p.offset.x,0);assert.equal(p.offset.y,0);assert.equal(p.offset.angle,0);
+});

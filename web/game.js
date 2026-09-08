@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.20.0';
+const GAME_VERSION='4.22.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -45,7 +45,7 @@ let scores=Array(MAX_TANKS).fill(0),round=1,roundClock=ROUND_SECONDS,phaseTime=0
 let cssW=0,cssH=0,dpr=1,scale=1,offsetX=0,offsetY=0,mapCanvas=null,touchUI=false,touchLandscape=false;
 let lastFrame=0,accumulator=0,bulletId=0,logLines=[],bestWins=0,resizeTimer=0,arenaResizeFrame=0,gameStarted=false;
 let goUntil=0; // One-shot countdown transition, never a cosmetic event timer.
-let guideEnabled=true, muted=false, audio=null,noiseBuffer=null,lastBounceSound=0,lastChatNotify=0;
+let guideEnabled=true, muted=false, audioVolume=50,audio=null,audioMaster=null,audioResume=null,noiseBuffer=null,lastBounceSound=0,lastChatNotify=0;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const UA=navigator.userAgent||'';
 const IOS_WEBKIT=/iP(?:hone|ad|od)/i.test(UA)||(navigator.platform==='MacIntel'&&(navigator.maxTouchPoints||0)>1);
@@ -55,7 +55,7 @@ document.body.classList.toggle('webkit-engine',WEBKIT_ENGINE);document.body.clas
 const keys=new Set(), firePointers=new Set(), firePresses=new Set();
 const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36};
 const Net=window.leqraNet;
-const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
+const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const localRoom={code:'',players:[],self:0,nextViewer:MAX_TANKS,nextMember:0,rules:defaultRoomRules()};
 let watchInvite=false,watchResume=null,rolePending=false,swapPending=null,lastSpectatorUI='';
@@ -64,7 +64,7 @@ const LEGACY_STORAGE_PREFIX='ricochet.';
 function migrateLegacyStorage(storage,keys){
  try{for(const key of keys){const current=STORAGE_PREFIX+key,legacy=LEGACY_STORAGE_PREFIX+key;if(storage.getItem(current)==null){const value=storage.getItem(legacy);if(value!=null)storage.setItem(current,value);}}}catch(_){}
 }
-migrateLegacyStorage(localStorage,['muted','wins','difficulty','name','local2Name','roomRules.v1','bindings.v1','feedback.v1','presets.v1','sidebarHidden']);
+migrateLegacyStorage(localStorage,['muted','volume','wins','difficulty','name','local2Name','roomRules.v1','bindings.v1','feedback.v1','presets.v1','sidebarHidden']);
 migrateLegacyStorage(sessionStorage,['session','kicked']);
 
 const pilotFeedback=[{text:'',until:0},{text:'',until:0}];
@@ -95,7 +95,7 @@ const secondaryID=()=>mode==='duel'?1:secondLocal()?.id;
 const primaryFireHeld=()=>heldAction(0,'fire')||firePointers.size>0;
 const primaryFireKey=code=>keyForAction(0,'fire',code);
 
-try{muted=localStorage.getItem('leqra.muted')==='1';bestWins=Number(localStorage.getItem('leqra.wins')||0)||0;const saved=localStorage.getItem('leqra.difficulty');if(DIFFICULTY[saved])difficulty=saved;}catch(_){}
+try{muted=localStorage.getItem('leqra.muted')==='1';const storedVolumeRaw=localStorage.getItem('leqra.volume');if(storedVolumeRaw!==null){const storedVolume=Number(storedVolumeRaw);if(Number.isFinite(storedVolume))audioVolume=Math.max(0,Math.min(100,Math.round(storedVolume)));}bestWins=Number(localStorage.getItem('leqra.wins')||0)||0;const saved=localStorage.getItem('leqra.difficulty');if(DIFFICULTY[saved])difficulty=saved;}catch(_){}
 const rnd=(a,b)=>a+Math.random()*(b-a), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 // Grenades keep most of their speed until the final three seconds, then brake
 // progressively harder. The integrated curve keeps local, online and AI projection
@@ -134,23 +134,67 @@ function scoreboardEntries(){
 function winnerName(winner){const p=roomData()?.players.find(t=>t.id===winner)||tanks.find(t=>t.id===winner);return mode==='solo'&&winner>0?'BOT SQUAD':p?.team>0?teamName(p.team):p?.name||'PILOT';}
 function save(key,val){try{localStorage.setItem('leqra.'+key,String(val));}catch(_){}}
 function roundRect(c,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
-function initAudio(){
- if(muted)return;
- try{if(!audio){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();}if(audio.state==='suspended')audio.resume().catch(()=>{});}catch(_){}
+function audioScale(){return clamp(audioVolume/50,0,2);}
+function applyAudioLevel(){
+ if(!audioMaster||!audio)return;const level=muted?0:audioScale();
+ try{audioMaster.gain.setValueAtTime(level,audio.currentTime);}catch(_){audioMaster.gain.value=level;}
 }
+let nativeAudioPool=[],nativeAudioIndex=0,nativeAudioPrimed=false;const nativeToneCache=new Map();
+function wavToneURL(freq,end,duration,type='sine'){
+ const key=[Math.round(freq),Math.round(end),Math.round(duration*1000),type].join(':');if(nativeToneCache.has(key))return nativeToneCache.get(key);
+ const rate=22050,n=Math.max(96,Math.floor(rate*Math.min(.35,Math.max(.025,duration)))),buffer=new ArrayBuffer(44+n*2),v=new DataView(buffer),u=new Uint8Array(buffer);const wr=(o,t)=>{for(let i=0;i<t.length;i++)u[o+i]=t.charCodeAt(i);};
+ wr(0,'RIFF');v.setUint32(4,36+n*2,true);wr(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);wr(36,'data');v.setUint32(40,n*2,true);
+ let phase=0;for(let i=0;i<n;i++){const q=i/(n-1),f=freq+(end-freq)*q;phase+=TAU*f/rate;let sample=type==='triangle'?2*Math.asin(Math.sin(phase))/Math.PI:type==='sawtooth'?2*(phase/TAU-Math.floor(phase/TAU+.5)):Math.sin(phase);const env=Math.min(1,i/(rate*.004))*Math.pow(1-q,1.6);v.setInt16(44+i*2,Math.round(sample*env*32760),true);}
+ const url=URL.createObjectURL(new Blob([buffer],{type:'audio/wav'}));nativeToneCache.set(key,url);if(nativeToneCache.size>48){const first=nativeToneCache.keys().next().value;URL.revokeObjectURL(nativeToneCache.get(first));nativeToneCache.delete(first);}return url;
+}
+function ensureNativeAudioPool(){
+ if(nativeAudioPool.length)return nativeAudioPool;for(let i=0;i<8;i++){const a=new Audio();a.preload='auto';a.playsInline=true;a.setAttribute('playsinline','');nativeAudioPool.push(a);}return nativeAudioPool;
+}
+function primeNativeAudio(){
+ if(!SAFARI_BROWSER||muted||audioVolume<=0||nativeAudioPrimed)return;const pool=ensureNativeAudioPool(),url=wavToneURL(25,25,.03,'sine');for(const a of pool){try{a.pause();a.src=url;a.volume=.001;a.load?.();const p=a.play();if(p?.then)p.then(()=>{a.pause();a.currentTime=0;nativeAudioPrimed=true;},()=>{});else nativeAudioPrimed=true;}catch(_){}}}
+function createAudioGraph(){
+ if(audio)return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;audio=new AC();audioMaster=audio.createGain();audioMaster.connect(audio.destination);applyAudioLevel();return true;
+}
+function primeWebAudio(){
+ if(muted||audioVolume<=0)return Promise.resolve(false);try{if(audio?.state==='running'){applyAudioLevel();return Promise.resolve(true);}if(!createAudioGraph())return Promise.resolve(false);
+  // WebKit is most reliable when a source is actually started inside the user
+  // activation callback, not when resume() is the only synchronous operation.
+  try{const b=audio.createBuffer(1,1,audio.sampleRate||22050),s=audio.createBufferSource();s.buffer=b;audioConnect(s);s.start(0);}catch(_){}
+  if(audio.state==='running'){applyAudioLevel();return Promise.resolve(true);}
+  let attempt;attempt=Promise.resolve(audio.resume()).then(()=>{if(audioResume===attempt)audioResume=null;applyAudioLevel();return audio?.state==='running';},()=>{if(audioResume===attempt)audioResume=null;return false;});audioResume=attempt;return attempt;
+ }catch(_){audioResume=null;return Promise.resolve(false);}
+}
+function initAudio(force=false){
+ if(muted||audioVolume<=0)return Promise.resolve(false);if(SAFARI_BROWSER&&force)primeNativeAudio();
+ try{if(!createAudioGraph())return Promise.resolve(SAFARI_BROWSER&&nativeAudioPrimed);if(audio.state==='running'){applyAudioLevel();return Promise.resolve(true);}if(force)return primeWebAudio();if(!audioResume){let attempt;attempt=Promise.resolve(audio.resume()).then(()=>{if(audioResume===attempt)audioResume=null;applyAudioLevel();return audio?.state==='running';},()=>{if(audioResume===attempt)audioResume=null;return false;});audioResume=attempt;}return audioResume;}catch(_){audioResume=null;return Promise.resolve(false);}
+}
+function audioWhenReady(play){
+ if(muted||audioVolume<=0)return;if(audio?.state==='running'){play();return;}initAudio().then(ok=>{if(ok&&!muted&&audioVolume>0)play();});
+}
+function webTone(freq,end,duration,volume=.035,type='sine',delay=0){
+ audioWhenReady(()=>{try{const t=audio.currentTime+delay,o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,end),t+duration);g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(volume,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+duration);o.connect(g);audioConnect(g);o.start(t);o.stop(t+duration+.01);}catch(_){}});
+}
+function nativeTone(freq,end,duration,volume=.035,type='sine',delay=0){
+ if(muted||audioVolume<=0)return;const play=()=>{const pool=ensureNativeAudioPool(),a=pool[nativeAudioIndex++%pool.length];try{a.pause();a.src=wavToneURL(freq,end,duration,type);a.currentTime=0;a.dataset.baseVolume=String(volume);a.volume=clamp(volume*audioScale()*7,0,1);a.load?.();const p=a.play();if(p?.then)p.then(()=>{nativeAudioPrimed=true;},()=>webTone(freq,end,duration,volume,type,0));else nativeAudioPrimed=true;}catch(_){webTone(freq,end,duration,volume,type,0);}};if(delay>0)setTimeout(play,delay*1000);else play();
+}
+function audioConnect(node){node.connect(audioMaster||audio.destination);}
 function ensureNoiseBuffer(){
  if(noiseBuffer||!audio)return noiseBuffer;
  try{const n=Math.floor(audio.sampleRate*.3);noiseBuffer=audio.createBuffer(1,n,audio.sampleRate);const data=noiseBuffer.getChannelData(0);for(let i=0;i<n;i++)data[i]=(Math.random()*2-1)*(1-i/n);}catch(_){noiseBuffer=null;}return noiseBuffer;
 }
 function tone(freq,end,duration,volume=.035,type='sine',delay=0){
- if(muted||!audio||audio.state!=='running')return;
- try{const t=audio.currentTime+delay,o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,end),t+duration);g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(volume,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+duration);o.connect(g);g.connect(audio.destination);o.start(t);o.stop(t+duration+.01);}catch(_){}
+ if(SAFARI_BROWSER&&audio?.state!=='running'){nativeTone(freq,end,duration,volume,type,delay);return;}webTone(freq,end,duration,volume,type,delay);
 }
-function boom(){if(muted||!audio||audio.state!=='running'||!ensureNoiseBuffer())return;try{const s=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();s.buffer=noiseBuffer;f.type='lowpass';f.frequency.value=850;g.gain.value=.15;s.connect(f);f.connect(g);g.connect(audio.destination);s.start();tone(100,30,.24,.06,'triangle');}catch(_){}}
+function boom(){if(SAFARI_BROWSER&&audio?.state!=='running'){nativeTone(95,32,.28,.12,'triangle');nativeTone(180,55,.14,.05,'sawtooth',.015);return;}audioWhenReady(()=>{if(!ensureNoiseBuffer())return;try{const s=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();s.buffer=noiseBuffer;f.type='lowpass';f.frequency.value=850;g.gain.value=.15;s.connect(f);f.connect(g);audioConnect(g);s.start();tone(100,30,.24,.06,'triangle');}catch(_){}});}
 function pickupSound(){tone(480,500,.09,.05,'sine');tone(700,800,.11,.04,'sine',.08);tone(1000,1200,.14,.035,'sine',.15);}
-function chatNotificationSound(){if(muted)return;const now=performance.now();if(now-lastChatNotify<180)return;lastChatNotify=now;initAudio();tone(920,740,.075,.035,'sine');tone(1180,900,.09,.028,'sine',.065);}
-function syncSound(){ $('soundBtn').classList.toggle('muted',muted);$('soundBtn').setAttribute('aria-pressed',String(!muted));$('soundBtn').setAttribute('aria-label',muted?'Unmute sound':'Mute sound'); }
-function toggleSound(){muted=!muted;save('muted',muted?1:0);syncSound();if(!muted){initAudio();tone(500,700,.1);}}
+function chatNotificationSound(){if(muted||audioVolume<=0)return;const now=performance.now();if(now-lastChatNotify<180)return;lastChatNotify=now;tone(920,740,.075,.035,'sine');tone(1180,900,.09,.028,'sine',.065);}
+function normalizeVolume(value){const n=clamp(Math.round(Number(value)||0),0,100);return Math.abs(n-50)<=4?50:n;}
+function syncVolumeControl(){const slider=$('masterVolume'),label=$('masterVolumeValue');if(slider)slider.value=String(audioVolume);if(label)label.textContent=audioVolume+'%';for(const a of nativeAudioPool){const base=Number(a.dataset.baseVolume);if(Number.isFinite(base))a.volume=clamp(base*audioScale()*7,0,1);}}
+function setAudioVolume(value,persist=false,preview=false){audioVolume=normalizeVolume(value);applyAudioLevel();syncVolumeControl();if(persist)save('volume',audioVolume);if(preview&&!muted&&audioVolume>0)tone(620,760,.10,.035,'sine');}
+function syncSound(){ $('soundBtn').classList.toggle('muted',muted);$('soundBtn').setAttribute('aria-pressed',String(!muted));$('soundBtn').setAttribute('aria-label',muted?'Unmute sound':'Mute sound');applyAudioLevel();syncVolumeControl(); }
+function toggleSound(){muted=!muted;save('muted',muted?1:0);syncSound();if(!muted){primeNativeAudio();tone(500,700,.1);}}
+function primeAudioUnlock(){if(muted||audioVolume<=0)return;if(SAFARI_BROWSER)primeNativeAudio();primeWebAudio();}
+for(const event of ['pointerdown','pointerup','touchstart','touchend','mousedown','click'])window.addEventListener(event,primeAudioUnlock,{capture:true,passive:true});window.addEventListener('keydown',primeAudioUnlock,true);
 function setLayout(){
  const coarse=window.matchMedia('(pointer: coarse)').matches||window.matchMedia('(any-pointer: coarse)').matches;
  touchUI=coarse||innerWidth<760||IOS_WEBKIT&&(navigator.maxTouchPoints||0)>0;
@@ -262,6 +306,17 @@ function rayWalls(x,y,dx,dy,r=0){
   if(hit<best-1e-7){best=hit;nearest={t:hit,nx,ny,wall:w};}else if(nearest&&Math.abs(hit-best)<1e-7){if(nx)nearest.nx=nx;if(ny)nearest.ny=ny;}
  }
  return nearest;
+}
+function wallBetweenCenters(x,y,dx,dy){
+ // Ghost tanks ignore wall collision, but another tank on the far side of a wall
+ // must not transmit the ordinary overlap-separation force through that wall.
+ for(const w of nearbyWalls(x,y,dx,dy,0)){
+  if(Math.max(x,x+dx)<w.x||Math.min(x,x+dx)>w.x+w.w||Math.max(y,y+dy)<w.y||Math.min(y,y+dy)>w.y+w.h)continue;
+  let enter=-Infinity,exit=Infinity;
+  if(Math.abs(dx)<1e-9){if(x<w.x||x>w.x+w.w)continue;}else{let a=(w.x-x)/dx,b=(w.x+w.w-x)/dx;if(a>b)[a,b]=[b,a];enter=Math.max(enter,a);exit=Math.min(exit,b);}
+  if(Math.abs(dy)<1e-9){if(y<w.y||y>w.y+w.h)continue;}else{let a=(w.y-y)/dy,b=(w.y+w.h-y)/dy;if(a>b)[a,b]=[b,a];enter=Math.max(enter,a);exit=Math.min(exit,b);}
+  if(enter<=exit&&exit>=0&&enter<=1)return true;
+ }return false;
 }
 function circleHit(x,y,dx,dy,tx,ty,r){const a=dx*dx+dy*dy,ox=x-tx,oy=y-ty,c=ox*ox+oy*oy-r*r;if(c<=0)return 0;if(a<1e-12)return null;const b=2*(ox*dx+oy*dy),disc=b*b-4*a*c;if(disc<0)return null;const n=(-b-Math.sqrt(disc))/(2*a);return n>=0&&n<=1?n:null;}
 function tankHit(x,y,dx,dy,r,owner,ignoreOwner,impactOnly=false){let first=null;for(const t of tanks){if(!t.alive||(t.id===owner&&ignoreOwner)||!impactOnly&&(!canDamage(owner,t)||t.invulnerable>0))continue;const hit=circleHit(x,y,dx,dy,t.x,t.y,t.r+r);if(hit!==null&&(!first||hit<first.at))first={at:hit,tank:t};}return first;}
@@ -906,7 +961,7 @@ function update(dt){
  for(const t of tanks){if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);t.invulnerable=Math.max(0,t.invulnerable-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;t.scopeTime=Math.max(0,(t.scopeTime||0)-dt);t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;}}
   const x=t.x,y=t.y;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.track+=Math.hypot(t.x-x,t.y-y);
  }
- for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){const a=tanks[i],b=tanks[j];if(!a.alive||!b.alive)continue;let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);const over=a.r+b.r-dist;if(over>0){if(dist<.001){dx=1;dy=0;dist=1;}moveTank(a,-dx/dist*over*.5,-dy/dist*over*.5);moveTank(b,dx/dist*over*.5,dy/dist*over*.5);}}
+ for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){const a=tanks[i],b=tanks[j];if(!a.alive||!b.alive)continue;let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);const over=a.r+b.r-dist;if(over>0){if((a.ghostTime>0||b.ghostTime>0)&&wallBetweenCenters(a.x,a.y,dx,dy))continue;if(dist<.001){dx=1;dy=0;dist=1;}moveTank(a,-dx/dist*over*.5,-dy/dist*over*.5);moveTank(b,dx/dist*over*.5,dy/dist*over*.5);}}
  updateBullets(dt);
  for(const p of pickups){p.age+=dt;p.life-=dt;if(p.life<=0)continue;for(const t of tanks){if(t.alive&&distance(t,p)<t.r+13){p.life=0;const def=POWER[p.type];grantPower(t,p.type);addRing(p.x,p.y,def.color,44);burst(p.x,p.y,def.color,13,90);pickupSound();const localIndex=localPilotIndex(t.id);if(localIndex>=0)setPilotFeedback(localIndex,pickupMessage(p.type),2.5);addLog(t.name+' picked up '+def.name.toLowerCase()+'.');break;}}}compactLife(pickups);
  if(mode==='room'&&objectiveMode()){stepLocalObjectives(dt);}
@@ -1124,7 +1179,7 @@ function frame(now){const workStart=performance.now();if(!lastFrame)lastFrame=no
 // Remote entities interpolate snapshots; the local tank predicts movement and
 // reconciles to authoritative positions. Predictions never award hits or points.
 function setNetStatus(text,error=false){$('netStatus').textContent=text;$('netStatus').classList.toggle('error',error);}
-function netBusy(busy){$('createRoomBtn').disabled=busy;$('joinRoomBtn').disabled=busy;}
+function netBusy(busy){$('joinRoomBtn').disabled=busy;}
 const MAX_ROOM_RUNES=128;
 function cleanRoomCode(value){
  const code=String(value??'').replace(/^[\s\u0085]+|[\s\u0085]+$/gu,'');
@@ -1149,8 +1204,8 @@ function acceptOnlineRoomCode(code,announce=true,rerender=true){
 }
 function submitRoomRename(e){
  e?.preventDefault();if(mode!=='online'||!online.connected||online.roomRenamePending)return;const r=roomData(),me=r?roomMember(localPlayerID(),r):null;if(!r||r.host!==localPlayerID()||r.queue||r.matchmaking||r.awayMatch)return;
- const code=cleanRoomCode($('onlineRoomCode').value);if(!validRoomCode(code)){$('roomStatus').textContent='Use a room name of 1–128 characters on one line.';$('onlineRoomCode').focus();return;}if(code===online.code){$('roomStatus').textContent='That is already this room’s code.';return;}
- online.roomRenamePending=true;$('renameRoomBtn').disabled=true;$('roomStatus').textContent='Renaming room…';if(!sendOnline({type:'rename_room',code})){online.roomRenamePending=false;$('renameRoomBtn').disabled=false;$('roomStatus').textContent='Connection unavailable. Room was not renamed.';}
+ const code=cleanRoomCode($('onlineRoomCode').value);if(!validRoomCode(code)){$('roomStatus').textContent='Use a room name of 1–128 characters on one line.';$('onlineRoomCode').focus();return;}if(code===online.code){$('onlineRoomCode').value=online.code;return;}
+ online.roomRenamePending=true;$('onlineRoomCode').disabled=true;$('roomStatus').textContent='Renaming room…';if(!sendOnline({type:'rename_room',code})){online.roomRenamePending=false;$('onlineRoomCode').disabled=false;$('roomStatus').textContent='Connection unavailable. Room was not renamed.';}
 }
 function sendOnline(value){const ws=online.socket;if(!ws||ws.readyState!==WebSocket.OPEN||ws.bufferedAmount>4096)return false;try{ws.send(JSON.stringify(value));return true;}catch(_){return false;}}
 // Host moderation is only UI here: the Go server independently checks identity,
@@ -1263,7 +1318,7 @@ function syncCallsignEditors(force=false){
   if(force||form.dataset.member!==member||old===undefined||field.value===old)field.value=name;
   form.dataset.member=member;form.dataset.currentName=name;
   field.disabled=mode==='online'&&!online.connected;
-  form.querySelector('button').disabled=mode==='online'&&!online.connected||!!online.renamePending||!field.value.trim()||field.value.trim()===name;
+  const saveButton=form.querySelector('button');if(saveButton)saveButton.disabled=mode==='online'&&!online.connected||!!online.renamePending||!field.value.trim()||field.value.trim()===name;
  }
 }
 function cancelCallsignSave(message=''){
@@ -1275,7 +1330,7 @@ function submitCallsign(form){
  if(online.renamePending)return;
  const player=editorPilot(form);if(!player){callsignStatus(form,'That local player is no longer in this room.',true);return;}
  const secondary=form.dataset.pilot==='secondary',name=cleanPilotName(form.elements.callsign.value);
- if(!name){callsignStatus(form,'Enter letters or numbers for your callsign.',true);return;}
+ if(!name){callsignStatus(form,'Enter letters or numbers for your callsign.',true);return;}if(name===player.name){form.elements.callsign.value=player.name;callsignStatus(form,'');syncCallsignEditors();return;}
  if(mode==='room'){
   player.name=name;if(secondary)rememberLocalCallsign(name);else rememberCallsign(name);
   // Update the source room participant, not the temporary display copy.
@@ -1286,7 +1341,7 @@ function submitCallsign(form){
  if(!online.connected){callsignStatus(form,'Reconnect before changing your callsign.',true);return;}
  callsignStatus(form,'');
  const message=secondary?{type:'rename_local',target:player.id,member:player.member,name}:{type:'rename',name};
- if(!sendOnline(message)){callsignStatus(form,'Could not send. Please try Save again.',true);return;}
+ if(!sendOnline(message)){callsignStatus(form,'Could not send. Please try again.',true);return;}
  const pending={form,id:player.id,member:player.member,timer:0};online.renamePending=pending;
  pending.timer=setTimeout(()=>{if(online.renamePending===pending)cancelCallsignSave('Not confirmed yet. Check your connection and try again.');},6000);
  callsignStatus(form,'Saving…');syncCallsignEditors();
@@ -1378,6 +1433,8 @@ function connectOnline(request,reconnecting=false){
   case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}online.roomData=msg;rolePending=false;if(rulesPending){rulesPending=false;closeFeature($('rulesDialog'));}if(presetsPending){presetsPending=false;closeFeature($('presetsDialog'));}const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);break;}
   case 'renamed':acceptCallsign(msg);break;
   case 'kicked':clearTimeout(timeout);receiveKick(msg);break;
+  case 'unshared':clearTimeout(timeout);completeUnshare();break;
+  case 'room_offline':clearTimeout(timeout);toast(msg.message||'The host took this room offline.',3);leaveOnline();break;
   case 'player_kicked':
    if(online.kickPending?.id===msg.id&&online.kickPending?.member===msg.member)cancelKick();
    toast(msg.name+' was removed from the room.',3);break;
@@ -1386,8 +1443,9 @@ function connectOnline(request,reconnecting=false){
   case 'error':
    if(msg.action==='rematch'){matchmaking.rematchPending=false;syncResultActions();toast(msg.message,3);break;}
    if(msg.action?.startsWith('queue_')||msg.action==='return_party'){matchmakingError(msg.message);break;}
-   if(msg.action==='chat'){const st=chatState(msg.channel);st.pending=false;if(roomChat.open&&roomChat.channel===(msg.channel||'room'))$('chatError').textContent=msg.message;syncChatStatus();break;}
-   if(msg.action==='rename_room'){online.roomRenamePending=false;$('renameRoomBtn').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
+   if(msg.action==='chat'){const channel=msg.channel==='opponent'?'opponent':'room',st=chatState(channel),pending=st.pending;st.pending=null;if(pending?.text&&!roomChat.draft)roomChat.draft=pending.text;st.error=msg.message;if(roomChat.open&&roomChat.sendTarget===channel){$('chatInput').value=roomChat.draft;$('chatError').textContent=st.error;}syncChatStatus();break;}
+   if(msg.action==='rename_room'){online.roomRenamePending=false;$('onlineRoomCode').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
+   if(msg.action==='unshare'){online.unsharePending=false;online.unshareSnapshot=null;$('unshareRoomBtn').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='rules'||msg.action==='preset'){rulesPending=presetsPending=false;featureNotice(msg.action==='rules'?'rulesNotice':'presetsNotice',msg.message,true);break;}
    if(online.publishing&&!online.connected){if(matchmaking.pending||matchmaking.pendingKey)matchmakingError(msg.message);clearTimeout(timeout);online.publishing=false;online.manual=true;online.socket=null;ws.close();online.connecting=false;netBusy(false);mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent=msg.message;break;}
    if(msg.action==='spectate'||msg.action==='swap'){rolePending=false;cancelSwap();syncSpectators();$('roomStatus').textContent=msg.message;toast(msg.message,4);break;}
@@ -1451,7 +1509,7 @@ function renderOnlineRoom(){
  $('localRoomName').hidden=isOnline;$('localRoomName').disabled=!host;
  if(!isOnline&&document.activeElement!==$('localRoomName'))$('localRoomName').value=localRoom.code;
  const canRenameRoom=isOnline&&host&&editable;$('roomCodeEditor').hidden=!canRenameRoom;$('roomCodeDisplay').hidden=!isOnline||canRenameRoom;$('roomCodeDisplay').textContent=isOnline?online.code:localRoom.code;
- if(canRenameRoom&&document.activeElement!==$('onlineRoomCode'))$('onlineRoomCode').value=online.code;$('renameRoomBtn').disabled=online.roomRenamePending;
+ if(canRenameRoom&&document.activeElement!==$('onlineRoomCode'))$('onlineRoomCode').value=online.code;$('onlineRoomCode').disabled=online.roomRenamePending;
  $('copyInviteBtn').textContent=isOnline?'COPY INVITE LINK ↗':'SHARE ROOM ONLINE ↗';$('copyInviteBtn').disabled=!!online.connecting;
  $('seatCount').textContent=count+' / '+MAX_TANKS;$('rosterTools').hidden=!host||!editable;
  $('addLocalBtn').disabled=count>=MAX_TANKS||roomMembers(r).some(p=>p.kind==='local');$('addBotBtn').disabled=count>=MAX_TANKS;
@@ -1462,7 +1520,7 @@ function renderOnlineRoom(){
  $('hostControls').hidden=!isOnline||!host||!online.connected;
  $('menuKickRoster').replaceChildren(...r.players.filter(p=>p.id!==localPlayerID()).map(p=>makeRoomPlayerRow(p,r,true)));
  $('returnRoomBtn').hidden=!host;$('returnRoomBtn').textContent='End match';$('copyInGameBtn').hidden=!isOnline;$('copyInGameBtn').disabled=false;if(isOnline)$('copyInGameBtn').textContent='Copy invite link';
- $('onlineLeaveBtn').hidden=!isOnline;if(isOnline)$('onlineLeaveBtn').textContent='Leave online room';
+ 
  $('readyBtn').hidden=!isOnline||host||!!own?.spectating;$('readyBtn').classList.toggle('is-ready',!!own?.ready);$('readyBtn').textContent=own?.ready?'READY ✓ · CLICK TO UNREADY':'I’M READY';$('readyBtn').disabled=!online.connected;
  const canStart=isOnline?r.canStart:sides>=2;
  $('startRoomBtn').hidden=isOnline&&!host;$('startRoomBtn').disabled=!host||!canStart||isOnline&&!online.connected;
@@ -1471,7 +1529,7 @@ function renderOnlineRoom(){
  const complete=r.phase==='matchOver';$('roomEyebrow').textContent=complete?'MATCH COMPLETE':isOnline?'ONLINE ROOM · '+(host?'YOU ARE THE HOST':'CONNECTED'):'LOCAL ROOM · YOU ARE THE HOST';
  $('roomTitle').innerHTML=complete?'GOOD<br><em>GAME.</em>':'YOUR<br><em>ARENA.</em>';
  $('roomStatus').textContent=complete?(roundWinner<0?'Draw — scores tied.':winnerName(roundWinner)+' wins!')+' Adjust the room or play again.':isOnline?(count===MAX_TANKS?'Eight tanks are assigned. New visitors can still join as spectators.':'Room is online. Share the invite link to bring in friends.'):'Local play is ready. Sharing keeps this roster and these teams.';
- $('leaveRoomBtn').textContent=isOnline?'Leave room':'New local room';
+ $('leaveRoomBtn').textContent=isOnline?'Leave room':'New local room';$('unshareRoomBtn').hidden=!(isOnline&&host&&editable);$('unshareRoomBtn').disabled=!!online.unsharePending;
  $('roomBtn').hidden=false;$('roomBtn').textContent=isOnline?online.code:'MY ROOM';
  $('manualContent').innerHTML='<div class="manual-line"><span>Player 1</span><kbd>'+(p2?'WASD + Q':'WASD / ARROWS + Q / SPACE')+'</kbd></div>'+(p2?'<div class="manual-line"><span>Local player 2</span><kbd>ARROWS + SPACE</kbd></div>':'')+'<div class="warning"><b>Last side standing wins.</b><br>Teammates share points and cannot hurt each other. Your own ricochets and grenades are still dangerous.</div>';
  syncFeatureSummary();syncSpectators();renderMatchmaking();
@@ -1690,16 +1748,15 @@ function initOnlineUI(){
  $('kickDialog').addEventListener('cancel',e=>{e.preventDefault();cancelKick();});
  try{$('pilotName').value=localStorage.getItem('leqra.name')||'';}catch(_){}
  const saveName=()=>{try{localStorage.setItem('leqra.name',$('pilotName').value.trim());}catch(_){}};
- for(const form of callsignForms()){form.addEventListener('submit',e=>{e.preventDefault();initAudio();submitCallsign(form);});form.elements.callsign.addEventListener('input',()=>{callsignStatus(form,'');syncCallsignEditors();});}
- $('createRoomBtn').addEventListener('click',()=>{const code=cleanRoomCode($('joinCode').value);if(code&&!validRoomCode(code)){setNetStatus('Use a room name of 1–128 characters on one line.',true);$('joinCode').focus();return;}initAudio();saveName();connectOnline({type:'create',code,name:$('pilotName').value});});
+ for(const form of callsignForms()){const field=form.elements.callsign;form.addEventListener('submit',e=>{e.preventDefault();initAudio();submitCallsign(form);});field.addEventListener('input',()=>{callsignStatus(form,'');syncCallsignEditors();});field.addEventListener('blur',()=>{if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);});field.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);field.blur();}});}
  const join=()=>{const code=cleanRoomCode($('joinCode').value);if(watchInvite){joinWatchInvite(code);return;}if(!validRoomCode(code)){setNetStatus('Enter a room name of 1–128 characters to join or create it.',true);$('joinCode').focus();return;}initAudio();saveName();connectOnline({type:'join',code,name:$('pilotName').value});};
  $('joinRoomBtn').addEventListener('click',join);$('joinCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();join();}});$('pilotName').addEventListener('keydown',e=>{if(watchInvite&&e.key==='Enter'){e.preventDefault();join();}});
  $('onlineBackBtn').addEventListener('click',()=>{if(online.connecting)return;watchInvite=false;watchResume=null;online.inviteCode='';online.inviteWatch=false;resetWatchDialog();if($('joinDialog').open)$('joinDialog').close();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
  $('joinDialog').addEventListener('cancel',e=>{if(online.connecting){e.preventDefault();return;}watchInvite=false;watchResume=null;online.inviteWatch=false;online.inviteCode='';resetWatchDialog();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
  const leave=()=>{if(mode==='online')leaveOnline();else createLocalRoom();};
- $('leaveRoomBtn').addEventListener('click',leave);$('onlineLeaveBtn').addEventListener('click',leave);
+ $('leaveRoomBtn').addEventListener('click',leave);$('unshareRoomBtn').addEventListener('click',unshareOnlineRoom);
  $('joinOtherBtn').addEventListener('click',openJoinDialog);$('addLocalBtn').addEventListener('click',()=>addRoomSeat('local'));$('addBotBtn').addEventListener('click',()=>addRoomSeat('bot'));
- $('localRoomName').addEventListener('input',()=>{localRoom.code=$('localRoomName').value;});$('roomCodeEditor').addEventListener('submit',submitRoomRename);$('onlineRoomCode').addEventListener('input',()=>{$('roomStatus').textContent='Press Rename room to update invite links for everyone.';});
+ $('localRoomName').addEventListener('input',()=>{localRoom.code=$('localRoomName').value;});$('roomCodeEditor').addEventListener('submit',submitRoomRename);const roomCodeField=$('onlineRoomCode');roomCodeField.addEventListener('input',()=>{$('roomStatus').textContent='Room name updates when you press Enter or leave the field.';});roomCodeField.addEventListener('blur',()=>{if(cleanRoomCode(roomCodeField.value)!==online.code)submitRoomRename();});roomCodeField.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(cleanRoomCode(roomCodeField.value)!==online.code)submitRoomRename();roomCodeField.blur();}});
  $('returnRoomBtn').addEventListener('click',returnToRoom);$('restartLocalBtn').addEventListener('click',restartLocalMatch);
  $('readyBtn').addEventListener('click',()=>{initAudio();const p=online.roomData?.players.find(p=>p.id===online.id);sendOnline({type:'ready',ready:!p?.ready});});
  $('startRoomBtn').addEventListener('click',()=>{initAudio();if(mode==='room')startMatch();else sendOnline({type:'start'});});
@@ -1795,6 +1852,19 @@ function shareLocalRoom(){
  const ffa=localRoom.rules.teamMode==='ffa';const roster=[localRoom.players.find(p=>p.id===localRoom.self),...localRoom.players.filter(p=>p.id!==localRoom.self)].map(({name,kind,team,difficulty,spectating,colorIndex})=>({name,kind,team,difficulty,...(ffa?{colorIndex}:{ }),spectating:!!spectating}));
  $('roomStatus').textContent='Sharing this roster with the Go server…';
  connectOnline({type:'publish',code,roster,rules:localRoom.rules});
+}
+function localSnapshotFromOnline(){
+ const r=roomData(),self=localPlayerID();if(!r)return null;const keep=roomMembers(r).filter(p=>p.id===self||p.kind==='bot'||p.kind==='local'&&p.owner===self).map(p=>({id:p.id,member:p.member||0,name:p.name,kind:p.id===self?'human':p.kind,owner:p.id===self?self:p.owner,team:p.team||0,difficulty:p.difficulty,colorIndex:p.colorIndex,spectating:!!p.spectating}));
+ if(!keep.some(p=>p.id===self))return null;return{code:r.code||online.code,self,players:keep,nextMember:Math.max(0,...keep.map(p=>p.member||0)),rules:validateRoomRules({...defaultRoomRules(),...(r.rules||{})})};
+}
+function completeUnshare(){
+ const snap=online.unshareSnapshot||localSnapshotFromOnline();online.unshareSnapshot=null;online.unsharePending=false;if(!snap){leaveOnline();return;}
+ resetMatchmaking();closeChat();clearRoomChat();cancelSwap();rolePending=false;watchInvite=false;watchResume=null;online.inviteWatch=false;online.spectating=false;resetWatchDialog();cancelKick();cancelCallsignSave();online.inviteCode='';online.inviteResumeRetries=0;online.manual=true;clearTimeout(online.retryTimer);clearInput();sendOnlineInput(true);
+ const ws=online.socket;online.socket=null;if(ws&&ws.readyState<2)ws.close(1000,'Room taken offline');online.connected=online.connecting=false;online.code=online.token='';online.id=-1;online.roomData=null;resetOnlineMotion();online.generation=-1;online.menu=false;online.lastMatch=-1;forgetOnlineSession();document.body.classList.remove('online-mode');document.documentElement.style.removeProperty('--pilot');$('roomBtn').hidden=true;$('bestInline').textContent='';$('barHint').textContent='Your own shots can take you out.';try{const url=new URL(location.href);url.searchParams.delete('room');url.searchParams.delete('spectate');history.replaceState(null,'',url);}catch(_){}
+ mode='room';phase='menu';localRoom.code=snap.code;localRoom.self=snap.self;localRoom.players=snap.players;localRoom.nextMember=snap.nextMember;localRoom.rules=snap.rules;$('localRoomName').value=snap.code;persistLocalRoomRules(localRoom.rules);resetPreview();setScreen('room');renderOnlineRoom();toast('ROOM UNSHARED · ONLINE PLAYERS DISCONNECTED',3);
+}
+function unshareOnlineRoom(){
+ const r=roomData();if(mode!=='online'||!online.connected||online.unsharePending||!r||r.host!==localPlayerID()||r.queue||r.matchmaking||r.awayMatch||!['lobby','matchOver'].includes(r.phase))return;if(!confirm('Take this room offline? All remote online players and spectators will be disconnected. Your local setup, bots, rules and local Player 2 will remain.'))return;online.unshareSnapshot=localSnapshotFromOnline();if(!online.unshareSnapshot){toast('Could not preserve this room locally.',3);return;}online.unsharePending=true;$('unshareRoomBtn').disabled=true;$('roomStatus').textContent='Taking room offline…';if(!sendOnline({type:'unshare'})){online.unsharePending=false;online.unshareSnapshot=null;$('unshareRoomBtn').disabled=false;$('roomStatus').textContent='Connection unavailable. Room is still online.';}
 }
 function toggleRoomMenu(){
  if(mode==='online'){toggleOnlineMenu();return;}
@@ -2161,7 +2231,7 @@ function initFeatures(){
  <label class="pickup-frequency">POWER-UP FREQUENCY<select id="rule-pickupRate"><option value="superfast">Super fast · every 1–2s (default)</option><option value="fast">Fast · every 2–3.5s</option><option value="normal">Normal · every 4–6s</option><option value="slow">Slow · every 7–10s</option><option value="off">Off · no pickups</option></select></label></div>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Your own shells, missiles and grenades can hit you in either setting.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span>→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP →</button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
- <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">Bindings use physical keys. P / Esc opens the menu; M toggles sound; F toggles fullscreen. With the default P1 keys and no local P2, arrows and Space also work. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional missile warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Missile-lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
+ <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">Bindings use physical keys. P / Esc opens the menu; M toggles sound; F toggles fullscreen. With the default P1 keys and no local P2, arrows and Space also work. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><p class="mode-help">The midpoint is the original leqra volume and the slider snaps to 50% near the center. The header sound button still provides instant mute.</p><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional missile warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Missile-lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
  document.body.append(dialogs);$('roomRulesBtn').onclick=()=>openFeature('rules');$('roomPresetsBtn').onclick=()=>openFeature('presets');$('roomControlsBtn').onclick=$('menuControlsBtn').onclick=()=>openFeature('controls');
  for(const b of document.querySelectorAll('[data-close-dialog]'))b.onclick=()=>closeFeature($(b.dataset.closeDialog));for(const d of document.querySelectorAll('.feature-dialog'))d.addEventListener('close',()=>{bindingCapture=null;clearInput();});
  $('rulesForm').onsubmit=submitRules;$('rule-mode').onchange=()=>{const m=$('rule-mode').value;$('rule-scoreTarget').value=m==='koth'?60:m==='ctf'?3:5;$('rule-timeLimit').value=m==='elimination'?75:180;updateRuleHelp();};
@@ -2169,6 +2239,7 @@ function initFeatures(){
  $('loadPresetBtn').onclick=applySelectedPreset;$('savePresetBtn').onclick=saveCurrentPreset;$('deletePresetBtn').onclick=deleteSelectedPreset;$('presetSelect').onchange=()=>$('deletePresetBtn').disabled=!$('presetSelect').value.startsWith('saved:');
  $('presetName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveCurrentPreset();}});
  $('resetBindingsBtn').onclick=()=>{bindings=defaultBindings();bindingCapture=null;clearInput();try{localStorage.setItem('leqra.bindings.v1',JSON.stringify({version:1,bindings}));}catch(_){}renderBindings();syncFeatureSummary();updateHUD(true);};
+ $('masterVolume').oninput=e=>setAudioVolume(e.target.value,false,false);$('masterVolume').onchange=e=>setAudioVolume(e.target.value,true,true);syncVolumeControl();
  for(const id of ['missileVisuals','missileAudio'])$(id).onchange=()=>{combatPrefs={...combatPrefs,visual:$('missileVisuals').checked,audio:$('missileAudio').checked};try{localStorage.setItem('leqra.feedback.v1',JSON.stringify(combatPrefs));}catch(_){}initAudio();};
  window.addEventListener('keydown',captureBinding,true);
 }
@@ -2177,11 +2248,11 @@ function initFeatures(){
 // v3.3 spectator membership. A spectator is never represented by a hidden tank.
 function resetWatchDialog(){
  if(!$('joinTitle'))return;
- $('joinDialog').querySelector('.eyebrow').textContent='JOIN OR CREATE';$('joinTitle').textContent='Find your room.';$('joinRoomBtn').textContent='JOIN →';$('createRoomBtn').hidden=false;$('joinCode').readOnly=false;
+ $('joinDialog').querySelector('.eyebrow').textContent='JOIN';$('joinTitle').textContent='Find your room.';$('joinRoomBtn').textContent='JOIN →';$('joinCode').readOnly=false;
 }
 function openWatchInvite(code,session=null){
  watchInvite=true;watchResume=session;online.inviteCode=code;online.inviteWatch=true;
- openOnline();$('joinDialog').querySelector('.eyebrow').textContent='SPECTATOR INVITE';$('joinTitle').textContent='Spectate this room.';$('joinRoomBtn').textContent='START SPECTATING →';$('createRoomBtn').hidden=true;
+ openOnline();$('joinDialog').querySelector('.eyebrow').textContent='SPECTATOR INVITE';$('joinTitle').textContent='Spectate this room.';$('joinRoomBtn').textContent='START SPECTATING →';
  $('joinCode').value=code;$('joinCode').readOnly=true;
  setNetStatus('Choose your callsign, then start spectating. You will not take a tank seat.');
  $('pilotName').focus({preventScroll:true});$('pilotName').select();
@@ -2535,77 +2606,35 @@ function stepLocalSuddenDeath(){
  if(multipleLive)return;
  if(multipleContenders)beginLocalSuddenDeath(true);else endLocalObjective(contenderPilot?.id??-1);
 }
-// Online chat is a floating region, never part of arena sizing. The ordinary
-// room channel remains visible to everyone; matchmaking adds an opponent-only
-// channel beside it without mixing histories or unread counts.
-const roomChat={open:false,code:'',channel:'room',channels:{room:{messages:[],lastID:0,unread:0,pending:false},opponent:{messages:[],lastID:0,unread:0,pending:false}}};
+// Online chat is a single floating conversation. During matchmaking it displays
+// both party traffic and enemy-side traffic together; the compose target is an
+// explicit in-panel choice so opening chat never changes who receives a message.
+const roomChat={open:false,code:'',sendTarget:'room',channels:{room:{messages:[],lastID:0,pending:null,error:''},opponent:{messages:[],lastID:0,pending:null,error:''}},unread:0,draft:''};
 function chatState(channel='room'){return roomChat.channels[channel==='opponent'?'opponent':'room'];}
+function matchPartyChat(){const r=roomData(),me=r?roomMember(localPlayerID(),r):null;return !!r?.matchmaking&&!!me?.hasParty;}
+function roomChatEnabled(){const r=roomData(),me=r?roomMember(localPlayerID(),r):null;return mode==='online'&&!!online.code&&(!r?.matchmaking||!!me?.hasParty);}
 function opponentChatEnabled(){const r=roomData(),me=r?roomMember(localPlayerID(),r):null;return mode==='online'&&!!online.code&&!!r?.matchmaking&&!!me?.hasParty&&!me?.spectating;}
 function syncChatStatus(){
- const enabled=mode==='online'&&!!online.code,oppEnabled=enabled&&opponentChatEnabled(),active=chatState(roomChat.channel);
- const roomState=chatState('room'),oppState=chatState('opponent');
- $('chatBtn').hidden=!enabled;$('enemyChatBtn').hidden=!oppEnabled;
- $('chatBtn').setAttribute('aria-expanded',String(roomChat.open&&roomChat.channel==='room'));$('enemyChatBtn').setAttribute('aria-expanded',String(roomChat.open&&roomChat.channel==='opponent'));
- $('chatBtn').classList.toggle('has-unread',roomState.unread>0);$('enemyChatBtn').classList.toggle('has-unread',oppState.unread>0);
- $('chatBadge').textContent=roomState.unread?String(Math.min(99,roomState.unread)):'';$('enemyChatBadge').textContent=oppState.unread?String(Math.min(99,oppState.unread)):'';
- $('chatBtn').setAttribute('aria-label','Room chat'+(roomState.unread?', '+roomState.unread+' unread messages':''));$('enemyChatBtn').setAttribute('aria-label','Opponent chat'+(oppState.unread?', '+oppState.unread+' unread messages':''));
- $('chatSendBtn').disabled=!online.connected||active.pending;$('chatInput').disabled=!online.connected;
- const opp=roomChat.channel==='opponent';$('chatTitle').textContent=opp?'Opponent chat':'Room chat';$('chatConnection').textContent=!online.connected?'RECONNECTING · MESSAGES NOT SENT':opp?'YOU + THE ENEMY SIDE':'EVERYONE IN THIS ROOM';
- $('chatInput').placeholder=opp?'Message the enemy side…':'Say something…';$('chatInput').setAttribute('aria-label',opp?'Message to the opposing matchmaking side':'Message to everyone in this room');
- $('chatPanel').classList.toggle('opponent-chat-panel',opp);
- if(!enabled&&roomChat.open)closeChat();else if(roomChat.open&&roomChat.channel==='opponent'&&!oppEnabled)openChat('room');
- document.body.classList.toggle('matchmaking-chat',oppEnabled);
+ const enabled=roomChatEnabled()||opponentChatEnabled(),party=matchPartyChat(),oppEnabled=opponentChatEnabled();$('chatBtn').hidden=!enabled;$('chatBtn').title=party?'Match chat':'Room chat (Enter when unbound)';$('chatBtn').setAttribute('aria-expanded',String(roomChat.open));$('chatBtn').classList.toggle('has-unread',roomChat.unread>0);$('chatBadge').textContent=roomChat.unread?String(Math.min(99,roomChat.unread)):'';$('chatBtn').setAttribute('aria-label',(party?'Match chat':'Room chat')+(roomChat.unread?', '+roomChat.unread+' unread messages':''));
+ if(!enabled&&roomChat.open)closeChat();if(!oppEnabled&&roomChat.sendTarget==='opponent')roomChat.sendTarget='room';
+ const target=roomChat.sendTarget==='opponent'&&oppEnabled?'opponent':'room',st=chatState(target);$('chatSendBtn').disabled=!online.connected||!!st.pending;$('chatInput').disabled=!online.connected;$('chatTitle').textContent=party?'Match chat':'Room chat';$('chatConnection').textContent=!online.connected?'RECONNECTING · MESSAGES NOT SENT':party?'PARTY + OPPONENT MESSAGES':'EVERYONE IN THIS ROOM';$('chatSendBtn').textContent=target==='opponent'?'SEND TO OPPONENT':party?'SEND TO PARTY':'SEND';$('chatInput').placeholder=target==='opponent'?'Message the opponent…':party?'Message your party…':'Say something…';$('chatInput').setAttribute('aria-label',target==='opponent'?'Message to opponent':'Message to room or party');
+ const chooser=$('chatTargetSwitch'),opponentToggle=$('chatOpponentToggle');chooser.hidden=!oppEnabled;opponentToggle.checked=target==='opponent';opponentToggle.disabled=!online.connected;$('chatError').textContent=st.error||'';document.body.classList.toggle('matchmaking-chat',oppEnabled);
 }
-function clearRoomChat(code=''){
- roomChat.code=code;roomChat.open=false;roomChat.channel='room';for(const st of Object.values(roomChat.channels)){st.messages=[];st.lastID=0;st.unread=0;st.pending=false;}
- $('chatPanel').hidden=true;$('chatMessages').replaceChildren();$('chatInput').value='';$('chatError').textContent='';syncChatStatus();
+function clearRoomChat(code=''){roomChat.code=code;roomChat.open=false;roomChat.sendTarget='room';roomChat.unread=0;roomChat.draft='';for(const st of Object.values(roomChat.channels)){st.messages=[];st.lastID=0;st.pending=null;st.error='';}$('chatPanel').hidden=true;$('chatMessages').replaceChildren();$('chatInput').value='';$('chatError').textContent='';syncChatStatus();}
+function renderChatMessage(m,channel='room'){
+ const row=document.createElement('div');row.className='chat-message '+(channel==='opponent'?'chat-opponent':'chat-room');row.dataset.chatId=channel+':'+m.id;const head=document.createElement('div');head.className='chat-message-head';const name=document.createElement('strong');name.textContent=m.name;const tag=document.createElement('span');tag.className='chat-channel-tag';const self=roomMember(localPlayerID());tag.textContent=channel==='opponent'?(m.member===self?.member?'TO OPPONENT':'OPPONENT'):(matchPartyChat()?'PARTY':'ROOM');const role=document.createElement('span');role.textContent=m.spectating?'SPECTATING':m.team>0?teamName(m.team):'PLAYER';const date=new Date(m.at),when=document.createElement('time');when.dateTime=date.toISOString();when.textContent=date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const text=document.createElement('p');text.textContent=m.text;head.append(name,tag,role,when);row.append(head,text);if(m.member===self?.member)row.classList.add('chat-self');return row;
 }
-function renderChatMessage(m){
- const row=document.createElement('div');row.className='chat-message';row.dataset.chatId=m.id;
- const head=document.createElement('div');head.className='chat-message-head';const name=document.createElement('strong');name.textContent=m.name;
- const role=document.createElement('span');role.textContent=m.spectating?'SPECTATING':m.team>0?teamName(m.team):'PLAYER';
- const date=new Date(m.at),when=document.createElement('time');when.dateTime=date.toISOString();when.textContent=date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
- const text=document.createElement('p');text.textContent=m.text;head.append(name,role,when);row.append(head,text);const self=roomMember(localPlayerID());if(m.member===self?.member)row.classList.add('chat-self');return row;
-}
-function renderActiveChat(){const st=chatState(),list=$('chatMessages'),frag=document.createDocumentFragment();for(const m of st.messages)frag.append(renderChatMessage(m));list.replaceChildren(frag);list.scrollTop=list.scrollHeight;}
-function openChat(channel='room'){
- if(mode!=='online'||!online.code||channel==='opponent'&&!opponentChatEnabled())return;if(roomChat.open&&roomChat.channel===channel){closeChat();return;}
- roomChat.open=true;roomChat.channel=channel;const st=chatState();st.unread=0;$('chatPanel').hidden=false;$('chatError').textContent='';renderActiveChat();
- clearInput();sendOnlineInput(true);syncChatStatus();positionChatPanel();if(online.connected)$('chatInput').focus({preventScroll:true});
-}
-function closeChat(){
- roomChat.open=false;$('chatPanel').hidden=true;clearInput();if(mode==='online')sendOnlineInput(true);syncChatStatus();if(document.activeElement?.closest('#chatPanel'))document.activeElement.blur();
-}
-function appendChat(m,history=false,channel='room',render=true){
- const st=chatState(channel);if(!m||!Number.isSafeInteger(m.id)||m.id<=st.lastID||typeof m.text!=='string')return false;st.lastID=m.id;st.messages.push(m);if(st.messages.length>60)st.messages.shift();
- const self=roomMember(localPlayerID()),active=roomChat.open&&roomChat.channel===channel;
- if(render&&active){const list=$('chatMessages'),bottom=list.scrollHeight-list.clientHeight-list.scrollTop<48;list.append(renderChatMessage(m));while(list.children.length>60)list.firstElementChild.remove();if(bottom)list.scrollTop=list.scrollHeight;}
- if(!history&&!active&&m.member!==self?.member){st.unread++;chatNotificationSound();}
- if(m.member===self?.member&&st.pending){st.pending=false;if(active){$('chatInput').value='';$('chatError').textContent='';}}
- return true;
-}
-function chatPacket(m){
- if(m.room!==online.code)return;const channel=m.channel==='opponent'?'opponent':'room';if(roomChat.code!==m.room)clearRoomChat(m.room);const st=chatState(channel);
- if(m.type==='chat_history'){const pending=st.pending;st.messages=[];st.lastID=0;for(const item of m.messages||[])appendChat(item,true,channel,false);st.pending=pending;if(roomChat.open&&roomChat.channel===channel)renderActiveChat();}
- else appendChat(m.message,false,channel,true);syncChatStatus();
-}
-function submitChat(e){
- e.preventDefault();const st=chatState();if(!online.connected||st.pending)return;const text=$('chatInput').value.trim();if(!text||[...text].length>280){$('chatError').textContent='Use 1–280 characters.';return;}
- if(sendOnline({type:'chat',channel:roomChat.channel,text})){st.pending=true;$('chatError').textContent='Sending…';syncChatStatus();}else $('chatError').textContent='Connection unavailable. Your message was not sent.';
-}
-function positionChatPanel(){
- if(!roomChat.open)return;const panel=$('chatPanel'),v=window.visualViewport;if(v&&v.height<innerHeight-40){panel.style.bottom=Math.max(10,innerHeight-v.height-v.offsetTop+10)+'px';panel.style.height=Math.max(160,Math.min(435,v.height-20))+'px';}else{panel.style.removeProperty('bottom');panel.style.removeProperty('height');}
-}
-function initRoomChat(){
- const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';
- const enemy=document.createElement('button');enemy.id='enemyChatBtn';enemy.type='button';enemy.className='icon-btn chat-toggle enemy-chat-toggle';enemy.hidden=true;enemy.title='Opponent chat';enemy.setAttribute('aria-label','Opponent chat');enemy.setAttribute('aria-controls','chatPanel');enemy.setAttribute('aria-expanded','false');enemy.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="enemyChatBadge"></span>';
- $('soundBtn').before(button);button.after(enemy);
- document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" maxlength="280" placeholder="Say something…" aria-label="Message to everyone in this room"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Enter sends · Esc closes<br>Typing stops your controls, not the online match.</small></div></section>');
- if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);
- button.onclick=()=>openChat('room');enemy.onclick=()=>openChat('opponent');$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;
- $('chatInput').addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();e.stopPropagation();closeChat();}else e.stopPropagation();});
- window.addEventListener('keydown',e=>{if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat('room');}},true);
-}
+function combinedChatMessages(){const out=[];for(const [channel,st] of Object.entries(roomChat.channels))for(const m of st.messages)out.push({m,channel});out.sort((a,b)=>(a.m.at||0)-(b.m.at||0)||a.m.id-b.m.id||(a.channel>b.channel?1:-1));return out;}
+function renderActiveChat(){const list=$('chatMessages'),frag=document.createDocumentFragment();for(const {m,channel} of combinedChatMessages())frag.append(renderChatMessage(m,channel));list.replaceChildren(frag);list.scrollTop=list.scrollHeight;}
+function setChatSendTarget(channel){if(channel!=='room'&&channel!=='opponent')return false;if(channel==='opponent'&&!opponentChatEnabled())return false;roomChat.sendTarget=channel;syncChatStatus();return true;}
+function switchChatChannel(channel){return setChatSendTarget(channel);}
+function openChat(){if(mode!=='online'||!online.code||!roomChatEnabled()&&!opponentChatEnabled())return;if(roomChat.open){closeChat();return;}roomChat.open=true;roomChat.unread=0;$('chatPanel').hidden=false;$('chatInput').value=roomChat.draft;renderActiveChat();clearInput();sendOnlineInput(true);syncChatStatus();positionChatPanel();if(online.connected)$('chatInput').focus({preventScroll:true});}
+function closeChat(){roomChat.draft=$('chatInput').value;roomChat.open=false;$('chatPanel').hidden=true;clearInput();if(mode==='online')sendOnlineInput(true);syncChatStatus();if(document.activeElement?.closest('#chatPanel'))document.activeElement.blur();}
+function appendChat(m,history=false,channel='room',render=true){const st=chatState(channel);if(!m||!Number.isSafeInteger(m.id)||m.id<=st.lastID||typeof m.text!=='string')return false;st.lastID=m.id;st.messages.push(m);if(st.messages.length>60)st.messages.shift();const self=roomMember(localPlayerID());if(render&&roomChat.open){const list=$('chatMessages'),bottom=list.scrollHeight-list.clientHeight-list.scrollTop<48;list.append(renderChatMessage(m,channel));if(bottom)list.scrollTop=list.scrollHeight;}if(!history&&!roomChat.open&&m.member!==self?.member){roomChat.unread++;chatNotificationSound();}if(m.member===self?.member&&st.pending){st.pending=null;st.error='';}return true;}
+function chatPacket(m){if(m.room!==online.code)return;const channel=m.channel==='opponent'?'opponent':'room';if(roomChat.code!==m.room)clearRoomChat(m.room);const st=chatState(channel);if(m.type==='chat_history'){const pending=st.pending,error=st.error;st.messages=[];st.lastID=0;for(const item of m.messages||[])appendChat(item,true,channel,false);st.pending=pending;st.error=error;if(roomChat.open)renderActiveChat();}else appendChat(m.message,false,channel,true);syncChatStatus();}
+function submitChat(e){e.preventDefault();const channel=roomChat.sendTarget==='opponent'&&opponentChatEnabled()?'opponent':'room',st=chatState(channel);if(!online.connected||st.pending)return;const text=$('chatInput').value.trim();if(!text||[...text].length>280){st.error='Use 1–280 characters.';$('chatError').textContent=st.error;return;}if(sendOnline({type:'chat',channel,text})){st.pending={text};st.error='';roomChat.draft='';$('chatInput').value='';$('chatError').textContent=channel==='opponent'?'Sending to opponent…':matchPartyChat()?'Sending to party…':'Sending…';syncChatStatus();}else{st.error='Connection unavailable. Your message was not sent.';$('chatError').textContent=st.error;}}
+function positionChatPanel(){if(!roomChat.open)return;const panel=$('chatPanel'),v=window.visualViewport;if(v&&v.height<innerHeight-40){panel.style.bottom=Math.max(10,innerHeight-v.height-v.offsetTop+10)+'px';panel.style.height=Math.max(160,Math.min(435,v.height-20))+'px';}else{panel.style.removeProperty('bottom');panel.style.removeProperty('height');}}
+function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" maxlength="280" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when you want the enemy side to receive your next message.<br>Enter sends · Esc closes · Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();e.stopPropagation();closeChat();}else e.stopPropagation();});window.addEventListener('keydown',e=>{if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
 
 // Sampling measures RAF cadence (not server tick rate); no HTML/layout work per frame.
 const frameStats={fps:0,frameMs:0,workMs:0,worstMs:0,count:0,elapsed:0,work:0,worst:0,last:0,at:0};
@@ -2784,9 +2813,10 @@ function initMatchmaking(){
  setInterval(()=>{if(!dialog.open)return;const q=online.roomData?.queue;if(q&&q.stage==='searching'){const elapsed=Math.max(0,Math.floor((Date.now()-q.since)/1000));$('queueElapsed').textContent='Searching · '+Math.floor(elapsed/60)+':'+String(elapsed%60).padStart(2,'0');}if(online.connected&&!q&&performance.now()-matchmaking.lastPoll>2000){matchmaking.lastPoll=performance.now();sendOnline({type:'queue_info'});}},1000);
 }
 
+function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<760)return;try{if(sessionStorage.getItem('leqra.safariNoticeDismissed')==='1')return;}catch(_){}const n=document.createElement('aside');n.id='browserNotice';n.className='safari-recommendation';n.setAttribute('role','status');n.innerHTML='<span><strong>Safari detected.</strong> leqra works here, but Chrome or Firefox is recommended for the most consistent audio and performance.</span><button type="button" aria-label="Dismiss browser recommendation">×</button>';n.querySelector('button').onclick=()=>{try{sessionStorage.setItem('leqra.safariNoticeDismissed','1');}catch(_){}n.remove();};document.body.append(n);}
 // Read-only public state is handy for embedding and smoke testing.
 window.leqra=Object.freeze({version:GAME_VERSION,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),scopeTime:t.scopeTime||0,ghostTime:t.ghostTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
 // Deterministic hooks are only present in explicit development/test mode.
-if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
-initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();requestAnimationFrame(frame);
+if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,unshareOnlineRoom,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
+initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();requestAnimationFrame(frame);
 })();

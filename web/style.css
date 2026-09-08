@@ -34,17 +34,15 @@ body.touch-landscape .room-badge{min-height:30px;padding:6px 9px}body.touch-land
 .callsign-label{display:block;font:8px var(--mono);letter-spacing:1px;color:var(--muted);margin:0 0 6px}
 .callsign-row{display:grid;grid-template-columns:minmax(0,1fr) 66px;gap:7px;align-items:stretch}
 .callsign-row .net-input{min-height:38px;padding:8px 10px}
-.screen-card .callsign-row .callsign-save{margin:0;min-height:38px;padding:7px 8px;font:10px var(--mono);letter-spacing:.8px;width:100%}
 .screen-card .callsign-status{margin:5px 0 0;font:9px/1.4 var(--mono);color:var(--accent-ink);overflow-wrap:anywhere}
 .screen-card .callsign-status.error{color:var(--orange)}
 body.touch-ui .callsign-row .net-input{font-size:16px}
 body.touch-landscape .callsign-editor{margin-bottom:8px}
-body.touch-landscape .callsign-row .net-input,body.touch-landscape .screen-card .callsign-row .callsign-save{min-height:34px;padding:6px 8px}
-@media(max-height:680px) and (orientation:portrait){body.touch-ui #roomScreen .callsign-editor{margin:7px 0}body.touch-ui #roomScreen .callsign-label{font-size:7px;margin-bottom:4px}body.touch-ui #roomScreen .callsign-row .net-input,body.touch-ui #roomScreen .callsign-row .callsign-save{min-height:34px;padding:6px 8px}body.touch-ui #roomScreen .callsign-status{font-size:8px;margin-top:3px}}
+body.touch-landscape .callsign-row .net-input{min-height:34px;padding:6px 8px}
+@media(max-height:680px) and (orientation:portrait){body.touch-ui #roomScreen .callsign-editor{margin:7px 0}body.touch-ui #roomScreen .callsign-label{font-size:7px;margin-bottom:4px}body.touch-ui #roomScreen .callsign-row .net-input{min-height:34px;padding:6px 8px}body.touch-ui #roomScreen .callsign-status{font-size:8px;margin-top:3px}}
 body.touch-landscape #onlineMenuScreen .compact-title{font-size:24px;margin:7px 0}
 body.touch-landscape #onlineMenuScreen #onlineMenuMessage{font-size:10px;margin:7px 0 10px}
 
-body .screen-card:is(#roomScreen,#onlineMenuScreen) .callsign-row .callsign-save{margin:0;align-self:stretch}
 
 /* A two-column match menu keeps all actions on short landscape phones. */
 body.touch-landscape #onlineMenuScreen{display:grid;grid-template-columns:1fr 1.15fr;gap:22px;max-width:600px;align-items:center}
@@ -108,7 +106,7 @@ body.touch-ui #onlineMenuScreen .host-controls .net-player{min-height:44px;paddi
  body.touch-ui #onlineMenuScreen .host-controls .net-player{min-height:40px;padding:0 8px}
  body.touch-ui #onlineMenuScreen .callsign-editor{margin:10px 0 5px}
  body.touch-ui #onlineMenuScreen .callsign-label{margin-bottom:4px}
- body.touch-ui #onlineMenuScreen .callsign-row .net-input,body.touch-ui #onlineMenuScreen .callsign-save{min-height:34px;padding:6px 8px}
+ body.touch-ui #onlineMenuScreen .callsign-row .net-input{min-height:34px;padding:6px 8px}
  body.touch-ui #onlineMenuScreen .online-menu-actions>.primary{min-height:40px;padding:9px 10px;margin-top:8px}
  body.touch-ui #onlineMenuScreen .online-menu-actions>.secondary{min-height:34px;padding:8px 10px;margin-top:6px}
 }
@@ -205,7 +203,7 @@ body.touch-ui #roomScreen.unified-room .room-utility{flex-direction:row;justify-
 body.touch-ui #roomScreen.unified-room .room-utility .text-button{min-height:32px;font-size:9px;padding:5px 0}
 body.touch-ui #roomScreen.unified-room .callsign-editor{margin:0 0 9px}
 body.touch-ui #roomScreen.unified-room .callsign-label{font-size:8px}
-body.touch-ui #roomScreen.unified-room .callsign-row .net-input,body.touch-ui #roomScreen.unified-room .callsign-row .callsign-save{min-height:38px;padding:7px 9px}
+body.touch-ui #roomScreen.unified-room .callsign-row .net-input{min-height:38px;padding:7px 9px}
 body.touch-ui #roomScreen .seat-controls select{min-height:38px;font-size:12px}
 body.touch-ui #roomScreen .seat-name-input{font-size:16px;height:27px}
 body.touch-ui #roomScreen .seat-row{padding:8px 9px}
@@ -554,10 +552,6 @@ body.ios-webkit .touch-controls{-webkit-touch-callout:none}
 .room-code-editor{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:stretch;margin-top:8px}
 .room-code-editor .net-input{min-width:0;margin:0}.room-code-editor .secondary{width:auto;min-width:112px;margin:0;padding:8px 11px;white-space:nowrap}
 .victory-dialog.is-defeat #victoryTitle,.victory-dialog.is-defeat .victory-emblem{color:#ff4f5f!important;text-shadow:0 0 25px rgb(255 79 95 / .28)}
-.enemy-chat-toggle{background:#9f2532!important;color:#fff!important;border-color:#ff5e6d!important;box-shadow:0 0 14px rgb(255 62 78 / .16)}
-.enemy-chat-toggle:hover{background:#bd2d3c!important;border-color:#ff7a86!important}.enemy-chat-toggle.has-unread{background:#d63445!important;border-color:#ff9ca5!important}
-#enemyChatBadge:empty{display:none}#enemyChatBadge{position:absolute;right:-4px;top:-5px;min-width:15px;height:15px;padding:1px 3px;border-radius:8px;background:#fff;color:#a31927;font:10px var(--mono)}
-.opponent-chat-panel{border-color:#e35160}.opponent-chat-panel>header{background:rgb(180 35 51 / .08)}.opponent-chat-panel #chatTitle{color:#ff5d6c}
 @media(max-width:430px){
  body.touch-ui.matchmaking-chat .header-right{gap:2px}
  body.touch-ui.matchmaking-chat .header-right .icon-btn{width:26px;min-width:26px;height:32px}
@@ -567,3 +561,18 @@ body.ios-webkit .touch-controls{-webkit-touch-callout:none}
  body.touch-ui.matchmaking-chat .brand-sub{font-size:5px;letter-spacing:1px}
  .room-code-editor{grid-template-columns:1fr}.room-code-editor .secondary{width:100%}
 }
+
+
+/* v4.22: clearer native controls, integrated match chat, and Safari guidance. */
+.feature-dialog select,.seat-controls select,.add-bot-row select{appearance:none;-webkit-appearance:none;padding-right:46px!important;background-image:linear-gradient(45deg,transparent 50%,var(--text-soft) 50%),linear-gradient(135deg,var(--text-soft) 50%,transparent 50%);background-position:calc(100% - 25px) 50%,calc(100% - 19px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.auto-save-hint{margin:4px 2px 0;font:8px var(--mono);color:var(--text-muted)}
+.safari-recommendation{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:1200;width:min(620px,calc(100vw - 24px));display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface);box-shadow:0 12px 45px rgb(var(--shadow-rgb) / .35);font:11px/1.45 var(--sans);color:var(--text-soft)}
+.safari-recommendation strong{color:var(--text-main)}.safari-recommendation button{margin-left:auto;flex:0 0 auto;border:0;background:transparent;color:var(--text-main);font-size:20px;cursor:pointer}
+.chat-target-switch{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:7px;width:max-content;max-width:100%;margin:0 0 8px auto;color:var(--text-soft);font:8px var(--mono);letter-spacing:.45px;cursor:pointer;user-select:none}.chat-target-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:2}.chat-target-track{position:relative;width:30px;height:16px;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface-raised);transition:.15s}.chat-target-track i{position:absolute;width:10px;height:10px;left:2px;top:2px;border-radius:50%;background:var(--text-muted);transition:.15s}.chat-target-switch input:checked+.chat-target-track{border-color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}.chat-target-switch input:checked+.chat-target-track i{transform:translateX(14px);background:var(--danger)}.chat-target-switch input:focus-visible+.chat-target-track{outline:2px solid var(--accent-ink);outline-offset:2px}.chat-target-switch:has(input:checked){color:var(--danger)}
+.chat-message .chat-channel-tag{border:1px solid var(--border-strong);border-radius:999px;padding:2px 5px;font:7px var(--mono);letter-spacing:.5px}.chat-message.chat-opponent .chat-channel-tag{border-color:color-mix(in srgb,var(--danger) 60%,var(--border-strong));color:var(--danger)}.chat-message.chat-opponent{background:linear-gradient(90deg,color-mix(in srgb,var(--danger) 5%,transparent),transparent 70%)}
+.chat-messages:empty::before{content:'No messages yet.'}
+.room-utility{align-items:stretch}.room-utility #unshareRoomBtn{color:var(--warning)}
+/* v4.22: single integrated match chat and field-only room editing. */
+.room-code-editor{grid-template-columns:minmax(0,1fr)}
+
+.volume-label{display:flex;align-items:center;justify-content:space-between;gap:12px;font:10px var(--mono);letter-spacing:1px;color:var(--text-soft);margin:2px 0 9px}.volume-label strong{font:12px var(--mono);color:var(--accent-ink);font-variant-numeric:tabular-nums}.volume-slider{display:block;width:100%;height:28px;margin:0;accent-color:var(--accent-ink);cursor:pointer}.volume-slider:focus-visible{outline:2px solid var(--accent-ink);outline-offset:3px}
