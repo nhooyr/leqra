@@ -56,7 +56,7 @@ You can deploy the binary anywhere as all assets are embedded.
 
 ## TODO
 
-1. Increase version for the safari detection message change.
+1. Increase version to cache bust for the safari detection message change. 1077aea
 1. The src/web/assets that duplicate from src should be symlinks instead of having entirely duplicate versions.
 2. Add mouse pointer aiming + click to fire to the controls for player 1 on desktop.
 3. Simplify the initial UI to just a big PLAY button and then add an advanced button that reveals the current lobby UI to allow making changes. Or maybe there should be more intermediate buttons like another button to show the full roster?
