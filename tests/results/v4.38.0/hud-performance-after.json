@@ -1,0 +1,48 @@
+{
+  "runtime": "v24.19.0",
+  "scope": "Production two-pilot loadout and combat-feedback refresh functions in Node/V8 with a lightweight DOM stand-in. Excludes browser layout, paint, and simulation; no FPS inference.",
+  "results": [
+    {
+      "mode": "room",
+      "projectiles": 32,
+      "medianUs": 5.65,
+      "samples": 7,
+      "projectileReads": 128
+    },
+    {
+      "mode": "room",
+      "projectiles": 192,
+      "medianUs": 7.323,
+      "samples": 7,
+      "projectileReads": 768
+    },
+    {
+      "mode": "room",
+      "projectiles": 768,
+      "medianUs": 14.226,
+      "samples": 7,
+      "projectileReads": 3072
+    },
+    {
+      "mode": "online",
+      "projectiles": 32,
+      "medianUs": 6.306,
+      "samples": 7,
+      "projectileReads": 128
+    },
+    {
+      "mode": "online",
+      "projectiles": 192,
+      "medianUs": 8.244,
+      "samples": 7,
+      "projectileReads": 768
+    },
+    {
+      "mode": "online",
+      "projectiles": 768,
+      "medianUs": 13.688,
+      "samples": 7,
+      "projectileReads": 3072
+    }
+  ]
+}

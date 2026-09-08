@@ -10,8 +10,8 @@ function boot({p2=false,spectating=false}={}){
  const room={players:[...(!spectating?[primary]:[]),...(p2?[secondary]:[])],spectators:spectating?[primary]:[],rules:{mode:'elimination'},phase:'lobby'};
  const s={mode:'online',phase:'onlineLobby',round:1,phaseTime:2.6,goUntil:0,tanks:[],COLORS:['#f80','#08f'],online:{roomData:room,snapshots:[{generation:0,tanks:[],tankMap:new Map()}]},$: $,document:{body},performance:{now:()=>1000},POWER:{shield:{color:'#0ff'}},pilotFeedback:[{},{}],
   roomData:()=>room,localPlayerID:()=>0,secondaryID:()=>room.players.find(p=>p.kind==='local')?.id,paintColor:c=>c,powerCapacity:()=>5,activeAmmo:()=>0,ownedGrenades:()=>[],shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,
-  syncPauseButton:noop,renderLineup:noop,survivalBreak:()=>false,survivalMode:()=>false,survivalBossPreview:()=>null,suddenDeath:()=>false,modeInstructions:()=>'',tone:noop,onlineHUD:noop,updateObjectiveHUD:noop,updateCombatFeedback:noop,syncSpectatingHUD:noop};
- vm.createContext(s);for(const name of ['setText','setStyle','pilotLoadoutTank','renderPilotLoadout','updateHUD'])vm.runInContext(declaration(name),s);
+  syncPauseButton:noop,renderLineup:noop,survivalBreak:()=>false,survivalMode:()=>false,survivalBossPreview:()=>null,suddenDeath:()=>false,modeInstructions:()=>'',getCountdownTip:()=> 'Get ready.',tone:noop,onlineHUD:noop,updateObjectiveHUD:noop,updateCombatFeedback:noop,syncSpectatingHUD:noop};
+ vm.createContext(s);for(const name of ['setText','setStyle','pilotProjectileState','pilotLoadoutTank','renderPilotLoadout','updateHUD'])vm.runInContext(declaration(name),s);
  function snapshot(phase,bodies){s.phase=phase;room.phase=phase==='onlineLobby'?'lobby':phase;s.online.snapshots=[{generation:1,tanks:bodies,tankMap:new Map(bodies.map(t=>[t.id,t]))}];s.updateHUD(true);}
  return{s,$,room,primary,secondary,body,snapshot};
 }

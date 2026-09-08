@@ -204,9 +204,9 @@ func (g *Game) respawnTank(t *Tank) {
 	t.fireBlocked = false
 	g.emit("respawn", t, t.ID, "")
 }
-func (g *Game) respawnPlayers(dt float64, players [maxTanks]*Player) {
+func (g *Game) respawnPlayers(dt float64, players [maxTanks]*Player) (respawned [maxTanks]bool) {
 	if g.Objectives == nil || g.suddenDeath() || g.survivalMode() {
-		return
+		return respawned
 	}
 	for id, t := range g.Tanks {
 		if t == nil || t.Alive || players[id] == nil || !participantAvailable(players, id) {
@@ -217,10 +217,12 @@ func (g *Game) respawnPlayers(dt float64, players [maxTanks]*Player) {
 			t.Team = players[id].Team
 			t.Color = selectedColor(id, t.Team, players[id].ColorIndex, g.settings())
 			g.respawnTank(t)
+			respawned[id] = t.Alive
 			players[id].Input = Input{}
 			players[id].FirePending = false
 		}
 	}
+	return respawned
 }
 func (g *Game) addObjectivePoint(id int) {
 	if g.suddenDeath() || g.Phase != "playing" || id < 0 || id >= maxTanks {

@@ -232,3 +232,15 @@ test('Survival holds its cleared maze for 240 ticks, then freezes a fresh boss a
  for(let tick=1;tick<360;tick++){s.update(1/120);assert.equal(s.phase,'countdown');assert.equal(JSON.stringify(s.tanks),frozen);assert.equal(s.grid,newMaze);assert.equal(s.roundClock,75);assert.equal(stats.duration,reportDuration);}
  s.update(1/120);assert.equal(s.phase,'playing');assert.equal(s.grid,newMaze);assert.equal(JSON.stringify(s.tanks),frozen);assert.equal(s.localSurvivalCheckpoint.wave,5);assert.equal(s.localSurvivalCheckpoint.duration,reportDuration);
 });
+
+
+test('actual Survival wave starts, retries and full replays rotate one stable countdown tip',()=>{
+ const s=boot({target:15});s.GRENADE_FUSE=10;s.logLines=[];
+ vm.runInContext(source.match(/const MAZE_SIZES=[^\n]+/)[0]+'\n'+source.match(/const countdownTipHistory=[^\n]+/)[0],s);
+ for(const name of ['mapDimensions','pickupCap','pickupLifetime','countdownTipPool','getCountdownTip','resetTanks','initObjectives','startRound','startMatch'])vm.runInContext(declaration(name),s);
+ s.startMatch();assert.equal(s.phase,'countdown');const first=s.getCountdownTip(),serial=s.localRoom.countdownSerial;
+ for(let n=0;n<30;n++)assert.equal(s.getCountdownTip(),first);
+ clearWave(s);s.stepLocalSurvival(2);assert.equal(s.phase,'countdown');assert.equal(s.survivalState().wave,2);assert.equal(s.localRoom.countdownSerial,serial+1);const second=s.getCountdownTip();assert.notEqual(second,first);
+ const maze=s.grid;assert.equal(s.restartLocalSurvivalWave(),true);assert.equal(s.grid,maze);assert.equal(s.survivalState().wave,2);assert.equal(s.localRoom.countdownSerial,serial+2);const retry=s.getCountdownTip();assert.notEqual(retry,second);
+ s.startMatch();assert.equal(s.survivalState().wave,1);assert.equal(s.localRoom.countdownSerial,serial+3);assert.notEqual(s.getCountdownTip(),retry);
+});

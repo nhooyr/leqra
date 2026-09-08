@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.37.0';
+const GAME_VERSION='4.38.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -47,6 +47,7 @@ let scores=Array(MAX_TANKS).fill(0),round=1,roundClock=ROUND_SECONDS,phaseTime=0
 let cssW=0,cssH=0,dpr=1,scale=1,offsetX=0,offsetY=0,mapCanvas=null,touchUI=false,touchLandscape=false;
 let lastFrame=0,accumulator=0,bulletId=0,logLines=[],bestWins=0,resizeTimer=0,arenaResizeFrame=0,gameStarted=false;
 let goUntil=0; // One-shot countdown transition, never a cosmetic event timer.
+const countdownTipHistory={current:null,next:Object.create(null),last:Object.create(null)};
 let guideEnabled=true, muted=false, audioVolume=50,audio=null,audioMaster=null,audioResume=null,noiseBuffer=null,lastBounceSound=0,lastChatNotify=0;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const UA=navigator.userAgent||'';
@@ -66,8 +67,9 @@ const LEGACY_STORAGE_PREFIX='ricochet.';
 function migrateLegacyStorage(storage,keys){
  try{for(const key of keys){const current=STORAGE_PREFIX+key,legacy=LEGACY_STORAGE_PREFIX+key;if(storage.getItem(current)==null){const value=storage.getItem(legacy);if(value!=null)storage.setItem(current,value);}}}catch(_){}
 }
-migrateLegacyStorage(localStorage,['muted','volume','wins','difficulty','name','local2Name','roomRules.v1','bindings.v1','feedback.v1','presets.v1','sidebarHidden']);
-migrateLegacyStorage(sessionStorage,['session','kicked']);
+// Some browser policies reject the storage property itself before getItem runs.
+try{migrateLegacyStorage(localStorage,['muted','volume','wins','difficulty','name','local2Name','roomRules.v1','bindings.v1','feedback.v1','presets.v1','sidebarHidden']);}catch(_){}
+try{migrateLegacyStorage(sessionStorage,['session','kicked']);}catch(_){}
 
 const pilotFeedback=[{text:'',until:0},{text:'',until:0}];
 let bindings=loadBindings(),bindingCapture=null,combatPrefs=readCombatPrefs(),savedPresets=loadPresets(),localObjectives=null,rulesPending=false,presetsPending=false;
@@ -318,7 +320,7 @@ function setMode(value){delete $('manualContent').dataset.content;if(value==='on
  if(phase==='menu'){resetPreview();setLayout();}}
 function setDifficulty(value){if(!Object.prototype.hasOwnProperty.call(DIFFICULTY,value))return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
 function startMatch(){if(mode==='room'&&roomStartError()){toast(roomStartError(),3);return;}initAudio();clearInput();scores=Array(MAX_TANKS).fill(0);round=1;gameStarted=true;beginLocalMatchStats();logLines=[];addLog(mode==='room'?modeLabel()+' · '+displayScoreTarget()+'.':mode==='solo'?'You vs. the bot squad. First to 5.':'Local duel. First to 5.');startRound();setScreen(null);canvas.focus({preventScroll:true});}
-function startRound(){goUntil=0;closeVictory();clearInput();makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];spawnClock=pickupInterval()[0];roundClock=currentRules().timeLimit;phase='countdown';phaseTime=3;roundWinner=-1;for(const t of tanks)bindLocalTankStats(t);initObjectives();seedPickups();$('toast').hidden=true;toastTime=0;updateHUD(true);}
+function startRound(){localRoom.countdownSerial=(localRoom.countdownSerial||0)+1;goUntil=0;closeVictory();clearInput();makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];spawnClock=pickupInterval()[0];roundClock=currentRules().timeLimit;phase='countdown';phaseTime=3;roundWinner=-1;for(const t of tanks)bindLocalTankStats(t);initObjectives();seedPickups();$('toast').hidden=true;toastTime=0;updateHUD(true);}
 function readyRoom(){goUntil=0;closeVictory();if(mode==='online'){leaveOnline();return;}phase='menu';gameStarted=false;clearInput();scores=Array(MAX_TANKS).fill(0);round=1;phaseTime=0;roundClock=ROUND_SECONDS;setScreen(mode==='room'?'room':'lobby');$('announcer').hidden=true;$('toast').hidden=true;resetPreview();if(mode==='room')renderOnlineRoom();setLayout();}
 function togglePause(){if(mode==='room'){toggleRoomMenu();return;}if(mode==='online'){toggleOnlineMenu();return;}if(['menu','matchOver'].includes(phase))return;if(phase==='paused'){phase=pausedFrom;setScreen(null);initAudio();lastFrame=performance.now();accumulator=0;clearInput();canvas.focus({preventScroll:true});}else{pausedFrom=phase;phase='paused';clearInput();setScreen('pause');$('announcer').hidden=true;$('resumeBtn').focus({preventScroll:true});}updateHUD();}
 function toast(message,duration=2.5){$('toast').textContent=message;$('toast').hidden=false;toastTime=duration;}
@@ -1286,12 +1288,13 @@ function pilotLoadoutTank(id){
 function renderPilotLoadout(player,num,force=false){
  const suffix=num===1?'':'2',panel=$('pilotLoadout'+num),dots=$('ammoDots'+suffix);
  if(!player){panel.hidden=true;return null;}panel.hidden=false;
+ const projectiles=pilotProjectileState(player);
  const rosterPilot=roomData()?.players.find(p=>p.id===player.id);
  const name=rosterPilot?.name||player.name;panel.style.setProperty('--loadout-color',paintColor(player.color));
  setText('loadoutName'+num,name);$('loadoutName'+num).title=name;
  // Machine Gun shows its firing budget instead; avoid rebuilding hidden slot dots.
  if(player.power!=='rapid'||!player.alive){
-  const capacity=powerCapacity(player),available=Math.max(0,capacity-activeAmmo(player)),key=[player.id,player.power,capacity,available,player.alive].join(':');
+  const capacity=powerCapacity(player),available=Math.max(0,capacity-projectiles.ammo),key=[player.id,player.power,capacity,available,player.alive].join(':');
   if(force||dots.dataset.state!==key){
    dots.dataset.state=key;dots.innerHTML=Array.from({length:Math.min(capacity,12)},(_,i)=>`<i class="ammo-dot ${i>=Math.ceil(available/capacity*Math.min(capacity,12))||!player.alive?'empty':''}"></i>`).join('');
   }
@@ -1299,9 +1302,9 @@ function renderPilotLoadout(player,num,force=false){
   dots.setAttribute('aria-label',name+': '+(player.alive?available:0)+' of '+capacity+' '+quantity+' available');
  }
  panel.setAttribute('aria-label','Player '+num+', '+name+', ammunition and power-ups');
- const liveGrenades=ownedGrenades(player),remoteReady=player.alive&&liveGrenades.length>0;
+ const remoteReady=player.alive&&projectiles.grenades>0;
  const power=POWER[player.power],charges=['scatter','homing','grenade','laser','cannon'].includes(player.power)?' ×'+player.charges:'';
- const label=$('weaponLabel'+suffix);setText('weaponLabel'+suffix,!player.alive?'TANK DOWN':remoteReady?'DETONATE · '+Math.max(0,...liveGrenades.map(b=>b.life)).toFixed(1)+'s':power?(power.short||power.name)+charges+' · '+(player.power==='rapid'?'EXPIRES ':'')+Math.ceil(player.powerTime)+'s':'STANDARD');
+ const label=$('weaponLabel'+suffix);setText('weaponLabel'+suffix,!player.alive?'TANK DOWN':remoteReady?'DETONATE · '+projectiles.grenadeLife.toFixed(1)+'s':power?(power.short||power.name)+charges+' · '+(player.power==='rapid'?'EXPIRES ':'')+Math.ceil(player.powerTime)+'s':'STANDARD');
  label.title=label.textContent;
  label.style.color=paintColor(remoteReady?POWER.grenade.color:power?.color||player.color||COLORS[0]);
  setStyle(label,'--weapon-color',label.style.color);
@@ -1335,7 +1338,7 @@ function updateHUD(force=false){
   setText('touchStatus',phase==='menu'?'GOOD LUCK':!player.alive?'TANK DOWN':player.ghostTime>0?'GHOST ACTIVE':player.speedTime>0?'SUPER SPEED':power?(power.short||power.name):player.shield>0?'SHIELDED':player.scopeTime>0?'SCOPE ACTIVE':'STAY SHARP');
  }
  const announce=$('announcer'),intermission=phase==='playing'&&survivalBreak(),bossPreview=phase==='countdown'&&survivalMode()?survivalBossPreview({...survivalState(),status:'break',wave:round-1}):null,resultPreview=phase==='matchOver'&&pendingMatchPresentation?matchResultPreview():null;announce.classList.toggle('round-result',phase==='roundOver'||intermission||!!resultPreview);announce.classList.toggle('boss-preview',!!bossPreview);
- if(phase==='countdown'){const preview=bossPreview;announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0')+(preview?' · '+preview.name:''));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(330,300,.07,.03,'triangle');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',preview?'Equipment: '+preview.equipment:mode==='solo'?'You vs. the bot squad. Take out both bots.':modeInstructions());}
+ if(phase==='countdown'){const preview=bossPreview;announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0')+(preview?' · '+preview.name:''));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(330,300,.07,.03,'triangle');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',preview?'Equipment: '+preview.equipment:getCountdownTip());}
  else if(intermission){const state=survivalState();announce.hidden=false;setText('announceTop','SQUAD SURVIVES');setText('announceMain','WAVE '+state.wave+' CLEARED');setText('announceSub','New maze in '+Math.ceil(state.breakTime)+'…');$('announceMain').style.color=paintColor(COLORS[0]);}
  else if(resultPreview){announce.hidden=false;setText('announceTop',resultPreview.top);setText('announceMain',resultPreview.main);setText('announceSub',resultPreview.sub);$('announceMain').style.color=paintColor(resultPreview.color);}
  else if(phase==='playing'&&performance.now()<goUntil&&!suddenDeath()){announce.hidden=false;setText('announceTop','WEAPONS LIVE');setText('announceMain','GO');setText('announceSub','');}
@@ -1442,7 +1445,7 @@ function drawLocalSpawnGuide(t){
  const zoom=Math.max(.05,scale),width=Math.max(2.5,1.6/zoom);
  ctx.save();ctx.globalAlpha=alpha;ctx.beginPath();ctx.arc(0,0,34,0,TAU);
  ctx.strokeStyle='#081015';ctx.lineWidth=width+1.5/zoom;ctx.stroke();
- ctx.strokeStyle=t.id===secondaryID()?'#ff4fd8':'#ffd76a';ctx.lineWidth=width;ctx.stroke();ctx.restore();
+ ctx.strokeStyle=t.id===secondaryID()?'#ff4fd8':'#bf5cff';ctx.lineWidth=width;ctx.stroke();ctx.restore();
 }
 function drawTank(t,withLabel=true){
  if(!t.alive){ctx.save();ctx.translate(t.x,t.y);ctx.rotate(t.angle);ctx.globalAlpha=.6;ctx.fillStyle=paintColor('#091116');roundRect(ctx,-18,-16,36,32,5);ctx.fill();ctx.strokeStyle=paintColor('#46545a');ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-8,-8);ctx.lineTo(8,8);ctx.moveTo(8,-8);ctx.lineTo(-8,8);ctx.stroke();ctx.restore();return;}
@@ -1921,6 +1924,7 @@ function connectOnline(request,reconnecting=false){
   if(online.socket===ws)clearRestartWavePending();
   clearTimeout(timeout);if(online.socket!==ws)return;online.connected=false;online.connecting=false;rolePending=false;clearRoomModePending();syncRoomModePicker();cancelSwap();cancelKick();cancelCallsignSave('Connection lost. Check your callsign after reconnecting.');syncCallsignEditors();netBusy(false);clearInput();
   clearEndMatchPending();
+  online.unsharePending=false;online.unshareSnapshot=null;
   syncChatStatus();if(mode!=='online'||online.manual)return;
   if(online.code&&online.token){showReconnecting();scheduleReconnect();}
   else {if(online.publishing){online.publishing=false;mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent='Could not reach the Go server. Local play is still available.';return;}phase='menu';setScreen('online');setNetStatus('Could not reach the Go game server. Start it with go run . and open its webpage.',true);}
@@ -1938,6 +1942,7 @@ function scheduleReconnect(){
  online.retryTimer=setTimeout(()=>{if(mode==='online'&&!online.manual)connectOnline({type:'join',code:online.code,token:online.token,name:$('pilotName').value},true);},delay);
 }
 function leaveOnline(){
+ online.unsharePending=false;online.unshareSnapshot=null;
  clearEndMatchPending();
  clearRestartWavePending();
  resetMatchmaking();
@@ -2578,6 +2583,77 @@ function setLocalRules(value){
 }
 function modeLabel(){return {elimination:'ELIMINATION',ctf:'CAPTURE THE FLAG',koth:'KING OF THE HILL',survival:'SURVIVAL'}[currentRules().mode];}
 function modeInstructions(){return survivalMode()?'Clear every enemy wave together before its timer runs out. Fallen squadmates return between waves. Bosses arrive every fifth wave: Normal first, then Fierce, then Godlike.':currentRules().mode==='ctf'?'Steal an enemy flag and bring it to your base. Your own flag must be home.':currentRules().mode==='koth'?'Hold the hill alone or with allies. Opposing sides contest it; nobody scores.':'Eliminate every opposing side to win the round.';}
+// Read one short tip during each ordinary countdown. Boss equipment keeps the
+// same space on boss waves; selection never advances just because the HUD redraws.
+function countdownTipPool(rules=currentRules()){
+ const modeTips=[],powerTips=[],generalTips=[],add=(list,id,text)=>list.push({id,text});
+ const gameMode=mode==='solo'||mode==='duel'?'elimination':rules.mode,teams=rules.teamMode==='teams';
+ if(gameMode==='survival'){
+  add(modeTips,'survival-timer','Clear every enemy before the wave timer runs out.');
+  add(modeTips,'survival-revive','Fallen squadmates return when the next wave starts.');
+  add(modeTips,'survival-last-ally','One surviving squadmate can save the run.');
+  add(modeTips,'survival-reset','Each new wave brings a fresh maze and resets equipment.');
+  add(modeTips,'survival-retry','Restart wave keeps this maze and your completed-wave progress.');
+  add(modeTips,'survival-bots','All-bot squads can play Survival while human pilots spectate.');
+  if(rules.scoreTarget>=5){
+   add(modeTips,'survival-boss-shield','Boss waves give every ally a starting shield, even with pickups off.');
+   add(modeTips,'survival-boss-cycle','A boss joins the enemy wave every fifth wave.');
+   add(modeTips,'survival-boss-tiers','New boss tiers: Normal at 5'+(rules.scoreTarget>=10?', Fierce at 10':'')+(rules.scoreTarget>=15?', Godlike at 15':'')+'.');
+  }
+ }else if(gameMode==='ctf'){
+  add(modeTips,'ctf-capture','Bring the enemy flag to your base while your own flag is home.');
+  add(modeTips,'ctf-return','Once protection ends, touch your dropped flag to return it.');
+  add(modeTips,'ctf-auto-return','Dropped flags return home after 12 seconds.');
+  add(modeTips,'ctf-make-space','Leave space at your base for an allied flag carrier.');
+  add(modeTips,'ctf-target','Score '+rules.scoreTarget+' capture'+(rules.scoreTarget===1?'':'s')+' to win.');
+ }else if(gameMode==='koth'){
+  add(modeTips,'koth-score','Hold the hill uncontested to score one point per second.');
+  add(modeTips,'koth-contest','Opposing sides on the hill stop all scoring.');
+  add(modeTips,'koth-protection','Spawn protection must expire before you can score on the hill.');
+  if(teams)add(modeTips,'koth-team-score','More allies on the hill do not multiply team points.');
+  add(modeTips,'koth-target','Reach '+rules.scoreTarget+' hill point'+(rules.scoreTarget===1?'':'s')+' to win.');
+ }else{
+  add(modeTips,'elimination-survive',mode==='solo'?'Defeat both bots to win the round.':teams?'The last team standing wins the round.':'The last tank standing wins the round.');
+  add(modeTips,'elimination-target','Win '+rules.scoreTarget+' round'+(rules.scoreTarget===1?'':'s')+' to take the match.');
+  add(modeTips,'elimination-revive','Eliminated tanks return in the next round.');
+  add(modeTips,'elimination-draw','The timer ends the round in a draw if multiple sides remain.');
+ }
+ if(gameMode==='ctf'||gameMode==='koth'){
+  add(modeTips,'objective-respawn','Eliminated tanks respawn after '+rules.respawnSeconds+' second'+(rules.respawnSeconds===1?'':'s')+'.');
+  add(modeTips,'objective-tie','A tied time limit starts sudden death: final lives, no respawns.');
+ }
+ if(teams)add(generalTips,'friendly-fire',rules.friendlyFire?'Friendly fire is ON: leave clear firing lanes for allies.':'Friendly fire is OFF; your own ricochets can still hit you.');
+ add(generalTips,'ricochet','Your standard shells can ricochet back into you.');
+ add(generalTips,'countdown','Movement and firing begin when the countdown reaches GO.');
+ if(rules.pickupRate!=='off'&&rules.weapons.length){
+  const [c,r]=mapDimensions(rules.mapSize),duration=powerEffectDuration(c,r);
+  const powerText={
+   rapid:'Machine gun: '+MACHINE_FIRING_ROUNDS/60+' seconds of firing; watch FIRE LEFT.',
+   scatter:'Shotgun pellets cannot hit the tank that fired them.',
+   shield:'Shield pickups stack charges and refresh the shield timer.',
+   homing:'Homing missiles can bounce; use turns and walls to shake them.',
+   grenade:'Grenades have a '+GRENADE_FUSE+'-second fuse; press Fire again to detonate.',
+   speed:'Speed pickups stack for faster movement and turning.',
+   laser:'Lasers ricochet instantly and cannot hit their own shooter.',
+   scope:'Scope extends your aiming guide without replacing your weapon.',
+   cannon:'Cannon shells ignore interior walls and bounce off the outer rim.',
+   ghost:'Ghost lets you drive through interior walls temporarily.'
+  };
+  for(const kind of rules.weapons)if(Object.prototype.hasOwnProperty.call(powerText,kind))add(powerTips,'power-'+kind,powerText[kind]);
+  if(rules.weapons.includes('grenade'))add(powerTips,'grenade-self','Your own grenade blast can eliminate you.');
+  add(generalTips,'power-duration','Equipped power-ups last up to '+duration+' seconds on this map.');
+  add(generalTips,'pickup-expiry','Uncollected pickups expire after '+pickupLifetime(c,r)+' seconds on this map.');
+ }
+ const tips=[];for(let i=0;i<Math.max(modeTips.length,powerTips.length,generalTips.length);i++)for(const list of [modeTips,powerTips,generalTips])if(list[i])tips.push(list[i]);
+ return tips;
+}
+function getCountdownTip(){
+ const rules=currentRules(),scope=mode==='online'?[mode,online.code,online.token,online.snapshots.at(-1)?.generation??online.generation]:[mode,localRoom.countdownSerial||0],key=JSON.stringify([...scope,rules.mode,round]);
+ if(countdownTipHistory.current?.key===key)return countdownTipHistory.current.text;
+ const group=mode==='solo'||mode==='duel'?mode:rules.mode,tips=countdownTipPool(rules);let next=countdownTipHistory.next[group]||0,tip=tips[next%tips.length];
+ if(tip.id===countdownTipHistory.last[group]&&tips.length>1)tip=tips[++next%tips.length];
+ countdownTipHistory.next[group]=next+1;countdownTipHistory.last[group]=tip.id;countdownTipHistory.current={key,text:tip.text};return tip.text;
+}
 function displayScoreTarget(){const r=currentRules();return r.mode==='survival'?r.scoreTarget+' WAVES':r.mode==='koth'?r.scoreTarget+' HILL POINTS':r.mode==='ctf'?r.scoreTarget+' CAPTURES':'FIRST TO '+r.scoreTarget;}
 function isRoomHost(){return roomData()?.host===localPlayerID();}
 function isRoomEditable(){const r=roomData();return isRoomHost()&&!r?.queue&&!r?.matchmaking&&!r?.awayMatch&&['menu','onlineLobby','matchOver'].includes(phase);}
@@ -2922,6 +2998,7 @@ function grantLocalSurvivalSquadShields(){
 function startLocalSurvivalWave(restart=false){
  const state=localObjectives?.survival;if(!state)return;
  const priorSerial=Math.max(0,...tanks.map(t=>t.spawnSerial||0)),members=localRoom.players.filter(p=>!p.spectating&&p.connected!==false);
+ if(state.wave>0)localRoom.countdownSerial=(localRoom.countdownSerial||0)+1;
  if(state.wave>0&&!restart){makeMaze();particles=[];rings=[];shake=0;phase='countdown';phaseTime=3;roundWinner=-1;}
  tanks=tanks.filter(t=>!t.survivalEnemy&&members.some(p=>p.id===t.id));bullets=[];traces=[];clearInput();goUntil=0;
  if(state.wave>0){for(const t of tanks)t.alive=false;for(const t of tanks)respawnLocalTank(t);pickups=[];spawnClock=pickupInterval()[0];}
@@ -3146,8 +3223,21 @@ function updateObjectiveHUD(){
  else if(on&&o){setText('objectiveModeLabel',o.mode==='ctf'?'CAPTURE THE FLAG':'KING OF THE HILL');setText('objectiveStatus',o.mode==='ctf'?o.flags.map(f=>shortTeamName(f.team)+': '+(f.home?'HOME':f.carrier>=0?'TAKEN':'DROPPED')).join(' · '):o.contested?'CONTESTED · NO POINTS':o.owner>0?teamName(o.owner)+' CONTROLS':o.owner<0?(tanks.find(t=>t.id===-o.owner-1)?.name||'PILOT')+' CONTROLS':'ENTER THE HILL');}
  $('objectiveBar').classList.toggle('sudden-death',!!o?.suddenDeath);
  if(mode!=='online')setText('bestInline','');const target=document.querySelector('.sidebar .target'),targetText=String(displayScoreTarget());if(target.textContent!==targetText)target.textContent=targetText;
- if(objectiveMode()){label=currentRules().mode==='ctf'?'FLAGS':'HILL';if(phase==='countdown')setText('announceSub',modeInstructions());}
+ if(objectiveMode())label=currentRules().mode==='ctf'?'FLAGS':'HILL';
  setText('arenaStatus',status);setText('roundLabel',label);setText('clock',clock);$('clock').classList.toggle('urgent',urgent);
+}
+// Read the same authoritative/local source as the gameplay queries, once per
+// pilot HUD pass. Keep this ephemeral: local bullets mutate between simulation
+// steps, and a new online snapshot can arrive before the rendered tanks do.
+function pilotProjectileState(t,checkLocks=false){
+ const list=mode==='online'?(online.snapshots.at(-1)?.bullets||[]):bullets;
+ let ammo=0,grenades=0,grenadeLife=0,locked=false;
+ for(const b of list){
+  if(b.dead)continue;
+  if(b.owner===t.id){ammo++;if(b.kind==='grenade'){grenades++;grenadeLife=Math.max(grenadeLife,b.life);}}
+  else if(checkLocks&&!locked&&b.kind==='homing'&&b.target===t.id&&canDamage(b.owner,t))locked=true;
+ }
+ return{ammo:t.power==='laser'?Math.max(0,3-t.charges):ammo,grenades,grenadeLife,locked};
 }
 function liveFeedbackTank(t){
  if(mode!=='online')return t;
@@ -3176,12 +3266,12 @@ function updateMachineBudget(t,num){
 function updateCombatFeedback(force=false){
  const now=performance.now();if(!force&&now-feedbackAt<1000/30)return;feedbackAt=now;
  for(const [num,source]of [[1,controlledTank()],[2,tanks.find(t=>t.id===secondaryID())]]){
-  if(!source)continue;const t=liveFeedbackTank(source),active=phase==='playing'&&t.alive&&!survivalBreak(),locked=active&&missileLocks(t).length>0;
+  if(!source)continue;const t=liveFeedbackTank(source),active=phase==='playing'&&t.alive&&!survivalBreak(),projectiles=pilotProjectileState(t,active),locked=active&&projectiles.locked;
   const warning=$('missileWarning'+num);warning.hidden=!combatPrefs.visual||!locked;if(warning.textContent!=='⚠ MISSILE LOCK')warning.textContent='⚠ MISSILE LOCK';
   const panel=$('pilotLoadout'+num);panel.classList.toggle('missile-locked',combatPrefs.visual&&locked);
   if(locked&&!lastLocks[num]&&combatPrefs.audio&&time-(lastLockTone[num]||-10)>1.5){tone(850,1050,.07,.025,'sine');tone(850,1150,.08,.025,'sine',.11);lastLockTone[num]=time;}lastLocks[num]=locked;
   updateMachineBudget(t,num);
-  const remote=t.alive&&ownedGrenades(t).length>0,cap=powerCapacity(t),free=t.power==='laser'?t.charges:cap-activeAmmo(t),need=t.power==='scatter'?3:1;
+  const remote=t.alive&&projectiles.grenades>0,cap=powerCapacity(t),free=t.power==='laser'?t.charges:cap-projectiles.ammo,need=t.power==='scatter'?3:1;
   const inWallBlocked=t.ghostTime>0&&t.power!=='cannon'&&!clearTankAt(t.x,t.y,0);
   let text='READY',ready=1;if(phase!=='playing'){text=phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':phase==='countdown'?'GET READY':phase==='paused'?'PAUSED':'READY';ready=phase==='countdown'?0:1;}else if(survivalBreak()){text='NEXT WAVE '+Math.ceil(survivalState().breakTime)+'s';ready=0;}else if(!t.alive){text=survivalMode()?'BACK NEXT WAVE':objectiveMode()&&!suddenDeath()?'RESPAWN '+(t.respawnTime||0).toFixed(1)+'s':'TANK DOWN';ready=0;}else if(remote)text='DETONATE READY';else{
    // Keep the colored cooldown/ammo bar stable while Ghost crosses a wall. Only
