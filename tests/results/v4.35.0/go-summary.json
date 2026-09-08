@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "top_level": 581,
+  "including_subtests": 1141,
+  "race_detector": true,
+  "package_elapsed_seconds": [
+    14.086
+  ],
+  "go_version": "go1.23.12"
+}

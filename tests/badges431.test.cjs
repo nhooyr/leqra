@@ -13,7 +13,7 @@ function boot(){
  const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,reduceMotion:true,fxTime:0,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
  vm.runInContext(source.slice(source.indexOf('const tankPowerBadgeCache='),source.indexOf('function activeTankPowerBadges(')),s);
- for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','drawTankPowerBadges','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','drawTank'])vm.runInContext(declaration(name),s);
+ for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','drawTank'])vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
 function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,scopeTime:10,ghostTime:10,...patch};}
@@ -112,9 +112,9 @@ test('golden spawn circles identify both actual local pilots in every mode witho
  }
 });
 
-test('gold remains solid exactly through spawn protection, including a paused countdown and long pauses',()=>{
+test('gold follows remaining spawn protection, freezing its fade through a paused countdown and long pauses',()=>{
  const {s}=boot(),t=tank({id:0,human:true});
- for(const phase of ['countdown','playing','paused']){s.phase=phase;for(const remaining of [.75,.35,.01,Number.EPSILON]){t.invulnerable=remaining;s.fxTime=1e8;assert.equal(s.localSpawnGuideAlpha(t),1);}}
+ for(const phase of ['countdown','playing','paused']){s.phase=phase;for(const remaining of [.75,.35,.01,Number.EPSILON]){t.invulnerable=remaining;s.fxTime=1e8;assert.equal(s.localSpawnGuideAlpha(t),s.protectionRingAlpha(t));}}
  t.invulnerable=0;assert.equal(s.localSpawnGuideAlpha(t),0,'no cosmetic tail after protection expires');
  t.invulnerable=.35;t.spawnProtected=false;assert.equal(s.localSpawnGuideAlpha(t),0,'shield-hit grace does not restart the spawn ring');
  t.spawnProtected=true;for(const phase of ['menu','onlineLobby','roundOver','matchOver']){s.phase=phase;assert.equal(s.localSpawnGuideAlpha(t),0);}
@@ -124,7 +124,7 @@ test('gold remains solid exactly through spawn protection, including a paused co
 test('online spawn tags follow authoritative life changes and never turn a shield save into a spawn',()=>{
  const {s}=boot();vm.runInContext(declaration('netTank'),s);
  let t=s.netTank(tank({id:0,bot:false,spawnSerial:0,invulnerable:.75}));assert.equal(s.localSpawnGuideAlpha(t),1);
- t=s.netTank({...t,invulnerable:.1},t);assert.equal(s.localSpawnGuideAlpha(t),1);
+ t=s.netTank({...t,invulnerable:.1},t);assert.ok(s.localSpawnGuideAlpha(t)>0&&s.localSpawnGuideAlpha(t)<1);
  t=s.netTank({...t,invulnerable:0},t);assert.equal(s.localSpawnGuideAlpha(t),0);
  t=s.netTank({...t,invulnerable:.35},t,true);assert.equal(s.localSpawnGuideAlpha(t),0);
  t=s.netTank({...t,spawnSerial:1,invulnerable:1.2},t);assert.equal(s.localSpawnGuideAlpha(t),1,'objective respawns rearm protection on a new life');
@@ -156,10 +156,10 @@ test('online protection presentation follows authoritative timers between packet
  const s=onlineBoot(),frame=now=>{s.renderOnlineMotion(1/60,now);return s.tanks.find(t=>t.id===0);};
  s.receiveOnlineState(s.packet('countdown',{world:true}));assert.equal(s.localSpawnGuideAlpha(frame(6000)),1,'waiting before weapons are live cannot spend countdown protection');
  s.now=6000;s.receiveOnlineState(s.packet('playing'));
- assert.equal(s.localSpawnGuideAlpha(frame(6749)),1);assert.equal(s.localSpawnGuideAlpha(frame(6750)),0,'ring vanishes precisely at the latest snapshot protection expiry');
+ assert.ok(s.localSpawnGuideAlpha(frame(6749))>0&&s.localSpawnGuideAlpha(frame(6749))<.0001);assert.equal(s.localSpawnGuideAlpha(frame(6750)),0,'ring vanishes precisely at the latest snapshot protection expiry');
  assert.equal(s.localSpawnGuideAlpha(frame(16000)),0,'stale snapshots cannot leave a stuck protected ring');
  assert.equal(s.online.snapshots.at(-1).tankMap.get(0).invulnerable,.75,'presentation never changes authority');assert.equal(s.online.predictor.state.invulnerable,.75,'prediction cannot gain or consume authoritative protection');
- s.now=16000;s.receiveOnlineState(s.packet('playing',{generation:2,wave:5,serial:1,invulnerable:1.2,world:true}));assert.equal(s.localSpawnGuideAlpha(frame(17199)),1);assert.equal(s.localSpawnGuideAlpha(frame(17200)),0);
+ s.now=16000;s.receiveOnlineState(s.packet('playing',{generation:2,wave:5,serial:1,invulnerable:1.2,world:true}));assert.ok(s.localSpawnGuideAlpha(frame(17199))>0&&s.localSpawnGuideAlpha(frame(17199))<.0001);assert.equal(s.localSpawnGuideAlpha(frame(17200)),0);
  s.now=18000;s.receiveOnlineState(s.packet('playing',{generation:2,wave:5,serial:1,status:'break',invulnerable:.1}));assert.equal(frame(25000).invulnerable,.1);assert.equal(s.localSpawnGuideAlpha(frame(25000)),0,'intermission has no golden spawn indicator');
  s.now=25000;s.receiveOnlineState(s.packet('countdown',{generation:3,wave:5,serial:2,invulnerable:1.2,world:true}));assert.equal(s.localSpawnGuideAlpha(frame(28000)),1,'retry countdown resets this wave’s protected bodies');
 });
@@ -167,7 +167,7 @@ test('online protection presentation follows authoritative timers between packet
 test('online shield history applies to the matching life and generation before drawing, including a dropped expiry packet',()=>{
  const s=onlineBoot();s.receiveOnlineState(s.packet('countdown',{world:true}));s.now+=1000;
  s.receiveOnlineState(s.packet('playing',{invulnerable:.1,events:[{type:'shield',id:1,player:0,spawnSerial:0,generation:1}]}));s.renderOnlineMotion(1/60,s.now);
- assert.equal(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===0)),0);assert.equal(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===1)),1);
+ assert.equal(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===0)),0);assert.ok(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===1))>0);
  s.now+=1000;s.receiveOnlineState(s.packet('countdown',{generation:2,world:true,events:[{type:'shield',id:1,player:0,spawnSerial:0,generation:1}]}));s.renderOnlineMotion(1/60,s.now);assert.equal(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===0)),1,'a former round’s shield event cannot cancel fresh spawn protection');
 });
 
@@ -178,4 +178,27 @@ test('the render pass paints edge labels above tanks after restoring the maze cl
  vm.runInContext(declaration('render'),s);s.render();
  const labels=ctx.events.filter(e=>e.type==='text');assert.equal(labels.length,1);assert.equal(labels[0].clipped,false,'the maze boundary must not cut off the name');
  const rect=labelRect(ctx);assert.equal(rect.y+rect.h,s.tanks[0].y-32);assert.ok(rect.y<0,'fixed above-tank position can extend into the canvas margin');
+});
+
+
+test('gold and grey rings use the same eased final 300 ms without extending protection',()=>{
+ const {s,ctx}=boot();
+ for(const [remaining,expected] of [[2,1],[.75,1],[.3,1],[.225,.84375],[.15,.5],[.075,.15625],[0,0],[-.1,0]]){
+  for(const [id,human] of [[0,true],[1,true],[3,true],[4,false]]){
+   const t=tank({id,human,shield:0,invulnerable:remaining});ctx.events.length=0;s.drawTank(t);
+   const gold=ctx.events.find(e=>e.type==='arc'&&e.r===34&&e.color==='#ffd76a'),grey=ctx.events.find(e=>e.type==='arc'&&e.r===27&&e.color===s.theme.protection);
+   if(remaining<=0){assert.equal(gold,undefined);assert.equal(grey,undefined);continue;}
+   assert.ok(Math.abs(grey.alpha-.35*expected)<1e-8,`grey ${remaining}`);
+   if(id===0||id===1)assert.ok(Math.abs(gold.alpha-expected)<1e-8,`gold ${remaining}`);else assert.equal(gold,undefined);
+  }
+ }
+ // A tiny step at either end changes opacity much less than a linear fade:
+ // easing joins both full strength and zero without a visible hard corner.
+ assert.ok(s.protectionRingAlpha({invulnerable:.0001})<.000001);
+ assert.ok(1-s.protectionRingAlpha({invulnerable:.2999})<.000001);
+});
+
+test('shield-hit grace may fade grey but never creates a golden spawn locator',()=>{
+ const {s,ctx}=boot(),t=tank({id:0,human:true,shield:0,spawnProtected:false,invulnerable:.15});s.drawTank(t);
+ assert.equal(ctx.events.some(e=>e.type==='arc'&&e.color==='#ffd76a'),false);assert.equal(ctx.events.find(e=>e.type==='arc'&&e.r===27).alpha,.175);
 });

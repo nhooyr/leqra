@@ -1,0 +1,34 @@
+{
+  "javascript_syntax": {
+    "passed": true,
+    "files": 8
+  },
+  "python_syntax": {
+    "passed": true,
+    "files": 68,
+    "executed": false
+  },
+  "html_assets": {
+    "passed": true,
+    "references": 9
+  },
+  "production_copies": {
+    "passed": true,
+    "files": [
+      "game.js",
+      "netcode.js",
+      "theme.js",
+      "style.css",
+      "theme.css",
+      "favicon.svg"
+    ]
+  },
+  "release_versions": {
+    "passed": true,
+    "version": "4.35.0",
+    "sole_asset_directory": "v4.35.0"
+  },
+  "git_diff_check": {
+    "passed": true
+  }
+}

@@ -19,7 +19,7 @@ func reachSurvivalWave433(t *testing.T, r *Room, wave int) {
 	g.Phase = "playing"
 	for g.survivalState().Wave < wave {
 		clearSurvivalWave427(t, r)
-		if !g.prepareSurvival(4, r.Players) {
+		if !g.prepareSurvival(2, r.Players) {
 			t.Fatal("wave did not advance")
 		}
 	}
@@ -41,7 +41,7 @@ func TestSurvival433RetryRestoresBoundaryWithoutRegeneratingMaze(t *testing.T) {
 	g.Tanks[1].Invulnerable = 0
 	g.hurt(g.Tanks[1], &Bullet{Owner: 1})
 	g.stepSurvival(r.Players)
-	g.prepareSurvival(4, r.Players)
+	g.prepareSurvival(2, r.Players)
 	s, cp := g.survivalState(), g.survivalCheckpoint
 	if s.Wave != 2 || cp.rows[0].Eliminations != 2 || cp.rows[1].Deaths != 1 {
 		t.Fatal("fixture did not capture completed-wave combat statistics")

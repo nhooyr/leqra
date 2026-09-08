@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
-class Element{constructor(){this.value='';this.dataset={};this.attributes={};this.hidden=false;this.disabled=false;this.textContent='';this.style={setProperty:(k,v)=>this[k]=v};this.classList={toggle(){}};}setAttribute(k,v){this.attributes[k]=v;}getAttribute(k){return this.attributes[k];}focus(){this.focused=true;}}
+class Element{constructor(){this.value='';this.dataset={};this.attributes={};this.hidden=false;this.disabled=false;this.textContent='';this.style={setProperty:(k,v)=>this[k]=v};this.classList={toggle(){}};}setAttribute(k,v){this.attributes[k]=v;}getAttribute(k){return this.attributes[k];}focus(){this.focused=true;}scrollIntoView(){this.revealed=true;}}
 function boot({online=false,count=4}={}){
  const elements=new Map(),$=id=>{if(!elements.has(id)){const el=new Element();el.parentElement=new Element();elements.set(id,el);}return elements.get(id);};
  const choices=['elimination','ctf','koth','survival'].map(id=>{const el=new Element();el.dataset.roomMode=id;return el;});
@@ -29,7 +29,7 @@ test('CTF and survival normalize the entire existing lineup without replacing pa
  const {s}=boot();const players=s.localRoom.players;s.selectRoomMode('ctf');assert.deepEqual(players.map(p=>p.team),[1,2,1,2]);s.selectRoomMode('survival');assert.deepEqual(players.map(p=>p.team),[1,1,1,1]);s.selectRoomMode('elimination');assert.deepEqual(players.map(p=>p.team),[1,2,3,4]);assert.equal(s.localRoom.players,players);
 });
 test('oversized survival squads roll back before local mutation or any online message',()=>{
- for(const online of [false,true]){const {s,$}=boot({online,count:5}),before=JSON.stringify(s.currentRules());assert.equal(s.selectRoomMode('survival'),false);assert.equal(JSON.stringify(s.currentRules()),before);assert.equal(s.sent.length,0);assert.equal(String(s.choices.findIndex(b=>b.getAttribute('aria-checked')==='true')),'0');assert.match($('roomModeNotice').textContent,/four squad tanks/);assert.equal(s.roomData().players.length,5);}
+ for(const online of [false,true]){const {s,$}=boot({online,count:5}),before=JSON.stringify(s.currentRules());assert.equal(s.selectRoomMode('survival'),false);assert.equal(JSON.stringify(s.currentRules()),before);assert.equal(s.sent.length,0);assert.equal(String(s.choices.findIndex(b=>b.getAttribute('aria-checked')==='true')),'0');assert.match($('roomModeNotice').textContent,/four squad tanks/);assert.equal($('roomModeNotice').getAttribute('role'),'alert');assert.equal($('roomModeNotice').focused,true);assert.equal($('roomModeNotice').revealed,true);assert.equal(s.roomData().players.length,5);}
 });
 test('icon buttons expose one checked mode and one tab stop without a range slider',()=>{
  const {s,choices}=boot();let markup='';s.initRoomModePicker({before(picker){markup=picker.innerHTML;}});
@@ -53,7 +53,7 @@ test('preset changes, authoritative updates and reconnects refresh the selector 
  const {s,$,timers}=boot({online:true});s.selectRoomMode('ctf');s.online.socket={};s.online.roomData.rules=s.rulesForRoomMode('koth');s.syncRoomModePicker();assert.equal(s.pendingRoomMode,null);assert.equal(String(s.choices.findIndex(b=>b.getAttribute('aria-checked')==='true')),'2');assert.equal(timers.size,0);s.online.roomData.host=1;s.syncRoomModePicker();assert.equal(s.choices.every(b=>b.disabled),true);assert.match($('roomModeNotice').textContent,/host/);
 });
 test('Rules use the selected mode without a second mode dropdown',()=>{
- const {s,$}=boot();s.selectRoomMode('survival');Object.assign(s,{mapDimensions:()=>[12,10],pickupLimitText:()=>'',pickupLifetime:()=>30});s.updateRuleHelp();assert.equal($('roomTeamMode').value,'teams');assert.equal($('roomTeamMode').disabled,true);assert.equal($('ruleScoreLabel').textContent,'WAVES TO SURVIVE');assert.equal($('rulesModeName').textContent,'SURVIVAL');assert.equal($('rule-respawnSeconds').parentElement.hidden,true);
+ const {s,$}=boot();Object.assign(s,{mapDimensions:()=>[12,10],pickupLimitText:()=>'',pickupLifetime:()=>30});s.updateRuleHelp();assert.equal($('ruleScoreLabel').textContent,'ROUNDS TO WIN');s.selectRoomMode('survival');s.updateRuleHelp();assert.equal($('roomTeamMode').value,'teams');assert.equal($('roomTeamMode').disabled,true);assert.equal($('ruleScoreLabel').textContent,'WAVES TO SURVIVE');assert.equal($('rulesModeName').textContent,'SURVIVAL');assert.equal($('rule-respawnSeconds').parentElement.hidden,true);
  assert.doesNotMatch(source,/id="rule-mode"|\$\('rule-mode'\)|RULES & MODE/);assert.doesNotMatch(source,/id="rule-(teamMode|mapSize)"|\$\('rule-(teamMode|mapSize)'\)/);assert.match(declaration('submitRules'),/const r=\{\.\.\.currentRules\(\)/);
 });
 test('arrow keys wrap across mode choices; Home and End reach the first and last',()=>{

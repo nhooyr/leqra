@@ -14,7 +14,7 @@ func TestSurvival431DefeatedLineupStaysUntilNextWave(t *testing.T) {
 		}
 	}
 	clearSurvivalWave427(t, r)
-	g.prepareSurvival(3.9, r.Players)
+	g.prepareSurvival(1.9, r.Players)
 	rows := 0
 	for _, tank := range h.stateMessage(r)["tanks"].([]Tank) {
 		if tank.SurvivalEnemy {
@@ -55,7 +55,7 @@ func TestSurvival431BotSquadClearsRevivesAndWinsWithoutHuman(t *testing.T) {
 	if g.survivalState().Status != "break" {
 		t.Fatal("surviving bot could not clear the wave")
 	}
-	g.prepareSurvival(4, r.Players)
+	g.prepareSurvival(2, r.Players)
 	if g.Phase != "playing" || g.survivalState().Wave != 2 || !g.Tanks[1].Alive {
 		t.Fatal("bot squad did not revive for next wave")
 	}

@@ -79,18 +79,18 @@ func TestSurvival427WaveBreakClearsHazardsRevivesAndKeepsMaze(t *testing.T) {
 	r.Players[0].FirePending = true
 	clearSurvivalWave427(t, r)
 	s := g.survivalState()
-	if s.Status != "break" || s.BreakTime != 4 || g.Phase != "playing" || len(g.Bullets) != 0 || len(g.Pickups) != 0 || g.Scores[0] != 1 || g.Scores[1] != 1 {
+	if s.Status != "break" || s.BreakTime != 2 || g.Phase != "playing" || len(g.Bullets) != 0 || len(g.Pickups) != 0 || g.Scores[0] != 1 || g.Scores[1] != 1 {
 		t.Fatalf("wave did not clear safely: %+v", s)
 	}
 	if g.fire(g.Tanks[0]) || r.Players[0].Input.Fire || r.Players[0].FirePending || r.Players[0].Input.Seq != 42 {
 		t.Fatal("weapon or held input leaked into intermission")
 	}
 	clock, x := g.Clock, g.Tanks[0].X
-	g.step(2, [maxTanks]Input{{Forward: true, Fire: true}}, r.Players)
-	if s.BreakTime != 2 || g.Clock != clock || g.Tanks[0].X != x || g.Tanks[1].Alive {
+	g.step(1, [maxTanks]Input{{Forward: true, Fire: true}}, r.Players)
+	if s.BreakTime != 1 || g.Clock != clock || g.Tanks[0].X != x || g.Tanks[1].Alive {
 		t.Fatal("intermission moved the simulation or revived too early")
 	}
-	g.step(2, [maxTanks]Input{}, r.Players)
+	g.step(1, [maxTanks]Input{}, r.Players)
 	if s.Status != "wave" || s.Wave != 2 || g.Round != 2 || !g.Tanks[1].Alive || g.Tanks[1].Power != "" || g.Tanks[0].SpawnSerial <= serial || g.Clock != float64(g.settings().TimeLimit) {
 		t.Fatalf("next wave failed to reset squad: %+v", s)
 	}
@@ -349,7 +349,7 @@ func TestSurvival427DepartureKeepsBotsRunningAndReconnectWaitsForWave(t *testing
 		t.Fatal("reconnect granted an immediate life")
 	}
 	clearSurvivalWave427(t, r)
-	g.prepareSurvival(4, r.Players)
+	g.prepareSurvival(2, r.Players)
 	if !g.Tanks[1].Alive {
 		t.Fatal("reconnected squadmate was not revived for next wave")
 	}
