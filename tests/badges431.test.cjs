@@ -100,12 +100,12 @@ test('tank names and badge centers stay close to the hull independent of shield 
  }
 });
 
-test('gold and neon pink spawn circles identify their actual local pilots in every mode without highlighting bots, remote tanks or spectator seats',()=>{
+test('neon purple and neon pink spawn circles identify their actual local pilots in every mode without highlighting bots, remote tanks or spectator seats',()=>{
  for(const mode of ['room','online','solo','duel'])for(const gameMode of ['elimination','deathmatch','ctf','koth','survival']){
   const {s,ctx}=boot();Object.assign(s,{mode,phase:'countdown',currentRules:()=>({mode:gameMode})});
   for(const [patch,expected] of [[{id:0,human:true},true],[{id:1,human:true},true],[{id:3,human:true},false],[{id:0,human:false},false],[{id:1,human:false},false],[{id:0,human:true,survivalEnemy:true},false],[{id:1,human:true,alive:false},false]]){
-   ctx.events.length=0;s.drawTank(tank(patch));const guides=ctx.events.filter(e=>e.type==='arc'&&['#ffd76a','#ff4fd8'].includes(e.color));assert.equal(guides.length,expected?1:0,`${mode}/${gameMode}: ${JSON.stringify(patch)}`);
-   if(expected){assert.equal(guides[0].r,34);assert.equal(guides[0].alpha,1);assert.equal(guides[0].color,patch.id===1?'#ff4fd8':'#ffd76a');}
+   ctx.events.length=0;s.drawTank(tank(patch));const guides=ctx.events.filter(e=>e.type==='arc'&&['#bf5cff','#ff4fd8'].includes(e.color));assert.equal(guides.length,expected?1:0,`${mode}/${gameMode}: ${JSON.stringify(patch)}`);
+   if(expected){assert.equal(guides[0].r,34);assert.equal(guides[0].alpha,1);assert.equal(guides[0].color,patch.id===1?'#ff4fd8':'#bf5cff');}
   }
   s.isSpectating=()=>true;assert.equal(s.localSpawnGuideAlpha(tank({id:0,human:true})),0);
   s.secondaryID=()=>undefined;assert.equal(s.localSpawnGuideAlpha(tank({id:1,human:true})),0);
@@ -114,14 +114,14 @@ test('gold and neon pink spawn circles identify their actual local pilots in eve
 
 test('online spawn guide colors follow local ownership when seat IDs change or the primary pilot spectates',()=>{
  const {s,ctx}=boot();Object.assign(s,{mode:'online',localPlayerID:()=>5,secondaryID:()=>3});
- const guide=id=>{ctx.events.length=0;s.drawTank(tank({id,human:true,shield:0}));return ctx.events.filter(e=>e.type==='arc'&&['#ffd76a','#ff4fd8'].includes(e.color));};
- assert.equal(guide(5)[0].color,'#ffd76a');assert.equal(guide(3)[0].color,'#ff4fd8');assert.equal(guide(1).length,0,'seat one is a remote pilot');
+ const guide=id=>{ctx.events.length=0;s.drawTank(tank({id,human:true,shield:0}));return ctx.events.filter(e=>e.type==='arc'&&['#bf5cff','#ff4fd8'].includes(e.color));};
+ assert.equal(guide(5)[0].color,'#bf5cff');assert.equal(guide(3)[0].color,'#ff4fd8');assert.equal(guide(1).length,0,'seat one is a remote pilot');
  s.isSpectating=()=>true;assert.equal(guide(5).length,0);assert.equal(guide(3)[0].color,'#ff4fd8','local P2 keeps pink while P1 spectates');
  s.secondaryID=()=>7;assert.equal(guide(3).length,0);assert.equal(guide(7)[0].color,'#ff4fd8','a reassigned local P2 gets the same color');
  s.secondaryID=()=>undefined;assert.equal(guide(7).length,0,'a removed local P2 cannot leave a locator on a remote body');
 });
 
-test('gold follows remaining spawn protection, freezing its fade through a paused countdown and long pauses',()=>{
+test('purple follows remaining spawn protection, freezing its fade through a paused countdown and long pauses',()=>{
  const {s}=boot(),t=tank({id:0,human:true});
  for(const phase of ['countdown','playing','paused']){s.phase=phase;for(const remaining of [.75,.35,.01,Number.EPSILON]){t.invulnerable=remaining;s.fxTime=1e8;assert.equal(s.localSpawnGuideAlpha(t),s.protectionRingAlpha(t));}}
  t.invulnerable=0;assert.equal(s.localSpawnGuideAlpha(t),0,'no cosmetic tail after protection expires');
@@ -141,7 +141,7 @@ test('online spawn tags follow authoritative life changes and never turn a shiel
  t=s.netTank({...t,invulnerable:.75},null);assert.equal(s.localSpawnGuideAlpha(t),1,'a new round generation starts with a fresh body');
 });
 
-test('a real shield save clears the local spawn tag instead of lighting the golden ring again',()=>{
+test('a real shield save clears the local spawn tag instead of lighting the purple ring again',()=>{
  const {s}=boot(),noop=()=>{};Object.assign(s,{canDamage:()=>true,burst:noop,addRing:noop,tone:noop,toast:noop});vm.runInContext(declaration('hurt'),s);
  const t=tank({id:0,human:true,invulnerable:0});s.hurt(t,{owner:3,kind:'shell'});assert.equal(t.invulnerable,.35);assert.equal(t.spawnProtected,false);assert.equal(s.localSpawnGuideAlpha(t),0);
 });
@@ -190,15 +190,15 @@ test('the render pass paints edge labels above tanks after restoring the maze cl
 });
 
 
-test('gold, pink and grey rings use the same eased final 300 ms without extending protection',()=>{
+test('purple, pink and grey rings use the same eased final 300 ms without extending protection',()=>{
  const {s,ctx}=boot();
  for(const [remaining,expected] of [[2,1],[.75,1],[.3,1],[.225,.84375],[.15,.5],[.075,.15625],[0,0],[-.1,0]]){
   for(const [id,human] of [[0,true],[1,true],[3,true],[4,false]]){
    const t=tank({id,human,shield:0,invulnerable:remaining});ctx.events.length=0;s.drawTank(t);
-   const guide=ctx.events.find(e=>e.type==='arc'&&e.r===34&&['#ffd76a','#ff4fd8'].includes(e.color)),grey=ctx.events.find(e=>e.type==='arc'&&e.r===27&&e.color===s.theme.protection);
+   const guide=ctx.events.find(e=>e.type==='arc'&&e.r===34&&['#bf5cff','#ff4fd8'].includes(e.color)),grey=ctx.events.find(e=>e.type==='arc'&&e.r===27&&e.color===s.theme.protection);
    if(remaining<=0){assert.equal(guide,undefined);assert.equal(grey,undefined);continue;}
    assert.ok(Math.abs(grey.alpha-.35*expected)<1e-8,`grey ${remaining}`);
-   if(id===0||id===1){assert.ok(Math.abs(guide.alpha-expected)<1e-8,`pilot ${id} at ${remaining}`);assert.equal(guide.color,id===1?'#ff4fd8':'#ffd76a');}else assert.equal(guide,undefined);
+   if(id===0||id===1){assert.ok(Math.abs(guide.alpha-expected)<1e-8,`pilot ${id} at ${remaining}`);assert.equal(guide.color,id===1?'#ff4fd8':'#bf5cff');}else assert.equal(guide,undefined);
   }
  }
  // A tiny step at either end changes opacity much less than a linear fade:
@@ -207,7 +207,7 @@ test('gold, pink and grey rings use the same eased final 300 ms without extendin
  assert.ok(1-s.protectionRingAlpha({invulnerable:.2999})<.000001);
 });
 
-test('shield-hit grace may fade grey but never creates a gold or pink spawn locator',()=>{
+test('shield-hit grace may fade grey but never creates a purple or pink spawn locator',()=>{
  for(const id of [0,1]){const {s,ctx}=boot(),t=tank({id,human:true,shield:0,spawnProtected:false,invulnerable:.15});s.drawTank(t);
- assert.equal(ctx.events.some(e=>e.type==='arc'&&['#ffd76a','#ff4fd8'].includes(e.color)),false);assert.equal(ctx.events.find(e=>e.type==='arc'&&e.r===27).alpha,.175);}
+ assert.equal(ctx.events.some(e=>e.type==='arc'&&['#bf5cff','#ff4fd8'].includes(e.color)),false);assert.equal(ctx.events.find(e=>e.type==='arc'&&e.r===27).alpha,.175);}
 });

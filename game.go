@@ -1325,7 +1325,14 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		g.SpawnClock = g.random(lo, hi)
 	}
 	if g.objectiveMode() {
-		g.respawnPlayers(dt, players)
+		for id, revived := range g.respawnPlayers(dt, players) {
+			if revived {
+				// The hub sampled these inputs before the respawn. A released
+				// tap from the dead life must not fire in the new one; current
+				// held controls remain usable, as they are in local play.
+				inputs[id].FirePressed = false
+			}
+		}
 	}
 	// Alternating order avoids always giving slot zero the first shot/move.
 	for i := 0; i < maxTanks; i++ {
