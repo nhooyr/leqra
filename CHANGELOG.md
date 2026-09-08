@@ -1,3 +1,9 @@
+# v4.45.1 — deployment, offline cache, and idle snapshot fixes
+
+- Make deployment rebuild before contacting the host, preserve local artifacts, repair required directories, reload systemd, and consolidate remote setup/service operations.
+- Keep successful navigation and asset responses usable when Cache Storage is slow or unavailable, and keep asynchronous cache writes alive correctly.
+- Skip state serialization for rooms without live sockets while preserving full map delivery after player and spectator reconnects.
+
 # v4.45.0 — appended roster rows and automatic session recovery
 
 - Match Leave room to the outlined neon-red REMOVE/KICK color.

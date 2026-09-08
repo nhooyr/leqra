@@ -1122,9 +1122,28 @@ func (h *Hub) sendState(c *Client, r *Room) {
 	}
 }
 
+func (r *Room) hasLiveClients() bool {
+	for _, p := range r.Players {
+		if socketLive(p) {
+			return true
+		}
+	}
+	for _, p := range r.Spectators {
+		if socketLive(p) {
+			return true
+		}
+	}
+	return false
+}
+
 // No per-client secrets exist in state. Encode once and share immutable bytes.
 // Map-bearing packets remain reliable and always precede replaceable snapshots.
 func (h *Hub) broadcastState(r *Room) {
+	// Disconnected rooms keep simulating during reconnect grace, but have no
+	// snapshot recipients. Closed sockets may still await removeClient.
+	if !r.hasLiveClients() {
+		return
+	}
 	s := h.stateWire(r)
 	data, ok := encodePacket(s)
 	if !ok {
