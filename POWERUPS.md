@@ -11,7 +11,7 @@ Equipped weapons and buffs last **10 seconds on Compact, Standard and Large**, o
 
 | Pickup | Effect | Duration / charges |
 | --- | --- | --- |
-| Machine gun | ⅓-diameter, 3×-speed ricochets; shooter-safe; one quarter-perimeter total path. No weapon cooldown; up to 60 rounds/s. | 10/15 seconds to use; 300 rounds (5 seconds of firing); 96 active slots |
+| Machine gun | ⅓-diameter, 3×-speed ricochets; shooter-safe; one quarter-perimeter total path. No weapon cooldown; up to 60 rounds/s. | 10/15 seconds to use; 180 rounds (3 seconds of firing); 96 active slots |
 | Shotgun | Three spreading ricochets at 3× normal speed; cannot damage their shooter. | 5 volleys or 10/15 seconds; 0.54s cooldown |
 | Shield | Adds one protective charge, up to five rings/charges; 3× individual spawn weight. | Shared 10/15-second timer, refreshed on collection |
 | Homing missile | Aggressive bounded tracking, wall ricochets, and a half-perimeter total travel limit. | 3 missiles or 10/15 seconds |
@@ -83,7 +83,7 @@ from cutting that requested range short on Giant maps.
 Zero cooldown is not an infinite same-instant emission loop: **at most one round
 per 60 Hz firing step, up to 60 rounds/second**. The same rate is used locally and
 by Go, including when the local physics/render rate is higher. The weapon remains
-available for **10/15 seconds**, with **300 successful rounds** per pickup: five seconds of full-rate firing. Idle or blocked attempts do not spend rounds; the regular equip timer still runs. It has **96 active-projectile slots per owner** while
+available for **10/15 seconds**, with **180 successful rounds** per pickup: three seconds of full-rate firing. Idle or blocked attempts do not spend rounds; the regular equip timer still runs. It has **96 active-projectile slots per owner** while
 equipped, enough to sustain a full-rate stream for the quarter-perimeter range on the
 16×14 map while still bounding the cloud. Old projectiles can occupy slots; damage
 authority remains on Go. The HUD shows **FIRE LEFT** with the remaining firing time.

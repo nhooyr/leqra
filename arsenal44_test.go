@@ -259,6 +259,11 @@ func Test44MachineGunEightTanksStressAndCompactWire(t *testing.T) {
 	for i := 0; i < 240; i++ {
 		g.Tick++
 		for _, tank := range g.Tanks {
+			// Model another pickup when the three-second firing budget runs out,
+			// keeping this four-second projectile/packing stress run continuous.
+			if tank.MachineRounds == 0 {
+				g.grantPower(tank, "rapid")
+			}
 			if !g.fire(tank) {
 				t.Fatalf("stream gap at %d", i)
 			}

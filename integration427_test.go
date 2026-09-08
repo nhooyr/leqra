@@ -50,7 +50,7 @@ func TestIntegration427MachineBudgetPausesDuringBreakAndResetsOnRevival(t *testi
 }
 
 func TestIntegration427GodlikeValuesReplacementForNearlyEmptyMachineGun(t *testing.T) {
-	tank := &Tank{Power: "rapid", PowerTime: 15, Charges: 5, MachineRounds: 300}
+	tank := &Tank{Power: "rapid", PowerTime: 15, Charges: 5, MachineRounds: 180}
 	if value := godlikePickupValue(tank, "rapid"); value != 0 {
 		t.Fatalf("Godlike abandoned a full machine gun for an identical pickup: %v", value)
 	}

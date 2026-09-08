@@ -3,6 +3,10 @@ package main
 import "math"
 
 type BotState struct {
+	ctfCoverClock, ctfCoverX, ctfCoverY float64
+	ctfCarrier, ctfCarrierCell          int
+	ctfYield                            bool
+
 	Think, Shot, Bank, Recover, Stuck float64
 	Aim, MoveAngle, Drive             float64
 	HasAim                            bool
@@ -640,6 +644,8 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		t.AI = &BotState{Think: g.random(.1, .35), Shot: g.random(.3, .9), Goal: -1, Target: -1, LastX: t.X, LastY: t.Y}
 	}
 	a := t.AI
+	a.ctfCoverClock -= dt
+	a.ctfYield = false
 	a.Think -= dt
 	a.Shot -= dt
 	a.Bank -= dt
@@ -673,9 +679,12 @@ func (g *Game) botControl(t *Tank, dt float64) {
 			}
 		}
 	}
-	gx, gy, objective := g.objectiveGoal(t)
+	var gx, gy float64
+	var objective bool
 	if t.Difficulty == "godlike" {
 		gx, gy, objective = g.godlikeObjective(t)
+	} else {
+		gx, gy, objective = g.objectiveGoal(t)
 	}
 	if enemy == nil && !objective {
 		a.Target = -1
@@ -708,7 +717,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 	if a.Think <= 0 {
 		a.Think = d.think * g.random(.9, 1.1)
 		a.HasAim = false
-		if t.Difficulty == "godlike" {
+		if t.Difficulty == "godlike" && !a.ctfYield {
 			if p := g.godlikePickup(t, d, destination, objective); p != nil {
 				destination = &Tank{X: p.X, Y: p.Y, R: tankRadius}
 				gx, gy, objective = p.X, p.Y, true
@@ -797,7 +806,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 				drive = 0
 			}
 		}
-		if g.botHoldingHill(t) {
+		if g.botHoldingHill(t) || a.ctfYield && dist(t.X, t.Y, gx, gy) < 10 {
 			drive = 0 // Hold scoring position; imminent danger can still override.
 		}
 		if t.Difficulty == "godlike" {

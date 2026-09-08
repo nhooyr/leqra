@@ -155,7 +155,11 @@ func (g *Game) godlikeObjective(t *Tank) (float64, float64, bool) {
 	}
 	if enemy.Carrier >= 0 && enemy.Carrier < maxTanks {
 		carrier := g.Tanks[enemy.Carrier]
-		if carrier != nil && carrier.Team == t.Team {
+		if carrier != nil && carrier.Alive && carrier.Team == t.Team {
+			if dist(t.X, t.Y, own.HomeX, own.HomeY) < cellSize*2 && dist(carrier.X, carrier.Y, own.HomeX, own.HomeY) < cellSize*3 {
+				x, y := g.ctfCoverGoal(t, own, carrier)
+				return x, y, true
+			}
 			// Meet threats to the returning carrier, or cover its route home.
 			var threat *Tank
 			best := cellSize * 4
@@ -169,7 +173,8 @@ func (g *Game) godlikeObjective(t *Tank) (float64, float64, bool) {
 			if threat != nil {
 				return threat.X, threat.Y, true
 			}
-			return own.HomeX, own.HomeY, true
+			x, y := g.ctfCoverGoal(t, own, carrier)
+			return x, y, true
 		}
 	}
 	return enemy.X, enemy.Y, true

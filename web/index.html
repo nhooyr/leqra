@@ -11,12 +11,12 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.28.0/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.28.0/theme.css">
-<link rel="stylesheet" href="assets/v4.28.0/style.css">
-<link rel="manifest" href="assets/v4.28.0/manifest.webmanifest">
-<link rel="icon" href="assets/v4.28.0/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/v4.28.0/apple-touch-icon.png">
+<script src="assets/v4.29.0/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.29.0/theme.css">
+<link rel="stylesheet" href="assets/v4.29.0/style.css">
+<link rel="manifest" href="assets/v4.29.0/manifest.webmanifest">
+<link rel="icon" href="assets/v4.29.0/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/v4.29.0/apple-touch-icon.png">
 </head>
 <body>
 <div class="app">
@@ -76,7 +76,7 @@
     <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode / difficulty</button></section>
    </div>
   </div>
-  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-dots" id="ammoDots"></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-dots" id="ammoDots2"></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Your own shots can take you out.</span><span class="micro-label" id="bestInline"></span></div>
+  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" hidden>FIRE 3.0s</span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" hidden>FIRE 3.0s</span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Your own shots can take you out.</span><span class="micro-label" id="bestInline"></span></div>
   <div class="touch-controls" id="touchControls" aria-label="Touch controls">
    <div class="stick-zone" id="stickZone" role="group" aria-label="Drag joystick to steer"><div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div><span class="touch-label">STEER</span></div>
    <div class="touch-center"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m-3-3 3 3-3 3M20 17h-9m3-3-3 3 3 3M5 14v4h3m11-8V6h-3"/></svg><span class="alive-status" id="touchStatus">GOOD LUCK</span><br><span id="fireHint">HOLD TO FIRE</span></div>
@@ -94,10 +94,10 @@
 <div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Tank impact. Tap again. Cruises, then brakes near its 10s fuse.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#8fb8ff"><canvas data-power-icon="scope" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Scope<span>Long dotted aim. Independent of your weapon.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5 · +65% speed each.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>5s of firing · tiny rounds · quarter-perimeter range.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing · tiny rounds · quarter-perimeter range.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread · shooter-safe.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#73cee4"><canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shield<span>Stack up to five protective rings.</span></div></div>
-<p class="power-note">Weapons use FIRE. Timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 5 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or when you press Fire again. Walls stop blasts; your own grenade can hit you.</p>
+<p class="power-note">Weapons use FIRE. Timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 3 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or when you press Fire again. Walls stop blasts; your own grenade can hit you.</p>
 </div></section>
   <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Pick your battle.</div></div></section>
  </aside>
@@ -110,8 +110,8 @@
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
  <div class="kick-actions"><button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button></div>
 </dialog>
-<script src="assets/v4.28.0/netcode.js" defer></script>
-<script src="assets/v4.28.0/game.js" defer></script>
-<script src="assets/v4.28.0/pwa.js" defer></script>
+<script src="assets/v4.29.0/netcode.js" defer></script>
+<script src="assets/v4.29.0/game.js" defer></script>
+<script src="assets/v4.29.0/pwa.js" defer></script>
 </body>
 </html>
