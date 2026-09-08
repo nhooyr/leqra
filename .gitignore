@@ -1,5 +1,5 @@
-/leqra
-/leqra.exe
+/deploy/leqra
+/deploy/leqra.exe
 /bin/
 /*.test
 /src/*.test

@@ -1,5 +1,7 @@
 # leqra
 
+https://leqra.com
+
 A tank arena battle game.
 
 - With single co-op, local multiplayer & online multiplayer support.
@@ -8,5 +10,3 @@ A tank arena battle game.
 Generated 100% with ChatGPT Astra.
 
 ![screenshot of the game](docs/screenshot.png)
-
-[Setup and development guide](docs/README-verbose.md)
