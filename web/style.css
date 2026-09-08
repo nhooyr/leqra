@@ -551,8 +551,12 @@ body.ios-webkit .touch-controls{-webkit-touch-callout:none}
 /* Each scrolling panel needs the policy: touch-action stops at its nearest
    scroll container. Allow menu panning without enabling pinch or double-tap
    zoom while a match is active; gameplay surfaces keep their pointer input. */
-html.match-active,html.match-active body,html.match-active body *{touch-action:pan-x pan-y}
+html.match-active,html.match-active body,html.match-active body *{touch-action:manipulation;touch-action:pan-x pan-y}
 html.match-active canvas,html.match-active .touch-controls,html.match-active .touch-controls *{touch-action:none}
+/* Cover the ammo/status bars, sidebar, dialogs and form controls as well as the
+   arena. Retain real pressed/focus states; suppress only native touch selection. */
+html.match-active body.touch-ui,html.match-active body.touch-ui *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+html.match-active body.touch-ui::selection,html.match-active body.touch-ui *::selection{background:transparent;color:inherit;text-shadow:none}
 
 /* iOS Safari zooms the viewport when focusing form controls below 16px. Keep
    room/rules editing stable instead of letting the browser zoom the whole game. */

@@ -72,18 +72,29 @@ test('badge orbits reuse cached icon sprites across movement and rotation, remov
  Object.assign(t,{alive:false,powerTime:10});ctx.events.length=0;s.drawTank(t);assert.equal(pictures(ctx).length,0);assert.equal(ctx.events.filter(e=>e.type==='text').length,0);
 });
 
-test('all five power icons stay inside the maze at its edges, keeping names fixed above without hiding the tank',()=>{
- for(const scale of [1,.25,.08])for(const x of [42,1200,2358])for(const y of [42,700,1458]){
-  const {s,ctx}=boot();s.scale=scale;s.drawTank(tank({x,y}));
-  const label=labelRect(ctx),icons=pictures(ctx);assert.equal(icons.length,5,`five visible badges at ${scale}: ${x}, ${y}`);
-  assert.ok(label.x>=0&&label.x+label.w<=s.W,'name stays inside horizontal maze bounds');assert.equal(y-label.y-label.h,32,'name never flips below or follows the top edge');
-  for(let i=0;i<icons.length;i++){
-   const icon=icons[i],r=icon.w*28.5/64,cx=icon.x+icon.w/2,cy=icon.y+icon.h/2;assert.ok(cx-r>=0&&cx+r<=s.W&&cy-r>=0&&cy+r<=s.H,'visible badge stays in the maze');
-   const labelDX=Math.max(label.x-cx,0,cx-label.x-label.w),labelDY=Math.max(label.y-cy,0,cy-label.y-label.h);assert.ok(labelDX*labelDX+labelDY*labelDY>=r*r,'badge remains clear of the name');
-   assert.ok(Math.hypot(cx-x,cy-y)-r>=30-1e-8,'badge stays outside the hull');
-   for(let j=0;j<i;j++)assert.ok(!badgeOverlap(icon,icons[j]),'badges remain separate');
+test('bot and remote power icons keep their tank-relative offsets through every edge and corner',()=>{
+ for(const mode of ['room','online'])for(const scale of [1,.25,.08])for(const count of [1,2,3,4,5]){
+  const {s,ctx}=boot();Object.assign(s,{mode,scale});
+  const t=tank({human:mode==='online',shield:count>=2?10:0,shieldCharges:count>=2?5:0,speedTime:count>=3?10:0,scopeTime:count>=4?10:0,ghostTime:count>=5?10:0});
+  s.drawTank(t);const offsets=pictures(ctx).map(icon=>({kind:icon.image.kind,x:icon.x-t.x,y:icon.y-t.y,w:icon.w}));assert.equal(offsets.length,count);
+  for(const x of [17,42,1200,2358,2383])for(const y of [17,42,700,1458,1483]){
+   Object.assign(t,{x,y,angle:t.angle+.17,powerTime:9,shieldCharges:count>=2?3:0,speedStacks:4});ctx.events.length=0;s.drawTank(t);
+   const label=labelRect(ctx),icons=pictures(ctx);assert.equal(icons.length,count);assert.equal(y-label.y-label.h,32,'badges never move the name');
+   for(let i=0;i<icons.length;i++){
+    const icon=icons[i],offset=offsets[i];assert.equal(icon.image.kind,offset.kind);assert.equal(icon.w,offset.w);
+    assert.ok(Math.abs(icon.x-x-offset.x)<1e-8&&Math.abs(icon.y-y-offset.y)<1e-8,`${mode}, scale ${scale}, ${count} icons at ${x}, ${y}: slots cannot move with the maze edge`);
+    for(let j=0;j<i;j++)assert.ok(!badgeOverlap(icon,icons[j]),'fixed slots remain separate');
+   }
   }
  }
+});
+
+test('gaining or losing a power-up may repack badges but moving cannot create an alternate orbit',()=>{
+ const {s,ctx}=boot(),t=tank({x:2383,y:1483});
+ const draw=()=>{ctx.events.length=0;s.drawTank(t);return pictures(ctx).map(icon=>({kind:icon.image.kind,x:icon.x-t.x,y:icon.y-t.y}));};
+ const full=draw();t.powerTime=0;const expired=draw();assert.equal(expired.length,4);assert.equal(expired[0].kind,'shield');assert.equal(expired[0].x,full[0].x);assert.equal(expired[0].y,full[0].y);
+ t.powerTime=15;assert.deepEqual(draw(),full,'regaining the weapon restores the same slots even at a corner');
+ const icons=pictures(ctx);assert.ok(icons.some(icon=>icon.x+icon.w>s.W||icon.y+icon.h>s.H),'near-edge icons may clip instead of moving away from the tank');
 });
 
 

@@ -25,14 +25,14 @@ function element(){
 }
 function boot(){
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
- const document={...eventTarget(),documentElement:element(),body:element()},window=eventTarget();
- const s={document,window,$,mode:'room',phase:'menu',matchTouchLocked:false,online:{connected:true,menu:false},
+ const selection={isCollapsed:true,cleared:0,removeAllRanges(){this.isCollapsed=true;this.cleared++;}},document={...eventTarget(),documentElement:element(),body:element(),getSelection:()=>selection},window=eventTarget();
+ const s={document,window,$,mode:'room',phase:'menu',matchTouchLocked:false,matchTextComposing:false,touchUI:true,pendingMatchPresentation:null,online:{connected:true,menu:false},
   stick:{id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36},firePointers:new Set(),firePresses:new Set(),initAudio(){},localPlayerID:()=>0,sendOnlineInput(){},primaryFireHeld:()=>s.firePointers.size>0};
  vm.createContext(s);
- for(const name of ['syncPauseButton','preventMatchPinch','syncMatchTouchPolicy'])vm.runInContext(declaration(name),s);
+ for(const name of ['syncPauseButton','preventMatchPinch','clearMatchSelection','preventMatchSelection','syncMatchTouchPolicy'])vm.runInContext(declaration(name),s);
  // The actual joystick/Fire handlers are exercised alongside document guards.
  vm.runInContext(source.slice(source.indexOf('function cacheStickGeometry('),source.indexOf("$('touchControls').addEventListener('contextmenu'")),s);
- return{s,$,document,window,setPhase(phase){s.phase=phase;s.syncPauseButton();},pinch(type='gesturechange',values={}){return document.emit(type,values);}};
+ return{s,$,document,window,selection,setPhase(phase){s.phase=phase;s.syncPauseButton();},pinch(type='gesturechange',values={}){return document.emit(type,values);}};
 }
 
 test('pinch is blocked throughout local and online active phases, including menus and disconnection',()=>{
@@ -51,7 +51,7 @@ test('home, lobby and completed matches release zoom and every nonpassive gestur
  for(const phase of ['menu','onlineLobby','lobby','matchOver']){
   b.setPhase('playing');b.setPhase(phase);
   assert.equal(b.document.documentElement.classList.contains('match-active'),false,phase);
-  for(const type of ['touchmove','gesturestart','gesturechange','gestureend']){
+  for(const type of ['touchmove','gesturestart','gesturechange','gestureend','selectstart','selectionchange','contextmenu','dblclick','compositionstart','compositionend']){
    assert.equal(b.document.handlers.get(type).length,0,type);
    assert.equal(b.pinch(type,{touches:[{},{}]}).defaultPrevented,false,phase);
   }
@@ -68,12 +68,12 @@ test('single-finger scrolling and taps remain native while only cancelable pinch
 });
 test('repeated HUD refreshes register one capture guard per event and leave no inactive scrolling overhead',()=>{
  const b=boot();for(let i=0;i<40;i++)b.setPhase('playing');
- assert.equal(b.document.changes.length,4);
+ assert.equal(b.document.changes.length,10);
  for(const list of b.document.handlers.values()){assert.equal(list.length,1);assert.equal(list[0].options.capture,true);assert.equal(list[0].options.passive,false);}
  for(const phase of ['paused','playing','roundOver','countdown'])b.setPhase(phase);
- assert.equal(b.document.changes.length,4);
- b.setPhase('matchOver');for(let i=0;i<40;i++)b.setPhase('menu');assert.equal(b.document.changes.length,8);
- b.setPhase('playing');assert.equal(b.document.changes.length,12);
+ assert.equal(b.document.changes.length,10);
+ b.setPhase('matchOver');for(let i=0;i<40;i++)b.setPhase('menu');assert.equal(b.document.changes.length,20);
+ b.setPhase('playing');assert.equal(b.document.changes.length,30);
  for(const list of b.document.handlers.values())assert.equal(list.length,1);
 });
 test('joystick plus Fire keep independent pointers through a prevented pinch and release without stuck input',()=>{
@@ -103,7 +103,7 @@ test('actual background reconnect keeps active-match pinch protection through it
   assert.equal(b.document.documentElement.classList.contains('match-active'),true);
   assert.equal(b.pinch('gesturechange').defaultPrevented,true);
   assert.equal(b.pinch('touchmove',{touches:[{},{}]}).defaultPrevented,true);
-  assert.equal(b.document.changes.length,4,'the retry never removes and reattaches the gesture listeners');
+  assert.equal(b.document.changes.length,10,'the retry never removes and reattaches the gesture listeners');
  }
 });
 test('cold-session and lobby reconnects do not acquire an active-match zoom lock',()=>{
@@ -125,4 +125,48 @@ test('authoritative lobby/results, abandoned retries and leaving release a retai
   assert.equal(b.pinch('gesturechange').defaultPrevented,false,outcome);
   for(const list of b.document.handlers.values())assert.equal(list.length,0,outcome);
  }
+});
+
+
+test('mobile HUD, ammo status, sidebar and dialogs reject native selection, callouts and double clicks only during a match',()=>{
+ const b=boot();b.selection.isCollapsed=false;b.setPhase('playing');assert.equal(b.selection.cleared,1,'starting clears a selection carried from the lobby');
+ for(const id of ['ammoDots','weaponLabel','pilotFeedback','secondAmmoDots','roster','onlineMenuScreen','controlsDialog'])for(const type of ['selectstart','contextmenu','dblclick']){
+  assert.equal(b.document.emit(type,{target:b.$(id)}).defaultPrevented,true,id+' '+type);
+ }
+ assert.equal(b.document.emit('click',{target:b.$('resumeBtn')}).defaultPrevented,false,'ordinary button clicks remain native');
+ for(const phase of ['paused','roundOver','countdown']){b.setPhase(phase);assert.equal(b.document.emit('selectstart').defaultPrevented,true);}
+ b.setPhase('matchOver');assert.equal(b.document.emit('selectstart').defaultPrevented,false);assert.equal(b.document.emit('dblclick').defaultPrevented,false);
+ b.s.touchUI=false;b.setPhase('playing');assert.equal(b.document.emit('selectstart').defaultPrevented,false,'desktop text stays selectable');
+});
+
+test('selection changes clear text ranges once while retaining a typing caret and IME composition',()=>{
+ const b=boot();b.setPhase('playing');const field={value:'PILOT',selectionStart:0,selectionEnd:5,calls:0,setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end;this.calls++;}};
+ b.document.activeElement=field;b.selection.isCollapsed=false;b.document.emit('selectionchange',{cancelable:false});
+ assert.equal(field.selectionStart,5);assert.equal(field.selectionEnd,5);assert.equal(field.value,'PILOT');assert.equal(b.selection.cleared,1);
+ for(let i=0;i<20;i++)b.document.emit('selectionchange',{cancelable:false});assert.equal(field.calls,1);assert.equal(b.selection.cleared,1,'collapsed selection does not cause recursive changes');
+ assert.equal(b.document.emit('compositionstart').defaultPrevented,false);field.selectionStart=1;field.selectionEnd=3;b.selection.isCollapsed=false;
+ b.document.emit('selectionchange',{cancelable:false});assert.equal(field.calls,1);assert.equal(b.selection.cleared,1,'do not interrupt active IME replacement');
+ assert.equal(b.document.emit('compositionend').defaultPrevented,false);assert.equal(field.calls,2);assert.equal(field.selectionStart,3);assert.equal(field.value,'PILOT');
+ b.document.emit('compositionstart');b.setPhase('menu');b.setPhase('playing');assert.equal(b.s.matchTextComposing,false,'a later match cannot inherit stale composition state');
+});
+
+function queueResult(b){
+ const s=b.s;Object.assign(s,{ROUND_END_SECONDS:2,localMatchReport:{},localObjectives:{},performance:{now:()=>1000},pendingGameConfirmation:null,
+  clearInput(){},setScreen(){s.syncPauseButton();},updateHUD(){s.syncPauseButton();}});
+ b.document.querySelectorAll=()=>[];b.document.querySelector=()=>null;
+ for(const name of ['queueMatchPresentation','flushMatchPresentation','closeVictory'])vm.runInContext(declaration(name),s);
+ s.phase='matchOver';s.queueMatchPresentation(()=>{s.presented=true;s.syncPauseButton();});
+}
+test('the actual compact results preview retains the complete touch lock until its final overlay appears',()=>{
+ for(const mode of ['room','online']){
+  const b=boot();b.s.mode=mode;b.setPhase('playing');if(mode==='online')Object.assign(b.s.online,{code:'ROOM',socket:{},generation:1,roomData:{phase:'matchOver'}});
+  queueResult(b);assert.equal(b.s.matchTouchLocked,true);assert.equal(b.$('pauseBtn').hidden,true,'the ended simulation stays unpausable');
+  b.s.flushMatchPresentation(2999);assert.equal(b.s.presented,undefined);assert.equal(b.document.emit('selectstart').defaultPrevented,true);assert.equal(b.pinch().defaultPrevented,true);
+  b.s.flushMatchPresentation(3000);assert.equal(b.s.presented,true);assert.equal(b.s.matchTouchLocked,false);for(const list of b.document.handlers.values())assert.equal(list.length,0);
+ }
+});
+
+test('superseded compact results release their touch lock without waiting for another HUD refresh',()=>{
+ const b=boot();b.setPhase('playing');queueResult(b);b.s.localMatchReport={};b.s.flushMatchPresentation(1500);
+ assert.equal(b.s.pendingMatchPresentation,null);assert.equal(b.s.matchTouchLocked,false);assert.equal(b.s.presented,undefined);
 });

@@ -23,7 +23,7 @@ function boot(){
   sendOnline(message){s.sent.push(message);return s.sendSucceeds;},sent:[],sendSucceeds:true,setTimeout(fn){const id=++timerID;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
   performance:{now:()=>1000},COLORS:['#fff'],particles:[{}],rings:[{}],traces:[{}],bullets:[{}],pickups:[{}],tanks:[],goUntil:99,bestWins:0,
   Net:{STEP_MS:1000/60,expandMachineBullets:()=>[]},cacheMap(){},resize(){},resetOnlineMotion(){s.online.snapshots=[];},closeVictory(){s.pendingMatchPresentation=null;s.closed=(s.closed||0)+1;},
-  setScreen(screen){s.screen=screen;},showStartingControls(){},showLocalSpawnGuide(){},renderOnlineRoom(){},updateHUD(){},onlineEffect(){},showVictory(){s.results=(s.results||0)+1;},save(){},teamKey:t=>t.team,
+  setScreen(screen){s.screen=screen;},showStartingControls(){},showLocalSpawnGuide(){},renderOnlineRoom(){},updateHUD(){},syncPauseButton(){},onlineEffect(){},showVictory(){s.results=(s.results||0)+1;},save(){},teamKey:t=>t.team,
   startMatch(){s.newRun=true;},matchmaking:{rematchPending:false},requestQueueRematch(){},confirm(){throw Error('Native confirmation is forbidden');}};
  vm.createContext(s);
  for(const name of ['objectiveState','survivalState','survivalMode','canRestartSurvivalWave','syncRestartWaveActions','clearRestartWavePending','captureActionScope','finishGameConfirmation','confirmGameAction','requestRestartSurvivalWave','syncResultActions','quickReplay','netTank','receiveOnlineState','queueMatchPresentation','flushMatchPresentation','onlineMatchResultDelay'])vm.runInContext(declaration(name),s);

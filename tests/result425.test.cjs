@@ -30,7 +30,7 @@ function boot({teams=false,target=1}={}){
   COLORS:['#fff'],$,document:{createElement:()=>new Element(),querySelectorAll:()=>[]},
   teamKey:p=>p.team>0?'team'+p.team:'pilot'+p.id,teamName:id=>'TEAM '+id,teamColor:()=>'#fff',paintColor:c=>c,
   currentRules:()=>rules,objectiveMode:()=>false,suddenDeath:()=>false,
-  clearInput(){},dropLocalFlags(){},addLog(){},tone(){},updateHUD(){},updateTraces(){},compactLife(){},save(){s.saves=(s.saves||0)+1;},setScreen(screen){s.screen=screen;},renderOnlineRoom(){},syncResultActions(){},
+  clearInput(){},dropLocalFlags(){},addLog(){},tone(){},updateHUD(){},syncPauseButton(){},updateTraces(){},compactLife(){},save(){s.saves=(s.saves||0)+1;},setScreen(screen){s.screen=screen;},renderOnlineRoom(){},syncResultActions(){},
   renderMatchStats(report){s.renderedReport=report;},startRound(){s.starts=(s.starts||0)+1;s.phase='countdown';},
   localPlayerID:()=>s.localRoom.self,controlledTank:()=>s.tanks.find(t=>t.id===s.localRoom.self),
   roomData:()=>({players:s.localRoom.players.filter(p=>!p.spectating),spectators:s.localRoom.players.filter(p=>p.spectating)}),
