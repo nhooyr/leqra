@@ -202,7 +202,15 @@ func (g *Game) nextSurvivalWave(players [maxTanks]*Player) {
 	s.Wave++
 	s.Status, s.BreakTime = "wave", 0
 	g.Round = s.Wave
-	g.Clock, g.PhaseTime = float64(g.settings().TimeLimit), .55
+	// Keep the completed arena for the entire result hold. Only now replace it
+	// and prepare a fresh, input-free countdown, just like Elimination.
+	g.Generation++
+	cols, rows := g.mapDimensions()
+	g.makeMaze(cols, rows)
+	g.buildNavigation()
+	g.Phase, g.PhaseTime = "countdown", 3
+	g.Clock = float64(g.settings().TimeLimit)
+	g.Winner, g.roundClinched, g.objectiveEnded = -1, false, false
 	g.SpawnClock = g.pickupDelay()
 	g.Bullets, g.Pickups = []*Bullet{}, []*Pickup{}
 	for id, t := range g.Tanks {
@@ -224,6 +232,7 @@ func (g *Game) nextSurvivalWave(players [maxTanks]*Player) {
 	g.clearSurvivalInput(players)
 	g.seedPickups()
 	g.checkpointSurvivalWave()
+	g.emit("roundStart", nil, -1, "")
 	g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d · %d enemies", s.Wave, s.EnemiesRemaining))
 }
 
@@ -245,7 +254,8 @@ func (g *Game) endSurvival(players [maxTanks]*Player, won bool) {
 	}
 	g.finishMatchStats(winner)
 	g.Winner, g.Phase, g.PhaseTime = winner, "matchOver", 0
-	g.Bullets, g.Pickups = []*Bullet{}, []*Pickup{}
+	// Preserve the completed field while the client reveals the final result.
+	g.Bullets = []*Bullet{}
 	g.clearSurvivalInput(players)
 	g.emit("matchEnd", nil, winner, message)
 }
@@ -317,7 +327,8 @@ func (g *Game) stepSurvival(players [maxTanks]*Player) {
 			return
 		}
 		s.Status, s.BreakTime = "break", survivalBreakSeconds
-		g.Bullets, g.Pickups = []*Bullet{}, []*Pickup{}
+		// prepareSurvival freezes pickups until nextSurvivalWave resets the field.
+		g.Bullets = []*Bullet{}
 		g.clearSurvivalInput(players)
 		g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d CLEAR · squad revives in %gs", s.Wave, float64(survivalBreakSeconds)))
 	} else if g.Clock <= 0 {

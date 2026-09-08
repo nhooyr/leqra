@@ -75,7 +75,7 @@ func TestSurvival433RetryRestoresBoundaryWithoutRegeneratingMaze(t *testing.T) {
 	if !bytes.Equal(world, nextWorld) || walls != &g.World.Walls[0] || navigation != &g.Neighbors[0] || spatial != g.spatial {
 		t.Fatal("retry rebuilt the maze or its navigation/collision caches")
 	}
-	if g.Generation != generation+1 || g.Phase != "countdown" || g.PhaseTime != 2.6 || g.Clock != float64(g.settings().TimeLimit) || g.Winner != -1 || g.Round != 2 || g.roundClinched || g.objectiveEnded {
+	if g.Generation != generation+1 || g.Phase != "countdown" || g.PhaseTime != 3 || g.Clock != float64(g.settings().TimeLimit) || g.Winner != -1 || g.Round != 2 || g.roundClinched || g.objectiveEnded {
 		t.Fatal("retry did not establish a fresh combat lifecycle")
 	}
 	if s.Status != "wave" || s.Wave != 2 || s.WavesCleared != 1 || s.EnemiesRemaining != 2 || s.BreakTime != 0 || g.survivalCheckpoint != cp {
@@ -118,7 +118,7 @@ func TestSurvival433RetryRestoresBoundaryWithoutRegeneratingMaze(t *testing.T) {
 			t.Fatal("every connected client must receive the restarted wave")
 		}
 	}
-	g.step(2.6, [maxTanks]Input{}, r.Players)
+	g.step(3, [maxTanks]Input{}, r.Players)
 	if g.Phase != "playing" || g.stats.duration != 9.5 || g.Clock != float64(g.settings().TimeLimit) {
 		t.Fatal("countdown consumed live time or failed to resume")
 	}
@@ -348,7 +348,7 @@ func TestSurvival433RetryRejectsDuplicateAndPriorWaveRequests(t *testing.T) {
 	request["generation"] = generation
 	reachSurvivalWave433(t, r, 2)
 	action(t, h, clients[0], request)
-	if !hasError(clients[0], "stale_wave") || g.Generation != generation || g.survivalState().Wave != 2 {
+	if !hasError(clients[0], "stale_wave") || g.Generation != generation+1 || g.survivalState().Wave != 2 {
 		t.Fatal("delayed previous-wave request reset the current wave")
 	}
 }
@@ -533,6 +533,7 @@ func TestSurvival433RestartCapabilityFollowsWaveTransitionsAndSetup(t *testing.T
 	if g.survivalState().Wave != 2 {
 		t.Fatal("fixture did not begin the next wave")
 	}
+	g.Phase = "playing"
 	g.Tanks[0].Alive = false
 	h.tick(time.Now())
 	checkRoom(true)

@@ -528,11 +528,15 @@ func (h *Hub) kick(c *Client, target *int, member uint64, now time.Time) {
 // Called only while Hub.mu is held. Lookup, optional creation, and assigning the
 // first pilot are one transaction, including concurrent joins for the same code.
 func (h *Hub) join(c *Client, create bool, code, name, token string, now time.Time, spectate ...bool) {
+	h.joinRoom(c, create, code, name, token, now, len(spectate) > 0 && spectate[0], false)
+}
+
+// Publishing imports rules and all seats before the first room/state packets.
+func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now time.Time, spectating, deferInitialState bool) {
 	if c.room != nil {
 		c.enqueue(roomError("already_joined", "Leave your current room first."))
 		return
 	}
-	spectating := len(spectate) > 0 && spectate[0]
 	if spectating && cleanCallsign(name) == "" {
 		c.enqueue(roomError("bad_name", "Choose a callsign before spectating."))
 		return
@@ -702,8 +706,10 @@ func (h *Hub) join(c *Client, create bool, code, name, token string, now time.Ti
 	r.LastAction = now
 	h.electHost(r)
 	c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": id, "token": secret, "resumed": false, "created": created, "spectating": p.Spectating, "member": p.Member, "full": fallback, "busy": busy})
-	h.broadcastRoom(r)
-	h.sendState(c, r)
+	if !deferInitialState {
+		h.broadcastRoom(r)
+		h.sendState(c, r)
+	}
 	h.sendChatHistory(c, r)
 }
 

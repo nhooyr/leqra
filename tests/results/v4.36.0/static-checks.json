@@ -1,0 +1,15 @@
+{
+  "version": "4.36.0",
+  "javascript_syntax": 5,
+  "python_scripts_parsed_not_executed": 68,
+  "html_asset_references": 9,
+  "root_assets_match_shipped": [
+    "game.js",
+    "style.css",
+    "theme.js",
+    "theme.css",
+    "netcode.js",
+    "favicon.svg"
+  ],
+  "version_consistency": true
+}

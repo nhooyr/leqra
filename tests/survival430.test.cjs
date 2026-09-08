@@ -7,7 +7,7 @@ function declaration(name){const start=source.indexOf('function '+name+'(');asse
 function boot(){
  const elements=new Map(),$=id=>{if(!elements.has(id)){const classes=new Set();elements.set(id,{hidden:false,_text:'',get textContent(){return this._text;},set textContent(value){this._text=String(value);},style:{},classes,classList:{toggle(name,on){if(on)classes.add(name);else classes.delete(name);}}});}return elements.get(id);};
  const rules={mode:'survival',pickupRate:'normal',weapons:['shield','speed','homing','cannon','laser']};
- const s={$,mode:'room',phase:'playing',round:5,phaseTime:3,goUntil:0,COLORS:['#fff'],localRoom:{rules},online:{roomData:{rules},snapshots:[]},localObjectives:{mode:'survival',survival:{wave:4,waveTarget:10,status:'break',breakTime:2}},performance:{now:()=>100},paintColor:c=>c,suddenDeath:()=>false,modeInstructions:()=>'',tone(){}};
+ const s={pendingMatchPresentation:null,$,mode:'room',phase:'playing',round:5,phaseTime:3,goUntil:0,COLORS:['#fff'],localRoom:{rules},online:{roomData:{rules},snapshots:[]},localObjectives:{mode:'survival',survival:{wave:4,waveTarget:10,status:'break',breakTime:2}},performance:{now:()=>100},paintColor:c=>c,suddenDeath:()=>false,modeInstructions:()=>'',tone(){}};
  vm.createContext(s);
  for(const name of ['botLevelName','setText','currentRules','objectiveState','survivalState','survivalBreak','survivalMode','survivalBossName','survivalWavePlan','survivalBossPreview'])vm.runInContext(declaration(name),s);
  // Execute the production announcer section, independently of unrelated roster
@@ -26,21 +26,21 @@ test('next-boss gear matches fixtures also checked against authoritative Go gran
   assert.equal(preview.wave,f.wave,f.name);assert.equal(preview.equipment,gear.join(' · '),f.name);
  }
 });
-test('boss preview uses the existing two-second countdown without changing wave state',()=>{
+test('boss preview uses the existing two-second result hold without changing wave state',()=>{
  const s=boot(),state=s.survivalState(),before=JSON.stringify(state);s.updateAnnouncer();
  assert.equal(s.$('announcer').hidden,false);assert.equal(s.$('announcer').classes.has('boss-preview'),true);
- assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 5 · NORMAL BOSS');assert.equal(s.$('announceMain').textContent,'2');
- assert.equal(s.$('announceSub').textContent,'Equipment: 1 shield charge · Homing missiles\nSquad returns together.');assert.equal(JSON.stringify(state),before);
- state.breakTime=1.2;s.updateAnnouncer();assert.equal(s.$('announceMain').textContent,'2');assert.equal(state.breakTime,1.2);
+ assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 5 · NORMAL BOSS');assert.equal(s.$('announceMain').textContent,'WAVE 4 CLEARED');
+ assert.equal(s.$('announceSub').textContent,'Equipment: 1 shield charge · Homing missiles\nNew maze in 2…');assert.equal(JSON.stringify(state),before);
+ state.breakTime=1.2;s.updateAnnouncer();assert.equal(s.$('announceMain').textContent,'WAVE 4 CLEARED');assert.equal(state.breakTime,1.2);
 });
 test('ordinary breaks retain their clear message and never show a boss equipment preview',()=>{
  const s=boot();s.updateAnnouncer();s.survivalState().wave=5;s.updateAnnouncer();
  assert.equal(s.survivalBossPreview(),null);assert.equal(s.$('announcer').classes.has('boss-preview'),false);
- assert.equal(s.$('announceTop').textContent,'WAVE 5 CLEARED');assert.equal(s.$('announceSub').textContent,'Squad returns for the next wave.');
+ assert.equal(s.$('announceTop').textContent,'SQUAD SURVIVES');assert.equal(s.$('announceMain').textContent,'WAVE 5 CLEARED');assert.equal(s.$('announceSub').textContent,'New maze in 2…');
 });
 test('boss preview hides during pause, resumes with the same timer, and disappears at wave start',()=>{
  const s=boot();s.updateAnnouncer();s.phase='paused';s.updateAnnouncer();assert.equal(s.$('announcer').hidden,true);assert.equal(s.$('announcer').classes.has('boss-preview'),false);assert.equal(s.survivalState().breakTime,2);
- s.phase='playing';s.updateAnnouncer();assert.equal(s.$('announcer').hidden,false);assert.equal(s.$('announceMain').textContent,'2');
+ s.phase='playing';s.updateAnnouncer();assert.equal(s.$('announcer').hidden,false);assert.equal(s.$('announceMain').textContent,'WAVE 4 CLEARED');
  Object.assign(s.survivalState(),{wave:5,status:'wave',breakTime:0});s.updateAnnouncer();assert.equal(s.survivalBossPreview(),null);assert.equal(s.$('announcer').hidden,true);assert.equal(s.$('announcer').classes.has('boss-preview'),false);
 });
 test('finished targets, ended runs, and other modes cannot announce another survival boss',()=>{
@@ -51,6 +51,12 @@ test('finished targets, ended runs, and other modes cannot announce another surv
 });
 test('online previews use authoritative snapshot waves and room rules, including disabled pickups',()=>{
  const s=boot();s.mode='online';s.online.snapshots=[{objectives:{mode:'survival',survival:{wave:9,waveTarget:20,status:'break',breakTime:2.2}}}];s.online.roomData.rules={mode:'survival',pickupRate:'off',weapons:['shield','speed','homing','cannon','laser']};s.updateAnnouncer();
- assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 10 · FIERCE BOSS');assert.equal(s.$('announceMain').textContent,'3');assert.equal(s.$('announceSub').textContent,'Equipment: Standard shells\nSquad returns together.');
- s.online.roomData.rules.pickupRate='normal';s.online.roomData.rules.weapons=['shield','laser'];s.updateAnnouncer();assert.equal(s.$('announceSub').textContent,'Equipment: 2 shield charges · Laser\nSquad returns together.');
+ assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 10 · FIERCE BOSS');assert.equal(s.$('announceMain').textContent,'WAVE 9 CLEARED');assert.equal(s.$('announceSub').textContent,'Equipment: Standard shells\nNew maze in 3…');
+ s.online.roomData.rules.pickupRate='normal';s.online.roomData.rules.weapons=['shield','laser'];s.updateAnnouncer();assert.equal(s.$('announceSub').textContent,'Equipment: 2 shield charges · Laser\nNew maze in 3…');
+});
+
+test('boss equipment stays visible after the new maze arrives for the three-second countdown',()=>{
+ const s=boot();s.phase='countdown';s.round=5;s.phaseTime=3;Object.assign(s.survivalState(),{wave:5,status:'wave',breakTime:0,boss:true});
+ s.updateAnnouncer();assert.equal(s.$('announceTop').textContent,'WAVE 05 · NORMAL BOSS');assert.equal(s.$('announceMain').textContent,'3');assert.equal(s.$('announceSub').textContent,'Equipment: 1 shield charge · Homing missiles');
+ s.phaseTime=1.1;s.updateAnnouncer();assert.equal(s.$('announceMain').textContent,'2');assert.match(s.$('announceSub').textContent,/Homing missiles/);
 });

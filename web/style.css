@@ -669,8 +669,10 @@ select:disabled{cursor:not-allowed}
 #leaveMatchBtn,#actionConfirmAccept{text-align:center;justify-content:center}
 
 /* Center the label itself; decorative icons occupy the reserved end space. */
-.primary:has(>[aria-hidden=true]){padding-inline:40px!important}
-.primary>[aria-hidden=true]{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:19px;text-align:center;pointer-events:none}
+.primary:has(>[aria-hidden=true]),.back-action{padding-inline:40px!important}
+.primary>[aria-hidden=true],.back-action>[aria-hidden=true]{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:19px;text-align:center;pointer-events:none}
+.back-action{position:relative}
+.back-action>[aria-hidden=true]{left:14px;right:auto}
 .primary>:not([aria-hidden=true]){min-width:0;overflow-wrap:anywhere}
 .primary,.secondary{line-height:1.4;text-align:center}
 .preset-actions>button{min-width:0}
@@ -719,7 +721,8 @@ body.touch-landscape #onlineMenuScreen .moderation-row{padding:7px 8px}
 .arena-stage{position:relative;display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;isolation:isolate}
 .arena-stage>.overlay{z-index:6}
 body.touch-landscape .touch-controls{top:0}
-body.has-objective-bar .objective-bar[hidden]{display:flex!important;visibility:hidden}
+/* Every mode reserves the same status row, including Elimination. */
+.objective-bar[hidden]{display:flex!important;visibility:hidden}
 body.spectating .spectator-banner[hidden]{display:flex!important;visibility:hidden}
 
 /* Connection incompatibility remains visible until the player chooses a path. */
@@ -730,3 +733,8 @@ body.spectating .spectator-banner[hidden]{display:flex!important;visibility:hidd
 .version-mismatch .feature-body p{font-size:14px;line-height:1.65;color:#ffe8c3;margin:0}
 .version-mismatch .primary{background:#ffc46b;color:#281400;border-color:#ffda9e;box-shadow:0 3px 0 #9b671f}
 body #roomScreen.unified-room .room-mode-notice.error{margin:9px 0;padding:10px 12px;border:1px solid var(--danger);border-left-width:4px;border-radius:6px;background:color-mix(in srgb,var(--danger) 12%,var(--surface));color:#ffabb3;font:600 12px/1.5 var(--sans);letter-spacing:0;scroll-margin-block:12px}
+
+/* Keep mode defaults and applying edited rules equally easy to reach. */
+#rulesDialog .feature-footer{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:center}
+#rulesDialog .feature-footer>button{min-width:0;width:100%;margin:0}
+@media(max-width:420px){#rulesDialog .feature-footer{grid-template-columns:minmax(0,1fr)}}

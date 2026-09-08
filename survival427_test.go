@@ -63,7 +63,7 @@ func TestSurvival427SingleHumanStartsAndEnemySlotsStayPrivate(t *testing.T) {
 	}
 }
 
-func TestSurvival427WaveBreakClearsHazardsRevivesAndKeepsMaze(t *testing.T) {
+func TestSurvival427WaveBreakPreparesFreshMazeAndCountdown(t *testing.T) {
 	_, _, r := survivalRoom427(t, 2)
 	g := r.Game
 	g.startMatch(r.Players)
@@ -79,7 +79,7 @@ func TestSurvival427WaveBreakClearsHazardsRevivesAndKeepsMaze(t *testing.T) {
 	r.Players[0].FirePending = true
 	clearSurvivalWave427(t, r)
 	s := g.survivalState()
-	if s.Status != "break" || s.BreakTime != 2 || g.Phase != "playing" || len(g.Bullets) != 0 || len(g.Pickups) != 0 || g.Scores[0] != 1 || g.Scores[1] != 1 {
+	if s.Status != "break" || s.BreakTime != 2 || g.Phase != "playing" || len(g.Bullets) != 0 || len(g.Pickups) != 1 || g.Pickups[0].Life != 9 || g.Scores[0] != 1 || g.Scores[1] != 1 {
 		t.Fatalf("wave did not clear safely: %+v", s)
 	}
 	if g.fire(g.Tanks[0]) || r.Players[0].Input.Fire || r.Players[0].FirePending || r.Players[0].Input.Seq != 42 {
@@ -94,8 +94,8 @@ func TestSurvival427WaveBreakClearsHazardsRevivesAndKeepsMaze(t *testing.T) {
 	if s.Status != "wave" || s.Wave != 2 || g.Round != 2 || !g.Tanks[1].Alive || g.Tanks[1].Power != "" || g.Tanks[0].SpawnSerial <= serial || g.Clock != float64(g.settings().TimeLimit) {
 		t.Fatalf("next wave failed to reset squad: %+v", s)
 	}
-	if generation != g.Generation || !reflect.DeepEqual(walls, g.World.Walls) {
-		t.Fatal("wave regenerated the maze")
+	if generation+1 != g.Generation || reflect.DeepEqual(walls, g.World.Walls) || g.Phase != "countdown" || g.PhaseTime != 3 {
+		t.Fatal("wave did not prepare a fresh maze countdown")
 	}
 }
 
@@ -356,7 +356,7 @@ func TestSurvival427DepartureKeepsBotsRunningAndReconnectWaitsForWave(t *testing
 	h.removeClient(clients[0])
 	h.removeClient(resumed)
 	g.step(tickDT, [maxTanks]Input{}, r.Players)
-	if g.survivalState().Status != "wave" || g.Phase != "playing" {
+	if g.survivalState().Status != "wave" || g.Phase != "countdown" {
 		t.Fatal("departing humans ended a live bot squad's run")
 	}
 	for _, tank := range g.Tanks {

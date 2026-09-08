@@ -368,7 +368,7 @@ func (h *Hub) publishRoom(c *Client, m clientMessage, now time.Time) {
 		fail("room_exists", "That name is already in use. Choose another name or join that room.")
 		return
 	}
-	h.join(c, code == "", code, cleanName(m.Roster[0].Name), "", now, m.Roster[0].Spectating)
+	h.joinRoom(c, code == "", code, cleanName(m.Roster[0].Name), "", now, m.Roster[0].Spectating, true)
 	if c.room == nil {
 		return
 	}
@@ -394,6 +394,7 @@ func (h *Hub) publishRoom(c *Client, m clientMessage, now time.Time) {
 	applyFormat(r)
 	resetReady(r)
 	h.broadcastRoom(r)
+	h.sendState(c, r)
 }
 
 // A callsign change is metadata, even during a round. Only the authenticated

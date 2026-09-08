@@ -77,7 +77,7 @@ func (g *Game) restartSurvivalWave(players [maxTanks]*Player) {
 	s := g.survivalState()
 	g.restoreSurvivalStats()
 	g.Generation++
-	g.Phase, g.PhaseTime, g.Winner = "countdown", 2.6, -1
+	g.Phase, g.PhaseTime, g.Winner = "countdown", 3, -1
 	g.Round, g.Clock = s.Wave, float64(g.settings().TimeLimit)
 	g.roundClinched, g.objectiveEnded = false, false
 	g.SpawnClock = g.pickupDelay()

@@ -149,3 +149,18 @@ test('local final and nonfinal elimination rounds hold for exactly 240 simulatio
   s.update(1/120);assert.equal(s.phase,target===1?'matchOver':'countdown');if(target===1){assert.equal($('victoryDialog').open,true);assert.equal(s.pendingMatchPresentation,null,'the completed round hold is not repeated');}
  }
 });
+
+test('every non-Elimination ending shows a compact preview throughout its existing two-second hold',()=>{
+ for(const ending of ['loss','win','ctf','koth']){
+  const {s,$}=boot();s.currentRules().mode=['loss','win'].includes(ending)?'survival':ending;
+  s.localObjectives={mode:s.currentRules().mode,...(s.survivalMode()?{survival:{wave:3,wavesCleared:ending==='win'?3:2,waveTarget:3,status:'wave'}}:{suddenDeath:true})};
+  s.survivalState=()=>s.localObjectives?.survival;s.survivalBreak=()=>false;s.modeLabel=()=>s.currentRules().mode.toUpperCase();s.survivalBossPreview=()=>null;
+  for(const name of ['setText','matchResultPreview'])vm.runInContext(declaration(name),s);
+  const hud=declaration('updateHUD'),start=hud.indexOf(" const announce=$('announcer')"),end=hud.indexOf(" if(mode==='online')onlineHUD();",start);
+  vm.runInContext('function updateHUD(){\n'+hud.slice(start,end)+'\n}',s);
+  if(s.survivalMode())s.endLocalSurvival(ending==='win');else s.finishMatch(0);
+  assert.equal($('announcer').hidden,false,ending);assert.equal($('announceMain').textContent,ending==='loss'?'RUN ENDED':ending==='win'?'SURVIVAL COMPLETE':'ORIGINAL WINS');
+  const pending=s.pendingMatchPresentation;s.now=1000;s.updateHUD();assert.equal(s.pendingMatchPresentation,pending);s.flushMatchPresentation(1999);assert.equal($('victoryDialog').open,false);assert.equal($('announcer').hidden,false);
+  s.flushMatchPresentation(2000);assert.equal($('announcer').hidden,true);assert.equal($('victoryDialog').open,true);s.updateHUD();assert.equal($('announcer').hidden,true);
+ }
+});
