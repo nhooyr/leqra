@@ -1,0 +1,74 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
+class Element{constructor(){this.value='';this.dataset={};this.attributes={};this.hidden=false;this.disabled=false;this.textContent='';this.style={setProperty:(k,v)=>this[k]=v};this.classList={toggle(){}};}setAttribute(k,v){this.attributes[k]=v;}getAttribute(k){return this.attributes[k];}}
+function boot({online=false,count=4}={}){
+ const elements=new Map(),$=id=>{if(!elements.has(id)){const el=new Element();el.parentElement=new Element();elements.set(id,el);}return elements.get(id);};
+ const choices=['elimination','ctf','koth','survival'].map(id=>{const el=new Element();el.dataset.roomMode=id;return el;});
+ const timers=new Map();let timer=0;
+ const s={console,mode:online?'online':'room',phase:online?'onlineLobby':'menu',MAX_TANKS:8,pendingRoomMode:null,roomModePreview:null,roomModeObserved:'',roomModeError:'',roomModeContext:'',rulesPending:false,presetsPending:false,POWER:{rapid:{},shield:{}},localRoom:{code:'LOCAL',self:0,players:Array.from({length:count},(_,id)=>({id,kind:id?'bot':'human',team:0,connected:true})),rules:null},online:{id:0,member:1,code:'ONLINE',connected:true,socket:{},roomData:null},$,document:{querySelectorAll:selector=>selector==='[data-room-mode]'?choices:[]},sent:[],sendOnline(message){s.sent.push(message);return !s.sendFails;},setTimeout(fn){timers.set(++timer,fn);return timer;},clearTimeout(id){timers.delete(id);},persistLocalRoomRules(r){s.persisted=r;},resetPreviewIfLobby(options){s.preview=options;},renderOnlineRoom(){s.syncRoomModeSlider();},syncFeatureSummary(){s.syncRoomModeSlider();},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>r?.players||s.localRoom.players};
+ s.roomData=()=>s.mode==='online'?s.online.roomData:{host:0,players:s.localRoom.players.filter(p=>!p.spectating),rules:s.localRoom.rules};
+ vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const ROOM_MODES='),source.indexOf('function roomModeEditable(')),s);
+ for(const name of ['defaultRoomRules','currentRules','validateTeamNames','validateRoomRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','setLocalRules','isRoomHost','isRoomEditable','roomModeEditable','rulesForRoomMode','clearRoomModePending','paintRoomModeChoice','syncRoomModeSlider','rejectRoomMode','selectRoomMode','previewRoomMode','cancelRoomModePreview','modeLabel','updateRuleHelp','readRuleTeamSettings','submitRules'])vm.runInContext(declaration(name),s);
+ s.localRoom.rules=s.defaultRoomRules();s.online.roomData={host:0,players:s.localRoom.players,rules:s.defaultRoomRules()};s.syncRoomModeSlider();return {s,$,choices,timers};
+}
+test('home selection applies mode defaults while preserving map, power-ups and team identity',()=>{
+ const {s,$}=boot();s.localRoom.rules={...s.localRoom.rules,mapSize:'huge',pickupRate:'slow',friendlyFire:true,respawnSeconds:7,teamNames:['A','B','C','D'],weapons:['shield']};
+ for(const [mode,score,time,team]of[['ctf',3,180,'teams'],['koth',60,180,'teams'],['survival',10,75,'teams'],['elimination',5,75,'teams']]){
+  assert.equal(s.selectRoomMode(mode),true);const r=s.currentRules();assert.equal(r.mode,mode);assert.equal(r.scoreTarget,score);assert.equal(r.timeLimit,time);assert.equal(r.teamMode,team);assert.equal(r.mapSize,'huge');assert.equal(r.pickupRate,'slow');assert.equal(r.respawnSeconds,7);assert.equal(r.friendlyFire,true);assert.deepEqual(Array.from(r.weapons),['shield']);assert.deepEqual(Array.from(r.teamNames),['A','B','C','D']);assert.equal(s.preview.regenerateMaze,false);assert.equal(s.preview.resetPickups,false);assert.equal(s.persisted.mode,mode);assert.equal($('roomModeSlider').getAttribute('aria-valuetext').toUpperCase(),s.modeLabel());
+ }
+});
+test('clicking the current mode preserves custom score and time; Hill keeps FFA when available',()=>{
+ const {s}=boot();s.localRoom.rules.scoreTarget=19;s.localRoom.rules.timeLimit=320;
+ assert.equal(s.selectRoomMode('elimination'),true);assert.equal(s.currentRules().scoreTarget,19);assert.equal(s.currentRules().timeLimit,320);assert.equal(s.preview,undefined);
+ assert.equal(s.selectRoomMode('koth'),true);assert.equal(s.currentRules().teamMode,'ffa');
+});
+test('CTF and survival normalize the entire existing lineup without replacing participants',()=>{
+ const {s}=boot();const players=s.localRoom.players;s.selectRoomMode('ctf');assert.deepEqual(players.map(p=>p.team),[1,2,1,2]);s.selectRoomMode('survival');assert.deepEqual(players.map(p=>p.team),[1,1,1,1]);s.selectRoomMode('elimination');assert.deepEqual(players.map(p=>p.team),[1,2,3,4]);assert.equal(s.localRoom.players,players);
+});
+test('oversized survival squads roll back before local mutation or any online message',()=>{
+ for(const online of [false,true]){const {s,$}=boot({online,count:5}),before=JSON.stringify(s.currentRules());assert.equal(s.selectRoomMode('survival'),false);assert.equal(JSON.stringify(s.currentRules()),before);assert.equal(s.sent.length,0);assert.equal(String($('roomModeSlider').value),'0');assert.match($('roomModeNotice').textContent,/four squad tanks/);assert.equal(s.roomData().players.length,5);}
+});
+test('native range previews without applying or sending; release commits once',()=>{
+ for(const online of [false,true]){const {s,$,choices}=boot({online});for(const index of [1,2,3])s.previewRoomMode(index);assert.equal(s.currentRules().mode,'elimination');assert.equal(s.sent.length,0);assert.equal(String($('roomModeSlider').value),'3');assert.equal(choices[3].getAttribute('aria-pressed'),'true');assert.equal(s.selectRoomMode('survival'),true);assert.equal(s.sent.length,online?1:0);assert.equal(s.currentRules().mode,online?'elimination':'survival');}
+ assert.match(declaration('initRoomModeSlider'),/type="range" min="0" max="3" step="1"/);assert.match(declaration('initRoomModeSlider'),/\.oninput=e=>previewRoomMode/);assert.match(declaration('initRoomModeSlider'),/\.onchange=e=>/);
+});
+test('online selection waits for the matching authoritative mode and blocks duplicate requests',()=>{
+ const {s,$,timers}=boot({online:true});s.selectRoomMode('ctf');assert.equal(s.sent[0].type,'rules');assert.equal(s.sent[0].rules.teamMode,'teams');assert.equal(s.currentRules().mode,'elimination');assert.equal($('roomModeSlider').disabled,true);assert.match($('roomModeNotice').textContent,/Applying Capture/);assert.equal(s.selectRoomMode('koth'),false);assert.equal(s.sent.length,1);
+ s.online.roomData={...s.online.roomData,players:[...s.online.roomData.players]};s.syncRoomModeSlider();assert.ok(s.pendingRoomMode,'unrelated roster packet must not acknowledge mode');
+ s.online.roomData.rules=s.sent[0].rules;s.syncRoomModeSlider();assert.equal(s.pendingRoomMode,null);assert.equal($('roomModeSlider').disabled,false);assert.equal(String($('roomModeSlider').value),'1');assert.equal(timers.size,0);
+});
+test('online failure, server rejection and acknowledgement timeout restore the real selection',()=>{
+ for(const failure of ['send','server','timeout']){const {s,$,timers}=boot({online:true});s.sendFails=failure==='send';s.selectRoomMode('koth');if(failure==='server')s.rejectRoomMode('The roster changed.');if(failure==='timeout')[...timers.values()][0]();assert.equal(s.currentRules().mode,'elimination');assert.equal(s.pendingRoomMode,null);assert.equal($('roomModeSlider').disabled,false);assert.equal(String($('roomModeSlider').value),'0');assert.ok($('roomModeNotice').textContent.length>0);}
+ assert.match(source,/if\(msg.action==='rules'&&pendingRoomMode\)\{rejectRoomMode\(msg.message\);break;\}/);
+});
+test('guests, active matches, matchmaking, disconnection and other pending settings are read-only',()=>{
+ for(const scenario of ['guest','playing','queue','matchmaking','awayMatch','disconnected','rules','preset']){const {s,$}=boot({online:true});if(scenario==='guest')s.online.roomData.host=1;else if(scenario==='playing')s.phase='playing';else if(scenario==='disconnected')s.online.connected=false;else if(scenario==='rules')s.rulesPending=true;else if(scenario==='preset')s.presetsPending=true;else s.online.roomData[scenario]={};s.syncRoomModeSlider();assert.equal($('roomModeSlider').disabled,true,scenario);assert.equal(s.selectRoomMode('ctf'),false,scenario);assert.equal(s.sent.length,0,scenario);}
+});
+test('preset changes, authoritative updates and reconnects refresh the slider without stale pending state',()=>{
+ const local=boot();local.s.localRoom.rules=local.s.rulesForRoomMode('survival');local.s.syncRoomModeSlider();assert.equal(String(local.$('roomModeSlider').value),'3');
+ const {s,$,timers}=boot({online:true});s.selectRoomMode('ctf');s.online.socket={};s.online.roomData.rules=s.rulesForRoomMode('koth');s.syncRoomModeSlider();assert.equal(s.pendingRoomMode,null);assert.equal(String($('roomModeSlider').value),'2');assert.equal(timers.size,0);s.online.roomData.host=1;s.syncRoomModeSlider();assert.equal($('roomModeSlider').disabled,true);assert.match($('roomModeNotice').textContent,/host/);
+});
+test('Rules use the selected mode without a second mode dropdown',()=>{
+ const {s,$}=boot();s.selectRoomMode('survival');Object.assign(s,{mapDimensions:()=>[12,10],pickupLimitText:()=>'',pickupLifetime:()=>30});$('rule-teamMode').value='ffa';s.updateRuleHelp();assert.equal($('rule-teamMode').value,'teams');assert.equal($('rule-teamMode').disabled,true);assert.equal($('ruleScoreLabel').textContent,'WAVES TO SURVIVE');assert.equal($('rulesModeName').textContent,'CO-OP SURVIVAL');assert.equal($('rule-respawnSeconds').parentElement.hidden,true);
+ assert.doesNotMatch(source,/id="rule-mode"|\$\('rule-mode'\)|RULES & MODE/);assert.match(declaration('submitRules'),/const r=\{mode:currentRules\(\).mode\}/);
+});
+test('benign room updates preserve an in-progress drag until release or cancel',()=>{
+ const {s,$}=boot({online:true});s.previewRoomMode(3);s.online.roomData.players[1].ready=true;s.syncRoomModeSlider();assert.equal(String($('roomModeSlider').value),'3');assert.equal(s.roomModePreview,'survival');assert.equal(s.currentRules().mode,'elimination');assert.equal(s.sent.length,0);
+ s.selectRoomMode('survival');assert.equal(s.sent[0].rules.mode,'survival');assert.equal(s.roomModePreview,null);
+ const local=boot();local.s.previewRoomMode(2);local.s.cancelRoomModePreview();assert.equal(String(local.$('roomModeSlider').value),'0');assert.equal(local.s.currentRules().mode,'elimination');
+});
+test('authoritative mode changes clear stale rejection messages and previews; lost edit access cancels a drag',()=>{
+ const {s,$}=boot({online:true});s.rejectRoomMode('The squad is too large.');s.previewRoomMode(1);s.online.roomData.rules=s.rulesForRoomMode('koth');s.syncRoomModeSlider();assert.equal(s.roomModeError,'');assert.equal(s.roomModePreview,null);assert.equal(String($('roomModeSlider').value),'2');assert.equal($('roomModeNotice').hidden,true);
+ s.previewRoomMode(3);s.online.roomData.host=1;s.syncRoomModeSlider();assert.equal(s.roomModePreview,null);assert.equal(String($('roomModeSlider').value),'2');assert.equal($('roomModeSlider').disabled,true);
+});
+test('an open Rules form refreshes when its authoritative mode changes, preserving drafts on unrelated updates',()=>{
+ const {s,$}=boot({online:true});Object.assign(s,{displayScoreTarget:()=>'',modeInstructions:()=>'',roomStartError:()=>'',controlSummary:()=>'',fieldManualHTML:()=>'',Theme:{colors:['a','b','c','d']},teamName:(i,r)=>r.teamNames[i-1],renderPowerLegend(){},updateRuleHelp(){s.helpUpdates=(s.helpUpdates||0)+1;}});
+ for(let i=1;i<=4;i++){$('rule-teamName'+i).parentElement.querySelector=()=>({});$('rule-teamColor'+i).previousElementSibling={style:{}};}
+ for(const name of ['featureNotice','fillRulesForm','syncFeatureSummary'])vm.runInContext(declaration(name),s);
+ s.fillRulesForm();$('rulesDialog').open=true;$('rule-scoreTarget').value='19';s.syncFeatureSummary();assert.equal($('rule-scoreTarget').value,'19');assert.equal($('rulesDialog').dataset.mode,'elimination');
+ s.online.roomData.rules=s.rulesForRoomMode('koth');s.syncFeatureSummary();assert.equal($('rule-scoreTarget').value,60);assert.equal($('rule-timeLimit').value,180);assert.equal($('rulesDialog').dataset.mode,'koth');
+ $('rule-timeLimit').value='222';s.online.roomData.players[1].ready=true;s.syncFeatureSummary();assert.equal($('rule-timeLimit').value,'222');
+});

@@ -29,7 +29,7 @@ func (g *Game) godlikeProgress(t, goal *Tank, dt float64) {
 	if a.ProgressClock > 0 {
 		return
 	}
-	hold := g.Objectives != nil && !g.Objectives.SuddenDeath && g.Objectives.Mode == "koth" && dist(t.X, t.Y, g.Objectives.HillX, g.Objectives.HillY) <= g.Objectives.Radius
+	hold := g.botHoldingHill(t)
 	if !hold && dist(t.X, t.Y, goal.X, goal.Y) > cellSize*.8 && dist(t.X, t.Y, a.ProgressX, a.ProgressY) < cellSize*.3 {
 		a.Advance = 1.1
 		a.RouteClock = 0
@@ -215,7 +215,7 @@ func (g *Game) godlikePickup(t *Tank, d botTuning, goal *Tank, objective bool) *
 	}
 	// Do not leave a scoring hill or interrupt a capture for a weapon swap.
 	if objective && g.Objectives != nil {
-		if g.Objectives.Mode == "koth" && dist(t.X, t.Y, g.Objectives.HillX, g.Objectives.HillY) <= g.Objectives.Radius {
+		if g.botHoldingHill(t) {
 			return nil
 		}
 		for _, f := range g.Objectives.Flags {

@@ -618,6 +618,13 @@ func (g *Game) botAvoidGrenades(t *Tank, d botTuning, angle, drive float64) (flo
 	return angle, drive
 }
 
+// A hill only counts as reached on its visible scoring side. A nearby tank
+// behind a wall must continue around the maze instead of holding the wrong side.
+func (g *Game) botHoldingHill(t *Tank) bool {
+	o := g.Objectives
+	return o != nil && !o.SuddenDeath && o.Mode == "koth" && dist(t.X, t.Y, o.HillX, o.HillY) < o.Radius-3 && !g.rayBlocked(o.HillX, o.HillY, t.X-o.HillX, t.Y-o.HillY, 0)
+}
+
 func (g *Game) botControl(t *Tank, dt float64) {
 	d := tuneBot(t.Difficulty)
 	t.SpeedTime = math.Max(0, t.SpeedTime-dt)
@@ -721,7 +728,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		if t.Difficulty == "godlike" {
 			replan = a.RouteClock <= 0 || goal != a.Goal && len(a.Path) == 0
 		} else {
-			replan = goal != a.Goal || len(a.Path) == 0 || g.rng.Float64() < .35
+			replan = goal != a.Goal || a.RouteClock <= 0 || len(a.Path) > 0 && g.rng.Float64() < .35
 		}
 		if t.GhostTime <= 0 && replan {
 			a.Goal = goal
@@ -729,7 +736,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 			a.RouteClock = .42 + float64(t.ID%3)*.02
 		}
 		angle, drive := t.Angle, 0.0
-		if a.HasAim && (t.Difficulty != "godlike" || a.Advance <= 0) && (!objective || dist(t.X, t.Y, gx, gy) < 26 || (g.Tick/30+t.ID)%5 == 0 && dist(t.X, t.Y, enemy.X, enemy.Y) < cellSize*2) {
+		if a.HasAim && (t.Difficulty != "godlike" || a.Advance <= 0) && (!objective || g.botHoldingHill(t) || dist(t.X, t.Y, gx, gy) < 10 && !g.rayBlocked(t.X, t.Y, gx-t.X, gy-t.Y, 0)) {
 			angle = a.Aim
 			r := dist(t.X, t.Y, enemy.X, enemy.Y)
 			if t.Difficulty == "godlike" {
@@ -745,9 +752,6 @@ func (g *Game) botControl(t *Tank, dt float64) {
 			} else if r > cellSize*2.7 {
 				drive = .4
 			}
-			if t.Difficulty == "godlike" && objective && g.Objectives != nil && g.Objectives.Mode == "koth" && dist(t.X, t.Y, g.Objectives.HillX, g.Objectives.HillY) <= g.Objectives.Radius {
-				drive = 0 // Hold scoring position while aiming; imminent danger can still override.
-			}
 		} else if t.GhostTime > 0 {
 			angle = math.Atan2(destination.Y-t.Y, destination.X-t.X)
 			if dist(t.X, t.Y, destination.X, destination.Y) > 12 {
@@ -761,16 +765,25 @@ func (g *Game) botControl(t *Tank, dt float64) {
 				}
 				a.Path = a.Path[1:]
 			}
+			// Finish an interaction directly once the complete tank fits. Cell
+			// centres are navigation waypoints, not pickup/flag arrival points.
+			if objective && !g.rayBlocked(t.X, t.Y, destination.X-t.X, destination.Y-t.Y, t.R+1) {
+				a.Path = nil
+			}
 			x, y := destination.X, destination.Y
 			if len(a.Path) > 0 {
 				x, y = g.cellCenter(a.Path[0])
+				skip := 0
 				for i := 1; i < len(a.Path) && i < 4; i++ {
 					nx, ny := g.cellCenter(a.Path[i])
 					if g.rayBlocked(t.X, t.Y, nx-t.X, ny-t.Y, t.R+2) {
 						break
 					}
 					x, y = nx, ny
+					skip = i
 				}
+				// Do not steer back to a waypoint already bypassed by a shortcut.
+				a.Path = a.Path[skip:]
 			}
 			if g.rayBlocked(t.X, t.Y, x-t.X, y-t.Y, t.R+1) {
 				cx, cy := g.cellCenter(g.cellAt(t.X, t.Y))
@@ -783,6 +796,9 @@ func (g *Game) botControl(t *Tank, dt float64) {
 			if objective && dist(t.X, t.Y, gx, gy) < 10 {
 				drive = 0
 			}
+		}
+		if g.botHoldingHill(t) {
+			drive = 0 // Hold scoring position; imminent danger can still override.
 		}
 		if t.Difficulty == "godlike" {
 			angle, drive = g.godlikeDodge(t, d, angle, drive)

@@ -164,7 +164,7 @@ test('a bot killed by remote grenade detonation stops before movement even when 
  const s={difficulty:'normal',DIFFICULTY:{normal:{think:.2,speed:108,turn:3.4,reaction:.4,dodge:false}},tanks:[bot,enemy],BLAST_RADIUS:220,CELL:84,RADIUS:17,
   speedCount:()=>0,isEnemy:(a,b)=>a.id!==b.id,distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),objectiveGoal:()=>null,rnd:()=>1,
   ownedGrenades:()=>[{x:140,y:210}],rayWalls:()=>null,detonateOwned(t){t.alive=false;detonations++;},
-  chooseBotAim:()=>null,cellAt:()=>0,routeControl:()=>({angle:0,drive:1}),chooseGrenadeAvoid:()=>null,angleDelta:(a,b)=>b-a,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
+  botHoldingHill:()=>false,chooseBotAim:()=>null,cellAt:()=>0,routeControl:()=>({angle:0,drive:1}),chooseGrenadeAvoid:()=>null,angleDelta:(a,b)=>b-a,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
   moveTank(t,dx,dy){moves++;t.x+=dx;t.y+=dy;}
  };
  vm.createContext(s);vm.runInContext(declaration('botControl'),s);s.botControl(bot,1/60);
