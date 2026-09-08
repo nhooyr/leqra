@@ -65,7 +65,7 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	sw := httptest.NewRecorder()
 	h.ServeHTTP(sw, httptest.NewRequest("GET", "/assets/v"+version+"/sw.js", nil))
-	for _, want := range []string{"leqra-app-", "v" + version, "'/ws'", "'/healthz'", "'/api/'", "caches.match('/')"} {
+	for _, want := range []string{"leqra-app-", "v" + version, "'/ws'", "'/healthz'", "'/api/'", "caches.match('/', {cacheName: CACHE})"} {
 		if !strings.Contains(sw.Body.String(), want) {
 			t.Fatalf("service worker missing %q", want)
 		}

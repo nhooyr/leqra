@@ -1,9 +1,6 @@
 package main
 
-import (
-	"crypto/sha256"
-	"time"
-)
+import "time"
 
 // renameRoom changes only the public room key. The room object, roster, scores,
 // chat, reconnect identities and current maze remain intact.
@@ -43,14 +40,11 @@ func (h *Hub) renameRoom(c *Client, m clientMessage, now time.Time) {
 
 	// Preserve automatic reconnects that were already in flight when the host
 	// renamed the room. Old public invite links are not aliases for fresh joins.
-	if h.resumeRoutes == nil {
-		h.resumeRoutes = map[resumeRouteKey]resumeRoute{}
-	}
 	for _, member := range r.members() {
 		if member == nil || member.Token == "" {
 			continue
 		}
-		h.resumeRoutes[resumeRouteKey{old, sha256.Sum256([]byte(member.Token))}] = resumeRoute{r, now.Add(reconnectGrace)}
+		h.rememberResumeRoute(old, member.Token, r, now)
 	}
 
 	delete(h.rooms, old)

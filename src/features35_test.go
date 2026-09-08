@@ -381,7 +381,7 @@ func (g *Game) bruteWalls35(x, y, dx, dy, r float64) *RayHit {
 				ny = -1
 			}
 		}
-		if hit < nearest-1e-7 {
+		if best == nil || hit < nearest-1e-7 {
 			nearest = hit
 			best = &RayHit{hit, nx, ny}
 		} else if best != nil && math.Abs(hit-nearest) < 1e-7 {

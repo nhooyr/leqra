@@ -45,10 +45,13 @@ type wsError struct {
 func (e *wsError) Error() string        { return e.reason }
 func protocolError(reason string) error { return &wsError{1002, reason} }
 
-func headerToken(v, token string) bool {
-	for _, s := range strings.Split(v, ",") {
-		if strings.EqualFold(strings.TrimSpace(s), token) {
-			return true
+// List-valued HTTP headers can span several field lines.
+func headerToken(values []string, token string) bool {
+	for _, value := range values {
+		for _, s := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(s), token) {
+				return true
+			}
 		}
 	}
 	return false
@@ -75,7 +78,7 @@ func validOrigin(r *http.Request, allowed []string) bool {
 
 func upgradeWS(w http.ResponseWriter, r *http.Request, allowed []string) (*wsConn, error) {
 	fail := func(status int, msg string) (*wsConn, error) { http.Error(w, msg, status); return nil, errors.New(msg) }
-	if r.Method != http.MethodGet || !headerToken(r.Header.Get("Connection"), "upgrade") || !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+	if r.Method != http.MethodGet || !headerToken(r.Header.Values("Connection"), "upgrade") || !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		return fail(400, "WebSocket upgrade required")
 	}
 	if r.Header.Get("Sec-WebSocket-Version") != "13" {

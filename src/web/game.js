@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.45.1';
+const GAME_VERSION='4.46.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -92,10 +92,15 @@ for(const [kind,def] of Object.entries(POWER)){const raw=def.color;Object.define
 // Keep local assignments available while an online publish is still importing.
 const roomData=()=>mode==='online'&&(!online.publishing||online.roomData)?online.roomData:{host:localRoom.self,code:localRoom.code,players:localRoom.players.filter(p=>!p.spectating).map(p=>({...p,color:teamColor(p.id,p.team,p.colorIndex),connected:true,ready:true})),spectators:localRoom.players.filter(p=>p.spectating).map(p=>({...p,color:'#aebbc4',connected:true,ready:false})),maxPlayers:roomCapacity(localRoom.rules),maxSpectators:16,rules:localRoom.rules,phase:phase==='menu'?'lobby':phase};
 const roomMembers=(r)=>r?[...(r.players||[]),...(r.spectators||[])]:mode==='online'&&(!online.publishing||online.roomData)?[...(online.roomData?.players||[]),...(online.roomData?.spectators||[])]:localRoom.players;
-const roomMember=(id,r)=>roomMembers(r).find(p=>p.id===id);
+// Hot control and HUD lookups scan the existing rosters without copying them.
+function findRoomMember(match,r){
+ if(!r&&(mode!=='online'||online.publishing&&!online.roomData))return localRoom.players.find(match);
+ r=r||online.roomData;return r?.players?.find(match)||r?.spectators?.find(match);
+}
+const roomMember=(id,r)=>findRoomMember(p=>p.id===id,r);
 const localPlayerID=()=>mode==='online'&&(!online.publishing||online.roomData)?online.id:localRoom.self;
-const secondaryMember=()=>roomMembers().find(p=>p.kind==='local'&&p.owner===localPlayerID());
-const secondLocal=()=>roomMembers().find(p=>!p.spectating&&p.kind==='local'&&p.owner===localPlayerID());
+const secondaryMember=()=>{const owner=localPlayerID();return findRoomMember(p=>p.kind==='local'&&p.owner===owner);};
+const secondLocal=()=>{const owner=localPlayerID();return findRoomMember(p=>!p.spectating&&p.kind==='local'&&p.owner===owner);};
 const isSpectating=()=>!!roomMember(localPlayerID())?.spectating;
 const controlledTank=()=>tanks.find(t=>t.id===localPlayerID());
 const hasLocalP2=()=>mode==='duel'||!!secondLocal();
@@ -420,7 +425,7 @@ function rayWalls(x,y,dx,dy,r=0){
   if(entry>exit||exit<0||entry>1||entry<-.0001)continue;
   const hit=Math.max(0,entry);let nx=0,ny=0;
   if(Math.abs(tx1-ty1)<1e-7){nx=dx>0?-1:1;ny=dy>0?-1:1;}else if(tx1>ty1)nx=dx>0?-1:1;else ny=dy>0?-1:1;
-  if(hit<best-1e-7){best=hit;nearest={t:hit,nx,ny,wall:w};}else if(nearest&&Math.abs(hit-best)<1e-7){if(nx)nearest.nx=nx;if(ny)nearest.ny=ny;}
+  if(!nearest||hit<best-1e-7){best=hit;nearest={t:hit,nx,ny,wall:w};}else if(nearest&&Math.abs(hit-best)<1e-7){if(nx)nearest.nx=nx;if(ny)nearest.ny=ny;}
  }
  return nearest;
 }
@@ -436,7 +441,17 @@ function wallBetweenCenters(x,y,dx,dy){
  }return false;
 }
 function circleHit(x,y,dx,dy,tx,ty,r){const a=dx*dx+dy*dy,ox=x-tx,oy=y-ty,c=ox*ox+oy*oy-r*r;if(c<=0)return 0;if(a<1e-12)return null;const b=2*(ox*dx+oy*dy),disc=b*b-4*a*c;if(disc<0)return null;const n=(-b-Math.sqrt(disc))/(2*a);return n>=0&&n<=1?n:null;}
-function tankHit(x,y,dx,dy,r,owner,ignoreOwner,impactOnly=false){let first=null;for(const t of tanks){if(!t.alive||(t.id===owner&&ignoreOwner)||!impactOnly&&(!canDamage(owner,t)||t.invulnerable>0))continue;const hit=circleHit(x,y,dx,dy,t.x,t.y,t.r+r);if(hit!==null&&(!first||hit<first.at))first={at:hit,tank:t};}return first;}
+function tankHit(x,y,dx,dy,r,owner,ignoreOwner,impactOnly=false,ownerStart=0){
+ let first=null;for(const t of tanks){
+  if(!t.alive||(t.id===owner&&ignoreOwner)||!impactOnly&&(!canDamage(owner,t)||t.invulnerable>0))continue;
+  // A grace period ending mid-sweep exposes only the remaining owner path.
+  // Other tanks still collide along the full segment.
+  let hit;
+  if(t.id===owner&&ownerStart>0){const rest=1-ownerStart,part=circleHit(x+dx*ownerStart,y+dy*ownerStart,dx*rest,dy*rest,t.x,t.y,t.r+r);hit=part===null?null:ownerStart+part*rest;}
+  else hit=circleHit(x,y,dx,dy,t.x,t.y,t.r+r);
+  if(hit!==null&&(!first||hit<first.at))first={at:hit,tank:t};
+ }return first;
+}
 // Outer-rim sweep shared by live Cannon physics, guidance, threat forecasts and
 // remote visuals. Adjacent wall tile seams cannot create spurious reflections.
 function rayBounds(x,y,dx,dy,r){
@@ -737,16 +752,17 @@ function projectileTankImpact(b,target){
 function updateBullets(dt){
  for(const b of bullets){if(b.dead)continue;
   if(b.kind==='homing')b.rangeLeft??=W+H;
-  const span=Math.min(dt,Math.max(0,b.life),b.kind==='homing'?b.rangeLeft/MISSILE_SPEED:Infinity),lifeBefore=b.life;b.age+=span;b.life-=span;
+  const span=Math.min(dt,Math.max(0,b.life),b.kind==='homing'?b.rangeLeft/MISSILE_SPEED:Infinity),lifeBefore=b.life,ageBefore=b.age;b.age+=span;b.life-=span;
   if(b.kind==='homing')steerMissile(b,span);
   if(b.kind==='grenade'){const drag=grenadeDragFactor(lifeBefore,b.life);b.vx*=drag;b.vy*=drag;}
-  if(b.kind!=='rapid'){b.trail.push({x:b.x,y:b.y});if(b.trail.length>11)b.trail.shift();}let remaining=span;
+  if(b.kind!=='rapid'){b.trail.push({x:b.x,y:b.y});if(b.trail.length>11)b.trail.shift();}let remaining=span,elapsed=0;
   for(let step=0;step<4&&remaining>.00001&&!b.dead;step++){
    if(b.kind==='homing')remaining=Math.min(remaining,Math.max(0,b.rangeLeft)/MISSILE_SPEED);
-   const dx=b.vx*remaining,dy=b.vy*remaining,wall=projectileWall(b.kind,b.x,b.y,dx,dy,b.r),tank=tankHit(b.x,b.y,dx,dy,b.r,b.owner,b.age<.20||b.kind==='scatter'||b.kind==='rapid',b.kind==='grenade');
+   const ageStart=ageBefore+elapsed,ownerStart=ageStart<.20?Math.min(1,(.20-ageStart)/remaining):0;
+   const dx=b.vx*remaining,dy=b.vy*remaining,wall=projectileWall(b.kind,b.x,b.y,dx,dy,b.r),tank=tankHit(b.x,b.y,dx,dy,b.r,b.owner,ageStart+remaining<.20||b.kind==='scatter'||b.kind==='rapid',b.kind==='grenade',ownerStart);
    if(tank&&(!wall||tank.at<=wall.t)){spendMissileRange(b,Math.hypot(dx,dy)*tank.at);b.x+=dx*tank.at;b.y+=dy*tank.at;projectileTankImpact(b,tank.tank);break;}
    if(wall){b.x+=dx*wall.t;b.y+=dy*wall.t;spendMissileRange(b,Math.hypot(dx,dy)*wall.t);
-    missileWallNudge(b,wall);remaining*=1-wall.t;burst(b.x,b.y,b.color,2,36);
+    missileWallNudge(b,wall);elapsed+=remaining*wall.t;remaining*=1-wall.t;burst(b.x,b.y,b.color,2,36);
     ricochetSound();
     if((b.kind!=='homing'&&b.kind!=='rapid'&&b.bounces>22)||b.bounces>128){if(b.kind==='grenade')detonate(b);else b.dead=true;}
    }else{b.x+=dx;b.y+=dy;spendMissileRange(b,Math.hypot(dx,dy));remaining=0;}
@@ -1044,15 +1060,15 @@ function godlikeObjectiveGoal(t){
  if(flag.carrier>=0){const escort=tanks.find(p=>p.alive&&p.id===flag.carrier);if(escort&&escort.team===t.team){if(own.home&&distance(t,{x:own.homeX,y:own.homeY})<CELL*2&&distance(escort,{x:own.homeX,y:own.homeY})<CELL*3)return ctfCoverGoal(t,own,escort);let threat=null,best=CELL*3;for(const p of tanks)if(p.alive&&isEnemy(t,p)&&distance(p,escort)<best){best=distance(p,escort);threat=p;}return threat?{x:threat.x,y:threat.y,urgent:true}:!own.home?{...stolen,urgent:true}:ctfCoverGoal(t,own,escort);}}
  return{...flag,urgent:false};
 }
+function godlikeWeaponValue(kind){switch(kind){case 'rapid':return 2.6;case 'scatter':return 2.2;case 'homing':return 3.1;case 'grenade':return 2;case 'laser':return 3.3;case 'cannon':return 3.7;default:return 0;}}
 function godlikePickupValue(t,p){
  if(p.type==='shield')return shieldCount(t)>=5&&t.shield>4?0:shieldCount(t)?2.2:4.5;
  if(p.type==='speed')return speedCount(t)>=MAX_SPEED_STACKS&&t.speedTime>4?0:speedCount(t)<2?3.5:1.5;
  if(p.type==='ghost')return t.ghostTime>4?0:3;
  if(p.type==='scope')return t.scopeTime>3?0:.3;
- const value={rapid:2.6,scatter:2.2,homing:3.1,grenade:2,laser:3.3,cannon:3.7};
- if(!t.power||t.powerTime<2||t.power==='rapid'&&(t.machineRounds??180)<120)return value[p.type]||0;
+ if(!t.power||t.powerTime<2||t.power==='rapid'&&(t.machineRounds??180)<120)return godlikeWeaponValue(p.type);
  if(t.power===p.type)return t.powerTime<5||t.charges<=1?1.4:.15;
- return Math.max(0,(value[p.type]||0)-(value[t.power]||0)+.25);
+ return Math.max(0,(godlikeWeaponValue(p.type))-(godlikeWeaponValue(t.power))+.25);
 }
 function godlikePointDanger(t,p){
  let danger=0;

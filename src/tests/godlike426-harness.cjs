@@ -27,7 +27,7 @@ function boot({cols=12,rows=8,wallList=[],lexical=false}={}){
   'pathScratch','tracePath','bfs','targetMotion','leadPoint','projectileSpec','muzzleProjectile','grenadeDragIntegral','grenadeDragFactor','grenadeForecast',
   'ownedGrenades','steerMissile','spendMissileRange','missileWallNudge','laserTrace','evaluateBotShot','findBankAim','chooseBotAim',
   'planBotPath','routeControl','botHoldingHill','ctfCoverGoal','objectiveGoal','objectiveRoute','chooseDodge','chooseGrenadeAvoid','forecastThreats','movementRisk','forecastGrenadeBodies','godlikeDistances','godlikeObjectiveGoal',
-  'godlikePickupValue','godlikePointDanger','godlikeDestination','godlikeRouteDanger','godlikeBlastSafe','godlikeDetonate','godlikeGrenadeShot',
+  'godlikeWeaponValue','godlikePickupValue','godlikePointDanger','godlikeDestination','godlikeRouteDanger','godlikeBlastSafe','godlikeDetonate','godlikeGrenadeShot',
   'godlikeGrenadeThreats','godlikeMissileRisk','godlikeDodge','godlikeSafeShot','godlikeProgress','godlikeBotControl','botControl'];
  if(lexical){const make=new Function('environment','let {'+Object.keys(s).join(',')+'}=environment;\n'+constants+'\n'+names.map(declaration).join('\n')+'\nreturn Object.assign(environment,{'+names.join(',')+',tune:DIFFICULTY});');return make(s);}
  vm.createContext(s);vm.runInContext(constants+'\nglobalThis.tune=DIFFICULTY;',s);

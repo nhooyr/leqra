@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/leqra-deploy.XXXXXX")
 trap 'rm -rf "$build_dir"' 0
 trap 'exit 1' HUP INT TERM
-GOOS=linux GOARCH=amd64 go build -o "$build_dir/leqra" ../src
+GOOS=linux GOARCH=amd64 go build -trimpath -o "$build_dir/leqra" ../src
 
 ssh leqra sh -s <<'REMOTE'
 set -eu
@@ -25,5 +25,5 @@ chown leqra:leqra /opt/leqra/leqra-server
 systemctl daemon-reload
 systemctl enable leqra
 systemctl restart leqra
-systemctl status leqra
+systemctl status --no-pager leqra
 REMOTE

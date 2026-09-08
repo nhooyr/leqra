@@ -444,6 +444,12 @@ func (g *Game) wallBetweenCenters(x, y, dx, dy float64) bool {
 }
 
 func (g *Game) rayWallsHit(x, y, dx, dy, r float64) (RayHit, bool) {
+	return g.rayWallsQuery(x, y, dx, dy, r, false)
+}
+
+// Line-of-sight queries stop at the first eligible wall. Reflection queries
+// still find the nearest contact and merge simultaneous corner normals.
+func (g *Game) rayWallsQuery(x, y, dx, dy, r float64, firstOnly bool) (RayHit, bool) {
 	var best RayHit
 	hasBest := false
 	nearest := 1.0 + 1e-8
@@ -481,6 +487,9 @@ func (g *Game) rayWallsHit(x, y, dx, dy, r float64) (RayHit, bool) {
 			continue
 		}
 		hit := math.Max(0, entry)
+		if firstOnly {
+			return RayHit{T: hit}, true
+		}
 		nx, ny := 0.0, 0.0
 		if math.Abs(tx1-ty1) < 1e-7 {
 			nx = 1
@@ -502,7 +511,7 @@ func (g *Game) rayWallsHit(x, y, dx, dy, r float64) (RayHit, bool) {
 				ny = -1
 			}
 		}
-		if hit < nearest-1e-7 {
+		if !hasBest || hit < nearest-1e-7 {
 			nearest = hit
 			best = RayHit{hit, nx, ny}
 			hasBest = true
@@ -529,7 +538,7 @@ func (g *Game) rayWalls(x, y, dx, dy, r float64) *RayHit {
 }
 
 func (g *Game) rayBlocked(x, y, dx, dy, r float64) bool {
-	_, ok := g.rayWallsHit(x, y, dx, dy, r)
+	_, ok := g.rayWallsQuery(x, y, dx, dy, r, true)
 	return ok
 }
 
@@ -789,7 +798,7 @@ func (g *Game) fire(t *Tank) bool {
 		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: t.X + cs*muzzle, Y: t.Y + sn*muzzle, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1}
 		// Cannon ignores internal walls, but even its muzzle respects the arena rim.
 		hit, hitOK := g.projectileWallHit(kind, t.X, t.Y, cs*muzzle, sn*muzzle, b.R)
-		target, targetAt := g.projectileTankHit(b, t.X, t.Y, cs*muzzle, sn*muzzle)
+		target, targetAt := g.projectileTankHit(b, t.X, t.Y, cs*muzzle, sn*muzzle, b.Age, 0)
 		if target != nil && hitOK && targetAt > hit.T {
 			target = nil
 		}
@@ -1059,17 +1068,39 @@ func (g *Game) detonate(b *Bullet) {
 
 // Muzzle placement and live flight use the same collision eligibility. Grenades
 // physically contact allies and protected tanks; only their damage is filtered.
-func (g *Game) projectileTankHit(b *Bullet, x, y, dx, dy float64) (*Tank, float64) {
+func (g *Game) projectileTankHit(b *Bullet, x, y, dx, dy, ageStart, span float64) (*Tank, float64) {
 	var target *Tank
 	first := 2.0
 	for _, t := range g.Tanks {
-		if t == nil || !t.Alive || (t.ID == b.Owner && (b.Age < .20 || b.Kind == "scatter" || b.Kind == "rapid")) {
+		if t == nil || !t.Alive {
 			continue
 		}
 		if b.Kind != "grenade" && (!g.canDamage(b.Owner, t) || t.Invulnerable > 0) {
 			continue
 		}
-		if at, ok := circleHit(x, y, dx, dy, t.X, t.Y, t.R+b.R); ok && at < first {
+		ownerStart := 0.0
+		if t.ID == b.Owner {
+			if b.Kind == "scatter" || b.Kind == "rapid" {
+				continue
+			}
+			if ageStart < .20 {
+				if span <= 0 || ageStart+span < .20 {
+					continue
+				}
+				// Only the portion after muzzle grace can touch the owner.
+				// Starting this suffix inside the tank is an immediate hit.
+				ownerStart = clamp((.20-ageStart)/span, 0, 1)
+			}
+		}
+		var at float64
+		var ok bool
+		if ownerStart > 0 {
+			at, ok = circleHit(x+dx*ownerStart, y+dy*ownerStart, dx*(1-ownerStart), dy*(1-ownerStart), t.X, t.Y, t.R+b.R)
+			at = ownerStart + at*(1-ownerStart)
+		} else {
+			at, ok = circleHit(x, y, dx, dy, t.X, t.Y, t.R+b.R)
+		}
+		if ok && at < first {
 			first, target = at, t
 		}
 	}
@@ -1106,7 +1137,7 @@ func (g *Game) updateBullets(dt float64) {
 		if b.Kind == "homing" {
 			span = math.Min(span, math.Max(0, b.RangeLeft)/missileSpeed)
 		}
-		lifeBefore := b.Life
+		ageBefore, lifeBefore := b.Age, b.Life
 		b.Age += span
 		b.Life -= span
 		if b.Kind == "homing" {
@@ -1117,14 +1148,14 @@ func (g *Game) updateBullets(dt float64) {
 			b.VX *= drag
 			b.VY *= drag
 		}
-		remaining := span
+		remaining, elapsed := span, 0.0
 		for step := 0; step < 4 && remaining > .00001 && !b.Dead; step++ {
 			if b.Kind == "homing" {
 				remaining = math.Min(remaining, math.Max(0, b.RangeLeft)/missileSpeed)
 			}
 			dx, dy := b.VX*remaining, b.VY*remaining
 			wall, wallOK := g.projectileWallHit(b.Kind, b.X, b.Y, dx, dy, b.R)
-			target, first := g.projectileTankHit(b, b.X, b.Y, dx, dy)
+			target, first := g.projectileTankHit(b, b.X, b.Y, dx, dy, ageBefore+elapsed, remaining)
 			if target != nil && (!wallOK || first <= wall.T) {
 				b.X += dx * first
 				b.Y += dy * first
@@ -1152,6 +1183,7 @@ func (g *Game) updateBullets(dt float64) {
 					b.VY = -b.VY
 				}
 				b.Bounces++
+				elapsed += remaining * wall.T
 				remaining *= 1 - wall.T
 				if (b.Kind != "homing" && b.Kind != "rapid" && b.Bounces > 22) || b.Bounces > 128 {
 					if b.Kind == "grenade" {
