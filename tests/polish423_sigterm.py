@@ -34,7 +34,7 @@ async def run_socket(base, proc):
     ws_url = base.replace('http://', 'ws://') + '/ws'
     async with connect(ws_url, origin=base, compression=None, max_size=1_000_000) as ws:
         hello = json.loads(await asyncio.wait_for(ws.recv(), 3))
-        check(hello.get('type') == 'server_hello' and hello.get('version') == '4.31.0' and hello.get('protocol') == 1,
+        check(hello.get('type') == 'server_hello' and hello.get('version') == '4.32.0' and hello.get('protocol') == 1,
               'Production WebSocket sends the v4.23 server hello first')
         await ws.send(json.dumps({'type': 'client_hello', 'version': hello['version'], 'protocol': hello['protocol']}))
         await ws.send(json.dumps({'type': 'create', 'name': 'SIGTERM TEST'}))
@@ -69,13 +69,13 @@ async def main():
                 try:
                     with urllib.request.urlopen(base + '/healthz', timeout=.2) as response:
                         data = json.load(response)
-                    if data.get('version') == '4.31.0':
+                    if data.get('version') == '4.32.0':
                         break
                 except Exception:
                     await asyncio.sleep(.05)
             else:
                 raise AssertionError('server did not become healthy')
-            check(True, 'Compiled production server reports v4.31.0 healthy')
+            check(True, 'Compiled production server reports v4.32.0 healthy')
             await run_socket(base, proc)
             deadline = time.monotonic() + 6
             while proc.poll() is None and time.monotonic() < deadline:

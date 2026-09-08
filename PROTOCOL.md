@@ -1,10 +1,10 @@
-# leqra v4.31.0 — current game protocol (protocol 1)
+# leqra v4.32.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.31.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.32.0**:
 
 ```json
-{"type":"server_hello","version":"4.31.0","protocol":1}
-{"type":"client_hello","version":"4.31.0","protocol":1}
+{"type":"server_hello","version":"4.32.0","protocol":1}
+{"type":"client_hello","version":"4.32.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -20,7 +20,7 @@ The home-screen icon selector and the battle-format/map-size selectors beneath i
 | Field or limit | Survival behavior |
 | --- | --- |
 | `rules.teamMode` | Must be `"teams"`; all room participants normalize to Team 1. |
-| `rules.scoreTarget` | Integer 1–20, interpreted as waves to clear. The browser's Survival selection/preset defaults to 10. |
+| `rules.scoreTarget` | Integer 1–20, interpreted as waves to clear. The browser's Survival selection/preset defaults to 15. |
 | `rules.timeLimit` | Integer 30–600 seconds per wave; browser default 75. |
 | `rules.respawnSeconds` | Retained as a validated 1–10 setting for compatibility; Survival revives between waves instead. |
 | Squad capacity | One to four available room participants, including friendly bots and local P2. All-bot squads are allowed. |
@@ -36,7 +36,7 @@ The ordinary `state.objectives` object contains an empty `flags` array and the a
 
 ```json
 {"mode":"survival","flags":[],"survival":{
-  "wave":5,"wavesCleared":4,"waveTarget":10,
+  "wave":5,"wavesCleared":4,"waveTarget":15,
   "enemiesRemaining":4,"boss":true,"breakTime":0,"status":"wave"
 }}
 ```
