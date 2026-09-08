@@ -11,12 +11,12 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.25.0/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.25.0/theme.css">
-<link rel="stylesheet" href="assets/v4.25.0/style.css">
-<link rel="manifest" href="assets/v4.25.0/manifest.webmanifest">
-<link rel="icon" href="assets/v4.25.0/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/v4.25.0/apple-touch-icon.png">
+<script src="assets/v4.27.0/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.27.0/theme.css">
+<link rel="stylesheet" href="assets/v4.27.0/style.css">
+<link rel="manifest" href="assets/v4.27.0/manifest.webmanifest">
+<link rel="icon" href="assets/v4.27.0/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/v4.27.0/apple-touch-icon.png">
 </head>
 <body>
 <div class="app">
@@ -32,14 +32,14 @@
  <section class="arena-shell" aria-label="Tank battle arena">
   <div class="arena-bar"><div class="arena-title"><span class="status-dot"></span><span id="arenaStatus">READY ROOM</span></div><div class="mobile-scores" id="miniScores" aria-label="Scores"></div><div class="bar-right"><span class="round-chip" id="roundLabel">ROUND 01</span><span class="clock" id="clock">01:15</span></div></div>
   <div class="arena-wrap" id="arenaWrap">
-   <canvas id="arena" tabindex="0" aria-label="Tank maze game. Use W A S D or arrow keys to drive and Q to fire (Space also works without a second local player). Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
+   <canvas id="arena" tabindex="0" aria-label="Tank maze game. Keyboard bindings can be changed in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
    <div class="toast" id="toast" role="status" hidden></div>
    <div class="announcer" id="announcer" hidden><span class="announce-top" id="announceTop"></span><strong id="announceMain"></strong><span class="announce-sub" id="announceSub"></span></div>
    <div class="overlay" id="overlay">
     <section class="screen-card" id="lobbyScreen" aria-label="Legacy settings" hidden>
      <div class="intro"><div class="eyebrow">QUICK MATCH / LOCAL + ONLINE</div><h2>ENTER<br><em>leqra.</em></h2><p>Small tanks. Tight corners. Big trouble.<br>Outlast the enemy. Rule the maze.</p></div>
      <div class="lobby-options"><label class="field-label">CHOOSE YOUR BATTLE</label><div class="segmented" id="modeOptions" role="group" aria-label="Game mode"><button class="selected" data-mode="solo" type="button" aria-pressed="true">Solo vs. bots</button><button data-mode="duel" type="button" aria-pressed="false">2P · Local</button><button data-mode="online" type="button" aria-pressed="false">Online</button></div>
-     <label class="field-label" id="difficultyLabel">BOT DIFFICULTY</label><div class="segmented" id="difficultyOptions" role="group" aria-label="Bot difficulty"><button data-difficulty="easy" type="button" aria-pressed="false">Chill</button><button data-difficulty="normal" class="selected" type="button" aria-pressed="true">Normal</button><button data-difficulty="hard" type="button" aria-pressed="false">Fierce</button></div></div>
+     <label class="field-label" id="difficultyLabel">BOT DIFFICULTY</label><div class="segmented" id="difficultyOptions" role="group" aria-label="Bot difficulty"><button data-difficulty="easy" type="button" aria-pressed="false">Chill</button><button data-difficulty="normal" class="selected" type="button" aria-pressed="true">Normal</button><button data-difficulty="hard" type="button" aria-pressed="false">Fierce</button><button data-difficulty="godlike" type="button" aria-pressed="false">Godlike</button></div></div>
      <button class="primary" id="playBtn" type="button"><span>DEPLOY TANK</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
      <div class="small-note" id="lobbyNote">FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES</div>
     </section>
@@ -64,8 +64,8 @@
       <form class="callsign-editor" id="roomCallsignForm" aria-label="Change your callsign"><label class="callsign-label" for="roomCallsign">YOUR CALLSIGN · HOST</label><div class="callsign-row"><input class="net-input" id="roomCallsign" name="callsign" maxlength="16" placeholder="PILOT" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="roomCallsignStatus"></div><p class="callsign-status" id="roomCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="roomP2CallsignForm" data-pilot="secondary" aria-label="Change Player 2 callsign" hidden><label class="callsign-label" for="roomP2Callsign">PLAYER 2 CALLSIGN</label><div class="callsign-row"><input class="net-input" id="roomP2Callsign" name="callsign" maxlength="16" placeholder="PLAYER 2" autocomplete="off" spellcheck="false" aria-describedby="roomP2CallsignStatus"></div><p class="callsign-status" id="roomP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
       <div class="roster-heading"><span>ROOM ROSTER</span><span id="seatCount">4 / 8</span></div>
       <div class="net-roster" id="roomRoster"></div>
-      <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ LOCAL PLAYER 2</button><div class="add-bot-row"><select id="newBotDifficulty" aria-label="New bot difficulty"><option value="easy">Chill bot</option><option value="normal" selected>Normal bot</option><option value="hard">Fierce bot</option></select><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div></div>
-      <p class="local-controls-note" id="localControlsNote" hidden>P1: WASD + Q · P2: arrows + Space.<br>Player 2 needs a keyboard on this device.</p>
+      <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ LOCAL PLAYER 2</button><div class="add-bot-row"><select id="newBotDifficulty" aria-label="New bot difficulty"><option value="easy">Chill bot</option><option value="normal" selected>Normal bot</option><option value="hard">Fierce bot</option><option value="godlike">Godlike bot</option></select><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div></div>
+      <p class="local-controls-note" id="localControlsNote" hidden>P1: WASD + Q / C · P2: arrows + Space / Enter.<br>Player 2 needs a keyboard on this device.</p>
       <button class="secondary ready-button" id="readyBtn" type="button" hidden>I’M READY</button>
       <button class="primary" id="startRoomBtn" type="button"><span>START MATCH</span><span aria-hidden="true">→</span></button>
       <div class="small-note" id="readyHint">YOU VS. THE BOT SQUAD · START WHEN YOU’RE READY</div>
@@ -85,19 +85,19 @@
  </section>
  <aside class="sidebar" aria-label="Scoreboard and instructions">
   <section class="panel"><div class="panel-title"><span>THE LINEUP</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
-  <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"><div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line"><span>Fire / detonate</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd></div></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through bots. Your own ricochets can still hit you.</div></div></section>
+  <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"><div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line manual-fire-line"><span>Fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>C</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd><span class="manual-or">OR</span><kbd>ENTER</kbd></div></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through bots. Your own ricochets can still hit you.</div></div></section>
   <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 PICKUPS</span></div><div class="power-list">
 <div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Through walls. Edge bounces. 4× size/speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#cce4ff"><canvas data-power-icon="ghost" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Ghost<span>Through walls. Stacks with speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#f57cff"><canvas data-power-icon="laser" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Laser<span>Ricochets. Maze-perimeter range.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#ff83bd"><canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Homing missile<span>Aggressive tracking. Half-perimeter range.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Tank impact. Tap again. Cruises, then brakes near its 10s fuse.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#8fb8ff"><canvas data-power-icon="scope" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Scope<span>Long dotted aim. 10 seconds.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5 · +65% speed each · 10s.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>Continuous tiny rounds · 10s · quarter-perimeter range.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread · shooter-safe · 10s.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#8fb8ff"><canvas data-power-icon="scope" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Scope<span>Long dotted aim. Independent of your weapon.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5 · +65% speed each.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>5s of firing · tiny rounds · quarter-perimeter range.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread · shooter-safe.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#73cee4"><canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shield<span>Stack up to five protective rings.</span></div></div>
-<p class="power-note">Weapons use FIRE. Timed power-ups last 10 seconds. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or when you press Fire again. Walls stop blasts; your own grenade can hit you.</p>
+<p class="power-note">Weapons use FIRE. Timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 5 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or when you press Fire again. Walls stop blasts; your own grenade can hit you.</p>
 </div></section>
   <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Pick your battle.</div></div></section>
  </aside>
@@ -110,8 +110,8 @@
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
  <div class="kick-actions"><button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button></div>
 </dialog>
-<script src="assets/v4.25.0/netcode.js" defer></script>
-<script src="assets/v4.25.0/game.js" defer></script>
-<script src="assets/v4.25.0/pwa.js" defer></script>
+<script src="assets/v4.27.0/netcode.js" defer></script>
+<script src="assets/v4.27.0/game.js" defer></script>
+<script src="assets/v4.27.0/pwa.js" defer></script>
 </body>
 </html>

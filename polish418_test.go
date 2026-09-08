@@ -75,8 +75,8 @@ func TestPickupLifetimeUsesEightThirdsGroundExpiry(t *testing.T) {
 		cols, rows int
 		want       float64
 	}{
-		{7, 7, 13},
-		{9, 8, 18},
+		{7, 7, 30},
+		{9, 8, 30},
 		{12, 10, 32},
 		{14, 12, 45},
 		{16, 14, 61},

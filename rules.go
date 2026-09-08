@@ -38,11 +38,14 @@ func validateRules(r MatchRules) error {
 	if err := validateTeamNames(r.TeamNames); err != nil {
 		return err
 	}
-	if r.Mode != "elimination" && r.Mode != "ctf" && r.Mode != "koth" {
-		return errors.New("Choose Elimination, Capture the Flag, or King of the Hill.")
+	if r.Mode != "elimination" && r.Mode != "ctf" && r.Mode != "koth" && r.Mode != "survival" {
+		return errors.New("Choose Elimination, Capture the Flag, King of the Hill, or Co-op Survival.")
 	}
 	if r.TeamMode != "teams" && r.TeamMode != "ffa" {
 		return errors.New("Choose Teams or Free-for-all.")
+	}
+	if r.Mode == "survival" && r.TeamMode != "teams" {
+		return errors.New("Co-op Survival requires Teams; every player joins the same squad.")
 	}
 	if r.Mode == "ctf" && r.TeamMode != "teams" {
 		return errors.New("Capture the Flag requires two numbered teams, not Free-for-all.")
@@ -124,14 +127,18 @@ func startingPickups(cols, rows int) int {
 	return count
 }
 
-// Ground pickup lifetime scales with the maze pickup cap. Integer whole-second
-// arithmetic intentionally follows the design example: Giant cap 23 -> 61s.
+// Ground pickup lifetime scales with the maze pickup cap, with at least 30s
+// through Large. Whole-second arithmetic keeps Giant cap 23 -> 61s.
 func pickupLifetime(cols, rows int) float64 {
 	cap := pickupCap(cols, rows)
 	if cap <= 0 {
 		return 0
 	}
-	return float64((cap * 8) / 3)
+	lifetime := (cap * 8) / 3
+	if cols*rows <= 12*10 {
+		lifetime = max(30, lifetime)
+	}
+	return float64(lifetime)
 }
 func (g *Game) seedPickups() {
 	for i := 0; i < startingPickups(g.World.Cols, g.World.Rows); i++ {
@@ -153,8 +160,11 @@ func (g *Game) pickupInterval() (float64, float64) {
 	}
 }
 func (g *Game) pickupDelay() float64 { lo, _ := g.pickupInterval(); return lo }
-func (g *Game) objectiveMode() bool  { return g.settings().Mode != "elimination" }
+func (g *Game) objectiveMode() bool  { return g.settings().Mode == "ctf" || g.settings().Mode == "koth" }
 func (g *Game) lineupError(ps [maxTanks]*Player) string {
+	if g.survivalMode() {
+		return g.survivalLineupError(ps)
+	}
 	if availableSides(ps) < 2 {
 		return "Choose at least two opposing sides."
 	}
@@ -176,6 +186,9 @@ func (g *Game) lineupError(ps [maxTanks]*Player) string {
 }
 
 func activeTeamCount(rules MatchRules) int {
+	if rules.Mode == "survival" {
+		return 1
+	}
 	if rules.TeamMode == "ffa" {
 		return 0
 	}
@@ -246,6 +259,10 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 		fail("bad_rules", err.Error())
 		return
 	}
+	if rules.Mode == "survival" && participantCount(r.Players) > survivalMaxPlayers {
+		fail("survival_full", "Survival supports up to four allied tanks. Remove extra tanks or move players to Spectators first.")
+		return
+	}
 	previousTeamCount := activeTeamCount(r.Game.settings())
 	r.Game.Rules = normalizedRules(rules)
 	r.Game.Clock = float64(rules.TimeLimit)
@@ -290,6 +307,10 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 	}
 	if err := validPresetRoster(m.Roster); err != nil {
 		fail("bad_roster", err.Error())
+		return
+	}
+	if m.Rules.Mode == "survival" && len(m.Roster) > survivalMaxPlayers {
+		fail("survival_full", "Survival presets support up to four allied tanks.")
 		return
 	}
 	for _, p := range r.members() {

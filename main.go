@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	version         = "4.25.0"
+	version         = "4.27.0"
 	protocolVersion = 1
 )
 
@@ -129,7 +129,7 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": protocolVersion, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unshareRoom": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
+		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": protocolVersion, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unshareRoom": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth", "survival"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
 	})
 	assetPrefix := "/assets/v" + version + "/"
 	assets := map[string]bool{

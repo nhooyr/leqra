@@ -400,7 +400,7 @@ func (h *Hub) roomMessage(r *Room) map[string]any {
 			players = append(players, entry)
 		}
 	}
-	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "maxPlayers": maxTanks, "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.Game.lineupError(r.Players), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
+	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.Game.lineupError(r.Players), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
 }
 func (h *Hub) broadcastRoom(r *Room) {
 	// Every controller receives the same metadata. Encode it once into immutable
@@ -665,7 +665,7 @@ func (h *Hub) join(c *Client, create bool, code, name, token string, now time.Ti
 		c.enqueue(roomError("resume_expired", "Your reconnect window expired. Join as a new pilot."))
 		return
 	}
-	busy := r.Queue != nil || r.hasAway() || r.Match != nil
+	busy := r.Queue != nil || r.hasAway() || r.Match != nil || r.survivalRunning()
 	if busy {
 		spectating = true
 	}
@@ -917,7 +917,11 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			return nil
 		}
 		if !canStart(r) {
-			c.enqueue(roomError("not_ready", "Add at least two opposing sides and ask connected guests to ready up."))
+			message := r.Game.lineupError(r.Players)
+			if message == "" {
+				message = "Ask connected guests to ready up before starting the match."
+			}
+			c.enqueue(roomError("not_ready", message))
 			return nil
 		}
 		r.LastAction = now
@@ -1082,7 +1086,7 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 		v.Life = rounded(v.Life)
 		ps = append(ps, v)
 	}
-	s := map[string]any{"type": "state", "tick": g.Tick, "generation": g.Generation, "phase": g.Phase, "phaseTime": rounded(g.PhaseTime), "round": g.Round, "roundClock": rounded(g.Clock), "winner": g.Winner, "scores": g.Scores, "tanks": ts, "bullets": bs, "pickups": ps, "events": g.events, "rules": g.settings(), "objectives": g.Objectives}
+	s := map[string]any{"type": "state", "tick": g.Tick, "generation": g.Generation, "phase": g.Phase, "phaseTime": rounded(g.PhaseTime), "round": g.Round, "roundClock": rounded(g.Clock), "winner": g.Winner, "scores": g.Scores, "tanks": ts, "bullets": bs, "pickups": ps, "events": g.events, "rules": g.settings(), "objectives": snapshotObjectives(g.Objectives)}
 	if len(ms) > 0 {
 		s["machineBullets"] = ms
 	}

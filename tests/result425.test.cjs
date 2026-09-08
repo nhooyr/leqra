@@ -11,6 +11,7 @@ class Element{
  constructor(){this.children=[];this.style={setProperty(){}};this.classList={toggle(){}};this.textContent='';this.open=false;}
  append(...children){this.children.push(...children);}
  replaceChildren(...children){this.children=[...children];}
+ setAttribute(k,v){this[k]=v;}
  focus(){}
  showModal(){this.open=true;}
  close(){this.open=false;}
@@ -24,7 +25,7 @@ function boot({teams=false,target=1}={}){
  const s={mode:'room',phase:'playing',MAX_TANKS:8,localRoom:{players,self:0,nextMember:103,nextViewer:8},
   tanks:players.map(p=>({...p,alive:p.name!=='RIVAL',human:p.kind!=='bot',color:'#fff'})),scores:Array(8).fill(0),
   round:1,roundWinner:-1,phaseTime:0,roundClock:75,bullets:[],particles:[],rings:[],fxTime:0,time:0,toastTime:0,shake:0,uiClock:1,
-  localMatchStats:null,localMatchReport:null,localMatchResult:null,goUntil:0,bestWins:0,
+  localObjectives:null,localMatchStats:null,localMatchReport:null,localMatchResult:null,goUntil:0,bestWins:0,
   COLORS:['#fff'],$,document:{createElement:()=>new Element(),querySelectorAll:()=>[]},
   teamKey:p=>p.team>0?'team'+p.team:'pilot'+p.id,teamName:id=>'TEAM '+id,teamColor:()=>'#fff',paintColor:c=>c,
   currentRules:()=>rules,objectiveMode:()=>false,suddenDeath:()=>false,
@@ -35,7 +36,7 @@ function boot({teams=false,target=1}={}){
   roomMember:id=>s.localRoom.players.find(p=>p.id===id),secondaryMember:()=>s.localRoom.players.find(p=>p.kind==='local'&&p.owner===s.localRoom.self),
   winnerName:id=>s.tanks.find(t=>t.id===id)?.name||'MISSING',newTank:id=>({...s.localRoom.players.find(p=>p.id===id),alive:true,color:'#fff'})};
  vm.createContext(s);
- const names=['beginLocalMatchStats','bindLocalTankStats','finishLocalMatchStats','finishRound','clearLocalSeat','moveLocalMember','update','finishMatch','showVictory','restartLocalMatch'];
+ const names=['survivalMode','beginLocalMatchStats','bindLocalTankStats','finishLocalMatchStats','finishRound','clearLocalSeat','moveLocalMember','update','finishMatch','showVictory','restartLocalMatch'];
  for(const helper of ['matchResultEntries','resultMemberMatches'])if(source.includes('function '+helper+'('))names.push(helper);
  for(const name of names)vm.runInContext(declaration(name),s);
  s.beginLocalMatchStats();for(const tank of s.tanks)s.bindLocalTankStats(tank);

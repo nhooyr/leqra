@@ -1,3 +1,66 @@
+# leqra v4.27.0 — survival and firing budgets (protocol 1)
+
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.27.0**:
+
+```json
+{"type":"server_hello","version":"4.27.0","protocol":1}
+{"type":"client_hello","version":"4.27.0","protocol":1}
+```
+
+The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the v4.27 rules here and the current source take precedence.
+
+## Survival rules and membership
+
+`GET /api/config` includes `"survival"` in `objectiveModes`. Existing `rules`, `publish` and `preset` messages accept `rules.mode:"survival"`; no new input or damage command is added.
+
+| Field or limit | Survival behavior |
+| --- | --- |
+| `rules.teamMode` | Must be `"teams"`; all room participants normalize to Team 1. |
+| `rules.scoreTarget` | Integer 1–20, interpreted as waves to clear. The browser's Survival selection/preset defaults to 10. |
+| `rules.timeLimit` | Integer 30–600 seconds per wave; browser default 75. |
+| `rules.respawnSeconds` | Retained as a validated 1–10 setting for compatibility; Survival revives between waves instead. |
+| Squad capacity | One to four active room participants, including friendly bots and local P2. At least one connected human participant is required. |
+| Team assignments | All squad participants use Team 1; generated enemies use Team 2. Manual assignment to another team is rejected. |
+| Existing rosters | Oversized `rules`, `publish` or `preset` requests fail with `survival_full` before changing the roster. |
+| Live joins | New visitors join as spectators. Promotions and swaps during a run fail with `survival_active`; a full lobby squad fails with `survival_full`. |
+
+The server checks readiness and available controllers independently of the browser. A spectating host can start with another connected human in the squad. A human disconnect loses the current tank life; if the run continues, a reconnect can restore that life at a later wave. If no connected human remains, the run ends. Generated enemies have no player, owner, token or room-member identity. Their tank IDs occupy unused combat slots **0–7**, distinct from spectator IDs **8 and above**. They never appear in `room.players` or consume a squad place. Public matchmaking queues remain unchanged.
+
+## Survival state and lifecycle
+
+The ordinary `state.objectives` object contains an empty `flags` array and the authoritative wave state:
+
+```json
+{"mode":"survival","flags":[],"survival":{
+  "wave":5,"wavesCleared":4,"waveTarget":10,
+  "enemiesRemaining":4,"boss":true,"breakTime":0,"status":"wave"
+}}
+```
+
+`status` is `"wave"`, `"break"`, `"won"` or `"lost"`. `wave` is the current one-based wave; `wavesCleared` is the shared score. `enemiesRemaining` counts living generated enemies, `boss` indicates a living boss, and `breakTime` is the remaining break duration in seconds. `state.round` tracks the wave and `roundClock` is its remaining time.
+
+Generated tank snapshots carry `survivalEnemy:true`; the boss also carries `survivalBoss:true`. False values can be omitted. The normal `bot`, `difficulty`, name, team, position, weapon, shield and movement fields still determine behavior. Clients must not infer room ownership from an enemy tank ID.
+
+Enemy count is `min(4, 2 + floor((wave - 1) / 2))`, bounded by free combat slots. Waves 1–2 use `easy`, waves 3–4 `normal`, and later waves `hard`. Every fifth wave replaces one enemy with a `godlike` boss. When pickups are enabled, bosses receive three Shield charges and one Speed stack only if those types are enabled. Their weapon starts at Homing, Cannon or Laser in successive boss waves, checking later entries cyclically for an enabled alternative. If none is enabled, no starting special weapon is granted. All starting gear uses ordinary effect durations, charges and damage rules.
+
+A clear requires a surviving squad tank. It adds one point to every remaining squad participant, including downed tanks. The final target clear sets `phase:"matchOver"`, `status:"won"` and a squad winner ID. A wipe, expired wave timer or absence of connected humans sets `phase:"matchOver"`, `status:"lost"` and `winner:-1`; this is a failed run, not a draw. Mutual destruction loses, while a final enemy killed on the last simulation tick clears the wave if a squad tank survives.
+
+Nonfinal clears keep `phase:"playing"` with `status:"break"` for four seconds. The server clears projectiles, pickups and held input, and rejects firing/movement during the break. At its end, available squad members receive fresh tanks, pickups reseed and the next wave starts with a fresh timer. The maze and generation remain unchanged throughout the run. The client uses the wave status and tank life serials to discard stale input and cosmetic shots.
+
+Completed `matchStats` includes a frozen `survival` object of the same shape. Its player rows describe squad participants only, and its live duration excludes wave breaks. Generated enemies are not report participants, while destroying them still credits the attacking squad pilot's elimination count. The final wave state and report must be copied for snapshots rather than aliased to mutable simulation data.
+
+## Map-dependent timers and machine-gun budget
+
+Equipped weapon timers and Shield, Speed, Scope and Ghost durations refresh to **10 seconds** on Compact/Standard/Large or **15 seconds** on Huge/Giant/Ultra Wide. This corresponds to 15 seconds at maze area at least `14 * 12` cells. Projectile ranges/lifetimes and the 10-second grenade fuse remain separate.
+
+Uncollected lifetime remains `floor(pickupCap * 8 / 3)` seconds, with a 30-second minimum for maze area at most `12 * 10` cells. The current six map values are **30, 30, 32, 45, 61 and 90 seconds**. These values are derived by the simulation; clients cannot supply expiry times.
+
+Tank snapshots add server-owned `machineRounds`, an integer remaining budget from 0–300 for the equipped `rapid` weapon. A Machine gun pickup grants 300 rounds, equivalent to five seconds at the existing maximum of 60 successful emissions per second. Each successfully emitted round consumes one; dry or rejected attempts do not. Releasing Fire preserves the remaining budget while `powerTime` continues normally. A new Machine gun pickup refreshes the budget, and a weapon replacement, expiry or fresh life resets it as appropriate. The final budgeted round remains a valid projectile; the tank then returns to its standard weapon.
+
+The browser subtracts outstanding predicted emissions from the server budget when deciding whether to preview another shot. Predictions never replenish authoritative rounds. The 96-projectile per-owner active cap, compact `machineBullets` stream, fire-rate ceiling and other server ownership checks remain intact. `machineRounds` cannot be set by input, and the existing `charges` field is not the Machine gun's firing budget.
+
+---
+
 # v4.23 connection compatibility and graceful shutdown (protocol 1)
 
 The framing protocol remains version 1, but every real production WebSocket now has an application-version handshake before room or matchmaking actions. Immediately after upgrade the server sends:
@@ -456,7 +519,7 @@ Host-only lobby/match-over controls:
 ```
 
 `team: 0` means that seat's own free-for-all side; 1–4 are numbered shared sides.
-Difficulty is `easy`, `normal`, or `hard`. The host may edit human teams, but
+Difficulty is `easy`, `normal`, `hard`, or `godlike`. The host may edit human teams, but
 humans rename themselves using `rename`. Bots/local names are host-editable.
 `configure` and `kick` require the current occupant's public `member` value.
 Roster edits clear online guest readiness. The host's Start action is sufficient

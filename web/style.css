@@ -516,7 +516,8 @@ body.many-sides .arena-bar{min-height:47px}
 body.touch-ui.many-sides .bar-right{flex-direction:row;align-items:center;gap:5px}
 
 /* v4.18: clearer single-player controls and queue results. */
-.manual-move-line{align-items:flex-start}.manual-key-options{display:flex;flex-direction:column;align-items:flex-end;gap:3px}.manual-key-options .keys{justify-content:flex-end}.manual-or{align-self:center;font:7px var(--mono);letter-spacing:.8px;color:var(--muted);padding:0 2px}
+.manual-move-line{align-items:flex-start}.manual-key-options{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0;max-width:78%}.manual-key-options .keys{justify-content:flex-end;flex-wrap:wrap}.manual-line>.keys{flex-wrap:wrap;justify-content:flex-end;max-width:78%}.manual-line>kbd{min-width:0;max-width:78%;overflow-wrap:anywhere}.manual-line>span{flex-shrink:0;margin-right:8px}.manual-or{align-self:center;font:7px var(--mono);letter-spacing:.8px;color:var(--muted);padding:0 2px}
+.manual-fire-line{flex-wrap:wrap;gap:4px 6px}.manual-fire-line>span{margin-right:0}.manual-fire-line>.keys{flex-wrap:nowrap;max-width:100%;gap:2px;overflow-x:auto}.manual-fire-line kbd{flex-shrink:0;min-width:20px;padding-inline:4px;font-size:9px}.manual-fire-line .manual-or{flex-shrink:0;font-size:6px;padding:0 1px}
 .victory-actions .queue-rematch{background:#39ff88;color:#06160d;border-color:#72ffaa;box-shadow:0 3px 0 #15994d,0 0 22px rgb(57 255 136 / .30);font-weight:900}
 .victory-actions .queue-rematch:hover{background:#5dff9f;filter:none}
 .victory-actions .queue-rematch:disabled{background:#1d6f44;color:#b8ecd0;border-color:#317a55;box-shadow:none}

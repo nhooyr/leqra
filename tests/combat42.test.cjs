@@ -33,7 +33,7 @@ test('dry fire, cooldown, wall-embedded ghost, and exhausted special charges hav
  }
 });
 test('machine-gun preview has zero cooldown, a 60Hz emission ceiling, and bounded pending shots',()=>{
- const p=new N.ShotPresentation(),t=tank({power:'rapid'});p.sync(t,'playing',0);let count=0;
+ const p=new N.ShotPresentation(),t=tank({power:'rapid',machineRounds:300});p.sync(t,'playing',0);let count=0;
  for(let ms=0;ms<500;ms+=5){const v=p.tryFire(t,true,ms,options({free:96,cooldown:0}));if(v){v.shells=[{}];count++;}}
  assert.equal(count,30);close(p.cooldown(t,500),0);
  for(let ms=500;ms<2000;ms+=17){const v=p.tryFire(t,true,ms,options({free:96,cooldown:0}));if(v)v.shells=[{}];}

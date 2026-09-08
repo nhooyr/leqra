@@ -23,7 +23,7 @@ function boot(extra={}){
  const rules={mode:'elimination',teamMode:'teams',teamNames:['A','B','C','D'],teamColors:[0,1,2,3],mapSize:'large',weapons:[],scoreTarget:5,timeLimit:75};
  const sandbox={console,mode:'room',phase:'menu',MAX_TANKS:8,localRoom:{rules,players:[],self:0,nextMember:10,nextViewer:8},online:{connected:true},rolePending:false,$,document:{createElement:tag=>new Element(tag)},DIFFICULTY:{easy:{},normal:{},hard:{}},toast(message){sandbox.notice=message;},sendOnline(message){sandbox.sent=message;return true;},paintColor:c=>c,teamName:(n,r=rules)=>r.teamNames[n-1],isRoomHost:()=>true,isRoomEditable:()=>sandbox.phase==='menu',currentRules:()=>sandbox.localRoom.rules,localPlayerID:()=>0,roomMembers:r=>r?r.players:sandbox.localRoom.players,roomData:()=>({host:0,players:sandbox.localRoom.players.filter(p=>!p.spectating)}),validateRoomRules:r=>({...r}),defaultRoomRules:()=>({...rules}),persistLocalRoomRules(){},resetPreviewIfLobby(options){sandbox.preview=options||{};},renderOnlineRoom(){},savedLocalCallsign:()=> 'P2',canEditTankPaint:()=>false,makeKickButton:()=>new Element('button'),moveLocalMember(p,id,spectating,team){p.id=id;p.spectating=spectating;p.team=team;},refreshLocalRoles(){},...extra};
  vm.createContext(sandbox);
- for(const name of ['activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['survivalMode','roomCapacity','survivalSeatLocked','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
  return {...sandbox,s:sandbox,$,elements};
 }
 const players=n=>Array.from({length:n},(_,id)=>({id,member:id+1,name:'P'+id,kind:id?'bot':'human',team:0,difficulty:'normal'}));
@@ -106,4 +106,16 @@ test('inactive team fields cannot block applying FFA or CTF with unfinished hidd
  const ctf=b.s.readRuleTeamSettings({mode:'ctf',teamMode:'teams'});
  assert.deepEqual(Array.from(ctf.teamNames),['New 1','New 2','C','D']);
  const ffa=b.s.readRuleTeamSettings({mode:'elimination',teamMode:'ffa'});assert.deepEqual(Array.from(ffa.teamNames),['A','B','C','D']);
+});
+
+test('survival rules reject oversized squads without losing their roster or changing the old rules',()=>{
+ const b=boot();b.s.localRoom.players=players(5);const rules=b.s.localRoom.rules,roster=JSON.stringify(b.s.localRoom.players);
+ assert.throws(()=>b.s.setLocalRules({...rules,mode:'survival',teamMode:'teams'}),/four squad tanks/);
+ assert.equal(b.s.localRoom.rules,rules);assert.equal(JSON.stringify(b.s.localRoom.players),roster);
+ b.s.localRoom.players[4].spectating=true;b.s.setLocalRules({...rules,mode:'survival',teamMode:'teams'});assert.deepEqual(teams(b),[1,1,1,1]);const length=b.s.localRoom.players.length;b.s.addRoomSeat('bot');assert.equal(b.s.localRoom.players.length,length);assert.match(b.s.notice,/four squad seats/);
+});
+test('survival roster hides team assignments and presets normalize one cooperative squad',()=>{
+ const b=boot();b.s.localRoom.rules.mode='survival';const p={id:0,name:'PILOT',team:1,color:'#fff',kind:'human'},r={host:0,phase:'lobby',rules:b.s.localRoom.rules};
+ assert.equal(b.s.makeRoomPlayerRow(p,r).children[1].children.some(c=>c.dataset.team===0),false);
+ const preset=b.s.validatePreset({rules:b.s.localRoom.rules,roster:players(4).map((p,i)=>({...p,team:i+1}))});assert.deepEqual(Array.from(preset.roster,p=>p.team),[1,1,1,1]);assert.throws(()=>b.s.validatePreset({rules:b.s.localRoom.rules,roster:players(5)}),/four squad tanks/);
 });

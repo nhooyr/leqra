@@ -191,7 +191,7 @@ func Test44MachineGunExactSizeSpeedAndZeroCooldown(t *testing.T) {
 		t.Fatal("next tick blocked by cooldown")
 	}
 }
-func Test44MachineGunContinuousSixHundredShotsAndFiniteCloud(t *testing.T) {
+func Test44MachineGunContinuousFiringBudgetAndFiniteCloud(t *testing.T) {
 	g := battle(2)
 	tank := g.Tanks[0]
 	for _, v := range g.Tanks {
@@ -201,7 +201,7 @@ func Test44MachineGunContinuousSixHundredShotsAndFiniteCloud(t *testing.T) {
 	}
 	g.grantPower(tank, "rapid")
 	high := 0
-	for i := 0; i < 600; i++ {
+	for i := 0; i < machineFiringRounds; i++ {
 		g.Tick++
 		if !g.fire(tank) {
 			t.Fatalf("unnecessary firing gap tick %d live %d", i, len(g.Bullets))
@@ -215,7 +215,7 @@ func Test44MachineGunContinuousSixHundredShotsAndFiniteCloud(t *testing.T) {
 		}
 	}
 	maxLive := int(math.Ceil((g.machineTravelRange()/machineSpeed)/tickDT)) + 2
-	if tank.ShotSerial != 600 || high > maxLive || len(g.events) > 24 {
+	if tank.ShotSerial != machineFiringRounds || high > maxLive || len(g.events) > 24 {
 		t.Fatalf("bad stream %d %d", tank.ShotSerial, high)
 	}
 	for i := 0; i < maxLive+4; i++ {

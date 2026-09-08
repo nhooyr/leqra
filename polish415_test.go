@@ -12,8 +12,8 @@ func Test415MazePickupTiers(t *testing.T) {
 		cap, start int
 		lifetime   float64
 	}{
-		{"compact", 7, 7, 5, 2, 13},
-		{"standard", 9, 8, 7, 3, 18},
+		{"compact", 7, 7, 5, 2, 30},
+		{"standard", 9, 8, 7, 3, 30},
 		{"large", 12, 10, 12, 4, 32},
 		{"huge", 14, 12, 17, 5, 45},
 		{"giant", 16, 14, 23, 6, 61},

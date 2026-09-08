@@ -10,16 +10,31 @@ type BotState struct {
 	Path                              []int
 	LastX, LastY                      float64
 
+	// Short-lived commitments prevent equivalent route/aim choices from flipping
+	// every think. The danger planner can still override an unsafe commitment.
+	RouteClock, Advance, ProgressClock float64
+	ProgressX, ProgressY               float64
+	DodgeTime, DodgeAngle, DodgeDrive  float64
+	BankAim                            float64
+	BankTarget                         int
+	BankPower                          string
+	HasBank, Retreat                   bool
+
 	// Reused Dijkstra scratch. A bot replans frequently, while the maze size is stable
 	// for the whole round; keeping these buffers on the bot avoids per-think GC.
-	pathCost       []float64
-	pathPrev       []int
-	pathPenalty    []float64
-	pathScratch    []int
-	pathHeap       []int
-	pathHeapPos    []int
-	dodgeThreats   []botProjectileThreat
-	grenadeThreats []botGrenadeThreat
+	pathCost         []float64
+	pathPrev         []int
+	pathPenalty      []float64
+	pathScratch      []int
+	pathHeap         []int
+	pathHeapPos      []int
+	dodgeThreats     []botProjectileThreat
+	grenadeThreats   []botGrenadeThreat
+	tacticalThreats  []godlikeThreat
+	tacticalMissiles []*Bullet
+	missileTanks     []Tank
+	goalDistances    []int
+	goalQueue        []int
 }
 type botTuning struct {
 	speed, turn, think, reaction, error, lead float64
@@ -30,6 +45,8 @@ func tuneBot(s string) botTuning {
 	switch s {
 	case "easy":
 		return botTuning{89, 2.8, .30, .72, .10, .4, false, false}
+	case "godlike":
+		return botTuning{123, 4.3, .075, .12, .003, 1, true, true}
 	case "hard":
 		return botTuning{123, 4.3, .13, .26, .012, 1, true, true}
 	default:
@@ -168,6 +185,9 @@ func (g *Game) botPath(t, enemy *Tank) []int {
 			penalty[g.cellAt(ally.X, ally.Y)] += 1
 		}
 	}
+	if t.Difficulty == "godlike" {
+		g.godlikeRoutePenalty(t, penalty)
+	}
 	a.queuePath(from)
 	for len(a.pathHeap) > 0 {
 		at := a.nextPathCell()
@@ -212,6 +232,9 @@ func (g *Game) botLead(t, e *Tank, d botTuning) (float64, float64) {
 		speed = cannonSpeed
 	}
 	delay := math.Max(0, dist(t.X, t.Y, e.X, e.Y)-28) / speed
+	if t.Difficulty == "godlike" && t.Power == "grenade" {
+		delay = math.Max(0, dist(t.X, t.Y, e.X, e.Y)-28) / grenadeSpeed
+	}
 	if t.Power == "laser" {
 		delay = 0
 	}
@@ -274,6 +297,9 @@ func (g *Game) botAim(t, e *Tank, d botTuning) (float64, bool) {
 	ex, ey := g.botLead(t, e, d)
 	a := math.Atan2(ey-t.Y, ex-t.X)
 	if t.Power == "grenade" {
+		if t.Difficulty == "godlike" {
+			return a, dist(t.X, t.Y, e.X, e.Y) < cellSize*5 && g.godlikeSafeShot(t, e, a) && !g.rayBlocked(t.X, t.Y, e.X-t.X, e.Y-t.Y, 6)
+		}
 		return a, dist(t.X, t.Y, e.X, e.Y) < cellSize*3 && !g.rayBlocked(t.X, t.Y, e.X-t.X, e.Y-t.Y, 6)
 	}
 	if t.Power == "homing" {
@@ -287,6 +313,11 @@ func (g *Game) botAim(t, e *Tank, d botTuning) (float64, bool) {
 		return a, true
 	}
 	if !d.bank || t.AI.Bank > 0 {
+		// A cached bank solution remains usable between expensive scans. Dropping
+		// it every other think made Godlike alternate aiming and walking.
+		if t.Difficulty == "godlike" && d.bank && t.AI.HasBank && t.AI.BankTarget == e.ID && t.AI.BankPower == t.Power && g.botShot(t, e, t.AI.BankAim, ex, ey, banks) {
+			return t.AI.BankAim, true
+		}
 		return a, false
 	}
 	t.AI.Bank = .55
@@ -321,6 +352,9 @@ func (g *Game) botAim(t, e *Tank, d botTuning) (float64, bool) {
 				found = true
 			}
 		}
+	}
+	if t.Difficulty == "godlike" {
+		t.AI.BankAim, t.AI.HasBank, t.AI.BankTarget, t.AI.BankPower = best, found, e.ID, t.Power
 	}
 	return best, found
 }
@@ -603,22 +637,39 @@ func (g *Game) botControl(t *Tank, dt float64) {
 	a.Shot -= dt
 	a.Bank -= dt
 	a.Recover -= dt
+	a.RouteClock -= dt
+	a.Advance = math.Max(0, a.Advance-dt)
+	a.DodgeTime = math.Max(0, a.DodgeTime-dt)
 	var enemy *Tank
-	best := math.Inf(1)
-	for _, e := range g.Tanks {
-		if e == nil || !e.Alive || e.ID == t.ID || !g.isOpponent(t.ID, e) {
-			continue
+	if t.Difficulty == "godlike" && a.Think > 0 && a.Target >= 0 && a.Target < maxTanks {
+		candidate := g.Tanks[a.Target]
+		if candidate != nil && candidate.Alive && g.isOpponent(t.ID, candidate) {
+			enemy = candidate
 		}
-		cost := dist(t.X, t.Y, e.X, e.Y)
-		if e.ID == a.Target {
-			cost *= .85
-		}
-		if cost < best {
-			best = cost
-			enemy = e
+	}
+	if enemy == nil {
+		best := math.Inf(1)
+		for _, e := range g.Tanks {
+			if e == nil || !e.Alive || e.ID == t.ID || !g.isOpponent(t.ID, e) {
+				continue
+			}
+			cost := dist(t.X, t.Y, e.X, e.Y)
+			if t.Difficulty == "godlike" {
+				cost = g.godlikeTargetCost(t, e, cost)
+			}
+			if e.ID == a.Target {
+				cost *= .85
+			}
+			if cost < best {
+				best = cost
+				enemy = e
+			}
 		}
 	}
 	gx, gy, objective := g.objectiveGoal(t)
+	if t.Difficulty == "godlike" {
+		gx, gy, objective = g.godlikeObjective(t)
+	}
 	if enemy == nil && !objective {
 		a.Target = -1
 		return
@@ -631,8 +682,11 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		destination = &Tank{X: gx, Y: gy, R: tankRadius}
 	}
 	a.Target = enemy.ID
+	if t.Difficulty == "godlike" {
+		g.godlikeProgress(t, destination, dt)
+	}
 	// Remotely detonate against an exposed opponent, not an ally or a guessed hit.
-	if a.Shot <= 0 {
+	if a.Shot <= 0 && (t.Difficulty != "godlike" || g.godlikeCanDetonate(t)) {
 		for _, b := range g.Bullets {
 			if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && b.Age > .22 && dist(b.X, b.Y, enemy.X, enemy.Y) < blastRadius+enemy.R && !g.rayBlocked(b.X, b.Y, enemy.X-b.X, enemy.Y-b.Y, 0) {
 				g.detonateOwned(t)
@@ -647,25 +701,52 @@ func (g *Game) botControl(t *Tank, dt float64) {
 	if a.Think <= 0 {
 		a.Think = d.think * g.random(.9, 1.1)
 		a.HasAim = false
+		if t.Difficulty == "godlike" {
+			if p := g.godlikePickup(t, d, destination, objective); p != nil {
+				destination = &Tank{X: p.X, Y: p.Y, R: tankRadius}
+				gx, gy, objective = p.X, p.Y, true
+			}
+		}
 		if enemy.Alive {
 			a.Aim, a.HasAim = g.botAim(t, enemy, d)
+			if a.HasAim && t.Difficulty == "godlike" && !g.godlikeSafeShot(t, enemy, a.Aim) {
+				a.HasAim = false
+			}
 		}
 		if a.HasAim {
 			a.Aim += g.random(-d.error, d.error)
 		}
 		goal := g.cellAt(destination.X, destination.Y)
-		if t.GhostTime <= 0 && (goal != a.Goal || len(a.Path) == 0 || g.rng.Float64() < .35) {
+		replan := false
+		if t.Difficulty == "godlike" {
+			replan = a.RouteClock <= 0 || goal != a.Goal && len(a.Path) == 0
+		} else {
+			replan = goal != a.Goal || len(a.Path) == 0 || g.rng.Float64() < .35
+		}
+		if t.GhostTime <= 0 && replan {
 			a.Goal = goal
 			a.Path = g.botPath(t, destination)
+			a.RouteClock = .42 + float64(t.ID%3)*.02
 		}
 		angle, drive := t.Angle, 0.0
-		if a.HasAim && (!objective || dist(t.X, t.Y, gx, gy) < 26 || (g.Tick/30+t.ID)%5 == 0 && dist(t.X, t.Y, enemy.X, enemy.Y) < cellSize*2) {
+		if a.HasAim && (t.Difficulty != "godlike" || a.Advance <= 0) && (!objective || dist(t.X, t.Y, gx, gy) < 26 || (g.Tick/30+t.ID)%5 == 0 && dist(t.X, t.Y, enemy.X, enemy.Y) < cellSize*2) {
 			angle = a.Aim
 			r := dist(t.X, t.Y, enemy.X, enemy.Y)
-			if r < cellSize*.95 {
+			if t.Difficulty == "godlike" {
+				// Approach while firing; retain a retreat until real separation is
+				// restored instead of reversing at one exact range every think.
+				a.Retreat = r < cellSize*.8 || a.Retreat && r < cellSize*1.2
+				drive = .65
+				if a.Retreat {
+					drive = -.7
+				}
+			} else if r < cellSize*.95 {
 				drive = -.6
 			} else if r > cellSize*2.7 {
 				drive = .4
+			}
+			if t.Difficulty == "godlike" && objective && g.Objectives != nil && g.Objectives.Mode == "koth" && dist(t.X, t.Y, g.Objectives.HillX, g.Objectives.HillY) <= g.Objectives.Radius {
+				drive = 0 // Hold scoring position while aiming; imminent danger can still override.
 			}
 		} else if t.GhostTime > 0 {
 			angle = math.Atan2(destination.Y-t.Y, destination.X-t.X)
@@ -703,7 +784,9 @@ func (g *Game) botControl(t *Tank, dt float64) {
 				drive = 0
 			}
 		}
-		if d.dodge {
+		if t.Difficulty == "godlike" {
+			angle, drive = g.godlikeDodge(t, d, angle, drive)
+		} else if d.dodge {
 			angle, drive = g.botDodge(t, d, angle, drive)
 		}
 		a.MoveAngle = angle
@@ -714,7 +797,9 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		angle = t.Angle
 		drive = -.8
 	}
-	angle, drive = g.botAvoidGrenades(t, d, angle, drive)
+	if t.Difficulty != "godlike" {
+		angle, drive = g.botAvoidGrenades(t, d, angle, drive)
+	}
 	diff := delta(t.Angle, angle)
 	t.Angle += clamp(diff, -d.turn*dt, d.turn*dt)
 	throttle := drive * math.Max(0, math.Cos(diff))
@@ -736,6 +821,9 @@ func (g *Game) botControl(t *Tank, dt float64) {
 				hasGrenade = true
 			}
 		}
+		if safe && t.Difficulty == "godlike" {
+			safe = g.godlikeSafeShot(t, enemy, t.Angle)
+		}
 		if safe && !hasGrenade && g.fire(t) {
 			a.Shot = d.reaction * g.random(.9, 1.15)
 			if t.Power == "rapid" {
@@ -752,6 +840,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		a.Recover = .38
 		a.Stuck = 0
 		a.Path = nil
+		a.RouteClock = 0
 		a.HasAim = false
 		a.Think = 0
 	}
