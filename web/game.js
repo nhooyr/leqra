@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.19.0';
+const GAME_VERSION='4.20.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -45,7 +45,7 @@ let scores=Array(MAX_TANKS).fill(0),round=1,roundClock=ROUND_SECONDS,phaseTime=0
 let cssW=0,cssH=0,dpr=1,scale=1,offsetX=0,offsetY=0,mapCanvas=null,touchUI=false,touchLandscape=false;
 let lastFrame=0,accumulator=0,bulletId=0,logLines=[],bestWins=0,resizeTimer=0,arenaResizeFrame=0,gameStarted=false;
 let goUntil=0; // One-shot countdown transition, never a cosmetic event timer.
-let guideEnabled=true, muted=false, audio=null,noiseBuffer=null,lastBounceSound=0;
+let guideEnabled=true, muted=false, audio=null,noiseBuffer=null,lastBounceSound=0,lastChatNotify=0;
 const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const UA=navigator.userAgent||'';
 const IOS_WEBKIT=/iP(?:hone|ad|od)/i.test(UA)||(navigator.platform==='MacIntel'&&(navigator.maxTouchPoints||0)>1);
@@ -55,7 +55,7 @@ document.body.classList.toggle('webkit-engine',WEBKIT_ENGINE);document.body.clas
 const keys=new Set(), firePointers=new Set(), firePresses=new Set();
 const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36};
 const Net=window.leqraNet;
-const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
+const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const localRoom={code:'',players:[],self:0,nextViewer:MAX_TANKS,nextMember:0,rules:defaultRoomRules()};
 let watchInvite=false,watchResume=null,rolePending=false,swapPending=null,lastSpectatorUI='';
@@ -148,24 +148,9 @@ function tone(freq,end,duration,volume=.035,type='sine',delay=0){
 }
 function boom(){if(muted||!audio||audio.state!=='running'||!ensureNoiseBuffer())return;try{const s=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();s.buffer=noiseBuffer;f.type='lowpass';f.frequency.value=850;g.gain.value=.15;s.connect(f);f.connect(g);g.connect(audio.destination);s.start();tone(100,30,.24,.06,'triangle');}catch(_){}}
 function pickupSound(){tone(480,500,.09,.05,'sine');tone(700,800,.11,.04,'sine',.08);tone(1000,1200,.14,.035,'sine',.15);}
+function chatNotificationSound(){if(muted)return;const now=performance.now();if(now-lastChatNotify<180)return;lastChatNotify=now;initAudio();tone(920,740,.075,.035,'sine');tone(1180,900,.09,.028,'sine',.065);}
 function syncSound(){ $('soundBtn').classList.toggle('muted',muted);$('soundBtn').setAttribute('aria-pressed',String(!muted));$('soundBtn').setAttribute('aria-label',muted?'Unmute sound':'Mute sound'); }
 function toggleSound(){muted=!muted;save('muted',muted?1:0);syncSound();if(!muted){initAudio();tone(500,700,.1);}}
-function isChromiumBrowser(){
- const brands=navigator.userAgentData?.brands||[];
- if(brands.some(b=>/Chromium|Google Chrome|Microsoft Edge|Opera/i.test(b.brand)))return true;
- return /(?:Chrome|Chromium|CriOS|Edg|OPR)\//.test(UA)&&!/Firefox|FxiOS/i.test(UA);
-}
-function syncBrowserRecommendation(){
- const notice=$('browserNotice');if(!notice)return;
- let dismissed=false;try{dismissed=sessionStorage.getItem('leqra.chromeNotice.dismissed')==='1';}catch(_){}
- notice.hidden=touchUI||isChromiumBrowser()||dismissed;
-}
-function initBrowserRecommendation(){
- if($('browserNotice'))return;
- const notice=document.createElement('aside');notice.id='browserNotice';notice.className='browser-notice';notice.hidden=true;notice.setAttribute('role','status');notice.innerHTML='<span>For the smoothest desktop experience, leqra recommends <strong>Google Chrome</strong>.</span><button type="button" aria-label="Dismiss browser recommendation">DISMISS</button>';
- document.body.append(notice);notice.querySelector('button').onclick=()=>{try{sessionStorage.setItem('leqra.chromeNotice.dismissed','1');}catch(_){}notice.hidden=true;};
- syncBrowserRecommendation();
-}
 function setLayout(){
  const coarse=window.matchMedia('(pointer: coarse)').matches||window.matchMedia('(any-pointer: coarse)').matches;
  touchUI=coarse||innerWidth<760||IOS_WEBKIT&&(navigator.maxTouchPoints||0)>0;
@@ -173,7 +158,7 @@ function setLayout(){
  touchLandscape=touchUI&&innerWidth>viewportH&&viewportH<620;
  document.body.classList.toggle('touch-ui',touchUI);document.body.classList.toggle('touch-landscape',touchLandscape);renderPowerLegend();
  $('pauseInstructions').textContent=controlSummary(0)+(hasLocalP2()?' · '+controlSummary(1):'')+' · '+modeInstructions();
- resize();syncBrowserRecommendation();
+ resize();
 }
 function scheduleArenaResize(){
  if(arenaResizeFrame)return;
@@ -1158,6 +1143,15 @@ function syncOnlineURL(){
 
 function storeOnlineSession(){if(!online.connected||!online.code||!online.token)return;try{sessionStorage.setItem('leqra.session',JSON.stringify({code:online.code,token:online.token,name:roomMember(online.id)?.name||$('pilotName').value,spectating:!!online.spectating,at:Date.now()}));}catch(_){}}
 function forgetOnlineSession(){try{sessionStorage.removeItem('leqra.session');}catch(_){}}
+function acceptOnlineRoomCode(code,announce=true,rerender=true){
+ code=cleanRoomCode(code);if(!validRoomCode(code)||code===online.code)return;const old=online.code;online.code=code;if(online.roomData)online.roomData.code=code;if(roomChat.code===old)roomChat.code=code;online.roomRenamePending=false;
+ $('roomCodeDisplay').textContent=code;$('joinCode').value=code;if($('onlineRoomCode')&&document.activeElement!==$('onlineRoomCode'))$('onlineRoomCode').value=code;syncOnlineURL();storeOnlineSession();if(rerender)renderOnlineRoom();if(announce)toast('ROOM RENAMED · '+code,2.4);
+}
+function submitRoomRename(e){
+ e?.preventDefault();if(mode!=='online'||!online.connected||online.roomRenamePending)return;const r=roomData(),me=r?roomMember(localPlayerID(),r):null;if(!r||r.host!==localPlayerID()||r.queue||r.matchmaking||r.awayMatch)return;
+ const code=cleanRoomCode($('onlineRoomCode').value);if(!validRoomCode(code)){$('roomStatus').textContent='Use a room name of 1–128 characters on one line.';$('onlineRoomCode').focus();return;}if(code===online.code){$('roomStatus').textContent='That is already this room’s code.';return;}
+ online.roomRenamePending=true;$('renameRoomBtn').disabled=true;$('roomStatus').textContent='Renaming room…';if(!sendOnline({type:'rename_room',code})){online.roomRenamePending=false;$('renameRoomBtn').disabled=false;$('roomStatus').textContent='Connection unavailable. Room was not renamed.';}
+}
 function sendOnline(value){const ws=online.socket;if(!ws||ws.readyState!==WebSocket.OPEN||ws.bufferedAmount>4096)return false;try{ws.send(JSON.stringify(value));return true;}catch(_){return false;}}
 // Host moderation is only UI here: the Go server independently checks identity,
 // host authority, room scope, and the seat incarnation again on every request.
@@ -1381,7 +1375,7 @@ function connectOnline(request,reconnecting=false){
    if(changed){cancelCallsignSave();clearInput();resetOnlineMotion();online.generation=-1;}
    rolePending=false;syncOnlineURL();break; }
   case 'swapped':cancelSwap();toast(msg.message,3);break;
-  case 'room':{if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}online.roomData=msg;rolePending=false;if(rulesPending){rulesPending=false;closeFeature($('rulesDialog'));}if(presetsPending){presetsPending=false;closeFeature($('presetsDialog'));}const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);break;}
+  case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}online.roomData=msg;rolePending=false;if(rulesPending){rulesPending=false;closeFeature($('rulesDialog'));}if(presetsPending){presetsPending=false;closeFeature($('presetsDialog'));}const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);break;}
   case 'renamed':acceptCallsign(msg);break;
   case 'kicked':clearTimeout(timeout);receiveKick(msg);break;
   case 'player_kicked':
@@ -1392,7 +1386,8 @@ function connectOnline(request,reconnecting=false){
   case 'error':
    if(msg.action==='rematch'){matchmaking.rematchPending=false;syncResultActions();toast(msg.message,3);break;}
    if(msg.action?.startsWith('queue_')||msg.action==='return_party'){matchmakingError(msg.message);break;}
-   if(msg.action==='chat'){roomChat.pending=false;$('chatError').textContent=msg.message;syncChatStatus();break;}
+   if(msg.action==='chat'){const st=chatState(msg.channel);st.pending=false;if(roomChat.open&&roomChat.channel===(msg.channel||'room'))$('chatError').textContent=msg.message;syncChatStatus();break;}
+   if(msg.action==='rename_room'){online.roomRenamePending=false;$('renameRoomBtn').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='rules'||msg.action==='preset'){rulesPending=presetsPending=false;featureNotice(msg.action==='rules'?'rulesNotice':'presetsNotice',msg.message,true);break;}
    if(online.publishing&&!online.connected){if(matchmaking.pending||matchmaking.pendingKey)matchmakingError(msg.message);clearTimeout(timeout);online.publishing=false;online.manual=true;online.socket=null;ws.close();online.connecting=false;netBusy(false);mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent=msg.message;break;}
    if(msg.action==='spectate'||msg.action==='swap'){rolePending=false;cancelSwap();syncSpectators();$('roomStatus').textContent=msg.message;toast(msg.message,4);break;}
@@ -1415,7 +1410,7 @@ function connectOnline(request,reconnecting=false){
  };
 }
 function showReconnecting(){
- roomChat.pending=false;syncChatStatus();
+ for(const st of Object.values(roomChat.channels))st.pending=false;online.roomRenamePending=false;syncChatStatus();
  cancelKick();$('hostControls').hidden=true;online.menu=true;setScreen('onlineMenu');$('announcer').hidden=true;$('onlineMenuEyebrow').textContent='CONNECTION INTERRUPTED';$('onlineMenuMessage').textContent='Reconnecting to room '+online.code+'… '+(online.spectating?'You will return as a spectator. Your membership is reserved for 20 seconds.':'Your tank remains in the match. The server reserves your seat for 20 seconds.');$('onlineReturnBtn').disabled=true;$('onlineReturnBtn').firstElementChild.textContent='RECONNECTING…';
 }
 function scheduleReconnect(){
@@ -1455,7 +1450,8 @@ function renderOnlineRoom(){
  $('roomCallsignForm').querySelector('label').textContent=host?'YOUR CALLSIGN · HOST':'YOUR CALLSIGN';
  $('localRoomName').hidden=isOnline;$('localRoomName').disabled=!host;
  if(!isOnline&&document.activeElement!==$('localRoomName'))$('localRoomName').value=localRoom.code;
- $('roomCodeDisplay').hidden=!isOnline;$('roomCodeDisplay').textContent=isOnline?online.code:localRoom.code;
+ const canRenameRoom=isOnline&&host&&editable;$('roomCodeEditor').hidden=!canRenameRoom;$('roomCodeDisplay').hidden=!isOnline||canRenameRoom;$('roomCodeDisplay').textContent=isOnline?online.code:localRoom.code;
+ if(canRenameRoom&&document.activeElement!==$('onlineRoomCode'))$('onlineRoomCode').value=online.code;$('renameRoomBtn').disabled=online.roomRenamePending;
  $('copyInviteBtn').textContent=isOnline?'COPY INVITE LINK ↗':'SHARE ROOM ONLINE ↗';$('copyInviteBtn').disabled=!!online.connecting;
  $('seatCount').textContent=count+' / '+MAX_TANKS;$('rosterTools').hidden=!host||!editable;
  $('addLocalBtn').disabled=count>=MAX_TANKS||roomMembers(r).some(p=>p.kind==='local');$('addBotBtn').disabled=count>=MAX_TANKS;
@@ -1465,7 +1461,7 @@ function renderOnlineRoom(){
  const pending=online.kickPending;if(pending&&!roomMembers(r).some(p=>p.id===pending.id&&p.member===pending.member))cancelKick();
  $('hostControls').hidden=!isOnline||!host||!online.connected;
  $('menuKickRoster').replaceChildren(...r.players.filter(p=>p.id!==localPlayerID()).map(p=>makeRoomPlayerRow(p,r,true)));
- $('returnRoomBtn').hidden=!host;$('copyInGameBtn').hidden=!isOnline;$('copyInGameBtn').disabled=false;if(isOnline)$('copyInGameBtn').textContent='Copy invite link';
+ $('returnRoomBtn').hidden=!host;$('returnRoomBtn').textContent='End match';$('copyInGameBtn').hidden=!isOnline;$('copyInGameBtn').disabled=false;if(isOnline)$('copyInGameBtn').textContent='Copy invite link';
  $('onlineLeaveBtn').hidden=!isOnline;if(isOnline)$('onlineLeaveBtn').textContent='Leave online room';
  $('readyBtn').hidden=!isOnline||host||!!own?.spectating;$('readyBtn').classList.toggle('is-ready',!!own?.ready);$('readyBtn').textContent=own?.ready?'READY ✓ · CLICK TO UNREADY':'I’M READY';$('readyBtn').disabled=!online.connected;
  const canStart=isOnline?r.canStart:sides>=2;
@@ -1703,7 +1699,7 @@ function initOnlineUI(){
  const leave=()=>{if(mode==='online')leaveOnline();else createLocalRoom();};
  $('leaveRoomBtn').addEventListener('click',leave);$('onlineLeaveBtn').addEventListener('click',leave);
  $('joinOtherBtn').addEventListener('click',openJoinDialog);$('addLocalBtn').addEventListener('click',()=>addRoomSeat('local'));$('addBotBtn').addEventListener('click',()=>addRoomSeat('bot'));
- $('localRoomName').addEventListener('input',()=>{localRoom.code=$('localRoomName').value;});
+ $('localRoomName').addEventListener('input',()=>{localRoom.code=$('localRoomName').value;});$('roomCodeEditor').addEventListener('submit',submitRoomRename);$('onlineRoomCode').addEventListener('input',()=>{$('roomStatus').textContent='Press Rename room to update invite links for everyone.';});
  $('returnRoomBtn').addEventListener('click',returnToRoom);$('restartLocalBtn').addEventListener('click',restartLocalMatch);
  $('readyBtn').addEventListener('click',()=>{initAudio();const p=online.roomData?.players.find(p=>p.id===online.id);sendOnline({type:'ready',ready:!p?.ready});});
  $('startRoomBtn').addEventListener('click',()=>{initAudio();if(mode==='room')startMatch();else sendOnline({type:'start'});});
@@ -2493,10 +2489,11 @@ function showVictory(winner,matchTanks=tanks,report=mode==='online'?online.snaps
  const name=winning?(team>0?teamName(team):winning.name):'NO SURVIVORS';
  const localMembers=[me,secondaryMember()].filter((p,i,a)=>p&&!p.spectating&&a.findIndex(n=>n.id===p.id)===i);
  const localWon=!!winning&&localMembers.some(p=>teamKey(p)===teamKey(winning)),localLost=winner>=0&&localMembers.length>0&&!localWon;
- $('victoryEyebrow').textContent=winner<0?'MATCH RESULTS':localWon?'VICTORY!':localLost?'DEFEAT':'MATCH RESULTS';
- $('victoryTitle').textContent=winner>=0?name+' WINS!':'MATCH DRAW';
- $('victoryTitle').style.color=paintColor(team>0?teamColor(0,team):winning?.color||COLORS[0]);
- $('victoryMembers').textContent=members.map(p=>p.name).join(' · ');
+ d.classList.toggle('is-defeat',localLost);$('victoryEyebrow').textContent='MATCH RESULTS';
+ $('victoryTitle').textContent=localLost?'DEFEAT':winner>=0?name+' WINS!':'MATCH DRAW';
+ $('victoryTitle').style.color=localLost?'#ff4f5f':paintColor(team>0?teamColor(0,team):winning?.color||COLORS[0]);
+ $('victoryEmblem').textContent=localLost?'☠':'★';
+ $('victoryMembers').textContent=localLost?(name+' WINS'):(members.map(p=>p.name).join(' · '));
  if(winner<0)$('victoryMessage').textContent='No side survived or remained in the room.';
  else if(localLost)$('victoryMessage').textContent=name+' takes the match. Ready for another battle?';
  else if(!localWon)$('victoryMessage').textContent=name+' takes the match.';
@@ -2517,7 +2514,7 @@ function initPresentation(){
  const apply=hidden=>{document.body.classList.toggle('sidebar-hidden',hidden);button.setAttribute('aria-expanded',String(!hidden));button.setAttribute('aria-label',hidden?'Show sidebar':'Hide sidebar');button.title=hidden?'Show sidebar':'Hide sidebar';resize();};
  let hidden=false;try{hidden=localStorage.getItem('leqra.sidebarHidden')==='1';}catch(_){}apply(hidden);
  button.onclick=()=>{const hidden=!document.body.classList.contains('sidebar-hidden');apply(hidden);save('sidebarHidden',hidden?'1':'0');};
- const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><div class="victory-emblem" aria-hidden="true">★</div><h2 id="victoryTitle"></h2><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="secondary" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button><button class="primary" id="victoryCloseBtn" type="button">BACK TO ROOM <span>→</span></button></footer>';
+ const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><h2 id="victoryTitle"></h2><div class="victory-emblem" id="victoryEmblem" aria-hidden="true">★</div><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="primary" id="victoryCloseBtn" type="button">BACK TO ROOM <span>→</span></button><button class="secondary" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button></footer>';
  document.body.append(dialog);$('victoryCloseBtn').onclick=resultBackToRoom;$('victoryAgainBtn').onclick=quickReplay;dialog.addEventListener('cancel',e=>{e.preventDefault();resultBackToRoom();});
 }
 function beginLocalSuddenDeath(replay=false){
@@ -2538,91 +2535,76 @@ function stepLocalSuddenDeath(){
  if(multipleLive)return;
  if(multipleContenders)beginLocalSuddenDeath(true);else endLocalObjective(contenderPilot?.id??-1);
 }
-// v3.5: online room chat is a floating region, never part of arena sizing.
-const roomChat={open:false,code:'',messages:[],lastID:0,unread:0,pending:false};
+// Online chat is a floating region, never part of arena sizing. The ordinary
+// room channel remains visible to everyone; matchmaking adds an opponent-only
+// channel beside it without mixing histories or unread counts.
+const roomChat={open:false,code:'',channel:'room',channels:{room:{messages:[],lastID:0,unread:0,pending:false},opponent:{messages:[],lastID:0,unread:0,pending:false}}};
+function chatState(channel='room'){return roomChat.channels[channel==='opponent'?'opponent':'room'];}
+function opponentChatEnabled(){const r=roomData(),me=r?roomMember(localPlayerID(),r):null;return mode==='online'&&!!online.code&&!!r?.matchmaking&&!!me?.hasParty&&!me?.spectating;}
 function syncChatStatus(){
- const enabled=mode==='online'&&!!online.code;
- $('chatBtn').hidden=!enabled;
- $('chatBtn').setAttribute('aria-expanded',String(roomChat.open));
- $('chatBtn').classList.toggle('has-unread',roomChat.unread>0);
- $('chatBadge').textContent=roomChat.unread?String(Math.min(99,roomChat.unread)):'';
- $('chatBtn').setAttribute('aria-label','Room chat'+(roomChat.unread?', '+roomChat.unread+' unread messages':''));
- $('chatSendBtn').disabled=!online.connected||roomChat.pending;
- $('chatInput').disabled=!online.connected;
- $('chatConnection').textContent=online.connected?'EVERYONE IN THIS ROOM':'RECONNECTING · MESSAGES NOT SENT';
- if(!enabled&&roomChat.open)closeChat();
+ const enabled=mode==='online'&&!!online.code,oppEnabled=enabled&&opponentChatEnabled(),active=chatState(roomChat.channel);
+ const roomState=chatState('room'),oppState=chatState('opponent');
+ $('chatBtn').hidden=!enabled;$('enemyChatBtn').hidden=!oppEnabled;
+ $('chatBtn').setAttribute('aria-expanded',String(roomChat.open&&roomChat.channel==='room'));$('enemyChatBtn').setAttribute('aria-expanded',String(roomChat.open&&roomChat.channel==='opponent'));
+ $('chatBtn').classList.toggle('has-unread',roomState.unread>0);$('enemyChatBtn').classList.toggle('has-unread',oppState.unread>0);
+ $('chatBadge').textContent=roomState.unread?String(Math.min(99,roomState.unread)):'';$('enemyChatBadge').textContent=oppState.unread?String(Math.min(99,oppState.unread)):'';
+ $('chatBtn').setAttribute('aria-label','Room chat'+(roomState.unread?', '+roomState.unread+' unread messages':''));$('enemyChatBtn').setAttribute('aria-label','Opponent chat'+(oppState.unread?', '+oppState.unread+' unread messages':''));
+ $('chatSendBtn').disabled=!online.connected||active.pending;$('chatInput').disabled=!online.connected;
+ const opp=roomChat.channel==='opponent';$('chatTitle').textContent=opp?'Opponent chat':'Room chat';$('chatConnection').textContent=!online.connected?'RECONNECTING · MESSAGES NOT SENT':opp?'YOU + THE ENEMY SIDE':'EVERYONE IN THIS ROOM';
+ $('chatInput').placeholder=opp?'Message the enemy side…':'Say something…';$('chatInput').setAttribute('aria-label',opp?'Message to the opposing matchmaking side':'Message to everyone in this room');
+ $('chatPanel').classList.toggle('opponent-chat-panel',opp);
+ if(!enabled&&roomChat.open)closeChat();else if(roomChat.open&&roomChat.channel==='opponent'&&!oppEnabled)openChat('room');
+ document.body.classList.toggle('matchmaking-chat',oppEnabled);
 }
 function clearRoomChat(code=''){
- roomChat.code=code;roomChat.messages=[];roomChat.lastID=0;roomChat.unread=0;roomChat.pending=false;
- $('chatMessages').replaceChildren();$('chatInput').value='';$('chatError').textContent='';
- syncChatStatus();
+ roomChat.code=code;roomChat.open=false;roomChat.channel='room';for(const st of Object.values(roomChat.channels)){st.messages=[];st.lastID=0;st.unread=0;st.pending=false;}
+ $('chatPanel').hidden=true;$('chatMessages').replaceChildren();$('chatInput').value='';$('chatError').textContent='';syncChatStatus();
 }
-function openChat(){
- if(mode!=='online'||!online.code)return;
- roomChat.open=true;roomChat.unread=0;$('chatPanel').hidden=false;
- clearInput();sendOnlineInput(true);syncChatStatus();positionChatPanel();
- const log=$('chatMessages');log.scrollTop=log.scrollHeight;
- if(online.connected)$('chatInput').focus({preventScroll:true});
+function renderChatMessage(m){
+ const row=document.createElement('div');row.className='chat-message';row.dataset.chatId=m.id;
+ const head=document.createElement('div');head.className='chat-message-head';const name=document.createElement('strong');name.textContent=m.name;
+ const role=document.createElement('span');role.textContent=m.spectating?'SPECTATING':m.team>0?teamName(m.team):'PLAYER';
+ const date=new Date(m.at),when=document.createElement('time');when.dateTime=date.toISOString();when.textContent=date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+ const text=document.createElement('p');text.textContent=m.text;head.append(name,role,when);row.append(head,text);const self=roomMember(localPlayerID());if(m.member===self?.member)row.classList.add('chat-self');return row;
+}
+function renderActiveChat(){const st=chatState(),list=$('chatMessages'),frag=document.createDocumentFragment();for(const m of st.messages)frag.append(renderChatMessage(m));list.replaceChildren(frag);list.scrollTop=list.scrollHeight;}
+function openChat(channel='room'){
+ if(mode!=='online'||!online.code||channel==='opponent'&&!opponentChatEnabled())return;if(roomChat.open&&roomChat.channel===channel){closeChat();return;}
+ roomChat.open=true;roomChat.channel=channel;const st=chatState();st.unread=0;$('chatPanel').hidden=false;$('chatError').textContent='';renderActiveChat();
+ clearInput();sendOnlineInput(true);syncChatStatus();positionChatPanel();if(online.connected)$('chatInput').focus({preventScroll:true});
 }
 function closeChat(){
- roomChat.open=false;$('chatPanel').hidden=true;roomChat.unread=0;
- clearInput();if(mode==='online')sendOnlineInput(true);
- $('chatBtn').setAttribute('aria-expanded','false');$('chatBadge').textContent='';$('chatBtn').classList.remove('has-unread');
- if(document.activeElement?.closest('#chatPanel'))document.activeElement.blur();
+ roomChat.open=false;$('chatPanel').hidden=true;clearInput();if(mode==='online')sendOnlineInput(true);syncChatStatus();if(document.activeElement?.closest('#chatPanel'))document.activeElement.blur();
 }
-function appendChat(m,history=false){
- if(!m||!Number.isSafeInteger(m.id)||m.id<=roomChat.lastID||typeof m.text!=='string')return;
- roomChat.lastID=m.id;roomChat.messages.push(m);if(roomChat.messages.length>60)roomChat.messages.shift();
- const list=$('chatMessages'),bottom=list.scrollHeight-list.clientHeight-list.scrollTop<48;
- const row=document.createElement('div');row.className='chat-message';row.dataset.chatId=m.id;
- const head=document.createElement('div');head.className='chat-message-head';
- const name=document.createElement('strong');name.textContent=m.name;
- const role=document.createElement('span');role.textContent=m.spectating?'SPECTATING':m.team>0?teamName(m.team):'PLAYER';
- const when=document.createElement('time');when.dateTime=new Date(m.at).toISOString();when.textContent=new Date(m.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
- const text=document.createElement('p');text.textContent=m.text; // Never parse HTML, links or markup from a message.
- head.append(name,role,when);row.append(head,text);list.append(row);
- const self=roomMember(localPlayerID());if(m.member===self?.member)row.classList.add('chat-self');
- while(list.children.length>60)list.firstElementChild.remove();
- if(bottom||history)list.scrollTop=list.scrollHeight;
- if(!history&&!roomChat.open&&m.member!==self?.member)roomChat.unread++;
- if(m.member===self?.member&&roomChat.pending){roomChat.pending=false;$('chatInput').value='';$('chatError').textContent='';}
- syncChatStatus();
+function appendChat(m,history=false,channel='room',render=true){
+ const st=chatState(channel);if(!m||!Number.isSafeInteger(m.id)||m.id<=st.lastID||typeof m.text!=='string')return false;st.lastID=m.id;st.messages.push(m);if(st.messages.length>60)st.messages.shift();
+ const self=roomMember(localPlayerID()),active=roomChat.open&&roomChat.channel===channel;
+ if(render&&active){const list=$('chatMessages'),bottom=list.scrollHeight-list.clientHeight-list.scrollTop<48;list.append(renderChatMessage(m));while(list.children.length>60)list.firstElementChild.remove();if(bottom)list.scrollTop=list.scrollHeight;}
+ if(!history&&!active&&m.member!==self?.member){st.unread++;chatNotificationSound();}
+ if(m.member===self?.member&&st.pending){st.pending=false;if(active){$('chatInput').value='';$('chatError').textContent='';}}
+ return true;
 }
 function chatPacket(m){
- if(m.room!==online.code)return;
- if(roomChat.code!==m.room)clearRoomChat(m.room);
- if(m.type==='chat_history'){
-  // Replace history atomically after reconnect; old IDs must never duplicate.
-  const pending=roomChat.pending;roomChat.messages=[];roomChat.lastID=0;$('chatMessages').replaceChildren();
-  for(const item of m.messages||[])appendChat(item,true);roomChat.pending=pending;
- }else appendChat(m.message);
- syncChatStatus();
+ if(m.room!==online.code)return;const channel=m.channel==='opponent'?'opponent':'room';if(roomChat.code!==m.room)clearRoomChat(m.room);const st=chatState(channel);
+ if(m.type==='chat_history'){const pending=st.pending;st.messages=[];st.lastID=0;for(const item of m.messages||[])appendChat(item,true,channel,false);st.pending=pending;if(roomChat.open&&roomChat.channel===channel)renderActiveChat();}
+ else appendChat(m.message,false,channel,true);syncChatStatus();
 }
 function submitChat(e){
- e.preventDefault();if(!online.connected||roomChat.pending)return;
- const text=$('chatInput').value.trim();if(!text||[...text].length>280){$('chatError').textContent='Use 1–280 characters.';return;}
- if(sendOnline({type:'chat',text})){roomChat.pending=true;$('chatError').textContent='Sending…';syncChatStatus();}
- else $('chatError').textContent='Connection unavailable. Your message was not sent.';
+ e.preventDefault();const st=chatState();if(!online.connected||st.pending)return;const text=$('chatInput').value.trim();if(!text||[...text].length>280){$('chatError').textContent='Use 1–280 characters.';return;}
+ if(sendOnline({type:'chat',channel:roomChat.channel,text})){st.pending=true;$('chatError').textContent='Sending…';syncChatStatus();}else $('chatError').textContent='Connection unavailable. Your message was not sent.';
 }
 function positionChatPanel(){
- if(!roomChat.open)return;const panel=$('chatPanel'),v=window.visualViewport;
- // Keep the composer above an on-screen keyboard without touching arena layout.
- if(v&&v.height<innerHeight-40){panel.style.bottom=Math.max(10,innerHeight-v.height-v.offsetTop+10)+'px';panel.style.height=Math.max(160,Math.min(435,v.height-20))+'px';}
- else{panel.style.removeProperty('bottom');panel.style.removeProperty('height');}
+ if(!roomChat.open)return;const panel=$('chatPanel'),v=window.visualViewport;if(v&&v.height<innerHeight-40){panel.style.bottom=Math.max(10,innerHeight-v.height-v.offsetTop+10)+'px';panel.style.height=Math.max(160,Math.min(435,v.height-20))+'px';}else{panel.style.removeProperty('bottom');panel.style.removeProperty('height');}
 }
 function initRoomChat(){
- const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');
- button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';
- $('soundBtn').before(button);
- document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Room messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" maxlength="560" placeholder="Say something…" aria-label="Message to everyone in this room"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Players + spectators · Enter sends · Esc closes<br>Typing stops your controls, not the online match.</small></div></section>');
+ const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';
+ const enemy=document.createElement('button');enemy.id='enemyChatBtn';enemy.type='button';enemy.className='icon-btn chat-toggle enemy-chat-toggle';enemy.hidden=true;enemy.title='Opponent chat';enemy.setAttribute('aria-label','Opponent chat');enemy.setAttribute('aria-controls','chatPanel');enemy.setAttribute('aria-expanded','false');enemy.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="enemyChatBadge"></span>';
+ $('soundBtn').before(button);button.after(enemy);
+ document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" maxlength="280" placeholder="Say something…" aria-label="Message to everyone in this room"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Enter sends · Esc closes<br>Typing stops your controls, not the online match.</small></div></section>');
  if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);
- button.onclick=()=>roomChat.open?closeChat():openChat();$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;
+ button.onclick=()=>openChat('room');enemy.onclick=()=>openChat('opponent');$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;
  $('chatInput').addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();e.stopPropagation();closeChat();}else e.stopPropagation();});
- window.addEventListener('keydown',e=>{
-  if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;
-  if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}
-  if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat();}
- },true);
+ window.addEventListener('keydown',e=>{if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat('room');}},true);
 }
 
 // Sampling measures RAF cadence (not server tick rate); no HTML/layout work per frame.
@@ -2805,6 +2787,6 @@ function initMatchmaking(){
 // Read-only public state is handy for embedding and smoke testing.
 window.leqra=Object.freeze({version:GAME_VERSION,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),scopeTime:t.scopeTime||0,ghostTime:t.ghostTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
 // Deterministic hooks are only present in explicit development/test mode.
-if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
-initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();initBrowserRecommendation();syncSound();setDifficulty(difficulty);setLayout();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();requestAnimationFrame(frame);
+if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
+initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();requestAnimationFrame(frame);
 })();

@@ -517,15 +517,11 @@ body.many-sides .mobile-scores{
 body.many-sides .arena-bar{min-height:47px}
 body.touch-ui.many-sides .bar-right{flex-direction:row;align-items:center;gap:5px}
 
-/* v4.18: desktop browser guidance, clearer single-player controls, and queue results. */
-.browser-notice{position:fixed;z-index:80;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;max-width:min(620px,calc(100vw - 32px));padding:10px 12px 10px 14px;border:1px solid var(--border-strong);border-radius:8px;background:color-mix(in srgb,var(--surface-raised) 96%,transparent);box-shadow:0 10px 34px rgb(var(--shadow-rgb) / .28);font:10px var(--mono);line-height:1.45;color:var(--text-soft);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-.browser-notice strong{color:var(--text-main)}
-.browser-notice button{flex-shrink:0;border:1px solid var(--border-strong);border-radius:5px;background:var(--surface);color:var(--text-main);padding:7px 9px;font:8px var(--mono);letter-spacing:.8px}
+/* v4.18: clearer single-player controls and queue results. */
 .manual-move-line{align-items:flex-start}.manual-key-options{display:flex;flex-direction:column;align-items:flex-end;gap:3px}.manual-key-options .keys{justify-content:flex-end}.manual-or{align-self:center;font:7px var(--mono);letter-spacing:.8px;color:var(--muted);padding:0 2px}
 .victory-actions .queue-rematch{background:#39ff88;color:#06160d;border-color:#72ffaa;box-shadow:0 3px 0 #15994d,0 0 22px rgb(57 255 136 / .30);font-weight:900}
 .victory-actions .queue-rematch:hover{background:#5dff9f;filter:none}
 .victory-actions .queue-rematch:disabled{background:#1d6f44;color:#b8ecd0;border-color:#317a55;box-shadow:none}
-body.touch-ui .browser-notice{display:none!important}
 
 
 /* v4.19: Safari/WebKit smoothness and mobile stability.
@@ -533,7 +529,6 @@ body.touch-ui .browser-notice{display:none!important}
    expensive on iPhone/iPad GPUs. The game keeps the same semantic styling while
    avoiding those compositor-heavy effects on that engine. */
 body.webkit-engine .overlay,
-body.webkit-engine .browser-notice,
 body.webkit-engine .feature-dialog::backdrop,
 body.webkit-engine .kick-dialog::backdrop,
 body.webkit-engine .join-dialog::backdrop,
@@ -553,4 +548,22 @@ body.ios-webkit .touch-controls{-webkit-touch-callout:none}
 @media(max-width:760px){
  body.ios-webkit input:not([type=checkbox]):not([type=range]):not([type=radio]),
  body.ios-webkit select,body.ios-webkit textarea{font-size:16px!important}
+}
+
+/* v4.20: results, room renaming and opponent chat. */
+.room-code-editor{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:stretch;margin-top:8px}
+.room-code-editor .net-input{min-width:0;margin:0}.room-code-editor .secondary{width:auto;min-width:112px;margin:0;padding:8px 11px;white-space:nowrap}
+.victory-dialog.is-defeat #victoryTitle,.victory-dialog.is-defeat .victory-emblem{color:#ff4f5f!important;text-shadow:0 0 25px rgb(255 79 95 / .28)}
+.enemy-chat-toggle{background:#9f2532!important;color:#fff!important;border-color:#ff5e6d!important;box-shadow:0 0 14px rgb(255 62 78 / .16)}
+.enemy-chat-toggle:hover{background:#bd2d3c!important;border-color:#ff7a86!important}.enemy-chat-toggle.has-unread{background:#d63445!important;border-color:#ff9ca5!important}
+#enemyChatBadge:empty{display:none}#enemyChatBadge{position:absolute;right:-4px;top:-5px;min-width:15px;height:15px;padding:1px 3px;border-radius:8px;background:#fff;color:#a31927;font:10px var(--mono)}
+.opponent-chat-panel{border-color:#e35160}.opponent-chat-panel>header{background:rgb(180 35 51 / .08)}.opponent-chat-panel #chatTitle{color:#ff5d6c}
+@media(max-width:430px){
+ body.touch-ui.matchmaking-chat .header-right{gap:2px}
+ body.touch-ui.matchmaking-chat .header-right .icon-btn{width:26px;min-width:26px;height:32px}
+ body.touch-ui.matchmaking-chat #roomBtn{width:46px;max-width:46px;height:32px;padding:4px;font-size:7px}
+ body.touch-ui.matchmaking-chat #spectatorsBtn{width:50px;height:32px;padding:4px 2px;font-size:7px}
+ body.touch-ui.matchmaking-chat .brand-name{font-size:13px}
+ body.touch-ui.matchmaking-chat .brand-sub{font-size:5px;letter-spacing:1px}
+ .room-code-editor{grid-template-columns:1fr}.room-code-editor .secondary{width:100%}
 }

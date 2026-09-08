@@ -1,0 +1,29 @@
+{
+  "version": "4.20.0",
+  "passed": 6,
+  "checks": [
+    "Ultra Wide mobile page has no horizontal document overflow",
+    "arena container stays inside the 390px viewport",
+    "mobile uses the actual 24\u00d714 Ultra Wide world",
+    "both local pilot loadouts remain available on narrow mobile",
+    "P2 feedback does not grow the mobile status underbar",
+    "no uncaught mobile browser errors: []"
+  ],
+  "errors": [],
+  "metrics": {
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "wrapLeft": 10,
+    "wrapRight": 380,
+    "underBefore": 114,
+    "underAfter": 114,
+    "p1": false,
+    "p2": false,
+    "world": {
+      "width": 2016,
+      "height": 1176,
+      "cols": 24,
+      "rows": 14
+    }
+  }
+}
