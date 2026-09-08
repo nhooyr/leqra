@@ -55,7 +55,7 @@ func Test49BotAvoidsCrossingGrenade(t *testing.T) {
 }
 
 func Test49Version(t *testing.T) {
-	if version != "4.33.0" {
+	if version != "4.34.0" {
 		t.Fatalf("version=%q", version)
 	}
 }
