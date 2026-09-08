@@ -1,0 +1,8 @@
+PASS: 5 shipped JavaScript syntax checks
+PASS: 69 retained Python files parse
+PASS: 11 HTML asset references resolve
+PASS: six root/versioned assets are byte-identical
+PASS: server, browser, HTML, PWA and cache use 4.41.0; only current assets ship
+PASS: removed volume explanation stays absent
+PASS: one PLAY lobby action immediately precedes ROOM NAME / CODE, with consistent rendered label
+PASS: git diff --check

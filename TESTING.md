@@ -1,6 +1,10 @@
-# leqra v4.23 — current verification
+# leqra v4.41.0 — current verification
 
-Current release verification is documented in **TEST-NOTES-v4.23.md**. v4.23 adds focused coverage for versioned/PWA assets and cache headers, the online version handshake, graceful shutdown notification/client return-to-Home behavior, no startup WebSocket, Unshare maze preservation, balanced Teams activation, chat-focus input routing, and the restored Leave match action.
+See **TEST-NOTES-v4.41.0.md** for current commands, results and limitations. Current raw logs are in `tests/results/v4.41.0/`. Historical browser fixtures below were not rerun for this release.
+
+## Historical v4.23 verification
+
+Historical release verification is documented in **TEST-NOTES-v4.23.md**. v4.23 adds focused coverage for versioned/PWA assets and cache headers, the online version handshake, graceful shutdown notification/client return-to-Home behavior, no startup WebSocket, Unshare maze preservation, balanced Teams activation, chat-focus input routing, and the restored Leave match action.
 
 Representative commands from the extracted source tree:
 

@@ -5,29 +5,29 @@ const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function recorder(){
  let matrix={x:0,y:0,angle:0},stack=[],shape,clipped=false;
- const events=[],c={events,canvas:{},save(){stack.push({matrix:{...matrix},clipped});},restore(){({matrix,clipped}=stack.pop());},clip(){clipped=true;},translate(x,y){matrix.x+=Math.cos(matrix.angle)*x-Math.sin(matrix.angle)*y;matrix.y+=Math.sin(matrix.angle)*x+Math.cos(matrix.angle)*y;},rotate(a){matrix.angle+=a;},beginPath(){shape=null;},rect(x,y,w,h){shape={x,y,w,h};},arc(x,y,r,start,end){shape={arc:true,x,y,r,start,end};},stroke(){if(shape?.arc)events.push({type:'arc',...shape,color:this.strokeStyle,alpha:this.globalAlpha,width:this.lineWidth,matrix:{...matrix}});},fill(){if(shape&&!shape.arc)events.push({type:'rect',...shape,matrix:{...matrix}});},fillText(text,x,y){events.push({type:'text',text,x,y,font:this.font,clipped,matrix:{...matrix}});},drawImage(image,x,y,w,h){events.push({type:'image',image,x,y,w,h,matrix:{...matrix}});},measureText(text){return{width:text.length*6};}};
+ const events=[],c={events,canvas:{},globalAlpha:1,textBaseline:'alphabetic',save(){stack.push({matrix:{...matrix},clipped,alpha:this.globalAlpha,textBaseline:this.textBaseline});},restore(){const state=stack.pop();({matrix,clipped}=state);this.globalAlpha=state.alpha;this.textBaseline=state.textBaseline;},clip(){clipped=true;},translate(x,y){matrix.x+=Math.cos(matrix.angle)*x-Math.sin(matrix.angle)*y;matrix.y+=Math.sin(matrix.angle)*x+Math.cos(matrix.angle)*y;},rotate(a){matrix.angle+=a;},beginPath(){shape=null;},rect(x,y,w,h){shape={x,y,w,h};},arc(x,y,r,start,end){shape={arc:true,x,y,r,start,end};},stroke(){if(shape?.arc)events.push({type:'arc',...shape,color:this.strokeStyle,alpha:this.globalAlpha,width:this.lineWidth,matrix:{...matrix}});},fill(){if(shape&&!shape.arc)events.push({type:'rect',...shape,alpha:this.globalAlpha,matrix:{...matrix}});},fillText(text,x,y){events.push({type:'text',text,x,y,font:this.font,alpha:this.globalAlpha,textBaseline:this.textBaseline,clipped,matrix:{...matrix}});},drawImage(image,x,y,w,h){events.push({type:'image',image,x,y,w,h,alpha:this.globalAlpha,matrix:{...matrix}});},measureText(text){return{width:text.length*6};}};
  return new Proxy(c,{get:(t,k)=>k in t?t[k]:(()=>{})});
 }
 function boot(){
  const ctx=recorder(),made=[];
- const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,reduceMotion:true,fxTime:0,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
+ const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,MACHINE_FIRING_ROUNDS:180,reduceMotion:true,fxTime:0,shake:0,combatPrefs:{performance:true},WEBKIT_ENGINE:false,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c=ctx)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
  vm.runInContext(source.slice(source.indexOf('const tankPowerBadgeCache='),source.indexOf('function activeTankPowerBadges(')),s);
- for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','drawTank'])vm.runInContext(declaration(name),s);
+ for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','powerExpiryAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
-function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,scopeTime:10,ghostTime:10,...patch};}
+function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,charges:3,machineRounds:180,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,scopeTime:10,ghostTime:10,...patch};}
 function pictures(ctx){return ctx.events.filter(e=>e.type==='image');}
 
 function badgeOverlap(a,b){return Math.hypot(a.x+a.w/2-b.x-b.w/2,a.y+a.h/2-b.y-b.h/2)<(a.w+b.w)*28.5/64-1e-8;}
 function labelRect(ctx){return ctx.events.findLast(e=>e.type==='rect');}
-function nameGeometry(ctx){const text=ctx.events.find(e=>e.type==='text'),label=labelRect(ctx);return{x:text.x,y:text.y,font:text.font,background:{x:label.x,y:label.y,w:label.w,h:label.h}};}
+function nameGeometry(ctx){const text=ctx.events.findLast(e=>e.type==='text'),label=labelRect(ctx);return{x:text.x,y:text.y,font:text.font,background:{x:label.x,y:label.y,w:label.w,h:label.h}};}
 
 test('bot and remote power icons proceed clockwise below stable names without covering the hull at desktop and mobile scales',()=>{
  for(const mode of ['room','online'])for(const scale of [2,1,.5,.2,.08])for(const charges of [0,1,5]){
   const {s,ctx}=boot();s.mode=mode;s.scale=scale;
   const t=tank({shield:charges?10:0,shieldCharges:charges,angle:1.35,human:mode==='online'});s.drawTank(t);
-  const text=ctx.events.find(e=>e.type==='text'),label=labelRect(ctx),icons=pictures(ctx);
+  const text=ctx.events.findLast(e=>e.type==='text'),label=labelRect(ctx),icons=pictures(ctx);
   assert.equal(text.text,'GODLIKE BOSS');assert.equal(icons.length,charges?5:4);
   const textDescent=parseFloat(text.font.replace('bold ',''))*.25;
   for(const icon of icons){
@@ -97,6 +97,55 @@ test('gaining or losing a power-up may repack badges but moving cannot create an
  const icons=pictures(ctx);assert.ok(icons.some(icon=>icon.x+icon.w>s.W||icon.y+icon.h>s.H),'near-edge icons may clip instead of moving away from the tank');
 });
 
+test('expiring bot and remote badges use each effect timer and the exact pickup pulse phase below three seconds',()=>{
+ for(const mode of ['room','online'])for(const clock of [0,Math.PI/24,Math.PI/8,7.21]){
+  const {s,ctx}=boot();Object.assign(s,{mode,fxTime:clock});const t=tank({human:mode==='online',powerTime:2.99,shield:3,speedTime:3.01,scopeTime:.01,ghostTime:1.4});
+  s.drawTank(t);const icons=pictures(ctx),labels=ctx.events.filter(e=>e.type==='text');assert.equal(icons.length,5);assert.equal(labels.at(-1).text,t.name);assert.equal(labels.at(-1).alpha,1,'badge pulse cannot fade the tank name');assert.equal(labels.at(-1).textBaseline,'alphabetic');
+  for(const icon of icons){const kind=icon.image.kind,life={laser:t.powerTime,shield:t.shield,speed:t.speedTime,scope:t.scopeTime,ghost:t.ghostTime}[kind];
+   ctx.events.length=0;s.drawPickup({type:kind,x:84,y:84,life});const pickup=ctx.events.find(e=>e.type==='rect');assert.equal(icon.alpha,pickup.alpha,kind+' uses the same pulse as the pickup');
+   assert.equal(icon.alpha,life<3?.5+.4*Math.sin(clock*12):1);assert.ok(icon.alpha>=.1-1e-8&&icon.alpha<=1);
+  }
+ }
+});
+
+test('weapon corners report actual charges or machine-gun rounds and do not allocate per-count sprites',()=>{
+ for(const mode of ['room','online'])for(const power of ['laser','homing','grenade','cannon','scatter','rapid']){
+  const {s,ctx,made}=boot();s.mode=mode;const t=tank({human:mode==='online',power,shield:0,speedTime:0,scopeTime:0,ghostTime:0});
+  const maximum=power==='rapid'?180:power==='scatter'?5:3;let sprite;
+  for(let remaining=maximum;remaining>=0;remaining--){
+   Object.assign(t,{charges:remaining,machineRounds:remaining,powerTime:remaining%2?2:10});s.fxTime=remaining/20;ctx.events.length=0;s.drawTankPowerBadges(t);
+   const icon=pictures(ctx)[0],numbers=ctx.events.filter(e=>e.type==='text');assert.equal(numbers.length,1);assert.equal(numbers[0].text,String(remaining));assert.equal(numbers[0].alpha,icon.alpha,'number shares the badge blink');
+   assert.ok(numbers[0].x>icon.x+icon.w/2&&numbers[0].x<=icon.x+icon.w);assert.ok(numbers[0].y>icon.y+icon.h/2&&numbers[0].y<icon.y+icon.h,'number occupies the lower-right corner');
+   if(sprite)assert.equal(icon.image,sprite);else sprite=icon.image;
+  }
+  assert.equal(made.length,1,'ammo changes reuse the weapon sprite');
+ }
+});
+
+test('stack counters reflect shield and speed stacks while Scope and Ghost remain unnumbered',()=>{
+ for(const mode of ['room','online'])for(const stacks of [1,2,5]){
+  const {s,ctx}=boot();s.mode=mode;const t=tank({human:mode==='online',power:null,shieldCharges:stacks,speedStacks:stacks});s.drawTankPowerBadges(t);
+  assert.deepEqual(pictures(ctx).map(e=>e.image.kind),['shield','speed','scope','ghost']);assert.deepEqual(ctx.events.filter(e=>e.type==='text').map(e=>e.text),[String(stacks),String(stacks)]);
+  Object.assign(t,{shield:0,speedTime:0});ctx.events.length=0;s.drawTankPowerBadges(t);assert.equal(pictures(ctx).length,2);assert.equal(ctx.events.some(e=>e.type==='text'),false);
+ }
+});
+
+test('blinking and changing counts keep all five fixed slots at a maze corner',()=>{
+ const {s,ctx}=boot(),t=tank({x:2383,y:1483,powerTime:2,shield:2,speedTime:2,scopeTime:2,ghostTime:2});let positions;
+ for(const clock of [0,Math.PI/24,Math.PI/8,12]){
+  s.fxTime=clock;t.charges=Math.ceil(clock)%3+1;t.shieldCharges=Math.ceil(clock)%5+1;ctx.events.length=0;s.drawTankPowerBadges(t);
+  const current=pictures(ctx).map(e=>[e.image.kind,e.x,e.y]);if(positions)assert.deepEqual(current,positions);else positions=current;assert.equal(current.length,5);
+ }
+});
+
+test('a paused local game keeps equipment timers frozen while matching the existing pickup animation',()=>{
+ const {s,ctx}=boot(),t=tank({powerTime:2.9,shield:3.1});s.phase='paused';s.tanks=[t];
+ const before=JSON.stringify(t);for(const dt of [.03,.7,4]){
+  s.update(dt);assert.equal(JSON.stringify(t),before);ctx.events.length=0;s.drawTankPowerBadges(t);const icons=pictures(ctx);
+  assert.equal(icons[0].alpha,.5+.4*Math.sin(s.fxTime*12));assert.equal(icons[1].alpha,1,'pause cannot move the shield across the three-second boundary');
+ }
+});
+
 
 test('tank names and badge centers stay close to the hull independent of shield count',()=>{
  for(const scale of [2,1,.5,.2,.08]){
@@ -153,14 +202,14 @@ test('online spawn tags follow authoritative life changes and never turn a shiel
 });
 
 test('a real shield save clears the local spawn tag instead of lighting the purple ring again',()=>{
- const {s}=boot(),noop=()=>{};Object.assign(s,{canDamage:()=>true,burst:noop,addRing:noop,tone:noop,toast:noop});vm.runInContext(declaration('hurt'),s);
+ const {s}=boot(),noop=()=>{};Object.assign(s,{canDamage:()=>true,burst:noop,addRing:noop,tone:noop,shieldSound:noop,toast:noop});vm.runInContext(declaration('hurt'),s);
  const t=tank({id:0,human:true,invulnerable:0});s.hurt(t,{owner:3,kind:'shell'});assert.equal(t.invulnerable,.35);assert.equal(t.spawnProtected,false);assert.equal(s.localSpawnGuideAlpha(t),0);
 });
 
 function onlineBoot(){
  const {s}=boot(),noop=()=>{};
  Object.assign(s,{mode:'online',phase:'onlineLobby',round:0,roundClock:0,phaseTime:0,roundWinner:-1,scores:[],gameStarted:false,tanks:[],particles:[],rings:[],traces:[],bullets:[],pickups:[],cols:12,rows:8,grid:[],walls:[],goUntil:0,shake:0,now:1000,
-  performance:{now:()=>s.now},Net:require('../web/netcode.js'),COLORS:[],cacheMap:noop,resize:noop,clearInput:noop,sendOnlineInput:noop,closeVictory:noop,setScreen:noop,renderOnlineRoom:noop,updateHUD:noop,showStartingControls:noop,secondLocal:()=>({id:1}),moveTank:noop,onlineEffect:noop,syncRestartWaveActions:noop,
+  performance:{now:()=>s.now},updateOnlineBounceSounds:noop,Net:require('../web/netcode.js'),COLORS:[],cacheMap:noop,resize:noop,clearInput:noop,sendOnlineInput:noop,closeVictory:noop,setScreen:noop,renderOnlineRoom:noop,updateHUD:noop,showStartingControls:noop,secondLocal:()=>({id:1}),moveTank:noop,onlineEffect:noop,syncRestartWaveActions:noop,
   online:{connected:true,id:0,generation:0,snapshots:[],ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set(),trails:new Map(),localBullets:new Map(),effectQueue:[],shots:{sync:noop,prune:noop,heard:()=>false,previews:new Map()},eventsInitialized:true,lastEvent:0,buffer:{push:packet=>s.online.snapshots.push(packet),advance:()=>null,tank:id=>({...s.online.snapshots.at(-1).tankMap.get(id)})}},
   survivalState:()=>s.online.snapshots.at(-1)?.objectives?.survival,survivalBreak:()=>s.survivalState()?.status==='break',
   resetOnlineMotion:()=>{s.online.snapshots.length=0;}

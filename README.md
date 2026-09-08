@@ -1,14 +1,14 @@
-# leqra v4.40.0
+# leqra v4.41.0
 
-This update blocks native mobile text selection, touch highlights, callouts and browser zoom throughout active matches, including both ammo/status areas, dialogs and the compact final results preview. Bot and remote-tank power-up icons keep fixed offsets at maze edges. The volume slider explanation is removed; base sound gain is doubled with headroom protection and the default slider position retained at 50%. All prior gameplay and high-resolution icon changes are retained.
+Bot and remote-tank power-up badges now blink during their final three seconds and show ammunition or stack counts. This update balances loud and quiet effects, restores online ricochet sounds, fixes stale online equipment timers and native layered-sound headroom, and speeds up server wall queries. The lobby action is now PLAY, placed above ROOM NAME / CODE for quicker access on mobile. Prior gameplay, mobile interaction and high-resolution icon changes are retained.
 
-See [UPDATE-v4.40.0.md](UPDATE-v4.40.0.md) for changes and upgrade commands and [TEST-NOTES-v4.40.0.md](TEST-NOTES-v4.40.0.md) for verification. Earlier versioned guides remain available as release history.
+See [UPDATE-v4.41.0.md](UPDATE-v4.41.0.md) for changes and upgrade commands and [TEST-NOTES-v4.41.0.md](TEST-NOTES-v4.41.0.md) for verification. Earlier versioned guides remain available as release history.
 
 ## PWA and online lifecycle
 
 leqra is an installable Progressive Web App with fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.40.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.41.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
 Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
@@ -16,7 +16,7 @@ Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process qu
 
 Retained room/game polish includes the **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams in Elimination/Hill (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
-The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See **UPDATE-v4.26.0.md** for that release and its physical-device testing limits; the current changes and verification are in **UPDATE-v4.40.0.md** and **TEST-NOTES-v4.40.0.md**.
+The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See **UPDATE-v4.26.0.md** for that release and its physical-device testing limits; the current changes and verification are in **UPDATE-v4.41.0.md** and **TEST-NOTES-v4.41.0.md**.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -52,7 +52,7 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.40.0.md** for current behavior and installation and **TEST-NOTES-v4.40.0.md** for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
+statistics remain intact. See **UPDATE-v4.41.0.md** for current behavior and installation and **TEST-NOTES-v4.41.0.md** for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
 
 ## Previous combat improvements (retained)
 
@@ -202,7 +202,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.40.0.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.41.0.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -239,7 +239,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.40.0**.
+on restart. Both the health endpoint and browser version should show **4.41.0**.
 
 ## Build one standalone server
 
