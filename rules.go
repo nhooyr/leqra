@@ -162,8 +162,8 @@ func (g *Game) lineupError(ps [maxTanks]*Player) string {
 		teams := map[int]bool{}
 		for id, p := range ps {
 			if p != nil && participantAvailable(ps, id) {
-				if p.Team == 0 {
-					return "Capture the Flag needs exactly two numbered teams; assign every participant."
+				if p.Team < 1 || p.Team > 2 {
+					return "Capture the Flag uses Team 1 and Team 2; assign every participant."
 				}
 				teams[p.Team] = true
 			}
@@ -175,33 +175,54 @@ func (g *Game) lineupError(ps [maxTanks]*Player) string {
 	return ""
 }
 
-// Team zero is only the internal FFA sentinel, never a fifth team in Teams mode.
-// Old presets containing independent seats migrate into numbered teams.
+func activeTeamCount(rules MatchRules) int {
+	if rules.TeamMode == "ffa" {
+		return 0
+	}
+	if rules.Mode == "ctf" {
+		return 2
+	}
+	return 4
+}
+
+// Rebalance only when enabling teams or changing the available team count.
+// Ordinary edits preserve the host's manual assignments.
 func balanceRoomTeams(r *Room) {
+	count := activeTeamCount(r.Game.settings())
 	n := 0
 	for _, p := range r.Players {
 		if p == nil {
 			continue
 		}
-		p.Team = 1 + n%2
+		p.Team = 0
+		if count > 0 {
+			p.Team = 1 + n%count
+		}
 		p.ColorIndex = nil
 		n++
 	}
 }
 
 func applyFormat(r *Room) {
+	count := activeTeamCount(r.Game.settings())
+	// Migrate old CTF presets/imports that used arbitrary numbered sides.
+	if count == 2 {
+		for _, p := range r.Players {
+			if p != nil && (p.Team < 1 || p.Team > count) {
+				balanceRoomTeams(r)
+				break
+			}
+		}
+	}
 	for _, p := range r.members() {
-		if r.Game.settings().TeamMode == "ffa" {
+		if count == 0 {
 			p.Team = 0
 		} else {
 			// Team paint is authoritative. Do not retain a hidden FFA override that
 			// could unexpectedly reappear after switching formats later.
 			p.ColorIndex = nil
-			if p.Team < 1 || p.Team > 4 {
-				p.Team = 2
-				if p.ID == r.Host || p.Kind == "local" && p.Owner == r.Host {
-					p.Team = 1
-				}
+			if p.Team < 1 || p.Team > count {
+				p.Team = joinTeam(r)
 			}
 		}
 	}
@@ -225,10 +246,10 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 		fail("bad_rules", err.Error())
 		return
 	}
-	wasFFA := r.Game.settings().TeamMode == "ffa"
+	previousTeamCount := activeTeamCount(r.Game.settings())
 	r.Game.Rules = normalizedRules(rules)
 	r.Game.Clock = float64(rules.TimeLimit)
-	if wasFFA && rules.TeamMode == "teams" {
+	if rules.TeamMode == "teams" && previousTeamCount != activeTeamCount(rules) {
 		balanceRoomTeams(r)
 	}
 	applyFormat(r)
@@ -330,29 +351,20 @@ func validPresetRoster(roster []SeatSpec) error {
 	return nil
 }
 
-// New guests join a least-populated existing side. Arbitrary numbered CTF sides
-// (for example teams 3 and 4) must not accidentally gain a third team on join.
+// Empty teams are eligible too. Spectators never consume a tank position.
 func joinTeam(r *Room) int {
-	if r.Game.settings().TeamMode == "ffa" {
+	count := activeTeamCount(r.Game.settings())
+	if count == 0 {
 		return 0
 	}
 	counts := [5]int{}
-	existing := []int{}
 	for _, p := range r.Players {
-		if p != nil && p.Team > 0 && p.Team <= 4 {
+		if p != nil && p.Team > 0 && p.Team <= count {
 			counts[p.Team]++
 		}
 	}
-	for t := 1; t <= 4; t++ {
-		if counts[t] > 0 {
-			existing = append(existing, t)
-		}
-	}
-	if len(existing) < 2 {
-		existing = []int{1, 2}
-	}
-	best := existing[0]
-	for _, t := range existing {
+	best := 1
+	for t := 2; t <= count; t++ {
 		if counts[t] < counts[best] {
 			best = t
 		}

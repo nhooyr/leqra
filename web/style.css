@@ -589,3 +589,6 @@ body.ios-webkit .touch-controls{-webkit-touch-callout:none}
 .shutdown-dialog p{font-size:clamp(15px,3vw,19px);line-height:1.55;color:#fff;margin:0 auto 16px;max-width:48ch}
 .shutdown-dialog strong{display:block;color:#ffd2d6;font:900 12px/1.5 var(--mono);letter-spacing:1.3px;margin-bottom:22px}
 .shutdown-dialog .shutdown-ack{min-width:170px;background:#ff4f5f;color:#fff;border-color:#ff8791;box-shadow:0 3px 0 #9d2530,0 0 24px rgb(255 79 95 / .32);font-weight:900}
+
+/* Contextual room controls must stay hidden even inside grid/flex layouts. */
+[hidden]{display:none!important}

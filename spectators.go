@@ -244,11 +244,7 @@ func (h *Hub) setSpectating(c *Client, m clientMessage, now time.Time) {
 				return
 			}
 		}
-		if r.Game.settings().TeamMode == "ffa" {
-			p.Team = 0
-		} else if p.Team == 0 || r.Game.objectiveMode() {
-			p.Team = joinTeam(r)
-		}
+		p.Team = joinTeam(r)
 		r.moveMember(p, id, false)
 		r.initializeSeat(p, -1)
 	}

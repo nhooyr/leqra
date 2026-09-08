@@ -56,7 +56,7 @@ with sync_playwright() as pw:
     page.add_script_tag(content=(web / 'theme.js').read_text())
     page.add_script_tag(content=(web / 'netcode.js').read_text())
     page.add_script_tag(content=js)
-    page.wait_for_function("window.__test && leqra.version === '4.23.2'")
+    page.wait_for_function("window.__test && leqra.version === '4.24.0'")
     page.wait_for_timeout(100)
 
     check(len(sockets) == 0, 'Local startup opens no WebSocket')
@@ -90,13 +90,13 @@ with sync_playwright() as pw:
       __test.setLocalRules({...__test.currentRules(),teamMode:'teams'});
       return leqra.getState().room.players.map(p=>p.team);
     }""")
-    check(teams.count(1) == 2 and teams.count(2) == 2, 'Teams activation balances four tanks 2 vs 2')
+    check(teams == [1, 2, 3, 4], 'Teams activation distributes four tanks across all four teams')
 
     page.evaluate("__test.setLocalRules({...__test.currentRules(),teamMode:'ffa'});__test.shareLocalRoom()")
     page.wait_for_function("leqra.getState().online?.connected === true", timeout=10000)
     page.wait_for_function("leqra.getState().phase === 'onlineLobby'", timeout=10000)
     check(len(sockets) == 1, 'Explicit Share Room Online opens exactly one WebSocket')
-    check(page.evaluate('__test.online.serverVersion') == '4.23.2', 'Online connection completes the v4.23 version handshake')
+    check(page.evaluate('__test.online.serverVersion') == '4.24.0', 'Online connection completes the v4.23 version handshake')
 
     before = page.evaluate('JSON.stringify(__test.walls)')
     page.evaluate('__test.unshareOnlineRoom()')
@@ -148,6 +148,6 @@ with sync_playwright() as pw:
     context.close()
     browser.close()
 
-report = {'version': '4.23.2', 'passed': len(checks), 'checks': checks, 'errors': errors}
+report = {'version': '4.24.0', 'passed': len(checks), 'checks': checks, 'errors': errors}
 (out / 'results.json').write_text(json.dumps(report, indent=2))
 print('TOTAL', len(checks))
