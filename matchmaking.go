@@ -714,7 +714,9 @@ func (h *Hub) requestQueueRematch(c *Client, now time.Time) {
 			continue
 		}
 		required++
-		if !r.Match.Rematch[controller.Member] {
+		// A socket may already be closed while removeClient is still waiting
+		// for Hub.mu. Never start a rematch around a disconnected participant.
+		if !socketLive(controller) || !r.Match.Rematch[controller.Member] {
 			ready = false
 		}
 	}
@@ -807,7 +809,7 @@ func (h *Hub) abandonTravel(tr *MatchTravel) {
 	h.broadcastRoom(tr.Home)
 }
 func (h *Hub) finishQueueForfeit(r *Room) {
-	if r.Match == nil || r.Game.Phase == "matchOver" {
+	if r.Match == nil || r.Game.Phase == "matchOver" || r.Game.Phase == "roundOver" && r.Game.roundClinched {
 		return
 	}
 	sides := map[int]int{}

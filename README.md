@@ -1,12 +1,14 @@
-# leqra v4.24.0
+# leqra v4.25.0
 
-Four-team automatic assignment, two-team Capture the Flag, contextual pause controls, and room UI fixes. See [UPDATE-v4.24.0.md](UPDATE-v4.24.0.md) for changes and upgrade commands, and [TEST-NOTES-v4.24.0.md](TEST-NOTES-v4.24.0.md) for verification.
+Fixes custom fire-key conflicts, reconnect/rematch edge cases, final-result identity, bot death movement and interrupted roster edits. Includes faster Go bot route planning, one encoding per room broadcast and selective roster rendering.
+
+See [UPDATE-v4.25.0.md](UPDATE-v4.25.0.md) for changes and upgrade commands, [TEST-NOTES-v4.25.0.md](TEST-NOTES-v4.25.0.md) for verification, and [IMPROVEMENTS-v4.25.0.md](IMPROVEMENTS-v4.25.0.md) for proposed next steps.
 
 ## PWA and online lifecycle
 
 leqra v4.23 makes the browser game an installable Progressive Web App while preserving fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.24.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.25.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
 Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the v4.23 client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 

@@ -311,6 +311,9 @@ func (h *Hub) removeClient(c *Client) {
 	}
 	p.Client = nil
 	p.Ready = false
+	if r.Match != nil && r.Match.Rematch != nil {
+		delete(r.Match.Rematch, p.Member)
+	}
 	for _, other := range r.members() {
 		if other != nil && other.Kind == "local" && other.Owner == p.ID {
 			other.Input = Input{}
@@ -400,10 +403,15 @@ func (h *Hub) roomMessage(r *Room) map[string]any {
 	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "maxPlayers": maxTanks, "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.Game.lineupError(r.Players), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
 }
 func (h *Hub) broadcastRoom(r *Room) {
-	m := h.roomMessage(r)
+	// Every controller receives the same metadata. Encode it once into immutable
+	// bytes so a full spectator gallery does not repeat JSON work per socket.
+	data, ok := encodePacket(h.roomMessage(r))
+	if !ok {
+		return
+	}
 	for _, p := range r.members() {
 		if p.Client != nil {
-			p.Client.enqueue(m)
+			p.Client.enqueueBytes(data)
 		}
 	}
 }
@@ -532,8 +540,9 @@ func (h *Hub) join(c *Client, create bool, code, name, token string, now time.Ti
 	code = cleanCode(code)
 	if !create && token != "" {
 		if route, ok := h.resumeRoutes[resumeRouteKey{code, sha256.Sum256([]byte(token))}]; ok && now.Before(route.Until) && h.rooms[route.Room.Code] == route.Room {
-			h.join(c, false, route.Room.Code, name, token, now, spectating)
-			return
+			// Routes hold the destination room itself, whose current code already
+			// follows later renames. Recursing can loop forever after A -> B -> A.
+			code = route.Room.Code
 		}
 	}
 	var r *Room

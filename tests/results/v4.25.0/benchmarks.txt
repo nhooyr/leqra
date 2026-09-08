@@ -1,0 +1,14 @@
+goos: linux
+goarch: amd64
+pkg: leqra
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkBroadcastRoomFullGallery-9   	    3403	    111296 ns/op	   64025 B/op	     870 allocs/op
+BenchmarkBroadcastRoomFullGallery-9   	    3445	    107041 ns/op	   64060 B/op	     870 allocs/op
+BenchmarkBotRoute425/10x7-9           	  287550	      1046 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBotRoute425/10x7-9           	  382348	      1272 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBotRoute425/18x14-9          	   75759	      4660 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBotRoute425/18x14-9          	   79507	      4597 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBotRoute425/24x14-9          	   58686	      7726 ns/op	       0 B/op	       0 allocs/op
+BenchmarkBotRoute425/24x14-9          	   54558	      6294 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	leqra	3.634s
