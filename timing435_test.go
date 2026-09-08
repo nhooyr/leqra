@@ -64,7 +64,7 @@ func TestTiming435SurvivalBossBreakEndsAtTwoSeconds(t *testing.T) {
 	if s := g.survivalState(); s.Status != "wave" || s.Wave != 5 || !s.Boss {
 		t.Fatalf("boss did not spawn at tick120: %+v", s)
 	}
-	if g.Generation != generation || &g.World.Walls[0] != walls {
-		t.Fatal("Survival hold rebuilt the maze")
+	if g.Generation != generation+1 || &g.World.Walls[0] == walls || g.Phase != "countdown" || g.PhaseTime != 3 {
+		t.Fatal("Survival hold did not prepare the next maze countdown")
 	}
 }

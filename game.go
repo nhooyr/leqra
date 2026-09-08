@@ -362,7 +362,7 @@ func (g *Game) startRound(players [maxTanks]*Player) {
 	g.Clock = float64(g.settings().TimeLimit)
 	g.SpawnClock = g.pickupDelay()
 	g.Phase = "countdown"
-	g.PhaseTime = 2.6
+	g.PhaseTime = 3
 	g.Winner = -1
 	g.roundClinched = false
 	spots := spawnCells(cols, rows)
@@ -1266,7 +1266,7 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		return
 	case "countdown":
 		g.PhaseTime -= dt
-		if g.PhaseTime <= 0 {
+		if g.PhaseTime <= 1e-9 {
 			g.Phase = "playing"
 			g.PhaseTime = .55
 		}

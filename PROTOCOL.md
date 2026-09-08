@@ -1,10 +1,10 @@
-# leqra v4.35.0 — current game protocol (protocol 1)
+# leqra v4.36.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.35.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.36.0**:
 
 ```json
-{"type":"server_hello","version":"4.35.0","protocol":1}
-{"type":"client_hello","version":"4.35.0","protocol":1}
+{"type":"server_hello","version":"4.36.0","protocol":1}
+{"type":"client_hello","version":"4.36.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -49,7 +49,7 @@ Enemy count is `min(4, 2 + floor((wave - 1) / 2))`, bounded by free combat slots
 
 A clear requires a surviving squad tank. It adds one point to every remaining squad participant, including downed tanks. The final target clear sets `phase:"matchOver"`, `status:"won"` and a squad winner ID. A wipe, expired wave timer or absence of available squad participants sets `phase:"matchOver"`, `status:"lost"` and `winner:-1`; this is a failed run, not a draw. Mutual destruction loses, while a final enemy killed on the last simulation tick clears the wave if a squad tank survives.
 
-Nonfinal clears keep `phase:"playing"` with `status:"break"` for two seconds. The server clears projectiles, pickups and held input, and rejects firing/movement during the break. Defeated enemy snapshots remain present for the lineup until the next wave replaces them. At its end, available squad members receive fresh tanks, pickups reseed and the next wave starts with a fresh timer. The maze and generation remain unchanged throughout the run. The client uses the wave status and tank life serials to discard stale input and cosmetic shots.
+Nonfinal clears keep `phase:"playing"` with `status:"break"` for two seconds. The server clears projectiles and held input, preserves uncollected pickups with frozen lifetimes, and rejects firing/movement during the break. Defeated enemy snapshots remain present for the lineup until the next wave replaces them. At its end, a new maze and generation are created, available squad members receive fresh tanks, pickups reseed, and the next wave begins with phase:"countdown" for three seconds before its fresh timer runs. Completed-wave progress and statistics remain intact. The client uses the wave status and tank life serials to discard stale input and cosmetic shots.
 
 Completed `matchStats` includes a frozen `survival` object of the same shape. Its player rows describe squad participants only, and its live duration excludes wave breaks. Generated enemies are not report participants, while destroying them still credits the attacking squad pilot's elimination count. The final wave state and report must be copied for snapshots rather than aliased to mutable simulation data.
 
@@ -57,7 +57,7 @@ Completed `matchStats` includes a frozen `survival` object of the same shape. It
 
 The host of a private Survival room can send `{"type":"restart_wave","generation":N,"wave":W}` for the current wave. The server validates the current generation and wave, available squad, room membership and host authority. The command is accepted during an active wave/countdown or after a lost run; lobbies, completed runs and between-wave breaks cannot retry. Existing version, action-rate, matchmaking and away-party restrictions apply. Rejections identify `action:"restart_wave"`.
 
-A retry increments the simulation generation while retaining the same world and navigation data. It resends the reliable world state so clients discard stale predictions, effects, input and prior results. The current wave's enemies/boss and timer reset, available squad members receive fresh tanks, and the phase becomes a 2.6-second countdown. `wavesCleared` and prior-wave scores remain intact. A participant-keyed checkpoint restores statistics to the start of the wave, excluding the discarded attempt's elapsed time and combat totals. Removed or replacement participants cannot inherit each other's statistics. Rule changes, preset application and returning the room to its lobby invalidate its checkpoint. Room snapshots expose `canRestartWave` so the client can hide an invalid retry action; host authorization is still checked independently.
+A retry increments the simulation generation while retaining the same world and navigation data. It resends the reliable world state so clients discard stale predictions, effects, input and prior results. The current wave's enemies/boss and timer reset, available squad members receive fresh tanks, and the phase becomes a three-second countdown. `wavesCleared` and prior-wave scores remain intact. A participant-keyed checkpoint restores statistics to the start of the wave, excluding the discarded attempt's elapsed time and combat totals. Removed or replacement participants cannot inherit each other's statistics. Rule changes, preset application and returning the room to its lobby invalidate its checkpoint. Room snapshots expose `canRestartWave` so the client can hide an invalid retry action; host authorization is still checked independently.
 
 ## Adding bots
 

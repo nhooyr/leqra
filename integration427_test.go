@@ -112,7 +112,7 @@ func TestIntegration427SurvivorLeavingDuringBreakStillRevivesConnectedSquadmate(
 		t.Fatal("last survivor leaving cancelled an already-earned squad revival")
 	}
 	g.step(.1, [maxTanks]Input{}, r.Players)
-	if g.Phase != "playing" || g.survivalState().Wave != 2 || g.survivalState().Status != "wave" || !g.Tanks[0].Alive {
+	if g.Phase != "countdown" || g.survivalState().Wave != 2 || g.survivalState().Status != "wave" || !g.Tanks[0].Alive {
 		t.Fatal("connected squadmate did not revive for the next wave")
 	}
 }

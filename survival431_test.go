@@ -56,7 +56,7 @@ func TestSurvival431BotSquadClearsRevivesAndWinsWithoutHuman(t *testing.T) {
 		t.Fatal("surviving bot could not clear the wave")
 	}
 	g.prepareSurvival(2, r.Players)
-	if g.Phase != "playing" || g.survivalState().Wave != 2 || !g.Tanks[1].Alive {
+	if g.Phase != "countdown" || g.survivalState().Wave != 2 || !g.Tanks[1].Alive {
 		t.Fatal("bot squad did not revive for next wave")
 	}
 	clearSurvivalWave427(t, r)

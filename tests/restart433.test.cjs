@@ -106,3 +106,18 @@ test('online end timing subtracts the authoritative hold even if roundOver snaps
  packet.events=[{generation:6,tick:10,type:'roundEnd'},{generation:7,tick:160,type:'matchEnd'}];assert.equal(s.onlineMatchResultDelay(packet,'playing',false),2000,'direct objective, Survival and forfeit finishes start a two-second hold');
  packet.tick=190;assert.equal(s.onlineMatchResultDelay(packet,'playing',false),1500,'late final snapshots do not restart the full timer');assert.equal(s.onlineMatchResultDelay(packet,'onlineLobby',true),0,'joining an already-finished match does not replay its hold');
 });
+
+test('online win and loss previews remain visible for exactly the existing two-second result interval',()=>{
+ for(const gameMode of ['survival','ctf','koth'])for(const won of [false,true]){
+  const b=boot(),{s,$}=b;b.room.rules.mode=gameMode;b.room.phase='matchOver';s.online.lastMatch=-1;
+  for(const id of ['announceTop','announceMain','announceSub']){const e=s.document.createElement('div');e.id=id;s.document.body.append(e);}
+  s.roundWinner=-1;s.survivalBreak=()=>false;s.survivalBossPreview=()=>null;s.modeLabel=()=>gameMode.toUpperCase();s.winnerName=id=>id===0?'SQUAD':'RIVAL';s.paintColor=c=>c;s.suddenDeath=()=>false;
+  for(const name of ['setText','survivalResultText','matchResultPreview'])vm.runInContext(declaration(name),s);
+  const hud=declaration('updateHUD'),start=hud.indexOf(" const announce=$('announcer')"),end=hud.indexOf(" if(mode==='online')onlineHUD();",start);
+  vm.runInContext('function updateHUD(){\n'+hud.slice(start,end)+'\n}',s);
+  const packet=statePacket({generation:1,tick:11,phase:'matchOver',status:won?'won':'lost'});packet.winner=won?0:gameMode==='survival'?-1:1;
+  s.receiveOnlineState(packet);assert.equal($('announcer').hidden,false);assert.equal($('announceMain').textContent,gameMode==='survival'?(won?'SURVIVAL COMPLETE':'RUN ENDED'):(won?'SQUAD WINS':'RIVAL WINS'));
+  const pending=s.pendingMatchPresentation;s.receiveOnlineState({...packet,tick:12});assert.equal(s.pendingMatchPresentation,pending);s.flushMatchPresentation(2999);assert.equal(s.results,undefined);assert.equal($('announcer').hidden,false);
+  s.flushMatchPresentation(3000);assert.equal(s.results,1);assert.equal($('announcer').hidden,true);
+ }
+});
