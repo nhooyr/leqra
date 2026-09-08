@@ -23,8 +23,8 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	body := index.Body.String()
 	for _, want := range []string{
-		`assets/v4.23.2/game.js`, `assets/v4.23.2/theme.js`, `assets/v4.23.2/manifest.webmanifest`,
-		`assets/v4.23.2/pwa.js`, `apple-mobile-web-app-capable`, `apple-touch-icon`,
+		`assets/v` + version + `/game.js`, `assets/v` + version + `/theme.js`, `assets/v` + version + `/manifest.webmanifest`,
+		`assets/v` + version + `/pwa.js`, `apple-mobile-web-app-capable`, `apple-touch-icon`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q", want)
@@ -65,7 +65,7 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	sw := httptest.NewRecorder()
 	h.ServeHTTP(sw, httptest.NewRequest("GET", "/assets/v"+version+"/sw.js", nil))
-	for _, want := range []string{"leqra-app-", "v4.23.2", "'/ws'", "'/healthz'", "'/api/'", "caches.match('/')"} {
+	for _, want := range []string{"leqra-app-", "v" + version, "'/ws'", "'/healthz'", "'/api/'", "caches.match('/')"} {
 		if !strings.Contains(sw.Body.String(), want) {
 			t.Fatalf("service worker missing %q", want)
 		}
@@ -130,16 +130,16 @@ func Test423ActivatingTeamsBalancesTanks(t *testing.T) {
 	if err := h.handle(cs[0], data, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	counts := [3]int{}
+	counts := [5]int{}
 	for _, p := range r.Players {
 		if p != nil {
-			if p.Team != 1 && p.Team != 2 {
+			if p.Team < 1 || p.Team > 4 {
 				t.Fatalf("tank assigned to unexpected default team %d", p.Team)
 			}
 			counts[p.Team]++
 		}
 	}
-	if d := counts[1] - counts[2]; d < -1 || d > 1 {
-		t.Fatalf("unbalanced teams: %d vs %d", counts[1], counts[2])
+	if counts != [5]int{0, 2, 1, 1, 1} {
+		t.Fatalf("expected all four teams: %v", counts)
 	}
 }

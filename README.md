@@ -1,14 +1,18 @@
-# leqra v4.23 — installable PWA, version-safe assets, and graceful online lifecycle
+# leqra v4.24.0
+
+Four-team automatic assignment, two-team Capture the Flag, contextual pause controls, and room UI fixes. See [UPDATE-v4.24.0.md](UPDATE-v4.24.0.md) for changes and upgrade commands, and [TEST-NOTES-v4.24.0.md](TEST-NOTES-v4.24.0.md) for verification.
+
+## PWA and online lifecycle
 
 leqra v4.23 makes the browser game an installable Progressive Web App while preserving fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.23.2/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.24.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
 Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the v4.23 client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
 Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process queues a **server shutting down** message before closing connected sockets. Browsers that are currently online show the notice, leave the server-backed game, and return to the local Home Screen instead of sitting in a reconnect loop against a server that is intentionally stopping.
 
-Room/game polish in this release includes the requested **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even default distribution across Team 1/Team 2 when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
+Room/game polish in this release includes the requested **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
 v4.22's Safari audio fallback/CSP work, integrated matchmaking chat, Ghost smoothing and simplified room editing are retained unchanged unless described above. See **UPDATE-v4.23.md** for the full update, **POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.23.md** for verification and test-environment limits.
 

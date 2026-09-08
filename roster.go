@@ -143,6 +143,10 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		fail("bad_team", "Choose one of the four teams. Free-for-all is a room-wide rule.")
 		return
 	}
+	if r.Game.settings().Mode == "ctf" && m.Team != nil && (*m.Team < 1 || *m.Team > 2) {
+		fail("bad_team", "Capture the Flag uses Team 1 and Team 2.")
+		return
+	}
 	if m.ColorIndex != nil {
 		fail("paint_action", "Tank paint uses the owner-aware paint action.")
 		return
@@ -181,9 +185,9 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			}
 		}
 		p := &Player{ID: slot, Member: r.NextMember, Name: cleanName(name), Kind: m.Kind, Owner: c.player.ID, Controller: c.player, Difficulty: m.Difficulty, Ready: true, InputAt: now}
-		if m.Team != nil {
-			p.Team = *m.Team
-		}
+		// Decide against the current authoritative roster, not a stale client
+		// count. The host can change this assignment after the tank is added.
+		p.Team = joinTeam(r)
 		r.Players[slot] = p
 		r.Game.Scores[slot] = 0
 	} else {

@@ -673,8 +673,8 @@ func TestObjective32SeededBotMatches(t *testing.T) {
 }
 func TestObjective32LateJoinExistingTeamsAndRespawn(t *testing.T) {
 	h, _, r := makeRoom(t, 2)
-	r.Players[0].Team = 3
-	r.Players[1].Team = 4
+	r.Players[0].Team = 1
+	r.Players[1].Team = 2
 	r.Game.Rules.Mode = "ctf"
 	r.Game.Rules.RespawnSeconds = 2
 	r.Game.startMatch(r.Players)
@@ -682,12 +682,12 @@ func TestObjective32LateJoinExistingTeamsAndRespawn(t *testing.T) {
 	r.Game.Scores[0] = 2
 	c := fakeClient()
 	action(t, h, c, map[string]any{"type": "join", "code": r.Code, "name": "late"})
-	if c.player == nil || c.player.Team != 3 {
+	if c.player == nil || c.player.Team != 1 {
 		t.Fatal("join created a third side")
 	}
 	id := c.player.ID
 	tk := r.Game.Tanks[id]
-	if tk.Team != 3 || tk.Alive || tk.RespawnTime != 2 || r.Game.Scores[id] != 2 {
+	if tk.Team != 1 || tk.Alive || tk.RespawnTime != 2 || r.Game.Scores[id] != 2 {
 		t.Fatal("join lost team, score, or spawn delay")
 	}
 	r.Game.respawnPlayers(1, r.Players)
@@ -695,7 +695,7 @@ func TestObjective32LateJoinExistingTeamsAndRespawn(t *testing.T) {
 		t.Fatal("spawned early")
 	}
 	r.Game.respawnPlayers(1.1, r.Players)
-	if !tk.Alive || tk.Invulnerable <= 0 || tk.Color != participantColor(id, 3) {
+	if !tk.Alive || tk.Invulnerable <= 0 || tk.Color != participantColor(id, 1) {
 		t.Fatal("late player never respawned correctly")
 	}
 }

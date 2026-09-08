@@ -13,6 +13,9 @@ func addSeat(t *testing.T, h *Hub, c *Client, kind, diff string, team int) *Play
 	action(t, h, c, map[string]any{"type": "add", "kind": kind, "difficulty": diff, "team": team, "name": "EXTRA"})
 	for _, p := range c.room.Players {
 		if p != nil && p.Member > before {
+			if p.Team != team {
+				configureSeat(t, h, c, p, team)
+			}
 			return p
 		}
 	}
