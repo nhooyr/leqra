@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.16.0';
+const GAME_VERSION='4.17.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -50,7 +50,7 @@ const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const keys=new Set(), firePointers=new Set(), firePresses=new Set();
 const stick={id:null,x:0,y:0,mag:0};
 const Net=window.leqraNet;
-const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,kickPending:null,inviteCode:'',inviteResumeRetries:0};
+const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const localRoom={code:'',players:[],self:0,nextViewer:MAX_TANKS,nextMember:0,rules:defaultRoomRules()};
 let watchInvite=false,watchResume=null,rolePending=false,swapPending=null,lastSpectatorUI='';
@@ -176,7 +176,11 @@ function cacheMap(){
  for(let i=0;i<walls.length;i+=17){const w=walls[i];if(w.axis==='h'&&w.line>0&&w.line<H){for(let n=0;n<3;n++){c.beginPath();c.moveTo(w.x+31+n*6,w.y+1);c.lineTo(w.x+35+n*6,w.y+6);c.stroke();}}}
  c.globalAlpha=1;c.strokeStyle=theme.rim;c.lineWidth=2;c.strokeRect(1,1,W-2,H-2);
 }
-function bfs(from,to){if(from===to)return[];const prev=new Int16Array(grid.length);prev.fill(-1);prev[from]=from;const q=[from];for(let p=0;p<q.length;p++){const i=q[p];for(const n of grid[i].neighbors){if(prev[n]!==-1)continue;prev[n]=i;if(n===to){const path=[];let at=to;while(at!==from){path.push(at);at=prev[at];}return path.reverse();}q.push(n);}}return[];}
+function pathScratch(a){
+ const n=grid.length;if(!a||a.pathPrev?.length!==n){if(!a)return null;a.pathCost=new Float64Array(n);a.pathPrev=new Int16Array(n);a.pathClosed=new Uint8Array(n);a.pathReserved=new Uint8Array(n);a.pathDanger=new Uint8Array(n);a.pathOpen=[];a.pathQueue=[];a.pathScratch=[];}return a;
+}
+function tracePath(from,to,prev,a){const path=a?.pathScratch||[];path.length=0;for(let at=to;at!==from;at=prev[at]){if(at<0||path.length>grid.length){path.length=0;return path;}path.push(at);}path.reverse();return path;}
+function bfs(from,to,a=null){if(from===to){if(a?.pathScratch)a.pathScratch.length=0;return a?.pathScratch||[];}const scratch=pathScratch(a),prev=scratch?.pathPrev||new Int16Array(grid.length),q=scratch?.pathQueue||[];prev.fill(-1);prev[from]=from;q.length=0;q.push(from);for(let p=0;p<q.length;p++){const i=q[p];for(const n of grid[i].neighbors){if(prev[n]!==-1)continue;prev[n]=i;if(n===to)return tracePath(from,to,prev,scratch);q.push(n);}}if(scratch?.pathScratch)scratch.pathScratch.length=0;return scratch?.pathScratch||[];}
 function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRoom.players.find(p=>p.id===i):null;return{id:i,name:member?member.name:mode==='duel'?(i===0?'PLAYER 1':'PLAYER 2'):NAMES[i],color:member?teamColor(i,member.team,member.colorIndex):COLORS[i],x:p.x,y:p.y,angle:i===0?-Math.PI/2:Math.PI/2,r:RADIUS,alive:true,human:member?member.kind!=='bot':i===0||mode==='duel',difficulty:member?.difficulty||difficulty,localIndex:member?.kind==='local'?1:0,team:member?member.team:mode==='duel'?'p'+i:i===0?'player':'bots',cooldown:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,scopeTime:0,ghostTime:0,invulnerable:.75,power:null,powerTime:0,charges:0,recoil:0,vx:0,vy:0,track:0,ai:{think:rnd(.15,.5),path:[],pathClock:0,target:-1,aim:null,shotClock:rnd(.6,1.6),bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,dodgeAngle:0,dodgeDrive:1,recoverTime:0,recoverAngle:0,recoverDrive:0,stuck:0,lastX:p.x,lastY:p.y}};}
 function spawnCells(){return [(rows-1)*cols,cols-1,rows*cols-1,0,Math.floor(cols/2),Math.floor(rows/2)*cols+cols-1,(rows-1)*cols+Math.floor(cols/2),Math.floor(rows/2)*cols];}
 function resetTanks(){const spawn=spawnCells();if(mode==='room'){tanks=localRoom.players.filter(p=>!p.spectating).map(p=>newTank(p.id,spawn[p.id]));return;}if(mode==='solo'&&Math.random()<.5)spawn[2]=0;tanks=spawn.slice(0,mode==='duel'?2:3).map((s,i)=>newTank(i,s));}
@@ -383,7 +387,9 @@ function fireLaser(t){
  if(beam.target)hurt(beam.target,{owner:t.id,kind:'laser'});
  t.charges--;if(t.charges<=0){t.power=null;t.powerTime=0;}return true;
 }
-function updateTraces(dt){for(const b of traces)b.life-=dt;traces=traces.filter(b=>b.life>0);}
+function compactLife(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(item.life>0)list[write++]=item;}list.length=write;return list;}
+function compactNotDead(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(!item.dead)list[write++]=item;}list.length=write;return list;}
+function updateTraces(dt){for(const b of traces)b.life-=dt;compactLife(traces);}
 // Scope is a visual aiming aid, never an extension to weapon damage/range.
 // Trace only owned live tanks. The path includes its muzzle and nudge distances.
 function aimingGuide(t){
@@ -540,7 +546,7 @@ function updateBullets(dt){
   if(!b.dead&&(b.life<=1e-9||(b.kind==='homing'&&b.rangeLeft<=1e-7))){if(b.kind==='grenade')detonate(b);else{b.dead=true;if(b.kind==='homing')impactEffect(b.x,b.y,b.color,20);else burst(b.x,b.y,b.color,3,25);}}
   if(b.x<-15||b.x>W+15||b.y<-15||b.y>H+15)b.dead=true;
  }
- bullets=bullets.filter(b=>!b.dead);
+ compactNotDead(bullets);
 }
 // Prediction is used by bots and the player's short aiming guide.
 function shotPrediction(t,angle,maxBounces=1,maxLength=CELL*7){let x=t.x,y=t.y,ux=Math.cos(angle),uy=Math.sin(angle),remaining=maxLength;const points=[{x,y}];for(let bounce=0;bounce<=maxBounces;bounce++){const dx=ux*remaining,dy=uy*remaining,w=rayWalls(x,y,dx,dy,3.5);let closest=null;for(const other of tanks){if(!other.alive||!canDamage(t.id,other)||(other.id===t.id&&(bounce===0||t.power==='scatter'||t.power==='rapid')))continue;const at=circleHit(x,y,dx,dy,other.x,other.y,other.r+2);if(at!==null&&(!w||at<w.t)&&(!closest||at<closest.at))closest={at,tank:other};}if(closest){points.push({x:x+dx*closest.at,y:y+dy*closest.at});return{tank:closest.tank,points};}const f=w?w.t:1;x+=dx*f;y+=dy*f;points.push({x,y});remaining*=1-f;if(!w||remaining<1)break;if(w.nx)ux=-ux;if(w.ny)uy=-uy;x+=w.nx*.12;y+=w.ny*.12;}return{tank:null,points};}
@@ -653,27 +659,28 @@ function chooseBotAim(t,enemy,d){
 // Weighted A*: allies reserve their route, encouraging a second approach when
 // the maze offers one. Only the player's position is a goal; no pickup detours.
 function planBotPath(t,enemy){
- const from=cellAt(t.x,t.y),goal=cellAt(enemy.x,enemy.y);
- if(from===goal)return[];
- const ally=tanks.find(o=>o.alive&&o.id!==t.id&&!isEnemy(t,o)),reserved=new Set(ally?ally.ai.path:[]);
- const danger=new Set();
+ const from=cellAt(t.x,t.y),goal=cellAt(enemy.x,enemy.y),a=pathScratch(t.ai);
+ if(from===goal){a.pathScratch.length=0;return a.pathScratch;}
+ const ally=tanks.find(o=>o.alive&&o.id!==t.id&&!isEnemy(t,o)),allyCell=ally?cellAt(ally.x,ally.y):-1;
+ const reserved=a.pathReserved,danger=a.pathDanger,cost=a.pathCost,prev=a.pathPrev,closed=a.pathClosed,open=a.pathOpen;
+ reserved.fill(0);danger.fill(0);cost.fill(Infinity);prev.fill(-1);closed.fill(0);open.length=0;
+ if(ally)for(const cell of ally.ai.path)if(cell>=0&&cell<reserved.length)reserved[cell]=1;
  for(const b of bullets){if(!b.dead&&canDamage(b.owner,t)){
-  danger.add(cellAt(b.x,b.y));const hit=projectileWall(b.kind,b.x,b.y,b.vx*.42,b.vy*.42,b.r),f=hit?hit.t:1;
-  danger.add(cellAt(b.x+b.vx*.42*f,b.y+b.vy*.42*f));
+  danger[cellAt(b.x,b.y)]=1;const hit=projectileWall(b.kind,b.x,b.y,b.vx*.42,b.vy*.42,b.r),f=hit?hit.t:1;
+  danger[cellAt(b.x+b.vx*.42*f,b.y+b.vy*.42*f)]=1;
  }}
- const cost=new Float64Array(grid.length);cost.fill(Infinity);cost[from]=0;
- const prev=new Int16Array(grid.length);prev.fill(-1);const open=[from],closed=new Set();
+ cost[from]=0;open.push(from);
  const heuristic=i=>Math.abs(i%cols-goal%cols)+Math.abs(Math.floor(i/cols)-Math.floor(goal/cols));
  while(open.length){let chosen=0;for(let k=1;k<open.length;k++)if(cost[open[k]]+heuristic(open[k])<cost[open[chosen]]+heuristic(open[chosen]))chosen=k;
-  const at=open.splice(chosen,1)[0];if(closed.has(at))continue;if(at===goal)break;closed.add(at);
+  const at=open[chosen];for(let k=chosen+1;k<open.length;k++)open[k-1]=open[k];open.length--;if(closed[at])continue;if(at===goal)break;closed[at]=1;
   for(const next of grid[at].neighbors){
-   const teamPenalty=ally&&next!==goal&&reserved.has(next)?(t.id>ally.id?1.65:.32):0;
-   const nextCost=cost[at]+1+teamPenalty+(danger.has(next)?1.8:0)+(ally&&cellAt(ally.x,ally.y)===next?.8:0);
+   const teamPenalty=ally&&next!==goal&&reserved[next]?(t.id>ally.id?1.65:.32):0;
+   const nextCost=cost[at]+1+teamPenalty+(danger[next]?1.8:0)+(ally&&allyCell===next?.8:0);
    if(nextCost>=cost[next])continue;cost[next]=nextCost;prev[next]=at;open.push(next);
   }
  }
- if(prev[goal]<0)return bfs(from,goal);
- const path=[];for(let at=goal;at!==from;at=prev[at]){if(at<0)return[];path.push(at);}return path.reverse();
+ if(prev[goal]<0)return bfs(from,goal,a);
+ return tracePath(from,goal,prev,a);
 }
 function routeControl(t,enemy){
  const a=t.ai;
@@ -807,7 +814,7 @@ function botControl(t,dt){
   if(!enemy.alive&&!objective){a.aim=null;return;}
   a.aim=enemy.alive?chooseBotAim(t,enemy,d):null;
   const goal=cellAt((objective||enemy).x,(objective||enemy).y);
-  if(t.ghostTime<=0&&(a.pathClock<=0||goal!==a.goal||!a.path.length)){a.pathClock=.55+(t.id%2)*.06;a.goal=goal;a.path=objective?bfs(cellAt(t.x,t.y),goal):planBotPath(t,enemy);}
+  if(t.ghostTime<=0&&(a.pathClock<=0||goal!==a.goal||!a.path.length)){a.pathClock=.55+(t.id%2)*.06;a.goal=goal;a.path=objective?bfs(cellAt(t.x,t.y),goal,a):planBotPath(t,enemy);}
  }
  let control;
  if(a.aim!==null&&(!objective||distance(t,objective)<26||(Math.floor(time*2)+t.id)%5===0&&distance(t,enemy)<CELL*2)){const range=distance(t,enemy);control={angle:a.aim,drive:range<CELL*.95?-.65:range>CELL*2.7?.42:0};}
@@ -856,7 +863,7 @@ function update(dt){
  updateTraces(dt);
  time+=dt;phaseTime-=dt;
  if(toastTime>0){toastTime-=dt;if(toastTime<=0)$('toast').hidden=true;}
- const drag=Math.exp(-3*dt);for(const p of particles){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=drag;p.vy*=drag;}particles=particles.filter(p=>p.life>0);for(const r of rings)r.life-=dt;rings=rings.filter(r=>r.life>0);shake=Math.max(0,shake-dt);
+ const drag=Math.exp(-3*dt);for(const p of particles){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=drag;p.vy*=drag;}compactLife(particles);for(const r of rings)r.life-=dt;compactLife(rings);shake=Math.max(0,shake-dt);
  if(phase==='countdown'){if(phaseTime<=0){phase='playing';phaseTime=.55;goUntil=performance.now()+550;tone(800,950,.15,.04);if(round===1)showStartingControls();}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
  if(phase==='roundOver'){if(phaseTime<=0){if(roundWinner>=0&&scores[roundWinner]>=currentRules().scoreTarget)finishMatch(roundWinner);else{round++;startRound();}}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
  if(objectiveMode()&&!suddenDeath()){
@@ -871,16 +878,18 @@ function update(dt){
  }
  for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){const a=tanks[i],b=tanks[j];if(!a.alive||!b.alive)continue;let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);const over=a.r+b.r-dist;if(over>0){if(dist<.001){dx=1;dy=0;dist=1;}moveTank(a,-dx/dist*over*.5,-dy/dist*over*.5);moveTank(b,dx/dist*over*.5,dy/dist*over*.5);}}
  updateBullets(dt);
- for(const p of pickups){p.age+=dt;p.life-=dt;if(p.life<=0)continue;for(const t of tanks){if(t.alive&&distance(t,p)<t.r+13){p.life=0;const def=POWER[p.type];grantPower(t,p.type);addRing(p.x,p.y,def.color,44);burst(p.x,p.y,def.color,13,90);pickupSound();const localIndex=localPilotIndex(t.id);if(localIndex>=0)setPilotFeedback(localIndex,pickupMessage(p.type),2.5);addLog(t.name+' picked up '+def.name.toLowerCase()+'.');break;}}}pickups=pickups.filter(p=>p.life>0);
- const remaining=alive();
-  if(mode==='room'&&objectiveMode()){stepLocalObjectives(dt);}
+ for(const p of pickups){p.age+=dt;p.life-=dt;if(p.life<=0)continue;for(const t of tanks){if(t.alive&&distance(t,p)<t.r+13){p.life=0;const def=POWER[p.type];grantPower(t,p.type);addRing(p.x,p.y,def.color,44);burst(p.x,p.y,def.color,13,90);pickupSound();const localIndex=localPilotIndex(t.id);if(localIndex>=0)setPilotFeedback(localIndex,pickupMessage(p.type),2.5);addLog(t.name+' picked up '+def.name.toLowerCase()+'.');break;}}}compactLife(pickups);
+ if(mode==='room'&&objectiveMode()){stepLocalObjectives(dt);}
   else if(mode==='room'){
-   const sides=new Set(remaining.map(teamKey));if(sides.size<=1)finishRound(remaining[0]?.id??-1);else if(roundClock<=0)finishRound(-1);
+   let owner=null,winner=-1,multiple=false;for(const t of tanks){if(!t.alive)continue;const side=teamKey(t);if(owner===null){owner=side;winner=t.id;}else if(side!==owner){multiple=true;break;}}
+   if(!multiple)finishRound(winner);else if(roundClock<=0)finishRound(-1);
   }else if(mode==='solo'){
-   const playerAlive=remaining.some(t=>t.human),botsAlive=remaining.some(t=>!t.human);
-   if(!playerAlive||!botsAlive)finishRound(playerAlive?0:botsAlive?1:-1);
-   else if(roundClock<=0)finishRound(-1);
-  }else if(remaining.length<=1)finishRound(remaining.length?remaining[0].id:-1);else if(roundClock<=0)finishRound(-1);
+   let playerAlive=false,botsAlive=false;for(const t of tanks)if(t.alive){if(t.human)playerAlive=true;else botsAlive=true;}
+   if(!playerAlive||!botsAlive)finishRound(playerAlive?0:botsAlive?1:-1);else if(roundClock<=0)finishRound(-1);
+  }else{
+   let liveCount=0,winner=-1;for(const t of tanks)if(t.alive){liveCount++;winner=t.id;if(liveCount>1)break;}
+   if(liveCount<=1)finishRound(winner);else if(roundClock<=0)finishRound(-1);
+  }
  uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}
 }
 function tankSvg(){return '<svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M6 10v12m16-12v12" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="10" y="9" width="8" height="14" rx="2" fill="currentColor"/><path d="M14 4v10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="14" cy="16" r="2.7" fill="#182229"/></svg>';}
@@ -1455,9 +1464,9 @@ function receiveOnlineState(s){
  if(phase==='playing'&&previousPhase==='countdown'){goUntil=now+550;if(round===1)showStartingControls();}
  if(s.objectives?.suddenDeath)goUntil=0;
  if(previousPhase==='playing'&&phase!=='playing'){clearInput();sendOnlineInput(true);online.localBullets.clear();}
- const ownedIDs=new Set([online.id,secondaryID()]);
- for(const t of s.tanks)if(ownedIDs.has(t.id))online.shots.sync(t,phase,now);
- online.shots.prune(now,new Set(s.tanks.filter(t=>t.alive&&ownedIDs.has(t.id)).map(t=>t.id)));
+ const ownedIDs=online.ownedIDs,activeIDs=online.activeIDs;ownedIDs.clear();activeIDs.clear();ownedIDs.add(online.id);const local2=secondaryID();if(local2!==undefined)ownedIDs.add(local2);
+ for(const t of s.tanks)if(ownedIDs.has(t.id)){online.shots.sync(t,phase,now);if(t.alive)activeIDs.add(t.id);}
+ online.shots.prune(now,activeIDs);
  if(phase!=='matchOver')closeVictory();
  const p2=secondLocal();if(p2){const t2=s.tankMap.get(p2.id);if(t2)online.secondary.predictor.reconcile(t2,newMap||phase!=='playing'||t2.spawnSerial!==online.secondary.predictor.state?.spawnSerial);}
  const me=s.tankMap.get(online.id);
@@ -1508,7 +1517,7 @@ function onlineUpdate(dt){
  updateTraces(dt);
  fxTime+=dt;time+=dt;
  if(toastTime>0){toastTime-=dt;if(toastTime<=0)$('toast').hidden=true;}
- const drag=Math.exp(-3*dt);for(const p of particles){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=drag;p.vy*=drag;}particles=particles.filter(p=>p.life>0);for(const r of rings)r.life-=dt;rings=rings.filter(r=>r.life>0);shake=Math.max(0,shake-dt);
+ const drag=Math.exp(-3*dt);for(const p of particles){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=drag;p.vy*=drag;}compactLife(particles);for(const r of rings)r.life-=dt;compactLife(rings);shake=Math.max(0,shake-dt);
  if(online.connected&&performance.now()-online.lastMessage>4500){online.socket?.close(4000,'Connection stalled');return;}
  predictOnlineTank(dt);
  if(online.connected){previewOnlineFire(false,onlineControls(),performance.now());if(secondLocal())previewOnlineFire(true,onlineControls(true),performance.now());}
@@ -1585,15 +1594,15 @@ function projectileOnTimeline(n,sample){
 // weapons share their shooter's buffered timeline. Go still owns every hit.
 function renderOnlineMotion(dt,now){
  const s=online.snapshots.at(-1);if(!s||s.generation<=0)return;
- const sample=online.buffer.advance(dt),local2ID=secondaryID(),since=clamp((now-s.received)/1000,0,.25);
- const ownIDs=new Set([online.id,local2ID]);
+ const sample=online.buffer.advance(dt),local2ID=secondaryID(),since=clamp((now-s.received)/1000,0,.25),ownIDs=online.ownedIDs,activeIDs=online.activeIDs,present=online.trailIDs;
+ ownIDs.clear();activeIDs.clear();present.clear();ownIDs.add(online.id);if(local2ID!==undefined)ownIDs.add(local2ID);
  tanks=s.tanks.map(n=>phase!=='playing'?{...n}:n.id===online.id&&online.predictor.state
   ?online.predictor.visual(dt,phase==='playing')
   :n.id===local2ID&&online.secondary?.predictor.state?online.secondary.predictor.visual(dt,phase==='playing')
   :online.buffer.tank(n.id,sample,moveTank));
- const activeIDs=new Set(tanks.filter(t=>t.alive&&ownIDs.has(t.id)&&phase==='playing').map(t=>t.id));
- online.shots.prune(now,online.connected?activeIDs:new Set());
- const present=new Set();bullets=[];
+ if(phase==='playing'&&online.connected)for(const t of tanks)if(t.alive&&ownIDs.has(t.id))activeIDs.add(t.id);
+ online.shots.prune(now,activeIDs);
+ bullets.length=0;
  for(const n of s.bullets){
   let item=phase!=='playing'?{...n}:ownIDs.has(n.owner)?localBulletVisual(n,now,since):projectileOnTimeline(n,sample);
   if(!item)continue;
@@ -1821,7 +1830,7 @@ function pickupLifetime(c=cols,r=rows){const cap=pickupCap(c,r);return cap>0?Mat
 function seedPickups(){for(let i=0;i<startingPickups();i++)spawnPower();}
 function pickupLimitText(size=currentRules().mapSize){const [c,r]=mapDimensions(size);return startingPickups(c,r)+' starting pickups · '+pickupCap(c,r)+' maximum on this maze.';}
 function syncControlsPickupInfo(){const el=$('controlsPickupInfo');if(!el)return;const [c,r]=mapDimensions();el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));}
-function pickupInterval(){return currentRules().pickupRate==='superfast'?[1,2]:currentRules().pickupRate==='normal'?[4,6]:currentRules().pickupRate==='slow'?[7,10]:[2,3.5];}
+function pickupInterval(){return currentRules().pickupRate==='off'?[Infinity,Infinity]:currentRules().pickupRate==='superfast'?[1,2]:currentRules().pickupRate==='normal'?[4,6]:currentRules().pickupRate==='slow'?[7,10]:[2,3.5];}
 function roomStartError(data=roomData()){
  const players=data?.players.filter(p=>p.connected!==false)||[],r=data?.rules||currentRules();
  if(new Set(players.map(teamKey)).size<2)return 'Choose at least two opposing sides.';
@@ -1990,13 +1999,13 @@ function stepLocalObjectives(dt){
    if(carried&&own.home&&distance(t,{x:own.homeX,y:own.homeY})<t.r+17&&!rayWalls(t.x,t.y,own.homeX-t.x,own.homeY-t.y,0)){recordLocalObjective(t,'captures');resetLocalFlag(carried);addObjectivePoint(t);pickupSound();toast(teamName(t.team)+' CAPTURED · +1',2);if(phase!=='playing')return;}
   }
  }else if(o.mode==='koth'){
-  const sides=new Map(),occupants=[];for(const t of tanks)if(t.alive&&t.invulnerable<=0&&distance(t,{x:o.hillX,y:o.hillY})<=o.radius&&!rayWalls(o.hillX,o.hillY,t.x-o.hillX,t.y-o.hillY,0)){sides.set(t.team>0?t.team:-t.id-1,t);occupants.push(t);}
-  o.contested=sides.size>1;if(sides.size!==1){o.owner=0;o.hold=0;}else{for(const pilot of occupants)recordLocalObjective(pilot,'hillSeconds',dt);const [side,t]=sides.entries().next().value;if(o.owner!==side)o.hold=0;o.owner=side;o.hold+=dt;while(o.hold>=1-1e-9){o.hold=Math.max(0,o.hold-1);addObjectivePoint(t);if(phase!=='playing')return;}}
+  let side=0,owner=null,sideCount=0;for(const t of tanks)if(t.alive&&t.invulnerable<=0&&Math.hypot(t.x-o.hillX,t.y-o.hillY)<=o.radius&&!rayWalls(o.hillX,o.hillY,t.x-o.hillX,t.y-o.hillY,0)){const key=t.team>0?t.team:-t.id-1;if(!sideCount){side=key;owner=t;sideCount=1;}else if(key!==side){sideCount=2;break;}}
+  o.contested=sideCount>1;if(sideCount!==1){o.owner=0;o.hold=0;}else{for(const pilot of tanks)if(pilot.alive&&pilot.invulnerable<=0&&(pilot.team>0?pilot.team:-pilot.id-1)===side&&Math.hypot(pilot.x-o.hillX,pilot.y-o.hillY)<=o.radius&&!rayWalls(o.hillX,o.hillY,pilot.x-o.hillX,pilot.y-o.hillY,0))recordLocalObjective(pilot,'hillSeconds',dt);if(o.owner!==side)o.hold=0;o.owner=side;o.hold+=dt;while(o.hold>=1-1e-9){o.hold=Math.max(0,o.hold-1);addObjectivePoint(owner);if(phase!=='playing')return;}}
  }
  if(roundClock<=0){const leader=objectiveLeader();if(leader>=0)endLocalObjective(leader);else beginLocalSuddenDeath();}
 }
 function objectiveGoal(t){const o=localObjectives;if(!o||o.suddenDeath)return null;if(o.mode==='koth')return{x:o.hillX,y:o.hillY};const own=o.flags.find(f=>f.team===t.team),enemy=o.flags.find(f=>f.team!==t.team),carried=o.flags.find(f=>f.carrier===t.id);if(!own||!enemy)return null;if(!own.home&&(carried||t.id%2===0))return own;if(carried)return{x:own.homeX,y:own.homeY};if(enemy.carrier>=0){const c=tanks.find(t=>t.id===enemy.carrier);if(c?.team===t.team)return !own.home?own:{x:own.homeX,y:own.homeY};}return enemy;}
-function objectiveRoute(t,point){const a=t.ai,goal=cellAt(point.x,point.y);if(a.goal!==goal||a.pathClock<=0||!a.path.length){a.goal=goal;a.pathClock=.45;a.path=bfs(cellAt(t.x,t.y),goal);}const v=routeControl(t,{...point,r:RADIUS});if(distance(t,point)<10)v.drive=0;return v;}
+function objectiveRoute(t,point){const a=t.ai,goal=cellAt(point.x,point.y);if(a.goal!==goal||a.pathClock<=0||!a.path.length){a.goal=goal;a.pathClock=.45;a.path=bfs(cellAt(t.x,t.y),goal,a);}const v=routeControl(t,{...point,r:RADIUS});if(distance(t,point)<10)v.drive=0;return v;}
 function shortTeamName(team){const s=Array.from(teamName(team));return s.length>14?s.slice(0,13).join('')+'…':s.join('');}
 function drawObjectives(){
  const o=objectiveState();if(!o||!objectiveMode()||o.suddenDeath||['menu','onlineLobby','matchOver'].includes(phase))return;
@@ -2428,11 +2437,11 @@ function beginLocalSuddenDeath(replay=false){
 }
 function stepLocalSuddenDeath(){
  if(!suddenDeath()||phase!=='playing')return;
- const contenders=tanks.filter(t=>t.suddenLife),live=contenders.filter(t=>t.alive),sides=new Set(live.map(teamKey));
- if(sides.size===1){endLocalObjective(live[0].id);return;}
- if(sides.size>1)return;
- if(new Set(contenders.map(teamKey)).size>=2)beginLocalSuddenDeath(true);
- else endLocalObjective(contenders[0]?.id??-1);
+ let liveSide='',livePilot=null,multipleLive=false,contenderSide='',contenderPilot=null,multipleContenders=false;
+ for(const t of tanks){if(!t.suddenLife)continue;const key=teamKey(t);contenderPilot??=t;if(!contenderSide)contenderSide=key;else if(key!==contenderSide)multipleContenders=true;if(!t.alive)continue;livePilot??=t;if(!liveSide)liveSide=key;else if(key!==liveSide)multipleLive=true;}
+ if(livePilot&&!multipleLive){endLocalObjective(livePilot.id);return;}
+ if(multipleLive)return;
+ if(multipleContenders)beginLocalSuddenDeath(true);else endLocalObjective(contenderPilot?.id??-1);
 }
 // v3.5: online room chat is a floating region, never part of arena sizing.
 const roomChat={open:false,code:'',messages:[],lastID:0,unread:0,pending:false};

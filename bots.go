@@ -9,6 +9,16 @@ type BotState struct {
 	Target, Goal                      int
 	Path                              []int
 	LastX, LastY                      float64
+
+	// Reused A* scratch. A bot replans frequently, while the maze size is stable
+	// for the whole round; keeping these buffers on the bot avoids per-think GC.
+	pathCost       []float64
+	pathPrev       []int
+	pathClosed     []bool
+	pathPenalty    []float64
+	pathScratch    []int
+	dodgeThreats   []botProjectileThreat
+	grenadeThreats []botGrenadeThreat
 }
 type botTuning struct {
 	speed, turn, think, reaction, error, lead float64
@@ -44,7 +54,7 @@ func (g *Game) buildNavigation() {
 				continue
 			}
 			xx, yy := g.cellCenter(j)
-			if g.rayWalls(x, y, xx-x, yy-y, tankRadius+1) == nil {
+			if !g.rayBlocked(x, y, xx-x, yy-y, tankRadius+1) {
 				g.Neighbors[i] = append(g.Neighbors[i], j)
 			}
 		}
@@ -62,16 +72,30 @@ func (g *Game) botPath(t, enemy *Tank) []int {
 	if from == to {
 		return nil
 	}
-	cost := make([]float64, n)
-	prev := make([]int, n)
-	closed := make([]bool, n)
-	for i := range cost {
+	a := t.AI
+	if a == nil {
+		return nil
+	}
+	if cap(a.pathCost) < n {
+		a.pathCost = make([]float64, n)
+		a.pathPrev = make([]int, n)
+		a.pathClosed = make([]bool, n)
+		a.pathPenalty = make([]float64, n)
+	} else {
+		a.pathCost = a.pathCost[:n]
+		a.pathPrev = a.pathPrev[:n]
+		a.pathClosed = a.pathClosed[:n]
+		a.pathPenalty = a.pathPenalty[:n]
+	}
+	cost, prev, closed, penalty := a.pathCost, a.pathPrev, a.pathClosed, a.pathPenalty
+	for i := 0; i < n; i++ {
 		cost[i] = math.Inf(1)
 		prev[i] = -1
+		closed[i] = false
+		penalty[i] = 0
 	}
 	cost[from] = 0
 	// Allies reserve nearby routes, encouraging a second approach when available.
-	penalty := make([]float64, n)
 	for _, ally := range g.Tanks {
 		if ally != nil && ally.Alive && ally.ID != t.ID && t.Team > 0 && ally.Team == t.Team && ally.AI != nil {
 			for _, cell := range ally.AI.Path {
@@ -109,9 +133,10 @@ func (g *Game) botPath(t, enemy *Tank) []int {
 	if prev[to] < 0 {
 		return nil
 	}
-	path := []int{}
+	path := a.pathScratch[:0]
 	for at := to; at != from; at = prev[at] {
 		if at < 0 || len(path) > n {
+			a.pathScratch = path[:0]
 			return nil
 		}
 		path = append(path, at)
@@ -119,6 +144,7 @@ func (g *Game) botPath(t, enemy *Tank) []int {
 	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
 		path[i], path[j] = path[j], path[i]
 	}
+	a.pathScratch = path
 	return path
 }
 func (g *Game) botLead(t, e *Tank, d botTuning) (float64, float64) {
@@ -138,7 +164,7 @@ func (g *Game) botLead(t, e *Tank, d botTuning) (float64, float64) {
 	}
 	vx, vy := e.VX*d.lead*delay, e.VY*d.lead*delay
 	f := 1.0
-	if wall := g.rayWalls(e.X, e.Y, vx, vy, e.R+1); wall != nil {
+	if wall, ok := g.rayWallsHit(e.X, e.Y, vx, vy, e.R+1); ok {
 		f = math.Max(0, wall.T-.01)
 	}
 	return e.X + vx*f, e.Y + vy*f
@@ -165,9 +191,9 @@ func (g *Game) botShot(t, e *Tank, angle, ex, ey float64, banks int) bool {
 		banks = 127
 	}
 	for k := 0; k <= banks && left > 1; k++ {
-		wall := g.projectileWall(t.Power, x, y, ux*left, uy*left, radius)
+		wall, wallOK := g.projectileWallHit(t.Power, x, y, ux*left, uy*left, radius)
 		stop := 1.0
-		if wall != nil {
+		if wallOK {
 			stop = wall.T
 		}
 		if at, ok := circleHit(x, y, ux*left, uy*left, ex, ey, targetRadius); ok && at < stop {
@@ -177,7 +203,7 @@ func (g *Game) botShot(t, e *Tank, angle, ex, ey float64, banks int) bool {
 		x += ux * length
 		y += uy * length
 		left -= length
-		if wall == nil {
+		if !wallOK {
 			break
 		}
 		if wall.NX != 0 {
@@ -195,10 +221,10 @@ func (g *Game) botAim(t, e *Tank, d botTuning) (float64, bool) {
 	ex, ey := g.botLead(t, e, d)
 	a := math.Atan2(ey-t.Y, ex-t.X)
 	if t.Power == "grenade" {
-		return a, dist(t.X, t.Y, e.X, e.Y) < cellSize*3 && g.rayWalls(t.X, t.Y, e.X-t.X, e.Y-t.Y, 6) == nil
+		return a, dist(t.X, t.Y, e.X, e.Y) < cellSize*3 && !g.rayBlocked(t.X, t.Y, e.X-t.X, e.Y-t.Y, 6)
 	}
 	if t.Power == "homing" {
-		return a, dist(t.X, t.Y, e.X, e.Y) < missileRange && g.rayWalls(t.X, t.Y, e.X-t.X, e.Y-t.Y, 5) == nil
+		return a, dist(t.X, t.Y, e.X, e.Y) < missileRange && !g.rayBlocked(t.X, t.Y, e.X-t.X, e.Y-t.Y, 5)
 	}
 	banks := 0
 	if d.bank {
@@ -245,13 +271,15 @@ func (g *Game) botAim(t, e *Tank, d botTuning) (float64, bool) {
 	}
 	return best, found
 }
+
+type botProjectileThreat struct{ x, y, vx, vy, start, end, r float64 }
+
 func (g *Game) botDodge(t *Tank, d botTuning, angle, drive float64) (float64, float64) {
 	horizon := .6
 	if t.Difficulty == "hard" {
 		horizon = .85
 	}
-	type threat struct{ x, y, vx, vy, start, end, r float64 }
-	threats := []threat{}
+	threats := t.AI.dodgeThreats[:0]
 	for _, b := range g.Bullets {
 		if b.Dead || !g.canDamage(b.Owner, t) || ((b.Kind == "scatter" || b.Kind == "rapid") && b.Owner == t.ID) || dist(t.X, t.Y, b.X, b.Y) > math.Max(350, math.Hypot(b.VX, b.VY)*horizon+80) {
 			continue
@@ -261,13 +289,13 @@ func (g *Game) botDodge(t *Tank, d botTuning, angle, drive float64) (float64, fl
 		}
 		x, y, vx, vy, left, elapsed := b.X, b.Y, b.VX, b.VY, math.Min(horizon, b.Life), 0.0
 		for k := 0; k < 3 && left > .001; k++ {
-			w := g.projectileWall(b.Kind, x, y, vx*left, vy*left, b.R)
+			w, wallOK := g.projectileWallHit(b.Kind, x, y, vx*left, vy*left, b.R)
 			span := left
-			if w != nil {
+			if wallOK {
 				span *= w.T
 			}
-			threats = append(threats, threat{x, y, vx, vy, elapsed, elapsed + span, b.R})
-			if w == nil {
+			threats = append(threats, botProjectileThreat{x, y, vx, vy, elapsed, elapsed + span, b.R})
+			if !wallOK {
 				break
 			}
 			x += vx*span + w.NX*.12
@@ -282,6 +310,7 @@ func (g *Game) botDodge(t *Tank, d botTuning, angle, drive float64) (float64, fl
 			elapsed += span
 		}
 	}
+	t.AI.dodgeThreats = threats
 	if len(threats) == 0 {
 		return angle, drive
 	}
@@ -295,7 +324,7 @@ func (g *Game) botDodge(t *Tank, d botTuning, angle, drive float64) (float64, fl
 			h += clamp(diff, -d.turn*step, d.turn*step)
 			dx, dy := math.Cos(h)*d.speed*v*math.Max(0, math.Cos(diff))*step, math.Sin(h)*d.speed*v*math.Max(0, math.Cos(diff))*step
 			f := 1.0
-			if w := g.movementWall(t.GhostTime > end, x, y, dx, dy, t.R+.5); w != nil {
+			if w, ok := g.movementWallHit(t.GhostTime > end, x, y, dx, dy, t.R+.5); ok {
 				f = math.Max(0, w.T-.01)
 			}
 			dx *= f
@@ -351,7 +380,10 @@ type botGrenadeThreat struct {
 // a small clearance from the grenade body so they do not trigger impact
 // detonation, but they do not flee the grenade's full blast radius.
 func (g *Game) botGrenadeThreats(t *Tank, d botTuning, horizon float64) []botGrenadeThreat {
-	var threats []botGrenadeThreat // zero allocation when no relevant grenade exists
+	var threats []botGrenadeThreat
+	if t.AI != nil {
+		threats = t.AI.grenadeThreats[:0] // zero allocation after the first relevant grenade
+	}
 	for _, b := range g.Bullets {
 		if b == nil || b.Dead || b.Kind != "grenade" || b.Life <= 0 {
 			continue
@@ -378,9 +410,9 @@ func (g *Game) botGrenadeThreats(t *Tank, d botTuning, horizon float64) []botGre
 			rest, segmentStart := dt, elapsed
 			for step := 0; step < 4 && rest > 1e-6; step++ {
 				dx, dy := vx*rest, vy*rest
-				wall := g.rayWalls(x, y, dx, dy, b.R)
+				wall, wallOK := g.rayWallsHit(x, y, dx, dy, b.R)
 				fraction := 1.0
-				if wall != nil {
+				if wallOK {
 					fraction = wall.T
 				}
 				span := rest * fraction
@@ -389,7 +421,7 @@ func (g *Game) botGrenadeThreats(t *Tank, d botTuning, horizon float64) []botGre
 				y += dy * fraction
 				segmentStart += span
 				rest -= span
-				if wall == nil {
+				if !wallOK {
 					break
 				}
 				x += wall.NX * .08
@@ -403,6 +435,9 @@ func (g *Game) botGrenadeThreats(t *Tank, d botTuning, horizon float64) []botGre
 			}
 			elapsed += dt
 		}
+	}
+	if t.AI != nil {
+		t.AI.grenadeThreats = threats
 	}
 	return threats
 }
@@ -427,7 +462,7 @@ func (g *Game) botAvoidGrenades(t *Tank, d botTuning, angle, drive float64) (flo
 			speed := d.speed * v * math.Max(0, math.Cos(diff))
 			dx, dy := math.Cos(heading)*speed*step, math.Sin(heading)*speed*step
 			f := 1.0
-			if w := g.movementWall(t.GhostTime > end, x, y, dx, dy, t.R+.5); w != nil {
+			if w, ok := g.movementWallHit(t.GhostTime > end, x, y, dx, dy, t.R+.5); ok {
 				f = math.Max(0, w.T-.01)
 			}
 			nx, ny := x+dx*f, y+dy*f
@@ -546,7 +581,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 	// Remotely detonate against an exposed opponent, not an ally or a guessed hit.
 	if a.Shot <= 0 {
 		for _, b := range g.Bullets {
-			if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && b.Age > .22 && dist(b.X, b.Y, enemy.X, enemy.Y) < blastRadius+enemy.R && g.rayWalls(b.X, b.Y, enemy.X-b.X, enemy.Y-b.Y, 0) == nil {
+			if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && b.Age > .22 && dist(b.X, b.Y, enemy.X, enemy.Y) < blastRadius+enemy.R && !g.rayBlocked(b.X, b.Y, enemy.X-b.X, enemy.Y-b.Y, 0) {
 				g.detonateOwned(t)
 				a.Shot = d.reaction
 				break
@@ -594,13 +629,13 @@ func (g *Game) botControl(t *Tank, dt float64) {
 				x, y = g.cellCenter(a.Path[0])
 				for i := 1; i < len(a.Path) && i < 4; i++ {
 					nx, ny := g.cellCenter(a.Path[i])
-					if g.rayWalls(t.X, t.Y, nx-t.X, ny-t.Y, t.R+2) != nil {
+					if g.rayBlocked(t.X, t.Y, nx-t.X, ny-t.Y, t.R+2) {
 						break
 					}
 					x, y = nx, ny
 				}
 			}
-			if g.rayWalls(t.X, t.Y, x-t.X, y-t.Y, t.R+1) != nil {
+			if g.rayBlocked(t.X, t.Y, x-t.X, y-t.Y, t.R+1) {
 				cx, cy := g.cellCenter(g.cellAt(t.X, t.Y))
 				if dist(t.X, t.Y, cx, cy) > 5 {
 					x, y = cx, cy
@@ -637,7 +672,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		}
 		safe := g.botShot(t, enemy, t.Angle, ex, ey, bank)
 		if t.Power == "homing" || t.Power == "grenade" {
-			safe = g.rayWalls(t.X, t.Y, enemy.X-t.X, enemy.Y-t.Y, 5) == nil
+			safe = !g.rayBlocked(t.X, t.Y, enemy.X-t.X, enemy.Y-t.Y, 5)
 		}
 		hasGrenade := false
 		for _, b := range g.Bullets {

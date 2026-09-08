@@ -64,6 +64,8 @@ type Room struct {
 	LastAction   time.Time
 	NextMember   uint64
 	Kicked       map[[32]byte]time.Time
+
+	state stateScratch // reusable 60 Hz snapshot buffers; encoded before reuse
 }
 type Client struct {
 	ws                    *wsConn
@@ -891,6 +893,103 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 	return nil
 }
 func rounded(v float64) float64 { return math.Round(v*100) / 100 }
+
+type stateScratch struct {
+	tanks          []Tank
+	bullets        []Bullet
+	machineBullets [][12]float64
+	pickups        []Pickup
+}
+
+type stateWire struct {
+	// Field order matches encoding/json's lexicographic map-key order from the
+	// canonical stateMessage so the optimized packet remains byte-for-byte stable.
+	Bullets        []Bullet        `json:"bullets"`
+	Events         []Event         `json:"events"`
+	Generation     int             `json:"generation"`
+	MachineBullets [][12]float64   `json:"machineBullets,omitempty"`
+	MatchStats     json.RawMessage `json:"matchStats,omitempty"`
+	Objectives     *ObjectiveState `json:"objectives"`
+	Phase          string          `json:"phase"`
+	PhaseTime      float64         `json:"phaseTime"`
+	Pickups        []Pickup        `json:"pickups"`
+	Round          int             `json:"round"`
+	RoundClock     float64         `json:"roundClock"`
+	Rules          MatchRules      `json:"rules"`
+	Scores         [maxTanks]int   `json:"scores"`
+	Tanks          []Tank          `json:"tanks"`
+	Tick           int             `json:"tick"`
+	Type           string          `json:"type"`
+	Winner         int             `json:"winner"`
+	World          *World          `json:"world,omitempty"`
+}
+
+// The 60 Hz broadcast path reuses room-owned slice capacity. JSON encoding is
+// synchronous, so the buffers are never mutated while queued packet bytes use them.
+func (h *Hub) stateWire(r *Room) stateWire {
+	g, z := r.Game, &r.state
+	z.tanks = z.tanks[:0]
+	z.bullets = z.bullets[:0]
+	z.machineBullets = z.machineBullets[:0]
+	z.pickups = z.pickups[:0]
+	if cap(z.tanks) < maxTanks {
+		z.tanks = make([]Tank, 0, maxTanks)
+	}
+	if z.bullets == nil || cap(z.bullets) < len(g.Bullets) {
+		z.bullets = make([]Bullet, 0, len(g.Bullets))
+	}
+	if cap(z.machineBullets) < len(g.Bullets) {
+		z.machineBullets = make([][12]float64, 0, len(g.Bullets))
+	}
+	if z.pickups == nil || cap(z.pickups) < len(g.Pickups) {
+		z.pickups = make([]Pickup, 0, len(g.Pickups))
+	}
+	for _, t := range g.Tanks {
+		if t == nil {
+			continue
+		}
+		v := *t
+		v.X = rounded(v.X)
+		v.Y = rounded(v.Y)
+		v.Angle = math.Round(v.Angle*10000) / 10000
+		v.VX = rounded(v.VX)
+		v.VY = rounded(v.VY)
+		v.Cooldown = rounded(v.Cooldown)
+		v.Invulnerable = rounded(v.Invulnerable)
+		v.Shield = rounded(v.Shield)
+		v.PowerTime = rounded(v.PowerTime)
+		v.Recoil = rounded(v.Recoil)
+		v.Track = rounded(v.Track)
+		z.tanks = append(z.tanks, v)
+	}
+	for _, b := range g.Bullets {
+		v := *b
+		v.X = rounded(v.X)
+		v.Y = rounded(v.Y)
+		v.VX = rounded(v.VX)
+		v.VY = rounded(v.VY)
+		v.Age = rounded(v.Age)
+		v.Life = rounded(v.Life)
+		if v.Kind == "rapid" {
+			color := tankColorIndex[v.Color]
+			z.machineBullets = append(z.machineBullets, [12]float64{float64(v.ID), float64(v.Owner), float64(v.ShotSerial), float64(v.SpawnSerial), v.X, v.Y, v.VX, v.VY, v.Age, v.Life, float64(v.Bounces), float64(color)})
+		} else {
+			z.bullets = append(z.bullets, v)
+		}
+	}
+	for _, p := range g.Pickups {
+		v := *p
+		v.Age = rounded(v.Age)
+		v.Life = rounded(v.Life)
+		z.pickups = append(z.pickups, v)
+	}
+	wire := stateWire{Type: "state", Tick: g.Tick, Generation: g.Generation, Phase: g.Phase, PhaseTime: rounded(g.PhaseTime), Round: g.Round, RoundClock: rounded(g.Clock), Winner: g.Winner, Scores: g.Scores, Tanks: z.tanks, Bullets: z.bullets, MachineBullets: z.machineBullets, Pickups: z.pickups, Events: g.events, Rules: g.settings(), Objectives: g.Objectives}
+	if g.Phase == "matchOver" && g.matchReportWire != nil {
+		wire.MatchStats = g.matchReportWire
+	}
+	return wire
+}
+
 func (h *Hub) stateMessage(r *Room) map[string]any {
 	g := r.Game
 	ts := make([]Tank, 0, maxTanks)
@@ -959,25 +1058,24 @@ func (h *Hub) sendState(c *Client, r *Room) {
 // No per-client secrets exist in state. Encode once and share immutable bytes.
 // Map-bearing packets remain reliable and always precede replaceable snapshots.
 func (h *Hub) broadcastState(r *Room) {
-	s := h.stateMessage(r)
+	s := h.stateWire(r)
 	data, ok := encodePacket(s)
 	if !ok {
 		return
 	}
 	var full []byte
-	for _, p := range r.members() {
-		c := p.Client
+	send := func(c *Client) bool {
 		if c == nil {
-			continue
+			return true
 		}
 		reliable := c.mapGeneration != r.Game.Generation
 		payload := data
 		if reliable && r.Game.Generation > 0 {
 			if full == nil {
-				s["world"] = r.Game.World
+				s.World = &r.Game.World
 				full, ok = encodePacket(s)
 				if !ok {
-					return
+					return false
 				}
 			}
 			payload = full
@@ -985,8 +1083,22 @@ func (h *Hub) broadcastState(r *Room) {
 		if c.enqueueStateBytes(payload, reliable) {
 			c.mapGeneration = r.Game.Generation
 		}
+		return true
+	}
+	// Snapshot delivery does not depend on spectator ordering. Avoid allocating
+	// Room.members()/sorted spectator IDs on every 60 Hz broadcast.
+	for _, p := range r.Players {
+		if p != nil && !send(p.Client) {
+			return
+		}
+	}
+	for _, p := range r.Spectators {
+		if p != nil && !send(p.Client) {
+			return
+		}
 	}
 }
+
 func (h *Hub) tick(now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

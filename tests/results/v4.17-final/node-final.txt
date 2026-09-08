@@ -1,0 +1,346 @@
+TAP version 13
+# Subtest: one accepted volley keeps a monotonic cooldown deadline despite repeated snapshots
+ok 1 - one accepted volley keeps a monotonic cooldown deadline despite repeated snapshots
+  ---
+  duration_ms: 1.428554
+  type: 'test'
+  ...
+# Subtest: round completion clears pending effects and stops combat timing
+ok 2 - round completion clears pending effects and stops combat timing
+  ---
+  duration_ms: 0.423207
+  type: 'test'
+  ...
+# Subtest: prediction never mutates server tank state, ammo, or score
+ok 3 - prediction never mutates server tank state, ammo, or score
+  ---
+  duration_ms: 0.486784
+  type: 'test'
+  ...
+# Subtest: matching authority suppresses duplicate sound and preserves predicted cooldown
+ok 4 - matching authority suppresses duplicate sound and preserves predicted cooldown
+  ---
+  duration_ms: 0.22106
+  type: 'test'
+  ...
+# Subtest: P1 fire does not consume P2 prediction, cooldown, or edges
+ok 5 - P1 fire does not consume P2 prediction, cooldown, or edges
+  ---
+  duration_ms: 0.238673
+  type: 'test'
+  ...
+# Subtest: dry fire, cooldown, wall-embedded ghost, and exhausted special charges have no preview
+ok 6 - dry fire, cooldown, wall-embedded ghost, and exhausted special charges have no preview
+  ---
+  duration_ms: 0.32754
+  type: 'test'
+  ...
+# Subtest: machine-gun preview has zero cooldown, a 60Hz emission ceiling, and bounded pending shots
+ok 7 - machine-gun preview has zero cooldown, a 60Hz emission ceiling, and bounded pending shots
+  ---
+  duration_ms: 2.558219
+  type: 'test'
+  ...
+# Subtest: unconfirmed charge use blocks a speculative fourth cannon shot
+ok 8 - unconfirmed charge use blocks a speculative fourth cannon shot
+  ---
+  duration_ms: 0.333456
+  type: 'test'
+  ...
+# Subtest: grenade hold cannot repeatedly throw or accidentally predict a blast
+ok 9 - grenade hold cannot repeatedly throw or accidentally predict a blast
+  ---
+  duration_ms: 0.369693
+  type: 'test'
+  ...
+# Subtest: rejected previews expire and cannot hide a later valid server shot forever
+ok 10 - rejected previews expire and cannot hide a later valid server shot forever
+  ---
+  duration_ms: 0.564869
+  type: 'test'
+  ...
+# Subtest: respawn and replacement life cannot inherit old cosmetic bullets or cooldown
+ok 11 - respawn and replacement life cannot inherit old cosmetic bullets or cooldown
+  ---
+  duration_ms: 0.216447
+  type: 'test'
+  ...
+# Subtest: short remote packet gap preserves bounded angular velocity
+ok 12 - short remote packet gap preserves bounded angular velocity
+  ---
+  duration_ms: 0.621507
+  type: 'test'
+  ...
+# Subtest: remote turn extrapolation never crosses a respawn
+ok 13 - remote turn extrapolation never crosses a respawn
+  ---
+  duration_ms: 0.143995
+  type: 'test'
+  ...
+# Subtest: 60 Hz movement follows authoritative forward/reverse/turn rates
+ok 14 - 60 Hz movement follows authoritative forward/reverse/turn rates
+  ---
+  duration_ms: 3.484329
+  type: 'test'
+  ...
+# Subtest: stick movement and angle wrapping stay finite and bounded
+ok 15 - stick movement and angle wrapping stay finite and bounded
+  ---
+  duration_ms: 0.392853
+  type: 'test'
+  ...
+# Subtest: real client wall collision never crosses a solid wall
+ok 16 - real client wall collision never crosses a solid wall
+  ---
+  duration_ms: 6.897482
+  type: 'test'
+  ...
+# Subtest: prediction responds before receiving any authoritative acknowledgement
+ok 17 - prediction responds before receiving any authoritative acknowledgement
+  ---
+  duration_ms: 0.856869
+  type: 'test'
+  ...
+# Subtest: held-input ackSteps replays exactly once including turns and releases
+ok 18 - held-input ackSteps replays exactly once including turns and releases
+  ---
+  duration_ms: 2.661211
+  type: 'test'
+  ...
+# Subtest: two server ticks for one held command do not double-predict the second tick
+ok 19 - two server ticks for one held command do not double-predict the second tick
+  ---
+  duration_ms: 0.286966
+  type: 'test'
+  ...
+# Subtest: server corrections are visual offsets, not forces applied to simulation
+ok 20 - server corrections are visual offsets, not forces applied to simulation
+  ---
+  duration_ms: 0.735668
+  type: 'test'
+  ...
+# Subtest: sub-tick rendering supports refresh rates above 60 Hz
+ok 21 - sub-tick rendering supports refresh rates above 60 Hz
+  ---
+  duration_ms: 0.285129
+  type: 'test'
+  ...
+# Subtest: death and generation reset discard prediction history and render offsets
+ok 22 - death and generation reset discard prediction history and render offsets
+  ---
+  duration_ms: 0.540186
+  type: 'test'
+  ...
+# Subtest: prediction history is bounded through stalled connections
+ok 23 - prediction history is bounded through stalled connections
+  ---
+  duration_ms: 5.742619
+  type: 'test'
+  ...
+# Subtest: snapshot buffer rejects duplicates and stale ticks
+ok 24 - snapshot buffer rejects duplicates and stale ticks
+  ---
+  duration_ms: 0.574098
+  type: 'test'
+  ...
+# Subtest: jittered delivery never restarts or reverses remote playback
+ok 25 - jittered delivery never restarts or reverses remote playback
+  ---
+  duration_ms: 10.255274
+  type: 'test'
+  ...
+# Subtest: interpolation uses the short path across the angle wrap boundary
+ok 26 - interpolation uses the short path across the angle wrap boundary
+  ---
+  duration_ms: 0.223431
+  type: 'test'
+  ...
+# Subtest: remote extrapolation is capped and cannot tunnel through a wall
+ok 27 - remote extrapolation is capped and cannot tunnel through a wall
+  ---
+  duration_ms: 1.325285
+  type: 'test'
+  ...
+# Subtest: latest death is authoritative even with an older render buffer
+ok 28 - latest death is authoritative even with an older render buffer
+  ---
+  duration_ms: 0.182697
+  type: 'test'
+  ...
+# Subtest: real client motion matches stored cross-language Go fixtures
+ok 29 - real client motion matches stored cross-language Go fixtures
+  ---
+  duration_ms: 18.548046
+  type: 'test'
+  ...
+# Subtest: speed boost matches keyboard, touch and reverse rates
+ok 30 - speed boost matches keyboard, touch and reverse rates
+  ---
+  duration_ms: 0.451265
+  type: 'test'
+  ...
+# Subtest: boost steering is faster but bounded
+ok 31 - boost steering is faster but bounded
+  ---
+  duration_ms: 0.113885
+  type: 'test'
+  ...
+# Subtest: boost expiry uses the same pre-movement tick as Go
+ok 32 - boost expiry uses the same pre-movement tick as Go
+  ---
+  duration_ms: 0.092895
+  type: 'test'
+  ...
+# Subtest: input replay crosses boost expiration without double speed or time
+ok 33 - input replay crosses boost expiration without double speed or time
+  ---
+  duration_ms: 1.639406
+  type: 'test'
+  ...
+# Subtest: boost sub-tick visuals do not consume simulation timer
+ok 34 - boost sub-tick visuals do not consume simulation timer
+  ---
+  duration_ms: 0.139386
+  type: 'test'
+  ...
+# Subtest: boosted wall contact cannot tunnel
+ok 35 - boosted wall contact cannot tunnel
+  ---
+  duration_ms: 2.794498
+  type: 'test'
+  ...
+# Subtest: five speed stacks scale movement and turning without tunneling
+ok 36 - five speed stacks scale movement and turning without tunneling
+  ---
+  duration_ms: 1.971876
+  type: 'test'
+  ...
+# Subtest: remote objective respawn never blends between different life epochs
+ok 37 - remote objective respawn never blends between different life epochs
+  ---
+  duration_ms: 0.154597
+  type: 'test'
+  ...
+# Subtest: newest respawn cannot render the previous life from an older buffer pair
+ok 38 - newest respawn cannot render the previous life from an older buffer pair
+  ---
+  duration_ms: 0.099177
+  type: 'test'
+  ...
+# Subtest: Ghost movement matches Go fixtures across walls, speed stacking and expiry
+ok 39 - Ghost movement matches Go fixtures across walls, speed stacking and expiry
+  ---
+  duration_ms: 12.567397
+  type: 'test'
+  ...
+# Subtest: Ghost expiry solidifies only once, including high refresh subtick rendering
+ok 40 - Ghost expiry solidifies only once, including high refresh subtick rendering
+  ---
+  duration_ms: 1.053992
+  type: 'test'
+  ...
+# Subtest: Remote Ghost inside a wall is not pushed out by interpolation
+ok 41 - Remote Ghost inside a wall is not pushed out by interpolation
+  ---
+  duration_ms: 0.706606
+  type: 'test'
+  ...
+# Subtest: Remote Ghost expiry never blends solid and phasing wall positions
+ok 42 - Remote Ghost expiry never blends solid and phasing wall positions
+  ---
+  duration_ms: 0.660304
+  type: 'test'
+  ...
+# Subtest: Independent predictors replay Ghost and Super Speed with delayed corrections
+ok 43 - Independent predictors replay Ghost and Super Speed with delayed corrections
+  ---
+  duration_ms: 21.655776
+  type: 'test'
+  ...
+# Subtest: eight distinct named dark palettes use neon-blue interface accent
+ok 44 - eight distinct named dark palettes use neon-blue interface accent
+  ---
+  duration_ms: 3.24105
+  type: 'test'
+  ...
+# Subtest: canonical color identity maps once into the dark palette
+ok 45 - canonical color identity maps once into the dark palette
+  ---
+  duration_ms: 1.41539
+  type: 'test'
+  ...
+# Subtest: every power-up has a dark palette paint
+ok 46 - every power-up has a dark palette paint
+  ---
+  duration_ms: 3.215271
+  type: 'test'
+  ...
+# Subtest: paint mapping preserves alpha and ignores unknown non-color objects
+ok 47 - paint mapping preserves alpha and ignores unknown non-color objects
+  ---
+  duration_ms: 1.904525
+  type: 'test'
+  ...
+# Subtest: compact machine-gun records expand with exact radius, volley, color and state
+ok 48 - compact machine-gun records expand with exact radius, volley, color and state
+  ---
+  duration_ms: 0.739681
+  type: 'test'
+  ...
+# Subtest: compact decoder bounds records and rejects malformed or nonfinite values
+ok 49 - compact decoder bounds records and rejects malformed or nonfinite values
+  ---
+  duration_ms: 5.684392
+  type: 'test'
+  ...
+# Subtest: both local machine guns predict independently and allow later confirmed streaming
+ok 50 - both local machine guns predict independently and allow later confirmed streaming
+  ---
+  duration_ms: 4.309484
+  type: 'test'
+  ...
+# Subtest: appearance is dark-only with neon blue primary
+ok 51 - appearance is dark-only with neon blue primary
+  ---
+  duration_ms: 2.335758
+  type: 'test'
+  ...
+# Subtest: dark bootstrap contains no light-mode state or browser color-scheme listener
+ok 52 - dark bootstrap contains no light-mode state or browser color-scheme listener
+  ---
+  duration_ms: 0.180223
+  type: 'test'
+  ...
+# Subtest: eight stable dark palette colors remain distinct
+ok 53 - eight stable dark palette colors remain distinct
+  ---
+  duration_ms: 1.05445
+  type: 'test'
+  ...
+# Subtest: canonical team colors map deterministically and preserve alpha
+ok 54 - canonical team colors map deterministically and preserve alpha
+  ---
+  duration_ms: 2.806166
+  type: 'test'
+  ...
+# Subtest: theme-color metadata follows the dark page surface
+ok 55 - theme-color metadata follows the dark page surface
+  ---
+  duration_ms: 0.815019
+  type: 'test'
+  ...
+# Subtest: asset mapping is idempotent and ignores non-strings
+ok 56 - asset mapping is idempotent and ignores non-strings
+  ---
+  duration_ms: 0.742121
+  type: 'test'
+  ...
+1..56
+# tests 56
+# suites 0
+# pass 56
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 200.554381

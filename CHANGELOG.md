@@ -1,3 +1,12 @@
+# v4.17.0 — bug fixes and hot-path optimization
+
+- Fix Pickup Rate **Off** still waking the spawn scheduler/RNG even though no pickup could spawn; the scheduler now sleeps indefinitely until a new round/rule set.
+- Make authoritative wall/projectile/movement ray queries value-based in simulation hot paths and reuse A* / projectile-threat scratch buffers for bots.
+- Remove per-tick side maps from elimination/KOTH checks and compact short-lived server/browser arrays in place.
+- Replace the 60 Hz room snapshot map/copy/sort path with reusable typed snapshot buffers while preserving the exact wire payload.
+- Reuse local-browser bot pathfinding scratch, KOTH/sudden-death side scans, online ownership/trail sets, and direct shot-preview pruning to reduce GC pressure.
+- Add randomized wire-parity, disabled-pickup scheduler, deterministic bot-route, all-map/all-mode browser stress, race-detector, and benchmark regression coverage.
+
 # v4.16.0 — lowercase leqra rebrand
 
 - Renamed the product and visible branding to lowercase **leqra**.

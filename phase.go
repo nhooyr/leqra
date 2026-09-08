@@ -4,17 +4,19 @@ import "math"
 
 // rayBounds intersects only the four inner faces of the arena rim. Cannon
 // ignores ALL interior walls; using a boundary rectangle avoids tile-seam hits.
-func (g *Game) rayBounds(x, y, dx, dy, r float64) *RayHit {
+func (g *Game) rayBoundsHit(x, y, dx, dy, r float64) (RayHit, bool) {
 	minX, minY := wallSize/2+r, wallSize/2+r
 	maxX, maxY := g.World.Width-minX, g.World.Height-minY
-	var best *RayHit
+	var best RayHit
+	hasBest := false
 	consider := func(at, nx, ny float64) {
 		if at < -1e-7 || at > 1+1e-7 {
 			return
 		}
 		at = clamp(at, 0, 1)
-		if best == nil || at < best.T-1e-7 {
-			best = &RayHit{at, nx, ny}
+		if !hasBest || at < best.T-1e-7 {
+			best = RayHit{at, nx, ny}
+			hasBest = true
 		} else if math.Abs(at-best.T) < 1e-7 {
 			if nx != 0 {
 				best.NX = nx
@@ -34,20 +36,42 @@ func (g *Game) rayBounds(x, y, dx, dy, r float64) *RayHit {
 	} else if dy < -1e-9 {
 		consider((minY-y)/dy, 0, 1)
 	}
-	return best
+	return best, hasBest
+}
+func (g *Game) rayBounds(x, y, dx, dy, r float64) *RayHit {
+	hit, ok := g.rayBoundsHit(x, y, dx, dy, r)
+	if !ok {
+		return nil
+	}
+	return &hit
+}
+func (g *Game) projectileWallHit(kind string, x, y, dx, dy, r float64) (RayHit, bool) {
+	if kind == "cannon" {
+		return g.rayBoundsHit(x, y, dx, dy, r)
+	}
+	return g.rayWallsHit(x, y, dx, dy, r)
 }
 func (g *Game) projectileWall(kind string, x, y, dx, dy, r float64) *RayHit {
-	if kind == "cannon" {
-		return g.rayBounds(x, y, dx, dy, r)
+	hit, ok := g.projectileWallHit(kind, x, y, dx, dy, r)
+	if !ok {
+		return nil
 	}
-	return g.rayWalls(x, y, dx, dy, r)
+	return &hit
+}
+func (g *Game) movementWallHit(ghost bool, x, y, dx, dy, r float64) (RayHit, bool) {
+	if ghost {
+		return g.rayBoundsHit(x, y, dx, dy, r)
+	}
+	return g.rayWallsHit(x, y, dx, dy, r)
 }
 func (g *Game) movementWall(ghost bool, x, y, dx, dy, r float64) *RayHit {
-	if ghost {
-		return g.rayBounds(x, y, dx, dy, r)
+	hit, ok := g.movementWallHit(ghost, x, y, dx, dy, r)
+	if !ok {
+		return nil
 	}
-	return g.rayWalls(x, y, dx, dy, r)
+	return &hit
 }
+
 func (g *Game) clearTankAt(x, y, r float64) bool {
 	margin := wallSize/2 + r
 	if x < margin || x > g.World.Width-margin || y < margin || y > g.World.Height-margin {

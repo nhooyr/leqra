@@ -146,6 +146,8 @@ func (g *Game) pickupInterval() (float64, float64) {
 		return 4, 6
 	case "slow":
 		return 7, 10
+	case "off":
+		return math.Inf(1), math.Inf(1)
 	default:
 		return 2, 3.5
 	}
