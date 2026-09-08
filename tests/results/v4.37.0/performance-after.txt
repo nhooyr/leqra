@@ -1,0 +1,26 @@
+goos: linux
+goarch: amd64
+pkg: leqra
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkMembers437/viewers_0-9         	 6774654	        51.24 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_0-9         	 7176076	        51.88 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_0-9         	 6783861	        51.03 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_0-9         	 6985774	        53.81 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_0-9         	 6226772	        52.48 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_16-9        	  881323	       401.3 ns/op	     192 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_16-9        	  863852	       399.8 ns/op	     192 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_16-9        	  802008	       405.8 ns/op	     192 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_16-9        	  803605	       425.3 ns/op	     192 B/op	       1 allocs/op
+BenchmarkMembers437/viewers_16-9        	  881236	       414.9 ns/op	     192 B/op	       1 allocs/op
+BenchmarkRoomTick437/parked_false-9     	  158532	      2325 ns/op	     528 B/op	       1 allocs/op
+BenchmarkRoomTick437/parked_false-9     	  148052	      2276 ns/op	     528 B/op	       1 allocs/op
+BenchmarkRoomTick437/parked_false-9     	  157400	      2297 ns/op	     528 B/op	       1 allocs/op
+BenchmarkRoomTick437/parked_false-9     	  154396	      2406 ns/op	     528 B/op	       1 allocs/op
+BenchmarkRoomTick437/parked_false-9     	  137252	      2407 ns/op	     528 B/op	       1 allocs/op
+BenchmarkRoomTick437/parked_true-9      	  786423	       466.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRoomTick437/parked_true-9      	  801284	       455.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRoomTick437/parked_true-9      	  803212	       452.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRoomTick437/parked_true-9      	  820341	       441.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRoomTick437/parked_true-9      	  728371	       466.0 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	leqra	8.491s

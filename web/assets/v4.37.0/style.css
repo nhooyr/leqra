@@ -101,7 +101,6 @@ body.touch-ui #onlineMenuScreen .host-controls .net-player{min-height:44px;paddi
  body.touch-ui #roomScreen{padding:11px 16px}
  body.touch-ui #roomScreen #readyHint{display:none}
  body.touch-ui #roomScreen #roomStatus{grid-column:1;grid-row:2;margin:0;font-size:7px}
- body.touch-ui #roomScreen #leaveRoomBtn{grid-column:2;grid-row:2;justify-self:end;min-height:28px;padding:4px 0}
  body.touch-ui #onlineMenuScreen{padding:12px 16px}
  body.touch-ui #onlineMenuScreen .compact-title,body.touch-ui #onlineMenuScreen #onlineMenuMessage{display:none}
  body.touch-ui #onlineMenuEyebrow::after{content:"MATCH IS STILL LIVE";display:block;color:var(--orange);font-size:8px;letter-spacing:.7px;margin:7px 0}
@@ -584,7 +583,17 @@ html.match-active canvas,html.match-active .touch-controls,html.match-active .to
 .chat-target-switch{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:7px;width:max-content;max-width:100%;margin:0 0 8px auto;color:var(--text-soft);font:8px var(--mono);letter-spacing:.45px;cursor:pointer;user-select:none}.chat-target-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:2}.chat-target-track{position:relative;width:30px;height:16px;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface-raised);transition:.15s}.chat-target-track i{position:absolute;width:10px;height:10px;left:2px;top:2px;border-radius:50%;background:var(--text-muted);transition:.15s}.chat-target-switch input:checked+.chat-target-track{border-color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}.chat-target-switch input:checked+.chat-target-track i{transform:translateX(14px);background:var(--danger)}.chat-target-switch input:focus-visible+.chat-target-track{outline:2px solid var(--accent-ink);outline-offset:2px}.chat-target-switch:has(input:checked){color:var(--danger)}
 .chat-message .chat-channel-tag{border:1px solid var(--border-strong);border-radius:999px;padding:2px 5px;font:7px var(--mono);letter-spacing:.5px}.chat-message.chat-opponent .chat-channel-tag{border-color:color-mix(in srgb,var(--danger) 60%,var(--border-strong));color:var(--danger)}.chat-message.chat-opponent{background:linear-gradient(90deg,color-mix(in srgb,var(--danger) 5%,transparent),transparent 70%)}
 .chat-messages:empty::before{content:'No messages yet.'}
-.room-utility{align-items:stretch}.room-utility #unshareRoomBtn{color:var(--warning)}
+.room-utility{align-items:stretch}
+/* Keep connection actions recognizable and comfortably tappable when shared. */
+body #roomScreen.unified-room .room-connection-actions{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+body #roomScreen.unified-room .room-connection-actions:has(.room-action:not([hidden])){display:grid}
+body #roomScreen.unified-room .room-connection-actions .room-action{--room-action-color:var(--warning);grid-column:auto;grid-row:auto;justify-self:stretch;min-width:0;min-height:44px;margin:0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--room-action-color) 60%,var(--border-strong));border-radius:7px;background:color-mix(in srgb,var(--room-action-color) 10%,var(--surface));color:var(--room-action-color);font:600 11px/1.4 var(--sans);text-align:center;overflow-wrap:anywhere;touch-action:manipulation}
+body #roomScreen.unified-room .room-connection-actions .room-action-leave{--room-action-color:var(--danger)}
+body #roomScreen.unified-room .room-connection-actions:has(.room-action-unshare[hidden]) .room-action-leave{grid-column:1 / -1}
+@media(hover:hover){body #roomScreen.unified-room .room-connection-actions .room-action:hover:not(:disabled){background:color-mix(in srgb,var(--room-action-color) 18%,var(--surface));border-color:var(--room-action-color)}}
+body #roomScreen.unified-room .room-connection-actions .room-action:active:not(:disabled){background:color-mix(in srgb,var(--room-action-color) 26%,var(--surface));border-color:var(--room-action-color)}
+body #roomScreen.unified-room .room-connection-actions .room-action:focus-visible{outline:2px solid var(--room-action-color);outline-offset:2px}
+body #roomScreen.unified-room .room-connection-actions .room-action:disabled{opacity:.5;cursor:wait}
 /* v4.22: single integrated match chat and field-only room editing. */
 .room-code-editor{grid-template-columns:minmax(0,1fr)}
 

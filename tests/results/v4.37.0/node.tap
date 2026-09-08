@@ -1,0 +1,2284 @@
+TAP version 13
+# Subtest: Controls opening and repeated scrolling never play native unlock tones
+ok 1 - Controls opening and repeated scrolling never play native unlock tones
+  ---
+  duration_ms: 2.692018
+  type: 'test'
+  ...
+# Subtest: unlock ignores synthetic clicks, held-key repeats, muted audio, and hidden pages
+ok 2 - unlock ignores synthetic clicks, held-key repeats, muted audio, and hidden pages
+  ---
+  duration_ms: 2.189873
+  type: 'test'
+  ...
+# Subtest: duplicate unlock events coalesce and a later activation can retry an interrupted context
+ok 3 - duplicate unlock events coalesce and a later activation can retry an interrupted context
+  ---
+  duration_ms: 1.205242
+  type: 'test'
+  ...
+# Subtest: running audio does not reschedule gain for every click; volume changes ramp
+ok 4 - running audio does not reschedule gain for every click; volume changes ramp
+  ---
+  duration_ms: 6.853339
+  type: 'test'
+  ...
+# Subtest: native Safari fallback bakes attenuation into samples, with silent endpoints
+ok 5 - native Safari fallback bakes attenuation into samples, with silent endpoints
+  ---
+  duration_ms: 9.751131
+  type: 'test'
+  ...
+# Subtest: muting stops native playback and cancels delayed tones across subsequent unmute
+ok 6 - muting stops native playback and cancels delayed tones across subsequent unmute
+  ---
+  duration_ms: 6.69811
+  type: 'test'
+  ...
+# Subtest: a delayed tone uses Web Audio when the context recovers before playback
+ok 7 - a delayed tone uses Web Audio when the context recovers before playback
+  ---
+  duration_ms: 2.533819
+  type: 'test'
+  ...
+# Subtest: delayed and resumed effects expire instead of bursting after a stall
+ok 8 - delayed and resumed effects expire instead of bursting after a stall
+  ---
+  duration_ms: 1.057139
+  type: 'test'
+  ...
+# Subtest: async resume respects mute even if the user unmutes before it completes
+ok 9 - async resume respects mute even if the user unmutes before it completes
+  ---
+  duration_ms: 1.007716
+  type: 'test'
+  ...
+# Subtest: blocked audio queues a bounded number of callbacks and releases them on resume
+ok 10 - blocked audio queues a bounded number of callbacks and releases them on resume
+  ---
+  duration_ms: 1.810161
+  type: 'test'
+  ...
+# Subtest: finished oscillators and explosions disconnect their transient graph nodes
+ok 11 - finished oscillators and explosions disconnect their transient graph nodes
+  ---
+  duration_ms: 5.488321
+  type: 'test'
+  ...
+# Subtest: zero volume prevents both playback paths, while restoring volume allows a fresh effect
+ok 12 - zero volume prevents both playback paths, while restoring volume allows a fresh effect
+  ---
+  duration_ms: 0.99778
+  type: 'test'
+  ...
+# Subtest: bot and remote power icons proceed clockwise below stable names without covering the hull at desktop and mobile scales
+ok 13 - bot and remote power icons proceed clockwise below stable names without covering the hull at desktop and mobile scales
+  ---
+  duration_ms: 48.723463
+  type: 'test'
+  ...
+# Subtest: name position and dimensions never change as weapons, shields and other effects are acquired or lost
+ok 14 - name position and dimensions never change as weapons, shields and other effects are acquired or lost
+  ---
+  duration_ms: 29.423417
+  type: 'test'
+  ...
+# Subtest: local pilots retain HUD-only power status while bots, remote pilots and spectated tanks receive badges
+ok 15 - local pilots retain HUD-only power status while bots, remote pilots and spectated tanks receive badges
+  ---
+  duration_ms: 14.071846
+  type: 'test'
+  ...
+# Subtest: badge orbits reuse cached icon sprites across movement and rotation, removing expired effects
+ok 16 - badge orbits reuse cached icon sprites across movement and rotation, removing expired effects
+  ---
+  duration_ms: 3.76472
+  type: 'test'
+  ...
+# Subtest: all five power icons stay inside the maze at its edges, keeping names fixed above without hiding the tank
+ok 17 - all five power icons stay inside the maze at its edges, keeping names fixed above without hiding the tank
+  ---
+  duration_ms: 32.214613
+  type: 'test'
+  ...
+# Subtest: tank names and badge centers stay close to the hull independent of shield count
+ok 18 - tank names and badge centers stay close to the hull independent of shield count
+  ---
+  duration_ms: 5.529844
+  type: 'test'
+  ...
+# Subtest: gold and neon pink spawn circles identify their actual local pilots in every mode without highlighting bots, remote tanks or spectator seats
+ok 19 - gold and neon pink spawn circles identify their actual local pilots in every mode without highlighting bots, remote tanks or spectator seats
+  ---
+  duration_ms: 32.913444
+  type: 'test'
+  ...
+# Subtest: online spawn guide colors follow local ownership when seat IDs change or the primary pilot spectates
+ok 20 - online spawn guide colors follow local ownership when seat IDs change or the primary pilot spectates
+  ---
+  duration_ms: 1.683191
+  type: 'test'
+  ...
+# Subtest: gold follows remaining spawn protection, freezing its fade through a paused countdown and long pauses
+ok 21 - gold follows remaining spawn protection, freezing its fade through a paused countdown and long pauses
+  ---
+  duration_ms: 1.286764
+  type: 'test'
+  ...
+# Subtest: online spawn tags follow authoritative life changes and never turn a shield save into a spawn
+ok 22 - online spawn tags follow authoritative life changes and never turn a shield save into a spawn
+  ---
+  duration_ms: 1.316629
+  type: 'test'
+  ...
+# Subtest: a real shield save clears the local spawn tag instead of lighting the golden ring again
+ok 23 - a real shield save clears the local spawn tag instead of lighting the golden ring again
+  ---
+  duration_ms: 1.245203
+  type: 'test'
+  ...
+# Subtest: online protection presentation follows authoritative timers between packets and freezes in countdown and wave breaks
+ok 24 - online protection presentation follows authoritative timers between packets and freezes in countdown and wave breaks
+  ---
+  duration_ms: 6.850549
+  type: 'test'
+  ...
+# Subtest: online shield history applies to the matching life and generation before drawing, including a dropped expiry packet
+ok 25 - online shield history applies to the matching life and generation before drawing, including a dropped expiry packet
+  ---
+  duration_ms: 1.99582
+  type: 'test'
+  ...
+# Subtest: the render pass paints edge labels above tanks after restoring the maze clip
+ok 26 - the render pass paints edge labels above tanks after restoring the maze clip
+  ---
+  duration_ms: 2.08868
+  type: 'test'
+  ...
+# Subtest: gold, pink and grey rings use the same eased final 300 ms without extending protection
+ok 27 - gold, pink and grey rings use the same eased final 300 ms without extending protection
+  ---
+  duration_ms: 29.105028
+  type: 'test'
+  ...
+# Subtest: shield-hit grace may fade grey but never creates a gold or pink spawn locator
+ok 28 - shield-hit grace may fade grey but never creates a gold or pink spawn locator
+  ---
+  duration_ms: 3.22635
+  type: 'test'
+  ...
+# Subtest: all bot difficulties complete flag pickup, dropped flag return, capture and hill scoring from the destination cell
+ok 29 - all bot difficulties complete flag pickup, dropped flag return, capture and hill scoring from the destination cell
+  ---
+  duration_ms: 99.145168
+  type: 'test'
+  ...
+# Subtest: Godlike enters pickup contact range instead of applying the combat stand-off distance
+ok 30 - Godlike enters pickup contact range instead of applying the combat stand-off distance
+  ---
+  duration_ms: 4.7619
+  type: 'test'
+  ...
+# Subtest: precise interaction approaches work with each difficulty tuning and a nearby teammate
+ok 31 - precise interaction approaches work with each difficulty tuning and a nearby teammate
+  ---
+  duration_ms: 15.031349
+  type: 'test'
+  ...
+# Subtest: ordinary enemy routes retain a combat stand-off distance
+ok 32 - ordinary enemy routes retain a combat stand-off distance
+  ---
+  duration_ms: 3.176095
+  type: 'test'
+  ...
+# Subtest: all bot difficulties keep scoring instead of backing off a nearby firing target
+ok 33 - all bot difficulties keep scoring instead of backing off a nearby firing target
+  ---
+  duration_ms: 55.600762
+  type: 'test'
+  ...
+# Subtest: all difficulties navigate around a blocking wall and take the flag
+ok 34 - all difficulties navigate around a blocking wall and take the flag
+  ---
+  duration_ms: 49.789516
+  type: 'test'
+  ...
+# Subtest: route shortcuts discard skipped prefixes and final approach cannot aim at a passed cell
+ok 35 - route shortcuts discard skipped prefixes and final approach cannot aim at a passed cell
+  ---
+  duration_ms: 3.291058
+  type: 'test'
+  ...
+# Subtest: fully speed-stacked bots complete and hold the hill approach
+ok 36 - fully speed-stacked bots complete and hold the hill approach
+  ---
+  duration_ms: 21.806464
+  type: 'test'
+  ...
+# Subtest: a clear final approach does not rebuild a breadth-first route on every frame
+ok 37 - a clear final approach does not rebuild a breadth-first route on every frame
+  ---
+  duration_ms: 14.581182
+  type: 'test'
+  ...
+# Subtest: an open chat retains only the latest 60 rendered messages per channel
+ok 38 - an open chat retains only the latest 60 rendered messages per channel
+  ---
+  duration_ms: 8.523986
+  type: 'test'
+  ...
+# Subtest: interleaved party and opponent messages evict only their own channel rows
+ok 39 - interleaved party and opponent messages evict only their own channel rows
+  ---
+  duration_ms: 2.451796
+  type: 'test'
+  ...
+# Subtest: readers keep the same message and pixel position when an earlier row expires
+ok 40 - readers keep the same message and pixel position when an earlier row expires
+  ---
+  duration_ms: 1.314366
+  type: 'test'
+  ...
+# Subtest: evicting a row below the visible conversation does not move the reader
+ok 41 - evicting a row below the visible conversation does not move the reader
+  ---
+  duration_ms: 1.717782
+  type: 'test'
+  ...
+# Subtest: chat keeps following new messages when already at the bottom
+ok 42 - chat keeps following new messages when already at the bottom
+  ---
+  duration_ms: 1.820447
+  type: 'test'
+  ...
+# Subtest: open history replacement and closed-history reopening share the same bounds
+ok 43 - open history replacement and closed-history reopening share the same bounds
+  ---
+  duration_ms: 6.665846
+  type: 'test'
+  ...
+# Subtest: reconnect restores an unacknowledged message without sending it again
+ok 44 - reconnect restores an unacknowledged message without sending it again
+  ---
+  duration_ms: 1.551713
+  type: 'test'
+  ...
+# Subtest: reconnect preserves a newer draft and keeps the previous message recoverable
+ok 45 - reconnect preserves a newer draft and keeps the previous message recoverable
+  ---
+  duration_ms: 1.237631
+  type: 'test'
+  ...
+# Subtest: two unacknowledged channels recover independently without changing recipients
+ok 46 - two unacknowledged channels recover independently without changing recipients
+  ---
+  duration_ms: 0.729978
+  type: 'test'
+  ...
+# Subtest: hidden chat preserves its restored text when reopened after reconnect
+ok 47 - hidden chat preserves its restored text when reopened after reconnect
+  ---
+  duration_ms: 1.181807
+  type: 'test'
+  ...
+# Subtest: reconnected history preserves the delivery warning and cannot resend a draft
+ok 48 - reconnected history preserves the delivery warning and cannot resend a draft
+  ---
+  duration_ms: 1.387346
+  type: 'test'
+  ...
+# Subtest: leaving a room clears unconfirmed texts as well as the current draft
+ok 49 - leaving a room clears unconfirmed texts as well as the current draft
+  ---
+  duration_ms: 0.888726
+  type: 'test'
+  ...
+# Subtest: a reconnect welcome cannot change an opponent draft to the party recipient
+ok 50 - a reconnect welcome cannot change an opponent draft to the party recipient
+  ---
+  duration_ms: 0.995737
+  type: 'test'
+  ...
+# Subtest: one accepted volley keeps a monotonic cooldown deadline despite repeated snapshots
+ok 51 - one accepted volley keeps a monotonic cooldown deadline despite repeated snapshots
+  ---
+  duration_ms: 2.027148
+  type: 'test'
+  ...
+# Subtest: round completion clears pending effects and stops combat timing
+ok 52 - round completion clears pending effects and stops combat timing
+  ---
+  duration_ms: 0.705771
+  type: 'test'
+  ...
+# Subtest: prediction never mutates server tank state, ammo, or score
+ok 53 - prediction never mutates server tank state, ammo, or score
+  ---
+  duration_ms: 0.277897
+  type: 'test'
+  ...
+# Subtest: matching authority suppresses duplicate sound and preserves predicted cooldown
+ok 54 - matching authority suppresses duplicate sound and preserves predicted cooldown
+  ---
+  duration_ms: 0.286621
+  type: 'test'
+  ...
+# Subtest: P1 fire does not consume P2 prediction, cooldown, or edges
+ok 55 - P1 fire does not consume P2 prediction, cooldown, or edges
+  ---
+  duration_ms: 0.242425
+  type: 'test'
+  ...
+# Subtest: dry fire, cooldown, wall-embedded ghost, and exhausted special charges have no preview
+ok 56 - dry fire, cooldown, wall-embedded ghost, and exhausted special charges have no preview
+  ---
+  duration_ms: 0.518881
+  type: 'test'
+  ...
+# Subtest: machine-gun preview has zero cooldown, a 60Hz emission ceiling, and bounded pending shots
+ok 57 - machine-gun preview has zero cooldown, a 60Hz emission ceiling, and bounded pending shots
+  ---
+  duration_ms: 1.231161
+  type: 'test'
+  ...
+# Subtest: unconfirmed charge use blocks a speculative fourth cannon shot
+ok 58 - unconfirmed charge use blocks a speculative fourth cannon shot
+  ---
+  duration_ms: 0.702566
+  type: 'test'
+  ...
+# Subtest: grenade hold cannot repeatedly throw or accidentally predict a blast
+ok 59 - grenade hold cannot repeatedly throw or accidentally predict a blast
+  ---
+  duration_ms: 5.717756
+  type: 'test'
+  ...
+# Subtest: rejected previews expire and cannot hide a later valid server shot forever
+ok 60 - rejected previews expire and cannot hide a later valid server shot forever
+  ---
+  duration_ms: 0.386752
+  type: 'test'
+  ...
+# Subtest: respawn and replacement life cannot inherit old cosmetic bullets or cooldown
+ok 61 - respawn and replacement life cannot inherit old cosmetic bullets or cooldown
+  ---
+  duration_ms: 1.954349
+  type: 'test'
+  ...
+# Subtest: short remote packet gap preserves bounded angular velocity
+ok 62 - short remote packet gap preserves bounded angular velocity
+  ---
+  duration_ms: 0.743237
+  type: 'test'
+  ...
+# Subtest: remote turn extrapolation never crosses a respawn
+ok 63 - remote turn extrapolation never crosses a respawn
+  ---
+  duration_ms: 0.193932
+  type: 'test'
+  ...
+# Subtest: confirmation uses text nodes, labelled dialog, Cancel focus, and releases held inputs
+ok 64 - confirmation uses text nodes, labelled dialog, Cancel focus, and releases held inputs
+  ---
+  duration_ms: 12.999714
+  type: 'test'
+  ...
+# Subtest: Escape, external close and stale acceptance cancel pending confirmations
+ok 65 - Escape, external close and stale acceptance cancel pending confirmations
+  ---
+  duration_ms: 9.296237
+  type: 'test'
+  ...
+# Subtest: a duplicate request cannot replace or execute a pending confirmation
+ok 66 - a duplicate request cannot replace or execute a pending confirmation
+  ---
+  duration_ms: 4.660067
+  type: 'test'
+  ...
+# Subtest: a delayed close event from an earlier dialog does not cancel the next confirmation
+ok 67 - a delayed close event from an earlier dialog does not cancel the next confirmation
+  ---
+  duration_ms: 2.69736
+  type: 'test'
+  ...
+# Subtest: online leave, host end, join, unshare and party-return act only after acceptance
+ok 68 - online leave, host end, join, unshare and party-return act only after acceptance
+  ---
+  duration_ms: 16.990154
+  type: 'test'
+  ...
+# Subtest: identity and authority changes invalidate actions while End and Leave survive round generations
+ok 69 - identity and authority changes invalidate actions while End and Leave survive round generations
+  ---
+  duration_ms: 32.639251
+  type: 'test'
+  ...
+# Subtest: preset replacement and deletion require acceptance and preserve the intended preset
+ok 70 - preset replacement and deletion require acceptance and preserve the intended preset
+  ---
+  duration_ms: 6.585651
+  type: 'test'
+  ...
+# Subtest: changed preset identity, selection or setup cannot be replaced or deleted by a stale dialog
+ok 71 - changed preset identity, selection or setup cannot be replaced or deleted by a stale dialog
+  ---
+  duration_ms: 6.37917
+  type: 'test'
+  ...
+# Subtest: all seven native confirmations have been removed
+ok 72 - all seven native confirmations have been removed
+  ---
+  duration_ms: 0.520543
+  type: 'test'
+  ...
+# Subtest: all difficulties vacate the capture point and leave a returning human room to score
+ok 73 - all difficulties vacate the capture point and leave a returning human room to score
+  ---
+  duration_ms: 136.512338
+  type: 'test'
+  ...
+# Subtest: all difficulties allow human and bot carriers to score with one or three escorts in open and dead-end bases
+ok 74 - all difficulties allow human and bot carriers to score with one or three escorts in open and dead-end bases
+  ---
+  duration_ms: 1084.601518
+  type: 'test'
+  ...
+# Subtest: CTF supporters still return a dropped own flag before clearing the base
+ok 75 - CTF supporters still return a dropped own flag before clearing the base
+  ---
+  duration_ms: 52.594572
+  type: 'test'
+  ...
+# Subtest: fully boosted and ghost supporters leave the carrier a usable scoring approach
+ok 76 - fully boosted and ghost supporters leave the carrier a usable scoring approach
+  ---
+  duration_ms: 215.628129
+  type: 'test'
+  ...
+# Subtest: cover positions are cached and restricted to active friendly carrier objectives
+ok 77 - cover positions are cached and restricted to active friendly carrier objectives
+  ---
+  duration_ms: 3.894344
+  type: 'test'
+  ...
+# Subtest: Godlike support does not leave its cover goal for a pickup on the capture point
+ok 78 - Godlike support does not leave its cover goal for a pickup on the capture point
+  ---
+  duration_ms: 2.779649
+  type: 'test'
+  ...
+# Subtest: Godlike cover hold still permits imminent projectile avoidance
+ok 79 - Godlike cover hold still permits imminent projectile avoidance
+  ---
+  duration_ms: 7.278753
+  type: 'test'
+  ...
+# Subtest: first End/Leave click survives callsign blur, save acknowledgement and a round transition
+ok 80 - first End/Leave click survives callsign blur, save acknowledgement and a round transition
+  ---
+  duration_ms: 16.490502
+  type: 'test'
+  ...
+# Subtest: blur autosave feedback keeps space reserved above match menu actions
+ok 81 - blur autosave feedback keeps space reserved above match menu actions
+  ---
+  duration_ms: 0.264258
+  type: 'test'
+  ...
+# Subtest: confirmed End sends once and stays pending through metadata renders until lobby acknowledgement
+ok 82 - confirmed End sends once and stays pending through metadata renders until lobby acknowledgement
+  ---
+  duration_ms: 3.225459
+  type: 'test'
+  ...
+# Subtest: only tiny End and Leave commands bypass movement backpressure, and Leave is queued before closing
+ok 83 - only tiny End and Leave commands bypass movement backpressure, and Leave is queued before closing
+  ---
+  duration_ms: 5.160639
+  type: 'test'
+  ...
+# Subtest: End send errors, rejection and timeout release pending state without duplicate retries
+ok 84 - End send errors, rejection and timeout release pending state without duplicate retries
+  ---
+  duration_ms: 9.110647
+  type: 'test'
+  ...
+# Subtest: End/Leave remain bound to their room identity and End requires private host authority
+ok 85 - End/Leave remain bound to their room identity and End requires private host authority
+  ---
+  duration_ms: 32.388193
+  type: 'test'
+  ...
+# Subtest: match-end presentation preserves valid End/Leave confirmation and waits for its decision
+ok 86 - match-end presentation preserves valid End/Leave confirmation and waits for its decision
+  ---
+  duration_ms: 12.932133
+  type: 'test'
+  ...
+# Subtest: zero-delay results wait for an already confirmed End but remain immediate without pending user intent
+ok 87 - zero-delay results wait for an already confirmed End but remain immediate without pending user intent
+  ---
+  duration_ms: 3.054933
+  type: 'test'
+  ...
+# Subtest: Godlike is selectable everywhere and adds decision skill without extra hull speed
+ok 88 - Godlike is selectable everywhere and adds decision skill without extra hull speed
+  ---
+  duration_ms: 9.839353
+  type: 'test'
+  ...
+# Subtest: Godlike flees an enemy remote grenade before its long fuse expires
+ok 89 - Godlike flees an enemy remote grenade before its long fuse expires
+  ---
+  duration_ms: 16.068097
+  type: 'test'
+  ...
+# Subtest: Godlike escapes its own expiring grenade without treating safe friendly grenades as threats
+ok 90 - Godlike escapes its own expiring grenade without treating safe friendly grenades as threats
+  ---
+  duration_ms: 19.671936
+  type: 'test'
+  ...
+# Subtest: maze walls shelter a Godlike bot from a remote grenade blast
+ok 91 - maze walls shelter a Godlike bot from a remote grenade blast
+  ---
+  duration_ms: 3.653673
+  type: 'test'
+  ...
+# Subtest: grenade detonation checks every owned grenade and avoids self or enabled teammate damage
+ok 92 - grenade detonation checks every owned grenade and avoids self or enabled teammate damage
+  ---
+  duration_ms: 4.673927
+  type: 'test'
+  ...
+# Subtest: Godlike throws safe grenades at useful range and rejects close-contact self blasts
+ok 93 - Godlike throws safe grenades at useful range and rejects close-contact self blasts
+  ---
+  duration_ms: 10.652997
+  type: 'test'
+  ...
+# Subtest: harmless teammates still trigger grenade contact blasts, so Godlike avoids unsafe throws
+ok 94 - harmless teammates still trigger grenade contact blasts, so Godlike avoids unsafe throws
+  ---
+  duration_ms: 3.391749
+  type: 'test'
+  ...
+# Subtest: Godlike seeks useful reachable pickups and avoids remote-grenade bait
+ok 95 - Godlike seeks useful reachable pickups and avoids remote-grenade bait
+  ---
+  duration_ms: 6.715045
+  type: 'test'
+  ...
+# Subtest: Godlike does not replace a strong healthy weapon with a weak redundant pickup
+ok 96 - Godlike does not replace a strong healthy weapon with a weak redundant pickup
+  ---
+  duration_ms: 3.892241
+  type: 'test'
+  ...
+# Subtest: CTF Godlike returns its carried flag and recovers a dropped own flag first
+ok 97 - CTF Godlike returns its carried flag and recovers a dropped own flag first
+  ---
+  duration_ms: 5.019967
+  type: 'test'
+  ...
+# Subtest: one-on-one CTF carriers intercept instead of waiting forever at their home bases
+ok 98 - one-on-one CTF carriers intercept instead of waiting forever at their home bases
+  ---
+  duration_ms: 4.92187
+  type: 'test'
+  ...
+# Subtest: KOTH Godlike stays on a scoring hill and declines pickup distractions
+ok 99 - KOTH Godlike stays on a scoring hill and declines pickup distractions
+  ---
+  duration_ms: 16.645274
+  type: 'test'
+  ...
+# Subtest: guided missile prediction follows candidate motion and never mutates live state
+ok 100 - guided missile prediction follows candidate motion and never mutates live state
+  ---
+  duration_ms: 4.204191
+  type: 'test'
+  ...
+# Subtest: all moving projectile powers participate in Godlike defensive forecasts
+ok 101 - all moving projectile powers participate in Godlike defensive forecasts
+  ---
+  duration_ms: 3.121554
+  type: 'test'
+  ...
+# Subtest: Godlike anticipates a ready enemy laser lane but does not grant impossible reaction speed
+ok 102 - Godlike anticipates a ready enemy laser lane but does not grant impossible reaction speed
+  ---
+  duration_ms: 4.200735
+  type: 'test'
+  ...
+# Subtest: Godlike begins clearing its own fuse with enough time to leave the complete blast radius
+ok 103 - Godlike begins clearing its own fuse with enough time to leave the complete blast radius
+  ---
+  duration_ms: 7.224712
+  type: 'test'
+  ...
+# Subtest: Godlike forecasts grenade contact with a harmless ally before a distant fuse
+ok 104 - Godlike forecasts grenade contact with a harmless ally before a distant fuse
+  ---
+  duration_ms: 2.750866
+  type: 'test'
+  ...
+# Subtest: boosted Godlike can forecast slow rounds reached by its own fast movement
+ok 105 - boosted Godlike can forecast slow rounds reached by its own fast movement
+  ---
+  duration_ms: 17.622385
+  type: 'test'
+  ...
+# Subtest: cached single-cell wall sweeps exactly match exhaustive collision order and normals
+ok 106 - cached single-cell wall sweeps exactly match exhaustive collision order and normals
+  ---
+  duration_ms: 36.228617
+  type: 'test'
+  ...
+# Subtest: Godlike keeps a safe advance and scoring hold when unrelated rounds pass nearby
+ok 107 - Godlike keeps a safe advance and scoring hold when unrelated rounds pass nearby
+  ---
+  duration_ms: 9.092841
+  type: 'test'
+  ...
+# Subtest: Godlike co-op ally advances and fires instead of hovering at middle range
+ok 108 - Godlike co-op ally advances and fires instead of hovering at middle range
+  ---
+  duration_ms: 20.010579
+  type: 'test'
+  ...
+# Subtest: Godlike retreat has separation hysteresis instead of oscillating at a single threshold
+ok 109 - Godlike retreat has separation hysteresis instead of oscillating at a single threshold
+  ---
+  duration_ms: 8.584817
+  type: 'test'
+  ...
+# Subtest: Godlike uses a safe route when it cannot take the aimed shot
+ok 110 - Godlike uses a safe route when it cannot take the aimed shot
+  ---
+  duration_ms: 14.8025
+  type: 'test'
+  ...
+# Subtest: Godlike does not rebuild its route on each think after reaching the destination cell
+ok 111 - Godlike does not rebuild its route on each think after reaching the destination cell
+  ---
+  duration_ms: 5.708532
+  type: 'test'
+  ...
+# Subtest: Godlike skips pickup distance scans when the arena has no pickups
+ok 112 - Godlike skips pickup distance scans when the arena has no pickups
+  ---
+  duration_ms: 2.869664
+  type: 'test'
+  ...
+# Subtest: an imminent projectile overrides a recent Godlike dodge commitment
+ok 113 - an imminent projectile overrides a recent Godlike dodge commitment
+  ---
+  duration_ms: 3.328544
+  type: 'test'
+  ...
+# Subtest: Godlike values a fresh machine gun when its active firing budget is nearly spent
+ok 114 - Godlike values a fresh machine gun when its active firing budget is nearly spent
+  ---
+  duration_ms: 3.375085
+  type: 'test'
+  ...
+# Subtest: Godlike repositions after unproductive aiming but preserves a scoring hill hold
+ok 115 - Godlike repositions after unproductive aiming but preserves a scoring hill hold
+  ---
+  duration_ms: 3.424879
+  type: 'test'
+  ...
+# Subtest: Godlike uses spawn protection instead of fleeing harmless rounds and laser lanes
+ok 116 - Godlike uses spawn protection instead of fleeing harmless rounds and laser lanes
+  ---
+  duration_ms: 12.737911
+  type: 'test'
+  ...
+# Subtest: host moderation keeps team, public difficulty name and status with the tank identity
+ok 117 - host moderation keeps team, public difficulty name and status with the tank identity
+  ---
+  duration_ms: 4.687758
+  type: 'test'
+  ...
+# Subtest: moderation preserves host permissions, connection restrictions and pending kick state
+ok 118 - moderation preserves host permissions, connection restrictions and pending kick state
+  ---
+  duration_ms: 4.569845
+  type: 'test'
+  ...
+# Subtest: local Player 2 spectate and remove actions retain owner handling in the compact host row
+ok 119 - local Player 2 spectate and remove actions retain owner handling in the compact host row
+  ---
+  duration_ms: 2.146838
+  type: 'test'
+  ...
+# Subtest: read-only lobby metadata uses visible difficulty names and hides nonexistent FFA teams
+ok 120 - read-only lobby metadata uses visible difficulty names and hides nonexistent FFA teams
+  ---
+  duration_ms: 6.476287
+  type: 'test'
+  ...
+# Subtest: lobby bot editing retains name, team and difficulty events
+ok 121 - lobby bot editing retains name, team and difficulty events
+  ---
+  duration_ms: 2.24837
+  type: 'test'
+  ...
+# Subtest: unchanged offline and online HUDs do not replace their status text each refresh
+ok 122 - unchanged offline and online HUDs do not replace their status text each refresh
+  ---
+  duration_ms: 17.616275
+  type: 'test'
+  ...
+# Subtest: Survival wave, break, boss and result transitions keep the final labels without intermediate generic text
+ok 123 - Survival wave, break, boss and result transitions keep the final labels without intermediate generic text
+  ---
+  duration_ms: 5.096051
+  type: 'test'
+  ...
+# Subtest: objective clock updates once per displayed second and sudden death stays stable
+ok 124 - objective clock updates once per displayed second and sudden death stays stable
+  ---
+  duration_ms: 1.818283
+  type: 'test'
+  ...
+# Subtest: pausing Survival keeps PAUSED visible during both waves and the intermission
+ok 125 - pausing Survival keeps PAUSED visible during both waves and the intermission
+  ---
+  duration_ms: 1.358011
+  type: 'test'
+  ...
+# Subtest: both default fire keys and solo fallback belong to exactly one pilot
+ok 126 - both default fire keys and solo fallback belong to exactly one pilot
+  ---
+  duration_ms: 8.549374
+  type: 'test'
+  ...
+# Subtest: all configured P2 movement and fire bindings fall back after either player remaps
+ok 127 - all configured P2 movement and fire bindings fall back after either player remaps
+  ---
+  duration_ms: 5.928463
+  type: 'test'
+  ...
+# Subtest: P1 remapping alone never disables configured P2 fallbacks
+ok 128 - P1 remapping alone never disables configured P2 fallbacks
+  ---
+  duration_ms: 3.120451
+  type: 'test'
+  ...
+# Subtest: C and Enter can be reassigned to movement after freeing their fire binding
+ok 129 - C and Enter can be reassigned to movement after freeing their fire binding
+  ---
+  duration_ms: 30.038961
+  type: 'test'
+  ...
+# Subtest: secondary fire keys are included in cross-player conflict validation
+ok 130 - secondary fire keys are included in cross-player conflict validation
+  ---
+  duration_ms: 27.83593
+  type: 'test'
+  ...
+# Subtest: remapped alternate fire is supported independently for both active players
+ok 131 - remapped alternate fire is supported independently for both active players
+  ---
+  duration_ms: 2.351005
+  type: 'test'
+  ...
+# Subtest: simultaneously held fire keys keep firing until the last key is released
+ok 132 - simultaneously held fire keys keep firing until the last key is released
+  ---
+  duration_ms: 2.060929
+  type: 'test'
+  ...
+# Subtest: solo field manual displays current movement and both fire bindings for both layouts
+ok 133 - solo field manual displays current movement and both fire bindings for both layouts
+  ---
+  duration_ms: 3.149525
+  type: 'test'
+  ...
+# Subtest: two-player field manual labels each player without advertising solo fallbacks
+ok 134 - two-player field manual labels each player without advertising solo fallbacks
+  ---
+  duration_ms: 2.450765
+  type: 'test'
+  ...
+# Subtest: old saved bindings migrate both extra fire keys without losing remaps
+ok 135 - old saved bindings migrate both extra fire keys without losing remaps
+  ---
+  duration_ms: 4.433615
+  type: 'test'
+  ...
+# Subtest: legacy C and Enter remaps are preserved while missing fire keys get unused keys
+ok 136 - legacy C and Enter remaps are preserved while missing fire keys get unused keys
+  ---
+  duration_ms: 4.668608
+  type: 'test'
+  ...
+# Subtest: legacy fullscreen key migration still avoids existing and secondary-fire bindings
+ok 137 - legacy fullscreen key migration still avoids existing and secondary-fire bindings
+  ---
+  duration_ms: 4.181557
+  type: 'test'
+  ...
+# Subtest: new alternate-fire remaps survive reload without another migration
+ok 138 - new alternate-fire remaps survive reload without another migration
+  ---
+  duration_ms: 5.117514
+  type: 'test'
+  ...
+# Subtest: invalid storage or unavailable storage restores valid safe defaults
+ok 139 - invalid storage or unavailable storage restores valid safe defaults
+  ---
+  duration_ms: 21.940917
+  type: 'test'
+  ...
+# Subtest: a spectating secondary seat does not suppress the solo fallback
+ok 140 - a spectating secondary seat does not suppress the solo fallback
+  ---
+  duration_ms: 1.183239
+  type: 'test'
+  ...
+# Subtest: layout and ResizeObserver callbacks leave the last drawn canvas intact until the next render
+ok 141 - layout and ResizeObserver callbacks leave the last drawn canvas intact until the next render
+  ---
+  duration_ms: 2.905408
+  type: 'test'
+  ...
+# Subtest: render allocation retains WebKit one-pixel jitter suppression while applying real viewport changes
+ok 142 - render allocation retains WebKit one-pixel jitter suppression while applying real viewport changes
+  ---
+  duration_ms: 0.928717
+  type: 'test'
+  ...
+# Subtest: GO initializes the round and HUD before exposing the arena
+ok 143 - GO initializes the round and HUD before exposing the arena
+  ---
+  duration_ms: 0.715565
+  type: 'test'
+  ...
+# Subtest: team lineup renders every tank on its own escaped line with bot strength
+ok 144 - team lineup renders every tank on its own escaped line with bot strength
+  ---
+  duration_ms: 3.941136
+  type: 'test'
+  ...
+# Subtest: free-for-all preserves one individual heading, strength label, and score per tank
+ok 145 - free-for-all preserves one individual heading, strength label, and score per tank
+  ---
+  duration_ms: 1.719225
+  type: 'test'
+  ...
+# Subtest: local Survival lists current enemies with all strength levels and marks a fallen boss
+ok 146 - local Survival lists current enemies with all strength levels and marks a fallen boss
+  ---
+  duration_ms: 1.068637
+  type: 'test'
+  ...
+# Subtest: online Survival uses authoritative bodies and replaces reused enemy seats when waves change
+ok 147 - online Survival uses authoritative bodies and replaces reused enemy seats when waves change
+  ---
+  duration_ms: 0.928566
+  type: 'test'
+  ...
+# Subtest: removed enemies disappear immediately during local and online wave breaks and fresh runs
+ok 148 - removed enemies disappear immediately during local and online wave breaks and fresh runs
+  ---
+  duration_ms: 1.725565
+  type: 'test'
+  ...
+# Subtest: lobby and other modes never show stale generated bodies
+ok 149 - lobby and other modes never show stale generated bodies
+  ---
+  duration_ms: 1.610061
+  type: 'test'
+  ...
+# Subtest: lineup cache avoids idle DOM writes but catches member deaths, strength edits, and target changes
+ok 150 - lineup cache avoids idle DOM writes but catches member deaths, strength edits, and target changes
+  ---
+  duration_ms: 1.132844
+  type: 'test'
+  ...
+# Subtest: solo practice keeps its bot squad score and gives each bot a separate strength line
+ok 151 - solo practice keeps its bot squad score and gives each bot a separate strength line
+  ---
+  duration_ms: 1.028256
+  type: 'test'
+  ...
+# Subtest: home selection applies mode defaults while preserving map, power-ups and team identity
+ok 152 - home selection applies mode defaults while preserving map, power-ups and team identity
+  ---
+  duration_ms: 9.652052
+  type: 'test'
+  ...
+# Subtest: clicking the current mode preserves custom score and time; Hill keeps FFA when available
+ok 153 - clicking the current mode preserves custom score and time; Hill keeps FFA when available
+  ---
+  duration_ms: 6.523878
+  type: 'test'
+  ...
+# Subtest: CTF and survival normalize the entire existing lineup without replacing participants
+ok 154 - CTF and survival normalize the entire existing lineup without replacing participants
+  ---
+  duration_ms: 7.266345
+  type: 'test'
+  ...
+# Subtest: oversized survival squads roll back before local mutation or any online message
+ok 155 - oversized survival squads roll back before local mutation or any online message
+  ---
+  duration_ms: 20.478549
+  type: 'test'
+  ...
+# Subtest: icon buttons expose one checked mode and one tab stop without a range slider
+ok 156 - icon buttons expose one checked mode and one tab stop without a range slider
+  ---
+  duration_ms: 5.483134
+  type: 'test'
+  ...
+# Subtest: online selection waits for the matching authoritative mode and blocks duplicate requests
+ok 157 - online selection waits for the matching authoritative mode and blocks duplicate requests
+  ---
+  duration_ms: 8.037394
+  type: 'test'
+  ...
+# Subtest: online failure, server rejection and acknowledgement timeout restore the real selection
+ok 158 - online failure, server rejection and acknowledgement timeout restore the real selection
+  ---
+  duration_ms: 16.975653
+  type: 'test'
+  ...
+# Subtest: guests, active matches, matchmaking, disconnection and other pending settings are read-only
+ok 159 - guests, active matches, matchmaking, disconnection and other pending settings are read-only
+  ---
+  duration_ms: 38.503388
+  type: 'test'
+  ...
+# Subtest: preset changes, authoritative updates and reconnects refresh the selector without stale pending state
+ok 160 - preset changes, authoritative updates and reconnects refresh the selector without stale pending state
+  ---
+  duration_ms: 7.512104
+  type: 'test'
+  ...
+# Subtest: Rules use the selected mode without a second mode dropdown
+ok 161 - Rules use the selected mode without a second mode dropdown
+  ---
+  duration_ms: 6.571209
+  type: 'test'
+  ...
+# Subtest: arrow keys wrap across mode choices; Home and End reach the first and last
+ok 162 - arrow keys wrap across mode choices; Home and End reach the first and last
+  ---
+  duration_ms: 4.315028
+  type: 'test'
+  ...
+# Subtest: mode keys ignore shortcuts, unrelated keys, repeats and unavailable editing
+ok 163 - mode keys ignore shortcuts, unrelated keys, repeats and unavailable editing
+  ---
+  duration_ms: 26.047952
+  type: 'test'
+  ...
+# Subtest: authoritative updates clear rejection messages and preserve the selected mode after lost edit access
+ok 164 - authoritative updates clear rejection messages and preserve the selected mode after lost edit access
+  ---
+  duration_ms: 3.783017
+  type: 'test'
+  ...
+# Subtest: an open Rules form refreshes when its authoritative mode changes, preserving drafts on unrelated updates
+ok 165 - an open Rules form refreshes when its authoritative mode changes, preserving drafts on unrelated updates
+  ---
+  duration_ms: 8.700841
+  type: 'test'
+  ...
+# Subtest: lobby format balances teams while map changes alone regenerate the maze
+ok 166 - lobby format balances teams while map changes alone regenerate the maze
+  ---
+  duration_ms: 4.817021
+  type: 'test'
+  ...
+# Subtest: lobby format and map wait for matching authoritative fields and roll back failures
+ok 167 - lobby format and map wait for matching authoritative fields and roll back failures
+  ---
+  duration_ms: 39.396871
+  type: 'test'
+  ...
+# Subtest: lobby format and map honor all host permissions and keep objective teams locked
+ok 168 - lobby format and map honor all host permissions and keep objective teams locked
+  ---
+  duration_ms: 35.950969
+  type: 'test'
+  ...
+# Subtest: lobby selectors follow mode in reading order and replace the Rules fields
+ok 169 - lobby selectors follow mode in reading order and replace the Rules fields
+  ---
+  duration_ms: 3.805371
+  type: 'test'
+  ...
+# Subtest: Hill and Survival defaults agree with presets while custom targets survive setup edits
+ok 170 - Hill and Survival defaults agree with presets while custom targets survive setup edits
+  ---
+  duration_ms: 4.035017
+  type: 'test'
+  ...
+# Subtest: Rules submission retains current lobby format and map without reading removed fields
+ok 171 - Rules submission retains current lobby format and map without reading removed fields
+  ---
+  duration_ms: 3.496467
+  type: 'test'
+  ...
+# Subtest: 60 Hz movement follows authoritative forward/reverse/turn rates
+ok 172 - 60 Hz movement follows authoritative forward/reverse/turn rates
+  ---
+  duration_ms: 1.686235
+  type: 'test'
+  ...
+# Subtest: stick movement and angle wrapping stay finite and bounded
+ok 173 - stick movement and angle wrapping stay finite and bounded
+  ---
+  duration_ms: 0.269375
+  type: 'test'
+  ...
+# Subtest: real client wall collision never crosses a solid wall
+ok 174 - real client wall collision never crosses a solid wall
+  ---
+  duration_ms: 11.049041
+  type: 'test'
+  ...
+# Subtest: prediction responds before receiving any authoritative acknowledgement
+ok 175 - prediction responds before receiving any authoritative acknowledgement
+  ---
+  duration_ms: 0.396366
+  type: 'test'
+  ...
+# Subtest: held-input ackSteps replays exactly once including turns and releases
+ok 176 - held-input ackSteps replays exactly once including turns and releases
+  ---
+  duration_ms: 2.905888
+  type: 'test'
+  ...
+# Subtest: two server ticks for one held command do not double-predict the second tick
+ok 177 - two server ticks for one held command do not double-predict the second tick
+  ---
+  duration_ms: 0.261463
+  type: 'test'
+  ...
+# Subtest: server corrections are visual offsets, not forces applied to simulation
+ok 178 - server corrections are visual offsets, not forces applied to simulation
+  ---
+  duration_ms: 0.514584
+  type: 'test'
+  ...
+# Subtest: sub-tick rendering supports refresh rates above 60 Hz
+ok 179 - sub-tick rendering supports refresh rates above 60 Hz
+  ---
+  duration_ms: 0.2599
+  type: 'test'
+  ...
+# Subtest: death and generation reset discard prediction history and render offsets
+ok 180 - death and generation reset discard prediction history and render offsets
+  ---
+  duration_ms: 1.776241
+  type: 'test'
+  ...
+# Subtest: prediction history is bounded through stalled connections
+ok 181 - prediction history is bounded through stalled connections
+  ---
+  duration_ms: 8.960131
+  type: 'test'
+  ...
+# Subtest: snapshot buffer rejects duplicates and stale ticks
+ok 182 - snapshot buffer rejects duplicates and stale ticks
+  ---
+  duration_ms: 1.541668
+  type: 'test'
+  ...
+# Subtest: jittered delivery never restarts or reverses remote playback
+ok 183 - jittered delivery never restarts or reverses remote playback
+  ---
+  duration_ms: 8.64677
+  type: 'test'
+  ...
+# Subtest: interpolation uses the short path across the angle wrap boundary
+ok 184 - interpolation uses the short path across the angle wrap boundary
+  ---
+  duration_ms: 0.203536
+  type: 'test'
+  ...
+# Subtest: remote extrapolation is capped and cannot tunnel through a wall
+ok 185 - remote extrapolation is capped and cannot tunnel through a wall
+  ---
+  duration_ms: 1.182878
+  type: 'test'
+  ...
+# Subtest: latest death is authoritative even with an older render buffer
+ok 186 - latest death is authoritative even with an older render buffer
+  ---
+  duration_ms: 0.115513
+  type: 'test'
+  ...
+# Subtest: real client motion matches stored cross-language Go fixtures
+ok 187 - real client motion matches stored cross-language Go fixtures
+  ---
+  duration_ms: 16.678235
+  type: 'test'
+  ...
+# Subtest: speed boost matches keyboard, touch and reverse rates
+ok 188 - speed boost matches keyboard, touch and reverse rates
+  ---
+  duration_ms: 3.947294
+  type: 'test'
+  ...
+# Subtest: boost steering is faster but bounded
+ok 189 - boost steering is faster but bounded
+  ---
+  duration_ms: 0.206581
+  type: 'test'
+  ...
+# Subtest: boost expiry uses the same pre-movement tick as Go
+ok 190 - boost expiry uses the same pre-movement tick as Go
+  ---
+  duration_ms: 0.158719
+  type: 'test'
+  ...
+# Subtest: input replay crosses boost expiration without double speed or time
+ok 191 - input replay crosses boost expiration without double speed or time
+  ---
+  duration_ms: 2.061639
+  type: 'test'
+  ...
+# Subtest: boost sub-tick visuals do not consume simulation timer
+ok 192 - boost sub-tick visuals do not consume simulation timer
+  ---
+  duration_ms: 0.800243
+  type: 'test'
+  ...
+# Subtest: boosted wall contact cannot tunnel
+ok 193 - boosted wall contact cannot tunnel
+  ---
+  duration_ms: 4.817223
+  type: 'test'
+  ...
+# Subtest: five speed stacks scale movement and turning without tunneling
+ok 194 - five speed stacks scale movement and turning without tunneling
+  ---
+  duration_ms: 3.388254
+  type: 'test'
+  ...
+# Subtest: remote objective respawn never blends between different life epochs
+ok 195 - remote objective respawn never blends between different life epochs
+  ---
+  duration_ms: 0.217657
+  type: 'test'
+  ...
+# Subtest: newest respawn cannot render the previous life from an older buffer pair
+ok 196 - newest respawn cannot render the previous life from an older buffer pair
+  ---
+  duration_ms: 0.143556
+  type: 'test'
+  ...
+# Subtest: Ghost movement matches Go fixtures across walls, speed stacking and expiry
+ok 197 - Ghost movement matches Go fixtures across walls, speed stacking and expiry
+  ---
+  duration_ms: 23.999211
+  type: 'test'
+  ...
+# Subtest: Ghost expiry solidifies only once, including high refresh subtick rendering
+ok 198 - Ghost expiry solidifies only once, including high refresh subtick rendering
+  ---
+  duration_ms: 1.498102
+  type: 'test'
+  ...
+# Subtest: Remote Ghost inside a wall is not pushed out by interpolation
+ok 199 - Remote Ghost inside a wall is not pushed out by interpolation
+  ---
+  duration_ms: 0.835066
+  type: 'test'
+  ...
+# Subtest: Remote Ghost expiry never blends solid and phasing wall positions
+ok 200 - Remote Ghost expiry never blends solid and phasing wall positions
+  ---
+  duration_ms: 0.794815
+  type: 'test'
+  ...
+# Subtest: Independent predictors replay Ghost and Super Speed with delayed corrections
+ok 201 - Independent predictors replay Ghost and Super Speed with delayed corrections
+  ---
+  duration_ms: 20.943217
+  type: 'test'
+  ...
+# Subtest: Ghost reconciliation never carries a sideways visual correction through walls
+ok 202 - Ghost reconciliation never carries a sideways visual correction through walls
+  ---
+  duration_ms: 0.79124
+  type: 'test'
+  ...
+# Subtest: remote boosted keyboard and touch rotation survives a short packet gap
+ok 203 - remote boosted keyboard and touch rotation survives a short packet gap
+  ---
+  duration_ms: 3.637929
+  type: 'test'
+  ...
+# Subtest: remote turn extrapolation bounds abrupt corrections using the current boost
+ok 204 - remote turn extrapolation bounds abrupt corrections using the current boost
+  ---
+  duration_ms: 0.298308
+  type: 'test'
+  ...
+# Subtest: shot cooldown tracks only its pilot’s unconfirmed previews and stops at the first match
+ok 205 - shot cooldown tracks only its pilot’s unconfirmed previews and stops at the first match
+  ---
+  duration_ms: 1.001736
+  type: 'test'
+  ...
+# Subtest: both mismatch responses refuse online play and expose reload while preserving the local roster
+ok 206 - both mismatch responses refuse online play and expose reload while preserving the local roster
+  ---
+  duration_ms: 7.304342
+  type: 'test'
+  ...
+# Subtest: compatible handshake proceeds without an update dialog
+ok 207 - compatible handshake proceeds without an update dialog
+  ---
+  duration_ms: 1.362959
+  type: 'test'
+  ...
+# Subtest: CTF flags/bases and Hill remain in the frozen final scene during local and online result previews
+ok 208 - CTF flags/bases and Hill remain in the frozen final scene during local and online result previews
+  ---
+  duration_ms: 9.962468
+  type: 'test'
+  ...
+# Subtest: objective preview visibility still excludes lobbies and sudden-death objectives
+ok 209 - objective preview visibility still excludes lobbies and sudden-death objectives
+  ---
+  duration_ms: 1.534246
+  type: 'test'
+  ...
+# Subtest: assigned online ammo panels retain their layout through empty lobby, GO, live play and END MATCH snapshots
+ok 210 - assigned online ammo panels retain their layout through empty lobby, GO, live play and END MATCH snapshots
+  ---
+  duration_ms: 6.219531
+  type: 'test'
+  ...
+# Subtest: online HUD uses the arriving authoritative tank before rendered bodies catch up
+ok 211 - online HUD uses the arriving authoritative tank before rendered bodies catch up
+  ---
+  duration_ms: 1.435378
+  type: 'test'
+  ...
+# Subtest: spectator and local P2 assignments define HUD presence without inventing controlled tanks
+ok 212 - spectator and local P2 assignments define HUD presence without inventing controlled tanks
+  ---
+  duration_ms: 1.488848
+  type: 'test'
+  ...
+# Subtest: LOCAL P2 Remove recovers after queue status/cancel packets without a bot mutation
+ok 213 - LOCAL P2 Remove recovers after queue status/cancel packets without a bot mutation
+  ---
+  duration_ms: 20.564567
+  type: 'test'
+  ...
+# Subtest: unchanged cached roster repairs a stale disabled Remove without replacing name controls
+ok 214 - unchanged cached roster repairs a stale disabled Remove without replacing name controls
+  ---
+  duration_ms: 2.026657
+  type: 'test'
+  ...
+# Subtest: closing Remove confirmation cannot unlock restricted roster actions
+ok 215 - closing Remove confirmation cannot unlock restricted roster actions
+  ---
+  duration_ms: 30.406765
+  type: 'test'
+  ...
+# Subtest: cached spectator Remove restores after queue cancellation in both spectator lists
+ok 216 - cached spectator Remove restores after queue cancellation in both spectator lists
+  ---
+  duration_ms: 8.840781
+  type: 'test'
+  ...
+# Subtest: eight distinct named dark palettes use neon-blue interface accent
+ok 217 - eight distinct named dark palettes use neon-blue interface accent
+  ---
+  duration_ms: 4.483081
+  type: 'test'
+  ...
+# Subtest: canonical color identity maps once into the dark palette
+ok 218 - canonical color identity maps once into the dark palette
+  ---
+  duration_ms: 2.235731
+  type: 'test'
+  ...
+# Subtest: every power-up has a dark palette paint
+ok 219 - every power-up has a dark palette paint
+  ---
+  duration_ms: 4.461898
+  type: 'test'
+  ...
+# Subtest: paint mapping preserves alpha and ignores unknown non-color objects
+ok 220 - paint mapping preserves alpha and ignores unknown non-color objects
+  ---
+  duration_ms: 1.16406
+  type: 'test'
+  ...
+# Subtest: compact machine-gun records expand with exact radius, volley, color and state
+ok 221 - compact machine-gun records expand with exact radius, volley, color and state
+  ---
+  duration_ms: 0.696727
+  type: 'test'
+  ...
+# Subtest: compact decoder bounds records and rejects malformed or nonfinite values
+ok 222 - compact decoder bounds records and rejects malformed or nonfinite values
+  ---
+  duration_ms: 1.805344
+  type: 'test'
+  ...
+# Subtest: both local machine guns predict independently and allow later confirmed streaming
+ok 223 - both local machine guns predict independently and allow later confirmed streaming
+  ---
+  duration_ms: 4.373195
+  type: 'test'
+  ...
+# Subtest: online Survival hold snapshots keep nearly expired pickups visible without visual aging
+ok 224 - online Survival hold snapshots keep nearly expired pickups visible without visual aging
+  ---
+  duration_ms: 2.911968
+  type: 'test'
+  ...
+# Subtest: online completed scenes and new-wave countdowns freeze pickups while live play still expires them
+ok 225 - online completed scenes and new-wave countdowns freeze pickups while live play still expires them
+  ---
+  duration_ms: 3.973644
+  type: 'test'
+  ...
+# Subtest: local equipped and ground durations match each of the six map tiers
+ok 226 - local equipped and ground durations match each of the six map tiers
+  ---
+  duration_ms: 5.025821
+  type: 'test'
+  ...
+# Subtest: local larger-map buffs refresh independently and respect stack and charge caps
+ok 227 - local larger-map buffs refresh independently and respect stack and charge caps
+  ---
+  duration_ms: 3.88458
+  type: 'test'
+  ...
+# Subtest: local machine gun fires exactly 180 rapid projectiles at 60 Hz on a 120 Hz simulation
+ok 228 - local machine gun fires exactly 180 rapid projectiles at 60 Hz on a 120 Hz simulation
+  ---
+  duration_ms: 9.479082
+  type: 'test'
+  ...
+# Subtest: local cooldown, wall, slot and same-tick blocks never spend firing budget
+ok 229 - local cooldown, wall, slot and same-tick blocks never spend firing budget
+  ---
+  duration_ms: 1.544983
+  type: 'test'
+  ...
+# Subtest: local released fire preserves budget but the regular timer still expires unused guns
+ok 230 - local released fire preserves budget but the regular timer still expires unused guns
+  ---
+  duration_ms: 62.910402
+  type: 'test'
+  ...
+# Subtest: machine-gun pickup refreshes its firing budget; other buffs preserve it
+ok 231 - machine-gun pickup refreshes its firing budget; other buffs preserve it
+  ---
+  duration_ms: 1.590291
+  type: 'test'
+  ...
+# Subtest: online predicted fire reserves remaining rounds and never shows a 181st machine-gun shot
+ok 232 - online predicted fire reserves remaining rounds and never shows a 181st machine-gun shot
+  ---
+  duration_ms: 13.536251
+  type: 'test'
+  ...
+# Subtest: unacknowledged previews cannot overspend the last firing rounds
+ok 233 - unacknowledged previews cannot overspend the last firing rounds
+  ---
+  duration_ms: 0.530517
+  type: 'test'
+  ...
+# Subtest: predicted firing budget is independent for P2 and resets with a new life
+ok 234 - predicted firing budget is independent for P2 and resets with a new life
+  ---
+  duration_ms: 0.350998
+  type: 'test'
+  ...
+# Subtest: pickup feedback explains map duration separately from machine-gun firing time and grenade fuse
+ok 235 - pickup feedback explains map duration separately from machine-gun firing time and grenade fuse
+  ---
+  duration_ms: 1.91591
+  type: 'test'
+  ...
+# Subtest: online restart uses the game confirmation and sends one host-scoped wave command
+ok 236 - online restart uses the game confirmation and sends one host-scoped wave command
+  ---
+  duration_ms: 6.120402
+  type: 'test'
+  ...
+# Subtest: cancel and authoritative state changes invalidate online restart confirmation
+ok 237 - cancel and authoritative state changes invalidate online restart confirmation
+  ---
+  duration_ms: 15.937341
+  type: 'test'
+  ...
+# Subtest: fresh authoritative restart state closes the menu after wave one and allows another loss result
+ok 238 - fresh authoritative restart state closes the menu after wave one and allows another loss result
+  ---
+  duration_ms: 5.685427
+  type: 'test'
+  ...
+# Subtest: loss results offer wave retry and full replay for spectating hosts of bot squads
+ok 239 - loss results offer wave retry and full replay for spectating hosts of bot squads
+  ---
+  duration_ms: 2.524866
+  type: 'test'
+  ...
+# Subtest: guests, disconnected hosts, non-Survival games and won runs never get wave retry controls
+ok 240 - guests, disconnected hosts, non-Survival games and won runs never get wave retry controls
+  ---
+  duration_ms: 21.53121
+  type: 'test'
+  ...
+# Subtest: send failure, rejection and timeout reenable retry without applying a local online restart
+ok 241 - send failure, rejection and timeout reenable retry without applying a local online restart
+  ---
+  duration_ms: 8.461352
+  type: 'test'
+  ...
+# Subtest: online final state delays results once while duplicate snapshots keep the original deadline
+ok 242 - online final state delays results once while duplicate snapshots keep the original deadline
+  ---
+  duration_ms: 7.688279
+  type: 'test'
+  ...
+# Subtest: online round-result delay and joining an already completed match reveal results immediately
+ok 243 - online round-result delay and joining an already completed match reveal results immediately
+  ---
+  duration_ms: 3.830589
+  type: 'test'
+  ...
+# Subtest: online result reveal cannot survive a disconnect, room transfer, new generation or lobby state
+ok 244 - online result reveal cannot survive a disconnect, room transfer, new generation or lobby state
+  ---
+  duration_ms: 18.093603
+  type: 'test'
+  ...
+# Subtest: a final snapshot arriving before room metadata retains its delayed result
+ok 245 - a final snapshot arriving before room metadata retains its delayed result
+  ---
+  duration_ms: 2.123402
+  type: 'test'
+  ...
+# Subtest: online end timing subtracts the authoritative hold even if roundOver snapshots were skipped
+ok 246 - online end timing subtracts the authoritative hold even if roundOver snapshots were skipped
+  ---
+  duration_ms: 1.811843
+  type: 'test'
+  ...
+# Subtest: online win and loss previews remain visible for exactly the existing two-second result interval
+ok 247 - online win and loss previews remain visible for exactly the existing two-second result interval
+  ---
+  duration_ms: 15.565522
+  type: 'test'
+  ...
+# Subtest: departed local pilots retain their last earned score after their seat is reused in every mode
+ok 248 - departed local pilots retain their last earned score after their seat is reused in every mode
+  ---
+  duration_ms: 12.904771
+  type: 'test'
+  ...
+# Subtest: winning team result keeps original members and score when the winning pilot spectates
+ok 249 - winning team result keeps original members and score when the winning pilot spectates
+  ---
+  duration_ms: 4.217541
+  type: 'test'
+  ...
+# Subtest: a spectator swapping into the winning seat cannot receive the original pilot win
+ok 250 - a spectator swapping into the winning seat cannot receive the original pilot win
+  ---
+  duration_ms: 8.000749
+  type: 'test'
+  ...
+# Subtest: reusing a winning seat with a reset score cannot cancel a clinched match
+ok 251 - reusing a winning seat with a reset score cannot cancel a clinched match
+  ---
+  duration_ms: 3.564113
+  type: 'test'
+  ...
+# Subtest: a nonfinal round remains open and starts the next round after its result delay
+ok 252 - a nonfinal round remains open and starts the next round after its result delay
+  ---
+  duration_ms: 5.742033
+  type: 'test'
+  ...
+# Subtest: starting a new local match clears the frozen result from the previous match
+ok 253 - starting a new local match clears the frozen result from the previous match
+  ---
+  duration_ms: 2.931808
+  type: 'test'
+  ...
+# Subtest: result ownership follows membership across role changes and rejects reused seats
+ok 254 - result ownership follows membership across role changes and rejects reused seats
+  ---
+  duration_ms: 2.565848
+  type: 'test'
+  ...
+# Subtest: restart during a clinched result opens results instead of starting another round
+ok 255 - restart during a clinched result opens results instead of starting another round
+  ---
+  duration_ms: 2.862283
+  type: 'test'
+  ...
+# Subtest: Survival and objective results wait two seconds while final statistics and combat stay frozen
+ok 256 - Survival and objective results wait two seconds while final statistics and combat stay frozen
+  ---
+  duration_ms: 9.999083
+  type: 'test'
+  ...
+# Subtest: legacy solo and local duel result screens receive the same terminal reveal delay
+ok 257 - legacy solo and local duel result screens receive the same terminal reveal delay
+  ---
+  duration_ms: 4.68234
+  type: 'test'
+  ...
+# Subtest: existing final elimination round delay is not followed by another result delay
+ok 258 - existing final elimination round delay is not followed by another result delay
+  ---
+  duration_ms: 2.544255
+  type: 'test'
+  ...
+# Subtest: local result reveal is canceled by navigation, restarting or setup replacement
+ok 259 - local result reveal is canceled by navigation, restarting or setup replacement
+  ---
+  duration_ms: 19.900429
+  type: 'test'
+  ...
+# Subtest: animation frames reveal queued results at the deadline after rendering impact-only updates
+ok 260 - animation frames reveal queued results at the deadline after rendering impact-only updates
+  ---
+  duration_ms: 3.210216
+  type: 'test'
+  ...
+# Subtest: opening Controls during the terminal reveal postpones results until the dialog closes
+ok 261 - opening Controls during the terminal reveal postpones results until the dialog closes
+  ---
+  duration_ms: 2.800019
+  type: 'test'
+  ...
+# Subtest: local final and nonfinal elimination rounds hold for exactly 240 simulation steps
+ok 262 - local final and nonfinal elimination rounds hold for exactly 240 simulation steps
+  ---
+  duration_ms: 7.991225
+  type: 'test'
+  ...
+# Subtest: every non-Elimination ending shows a compact preview throughout its existing two-second hold
+ok 263 - every non-Elimination ending shows a compact preview throughout its existing two-second hold
+  ---
+  duration_ms: 15.861727
+  type: 'test'
+  ...
+# Subtest: enabling Teams distributes 1–8 tanks across every eligible team, skipping spectators
+ok 264 - enabling Teams distributes 1–8 tanks across every eligible team, skipping spectators
+  ---
+  duration_ms: 50.108095
+  type: 'test'
+  ...
+# Subtest: new bot and local P2 fill the least-populated team and preserve manual choices
+ok 265 - new bot and local P2 fill the least-populated team and preserve manual choices
+  ---
+  duration_ms: 8.026087
+  type: 'test'
+  ...
+# Subtest: online add leaves team and difficulty inheritance to the server; active matches reject local adds
+ok 266 - online add leaves team and difficulty inheritance to the server; active matches reject local adds
+  ---
+  duration_ms: 3.017807
+  type: 'test'
+  ...
+# Subtest: Add Bot inherits the last roster bot through edits and seat reuse, ignoring humans and spectators
+ok 267 - Add Bot inherits the last roster bot through edits and seat reuse, ignoring humans and spectators
+  ---
+  duration_ms: 11.32733
+  type: 'test'
+  ...
+# Subtest: changing to and from CTF rebalances, while other rule edits preserve host assignments
+ok 268 - changing to and from CTF rebalances, while other rule edits preserve host assignments
+  ---
+  duration_ms: 2.135029
+  type: 'test'
+  ...
+# Subtest: CTF roster menus contain only first two teams; FFA has no team menu
+ok 269 - CTF roster menus contain only first two teams; FFA has no team menu
+  ---
+  duration_ms: 8.641602
+  type: 'test'
+  ...
+# Subtest: CTF rejects manual Teams 3/4 locally and before sending an online edit
+ok 270 - CTF rejects manual Teams 3/4 locally and before sending an online edit
+  ---
+  duration_ms: 4.946136
+  type: 'test'
+  ...
+# Subtest: legacy CTF presets migrate to two teams; valid manual presets retain their teams
+ok 271 - legacy CTF presets migrate to two teams; valid manual presets retain their teams
+  ---
+  duration_ms: 2.970466
+  type: 'test'
+  ...
+# Subtest: spectators entering play fill an empty side, including after a CTF transition
+ok 272 - spectators entering play fill an empty side, including after a CTF transition
+  ---
+  duration_ms: 2.094348
+  type: 'test'
+  ...
+# Subtest: pause visibility and labels track lobby, match, results, local pause and online connection
+ok 273 - pause visibility and labels track lobby, match, results, local pause and online connection
+  ---
+  duration_ms: 2.999429
+  type: 'test'
+  ...
+# Subtest: rules hide inactive team fields and respawn settings without losing saved team names
+ok 274 - rules hide inactive team fields and respawn settings without losing saved team names
+  ---
+  duration_ms: 2.310664
+  type: 'test'
+  ...
+# Subtest: unchanged room metadata does not rebuild the field manual DOM
+ok 275 - unchanged room metadata does not rebuild the field manual DOM
+  ---
+  duration_ms: 3.287703
+  type: 'test'
+  ...
+# Subtest: lobby score summary names elimination wins and follows each mode’s current target
+ok 276 - lobby score summary names elimination wins and follows each mode’s current target
+  ---
+  duration_ms: 2.397244
+  type: 'test'
+  ...
+# Subtest: inactive team fields cannot block applying FFA or CTF with unfinished hidden names
+ok 277 - inactive team fields cannot block applying FFA or CTF with unfinished hidden names
+  ---
+  duration_ms: 1.997893
+  type: 'test'
+  ...
+# Subtest: survival rules reject oversized squads without losing their roster or changing the old rules
+ok 278 - survival rules reject oversized squads without losing their roster or changing the old rules
+  ---
+  duration_ms: 2.29487
+  type: 'test'
+  ...
+# Subtest: survival roster hides team assignments and presets normalize one cooperative squad
+ok 279 - survival roster hides team assignments and presets normalize one cooperative squad
+  ---
+  duration_ms: 2.224524
+  type: 'test'
+  ...
+# Subtest: local roster difficulty edits ignore inherited object names
+ok 280 - local roster difficulty edits ignore inherited object names
+  ---
+  duration_ms: 1.93553
+  type: 'test'
+  ...
+# Subtest: Rules waits through unrelated live room broadcasts and closes only after all submitted rules match
+ok 281 - Rules waits through unrelated live room broadcasts and closes only after all submitted rules match
+  ---
+  duration_ms: 9.721665
+  type: 'test'
+  ...
+# Subtest: applying identical rules still waits for a fresh room packet
+ok 282 - applying identical rules still waits for a fresh room packet
+  ---
+  duration_ms: 3.660113
+  type: 'test'
+  ...
+# Subtest: Preset waits for both rules and the complete authoritative roster, with a host in a nonzero seat
+ok 283 - Preset waits for both rules and the complete authoritative roster, with a host in a nonzero seat
+  ---
+  duration_ms: 5.239978
+  type: 'test'
+  ...
+# Subtest: disconnect cancels the pending edit, keeps the draft and permits local setup after leaving
+ok 284 - disconnect cancels the pending edit, keeps the draft and permits local setup after leaving
+  ---
+  duration_ms: 3.617529
+  type: 'test'
+  ...
+# Subtest: send failure, server rejection and timeout retain the form and release edit locks
+ok 285 - send failure, server rejection and timeout retain the form and release edit locks
+  ---
+  duration_ms: 10.318924
+  type: 'test'
+  ...
+# Subtest: connection identity, host and match changes cancel old requests without accepting a different room
+ok 286 - connection identity, host and match changes cancel old requests without accepting a different room
+  ---
+  duration_ms: 13.576802
+  type: 'test'
+  ...
+# Subtest: a timed-out request cannot clear a newer retry and a mismatched action error cannot dismiss it
+ok 287 - a timed-out request cannot clear a newer retry and a mismatched action error cannot dismiss it
+  ---
+  duration_ms: 2.936104
+  type: 'test'
+  ...
+# Subtest: saved presets reject inherited object names as bot strengths before local or online mutation
+ok 288 - saved presets reject inherited object names as bot strengths before local or online mutation
+  ---
+  duration_ms: 24.981878
+  type: 'test'
+  ...
+# Subtest: saved rule profiles and presets reject inherited object names as power-ups
+ok 289 - saved rule profiles and presets reject inherited object names as power-ups
+  ---
+  duration_ms: 3.633342
+  type: 'test'
+  ...
+# Subtest: saved and direct global difficulty selection ignore inherited names
+ok 290 - saved and direct global difficulty selection ignore inherited names
+  ---
+  duration_ms: 11.53325
+  type: 'test'
+  ...
+# Subtest: 100 identical room packets create no new rows or DOM attachments and preserve a name draft
+ok 291 - 100 identical room packets create no new rows or DOM attachments and preserve a name draft
+  ---
+  duration_ms: 7.36349
+  type: 'test'
+  ...
+# Subtest: unrelated ready, connection and score packets patch status without rebuilding another pilot draft
+ok 292 - unrelated ready, connection and score packets patch status without rebuilding another pilot draft
+  ---
+  duration_ms: 6.171468
+  type: 'test'
+  ...
+# Subtest: room status handles host, self, ready, reconnecting, bot, local P2 and away pilots
+ok 293 - room status handles host, self, ready, reconnecting, bot, local P2 and away pilots
+  ---
+  duration_ms: 0.906462
+  type: 'test'
+  ...
+# Subtest: editing a tank rebuilds only that tank row and preserves the other controls
+ok 294 - editing a tank rebuilds only that tank row and preserves the other controls
+  ---
+  duration_ms: 4.663231
+  type: 'test'
+  ...
+# Subtest: a removed or reused seat cannot inherit the previous member row or draft
+ok 295 - a removed or reused seat cannot inherit the previous member row or draft
+  ---
+  duration_ms: 1.240556
+  type: 'test'
+  ...
+# Subtest: roster order changes move existing rows without discarding input nodes or drafts
+ok 296 - roster order changes move existing rows without discarding input nodes or drafts
+  ---
+  duration_ms: 0.994886
+  type: 'test'
+  ...
+# Subtest: permission, host and game-format transitions rebuild controls before displaying the new state
+ok 297 - permission, host and game-format transitions rebuild controls before displaying the new state
+  ---
+  duration_ms: 9.61742
+  type: 'test'
+  ...
+# Subtest: moderation roster caches are independent and switching moderation mode rebuilds controls
+ok 298 - moderation roster caches are independent and switching moderation mode rebuilds controls
+  ---
+  duration_ms: 1.067435
+  type: 'test'
+  ...
+# Subtest: the open-seat notice stays unique, follows capacity, and disappears when full or disabled
+ok 299 - the open-seat notice stays unique, follows capacity, and disappears when full or disabled
+  ---
+  duration_ms: 2.612378
+  type: 'test'
+  ...
+# Subtest: a bot killed by remote grenade detonation stops before movement even when its target survives
+ok 300 - a bot killed by remote grenade detonation stops before movement even when its target survives
+  ---
+  duration_ms: 1.304912
+  type: 'test'
+  ...
+# Subtest: each mode remembers its rules through mode changes and a fresh page load, keeping the selected map
+ok 301 - each mode remembers its rules through mode changes and a fresh page load, keeping the selected map
+  ---
+  duration_ms: 12.96337
+  type: 'test'
+  ...
+# Subtest: roster names, bot strengths, teams, local P2, spectator state and owner IDs restore across runs
+ok 302 - roster names, bot strengths, teams, local P2, spectator state and owner IDs restore across runs
+  ---
+  duration_ms: 6.543778
+  type: 'test'
+  ...
+# Subtest: FFA tank colors survive seat reassignment and repeated restarts
+ok 303 - FFA tank colors survive seat reassignment and repeated restarts
+  ---
+  duration_ms: 13.280346
+  type: 'test'
+  ...
+# Subtest: unchanged room renders write once; individual configuration changes persist immediately
+ok 304 - unchanged room renders write once; individual configuration changes persist immediately
+  ---
+  duration_ms: 9.709708
+  type: 'test'
+  ...
+# Subtest: accepted online host settings save only the host, their local P2 and bots
+ok 305 - accepted online host settings save only the host, their local P2 and bots
+  ---
+  duration_ms: 6.883539
+  type: 'test'
+  ...
+# Subtest: legacy rules migrate including mobile map preference and omitted future defaults
+ok 306 - legacy rules migrate including mobile map preference and omitted future defaults
+  ---
+  duration_ms: 5.722553
+  type: 'test'
+  ...
+# Subtest: invalid saved rule profiles and rosters recover independently without loading unsafe seats
+ok 307 - invalid saved rule profiles and rosters recover independently without loading unsafe seats
+  ---
+  duration_ms: 34.737426
+  type: 'test'
+  ...
+# Subtest: spectating pilots do not consume survival seats; saved active overflow is rejected
+ok 308 - spectating pilots do not consume survival seats; saved active overflow is rejected
+  ---
+  duration_ms: 3.505701
+  type: 'test'
+  ...
+# Subtest: storage failure does not interrupt editing and in-session mode memory remains available
+ok 309 - storage failure does not interrupt editing and in-session mode memory remains available
+  ---
+  duration_ms: 3.381895
+  type: 'test'
+  ...
+# Subtest: DEFAULT RULES stages mode defaults, leaves the lobby setup intact and saves only on Apply
+ok 310 - DEFAULT RULES stages mode defaults, leaves the lobby setup intact and saves only on Apply
+  ---
+  duration_ms: 12.674626
+  type: 'test'
+  ...
+# Subtest: DEFAULT RULES is host-only and online Apply waits for authoritative confirmation
+ok 311 - DEFAULT RULES is host-only and online Apply waits for authoritative confirmation
+  ---
+  duration_ms: 3.756858
+  type: 'test'
+  ...
+# Subtest: a rejected oversized Survival mode switch preserves the saved rules and complete roster
+ok 312 - a rejected oversized Survival mode switch preserves the saved rules and complete roster
+  ---
+  duration_ms: 3.670899
+  type: 'test'
+  ...
+# Subtest: denied storage reads use device defaults and an invalid selected profile does not discard other profiles
+ok 313 - denied storage reads use device defaults and an invalid selected profile does not discard other profiles
+  ---
+  duration_ms: 8.495973
+  type: 'test'
+  ...
+# Subtest: sharing preserves the current pilots, rules, maze and pickups through handshake and generation zero
+ok 314 - sharing preserves the current pilots, rules, maze and pickups through handshake and generation zero
+  ---
+  duration_ms: 22.427092
+  type: 'test'
+  ...
+# Subtest: failed publish, refused version and unavailable server preserve the local room preview
+ok 315 - failed publish, refused version and unavailable server preserve the local room preview
+  ---
+  duration_ms: 13.606436
+  type: 'test'
+  ...
+# Subtest: the fixed objective HUD row reserves the same geometry for every mode including Elimination
+ok 316 - the fixed objective HUD row reserves the same geometry for every mode including Elimination
+  ---
+  duration_ms: 16.951816
+  type: 'test'
+  ...
+# Subtest: one to four survival squad members allow a solo human start and never become enemies
+ok 317 - one to four survival squad members allow a solo human start and never become enemies
+  ---
+  duration_ms: 32.261549
+  type: 'test'
+  ...
+# Subtest: wave plan scales to four enemies, alternates boss weapons and respects every enabled selection
+ok 318 - wave plan scales to four enemies, alternates boss weapons and respects every enabled selection
+  ---
+  duration_ms: 5.650014
+  type: 'test'
+  ...
+# Subtest: wave clear awards every squad member once, then starts a new maze countdown after two seconds
+ok 319 - wave clear awards every squad member once, then starts a new maze countdown after two seconds
+  ---
+  duration_ms: 5.953621
+  type: 'test'
+  ...
+# Subtest: fifth-wave boss introduces Normal skill and only enabled gear, with no extra room participant
+ok 320 - fifth-wave boss introduces Normal skill and only enabled gear, with no extra room participant
+  ---
+  duration_ms: 16.816442
+  type: 'test'
+  ...
+# Subtest: squad wipes and timeout lose the run, including simultaneous final-enemy destruction
+ok 321 - squad wipes and timeout lose the run, including simultaneous final-enemy destruction
+  ---
+  duration_ms: 26.651478
+  type: 'test'
+  ...
+# Subtest: final wave wins without a new maze or another break and freezes squad-only statistics
+ok 322 - final wave wins without a new maze or another break and freezes squad-only statistics
+  ---
+  duration_ms: 6.972203
+  type: 'test'
+  ...
+# Subtest: survival HUD explains enemies, bosses and squad returns instead of Hill or respawn timers
+ok 323 - survival HUD explains enemies, bosses and squad returns instead of Hill or respawn timers
+  ---
+  duration_ms: 4.507908
+  type: 'test'
+  ...
+# Subtest: survival loss and victory dialogs report waves, never a draw or Hill result
+ok 324 - survival loss and victory dialogs report waves, never a draw or Hill result
+  ---
+  duration_ms: 8.60726
+  type: 'test'
+  ...
+# Subtest: spectators cannot enter or swap midrun, and break combat is blocked for local and online inputs
+ok 325 - spectators cannot enter or swap midrun, and break combat is blocked for local and online inputs
+  ---
+  duration_ms: 4.423951
+  type: 'test'
+  ...
+# Subtest: the final fraction of a wave clamps physics and match duration before a timeout loss
+ok 326 - the final fraction of a wave clamps physics and match duration before a timeout loss
+  ---
+  duration_ms: 7.260115
+  type: 'test'
+  ...
+# Subtest: completed survival progress survives a later lobby preview reset
+ok 327 - completed survival progress survives a later lobby preview reset
+  ---
+  duration_ms: 4.969692
+  type: 'test'
+  ...
+# Subtest: wave breaks preserve machine firing budget, then revival clears it
+ok 328 - wave breaks preserve machine firing budget, then revival clears it
+  ---
+  duration_ms: 5.759413
+  type: 'test'
+  ...
+# Subtest: Huge survival bosses receive fifteen-second buffs and dead bosses leave the HUD
+ok 329 - Huge survival bosses receive fifteen-second buffs and dead bosses leave the HUD
+  ---
+  duration_ms: 6.049445
+  type: 'test'
+  ...
+# Subtest: the earned wave-break revival continues if the surviving pilot spectates
+ok 330 - the earned wave-break revival continues if the surviving pilot spectates
+  ---
+  duration_ms: 6.579131
+  type: 'test'
+  ...
+# Subtest: generated enemies cannot inherit old scores and finished runs preserve scene pickups
+ok 331 - generated enemies cannot inherit old scores and finished runs preserve scene pickups
+  ---
+  duration_ms: 5.120448
+  type: 'test'
+  ...
+# Subtest: Survival results let the last impact shake settle without advancing the finished game
+ok 332 - Survival results let the last impact shake settle without advancing the finished game
+  ---
+  duration_ms: 11.181891
+  type: 'test'
+  ...
+# Subtest: paused and lobby views cannot leave the maze jiggling indefinitely
+ok 333 - paused and lobby views cannot leave the maze jiggling indefinitely
+  ---
+  duration_ms: 10.136759
+  type: 'test'
+  ...
+# Subtest: defeated local enemies retain their lineup rows until the next wave replaces them
+ok 334 - defeated local enemies retain their lineup rows until the next wave replaces them
+  ---
+  duration_ms: 6.066902
+  type: 'test'
+  ...
+# Subtest: all-bot local squads clear waves, revive and win while their human host spectates
+ok 335 - all-bot local squads clear waves, revive and win while their human host spectates
+  ---
+  duration_ms: 4.880858
+  type: 'test'
+  ...
+# Subtest: stronger enemy tiers first appear as bosses, with staged armor and speed
+ok 336 - stronger enemy tiers first appear as bosses, with staged armor and speed
+  ---
+  duration_ms: 25.123572
+  type: 'test'
+  ...
+# Subtest: each local Survival wave protects its respawned squad with the real spawn duration
+ok 337 - each local Survival wave protects its respawned squad with the real spawn duration
+  ---
+  duration_ms: 5.301951
+  type: 'test'
+  ...
+# Subtest: a lost Survival boss wave retries on the same maze with the prior-wave score and statistics
+ok 338 - a lost Survival boss wave retries on the same maze with the prior-wave score and statistics
+  ---
+  duration_ms: 6.735496
+  type: 'test'
+  ...
+# Subtest: repeated failed attempts cannot farm statistics or advance the Survival wave
+ok 339 - repeated failed attempts cannot farm statistics or advance the Survival wave
+  ---
+  duration_ms: 4.954098
+  type: 'test'
+  ...
+# Subtest: paused Survival retries reset the whole squad and exclude departed pilots
+ok 340 - paused Survival retries reset the whole squad and exclude departed pilots
+  ---
+  duration_ms: 4.370931
+  type: 'test'
+  ...
+# Subtest: Survival restart eligibility rejects breaks, empty squads and stale lobby or mode state
+ok 341 - Survival restart eligibility rejects breaks, empty squads and stale lobby or mode state
+  ---
+  duration_ms: 4.090931
+  type: 'test'
+  ...
+# Subtest: editing a finished Survival setup invalidates retry while preserving its frozen results
+ok 342 - editing a finished Survival setup invalidates retry while preserving its frozen results
+  ---
+  duration_ms: 17.770938
+  type: 'test'
+  ...
+# Subtest: every available local squad tank starts boss waves shielded even with shield pickups disabled
+ok 343 - every available local squad tank starts boss waves shielded even with shield pickups disabled
+  ---
+  duration_ms: 12.508446
+  type: 'test'
+  ...
+# Subtest: current and lost boss-wave retries restore the full shield bonus to an all-bot squad
+ok 344 - current and lost boss-wave retries restore the full shield bonus to an all-bot squad
+  ---
+  duration_ms: 5.802584
+  type: 'test'
+  ...
+# Subtest: boss protection preserves stronger shields and skips dead, spectating and disconnected tanks
+ok 345 - boss protection preserves stronger shields and skips dead, spectating and disconnected tanks
+  ---
+  duration_ms: 3.967575
+  type: 'test'
+  ...
+# Subtest: completed Survival waves freeze nearly expired pickups until the next wave replaces them
+ok 346 - completed Survival waves freeze nearly expired pickups until the next wave replaces them
+  ---
+  duration_ms: 5.349343
+  type: 'test'
+  ...
+# Subtest: finished Survival scenes freeze pickups throughout the result reveal
+ok 347 - finished Survival scenes freeze pickups throughout the result reveal
+  ---
+  duration_ms: 10.514137
+  type: 'test'
+  ...
+# Subtest: Survival holds its cleared maze for 240 ticks, then freezes a fresh boss arena for a full 360-tick countdown
+ok 348 - Survival holds its cleared maze for 240 ticks, then freezes a fresh boss arena for a full 360-tick countdown
+  ---
+  duration_ms: 12.836188
+  type: 'test'
+  ...
+# Subtest: next-boss gear matches fixtures also checked against authoritative Go grants
+ok 349 - next-boss gear matches fixtures also checked against authoritative Go grants
+  ---
+  duration_ms: 23.790337
+  type: 'test'
+  ...
+# Subtest: pre-boss compact results show only the completed wave throughout the two-second hold
+ok 350 - pre-boss compact results show only the completed wave throughout the two-second hold
+  ---
+  duration_ms: 2.884997
+  type: 'test'
+  ...
+# Subtest: ordinary breaks retain their clear message and never show a boss equipment preview
+ok 351 - ordinary breaks retain their clear message and never show a boss equipment preview
+  ---
+  duration_ms: 1.445022
+  type: 'test'
+  ...
+# Subtest: wave results hide during pause, resume without boss details, and disappear at wave start
+ok 352 - wave results hide during pause, resume without boss details, and disappear at wave start
+  ---
+  duration_ms: 1.501317
+  type: 'test'
+  ...
+# Subtest: finished targets, ended runs, and other modes cannot announce another survival boss
+ok 353 - finished targets, ended runs, and other modes cannot announce another survival boss
+  ---
+  duration_ms: 1.715389
+  type: 'test'
+  ...
+# Subtest: online boss details wait for the countdown and use authoritative equipment rules
+ok 354 - online boss details wait for the countdown and use authoritative equipment rules
+  ---
+  duration_ms: 3.986854
+  type: 'test'
+  ...
+# Subtest: boss equipment appears only after the new maze arrives for the three-second countdown
+ok 355 - boss equipment appears only after the new maze arrives for the three-second countdown
+  ---
+  duration_ms: 1.618042
+  type: 'test'
+  ...
+# Subtest: appearance is dark-only with neon blue primary
+ok 356 - appearance is dark-only with neon blue primary
+  ---
+  duration_ms: 2.109582
+  type: 'test'
+  ...
+# Subtest: dark bootstrap contains no light-mode state or browser color-scheme listener
+ok 357 - dark bootstrap contains no light-mode state or browser color-scheme listener
+  ---
+  duration_ms: 0.175834
+  type: 'test'
+  ...
+# Subtest: eight stable dark palette colors remain distinct
+ok 358 - eight stable dark palette colors remain distinct
+  ---
+  duration_ms: 0.669977
+  type: 'test'
+  ...
+# Subtest: canonical team colors map deterministically and preserve alpha
+ok 359 - canonical team colors map deterministically and preserve alpha
+  ---
+  duration_ms: 0.796197
+  type: 'test'
+  ...
+# Subtest: theme-color metadata follows the dark page surface
+ok 360 - theme-color metadata follows the dark page surface
+  ---
+  duration_ms: 0.721174
+  type: 'test'
+  ...
+# Subtest: asset mapping is idempotent and ignores non-strings
+ok 361 - asset mapping is idempotent and ignores non-strings
+  ---
+  duration_ms: 0.701425
+  type: 'test'
+  ...
+# Subtest: pinch is blocked throughout local and online active phases, including menus and disconnection
+ok 362 - pinch is blocked throughout local and online active phases, including menus and disconnection
+  ---
+  duration_ms: 5.930396
+  type: 'test'
+  ...
+# Subtest: home, lobby and completed matches release zoom and every nonpassive gesture listener
+ok 363 - home, lobby and completed matches release zoom and every nonpassive gesture listener
+  ---
+  duration_ms: 1.140695
+  type: 'test'
+  ...
+# Subtest: single-finger scrolling and taps remain native while only cancelable pinch gestures are canceled
+ok 364 - single-finger scrolling and taps remain native while only cancelable pinch gestures are canceled
+  ---
+  duration_ms: 1.107114
+  type: 'test'
+  ...
+# Subtest: repeated HUD refreshes register one capture guard per event and leave no inactive scrolling overhead
+ok 365 - repeated HUD refreshes register one capture guard per event and leave no inactive scrolling overhead
+  ---
+  duration_ms: 2.133467
+  type: 'test'
+  ...
+# Subtest: joystick plus Fire keep independent pointers through a prevented pinch and release without stuck input
+ok 366 - joystick plus Fire keep independent pointers through a prevented pinch and release without stuck input
+  ---
+  duration_ms: 1.193965
+  type: 'test'
+  ...
+# Subtest: actual background reconnect keeps active-match pinch protection through its temporary menu phase
+ok 367 - actual background reconnect keeps active-match pinch protection through its temporary menu phase
+  ---
+  duration_ms: 6.017678
+  type: 'test'
+  ...
+# Subtest: cold-session and lobby reconnects do not acquire an active-match zoom lock
+ok 368 - cold-session and lobby reconnects do not acquire an active-match zoom lock
+  ---
+  duration_ms: 2.771987
+  type: 'test'
+  ...
+# Subtest: authoritative lobby/results, abandoned retries and leaving release a retained reconnect lock
+ok 369 - authoritative lobby/results, abandoned retries and leaving release a retained reconnect lock
+  ---
+  duration_ms: 8.637185
+  type: 'test'
+  ...
+# Subtest: F toggles fullscreen from Rules, Presets, Controls and Find Online Battle dialogs
+ok 370 - F toggles fullscreen from Rules, Presets, Controls and Find Online Battle dialogs
+  ---
+  duration_ms: 18.079431
+  type: 'test'
+  ...
+# Subtest: fullscreen keeps text entry, native select typeahead, remap capture and system shortcuts intact
+ok 371 - fullscreen keeps text entry, native select typeahead, remap capture and system shortcuts intact
+  ---
+  duration_ms: 4.56892
+  type: 'test'
+  ...
+# Subtest: F works while a non-text menu control is focused and does not repeat when held
+ok 372 - F works while a non-text menu control is focused and does not repeat when held
+  ---
+  duration_ms: 2.674601
+  type: 'test'
+  ...
+# Subtest: allowing menu fullscreen does not leak firing, pause or sound shortcuts into dialogs
+ok 373 - allowing menu fullscreen does not leak firing, pause or sound shortcuts into dialogs
+  ---
+  duration_ms: 2.981733
+  type: 'test'
+  ...
+# Subtest: both ammo readouts show their own remaining productive firing time, rounded up to tenths
+ok 374 - both ammo readouts show their own remaining productive firing time, rounded up to tenths
+  ---
+  duration_ms: 4.067265
+  type: 'test'
+  ...
+# Subtest: ammo budget survives pauses and ammo waits, and hides when dead, expired or replaced
+ok 375 - ammo budget survives pauses and ammo waits, and hides when dead, expired or replaced
+  ---
+  duration_ms: 1.888179
+  type: 'test'
+  ...
+# Subtest: online ammo readouts include unacknowledged shots independently without mutating snapshots
+ok 376 - online ammo readouts include unacknowledged shots independently without mutating snapshots
+  ---
+  duration_ms: 2.380158
+  type: 'test'
+  ...
+# Subtest: unforced live feedback follows actual shots while idle time preserves both firing budgets
+ok 377 - unforced live feedback follows actual shots while idle time preserves both firing budgets
+  ---
+  duration_ms: 3.729808
+  type: 'test'
+  ...
+# Subtest: unforced online readout and depletion bar update before a fresh server snapshot
+ok 378 - unforced online readout and depletion bar update before a fresh server snapshot
+  ---
+  duration_ms: 3.967736
+  type: 'test'
+  ...
+# Subtest: loadout skips hidden machine-gun slot work and restores correct slots on weapon changes
+ok 379 - loadout skips hidden machine-gun slot work and restores correct slots on weapon changes
+  ---
+  duration_ms: 2.612167
+  type: 'test'
+  ...
+1..379
+# tests 379
+# suites 0
+# pass 379
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1666.654364

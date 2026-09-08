@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.36.0';
+const GAME_VERSION='4.37.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -101,7 +101,7 @@ const secondaryID=()=>mode==='duel'?1:secondLocal()?.id;
 const primaryFireHeld=()=>heldAction(0,'fire')||firePointers.size>0;
 const primaryFireKey=code=>keyForAction(0,'fire',code);
 
-try{muted=localStorage.getItem('leqra.muted')==='1';const storedVolumeRaw=localStorage.getItem('leqra.volume');if(storedVolumeRaw!==null){const storedVolume=Number(storedVolumeRaw);if(Number.isFinite(storedVolume))audioVolume=Math.max(0,Math.min(100,Math.round(storedVolume)));}bestWins=Number(localStorage.getItem('leqra.wins')||0)||0;const saved=localStorage.getItem('leqra.difficulty');if(DIFFICULTY[saved])difficulty=saved;}catch(_){}
+try{muted=localStorage.getItem('leqra.muted')==='1';const storedVolumeRaw=localStorage.getItem('leqra.volume');if(storedVolumeRaw!==null){const storedVolume=Number(storedVolumeRaw);if(Number.isFinite(storedVolume))audioVolume=Math.max(0,Math.min(100,Math.round(storedVolume)));}bestWins=Number(localStorage.getItem('leqra.wins')||0)||0;const saved=localStorage.getItem('leqra.difficulty');if(Object.prototype.hasOwnProperty.call(DIFFICULTY,saved))difficulty=saved;}catch(_){}
 const rnd=(a,b)=>a+Math.random()*(b-a), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 // Grenades keep most of their speed until the final three seconds, then brake
 // progressively harder. The integrated curve keeps local, online and AI projection
@@ -316,7 +316,7 @@ function setScreen(which){if(which)pendingMatchPresentation=null;syncPauseButton
 function clearInput(){keys.clear();firePointers.clear();firePresses.clear();for(const t of tanks){t.fireHeld=false;t.fireBlocked=false;}stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
 function setMode(value){delete $('manualContent').dataset.content;if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS · ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').textContent=mode==='duel'?controlSummary(0)+' · '+controlSummary(1):'FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES';$('manualContent').innerHTML=fieldManualHTML();
  if(phase==='menu'){resetPreview();setLayout();}}
-function setDifficulty(value){if(!DIFFICULTY[value])return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
+function setDifficulty(value){if(!Object.prototype.hasOwnProperty.call(DIFFICULTY,value))return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
 function startMatch(){if(mode==='room'&&roomStartError()){toast(roomStartError(),3);return;}initAudio();clearInput();scores=Array(MAX_TANKS).fill(0);round=1;gameStarted=true;beginLocalMatchStats();logLines=[];addLog(mode==='room'?modeLabel()+' · '+displayScoreTarget()+'.':mode==='solo'?'You vs. the bot squad. First to 5.':'Local duel. First to 5.');startRound();setScreen(null);canvas.focus({preventScroll:true});}
 function startRound(){goUntil=0;closeVictory();clearInput();makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];spawnClock=pickupInterval()[0];roundClock=currentRules().timeLimit;phase='countdown';phaseTime=3;roundWinner=-1;for(const t of tanks)bindLocalTankStats(t);initObjectives();seedPickups();$('toast').hidden=true;toastTime=0;updateHUD(true);}
 function readyRoom(){goUntil=0;closeVictory();if(mode==='online'){leaveOnline();return;}phase='menu';gameStarted=false;clearInput();scores=Array(MAX_TANKS).fill(0);round=1;phaseTime=0;roundClock=ROUND_SECONDS;setScreen(mode==='room'?'room':'lobby');$('announcer').hidden=true;$('toast').hidden=true;resetPreview();if(mode==='room')renderOnlineRoom();setLayout();}
@@ -1334,9 +1334,9 @@ function updateHUD(force=false){
   // Weapon button text, state and progress are written only by updateCombatFeedback().
   setText('touchStatus',phase==='menu'?'GOOD LUCK':!player.alive?'TANK DOWN':player.ghostTime>0?'GHOST ACTIVE':player.speedTime>0?'SUPER SPEED':power?(power.short||power.name):player.shield>0?'SHIELDED':player.scopeTime>0?'SCOPE ACTIVE':'STAY SHARP');
  }
- const announce=$('announcer'),intermission=phase==='playing'&&survivalBreak(),bossPreview=intermission?survivalBossPreview():null,resultPreview=phase==='matchOver'&&pendingMatchPresentation?matchResultPreview():null;announce.classList.toggle('round-result',phase==='roundOver'||intermission||!!resultPreview);announce.classList.toggle('boss-preview',!!bossPreview);
- if(phase==='countdown'){const preview=survivalMode()?survivalBossPreview({...survivalState(),status:'break',wave:round-1}):null;announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0')+(preview?' · '+preview.name:''));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(330,300,.07,.03,'triangle');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',preview?'Equipment: '+preview.equipment:mode==='solo'?'You vs. the bot squad. Take out both bots.':modeInstructions());}
- else if(intermission){const state=survivalState(),preview=bossPreview;announce.hidden=false;setText('announceTop',preview?'NEXT: WAVE '+preview.wave+' · '+preview.name:'SQUAD SURVIVES');setText('announceMain','WAVE '+state.wave+' CLEARED');setText('announceSub',(preview?'Equipment: '+preview.equipment+'\n':'')+'New maze in '+Math.ceil(state.breakTime)+'…');$('announceMain').style.color=paintColor(COLORS[0]);}
+ const announce=$('announcer'),intermission=phase==='playing'&&survivalBreak(),bossPreview=phase==='countdown'&&survivalMode()?survivalBossPreview({...survivalState(),status:'break',wave:round-1}):null,resultPreview=phase==='matchOver'&&pendingMatchPresentation?matchResultPreview():null;announce.classList.toggle('round-result',phase==='roundOver'||intermission||!!resultPreview);announce.classList.toggle('boss-preview',!!bossPreview);
+ if(phase==='countdown'){const preview=bossPreview;announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0')+(preview?' · '+preview.name:''));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(330,300,.07,.03,'triangle');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',preview?'Equipment: '+preview.equipment:mode==='solo'?'You vs. the bot squad. Take out both bots.':modeInstructions());}
+ else if(intermission){const state=survivalState();announce.hidden=false;setText('announceTop','SQUAD SURVIVES');setText('announceMain','WAVE '+state.wave+' CLEARED');setText('announceSub','New maze in '+Math.ceil(state.breakTime)+'…');$('announceMain').style.color=paintColor(COLORS[0]);}
  else if(resultPreview){announce.hidden=false;setText('announceTop',resultPreview.top);setText('announceMain',resultPreview.main);setText('announceSub',resultPreview.sub);$('announceMain').style.color=paintColor(resultPreview.color);}
  else if(phase==='playing'&&performance.now()<goUntil&&!suddenDeath()){announce.hidden=false;setText('announceTop','WEAPONS LIVE');setText('announceMain','GO');setText('announceSub','');}
  else if(phase==='roundOver'){announce.hidden=false;setText('announceTop',roundWinner>=0?'ONE POINT CLOSER':'NO POINTS AWARDED');setText('announceMain',roundWinner<0?'ROUND DRAW':mode==='solo'&&roundWinner===0?'YOU TAKE THE ROUND':winnerName(roundWinner)+' WINS');$('announceMain').style.color=paintColor(roundWinner<0?'#eff2df':(tanks.find(t=>t.id===roundWinner)?.color||COLORS[roundWinner]||COLORS[0]));setText('announceSub',roundWinner>=0&&scores[roundWinner]>=currentRules().scoreTarget?'Match complete.':'New maze in '+Math.ceil(phaseTime)+'…');}
@@ -1592,15 +1592,19 @@ function submitRoomRename(e){
 function sendOnline(value){const ws=online.socket;if(!ws||ws.readyState!==WebSocket.OPEN)return false;const busy=ws.bufferedAmount>4096;if(busy&&value.type!=='lobby'&&value.type!=='leave')return false;try{const data=JSON.stringify(value);if(busy&&data.length>128)return false;ws.send(data);return true;}catch(_){return false;}}
 // Host moderation is only UI here: the Go server independently checks identity,
 // host authority, room scope, and the seat incarnation again on every request.
+function roomKickDisabled(r=roomData()){
+ return !r||r.host!==localPlayerID()||!!r.queue||!!r.matchmaking||!!r.awayMatch||!!online.kickPending||
+  (mode==='online'?!online.connected:!['lobby','matchOver'].includes(r.phase));
+}
 function cancelKick(){
  const pending=online.kickPending;if(pending)clearTimeout(pending.timer);
  online.kickPending=null;
  if($('kickDialog').open)$('kickDialog').close();
  $('confirmKickBtn').disabled=false;$('confirmKickBtn').textContent='KICK PLAYER';
- document.querySelectorAll('[data-kick-target]').forEach(b=>b.disabled=mode==='online'&&!online.connected);
+ const disabled=roomKickDisabled();document.querySelectorAll('[data-kick-target]').forEach(b=>b.disabled=disabled);
 }
 function requestKick(player){
- const r=roomData(),self=localPlayerID();if(!r||r.host!==self||player.id===self||online.kickPending)return;
+ const r=roomData(),self=localPlayerID();if(roomKickDisabled(r)||player.id===self)return;
  const current=roomMembers(r).find(p=>p.id===player.id&&p.member===player.member);if(!current)return;
  clearInput();sendOnlineInput(true);online.kickPending={id:current.id,member:current.member,name:current.name,timer:0,sent:false};
  if(current.kind==='bot'){confirmKick();return;}
@@ -1638,7 +1642,7 @@ function makeKickButton(player){
  const button=document.createElement('button');button.type='button';button.className='kick-button';
  button.textContent=player.kind==='bot'||player.kind==='local'?'REMOVE':'KICK';button.dataset.kickTarget=player.id;button.dataset.kickMember=player.member;
  button.setAttribute('aria-label','Kick '+player.name);button.title='Remove '+player.name+' from this room';
- button.disabled=mode==='online'&&!online.connected||!!online.kickPending;
+ button.disabled=roomKickDisabled();
  button.addEventListener('click',()=>requestKick(player));return button;
 }
 function makeColorSelect(value,onchange,label,inherit=false,id=null){
@@ -1672,7 +1676,10 @@ function renderRoomPlayerRows(container,players,r,moderationOnly=false,showOpenS
  for(const player of players){
   const key=player.id+':'+player.member,signature=JSON.stringify([context,player.name,player.kind,player.owner,player.team,player.color,player.colorIndex,player.difficulty]);
   let entry=cache.rows.get(key);
-  if(!entry||entry.signature!==signature){const row=makeRoomPlayerRow(player,r,moderationOnly);entry={signature,row,status:row.querySelector('.seat-kind')};}
+  if(!entry||entry.signature!==signature){const row=makeRoomPlayerRow(player,r,moderationOnly);entry={signature,row,status:row.querySelector('.seat-kind'),kick:row.querySelector('.kick-button')};}
+  // Transient queue/removal states can disable a cached node without changing
+  // its signature. Reconcile availability without discarding attached controls.
+  if(entry.kick)entry.kick.disabled=roomKickDisabled(r);
   const status=entry.status,text=roomPlayerStatus(player,r);if(status.textContent!==text)status.textContent=text;
   next.set(key,entry);nodes.push(entry.row);
  }
@@ -1876,7 +1883,7 @@ function connectOnline(request,reconnecting=false){
    if(changed){cancelCallsignSave();clearInput();resetOnlineMotion();online.generation=-1;}
    rolePending=false;syncOnlineURL();break; }
   case 'swapped':cancelSwap();toast(msg.message,3);break;
-  case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}online.roomData=msg;online.publishing=false;rolePending=false;if(rulesPending){rulesPending=false;closeFeature($('rulesDialog'));}if(presetsPending){presetsPending=false;closeFeature($('presetsDialog'));}const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);break;}
+  case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}online.roomData=msg;online.publishing=false;rolePending=false;const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);break;}
   case 'renamed':acceptCallsign(msg);break;
   case 'kicked':clearTimeout(timeout);receiveKick(msg);break;
   case 'unshared':clearTimeout(timeout);completeUnshare();break;
@@ -1896,7 +1903,7 @@ function connectOnline(request,reconnecting=false){
    if(msg.action==='rename_room'){online.roomRenamePending=false;$('onlineRoomCode').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='unshare'){online.unsharePending=false;online.unshareSnapshot=null;$('unshareRoomBtn').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='rules'&&pendingRoomMode){rejectRoomMode(msg.message);break;}
-   if(msg.action==='rules'||msg.action==='preset'){rulesPending=presetsPending=false;syncRoomModePicker();featureNotice(msg.action==='rules'?'rulesNotice':'presetsNotice',msg.message,true);break;}
+   if(msg.action==='rules'||msg.action==='preset'){if(online.setupPending?.type===msg.action)finishRoomSetupRequest(msg.message);syncFeatureSummary();featureNotice(msg.action==='rules'?'rulesNotice':'presetsNotice',msg.message,true);break;}
    if(online.publishing&&!online.connected){if(matchmaking.pending||matchmaking.pendingKey)matchmakingError(msg.message);clearTimeout(timeout);online.publishing=false;online.manual=true;online.socket=null;ws.close();online.connecting=false;netBusy(false);mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent=msg.message;break;}
    if(msg.action==='spectate'||msg.action==='swap'){rolePending=false;cancelSwap();syncSpectators();$('roomStatus').textContent=msg.message;toast(msg.message,4);break;}
    if(msg.action==='kick'){cancelKick();$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
@@ -2369,7 +2376,7 @@ function changeSeat(player,changes){
  if(!isRoomHost()||!['menu','matchOver'].includes(phase))return;
  const p=localRoom.players.find(p=>p.id===player.id&&p.member===player.member);if(!p)return;
  if(changes.team!==undefined){p.team=changes.team;if(p.team>0)delete p.colorIndex;}
- if(changes.difficulty&&DIFFICULTY[changes.difficulty])p.difficulty=changes.difficulty;
+ if(Object.prototype.hasOwnProperty.call(DIFFICULTY,changes.difficulty))p.difficulty=changes.difficulty;
  if(changes.name){const name=cleanPilotName(changes.name);if(name)p.name=name;}
  resetPreviewIfLobby();renderOnlineRoom();
 }
@@ -2533,7 +2540,7 @@ function validateRoomRules(r){
  if(!Number.isInteger(r.scoreTarget)||r.scoreTarget<1||r.scoreTarget>(r.mode==='koth'?300:20))throw Error('Score target: 1–20, or 1–300 in Hill.');
  if(!Number.isInteger(r.timeLimit)||r.timeLimit<30||r.timeLimit>600)throw Error('Time limit must be 30–600 seconds.');
  if(!Number.isInteger(r.respawnSeconds)||r.respawnSeconds<1||r.respawnSeconds>10)throw Error('Respawn delay must be 1–10 seconds.');
- if(!Array.isArray(r.weapons)||r.weapons.length>Object.keys(POWER).length||new Set(r.weapons).size!==r.weapons.length||r.weapons.some(w=>!POWER[w]))throw Error('Invalid power-up selection.');
+ if(!Array.isArray(r.weapons)||r.weapons.length>Object.keys(POWER).length||new Set(r.weapons).size!==r.weapons.length||r.weapons.some(w=>!Object.prototype.hasOwnProperty.call(POWER,w)))throw Error('Invalid power-up selection.');
  if(r.friendlyFire!==undefined&&typeof r.friendlyFire!=='boolean')throw Error('Friendly fire must be on or off.');
  const teamNames=validateTeamNames(r.teamNames);const teamColors=r.teamColors??[0,1,2,3];if(!Array.isArray(teamColors)||teamColors.length!==4||teamColors.some(i=>!Number.isInteger(i)||i<0||i>7))throw Error('Choose a palette color for each team.');
  return {...JSON.parse(JSON.stringify(r)),teamNames,teamColors:[...teamColors],friendlyFire:r.friendlyFire??false};
@@ -2594,6 +2601,7 @@ function paintRoomModeChoice(value){
  $('roomModeDescription').textContent=choice.help;
 }
 function syncRoomModePicker(){
+ syncRoomSetupPending();
  if(!$('roomModeChoices'))return;
  const context=mode==='online'?'online:'+online.code+':'+online.member:'local:'+localRoom.code,rules=currentRules(),value=rules.mode,observed=JSON.stringify([value,rules.teamMode,rules.mapSize]);
  if(context!==roomModeContext){clearRoomModePending();roomModeError='';roomModeContext=context;}
@@ -2648,6 +2656,44 @@ function initRoomModePicker(toolbar){
  for(const b of document.querySelectorAll('[data-room-mode]')){b.onclick=()=>selectRoomMode(b.dataset.roomMode);b.onkeydown=roomModeKeydown;}
  syncRoomModePicker();
 }
+// Room broadcasts also report readiness and presence. Only a matching setup
+// confirms Apply; disconnects and timeouts keep the draft available for retry.
+function roomSetupRulesKey(rules){
+ const r=validateRoomRules(rules);
+ return JSON.stringify([r.mode,r.teamMode,r.mapSize,r.scoreTarget,r.timeLimit,r.respawnSeconds,r.pickupRate,[...r.weapons].sort(),r.friendlyFire,r.teamNames,r.teamColors]);
+}
+function roomSetupRosterKey(roster,rules){
+ return JSON.stringify(roster.map((p,i)=>[i===0?'human':p.kind,cleanPilotName(p.name),p.team,p.kind==='bot'?p.difficulty:'',rules.teamMode==='ffa'?(p.colorIndex??-1):-1]));
+}
+function finishRoomSetupRequest(message='',accepted=false){
+ const request=online.setupPending;if(!request)return;
+ clearTimeout(request.timer);online.setupPending=null;rulesPending=presetsPending=false;
+ const kind=request.type==='rules'?'rules':'presets';
+ if(accepted)closeFeature($(kind+'Dialog'));else if(message)featureNotice(kind+'Notice',message,true);
+}
+function syncRoomSetupPending(){
+ const request=online.setupPending;if(!request)return;
+ const r=online.roomData;
+ if(mode!=='online'||!online.connected||online.socket!==request.socket||online.member!==request.member){finishRoomSetupRequest('Connection changed before confirmation. Check the current room settings before applying again.');return;}
+ if(!r)return;
+ if(r.host!==online.id||!['lobby','matchOver'].includes(r.phase)||r.queue||r.matchmaking||r.awayMatch){finishRoomSetupRequest('The room changed before confirmation. Check its current settings.');return;}
+ try{
+  if(r===request.roomData)return;
+  if(roomSetupRulesKey(r.rules)!==request.rulesKey)return;
+  if(request.type==='preset'){
+   const own=r.players.find(p=>p.id===online.id);if(!own||r.spectators?.length)return;
+   if(roomSetupRosterKey([own,...r.players.filter(p=>p.id!==online.id)],r.rules)!==request.rosterKey)return;
+  }
+  finishRoomSetupRequest('',true);
+ }catch(_){} // An incomplete packet cannot acknowledge an edit.
+}
+function sendRoomSetupRequest(type,setup){
+ const request={type,socket:online.socket,member:online.member,roomData:online.roomData,rulesKey:roomSetupRulesKey(setup.rules),rosterKey:type==='preset'?roomSetupRosterKey(setup.roster,setup.rules):null,timer:0};
+ if(!sendOnline({type,...setup}))throw Error('Connection unavailable. Room settings were not sent.');
+ online.setupPending=request;rulesPending=type==='rules';presetsPending=type==='preset';
+ request.timer=setTimeout(()=>{if(online.setupPending===request){finishRoomSetupRequest('No confirmation received. Check the current room settings before applying again.');syncFeatureSummary();}},8000);
+ syncFeatureSummary();if(online.setupPending===request)featureNotice(type==='rules'?'rulesNotice':'presetsNotice','Waiting for the server…');
+}
 function featureNotice(id,text,error=false){const n=$(id);n.textContent=text;n.classList.toggle('error',error);}
 function openFeature(kind){
  closeChat();clearInput();if(mode==='online')sendOnlineInput(true);
@@ -2666,10 +2712,10 @@ function syncFeatureSummary(){
  $('rulesSummary').title=modeInstructions();$('roomRulesBtn').textContent=host?'RULES':'VIEW RULES';$('roomRulesBtn').disabled=!!pendingRoomMode;
  $('roomPresetsBtn').disabled=!host||!!pendingRoomMode;
  $('readyHint').textContent=roomStartError()|| (mode==='online'&&!online.roomData?.canStart?'WAITING FOR GUESTS TO READY UP':displayScoreTarget()+' · START WHEN READY');
- $('startRoomBtn').disabled=!isRoomEditable()||!!roomStartError()||!!pendingRoomMode||mode==='online'&&(!online.connected||!online.roomData?.canStart);
+ $('startRoomBtn').disabled=!isRoomEditable()||!!roomStartError()||!!pendingRoomMode||rulesPending||presetsPending||mode==='online'&&(!online.connected||!online.roomData?.canStart);
  $('localControlsNote').textContent=controlSummary(0)+' · '+controlSummary(1)+'. Player 2 needs a keyboard.';
  const manual=fieldManualHTML();if($('manualContent').dataset.content!==manual){$('manualContent').innerHTML=manual;$('manualContent').dataset.content=manual;}
- if($('rulesDialog').open){if($('rulesDialog').dataset.mode!==r.mode)fillRulesForm();else{$('rulesFields').disabled=!isRoomEditable();$('applyRulesBtn').disabled=!isRoomEditable();$('defaultRulesBtn').disabled=!isRoomEditable()||!!pendingRoomMode||rulesPending;updateRuleHelp();}}
+ if($('rulesDialog').open){if($('rulesDialog').dataset.mode!==r.mode)fillRulesForm();else{$('rulesFields').disabled=!roomModeEditable();$('applyRulesBtn').disabled=!roomModeEditable();$('defaultRulesBtn').disabled=!roomModeEditable();updateRuleHelp();}}
  if($('presetsDialog').open){$('loadPresetBtn').disabled=!canLoadPreset();$('savePresetBtn').disabled=!host;}
 }
 function fillRulesForm(r=currentRules()){
@@ -2678,11 +2724,11 @@ function fillRulesForm(r=currentRules()){
  $('rule-friendlyFire').checked=!!r.friendlyFire;
  for(let i=1;i<=4;i++){$('rule-teamName'+i).value=teamName(i,r);const box=$('rule-teamName'+i).parentElement;if(!box.querySelector('[data-team-palette]')){const picker=makeColorSelect(r.teamColors?.[i-1]??i-1,()=>{},'Color for team '+i);picker.querySelector('select').id='rule-teamColor'+i;picker.dataset.teamPalette=i;box.append(picker);}const sel=$('rule-teamColor'+i);sel.value=r.teamColors?.[i-1]??i-1;sel.previousElementSibling.style.background=Theme.colors[+sel.value];}
  for(const c of document.querySelectorAll('[data-weapon-toggle]'))c.checked=r.weapons.includes(c.dataset.weaponToggle);
- $('rulesFields').disabled=!isRoomEditable();$('applyRulesBtn').disabled=!isRoomEditable();$('defaultRulesBtn').disabled=!isRoomEditable()||!!pendingRoomMode||rulesPending;
+ $('rulesFields').disabled=!roomModeEditable();$('applyRulesBtn').disabled=!roomModeEditable();$('defaultRulesBtn').disabled=!roomModeEditable();
  featureNotice('rulesNotice',isRoomEditable()?'Changes reset guest readiness. Rules are fixed for the match.':'Only the host can change rules, between matches.');updateRuleHelp();renderPowerLegend();
 }
 function resetRuleDefaults(){
- if(!isRoomEditable()||pendingRoomMode||rulesPending)return;
+ if(!roomModeEditable())return;
  const current=currentRules();fillRulesForm({...defaultModeRules(current.mode),mapSize:current.mapSize,teamMode:current.teamMode});$('rulesDialog').dataset.defaults='true';
  featureNotice('rulesNotice','Default '+modeLabel().toLowerCase()+' rules loaded. Select APPLY RULES to save.');
 }
@@ -2711,9 +2757,9 @@ function readRuleTeamSettings(rules){
  };
 }
 function submitRules(e){
- e.preventDefault();if(!isRoomEditable()||pendingRoomMode)return;
+ e.preventDefault();if(!roomModeEditable())return;
  try{const current=currentRules(),base=$('rulesDialog').dataset.defaults==='true'?defaultModeRules(current.mode):current,r={...base,mapSize:current.mapSize,teamMode:current.teamMode,pickupRate:$('rule-pickupRate').value};for(const k of ['scoreTarget','timeLimit','respawnSeconds'])r[k]=k==='respawnSeconds'&&['elimination','survival'].includes(r.mode)?base.respawnSeconds:Number($('rule-'+k).value);Object.assign(r,readRuleTeamSettings(r));r.friendlyFire=$('rule-friendlyFire').checked;r.weapons=[...document.querySelectorAll('[data-weapon-toggle]:checked')].map(c=>c.dataset.weaponToggle);validateRoomRules(r);
-  if(mode==='online'){if(!sendOnline({type:'rules',rules:r}))throw Error('Connection unavailable. Rules were not sent.');featureNotice('rulesNotice','Waiting for the server…');rulesPending=true;syncRoomModePicker();}
+  if(mode==='online')sendRoomSetupRequest('rules',{rules:r});
   else{setLocalRules(r);closeFeature($('rulesDialog'));}
  }catch(e){featureNotice('rulesNotice',e.message,true);}
 }
@@ -2792,11 +2838,11 @@ function builtinPresets(){
 }
 function validatePreset(p){
  const rules=validateRoomRules(p.rules);if(!Array.isArray(p.roster)||p.roster.length<1||p.roster.length>roomCapacity(rules))throw Error(survivalMode(rules)?'Survival presets support one to four squad tanks.':'Invalid preset roster.');let local=0;
- const roster=p.roster.map((s,i)=>{if((i===0?s.kind!=='human':!['bot','local'].includes(s.kind))||!Number.isInteger(s.team)||s.team<0||s.team>4||!cleanPilotName(s.name)||s.kind==='bot'&&!DIFFICULTY[s.difficulty])throw Error('Invalid preset participant.');if(s.kind==='local')local++;if(s.colorIndex!=null&&(!Number.isInteger(s.colorIndex)||s.colorIndex< -1||s.colorIndex>7))throw Error('Invalid tank color.');return{kind:s.kind,name:cleanPilotName(s.name),colorIndex:rules.teamMode==='ffa'?(s.colorIndex??-1):undefined,team:rules.teamMode==='ffa'?0:s.team,...(s.kind==='bot'?{difficulty:s.difficulty}:{})};});
+ const roster=p.roster.map((s,i)=>{if((i===0?s.kind!=='human':!['bot','local'].includes(s.kind))||!Number.isInteger(s.team)||s.team<0||s.team>4||!cleanPilotName(s.name)||s.kind==='bot'&&!Object.prototype.hasOwnProperty.call(DIFFICULTY,s.difficulty))throw Error('Invalid preset participant.');if(s.kind==='local')local++;if(s.colorIndex!=null&&(!Number.isInteger(s.colorIndex)||s.colorIndex< -1||s.colorIndex>7))throw Error('Invalid tank color.');return{kind:s.kind,name:cleanPilotName(s.name),colorIndex:rules.teamMode==='ffa'?(s.colorIndex??-1):undefined,team:rules.teamMode==='ffa'?0:s.team,...(s.kind==='bot'?{difficulty:s.difficulty}:{})};});
  if(local>1)throw Error('Only one secondary local player is supported.');normalizeRoomTeams(roster,rules);return{rules,roster};
 }
 function snapshotPreset(){const r=roomData(),me=roomMember(localPlayerID(),r);const ffa=currentRules().teamMode==='ffa';return{rules:validateRoomRules(currentRules()),roster:[{name:me.name,kind:'human',team:me.team,...(ffa?{colorIndex:me.colorIndex??-1}:{})},...r.players.filter(p=>p.kind==='bot'||p.kind==='local'&&p.owner===me.id).map(({name,kind,team,difficulty,colorIndex})=>({name,kind,team,difficulty,...(ffa?{colorIndex:colorIndex??-1}:{})}))]};}
-function canLoadPreset(){return isRoomEditable()&&!pendingRoomMode&&!roomData()?.spectators?.length&&(mode!=='online'||!roomData().players.some(p=>p.id!==online.id&&p.kind!=='bot'&&p.kind!=='local'));}
+function canLoadPreset(){return roomModeEditable()&&!roomData()?.spectators?.length&&(mode!=='online'||!roomData().players.some(p=>p.id!==online.id&&p.kind!=='bot'&&p.kind!=='local'));}
 function renderPresets(){
  const select=$('presetSelect');const chosen=select.value;select.replaceChildren();const builtins=builtinPresets();for(const [group,items,prefix]of [['QUICK SETUPS',builtins,'builtin'],['SAVED ON THIS DEVICE',savedPresets,'saved']]){const opt=document.createElement('optgroup');opt.label=group;items.forEach((p,i)=>{const o=document.createElement('option');o.value=prefix+':'+i;o.textContent=p.name;opt.append(o);});select.append(opt);}
  if([...select.options].some(o=>o.value===chosen))select.value=chosen;
@@ -2810,7 +2856,7 @@ function applyLocalPreset(p){
  phase='menu';gameStarted=false;online.menu=false;scores=Array(MAX_TANKS).fill(0);clearInput();resetPreviewIfLobby({regenerateMaze:mapChanged,resetPickups:true});setScreen('room');renderOnlineRoom();
 }
 function selectedPreset(){const [type,index]=$('presetSelect').value.split(':');return(type==='builtin'?builtinPresets():savedPresets)[Number(index)];}
-function applySelectedPreset(){try{if(!canLoadPreset())throw Error('Presets cannot replace spectators, online guests, or an active match.');const p=validatePreset(selectedPreset());if(mode==='online'){if(!sendOnline({type:'preset',...p}))throw Error('Connection unavailable.');presetsPending=true;syncRoomModePicker();featureNotice('presetsNotice','Waiting for the server…');}else{applyLocalPreset(p);closeFeature($('presetsDialog'));}}catch(e){featureNotice('presetsNotice',e.message,true);}}
+function applySelectedPreset(){try{if(!canLoadPreset())throw Error('Presets cannot replace spectators, online guests, or an active match.');const p=validatePreset(selectedPreset());if(mode==='online')sendRoomSetupRequest('preset',p);else{applyLocalPreset(p);closeFeature($('presetsDialog'));}}catch(e){featureNotice('presetsNotice',e.message,true);}}
 async function saveCurrentPreset(){
  try{
   if(!isRoomHost())throw Error('Only the host can save the room setup.');
@@ -3057,7 +3103,7 @@ function objectiveGoal(t){const o=localObjectives;if(!o||o.suddenDeath)return nu
 function objectiveRoute(t,point){const a=t.ai,goal=cellAt(point.x,point.y);if(a.goal!==goal||a.pathClock<=0){a.goal=goal;a.pathClock=.45;a.path=bfs(cellAt(t.x,t.y),goal,a);}const v=routeControl(t,{...point,r:RADIUS},true);if(distance(t,point)<10)v.drive=0;return v;}
 function shortTeamName(team){const s=Array.from(teamName(team));return s.length>14?s.slice(0,13).join('')+'…':s.join('');}
 function drawObjectives(){
- const o=objectiveState();if(!o||!objectiveMode()||o.suddenDeath||['menu','onlineLobby','matchOver'].includes(phase))return;
+ const o=objectiveState();if(!o||!objectiveMode()||o.suddenDeath||['menu','onlineLobby'].includes(phase)||phase==='matchOver'&&!pendingMatchPresentation)return;
  ctx.save();ctx.font='bold '+Math.max(10,9/scale)+'px ui-monospace,monospace';ctx.textAlign='center';
  if(o.mode==='koth'){
   const owner=o.owner>0?teamColor(0,o.owner):o.owner<0?(tanks.find(t=>t.id===-o.owner-1)?.color||COLORS[-o.owner-1]):null;ctx.fillStyle=paintColor(o.contested?'#ff96792b':owner?owner+'2b':theme.neutralHillFill);ctx.strokeStyle=paintColor(o.contested?'#ff9679':owner||theme.neutralHill);ctx.lineWidth=2;ctx.beginPath();ctx.arc(o.hillX,o.hillY,o.radius,0,TAU);ctx.fill();ctx.stroke();ctx.fillStyle=paintColor(ctx.strokeStyle);ctx.fillText(o.contested?'CONTESTED':'HILL',o.hillX,o.hillY+4);ctx.lineWidth=4;ctx.beginPath();ctx.arc(o.hillX,o.hillY,o.radius+4,-Math.PI/2,-Math.PI/2+TAU*(o.hold||0));ctx.stroke();
@@ -3069,7 +3115,7 @@ function drawObjectives(){
 // Ground layer: flags and tethers are rendered BEFORE every tank.
 // A tank can never be hidden under its own flag; minimum marker size is retained.
 function drawFlags(){
- const o=objectiveState();if(!o||o.mode!=='ctf'||o.suddenDeath||['menu','onlineLobby','matchOver'].includes(phase))return;
+ const o=objectiveState();if(!o||o.mode!=='ctf'||o.suddenDeath||['menu','onlineLobby'].includes(phase)||phase==='matchOver'&&!pendingMatchPresentation)return;
  for(const f of o.flags){
   const t=f.carrier>=0?tanks.find(t=>t.id===f.carrier):null,color=teamColor(0,f.team);
   const anchor={x:t?.x??f.x,y:t?.y??f.y},z=Math.max(1.35,1/scale);
@@ -3222,6 +3268,9 @@ function setPlayerSpectating(player,value){
  moveLocalMember(p,id,value,value?p.team:nextRoomTeam(localRoom.players));refreshLocalRoles();
 }
 function clearLocalSeat(id){
+ // Capture the departing participant's score before this disposable seat can
+ // be cleared or reused. Completed match reports are already frozen.
+ if(!localMatchReport){const row=tanks.find(t=>t.id===id)?.statsRow;if(row)row.score=scores[id]||0;}
  dropLocalFlags(id);tanks=tanks.filter(t=>t.id!==id);bullets=bullets.filter(b=>b.owner!==id);
  for(const b of bullets)if(b.target===id)b.target=-1;
 }
@@ -3307,6 +3356,10 @@ function syncSpectators(){
   $('spectatorList').replaceChildren(...spectators.map(p=>spectatorRow(p,r)));
   $('noSpectators').hidden=!!spectators.length;
  }
+ // These lists cache their rows separately from the active roster. Queue and
+ // pending-removal locks still need reconciliation on every room refresh.
+ const kickDisabled=roomKickDisabled(r);
+ for(const id of ['roomSpectatorList','spectatorList'])for(const button of $(id).querySelectorAll('[data-kick-target]'))button.disabled=kickDisabled;
  if(swapPending&&!spectators.some(p=>p.id===swapPending.id&&p.member===swapPending.member))cancelSwap();
  if($('spectatorsDialog').open&&!isRoomHost())cancelSwap();
  $('spectatorLimit').textContent='Up to 8 tanks + '+(r.maxSpectators||16)+' spectators. Spectating does not use a tank seat.';
@@ -3779,7 +3832,9 @@ function matchmakingPacket(msg){
   matchmaking.pending=false;matchmaking.pendingKey='';clearTimeout(matchmaking.pendingTimer);
   matchmakingNotice(msg.message);toast(msg.message,3);
  }
- renderMatchmaking();
+ // Queue packets can arrive without a room packet. Refresh the ordinary room
+ // controls too, so cancellation removes queue locks and restores cached rows.
+ if(msg.type==='queue_status'||msg.type==='queue_cancelled')renderOnlineRoom();else renderMatchmaking();
 }
 function matchmakingWelcome(msg){
  if(msg.transfer){
@@ -3851,7 +3906,7 @@ function renderMatchmaking(){
 }
 function initMatchmaking(){
  const launcher=document.createElement('button');launcher.id='matchmakingBtn';launcher.type='button';launcher.className='primary queue-launch';launcher.textContent='FIND ONLINE BATTLE';
- $('copyInviteBtn').after(launcher);launcher.onclick=openMatchmaking;
+ $('joinOtherBtn').parentElement.after(launcher);launcher.onclick=openMatchmaking;
  const watch=document.createElement('a');watch.id='partyAwayLink';watch.className='secondary queue-watch';watch.textContent='SPECTATE PARTY’S MATCH ↗';watch.target='_blank';watch.rel='noopener';watch.hidden=true;launcher.after(watch);
  const dialog=document.createElement('dialog');dialog.id='queueDialog';dialog.className='feature-dialog queue-dialog';dialog.setAttribute('aria-labelledby','queueTitle');
  dialog.innerHTML='<header class="feature-header"><div><div class="eyebrow">ONLINE · REAL PLAYERS · THIS SERVER</div><h2 id="queueTitle">Find your next battle.</h2></div><button id="queueCloseBtn" type="button" class="dialog-close" aria-label="Close matchmaking panel">×</button></header><div class="feature-body"><div class="queue-party"><strong id="queuePartyText"></strong><p id="queuePartyHint"></p></div><div id="queueChoose"><div class="queue-grid">'+MATCH_QUEUES.map(d=>'<button type="button" class="queue-card" data-queue="'+d.key+'" aria-pressed="false"><span class="queue-mode">'+d.name+'</span><strong>'+d.detail+'</strong><span class="queue-count">'+d.cols+'×'+d.rows+' maze</span></button>').join('')+'</div><p class="mode-help">Random compatible opponents, not ranked matchmaking. Solo players fill open team positions. A match starts automatically only when its full human lineup is ready.</p></div><section id="queueActive" hidden aria-live="polite"><div class="queue-search-mark" aria-hidden="true">⌕</div><h3 id="queueActiveTitle"></h3><p id="queueActiveMode"></p><div id="queuePeople"></div><p id="queueProgress"></p><strong id="queueElapsed"></strong></section><p id="queueNotice" class="feature-notice" role="status"></p></div><footer class="feature-footer"><button id="queueStartBtn" class="primary" type="button"><span>FIND MATCH</span><span aria-hidden="true">→</span></button><button id="queueAcceptBtn" class="primary" type="button" hidden>JOIN THIS SEARCH <span aria-hidden="true">→</span></button><button id="queueCancelBtn" class="secondary" type="button" hidden>CANCEL PARTY SEARCH</button><p class="queue-footnote">Closing this panel does not cancel a search. Everyone must use the same running Go server; this is not a global hosted service.</p></footer>';

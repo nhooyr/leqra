@@ -1175,15 +1175,23 @@ func (h *Hub) tick(now time.Time) {
 			}
 		}
 		changed := false
-		for _, p := range r.members() {
+		var memberStorage [maxTanks + maxSpectators]*Player
+		members := r.appendMembers(memberStorage[:0])
+		for _, p := range members {
 			id := p.ID
 			if p.Away == nil && p.Kind != "bot" && p.Kind != "local" && p.Client == nil && now.Sub(p.DisconnectedAt) > reconnectGrace {
 				h.expirePlayer(r, id)
 				changed = true
 			}
 		}
+		// Expiration may also remove a controller's P2. Refresh only after the
+		// original snapshot has been consumed, so removed seats cannot keep an
+		// empty room alive and expiration order remains deterministic.
+		if changed {
+			members = r.appendMembers(memberStorage[:0])
+		}
 		present := 0
-		for _, p := range r.members() {
+		for _, p := range members {
 			if p.Kind != "bot" && p.Kind != "local" {
 				present++
 			}

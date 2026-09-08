@@ -47,6 +47,18 @@ function complete(s){s.phaseTime=0;s.update(1/120);}
 function winnerRow(s){return s.localMatchReport?.players.find(row=>row.member===101);}
 function scoreLabels($){return $('victoryScores').children.map(row=>row.children.map(c=>c.textContent).join(':'));}
 
+test('departed local pilots retain their last earned score after their seat is reused in every mode',()=>{
+ for(const gameMode of ['elimination','ctf','koth','survival']){
+  const {s,players}=boot({target:15});s.currentRules().mode=gameMode;s.scores[0]=4;
+  s.moveLocalMember(players[0],8,true);
+  const replacement={id:9,member:104,name:'REPLACEMENT',kind:'local',owner:8,spectating:true,team:0};players.push(replacement);
+  s.moveLocalMember(replacement,0,false,0);s.scores[0]=7;s.finishLocalMatchStats(1);
+  const departed=winnerRow(s),incoming=s.localMatchReport.players.find(row=>row.member===104);
+  assert.equal(departed.active,false);assert.equal(departed.score,4,gameMode+' departure score');assert.equal(departed.winner,false);
+  assert.equal(incoming.score,7,'replacement owns only the current seat score');
+ }
+});
+
 test('winning team result keeps original members and score when the winning pilot spectates',()=>{
  const {s,$,players}=boot({teams:true});s.finishRound(0);
  s.moveLocalMember(players[0],s.localRoom.nextViewer++,true);complete(s);
