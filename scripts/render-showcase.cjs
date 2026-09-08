@@ -4,8 +4,8 @@
 // Run: NODE_PATH=/path/to/node_modules node scripts/render-showcase.cjs
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {createCanvas}=require('@napi-rs/canvas');
-const {boot,tank,declaration}=require('../tests/godlike426-harness.cjs');
-const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'web/game.js'),'utf8');
+const {boot,tank,declaration}=require('../src/tests/godlike426-harness.cjs');
+const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'src/web/game.js'),'utf8');
 let seed=14383;const random=()=>{seed|=0;seed=seed+0x6d2b79f5|0;let t=Math.imul(seed^seed>>>15,1|seed);t^=t+Math.imul(t^t>>>7,61|t);return((t^t>>>14)>>>0)/4294967296;};
 const canvas=createCanvas(3120,1860),ctx=canvas.getContext('2d');
 const s=boot({cols:24,rows:14}),math=Object.create(Math);math.random=random;
@@ -16,7 +16,7 @@ Object.assign(s,{Math:math,rnd:(a,b)=>a+(b-a)*random(),canvas,ctx,cssW:2080,cssH
  document:{createElement:()=>createCanvas(64,64),documentElement:{dataset:{},style:{}},querySelector:()=>null},window:{},
  currentRules:()=>({mode:'elimination',mapSize:'ultrawide',teamMode:'ffa',friendlyFire:false}),
 });
-vm.runInContext(fs.readFileSync(path.join(root,'web/theme.js'),'utf8'),s);s.theme=s.window.leqraTheme.palette;s.paintColor=s.window.leqraTheme.assetColor;s.Theme=s.window.leqraTheme;
+vm.runInContext(fs.readFileSync(path.join(root,'src/web/theme.js'),'utf8'),s);s.theme=s.window.leqraTheme.palette;s.paintColor=s.window.leqraTheme.assetColor;s.Theme=s.window.leqraTheme;
 vm.runInContext(source.split('\n').find(line=>line.startsWith('for(const [kind,def] of Object.entries(POWER))')),s);
 vm.runInContext('this.powerDefs=POWER;',s);
 vm.runInContext(source.slice(source.indexOf('const tankHullCache='),source.indexOf('function guideInk(')),s);

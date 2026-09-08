@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render crisp app icons from web/favicon.svg using Inkscape 1.2 or newer.
+"""Render crisp app icons from src/web/favicon.svg using Inkscape 1.2 or newer.
 
 Run from any directory: python3 scripts/render-icons.py
 Requires the Inkscape command-line renderer; no source PNG is resized. Outputs
@@ -26,13 +26,13 @@ def main():
     if not inkscape:
         parser.error("Inkscape is required to render the vector artwork.")
 
-    source = root / "web/favicon.svg"
+    source = root / "src/web/favicon.svg"
     svg = ET.fromstring(source.read_text())
     ns = "{http://www.w3.org/2000/svg}"
     styles = " ".join(node.text or "" for node in svg.iter(ns + "style"))
     background = re.search(r"\.bg\s*\{\s*fill:\s*(#[0-9a-fA-F]+)", styles).group(1)
-    version = re.search(r'\bversion\s*=\s*"([^"]+)"', (root / "main.go").read_text()).group(1)
-    output = (args.output_dir or root / "web/assets" / ("v" + version)).resolve()
+    version = re.search(r'\bversion\s*=\s*"([^"]+)"', (root / "src/main.go").read_text()).group(1)
+    output = (args.output_dir or root / "src/web/assets" / ("v" + version)).resolve()
     output.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="leqra-icons-") as temporary:
