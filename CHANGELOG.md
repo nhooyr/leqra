@@ -1,3 +1,16 @@
+# v4.20.0 — opponent chat, room renaming, results polish, and bug fixes
+
+- Put queued **REMATCH** to the right of **BACK TO ROOM** while retaining its neon-green matchmaking treatment.
+- Give losing local players a red **DEFEAT** heading and defeat icon below it instead of the victory star.
+- Add host-authoritative online room-code/name renaming with collision checks, live URL/member propagation, and in-flight reconnect migration.
+- Add a minimized-chat audio notification that respects the game's sound setting.
+- Add a second red matchmaking **Opponent chat** button to the right of room chat; messages reach only the sender and opposing matchmaking side, with separate history/unread state.
+- Rename **End match & edit room** to **End match**.
+- Remove the desktop Safari Chrome recommendation while retaining the v4.19 Safari optimization path.
+- Fix a chat rendering exception caused by collision with the browser `window.name` property and align the chat input maxlength with the authoritative 280-character limit.
+- Batch chat-history DOM rendering, avoid an extra lobby rerender after authoritative code updates, and deduplicate opponent-chat sockets without allocating a per-message map.
+- Remove duplicate stale WebSocket and sudden-death branches found during the audit.
+
 # v4.19.0 — Safari smoothness, mobile stability, and renderer cleanup
 
 - Add a WebKit/iOS-specific rendering path with adaptive Canvas DPR/pixel budgets and smaller static maze-cache budgets, while leaving Chromium quality budgets unchanged.

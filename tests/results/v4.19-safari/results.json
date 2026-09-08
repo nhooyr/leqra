@@ -1,10 +1,10 @@
 {
-  "version": "4.19.0",
+  "version": "4.20.0",
   "passed": 23,
   "checks": [
     "desktop Safari selects the WebKit/Safari optimization path",
     "desktop Safari receives WebKit CSS performance class",
-    "desktop Safari still receives the Chrome recommendation",
+    "desktop Safari no longer receives the Chrome recommendation",
     "desktop Safari caps adaptive Canvas pixel density at 1.75x",
     "Safari path disables full-arena backdrop blur",
     "fractional WebKit layout jitter does not reallocate Canvas for a 1px wobble",

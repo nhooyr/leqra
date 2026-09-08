@@ -52,18 +52,20 @@ type Room struct {
 	Queue *QueueTicket
 	Match *QueueMatch
 
-	Chat         []ChatMessage
-	NextChat     uint64
-	Code         string
-	Host         int
-	Players      [maxTanks]*Player
-	Spectators   map[int]*Player
-	NextViewerID int
-	RoleVersion  int
-	Game         *Game
-	LastAction   time.Time
-	NextMember   uint64
-	Kicked       map[[32]byte]time.Time
+	Chat             []ChatMessage
+	OpponentChat     []ChatMessage
+	NextChat         uint64
+	NextOpponentChat uint64
+	Code             string
+	Host             int
+	Players          [maxTanks]*Player
+	Spectators       map[int]*Player
+	NextViewerID     int
+	RoleVersion      int
+	Game             *Game
+	LastAction       time.Time
+	NextMember       uint64
+	Kicked           map[[32]byte]time.Time
 
 	state stateScratch // reusable 60 Hz snapshot buffers; encoded before reuse
 }
@@ -705,6 +707,7 @@ type clientMessage struct {
 	Target     *int        `json:"target"`
 	Member     uint64      `json:"member"`
 	Text       string      `json:"text"`
+	Channel    string      `json:"channel"`
 	Type       string      `json:"type"`
 	Code       string      `json:"code"`
 	Name       string      `json:"name"`
@@ -759,6 +762,8 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		h.requestQueueRematch(c, now)
 	case "chat":
 		h.chat(c, m, now)
+	case "rename_room":
+		h.renameRoom(c, m, now)
 	case "spectate":
 		h.setSpectating(c, m, now)
 	case "swap":

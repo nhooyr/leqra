@@ -1,0 +1,8 @@
+goos: linux
+goarch: amd64
+pkg: leqra
+cpu: INTEL(R) XEON(R) PLATINUM 8573C
+BenchmarkEightBotsHuge35-5   	   30218	     39109 ns/op	      80 B/op	       0 allocs/op
+BenchmarkRoomBroadcast35-5   	   55807	     23188 ns/op	    5351 B/op	       2 allocs/op
+PASS
+ok  	leqra	4.168s
