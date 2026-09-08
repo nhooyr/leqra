@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.39.0';
+const GAME_VERSION='4.40.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -41,7 +41,7 @@ const LASER_MAX_SEGMENTS=128,LASER_RADIUS=3,LASER_COOLDOWN=.85,SCOPE_DURATION=PO
 const MACHINE_SPEED=282*3,MACHINE_RADIUS=3.5/3,MACHINE_CAPACITY=96,MACHINE_FIRING_ROUNDS=3*60;
 const CANNON_RADIUS=3.5*4,CANNON_SPEED=282*4,CANNON_LIFETIME=5.3,CANNON_COOLDOWN=.85;
 let phase='menu', pausedFrom='playing', mode='room', difficulty='normal';
-let matchTouchLocked=false;
+let matchTouchLocked=false,matchTextComposing=false;
 let cols=12,rows=8,W=cols*CELL,H=rows*CELL,grid=[],walls=[],tanks=[],bullets=[],particles=[],pickups=[],rings=[],traces=[];
 let scores=Array(MAX_TANKS).fill(0),round=1,roundClock=ROUND_SECONDS,phaseTime=0,time=0,fxTime=0,spawnClock=5,toastTime=0,shake=0,uiClock=0,roundWinner=-1;
 let cssW=0,cssH=0,dpr=1,scale=1,offsetX=0,offsetY=0,mapCanvas=null,touchUI=false,touchLandscape=false;
@@ -164,7 +164,8 @@ function save(key,val){try{localStorage.setItem('leqra.'+key,String(val));}catch
 function roundRect(c,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 let audioLevel=null,audioEpoch=0,audioResumeStarted=-Infinity,pendingAudioEffects=0;
 const nativeAudioTimers=new Set();
-function audioScale(){return clamp(audioVolume/50,0,2);}
+const SOUND_EFFECT_GAIN=2;
+function audioScale(){return SOUND_EFFECT_GAIN*clamp(audioVolume/50,0,2);}
 function applyAudioLevel(){
  const level=muted?0:audioScale();if(level===0&&audioLevel!==0)cancelPendingAudio();
  if(!audioMaster||!audio)return;if(audioLevel===level)return;
@@ -175,7 +176,7 @@ function applyAudioLevel(){
 }
 let nativeAudioPool=[],nativeAudioIndex=0;const nativeToneCache=new Map();
 function wavToneURL(freq,end,duration,type='sine',gain=1){
- gain=clamp(Math.round(gain*1000)/1000,0,1);const key=[Math.round(freq),Math.round(end),Math.round(duration*1000),type,gain].join(':');if(nativeToneCache.has(key))return nativeToneCache.get(key);
+ gain=clamp(Math.round(gain*100000)/100000,0,1);const key=[Math.round(freq),Math.round(end),Math.round(duration*1000),type,gain].join(':');if(nativeToneCache.has(key))return nativeToneCache.get(key);
  const rate=22050,n=Math.max(96,Math.floor(rate*Math.min(.35,Math.max(.025,duration)))),buffer=new ArrayBuffer(44+n*2),v=new DataView(buffer),u=new Uint8Array(buffer);const wr=(o,t)=>{for(let i=0;i<t.length;i++)u[o+i]=t.charCodeAt(i);};
  wr(0,'RIFF');v.setUint32(4,36+n*2,true);wr(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);wr(36,'data');v.setUint32(40,n*2,true);
  let phase=0;for(let i=0;i<n;i++){const q=i/(n-1),f=freq+(end-freq)*q;phase+=TAU*f/rate;let sample=type==='triangle'?2*Math.asin(Math.sin(phase))/Math.PI:type==='sawtooth'?2*(phase/TAU-Math.floor(phase/TAU+.5)):Math.sin(phase);const env=Math.min(1,i/(rate*.004))*Math.pow(1-q,1.6);v.setInt16(44+i*2,Math.round(sample*env*gain*32760),true);}
@@ -188,7 +189,15 @@ function cancelPendingAudio(){
  audioEpoch++;for(const timer of nativeAudioTimers)clearTimeout(timer);nativeAudioTimers.clear();for(const a of nativeAudioPool){try{a.muted=true;a.pause();}catch(_){}}
 }
 function createAudioGraph(){
- if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;audioMaster=audio.createGain();audioMaster.connect(audio.destination);applyAudioLevel();return true;
+ if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;audioMaster=audio.createGain();
+ // Protect the combined mix when deaths and shots overlap. Allocate this graph
+ // once per context; individual effect shapes and their relative gains stay intact.
+ const peak=audio.createDynamicsCompressor(),trim=audio.createGain(),threshold=-3,ratio=20;
+ peak.threshold.value=threshold;peak.knee.value=0;peak.ratio.value=ratio;peak.attack.value=0;peak.release.value=.08;
+ // Cancel Web Audio's specified automatic makeup gain so quiet effects retain
+ // their requested level: full-range attenuation is threshold*(1-1/ratio) dB.
+ trim.gain.value=Math.pow(10,threshold*(1-1/ratio)*.6/20);
+ audioMaster.connect(peak);peak.connect(trim);trim.connect(audio.destination);applyAudioLevel();return true;
 }
 function primeWebAudio(){
  if(muted||audioVolume<=0||document.hidden)return Promise.resolve(false);try{if(audio?.state==='running')return Promise.resolve(true);if(!createAudioGraph())return Promise.resolve(false);
@@ -217,7 +226,13 @@ function nativeTone(freq,end,duration,volume=.035,type='sine',delay=0){
  if(muted||audioVolume<=0||document.hidden)return;const epoch=audioEpoch,requested=performance.now();const play=()=>{if(epoch!==audioEpoch||muted||audioVolume<=0||document.hidden||performance.now()-requested>delay*1000+250)return;if(audio?.state==='running'){webTone(freq,end,duration,volume,type,0);return;}const pool=ensureNativeAudioPool(),a=pool[nativeAudioIndex++%pool.length];const fallback=()=>{if(epoch===audioEpoch&&performance.now()-requested<=delay*1000+250)webTone(freq,end,duration,volume,type,0);};try{a.pause();a.muted=false;
   // iOS may ignore HTMLMediaElement.volume. Bake the requested level into the
   // WAV itself; never play full-scale "almost silent" tones to unlock audio.
-  a.src=wavToneURL(freq,end,duration,type,volume*audioScale()*7);a.currentTime=0;a.dataset.baseVolume=String(volume);a.volume=1;const p=a.play();if(p?.then)p.then(()=>{if(epoch!==audioEpoch||muted||audioVolume<=0||document.hidden){a.muted=true;a.pause();}},fallback);}catch(_){fallback();}};if(delay>0){const timer=setTimeout(()=>{nativeAudioTimers.delete(timer);play();},delay*1000);nativeAudioTimers.add(timer);}else play();
+  a.src=wavToneURL(freq,end,duration,type,nativeToneGain(volume));a.currentTime=0;a.dataset.baseVolume=String(volume);a.volume=1;const p=a.play();if(p?.then)p.then(()=>{if(epoch!==audioEpoch||muted||audioVolume<=0||document.hidden){a.muted=true;a.pause();}},fallback);}catch(_){fallback();}};if(delay>0){const timer=setTimeout(()=>{nativeAudioTimers.delete(timer);play();},delay*1000);nativeAudioTimers.add(timer);}else play();
+}
+function nativeToneGain(volume){
+ // Scale the entire waveform, preserving its shape. Above the soft knee the
+ // slider still increases output through 100%, without reaching PCM full scale.
+ const level=Math.max(0,volume*audioScale()*7),knee=.7,headroom=.28;
+ return level<=knee?level:knee+headroom*(level-knee)/(headroom+level-knee);
 }
 function audioConnect(node){node.connect(audioMaster||audio.destination);}
 function ensureNoiseBuffer(){
@@ -245,6 +260,7 @@ function setLayout(){
  const viewportH=window.visualViewport?.height||innerHeight;
  touchLandscape=touchUI&&innerWidth>viewportH&&viewportH<620;
  document.body.classList.toggle('touch-ui',touchUI);document.body.classList.toggle('touch-landscape',touchLandscape);renderPowerLegend();
+ clearMatchSelection();
  $('pauseInstructions').textContent=controlSummary(0)+(hasLocalP2()?' · '+controlSummary(1):'')+' · '+modeInstructions();
  resize();
 }
@@ -1416,20 +1432,15 @@ function tankStatusLayout(t){
  return{x,labelY,labelWidth,labelHeight,labelBaseline:font+.5,size,gap,font,margin};
 }
 function tankPowerBadgePositions(t,layout,count,out=tankPowerBadgePositionScratch){
- const {size,gap,margin}=layout,half=size/2,inkRadius=size*28.5/64,step=inkRadius*2+gap;
+ const {size,gap}=layout,half=size/2,inkRadius=size*28.5/64,step=inkRadius*2+gap;
  // Pack the visible circles rather than their transparent square sprites.
  const radius=Math.max(30+inkRadius+gap,step/(2*tankPowerBadgeDirections[1][1])),cy=Math.max(t.y,layout.labelY+layout.labelHeight+gap+inkRadius);
  out.length=0;
- // Start on the right below the name, then proceed clockwise over the lower arc.
- // At maze edges, skip clipped or occupied slots and use the next clear orbit.
- for(let ring=0;ring<8&&out.length<count;ring++)for(let slot=0;slot<(ring?16:8)&&out.length<count;slot++){
-  const direction=tankPowerBadgeDirections[ring?slot:slot*2],r=radius+ring*step,cx=t.x+direction[0]*r,by=cy+direction[1]*r;
-  if(cx-inkRadius<margin||by-inkRadius<margin||cx+inkRadius>W-margin||by+inkRadius>H-margin)continue;
-  const labelDX=Math.max(layout.x-layout.labelWidth/2-cx,0,cx-layout.x-layout.labelWidth/2),labelDY=Math.max(layout.labelY-by,0,by-layout.labelY-layout.labelHeight);
-  if(labelDX*labelDX+labelDY*labelDY<(inkRadius+gap)**2)continue;
-  if((cx-t.x)**2+(by-t.y)**2<(30+inkRadius)**2)continue;
-  let occupied=false;for(const p of out)if((cx-p.x-half)**2+(by-p.y-half)**2<step*step-1e-8){occupied=true;break;}if(occupied)continue;
-  const point=tankPowerBadgePositionPool[out.length];point.x=cx-half;point.y=by-half;out.push(point);
+ // Keep the same clockwise lower-arc slots relative to the tank everywhere.
+ // The maze clip may hide an edge icon; it must never move to another orbit.
+ for(let slot=0;slot<Math.min(count,tankPowerBadgePositionPool.length);slot++){
+  const direction=tankPowerBadgeDirections[slot*2],point=tankPowerBadgePositionPool[slot];
+  point.x=t.x+direction[0]*radius-half;point.y=cy+direction[1]*radius-half;out.push(point);
  }
  return out;
 }
@@ -3329,7 +3340,7 @@ function initFeatures(){
  <label class="pickup-frequency">POWER-UP FREQUENCY<select id="rule-pickupRate"><option value="superfast">Super fast · every 1–2s (default)</option><option value="fast">Fast · every 2–3.5s</option><option value="normal">Normal · every 4–6s</option><option value="slow">Slow · every 7–10s</option><option value="off">Off · no pickups</option></select></label></div>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Your own shells, missiles and grenades can hit you in either setting.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="secondary" type="button" id="defaultRulesBtn">DEFAULT RULES</button><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span aria-hidden="true">→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP <span aria-hidden="true">→</span></button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
- <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">Bindings use physical keys. P / Esc opens the menu; M toggles sound; F toggles fullscreen. Both fire keys can also detonate your grenade. When Player 2 is not active, all their configured keys also control Player 1. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><p class="mode-help">The midpoint is the original leqra volume and the slider snaps to 50% near the center. The header sound button still provides instant mute.</p><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional missile warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Missile-lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
+ <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">Bindings use physical keys. P / Esc opens the menu; M toggles sound; F toggles fullscreen. Both fire keys can also detonate your grenade. When Player 2 is not active, all their configured keys also control Player 1. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional missile warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Missile-lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
  document.body.append(dialogs);$('roomRulesBtn').onclick=()=>openFeature('rules');$('roomPresetsBtn').onclick=()=>openFeature('presets');$('roomControlsBtn').onclick=$('menuControlsBtn').onclick=()=>openFeature('controls');
  for(const b of document.querySelectorAll('[data-close-dialog]'))b.onclick=()=>closeFeature($(b.dataset.closeDialog));for(const d of document.querySelectorAll('.feature-dialog'))d.addEventListener('close',()=>{bindingCapture=null;clearInput();});
  $('rulesForm').onsubmit=submitRules;$('defaultRulesBtn').onclick=resetRuleDefaults;
@@ -3529,20 +3540,40 @@ $('fireBtn').addEventListener('pointerup',endFire);$('fireBtn').addEventListener
 window.addEventListener('pointerup',e=>{endStick(e);endFire(e);},true);window.addEventListener('pointercancel',e=>{endStick(e);endFire(e);},true);
 $('touchControls').addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('contextmenu',e=>e.preventDefault());
 // Dialogs and the sidebar are part of the match too. Keep single-finger
-// scrolling and independent pointer controls, but prevent browser pinch zoom.
+// scrolling and independent pointer controls, but prevent browser zoom and
+// native selection/callouts across the whole mobile match, including its HUD.
 // Register blocking listeners only during a match, including pause/breaks.
 function preventMatchPinch(e){if(matchTouchLocked&&e.cancelable&&(e.type.startsWith('gesture')||e.touches?.length>1))e.preventDefault();}
+function clearMatchSelection(){
+ if(!matchTouchLocked||!touchUI||matchTextComposing)return;
+ const selection=document.getSelection?.();if(selection&&!selection.isCollapsed)selection.removeAllRanges();
+ const field=document.activeElement;
+ if(Number.isInteger(field?.selectionStart)&&field.selectionStart!==field.selectionEnd)field.setSelectionRange(field.selectionEnd,field.selectionEnd);
+}
+function preventMatchSelection(e){
+ if(!matchTouchLocked||!touchUI)return;
+ if(e.type==='compositionstart'){matchTextComposing=true;return;}
+ if(e.type==='compositionend')matchTextComposing=false;
+ if(e.cancelable&&['selectstart','contextmenu','dblclick'].includes(e.type))e.preventDefault();
+ clearMatchSelection();
+}
 function syncMatchTouchPolicy(active){
+ active=active||phase==='matchOver'&&!!pendingMatchPresentation;
  // A transport retry temporarily uses the menu phase until its first snapshot.
  // Keep an existing match lock until the server reports a lobby/result or the
  // retry is abandoned; a fresh join or lobby resume never acquires this lock.
  if(!active&&matchTouchLocked&&mode==='online'&&phase==='menu'&&online.code&&online.token&&!online.manual)active=true;
  if(active===matchTouchLocked)return;
- matchTouchLocked=active;document.documentElement.classList.toggle('match-active',active);
+ matchTouchLocked=active;matchTextComposing=false;document.documentElement.classList.toggle('match-active',active);
  for(const type of ['touchmove','gesturestart','gesturechange','gestureend']){
   if(active)document.addEventListener(type,preventMatchPinch,{capture:true,passive:false});
   else document.removeEventListener(type,preventMatchPinch,true);
  }
+ for(const type of ['selectstart','selectionchange','contextmenu','dblclick','compositionstart','compositionend']){
+  if(active)document.addEventListener(type,preventMatchSelection,{capture:true,passive:false});
+  else document.removeEventListener(type,preventMatchSelection,true);
+ }
+ if(active)clearMatchSelection();
 }
 $('playBtn').addEventListener('click',startMatch);$('rematchBtn').addEventListener('click',startMatch);$('menuBtn').addEventListener('click',readyRoom);$('quitBtn').addEventListener('click',readyRoom);$('resumeBtn').addEventListener('click',togglePause);$('pauseBtn').addEventListener('click',togglePause);$('soundBtn').addEventListener('click',toggleSound);
 for(const b of document.querySelectorAll('[data-mode]'))b.addEventListener('click',()=>setMode(b.dataset.mode));for(const b of document.querySelectorAll('[data-difficulty]'))b.addEventListener('click',()=>setDifficulty(b.dataset.difficulty));
@@ -3692,11 +3723,11 @@ function queueMatchPresentation(present,delay=ROUND_END_SECONDS*1000){
 function flushMatchPresentation(now=performance.now()){
  const pending=pendingMatchPresentation;if(!pending)return;
  const current=mode===pending.mode&&phase==='matchOver'&&(mode==='online'?online.connected&&online.code===pending.code&&online.socket===pending.socket&&online.generation===pending.generation:localMatchReport===pending.report&&localObjectives===pending.objectives);
- if(!current){pendingMatchPresentation=null;return;}
+ if(!current){pendingMatchPresentation=null;syncPauseButton();return;}
  if(mode==='online'&&online.roomData?.phase!=='matchOver'){
   // A final snapshot can beat its room metadata through the two send queues.
   // Wait for that metadata; an observed new lobby/countdown supersedes results.
-  const room=online.roomData;if((room!==pending.room||room?.phase!==pending.roomPhase)&&['lobby','countdown'].includes(room?.phase))pendingMatchPresentation=null;
+  const room=online.roomData;if((room!==pending.room||room?.phase!==pending.roomPhase)&&['lobby','countdown'].includes(room?.phase)){pendingMatchPresentation=null;syncPauseButton();}
   return;
  }
  if(now<pending.at||document.querySelector?.('dialog[open]')||mode==='online'&&online.endMatchPending)return;

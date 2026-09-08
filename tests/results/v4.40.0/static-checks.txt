@@ -1,0 +1,6 @@
+PASS: 5 JavaScript syntax checks; 69 Python files parsed.
+PASS: 11 HTML asset references resolve; six root/production assets identical.
+PASS: all application and asset versions use4.40.0; only current asset directory exists.
+PASS: volume paragraph absent from root and shipped JavaScript.
+PASS: mobile match CSS covers all body descendants and selection highlights, includes Safari manipulation fallback, retains gameplay touch-action:none.
+PASS: git diff --check.

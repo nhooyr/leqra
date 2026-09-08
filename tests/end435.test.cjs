@@ -31,7 +31,7 @@ function boot(){
   online:{socket,code:'ROOM',member:101,id:0,generation:2,connected:true,menu:true,roomData:{host:0,phase:'playing',players},renamePending:null,endMatchPending:null},
   document:doc,$,setTimeout(fn){const id=++serial;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
   roomData:()=>s.online.roomData,roomMember:id=>s.online.roomData?.players.find(p=>p.id===id),localPlayerID:()=>s.online.id,secondaryMember:()=>s.online.roomData?.players.find(p=>p.kind==='local'),cleanPilotName:n=>String(n).trim().replace(/[^\w -]/g,'').slice(0,16),
-  rememberCallsign(name){$('pilotName').value=name;},rememberLocalCallsign(){},initAudio(){},updateHUD(){},renderOnlineRoom(){s.syncCallsignEditors();s.syncEndMatchAction();},
+  rememberCallsign(name){$('pilotName').value=name;},rememberLocalCallsign(){},initAudio(){},updateHUD(){},syncPauseButton(){},renderOnlineRoom(){s.syncCallsignEditors();s.syncEndMatchAction();},
   clearInput(){},sendOnlineInput(){},toast(message){s.notice=message;},performance:{now:()=>1000},closeVictory(){s.pendingMatchPresentation=null;},setScreen(){},
   clearRestartWavePending(){},resetMatchmaking(){},closeChat(){},clearRoomChat(){},cancelSwap(){},resetWatchDialog(){},cancelKick(){},resetOnlineMotion(){},forgetOnlineSession(){},createLocalRoom(){s.createdLocal=(s.createdLocal||0)+1;},
   readyRoom(){s.ready=true;},leaveOnline(){s.left=(s.left||0)+1;s.mode='room';}
