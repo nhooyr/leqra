@@ -1,0 +1,45 @@
+# /etc/systemd/system/leqra.service
+
+[Unit]
+Description=leqra game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Run as a dedicated non-root user
+User=leqra
+Group=leqra
+
+# Directory containing the server binary/config
+WorkingDirectory=/opt/leqra
+
+# Optional environment variables
+EnvironmentFile=-/etc/leqra/leqra.env
+
+# Your compiled Go server binary
+ExecStart=/opt/leqra/leqra-server
+
+# Automatically restart if it crashes or exits
+Restart=always
+RestartSec=3
+
+# Give the process time to shut down cleanly
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+# Basic hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+# Allow writes here if your server needs persistent local data
+ReadWritePaths=/var/lib/leqra
+
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
