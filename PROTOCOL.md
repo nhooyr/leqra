@@ -3,13 +3,13 @@
 The framing protocol remains version 1, but every real production WebSocket now has an application-version handshake before room or matchmaking actions. Immediately after upgrade the server sends:
 
 ```json
-{"type":"server_hello","version":"4.23.1","protocol":1}
+{"type":"server_hello","version":"4.23.2","protocol":1}
 ```
 
 A compatible client replies before any normal command:
 
 ```json
-{"type":"client_hello","version":"4.23.1","protocol":1}
+{"type":"client_hello","version":"4.23.2","protocol":1}
 ```
 
 A matching hello enables the connection and the server answers `client_ready`. Any other action before a successful hello, or a hello with a different app/protocol version, receives `type:error`, `code:"version_mismatch"`, `action:"version"`, the current `serverVersion` and `protocol`, plus reload guidance. This is deliberately stricter than protocol-number checking alone because releases can make coordinated client/server behavior changes while retaining the same JSON framing version.

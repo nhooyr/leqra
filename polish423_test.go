@@ -23,8 +23,8 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	body := index.Body.String()
 	for _, want := range []string{
-		`assets/v4.23.1/game.js`, `assets/v4.23.1/theme.js`, `assets/v4.23.1/manifest.webmanifest`,
-		`assets/v4.23.1/pwa.js`, `apple-mobile-web-app-capable`, `apple-touch-icon`,
+		`assets/v4.23.2/game.js`, `assets/v4.23.2/theme.js`, `assets/v4.23.2/manifest.webmanifest`,
+		`assets/v4.23.2/pwa.js`, `apple-mobile-web-app-capable`, `apple-touch-icon`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q", want)
@@ -65,7 +65,7 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	sw := httptest.NewRecorder()
 	h.ServeHTTP(sw, httptest.NewRequest("GET", "/assets/v"+version+"/sw.js", nil))
-	for _, want := range []string{"leqra-app-", "v4.23.1", "'/ws'", "'/healthz'", "'/api/'", "caches.match('/')"} {
+	for _, want := range []string{"leqra-app-", "v4.23.2", "'/ws'", "'/healthz'", "'/api/'", "caches.match('/')"} {
 		if !strings.Contains(sw.Body.String(), want) {
 			t.Fatalf("service worker missing %q", want)
 		}

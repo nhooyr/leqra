@@ -1,3 +1,10 @@
+# v4.23.2 — mobile compact default and expanded fire keys
+
+- Fresh mobile local rooms now default to the Compact 7×7 maze; an explicitly saved maze-size preference is preserved.
+- Single-player controls add C and Enter as additional fire/detonate keys, alongside Q and Space.
+- With local Player 2 active, C is an additional Player 1 fire key and Enter is an additional Player 2 fire key.
+- Control summaries/help text now show the supplemental fire keys.
+
 # v4.23.1 — UI state cleanup and stronger shutdown warning
 
 - Keep **Leave match** strictly online-only across online → local transitions.

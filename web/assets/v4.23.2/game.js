@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.23.1';
+const GAME_VERSION='4.23.2';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -261,7 +261,7 @@ function resetTanks(){const spawn=spawnCells();if(mode==='room'){tanks=localRoom
 function resetPreview(){localObjectives=null;makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];seedPickups();if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);}
 function setScreen(which){if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=mode!=='online';document.body.classList.toggle('room-setup',which==='room');if(which==='online'){which='room';if(!$('joinDialog').open)$('joinDialog').showModal();}document.body.classList.toggle('overlay-open',!!which);$('overlay').hidden=!which;for(const id of ['lobby','pause','match','online','room','onlineMenu'])$(id+'Screen').hidden=id!==which;stabilizeArenaLayout();}
 function clearInput(){keys.clear();firePointers.clear();firePresses.clear();for(const t of tanks){t.fireHeld=false;t.fireBlocked=false;}stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
-function setMode(value){if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS · ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').textContent=mode==='duel'?'P1: WASD + Q · P2: ARROWS + SPACE':'FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES';if(mode==='duel')$('manualContent').innerHTML='<div class="manual-line"><span>Player 1</span><kbd>WASD + Q</kbd></div><div class="manual-line"><span>Player 2</span><kbd>ARROWS + SPACE</kbd></div><div class="manual-line"><span>Pause</span><kbd>P / ESC</kbd></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>One keyboard. Two rivals.</b><br>First to 5 wins. Every ricochet is live.</div>';else $('manualContent').innerHTML='<div class="manual-line manual-move-line"><span>Drive &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line"><span>Fire / hold to fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd></div></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through bots. Your own ricochets can still hit you.</div>';
+function setMode(value){if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS · ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').textContent=mode==='duel'?'P1: WASD + Q / C · P2: ARROWS + SPACE / ENTER':'FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES';if(mode==='duel')$('manualContent').innerHTML='<div class="manual-line"><span>Player 1</span><kbd>WASD + Q / C</kbd></div><div class="manual-line"><span>Player 2</span><kbd>ARROWS + SPACE / ENTER</kbd></div><div class="manual-line"><span>Pause</span><kbd>P / ESC</kbd></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>One keyboard. Two rivals.</b><br>First to 5 wins. Every ricochet is live.</div>';else $('manualContent').innerHTML='<div class="manual-line manual-move-line"><span>Drive &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line"><span>Fire / hold to fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd><span class="manual-or">OR</span><kbd>C</kbd><span class="manual-or">OR</span><kbd>ENTER</kbd></div></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through bots. Your own ricochets can still hit you.</div>';
  if(phase==='menu'){resetPreview();setLayout();}}
 function setDifficulty(value){if(!DIFFICULTY[value])return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
 function startMatch(){if(mode==='room'&&roomStartError()){toast(roomStartError(),3);return;}initAudio();clearInput();scores=Array(MAX_TANKS).fill(0);round=1;gameStarted=true;beginLocalMatchStats();logLines=[];setScreen(null);addLog(mode==='room'?'Room battle. First side to 5.':mode==='solo'?'You vs. the bot squad. First to 5.':'Local duel. First to 5.');startRound();canvas.focus({preventScroll:true});}
@@ -1918,15 +1918,17 @@ function openJoinDialog(){
 // v3.2 room rules, local presets, keyboard bindings, combat feedback and objectives.
 // All game state below is local-only unless it is received in a server snapshot.
 function defaultRoomRules(){return{mode:'elimination',teamMode:'ffa',teamNames:['Team 1','Team 2','Team 3','Team 4'],teamColors:[0,1,2,3],mapSize:'large',scoreTarget:5,timeLimit:75,respawnSeconds:3,pickupRate:'superfast',friendlyFire:false,weapons:Object.keys(POWER)};}
+function defaultLocalRoomRules(){const rules=defaultRoomRules();if(touchUI)rules.mapSize='compact';return rules;}
 const LOCAL_RULES_KEY='leqra.roomRules.v1';
 function loadLocalRoomRules(){
  try{
-  const saved=JSON.parse(localStorage.getItem(LOCAL_RULES_KEY)||'null');if(!saved)return defaultRoomRules();
-  const raw=saved.version===1?saved.rules:saved.rules||saved;if(!raw||typeof raw!=='object')return defaultRoomRules();
+  const saved=JSON.parse(localStorage.getItem(LOCAL_RULES_KEY)||'null');if(!saved)return defaultLocalRoomRules();
+  const raw=saved.version===1?saved.rules:saved.rules||saved;if(!raw||typeof raw!=='object')return defaultLocalRoomRules();
   // Merge before validation so a future release can add a rule without making an
-  // otherwise valid older local configuration unusable.
-  return validateRoomRules({...defaultRoomRules(),...raw});
- }catch(_){return defaultRoomRules();}
+  // otherwise valid older local configuration unusable. Explicit saved choices win
+  // over the device-specific fresh-room default.
+  return validateRoomRules({...defaultLocalRoomRules(),...raw});
+ }catch(_){return defaultLocalRoomRules();}
 }
 function persistLocalRoomRules(r=localRoom.rules){
  try{localStorage.setItem(LOCAL_RULES_KEY,JSON.stringify({version:1,rules:validateRoomRules(r)}));return true;}catch(_){return false;}
@@ -2029,17 +2031,19 @@ function loadBindings(){try{const data=JSON.parse(localStorage.getItem('leqra.bi
 function keyLabel(code){return code==='Space'?'SPACE':code==='ArrowUp'?'↑':code==='ArrowDown'?'↓':code==='ArrowLeft'?'←':code==='ArrowRight'?'→':code.replace(/^Key/,'').replace(/^Digit/,'').replace(/^Numpad/,'NUM ').replace(/Left$/,' L').replace(/Right$/,' R').toUpperCase();}
 function defaultPrimary(){const b=bindings[0];return b.forward==='KeyW'&&b.reverse==='KeyS'&&b.left==='KeyA'&&b.right==='KeyD'&&b.fire==='KeyQ';}
 function aliasesActive(){return !hasLocalP2()&&defaultPrimary();}
-function keyForAction(index,action,code){return bindings[index][action]===code||(index===0&&aliasesActive()&&({forward:'ArrowUp',reverse:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'Space'})[action]===code);}
-function heldAction(index,action){if(keys.has(bindings[index][action]))return true;if(index!==0||!aliasesActive())return false;const a={forward:'ArrowUp',reverse:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'Space'};return keys.has(a[action]);}
+function supplementalFireKey(index,code){if(code==='KeyC')return index===0;if(code==='Enter')return index===(hasLocalP2()?1:0);return false;}
+function keyForAction(index,action,code){return bindings[index][action]===code||(index===0&&aliasesActive()&&({forward:'ArrowUp',reverse:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'Space'})[action]===code)||(action==='fire'&&supplementalFireKey(index,code));}
+function heldAction(index,action){if(keys.has(bindings[index][action]))return true;if(action==='fire'&&(index===0&&keys.has('KeyC')||index===(hasLocalP2()?1:0)&&keys.has('Enter')))return true;if(index!==0||!aliasesActive())return false;const a={forward:'ArrowUp',reverse:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'Space'};return keys.has(a[action]);}
 function isWeaponKey(code){return keyForAction(0,'fire',code)||hasLocalP2()&&keyForAction(1,'fire',code);}
 function isControlKey(code){return ['forward','reverse','left','right','fire'].some(a=>keyForAction(0,a,code)||hasLocalP2()&&keyForAction(1,a,code));}
-function controlSummary(index,prefix=true){const b=bindings[index],moves=[b.forward,b.left,b.reverse,b.right].map(keyLabel).join(' ');return(prefix?'P'+(index+1)+': ':'')+moves+' + '+keyLabel(b.fire)+(index===0&&aliasesActive()?' / SPACE':'');}
+function fireAliasLabels(index){const labels=[];if(index===0&&aliasesActive())labels.push('SPACE');if(index===0)labels.push('C');if(index===(hasLocalP2()?1:0))labels.push('ENTER');return labels;}
+function controlSummary(index,prefix=true){const b=bindings[index],moves=[b.forward,b.left,b.reverse,b.right].map(keyLabel).join(' '),aliases=fireAliasLabels(index);return(prefix?'P'+(index+1)+': ':'')+moves+' + '+keyLabel(b.fire)+(aliases.length?' / '+aliases.join(' / '):'');}
 function manualKeyRow(codes){return '<div class="keys">'+codes.map(code=>'<kbd>'+escapeHTML(keyLabel(code))+'</kbd>').join('')+'</div>';}
 function fieldManualHTML(){
  let html='';
  if(!hasLocalP2()&&aliasesActive()){
   html+='<div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options">'+manualKeyRow(['ArrowUp','ArrowLeft','ArrowDown','ArrowRight'])+'<span class="manual-or">OR</span>'+manualKeyRow(['KeyW','KeyA','KeyS','KeyD'])+'</div></div>';
-  html+='<div class="manual-line"><span>Fire / detonate</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd></div></div>';
+  html+='<div class="manual-line"><span>Fire / detonate</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd><span class="manual-or">OR</span><kbd>C</kbd><span class="manual-or">OR</span><kbd>ENTER</kbd></div></div>';
  }else{
   html+='<div class="manual-line"><span>Player 1</span><kbd>'+escapeHTML(controlSummary(0,false))+'</kbd></div>';
   if(hasLocalP2())html+='<div class="manual-line"><span>Player 2</span><kbd>'+escapeHTML(controlSummary(1,false))+'</kbd></div>';
