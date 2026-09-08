@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.29.0';
+const GAME_VERSION='4.30.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -123,17 +123,31 @@ const isEnemy=(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team);
 // Human self-ricochets and grenade damage deliberately remain enabled.
 function canDamage(owner,target){const shooter=tanks.find(t=>t.id===owner);return !!shooter&&(shooter.id===target.id||!!currentRules().friendlyFire||isEnemy(shooter,target));}
 function botLevelName(level){return {easy:'Chill',normal:'Normal',hard:'Fierce',godlike:'Godlike'}[level]||'Normal';}
+function lineupMember(p,alive=p.alive){
+ const bot=p.kind==='bot'||p.bot||p.human===false||p.survivalEnemy;
+ return{id:p.id,alive,text:p.name+(bot?' ('+botLevelName(p.difficulty)+(p.survivalBoss?' boss':' bot')+')':'')};
+}
 function scoreboardEntries(){
  if(mode==='room'||mode==='online'){
-  const data=roomData(),result=[],groups=new Map();
-  for(const p of data?.players||[]){const key=teamKey(p);let entry=groups.get(key);const alive=tanks.find(t=>t.id===p.id)?.alive??true;
+  // Wave enemies have tank bodies but no room seats. Use the newest server
+  // bodies online so an interpolated old wave cannot linger in the lineup.
+  const data=roomData(),bodies=mode==='online'?(online.snapshots.at(-1)?.tanks??tanks):tanks;
+  const result=[],groups=new Map(),tankMap=new Map(bodies.map(t=>[t.id,t]));
+  for(const p of data?.players||[]){const key=teamKey(p);let entry=groups.get(key);const alive=tankMap.get(p.id)?.alive??true;
    if(!entry){entry={...p,color:p.team>0?teamColor(p.id,p.team):p.color,name:p.team>0?teamName(p.team):p.name,alive:false,meta:'',members:[]};groups.set(key,entry);result.push(entry);}
-   entry.alive ||= alive;entry.members.push(p.kind==='bot'?p.name+' ('+botLevelName(p.difficulty)+' bot)':p.name);entry.meta=p.team>0?entry.members.join(' + '):p.kind==='bot'?botLevelName(p.difficulty).toUpperCase()+' BOT':p.id===localPlayerID()?'YOU':p.kind==='local'?'LOCAL PLAYER 2':'ONLINE PILOT';
-  }return result;
+   entry.alive ||= alive;
+   if(p.team>0)entry.members.push(lineupMember(p,alive));
+   else entry.meta=p.kind==='bot'?botLevelName(p.difficulty).toUpperCase()+' BOT':p.id===localPlayerID()?'YOU':p.kind==='local'?'LOCAL PLAYER 2':'ONLINE PILOT';
+  }
+  if(data?.rules?.mode==='survival'&&!['menu','onlineLobby'].includes(phase)){
+   const enemies=bodies.filter(t=>t.survivalEnemy);
+   if(enemies.length)result.push({id:'survivalEnemies',name:teamName(2),color:teamColor(0,2),alive:enemies.some(t=>t.alive),survivalEnemy:true,meta:'',members:enemies.map(t=>lineupMember(t))});
+  }
+  return result;
  }
  if(mode==='duel')return tanks.map(t=>({...t,meta:t.alive?'HUMAN PILOT':'ELIMINATED'}));
  const player=tanks[0],bots=tanks.filter(t=>!t.human);if(!player)return[];
- return[{...player,meta:player.alive?'HUMAN PILOT':'ELIMINATED'},{id:1,name:'BOT SQUAD',color:COLORS[1],alive:bots.some(t=>t.alive),human:false,meta:bots.map(t=>t.name+' ('+botLevelName(t.difficulty||difficulty)+' bot)'+(t.alive?'':' ×')).join(' + ')}];
+ return[{...player,meta:player.alive?'HUMAN PILOT':'ELIMINATED'},{id:1,name:'BOT SQUAD',color:COLORS[1],alive:bots.some(t=>t.alive),human:false,meta:'',members:bots.map(t=>lineupMember({...t,difficulty:t.difficulty||difficulty}))}];
 }
 function winnerName(winner){
  const report=mode==='online'?online.snapshots.at(-1)?.matchStats:localMatchReport;
@@ -1257,16 +1271,19 @@ function renderPilotLoadout(player,num,force=false){
  const rosterPilot=roomData()?.players.find(p=>p.id===player.id);
  const name=rosterPilot?.name||player.name;panel.style.setProperty('--loadout-color',paintColor(player.color));
  setText('loadoutName'+num,name);$('loadoutName'+num).title=name;
- const capacity=powerCapacity(player),available=Math.max(0,capacity-activeAmmo(player)),key=[player.id,player.power,capacity,available,player.alive].join(':');
- if(force||dots.dataset.state!==key){
-  dots.dataset.state=key;dots.innerHTML=Array.from({length:Math.min(capacity,12)},(_,i)=>`<i class="ammo-dot ${i>=Math.ceil(available/capacity*Math.min(capacity,12))||!player.alive?'empty':''}"></i>`).join('');
+ // Machine Gun shows its firing budget instead; avoid rebuilding hidden slot dots.
+ if(player.power!=='rapid'||!player.alive){
+  const capacity=powerCapacity(player),available=Math.max(0,capacity-activeAmmo(player)),key=[player.id,player.power,capacity,available,player.alive].join(':');
+  if(force||dots.dataset.state!==key){
+   dots.dataset.state=key;dots.innerHTML=Array.from({length:Math.min(capacity,12)},(_,i)=>`<i class="ammo-dot ${i>=Math.ceil(available/capacity*Math.min(capacity,12))||!player.alive?'empty':''}"></i>`).join('');
+  }
+  const quantity=player.power==='laser'?'laser charges':'active projectile slots';
+  dots.setAttribute('aria-label',name+': '+(player.alive?available:0)+' of '+capacity+' '+quantity+' available');
  }
- const quantity=player.power==='laser'?'laser charges':'active projectile slots';
- dots.setAttribute('aria-label',name+': '+(player.alive?available:0)+' of '+capacity+' '+quantity+' available');
  panel.setAttribute('aria-label','Player '+num+', '+name+', ammunition and power-ups');
  const liveGrenades=ownedGrenades(player),remoteReady=player.alive&&liveGrenades.length>0;
  const power=POWER[player.power],charges=['scatter','homing','grenade','laser','cannon'].includes(player.power)?' ×'+player.charges:'';
- const label=$('weaponLabel'+suffix);setText('weaponLabel'+suffix,!player.alive?'TANK DOWN':remoteReady?'DETONATE · '+Math.max(0,...liveGrenades.map(b=>b.life)).toFixed(1)+'s':power?(power.short||power.name)+charges+' · '+Math.ceil(player.powerTime)+'s':'STANDARD');
+ const label=$('weaponLabel'+suffix);setText('weaponLabel'+suffix,!player.alive?'TANK DOWN':remoteReady?'DETONATE · '+Math.max(0,...liveGrenades.map(b=>b.life)).toFixed(1)+'s':power?(power.short||power.name)+charges+' · '+(player.power==='rapid'?'EXPIRES ':'')+Math.ceil(player.powerTime)+'s':'STANDARD');
  label.title=label.textContent;
  label.style.color=paintColor(remoteReady?POWER.grenade.color:power?.color||player.color||COLORS[0]);
  setStyle(label,'--weapon-color',label.style.color);
@@ -1275,11 +1292,25 @@ function renderPilotLoadout(player,num,force=false){
  const detailText=player.alive?(feedbackText||buffText):'',detail=$('buffLabel'+suffix);setText('buffLabel'+suffix,detailText);detail.hidden=!detailText;detail.title=feedbackText||('Speed: '+speedCount(player)+' stacks, '+Math.ceil(player.speedTime||0)+'s · Shield: '+shieldCount(player)+' charges, '+Math.ceil(player.shield||0)+'s · Scope: '+Math.ceil(player.scopeTime||0)+'s · Ghost: '+Math.ceil(player.ghostTime||0)+'s');
  return {power,remoteReady};
 }
+function renderLineup(force=false){
+ const entries=scoreboardEntries(),scored=entries.filter(t=>!t.survivalEnemy),target=currentRules().scoreTarget,pipCount=Math.min(10,target);
+ document.body.classList.toggle('many-sides',scored.length>4);
+ // Include member state and the score target: partial eliminations and settings
+ // changes must refresh even while the team itself is still alive.
+ const rosterKey=JSON.stringify([mode,target,entries.map(t=>[t.id,t.name,t.color,t.alive,t.meta,t.members,!!t.survivalEnemy,scores[t.id]])]);
+ if(!force&&rosterKey===lastRoster)return;lastRoster=rosterKey;
+ $('roster').innerHTML=entries.map(t=>{
+  const details=t.members?.length?t.members.map(p=>`<div class="lineup-member ${p.alive?'':'out'}">${escapeHTML(p.text)}${p.alive?'':' <span aria-label="Eliminated">×</span>'}</div>`).join(''):escapeHTML(t.meta);
+  const points=t.survivalEnemy?'':`<div class="score-pips">${Array.from({length:pipCount},(_,n)=>`<i class="${n<Math.ceil(scores[t.id]/target*pipCount)?'on':''}"></i>`).join('')}</div>`;
+  return `<div class="roster-row ${!t.alive?'out':''}${t.survivalEnemy?' survival-enemies':''}" style="--player:${paintColor(t.color)}"><div class="avatar">${tankSvg()}</div><div class="player-info"><div class="player-name">${escapeHTML(t.name)}</div><div class="player-meta">${details}</div>${points}</div>${t.survivalEnemy?'':`<div class="score">${scores[t.id]}</div>`}</div>`;
+ }).join('');
+ $('miniScores').innerHTML=scored.map(t=>`<span class="mini-score" style="--player:${paintColor(t.color)};opacity:${t.alive?1:.4}" title="${escapeHTML(t.name)}" aria-label="${escapeHTML(t.name)}: ${scores[t.id]} points"><i></i>${mode==='solo'?(t.id===0?'YOU ':'BOTS '):''}${scores[t.id]}</span>`).join('');
+}
 function updateHUD(force=false){
  syncPauseButton();
  setText('arenaStatus',phase==='menu'?'READY ROOM':phase==='paused'?'PAUSED':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'LIVE ARENA');
  setText('roundLabel','ROUND '+String(round).padStart(2,'0'));const secs=Math.ceil(roundClock);setText('clock',String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0'));$('clock').classList.toggle('urgent',secs<=15);
- const entries=scoreboardEntries();document.body.classList.toggle('many-sides',entries.length>4);const rosterKey=entries.map(t=>[t.name,t.color,t.alive,t.meta,scores[t.id]].join()).join('|');if(force||rosterKey!==lastRoster){lastRoster=rosterKey;$('roster').innerHTML=entries.map(t=>`<div class="roster-row ${!t.alive?'out':''}" style="--player:${paintColor(t.color)}"><div class="avatar">${tankSvg()}</div><div class="player-info"><div class="player-name">${escapeHTML(t.name)}</div><div class="player-meta">${escapeHTML(t.meta)}</div><div class="score-pips">${Array.from({length:Math.min(10,currentRules().scoreTarget)},(_,n)=>`<i class="${n<Math.ceil(scores[t.id]/currentRules().scoreTarget*Math.min(10,currentRules().scoreTarget))?'on':''}"></i>`).join('')}</div></div><div class="score">${scores[t.id]}</div></div>`).join('');$('miniScores').innerHTML=entries.map(t=>`<span class="mini-score" style="--player:${paintColor(t.color)};opacity:${t.alive?1:.4}" title="${escapeHTML(t.name)}" aria-label="${escapeHTML(t.name)}: ${scores[t.id]} points"><i></i>${mode==='solo'?(t.id===0?'YOU ':'BOTS '):''}${scores[t.id]}</span>`).join('');}
+ renderLineup(force);
  const player=controlledTank(),p2=tanks.find(t=>t.id===secondaryID());
  $('localLoadouts').classList.toggle('two-pilots',!!p2);document.body.classList.toggle('two-local-pilots',!!p2);
  const state=renderPilotLoadout(player,1,force);renderPilotLoadout(p2,2,force);
@@ -1287,9 +1318,9 @@ function updateHUD(force=false){
   // Weapon button text, state and progress are written only by updateCombatFeedback().
   setText('touchStatus',phase==='menu'?'GOOD LUCK':!player.alive?'TANK DOWN':player.ghostTime>0?'GHOST ACTIVE':player.speedTime>0?'SUPER SPEED':power?(power.short||power.name):player.shield>0?'SHIELDED':player.scopeTime>0?'SCOPE ACTIVE':'STAY SHARP');
  }
- const announce=$('announcer');announce.classList.toggle('round-result',phase==='roundOver');
+ const announce=$('announcer'),intermission=phase==='playing'&&survivalBreak(),bossPreview=intermission?survivalBossPreview():null;announce.classList.toggle('round-result',phase==='roundOver');announce.classList.toggle('boss-preview',!!bossPreview);
  if(phase==='countdown'){announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0'));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(330,300,.07,.03,'triangle');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',mode==='solo'?'You vs. the bot squad. Take out both bots.':modeInstructions());}
- else if(phase==='playing'&&survivalBreak()){announce.hidden=false;setText('announceTop','WAVE '+survivalState().wave+' CLEARED');setText('announceMain',Math.ceil(survivalState().breakTime));setText('announceSub',(survivalState().wave+1)%5===0?'Godlike boss next. Squad returns together.':'Squad returns for the next wave.');$('announceMain').style.color=paintColor(COLORS[0]);}
+ else if(intermission){const state=survivalState(),preview=bossPreview;announce.hidden=false;setText('announceTop',preview?'NEXT: WAVE '+preview.wave+' · GODLIKE BOSS':'WAVE '+state.wave+' CLEARED');setText('announceMain',Math.ceil(state.breakTime));setText('announceSub',preview?'Equipment: '+preview.equipment+'\nSquad returns together.':'Squad returns for the next wave.');$('announceMain').style.color=paintColor(COLORS[0]);}
  else if(phase==='playing'&&performance.now()<goUntil&&!suddenDeath()){announce.hidden=false;setText('announceTop','WEAPONS LIVE');setText('announceMain','GO');setText('announceSub','');}
  else if(phase==='roundOver'){announce.hidden=false;setText('announceTop',roundWinner>=0?'ONE POINT CLOSER':'NO POINTS AWARDED');setText('announceMain',roundWinner<0?'ROUND DRAW':mode==='solo'&&roundWinner===0?'YOU TAKE THE ROUND':winnerName(roundWinner)+' WINS');$('announceMain').style.color=paintColor(roundWinner<0?'#eff2df':(tanks.find(t=>t.id===roundWinner)?.color||COLORS[roundWinner]||COLORS[0]));setText('announceSub',roundWinner>=0&&scores[roundWinner]>=currentRules().scoreTarget?'Match complete.':'New maze in '+Math.ceil(phaseTime)+'…');}
  else announce.hidden=true;
@@ -2313,7 +2344,7 @@ function survivalBreak(){return survivalState()?.status==='break';}
 function suddenDeath(){return !!objectiveState()?.suddenDeath;}
 function validateRoomRules(r){
  if(!r||!['elimination','ctf','koth','survival'].includes(r.mode)||!['teams','ffa'].includes(r.teamMode)||!['compact','standard','large','huge','giant','ultrawide'].includes(r.mapSize)||!['superfast','fast','normal','slow','off'].includes(r.pickupRate))throw Error('Choose valid mode, format, map and pickup settings.');
- if((r.mode==='ctf'||r.mode==='survival')&&r.teamMode!=='teams')throw Error(r.mode==='survival'?'Co-op Survival needs teams.':'Capture the Flag needs two numbered teams.');
+ if((r.mode==='ctf'||r.mode==='survival')&&r.teamMode!=='teams')throw Error(r.mode==='survival'?'Survival needs teams.':'Capture the Flag needs two numbered teams.');
  if(!Number.isInteger(r.scoreTarget)||r.scoreTarget<1||r.scoreTarget>(r.mode==='koth'?300:20))throw Error('Score target: 1–20, or 1–300 in Hill.');
  if(!Number.isInteger(r.timeLimit)||r.timeLimit<30||r.timeLimit>600)throw Error('Time limit must be 30–600 seconds.');
  if(!Number.isInteger(r.respawnSeconds)||r.respawnSeconds<1||r.respawnSeconds>10)throw Error('Respawn delay must be 1–10 seconds.');
@@ -2341,19 +2372,19 @@ function syncControlsPickupInfo(){const el=$('controlsPickupInfo');if(!el)return
 function pickupInterval(){return currentRules().pickupRate==='off'?[Infinity,Infinity]:currentRules().pickupRate==='superfast'?[1,2]:currentRules().pickupRate==='normal'?[4,6]:currentRules().pickupRate==='slow'?[7,10]:[2,3.5];}
 function roomStartError(data=roomData()){
  const players=data?.players.filter(p=>p.connected!==false)||[],r=data?.rules||currentRules();
- if(survivalMode(r)){if((data?.players.length||0)>4)return 'Co-op Survival supports up to four squad tanks.';if(!players.some(p=>p.kind!=='bot'))return 'Co-op Survival needs at least one active human pilot.';return '';}
+ if(survivalMode(r)){if((data?.players.length||0)>4)return 'Survival supports up to four squad tanks.';if(!players.some(p=>p.kind!=='bot'))return 'Survival needs at least one active human pilot.';return '';}
  if(new Set(players.map(teamKey)).size<2)return 'Choose at least two opposing sides.';
  if(r.mode==='ctf'&&(players.some(p=>p.team<1||p.team>2)||new Set(players.map(p=>p.team)).size!==2))return 'Capture the Flag needs tanks on Team 1 and Team 2.';
  return '';
 }
 function setLocalRules(value){
- if(value?.mode==='survival'&&localRoom.players.filter(p=>!p.spectating).length>4)throw Error('Co-op Survival supports up to four squad tanks. Remove a bot or move a pilot to spectating first.');
+ if(value?.mode==='survival'&&localRoom.players.filter(p=>!p.spectating).length>4)throw Error('Survival supports up to four squad tanks. Remove a bot or move a pilot to spectating first.');
  const previous=localRoom.rules||defaultRoomRules(),rules=validateRoomRules(value),teamCountChanged=activeTeamCount(previous)!==activeTeamCount(rules),mapChanged=previous.mapSize!==rules.mapSize,pickupSetupChanged=previous.pickupRate!==rules.pickupRate||previous.weapons.join('|')!==rules.weapons.join('|');localRoom.rules=rules;roundClock=rules.timeLimit;
  if(rules.teamMode==='teams'&&teamCountChanged)balanceLocalTeams();normalizeRoomTeams(localRoom.players,rules);
  persistLocalRoomRules(rules);
  resetPreviewIfLobby({regenerateMaze:mapChanged,resetPickups:pickupSetupChanged});renderOnlineRoom();
 }
-function modeLabel(){return {elimination:'ELIMINATION',ctf:'CAPTURE THE FLAG',koth:'KING OF THE HILL',survival:'CO-OP SURVIVAL'}[currentRules().mode];}
+function modeLabel(){return {elimination:'ELIMINATION',ctf:'CAPTURE THE FLAG',koth:'KING OF THE HILL',survival:'SURVIVAL'}[currentRules().mode];}
 function modeInstructions(){return survivalMode()?'Clear every enemy wave together before its timer runs out. Fallen squadmates return between waves. Every fifth wave includes a Godlike boss.':currentRules().mode==='ctf'?'Steal an enemy flag and bring it to your base. Your own flag must be home.':currentRules().mode==='koth'?'Hold the hill alone or with allies. Opposing sides contest it; nobody scores.':'Eliminate every opposing side to win the round.';}
 function displayScoreTarget(){const r=currentRules();return r.mode==='survival'?r.scoreTarget+' WAVES':r.mode==='koth'?r.scoreTarget+' HILL POINTS':r.mode==='ctf'?r.scoreTarget+' CAPTURES':'FIRST TO '+r.scoreTarget;}
 function isRoomHost(){return roomData()?.host===localPlayerID();}
@@ -2362,7 +2393,7 @@ const ROOM_MODES=[
  {id:'elimination',name:'Elimination',help:'Outlast every opposing tank or team.',icon:'<circle cx="12" cy="12" r="6"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="1"/>'},
  {id:'ctf',name:'Capture the Flag',help:'Steal the enemy flag and bring it home.',icon:'<path d="M5 22V3m0 1c5-5 9 5 14 0v10c-5 5-9-5-14 0"/>'},
  {id:'koth',name:'King of the Hill',help:'Control the hill. Contest it to stop rivals scoring.',icon:'<path d="m2 21 7-10 4 5 3-4 6 9H2ZM8 7 6 2l6 3 6-3-2 5H8Z"/>'},
- {id:'survival',name:'Co-op Survival',help:'Survive together. Godlike bosses arrive every fifth wave.',icon:'<path d="m12 2 8 3v7c0 5-8 10-8 10S4 17 4 12V5l8-3Z"/><path d="M12 7v9m-4-5h8"/>'}
+ {id:'survival',name:'Survival',help:'Survive together. Godlike bosses arrive every fifth wave.',icon:'<path d="m12 2 8 3v7c0 5-8 10-8 10S4 17 4 12V5l8-3Z"/><path d="M12 7v9m-4-5h8"/>'}
 ];
 function roomModeEditable(){return isRoomEditable()&&(mode!=='online'||online.connected)&&!pendingRoomMode&&!rulesPending&&!presetsPending;}
 function rulesForRoomMode(value){
@@ -2394,7 +2425,7 @@ function selectRoomMode(value){
  roomModeError='';
  try{
   const rules=rulesForRoomMode(value);
-  if(value==='survival'&&roomData().players.length>4)throw Error('Co-op Survival supports up to four squad tanks. Remove a bot or move a pilot to spectating first.');
+  if(value==='survival'&&roomData().players.length>4)throw Error('Survival supports up to four squad tanks. Remove a bot or move a pilot to spectating first.');
   if(mode==='online'){
    if(!sendOnline({type:'rules',rules}))throw Error('Connection unavailable. The mode was not changed.');
    const request={value,socket:online.socket,timer:0};pendingRoomMode=request;
@@ -2554,12 +2585,12 @@ function builtinPresets(){
  {name:'4-tank Free-for-all',rules:{...defaultRoomRules(),teamMode:'ffa',mapSize:'large'},roster:[{...human,team:0},...ffaBots.slice(0,3).map(n=>bot(n,0))]},
  {name:'8-tank Free-for-all',rules:{...defaultRoomRules(),teamMode:'ffa',mapSize:'giant'},roster:[{...human,team:0},...ffaBots.map(n=>bot(n,0))]},
  {name:'Two humans vs. bots',rules:{...defaultRoomRules(),teamMode:'teams'},roster:[human,local,bot('RUST',2),bot('VAPOR',2)]},
- {name:'Co-op Survival',rules:{...defaultRoomRules(),teamMode:'teams',mode:'survival',scoreTarget:10,timeLimit:75},roster:[human,bot('EMBER',1,'hard')]},
+ {name:'Survival',rules:{...defaultRoomRules(),teamMode:'teams',mode:'survival',scoreTarget:10,timeLimit:75},roster:[human,bot('EMBER',1,'hard')]},
  {name:'Capture the Flag',rules:{...defaultRoomRules(),teamMode:'teams',mode:'ctf',scoreTarget:3,timeLimit:180},roster:[human,bot('EMBER',1),bot('RUST',2),bot('VAPOR',2)]},
  {name:'King of the Hill',rules:{...defaultRoomRules(),mode:'koth',teamMode:'ffa',scoreTarget:60,timeLimit:180},roster:[{...human,team:0},bot('RUST',0),bot('VAPOR',0),bot('EMBER',0)]}];
 }
 function validatePreset(p){
- const rules=validateRoomRules(p.rules);if(!Array.isArray(p.roster)||p.roster.length<1||p.roster.length>roomCapacity(rules))throw Error(survivalMode(rules)?'Co-op Survival presets support one to four squad tanks.':'Invalid preset roster.');let local=0;
+ const rules=validateRoomRules(p.rules);if(!Array.isArray(p.roster)||p.roster.length<1||p.roster.length>roomCapacity(rules))throw Error(survivalMode(rules)?'Survival presets support one to four squad tanks.':'Invalid preset roster.');let local=0;
  const roster=p.roster.map((s,i)=>{if((i===0?s.kind!=='human':!['bot','local'].includes(s.kind))||!Number.isInteger(s.team)||s.team<0||s.team>4||!cleanPilotName(s.name)||s.kind==='bot'&&!DIFFICULTY[s.difficulty])throw Error('Invalid preset participant.');if(s.kind==='local')local++;if(s.colorIndex!=null&&(!Number.isInteger(s.colorIndex)||s.colorIndex< -1||s.colorIndex>7))throw Error('Invalid tank color.');return{kind:s.kind,name:cleanPilotName(s.name),colorIndex:rules.teamMode==='ffa'?(s.colorIndex??-1):undefined,team:rules.teamMode==='ffa'?0:s.team,...(s.kind==='bot'?{difficulty:s.difficulty}:{})};});
  if(local>1)throw Error('Only one secondary local player is supported.');normalizeRoomTeams(roster,rules);return{rules,roster};
 }
@@ -2608,8 +2639,17 @@ async function deleteSelectedPreset(){
 // members. This keeps spectator IDs, local controls and match reports distinct.
 function survivalWavePlan(wave,slots=4,rules=currentRules()){
  const boss=wave%5===0,count=Math.min(slots,4,2+Math.floor((wave-1)/2));
- const choices=['homing','cannon','laser'],index=(Math.floor(wave/5)-1+3)%3;
- return{count,boss,difficulty:wave<=2?'easy':wave<=4?'normal':'hard',weapon:rules.pickupRate==='off'?null:[0,1,2].map(n=>choices[(index+n)%3]).find(w=>rules.weapons.includes(w))||null};
+ const choices=['homing','cannon','laser'],index=(Math.floor(wave/5)-1+3)%3,gear=boss&&rules.pickupRate!=='off';
+ return{count,boss,difficulty:wave<=2?'easy':wave<=4?'normal':'hard',shieldCharges:gear&&rules.weapons.includes('shield')?3:0,speedStacks:gear&&rules.weapons.includes('speed')?1:0,weapon:rules.pickupRate==='off'?null:[0,1,2].map(n=>choices[(index+n)%3]).find(w=>rules.weapons.includes(w))||null};
+}
+// Derive the preview from the spawn plan and authoritative room rules. No gear
+// is rolled at spawn, so online and offline previews need no extra wire state.
+function survivalBossPreview(state=survivalState(),rules=currentRules()){
+ if(rules.mode!=='survival'||state?.status!=='break'||state.wave+1>state.waveTarget)return null;
+ const wave=state.wave+1,plan=survivalWavePlan(wave,4,rules);if(!plan.boss)return null;
+ const equipment=[];if(plan.shieldCharges)equipment.push(plan.shieldCharges+' shield charges');if(plan.speedStacks)equipment.push('Speed boost');
+ equipment.push({homing:'Homing missiles',cannon:'Cannon',laser:'Laser'}[plan.weapon]||'Standard shells');
+ return{wave,equipment:equipment.join(' · ')};
 }
 function survivalSpawnPoint(){
  let best=-Infinity,point=center(0);
@@ -2635,7 +2675,7 @@ function startLocalSurvivalWave(){
   const boss=plan.boss&&n===0,p=survivalSpawnPoint(),t=newTank(free[n],cellAt(p.x,p.y));
   Object.assign(t,{name:boss?'GODLIKE BOSS':'WAVE '+state.wave+' BOT '+(n+1),human:false,team:2,color:teamColor(t.id,2),difficulty:boss?'godlike':plan.difficulty,survivalEnemy:true,survivalBoss:boss,spawnSerial:state.wave*100+1,invulnerable:1.2});
   tanks.push(t);scores[t.id]=0;
-  if(boss&&currentRules().pickupRate!=='off'){if(currentRules().weapons.includes('shield'))for(let i=0;i<3;i++)grantPower(t,'shield');if(currentRules().weapons.includes('speed'))grantPower(t,'speed');if(plan.weapon)grantPower(t,plan.weapon);}
+  if(boss){for(let i=0;i<plan.shieldCharges;i++)grantPower(t,'shield');for(let i=0;i<plan.speedStacks;i++)grantPower(t,'speed');if(plan.weapon)grantPower(t,plan.weapon);}
  }
  if(state.wave>1)seedPickups();
  addLog('Wave '+state.wave+' · '+plan.count+' enemies'+(plan.boss?' · GODLIKE BOSS':''));
@@ -2800,6 +2840,18 @@ let feedbackAt=-Infinity;
 function setText(id,value){const el=$(id);if(el.textContent!==String(value))el.textContent=value;}
 function setStyle(el,key,value){if(el.style.getPropertyValue(key)!==String(value))el.style.setProperty(key,String(value));}
 function setAttr(el,key,value){if(el.getAttribute(key)!==String(value))el.setAttribute(key,value);}
+function updateMachineBudget(t,num){
+ const budget=$('machineBudget'+num),shown=t.alive&&t.power==='rapid';budget.hidden=!shown;$('ammoDots'+(num===1?'':'2')).hidden=shown;
+ if(!shown)return;
+ const rounds=clamp(t.machineRounds||0,0,MACHINE_FIRING_ROUNDS),total=MACHINE_FIRING_ROUNDS/60,remaining=(Math.ceil(rounds/6)/10).toFixed(1);
+ // The firing budget is separate from the power-up's 10/15-second hold timer.
+ // Use liveFeedbackTank's predicted count so online input is visible immediately.
+ setText('machineBudgetTime'+num,remaining+' / '+total+'s');
+ setStyle(budget,'--firing-left',String(rounds/MACHINE_FIRING_ROUNDS));
+ setAttr(budget,'aria-valuemax',String(total));setAttr(budget,'aria-valuenow',String(Number((rounds/60).toFixed(3))));
+ setAttr(budget,'aria-valuetext',remaining+' of '+total+' seconds of firing remaining');
+ setAttr(budget,'title',remaining+' of '+total+' seconds of firing remaining. Only firing uses this budget.');
+}
 function updateCombatFeedback(force=false){
  const now=performance.now();if(!force&&now-feedbackAt<1000/30)return;feedbackAt=now;
  for(const [num,source]of [[1,controlledTank()],[2,tanks.find(t=>t.id===secondaryID())]]){
@@ -2807,7 +2859,7 @@ function updateCombatFeedback(force=false){
   const warning=$('missileWarning'+num);warning.hidden=!combatPrefs.visual||!locked;if(warning.textContent!=='⚠ MISSILE LOCK')warning.textContent='⚠ MISSILE LOCK';
   const panel=$('pilotLoadout'+num);panel.classList.toggle('missile-locked',combatPrefs.visual&&locked);
   if(locked&&!lastLocks[num]&&combatPrefs.audio&&time-(lastLockTone[num]||-10)>1.5){tone(850,1050,.07,.025,'sine');tone(850,1150,.08,.025,'sine',.11);lastLockTone[num]=time;}lastLocks[num]=locked;
-  const budget=$('machineBudget'+num),firingTime=(Math.ceil(Math.max(0,t.machineRounds||0)/6)/10).toFixed(1);budget.hidden=!t.alive||t.power!=='rapid';setText('machineBudget'+num,'FIRE '+firingTime+'s');setAttr(budget,'aria-label','Machine gun: '+firingTime+' seconds of firing remaining');
+  updateMachineBudget(t,num);
   const remote=t.alive&&ownedGrenades(t).length>0,cap=powerCapacity(t),free=t.power==='laser'?t.charges:cap-activeAmmo(t),need=t.power==='scatter'?3:1;
   const inWallBlocked=t.ghostTime>0&&t.power!=='cannon'&&!clearTankAt(t.x,t.y,0);
   let text='READY',ready=1;if(phase!=='playing'){text=phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':phase==='countdown'?'GET READY':phase==='paused'?'PAUSED':'READY';ready=phase==='countdown'?0:1;}else if(survivalBreak()){text='NEXT WAVE '+Math.ceil(survivalState().breakTime)+'s';ready=0;}else if(!t.alive){text=survivalMode()?'BACK NEXT WAVE':objectiveMode()&&!suddenDeath()?'RESPAWN '+(t.respawnTime||0).toFixed(1)+'s':'TANK DOWN';ready=0;}else if(remote)text='DETONATE READY';else{
@@ -3114,7 +3166,7 @@ function renderMatchStats(report){
  if(!report?.players?.length){section.hidden=true;$('victorySummary').textContent='';return;}
  section.hidden=false;
  const rows=report.players,mode=report.mode||'elimination',eliminations=rows.reduce((n,p)=>n+p.eliminations,0);
- const modeName=mode==='survival'?'CO-OP SURVIVAL':mode==='ctf'?'CAPTURE THE FLAG':mode==='koth'?'KING OF THE HILL':'ELIMINATION';
+ const modeName=mode==='survival'?'SURVIVAL':mode==='ctf'?'CAPTURE THE FLAG':mode==='koth'?'KING OF THE HILL':'ELIMINATION';
  $('victorySummary').textContent=modeName+' · '+matchDuration(report.duration)+' LIVE'+(mode==='elimination'?' · '+report.rounds+' ROUND'+(report.rounds===1?'':'S'):'');
  const head=document.createElement('div');head.className='match-stats-heading';
  const title=document.createElement('h3');title.id='matchStatsTitle';title.textContent='PLAYER RESULTS';

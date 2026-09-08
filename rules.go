@@ -39,13 +39,13 @@ func validateRules(r MatchRules) error {
 		return err
 	}
 	if r.Mode != "elimination" && r.Mode != "ctf" && r.Mode != "koth" && r.Mode != "survival" {
-		return errors.New("Choose Elimination, Capture the Flag, King of the Hill, or Co-op Survival.")
+		return errors.New("Choose Elimination, Capture the Flag, King of the Hill, or Survival.")
 	}
 	if r.TeamMode != "teams" && r.TeamMode != "ffa" {
 		return errors.New("Choose Teams or Free-for-all.")
 	}
 	if r.Mode == "survival" && r.TeamMode != "teams" {
-		return errors.New("Co-op Survival requires Teams; every player joins the same squad.")
+		return errors.New("Survival requires Teams; every player joins the same squad.")
 	}
 	if r.Mode == "ctf" && r.TeamMode != "teams" {
 		return errors.New("Capture the Flag requires two numbered teams, not Free-for-all.")

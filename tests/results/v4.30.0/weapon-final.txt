@@ -1,0 +1,14 @@
+✔ both ammo readouts show their own remaining productive firing time, rounded up to tenths (3.81239ms)
+✔ ammo budget survives pauses and ammo waits, and hides when dead, expired or replaced (1.878394ms)
+✔ online ammo readouts include unacknowledged shots independently without mutating snapshots (1.995048ms)
+✔ unforced live feedback follows actual shots while idle time preserves both firing budgets (3.768525ms)
+✔ unforced online readout and depletion bar update before a fresh server snapshot (2.797855ms)
+✔ loadout skips hidden machine-gun slot work and restores correct slots on weapon changes (2.278865ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 98.290833

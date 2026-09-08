@@ -11,12 +11,12 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.29.0/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.29.0/theme.css">
-<link rel="stylesheet" href="assets/v4.29.0/style.css">
-<link rel="manifest" href="assets/v4.29.0/manifest.webmanifest">
-<link rel="icon" href="assets/v4.29.0/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/v4.29.0/apple-touch-icon.png">
+<script src="assets/v4.30.0/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.30.0/theme.css">
+<link rel="stylesheet" href="assets/v4.30.0/style.css">
+<link rel="manifest" href="assets/v4.30.0/manifest.webmanifest">
+<link rel="icon" href="assets/v4.30.0/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/v4.30.0/apple-touch-icon.png">
 </head>
 <body>
 <div class="app">
@@ -76,7 +76,7 @@
     <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode / difficulty</button></section>
    </div>
   </div>
-  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" hidden>FIRE 3.0s</span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" hidden>FIRE 3.0s</span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Your own shots can take you out.</span><span class="micro-label" id="bestInline"></span></div>
+  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime1">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime2">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Your own shots can take you out.</span><span class="micro-label" id="bestInline"></span></div>
   <div class="touch-controls" id="touchControls" aria-label="Touch controls">
    <div class="stick-zone" id="stickZone" role="group" aria-label="Drag joystick to steer"><div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div><span class="touch-label">STEER</span></div>
    <div class="touch-center"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m-3-3 3 3-3 3M20 17h-9m3-3-3 3 3 3M5 14v4h3m11-8V6h-3"/></svg><span class="alive-status" id="touchStatus">GOOD LUCK</span><br><span id="fireHint">HOLD TO FIRE</span></div>
@@ -110,8 +110,8 @@
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
  <div class="kick-actions"><button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button></div>
 </dialog>
-<script src="assets/v4.29.0/netcode.js" defer></script>
-<script src="assets/v4.29.0/game.js" defer></script>
-<script src="assets/v4.29.0/pwa.js" defer></script>
+<script src="assets/v4.30.0/netcode.js" defer></script>
+<script src="assets/v4.30.0/game.js" defer></script>
+<script src="assets/v4.30.0/pwa.js" defer></script>
 </body>
 </html>

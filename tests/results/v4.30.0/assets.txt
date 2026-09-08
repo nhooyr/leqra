@@ -1,0 +1,16 @@
+=== RUN   Test410Version
+--- PASS: Test410Version (0.00s)
+=== RUN   Test423VersionedPWAAssetsAndCaching
+--- PASS: Test423VersionedPWAAssetsAndCaching (0.00s)
+=== RUN   Test423RealClientsMustCompleteVersionHandshake
+--- PASS: Test423RealClientsMustCompleteVersionHandshake (0.00s)
+=== RUN   Test49Version
+--- PASS: Test49Version (0.00s)
+=== RUN   Test45DarkAppearanceAssetsAreServedSameOrigin
+--- PASS: Test45DarkAppearanceAssetsAreServedSameOrigin (0.00s)
+=== RUN   Test45ThemeBootstrapPrecedesStyles
+--- PASS: Test45ThemeBootstrapPrecedesStyles (0.00s)
+=== RUN   TestHTTPAndUpgradeValidation
+--- PASS: TestHTTPAndUpgradeValidation (0.00s)
+PASS
+ok  	leqra	0.022s

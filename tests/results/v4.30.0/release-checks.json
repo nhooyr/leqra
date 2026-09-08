@@ -1,0 +1,18 @@
+{
+  "version": "4.30.0",
+  "javascript_syntax_files": 8,
+  "html_assets": 9,
+  "asset_copies_equal": true,
+  "only_current_assets": true,
+  "versions_equal": true,
+  "python_script_syntax": "passed",
+  "diff_check": "passed",
+  "browser_device_run": false,
+  "go_tests_top_level": 557,
+  "go_tests_including_subtests": 1077,
+  "node_tests_passed": 253,
+  "final_weapon_tests_passed": 6,
+  "go_vet": "passed",
+  "production_build": "passed",
+  "final_asset_tests": "passed"
+}

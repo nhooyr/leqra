@@ -1,0 +1,18 @@
+[
+  {"name":"wave-5-full-kit","wave":5,"pickupRate":"superfast","weapons":["shield","speed","homing","cannon","laser"],"shieldCharges":3,"speedStacks":1,"weapon":"homing"},
+  {"name":"wave-10-full-kit","wave":10,"pickupRate":"normal","weapons":["shield","speed","homing","cannon","laser"],"shieldCharges":3,"speedStacks":1,"weapon":"cannon"},
+  {"name":"wave-15-full-kit","wave":15,"pickupRate":"slow","weapons":["shield","speed","homing","cannon","laser"],"shieldCharges":3,"speedStacks":1,"weapon":"laser"},
+  {"name":"wave-20-rotation","wave":20,"pickupRate":"fast","weapons":["shield","speed","homing","cannon","laser"],"shieldCharges":3,"speedStacks":1,"weapon":"homing"},
+  {"name":"skip-homing","wave":5,"pickupRate":"normal","weapons":["cannon","laser"],"shieldCharges":0,"speedStacks":0,"weapon":"cannon"},
+  {"name":"skip-cannon","wave":10,"pickupRate":"normal","weapons":["homing","laser"],"shieldCharges":0,"speedStacks":0,"weapon":"laser"},
+  {"name":"wrap-after-laser","wave":15,"pickupRate":"normal","weapons":["homing","cannon"],"shieldCharges":0,"speedStacks":0,"weapon":"homing"},
+  {"name":"only-laser","wave":5,"pickupRate":"normal","weapons":["laser"],"shieldCharges":0,"speedStacks":0,"weapon":"laser"},
+  {"name":"only-homing","wave":10,"pickupRate":"normal","weapons":["homing"],"shieldCharges":0,"speedStacks":0,"weapon":"homing"},
+  {"name":"only-cannon","wave":15,"pickupRate":"normal","weapons":["cannon"],"shieldCharges":0,"speedStacks":0,"weapon":"cannon"},
+  {"name":"only-shield","wave":5,"pickupRate":"normal","weapons":["shield"],"shieldCharges":3,"speedStacks":0,"weapon":""},
+  {"name":"only-speed","wave":5,"pickupRate":"normal","weapons":["speed"],"shieldCharges":0,"speedStacks":1,"weapon":""},
+  {"name":"support-only","wave":10,"pickupRate":"normal","weapons":["shield","speed"],"shieldCharges":3,"speedStacks":1,"weapon":""},
+  {"name":"other-weapons-only","wave":5,"pickupRate":"normal","weapons":["rapid","scatter","grenade","ghost","scope"],"shieldCharges":0,"speedStacks":0,"weapon":""},
+  {"name":"no-pickups","wave":5,"pickupRate":"off","weapons":["shield","speed","homing","cannon","laser"],"shieldCharges":0,"speedStacks":0,"weapon":""},
+  {"name":"no-pickups-rotation","wave":15,"pickupRate":"off","weapons":["shield","speed","laser"],"shieldCharges":0,"speedStacks":0,"weapon":""}
+]
