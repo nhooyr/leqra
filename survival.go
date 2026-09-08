@@ -45,9 +45,9 @@ func participantCount(players [maxTanks]*Player) int {
 	}
 	return n
 }
-func survivalHumanPresent(players [maxTanks]*Player) bool {
+func survivalParticipantPresent(players [maxTanks]*Player) bool {
 	for id, p := range players {
-		if p != nil && p.Kind != "bot" && participantAvailable(players, id) {
+		if p != nil && participantAvailable(players, id) {
 			return true
 		}
 	}
@@ -57,8 +57,8 @@ func (g *Game) survivalLineupError(players [maxTanks]*Player) string {
 	if participantCount(players) > survivalMaxPlayers {
 		return "Survival supports up to four allied tanks. Remove extra tanks or move players to Spectators."
 	}
-	if !survivalHumanPresent(players) {
-		return "Survival needs at least one connected human player in the squad."
+	if !survivalParticipantPresent(players) {
+		return "Survival needs at least one available squad tank."
 	}
 	for _, p := range players {
 		if p != nil && p.Team != 1 {
@@ -81,13 +81,30 @@ func (g *Game) clearSurvivalInput(players [maxTanks]*Player) {
 }
 
 func survivalDifficulty(wave int) string {
-	if wave <= 2 {
+	if wave <= 5 {
 		return "easy"
 	}
-	if wave <= 4 {
+	if wave <= 10 {
 		return "normal"
 	}
-	return "hard"
+	if wave <= 15 {
+		return "hard"
+	}
+	return "godlike"
+}
+
+// A new skill tier first appears as the preceding five-wave block's boss.
+func survivalBossDifficulty(wave int) string { return survivalDifficulty(wave + 1) }
+
+func survivalBossName(wave int) string {
+	switch survivalBossDifficulty(wave) {
+	case "normal":
+		return "NORMAL BOSS"
+	case "hard":
+		return "FIERCE BOSS"
+	default:
+		return "GODLIKE BOSS"
+	}
 }
 
 // Maximize the distance to the nearest live tank, rather than accepting the
@@ -123,12 +140,13 @@ func (g *Game) survivalBossPower(t *Tank, wave int) {
 		}
 		return false
 	}
+	strength := min(3, max(1, wave/5))
 	if enabled("shield") {
-		for i := 0; i < 3; i++ {
+		for i := 0; i < strength; i++ {
 			g.grantPower(t, "shield")
 		}
 	}
-	if enabled("speed") {
+	if strength >= 2 && enabled("speed") {
 		g.grantPower(t, "speed")
 	}
 	weapons := []string{"homing", "cannon", "laser"}
@@ -156,7 +174,7 @@ func (g *Game) spawnSurvivalEnemies(players [maxTanks]*Player) {
 		boss := s.Boss && s.EnemiesRemaining == 0
 		name, difficulty := fmt.Sprintf("RAIDER %d", s.EnemiesRemaining+1), survivalDifficulty(s.Wave)
 		if boss {
-			name, difficulty = "GODLIKE BOSS", "godlike"
+			name, difficulty = survivalBossName(s.Wave), survivalBossDifficulty(s.Wave)
 		}
 		t := &Tank{ID: id, Name: name, Team: 2, Color: selectedColor(id, 2, nil, g.settings()), Bot: true, Difficulty: difficulty, SurvivalEnemy: true, SurvivalBoss: boss, R: tankRadius, Alive: true, Angle: -math.Pi / 2, Invulnerable: 1.2, SpawnSerial: s.Wave}
 		g.Tanks[id] = t
@@ -222,8 +240,8 @@ func (g *Game) endSurvival(players [maxTanks]*Player, won bool) {
 }
 
 // Returns true when the wave boundary consumed this step. Disconnects remove
-// the current life; reconnecting can restore it only at the next wave. Bots
-// cannot continue farming a run after every human participant has left.
+// the current life; reconnecting can restore it only at the next wave. A squad
+// can be entirely bots, but an empty or unavailable squad cannot continue.
 func (g *Game) prepareSurvival(dt float64, players [maxTanks]*Player) bool {
 	s := g.survivalState()
 	if s == nil {
@@ -236,7 +254,7 @@ func (g *Game) prepareSurvival(dt float64, players [maxTanks]*Player) bool {
 			t.VX, t.VY = 0, 0
 		}
 	}
-	if !survivalHumanPresent(players) {
+	if !survivalParticipantPresent(players) {
 		g.endSurvival(players, false)
 		return true
 	}
@@ -271,7 +289,7 @@ func (g *Game) stepSurvival(players [maxTanks]*Player) {
 		}
 	}
 	// Mutual destruction is a loss; clearing a wave requires a surviving ally.
-	if allies == 0 || !survivalHumanPresent(players) {
+	if allies == 0 {
 		g.endSurvival(players, false)
 		return
 	}

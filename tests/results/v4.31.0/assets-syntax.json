@@ -1,0 +1,16 @@
+{
+  "version": "4.31.0",
+  "javascriptSyntax": 8,
+  "pythonSyntax": 68,
+  "assetReferences": 9,
+  "identicalSourceCopies": [
+    "game.js",
+    "netcode.js",
+    "theme.js",
+    "style.css",
+    "theme.css",
+    "favicon.svg"
+  ],
+  "onlyCurrentAssets": true,
+  "removedRulesSelectorsAbsent": true
+}

@@ -31,7 +31,7 @@ var queueDefinitions = []QueueDefinition{
 	{"elimination-2", "Elimination · 2v2", "elimination", 2, 4, "large", 12, 10, 5, 75},
 	{"elimination-3", "Elimination · 3v3", "elimination", 3, 6, "huge", 14, 12, 5, 75},
 	{"ctf-3", "Capture the Flag · 3v3", "ctf", 3, 6, "huge", 14, 12, 3, 180},
-	{"koth-3", "King of the Hill · 3v3", "koth", 3, 6, "huge", 14, 12, 60, 180},
+	{"koth-3", "King of the Hill · 3v3", "koth", 3, 6, "huge", 14, 12, 30, 180},
 	{"ffa-8", "Free-for-all · 8 players", "elimination", 0, 8, "giant", 16, 14, 5, 120},
 }
 

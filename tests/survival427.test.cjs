@@ -10,16 +10,16 @@ function boot({count=2,ids=[0,1,2,3],target=10,weapons=['shield','speed','homing
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
  const s={console,mode:'room',phase:'playing',MAX_TANKS:8,RADIUS:17,CELL:84,cols:7,rows:7,W:588,H:588,POWER:Object.fromEntries(weapons.map(w=>[w,{}])),POWER_EFFECT_DURATION:10,MACHINE_FIRING_ROUNDS:180,MAX_SPEED_STACKS:5,SCOPE_DURATION:10,GHOST_DURATION:10,COLORS:['#fff','#f00'],NAMES:[],difficulty:'normal',tanks:[],bullets:[],traces:[],pickups:[],scores:Array(8).fill(0),round:1,roundClock:75,spawnClock:0,goUntil:0,localObjectives:null,firePresses:new Set(),localRoom:{rules,players,self:players[0].id},online:{snapshots:[]},$,document:{createElement:()=>new Element(),querySelectorAll:()=>[],querySelector:()=>new Element()},grid:Array.from({length:49},(_,i)=>({neighbors:[i%7?i-1:-1,i%7<6?i+1:-1,i>=7?i-7:-1,i<42?i+7:-1].filter(n=>n>=0)})),currentRules:()=>rules,center:i=>({x:(i%7+.5)*84,y:(Math.floor(i/7)+.5)*84}),cellAt:(x,y)=>Math.floor(y/84)*7+Math.floor(x/84),distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),rnd:(a,b)=>(a+b)/2,teamColor:(id,team)=>team===1?'#fff':'#f00',teamName:id=>rules.teamNames[id-1],teamKey:p=>'team'+p.team,shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,clearInput(){s.inputClears=(s.inputClears||0)+1;},addLog(){},addRing(){},toast(){},pickupInterval:()=>[1,2],seedPickups(){s.seeds=(s.seeds||0)+1;s.pickups.push({type:'shield',life:30});},finishMatch(winner){s.winner=winner;s.finishLocalMatchStats(winner);s.phase='matchOver';},roomData:()=>({phase:s.phase,rules,players:s.localRoom.players.filter(p=>!p.spectating),spectators:s.localRoom.players.filter(p=>p.spectating)}),localPlayerID:()=>s.localRoom.self,localMatchStats:null,localMatchReport:null,localMatchResult:null,localPlayerID:()=>s.localRoom.self,secondaryMember:()=>null,roomMember:id=>s.localRoom.players.find(p=>p.id===id),syncResultActions(){},paintColor:c=>c,renderMatchStats(){},suddenDeath:()=>false};
  vm.createContext(s);
- for(const name of ['powerEffectDuration','newTank','spawnCells','respawnLocalTank','flagSafeSpawn','grantPower','setText','modeLabel','displayScoreTarget','objectiveState','objectiveMode','survivalMode','survivalState','survivalBreak','roomCapacity','survivalSeatLocked','roomStartError','survivalWavePlan','survivalSpawnPoint','initLocalSurvival','startLocalSurvivalWave','prepareLocalSurvivalBreak','endLocalSurvival','stepLocalSurvival','survivalResultState','survivalResultText','beginLocalMatchStats','bindLocalTankStats','finishLocalMatchStats','updateObjectiveHUD','fire','showVictory','matchResultEntries','resultMemberMatches'])vm.runInContext(declaration(name),s);
+ for(const name of ['botLevelName','powerEffectDuration','newTank','spawnCells','respawnLocalTank','flagSafeSpawn','grantPower','setText','modeLabel','displayScoreTarget','objectiveState','objectiveMode','survivalMode','survivalState','survivalBreak','roomCapacity','survivalSeatLocked','roomStartError','survivalBossName','survivalWavePlan','survivalSpawnPoint','initLocalSurvival','startLocalSurvivalWave','prepareLocalSurvivalBreak','endLocalSurvival','stepLocalSurvival','survivalResultState','survivalResultText','beginLocalMatchStats','bindLocalTankStats','finishLocalMatchStats','updateObjectiveHUD','fire','showVictory','matchResultEntries','resultMemberMatches'])vm.runInContext(declaration(name),s);
  s.tanks=players.map((p,i)=>s.newTank(p.id,s.spawnCells()[i]));s.beginLocalMatchStats();for(const t of s.tanks)s.bindLocalTankStats(t);s.initLocalSurvival();return s;
 }
 function clearWave(s){for(const t of s.tanks)if(t.survivalEnemy)t.alive=false;s.stepLocalSurvival(1/120);}
 test('one to four survival squad members allow a solo human start and never become enemies',()=>{
  for(let n=1;n<=4;n++){const s=boot({count:n,ids:[7,2,4,6]});assert.equal(s.roomStartError(),'');assert.equal(s.roomCapacity(),4);assert.equal(s.objectiveMode(),false);assert.equal(s.tanks.length,n+2);assert.equal(s.localRoom.players.length,n);assert.equal(new Set(s.tanks.map(t=>t.id)).size,s.tanks.length);for(const e of s.tanks.filter(t=>t.survivalEnemy)){assert.ok(e.id>=0&&e.id<8);assert.equal(e.human,false);assert.equal(e.team,2);assert.equal(s.localRoom.players.some(p=>p.id===e.id),false);}}
- const s=boot();s.localRoom.players.forEach(p=>p.kind='bot');assert.match(s.roomStartError(),/human/);s.localRoom.players.push(...Array(3).fill({kind:'human',connected:true}));assert.match(s.roomStartError(),/four/);
+ const s=boot();s.localRoom.players.forEach(p=>p.kind='bot');assert.equal(s.roomStartError(),'');s.localRoom.players.push(...Array(3).fill({kind:'human',connected:true}));assert.match(s.roomStartError(),/four/);
 });
 test('wave plan scales to four enemies, alternates boss weapons and respects every enabled selection',()=>{
- const s=boot();for(let wave=1;wave<=20;wave++){const p=s.survivalWavePlan(wave);assert.equal(p.count,Math.min(4,2+Math.floor((wave-1)/2)));assert.equal(p.boss,wave%5===0);assert.equal(p.difficulty,wave<=2?'easy':wave<=4?'normal':'hard');}
+ const s=boot();for(let wave=1;wave<=20;wave++){const p=s.survivalWavePlan(wave);assert.equal(p.count,Math.min(4,2+Math.floor((wave-1)/2)));assert.equal(p.boss,wave%5===0);assert.equal(p.difficulty,wave<=5?'easy':wave<=10?'normal':wave<=15?'hard':'godlike');}
  assert.deepEqual([5,10,15,20].map(w=>s.survivalWavePlan(w).weapon),['homing','cannon','laser','homing']);
  s.currentRules().weapons=['homing','laser'];assert.equal(s.survivalWavePlan(10).weapon,'laser');s.currentRules().pickupRate='off';assert.equal(s.survivalWavePlan(10).weapon,null);
 });
@@ -28,19 +28,19 @@ test('wave clear awards every squad member once, keeps the maze, clears hazards 
  assert.equal(s.survivalState().status,'break');assert.equal(s.tanks[0].alive,false);assert.equal(s.bullets.length,0);assert.equal(s.pickups.length,0);assert.deepEqual(Array.from(s.scores.slice(0,2)),[1,1]);assert.equal(s.localRoom.players,players);s.stepLocalSurvival(3.9);assert.equal(s.survivalState().wave,1);s.stepLocalSurvival(.1);
  assert.equal(s.survivalState().wave,2);assert.equal(s.survivalState().status,'wave');assert.equal(s.grid,grid);assert.equal(s.roundClock,75);assert.equal(s.tanks.filter(t=>!t.survivalEnemy).every(t=>t.alive&&t.power===null),true);assert.equal(s.seeds,1);assert.ok(s.inputClears>=3);
 });
-test('fifth-wave boss has Godlike skill and only enabled gear, with no extra room participant',()=>{
- for(const [pickupRate,weapons,charges,speed,weapon]of[['superfast',['shield','speed','homing'],3,1,'homing'],['superfast',['cannon'],0,0,'cannon'],['off',['shield','speed','homing'],0,0,null]]){
-  const s=boot({pickupRate,weapons});s.localObjectives.survival.wave=4;s.startLocalSurvivalWave();const boss=s.tanks.find(t=>t.survivalBoss);assert.equal(boss.name,'GODLIKE BOSS');assert.equal(boss.difficulty,'godlike');assert.equal(boss.shieldCharges,charges);assert.equal(boss.speedStacks,speed);assert.equal(boss.power,weapon);assert.equal(s.localRoom.players.length,2);assert.equal(s.tanks.filter(t=>t.survivalEnemy).length,4);
+test('fifth-wave boss introduces Normal skill and only enabled gear, with no extra room participant',()=>{
+ for(const [pickupRate,weapons,charges,speed,weapon]of[['superfast',['shield','speed','homing'],1,0,'homing'],['superfast',['cannon'],0,0,'cannon'],['off',['shield','speed','homing'],0,0,null]]){
+  const s=boot({pickupRate,weapons});s.localObjectives.survival.wave=4;s.startLocalSurvivalWave();const boss=s.tanks.find(t=>t.survivalBoss);assert.equal(boss.name,'NORMAL BOSS');assert.equal(boss.difficulty,'normal');assert.equal(boss.shieldCharges,charges);assert.equal(boss.speedStacks,speed);assert.equal(boss.power,weapon);assert.equal(s.localRoom.players.length,2);assert.equal(s.tanks.filter(t=>t.survivalEnemy).length,4);
  }
 });
 test('squad wipes and timeout lose the run, including simultaneous final-enemy destruction',()=>{
- for(const reason of ['wipe','timeout','mutual','no-human']){const s=boot();if(reason==='timeout')s.roundClock=0;else if(reason==='no-human')s.localRoom.players[0].spectating=true;else for(const t of s.tanks)if(reason==='mutual'||!t.survivalEnemy)t.alive=false;s.stepLocalSurvival(1/120);assert.equal(s.phase,'matchOver',reason);assert.equal(s.winner,-1);assert.equal(s.survivalState().status,'lost');assert.equal(s.survivalState().wavesCleared,0);}
+ for(const reason of ['wipe','timeout','mutual','empty-squad']){const s=boot();if(reason==='timeout')s.roundClock=0;else if(reason==='empty-squad')s.localRoom.players.forEach(p=>p.spectating=true);else for(const t of s.tanks)if(reason==='mutual'||!t.survivalEnemy)t.alive=false;s.stepLocalSurvival(1/120);assert.equal(s.phase,'matchOver',reason);assert.equal(s.winner,-1);assert.equal(s.survivalState().status,'lost');assert.equal(s.survivalState().wavesCleared,0);}
 });
 test('final wave wins without a new maze or another break and freezes squad-only statistics',()=>{
  const s=boot({target:2});clearWave(s);s.stepLocalSurvival(4);clearWave(s);assert.equal(s.phase,'matchOver');assert.equal(s.survivalState().status,'won');assert.equal(s.survivalState().wavesCleared,2);assert.equal(s.localMatchReport.players.length,2);assert.ok(s.localMatchReport.players.every(p=>p.winner&&p.score===2));assert.equal(s.localMatchReport.survival.status,'won');s.localObjectives.survival.wave=99;assert.equal(s.localMatchReport.survival.wave,2);
 });
 test('survival HUD explains enemies, bosses and squad returns instead of Hill or respawn timers',()=>{
- const s=boot();s.updateObjectiveHUD();assert.equal(s.$('objectiveModeLabel').textContent,'WAVE 1 / 10');assert.equal(s.$('objectiveStatus').textContent,'2 ENEMIES LEFT');s.survivalState().boss=true;s.updateObjectiveHUD();assert.match(s.$('objectiveStatus').textContent,/GODLIKE BOSS/);clearWave(s);s.updateObjectiveHUD();assert.equal(s.$('objectiveStatus').textContent,'SQUAD RETURNS IN 4s');assert.equal(s.$('clock').textContent,'4s');
+ const s=boot();s.updateObjectiveHUD();assert.equal(s.$('objectiveModeLabel').textContent,'WAVE 1 / 10');assert.equal(s.$('objectiveStatus').textContent,'2 ENEMIES LEFT');s.survivalState().wave=5;s.survivalState().boss=true;s.updateObjectiveHUD();assert.match(s.$('objectiveStatus').textContent,/NORMAL BOSS/);clearWave(s);s.updateObjectiveHUD();assert.equal(s.$('objectiveStatus').textContent,'SQUAD RETURNS IN 4s');assert.equal(s.$('clock').textContent,'4s');
 });
 test('survival loss and victory dialogs report waves, never a draw or Hill result',()=>{
  for(const win of [false,true]){const s=boot({target:1});if(win)clearWave(s);else s.endLocalSurvival(false);s.showVictory(s.winner,s.tanks,s.localMatchReport);assert.equal(s.$('victoryTitle').textContent,win?'SURVIVAL COMPLETE!':'RUN ENDED');assert.match(s.$('victoryMessage').textContent,win?/All 1 wave cleared/:/0 \/ 1 waves cleared/);assert.equal(s.$('victoryScores').getAttribute?.('aria-label')??s.$('victoryScores')['aria-label'],'Waves cleared');}
@@ -65,7 +65,7 @@ test('wave breaks preserve machine firing budget, then revival clears it',()=>{
  assert.equal(pilot.machineRounds,0);assert.equal(pilot.power,null);
 });
 test('Huge survival bosses receive fifteen-second buffs and dead bosses leave the HUD',()=>{
- const s=boot();s.cols=14;s.rows=12;s.localObjectives.survival.wave=4;s.startLocalSurvivalWave();
+ const s=boot();s.cols=14;s.rows=12;s.localObjectives.survival.wave=9;s.startLocalSurvivalWave();
  const boss=s.tanks.find(t=>t.survivalBoss);assert.equal(boss.powerTime,15);assert.equal(boss.shield,15);assert.equal(boss.speedTime,15);
  boss.alive=false;s.stepLocalSurvival(1/120);assert.equal(s.survivalState().boss,false);assert.equal(s.survivalState().enemiesRemaining,3);assert.equal(s.phase,'playing');
 });
@@ -78,4 +78,45 @@ test('generated enemies cannot inherit old scores and finished runs clear pickup
  const s=boot();s.scores[2]=7;s.scores[3]=7;s.startLocalSurvivalWave();
  for(const enemy of s.tanks.filter(t=>t.survivalEnemy))assert.equal(s.scores[enemy.id],0);
  s.pickups=[{life:30}];s.endLocalSurvival(false);assert.equal(s.pickups.length,0);
+});
+
+test('Survival results let the last impact shake settle without advancing the finished game',()=>{
+ for(const won of [false,true]){
+  const s=boot({target:1});Object.assign(s,{fxTime:0,time:7,phaseTime:1,shake:.18});
+  vm.runInContext(declaration('update'),s);if(won)clearWave(s);else s.endLocalSurvival(false);
+  const state=JSON.stringify(s.survivalState()),clock=s.roundClock,positions=s.tanks.map(t=>[t.x,t.y]);
+  for(let i=0;i<12;i++)s.update(1/120);assert.ok(s.shake>0&&s.shake<.18,'impact fades instead of freezing');
+  for(let i=0;i<60;i++)s.update(1/120);assert.equal(s.shake,0);assert.equal(s.time,7);assert.equal(s.phaseTime,1);assert.equal(s.roundClock,clock);assert.equal(JSON.stringify(s.survivalState()),state);assert.deepEqual(s.tanks.map(t=>[t.x,t.y]),positions);
+ }
+});
+test('paused and lobby views cannot leave the maze jiggling indefinitely',()=>{
+ for(const phase of ['paused','menu']){const s=boot();Object.assign(s,{phase,fxTime:0,time:7,shake:.18});vm.runInContext(declaration('update'),s);for(let i=0;i<60;i++)s.update(1/120);assert.equal(s.shake,0);assert.equal(s.time,7);assert.equal(s.phase,phase);}
+});
+test('defeated local enemies retain their lineup rows until the next wave replaces them',()=>{
+ const s=boot(),prior=s.tanks.filter(t=>t.survivalEnemy);for(const name of ['botLevelName','lineupMember','scoreboardEntries'])vm.runInContext(declaration(name),s);
+ clearWave(s);s.stepLocalSurvival(3.9);
+ assert.deepEqual(s.tanks.filter(t=>t.survivalEnemy),prior);assert.equal(prior.every(t=>!t.alive),true);
+ const group=s.scoreboardEntries().find(t=>t.survivalEnemy);assert.equal(group.members.length,prior.length);assert.equal(group.members.every(t=>!t.alive),true);
+ s.stepLocalSurvival(.2);const next=s.tanks.filter(t=>t.survivalEnemy);assert.equal(s.survivalState().wave,2);assert.equal(next.length,2);assert.equal(next.every(t=>t.alive&&!prior.includes(t)),true);
+});
+test('all-bot local squads clear waves, revive and win while their human host spectates',()=>{
+ const s=boot({target:2});for(const p of s.localRoom.players)p.kind='bot';for(const t of s.tanks)if(!t.survivalEnemy)t.human=false;
+ s.localRoom.players.push({id:8,member:999,kind:'human',name:'SPECTATOR',spectating:true});s.localRoom.self=8;
+ assert.equal(s.roomStartError(),'');s.tanks[1].alive=false;clearWave(s);assert.equal(s.survivalState().status,'break');s.stepLocalSurvival(4);assert.equal(s.survivalState().wave,2);assert.equal(s.tanks[1].alive,true);clearWave(s);
+ assert.equal(s.phase,'matchOver');assert.equal(s.survivalState().status,'won');assert.equal(s.localMatchReport.players.length,2);assert.equal(s.localMatchReport.players.every(p=>p.winner&&p.score===2),true);
+});
+
+test('stronger enemy tiers first appear as bosses, with staged armor and speed',()=>{
+ const s=boot({target:20}),seen=new Set(['easy']);
+ for(let wave=1;wave<=20;wave++){
+  if(wave>1)s.startLocalSurvivalWave();
+  const enemies=s.tanks.filter(t=>t.survivalEnemy),boss=enemies.find(t=>t.survivalBoss),difficulty=wave<=5?'easy':wave<=10?'normal':wave<=15?'hard':'godlike';
+  for(const e of enemies.filter(t=>!t.survivalBoss)){assert.equal(e.difficulty,difficulty,'wave '+wave);assert.ok(seen.has(e.difficulty),'unintroduced regular tier on wave '+wave);}
+  if(boss){
+   const stage=Math.min(3,wave/5),skill=['normal','hard','godlike'][stage-1],name=['NORMAL BOSS','FIERCE BOSS','GODLIKE BOSS'][stage-1];
+   assert.equal(boss.difficulty,skill);assert.equal(boss.name,name);assert.equal(boss.shieldCharges,stage);assert.equal(boss.speedStacks,stage>=2?1:0);assert.equal(boss.power,['homing','cannon','laser','homing'][wave/5-1]);
+   s.updateObjectiveHUD();assert.ok(s.$('objectiveStatus').textContent.endsWith(name));seen.add(skill);
+  }
+ }
+ assert.deepEqual([...seen],['easy','normal','hard','godlike']);
 });

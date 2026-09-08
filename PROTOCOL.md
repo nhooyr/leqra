@@ -1,17 +1,17 @@
-# leqra v4.30.0 — current game protocol (protocol 1)
+# leqra v4.31.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.30.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.31.0**:
 
 ```json
-{"type":"server_hello","version":"4.30.0","protocol":1}
-{"type":"client_hello","version":"4.30.0","protocol":1}
+{"type":"server_hello","version":"4.31.0","protocol":1}
+{"type":"client_hello","version":"4.31.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
 
 ## Home-screen mode selection
 
-The home-screen icon selector uses the existing host-owned `rules` command with a complete validated rules object. Selecting a mode adds no new protocol fields or commands. Guests and active-match controls remain read-only, normal server authorization applies, and online clients display an accepted mode only after authoritative room state confirms it. The Rules dialog edits the other settings for that mode.
+The home-screen icon selector and the battle-format/map-size selectors beneath it use the existing host-owned `rules` command with a complete validated rules object. They add no new protocol fields or commands. Guests and active-match controls remain read-only, normal server authorization applies, and online clients display accepted settings only after authoritative room state confirms them. The Rules dialog edits the remaining settings for that mode. New King of the Hill selections, its built-in preset and public Hill queue default to 30 points; explicit saved/custom targets remain valid.
 
 ## Survival rules and membership
 
@@ -23,12 +23,12 @@ The home-screen icon selector uses the existing host-owned `rules` command with 
 | `rules.scoreTarget` | Integer 1–20, interpreted as waves to clear. The browser's Survival selection/preset defaults to 10. |
 | `rules.timeLimit` | Integer 30–600 seconds per wave; browser default 75. |
 | `rules.respawnSeconds` | Retained as a validated 1–10 setting for compatibility; Survival revives between waves instead. |
-| Squad capacity | One to four active room participants, including friendly bots and local P2. At least one connected human participant is required. |
+| Squad capacity | One to four available room participants, including friendly bots and local P2. All-bot squads are allowed. |
 | Team assignments | All squad participants use Team 1; generated enemies use Team 2. Manual assignment to another team is rejected. |
 | Existing rosters | Oversized `rules`, `publish` or `preset` requests fail with `survival_full` before changing the roster. |
 | Live joins | New visitors join as spectators. Promotions and swaps during a run fail with `survival_active`; a full lobby squad fails with `survival_full`. |
 
-The server checks readiness and available controllers independently of the browser. A spectating host can start with another connected human in the squad. A human disconnect loses the current tank life; if the run continues, a reconnect can restore that life at a later wave. If no connected human remains, the run ends. Generated enemies have no player, owner, token or room-member identity. Their tank IDs occupy unused combat slots **0–7**, distinct from spectator IDs **8 and above**. They never appear in `room.players` or consume a squad place. Public matchmaking queues remain unchanged.
+The server checks readiness and available controllers independently of the browser. A spectating host can start an all-bot squad. A human disconnect loses the current tank life; if the run continues, a reconnect can restore that life at a later wave. Available bots can continue after human pilots leave or spectate. Empty or unavailable squads cannot start or continue. Generated enemies have no player, owner, token or room-member identity. Their tank IDs occupy unused combat slots **0–7**, distinct from spectator IDs **8 and above**. They never appear in `room.players` or consume a squad place. Public matchmaking queue modes remain unchanged.
 
 ## Survival state and lifecycle
 
@@ -45,11 +45,11 @@ The ordinary `state.objectives` object contains an empty `flags` array and the a
 
 Generated tank snapshots carry `survivalEnemy:true`; the boss also carries `survivalBoss:true`. False values can be omitted. The normal `bot`, `difficulty`, name, team, position, weapon, shield and movement fields still determine behavior. Clients must not infer room ownership from an enemy tank ID.
 
-Enemy count is `min(4, 2 + floor((wave - 1) / 2))`, bounded by free combat slots. Waves 1–2 use `easy`, waves 3–4 `normal`, and later waves `hard`. Every fifth wave replaces one enemy with a `godlike` boss. When pickups are enabled, bosses receive three Shield charges and one Speed stack only if those types are enabled. Their weapon starts at Homing, Cannon or Laser in successive boss waves, checking later entries cyclically for an enabled alternative. If none is enabled, no starting special weapon is granted. All starting gear uses ordinary effect durations, charges and damage rules.
+Enemy count is `min(4, 2 + floor((wave - 1) / 2))`, bounded by free combat slots. Regular enemies use `easy` on waves 1–5, `normal` on 6–10, `hard` on 11–15 and `godlike` from 16 onward. Every fifth wave replaces one enemy with a boss: `normal` on wave 5, `hard` on 10 and `godlike` on 15 and 20. Each higher difficulty appears as a boss before appearing in ordinary waves. When the respective pickup types are enabled, Normal bosses receive one Shield charge, Fierce two Shield charges and one Speed stack, and Godlike three Shield charges and one Speed stack. Their weapon starts at Homing, Cannon or Laser in successive boss waves, checking later entries cyclically for an enabled alternative. If none is enabled, no starting special weapon is granted. All starting gear uses ordinary effect durations, charges and damage rules. Clients derive the next-boss preview from this same schedule and enabled equipment.
 
-A clear requires a surviving squad tank. It adds one point to every remaining squad participant, including downed tanks. The final target clear sets `phase:"matchOver"`, `status:"won"` and a squad winner ID. A wipe, expired wave timer or absence of connected humans sets `phase:"matchOver"`, `status:"lost"` and `winner:-1`; this is a failed run, not a draw. Mutual destruction loses, while a final enemy killed on the last simulation tick clears the wave if a squad tank survives.
+A clear requires a surviving squad tank. It adds one point to every remaining squad participant, including downed tanks. The final target clear sets `phase:"matchOver"`, `status:"won"` and a squad winner ID. A wipe, expired wave timer or absence of available squad participants sets `phase:"matchOver"`, `status:"lost"` and `winner:-1`; this is a failed run, not a draw. Mutual destruction loses, while a final enemy killed on the last simulation tick clears the wave if a squad tank survives.
 
-Nonfinal clears keep `phase:"playing"` with `status:"break"` for four seconds. The server clears projectiles, pickups and held input, and rejects firing/movement during the break. At its end, available squad members receive fresh tanks, pickups reseed and the next wave starts with a fresh timer. The maze and generation remain unchanged throughout the run. The client uses the wave status and tank life serials to discard stale input and cosmetic shots.
+Nonfinal clears keep `phase:"playing"` with `status:"break"` for four seconds. The server clears projectiles, pickups and held input, and rejects firing/movement during the break. Defeated enemy snapshots remain present for the lineup until the next wave replaces them. At its end, available squad members receive fresh tanks, pickups reseed and the next wave starts with a fresh timer. The maze and generation remain unchanged throughout the run. The client uses the wave status and tank life serials to discard stale input and cosmetic shots.
 
 Completed `matchStats` includes a frozen `survival` object of the same shape. Its player rows describe squad participants only, and its live duration excludes wave breaks. Generated enemies are not report participants, while destroying them still credits the attacking squad pilot's elimination count. The final wave state and report must be copied for snapshots rather than aliased to mutable simulation data.
 

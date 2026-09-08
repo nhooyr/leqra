@@ -29,7 +29,7 @@ with sync_playwright() as pw:
         p=load(browser,store)
         check(state(p)['rules']==custom,'map, teams, names/colors and match rules restore after reload')
         room=state(p)['room'];check(room['players'][0]['team']==1 and all(x['team']==2 for x in room['players'][1:]),'restored Teams rules build a valid default local lineup')
-        p.locator('#roomRulesBtn').click();check(p.locator('#rule-mapSize').input_value()=='giant' and p.locator('#rule-teamName1').input_value()=='NEON WOLVES','restored values populate Rules controls');p.locator('[data-close-dialog="rulesDialog"]').click()
+        p.locator('#roomRulesBtn').click();check(p.locator('#roomMapSize').input_value()=='giant' and p.locator('#rule-teamName1').input_value()=='NEON WOLVES','restored values populate Rules controls');p.locator('[data-close-dialog="rulesDialog"]').click()
         preset={**custom,'mode':'koth','teamMode':'ffa','mapSize':'compact','scoreTarget':44,'timeLimit':222,'respawnSeconds':4,'pickupRate':'superfast','friendlyFire':False,'teamNames':['A','B','C','D'],'teamColors':[0,1,2,3],'weapons':['rapid','scatter']}
         p.evaluate('(r)=>__test.applyLocalPreset({rules:r,roster:[{kind:"human",name:"PILOT",team:0}]})',preset)
         store=p.evaluate('({...__store})');p.close();p=load(browser,store)

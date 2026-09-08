@@ -89,10 +89,10 @@ test('pause visibility and labels track lobby, match, results, local pause and o
 });
 test('rules hide inactive team fields and respawn settings without losing saved team names',()=>{
  const b=boot({mapDimensions:()=>[12,10],pickupLimitText:()=>'',pickupLifetime:()=>32});
- b.s.localRoom.rules.mode='ctf';b.$('rule-teamMode').value='teams';b.$('rule-teamName3').value='Saved team';b.s.updateRuleHelp();
+ b.s.localRoom.rules.mode='ctf';b.s.localRoom.rules.teamMode='teams';b.$('rule-teamName3').value='Saved team';b.s.updateRuleHelp();
  for(let i=1;i<=4;i++){assert.equal(b.$('rule-teamName'+i).parentElement.hidden,i>2);assert.equal(b.$('rule-teamName'+i).disabled,i>2);}
- b.s.localRoom.rules.mode='elimination';b.$('rule-teamMode').value='ffa';b.s.updateRuleHelp();assert.equal(b.$('teamNamesEditor').hidden,true);assert.equal(b.$('rule-friendlyFire').parentElement.hidden,true);assert.equal(b.$('rule-respawnSeconds').parentElement.hidden,true);
- b.$('rule-teamMode').value='teams';b.s.updateRuleHelp();assert.equal(b.$('rule-teamName3').value,'Saved team');assert.equal(b.$('rule-teamName3').parentElement.hidden,false);
+ b.s.localRoom.rules.mode='elimination';b.s.localRoom.rules.teamMode='ffa';b.s.updateRuleHelp();assert.equal(b.$('teamNamesEditor').hidden,true);assert.equal(b.$('rule-friendlyFire').parentElement.hidden,true);assert.equal(b.$('rule-respawnSeconds').parentElement.hidden,true);
+ b.s.localRoom.rules.teamMode='teams';b.s.updateRuleHelp();assert.equal(b.$('rule-teamName3').value,'Saved team');assert.equal(b.$('rule-teamName3').parentElement.hidden,false);
 });
 test('unchanged room metadata does not rebuild the field manual DOM',()=>{
  const b=boot({modeLabel:()=> 'ELIMINATION',displayScoreTarget:()=> 'FIRST TO 5',modeInstructions:()=> 'Play',roomStartError:()=> '',controlSummary:()=> 'KEYS',fieldManualHTML:()=> '<p>Controls</p>'});

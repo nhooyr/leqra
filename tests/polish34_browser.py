@@ -39,6 +39,12 @@ with sync_playwright() as pw:
   selected_mode=values.pop('mode',None)
   if selected_mode is not None:
    p.locator('[data-room-mode="'+selected_mode+'"]').click();p.wait_for_function('(mode)=>leqra.getState().rules.mode===mode',arg=selected_mode)
+  for setting,selector in [('teamMode','#roomTeamMode'),('mapSize','#roomMapSize')]:
+   value=values.pop(setting,None)
+   if value is not None:
+    control=p.locator(selector)
+    if control.is_disabled():assert control.input_value()==str(value)
+    else:control.select_option(str(value));p.wait_for_function('([key,value])=>leqra.getState().rules[key]===value',arg=[setting,value])
   p.locator('#roomRulesBtn').click()
   for k,v in values.items():
    n=p.locator('#rule-'+k)
