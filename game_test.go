@@ -189,7 +189,7 @@ func TestCooldownAndAmmoCapacity(t *testing.T) {
 		t.Fatalf("standard cap %d", len(g.Bullets))
 	}
 	g.Bullets = nil
-	tank.Power = "rapid"
+	g.grantPower(tank, "rapid")
 	for i := 0; i < machineCapacity+20; i++ {
 		g.Tick++
 		tank.Cooldown = 0

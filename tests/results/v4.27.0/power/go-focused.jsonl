@@ -1,0 +1,28 @@
+{"Time":"2026-09-07T21:33:43.555329458+09:00","Action":"start","Package":"leqra"}
+{"Time":"2026-09-07T21:33:43.558066687+09:00","Action":"run","Package":"leqra","Test":"Test427PowerDurationByArenaForEveryPickup"}
+{"Time":"2026-09-07T21:33:43.558099076+09:00","Action":"output","Package":"leqra","Test":"Test427PowerDurationByArenaForEveryPickup","Output":"=== RUN   Test427PowerDurationByArenaForEveryPickup\n"}
+{"Time":"2026-09-07T21:33:43.559005078+09:00","Action":"output","Package":"leqra","Test":"Test427PowerDurationByArenaForEveryPickup","Output":"--- PASS: Test427PowerDurationByArenaForEveryPickup (0.00s)\n"}
+{"Time":"2026-09-07T21:33:43.559013791+09:00","Action":"pass","Package":"leqra","Test":"Test427PowerDurationByArenaForEveryPickup","Elapsed":0}
+{"Time":"2026-09-07T21:33:43.559017556+09:00","Action":"run","Package":"leqra","Test":"Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges"}
+{"Time":"2026-09-07T21:33:43.559022344+09:00","Action":"output","Package":"leqra","Test":"Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges","Output":"=== RUN   Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges\n"}
+{"Time":"2026-09-07T21:33:43.559167211+09:00","Action":"output","Package":"leqra","Test":"Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges","Output":"--- PASS: Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges (0.00s)\n"}
+{"Time":"2026-09-07T21:33:43.55917295+09:00","Action":"pass","Package":"leqra","Test":"Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges","Elapsed":0}
+{"Time":"2026-09-07T21:33:43.559175424+09:00","Action":"run","Package":"leqra","Test":"Test427MachineGunSpendsOnlySuccessfulRounds"}
+{"Time":"2026-09-07T21:33:43.559177326+09:00","Action":"output","Package":"leqra","Test":"Test427MachineGunSpendsOnlySuccessfulRounds","Output":"=== RUN   Test427MachineGunSpendsOnlySuccessfulRounds\n"}
+{"Time":"2026-09-07T21:33:43.559453842+09:00","Action":"output","Package":"leqra","Test":"Test427MachineGunSpendsOnlySuccessfulRounds","Output":"--- PASS: Test427MachineGunSpendsOnlySuccessfulRounds (0.00s)\n"}
+{"Time":"2026-09-07T21:33:43.559459781+09:00","Action":"pass","Package":"leqra","Test":"Test427MachineGunSpendsOnlySuccessfulRounds","Elapsed":0}
+{"Time":"2026-09-07T21:33:43.559462044+09:00","Action":"run","Package":"leqra","Test":"Test427MachineGunBlockedInsideWallPreservesBudget"}
+{"Time":"2026-09-07T21:33:43.559463617+09:00","Action":"output","Package":"leqra","Test":"Test427MachineGunBlockedInsideWallPreservesBudget","Output":"=== RUN   Test427MachineGunBlockedInsideWallPreservesBudget\n"}
+{"Time":"2026-09-07T21:33:43.559613562+09:00","Action":"output","Package":"leqra","Test":"Test427MachineGunBlockedInsideWallPreservesBudget","Output":"--- PASS: Test427MachineGunBlockedInsideWallPreservesBudget (0.00s)\n"}
+{"Time":"2026-09-07T21:33:43.559617218+09:00","Action":"pass","Package":"leqra","Test":"Test427MachineGunBlockedInsideWallPreservesBudget","Elapsed":0}
+{"Time":"2026-09-07T21:33:43.559619681+09:00","Action":"run","Package":"leqra","Test":"Test427UnusedMachineGunStillExpiresAtRegularMapDuration"}
+{"Time":"2026-09-07T21:33:43.559622666+09:00","Action":"output","Package":"leqra","Test":"Test427UnusedMachineGunStillExpiresAtRegularMapDuration","Output":"=== RUN   Test427UnusedMachineGunStillExpiresAtRegularMapDuration\n"}
+{"Time":"2026-09-07T21:33:43.56200062+09:00","Action":"output","Package":"leqra","Test":"Test427UnusedMachineGunStillExpiresAtRegularMapDuration","Output":"--- PASS: Test427UnusedMachineGunStillExpiresAtRegularMapDuration (0.00s)\n"}
+{"Time":"2026-09-07T21:33:43.562010775+09:00","Action":"pass","Package":"leqra","Test":"Test427UnusedMachineGunStillExpiresAtRegularMapDuration","Elapsed":0}
+{"Time":"2026-09-07T21:33:43.562013499+09:00","Action":"run","Package":"leqra","Test":"Test427MachineGunBudgetSerializedAndClearedOnRespawn"}
+{"Time":"2026-09-07T21:33:43.562015612+09:00","Action":"output","Package":"leqra","Test":"Test427MachineGunBudgetSerializedAndClearedOnRespawn","Output":"=== RUN   Test427MachineGunBudgetSerializedAndClearedOnRespawn\n"}
+{"Time":"2026-09-07T21:33:43.562555785+09:00","Action":"output","Package":"leqra","Test":"Test427MachineGunBudgetSerializedAndClearedOnRespawn","Output":"--- PASS: Test427MachineGunBudgetSerializedAndClearedOnRespawn (0.00s)\n"}
+{"Time":"2026-09-07T21:33:43.562572099+09:00","Action":"pass","Package":"leqra","Test":"Test427MachineGunBudgetSerializedAndClearedOnRespawn","Elapsed":0}
+{"Time":"2026-09-07T21:33:43.562576155+09:00","Action":"output","Package":"leqra","Output":"PASS\n"}
+{"Time":"2026-09-07T21:33:43.562758549+09:00","Action":"output","Package":"leqra","Output":"ok  \tleqra\t0.007s\n"}
+{"Time":"2026-09-07T21:33:43.563024529+09:00","Action":"pass","Package":"leqra","Elapsed":0.008}

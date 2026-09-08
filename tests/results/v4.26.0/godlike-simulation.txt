@@ -1,0 +1,7 @@
+=== RUN   TestGodlikeModesSimulation426
+    godlike_mode_simulation_test.go:64: elimination: Godlike/Fierce scores [16 9], kills [33 19], deaths [21 37], captures [0 0], hill seconds 0.0/0.0 (3 seeds, up to120s each)
+    godlike_mode_simulation_test.go:64: ctf: Godlike/Fierce scores [7 2], kills [39 28], deaths [28 47], captures [7 2], hill seconds 0.0/0.0 (3 seeds, up to120s each)
+    godlike_mode_simulation_test.go:64: koth: Godlike/Fierce scores [134 29], kills [47 19], deaths [21 50], captures [0 0], hill seconds 211.9/40.5 (3 seeds, up to120s each)
+--- PASS: TestGodlikeModesSimulation426 (0.95s)
+PASS
+ok  	leqra	0.957s

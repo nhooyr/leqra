@@ -54,6 +54,9 @@ func (r *Room) putViewer(p *Player) {
 	r.Spectators[p.ID] = p
 }
 func (r *Room) freeJoinSeat() int {
+	if r.Game.survivalMode() && (r.survivalRunning() || participantCount(r.Players) >= survivalMaxPlayers) {
+		return -1
+	}
 	for id, p := range r.Players {
 		if p == nil && (r.Game.Phase == "lobby" || r.Game.Phase == "matchOver" || r.Game.Tanks[id] == nil) {
 			return id
@@ -224,6 +227,16 @@ func (h *Hub) setSpectating(c *Client, m clientMessage, now time.Time) {
 		h.broadcastRoom(r)
 		return
 	}
+	if !*m.Spectating && r.Game.survivalMode() {
+		if r.survivalRunning() {
+			fail("survival_active", "Join the squad between survival runs. This run is already underway.")
+			return
+		}
+		if participantCount(r.Players) >= survivalMaxPlayers {
+			fail("survival_full", "The four-player survival squad is full.")
+			return
+		}
+	}
 	h.cancelQueue(r, "A player changed roles. Join the queue again when the party is ready.")
 	if *m.Spectating {
 		if len(r.Spectators) >= maxSpectators {
@@ -256,6 +269,10 @@ func (h *Hub) swapSpectator(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	fail := func(code, text string) { e := roomError(code, text); e["action"] = "swap"; c.enqueue(e) }
+	if r.survivalRunning() {
+		fail("survival_active", "Swap players between survival runs. This run is already underway.")
+		return
+	}
 	if m.Target == nil || m.Spectator == nil || m.Member == 0 || m.SpectatorMember == 0 {
 		fail("bad_target", "Select an active player and a spectator.")
 		return

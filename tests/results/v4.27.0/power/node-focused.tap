@@ -1,0 +1,70 @@
+TAP version 13
+# Subtest: local equipped and ground durations match each of the six map tiers
+ok 1 - local equipped and ground durations match each of the six map tiers
+  ---
+  duration_ms: 2.859167
+  type: 'test'
+  ...
+# Subtest: local larger-map buffs refresh independently and respect stack and charge caps
+ok 2 - local larger-map buffs refresh independently and respect stack and charge caps
+  ---
+  duration_ms: 1.068135
+  type: 'test'
+  ...
+# Subtest: local machine gun fires exactly 300 rapid projectiles at 60 Hz on a 120 Hz simulation
+ok 3 - local machine gun fires exactly 300 rapid projectiles at 60 Hz on a 120 Hz simulation
+  ---
+  duration_ms: 2.37511
+  type: 'test'
+  ...
+# Subtest: local cooldown, wall, slot and same-tick blocks never spend firing budget
+ok 4 - local cooldown, wall, slot and same-tick blocks never spend firing budget
+  ---
+  duration_ms: 1.0515
+  type: 'test'
+  ...
+# Subtest: local released fire preserves budget but the regular timer still expires unused guns
+ok 5 - local released fire preserves budget but the regular timer still expires unused guns
+  ---
+  duration_ms: 40.741845
+  type: 'test'
+  ...
+# Subtest: machine-gun pickup refreshes its firing budget; other buffs preserve it
+ok 6 - machine-gun pickup refreshes its firing budget; other buffs preserve it
+  ---
+  duration_ms: 1.148957
+  type: 'test'
+  ...
+# Subtest: online predicted fire reserves remaining rounds and never shows a 301st machine-gun shot
+ok 7 - online predicted fire reserves remaining rounds and never shows a 301st machine-gun shot
+  ---
+  duration_ms: 7.363177
+  type: 'test'
+  ...
+# Subtest: unacknowledged previews cannot overspend the last firing rounds
+ok 8 - unacknowledged previews cannot overspend the last firing rounds
+  ---
+  duration_ms: 0.246821
+  type: 'test'
+  ...
+# Subtest: predicted firing budget is independent for P2 and resets with a new life
+ok 9 - predicted firing budget is independent for P2 and resets with a new life
+  ---
+  duration_ms: 0.291748
+  type: 'test'
+  ...
+# Subtest: pickup feedback explains map duration separately from machine-gun firing time and grenade fuse
+ok 10 - pickup feedback explains map duration separately from machine-gun firing time and grenade fuse
+  ---
+  duration_ms: 1.272893
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 159.514605

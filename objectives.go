@@ -17,20 +17,25 @@ type Flag struct {
 	ReturnIn float64 `json:"returnIn"`
 }
 type ObjectiveState struct {
-	SuddenDeath bool    `json:"suddenDeath"`
-	Showdown    int     `json:"showdown"`
-	Mode        string  `json:"mode"`
-	Flags       []*Flag `json:"flags"`
-	HillX       float64 `json:"hillX"`
-	HillY       float64 `json:"hillY"`
-	Radius      float64 `json:"radius"`
-	Owner       int     `json:"owner"`
-	Contested   bool    `json:"contested"`
-	Hold        float64 `json:"hold"`
+	Survival    *SurvivalState `json:"survival,omitempty"`
+	SuddenDeath bool           `json:"suddenDeath"`
+	Showdown    int            `json:"showdown"`
+	Mode        string         `json:"mode"`
+	Flags       []*Flag        `json:"flags"`
+	HillX       float64        `json:"hillX"`
+	HillY       float64        `json:"hillY"`
+	Radius      float64        `json:"radius"`
+	Owner       int            `json:"owner"`
+	Contested   bool           `json:"contested"`
+	Hold        float64        `json:"hold"`
 }
 
 func (g *Game) initObjectives() {
 	g.Objectives = nil
+	if g.survivalMode() {
+		g.Objectives = &ObjectiveState{Mode: "survival", Flags: []*Flag{}, Survival: &SurvivalState{Wave: 1, WaveTarget: g.settings().ScoreTarget, Status: "wave"}}
+		return
+	}
 	if !g.objectiveMode() {
 		return
 	}
@@ -183,6 +188,7 @@ func (g *Game) respawnTank(t *Tank) {
 	t.Angle = -math.Pi / 2
 	t.Power = ""
 	t.PowerTime = 0
+	t.MachineRounds = 0
 	t.Charges = 0
 	t.Shield = 0
 	t.ShieldCharges = 0
@@ -199,7 +205,7 @@ func (g *Game) respawnTank(t *Tank) {
 	g.emit("respawn", t, t.ID, "")
 }
 func (g *Game) respawnPlayers(dt float64, players [maxTanks]*Player) {
-	if g.Objectives == nil || g.suddenDeath() {
+	if g.Objectives == nil || g.suddenDeath() || g.survivalMode() {
 		return
 	}
 	for id, t := range g.Tanks {
@@ -279,7 +285,7 @@ func (g *Game) objectiveLeader(players [maxTanks]*Player) int {
 }
 func (g *Game) stepObjectives(dt float64, players [maxTanks]*Player) {
 	o := g.Objectives
-	if o == nil || g.Phase != "playing" {
+	if o == nil || g.Phase != "playing" || g.survivalMode() {
 		return
 	}
 	if o.SuddenDeath {

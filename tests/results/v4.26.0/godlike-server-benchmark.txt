@@ -1,0 +1,28 @@
+Server Godlike v4.26 verification (tool outputs captured during implementation)
+
+Command: /workspace/scratch/1a29ac9a379e/go/bin/go test -race ./...
+Result: ok leqra 14.660s
+This ran after the KOTH hold fix. The last two focused tests were added afterward:
+TestGodlikeHoldsHillWhileAimingWithSpeedStacks426 PASS
+TestGodlikeAnticipatesReadyLaser426 PASS
+
+Command: /workspace/scratch/1a29ac9a379e/go/bin/go test -run '^$' -bench Godlike -benchtime=1s -count=1
+Raw output:
+goos: linux
+goarch: amd64
+pkg: leqra
+cpu: AMD EPYC 9V74 80-Core Processor
+BenchmarkGodlikeEightBotsUltrawide426-9  243  5357463 ns/op  12 B/op  0 allocs/op
+PASS
+ok leqra 2.239s
+
+Benchmark generates a 24x14 maze with eight Godlike bots and 80 mixed projectiles.
+Every measured batch forces all eight bots to replan; buffers are warmed first.
+5.36 ms per eight-bot decision batch is approximately 1.19 ms per 60 Hz frame
+when amortized over the 0.075-second think interval. This is planner/control
+cost only, excludes other game physics/transport, and is not a browser FPS claim.
+Counts and positions are deliberately synthetic; timings depend on hardware.
+
+The first unoptimized implementation measured 10.29 ms with 56 allocations per
+batch. Reusing candidate tank storage and evaluating each shared ballistic
+segment only in its own time slice reduced planner time and allocations.

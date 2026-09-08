@@ -19,7 +19,9 @@ func playerKind(p *Player) string {
 	}
 	return p.Kind
 }
-func validDifficulty(s string) bool { return s == "easy" || s == "normal" || s == "hard" }
+func validDifficulty(s string) bool {
+	return s == "easy" || s == "normal" || s == "hard" || s == "godlike"
+}
 func sideKey(id, team int) int {
 	if team > 0 {
 		return team
@@ -147,17 +149,25 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		fail("bad_team", "Capture the Flag uses Team 1 and Team 2.")
 		return
 	}
+	if r.Game.survivalMode() && m.Team != nil && *m.Team != 1 {
+		fail("bad_team", "Survival players share Team 1.")
+		return
+	}
 	if m.ColorIndex != nil {
 		fail("paint_action", "Tank paint uses the owner-aware paint action.")
 		return
 	}
 	if m.Type == "add" {
+		if r.Game.survivalMode() && participantCount(r.Players) >= survivalMaxPlayers {
+			fail("survival_full", "The four-player survival squad is full.")
+			return
+		}
 		if m.Kind != "bot" && m.Kind != "local" {
 			fail("bad_kind", "Add a bot or a second local player.")
 			return
 		}
 		if m.Kind == "bot" && !validDifficulty(m.Difficulty) {
-			fail("bad_difficulty", "Choose Chill, Normal, or Fierce.")
+			fail("bad_difficulty", "Choose Chill, Normal, Fierce, or Godlike.")
 			return
 		}
 		if m.Team != nil && (*m.Team < 0 || *m.Team > 4) {
@@ -321,6 +331,10 @@ func (h *Hub) publishRoom(c *Client, m clientMessage, now time.Time) {
 		if !s.Spectating {
 			active++
 		}
+	}
+	if m.Rules != nil && m.Rules.Mode == "survival" && active > survivalMaxPlayers {
+		fail("survival_full", "Survival supports up to four allied tanks.")
+		return
 	}
 	if active > maxTanks {
 		fail("bad_roster", "There are only eight tank seats.")

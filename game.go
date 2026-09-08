@@ -10,6 +10,14 @@ const maxTanks = 8
 
 const powerEffectDuration = 10.0
 
+// Huge and larger arenas need more time to reach an opponent or objective.
+func powerDuration(cols, rows int) float64 {
+	if cols*rows >= 14*12 {
+		return 15
+	}
+	return powerEffectDuration
+}
+
 const (
 	cellSize           = 84.0
 	wallSize           = 8.0
@@ -88,6 +96,8 @@ type Tank struct {
 	Team          int               `json:"team"`
 	Bot           bool              `json:"bot"`
 	Difficulty    string            `json:"difficulty,omitempty"`
+	SurvivalEnemy bool              `json:"survivalEnemy,omitempty"`
+	SurvivalBoss  bool              `json:"survivalBoss,omitempty"`
 	AI            *BotState         `json:"-"`
 	fireHeld      bool              // Last simulated button state.
 	fireBlocked   bool              // A grenade action consumes the entire hold, even after expiry.
@@ -114,6 +124,7 @@ type Tank struct {
 	ScopeTime     float64 `json:"scopeTime"`
 	GhostTime     float64 `json:"ghostTime"`
 	PowerTime     float64 `json:"powerTime"`
+	MachineRounds int     `json:"machineRounds"` // Successful rapid projectiles left, at 60 per second.
 	Charges       int     `json:"charges"`
 	Recoil        float64 `json:"recoil"`
 	Track         float64 `json:"track"`
@@ -376,6 +387,9 @@ func (g *Game) startRound(players [maxTanks]*Player) {
 		p.FirePending = false
 	}
 	g.initObjectives()
+	if g.survivalMode() {
+		g.spawnSurvivalEnemies(players)
+	}
 	g.objectiveEnded = false
 	g.seedPickups()
 	g.emit("roundStart", nil, -1, "")
@@ -647,7 +661,7 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 // Detonation is independent of the current weapon/charges/cooldown. Holding never
 // immediately detonates, repeats a throw, or falls through to an ordinary shot.
 func (g *Game) weaponControl(t *Tank, held, pressed bool) {
-	if !t.Alive {
+	if !t.Alive || (g.survivalState() != nil && g.survivalState().Status != "wave") {
 		return
 	}
 	if !held {
@@ -700,10 +714,13 @@ func capacity(t *Tank) int {
 	return 5
 }
 func (g *Game) fire(t *Tank) bool {
+	if s := g.survivalState(); s != nil && s.Status != "wave" {
+		return false
+	}
 	if !t.Alive || t.Cooldown > 0 || (t.GhostTime > 0 && t.Power != "cannon" && !g.clearTankAt(t.X, t.Y, 0)) {
 		return false
 	}
-	if t.Power == "rapid" && t.rapidFired && t.rapidTick == g.Tick {
+	if t.Power == "rapid" && (t.MachineRounds <= 0 || t.rapidFired && t.rapidTick == g.Tick) {
 		return false
 	}
 	if t.Power == "laser" {
@@ -801,6 +818,14 @@ func (g *Game) fire(t *Tank) bool {
 	// Throttle cosmetic machine-gun events, never the authoritative bullets.
 	if kind != "rapid" || t.ShotSerial%4 == 1 {
 		g.emit("shot", t, t.ID, kind)
+	}
+	if kind == "rapid" {
+		t.MachineRounds--
+		if t.MachineRounds == 0 {
+			t.Power = ""
+			t.PowerTime = 0
+			t.Charges = 0
+		}
 	}
 	if t.Power == "scatter" || t.Power == "homing" || t.Power == "grenade" || t.Power == "cannon" {
 		t.Charges--
@@ -1143,28 +1168,32 @@ func (g *Game) updateBullets(dt float64) {
 var pickupTypes = []string{"rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "scope", "cannon", "ghost"}
 
 func (g *Game) grantPower(t *Tank, kind string) {
+	duration := powerDuration(g.World.Cols, g.World.Rows)
 	switch kind {
 	case "shield":
 		t.ShieldCharges = min(maxShieldCharges, shieldCount(t)+1)
-		t.Shield = shieldDuration
+		t.Shield = duration
 	case "speed":
 		t.SpeedStacks = min(maxSpeedStacks, speedCount(t)+1)
-		t.SpeedTime = boostDuration
+		t.SpeedTime = duration
 	case "scope":
-		t.ScopeTime = scopeDuration // Independent aiming buff; no weapon-slot changes.
+		t.ScopeTime = duration // Independent aiming buff; no weapon-slot changes.
 	case "ghost":
-		t.GhostTime = ghostDuration // Refresh only. Weapon, speed, scope and shield stay intact.
+		t.GhostTime = duration // Refresh only. Weapon, speed, scope and shield stay intact.
 	case "rapid", "scatter":
+		t.MachineRounds = 0
 		if kind == "rapid" {
+			t.MachineRounds = machineFiringRounds
 			t.Cooldown = 0
 			t.CooldownTotal = 0
 		}
 		t.Power = kind
-		t.PowerTime = powerEffectDuration
+		t.PowerTime = duration
 		t.Charges = 5
 	case "homing", "grenade", "laser", "cannon":
+		t.MachineRounds = 0
 		t.Power = kind
-		t.PowerTime = powerEffectDuration
+		t.PowerTime = duration
 		t.Charges = 3
 	default:
 		return
@@ -1226,6 +1255,9 @@ func (g *Game) finishRound(winner int) {
 }
 func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Player) {
 	g.Tick++
+	if g.survivalMode() && g.Phase != "lobby" && g.Phase != "matchOver" && g.prepareSurvival(dt, players) {
+		return
+	}
 	switch g.Phase {
 	case "lobby", "matchOver":
 		return
@@ -1258,6 +1290,13 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		g.Round++
 		g.startRound(players)
 		return
+	}
+	if g.survivalMode() {
+		if g.Clock <= 0 {
+			g.endSurvival(players, false)
+			return
+		}
+		dt = math.Min(dt, g.Clock)
 	}
 	if g.objectiveMode() && !g.suddenDeath() {
 		if g.Clock <= 0 {
@@ -1302,6 +1341,7 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		if t.Power != "" {
 			t.PowerTime -= dt
 			if t.PowerTime <= 0 {
+				t.MachineRounds = 0
 				t.Power = ""
 				t.PowerTime = 0
 			}
@@ -1360,6 +1400,10 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		}
 	}
 	g.Pickups = livePickups
+	if g.survivalMode() {
+		g.stepSurvival(players)
+		return
+	}
 	if g.objectiveMode() {
 		g.stepObjectives(dt, players)
 		return

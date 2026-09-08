@@ -1,0 +1,20 @@
+{
+  "runtime": "v24.19.0",
+  "scope": "Forced full AI decisions and route rebuilds for all eight bots in Node/V8; excludes browser rendering and live physics.",
+  "results": [
+    {
+      "scenario": "8 Godlike bots, ultrawide maze, no projectiles",
+      "measuredBatches": 35,
+      "meanMs": 0.47,
+      "medianMs": 0.448,
+      "p95Ms": 0.883
+    },
+    {
+      "scenario": "8 Godlike bots, ultrawide maze, 80 mixed projectiles",
+      "measuredBatches": 35,
+      "meanMs": 13.71,
+      "medianMs": 13.242,
+      "p95Ms": 18.148
+    }
+  ]
+}

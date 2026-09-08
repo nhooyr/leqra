@@ -1,22 +1,22 @@
-# leqra v4.25.0
+# leqra v4.27.0
 
-Fixes custom fire-key conflicts, reconnect/rematch edge cases, final-result identity, bot death movement and interrupted roster edits. Includes faster Go bot route planning, one encoding per room broadcast and selective roster rendering.
+Adds local and online Co-op Survival with Godlike boss waves, more decisive Godlike bots, longer power-ups on large arenas, a five-second machine-gun firing budget, and clearer controls.
 
-See [UPDATE-v4.25.0.md](UPDATE-v4.25.0.md) for changes and upgrade commands, [TEST-NOTES-v4.25.0.md](TEST-NOTES-v4.25.0.md) for verification, and [IMPROVEMENTS-v4.25.0.md](IMPROVEMENTS-v4.25.0.md) for proposed next steps.
+See [UPDATE-v4.27.0.md](UPDATE-v4.27.0.md) for changes and upgrade commands and [TEST-NOTES-v4.27.0.md](TEST-NOTES-v4.27.0.md) for verification. Earlier versioned guides remain available as release history.
 
 ## PWA and online lifecycle
 
-leqra v4.23 makes the browser game an installable Progressive Web App while preserving fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
+leqra is an installable Progressive Web App with fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.25.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.27.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
-Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the v4.23 client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
+Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
 Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process queues a **server shutting down** message before closing connected sockets. Browsers that are currently online show the notice, leave the server-backed game, and return to the local Home Screen instead of sitting in a reconnect loop against a server that is intentionally stopping.
 
-Room/game polish in this release includes the requested **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
+Retained room/game polish includes the **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams in Elimination/Hill (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
-v4.22's Safari audio fallback/CSP work, integrated matchmaking chat, Ghost smoothing and simplified room editing are retained unchanged unless described above. See **UPDATE-v4.23.md** for the full update, **POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.23.md** for verification and test-environment limits.
+The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See **UPDATE-v4.26.0.md** for that release and its physical-device testing limits; the current changes and verification are in **UPDATE-v4.27.0.md** and **TEST-NOTES-v4.27.0.md**.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -32,19 +32,17 @@ an explicit player action. Spectator-facing copy consistently uses **Spectators*
 **Spectating**.
 
 Uncollected pickup lifetime now scales with the maze's maximum pickup count using
-`floor(maximum pickups × 8/3)`. Giant is therefore **23 max / 61 seconds** and
+`floor(maximum pickups × 8/3)`, with a **30-second minimum on Large and smaller maps**. Giant is therefore **23 max / 61 seconds** and
 Ultra Wide is **34 max / 90 seconds**. The Controls menu shows starting pickups, maximum
 pickups, and this expiry duration for the selected maze.
 
-Player 1 now fires with **Q** by default. With no local Player 2, **Space remains a
-second Fire alias**; with Player 2 active, Space belongs to Player 2. Existing saved
-stock bindings migrate from F to Q, while genuinely remapped controls are preserved.
+Player 1 fires with **Q / C** by default; Player 2 uses **Space / Enter**. Both fire keys are remappable in Controls. When Player 2 is inactive, all of their current movement and fire bindings also control Player 1, even after either player remaps keys. All twelve bindings remain unique, and existing saved remaps are preserved.
 
 **Machine gun rounds are shooter-safe and travel one total quarter-perimeter path**
 (`(maze width + maze height) / 2`), counting the hidden muzzle section and every ricochet.
 The stream remains continuous at up to 60 authoritative rounds/second with a 96-round
-per-owner active cap, enough for that range on the 16×14 map. **Grenades have a 10-second fuse and
-a 220-unit blast radius**. They keep most of their launch speed through the first seven seconds, then brake progressively harder as detonation approaches. In v4.10, bots still avoid the grenade body rather than the blast radius, but harmless friendly grenades are ignored when friendly fire is off; bots always avoid their own grenades and all damaging grenades.
+per-owner active cap. Each machine-gun pickup provides **300 successfully fired rounds**, equivalent to **five seconds of continuous firing at 60 rounds/second**. Pausing fire preserves the remaining firing budget while the regular 10- or 15-second equip timer continues. **Grenades have a 10-second fuse and
+a 220-unit blast radius**. They keep most of their launch speed through the first seven seconds, then brake progressively harder as detonation approaches. Godlike bots predict grenade blasts, remote detonation danger and expiring fuses as well as the grenade body. They also predict homing turns, seek useful power-ups and prioritize objectives. Godlike now commits to routes and firing positions for longer, advances when progress stalls, and avoids abandoning useful movement for low-risk near misses. Expensive forecasts select a bounded set of relevant projectiles and reuse planning buffers.
 
 The match-complete popup adds **PLAY AGAIN** beside Back to Room. Local matches restart
 immediately with the same room/rules; online guests use the same button to ready for the
@@ -54,8 +52,7 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.23.md** for current behavior and installation,
-**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.23.md** for the current verification.
+statistics remain intact. See **UPDATE-v4.27.0.md** for current behavior and installation and **TEST-NOTES-v4.27.0.md** for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
 
 ## Previous combat improvements (retained)
 
@@ -71,7 +68,7 @@ for behavior and installation, and **TEST-NOTES-v4.2.md** for measurements and l
 
 **Cannon now fires 4×-diameter, 4×-speed rounds** through internal walls and
 ricochets them off the arena rim. **Ghost** lets tanks phase through internal
-walls for ten seconds and stacks with Super Speed, Shield, Scope and weapons.
+walls for the map-dependent 10- or 15-second duration and stacks with Super Speed, Shield, Scope and weapons.
 Bots can now be removed with one click; human kicks still require confirmation.
 See **POWERUPS.md** and the retained **UPDATE-v4.1.md** for weapon and expiry rules.
 
@@ -117,7 +114,7 @@ go run .
 ```
 
 Open **http://localhost:8080**. The game opens directly into your local room,
-with you plus three Normal bots in Free-for-all on a 12×10 map. Press **START MATCH** or change the roster.
+with you plus three Normal bots. A fresh desktop setup uses Free-for-all on a 12×10 map; phones start with Compact, and saved room rules are restored. Press **START MATCH** or change the roster.
 Local play works without a WebSocket connection; `web/index.html` can also be
 opened directly for local-only play.
 
@@ -128,30 +125,30 @@ is treated as a secure development context, but a plain `http://192.168.x.x` LAN
 play the game without necessarily being eligible for service-worker/PWA installation.
 On iPhone/iPad, open the HTTPS site in Safari and use **Share → Add to Home Screen**.
 On Android, Chrome/compatible browsers offer **Install app** or **Add to Home screen**.
-After the v4.23 shell has been installed/cached, the installed app can launch without a
+After the current app shell has been installed/cached, the installed app can launch without a
 network connection and local matches remain playable. Online rooms and matchmaking still
 require a reachable Go server and naturally cannot work while offline.
 
-**+ LOCAL PLAYER 2** adds a second tank controlled by arrow keys and Space on the
-same device. Player 1 uses WASD + Q; Space is an alias when no second local human exists. **F toggles fullscreen.** On a phone, the primary player uses
+**+ LOCAL PLAYER 2** adds a second tank using arrows + Space / Enter by default on the
+same device. Player 1 uses WASD + Q / C. The Controls menu edits both layouts; inactive Player 2 bindings fall back to Player 1. **F toggles fullscreen.** On a phone, the primary player uses
 the thumbstick and Fire button. Player 2 needs a keyboard on that device.
 
 Choose a bot difficulty and press **+ ADD BOT**, or change an existing bot's
-Chill / Normal / Fierce selector. In Teams mode, assign each participant to one of four numbered teams. Rename them
+Chill / Normal / Fierce / Godlike selector. In Teams Elimination or Hill, assign each participant to one of four numbered teams; Capture the Flag uses the first two, and Survival puts the whole squad on Team 1. Rename them
 in RULES & MODE. Free-for-all is a room-wide host format, not an individual team option. Numbered teammates share round points and cannot hurt each other unless the host
 enables friendly fire;
-default first side to five wins. A match requires at least two opposing sides.
+default first side to five wins in Elimination. Elimination, Capture the Flag and Hill require at least two opposing sides; Survival requires at least one active human in a squad of one to four tanks.
 Open **RULES & MODE** to change the score target, map, timer, weapon availability
-and pickup rate or friendly fire, or choose Capture the Flag / King of the Hill.
+and pickup rate or friendly fire, or choose Capture the Flag / King of the Hill / Co-op Survival.
 A tied objective time limit enters sudden death: one final life, last side wins. Only the host
-can change the battle format or teams. Global Free-for-all hides the per-tank team selectors entirely.
+can change the battle format or teams. Global Free-for-all hides the per-tank team selectors entirely. Survival also hides them because squad membership is fixed.
 
 **SHARE ROOM ONLINE** publishes your configured local roster to the Go server.
 It retains the bot settings, local player and teams, updates the address bar,
 and enables **COPY INVITE LINK**. Opening that link directly joins the room.
 The host starts; connected active guests ready up first. Bots and the secondary local
 player are automatically ready. Spectators need not ready up. Full arenas admit new
-people as spectators; remove a bot or use a host swap to make a tank place. Sharing
+people as spectators; remove a bot or use a host swap to make a tank place. Survival runs admit new visitors as spectators and lock squad entries/swaps until the run ends. Sharing
 is done in the lobby, not halfway through a round. **COPY SPECTATOR LINK** invites
 spectators with a callsign prompt; **SPECTATE / JOIN AS PLAYER** changes your own role.
 
@@ -160,6 +157,16 @@ Go is required on the hosting computer only. `run.bat` (Windows) or `sh run.sh`
 address rather than localhost. A server accessible only on your home Wi-Fi is
 not reachable by friends elsewhere. Public play needs a publicly reachable Go
 server, usually behind HTTPS. The Share button is not a hosting deployment.
+
+## Co-op Survival
+
+Choose **RULES & MODE → Co-op Survival**, or load the **Co-op Survival** preset for a human pilot and a Fierce teammate. Play alone, with local Player 2, with online friends, or with friendly bots. The squad has **one to four tanks**, all on Team 1, and needs at least one active human. A spectating host can start when another human is playing. Switching an oversized room to Survival is rejected until you reduce the active roster; it never silently removes players.
+
+The default run has **10 waves**, with a configurable target of **1–20** and a **75-second timer per wave** by default. Each wave starts with two enemies, plus one every two waves, capped at four. Waves 1–2 use Chill enemies, 3–4 use Normal, and later waves use Fierce. Every fifth wave replaces one enemy with a **Godlike boss**. Bosses start with three shield charges and one speed stack when those pickups are enabled, plus an enabled Homing/Cannon/Laser weapon selected in rotation. Disabling pickups also disables boss starting gear.
+
+Clear the enemies before time runs out. One surviving squad tank can complete a wave for everyone; fallen squadmates return after a four-second break, with fresh tanks. The maze stays the same throughout the run. Bullets and uncollected pickups clear between waves; pickups seed again with the next wave. Fire and movement are inactive during the break. A squad wipe or expired timer ends the run, and mutual destruction counts as a loss. Each cleared wave adds one shared point; surviving the target wave count wins.
+
+Enemy tanks are generated automatically and never occupy room-player places. New online visitors spectate during a run; squad entries and swaps wait until it ends. Disconnecting removes the current life, with recovery possible at a later wave after reconnecting while the run continues. The run ends if no connected human remains in the squad. Survival is available in private rooms and local play; public matchmaking queues are unchanged.
 
 ## Weapons and room features retained
 
@@ -175,7 +182,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.23.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.27.0.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -183,28 +190,28 @@ room/objective/spectator features in their versioned guides.
 All ten pickups use the **same icon drawing** in the legend and maze.
 Lasers bounce for up to the full perimeter. Homing missiles bounce for up to
 half the perimeter. Grenades detonate on tank impact or a ten-second fuse:
-throw, release Fire, then press Fire again to trigger an early blast. Their blast radius is 220 world units. All timed power-up effects now use a ten-second timer; Machine gun, Shotgun and stacked shields remain available. Teammate hits do not consume shields with friendly fire off. Ordinary returning shells, missiles and grenade blasts can hurt their owner; **Machine gun, Shotgun and Laser are shooter-safe**. Cannon rounds pass through internal walls, bounce
+throw, release Fire, then press Fire again to trigger an early blast. Their blast radius is 220 world units. Equipped weapons and timed buffs last **10 seconds on Compact, Standard and Large**, or **15 seconds on Huge, Giant and Ultra Wide**. Projectile lifetimes, range limits and the grenade fuse keep their own limits. Machine gun, Shotgun and stacked shields remain available. Teammate hits do not consume shields with friendly fire off. Ordinary returning shells, missiles and grenade blasts can hurt their owner; **Machine gun, Shotgun and Laser are shooter-safe**. Cannon rounds pass through internal walls, bounce
 at the rim and last at most 5.3 seconds. Ghost lets tanks cross internal walls for
-ten seconds, stacks with speed, and safely clears a wall overlap on expiry.
+the map-dependent duration, stacks with speed, and safely clears a wall overlap on expiry.
 See **POWERUPS.md**.
 
-Scope is independent of weapons, speed and shields. Its timer refreshes to ten
-seconds when collected again; it never stacks extra range or damage. Both local
+Scope is independent of weapons, speed and shields. Its timer refreshes to the map-dependent duration
+when collected again; it never stacks extra range or damage. Both local
 pilots see their own extended guide and a separate `SCP` timer.
 
-| Map | Cells | Starting pickups | Uncollected cap | Pickup expiry |
-| --- | ---: | ---: | ---: | ---: |
-| Compact | 7×7 | 2 | 5 | 13 s |
-| Standard | 9×8 | 3 | 7 | 18 s |
-| Large (default) | 12×10 | 4 | 12 | 32 s |
-| Huge | 14×12 | 5 | 17 | 45 s |
-| Giant | 16×14 | 6 | 23 | 61 s |
-| Ultra Wide | 24×14 | 7 | 34 | 90 s |
+| Map | Cells | Starting pickups | Uncollected cap | Pickup expiry | Equipped/buff duration |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Compact | 7×7 | 2 | 5 | 30 s | 10 s |
+| Standard | 9×8 | 3 | 7 | 30 s | 10 s |
+| Large (default) | 12×10 | 4 | 12 | 32 s | 10 s |
+| Huge | 14×12 | 5 | 17 | 45 s | 15 s |
+| Giant | 16×14 | 6 | 23 | 61 s | 15 s |
+| Ultra Wide | 24×14 | 7 | 34 | 90 s | 15 s |
 
 Extra spawn attempts remain one live second after start, then every 1–2 seconds
 by default. The host can change frequency or disable any/all of the ten types.
 Safe placement and the area cap remain; uncollected pickup lifetime is derived from the
-maze cap as `floor(cap × 8/3)` seconds. A cap is a maximum, not a promise that every
+maze cap as `floor(cap × 8/3)` seconds, raised to at least 30 seconds on Large and smaller maps. A cap is a maximum, not a promise that every
 arena will always fill to it.
 
 ## Updating from an earlier version
@@ -212,7 +219,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.23.2**.
+on restart. Both the health endpoint and browser version should show **4.27.0**.
 
 ## Build one standalone server
 
@@ -310,6 +317,7 @@ transport.go     Bounded WebSocket framing and handshake
 hub.go           Rooms, sessions, validation, broadcasts
 matchmaking.go   Party consent, six queues, exact team packing and room transfers
 game.go          Authoritative online tank simulation
+survival.go      Cooperative waves, boss loadouts and squad lifecycle
 bots.go          Server-controlled bot navigation, aiming and evasion
 roster.go        Host-only roster setup, sharing and team rules
 teams.go         Validated Unicode team names and rule copying

@@ -33,6 +33,7 @@ type PlayerMatchStats struct {
 }
 
 type MatchReport struct {
+	Survival *SurvivalState     `json:"survival,omitempty"`
 	Mode     string             `json:"mode"`
 	Duration float64            `json:"duration"` // Simulated live time; excludes countdowns and round breaks.
 	Rounds   int                `json:"rounds"`
@@ -134,6 +135,10 @@ func (g *Game) finishMatchStats(winner int) {
 		return
 	}
 	report := &MatchReport{Mode: g.settings().Mode, Duration: math.Round(g.stats.duration*100) / 100, Rounds: g.Round, Players: make([]PlayerMatchStats, 0, len(g.stats.rows)), Limited: g.stats.limited}
+	if s := g.survivalState(); s != nil {
+		copySurvival := *s
+		report.Survival = &copySurvival
+	}
 	var winning *Tank
 	if winner >= 0 && winner < maxTanks {
 		winning = g.Tanks[winner]

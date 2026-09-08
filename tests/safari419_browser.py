@@ -21,7 +21,7 @@ def install(page,platform,max_touch):
     page.set_content(html)
     page.evaluate("""a=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const store={getItem(){return null},setItem(){},removeItem(){}};Object.defineProperty(window,'localStorage',{value:store});Object.defineProperty(window,'sessionStorage',{value:store});window.__nativeAudioPlays=0;window.Audio=class{constructor(){this.src='';this.volume=1;this.currentTime=0;this.preload='';this.playsInline=false;this.dataset={};}setAttribute(){}pause(){}load(){}play(){window.__nativeAudioPlays++;return Promise.resolve();}};window.AudioContext=undefined;window.webkitAudioContext=undefined;try{Object.defineProperty(navigator,'platform',{value:a.platform,configurable:true});Object.defineProperty(navigator,'maxTouchPoints',{value:a.maxTouch,configurable:true});Object.defineProperty(navigator,'userAgentData',{value:undefined,configurable:true});}catch(_){}}""",{'platform':platform,'maxTouch':max_touch})
     for f in ['theme.js','netcode.js']:page.add_script_tag(content=(web/f).read_text())
-    page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.25.0'")
+    page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.27.0'")
 
 safari_mac='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15'
 safari_phone='Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
@@ -82,5 +82,5 @@ with sync_playwright() as pw:
     c.close();browser.close()
 
 check(not errors,'no JavaScript errors in Safari identity paths: '+str(errors))
-report={'version':'4.25.0','passed':len(checks),'checks':checks,'errors':errors,'note':'Safari identities executed in Chromium because Playwright WebKit could not be installed in this environment.'}
+report={'version':'4.27.0','passed':len(checks),'checks':checks,'errors':errors,'note':'Safari identities executed in Chromium because Playwright WebKit could not be installed in this environment.'}
 (out/'results.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))

@@ -1,0 +1,18 @@
+{
+  "build": {
+    "exit": 0,
+    "output": ""
+  },
+  "final_asset_tests": {
+    "exit": 0,
+    "output": "ok  \tleqra\t0.024s\n"
+  },
+  "diff_check": {
+    "exit": 0,
+    "output": ""
+  },
+  "go_vet": {
+    "exit": 0,
+    "note": "Completed successfully on final Go source."
+  }
+}

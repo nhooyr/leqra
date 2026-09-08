@@ -331,6 +331,9 @@ func TestRemoteGrenadeRegularWeaponsStillAutoFire(t *testing.T) {
 	for _, kind := range []string{"", "rapid", "scatter", "homing", "laser"} {
 		g, p := grenadeGame()
 		p.Power = kind
+		if kind == "rapid" {
+			g.grantPower(p, kind)
+		}
 		p.Charges = 3
 		p.Angle = -math.Pi / 2
 		g.weaponControl(p, true, true)

@@ -40,6 +40,9 @@ func validateTeamNames(names []string) error {
 
 // Copy slice fields so accepted room rules never alias a request or preset buffer.
 func normalizedRules(r MatchRules) MatchRules {
+	if r.Mode == "survival" {
+		r.TeamMode = "teams"
+	}
 	r.Weapons = append([]string{}, r.Weapons...)
 	names := defaultTeamNames()
 	if len(r.TeamNames) == 4 {

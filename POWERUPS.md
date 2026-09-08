@@ -1,24 +1,26 @@
-# leqra v4.10 — the ten power-ups
+# leqra v4.27 — the ten power-ups
 
-> Current rules: friendly fire is optional; **Machine gun, Shotgun and Laser never damage their own shooter**. Other returning shells/missiles and grenade blasts can. See UPDATE-v4.10.md for the newest duration, expiry and bot-avoidance details.
+> Current rules: friendly fire is optional; **Machine gun, Shotgun and Laser never damage their own shooter**. Other returning shells/missiles and grenade blasts can. See UPDATE-v4.27.0.md for current timing, survival and bot changes.
 
 
 Drive over a glowing pickup to collect it. The same pickups are available in
 local rooms and shared online rooms, including mixed human/bot teams. Every
-weapon uses the existing Fire control: **Q** (or Space without a second local human), mobile FIRE, or player two's Space.
+weapon uses the existing Fire control: **Q / C**, mobile FIRE, or Player 2's **Space / Enter**. Both players can remap both fire keys; all configured P2 keys also control P1 while P2 is inactive.
+
+Equipped weapons and buffs last **10 seconds on Compact, Standard and Large**, or **15 seconds on Huge, Giant and Ultra Wide**. The table below uses “10/15 seconds” for this map-dependent duration. Projectile flight and grenade fuses remain separate.
 
 | Pickup | Effect | Duration / charges |
 | --- | --- | --- |
-| Machine gun | ⅓-diameter, 3×-speed ricochets; shooter-safe; one quarter-perimeter total path. No weapon cooldown; up to 60 rounds/s. | 10 seconds; path-limited rounds, 96 active slots |
-| Shotgun | Three spreading ricochets at 3× normal speed; cannot damage their shooter. | 5 volleys or 10 seconds; 0.54s cooldown |
-| Shield | Adds one protective charge, up to five rings/charges; 3× individual spawn weight. | Shared 10-second timer, refreshed on collection |
-| Homing missile | Aggressive bounded tracking, wall ricochets, and a half-perimeter total travel limit. | 3 missiles or 10 seconds |
-| Grenade | Bounces off walls; explodes on tank impact, another Fire press, or the **10-second fuse**. **220-unit blast radius**; walls block blasts. | 3 throws or 10 seconds |
-| Super speed | Adds +65% movement and +25% turning per stack, up to five stacks; 3× individual spawn weight. | Shared 10-second timer, refreshed on collection |
-| Laser | Instant wall-bouncing beam, limited by maze perimeter; stops at the first vulnerable tank. | 3 shots or 10 seconds |
-| Cannon | Pierces internal walls, ricochets at the outer rim; 4× normal diameter and speed. Stops on a damaging tank hit. | 3 shots or 10 seconds; 0.85s cooldown |
-| Scope | Extends the dotted aiming guide to half the maze perimeter, including reflected segments. Does not change actual projectile range. | 10 seconds; independent buff |
-| Ghost | Tank passes through internal walls while the arena rim stays solid. Stacks with speed, shield, Scope and weapons. | 10 seconds; independent buff |
+| Machine gun | ⅓-diameter, 3×-speed ricochets; shooter-safe; one quarter-perimeter total path. No weapon cooldown; up to 60 rounds/s. | 10/15 seconds to use; 300 rounds (5 seconds of firing); 96 active slots |
+| Shotgun | Three spreading ricochets at 3× normal speed; cannot damage their shooter. | 5 volleys or 10/15 seconds; 0.54s cooldown |
+| Shield | Adds one protective charge, up to five rings/charges; 3× individual spawn weight. | Shared 10/15-second timer, refreshed on collection |
+| Homing missile | Aggressive bounded tracking, wall ricochets, and a half-perimeter total travel limit. | 3 missiles or 10/15 seconds |
+| Grenade | Bounces off walls; explodes on tank impact, another Fire press, or the **10-second fuse**. **220-unit blast radius**; walls block blasts. | 3 throws or 10/15 seconds |
+| Super speed | Adds +65% movement and +25% turning per stack, up to five stacks; 3× individual spawn weight. | Shared 10/15-second timer, refreshed on collection |
+| Laser | Instant wall-bouncing beam, limited by maze perimeter; stops at the first vulnerable tank. | 3 shots or 10/15 seconds |
+| Cannon | Pierces internal walls, ricochets at the outer rim; 4× normal diameter and speed. Stops on a damaging tank hit. | 3 shots or 10/15 seconds; 0.85s cooldown |
+| Scope | Extends the dotted aiming guide to half the maze perimeter, including reflected segments. Does not change actual projectile range. | 10/15 seconds; independent buff |
+| Ghost | Tank passes through internal walls while the arena rim stays solid. Stacks with speed, shield, Scope and weapons. | 10/15 seconds; independent buff |
 
 ## Shields: five charges, five rings
 
@@ -29,9 +31,9 @@ prevents simultaneous pellets from stripping several charges in one impact.
 Friendly-fire protection, spawn protection, and weapon-specific shooter immunity
 still apply before a shield is consumed.
 
-All charges share the existing **ten-second timer**. Every collection refreshes
-that timer, including collection at the five-charge cap. It does not add ten
-seconds per charge. Remaining charges expire together, and a new life/round
+All charges share a **10/15-second timer**. Every collection refreshes
+that timer, including collection at the five-charge cap. It does not add another full
+duration per charge. Remaining charges expire together, and a new life/round
 resets them. Shield remains independent of weapons, Scope, Ghost, and Super Speed.
 Both local players have separate counts and rings. Stacked buff labels use fixed
 HUD rows and compact text on phones, without resizing the maze.
@@ -44,7 +46,7 @@ Map-scaled caps, starting stock, Super fast timing, and placement checks are unc
 
 ## Super Speed: five stacks
 
-Each Speed pickup adds one stack, up to five, and refreshes the shared ten-second
+Each Speed pickup adds one stack, up to five, and refreshes the shared 10/15-second
 timer. One stack retains the previous +65% movement / +25% turn effect. Stacks add
 linearly: five stacks are **4.25× base movement** and **2.25× base turning**. The
 HUD shows `SPD×N`, and the tank draws additional speed streaks for each stack.
@@ -60,7 +62,7 @@ units**, the same as a normal shell. They ricochet using ordinary wall geometry.
 Shotgun pellets **never damage their own shooter or consume that shooter's shields**,
 even after bouncing or after the owner changes weapons. Other enemies, friendly
 fire when enabled, spawn protection, and shield absorption follow ordinary rules.
-The existing **five volleys**, now paired with the common ten-second equip timer, 0.54-second cooldown,
+The existing **five volleys**, now paired with the common 10/15-second equip timer, 0.54-second cooldown,
 and 3.9-second pellet lifetime remain. The visible name and shared legend/maze icon
 are updated. No scatter pellet gains extra damage or wall penetration.
 
@@ -81,10 +83,10 @@ from cutting that requested range short on Giant maps.
 Zero cooldown is not an infinite same-instant emission loop: **at most one round
 per 60 Hz firing step, up to 60 rounds/second**. The same rate is used locally and
 by Go, including when the local physics/render rate is higher. The weapon remains
-active for **ten seconds**. It has **96 active-projectile slots per owner** while
+available for **10/15 seconds**, with **300 successful rounds** per pickup: five seconds of full-rate firing. Idle or blocked attempts do not spend rounds; the regular equip timer still runs. It has **96 active-projectile slots per owner** while
 equipped, enough to sustain a full-rate stream for the quarter-perimeter range on the
 16×14 map while still bounding the cloud. Old projectiles can occupy slots; damage
-authority remains on Go. The HUD shows **READY · CONTINUOUS**.
+authority remains on Go. The HUD shows **FIRE LEFT** with the remaining firing time.
 
 Existing Fire bindings, remapping, both local players, and mobile Fire work as
 before. An already-armed grenade still takes priority on the next new Fire press.
@@ -135,10 +137,10 @@ same collision model. See **UPDATE-v4.1.md** for details.
 
 ## Ghost
 
-The pale-blue Ghost pickup grants **ten seconds of wall-phasing movement**.
+The pale-blue Ghost pickup grants **10/15 seconds of wall-phasing movement**.
 It is an independent buff; **every active Super Speed stack keeps its +65% movement** while
 Ghost is active. Weapons, Shield and Scope also coexist. Recollection refreshes
-only Ghost to ten seconds, without stacking duration. The tank is translucent
+only Ghost to the map duration, without stacking duration. The tank is translucent
 with a dashed outline; each local pilot has a separate `GHO` timer.
 
 The outer rim remains solid, and tank collisions and damage remain enabled.
@@ -160,8 +162,8 @@ Pickup caps are `round(columns × rows / 9.8)`: **5 / 7 / 12 / 17 / 23 / 34** fo
 and subsequent pickups. The default Super fast setting attempts the first extra spawn
 one second into live play, then every 1–2 seconds. Safe placement avoids tanks and
 other pickups; a blocked/full arena skips that attempt. Uncollected pickup lifetime is
-`floor(maximum pickups × 8/3)` seconds, so the six sizes expire after
-**13 / 18 / 32 / 45 / 61 / 90 seconds** respectively.
+`floor(maximum pickups × 8/3)` seconds, with a 30-second minimum on Large and smaller. The six sizes expire after
+**30 / 30 / 32 / 45 / 61 / 90 seconds** respectively.
 
 ## Scope
 
@@ -173,7 +175,7 @@ when Cannon is equipped, which passes through internal walls but reflects at the
 vulnerable tanks can stop it; friendly-fire settings determine eligible hits.
 The actual visible length can therefore be shorter than the maximum.
 
-Scope lasts **ten live-play seconds** and has no firing charges. It stacks with
+Scope lasts **10/15 live-play seconds** and has no firing charges. It stacks with
 weapons, speed and shields; collecting it again refreshes the timer to ten,
 not twenty. It is cleared on the next life/round and sudden-death reset. Death
 hides the guide. Local pause freezes the timer; an online menu does not pause it.
@@ -221,11 +223,11 @@ at the distance limit, including partway through a simulation tick. In the defau
 12×10 maze this budget is 1,848 world units. Speed remains 235 units/second.
 There is also a defensive lifetime of `budget / 235 + 0.5` seconds and a 128-bounce
 safety ceiling. A hit or round reset can end flight sooner. The weapon still equips
-three missiles for ten seconds; this equip timer is separate from missile flight.
+three missiles for 10/15 seconds; this equip timer is separate from missile flight.
 
 Press Fire to throw a grenade, release, and press Fire again to detonate early.
 Holding never auto-detonates or launches another grenade. The fallback fuse is
-**five seconds**. The next press detonates owned live grenades even after the last
+**ten seconds**. The next press detonates owned live grenades even after the last
 charge, equip timer expiry, or a new weapon pickup; no extra charge is consumed.
 Detonation works during the launch cooldown and only for a living owner. The HUD
 shows DETONATE and the mobile button changes to BOOM while a grenade is active.
@@ -250,7 +252,7 @@ For normal/missile/grenade/Cannon weapons, ammunition bars show available active
 projectile slots; special-weapon charges and timers are shown separately. The
 laser instead shows its three remaining charges in the bars. Already launched
 projectiles retain their lifetime after the weapon expires. Three-shot weapons
-are removed after the last charge or their ten-second equip timer, whichever
+are removed after the last charge or their 10/15-second equip timer, whichever
 comes first.
 
 ## Bots and online ownership

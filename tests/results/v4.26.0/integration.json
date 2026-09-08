@@ -1,0 +1,29 @@
+{
+  "version": "4.26.0",
+  "node_tests": "passed",
+  "javascript_syntax_files": [
+    "web/theme.js",
+    "web/game.js",
+    "web/netcode.js",
+    "web/assets/v4.26.0/pwa.js",
+    "web/assets/v4.26.0/theme.js",
+    "web/assets/v4.26.0/sw.js",
+    "web/assets/v4.26.0/game.js",
+    "web/assets/v4.26.0/netcode.js"
+  ],
+  "asset_entrypoints": [
+    "assets/v4.26.0/theme.js",
+    "assets/v4.26.0/theme.css",
+    "assets/v4.26.0/style.css",
+    "assets/v4.26.0/manifest.webmanifest",
+    "assets/v4.26.0/favicon.svg",
+    "assets/v4.26.0/apple-touch-icon.png",
+    "assets/v4.26.0/netcode.js",
+    "assets/v4.26.0/game.js",
+    "assets/v4.26.0/pwa.js"
+  ],
+  "source_asset_parity": true,
+  "no_native_prompts": true,
+  "requested_labels": true,
+  "only_current_asset_directory": true
+}

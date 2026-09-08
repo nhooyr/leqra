@@ -46,7 +46,7 @@ function boot(){
    creations.push({id:player.id,member:player.member,row,moderationOnly});return row;
   }
  };
- vm.createContext(s);vm.runInContext('const roomRosterCache=new WeakMap();\n'+declaration('roomPlayerStatus')+'\n'+declaration('renderRoomPlayerRows'),s);
+ vm.createContext(s);vm.runInContext('const roomRosterCache=new WeakMap();\n'+declaration('survivalMode')+'\n'+declaration('roomCapacity')+'\n'+declaration('roomPlayerStatus')+'\n'+declaration('renderRoomPlayerRows'),s);
  const render=(r=room,options={})=>s.renderRoomPlayerRows(options.container||container,r.players,r,options.moderationOnly||false,options.showOpenSeats!==false);
  return {s,room,container,creations,render};
 }

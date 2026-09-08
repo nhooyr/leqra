@@ -3,14 +3,15 @@ package main
 // Weapon IDs remain rapid/scatter for saved-preset and protocol compatibility.
 // Labels are Machine gun / Shotgun. Visuals and simulation share these values.
 const (
-	regularSpeed     = 282.0
-	regularRadius    = 3.5
-	shotgunSpeed     = regularSpeed * 3
-	machineSpeed     = regularSpeed * 3
-	machineRadius    = regularRadius / 3
-	machineCapacity  = 96 // Covers a continuous 60 Hz stream across the largest quarter-perimeter range.
-	shieldDuration   = powerEffectDuration
-	maxShieldCharges = 5
+	regularSpeed        = 282.0
+	regularRadius       = 3.5
+	shotgunSpeed        = regularSpeed * 3
+	machineSpeed        = regularSpeed * 3
+	machineRadius       = regularRadius / 3
+	machineFiringRounds = 5 * 60 // Five seconds of productive firing; idle or blocked ticks cost nothing.
+	machineCapacity     = 96     // Covers a continuous 60 Hz stream across the largest quarter-perimeter range.
+	shieldDuration      = powerEffectDuration
+	maxShieldCharges    = 5
 )
 
 // Old deterministic fixtures may specify only Shield. Treat that as one charge;
