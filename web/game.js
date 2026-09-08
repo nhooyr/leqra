@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.23.0';
+const GAME_VERSION='4.23.1';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -259,7 +259,7 @@ function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRo
 function spawnCells(){return [(rows-1)*cols,cols-1,rows*cols-1,0,Math.floor(cols/2),Math.floor(rows/2)*cols+cols-1,(rows-1)*cols+Math.floor(cols/2),Math.floor(rows/2)*cols];}
 function resetTanks(){const spawn=spawnCells();if(mode==='room'){tanks=localRoom.players.filter(p=>!p.spectating).map(p=>newTank(p.id,spawn[p.id]));return;}if(mode==='solo'&&Math.random()<.5)spawn[2]=0;tanks=spawn.slice(0,mode==='duel'?2:3).map((s,i)=>newTank(i,s));}
 function resetPreview(){localObjectives=null;makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];seedPickups();if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);}
-function setScreen(which){document.body.classList.toggle('room-setup',which==='room');if(which==='online'){which='room';if(!$('joinDialog').open)$('joinDialog').showModal();}document.body.classList.toggle('overlay-open',!!which);$('overlay').hidden=!which;for(const id of ['lobby','pause','match','online','room','onlineMenu'])$(id+'Screen').hidden=id!==which;stabilizeArenaLayout();}
+function setScreen(which){if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=mode!=='online';document.body.classList.toggle('room-setup',which==='room');if(which==='online'){which='room';if(!$('joinDialog').open)$('joinDialog').showModal();}document.body.classList.toggle('overlay-open',!!which);$('overlay').hidden=!which;for(const id of ['lobby','pause','match','online','room','onlineMenu'])$(id+'Screen').hidden=id!==which;stabilizeArenaLayout();}
 function clearInput(){keys.clear();firePointers.clear();firePresses.clear();for(const t of tanks){t.fireHeld=false;t.fireBlocked=false;}stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
 function setMode(value){if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS · ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').textContent=mode==='duel'?'P1: WASD + Q · P2: ARROWS + SPACE':'FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES';if(mode==='duel')$('manualContent').innerHTML='<div class="manual-line"><span>Player 1</span><kbd>WASD + Q</kbd></div><div class="manual-line"><span>Player 2</span><kbd>ARROWS + SPACE</kbd></div><div class="manual-line"><span>Pause</span><kbd>P / ESC</kbd></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>One keyboard. Two rivals.</b><br>First to 5 wins. Every ricochet is live.</div>';else $('manualContent').innerHTML='<div class="manual-line manual-move-line"><span>Drive &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line"><span>Fire / hold to fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd></div></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through bots. Your own ricochets can still hit you.</div>';
  if(phase==='menu'){resetPreview();setLayout();}}
@@ -1421,7 +1421,7 @@ function connectOnline(request,reconnecting=false){
    online.serverVersion=msg.version;sendOnline({type:'client_hello',version:GAME_VERSION,protocol:1});sendOnline(request);break;
   case 'client_ready':break;
   case 'server_shutdown':
-   clearTimeout(timeout);leaveOnline();$('roomStatus').textContent=msg.message||'The leqra server is shutting down. You were returned to the Home Screen.';toast('SERVER SHUTTING DOWN · RETURNED HOME',5);break;
+   clearTimeout(timeout);{const shutdownMessage=msg.message||'The leqra server is shutting down.';leaveOnline();$('roomStatus').textContent=shutdownMessage+' You were returned to the Home Screen.';toast('SERVER SHUTTING DOWN · RETURNED HOME',7);showServerShutdown(shutdownMessage);}break;
   case 'queue_catalog':case 'queue_status':case 'queue_cancelled':matchmakingPacket(msg);break;
   case 'chat':case 'chat_history':chatPacket(msg);break;
   case 'welcome':
@@ -1503,6 +1503,7 @@ function leaveOnline(){
 }
 function leaveOnlineMatch(){if(mode!=='online')return;if(!confirm('Leave this online match and return to the Home Screen?'))return;leaveOnline();}
 function toggleOnlineMenu(){
+ if(mode!=='online')return;
  if($('restartLocalBtn'))$('restartLocalBtn').hidden=true;if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=false;
  if(!online.code)return;
  if(!online.connected){showReconnecting();return;}
@@ -1801,7 +1802,7 @@ function balanceLocalTeams(players=localRoom.players){let n=0;for(const p of pla
 function createLocalRoom(){
  localRoom.self=0;localRoom.nextViewer=MAX_TANKS;
  let name='PILOT';try{name=localStorage.getItem('leqra.name')||name;}catch(_){}
- mode='room';phase='menu';online.menu=false;gameStarted=false;document.body.classList.remove('online-mode');
+ mode='room';phase='menu';online.menu=false;gameStarted=false;document.body.classList.remove('online-mode');if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=true;
  localRoom.rules=loadLocalRoomRules();localRoom.code='';localRoom.players=[{id:0,member:++localRoom.nextMember,kind:'human',name,owner:0,team:localRoom.rules.teamMode==='ffa'?0:1},
   {id:1,member:++localRoom.nextMember,kind:'bot',name:'RUST',owner:0,team:0,difficulty:'normal'},
   {id:2,member:++localRoom.nextMember,kind:'bot',name:'VAPOR',owner:0,team:0,difficulty:'normal'},
@@ -2548,6 +2549,7 @@ function requestQueueRematch(){
  matchmaking.rematchPending=true;syncResultActions();
  if(!sendOnline({type:'rematch'})){matchmaking.rematchPending=false;syncResultActions();toast('Connection unavailable. Try again after reconnecting.',3);}
 }
+function showServerShutdown(message){let d=$('shutdownDialog');if(!d){d=document.createElement('dialog');d.id='shutdownDialog';d.className='shutdown-dialog';d.setAttribute('aria-labelledby','shutdownTitle');d.innerHTML='<div class="shutdown-mark" aria-hidden="true">!</div><div class="eyebrow">SERVER NOTICE</div><h2 id="shutdownTitle">SERVER SHUTTING DOWN</h2><p id="shutdownMessage"></p><strong>YOU HAVE BEEN RETURNED TO THE HOME SCREEN</strong><button class="shutdown-ack" type="button">OK</button>';document.body.append(d);d.querySelector('.shutdown-ack').onclick=()=>d.close();d.addEventListener('cancel',e=>{e.preventDefault();d.close();});}d.querySelector('#shutdownMessage').textContent=message||'The leqra server is shutting down.';if(!d.open)d.showModal();d.querySelector('.shutdown-ack').focus({preventScroll:true});}
 function closeVictory(){if($('victoryDialog')?.open)$('victoryDialog').close();}
 function resultBackToRoom(){
  const r=roomData(),me=r?roomMember(localPlayerID(),r):null;
@@ -2601,7 +2603,7 @@ function initPresentation(){
  const apply=hidden=>{document.body.classList.toggle('sidebar-hidden',hidden);button.setAttribute('aria-expanded',String(!hidden));button.setAttribute('aria-label',hidden?'Show sidebar':'Hide sidebar');button.title=hidden?'Show sidebar':'Hide sidebar';resize();};
  let hidden=false;try{hidden=localStorage.getItem('leqra.sidebarHidden')==='1';}catch(_){}apply(hidden);
  button.onclick=()=>{const hidden=!document.body.classList.contains('sidebar-hidden');apply(hidden);save('sidebarHidden',hidden?'1':'0');};
- const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><h2 id="victoryTitle"></h2><div class="victory-emblem" id="victoryEmblem" aria-hidden="true">★</div><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="primary" id="victoryCloseBtn" type="button">BACK TO ROOM <span>→</span></button><button class="secondary" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button></footer>';
+ const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><h2 id="victoryTitle"></h2><div class="victory-emblem" id="victoryEmblem" aria-hidden="true">★</div><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="primary" id="victoryCloseBtn" type="button">BACK TO ROOM <span>→</span></button><button class="secondary result-replay" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button></footer>';
  document.body.append(dialog);$('victoryCloseBtn').onclick=resultBackToRoom;$('victoryAgainBtn').onclick=quickReplay;dialog.addEventListener('cancel',e=>{e.preventDefault();resultBackToRoom();});
 }
 function beginLocalSuddenDeath(replay=false){

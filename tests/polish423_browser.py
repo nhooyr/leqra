@@ -56,7 +56,7 @@ with sync_playwright() as pw:
     page.add_script_tag(content=(web / 'theme.js').read_text())
     page.add_script_tag(content=(web / 'netcode.js').read_text())
     page.add_script_tag(content=js)
-    page.wait_for_function("window.__test && leqra.version === '4.23.0'")
+    page.wait_for_function("window.__test && leqra.version === '4.23.1'")
     page.wait_for_timeout(100)
 
     check(len(sockets) == 0, 'Local startup opens no WebSocket')
@@ -96,7 +96,7 @@ with sync_playwright() as pw:
     page.wait_for_function("leqra.getState().online?.connected === true", timeout=10000)
     page.wait_for_function("leqra.getState().phase === 'onlineLobby'", timeout=10000)
     check(len(sockets) == 1, 'Explicit Share Room Online opens exactly one WebSocket')
-    check(page.evaluate('__test.online.serverVersion') == '4.23.0', 'Online connection completes the v4.23 version handshake')
+    check(page.evaluate('__test.online.serverVersion') == '4.23.1', 'Online connection completes the v4.23 version handshake')
 
     before = page.evaluate('JSON.stringify(__test.walls)')
     page.evaluate('__test.unshareOnlineRoom()')
@@ -125,19 +125,29 @@ with sync_playwright() as pw:
     page.locator('#roomBtn').click()
     page.wait_for_function("!document.querySelector('#onlineMenuScreen').hidden")
     check(page.locator('#leaveMatchBtn').is_visible() and page.locator('#leaveMatchBtn').inner_text().strip() == 'Leave match', 'Online pause menu includes Leave match')
-    page.locator('#onlineReturnBtn').click()
+    # Regression: online-only pause actions must not leak into a later local room.
+    page.evaluate('window.confirm=()=>true')
+    page.locator('#leaveMatchBtn').click()
+    page.wait_for_function("leqra.getState().mode === 'room'", timeout=10000)
+    check(page.locator('#leaveMatchBtn').is_hidden(), 'Leave match is reset hidden after switching from online to local play')
+    page.evaluate('__test.showVictory(-1, [])')
+    check(page.locator('#victoryAgainBtn').evaluate("e=>getComputedStyle(e).backgroundColor") == 'rgb(57, 255, 136)', 'Local PLAY AGAIN uses the same neon green treatment as REMATCH')
+    page.evaluate('__test.closeVictory()')
 
+    page.evaluate('__test.shareLocalRoom()')
+    page.wait_for_function("leqra.getState().online?.connected === true", timeout=10000)
     request = urllib.request.Request(args.server + '/_fixture/shutdown423', data=b'', method='POST')
     with urllib.request.urlopen(request, timeout=5) as response:
         check(response.status == 204, 'Shutdown fixture queued the server notice')
     page.wait_for_function("leqra.getState().mode === 'room'", timeout=10000)
     check('shutting down' in page.locator('#roomStatus').inner_text().lower(), 'Server shutdown returns the online client Home with a visible notice')
+    check(page.locator('#shutdownDialog').is_visible() and 'SERVER SHUTTING DOWN' in page.locator('#shutdownDialog').inner_text(), 'Server shutdown opens a pronounced blocking notice')
     check(not errors, 'No uncaught browser errors: ' + str(errors))
 
     page.screenshot(path=str(out / 'v4.23-ui.png'))
     context.close()
     browser.close()
 
-report = {'version': '4.23.0', 'passed': len(checks), 'checks': checks, 'errors': errors}
+report = {'version': '4.23.1', 'passed': len(checks), 'checks': checks, 'errors': errors}
 (out / 'results.json').write_text(json.dumps(report, indent=2))
 print('TOTAL', len(checks))

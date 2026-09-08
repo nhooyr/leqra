@@ -1,3 +1,9 @@
+# v4.23.1 — UI state cleanup and stronger shutdown warning
+
+- Keep **Leave match** strictly online-only across online → local transitions.
+- Present server shutdown as a prominent modal warning after safely returning Home.
+- Style normal **PLAY AGAIN** with the same neon green as matchmaking **REMATCH**.
+
 # v4.23.0 — PWA, versioned assets, graceful shutdown, and online UX fixes
 
 - Make leqra an installable PWA with a manifest, Apple/Android icons and a versioned service worker that precaches the local app shell while keeping WebSocket/API endpoints network-only.
