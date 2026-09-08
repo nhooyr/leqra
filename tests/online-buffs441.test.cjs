@@ -11,7 +11,7 @@ function boot(){
   online:{id:0,connected:true,menu:false,generation:1,lastMatch:1,snapshots:buffer.items,buffer,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set(),trails:new Map(),localBullets:new Map(),effectQueue:[],shots:new Net.ShotPresentation(),eventsInitialized:true,lastEvent:0}
  });
  s.online.predictor=new Net.Predictor(s.moveTank);s.online.secondary={predictor:new Net.Predictor(s.moveTank)};
- for(const name of ['netTank','receiveOnlineState','predictOnlineTank','renderOnlineMotion','activeTankPowerBadges'])vm.runInContext(declaration(name),s);
+ for(const name of ['netTank','receiveOnlineState','predictOnlineTank','applyOnlineTankEffects','renderOnlineMotion','activeTankPowerBadges'])vm.runInContext(declaration(name),s);
  let tick=58;s.packet=(patch={},status='wave',phase='playing')=>({tick:tick+=2,generation:1,phase,round:1,roundClock:75,phaseTime:2,winner:-1,scores:[],bullets:[],pickups:[],events:[],objectives:{survival:{wave:1,status}},tanks:[0,1,3].map(id=>tank(id,126+id*100,126,{bot:id===3,spawnSerial:1,ack:0,ackSteps:0,power:'laser',powerTime:10,charges:3,machineRounds:0,shield:10,shieldCharges:1,speedTime:10,speedStacks:1,scopeTime:10,ghostTime:10,...patch}))});
  s.receive=(patch,status,phase)=>{const p=s.packet(patch,status,phase);s.receiveOnlineState(p);return p;};
  return s;

@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.41.0';
+const GAME_VERSION='4.42.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -1342,7 +1342,7 @@ function pilotLoadoutTank(id){
  if(online.publishing&&!online.roomData)return tanks.find(t=>t.id===id)||member;
  // Lobby snapshots intentionally contain no tank bodies. Keep assigned HUD
  // slots in the layout, and read live equipment before the next render pass.
- const tank=online.snapshots.at(-1)?.tankMap?.get(id);if(tank)return tank;
+ const tank=online.snapshots.at(-1)?.tankMap?.get(id);if(tank)return liveFeedbackTank(tank);
  return {...member,alive:false,color:member.color||COLORS[id],power:null,powerTime:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,scopeTime:0,ghostTime:0};
 }
 function renderPilotLoadout(player,num,force=false){
@@ -2298,6 +2298,17 @@ function projectileOnTimeline(n,sample){
   life:a.life+(b.life-a.life)*f,age:a.age+(b.age-a.age)*f,rangeLeft:typeof a.rangeLeft==='number'?a.rangeLeft+(b.rangeLeft-a.rangeLeft)*f:undefined};
  return sample.extrapolate>0?projectOnlineBullet(item,sample.extrapolate):item;
 }
+function applyOnlineTankEffects(t,source,age){
+ // Share equipment expiry between buffered tank drawings and pilot HUDs.
+ // Only the caller's visual copy changes; snapshots and predictors stay intact.
+ t.spawnProtected=!!source?.spawnProtected;t.invulnerable=Math.max(0,(source?.invulnerable||0)-age);
+ t.powerTime=Math.max(0,(source?.powerTime||0)-age);t.power=t.powerTime>0?source?.power:null;
+ t.charges=t.power?(source?.charges||0):0;t.machineRounds=t.power?(source?.machineRounds||0):0;
+ t.shield=Math.max(0,(source?.shield||0)-age);t.shieldCharges=t.shield>0?(source?.shieldCharges||0):0;
+ t.speedTime=Math.max(0,(source?.speedTime||0)-age);t.speedStacks=t.speedTime>0?(source?.speedStacks||0):0;
+ t.scopeTime=Math.max(0,(source?.scopeTime||0)-age);t.ghostTime=Math.max(0,(source?.ghostTime||0)-age);
+ return t;
+}
 // One render pass per animation frame. Own fire is cosmetic-predicted; other
 // weapons share their shooter's buffered timeline. Go still owns every hit.
 function renderOnlineMotion(dt,now){
@@ -2335,12 +2346,7 @@ function renderOnlineMotion(dt,now){
  for(const t of tanks){const source=s.tankMap.get(t.id),live=playing&&t.alive,age=live?effectAge:0;
   // Buffer poses, not equipment. Counts and timers follow the newest authority
   // on visual copies, including refresh/expiry between received snapshots.
-  t.spawnProtected=!!source?.spawnProtected;t.invulnerable=Math.max(0,(source?.invulnerable||0)-age);
-  t.powerTime=Math.max(0,(source?.powerTime||0)-age);t.power=t.powerTime>0?source?.power:null;
-  t.charges=t.power?(source?.charges||0):0;t.machineRounds=t.power?(source?.machineRounds||0):0;
-  t.shield=Math.max(0,(source?.shield||0)-age);t.shieldCharges=t.shield>0?(source?.shieldCharges||0):0;
-  t.speedTime=Math.max(0,(source?.speedTime||0)-age);t.speedStacks=t.speedTime>0?(source?.speedStacks||0):0;
-  t.scopeTime=Math.max(0,(source?.scopeTime||0)-age);t.ghostTime=Math.max(0,(source?.ghostTime||0)-age);
+  applyOnlineTankEffects(t,source,age);
   t.recoil=live?Math.max(0,(source?.recoil||0)-since*9):0;
   if(ownIDs.has(t.id)){if(online.shots.heard(t.id,source?.spawnSerial,source?.shotSerial))t.recoil=0;for(const v of online.shots.previews.values())if(v.owner===t.id)t.recoil=Math.max(t.recoil,Math.max(0,1-(now-v.at)/1000*9));}
  }
@@ -3328,9 +3334,12 @@ function pilotProjectileState(t,checkLocks=false){
 function liveFeedbackTank(t){
  if(mode!=='online')return t;
  const s=online.snapshots.at(-1),auth=s?.tankMap.get(t.id);if(!auth)return t;
- const now=performance.now(),live=phase==='playing',age=live?clamp((now-s.received)/1000,0,.25):0;
- return {...auth,machineRounds:online.shots?.machineRounds(auth)??auth.machineRounds,cooldown:live&&auth.alive?(online.shots?.cooldown(auth,now)??Math.max(0,auth.cooldown-age)):auth.cooldown,
-  cooldownTotal:online.shots?.pilots.get(t.id)?.total||auth.cooldownTotal,respawnTime:Math.max(0,(auth.respawnTime||0)-age)};
+ const now=performance.now(),live=phase==='playing'&&!survivalBreak(),age=live?Math.max(0,(now-s.received)/1000):0;
+ const view=applyOnlineTankEffects({...auth},auth,auth.alive?age:0);
+ if(live&&auth.alive&&view.power==='rapid')view.machineRounds=online.shots?.machineRounds(auth)??view.machineRounds;
+ view.cooldown=live&&auth.alive?(online.shots?.cooldown(auth,now)??Math.max(0,auth.cooldown-Math.min(age,.25))):auth.cooldown;
+ view.cooldownTotal=online.shots?.pilots.get(t.id)?.total||auth.cooldownTotal;view.respawnTime=Math.max(0,(auth.respawnTime||0)-Math.min(age,.25));
+ return view;
 }
 function missileLocks(t){const bs=mode==='online'?online.snapshots.at(-1)?.bullets||[]:bullets;return bs.filter(b=>b.kind==='homing'&&!b.dead&&b.target===t.id&&b.owner!==t.id&&canDamage(b.owner,t));}
 let feedbackAt=-Infinity;
@@ -3900,11 +3909,18 @@ function syncChatStatus(){
  const chooser=$('chatTargetSwitch'),opponentToggle=$('chatOpponentToggle');chooser.hidden=!oppEnabled;opponentToggle.checked=target==='opponent';opponentToggle.disabled=!online.connected;$('chatError').textContent=st.error||'';document.body.classList.toggle('matchmaking-chat',oppEnabled);
 }
 function clearRoomChat(code=''){roomChat.code=code;roomChat.open=false;roomChat.sendTarget='room';roomChat.unread=0;roomChat.draft='';for(const st of Object.values(roomChat.channels)){st.messages=[];st.lastID=0;st.pending=null;st.unconfirmed=null;st.error='';}$('chatPanel').hidden=true;$('chatMessages').replaceChildren();$('chatInput').value='';$('chatError').textContent='';syncChatStatus();}
-function renderChatMessage(m,channel='room'){
- const row=document.createElement('div');row.className='chat-message '+(channel==='opponent'?'chat-opponent':'chat-room');row.dataset.chatId=channel+':'+m.id;const head=document.createElement('div');head.className='chat-message-head';const name=document.createElement('strong');name.textContent=m.name;const tag=document.createElement('span');tag.className='chat-channel-tag';const self=roomMember(localPlayerID());tag.textContent=channel==='opponent'?(m.member===self?.member?'TO OPPONENT':'OPPONENT'):(matchPartyChat()?'PARTY':'ROOM');const role=document.createElement('span');role.textContent=m.spectating?'SPECTATING':m.team>0?teamName(m.team):'PLAYER';const date=new Date(m.at),when=document.createElement('time');when.dateTime=date.toISOString();when.textContent=date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const text=document.createElement('p');text.textContent=m.text;head.append(name,tag,role,when);row.append(head,text);if(m.member===self?.member)row.classList.add('chat-self');return row;
+function renderChatMessage(m,channel='room',timeFormat=null){
+ const row=document.createElement('div');row.className='chat-message '+(channel==='opponent'?'chat-opponent':'chat-room');row.dataset.chatId=channel+':'+m.id;const head=document.createElement('div');head.className='chat-message-head';const name=document.createElement('strong');name.textContent=m.name;const tag=document.createElement('span');tag.className='chat-channel-tag';const self=roomMember(localPlayerID());tag.textContent=channel==='opponent'?(m.member===self?.member?'TO OPPONENT':'OPPONENT'):(matchPartyChat()?'PARTY':'ROOM');const role=document.createElement('span');role.textContent=m.spectating?'SPECTATING':m.team>0?teamName(m.team):'PLAYER';const date=new Date(m.at),when=document.createElement('time');when.dateTime=date.toISOString();when.textContent=timeFormat?timeFormat.format(date):date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const text=document.createElement('p');text.textContent=m.text;head.append(name,tag,role,when);row.append(head,text);if(m.member===self?.member)row.classList.add('chat-self');return row;
 }
 function combinedChatMessages(){const out=[];for(const [channel,st] of Object.entries(roomChat.channels))for(const m of st.messages)out.push({m,channel});out.sort((a,b)=>(a.m.at||0)-(b.m.at||0)||a.m.id-b.m.id||(a.channel>b.channel?1:-1));return out;}
-function renderActiveChat(){const list=$('chatMessages'),frag=document.createDocumentFragment();for(const {m,channel} of combinedChatMessages())frag.append(renderChatMessage(m,channel));list.replaceChildren(frag);list.scrollTop=list.scrollHeight;}
+function renderActiveChat(){
+ const list=$('chatMessages'),frag=document.createDocumentFragment(),messages=combinedChatMessages();
+ // Reuse locale setup within this batch; a fresh formatter on each opening or
+ // history refresh still follows device locale/timezone changes after travel.
+ const timeFormat=messages.length?new Intl.DateTimeFormat([],{hour:'2-digit',minute:'2-digit'}):null;
+ for(const {m,channel} of messages)frag.append(renderChatMessage(m,channel,timeFormat));
+ list.replaceChildren(frag);list.scrollTop=list.scrollHeight;
+}
 function setChatSendTarget(channel){if(channel!=='room'&&channel!=='opponent')return false;if(channel==='opponent'&&!opponentChatEnabled())return false;roomChat.sendTarget=channel;restoreUnconfirmedChatDraft();syncChatStatus();return true;}
 function switchChatChannel(channel){return setChatSendTarget(channel);}
 function openChat(){if(mode!=='online'||!online.code||!roomChatEnabled()&&!opponentChatEnabled())return;if(roomChat.open){closeChat();return;}roomChat.open=true;roomChat.unread=0;restoreUnconfirmedChatDraft();$('chatPanel').hidden=false;$('chatInput').value=roomChat.draft;renderActiveChat();clearInput();sendOnlineInput(true);syncChatStatus();positionChatPanel();if(online.connected)$('chatInput').focus({preventScroll:true});}
@@ -4102,7 +4118,7 @@ function renderMatchmaking(){
 }
 function initMatchmaking(){
  const launcher=document.createElement('button');launcher.id='matchmakingBtn';launcher.type='button';launcher.className='primary queue-launch';launcher.textContent='FIND ONLINE BATTLE';
- $('joinOtherBtn').parentElement.after(launcher);launcher.onclick=openMatchmaking;
+ $('startRoomBtn').after(launcher);launcher.onclick=openMatchmaking;
  const watch=document.createElement('a');watch.id='partyAwayLink';watch.className='secondary queue-watch';watch.textContent='SPECTATE PARTY’S MATCH ↗';watch.target='_blank';watch.rel='noopener';watch.hidden=true;launcher.after(watch);
  const dialog=document.createElement('dialog');dialog.id='queueDialog';dialog.className='feature-dialog queue-dialog';dialog.setAttribute('aria-labelledby','queueTitle');
  dialog.innerHTML='<header class="feature-header"><div><div class="eyebrow">ONLINE · REAL PLAYERS · THIS SERVER</div><h2 id="queueTitle">Find your next battle.</h2></div><button id="queueCloseBtn" type="button" class="dialog-close" aria-label="Close matchmaking panel">×</button></header><div class="feature-body"><div class="queue-party"><strong id="queuePartyText"></strong><p id="queuePartyHint"></p></div><div id="queueChoose"><div class="queue-grid">'+MATCH_QUEUES.map(d=>'<button type="button" class="queue-card" data-queue="'+d.key+'" aria-pressed="false"><span class="queue-mode">'+d.name+'</span><strong>'+d.detail+'</strong><span class="queue-count">'+d.cols+'×'+d.rows+' maze</span></button>').join('')+'</div><p class="mode-help">Random compatible opponents, not ranked matchmaking. Solo players fill open team positions. A match starts automatically only when its full human lineup is ready.</p></div><section id="queueActive" hidden aria-live="polite"><div class="queue-search-mark" aria-hidden="true">⌕</div><h3 id="queueActiveTitle"></h3><p id="queueActiveMode"></p><div id="queuePeople"></div><p id="queueProgress"></p><strong id="queueElapsed"></strong></section><p id="queueNotice" class="feature-notice" role="status"></p></div><footer class="feature-footer"><button id="queueStartBtn" class="primary" type="button"><span>FIND MATCH</span><span aria-hidden="true">→</span></button><button id="queueAcceptBtn" class="primary" type="button" hidden>JOIN THIS SEARCH <span aria-hidden="true">→</span></button><button id="queueCancelBtn" class="secondary" type="button" hidden>CANCEL PARTY SEARCH</button><p class="queue-footnote">Closing this panel does not cancel a search. Everyone must use the same running Go server; this is not a global hosted service.</p></footer>';

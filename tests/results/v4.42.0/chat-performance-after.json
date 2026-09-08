@@ -1,0 +1,25 @@
+{
+  "runtime": "v24.19.0",
+  "scope": "Production chat history rendering with native Intl timestamp formatting and a lightweight DOM stand-in; excludes browser layout/paint and whole game FPS.",
+  "checksum": 56000,
+  "results": [
+    {
+      "messages": 0,
+      "iterationsPerSample": 40,
+      "samples": 7,
+      "medianMs": 0.0026
+    },
+    {
+      "messages": 20,
+      "iterationsPerSample": 40,
+      "samples": 7,
+      "medianMs": 0.162
+    },
+    {
+      "messages": 120,
+      "iterationsPerSample": 40,
+      "samples": 7,
+      "medianMs": 0.843
+    }
+  ]
+}

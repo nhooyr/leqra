@@ -215,7 +215,7 @@ function onlineBoot(){
   resetOnlineMotion:()=>{s.online.snapshots.length=0;}
  });
  s.online.predictor=new s.Net.Predictor(noop);s.online.secondary={predictor:new s.Net.Predictor(noop)};
- for(const name of ['netTank','receiveOnlineState','renderOnlineMotion'])vm.runInContext(declaration(name),s);
+ for(const name of ['netTank','receiveOnlineState','applyOnlineTankEffects','renderOnlineMotion'])vm.runInContext(declaration(name),s);
  let tick=0;
  s.packet=(phase,{generation=1,wave=0,status='wave',world=false,serial=0,invulnerable=.75,events=[]}={})=>({tick:++tick,generation,phase,round:wave||1,roundClock:75,phaseTime:2.6,winner:-1,scores:[],bullets:[],pickups:[],events,tanks:[tank({id:0,bot:false,spawnSerial:serial,invulnerable}),tank({id:1,bot:false,spawnSerial:serial,invulnerable}),tank({id:3,bot:true,spawnSerial:serial,invulnerable})],...(wave?{objectives:{survival:{wave,status}}}:{}),...(world?{world:{cols:12,rows:8,width:1008,height:672,walls:[]}}:{})});
  return s;

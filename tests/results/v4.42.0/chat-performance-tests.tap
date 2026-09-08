@@ -1,0 +1,112 @@
+TAP version 13
+# Subtest: an open chat retains only the latest 60 rendered messages per channel
+ok 1 - an open chat retains only the latest 60 rendered messages per channel
+  ---
+  duration_ms: 10.628756
+  type: 'test'
+  ...
+# Subtest: interleaved party and opponent messages evict only their own channel rows
+ok 2 - interleaved party and opponent messages evict only their own channel rows
+  ---
+  duration_ms: 3.185108
+  type: 'test'
+  ...
+# Subtest: readers keep the same message and pixel position when an earlier row expires
+ok 3 - readers keep the same message and pixel position when an earlier row expires
+  ---
+  duration_ms: 1.497431
+  type: 'test'
+  ...
+# Subtest: evicting a row below the visible conversation does not move the reader
+ok 4 - evicting a row below the visible conversation does not move the reader
+  ---
+  duration_ms: 1.621557
+  type: 'test'
+  ...
+# Subtest: chat keeps following new messages when already at the bottom
+ok 5 - chat keeps following new messages when already at the bottom
+  ---
+  duration_ms: 1.392903
+  type: 'test'
+  ...
+# Subtest: open history replacement and closed-history reopening share the same bounds
+ok 6 - open history replacement and closed-history reopening share the same bounds
+  ---
+  duration_ms: 19.048632
+  type: 'test'
+  ...
+# Subtest: reconnect restores an unacknowledged message without sending it again
+ok 7 - reconnect restores an unacknowledged message without sending it again
+  ---
+  duration_ms: 1.602028
+  type: 'test'
+  ...
+# Subtest: reconnect preserves a newer draft and keeps the previous message recoverable
+ok 8 - reconnect preserves a newer draft and keeps the previous message recoverable
+  ---
+  duration_ms: 1.010429
+  type: 'test'
+  ...
+# Subtest: two unacknowledged channels recover independently without changing recipients
+ok 9 - two unacknowledged channels recover independently without changing recipients
+  ---
+  duration_ms: 1.153113
+  type: 'test'
+  ...
+# Subtest: hidden chat preserves its restored text when reopened after reconnect
+ok 10 - hidden chat preserves its restored text when reopened after reconnect
+  ---
+  duration_ms: 1.296178
+  type: 'test'
+  ...
+# Subtest: reconnected history preserves the delivery warning and cannot resend a draft
+ok 11 - reconnected history preserves the delivery warning and cannot resend a draft
+  ---
+  duration_ms: 1.199483
+  type: 'test'
+  ...
+# Subtest: leaving a room clears unconfirmed texts as well as the current draft
+ok 12 - leaving a room clears unconfirmed texts as well as the current draft
+  ---
+  duration_ms: 0.971961
+  type: 'test'
+  ...
+# Subtest: a reconnect welcome cannot change an opponent draft to the party recipient
+ok 13 - a reconnect welcome cannot change an opponent draft to the party recipient
+  ---
+  duration_ms: 1.013253
+  type: 'test'
+  ...
+# Subtest: batched chat timestamps exactly match native per-message formatting and retain ordering
+ok 14 - batched chat timestamps exactly match native per-message formatting and retain ordering
+  ---
+  duration_ms: 34.117592
+  type: 'test'
+  ...
+# Subtest: history batches construct one formatter while live message append keeps fresh native formatting
+ok 15 - history batches construct one formatter while live message append keeps fresh native formatting
+  ---
+  duration_ms: 8.186935
+  type: 'test'
+  ...
+# Subtest: reopening chat follows a changed device timezone without changing message dates
+ok 16 - reopening chat follows a changed device timezone without changing message dates
+  ---
+  duration_ms: 3.624268
+  type: 'test'
+  ...
+# Subtest: empty chat history skips locale setup and still clears prior rows
+ok 17 - empty chat history skips locale setup and still clears prior rows
+  ---
+  duration_ms: 2.469111
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 147.047241

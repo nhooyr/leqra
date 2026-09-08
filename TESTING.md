@@ -1,6 +1,6 @@
-# leqra v4.41.0 — current verification
+# leqra v4.42.0 — current verification
 
-See **TEST-NOTES-v4.41.0.md** for current commands, results and limitations. Current raw logs are in `tests/results/v4.41.0/`. Historical browser fixtures below were not rerun for this release.
+See **TEST-NOTES-v4.42.0.md** for current commands, results and limitations. Current raw logs are in `tests/results/v4.42.0/`. Historical browser fixtures below were not rerun for this release.
 
 ## Historical v4.23 verification
 
