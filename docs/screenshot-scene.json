@@ -1,0 +1,45 @@
+{
+  "output": "docs/screenshot.png",
+  "width": 3120,
+  "height": 1860,
+  "maze": [
+    24,
+    14
+  ],
+  "tanks": 8,
+  "teams": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "effects": {
+    "ghost": 2,
+    "speed": 4,
+    "shield": 3
+  },
+  "powerups": 20,
+  "projectiles": [
+    "cannon",
+    "cannon",
+    "grenade",
+    "grenade",
+    "homing",
+    "homing",
+    "rapid",
+    "rapid",
+    "rapid",
+    "rapid",
+    "rapid",
+    "rapid"
+  ],
+  "laserSegments": [
+    8,
+    4
+  ],
+  "renderer": "unmodified production Canvas functions; deliberately staged scene"
+}
