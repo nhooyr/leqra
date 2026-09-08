@@ -1,10 +1,10 @@
-# leqra v4.43.0 — current game protocol (protocol 1)
+# leqra v4.44.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.43.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.44.0**:
 
 ```json
-{"type":"server_hello","version":"4.43.0","protocol":1}
-{"type":"client_hello","version":"4.43.0","protocol":1}
+{"type":"server_hello","version":"4.44.0","protocol":1}
+{"type":"client_hello","version":"4.44.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -619,7 +619,7 @@ Resume a disconnected seat, within 20 seconds:
 {"type":"join","code":"ABC234","token":"TOKEN_FROM_YOUR_WELCOME_MESSAGE"}
 ```
 
-A resume token is a bearer credential. Keep it private, never put it in a shared URL, and send it only over the original server's connection. The included client stores it in the current tab's session storage. A live session cannot be replaced by a second socket presenting its token. An expired or unknown credential does not silently become a fresh join on the server. A token-bearing request for a missing room returns `room_missing` without creating anything. When an explicit invite fails to resume (`resume_expired` or `room_missing`), the client may send a separate `join` without a token to request a fresh seat, creating the room if absent. This fallback does not run for background-only reconnection, and it never bypasses capacity, live-session, or kick protection. Copied active-session invite handling remains bounded as in v2.2.
+A resume token is a bearer credential. Keep it private, never put it in a shared URL, and send it only over the original server's connection. The included client stores it in the current tab's session storage. A live session cannot be replaced by a second socket presenting its token. An expired or unknown credential does not silently become a fresh join on the server. A token-bearing request for a missing room returns `room_missing` without creating anything. After the player confirms JOIN in the invite menu, if that invite fails to resume (`resume_expired` or `room_missing`), the client may send a separate `join` without a token to request a fresh seat, creating the room if absent. This fallback does not run for background-only reconnection, and it never bypasses capacity, live-session, or kick protection. Copied active-session invite handling remains bounded as in v2.2.
 
 Change your own callsign (v2.2 application extension; wire protocol remains 1):
 

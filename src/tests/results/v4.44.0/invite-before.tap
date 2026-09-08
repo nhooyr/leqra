@@ -1,0 +1,204 @@
+TAP version 13
+# Subtest: fresh invite shows the callsign menu without connecting until JOIN is clicked
+not ok 1 - fresh invite shows the callsign menu without connecting until JOIN is clicked
+  ---
+  duration_ms: 5.707469
+  type: 'test'
+  location: '/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:21:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:22:39)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.start (node:internal/test_runner/test:1242:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)
+  ...
+# Subtest: recent matching sessions also wait, then recover their seat with the selected name
+not ok 2 - recent matching sessions also wait, then recover their seat with the selected name
+  ---
+  duration_ms: 3.341953
+  type: 'test'
+  location: '/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:25:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:26:51)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+  ...
+# Subtest: expired, future or unrelated sessions never bypass the menu or supply another room token
+not ok 3 - expired, future or unrelated sessions never bypass the menu or supply another room token
+  ---
+  duration_ms: 2.278234
+  type: 'test'
+  location: '/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:29:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:30:154)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: Back and Escape cancel an invite without joining, retaining resume credentials for a later visit
+not ok 4 - Back and Escape cancel an invite without joining, retaining resume credentials for a later visit
+  ---
+  duration_ms: 2.332065
+  type: 'test'
+  location: '/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:33:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:34:208)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: Enter in callsign submits manually and invalid room names stay in the join menu
+not ok 5 - Enter in callsign submits manually and invalid room names stay in the join menu
+  ---
+  duration_ms: 2.439556
+  type: 'test'
+  location: '/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:36:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'SAVED PILOT'
+    - 'ENTER PILOT'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'ENTER PILOT'
+  actual: 'SAVED PILOT'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:37:125)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: a removed player must explicitly JOIN and is not given the removed session token
+not ok 6 - a removed player must explicitly JOIN and is not given the removed session token
+  ---
+  duration_ms: 2.649162
+  type: 'test'
+  location: '/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:40:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:41:267)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+# Subtest: spectator invites still wait for callsign confirmation and retain spectator intent
+ok 7 - spectator invites still wait for callsign confirmation and retain spectator intent
+  ---
+  duration_ms: 3.133049
+  type: 'test'
+  ...
+# Subtest: background recovery without an invite keeps its existing automatic resume behavior
+ok 8 - background recovery without an invite keeps its existing automatic resume behavior
+  ---
+  duration_ms: 5.441308
+  type: 'test'
+  ...
+# Subtest: confirmed invite callsign is applied after a resumed welcome, including a network retry
+not ok 9 - confirmed invite callsign is applied after a resumed welcome, including a network retry
+  ---
+  duration_ms: 3.474702
+  type: 'test'
+  location: '/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:51:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    0 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/workspace/scratch/1a29ac9a379e/project/leqra-online/src/tests/invite444.test.cjs:58:10)
+    Test.runInAsyncScope (node:async_hooks:227:14)
+    Test.run (node:internal/test_runner/test:1382:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+    Test.postRun (node:internal/test_runner/test:1522:19)
+    Test.run (node:internal/test_runner/test:1447:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 2
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 124.019514

@@ -1,8 +1,8 @@
-# leqra v4.43.0
+# leqra v4.44.0
 
-Maze space now remains reserved when local pilots switch roles, when Player 2 is added or removed, and when the roster crosses four sides. Phone keyboards no longer trigger the landscape control layout through visual-viewport changes alone. PLAY is neon green, Unshare room neon purple, and Leave room neon pink; the header Spectators button appears only for established online rooms. Delayed online inputs are bound to pilot identity, and room metadata uses a faster typed encoder. The source tree is organized into the folders below.
+Room invite links now open the join menu so players can choose their callsign and press JOIN themselves. A recent matching session is recovered only after confirmation, and the chosen callsign is applied to the resumed pilot. Unshare room and Leave room retain neon purple/pink colors with outlined styling; REMOVE/KICK actions are neon-red outlines, and Chat matches the blue Spectators header control. The v4.43 maze stability, input identity and repository organization changes are retained.
 
-See [UPDATE-v4.43.0.md](releases/UPDATE-v4.43.0.md) for release changes and [TEST-NOTES-v4.43.0.md](releases/TEST-NOTES-v4.43.0.md) for verification. Earlier versioned guides remain available in [releases/](releases/) as historical records; use the commands in this guide for the current repository layout. See the [changelog](../CHANGELOG.md) for the complete release history.
+See [UPDATE-v4.44.0.md](releases/UPDATE-v4.44.0.md) for release changes and [TEST-NOTES-v4.44.0.md](releases/TEST-NOTES-v4.44.0.md) for verification. Earlier versioned guides remain available in [releases/](releases/) as historical records; use the commands in this guide for the current repository layout. See the [changelog](../CHANGELOG.md) for the complete release history.
 
 ## Repository layout
 
@@ -21,9 +21,9 @@ Run all setup, build, test and deployment commands below from the repository roo
 
 ## PWA and online lifecycle
 
-leqra is an installable Progressive Web App with fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
+leqra is an installable Progressive Web App with fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, confirms an online invite, resumes a connection, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.43.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.44.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
 Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
@@ -31,7 +31,7 @@ Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process qu
 
 Retained room/game polish includes the **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams in Elimination/Hill (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
-The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See [UPDATE-v4.26.0.md](releases/UPDATE-v4.26.0.md) for that release and its physical-device testing limits; the current changes and verification are in [UPDATE-v4.43.0.md](releases/UPDATE-v4.43.0.md) and [TEST-NOTES-v4.43.0.md](releases/TEST-NOTES-v4.43.0.md).
+The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See [UPDATE-v4.26.0.md](releases/UPDATE-v4.26.0.md) for that release and its physical-device testing limits; the current changes and verification are in [UPDATE-v4.44.0.md](releases/UPDATE-v4.44.0.md) and [TEST-NOTES-v4.44.0.md](releases/TEST-NOTES-v4.44.0.md).
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -67,7 +67,7 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See [UPDATE-v4.43.0.md](releases/UPDATE-v4.43.0.md) for current behavior and installation and [TEST-NOTES-v4.43.0.md](releases/TEST-NOTES-v4.43.0.md) for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
+statistics remain intact. See [UPDATE-v4.44.0.md](releases/UPDATE-v4.44.0.md) for current behavior and installation and [TEST-NOTES-v4.44.0.md](releases/TEST-NOTES-v4.44.0.md) for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
 
 ## Previous combat improvements (retained)
 
@@ -159,7 +159,7 @@ can change the battle format or teams. Global Free-for-all hides the per-tank te
 
 **SHARE ROOM ONLINE** publishes your configured local roster to the Go server.
 It retains the bot settings, local player and teams, updates the address bar,
-and enables **COPY INVITE LINK**. Opening that link directly joins the room.
+and enables **COPY INVITE LINK**. Opening that link shows the join menu with the room prefilled. Choose a callsign and press **JOIN** to enter.
 The host starts; connected active guests ready up first. Bots and the secondary local
 player are automatically ready. Spectators need not ready up. Full arenas admit new
 people as spectators; remove a bot or use a host swap to make a tank place. Survival runs admit new visitors as spectators and lock squad entries/swaps until the run ends. Sharing
@@ -217,7 +217,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See [GAMEPLAY-v3.2.md](releases/GAMEPLAY-v3.2.md) for the rules and objectives introduced in that version and [UNIFIED-ROOMS.md](UNIFIED-ROOMS.md) for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and [UPDATE-v4.43.0.md](releases/UPDATE-v4.43.0.md), with the retained
+are retained as historical notes; current behavior is described in this README and [UPDATE-v4.44.0.md](releases/UPDATE-v4.44.0.md), with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -254,7 +254,7 @@ arena will always fill to it.
 Back up custom deployment settings. Update the complete source package, including **all of `src/`** and the root `go.mod`, `scripts/` and `deploy/` files. When migrating from the old flat layout, remove the superseded root Go files and `web/` after backing them up.
 Rebuild and restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.43.0**.
+on restart. Both the health endpoint and browser version should show **4.44.0**.
 
 ## Build one standalone server
 

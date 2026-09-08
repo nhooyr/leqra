@@ -1,3 +1,11 @@
+# v4.44.0 — outlined neon actions and confirmed invite joining
+
+- Restore outlined Unshare room and Leave room buttons while retaining neon purple and pink.
+- Use neon-red outlines for roster/host/spectator REMOVE/KICK actions and the kick confirmation action.
+- Match the Chat header icon and unread indication to Spectators blue.
+- Invite links wait at the callsign/join menu, including recent sessions; confirmed resumes apply the chosen callsign.
+- Update built-in server startup hints for the `src/` layout.
+
 # v4.43.0 — stable maze space, neon lobby actions and organized source tree
 
 - Preserve maze space across spectator/P2 changes, roster side counts and keyboard-only visual-viewport changes.

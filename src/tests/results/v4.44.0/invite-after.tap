@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: fresh invite shows the callsign menu without connecting until JOIN is clicked
+ok 1 - fresh invite shows the callsign menu without connecting until JOIN is clicked
+  ---
+  duration_ms: 5.983043
+  type: 'test'
+  ...
+# Subtest: recent matching sessions also wait, then recover their seat with the selected name
+ok 2 - recent matching sessions also wait, then recover their seat with the selected name
+  ---
+  duration_ms: 2.869663
+  type: 'test'
+  ...
+# Subtest: expired, future or unrelated sessions never bypass the menu or supply another room token
+ok 3 - expired, future or unrelated sessions never bypass the menu or supply another room token
+  ---
+  duration_ms: 9.438566
+  type: 'test'
+  ...
+# Subtest: Back and Escape cancel an invite without joining, retaining resume credentials for a later visit
+ok 4 - Back and Escape cancel an invite without joining, retaining resume credentials for a later visit
+  ---
+  duration_ms: 5.253446
+  type: 'test'
+  ...
+# Subtest: Enter in callsign submits manually and invalid room names stay in the join menu
+ok 5 - Enter in callsign submits manually and invalid room names stay in the join menu
+  ---
+  duration_ms: 4.442577
+  type: 'test'
+  ...
+# Subtest: a removed player must explicitly JOIN and is not given the removed session token
+ok 6 - a removed player must explicitly JOIN and is not given the removed session token
+  ---
+  duration_ms: 2.400949
+  type: 'test'
+  ...
+# Subtest: spectator invites still wait for callsign confirmation and retain spectator intent
+ok 7 - spectator invites still wait for callsign confirmation and retain spectator intent
+  ---
+  duration_ms: 2.310282
+  type: 'test'
+  ...
+# Subtest: background recovery without an invite keeps its existing automatic resume behavior
+ok 8 - background recovery without an invite keeps its existing automatic resume behavior
+  ---
+  duration_ms: 4.083037
+  type: 'test'
+  ...
+# Subtest: confirmed invite callsign is applied after a resumed welcome, including a network retry
+ok 9 - confirmed invite callsign is applied after a resumed welcome, including a network retry
+  ---
+  duration_ms: 6.267331
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 124.687552
