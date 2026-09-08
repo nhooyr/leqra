@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.45.0';
+const VERSION = 'v4.45.1';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
@@ -42,20 +42,30 @@ self.addEventListener('fetch', event => {
   // them unless the player explicitly shares/joins a room or uses matchmaking.
   if (url.pathname === '/ws' || url.pathname === '/healthz' || url.pathname.startsWith('/api/')) return;
 
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).then(response => {
-        if (response.ok) caches.open(CACHE).then(cache => cache.put('/', response.clone()));
-        return response;
-      }).catch(() => caches.match('/'))
-    );
-    return;
-  }
+  let cacheWrite = Promise.resolve();
+  const storeResponse = (key, response) => {
+    if (response.ok) {
+      // Clone before returning the response: the browser may consume its body
+      // while opening Cache Storage is still pending.
+      const copy = response.clone();
+      cacheWrite = Promise.resolve().then(() => caches.open(CACHE))
+        .then(cache => cache.put(key, copy)).catch(() => {});
+    }
+    return response;
+  };
 
-  if (url.pathname.startsWith(BASE)) {
-    event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
-      if (response.ok) caches.open(CACHE).then(cache => cache.put(request, response.clone()));
-      return response;
-    })));
-  }
+  let response;
+  if (request.mode === 'navigate') {
+    response = fetch(request).then(result => storeResponse('/', result))
+      .catch(() => caches.match('/'));
+  } else if (url.pathname.startsWith(BASE)) {
+    response = caches.match(request).catch(() => undefined).then(cached =>
+      cached || fetch(request).then(result => storeResponse(request, result))
+    );
+  } else return;
+
+  event.respondWith(response);
+  // Register synchronously, and keep the worker alive through the eventual
+  // cache write. Storage failures must not turn a valid response into an error.
+  event.waitUntil(response.then(() => cacheWrite).catch(() => {}));
 });

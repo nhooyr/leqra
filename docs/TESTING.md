@@ -1,6 +1,6 @@
-# leqra v4.45.0 — current verification
+# leqra v4.45.1 — current verification
 
-See [TEST-NOTES-v4.45.0.md](releases/TEST-NOTES-v4.45.0.md) for the recorded release results and limitations. Current raw logs are in `src/tests/results/v4.45.0/`. Archived reports preserve the paths used when they were written; use the commands below for the current repository layout.
+See [TEST-NOTES-v4.45.1.md](releases/TEST-NOTES-v4.45.1.md) for the release checks and limitations. Archived reports preserve the paths used when they were written; use the commands below for the current repository layout.
 
 ## Current commands
 
@@ -14,7 +14,12 @@ node --check src/web/theme.js
 node --check src/web/netcode.js
 node --check src/web/game.js
 node --test src/tests/*.test.cjs
+python3 -m unittest discover -s tests -p 'test_deploy.py' -v
 ```
+
+Deployment tests use temporary directories and mock builds, SSH, transfers, and
+server commands; they do not contact the deployment host. If Node.js is unavailable,
+the JavaScript suite also runs with `deno test --allow-read --allow-env src/tests/*.test.cjs`.
 
 On Windows, build with `go build -trimpath -o bin/leqra.exe ./src`. To target a Go test or opt-in fixture, include the package path, for example `go test -run '^TestBrowserFixture$' ./src`.
 
