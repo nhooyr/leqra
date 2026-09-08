@@ -1,0 +1,53 @@
+{
+  "version": "4.21.0",
+  "passed": 16,
+  "checks": [
+    "Giant keeps 23 max pickups and the requested 61-second expiry",
+    "Ultra Wide is 24\u00d714 with 7 starting, 34 max and 90-second pickup expiry",
+    "renaming/tuning roster and adding local P2 do not regenerate the lobby maze",
+    "team/FFA rule edits preserve the lobby maze",
+    "FFA removes tank team selectors instead of showing locked controls",
+    "changing maze size regenerates into the 24\u00d714 Ultra Wide layout",
+    "responsive layout changes resize the same lobby maze instead of regenerating it",
+    "Controls menu shows starting/max pickups and maze-dependent expiry",
+    "P1 and local P2 each receive their own controls feedback beside ammo",
+    "controls/pickup feedback does not change the player-status area height",
+    "a local P2 pickup replaces only P2\u2019s reserved feedback line with pickup details",
+    "window focus loss does not pause local gameplay",
+    "pause-menu action is labeled Controls",
+    "spectator UI uses Spectators/Spectating and omits NO TANK ASSIGNED",
+    "victory score values use the tank/team result colors",
+    "no uncaught browser errors: []"
+  ],
+  "errors": [],
+  "tiers": {
+    "giant": {
+      "dim": [
+        16,
+        14
+      ],
+      "cap": 23,
+      "start": 6,
+      "life": 61
+    },
+    "ultra": {
+      "dim": [
+        24,
+        14
+      ],
+      "cap": 34,
+      "start": 7,
+      "life": 90
+    }
+  },
+  "feedback": {
+    "before": 64,
+    "afterControls": 64,
+    "afterPickup": 64,
+    "p1": "CONTROLS \u00b7 W A S D + Q",
+    "p2": "CONTROLS \u00b7 \u2191 \u2190 \u2193 \u2192 + SPACE",
+    "p2Pickup": "LASER \u00b7 RICOCHETS \u00b7 MAZE-PERIMETER RANGE",
+    "p2Visible": true
+  },
+  "controlsPickupInfo": "7 starting pickups \u00b7 34 maximum on this maze.Uncollected power-ups expire after 90 seconds."
+}

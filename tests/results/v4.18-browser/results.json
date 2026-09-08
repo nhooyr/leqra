@@ -1,16 +1,15 @@
 {
-  "version": "4.19.0",
-  "passed": 9,
+  "version": "4.22.0",
+  "passed": 8,
   "checks": [
-    "Chromium desktop does not receive the Chrome recommendation",
+    "Chromium does not receive the Safari-only browser recommendation",
     "ground pickup expiry uses the 8/3 maze-cap formula (Giant 61s, Ultra Wide 90s)",
     "single-P1 Field Manual places arrow movement above WASD",
     "pause/menu interactions keep canvas and arena aspect ratios synchronized (no horizontal stretch)",
     "dead P1 and P2 remain TANK DOWN rather than becoming Spectating",
-    "losing player receives DEFEAT/results language with no congratulations",
+    "losing player receives red DEFEAT with defeat icon below it and no congratulations",
     "no uncaught Chromium browser errors: []",
-    "desktop Safari/non-Chromium receives a Chrome-for-optimal-experience recommendation",
-    "browser recommendation can be dismissed for the session"
+    "desktop Safari recommends Chrome or Firefox"
   ],
   "errors": [],
   "manual": {
@@ -73,9 +72,13 @@
     "loadouts": "P1ALPHA\u26a0 MISSILE LOCKAMMOTANK DOWNTANK DOWNP2PLAYER 2\u26a0 MISSILE LOCKAMMOTANK DOWNTANK DOWN"
   },
   "result": {
-    "eyebrow": "DEFEAT",
-    "title": "RUST WINS!",
+    "eyebrow": "MATCH RESULTS",
+    "title": "DEFEAT",
     "message": "RUST takes the match. Ready for another battle?",
-    "all": "DEFEAT\n\u2605\nRUST WINS!\n\nRUST\n\nRUST takes the match. Ready for another battle?\n\nALPHA\n0\nRUST\n0\nVAPOR\n0\nEMBER\n0\nPLAY AGAIN \u21bb\nBACK TO ROOM\n\u2192"
+    "all": "MATCH RESULTS\nDEFEAT\n\u2620\n\nRUST WINS\n\nRUST takes the match. Ready for another battle?\n\nALPHA\n0\nRUST\n0\nVAPOR\n0\nEMBER\n0\nBACK TO ROOM\n\u2192\nPLAY AGAIN \u21bb",
+    "emblem": "\u2620",
+    "color": "rgb(255, 79, 95)",
+    "titleTop": 339.3125,
+    "emblemTop": 398.3125
   }
 }

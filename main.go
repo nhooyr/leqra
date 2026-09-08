@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const version = "4.20.0"
+const version = "4.22.0"
 
 //go:embed web/*
 var embeddedWeb embed.FS
@@ -122,7 +122,7 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": 1, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
+		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": 1, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unshareRoom": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
@@ -142,7 +142,7 @@ func (a *App) handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		mux.ServeHTTP(w, r)
 	})
 }

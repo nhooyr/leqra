@@ -1,0 +1,27 @@
+{
+  "version": "4.21.0",
+  "passed": 12,
+  "checks": [
+    "document title uses lowercase leqra",
+    "header wordmark is exactly lowercase leqra",
+    "meta description uses leqra",
+    "landing hero uses leqra",
+    "canonical public browser API is leqra v4.21.0",
+    "browser helper globals use leqra names",
+    "old product-named browser globals are not exposed",
+    "legacy local settings migrate into leqra namespace",
+    "existing leqra setting wins over any legacy value",
+    "legacy reconnect session migrates into leqra namespace",
+    "Controls version footer uses lowercase leqra",
+    "no uncaught browser errors: []"
+  ],
+  "errors": [],
+  "migrated": {
+    "name": "LEGACY PILOT",
+    "muted": "1",
+    "difficulty": "hard",
+    "p2": "LEGACY P2",
+    "wins": "7",
+    "session": "{\"code\":\"OLD\",\"token\":\"tok\",\"name\":\"LEGACY PILOT\",\"spectating\":false,\"at\":1}"
+  }
+}

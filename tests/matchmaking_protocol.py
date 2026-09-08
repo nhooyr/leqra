@@ -105,8 +105,9 @@ async def main():
  viewer=await peer();vw=await viewer.op('join',lambda m:m['type']=='welcome',code=code,name='Match Viewer');check(vw['spectating'],'Fresh match link visitor cannot replace a contestant')
  err=await viewer.op('spectate',lambda m:m['type']=='error',spectating=False);check(err['code']=='match_locked','Matched spectator cannot claim a seat')
  err=await viewer.op('return_party',lambda m:m['type']=='error');check(err['code']=='no_party','Unrelated viewer cannot return into a private origin')
- start=len(viewer.messages);await a[0].send('chat',text='Matched together');await viewer.wait(lambda m:m['type']=='chat' and m['message']['text']=='Matched together',after=start);check(True,'Matched room chat includes its viewers')
- await asyncio.sleep(.1);check(not any(m['type']=='chat' and m['message']['text']=='Matched together' for m in late.messages),'Battle chat does not leak into source lobby')
+ party_start=len(a[1].messages);viewer_start=len(viewer.messages);await a[0].send('chat',text='Matched together');await a[1].wait(lambda m:m['type']=='chat' and m.get('channel','room')=='room' and m['message']['text']=='Matched together',after=party_start);check(True,'Matched normal chat stays with the travelling party')
+ await asyncio.sleep(.1);check(not any(m['type']=='chat' and m['message']['text']=='Matched together' for m in viewer.messages[viewer_start:]),'Unrelated match spectators do not receive private party chat')
+ check(not any(m['type']=='chat' and m['message']['text']=='Matched together' for m in late.messages),'Matched party chat does not leak into the source lobby')
  # Resume using the pre-transfer home URL/token (a refresh racing the welcome).
  oldid=w['id'];await a[0].ws.close();await a[0].task
  fresh=await peer();rw=await fresh.op('join',lambda m:m['type']=='welcome',code=home,token=aw[0]['token'],name='Ignored')

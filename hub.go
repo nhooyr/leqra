@@ -764,6 +764,8 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		h.chat(c, m, now)
 	case "rename_room":
 		h.renameRoom(c, m, now)
+	case "unshare":
+		h.unshareRoom(c, now)
 	case "spectate":
 		h.setSpectating(c, m, now)
 	case "swap":

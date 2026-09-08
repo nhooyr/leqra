@@ -1,0 +1,16 @@
+{
+  "version": "4.22.0",
+  "passed": 9,
+  "checks": [
+    "Join-another-room dialog has one Join action and no redundant Create action",
+    "In-match Leave online room action is removed",
+    "Your callsign has no explicit Save button",
+    "Your callsign saves automatically when the field loses focus",
+    "Rules dropdown arrow reserves extra right spacing",
+    "Host sees Unshare room beside room exit controls",
+    "Online room rename saves automatically on blur",
+    "Unshare keeps room code, roster and local Player 2 intact offline",
+    "No uncaught browser errors in v4.22 room UX: []"
+  ],
+  "errors": []
+}
