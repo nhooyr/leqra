@@ -111,7 +111,7 @@ test('lobby selectors follow mode in reading order and replace the Rules fields'
  assert.ok(html.indexOf('id="roomModeChoices"')<html.indexOf('id="roomTeamMode"'));assert.ok(html.indexOf('id="roomTeamMode"')<html.indexOf('id="roomMapSize"'));assert.equal((html.match(/id="roomMapSize"/g)||[]).length,1);
  $('roomTeamMode').onchange({target:{value:'teams'}});assert.equal(s.currentRules().teamMode,'teams');$('roomMapSize').onchange({target:{value:'giant'}});assert.equal(s.currentRules().mapSize,'giant');
  assert.doesNotMatch(declaration('initFeatures'),/rule-(teamMode|mapSize)/);
- const index=readFileSync(path.join(__dirname,'../web/index.html'),'utf8');assert.match(index,/id="startRoomBtn"[^>]*><span>START BUTTON<\/span>/);assert.match(declaration('renderOnlineRoom'),/firstElementChild.textContent='START BUTTON'/);
+ const index=readFileSync(path.join(__dirname,'../web/index.html'),'utf8');assert.match(index,/id="startRoomBtn"[^>]*><span>GO<\/span>/);assert.match(declaration('renderOnlineRoom'),/firstElementChild.textContent='GO'/);
 });
 
 test('Hill and Survival defaults agree with presets while custom targets survive setup edits',()=>{

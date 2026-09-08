@@ -400,7 +400,7 @@ func (h *Hub) roomMessage(r *Room) map[string]any {
 			players = append(players, entry)
 		}
 	}
-	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.Game.lineupError(r.Players), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
+	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "canRestartWave": r.canRestartSurvivalWave(), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.Game.lineupError(r.Players), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
 }
 func (h *Hub) broadcastRoom(r *Room) {
 	// Every controller receives the same metadata. Encode it once into immutable
@@ -735,6 +735,8 @@ type clientMessage struct {
 	T          float64     `json:"t"`
 	Version    string      `json:"version"`
 	Protocol   int         `json:"protocol"`
+	Generation int         `json:"generation"`
+	Wave       int         `json:"wave"`
 	Input
 }
 
@@ -794,6 +796,8 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		h.returnToParty(c, now)
 	case "rematch":
 		h.requestQueueRematch(c, now)
+	case "restart_wave":
+		h.restartSurvivalWave(c, m, now)
 	case "chat":
 		h.chat(c, m, now)
 	case "rename_room":
@@ -1216,9 +1220,16 @@ func (h *Hub) tick(now time.Time) {
 			}
 		}
 		oldPhase := r.Game.Phase
+		oldSurvivalStatus := ""
+		if s := r.Game.survivalState(); s != nil {
+			oldSurvivalStatus = s.Status
+		}
 		r.Game.step(tickDT, inputs, r.Players)
 		h.finishQueueForfeit(r)
 		if oldPhase != r.Game.Phase {
+			changed = true
+		}
+		if s := r.Game.survivalState(); s != nil && s.Status != oldSurvivalStatus {
 			changed = true
 		}
 		if changed {

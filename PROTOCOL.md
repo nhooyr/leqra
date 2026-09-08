@@ -1,10 +1,10 @@
-# leqra v4.32.0 — current game protocol (protocol 1)
+# leqra v4.33.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.32.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.33.0**:
 
 ```json
-{"type":"server_hello","version":"4.32.0","protocol":1}
-{"type":"client_hello","version":"4.32.0","protocol":1}
+{"type":"server_hello","version":"4.33.0","protocol":1}
+{"type":"client_hello","version":"4.33.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -52,6 +52,16 @@ A clear requires a surviving squad tank. It adds one point to every remaining sq
 Nonfinal clears keep `phase:"playing"` with `status:"break"` for four seconds. The server clears projectiles, pickups and held input, and rejects firing/movement during the break. Defeated enemy snapshots remain present for the lineup until the next wave replaces them. At its end, available squad members receive fresh tanks, pickups reseed and the next wave starts with a fresh timer. The maze and generation remain unchanged throughout the run. The client uses the wave status and tank life serials to discard stale input and cosmetic shots.
 
 Completed `matchStats` includes a frozen `survival` object of the same shape. Its player rows describe squad participants only, and its live duration excludes wave breaks. Generated enemies are not report participants, while destroying them still credits the attacking squad pilot's elimination count. The final wave state and report must be copied for snapshots rather than aliased to mutable simulation data.
+
+## Survival wave retries
+
+The host of a private Survival room can send `{"type":"restart_wave","generation":N,"wave":W}` for the current wave. The server validates the current generation and wave, available squad, room membership and host authority. The command is accepted during an active wave/countdown or after a lost run; lobbies, completed runs and between-wave breaks cannot retry. Existing version, action-rate, matchmaking and away-party restrictions apply. Rejections identify `action:"restart_wave"`.
+
+A retry increments the simulation generation while retaining the same world and navigation data. It resends the reliable world state so clients discard stale predictions, effects, input and prior results. The current wave's enemies/boss and timer reset, available squad members receive fresh tanks, and the phase becomes a 2.6-second countdown. `wavesCleared` and prior-wave scores remain intact. A participant-keyed checkpoint restores statistics to the start of the wave, excluding the discarded attempt's elapsed time and combat totals. Removed or replacement participants cannot inherit each other's statistics. Rule changes, preset application and returning the room to its lobby invalidate its checkpoint. Room snapshots expose `canRestartWave` so the client can hide an invalid retry action; host authorization is still checked independently.
+
+## Adding bots
+
+An `add` command with `kind:"bot"` may omit `difficulty`. The server then copies the last bot's difficulty in active roster/seat order, defaulting to `normal` when no bot exists. It resolves this after earlier ordered roster edits, so the browser does not need to guess from a stale room snapshot. An explicitly supplied difficulty retains its existing validation and behavior. The Add Bot UI uses the omitted-field form; per-bot difficulty editing remains available.
 
 ## Map-dependent timers and machine-gun budget
 

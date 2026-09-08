@@ -193,7 +193,8 @@
     const prev=prior?.tankMap.get(id),span=prior?(newestTime(items)-prior.netTime)/1000:0;
     if(prev?.alive&&prev.spawnSerial===b.spawnSerial&&span>0&&span<.25){
      // A tank can rotate in place: positional velocity alone loses that motion.
-     const omega=clamp(delta(prev.angle,b.angle)/span,-7.25,7.25);
+     const stacks=b.speedTime>0?clamp(b.speedStacks||1,1,5):0,maxTurn=5.8*(1+.25*stacks);
+     const omega=clamp(delta(prev.angle,b.angle)/span,-maxTurn,maxTurn);
      t.angle=b.angle+omega*dt;
     }
    }else moveTank(t,0,0); // Keep interpolated corners outside solid walls too.
@@ -223,12 +224,14 @@
     if(!pred){p.until=now+Math.max(0,t.cooldown||0)*1000;p.total=t.cooldownTotal||p.total;}
     for(const v of this.previews.values())if(v.owner===t.id&&v.shot<=serial)v.accepted=true;
     p.serial=serial;p.next=Math.max(p.next,serial);
-   }else if(![...this.previews.values()].some(v=>v.owner===t.id&&!v.accepted)){
+   }else if(!this.hasPending(t.id)){
     // The deadline may approach, but never sawtooth back up for one volley.
     p.until=Math.min(p.until,now+Math.max(0,t.cooldown||0)*1000);
    }
    return p;
   }
+  // Snapshot sync can find a pending shot without materializing every preview.
+  hasPending(id){for(const v of this.previews.values())if(v.owner===id&&!v.accepted)return true;return false;}
   remove(id){this.pilots.delete(id);for(const [k,v]of this.previews)if(v.owner===id)this.previews.delete(k);}
   cooldown(t,now){const p=this.pilots.get(t.id);return p?Math.max(0,(p.until-now)/1000):Math.max(0,t.cooldown||0);}
   machineRounds(t){
@@ -263,7 +266,7 @@
    for(const [k,v]of this.previews)if(now>v.expires||!activeIDs.has(v.owner))this.previews.delete(k);
    for(const [k,until]of this.soundKeys)if(now>until)this.soundKeys.delete(k);
    for(const id of this.pilots.keys())if(!activeIDs.has(id))this.remove(id);
-   for(const p of this.pilots.values()){let pending=false;for(const v of this.previews.values())if(v.owner!==undefined&&this.pilots.get(v.owner)===p&&!v.accepted){pending=true;break;}if(!pending)p.next=p.serial;}
+   for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
  return Object.freeze({expandMachineBullets,STEP,STEP_MS,clamp,delta,neutral,controlsEqual,move,Predictor,SnapshotBuffer,ShotPresentation});

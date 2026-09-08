@@ -213,6 +213,7 @@ func (g *Game) nextSurvivalWave(players [maxTanks]*Player) {
 	g.spawnSurvivalEnemies(players)
 	g.clearSurvivalInput(players)
 	g.seedPickups()
+	g.checkpointSurvivalWave()
 	g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d · %d enemies", s.Wave, s.EnemiesRemaining))
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"math"
+	"reflect"
 	"time"
 )
 
@@ -264,7 +265,11 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	previousTeamCount := activeTeamCount(r.Game.settings())
-	r.Game.Rules = normalizedRules(rules)
+	nextRules := normalizedRules(rules)
+	if !reflect.DeepEqual(r.Game.settings(), nextRules) {
+		r.Game.survivalCheckpoint = nil
+	}
+	r.Game.Rules = nextRules
 	r.Game.Clock = float64(rules.TimeLimit)
 	if rules.TeamMode == "teams" && previousTeamCount != activeTeamCount(rules) {
 		balanceRoomTeams(r)
@@ -338,6 +343,7 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 	r.Game.Bullets = []*Bullet{}
 	r.Game.Pickups = []*Pickup{}
 	r.Game.Objectives = nil
+	r.Game.survivalCheckpoint = nil
 	r.Game.Phase = "lobby"
 	resetReady(r)
 	r.LastAction = now

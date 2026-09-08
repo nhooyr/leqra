@@ -122,6 +122,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		r.Game.Pickups = []*Pickup{}
 		r.Game.Tanks = [maxTanks]*Tank{}
 		r.Game.Objectives = nil
+		r.Game.survivalCheckpoint = nil
 		r.Game.Scores = [maxTanks]int{}
 		resetReady(r)
 		r.LastAction = now
@@ -166,7 +167,21 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			fail("bad_kind", "Add a bot or a second local player.")
 			return
 		}
-		if m.Kind == "bot" && !validDifficulty(m.Difficulty) {
+		difficulty := m.Difficulty
+		if m.Kind == "bot" && difficulty == "" {
+			difficulty = "normal"
+			// Roster order is seat order. Resolve against the current roster so
+			// a queued difficulty edit is reflected by the next Add Bot action.
+			for id := len(r.Players) - 1; id >= 0; id-- {
+				if p := r.Players[id]; p != nil && p.Kind == "bot" {
+					if validDifficulty(p.Difficulty) {
+						difficulty = p.Difficulty
+					}
+					break
+				}
+			}
+		}
+		if m.Kind == "bot" && !validDifficulty(difficulty) {
 			fail("bad_difficulty", "Choose Chill, Normal, Fierce, or Godlike.")
 			return
 		}
@@ -194,7 +209,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 				name = "PLAYER 2"
 			}
 		}
-		p := &Player{ID: slot, Member: r.NextMember, Name: cleanName(name), Kind: m.Kind, Owner: c.player.ID, Controller: c.player, Difficulty: m.Difficulty, Ready: true, InputAt: now}
+		p := &Player{ID: slot, Member: r.NextMember, Name: cleanName(name), Kind: m.Kind, Owner: c.player.ID, Controller: c.player, Difficulty: difficulty, Ready: true, InputAt: now}
 		// Decide against the current authoritative roster, not a stale client
 		// count. The host can change this assignment after the tank is added.
 		p.Team = joinTeam(r)

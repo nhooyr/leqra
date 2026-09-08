@@ -50,6 +50,7 @@ type matchStatLedger struct {
 
 func (g *Game) resetMatchStats() {
 	g.stats = &matchStatLedger{members: make(map[*Player]*PlayerMatchStats)}
+	g.survivalCheckpoint = nil
 	g.matchReport = nil
 	g.matchReportWire = nil
 }
