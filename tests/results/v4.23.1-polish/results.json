@@ -1,0 +1,25 @@
+{
+  "version": "4.23.1",
+  "passed": 18,
+  "checks": [
+    "Local startup opens no WebSocket",
+    "Local room has no New local room action",
+    "Version mismatch asks the player to reload before online play",
+    "Version mismatch aborts online room setup",
+    "Teams activation balances four tanks 2 vs 2",
+    "Explicit Share Room Online opens exactly one WebSocket",
+    "Online connection completes the v4.23 version handshake",
+    "Unsharing preserves the displayed maze",
+    "Focused chat suppresses gameplay controls",
+    "Visible but unfocused chat allows maze input",
+    "Refocusing chat suppresses maze input again",
+    "Online pause menu includes Leave match",
+    "Leave match is reset hidden after switching from online to local play",
+    "Local PLAY AGAIN uses the same neon green treatment as REMATCH",
+    "Shutdown fixture queued the server notice",
+    "Server shutdown returns the online client Home with a visible notice",
+    "Server shutdown opens a pronounced blocking notice",
+    "No uncaught browser errors: []"
+  ],
+  "errors": []
+}

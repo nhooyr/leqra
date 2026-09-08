@@ -576,3 +576,16 @@ body.ios-webkit .touch-controls{-webkit-touch-callout:none}
 .room-code-editor{grid-template-columns:minmax(0,1fr)}
 
 .volume-label{display:flex;align-items:center;justify-content:space-between;gap:12px;font:10px var(--mono);letter-spacing:1px;color:var(--text-soft);margin:2px 0 9px}.volume-label strong{font:12px var(--mono);color:var(--accent-ink);font-variant-numeric:tabular-nums}.volume-slider{display:block;width:100%;height:28px;margin:0;accent-color:var(--accent-ink);cursor:pointer}.volume-slider:focus-visible{outline:2px solid var(--accent-ink);outline-offset:3px}
+
+/* v4.23.1: result and shutdown emphasis */
+.victory-actions .result-replay{background:#39ff88;color:#06160d;border-color:#72ffaa;box-shadow:0 3px 0 #15994d,0 0 22px rgb(57 255 136 / .30);font-weight:900}
+.victory-actions .result-replay:hover{background:#5dff9f;filter:none}
+.victory-actions .result-replay:disabled{background:#1d6f44;color:#b8ecd0;border-color:#317a55;box-shadow:none}
+.shutdown-dialog{width:min(620px,calc(100vw - 24px));border:2px solid #ff4f5f;border-radius:12px;background:#16090b;color:#fff;text-align:center;padding:clamp(22px,5vw,42px);box-shadow:0 0 0 100vmax rgb(0 0 0 / .78),0 0 44px rgb(255 79 95 / .5)}
+.shutdown-dialog::backdrop{background:rgb(0 0 0 / .82);backdrop-filter:blur(4px)}
+.shutdown-dialog .shutdown-mark{width:72px;height:72px;margin:0 auto 14px;border:3px solid #ff4f5f;border-radius:50%;display:grid;place-items:center;font:900 48px/1 var(--mono);color:#ff4f5f;box-shadow:0 0 28px rgb(255 79 95 / .45)}
+.shutdown-dialog .eyebrow{color:#ff8e98;font-weight:900;letter-spacing:2.5px}
+.shutdown-dialog h2{margin:8px 0 14px;font-size:clamp(30px,7vw,54px);line-height:.95;color:#ff4f5f;text-shadow:0 0 24px rgb(255 79 95 / .35)}
+.shutdown-dialog p{font-size:clamp(15px,3vw,19px);line-height:1.55;color:#fff;margin:0 auto 16px;max-width:48ch}
+.shutdown-dialog strong{display:block;color:#ffd2d6;font:900 12px/1.5 var(--mono);letter-spacing:1.3px;margin-bottom:22px}
+.shutdown-dialog .shutdown-ack{min-width:170px;background:#ff4f5f;color:#fff;border-color:#ff8791;box-shadow:0 3px 0 #9d2530,0 0 24px rgb(255 79 95 / .32);font-weight:900}
