@@ -112,7 +112,7 @@ with sync_playwright() as pw:
  if args.roles:
   assert args.local2, '--roles requires --local2'
   # Team-specific handoff trial: choose Teams explicitly (new rooms default FFA).
-  host.locator('#roomRulesBtn').click();host.locator('#rule-teamMode').select_option('teams');host.locator('#applyRulesBtn').click()
+  host.locator('#roomTeamMode').select_option('teams');host.wait_for_function('(value)=>leqra.getState().rules.teamMode===value',arg='teams');host.locator('#roomRulesBtn').click();host.locator('#applyRulesBtn').click()
   host.wait_for_function('leqra.getState().rules.teamMode==="teams"')
   host.locator('#roomRoster [data-team="2"]').select_option('3')
   host.wait_for_function('leqra.getState().room.players.some(p=>p.id===2&&p.team===3)')

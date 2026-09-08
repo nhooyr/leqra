@@ -12,6 +12,8 @@ import (
 func TestSurvival430BossPreviewMatchesAuthoritativeGrants(t *testing.T) {
 	var fixtures []struct {
 		Name          string   `json:"name"`
+		Difficulty    string   `json:"difficulty"`
+		BossName      string   `json:"bossName"`
 		Wave          int      `json:"wave"`
 		PickupRate    string   `json:"pickupRate"`
 		Weapons       []string `json:"weapons"`
@@ -33,6 +35,9 @@ func TestSurvival430BossPreviewMatchesAuthoritativeGrants(t *testing.T) {
 		t.Run(fixture.Name, func(t *testing.T) {
 			g := newGame(430)
 			g.Rules.PickupRate, g.Rules.Weapons = fixture.PickupRate, fixture.Weapons
+			if survivalBossDifficulty(fixture.Wave) != fixture.Difficulty || survivalBossName(fixture.Wave) != fixture.BossName {
+				t.Fatal("boss difficulty/name differs from browser preview")
+			}
 			boss := &Tank{Alive: true}
 			g.survivalBossPower(boss, fixture.Wave)
 			if boss.ShieldCharges != fixture.ShieldCharges || boss.SpeedStacks != fixture.SpeedStacks || boss.Power != fixture.Weapon {

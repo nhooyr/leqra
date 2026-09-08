@@ -27,9 +27,9 @@ with sync_playwright() as pw:
   check(p.evaluate('leqra.version')=='3.9.0','Version 3.9.0 starts without errors')
   check(p.evaluate("leqra.getState().rules.mapSize==='large' && leqra.getState().rules.pickupRate==='superfast'"),'12x10 and Super fast defaults retained')
   check(p.evaluate("leqra.getState().rules.weapons.includes('scope') && leqra.getState().rules.weapons.length===9"),'Scope remains included with all nine default pickups')
-  p.locator('#roomRulesBtn').click();check(p.locator('#rule-mapSize option').count()==5,'All five map choices visible');check(p.locator('[data-weapon-toggle="scope"]').is_checked(),'Host can enable/disable Scope in rules')
+  p.locator('#roomRulesBtn').click();check(p.locator('#roomMapSize option').count()==6,'All six map choices visible');check(p.locator('[data-weapon-toggle="scope"]').is_checked(),'Host can enable/disable Scope in rules')
   for name,w,h,start,cap in sizes:
-   p.locator('#rule-mapSize').select_option(name)
+   p.locator('[data-close-dialog="rulesDialog"]').click();p.locator('#roomMapSize').select_option(name);p.locator('#roomRulesBtn').click()
    check(p.locator('#rule-pickup-density').inner_text().startswith(f'{start} starting pickups · {cap} maximum'),f'{name} live density explanation')
    p.locator('#applyRulesBtn').click();s=p.evaluate('leqra.getState()')
    check((s['world']['cols'],s['world']['rows'],s['pickupCount'])==(w,h,start),f'{name} local preview dimensions and starts')
@@ -73,7 +73,7 @@ with sync_playwright() as pw:
    mobile=w<760 or h<620;c=b.new_context(viewport={'width':w,'height':h},has_touch=mobile,is_mobile=mobile,device_scale_factor=2 if mobile else 1);p=load(c)
    pixels=p.evaluate('''()=>{const T=__test;T.renderPowerLegend();return [...document.querySelectorAll('.power-list canvas[data-power-icon]')].map(e=>{const fresh=document.createElement('canvas');fresh.width=e.width;fresh.height=e.height;const c=fresh.getContext('2d');c.setTransform(e.width/26,0,0,e.height/26,e.width/2,e.height/2);T.powerIcon(e.dataset.powerIcon,c);return{name:e.dataset.powerIcon,match:e.toDataURL()===fresh.toDataURL()};});}''')
    check(len(pixels)==9 and all(e['match'] for e in pixels),f'{w}x{h}: all nine legend icons pixel-match shared maze routine')
-   p.locator('#roomRulesBtn').click();p.locator('#rule-mapSize').select_option('giant');p.screenshot(path=str(out/f'rules-{w}x{h}.png'));p.locator('#applyRulesBtn').click()
+   p.locator('#roomMapSize').select_option('giant');p.wait_for_function('(value)=>leqra.getState().rules.mapSize===value',arg='giant');p.locator('#roomRulesBtn').click();p.screenshot(path=str(out/f'rules-{w}x{h}.png'));p.locator('#applyRulesBtn').click()
    p.evaluate("__test.addRoomSeat('local')");p.locator('#startRoomBtn').click()
    result=p.evaluate('''()=>{const T=__test;T.setPhase('playing');T.clearBullets();for(const t of T.tanks){t.human=true;t.invulnerable=999;t.cooldown=0;}
     const rect=()=>{const b=document.querySelector('#arenaWrap').getBoundingClientRect();return [b.width,b.height]};T.updateHUD(true);const before=rect();

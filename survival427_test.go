@@ -175,7 +175,7 @@ func TestSurvival427ProgressionAndBossRespectsAllowedPowerups(t *testing.T) {
 	g := r.Game
 	g.startMatch(r.Players)
 	g.Phase = "playing"
-	for wave := 1; wave <= 15; wave++ {
+	for wave := 1; wave <= 20; wave++ {
 		s := g.survivalState()
 		if s.Wave != wave || s.EnemiesRemaining != min(4, 2+(wave-1)/2) || s.Boss != (wave%5 == 0) {
 			t.Fatalf("wrong wave progression: %+v", s)
@@ -187,10 +187,17 @@ func TestSurvival427ProgressionAndBossRespectsAllowedPowerups(t *testing.T) {
 			}
 			if tank.SurvivalBoss {
 				bosses++
-				if tank.Name != "GODLIKE BOSS" || tank.Difficulty != "godlike" || tank.ShieldCharges != 3 || tank.SpeedStacks != 1 || tank.Power != []string{"homing", "cannon", "laser"}[wave/5-1] {
+				strength := min(3, wave/5)
+				wantSkill := []string{"normal", "hard", "godlike"}[strength-1]
+				wantName := []string{"NORMAL BOSS", "FIERCE BOSS", "GODLIKE BOSS"}[strength-1]
+				wantSpeed := 0
+				if strength >= 2 {
+					wantSpeed = 1
+				}
+				if tank.Name != wantName || tank.Difficulty != wantSkill || tank.ShieldCharges != strength || tank.SpeedStacks != wantSpeed || tank.Power != []string{"homing", "cannon", "laser", "homing"}[wave/5-1] {
 					t.Fatalf("wrong boss loadout: %+v", tank)
 				}
-			} else if tank.Difficulty != survivalDifficulty(wave) {
+			} else if tank.Difficulty != []string{"easy", "normal", "hard", "godlike"}[(wave-1)/5] {
 				t.Fatal("wrong raider difficulty")
 			}
 		}
@@ -270,16 +277,25 @@ func TestSurvival427RulesAndRosterLimitsAreAtomic(t *testing.T) {
 	}
 }
 
-func TestSurvival427BotsAloneCannotStart(t *testing.T) {
-	_, clients, r := survivalRoom427(t, 1)
-	r.Players[0].Kind = "bot"
-	if canStart(r) || r.Game.lineupError(r.Players) == "" {
-		t.Fatal("bot-only survival can start")
+func TestSurvival427BotsCanStartButUnavailableSquadsCannot(t *testing.T) {
+	h, clients, r := survivalRoom427(t, 1)
+	h.configureRoom(clients[0], clientMessage{Type: "add", Kind: "bot", Difficulty: "godlike"}, time.Now())
+	spectate := true
+	h.setSpectating(clients[0], clientMessage{Spectating: &spectate}, time.Now())
+	if !clients[0].player.Spectating || !canStart(r) || r.Game.lineupError(r.Players) != "" {
+		t.Fatal("spectating host cannot start a bot-only squad")
 	}
-	r.Players[0].Kind = "human"
-	clients[0].player.Client = nil
-	if canStart(r) {
-		t.Fatal("disconnected-only survival can start")
+	var empty [maxTanks]*Player
+	if r.Game.lineupError(empty) == "" {
+		t.Fatal("empty survival squad can start")
+	}
+	empty[0] = &Player{ID: 0, Kind: "human", Team: 1}
+	if r.Game.lineupError(empty) == "" {
+		t.Fatal("disconnected-only survival squad can start")
+	}
+	action(t, h, clients[0], map[string]any{"type": "start"})
+	if r.Game.Phase != "countdown" || r.Game.survivalState() == nil {
+		t.Fatal("bot-only start did not launch")
 	}
 }
 
@@ -316,7 +332,7 @@ func TestSurvival427JoinAndSwapCannotOverwriteWaveEnemies(t *testing.T) {
 	}
 }
 
-func TestSurvival427DepartureEndsBotOnlyRunAndReconnectWaitsForWave(t *testing.T) {
+func TestSurvival427DepartureKeepsBotsRunningAndReconnectWaitsForWave(t *testing.T) {
 	h, clients, r := survivalRoom427(t, 2)
 	h.configureRoom(clients[0], clientMessage{Type: "add", Kind: "bot", Difficulty: "normal"}, time.Now())
 	g := r.Game
@@ -340,8 +356,17 @@ func TestSurvival427DepartureEndsBotOnlyRunAndReconnectWaitsForWave(t *testing.T
 	h.removeClient(clients[0])
 	h.removeClient(resumed)
 	g.step(tickDT, [maxTanks]Input{}, r.Players)
-	if g.survivalState().Status != "lost" || g.Phase != "matchOver" {
-		t.Fatal("friendly bots continued an abandoned run")
+	if g.survivalState().Status != "wave" || g.Phase != "playing" {
+		t.Fatal("departing humans ended a live bot squad's run")
+	}
+	for _, tank := range g.Tanks {
+		if tank != nil && !tank.SurvivalEnemy {
+			tank.Alive = false
+		}
+	}
+	g.stepSurvival(r.Players)
+	if g.survivalState().Status != "lost" {
+		t.Fatal("wiped bot squad did not lose")
 	}
 }
 
@@ -394,7 +419,7 @@ func TestSurvival427PublishAndPresetRejectExcessBeforeMutation(t *testing.T) {
 	}
 }
 
-func TestSurvival427SpectatingLastHumanEndsRunWithoutEnemyOwnership(t *testing.T) {
+func TestSurvival427SpectatingLastHumanKeepsBotsWithoutEnemyOwnership(t *testing.T) {
 	h, clients, r := survivalRoom427(t, 1)
 	h.configureRoom(clients[0], clientMessage{Type: "add", Kind: "bot", Difficulty: "godlike"}, time.Now())
 	r.Game.startMatch(r.Players)
@@ -402,8 +427,8 @@ func TestSurvival427SpectatingLastHumanEndsRunWithoutEnemyOwnership(t *testing.T
 	spectate := true
 	h.setSpectating(clients[0], clientMessage{Spectating: &spectate}, time.Now())
 	r.Game.step(tickDT, [maxTanks]Input{}, r.Players)
-	if !clients[0].player.Spectating || r.Game.survivalState().Status != "lost" {
-		t.Fatal("last human spectating did not end run")
+	if !clients[0].player.Spectating || r.Game.survivalState().Status != "wave" || r.Game.Phase != "playing" {
+		t.Fatal("last human spectating stopped a live bot squad")
 	}
 	for _, p := range r.Players {
 		if p != nil && p.Kind != "bot" {

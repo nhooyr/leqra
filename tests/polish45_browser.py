@@ -37,7 +37,7 @@ with sync_playwright() as pw:
   check(speed['stacks']==5 and speed['time']==6 and 'SPD×5' in speed['buff'],'Super Speed stacks to five and refreshes one timer')
   # Team format clears FFA paint and forces all tank paint to team choices.
   p.locator('[data-tank-color="0"]').select_option('7');check(p.evaluate('__test.localRoom.players.find(p=>p.id===0).colorIndex')==7,'FFA tank paint can be customized')
-  p.locator('#roomRulesBtn').click();p.locator('#rule-teamMode').select_option('teams');p.locator('#rule-teamColor1').select_option('4');p.locator('#rule-teamColor2').select_option('6');p.locator('#applyRulesBtn').click()
+  p.locator('#roomTeamMode').select_option('teams');p.wait_for_function('(value)=>leqra.getState().rules.teamMode===value',arg='teams');p.locator('#roomRulesBtn').click();p.locator('#rule-teamColor1').select_option('4');p.locator('#rule-teamColor2').select_option('6');p.locator('#applyRulesBtn').click()
   check(p.locator('[data-tank-color]').count()==0,'individual tank color controls disappear in Teams')
   state=p.evaluate('''()=>({rules:__test.currentRules(),players:__test.localRoom.players.map(p=>({id:p.id,team:p.team,colorIndex:p.colorIndex,color:__test.localRoom.players.find(x=>x.id===p.id)&&document.querySelector(`[data-seat="${p.id}"]`)?.style.getPropertyValue('--player')}))})''')
   check(all(x.get('colorIndex') is None for x in state['players']),'switching to Teams clears hidden FFA paint overrides')
@@ -57,7 +57,7 @@ with sync_playwright() as pw:
   guest.locator(f'[data-tank-color="{gid}"]').select_option('6');wait(host,f'__test.online.roomData.players.find(p=>p.id==={gid}).colorIndex===6')
   check(host.evaluate(f'__test.online.roomData.players.find(p=>p.id==={gid}).color')=='#75f0cb','self-selected FFA color replicates to room')
   # Convert to teams and verify both clients lose personal color controls and server clears override.
-  host.locator('#roomRulesBtn').click();host.locator('#rule-teamMode').select_option('teams');host.locator('#rule-teamColor1').select_option('0');host.locator('#rule-teamColor2').select_option('1');host.locator('#applyRulesBtn').click();wait(guest,'__test.online.roomData.rules.teamMode==="teams"')
+  host.locator('#roomTeamMode').select_option('teams');host.wait_for_function('(value)=>leqra.getState().rules.teamMode===value',arg='teams');host.locator('#roomRulesBtn').click();host.locator('#rule-teamColor1').select_option('0');host.locator('#rule-teamColor2').select_option('1');host.locator('#applyRulesBtn').click();wait(guest,'__test.online.roomData.rules.teamMode==="teams"')
   wait(host,"document.querySelectorAll('[data-tank-color]').length===0");wait(guest,"document.querySelectorAll('[data-tank-color]').length===0");check(True,'Teams lock individual paint for host and guest')
   check(guest.evaluate(f'__test.online.roomData.players.find(p=>p.id==={gid}).colorIndex==null'),'server clears former FFA paint when Teams begins')
   check(guest.evaluate(f'__test.online.roomData.players.find(p=>p.id==={gid}).color')=='#ff9679','remote team tank matches host-selected Team 2 color')

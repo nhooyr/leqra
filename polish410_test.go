@@ -80,7 +80,7 @@ func Test410BotsIgnoreHarmlessFriendlyGrenadesButAvoidOwnAndDangerous(t *testing
 }
 
 func Test410Version(t *testing.T) {
-	if version != "4.30.0" {
+	if version != "4.31.0" {
 		t.Fatalf("version=%q", version)
 	}
 }

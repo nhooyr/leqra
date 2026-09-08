@@ -49,6 +49,9 @@ func TestMatchmakingCatalogRules(t *testing.T) {
 	for _, d := range queueDefinitions {
 		t.Run(d.Key, func(t *testing.T) {
 			r := queueRules(d)
+			if d.Mode == "koth" && (d.Target != 30 || r.ScoreTarget != 30) {
+				t.Fatal("Hill matchmaking must default to 30 points in both the catalog and match rules")
+			}
 			if err := validateRules(r); err != nil {
 				t.Fatal(err)
 			}

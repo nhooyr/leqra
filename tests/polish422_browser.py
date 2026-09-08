@@ -11,7 +11,7 @@ def check(ok,label):
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');c=b.new_context(viewport={'width':1200,'height':900});p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={};const st={getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]};Object.defineProperty(window,'localStorage',{value:st});Object.defineProperty(window,'sessionStorage',{value:st});}""")
- p.add_script_tag(content=(web/'theme.js').read_text());p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.30.0'")
+ p.add_script_tag(content=(web/'theme.js').read_text());p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.31.0'")
  # Callsign is save-on-blur and there are no explicit Save buttons.
  check(p.locator('#roomCallsignForm button').count()==0 and p.locator('#menuCallsignForm button').count()==0,'Callsign editors no longer require explicit Save buttons')
  p.locator('#roomCallsign').fill('Blur Pilot');p.locator('#roomTitle').click();p.wait_for_function("leqra.getState().room.players.some(p=>p.name==='Blur Pilot')")
@@ -32,4 +32,4 @@ with sync_playwright() as pw:
  world={'width':1008,'height':840,'cols':12,'rows':10,'walls':[{'x':-4,'y':-4,'w':1016,'h':8},{'x':-4,'y':836,'w':1016,'h':8},{'x':-4,'y':-4,'w':8,'h':848},{'x':1004,'y':-4,'w':8,'h':848},{'x':248,'y':-4,'w':8,'h':848}]}
  p.evaluate('(w)=>__test.setWorld(w)',world);check(p.evaluate('__test.wallBetweenCenters(242,420,31,0)') is True,'Ghost overlap across an interior wall is recognized as wall-separated')
  check(not errors,'No uncaught browser errors: '+str(errors));p.screenshot(path=str(out/'v4.22-ui.png'));c.close();b.close()
-report={'version':'4.30.0','passed':len(checks),'checks':checks,'errors':errors};(out/'results.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
+report={'version':'4.31.0','passed':len(checks),'checks':checks,'errors':errors};(out/'results.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))

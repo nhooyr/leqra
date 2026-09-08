@@ -40,6 +40,12 @@ with sync_playwright() as pw:
   selected_mode=values.pop('mode',None)
   if selected_mode is not None:
    p.locator('[data-room-mode="'+selected_mode+'"]').click();p.wait_for_function('(mode)=>leqra.getState().rules.mode===mode',arg=selected_mode)
+  for setting,selector in [('teamMode','#roomTeamMode'),('mapSize','#roomMapSize')]:
+   value=values.pop(setting,None)
+   if value is not None:
+    control=p.locator(selector)
+    if control.is_disabled():assert control.input_value()==str(value)
+    else:control.select_option(str(value));p.wait_for_function('([key,value])=>leqra.getState().rules[key]===value',arg=[setting,value])
   p.locator('#roomRulesBtn').click()
   for key,val in values.items():
    loc=p.locator('#rule-'+key)
@@ -157,7 +163,7 @@ with sync_playwright() as pw:
   p=load(size=size);preset(p,3)
   for button in ['roomRulesBtn','roomPresetsBtn','roomControlsBtn','startRoomBtn']:
    p.locator('#'+button).scroll_into_view_if_needed();hit=p.locator('#'+button).evaluate('(e)=>{const r=e.getBoundingClientRect();const h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return h===e||e.contains(h)}');check(hit,f'{size}: {button} reachable and not covered')
-  dismissVictory(p);p.locator('#roomRulesBtn').click();p.locator('#rule-mapSize').select_option('compact');p.locator('#applyRulesBtn').scroll_into_view_if_needed();check(p.locator('#applyRulesBtn').is_visible(),f'{size}: rules form scrolls to Apply');screenshot(p,f'rules-{size[0]}x{size[1]}');p.locator('#applyRulesBtn').click()
+  dismissVictory(p);p.locator('#roomMapSize').select_option('compact');p.wait_for_function('(value)=>leqra.getState().rules.mapSize===value',arg='compact');p.locator('#roomRulesBtn').click();p.locator('#applyRulesBtn').scroll_into_view_if_needed();check(p.locator('#applyRulesBtn').is_visible(),f'{size}: rules form scrolls to Apply');screenshot(p,f'rules-{size[0]}x{size[1]}');p.locator('#applyRulesBtn').click()
   p.locator('#roomControlsBtn').click();p.locator('[data-bind="1:fire"]').click();p.keyboard.press('KeyL');check(p.locator('[data-bind="1:fire"]').inner_text()=='L',f'{size}: remapping works in compact dialog');screenshot(p,f'controls-{size[0]}x{size[1]}');close(p,'controls')
   dismissVictory(p);p.locator('#roomPresetsBtn').click();p.locator('#presetName').fill('Responsive setup');p.locator('#savePresetBtn').click();check('saved' in p.locator('#presetsNotice').inner_text().lower(),f'{size}: custom preset can be saved');close(p,'presets')
   p.locator('#roomScreen').evaluate('(e)=>e.scrollTop=0');screenshot(p,f'room-{size[0]}x{size[1]}');start(p)

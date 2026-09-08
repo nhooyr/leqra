@@ -1,14 +1,14 @@
-# leqra v4.30.0
+# leqra v4.31.0
 
-Adds upcoming boss equipment previews to Survival, live enemy strength labels, and separate tank rows in THE LINEUP. The machine-gun ammo display clearly distinguishes its remaining three-second firing budget from the regular equip timer. Wrapped rules-summary lines start without a separator. The previous CTF, mobile, chat and power-up fixes are retained.
+Fixes the lingering maze shake after Survival losses and keeps defeated enemies listed between waves. Survival now supports all-bot squads and introduces stronger enemies gradually through Normal, Fierce and Godlike bosses. Battle format and map size move into the lobby, Hill defaults to 30 points, and remote/bot power-up icons sit below their names.
 
-See [UPDATE-v4.30.0.md](UPDATE-v4.30.0.md) for changes and upgrade commands and [TEST-NOTES-v4.30.0.md](TEST-NOTES-v4.30.0.md) for verification. Earlier versioned guides remain available as release history.
+See [UPDATE-v4.31.0.md](UPDATE-v4.31.0.md) for changes and upgrade commands and [TEST-NOTES-v4.31.0.md](TEST-NOTES-v4.31.0.md) for verification. Earlier versioned guides remain available as release history.
 
 ## PWA and online lifecycle
 
 leqra is an installable Progressive Web App with fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.30.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.31.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
 Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
@@ -16,7 +16,7 @@ Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process qu
 
 Retained room/game polish includes the **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams in Elimination/Hill (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
-The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See **UPDATE-v4.26.0.md** for that release and its physical-device testing limits; the current changes and verification are in **UPDATE-v4.30.0.md** and **TEST-NOTES-v4.30.0.md**.
+The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See **UPDATE-v4.26.0.md** for that release and its physical-device testing limits; the current changes and verification are in **UPDATE-v4.31.0.md** and **TEST-NOTES-v4.31.0.md**.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -52,7 +52,7 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.30.0.md** for current behavior and installation and **TEST-NOTES-v4.30.0.md** for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
+statistics remain intact. See **UPDATE-v4.31.0.md** for current behavior and installation and **TEST-NOTES-v4.31.0.md** for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
 
 ## Previous combat improvements (retained)
 
@@ -137,8 +137,8 @@ Choose a bot difficulty and press **+ ADD BOT**, or change an existing bot's
 Chill / Normal / Fierce / Godlike selector. THE LINEUP shows each bot's level beside its name, including bots on mixed teams. In Teams Elimination or Hill, assign each participant to one of four numbered teams; Capture the Flag uses the first two, and Survival puts the whole squad on Team 1. Rename them
 in RULES. Free-for-all is a room-wide host format, not an individual team option. Numbered teammates share round points and cannot hurt each other unless the host
 enables friendly fire;
-default first side to five wins in Elimination. Elimination, Capture the Flag and Hill require at least two opposing sides; Survival requires at least one active human in a squad of one to four tanks.
-Choose Elimination, Capture the Flag, King of the Hill or Survival using the home-screen icon selector. Tap an icon, or focus the selector and use arrows, Home or End. The extra range slider has been removed. Open **RULES** to change the score target, map, timer, weapon availability, pickup rate or friendly fire. The selected mode stays colored on touch devices, and the rules summary wraps between complete items without a leading dot on a new line. **F** toggles fullscreen inside menus when text entry, select typeahead or key remapping is not using it. Active matches suppress pinch zoom throughout the page, including pause menus; single-finger scrolling and joystick + Fire input are retained.
+default first side to five wins in Elimination and 30 points in King of the Hill. Elimination, Capture the Flag and Hill require at least two opposing sides; Survival requires one to four available squad tanks, including an all-bot squad.
+Choose Elimination, Capture the Flag, King of the Hill or Survival using the home-screen icon selector. Tap an icon, or focus the selector and use arrows, Home or End. Choose **Teams / Free-for-all** directly beneath it, then **map size** beneath the format. Capture the Flag and Survival use fixed Teams format. Open **RULES** to change the score target, timer, weapon availability, pickup rate or friendly fire. The lobby action consistently reads **START BUTTON**; **PLAY AGAIN** belongs to the results screen. The selected mode stays colored on touch devices, and the rules summary wraps between complete items without a leading dot on a new line. **F** toggles fullscreen inside menus when text entry, select typeahead or key remapping is not using it. Active matches suppress pinch zoom throughout the page, including pause menus; single-finger scrolling and joystick + Fire input are retained.
 A tied objective time limit enters sudden death: one final life, last side wins. Only the host
 can change the battle format or teams. Global Free-for-all hides the per-tank team selectors entirely. Survival also hides them because squad membership is fixed.
 
@@ -159,13 +159,22 @@ server, usually behind HTTPS. The Share button is not a hosting deployment.
 
 ## Survival
 
-Choose **Survival on the home-screen icon selector**, or load the **Survival** preset for a human pilot and a Fierce teammate. Play alone, with local Player 2, with online friends, or with friendly bots. The squad has **one to four tanks**, all on Team 1, and needs at least one active human. A spectating host can start when another human is playing. Switching an oversized room to Survival is rejected until you reduce the active roster; it never silently removes players.
+Choose **Survival on the home-screen icon selector**, or load the **Survival** preset for a human pilot and a Fierce teammate. Play alone, with local Player 2, with online friends, or with friendly bots. The squad has **one to four tanks**, all on Team 1; an all-bot squad can play while the host spectates. Switching an oversized room to Survival is rejected until you reduce the active roster; it never silently removes players.
 
-The default run has **10 waves**, with a configurable target of **1–20** and a **75-second timer per wave** by default. Each wave starts with two enemies, plus one every two waves, capped at four. Waves 1–2 use Chill enemies, 3–4 use Normal, and later waves use Fierce. Every fifth wave replaces one enemy with a **Godlike boss**. Bosses start with three shield charges and one speed stack when those pickups are enabled, plus an enabled Homing/Cannon/Laser weapon selected in rotation. Disabling pickups also disables boss starting gear. Before a boss wave, the existing four-second intermission shows the next wave number, Godlike difficulty and the boss’s actual enabled equipment. The preview ends when the wave starts. THE LINEUP lists every squad member on a separate row and includes the current enemy bots with their AI strength levels; bosses are marked explicitly.
+The default run has **10 waves**, with a configurable target of **1–20** and a **75-second timer per wave** by default. Each wave starts with two enemies, plus one every two waves, capped at four. Every fifth wave replaces one enemy with a boss. Each higher AI level first appears as a boss before joining ordinary waves:
+
+| Waves | Regular enemies | Final wave boss |
+| --- | --- | --- |
+| 1–5 | Chill | Wave 5: Normal |
+| 6–10 | Normal | Wave 10: Fierce |
+| 11–15 | Fierce | Wave 15: Godlike |
+| 16–20 | Godlike | Wave 20: Godlike |
+
+Normal bosses start with one shield charge and no speed boost; Fierce bosses get two shield charges and one speed stack; Godlike bosses get three and one. Bosses also receive an enabled Homing/Cannon/Laser weapon selected in rotation. Disabled pickups never appear as starting gear. Before a boss wave, the four-second intermission previews the next wave, its actual boss difficulty and enabled equipment. THE LINEUP includes every squad member and enemy on a separate row, with AI levels and explicit boss markers. Defeated enemies remain listed during the break until the next wave replaces them.
 
 Clear the enemies before time runs out. One surviving squad tank can complete a wave for everyone; fallen squadmates return after a four-second break, with fresh tanks. The maze stays the same throughout the run. Bullets and uncollected pickups clear between waves; pickups seed again with the next wave. Fire and movement are inactive during the break. A squad wipe or expired timer ends the run, and mutual destruction counts as a loss. Each cleared wave adds one shared point; surviving the target wave count wins.
 
-Enemy tanks are generated automatically and never occupy room-player places. New online visitors spectate during a run; squad entries and swaps wait until it ends. Disconnecting removes the current life, with recovery possible at a later wave after reconnecting while the run continues. The run ends if no connected human remains in the squad. Survival is available in private rooms and local play; public matchmaking queues are unchanged.
+Enemy tanks are generated automatically and never occupy room-player places. New online visitors spectate during a run; squad entries and swaps wait until it ends. Disconnecting removes the current life, with recovery possible at a later wave after reconnecting while the run continues. Available bot teammates can continue after human pilots leave or spectate; an empty or defeated squad cannot continue. Survival is available in private rooms and local play; public matchmaking queues are unchanged.
 
 ## Weapons and room features retained
 
@@ -181,7 +190,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.30.0.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.31.0.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -218,7 +227,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.30.0**.
+on restart. Both the health endpoint and browser version should show **4.31.0**.
 
 ## Build one standalone server
 

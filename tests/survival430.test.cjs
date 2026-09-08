@@ -9,7 +9,7 @@ function boot(){
  const rules={mode:'survival',pickupRate:'normal',weapons:['shield','speed','homing','cannon','laser']};
  const s={$,mode:'room',phase:'playing',round:5,phaseTime:3,goUntil:0,COLORS:['#fff'],localRoom:{rules},online:{roomData:{rules},snapshots:[]},localObjectives:{mode:'survival',survival:{wave:4,waveTarget:10,status:'break',breakTime:4}},performance:{now:()=>100},paintColor:c=>c,suddenDeath:()=>false,modeInstructions:()=>'',tone(){}};
  vm.createContext(s);
- for(const name of ['setText','currentRules','objectiveState','survivalState','survivalBreak','survivalMode','survivalWavePlan','survivalBossPreview'])vm.runInContext(declaration(name),s);
+ for(const name of ['botLevelName','setText','currentRules','objectiveState','survivalState','survivalBreak','survivalMode','survivalBossName','survivalWavePlan','survivalBossPreview'])vm.runInContext(declaration(name),s);
  // Execute the production announcer section, independently of unrelated roster
  // and control widgets. This includes its phase gates and stale-preview reset.
  const hud=declaration('updateHUD'),start=hud.indexOf(" const announce=$('announcer')"),end=hud.indexOf(" if(mode==='online')onlineHUD();",start);
@@ -21,16 +21,16 @@ test('next-boss gear matches fixtures also checked against authoritative Go gran
  for(const f of fixtures){
   const s=boot();Object.assign(s.currentRules(),{pickupRate:f.pickupRate,weapons:f.weapons});Object.assign(s.survivalState(),{wave:f.wave-1,waveTarget:20});
   const plan=s.survivalWavePlan(f.wave),preview=s.survivalBossPreview();
-  assert.equal(plan.shieldCharges,f.shieldCharges,f.name);assert.equal(plan.speedStacks,f.speedStacks,f.name);assert.equal(plan.weapon||'',f.weapon,f.name);
-  const gear=[];if(f.shieldCharges)gear.push(f.shieldCharges+' shield charges');if(f.speedStacks)gear.push('Speed boost');gear.push({homing:'Homing missiles',cannon:'Cannon',laser:'Laser'}[f.weapon]||'Standard shells');
+  assert.equal(plan.bossDifficulty,f.difficulty,f.name);assert.equal(plan.bossName,f.bossName,f.name);assert.equal(preview.difficulty,f.difficulty,f.name);assert.equal(preview.name,f.bossName,f.name);assert.equal(plan.shieldCharges,f.shieldCharges,f.name);assert.equal(plan.speedStacks,f.speedStacks,f.name);assert.equal(plan.weapon||'',f.weapon,f.name);
+  const gear=[];if(f.shieldCharges)gear.push(f.shieldCharges+' shield charge'+(f.shieldCharges===1?'':'s'));if(f.speedStacks)gear.push('Speed boost');gear.push({homing:'Homing missiles',cannon:'Cannon',laser:'Laser'}[f.weapon]||'Standard shells');
   assert.equal(preview.wave,f.wave,f.name);assert.equal(preview.equipment,gear.join(' · '),f.name);
  }
 });
 test('boss preview uses the existing four-second countdown without changing wave state',()=>{
  const s=boot(),state=s.survivalState(),before=JSON.stringify(state);s.updateAnnouncer();
  assert.equal(s.$('announcer').hidden,false);assert.equal(s.$('announcer').classes.has('boss-preview'),true);
- assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 5 · GODLIKE BOSS');assert.equal(s.$('announceMain').textContent,'4');
- assert.equal(s.$('announceSub').textContent,'Equipment: 3 shield charges · Speed boost · Homing missiles\nSquad returns together.');assert.equal(JSON.stringify(state),before);
+ assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 5 · NORMAL BOSS');assert.equal(s.$('announceMain').textContent,'4');
+ assert.equal(s.$('announceSub').textContent,'Equipment: 1 shield charge · Homing missiles\nSquad returns together.');assert.equal(JSON.stringify(state),before);
  state.breakTime=1.2;s.updateAnnouncer();assert.equal(s.$('announceMain').textContent,'2');assert.equal(state.breakTime,1.2);
 });
 test('ordinary breaks retain their clear message and never show a boss equipment preview',()=>{
@@ -51,6 +51,6 @@ test('finished targets, ended runs, and other modes cannot announce another surv
 });
 test('online previews use authoritative snapshot waves and room rules, including disabled pickups',()=>{
  const s=boot();s.mode='online';s.online.snapshots=[{objectives:{mode:'survival',survival:{wave:9,waveTarget:20,status:'break',breakTime:2.2}}}];s.online.roomData.rules={mode:'survival',pickupRate:'off',weapons:['shield','speed','homing','cannon','laser']};s.updateAnnouncer();
- assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 10 · GODLIKE BOSS');assert.equal(s.$('announceMain').textContent,'3');assert.equal(s.$('announceSub').textContent,'Equipment: Standard shells\nSquad returns together.');
- s.online.roomData.rules.pickupRate='normal';s.online.roomData.rules.weapons=['shield','laser'];s.updateAnnouncer();assert.equal(s.$('announceSub').textContent,'Equipment: 3 shield charges · Laser\nSquad returns together.');
+ assert.equal(s.$('announceTop').textContent,'NEXT: WAVE 10 · FIERCE BOSS');assert.equal(s.$('announceMain').textContent,'3');assert.equal(s.$('announceSub').textContent,'Equipment: Standard shells\nSquad returns together.');
+ s.online.roomData.rules.pickupRate='normal';s.online.roomData.rules.weapons=['shield','laser'];s.updateAnnouncer();assert.equal(s.$('announceSub').textContent,'Equipment: 2 shield charges · Laser\nSquad returns together.');
 });

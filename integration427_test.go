@@ -14,12 +14,12 @@ func TestIntegration427HugeSurvivalBossUsesExtendedPowerDuration(t *testing.T) {
 		if tank == nil || !tank.SurvivalBoss {
 			continue
 		}
-		if tank.Power != "homing" || tank.PowerTime != 15 || tank.Shield != 15 || tank.SpeedTime != 15 || tank.ShieldCharges != 3 || tank.SpeedStacks != 1 {
+		if tank.Power != "homing" || tank.PowerTime != 15 || tank.Shield != 15 || tank.SpeedTime != 0 || tank.ShieldCharges != 1 || tank.SpeedStacks != 0 || tank.Difficulty != "normal" {
 			t.Fatalf("Huge boss did not receive the extended power-up duration: %+v", tank)
 		}
 		return
 	}
-	t.Fatal("wave five has no Godlike boss")
+	t.Fatal("wave five has no Normal boss")
 }
 
 func TestIntegration427MachineBudgetPausesDuringBreakAndResetsOnRevival(t *testing.T) {
