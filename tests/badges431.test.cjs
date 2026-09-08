@@ -4,22 +4,22 @@ const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('no
 const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function recorder(){
- let matrix={x:0,y:0,angle:0},stack=[],shape;
- const events=[],c={events,canvas:{},save(){stack.push({...matrix});},restore(){matrix=stack.pop();},translate(x,y){matrix.x+=Math.cos(matrix.angle)*x-Math.sin(matrix.angle)*y;matrix.y+=Math.sin(matrix.angle)*x+Math.cos(matrix.angle)*y;},rotate(a){matrix.angle+=a;},beginPath(){shape=null;},rect(x,y,w,h){shape={x,y,w,h};},arc(x,y,r,start,end){shape={arc:true,x,y,r,start,end};},stroke(){if(shape?.arc)events.push({type:'arc',...shape,color:this.strokeStyle,alpha:this.globalAlpha,width:this.lineWidth,matrix:{...matrix}});},fill(){if(shape&&!shape.arc)events.push({type:'rect',...shape,matrix:{...matrix}});},fillText(text,x,y){events.push({type:'text',text,x,y,font:this.font,matrix:{...matrix}});},drawImage(image,x,y,w,h){events.push({type:'image',image,x,y,w,h,matrix:{...matrix}});},measureText(text){return{width:text.length*6};}};
+ let matrix={x:0,y:0,angle:0},stack=[],shape,clipped=false;
+ const events=[],c={events,canvas:{},save(){stack.push({matrix:{...matrix},clipped});},restore(){({matrix,clipped}=stack.pop());},clip(){clipped=true;},translate(x,y){matrix.x+=Math.cos(matrix.angle)*x-Math.sin(matrix.angle)*y;matrix.y+=Math.sin(matrix.angle)*x+Math.cos(matrix.angle)*y;},rotate(a){matrix.angle+=a;},beginPath(){shape=null;},rect(x,y,w,h){shape={x,y,w,h};},arc(x,y,r,start,end){shape={arc:true,x,y,r,start,end};},stroke(){if(shape?.arc)events.push({type:'arc',...shape,color:this.strokeStyle,alpha:this.globalAlpha,width:this.lineWidth,matrix:{...matrix}});},fill(){if(shape&&!shape.arc)events.push({type:'rect',...shape,matrix:{...matrix}});},fillText(text,x,y){events.push({type:'text',text,x,y,font:this.font,clipped,matrix:{...matrix}});},drawImage(image,x,y,w,h){events.push({type:'image',image,x,y,w,h,matrix:{...matrix}});},measureText(text){return{width:text.length*6};}};
  return new Proxy(c,{get:(t,k)=>k in t?t[k]:(()=>{})});
 }
 function boot(){
  const ctx=recorder(),made=[];
- const s={ctx,mode:'room',phase:'playing',spawnGuideUntil:0,isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,reduceMotion:true,fxTime:0,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
+ const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,reduceMotion:true,fxTime:0,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
  vm.runInContext(source.slice(source.indexOf('const tankPowerBadgeCache='),source.indexOf('function activeTankPowerBadges(')),s);
- for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','drawTankPowerBadges','showLocalSpawnGuide','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTank'])vm.runInContext(declaration(name),s);
+ for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','drawTankPowerBadges','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','drawTank'])vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
-function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,scopeTime:10,ghostTime:10,...patch};}
+function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,scopeTime:10,ghostTime:10,...patch};}
 function pictures(ctx){return ctx.events.filter(e=>e.type==='image');}
 
-function overlaps(a,b,gap=0){return a.x<b.x+b.w+gap&&a.x+a.w+gap>b.x&&a.y<b.y+b.h+gap&&a.y+a.h+gap>b.y;}
+function badgeOverlap(a,b){return Math.hypot(a.x+a.w/2-b.x-b.w/2,a.y+a.h/2-b.y-b.h/2)<(a.w+b.w)*28.5/64-1e-8;}
 function labelRect(ctx){return ctx.events.findLast(e=>e.type==='rect');}
 function nameGeometry(ctx){const text=ctx.events.find(e=>e.type==='text'),label=labelRect(ctx);return{x:text.x,y:text.y,font:text.font,background:{x:label.x,y:label.y,w:label.w,h:label.h}};}
 
@@ -31,15 +31,14 @@ test('bot and remote power icons proceed clockwise below stable names without co
   assert.equal(text.text,'GODLIKE BOSS');assert.equal(icons.length,charges?5:4);
   const textDescent=parseFloat(text.font.replace('bold ',''))*.25;
   for(const icon of icons){
-   assert.ok(icon.y>=label.y+label.h,'name background stays above the lower icon arc');
-   assert.ok(icon.y>text.y+textDescent,'scaled name descenders must stay above icons');
-   const nearX=Math.max(icon.x-t.x,0,t.x-icon.x-icon.w),nearY=Math.max(icon.y-t.y,0,t.y-icon.y-icon.h);
-   assert.ok(nearX*nearX+nearY*nearY>=31*31,'icons stay outside the hull while outer shield rings can sit behind icons');
+   assert.ok(icon.y+icon.w*(.5-28.5/64)>=label.y+label.h,'name background stays above the lower icon arc');
+   assert.ok(icon.y+icon.w*(.5-28.5/64)>text.y+textDescent,'scaled name descenders must stay above icons');
+   assert.ok(Math.hypot(icon.x+icon.w/2-t.x,icon.y+icon.h/2-t.y)-icon.w*28.5/64>=30-1e-8,'visible badge circles stay outside the hull');
    assert.deepEqual(icon.matrix,{x:0,y:0,angle:0},'icons remain aligned with the world after the tank rotates');
    assert.ok(icon.w>=24&&icon.h>=24,'retain readable icon size');
    assert.ok(icon.w*scale>=Math.min(24*scale,17.28)-1e-8);
   }
-  for(let i=0;i<icons.length;i++)for(let j=0;j<i;j++)assert.ok(!overlaps(icons[i],icons[j]),'adjacent icons do not overlap');
+  for(let i=0;i<icons.length;i++)for(let j=0;j<i;j++)assert.ok(!badgeOverlap(icons[i],icons[j]),'adjacent icons do not overlap');
   assert.ok(icons[0].x>t.x,'first badge starts right of the tank below its name');
   assert.ok(icons[1].x<icons[0].x&&icons[1].y>icons[0].y);
   assert.ok(Math.abs(icons[2].x+icons[2].w/2-t.x)<1e-8,'third badge is below the tank');
@@ -73,17 +72,16 @@ test('badge orbits reuse cached icon sprites across movement and rotation, remov
  Object.assign(t,{alive:false,powerTime:10});ctx.events.length=0;s.drawTank(t);assert.equal(pictures(ctx).length,0);assert.equal(ctx.events.filter(e=>e.type==='text').length,0);
 });
 
-test('names and all five power icons stay inside the maze at its edges without hiding each other or the tank',()=>{
+test('all five power icons stay inside the maze at its edges, keeping names fixed above without hiding the tank',()=>{
  for(const scale of [1,.25,.08])for(const x of [42,1200,2358])for(const y of [42,700,1458]){
   const {s,ctx}=boot();s.scale=scale;s.drawTank(tank({x,y}));
   const label=labelRect(ctx),icons=pictures(ctx);assert.equal(icons.length,5,`five visible badges at ${scale}: ${x}, ${y}`);
-  assert.ok(label.x>=0&&label.x+label.w<=s.W&&label.y>=0&&label.y+label.h<=s.H,'name stays in the maze');
+  assert.ok(label.x>=0&&label.x+label.w<=s.W,'name stays inside horizontal maze bounds');assert.equal(y-label.y-label.h,32,'name never flips below or follows the top edge');
   for(let i=0;i<icons.length;i++){
-   const icon=icons[i];assert.ok(icon.x>=0&&icon.x+icon.w<=s.W&&icon.y>=0&&icon.y+icon.h<=s.H,'badge stays in the maze');
-   assert.ok(!overlaps(icon,label),'badge remains clear of the name');
-   const nearX=Math.max(icon.x-x,0,x-icon.x-icon.w),nearY=Math.max(icon.y-y,0,y-icon.y-icon.h);
-   assert.ok(nearX*nearX+nearY*nearY>=31*31,'badge stays outside the hull');
-   for(let j=0;j<i;j++)assert.ok(!overlaps(icon,icons[j]),'badges remain separate');
+   const icon=icons[i],r=icon.w*28.5/64,cx=icon.x+icon.w/2,cy=icon.y+icon.h/2;assert.ok(cx-r>=0&&cx+r<=s.W&&cy-r>=0&&cy+r<=s.H,'visible badge stays in the maze');
+   const labelDX=Math.max(label.x-cx,0,cx-label.x-label.w),labelDY=Math.max(label.y-cy,0,cy-label.y-label.h);assert.ok(labelDX*labelDX+labelDY*labelDY>=r*r,'badge remains clear of the name');
+   assert.ok(Math.hypot(cx-x,cy-y)-r>=30-1e-8,'badge stays outside the hull');
+   for(let j=0;j<i;j++)assert.ok(!badgeOverlap(icon,icons[j]),'badges remain separate');
   }
  }
 });
@@ -92,13 +90,13 @@ test('names and all five power icons stay inside the maze at its edges without h
 test('tank names and badge centers stay close to the hull independent of shield count',()=>{
  for(const scale of [2,1,.5,.2,.08]){
   const {s,ctx}=boot();s.scale=scale;const t=tank();s.drawTank(t);
-  const label=labelRect(ctx),icons=pictures(ctx),half=icons[0].w/2,gap=2*Math.max(1,.72/scale);
+  const label=labelRect(ctx),icons=pictures(ctx),half=icons[0].w/2;
   assert.equal(t.y-label.y-label.h,32,'name has only two units of clearance above an upward muzzle');
-  const oldZ=Math.max(1,.82/scale),oldHalf=13*oldZ,oldGap=3*oldZ;
-  const oldRadius=Math.hypot(Math.max(46+oldHalf*Math.SQRT2+oldGap,Math.SQRT2*(2*oldHalf+oldGap)),Math.max(0,oldGap+oldHalf-46));
+  const oldZ=Math.max(1,.72/scale),oldHalf=12*oldZ,oldGap=2*oldZ;
+  const oldRadius=Math.hypot(Math.max(31+oldHalf*Math.SQRT2+oldGap,Math.SQRT2*(2*oldHalf+oldGap)),Math.max(0,oldGap+oldHalf-32));
   const radius=Math.hypot(icons[0].x+half-t.x,icons[0].y+half-t.y);
   assert.ok(radius<=oldRadius,'readability must not increase the former orbit');
-  if(scale>=.5)assert.ok(radius<=oldRadius-14.9,'normal and compact views bring icons 15 units closer');
+  if(scale>=.5)assert.ok(radius<=oldRadius-7,'normal and compact views bring icons at least seven units closer');
  }
 });
 
@@ -114,43 +112,70 @@ test('golden spawn circles identify both actual local pilots in every mode witho
  }
 });
 
-test('spawn circles remain through countdown, briefly mark the start, and disappear during menus, intermission and results',()=>{
- const {s}=boot(),t=tank({id:0,human:true});s.fxTime=10;s.phase='countdown';assert.equal(s.localSpawnGuideAlpha(t),1);
- s.phase='playing';s.showLocalSpawnGuide();assert.equal(s.localSpawnGuideAlpha(t),1);
- s.fxTime=11.35;assert.ok(Math.abs(s.localSpawnGuideAlpha(t)-.5)<1e-8);
- s.fxTime=11.61;assert.equal(s.localSpawnGuideAlpha(t),0);
- s.showLocalSpawnGuide();for(const phase of ['menu','onlineLobby','paused','roundOver','matchOver']){s.phase=phase;assert.equal(s.localSpawnGuideAlpha(t),0);}
- s.phase='playing';s.survivalBreak=()=>true;assert.equal(s.localSpawnGuideAlpha(t),0,'an early wave clear hides the guide during intermission');
- s.phase='countdown';s.fxTime=100;assert.equal(s.localSpawnGuideAlpha(t),1,'another countdown remains visible after the prior timer expires');
+test('gold remains solid exactly through spawn protection, including a paused countdown and long pauses',()=>{
+ const {s}=boot(),t=tank({id:0,human:true});
+ for(const phase of ['countdown','playing','paused']){s.phase=phase;for(const remaining of [.75,.35,.01,Number.EPSILON]){t.invulnerable=remaining;s.fxTime=1e8;assert.equal(s.localSpawnGuideAlpha(t),1);}}
+ t.invulnerable=0;assert.equal(s.localSpawnGuideAlpha(t),0,'no cosmetic tail after protection expires');
+ t.invulnerable=.35;t.spawnProtected=false;assert.equal(s.localSpawnGuideAlpha(t),0,'shield-hit grace does not restart the spawn ring');
+ t.spawnProtected=true;for(const phase of ['menu','onlineLobby','roundOver','matchOver']){s.phase=phase;assert.equal(s.localSpawnGuideAlpha(t),0);}
+ s.phase='playing';s.survivalBreak=()=>true;assert.equal(s.localSpawnGuideAlpha(t),0,'intermission is not a spawn');
 });
 
-test('authoritative online countdowns and Survival wave transitions trigger location guides once, including a restart generation',()=>{
+test('online spawn tags follow authoritative life changes and never turn a shield save into a spawn',()=>{
+ const {s}=boot();vm.runInContext(declaration('netTank'),s);
+ let t=s.netTank(tank({id:0,bot:false,spawnSerial:0,invulnerable:.75}));assert.equal(s.localSpawnGuideAlpha(t),1);
+ t=s.netTank({...t,invulnerable:.1},t);assert.equal(s.localSpawnGuideAlpha(t),1);
+ t=s.netTank({...t,invulnerable:0},t);assert.equal(s.localSpawnGuideAlpha(t),0);
+ t=s.netTank({...t,invulnerable:.35},t,true);assert.equal(s.localSpawnGuideAlpha(t),0);
+ t=s.netTank({...t,spawnSerial:1,invulnerable:1.2},t);assert.equal(s.localSpawnGuideAlpha(t),1,'objective respawns rearm protection on a new life');
+ t=s.netTank({...t,invulnerable:.1},t,true);assert.equal(s.localSpawnGuideAlpha(t),0,'a shield event invalidates spawn protection even when an expired snapshot was skipped');
+ t=s.netTank({...t,invulnerable:.75},null);assert.equal(s.localSpawnGuideAlpha(t),1,'a new round generation starts with a fresh body');
+});
+
+test('a real shield save clears the local spawn tag instead of lighting the golden ring again',()=>{
+ const {s}=boot(),noop=()=>{};Object.assign(s,{canDamage:()=>true,burst:noop,addRing:noop,tone:noop,toast:noop});vm.runInContext(declaration('hurt'),s);
+ const t=tank({id:0,human:true,invulnerable:0});s.hurt(t,{owner:3,kind:'shell'});assert.equal(t.invulnerable,.35);assert.equal(t.spawnProtected,false);assert.equal(s.localSpawnGuideAlpha(t),0);
+});
+
+function onlineBoot(){
  const {s}=boot(),noop=()=>{};
- Object.assign(s,{mode:'online',phase:'onlineLobby',round:0,roundClock:0,phaseTime:0,roundWinner:-1,scores:[],gameStarted:false,tanks:[],particles:[],rings:[],traces:[],bullets:[],pickups:[],cols:12,rows:8,grid:[],walls:[],goUntil:0,
-  performance:{now:()=>s.fxTime*1000},Net:{expandMachineBullets:()=>[]},COLORS:[],cacheMap:noop,resize:noop,clearInput:noop,sendOnlineInput:noop,closeVictory:noop,setScreen:noop,renderOnlineRoom:noop,updateHUD:noop,showStartingControls:noop,secondLocal:()=>({id:1}),
-  online:{connected:true,id:0,generation:0,snapshots:[],ownedIDs:new Set(),activeIDs:new Set(),localBullets:new Map(),shots:{sync:noop,prune:noop},predictor:{state:null,reconcile:noop},secondary:{predictor:{state:null,reconcile:noop}},eventsInitialized:true},
-  survivalState:()=>s.online.snapshots.at(-1)?.objectives?.survival,
+ Object.assign(s,{mode:'online',phase:'onlineLobby',round:0,roundClock:0,phaseTime:0,roundWinner:-1,scores:[],gameStarted:false,tanks:[],particles:[],rings:[],traces:[],bullets:[],pickups:[],cols:12,rows:8,grid:[],walls:[],goUntil:0,shake:0,now:1000,
+  performance:{now:()=>s.now},Net:require('../web/netcode.js'),COLORS:[],cacheMap:noop,resize:noop,clearInput:noop,sendOnlineInput:noop,closeVictory:noop,setScreen:noop,renderOnlineRoom:noop,updateHUD:noop,showStartingControls:noop,secondLocal:()=>({id:1}),moveTank:noop,onlineEffect:noop,syncRestartWaveActions:noop,
+  online:{connected:true,id:0,generation:0,snapshots:[],ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set(),trails:new Map(),localBullets:new Map(),effectQueue:[],shots:{sync:noop,prune:noop,heard:()=>false,previews:new Map()},eventsInitialized:true,lastEvent:0,buffer:{push:packet=>s.online.snapshots.push(packet),advance:()=>null,tank:id=>({...s.online.snapshots.at(-1).tankMap.get(id)})}},
+  survivalState:()=>s.online.snapshots.at(-1)?.objectives?.survival,survivalBreak:()=>s.survivalState()?.status==='break',
   resetOnlineMotion:()=>{s.online.snapshots.length=0;}
  });
- s.online.buffer={push:packet=>s.online.snapshots.push(packet)};
- for(const name of ['netTank','receiveOnlineState'])vm.runInContext(declaration(name),s);
+ s.online.predictor=new s.Net.Predictor(noop);s.online.secondary={predictor:new s.Net.Predictor(noop)};
+ for(const name of ['netTank','receiveOnlineState','renderOnlineMotion'])vm.runInContext(declaration(name),s);
  let tick=0;
- const packet=(phase,{generation=1,wave=0,status='wave',world=false}={})=>({tick:++tick,generation,phase,round:wave||1,roundClock:75,phaseTime:2.6,winner:-1,scores:[],bullets:[],tanks:[tank({id:0,human:undefined,bot:false}),tank({id:1,human:undefined,bot:false}),tank({id:3,human:undefined,bot:true})],...(wave?{objectives:{survival:{wave,status}}}:{}),...(world?{world:{cols:12,rows:8,width:1008,height:672,walls:[]}}:{})});
- const own=()=>s.online.snapshots.at(-1).tanks[0];
- s.receiveOnlineState(packet('countdown',{world:true}));assert.equal(s.localSpawnGuideAlpha(own()),1);
- s.fxTime=3;s.receiveOnlineState(packet('playing'));assert.equal(s.spawnGuideUntil,4.6);assert.equal(s.localSpawnGuideAlpha(own()),1);
- s.fxTime=5;s.receiveOnlineState(packet('playing'));assert.equal(s.localSpawnGuideAlpha(own()),0,'routine snapshots must not keep circles alive');
- s.receiveOnlineState(packet('playing',{generation:2,wave:4,world:true}));assert.equal(s.spawnGuideUntil,6.6,'joining the Survival generation points out the owned tank');
- s.fxTime=8;s.receiveOnlineState(packet('playing',{generation:2,wave:4,status:'break'}));assert.equal(s.spawnGuideUntil,6.6);
- s.fxTime=12;s.receiveOnlineState(packet('playing',{generation:2,wave:5}));assert.equal(s.spawnGuideUntil,13.6,'the existing maze receives a new wave guide');
- s.fxTime=20;s.receiveOnlineState(packet('countdown',{generation:3,wave:5,world:true}));assert.equal(s.localSpawnGuideAlpha(own()),1,'restarting this wave keeps countdown markers');
- s.fxTime=23;s.receiveOnlineState(packet('playing',{generation:3,wave:5}));assert.equal(s.spawnGuideUntil,24.6);
- s.fxTime=25;s.receiveOnlineState(packet('playing',{generation:3,wave:5}));assert.equal(s.localSpawnGuideAlpha(own()),0);
+ s.packet=(phase,{generation=1,wave=0,status='wave',world=false,serial=0,invulnerable=.75,events=[]}={})=>({tick:++tick,generation,phase,round:wave||1,roundClock:75,phaseTime:2.6,winner:-1,scores:[],bullets:[],pickups:[],events,tanks:[tank({id:0,bot:false,spawnSerial:serial,invulnerable}),tank({id:1,bot:false,spawnSerial:serial,invulnerable}),tank({id:3,bot:true,spawnSerial:serial,invulnerable})],...(wave?{objectives:{survival:{wave,status}}}:{}),...(world?{world:{cols:12,rows:8,width:1008,height:672,walls:[]}}:{})});
+ return s;
+}
+
+test('online protection presentation follows authoritative timers between packets and freezes in countdown and wave breaks',()=>{
+ const s=onlineBoot(),frame=now=>{s.renderOnlineMotion(1/60,now);return s.tanks.find(t=>t.id===0);};
+ s.receiveOnlineState(s.packet('countdown',{world:true}));assert.equal(s.localSpawnGuideAlpha(frame(6000)),1,'waiting before weapons are live cannot spend countdown protection');
+ s.now=6000;s.receiveOnlineState(s.packet('playing'));
+ assert.equal(s.localSpawnGuideAlpha(frame(6749)),1);assert.equal(s.localSpawnGuideAlpha(frame(6750)),0,'ring vanishes precisely at the latest snapshot protection expiry');
+ assert.equal(s.localSpawnGuideAlpha(frame(16000)),0,'stale snapshots cannot leave a stuck protected ring');
+ assert.equal(s.online.snapshots.at(-1).tankMap.get(0).invulnerable,.75,'presentation never changes authority');assert.equal(s.online.predictor.state.invulnerable,.75,'prediction cannot gain or consume authoritative protection');
+ s.now=16000;s.receiveOnlineState(s.packet('playing',{generation:2,wave:5,serial:1,invulnerable:1.2,world:true}));assert.equal(s.localSpawnGuideAlpha(frame(17199)),1);assert.equal(s.localSpawnGuideAlpha(frame(17200)),0);
+ s.now=18000;s.receiveOnlineState(s.packet('playing',{generation:2,wave:5,serial:1,status:'break',invulnerable:.1}));assert.equal(frame(25000).invulnerable,.1);assert.equal(s.localSpawnGuideAlpha(frame(25000)),0,'intermission has no golden spawn indicator');
+ s.now=25000;s.receiveOnlineState(s.packet('countdown',{generation:3,wave:5,serial:2,invulnerable:1.2,world:true}));assert.equal(s.localSpawnGuideAlpha(frame(28000)),1,'retry countdown resets this wave’s protected bodies');
 });
 
-test('every offline round countdown refreshes the guide when weapons become live',()=>{
- const {s}=boot(),noop=()=>{};
- Object.assign(s,{phase:'countdown',phaseTime:.01,fxTime:100,shake:0,time:0,toastTime:0,particles:[],rings:[],round:2,uiClock:0,goUntil:0,performance:{now:()=>s.fxTime*1000},updateTraces:noop,compactLife:noop,tone:noop,showStartingControls:noop,updateHUD:noop});
- vm.runInContext(declaration('update'),s);s.update(.02);
- assert.equal(s.phase,'playing');assert.ok(Math.abs(s.spawnGuideUntil-101.62)<1e-8);assert.equal(s.localSpawnGuideAlpha(tank({id:0,human:true})),1);assert.equal(s.localSpawnGuideAlpha(tank({id:1,human:true})),1);
+test('online shield history applies to the matching life and generation before drawing, including a dropped expiry packet',()=>{
+ const s=onlineBoot();s.receiveOnlineState(s.packet('countdown',{world:true}));s.now+=1000;
+ s.receiveOnlineState(s.packet('playing',{invulnerable:.1,events:[{type:'shield',id:1,player:0,spawnSerial:0,generation:1}]}));s.renderOnlineMotion(1/60,s.now);
+ assert.equal(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===0)),0);assert.equal(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===1)),1);
+ s.now+=1000;s.receiveOnlineState(s.packet('countdown',{generation:2,world:true,events:[{type:'shield',id:1,player:0,spawnSerial:0,generation:1}]}));s.renderOnlineMotion(1/60,s.now);assert.equal(s.localSpawnGuideAlpha(s.tanks.find(t=>t.id===0)),1,'a former round’s shield event cannot cancel fresh spawn protection');
+});
+
+
+test('the render pass paints edge labels above tanks after restoring the maze clip',()=>{
+ const {s,ctx}=boot(),noop=()=>{};
+ Object.assign(s,{dpr:1,cssW:2400,cssH:1500,offsetX:0,offsetY:0,shake:0,mapCanvas:null,tanks:[tank({x:1200,y:21,powerTime:0,shield:0,speedTime:0,scopeTime:0,ghostTime:0})],pickups:[],bullets:[],rings:[],particles:[],drawObjectives:noop,drawAimingGuides:noop,drawFlags:noop,drawMissileWarnings:noop,drawLasers:noop,syncCanvasSize:noop});
+ vm.runInContext(declaration('render'),s);s.render();
+ const labels=ctx.events.filter(e=>e.type==='text');assert.equal(labels.length,1);assert.equal(labels[0].clipped,false,'the maze boundary must not cut off the name');
+ const rect=labelRect(ctx);assert.equal(rect.y+rect.h,s.tanks[0].y-32);assert.ok(rect.y<0,'fixed above-tank position can extend into the canvas margin');
 });

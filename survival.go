@@ -166,6 +166,16 @@ func (g *Game) spawnSurvivalEnemies(players [maxTanks]*Player) {
 	}
 	count := min(4, 2+(s.Wave-1)/2)
 	s.Boss = s.Wave%5 == 0
+	if s.Boss {
+		// Boss-wave protection is a squad starting bonus, independent of which
+		// pickups are enabled. Keep any stronger shield already on the tank.
+		for id, p := range players {
+			tank := g.Tanks[id]
+			if p != nil && participantAvailable(players, id) && tank != nil && tank.Alive && !tank.SurvivalEnemy && shieldCount(tank) == 0 {
+				g.grantPower(tank, "shield")
+			}
+		}
+	}
 	s.EnemiesRemaining = 0
 	for id, p := range players {
 		if p != nil || s.EnemiesRemaining >= count {

@@ -11,12 +11,12 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.33.0/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.33.0/theme.css">
-<link rel="stylesheet" href="assets/v4.33.0/style.css">
-<link rel="manifest" href="assets/v4.33.0/manifest.webmanifest">
-<link rel="icon" href="assets/v4.33.0/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/v4.33.0/apple-touch-icon.png">
+<script src="assets/v4.34.0/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.34.0/theme.css">
+<link rel="stylesheet" href="assets/v4.34.0/style.css">
+<link rel="manifest" href="assets/v4.34.0/manifest.webmanifest">
+<link rel="icon" href="assets/v4.34.0/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/v4.34.0/apple-touch-icon.png">
 </head>
 <body>
 <div class="app">
@@ -31,10 +31,18 @@
 <main class="main-grid">
  <section class="arena-shell" aria-label="Tank battle arena">
   <div class="arena-bar"><div class="arena-title"><span class="status-dot"></span><span id="arenaStatus">READY ROOM</span></div><div class="mobile-scores" id="miniScores" aria-label="Scores"></div><div class="bar-right"><span class="round-chip" id="roundLabel">ROUND 01</span><span class="clock" id="clock">01:15</span></div></div>
+  <div class="arena-stage">
   <div class="arena-wrap" id="arenaWrap">
    <canvas id="arena" tabindex="0" aria-label="Tank maze game. Keyboard bindings can be changed in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
    <div class="toast" id="toast" role="status" hidden></div>
    <div class="announcer" id="announcer" hidden><span class="announce-top" id="announceTop"></span><strong id="announceMain"></strong><span class="announce-sub" id="announceSub"></span></div>
+  </div>
+  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime1">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime2">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Your own shots can take you out.</span><span class="micro-label" id="bestInline"></span></div>
+  <div class="touch-controls" id="touchControls" aria-label="Touch controls">
+   <div class="stick-zone" id="stickZone" role="group" aria-label="Drag joystick to steer"><div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div><span class="touch-label">STEER</span></div>
+   <div class="touch-center"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m-3-3 3 3-3 3M20 17h-9m3-3-3 3 3 3M5 14v4h3m11-8V6h-3"/></svg><span class="alive-status" id="touchStatus">GOOD LUCK</span><br><span id="fireHint">HOLD TO FIRE</span></div>
+   <div class="fire-zone"><button class="fire-button" id="fireBtn" type="button" aria-label="Hold to fire"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="8"/><path d="M16 3v7m0 12v7M3 16h7m12 0h7"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg><span id="fireLabel">FIRE</span></button><span class="touch-label">LET IT RIP</span></div>
+  </div>
    <div class="overlay" id="overlay">
     <section class="screen-card" id="lobbyScreen" aria-label="Legacy settings" hidden>
      <div class="intro"><div class="eyebrow">QUICK MATCH / LOCAL + ONLINE</div><h2>ENTER<br><em>leqra.</em></h2><p>Small tanks. Tight corners. Big trouble.<br>Outlast the enemy. Rule the maze.</p></div>
@@ -58,7 +66,7 @@
       <input class="net-input invite-fallback" id="inviteFallback" aria-label="Copy this invite link" readonly hidden>
       <p class="net-status" id="roomStatus" role="status">Local play is ready. Share to invite online friends.</p>
       <div class="room-utility"><button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button><button class="text-button" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="text-button" id="leaveRoomBtn" type="button" hidden>Leave room</button></div>
-      <div class="room-rules">FIRST TO 5 · UP TO 8 TANKS<br><span>Teammates share wins. Friendly fire is off.</span></div>
+      <div class="room-rules">FIRST TO 5 WINS · UP TO 8 TANKS<br><span>Teammates share wins. Friendly fire is off.</span></div>
      </div>
      <div class="net-content">
       <form class="callsign-editor" id="roomCallsignForm" aria-label="Change your callsign"><label class="callsign-label" for="roomCallsign">YOUR CALLSIGN · HOST</label><div class="callsign-row"><input class="net-input" id="roomCallsign" name="callsign" maxlength="16" placeholder="PILOT" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="roomCallsignStatus"></div><p class="callsign-status" id="roomCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="roomP2CallsignForm" data-pilot="secondary" aria-label="Change Player 2 callsign" hidden><label class="callsign-label" for="roomP2Callsign">PLAYER 2 CALLSIGN</label><div class="callsign-row"><input class="net-input" id="roomP2Callsign" name="callsign" maxlength="16" placeholder="PLAYER 2" autocomplete="off" spellcheck="false" aria-describedby="roomP2CallsignStatus"></div><p class="callsign-status" id="roomP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
@@ -75,12 +83,6 @@
     <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden><div class="eyebrow">TAKE A BREATHER</div><h2 class="compact-title">HOLD YOUR<br><em>FIRE.</em></h2><p>The battle is paused. Your tank is safe.</p><button class="primary" id="resumeBtn" type="button"><span>BACK TO THE BATTLE</span><span aria-hidden="true">→</span></button><button class="secondary" id="quitBtn" type="button">Return to ready room</button><p class="control-note" id="pauseInstructions"></p></section>
     <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode / difficulty</button></section>
    </div>
-  </div>
-  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime1">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime2">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Your own shots can take you out.</span><span class="micro-label" id="bestInline"></span></div>
-  <div class="touch-controls" id="touchControls" aria-label="Touch controls">
-   <div class="stick-zone" id="stickZone" role="group" aria-label="Drag joystick to steer"><div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div><span class="touch-label">STEER</span></div>
-   <div class="touch-center"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m-3-3 3 3-3 3M20 17h-9m3-3-3 3 3 3M5 14v4h3m11-8V6h-3"/></svg><span class="alive-status" id="touchStatus">GOOD LUCK</span><br><span id="fireHint">HOLD TO FIRE</span></div>
-   <div class="fire-zone"><button class="fire-button" id="fireBtn" type="button" aria-label="Hold to fire"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="8"/><path d="M16 3v7m0 12v7M3 16h7m12 0h7"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg><span id="fireLabel">FIRE</span></button><span class="touch-label">LET IT RIP</span></div>
   </div>
  </section>
  <aside class="sidebar" aria-label="Scoreboard and instructions">
@@ -110,8 +112,8 @@
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
  <div class="kick-actions"><button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button></div>
 </dialog>
-<script src="assets/v4.33.0/netcode.js" defer></script>
-<script src="assets/v4.33.0/game.js" defer></script>
-<script src="assets/v4.33.0/pwa.js" defer></script>
+<script src="assets/v4.34.0/netcode.js" defer></script>
+<script src="assets/v4.34.0/game.js" defer></script>
+<script src="assets/v4.34.0/pwa.js" defer></script>
 </body>
 </html>

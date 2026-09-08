@@ -110,6 +110,17 @@ test('unchanged room metadata does not rebuild the field manual DOM',()=>{
  b.s.fieldManualHTML=()=>'<p>Updated controls</p>';b.s.syncFeatureSummary();assert.equal(b.$('manualContent').htmlWrites,2);
 });
 
+test('lobby score summary names elimination wins and follows each mode’s current target',()=>{
+ const b=boot({modeInstructions:()=> 'Play',controlSummary:()=> 'KEYS',fieldManualHTML:()=> '<p>Controls</p>'});b.s.roomStartError=()=>'';
+ vm.runInContext(declaration('displayScoreTarget'),b.s);
+ for(const [mode,scoreTarget,want]of [['elimination',5,'FIRST TO 5 WINS'],['elimination',12,'FIRST TO 12 WINS'],['ctf',3,'3 CAPTURES'],['koth',30,'30 HILL POINTS'],['survival',15,'15 WAVES']]){
+  Object.assign(b.s.localRoom.rules,{mode,scoreTarget});b.s.syncFeatureSummary();
+  assert.ok(b.$('rulesSummary').innerHTML.includes('<span class="room-rule-item">'+want+'</span>'),mode);
+  if(mode!=='elimination')assert.doesNotMatch(b.$('rulesSummary').innerHTML,/WINS/);
+  const writes=b.$('rulesSummary').htmlWrites;b.s.syncFeatureSummary();assert.equal(b.$('rulesSummary').htmlWrites,writes,'unchanged summary keeps existing DOM');
+ }
+});
+
 test('inactive team fields cannot block applying FFA or CTF with unfinished hidden names',()=>{
  const b=boot();for(let i=1;i<=4;i++){b.$('rule-teamName'+i).value=i<=2?'New '+i:'';b.$('rule-teamColor'+i).value=String(i-1);}
  const ctf=b.s.readRuleTeamSettings({mode:'ctf',teamMode:'teams'});
