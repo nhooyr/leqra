@@ -1,0 +1,55 @@
+{
+  "runtime": "v24.19.0",
+  "scope": "Isolated production wall-candidate and exact ray queries in a seeded Ultrawide maze; excludes whole simulation, renderer, and network. No FPS claim.",
+  "checksum": 65633831.72360424,
+  "results": [
+    {
+      "kind": "movement",
+      "operation": "candidates",
+      "walls": 294,
+      "queriesPerSample": 40960,
+      "samples": 7,
+      "medianUs": 0.1668
+    },
+    {
+      "kind": "movement",
+      "operation": "ray",
+      "walls": 294,
+      "queriesPerSample": 40960,
+      "samples": 7,
+      "medianUs": 0.2601
+    },
+    {
+      "kind": "aiming",
+      "operation": "candidates",
+      "walls": 294,
+      "queriesPerSample": 40960,
+      "samples": 7,
+      "medianUs": 0.4546
+    },
+    {
+      "kind": "aiming",
+      "operation": "ray",
+      "walls": 294,
+      "queriesPerSample": 40960,
+      "samples": 7,
+      "medianUs": 0.8023
+    },
+    {
+      "kind": "laser",
+      "operation": "candidates",
+      "walls": 294,
+      "queriesPerSample": 40960,
+      "samples": 7,
+      "medianUs": 0.8354
+    },
+    {
+      "kind": "laser",
+      "operation": "ray",
+      "walls": 294,
+      "queriesPerSample": 40960,
+      "samples": 7,
+      "medianUs": 2.4232
+    }
+  ]
+}

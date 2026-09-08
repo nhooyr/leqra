@@ -23,7 +23,7 @@ function boot({cols=12,rows=8,wallList=[],lexical=false}={}){
  };
  s.grid=Array.from({length:cols*rows},(_,i)=>({neighbors:[i-cols,i+cols,...(i%cols?[i-1]:[]),...(i%cols<cols-1?[i+1]:[])].filter(n=>n>=0&&n<cols*rows)}));
  const constants=source.slice(source.indexOf('const DIFFICULTY='),source.indexOf("let phase='menu'"));
- const names=['shieldCount','speedCount','canDamage','nearbyWalls','rayWalls','circleHit','rayBounds','projectileWall','movementWall','resolveWalls','moveTank',
+ const names=['shieldCount','speedCount','canDamage','nearbyWalls','rayWalls','circleHit','tankHit','rayBounds','projectileWall','movementWall','resolveWalls','moveTank',
   'pathScratch','tracePath','bfs','targetMotion','leadPoint','projectileSpec','muzzleProjectile','grenadeDragIntegral','grenadeDragFactor','grenadeForecast',
   'ownedGrenades','steerMissile','spendMissileRange','missileWallNudge','laserTrace','evaluateBotShot','findBankAim','chooseBotAim',
   'planBotPath','routeControl','botHoldingHill','ctfCoverGoal','objectiveGoal','objectiveRoute','chooseDodge','chooseGrenadeAvoid','forecastThreats','movementRisk','forecastGrenadeBodies','godlikeDistances','godlikeObjectiveGoal',

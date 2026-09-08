@@ -1,0 +1,4 @@
+PASS: 5 JavaScript syntax checks; 69 Python files parsed.
+PASS: 11 HTML asset references resolve; six root/production assets identical.
+PASS: server, browser, HTML, PWA and offline cache version 4.39.0; only current asset directory exists.
+PASS: removed shared-room hint stays absent; git diff --check.
