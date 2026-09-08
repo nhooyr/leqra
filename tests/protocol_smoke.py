@@ -47,7 +47,11 @@ class Peer:
         await self.task
 
 async def peer():
-    return Peer(await connect(WS, origin=ORIGIN, max_size=1_000_000, compression=None))
+    ws = await connect(WS, origin=ORIGIN, max_size=1_000_000, compression=None)
+    hello = json.loads(await ws.recv())
+    if hello.get('type') != 'server_hello': raise AssertionError('missing server_hello: '+str(hello))
+    await ws.send(json.dumps({'type':'client_hello','version':hello.get('version'),'protocol':hello.get('protocol')}))
+    return Peer(ws)
 
 async def main():
     peers = []

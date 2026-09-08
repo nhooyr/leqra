@@ -1,16 +1,16 @@
-# leqra v4.22 — Safari audio reliability, integrated match chat, Ghost fixes, and room UX
+# leqra v4.23 — installable PWA, version-safe assets, and graceful online lifecycle
 
-leqra v4.22 fixes the remaining Safari audio failure in the served build. The Safari native-audio fallback uses generated WAV `blob:` URLs, but v4.21's Content-Security-Policy did not allow `blob:` media, so WebKit could successfully unlock audio and still have playback blocked by the page policy. The server now explicitly permits `media-src 'self' blob:`. Safari audio activation is also stronger: a real one-frame Web Audio source is started inside the user gesture, native fallback elements are primed once per unlock cycle, and later interactions avoid repeating the expensive compatibility work unless WebKit suspends/interrupts audio again. Desktop Safari again receives a dismissible recommendation to use **Chrome or Firefox** for the most consistent audio and performance.
+leqra v4.23 makes the browser game an installable Progressive Web App while preserving fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, follows an online invite/resume, or starts matchmaking.
 
-The Controls menu retains the persistent **Volume** slider from 0–100. **50% is the original leqra loudness and the default/current midpoint**, values near the middle snap cleanly to 50%, and 100% provides up to twice the old master gain. Mute remains independent.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.23.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
-Matchmaking now uses **one integrated chat transcript**. Party/room messages and opponent messages appear together, with opponent messages visibly marked **OPPONENT** in red. A compact **Send to opponent** switch beside the composer selects whether your next messages go to the enemy side; leaving it off sends to your travelling party. The server still enforces the two scopes independently, reconnect history is filtered by the same rules, and shared P1/P2 sockets are deduplicated. Ordinary non-match rooms retain room-wide chat.
+Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the v4.23 client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
-Ghost received both presentation and physics fixes. Online Ghost reconciliation no longer carries a stale sideways correction while phasing through walls, and tank-to-tank overlap separation no longer pushes a ghosted tank through an intervening wall when another tank happens to overlap it from the opposite side. Same-side tank collisions remain unchanged.
+Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process queues a **server shutting down** message before closing connected sockets. Browsers that are currently online show the notice, leave the server-backed game, and return to the local Home Screen instead of sitting in a reconnect loop against a server that is intentionally stopping.
 
-Room editing is simpler: Join Another Room has one **JOIN** action because an unused code creates a room automatically; callsigns and online room codes save on Enter or blur; hosts can **Unshare room** to take a shared room offline while keeping their local setup/rules/bots/local Player 2; and Rules/Presets and Controls dropdown chevrons have more right-side spacing.
+Room/game polish in this release includes the requested **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even default distribution across Team 1/Team 2 when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
-See **UPDATE-v4.22.md** for current behavior and installation, **POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.22.md** for current verification.
+v4.22's Safari audio fallback/CSP work, integrated matchmaking chat, Ghost smoothing and simplified room editing are retained unchanged unless described above. See **UPDATE-v4.23.md** for the full update, **POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.23.md** for verification and test-environment limits.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -48,8 +48,8 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.22.md** for current behavior and installation,
-**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.22.md** for the current verification.
+statistics remain intact. See **UPDATE-v4.23.md** for current behavior and installation,
+**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.23.md** for the current verification.
 
 ## Previous combat improvements (retained)
 
@@ -115,6 +115,17 @@ with you plus three Normal bots in Free-for-all on a 12×10 map. Press **START M
 Local play works without a WebSocket connection; `web/index.html` can also be
 opened directly for local-only play.
 
+### Install on iPhone / Android
+
+For the installable PWA, serve leqra from **HTTPS** in a normal deployment. `localhost`
+is treated as a secure development context, but a plain `http://192.168.x.x` LAN URL can
+play the game without necessarily being eligible for service-worker/PWA installation.
+On iPhone/iPad, open the HTTPS site in Safari and use **Share → Add to Home Screen**.
+On Android, Chrome/compatible browsers offer **Install app** or **Add to Home screen**.
+After the v4.23 shell has been installed/cached, the installed app can launch without a
+network connection and local matches remain playable. Online rooms and matchmaking still
+require a reachable Go server and naturally cannot work while offline.
+
 **+ LOCAL PLAYER 2** adds a second tank controlled by arrow keys and Space on the
 same device. Player 1 uses WASD + Q; Space is an alias when no second local human exists. **F toggles fullscreen.** On a phone, the primary player uses
 the thumbstick and Fire button. Player 2 needs a keyboard on that device.
@@ -158,7 +169,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.22.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.23.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -195,7 +206,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.22.0**.
+on restart. Both the health endpoint and browser version should show **4.23.0**.
 
 ## Build one standalone server
 

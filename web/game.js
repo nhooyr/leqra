@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.22.0';
+const GAME_VERSION='4.23.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -55,7 +55,7 @@ document.body.classList.toggle('webkit-engine',WEBKIT_ENGINE);document.body.clas
 const keys=new Set(), firePointers=new Set(), firePresses=new Set();
 const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36};
 const Net=window.leqraNet;
-const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
+const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,serverVersion:'',seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const localRoom={code:'',players:[],self:0,nextViewer:MAX_TANKS,nextMember:0,rules:defaultRoomRules()};
 let watchInvite=false,watchResume=null,rolePending=false,swapPending=null,lastSpectatorUI='';
@@ -1367,9 +1367,10 @@ function joinInviteAsNewPilot(ws){
  online.retryAt=0;online.retries=0;forgetOnlineSession();setScreen('online');
  connectOnline({type:'join',code,name,spectating:!!online.inviteWatch});
 }
+function chatHasFocus(){return roomChat.open&&!!document.activeElement?.closest?.('#chatPanel');}
 function onlineControls(second=false){
  const pilot=second?secondLocal()?.id:online.id;
- const active=online.connected&&!online.menu&&!roomChat.open&&!document.querySelector('.feature-dialog[open]')&&!document.hidden&&phase==='playing'&&performance.now()-(online.snapshots.at(-1)?.received||0)<450&&tanks.find(t=>t.id===pilot)?.alive;
+ const active=online.connected&&!online.menu&&!chatHasFocus()&&!document.querySelector('.feature-dialog[open]')&&!document.hidden&&phase==='playing'&&performance.now()-(online.snapshots.at(-1)?.received||0)<450&&tanks.find(t=>t.id===pilot)?.alive;
  if(!active)return{forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0};
  return{forward:heldAction(second?1:0,'forward'),reverse:heldAction(second?1:0,'reverse'),left:heldAction(second?1:0,'left'),right:heldAction(second?1:0,'right'),fire:second?heldAction(1,'fire'):primaryFireHeld(),stickX:second?0:stick.x,stickY:second?0:stick.y};
 }
@@ -1406,12 +1407,21 @@ function connectOnline(request,reconnecting=false){
  let ws;try{ws=new WebSocket(wsURL.href);}catch(_){online.connecting=false;netBusy(false);if(online.publishing){online.publishing=false;mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent='Could not connect to the Go server. Your local room is unchanged.';}else setNetStatus('Could not open a connection to the Go server.',true);return;}
  const old=online.socket;online.socket=ws;if(old&&old.readyState<2)old.close();
  const timeout=setTimeout(()=>{if(online.socket===ws&&online.connecting)ws.close();},8000);
- ws.onopen=()=>{if(online.socket!==ws)return;sendOnline(request);};
+ ws.onopen=()=>{if(online.socket!==ws)return;};
  ws.onmessage=e=>{
   if(online.socket!==ws||mode!=='online')return;
   let msg;try{msg=JSON.parse(e.data);}catch(_){ws.close(1007,'Invalid server data');return;}
   online.lastMessage=performance.now();
   switch(msg.type){
+  case 'server_hello':
+   if(msg.version!==GAME_VERSION||msg.protocol!==1){
+    clearTimeout(timeout);const serverVersion=typeof msg.version==='string'?msg.version:'unknown',notice='This page is leqra v'+GAME_VERSION+', but the server is v'+serverVersion+'. Reload the page to update before playing online.';
+    online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.serverVersion=serverVersion;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;toast('UPDATE REQUIRED · RELOAD PAGE',5);break;
+   }
+   online.serverVersion=msg.version;sendOnline({type:'client_hello',version:GAME_VERSION,protocol:1});sendOnline(request);break;
+  case 'client_ready':break;
+  case 'server_shutdown':
+   clearTimeout(timeout);leaveOnline();$('roomStatus').textContent=msg.message||'The leqra server is shutting down. You were returned to the Home Screen.';toast('SERVER SHUTTING DOWN · RETURNED HOME',5);break;
   case 'queue_catalog':case 'queue_status':case 'queue_cancelled':matchmakingPacket(msg);break;
   case 'chat':case 'chat_history':chatPacket(msg);break;
   case 'welcome':
@@ -1441,6 +1451,7 @@ function connectOnline(request,reconnecting=false){
   case 'state':receiveOnlineState(msg);break;
   case 'pong':{const sample=clamp(performance.now()-msg.t,0,5000);online.latency=Math.round(online.latency?online.latency*.7+sample*.3:sample);break;}
   case 'error':
+   if(msg.action==='version'){clearTimeout(timeout);const notice=msg.message||'This leqra page does not match the server. Reload the page before playing online.';online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;toast('UPDATE REQUIRED · RELOAD PAGE',5);break;}
    if(msg.action==='rematch'){matchmaking.rematchPending=false;syncResultActions();toast(msg.message,3);break;}
    if(msg.action?.startsWith('queue_')||msg.action==='return_party'){matchmakingError(msg.message);break;}
    if(msg.action==='chat'){const channel=msg.channel==='opponent'?'opponent':'room',st=chatState(channel),pending=st.pending;st.pending=null;if(pending?.text&&!roomChat.draft)roomChat.draft=pending.text;st.error=msg.message;if(roomChat.open&&roomChat.sendTarget===channel){$('chatInput').value=roomChat.draft;$('chatError').textContent=st.error;}syncChatStatus();break;}
@@ -1469,7 +1480,7 @@ function connectOnline(request,reconnecting=false){
 }
 function showReconnecting(){
  for(const st of Object.values(roomChat.channels))st.pending=false;online.roomRenamePending=false;syncChatStatus();
- cancelKick();$('hostControls').hidden=true;online.menu=true;setScreen('onlineMenu');$('announcer').hidden=true;$('onlineMenuEyebrow').textContent='CONNECTION INTERRUPTED';$('onlineMenuMessage').textContent='Reconnecting to room '+online.code+'… '+(online.spectating?'You will return as a spectator. Your membership is reserved for 20 seconds.':'Your tank remains in the match. The server reserves your seat for 20 seconds.');$('onlineReturnBtn').disabled=true;$('onlineReturnBtn').firstElementChild.textContent='RECONNECTING…';
+ cancelKick();$('hostControls').hidden=true;if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=false;online.menu=true;setScreen('onlineMenu');$('announcer').hidden=true;$('onlineMenuEyebrow').textContent='CONNECTION INTERRUPTED';$('onlineMenuMessage').textContent='Reconnecting to room '+online.code+'… '+(online.spectating?'You will return as a spectator. Your membership is reserved for 20 seconds.':'Your tank remains in the match. The server reserves your seat for 20 seconds.');$('onlineReturnBtn').disabled=true;$('onlineReturnBtn').firstElementChild.textContent='RECONNECTING…';
 }
 function scheduleReconnect(){
  if(online.manual||mode!=='online')return;
@@ -1490,8 +1501,9 @@ function leaveOnline(){
  try{const url=new URL(location.href);url.searchParams.delete('room');url.searchParams.delete('spectate');history.replaceState(null,'',url);}catch(_){}
  mode='room';phase='menu';createLocalRoom();
 }
+function leaveOnlineMatch(){if(mode!=='online')return;if(!confirm('Leave this online match and return to the Home Screen?'))return;leaveOnline();}
 function toggleOnlineMenu(){
- if($('restartLocalBtn'))$('restartLocalBtn').hidden=true;
+ if($('restartLocalBtn'))$('restartLocalBtn').hidden=true;if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=false;
  if(!online.code)return;
  if(!online.connected){showReconnecting();return;}
  if(['onlineLobby','matchOver'].includes(phase)){setScreen('room');return;}
@@ -1529,7 +1541,7 @@ function renderOnlineRoom(){
  const complete=r.phase==='matchOver';$('roomEyebrow').textContent=complete?'MATCH COMPLETE':isOnline?'ONLINE ROOM · '+(host?'YOU ARE THE HOST':'CONNECTED'):'LOCAL ROOM · YOU ARE THE HOST';
  $('roomTitle').innerHTML=complete?'GOOD<br><em>GAME.</em>':'YOUR<br><em>ARENA.</em>';
  $('roomStatus').textContent=complete?(roundWinner<0?'Draw — scores tied.':winnerName(roundWinner)+' wins!')+' Adjust the room or play again.':isOnline?(count===MAX_TANKS?'Eight tanks are assigned. New visitors can still join as spectators.':'Room is online. Share the invite link to bring in friends.'):'Local play is ready. Sharing keeps this roster and these teams.';
- $('leaveRoomBtn').textContent=isOnline?'Leave room':'New local room';$('unshareRoomBtn').hidden=!(isOnline&&host&&editable);$('unshareRoomBtn').disabled=!!online.unsharePending;
+ $('leaveRoomBtn').hidden=!isOnline;$('leaveRoomBtn').textContent='Leave room';$('unshareRoomBtn').hidden=!(isOnline&&host&&editable);$('unshareRoomBtn').disabled=!!online.unsharePending;
  $('roomBtn').hidden=false;$('roomBtn').textContent=isOnline?online.code:'MY ROOM';
  $('manualContent').innerHTML='<div class="manual-line"><span>Player 1</span><kbd>'+(p2?'WASD + Q':'WASD / ARROWS + Q / SPACE')+'</kbd></div>'+(p2?'<div class="manual-line"><span>Local player 2</span><kbd>ARROWS + SPACE</kbd></div>':'')+'<div class="warning"><b>Last side standing wins.</b><br>Teammates share points and cannot hurt each other. Your own ricochets and grenades are still dangerous.</div>';
  syncFeatureSummary();syncSpectators();renderMatchmaking();
@@ -1753,11 +1765,10 @@ function initOnlineUI(){
  $('joinRoomBtn').addEventListener('click',join);$('joinCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();join();}});$('pilotName').addEventListener('keydown',e=>{if(watchInvite&&e.key==='Enter'){e.preventDefault();join();}});
  $('onlineBackBtn').addEventListener('click',()=>{if(online.connecting)return;watchInvite=false;watchResume=null;online.inviteCode='';online.inviteWatch=false;resetWatchDialog();if($('joinDialog').open)$('joinDialog').close();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
  $('joinDialog').addEventListener('cancel',e=>{if(online.connecting){e.preventDefault();return;}watchInvite=false;watchResume=null;online.inviteWatch=false;online.inviteCode='';resetWatchDialog();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
- const leave=()=>{if(mode==='online')leaveOnline();else createLocalRoom();};
- $('leaveRoomBtn').addEventListener('click',leave);$('unshareRoomBtn').addEventListener('click',unshareOnlineRoom);
+ $('leaveRoomBtn').addEventListener('click',leaveOnline);$('unshareRoomBtn').addEventListener('click',unshareOnlineRoom);
  $('joinOtherBtn').addEventListener('click',openJoinDialog);$('addLocalBtn').addEventListener('click',()=>addRoomSeat('local'));$('addBotBtn').addEventListener('click',()=>addRoomSeat('bot'));
  $('localRoomName').addEventListener('input',()=>{localRoom.code=$('localRoomName').value;});$('roomCodeEditor').addEventListener('submit',submitRoomRename);const roomCodeField=$('onlineRoomCode');roomCodeField.addEventListener('input',()=>{$('roomStatus').textContent='Room name updates when you press Enter or leave the field.';});roomCodeField.addEventListener('blur',()=>{if(cleanRoomCode(roomCodeField.value)!==online.code)submitRoomRename();});roomCodeField.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(cleanRoomCode(roomCodeField.value)!==online.code)submitRoomRename();roomCodeField.blur();}});
- $('returnRoomBtn').addEventListener('click',returnToRoom);$('restartLocalBtn').addEventListener('click',restartLocalMatch);
+ $('returnRoomBtn').addEventListener('click',returnToRoom);$('restartLocalBtn').addEventListener('click',restartLocalMatch);$('leaveMatchBtn').addEventListener('click',leaveOnlineMatch);
  $('readyBtn').addEventListener('click',()=>{initAudio();const p=online.roomData?.players.find(p=>p.id===online.id);sendOnline({type:'ready',ready:!p?.ready});});
  $('startRoomBtn').addEventListener('click',()=>{initAudio();if(mode==='room')startMatch();else sendOnline({type:'start'});});
  $('copyInviteBtn').addEventListener('click',copyOnlineInvite);$('copyInGameBtn').addEventListener('click',copyOnlineInvite);$('roomBtn').addEventListener('click',toggleRoomMenu);$('onlineReturnBtn').addEventListener('click',toggleRoomMenu);
@@ -1786,6 +1797,7 @@ function initOnlineUI(){
 
 // v3: one room model for local play and server-backed sessions.
 function cleanPilotName(value){return [...String(value).trim()].filter(c=>/[\p{L}\p{N} _-]/u.test(c)).slice(0,16).join('').replace(/\s+/g,' ').trim();}
+function balanceLocalTeams(players=localRoom.players){let n=0;for(const p of players.filter(p=>!p.spectating).sort((a,b)=>a.id-b.id)){p.team=1+n%2;delete p.colorIndex;n++;}}
 function createLocalRoom(){
  localRoom.self=0;localRoom.nextViewer=MAX_TANKS;
  let name='PILOT';try{name=localStorage.getItem('leqra.name')||name;}catch(_){}
@@ -1794,7 +1806,7 @@ function createLocalRoom(){
   {id:1,member:++localRoom.nextMember,kind:'bot',name:'RUST',owner:0,team:0,difficulty:'normal'},
   {id:2,member:++localRoom.nextMember,kind:'bot',name:'VAPOR',owner:0,team:0,difficulty:'normal'},
   {id:3,member:++localRoom.nextMember,kind:'bot',name:'EMBER',owner:0,team:0,difficulty:'normal'}];
- if(localRoom.rules.teamMode==='teams')for(const p of localRoom.players)if(p.id!==localRoom.self)p.team=2;
+ if(localRoom.rules.teamMode==='teams')balanceLocalTeams();
  $('pilotName').value=name;$('localRoomName').value='';$('inviteFallback').hidden=true;
  document.documentElement.style.removeProperty('--pilot');$('roomBtn').hidden=false;$('roomBtn').textContent='MY ROOM';
  callsignForms().forEach(f=>delete f.dataset.currentName);readyRoom();
@@ -1855,13 +1867,17 @@ function shareLocalRoom(){
 }
 function localSnapshotFromOnline(){
  const r=roomData(),self=localPlayerID();if(!r)return null;const keep=roomMembers(r).filter(p=>p.id===self||p.kind==='bot'||p.kind==='local'&&p.owner===self).map(p=>({id:p.id,member:p.member||0,name:p.name,kind:p.id===self?'human':p.kind,owner:p.id===self?self:p.owner,team:p.team||0,difficulty:p.difficulty,colorIndex:p.colorIndex,spectating:!!p.spectating}));
- if(!keep.some(p=>p.id===self))return null;return{code:r.code||online.code,self,players:keep,nextMember:Math.max(0,...keep.map(p=>p.member||0)),rules:validateRoomRules({...defaultRoomRules(),...(r.rules||{})})};
+ if(!keep.some(p=>p.id===self))return null;const preview=walls.length&&cols>0&&rows>0?{cols,rows,width:W,height:H,walls:walls.map(w=>({...w})),pickups:pickups.map(p=>({...p}))}:null;return{code:r.code||online.code,self,players:keep,nextMember:Math.max(0,...keep.map(p=>p.member||0)),rules:validateRoomRules({...defaultRoomRules(),...(r.rules||{})}),preview};
+}
+function restoreUnsharedPreview(preview){
+ if(!preview||!Array.isArray(preview.walls)||!preview.walls.length||!Number.isInteger(preview.cols)||!Number.isInteger(preview.rows))return false;
+ cols=preview.cols;rows=preview.rows;W=preview.width||cols*CELL;H=preview.height||rows*CELL;walls=preview.walls.map(w=>({...w}));grid=Array.from({length:cols*rows},()=>({neighbors:[]}));cacheMap();resize();localObjectives=null;resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=Array.isArray(preview.pickups)?preview.pickups.map(p=>({...p})):[];if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);return true;
 }
 function completeUnshare(){
  const snap=online.unshareSnapshot||localSnapshotFromOnline();online.unshareSnapshot=null;online.unsharePending=false;if(!snap){leaveOnline();return;}
  resetMatchmaking();closeChat();clearRoomChat();cancelSwap();rolePending=false;watchInvite=false;watchResume=null;online.inviteWatch=false;online.spectating=false;resetWatchDialog();cancelKick();cancelCallsignSave();online.inviteCode='';online.inviteResumeRetries=0;online.manual=true;clearTimeout(online.retryTimer);clearInput();sendOnlineInput(true);
  const ws=online.socket;online.socket=null;if(ws&&ws.readyState<2)ws.close(1000,'Room taken offline');online.connected=online.connecting=false;online.code=online.token='';online.id=-1;online.roomData=null;resetOnlineMotion();online.generation=-1;online.menu=false;online.lastMatch=-1;forgetOnlineSession();document.body.classList.remove('online-mode');document.documentElement.style.removeProperty('--pilot');$('roomBtn').hidden=true;$('bestInline').textContent='';$('barHint').textContent='Your own shots can take you out.';try{const url=new URL(location.href);url.searchParams.delete('room');url.searchParams.delete('spectate');history.replaceState(null,'',url);}catch(_){}
- mode='room';phase='menu';localRoom.code=snap.code;localRoom.self=snap.self;localRoom.players=snap.players;localRoom.nextMember=snap.nextMember;localRoom.rules=snap.rules;$('localRoomName').value=snap.code;persistLocalRoomRules(localRoom.rules);resetPreview();setScreen('room');renderOnlineRoom();toast('ROOM UNSHARED · ONLINE PLAYERS DISCONNECTED',3);
+ mode='room';phase='menu';localRoom.code=snap.code;localRoom.self=snap.self;localRoom.players=snap.players;localRoom.nextMember=snap.nextMember;localRoom.rules=snap.rules;$('localRoomName').value=snap.code;persistLocalRoomRules(localRoom.rules);if(!restoreUnsharedPreview(snap.preview))resetPreview();setScreen('room');renderOnlineRoom();toast('ROOM UNSHARED · ONLINE PLAYERS DISCONNECTED',3);
 }
 function unshareOnlineRoom(){
  const r=roomData();if(mode!=='online'||!online.connected||online.unsharePending||!r||r.host!==localPlayerID()||r.queue||r.matchmaking||r.awayMatch||!['lobby','matchOver'].includes(r.phase))return;if(!confirm('Take this room offline? All remote online players and spectators will be disconnected. Your local setup, bots, rules and local Player 2 will remain.'))return;online.unshareSnapshot=localSnapshotFromOnline();if(!online.unshareSnapshot){toast('Could not preserve this room locally.',3);return;}online.unsharePending=true;$('unshareRoomBtn').disabled=true;$('roomStatus').textContent='Taking room offline…';if(!sendOnline({type:'unshare'})){online.unsharePending=false;online.unshareSnapshot=null;$('unshareRoomBtn').disabled=false;$('roomStatus').textContent='Connection unavailable. Room is still online.';}
@@ -1951,7 +1967,7 @@ function roomStartError(data=roomData()){
 }
 function setLocalRules(value){
  const previous=localRoom.rules||defaultRoomRules(),rules=validateRoomRules(value),wasFFA=previous.teamMode==='ffa',mapChanged=previous.mapSize!==rules.mapSize,pickupSetupChanged=previous.pickupRate!==rules.pickupRate||previous.weapons.join('|')!==rules.weapons.join('|');localRoom.rules=rules;roundClock=rules.timeLimit;
- for(const p of localRoom.players){if(rules.teamMode==='ffa')p.team=0;else{if(wasFFA||p.team<1||p.team>4)p.team=p.id===localRoom.self||p.kind==='local'?1:2;delete p.colorIndex;}}
+ if(rules.teamMode==='ffa')for(const p of localRoom.players)p.team=0;else if(wasFFA)balanceLocalTeams();else for(const p of localRoom.players){if(p.team<1||p.team>4)p.team=p.id===localRoom.self||p.kind==='local'?1:2;delete p.colorIndex;}
  persistLocalRoomRules(rules);
  resetPreviewIfLobby({regenerateMaze:mapChanged,resetPickups:pickupSetupChanged});renderOnlineRoom();
 }
@@ -2817,6 +2833,6 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 // Read-only public state is handy for embedding and smoke testing.
 window.leqra=Object.freeze({version:GAME_VERSION,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),scopeTime:t.scopeTime||0,ghostTime:t.ghostTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
 // Deterministic hooks are only present in explicit development/test mode.
-if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,unshareOnlineRoom,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
+if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,restoreUnsharedPreview,unshareOnlineRoom,chatHasFocus,onlineControls,balanceLocalTeams,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
 initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();requestAnimationFrame(frame);
 })();

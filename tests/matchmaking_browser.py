@@ -15,7 +15,7 @@ def check(ok,text):
  checks.append(text);print('PASS',text,flush=True)
 class Peer:
  def __init__(self):
-  self.ws=connect(args.url.replace('http','ws',1)+'/ws',origin=args.url,compression=None,proxy=None);self.messages=[];self.cv=threading.Condition();self.thread=threading.Thread(target=self.read,daemon=True);self.thread.start();peers.append(self)
+  self.ws=connect(args.url.replace('http','ws',1)+'/ws',origin=args.url,compression=None,proxy=None);hello=json.loads(self.ws.recv());assert hello.get('type')=='server_hello',hello;self.ws.send(json.dumps({'type':'client_hello','version':hello.get('version'),'protocol':hello.get('protocol')}));self.messages=[hello];self.cv=threading.Condition();self.thread=threading.Thread(target=self.read,daemon=True);self.thread.start();peers.append(self)
  def read(self):
   try:
    for data in self.ws:

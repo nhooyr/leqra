@@ -38,7 +38,12 @@ class Peer:
   try:await self.send('leave')
   except ConnectionClosed:pass
   await self.ws.close();await self.task
-async def peer():return Peer(await connect(WS,origin=ORIGIN,compression=None,proxy=None,max_size=2_000_000))
+async def peer():
+ ws=await connect(WS,origin=ORIGIN,compression=None,proxy=None,max_size=2_000_000)
+ hello=json.loads(await ws.recv())
+ if hello.get('type')!='server_hello':raise AssertionError('missing server_hello: '+str(hello))
+ await ws.send(json.dumps({'type':'client_hello','version':hello.get('version'),'protocol':hello.get('protocol')}))
+ return Peer(ws)
 async def party(n,name):
  ps=[await peer() for _ in range(n)];w=await ps[0].op('create',lambda m:m['type']=='welcome',name=name+'0');code=w['room'];ws=[w]
  for i,p in enumerate(ps[1:]):ws.append(await p.op('join',lambda m:m['type']=='welcome',code=code,name=name+str(i+1)))
