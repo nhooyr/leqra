@@ -44,7 +44,7 @@ def load(b,name,w=1365,h=950,invite=''):
  p.evaluate('''a=>{window.__location=new URL(a.url);window.__history={state:null,replaceState(state,title,url){this.state=state;window.__updatedURL=String(url);}};
  const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});
  Object.defineProperty(window,'localStorage',{value:store({'leqra.muted':'1','leqra.name':a.name})});Object.defineProperty(window,'sessionStorage',{value:store({})});}''',{'url':args.url+'/?test=1'+invite,'name':name})
- p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p,c
+ p.add_script_tag(content=(web/'theme.js').read_text());p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p,c
 
 def queue_party_wire(n,key):
  people=[Peer() for _ in range(n)];w=people[0].op('create',lambda m:m['type']=='welcome',name='Opponent 1');code=w['room']
@@ -99,23 +99,28 @@ with sync_playwright() as pw:
   host.wait_for_function('''()=>{const s=leqra.getState(),me=s.online.id,p2=s.room.players.find(p=>p.kind==='local'&&p.owner===me),ts=__test.online.snapshots.at(-1).tanks;return p2&&[me,p2.id].every(id=>ts.find(t=>t.id===id)?.ack>0);}''')
   check(True,'Primary F and secondary Space retain independent online input acknowledgements')
   check(host.locator('#weaponLabel2').is_visible(),'Player 2 ammo remains visible in matched gameplay')
+  host.locator('#roomBtn').click();host.wait_for_function('!document.querySelector("#onlineMenuScreen").hidden')
+  check('BACK TO MY PARTY' not in host.locator('#onlineMenuScreen').inner_text() and host.locator('#partyReturnMenuBtn').count()==0,'Online match menu has no BACK TO MY PARTY action')
+  host.locator('#onlineReturnBtn').click();host.wait_for_function('document.querySelector("#onlineMenuScreen").hidden')
   friend.screenshot(path=str(out/'matched-ctf-320.png'))
   # Match spectator links remain names-first and cannot take an empty tank seat.
   watch,wc=load(b,'Match Viewer',390,844,'&room='+battle+'&spectate=1');watch.wait_for_function('document.querySelector("#joinDialog").open');watch.locator('#pilotName').fill('Match Viewer');watch.locator('#joinRoomBtn').click();watch.wait_for_function('leqra.getState().online?.spectating');check(watch.evaluate('leqra.getState().online.code')==battle,'Watch link joins matched arena as spectator after callsign confirmation')
-  check(watch.locator('#spectatorPlayBtn').is_disabled() and watch.locator('#spectatorPlayBtn').inner_text()=='WATCH ONLY','Matched spectator HUD clearly disables new tank entry')
+  check(watch.locator('#spectatorPlayBtn').is_disabled() and watch.locator('#spectatorPlayBtn').inner_text()=='SPECTATING ONLY','Matched spectator HUD clearly disables new tank entry while remaining Spectating')
   check(watch.locator('#toggleSpectateBtn').is_disabled(),'Matched spectator room role control is disabled, not a failing action')
   # Live reconnect preserves queue membership, both pilots and return reservation.
   old=host.evaluate('leqra.getState().online.id');host.evaluate('__test.online.socket.close(4000,"queue reconnect test")');host.wait_for_function('!leqra.getState().online.connected');host.wait_for_function('leqra.getState().online.connected',timeout=15000)
   check(host.evaluate('leqra.getState().online.id')==old and host.evaluate('leqra.getState().room.players.some(p=>p.kind==="local"&&p.name==="Keyboard Ally")'),'Reconnect preserves both matched pilots and identities')
-  # Abandon opposing side: normal immutable congratulations/statistics still work.
+  # Abandon opposing side: the result screen and private-party return still work.
   for p in opp:p.leave()
   host.wait_for_function('leqra.getState().phase==="matchOver"',timeout=10000);host.wait_for_function('document.querySelector("#victoryDialog").open');friend.wait_for_function('document.querySelector("#victoryDialog").open');watch.wait_for_function('document.querySelector("#victoryDialog").open')
-  check('WINS' in host.locator('#victoryTitle').inner_text() and host.locator('#victoryStats').is_visible(),'Public forfeit resolves to a congratulations popup with match statistics')
-  check(host.locator('#victoryPartyBtn').is_visible() and watch.locator('#victoryPartyBtn').is_hidden(),'Only actual queue members have a private-party return button')
-  host.screenshot(path=str(out/'matched-results.png'));host.locator('#victoryPartyBtn').click();host.wait_for_function('(code)=>leqra.getState().online.code===code',arg=home)
+  check('WINS' in host.locator('#victoryTitle').inner_text() and host.locator('#victoryStats').is_visible(),'Public forfeit resolves to a results screen with match statistics')
+  check(host.locator('#victoryEyebrow').inner_text()=='VICTORY!' and 'CONGRAT' not in host.locator('#victoryDialog').inner_text().upper(),'Winning result celebrates only the winning local side')
+  check(host.locator('#victoryAgainBtn').is_visible() and host.locator('#victoryAgainBtn').inner_text().startswith('REMATCH') and 'queue-rematch' in (host.locator('#victoryAgainBtn').get_attribute('class') or '') and host.locator('#victoryAgainBtn').evaluate("e=>getComputedStyle(e).backgroundColor")=='rgb(57, 255, 136)','Queued participant gets the neon green REMATCH action')
+  check(host.locator('#victoryPartyBtn').count()==0 and watch.locator('#victoryAgainBtn').is_hidden(),'Legacy result party button is removed and spectators cannot rematch')
+  host.screenshot(path=str(out/'matched-results.png'));host.locator('#victoryCloseBtn').click();host.wait_for_function('(code)=>leqra.getState().online.code===code',arg=home)
   check(host.evaluate('leqra.getState().room.awayMatch')==battle,'Returning early reserves the lobby until remaining friend returns')
   check(host.locator('#toggleSpectateBtn').is_disabled(),'Reserved source lobby disables role changes until friends return')
-  friend.locator('#victoryPartyBtn').click();friend.wait_for_function('(code)=>leqra.getState().online.code===code',arg=home);host.wait_for_function('!leqra.getState().room.awayMatch')
+  friend.locator('#victoryCloseBtn').click();friend.wait_for_function('(code)=>leqra.getState().online.code===code',arg=home);host.wait_for_function('!leqra.getState().room.awayMatch')
   r=host.evaluate('leqra.getState().room');check(len(r['players'])==6 and sum(p['kind']=='bot' for p in r['players'])==3,'Return restores private bot roster and three real players')
   check(r['rules']['teamMode']=='ffa' and r['rules']['mapSize']=='large','Private Free-for-all rules and default map were not overwritten')
   check(any(p['name']=='Keyboard Ally' and p['kind']=='local' for p in r['players']),'Player 2 custom callsign survives battle and return')
@@ -124,7 +129,7 @@ with sync_playwright() as pw:
   friend.locator('#queueCancelBtn').click();host.wait_for_function('!leqra.getState().room.queue');check(True,'A participating friend can cancel the next party search')
   check(not errors,'No uncaught browser errors')
   for c in [hc,fc,wc]:c.close()
-  report={'version':re.search(r"version:'([^']+)'",js).group(1),'passed':len(checks),'checks':checks,'errors':errors,'limitations':'Chromium desktop/mobile emulation; exact assets; synthetic Location/History/storage; real local Go sockets. No physical phones or public deployment.'};(out/'results.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
+  report={'version':re.search(r"GAME_VERSION='([^']+)'",js).group(1),'passed':len(checks),'checks':checks,'errors':errors,'limitations':'Chromium desktop/mobile emulation; exact assets; synthetic Location/History/storage; real local Go sockets. No physical phones or public deployment.'};(out/'results.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
  finally:
   for p in peers:p.leave()
   b.close()

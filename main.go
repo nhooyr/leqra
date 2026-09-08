@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const version = "4.17.0"
+const version = "4.19.0"
 
 //go:embed web/*
 var embeddedWeb embed.FS
