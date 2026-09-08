@@ -313,7 +313,7 @@ func (g *Game) stepObjectives(dt float64, players [maxTanks]*Player) {
 				continue
 			}
 			for _, f := range o.Flags {
-				if f.Team == t.Team && !f.Home && f.Carrier < 0 && dist(t.X, t.Y, f.X, f.Y) < t.R+14 && g.rayWalls(t.X, t.Y, f.X-t.X, f.Y-t.Y, 0) == nil {
+				if f.Team == t.Team && !f.Home && f.Carrier < 0 && dist(t.X, t.Y, f.X, f.Y) < t.R+14 && !g.rayBlocked(t.X, t.Y, f.X-t.X, f.Y-t.Y, 0) {
 					g.recordFlagReturn(t)
 					resetFlag(f)
 					g.emit("objective", t, t.ID, "Flag returned")
@@ -338,7 +338,7 @@ func (g *Game) stepObjectives(dt float64, players [maxTanks]*Player) {
 			}
 			if carried == nil {
 				for _, f := range o.Flags {
-					if f.Team != t.Team && f.Carrier < 0 && dist(t.X, t.Y, f.X, f.Y) < t.R+14 && g.rayWalls(t.X, t.Y, f.X-t.X, f.Y-t.Y, 0) == nil {
+					if f.Team != t.Team && f.Carrier < 0 && dist(t.X, t.Y, f.X, f.Y) < t.R+14 && !g.rayBlocked(t.X, t.Y, f.X-t.X, f.Y-t.Y, 0) {
 						f.Carrier = t.ID
 						f.Home = false
 						f.ReturnIn = 0
@@ -350,7 +350,7 @@ func (g *Game) stepObjectives(dt float64, players [maxTanks]*Player) {
 					}
 				}
 			}
-			if carried != nil && own.Home && dist(t.X, t.Y, own.HomeX, own.HomeY) < t.R+17 && g.rayWalls(t.X, t.Y, own.HomeX-t.X, own.HomeY-t.Y, 0) == nil {
+			if carried != nil && own.Home && dist(t.X, t.Y, own.HomeX, own.HomeY) < t.R+17 && !g.rayBlocked(t.X, t.Y, own.HomeX-t.X, own.HomeY-t.Y, 0) {
 				g.recordCapture(t)
 				resetFlag(carried)
 				g.addObjectivePoint(t.ID)
@@ -361,30 +361,31 @@ func (g *Game) stepObjectives(dt float64, players [maxTanks]*Player) {
 			}
 		}
 	} else if o.Mode == "koth" {
-		sides := map[int]int{}
-		occupants := make([]*Tank, 0, maxTanks)
+		var occupants [maxTanks]*Tank
+		occupantCount, sideCount, owner, id := 0, 0, 0, -1
 		for _, t := range g.Tanks {
-			if t != nil && t.Alive && t.Invulnerable <= 0 && dist(t.X, t.Y, o.HillX, o.HillY) <= o.Radius && g.rayWalls(o.HillX, o.HillY, t.X-o.HillX, t.Y-o.HillY, 0) == nil {
-				occupants = append(occupants, t)
-				sides[sideKey(t.ID, t.Team)] = t.ID
+			if t == nil || !t.Alive || t.Invulnerable > 0 || dist(t.X, t.Y, o.HillX, o.HillY) > o.Radius || g.rayBlocked(o.HillX, o.HillY, t.X-o.HillX, t.Y-o.HillY, 0) {
+				continue
+			}
+			occupants[occupantCount] = t
+			occupantCount++
+			side := sideKey(t.ID, t.Team)
+			if sideCount == 0 {
+				owner, id, sideCount = side, t.ID, 1
+			} else if side != owner {
+				sideCount = 2 // Only zero / one / contested matters below.
 			}
 		}
-		owner := 0
-		id := -1
-		for side, pilot := range sides {
-			owner = side
-			id = pilot
-		}
-		o.Contested = len(sides) > 1
-		if len(sides) != 1 {
+		o.Contested = sideCount > 1
+		if sideCount != 1 {
 			o.Owner = 0
 			o.Hold = 0
 		} else {
 			if o.Owner != owner {
 				o.Hold = 0
 			}
-			for _, t := range occupants {
-				g.recordHillTime(t, dt)
+			for i := 0; i < occupantCount; i++ {
+				g.recordHillTime(occupants[i], dt)
 			}
 			o.Owner = owner
 			o.Hold += dt

@@ -1,6 +1,8 @@
-# leqra v4.16 — lowercase rebrand
+# leqra v4.17 — bug fixes and performance pass
 
-leqra v4.16 is the full lowercase rebrand of the game. The v4.15 gameplay, lobby, HUD, and Ultra Wide behavior is retained while the product, browser, server, storage, package, and deployment surfaces now use the leqra name.
+leqra v4.17 keeps the lowercase leqra branding and v4.15/v4.16 gameplay intact while tightening simulation, browser, and networking hot paths. The disabled-pickup scheduler now truly sleeps when Pickup Rate is Off, server bot/path/collision work reuses scratch state, 60 Hz room snapshots reuse serialization buffers, and local/online browser loops avoid several per-tick/per-frame collection allocations.
+
+The v4.16 full-game rebrand remains canonical across the browser, server, storage namespace, package, executable, and deployment examples. Existing migrated `leqra.*` settings remain compatible.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -38,8 +40,8 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.16.md** for current behavior and installation,
-**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.16.md** for the focused tests.
+statistics remain intact. See **UPDATE-v4.17.md** for current behavior and installation,
+**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.17.md** for the focused tests.
 
 ## Previous combat improvements (retained)
 
@@ -146,7 +148,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.16.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.17.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -183,7 +185,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.16.0**.
+on restart. Both the health endpoint and browser version should show **4.17.0**.
 
 ## Build one standalone server
 

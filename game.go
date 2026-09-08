@@ -388,8 +388,9 @@ func (g *Game) startMatch(players [maxTanks]*Player) {
 
 type RayHit struct{ T, NX, NY float64 }
 
-func (g *Game) rayWalls(x, y, dx, dy, r float64) *RayHit {
-	var best *RayHit
+func (g *Game) rayWallsHit(x, y, dx, dy, r float64) (RayHit, bool) {
+	var best RayHit
+	hasBest := false
 	nearest := 1.0 + 1e-8
 	for _, wi := range g.wallCandidates(x, y, dx, dy, r) {
 		w := g.World.Walls[wi]
@@ -448,8 +449,9 @@ func (g *Game) rayWalls(x, y, dx, dy, r float64) *RayHit {
 		}
 		if hit < nearest-1e-7 {
 			nearest = hit
-			best = &RayHit{hit, nx, ny}
-		} else if best != nil && math.Abs(hit-nearest) < 1e-7 {
+			best = RayHit{hit, nx, ny}
+			hasBest = true
+		} else if hasBest && math.Abs(hit-nearest) < 1e-7 {
 			if nx != 0 {
 				best.NX = nx
 			}
@@ -458,8 +460,24 @@ func (g *Game) rayWalls(x, y, dx, dy, r float64) *RayHit {
 			}
 		}
 	}
-	return best
+	return best, hasBest
 }
+
+// Pointer compatibility is retained for test fixtures and low-frequency helpers.
+// Simulation hot paths use rayWallsHit so collision checks do not allocate.
+func (g *Game) rayWalls(x, y, dx, dy, r float64) *RayHit {
+	hit, ok := g.rayWallsHit(x, y, dx, dy, r)
+	if !ok {
+		return nil
+	}
+	return &hit
+}
+
+func (g *Game) rayBlocked(x, y, dx, dy, r float64) bool {
+	_, ok := g.rayWallsHit(x, y, dx, dy, r)
+	return ok
+}
+
 func circleHit(x, y, dx, dy, tx, ty, r float64) (float64, bool) {
 	a := dx*dx + dy*dy
 	ox, oy := x-tx, y-ty
@@ -618,16 +636,18 @@ func (g *Game) detonateOwned(t *Tank) bool {
 	}
 	// Capture the set first: the first explosion can kill its owner, but all
 	// grenades selected by the same valid detonation press still go off.
-	owned := make([]*Bullet, 0, 3)
+	var owned [3]*Bullet
+	count := 0
 	for _, b := range g.Bullets {
-		if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" {
-			owned = append(owned, b)
+		if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && count < len(owned) {
+			owned[count] = b
+			count++
 		}
 	}
-	for _, b := range owned {
-		g.detonate(b)
+	for i := 0; i < count; i++ {
+		g.detonate(owned[i])
 	}
-	return len(owned) > 0
+	return count > 0
 }
 func capacity(t *Tank) int {
 	if t.Power == "homing" || t.Power == "grenade" || t.Power == "laser" || t.Power == "cannon" {
@@ -710,8 +730,8 @@ func (g *Game) fire(t *Tank) bool {
 		g.nextBullet++
 		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: t.X + cs*muzzle, Y: t.Y + sn*muzzle, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1}
 		// Cannon ignores internal walls, but even its muzzle respects the arena rim.
-		hit := g.projectileWall(kind, t.X, t.Y, cs*muzzle, sn*muzzle, b.R)
-		if hit != nil {
+		hit, hitOK := g.projectileWallHit(kind, t.X, t.Y, cs*muzzle, sn*muzzle, b.R)
+		if hitOK {
 			b.X = t.X + cs*muzzle*hit.T + hit.NX*.12
 			b.Y = t.Y + sn*muzzle*hit.T + hit.NY*.12
 			if hit.NX != 0 {
@@ -725,7 +745,7 @@ func (g *Game) fire(t *Tank) bool {
 		if kind == "homing" || kind == "rapid" {
 			// Count the hidden muzzle section toward total path budgets, matching Laser/Scope semantics.
 			launchDistance := muzzle
-			if hit != nil {
+			if hitOK {
 				launchDistance = muzzle*hit.T + math.Hypot(hit.NX, hit.NY)*.12
 				if kind == "homing" {
 					b.SeekDelay = missileWallDelay
@@ -767,9 +787,9 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 	points := make([]BeamPoint, 0, 16)
 	for segment := 0; segment < laserMaxSegments && remaining > 1e-7; segment++ {
 		dx, dy := ux*remaining, uy*remaining
-		wall := g.rayWalls(x, y, dx, dy, laserRadius)
+		wall, wallOK := g.rayWallsHit(x, y, dx, dy, laserRadius)
 		stop := 1.0
-		if wall != nil {
+		if wallOK {
 			stop = wall.T
 		}
 		var target *Tank
@@ -793,7 +813,7 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 		if target != nil {
 			return points, target
 		}
-		if wall == nil || remaining <= 1e-7 {
+		if !wallOK || remaining <= 1e-7 {
 			break
 		}
 		if wall.NX != 0 {
@@ -898,7 +918,7 @@ func (g *Game) steerMissile(b *Bullet, dt float64) {
 		if d > 1e-8 && rx*b.VX+ry*b.VY < missileViewCos*d*math.Hypot(b.VX, b.VY) {
 			return false
 		}
-		return g.rayWalls(b.X, b.Y, rx, ry, b.R) == nil
+		return !g.rayBlocked(b.X, b.Y, rx, ry, b.R)
 	}
 	var target *Tank
 	if b.Target >= 0 {
@@ -950,7 +970,7 @@ func (g *Game) detonate(b *Bullet) {
 		if t == nil || !t.Alive || dist(b.X, b.Y, t.X, t.Y) > blastRadius+t.R {
 			continue
 		}
-		if g.rayWalls(b.X, b.Y, t.X-b.X, t.Y-b.Y, 0) != nil {
+		if g.rayBlocked(b.X, b.Y, t.X-b.X, t.Y-b.Y, 0) {
 			continue
 		}
 		g.hurt(t, b)
@@ -988,7 +1008,7 @@ func (g *Game) updateBullets(dt float64) {
 				remaining = math.Min(remaining, math.Max(0, b.RangeLeft)/missileSpeed)
 			}
 			dx, dy := b.VX*remaining, b.VY*remaining
-			wall := g.projectileWall(b.Kind, b.X, b.Y, dx, dy, b.R)
+			wall, wallOK := g.projectileWallHit(b.Kind, b.X, b.Y, dx, dy, b.R)
 			var target *Tank
 			first := 2.0
 			// A grenade makes one blast at first living-tank contact. Physical
@@ -1006,7 +1026,7 @@ func (g *Game) updateBullets(dt float64) {
 					first, target = at, t
 				}
 			}
-			if target != nil && (wall == nil || first <= wall.T) {
+			if target != nil && (!wallOK || first <= wall.T) {
 				b.X += dx * first
 				b.Y += dy * first
 				if b.Kind == "grenade" {
@@ -1024,7 +1044,7 @@ func (g *Game) updateBullets(dt float64) {
 				}
 				break
 			}
-			if wall != nil {
+			if wallOK {
 				nudge := .08
 				if b.Kind == "homing" {
 					b.RangeLeft = math.Max(0, b.RangeLeft-math.Hypot(dx, dy)*wall.T)
@@ -1297,19 +1317,20 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		g.stepObjectives(dt, players)
 		return
 	}
-	count, winner := 0, -1
-	sides := map[int]bool{}
+	sideCount, winner, owner := 0, -1, 0
 	for _, t := range g.Tanks {
-		if t != nil && t.Alive {
-			key := sideKey(t.ID, t.Team)
-			if !sides[key] {
-				sides[key] = true
-				count++
-				winner = t.ID
-			}
+		if t == nil || !t.Alive {
+			continue
+		}
+		key := sideKey(t.ID, t.Team)
+		if sideCount == 0 {
+			owner, winner, sideCount = key, t.ID, 1
+		} else if key != owner {
+			sideCount = 2
+			break
 		}
 	}
-	if count <= 1 {
+	if sideCount <= 1 {
 		g.finishRound(winner)
 	} else if g.Clock <= 0 {
 		g.finishRound(-1)

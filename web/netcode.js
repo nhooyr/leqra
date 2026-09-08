@@ -254,7 +254,7 @@
    for(const [k,v]of this.previews)if(now>v.expires||!activeIDs.has(v.owner))this.previews.delete(k);
    for(const [k,until]of this.soundKeys)if(now>until)this.soundKeys.delete(k);
    for(const id of this.pilots.keys())if(!activeIDs.has(id))this.remove(id);
-   for(const p of this.pilots.values())if(![...this.previews.values()].some(v=>v.owner!==undefined&&this.pilots.get(v.owner)===p&&!v.accepted))p.next=p.serial;
+   for(const p of this.pilots.values()){let pending=false;for(const v of this.previews.values())if(v.owner!==undefined&&this.pilots.get(v.owner)===p&&!v.accepted){pending=true;break;}if(!pending)p.next=p.serial;}
   }
  }
  return Object.freeze({expandMachineBullets,STEP,STEP_MS,clamp,delta,neutral,controlsEqual,move,Predictor,SnapshotBuffer,ShotPresentation});
