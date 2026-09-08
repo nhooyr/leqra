@@ -789,7 +789,15 @@ func (g *Game) fire(t *Tank) bool {
 		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: t.X + cs*muzzle, Y: t.Y + sn*muzzle, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1}
 		// Cannon ignores internal walls, but even its muzzle respects the arena rim.
 		hit, hitOK := g.projectileWallHit(kind, t.X, t.Y, cs*muzzle, sn*muzzle, b.R)
-		if hitOK {
+		target, targetAt := g.projectileTankHit(b, t.X, t.Y, cs*muzzle, sn*muzzle)
+		if target != nil && hitOK && targetAt > hit.T {
+			target = nil
+		}
+		if target != nil {
+			// The hidden muzzle section still travels through the arena. A
+			// close grazing tank can be entirely behind the initial shell point.
+			b.X, b.Y = t.X+cs*muzzle*targetAt, t.Y+sn*muzzle*targetAt
+		} else if hitOK {
 			b.X = t.X + cs*muzzle*hit.T + hit.NX*.12
 			b.Y = t.Y + sn*muzzle*hit.T + hit.NY*.12
 			if hit.NX != 0 {
@@ -803,7 +811,9 @@ func (g *Game) fire(t *Tank) bool {
 		if kind == "homing" || kind == "rapid" {
 			// Count the hidden muzzle section toward total path budgets, matching Laser/Scope semantics.
 			launchDistance := muzzle
-			if hitOK {
+			if target != nil {
+				launchDistance = muzzle * targetAt
+			} else if hitOK {
 				launchDistance = muzzle*hit.T + math.Hypot(hit.NX, hit.NY)*.12
 				if kind == "homing" {
 					b.SeekDelay = missileWallDelay
@@ -816,7 +826,11 @@ func (g *Game) fire(t *Tank) bool {
 				b.Life = math.Max(0, (g.machineTravelRange()-launchDistance)/machineSpeed)
 			}
 		}
-		g.Bullets = append(g.Bullets, b)
+		if target != nil {
+			g.projectileTankImpact(b, target)
+		} else {
+			g.Bullets = append(g.Bullets, b)
+		}
 	}
 	// Throttle cosmetic machine-gun events, never the authoritative bullets.
 	if kind != "rapid" || t.ShotSerial%4 == 1 {
@@ -1042,6 +1056,41 @@ func (g *Game) detonate(b *Bullet) {
 		g.hurt(t, b)
 	}
 }
+
+// Muzzle placement and live flight use the same collision eligibility. Grenades
+// physically contact allies and protected tanks; only their damage is filtered.
+func (g *Game) projectileTankHit(b *Bullet, x, y, dx, dy float64) (*Tank, float64) {
+	var target *Tank
+	first := 2.0
+	for _, t := range g.Tanks {
+		if t == nil || !t.Alive || (t.ID == b.Owner && (b.Age < .20 || b.Kind == "scatter" || b.Kind == "rapid")) {
+			continue
+		}
+		if b.Kind != "grenade" && (!g.canDamage(b.Owner, t) || t.Invulnerable > 0) {
+			continue
+		}
+		if at, ok := circleHit(x, y, dx, dy, t.X, t.Y, t.R+b.R); ok && at < first {
+			first, target = at, t
+		}
+	}
+	return target, first
+}
+
+func (g *Game) projectileTankImpact(b *Bullet, target *Tank) {
+	if b.Kind == "grenade" {
+		g.detonate(b) // Contact makes one blast; shields absorb one hit.
+		return
+	}
+	b.Dead = true
+	if b.Kind == "homing" {
+		g.projectileEvent("impact", b, 25)
+	}
+	if b.Kind == "cannon" {
+		g.projectileEvent("impact", b, 32) // Cosmetic only, no splash damage.
+	}
+	g.hurt(target, b)
+}
+
 func (g *Game) updateBullets(dt float64) {
 	for _, b := range g.Bullets {
 		if b.Dead {
@@ -1075,39 +1124,14 @@ func (g *Game) updateBullets(dt float64) {
 			}
 			dx, dy := b.VX*remaining, b.VY*remaining
 			wall, wallOK := g.projectileWallHit(b.Kind, b.X, b.Y, dx, dy, b.R)
-			var target *Tank
-			first := 2.0
-			// A grenade makes one blast at first living-tank contact. Physical
-			// contact also counts on allies or spawn-protected tanks; damage still
-			// passes through canDamage / invulnerability / shield checks. A short
-			// owner grace keeps a wall-adjacent launch from detonating in the barrel.
-			for _, t := range g.Tanks {
-				if t == nil || !t.Alive || (t.ID == b.Owner && (b.Age < .20 || b.Kind == "scatter" || b.Kind == "rapid")) {
-					continue
-				}
-				if b.Kind != "grenade" && (!g.canDamage(b.Owner, t) || t.Invulnerable > 0) {
-					continue
-				}
-				if at, ok := circleHit(b.X, b.Y, dx, dy, t.X, t.Y, t.R+b.R); ok && at < first {
-					first, target = at, t
-				}
-			}
+			target, first := g.projectileTankHit(b, b.X, b.Y, dx, dy)
 			if target != nil && (!wallOK || first <= wall.T) {
 				b.X += dx * first
 				b.Y += dy * first
-				if b.Kind == "grenade" {
-					g.detonate(b) // Not contact damage plus blast: shields absorb one hit.
-				} else {
-					b.Dead = true
-					if b.Kind == "homing" {
-						b.RangeLeft = math.Max(0, b.RangeLeft-math.Hypot(dx, dy)*first)
-						g.projectileEvent("impact", b, 25)
-					}
-					if b.Kind == "cannon" {
-						g.projectileEvent("impact", b, 32) // Cosmetic only, no splash damage.
-					}
-					g.hurt(target, b)
+				if b.Kind == "homing" {
+					b.RangeLeft = math.Max(0, b.RangeLeft-math.Hypot(dx, dy)*first)
 				}
+				g.projectileTankImpact(b, target)
 				break
 			}
 			if wallOK {

@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.38.0';
+const GAME_VERSION='4.39.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -335,7 +335,7 @@ function nearbyWalls(x,y,dx,dy,r){
  if(walls.length<24)return walls;
  let z=wallIndex;
  if(!z||z.source!==walls||z.count!==walls.length||z.cols!==cols||z.rows!==rows){
-  z={source:walls,count:walls.length,cols,rows,bins:Array.from({length:cols*rows},()=>[]),seen:new Uint32Array(walls.length),stamp:0,ids:[],result:[],order:new Map(walls.map((w,i)=>[w,i]))};
+  z={source:walls,count:walls.length,cols,rows,bins:Array.from({length:cols*rows},()=>[]),mask:new Uint32Array(Math.ceil(walls.length/32)),result:[],order:new Map(walls.map((w,i)=>[w,i]))};
   for(let i=0;i<walls.length;i++){const w=walls[i],x0=clamp(Math.floor(w.x/CELL),0,cols-1),x1=clamp(Math.floor((w.x+w.w)/CELL),0,cols-1),y0=clamp(Math.floor(w.y/CELL),0,rows-1),y1=clamp(Math.floor((w.y+w.h)/CELL),0,rows-1);for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++)z.bins[yy*cols+xx].push(i);}
   // Cell bins already contain each wall once in authoritative wall order.
   // Most movement/guidance sweeps stay in one cell: reuse that immutable list.
@@ -345,9 +345,14 @@ function nearbyWalls(x,y,dx,dy,r){
  const x0=clamp(Math.floor((Math.min(x,x+dx)-r)/CELL),0,cols-1),x1=clamp(Math.floor((Math.max(x,x+dx)+r)/CELL),0,cols-1),y0=clamp(Math.floor((Math.min(y,y+dy)-r)/CELL),0,rows-1),y1=clamp(Math.floor((Math.max(y,y+dy)+r)/CELL),0,rows-1);
  if(x0===x1&&y0===y1)return z.cellWalls[y0*cols+x0];
  if((x1-x0+1)*(y1-y0+1)>cols*rows/3)return walls;
- z.stamp=(z.stamp+1)>>>0;if(z.stamp===0){z.seen.fill(0);z.stamp=1;}z.ids.length=0;z.result.length=0;
- for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++)for(const id of z.bins[yy*cols+xx])if(z.seen[id]!==z.stamp){z.seen[id]=z.stamp;z.ids.push(id);}
- z.ids.sort((a,b)=>a-b);for(const id of z.ids)z.result.push(walls[id]);return z.result;
+ // A bit per authoritative wall deduplicates overlapping cell bins and emits
+ // candidates in their original order without sorting IDs for every sweep.
+ z.mask.fill(0);z.result.length=0;
+ for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++)for(const id of z.bins[yy*cols+xx])z.mask[id>>>5]|=1<<(id&31);
+ for(let word=0;word<z.mask.length;word++){
+  let bits=z.mask[word];while(bits){const bit=31-Math.clz32(bits&-bits);z.result.push(walls[(word<<5)+bit]);bits&=bits-1;}
+ }
+ return z.result;
 }
 
 function rayWalls(x,y,dx,dy,r=0){
@@ -462,10 +467,12 @@ function muzzleProjectile(t,angle){
  const spec=projectileSpec(t.power),cs=Math.cos(angle),sn=Math.sin(angle);
  const muzzle=spec.kind==='cannon'?Math.max(28,t.r+spec.r+1):28;
  const b={...spec,owner:t.id,x:t.x+cs*muzzle,y:t.y+sn*muzzle,vx:cs*spec.speed,vy:sn*spec.speed,age:0,color:t.color,bounces:0,target:-1,trail:[],dead:false};
- const hit=projectileWall(b.kind,t.x,t.y,cs*muzzle,sn*muzzle,b.r);
- if(hit){b.x=t.x+cs*muzzle*hit.t+hit.nx*.12;b.y=t.y+sn*muzzle*hit.t+hit.ny*.12;if(hit.nx)b.vx=-b.vx;if(hit.ny)b.vy=-b.vy;b.bounces++;}
- const launchDistance=hit?muzzle*hit.t+Math.hypot(hit.nx,hit.ny)*.12:muzzle;
- if(b.kind==='homing'){b.rangeLeft=Math.max(0,W+H-launchDistance);b.seekDelay=hit?MISSILE_WALL_DELAY:0;}
+ const hit=projectileWall(b.kind,t.x,t.y,cs*muzzle,sn*muzzle,b.r),tank=tankHit(t.x,t.y,cs*muzzle,sn*muzzle,b.r,t.id,true,b.kind==='grenade');
+ const contact=tank&&(!hit||tank.at<=hit.t);
+ if(contact){b.x=t.x+cs*muzzle*tank.at;b.y=t.y+sn*muzzle*tank.at;b.launchHit=tank.tank.id;}
+ else if(hit){b.x=t.x+cs*muzzle*hit.t+hit.nx*.12;b.y=t.y+sn*muzzle*hit.t+hit.ny*.12;if(hit.nx)b.vx=-b.vx;if(hit.ny)b.vy=-b.vy;b.bounces++;}
+ const launchDistance=contact?muzzle*tank.at:hit?muzzle*hit.t+Math.hypot(hit.nx,hit.ny)*.12:muzzle;
+ if(b.kind==='homing'){b.rangeLeft=Math.max(0,W+H-launchDistance);b.seekDelay=!contact&&hit?MISSILE_WALL_DELAY:0;}
  else if(b.kind==='rapid')b.life=Math.max(0,((W+H)/2-launchDistance)/MACHINE_SPEED);
  return b;
 }
@@ -487,7 +494,8 @@ function fire(t){
  if(available<spread.length)return false;
  const spec=projectileSpec(t.power);if(t.power==='rapid')t.rapidTick=Math.floor((time+1e-7)*60);t.cooldown=spec.cooldown;t.cooldownTotal=t.cooldown;t.recoil=1;
  for(const offset of spread){const angle=t.angle+offset,b=muzzleProjectile(t,angle);b.id=++bulletId;
-  bullets.push(b);
+  if(b.launchHit!==undefined)projectileTankImpact(b,tanks.find(other=>other.id===b.launchHit));
+  if(!b.dead)bullets.push(b);
   if(spec.kind!=='rapid'||Math.floor(time*60)%4===0)burst(t.x+Math.cos(angle)*27,t.y+Math.sin(angle)*27,t.color,3,40);
  }
  shotSound(spec.kind,t.human);
@@ -639,7 +647,7 @@ function missileWallNudge(b,wall){
 }
 // Used only for grenade guidance/AI, not authoritative online damage.
 function grenadeForecast(source,seconds=source.life){
- const b={...source};let left=Math.max(0,Math.min(seconds,b.life));
+ const b={...source};if(b.launchHit!==undefined){b.life=0;return b;}let left=Math.max(0,Math.min(seconds,b.life));
  while(left>1e-6){const dt=Math.min(1/60,left),lifeBefore=b.life;b.life=Math.max(0,b.life-dt);const drag=grenadeDragFactor(lifeBefore,b.life);b.vx*=drag;b.vy*=drag;let rest=dt;
   for(let i=0;i<4&&rest>1e-5;i++){const dx=b.vx*rest,dy=b.vy*rest,w=rayWalls(b.x,b.y,dx,dy,b.r);if(!w){b.x+=dx;b.y+=dy;break;}
    b.x+=dx*w.t+w.nx*.08;b.y+=dy*w.t+w.ny*.08;if(w.nx)b.vx=-b.vx;if(w.ny)b.vy=-b.vy;b.bounces++;rest*=1-w.t;
@@ -672,6 +680,10 @@ function hurt(t,b){
  if(t.id===0&&mode==='solo'){toast(b.owner===t.id?(b.kind==='grenade'?'YOUR OWN GRENADE!':'YOUR OWN RICOCHET!'):'TANK DOWN · SQUAD WINS',2.4);if(touchUI&&navigator.vibrate)navigator.vibrate(35);}
  updateHUD(true);
 }
+function projectileTankImpact(b,target){
+ if(b.kind==='grenade')detonate(b);
+ else{b.dead=true;if(b.kind==='homing'||b.kind==='cannon')impactEffect(b.x,b.y,b.color,b.kind==='cannon'?32:25);hurt(target,b);}
+}
 function updateBullets(dt){
  for(const b of bullets){if(b.dead)continue;
   if(b.kind==='homing')b.rangeLeft??=W+H;
@@ -682,7 +694,7 @@ function updateBullets(dt){
   for(let step=0;step<4&&remaining>.00001&&!b.dead;step++){
    if(b.kind==='homing')remaining=Math.min(remaining,Math.max(0,b.rangeLeft)/MISSILE_SPEED);
    const dx=b.vx*remaining,dy=b.vy*remaining,wall=projectileWall(b.kind,b.x,b.y,dx,dy,b.r),tank=tankHit(b.x,b.y,dx,dy,b.r,b.owner,b.age<.20||b.kind==='scatter'||b.kind==='rapid',b.kind==='grenade');
-   if(tank&&(!wall||tank.at<=wall.t)){spendMissileRange(b,Math.hypot(dx,dy)*tank.at);b.x+=dx*tank.at;b.y+=dy*tank.at;if(b.kind==='grenade')detonate(b);else{b.dead=true;if(b.kind==='homing'||b.kind==='cannon')impactEffect(b.x,b.y,b.color,b.kind==='cannon'?32:25);hurt(tank.tank,b);}break;}
+   if(tank&&(!wall||tank.at<=wall.t)){spendMissileRange(b,Math.hypot(dx,dy)*tank.at);b.x+=dx*tank.at;b.y+=dy*tank.at;projectileTankImpact(b,tank.tank);break;}
    if(wall){b.x+=dx*wall.t;b.y+=dy*wall.t;spendMissileRange(b,Math.hypot(dx,dy)*wall.t);
     missileWallNudge(b,wall);remaining*=1-wall.t;burst(b.x,b.y,b.color,2,36);
     if(time-lastBounceSound>.07){tone(650,420,.045,.009);lastBounceSound=time;}
@@ -2119,10 +2131,18 @@ function receiveOnlineState(s){
 }
 function onlineEffect(e,s){
  if(e.generation!==undefined&&e.generation!==s.generation)return;
- if(e.type==='laser'){const key=online.shots.key(e.player,e.spawnSerial,e.shotSerial);
-  if(online.shots.heard(e.player,e.spawnSerial,e.shotSerial)){
-   const preview=traces.find(t=>t.previewKey===key);if(preview){preview.x=e.x;preview.y=e.y;preview.endX=e.endX;preview.endY=e.endY;if(e.points)preview.points=e.points.map(p=>({...p}));}
-   // Correct any remaining visual; do not restart its lifetime or flash twice.
+ if((e.type==='hit'||e.type==='shield')&&Number.isFinite(e.tick)){
+  // Damage is applied immediately from authority. Its instantaneous beam must
+  // reach the screen with it, even while unrelated remote fire stays buffered.
+  for(let i=0;i<online.effectQueue.length;){const queued=online.effectQueue[i],shot=queued.e;
+   if(queued.s.generation===s.generation&&shot.tick===e.tick&&shot.player===e.owner&&(shot.type==='laser'||shot.type==='shot'&&shot.text==='laser')){online.effectQueue.splice(i,1);onlineEffect(shot,queued.s);}else i++;
+  }
+ }
+ if(e.type==='laser'){const key=online.shots.key(e.player,e.spawnSerial,e.shotSerial),preview=traces.find(t=>t.previewKey===key);
+  if(preview){
+   preview.x=e.x;preview.y=e.y;preview.endX=e.endX;preview.endY=e.endY;if(e.points)preview.points=e.points.map(p=>({...p}));
+   // Correct a live preview without extending it. The audio dedupe outlives
+   // the beam, so it must not hide the actual path after a late confirmation.
   }else laserEffect(e.x,e.y,e.endX,e.endY,e.color,e.points);
  }
   else if(e.type==='blast')blastEffect(e.x,e.y,e.color,e.radius||BLAST_RADIUS);
@@ -2244,7 +2264,7 @@ function renderOnlineMotion(dt,now){
  for(const id of online.localBullets.keys())if(!s.bulletMap.has(id))online.localBullets.delete(id);
  for(const v of online.shots.previews.values()){
   if(v.accepted)continue; // A shot destroyed before the first snapshot must not linger.
-  for(const shell of v.shells){if(v.confirmed.has(shell.pellet))continue;
+  for(const shell of v.shells){if(shell.launchHit!==undefined||v.confirmed.has(shell.pellet))continue;
    const age=Math.max(0,(now-v.at)/1000),item=projectOnlineBullet(shell,Math.min(age,.35),.35);
    // In a prolonged outage, don't let an unconfirmed projectile drift forever.
    if(age>.35)continue;

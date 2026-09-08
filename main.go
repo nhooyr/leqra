@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	version         = "4.38.0"
+	version         = "4.39.0"
 	protocolVersion = 1
 )
 
@@ -137,6 +137,8 @@ func (a *App) handler() http.Handler {
 		"netcode.js": true, "game.js": true, "pwa.js": true, "manifest.webmanifest": true,
 		"sw.js": true, "icon-192.png": true, "icon-512.png": true,
 		"icon-maskable-512.png": true, "apple-touch-icon.png": true,
+		"icon-1024.png": true, "icon-maskable-1024.png": true,
+		"favicon-256.png": true, "apple-touch-icon-512.png": true,
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {

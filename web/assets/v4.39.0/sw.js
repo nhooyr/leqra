@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.38.0';
+const VERSION = 'v4.39.0';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
@@ -8,14 +8,18 @@ const SHELL = [
   BASE + 'theme.css',
   BASE + 'style.css',
   BASE + 'favicon.svg',
+  BASE + 'favicon-256.png',
   BASE + 'netcode.js',
   BASE + 'game.js',
   BASE + 'pwa.js',
   BASE + 'manifest.webmanifest',
   BASE + 'icon-192.png',
   BASE + 'icon-512.png',
+  BASE + 'icon-1024.png',
   BASE + 'icon-maskable-512.png',
-  BASE + 'apple-touch-icon.png'
+  BASE + 'icon-maskable-1024.png',
+  BASE + 'apple-touch-icon.png',
+  BASE + 'apple-touch-icon-512.png'
 ];
 
 self.addEventListener('install', event => {

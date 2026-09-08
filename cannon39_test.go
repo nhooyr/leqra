@@ -69,7 +69,7 @@ func Test39CannonCrossesMultipleWalls(t *testing.T) {
 func Test39CannonMuzzleInsideWallDoesNotReflect(t *testing.T) {
 	for _, angle := range []float64{0, math.Pi / 2, math.Pi, math.Pi * 1.5} {
 		t.Run(fmt.Sprint(angle), func(t *testing.T) {
-			g := battle(2)
+			g := battle(1) // This fixture checks walls without an overlapping target tank.
 			p := g.Tanks[0]
 			p.X = 210
 			p.Y = 210
