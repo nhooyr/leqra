@@ -1,17 +1,17 @@
-# leqra v4.28.0 — current game protocol (protocol 1)
+# leqra v4.29.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.28.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.29.0**:
 
 ```json
-{"type":"server_hello","version":"4.28.0","protocol":1}
-{"type":"client_hello","version":"4.28.0","protocol":1}
+{"type":"server_hello","version":"4.29.0","protocol":1}
+{"type":"client_hello","version":"4.29.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
 
 ## Home-screen mode selection
 
-The home-screen mode slider uses the existing host-owned `rules` command with a complete validated rules object. Selecting a mode adds no new protocol fields or commands. Guests and active-match controls remain read-only, normal server authorization applies, and online clients display an accepted mode only after authoritative room state confirms it. The Rules dialog edits the other settings for that mode.
+The home-screen icon selector uses the existing host-owned `rules` command with a complete validated rules object. Selecting a mode adds no new protocol fields or commands. Guests and active-match controls remain read-only, normal server authorization applies, and online clients display an accepted mode only after authoritative room state confirms it. The Rules dialog edits the other settings for that mode.
 
 ## Survival rules and membership
 
@@ -59,7 +59,7 @@ Equipped weapon timers and Shield, Speed, Scope and Ghost durations refresh to *
 
 Uncollected lifetime remains `floor(pickupCap * 8 / 3)` seconds, with a 30-second minimum for maze area at most `12 * 10` cells. The current six map values are **30, 30, 32, 45, 61 and 90 seconds**. These values are derived by the simulation; clients cannot supply expiry times.
 
-Tank snapshots add server-owned `machineRounds`, an integer remaining budget from 0–300 for the equipped `rapid` weapon. A Machine gun pickup grants 300 rounds, equivalent to five seconds at the existing maximum of 60 successful emissions per second. Each successfully emitted round consumes one; dry or rejected attempts do not. Releasing Fire preserves the remaining budget while `powerTime` continues normally. A new Machine gun pickup refreshes the budget, and a weapon replacement, expiry or fresh life resets it as appropriate. The final budgeted round remains a valid projectile; the tank then returns to its standard weapon.
+Tank snapshots add server-owned `machineRounds`, an integer remaining budget from 0–180 for the equipped `rapid` weapon. A Machine gun pickup grants 180 rounds, equivalent to three seconds at the existing maximum of 60 successful emissions per second. Each successfully emitted round consumes one; dry or rejected attempts do not. Releasing Fire preserves the remaining budget while `powerTime` continues normally. A new Machine gun pickup refreshes the budget, and a weapon replacement, expiry or fresh life resets it as appropriate. The final budgeted round remains a valid projectile; the tank then returns to its standard weapon.
 
 The browser subtracts outstanding predicted emissions from the server budget when deciding whether to preview another shot. Predictions never replenish authoritative rounds. The 96-projectile per-owner active cap, compact `machineBullets` stream, fire-rate ceiling and other server ownership checks remain intact. `machineRounds` cannot be set by input, and the existing `charges` field is not the Machine gun's firing budget.
 

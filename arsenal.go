@@ -8,7 +8,7 @@ const (
 	shotgunSpeed        = regularSpeed * 3
 	machineSpeed        = regularSpeed * 3
 	machineRadius       = regularRadius / 3
-	machineFiringRounds = 5 * 60 // Five seconds of productive firing; idle or blocked ticks cost nothing.
+	machineFiringRounds = 3 * 60 // Three seconds of productive firing; idle or blocked ticks cost nothing.
 	machineCapacity     = 96     // Covers a continuous 60 Hz stream across the largest quarter-perimeter range.
 	shieldDuration      = powerEffectDuration
 	maxShieldCharges    = 5

@@ -460,11 +460,12 @@ func (g *Game) objectiveGoal(t *Tank) (float64, float64, bool) {
 	}
 	if enemy.Carrier >= 0 {
 		carrier := g.Tanks[enemy.Carrier]
-		if carrier != nil && carrier.Team == t.Team {
+		if carrier != nil && carrier.Alive && carrier.Team == t.Team {
 			if !own.Home {
 				return own.X, own.Y, true
 			}
-			return own.HomeX, own.HomeY, true
+			x, y := g.ctfCoverGoal(t, own, carrier)
+			return x, y, true
 		}
 	}
 	return enemy.X, enemy.Y, true

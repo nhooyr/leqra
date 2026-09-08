@@ -52,9 +52,9 @@ test('an imminent projectile overrides a recent Godlike dodge commitment',()=>{
 });
 
 test('Godlike values a fresh machine gun when its active firing budget is nearly spent',()=>{
- const s=boot(),t=tank(0,126,126,{power:'rapid',powerTime:12,charges:300,machineRounds:40});
+ const s=boot(),t=tank(0,126,126,{power:'rapid',powerTime:12,charges:5,machineRounds:40});
  assert.ok(s.godlikePickupValue(t,{type:'rapid'})>2);
- t.machineRounds=300;assert.ok(s.godlikePickupValue(t,{type:'rapid'})<1);
+ t.machineRounds=180;assert.ok(s.godlikePickupValue(t,{type:'rapid'})<1);
 });
 
 test('Godlike repositions after unproductive aiming but preserves a scoring hill hold',()=>{

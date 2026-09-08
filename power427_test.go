@@ -60,7 +60,7 @@ func Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges(t *testing.T) {
 	p.MachineRounds = 12
 	p.PowerTime = 2
 	g.grantPower(p, "rapid")
-	if p.MachineRounds != 300 || p.PowerTime != 15 || p.SpeedStacks != 5 || p.ShieldCharges != 5 {
+	if p.MachineRounds != 180 || p.PowerTime != 15 || p.SpeedStacks != 5 || p.ShieldCharges != 5 {
 		t.Fatalf("refresh failed: %+v", p)
 	}
 	if grenadeFuse != 10 {
@@ -83,11 +83,11 @@ func Test427MachineGunSpendsOnlySuccessfulRounds(t *testing.T) {
 	for n := 0; n < machineCapacity; n++ {
 		g.Bullets = append(g.Bullets, &Bullet{Owner: p.ID})
 	}
-	if g.fire(p) || p.MachineRounds != 300 {
+	if g.fire(p) || p.MachineRounds != 180 {
 		t.Fatal("capacity-blocked attempt consumed firing time")
 	}
 	g.Bullets = nil
-	for n := 0; n < 300; n++ {
+	for n := 0; n < 180; n++ {
 		g.Tick++
 		if !g.fire(p) {
 			t.Fatalf("productive shot %d was blocked", n)
@@ -95,10 +95,10 @@ func Test427MachineGunSpendsOnlySuccessfulRounds(t *testing.T) {
 		if g.Bullets[0].Kind != "rapid" {
 			t.Fatalf("shot %d lost rapid power", n)
 		}
-		if n < 299 && g.fire(p) {
+		if n < 179 && g.fire(p) {
 			t.Fatal("same-tick attempt bypassed 60 Hz")
 		}
-		if p.MachineRounds != 299-n {
+		if p.MachineRounds != 179-n {
 			t.Fatalf("budget after shot %d: %d", n, p.MachineRounds)
 		}
 		g.Bullets = nil
@@ -116,11 +116,11 @@ func Test427MachineGunBlockedInsideWallPreservesBudget(t *testing.T) {
 	g.grantPower(p, "rapid")
 	p.GhostTime = 10
 	p.X = 0
-	if g.fire(p) || p.MachineRounds != 300 {
+	if g.fire(p) || p.MachineRounds != 180 {
 		t.Fatal("wall-blocked fire consumed budget")
 	}
 	p.X = 90
-	if !g.fire(p) || p.MachineRounds != 299 {
+	if !g.fire(p) || p.MachineRounds != 179 {
 		t.Fatal("clear muzzle failed after blocked attempt")
 	}
 }
@@ -139,7 +139,7 @@ func Test427UnusedMachineGunStillExpiresAtRegularMapDuration(t *testing.T) {
 		for n := 0; n < int(size.duration*60)-1; n++ {
 			g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
 		}
-		if p.Power != "rapid" || p.MachineRounds != 300 || math.Abs(p.PowerTime-tickDT) > 1e-8 {
+		if p.Power != "rapid" || p.MachineRounds != 180 || math.Abs(p.PowerTime-tickDT) > 1e-8 {
 			t.Fatalf("idle duration/budget changed early: %+v", p)
 		}
 		g.step(tickDT*2, [maxTanks]Input{}, testPlayers(2))
@@ -167,7 +167,7 @@ func Test427MachineGunBudgetSerializedAndClearedOnRespawn(t *testing.T) {
 	if err = json.Unmarshal(encoded, &state); err != nil {
 		t.Fatal(err)
 	}
-	if len(state.Tanks) != 2 || state.Tanks[0].MachineRounds != 299 {
+	if len(state.Tanks) != 2 || state.Tanks[0].MachineRounds != 179 {
 		t.Fatalf("budget absent in snapshot: %s", encoded)
 	}
 	g.makeMaze(9, 8)

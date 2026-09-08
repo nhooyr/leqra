@@ -1,0 +1,17 @@
+{
+  "version": "4.29.0",
+  "javascript_syntax_files": 8,
+  "html_assets": 9,
+  "asset_copies_equal": true,
+  "only_current_assets": true,
+  "versions_equal": true,
+  "python_script_syntax": "passed",
+  "diff_check": "passed",
+  "browser_device_run": false,
+  "node_tests_passed": 236,
+  "go_tests_top_level": 556,
+  "go_tests_including_subtests": 1060,
+  "production_build": "passed",
+  "go_vet": "passed",
+  "final_asset_tests": "passed"
+}
