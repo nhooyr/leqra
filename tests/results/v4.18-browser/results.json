@@ -1,5 +1,5 @@
 {
-  "version": "4.22.0",
+  "version": "4.23.2",
   "passed": 8,
   "checks": [
     "Chromium does not receive the Safari-only browser recommendation",
@@ -31,7 +31,7 @@
       458,
       496
     ],
-    "text": "Move & steer\n\u2191\n\u2190\n\u2193\n\u2192\nOR\nW\nA\nS\nD\nFire / detonate\nQ\nOR\nSPACE\nFullscreen\nF\nELIMINATION\nEliminate every opposing side to win the round.\nUse Controls menu to change keys."
+    "text": "Move & steer\n\u2191\n\u2190\n\u2193\n\u2192\nOR\nW\nA\nS\nD\nFire / detonate\nQ\nOR\nSPACE\nOR\nC\nOR\nENTER\nFullscreen\nF\nELIMINATION\nEliminate every opposing side to win the round.\nUse Controls menu to change keys."
   },
   "arena": {
     "before": {

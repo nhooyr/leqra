@@ -1,12 +1,12 @@
 {
-  "version": "4.19.0",
+  "version": "4.23.2",
   "passed": 12,
   "checks": [
     "document title uses lowercase leqra",
     "header wordmark is exactly lowercase leqra",
     "meta description uses leqra",
     "landing hero uses leqra",
-    "canonical public browser API is leqra v4.19.0",
+    "canonical public browser API is leqra v4.23.2",
     "browser helper globals use leqra names",
     "old product-named browser globals are not exposed",
     "legacy local settings migrate into leqra namespace",

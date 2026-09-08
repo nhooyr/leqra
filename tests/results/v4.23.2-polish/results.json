@@ -1,0 +1,15 @@
+{
+  "version": "4.23.2",
+  "passed": 8,
+  "checks": [
+    "Fresh mobile room defaults to Compact 7\u00d77",
+    "Saved mobile maze choice overrides Compact default",
+    "Single-player C fires Player 1",
+    "Single-player Enter fires Player 1",
+    "Two-player C fires Player 1 only",
+    "Two-player Enter fires Player 2 only",
+    "Controls help displays supplemental fire keys",
+    "No uncaught browser errors: []"
+  ],
+  "errors": []
+}

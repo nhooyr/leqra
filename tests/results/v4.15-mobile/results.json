@@ -1,5 +1,5 @@
 {
-  "version": "4.19.0",
+  "version": "4.23.2",
   "passed": 6,
   "checks": [
     "Ultra Wide mobile page has no horizontal document overflow",

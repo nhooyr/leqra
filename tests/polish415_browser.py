@@ -14,7 +14,7 @@ with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');c=b.new_context(viewport={'width':1365,'height':950},color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={'leqra.name':'ALPHA','leqra.muted':'1'};Object.defineProperty(window,'localStorage',{value:{getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]}});Object.defineProperty(window,'sessionStorage',{value:{getItem:()=>null,setItem(){},removeItem(){}}});window.requestAnimationFrame=()=>0;}""")
  for f in ['theme.js','netcode.js']: p.add_script_tag(content=(web/f).read_text())
- p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.23.1'")
+ p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.23.2'")
  p.evaluate('__test.createLocalRoom()');p.wait_for_timeout(20)
 
  # New maze tier and exact pickup-density/lifetime rule.
@@ -66,4 +66,4 @@ with sync_playwright() as pw:
  check(not errors,'no uncaught browser errors: '+str(errors))
  p.screenshot(path=str(out/'v415-desktop.png'));c.close();b.close()
 
-(out/'results.json').write_text(json.dumps({'version':'4.23.1','passed':len(checks),'checks':checks,'errors':errors,'tiers':tiers,'feedback':feedback,'controlsPickupInfo':info},indent=2));print('TOTAL',len(checks))
+(out/'results.json').write_text(json.dumps({'version':'4.23.2','passed':len(checks),'checks':checks,'errors':errors,'tiers':tiers,'feedback':feedback,'controlsPickupInfo':info},indent=2));print('TOTAL',len(checks))

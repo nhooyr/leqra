@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.23.1';
+const VERSION = 'v4.23.2';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
