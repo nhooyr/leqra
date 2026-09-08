@@ -76,6 +76,7 @@ type QueueTicket struct {
 type QueueMatch struct {
 	Definition QueueDefinition
 	Started    time.Time
+	Rematch    map[uint64]bool // one vote per connected controller/member
 }
 type MatchTravel struct {
 	Home     *Room
@@ -680,6 +681,64 @@ func (h *Hub) travelWelcome(c *Client, r *Room, p *Player, reason string) {
 // Return the authenticated controller and its keyboard dependants, never other
 // party members. Their original slots remain reserved; each friend returns at
 // their own pace. A return during play forfeits those tanks, without free kills.
+
+func (h *Hub) requestQueueRematch(c *Client, now time.Time) {
+	r, p := c.room, c.player
+	if r == nil || p == nil || p.Client != c || p.Return == nil || r.Match == nil {
+		queueError(c, "rematch", "no_match", "This player is not part of a matchmaking battle.")
+		return
+	}
+	if r.Game.Phase != "matchOver" {
+		queueError(c, "rematch", "match_active", "A rematch can be requested after the current match ends.")
+		return
+	}
+	// Queue matches are hostless. A rematch therefore starts only after every
+	// participating network controller asks for one; local P2 never votes twice.
+	activePilots := 0
+	for _, pilot := range r.Players {
+		if pilot != nil && pilot.Return != nil && !pilot.Spectating {
+			activePilots++
+		}
+	}
+	if activePilots != r.Match.Definition.Players {
+		queueError(c, "rematch", "lineup_changed", "A player already returned to their room, so this battle cannot be rematched.")
+		return
+	}
+	if r.Match.Rematch == nil {
+		r.Match.Rematch = map[uint64]bool{}
+	}
+	r.Match.Rematch[p.Member] = true
+	required, ready := 0, true
+	for _, controller := range r.members() {
+		if controller == nil || controller.Return == nil || controller.Kind == "local" {
+			continue
+		}
+		required++
+		if !r.Match.Rematch[controller.Member] {
+			ready = false
+		}
+	}
+	if required == 0 {
+		ready = false
+	}
+	r.LastAction = now
+	if !ready {
+		h.broadcastRoom(r)
+		return
+	}
+	r.Match.Rematch = nil
+	r.Match.Started = now
+	r.Game.startMatch(r.Players)
+	r.Game.PhaseTime = 4
+	for _, member := range r.members() {
+		if member != nil {
+			member.Ready = false
+		}
+	}
+	h.broadcastRoom(r)
+	h.broadcastState(r)
+}
+
 func (h *Hub) returnToParty(c *Client, now time.Time) {
 	if c.room == nil || c.player == nil || c.player.Client != c || c.player.Return == nil {
 		queueError(c, "return_party", "no_party", "This spectator has no reserved party in this match.")
@@ -707,6 +766,9 @@ func (h *Hub) returnToParty(c *Client, now time.Time) {
 	h.resumeRoutes[resumeRouteKey{battle.Code, sha256.Sum256([]byte(p.Token))}] = resumeRoute{home, now.Add(reconnectGrace)}
 	for _, tr := range group {
 		old, n := tr.Original, tr.Pilot
+		if battle.Match != nil && battle.Match.Rematch != nil {
+			delete(battle.Match.Rematch, n.Member)
+		}
 		old.Name = n.Name
 		old.Away = nil
 		old.Return = nil

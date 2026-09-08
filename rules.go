@@ -125,13 +125,13 @@ func startingPickups(cols, rows int) int {
 }
 
 // Ground pickup lifetime scales with the maze pickup cap. Integer whole-second
-// arithmetic intentionally follows the design example: Giant cap 23 -> 30s.
+// arithmetic intentionally follows the design example: Giant cap 23 -> 61s.
 func pickupLifetime(cols, rows int) float64 {
 	cap := pickupCap(cols, rows)
 	if cap <= 0 {
 		return 0
 	}
-	return float64((cap * 4) / 3)
+	return float64((cap * 8) / 3)
 }
 func (g *Game) seedPickups() {
 	for i := 0; i < startingPickups(g.World.Cols, g.World.Rows); i++ {

@@ -14,13 +14,13 @@ with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');c=b.new_context(viewport={'width':1365,'height':950},color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={'leqra.name':'ALPHA','leqra.muted':'1'};Object.defineProperty(window,'localStorage',{value:{getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]}});Object.defineProperty(window,'sessionStorage',{value:{getItem:()=>null,setItem(){},removeItem(){}}});window.requestAnimationFrame=()=>0;}""")
  for f in ['theme.js','netcode.js']: p.add_script_tag(content=(web/f).read_text())
- p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.17.0'")
+ p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.19.0'")
  p.evaluate('__test.createLocalRoom()');p.wait_for_timeout(20)
 
  # New maze tier and exact pickup-density/lifetime rule.
  tiers=p.evaluate("""()=>({giant:{dim:__test.mapDimensions('giant'),cap:__test.pickupCap(16,14),start:__test.startingPickups(16,14),life:__test.pickupLifetime(16,14)},ultra:{dim:__test.mapDimensions('ultrawide'),cap:__test.pickupCap(24,14),start:__test.startingPickups(24,14),life:__test.pickupLifetime(24,14)}})""")
- check(tiers['giant']=={'dim':[16,14],'cap':23,'start':6,'life':30},'Giant keeps 23 max pickups and the requested 30-second expiry')
- check(tiers['ultra']=={'dim':[24,14],'cap':34,'start':7,'life':45},'Ultra Wide is 24×14 with 7 starting, 34 max and 45-second pickup expiry')
+ check(tiers['giant']=={'dim':[16,14],'cap':23,'start':6,'life':61},'Giant keeps 23 max pickups and the requested 61-second expiry')
+ check(tiers['ultra']=={'dim':[24,14],'cap':34,'start':7,'life':90},'Ultra Wide is 24×14 with 7 starting, 34 max and 90-second pickup expiry')
 
  # Roster edits must preserve the exact generated wall layout.
  stable=p.evaluate("""()=>{const before=JSON.stringify(__test.walls);const bot=__test.localRoom.players.find(x=>x.kind==='bot');__test.changeSeat(bot,{difficulty:'hard',name:'RUSTY'});const afterEdit=JSON.stringify(__test.walls);__test.addRoomSeat('local');const afterAdd=JSON.stringify(__test.walls);return{sameEdit:before===afterEdit,sameAdd:before===afterAdd,players:__test.localRoom.players.length};}""")
@@ -37,7 +37,7 @@ with sync_playwright() as pw:
 
  # Controls menu describes the currently selected maze pickup budget and expiry.
  info=p.evaluate("""()=>{__test.syncControlsPickupInfo();return document.querySelector('#controlsPickupInfo').textContent;}""")
- check('7 starting pickups' in info and '34 maximum' in info and '45 seconds' in info,'Controls menu shows starting/max pickups and maze-dependent expiry')
+ check('7 starting pickups' in info and '34 maximum' in info and '90 seconds' in info,'Controls menu shows starting/max pickups and maze-dependent expiry')
  p.locator('#startRoomBtn').click();p.wait_for_timeout(30)
 
  # Per-player feedback occupies the existing reserved loadout line, keeping height invariant.
@@ -66,4 +66,4 @@ with sync_playwright() as pw:
  check(not errors,'no uncaught browser errors: '+str(errors))
  p.screenshot(path=str(out/'v415-desktop.png'));c.close();b.close()
 
-(out/'results.json').write_text(json.dumps({'version':'4.17.0','passed':len(checks),'checks':checks,'errors':errors,'tiers':tiers,'feedback':feedback,'controlsPickupInfo':info},indent=2));print('TOTAL',len(checks))
+(out/'results.json').write_text(json.dumps({'version':'4.19.0','passed':len(checks),'checks':checks,'errors':errors,'tiers':tiers,'feedback':feedback,'controlsPickupInfo':info},indent=2));print('TOTAL',len(checks))

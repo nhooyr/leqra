@@ -12,12 +12,12 @@ func Test415MazePickupTiers(t *testing.T) {
 		cap, start int
 		lifetime   float64
 	}{
-		{"compact", 7, 7, 5, 2, 6},
-		{"standard", 9, 8, 7, 3, 9},
-		{"large", 12, 10, 12, 4, 16},
-		{"huge", 14, 12, 17, 5, 22},
-		{"giant", 16, 14, 23, 6, 30},
-		{"ultrawide", 24, 14, 34, 7, 45},
+		{"compact", 7, 7, 5, 2, 13},
+		{"standard", 9, 8, 7, 3, 18},
+		{"large", 12, 10, 12, 4, 32},
+		{"huge", 14, 12, 17, 5, 45},
+		{"giant", 16, 14, 23, 6, 61},
+		{"ultrawide", 24, 14, 34, 7, 90},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,8 +50,8 @@ func Test415UltraWideRulesAndRound(t *testing.T) {
 		t.Fatalf("seed pickups=%d want 7", len(g.Pickups))
 	}
 	for i, p := range g.Pickups {
-		if p == nil || math.Abs(p.Life-45) > 1e-12 {
-			t.Fatalf("pickup %d lifetime=%v want 45", i, p.Life)
+		if p == nil || math.Abs(p.Life-90) > 1e-12 {
+			t.Fatalf("pickup %d lifetime=%v want 90", i, p.Life)
 		}
 	}
 }
@@ -62,7 +62,7 @@ func Test415SpawnedPickupUsesCurrentMazeLifetime(t *testing.T) {
 	g.startMatch(testPlayers(2))
 	g.Pickups = nil
 	g.spawnPower()
-	if len(g.Pickups) != 1 || math.Abs(g.Pickups[0].Life-30) > 1e-12 {
+	if len(g.Pickups) != 1 || math.Abs(g.Pickups[0].Life-61) > 1e-12 {
 		t.Fatalf("giant spawned pickup=%+v", g.Pickups)
 	}
 
@@ -70,7 +70,7 @@ func Test415SpawnedPickupUsesCurrentMazeLifetime(t *testing.T) {
 	g.startRound(testPlayers(2))
 	g.Pickups = nil
 	g.spawnPower()
-	if len(g.Pickups) != 1 || math.Abs(g.Pickups[0].Life-45) > 1e-12 {
+	if len(g.Pickups) != 1 || math.Abs(g.Pickups[0].Life-90) > 1e-12 {
 		t.Fatalf("ultra-wide spawned pickup=%+v", g.Pickups)
 	}
 }

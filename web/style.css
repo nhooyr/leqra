@@ -516,3 +516,41 @@ body.many-sides .mobile-scores{
 }
 body.many-sides .arena-bar{min-height:47px}
 body.touch-ui.many-sides .bar-right{flex-direction:row;align-items:center;gap:5px}
+
+/* v4.18: desktop browser guidance, clearer single-player controls, and queue results. */
+.browser-notice{position:fixed;z-index:80;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;max-width:min(620px,calc(100vw - 32px));padding:10px 12px 10px 14px;border:1px solid var(--border-strong);border-radius:8px;background:color-mix(in srgb,var(--surface-raised) 96%,transparent);box-shadow:0 10px 34px rgb(var(--shadow-rgb) / .28);font:10px var(--mono);line-height:1.45;color:var(--text-soft);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.browser-notice strong{color:var(--text-main)}
+.browser-notice button{flex-shrink:0;border:1px solid var(--border-strong);border-radius:5px;background:var(--surface);color:var(--text-main);padding:7px 9px;font:8px var(--mono);letter-spacing:.8px}
+.manual-move-line{align-items:flex-start}.manual-key-options{display:flex;flex-direction:column;align-items:flex-end;gap:3px}.manual-key-options .keys{justify-content:flex-end}.manual-or{align-self:center;font:7px var(--mono);letter-spacing:.8px;color:var(--muted);padding:0 2px}
+.victory-actions .queue-rematch{background:#39ff88;color:#06160d;border-color:#72ffaa;box-shadow:0 3px 0 #15994d,0 0 22px rgb(57 255 136 / .30);font-weight:900}
+.victory-actions .queue-rematch:hover{background:#5dff9f;filter:none}
+.victory-actions .queue-rematch:disabled{background:#1d6f44;color:#b8ecd0;border-color:#317a55;box-shadow:none}
+body.touch-ui .browser-notice{display:none!important}
+
+
+/* v4.19: Safari/WebKit smoothness and mobile stability.
+   WebKit's full-screen backdrop filters and dynamic Canvas shadows are unusually
+   expensive on iPhone/iPad GPUs. The game keeps the same semantic styling while
+   avoiding those compositor-heavy effects on that engine. */
+body.webkit-engine .overlay,
+body.webkit-engine .browser-notice,
+body.webkit-engine .feature-dialog::backdrop,
+body.webkit-engine .kick-dialog::backdrop,
+body.webkit-engine .join-dialog::backdrop,
+body.webkit-engine .spectator-dialog::backdrop{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+body.webkit-engine .arena-wrap::after{box-shadow:inset 0 0 28px rgb(var(--shadow-rgb) / .055)}
+body.webkit-engine .screen-card,
+body.webkit-engine .feature-dialog,
+body.webkit-engine .join-dialog,
+body.webkit-engine .kick-dialog{box-shadow:0 12px 36px rgb(var(--shadow-rgb) / .34)}
+body.webkit-engine .ammo-dot:not(.empty),body.webkit-engine .status-dot{box-shadow:none}
+body.webkit-engine.touch-ui .app{height:100vh;height:100svh}
+body.ios-webkit .touch-controls,body.ios-webkit .stick-zone,body.ios-webkit .fire-zone,body.ios-webkit .fire-button{touch-action:none;-webkit-user-select:none;user-select:none}
+body.ios-webkit .touch-controls{-webkit-touch-callout:none}
+
+/* iOS Safari zooms the viewport when focusing form controls below 16px. Keep
+   room/rules editing stable instead of letting the browser zoom the whole game. */
+@media(max-width:760px){
+ body.ios-webkit input:not([type=checkbox]):not([type=range]):not([type=radio]),
+ body.ios-webkit select,body.ios-webkit textarea{font-size:16px!important}
+}

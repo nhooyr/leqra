@@ -1,3 +1,27 @@
+# v4.19.0 — Safari smoothness, mobile stability, and renderer cleanup
+
+- Add a WebKit/iOS-specific rendering path with adaptive Canvas DPR/pixel budgets and smaller static maze-cache budgets, while leaving Chromium quality budgets unchanged.
+- Remove compositor-heavy backdrop blur and dynamic projectile/pickup Canvas shadows on WebKit; reduce WebKit-only particle count, remote projectile trail length, and legend backing resolution.
+- Fix iPadOS Safari being misclassified as desktop/fine-pointer and therefore losing the touch HUD when a trackpad/desktop-style UA is present.
+- Cache joystick geometry once per touch gesture instead of forcing a DOM layout read on every pointer move.
+- Guard Pointer Capture and add window-level pointer release/cancel fallbacks so WebKit capture loss cannot leave movement or FIRE stuck.
+- Suppress WebKit gesture zoom over the game controls and keep iOS editable controls at 16px to prevent focus auto-zoom.
+- Coalesce Visual Viewport/ResizeObserver changes, ignore one-pixel fractional Canvas jitter, and re-measure after rotation/back-forward-cache restores.
+- Defer explosion-noise buffer generation until the first explosion instead of doing it on the first audio-enabling gesture.
+- Add Safari desktop/iPhone portrait/iPhone landscape/iPadOS identity regressions plus the retained full multiplayer/gameplay regression matrix.
+
+# v4.18.0 — matchmaking results and layout polish
+
+- Remove the legacy **BACK TO MY PARTY** action from online in-match menus.
+- Double ground pickup lifetime scaling to `floor(maximum pickups × 8/3)`: Giant 61s, Ultra Wide 90s.
+- Recommend Google Chrome on desktop Safari/non-Chromium browsers with a dismissible notice.
+- Re-synchronize arena/canvas sizing after overlay transitions so pause/Controls interactions cannot leave the maze horizontally stretched.
+- Show arrow movement above WASD in the single-P1 desktop Field Manual when the default alias controls are active.
+- Replace queued-match result return with neon-green **REMATCH** voting plus blue **BACK TO ROOM**, where Back to Room performs the reserved-party transfer.
+- Use **DEFEAT** / neutral result copy for losing players instead of congratulating every client.
+- Keep eliminated local P1/P2 status at **TANK DOWN**; only actual spectator roles are labeled Spectating.
+- Add unanimous server-authoritative rematch voting and regression coverage for party reservations, layout, browser guidance, results copy, and tank-down semantics.
+
 # v4.17.0 — bug fixes and hot-path optimization
 
 - Fix Pickup Rate **Off** still waking the spawn scheduler/RNG even though no pickup could spawn; the scheduler now sleeps indefinitely until a new round/rule set.

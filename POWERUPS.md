@@ -160,8 +160,8 @@ Pickup caps are `round(columns × rows / 9.8)`: **5 / 7 / 12 / 17 / 23 / 34** fo
 and subsequent pickups. The default Super fast setting attempts the first extra spawn
 one second into live play, then every 1–2 seconds. Safe placement avoids tanks and
 other pickups; a blocked/full arena skips that attempt. Uncollected pickup lifetime is
-`floor(maximum pickups × 4/3)` seconds, so the six sizes expire after
-**6 / 9 / 16 / 22 / 30 / 45 seconds** respectively.
+`floor(maximum pickups × 8/3)` seconds, so the six sizes expire after
+**13 / 18 / 32 / 45 / 61 / 90 seconds** respectively.
 
 ## Scope
 

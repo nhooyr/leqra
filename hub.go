@@ -373,6 +373,9 @@ func (h *Hub) roomMessage(r *Room) map[string]any {
 			connected = owner != nil && owner.Client != nil
 		}
 		entry := map[string]any{"id": p.ID, "member": p.Member, "name": p.Name, "color": selectedColor(p.ID, p.Team, p.ColorIndex, r.Game.settings()), "connected": connected, "ready": !p.Spectating && (p.Ready || p.Kind == "bot" || p.Kind == "local"), "score": score, "kind": playerKind(p), "owner": p.Owner, "team": p.Team, "difficulty": p.Difficulty, "spectating": p.Spectating, "away": p.Away != nil, "hasParty": p.Return != nil}
+		if r.Match != nil && r.Game.Phase == "matchOver" && r.Match.Rematch != nil {
+			entry["rematch"] = r.Match.Rematch[p.Member]
+		}
 		if p.ColorIndex != nil && r.Game.settings().TeamMode == "ffa" {
 			entry["colorIndex"] = *p.ColorIndex
 		}
@@ -752,6 +755,8 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		c.enqueue(map[string]any{"type": "queue_catalog", "queues": h.queueCatalog()})
 	case "return_party":
 		h.returnToParty(c, now)
+	case "rematch":
+		h.requestQueueRematch(c, now)
 	case "chat":
 		h.chat(c, m, now)
 	case "spectate":

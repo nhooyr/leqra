@@ -1,8 +1,10 @@
-# leqra v4.17 — bug fixes and performance pass
+# leqra v4.19 — Safari smoothness and mobile stability
 
-leqra v4.17 keeps the lowercase leqra branding and v4.15/v4.16 gameplay intact while tightening simulation, browser, and networking hot paths. The disabled-pickup scheduler now truly sleeps when Pickup Rate is Off, server bot/path/collision work reuses scratch state, 60 Hz room snapshots reuse serialization buffers, and local/online browser loops avoid several per-tick/per-frame collection allocations.
+leqra v4.19 keeps the v4.18 gameplay, matchmaking/results behavior, and v4.17 server/network optimizations while adding a WebKit-focused rendering and input pass. Safari on macOS and iPhone/iPad now uses a lower-cost Canvas/compositor path without changing simulation, collision, scoring, or network authority. The existing desktop recommendation to use Google Chrome for the smoothest experience remains.
 
-The v4.16 full-game rebrand remains canonical across the browser, server, storage namespace, package, executable, and deployment examples. Existing migrated `leqra.*` settings remain compatible.
+The mobile Safari audit also fixes several reliability problems: iPadOS is recognized as touch-capable even when it advertises a desktop-style pointer, joystick geometry is measured once per gesture instead of on every pointer move, failed/lost pointer capture can no longer leave movement or FIRE stuck, game controls suppress WebKit pinch gestures, and small-screen form controls stay at 16px to avoid Safari focus auto-zoom. Rotation, Visual Viewport changes, fractional ResizeObserver jitter, and back/forward-cache restores are coalesced/re-measured instead of repeatedly reallocating the arena Canvas.
+
+WebKit rendering now uses adaptive Canvas pixel budgets (up to 1.75× on desktop and 1.5× on touch), smaller static maze-cache budgets, no dynamic Canvas glow blur, no full-screen backdrop blur, a lower cosmetic particle ceiling, shorter remote projectile trails, and 2× power-icon backing resolution. The first audio gesture no longer generates the explosion-noise buffer; that work is deferred until an explosion actually needs it. Chromium keeps the existing higher-quality rendering budgets.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -17,9 +19,9 @@ messages appear. Focus loss clears held input but never pauses the game; pause r
 an explicit player action. Spectator-facing copy consistently uses **Spectators** and
 **Spectating**.
 
-Uncollected pickup lifetime now scales with the maze's maximum pickup count using the
-room rule `floor(maximum pickups × 4/3)`. Giant therefore remains **23 max / 30 seconds**;
-Ultra Wide is **34 max / 45 seconds**. The Controls menu shows starting pickups, maximum
+Uncollected pickup lifetime now scales with the maze's maximum pickup count using
+`floor(maximum pickups × 8/3)`. Giant is therefore **23 max / 61 seconds** and
+Ultra Wide is **34 max / 90 seconds**. The Controls menu shows starting pickups, maximum
 pickups, and this expiry duration for the selected maze.
 
 Player 1 now fires with **Q** by default. With no local Player 2, **Space remains a
@@ -40,8 +42,8 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See **UPDATE-v4.17.md** for current behavior and installation,
-**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.17.md** for the focused tests.
+statistics remain intact. See **UPDATE-v4.19.md** for current behavior and installation,
+**POWERUPS.md** for all ten pickups, and **TEST-NOTES-v4.19.md** for the current verification.
 
 ## Previous combat improvements (retained)
 
@@ -71,10 +73,12 @@ Remote friends confirm the search individually. A party never splits across team
 solos can fill open team positions. FFA is solo-entry. Bots remain in the private
 room and never fill matchmaking slots. A full lineup starts automatically.
 
-The original lobby is reserved. **BACK TO MY PARTY** restores it after the battle,
-including names, bots, teams, rules and chat. Source spectators can spectate through
-its match link. Public battle rules and team assignments cannot be changed by a
-player-host. Private-room hosting remains available outside matchmaking.
+The original lobby is reserved. On matchmaking results, **BACK TO ROOM** restores it,
+including names, bots, teams, rules and chat. **REMATCH** requests another battle with
+the same queued lineup; the hostless public battle restarts only after every participating
+network controller requests it. Source spectators can spectate through its match link.
+Public battle rules and team assignments cannot be changed by a player-host. Private-room
+hosting remains available outside matchmaking.
 
 See **UPDATE-v4.0.md** for queue sizes, fixed rules, consent, cancellation, return,
 reconnection and deployment boundaries. **TESTING.md** lists current executions;
@@ -148,7 +152,7 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See **GAMEPLAY-v3.2.md** for the rules and objectives introduced in that version and **UNIFIED-ROOMS.md** for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and UPDATE-v4.17.md, with the retained
+are retained as historical notes; current behavior is described in this README and UPDATE-v4.19.md, with the retained
 room/objective/spectator features in their versioned guides.
 
 ## Power-ups
@@ -167,17 +171,17 @@ pilots see their own extended guide and a separate `SCP` timer.
 
 | Map | Cells | Starting pickups | Uncollected cap | Pickup expiry |
 | --- | ---: | ---: | ---: | ---: |
-| Compact | 7×7 | 2 | 5 | 6 s |
-| Standard | 9×8 | 3 | 7 | 9 s |
-| Large (default) | 12×10 | 4 | 12 | 16 s |
-| Huge | 14×12 | 5 | 17 | 22 s |
-| Giant | 16×14 | 6 | 23 | 30 s |
-| Ultra Wide | 24×14 | 7 | 34 | 45 s |
+| Compact | 7×7 | 2 | 5 | 13 s |
+| Standard | 9×8 | 3 | 7 | 18 s |
+| Large (default) | 12×10 | 4 | 12 | 32 s |
+| Huge | 14×12 | 5 | 17 | 45 s |
+| Giant | 16×14 | 6 | 23 | 61 s |
+| Ultra Wide | 24×14 | 7 | 34 | 90 s |
 
 Extra spawn attempts remain one live second after start, then every 1–2 seconds
 by default. The host can change frequency or disable any/all of the ten types.
 Safe placement and the area cap remain; uncollected pickup lifetime is derived from the
-maze cap as `floor(cap × 4/3)` seconds. A cap is a maximum, not a promise that every
+maze cap as `floor(cap × 8/3)` seconds. A cap is a maximum, not a promise that every
 arena will always fill to it.
 
 ## Updating from an earlier version
@@ -185,7 +189,7 @@ arena will always fill to it.
 Back up custom deployment settings. Replace **all Go sources and all of `web/`**,
 restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.17.0**.
+on restart. Both the health endpoint and browser version should show **4.19.0**.
 
 ## Build one standalone server
 
