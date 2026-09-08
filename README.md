@@ -4,14 +4,16 @@ https://leqra.com
 
 An online multiplayer tank arena battle game.
 
+Generated 100% by ChatGPT Astra.
+
 ![screenshot of the game](docs/screenshot.png)
 
-- 4 fun free-for-all and team based game modes.
+- 4 fun free-for-all and team based game modes:
     1. Elimination
     2. Capture the flag
     3. King of the hill
     4. Survival
-- 10 collectable power-ups.
+- 10 collectable power-ups:
     1. Cannon
     2. Ghost
     3. Laser
@@ -22,15 +24,20 @@ An online multiplayer tank arena battle game.
     8. Machine gun
     9. Shotgun
     10. Shield
-- 4 bot levels.
+- Flexible lobby rooms supporting:
+    1. Local players
+    2. Bots
+    3. Online players
+    4. Teams
+    5. Spectators
+    6. Online matchmaking
+- 4 bot levels:
     1. Chill
     2. Normal
     3. Fierce
     4. Godlike
 - 6 map sizes.
 - 8 tanks at a time.
-- Second local player support.
+- A second local player.
 - Mobile & PWA support.
-- Lobby rooms support local players, bots, online players, teams, spectators and online matchmaking.
-
-Generated 100% with ChatGPT Astra.
+- Managed deployments to minimize downtime.
