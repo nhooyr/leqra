@@ -36,10 +36,14 @@ with sync_playwright() as pw:
  def room(p):dismissVictory(p);p.locator('#roomBtn').click();p.locator('#returnRoomBtn').click();p.wait_for_function('["menu","onlineLobby"].includes(leqra.getState().phase)')
  def press(p,key,ms=40):p.keyboard.down(key);p.wait_for_timeout(ms);p.keyboard.up(key)
  def rules(p,**values):
-  dismissVictory(p);p.locator('#roomRulesBtn').click()
+  dismissVictory(p)
+  selected_mode=values.pop('mode',None)
+  if selected_mode is not None:
+   p.locator('[data-room-mode="'+selected_mode+'"]').click();p.wait_for_function('(mode)=>leqra.getState().rules.mode===mode',arg=selected_mode)
+  p.locator('#roomRulesBtn').click()
   for key,val in values.items():
    loc=p.locator('#rule-'+key)
-   if key in ['mode','teamMode','mapSize','pickupRate']:
+   if key in ['teamMode','mapSize','pickupRate']:
     if not loc.is_disabled():loc.select_option(str(val));p.wait_for_timeout(20)
     else:assert loc.input_value()==str(val)
    else:loc.fill(str(val))

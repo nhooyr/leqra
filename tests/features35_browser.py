@@ -21,10 +21,15 @@ with sync_playwright() as pw:
  def conn(p):p.wait_for_function('leqra.getState().online?.connected',timeout=12000)
  def start(p):p.locator('#startRoomBtn').click();p.wait_for_function('leqra.getState().phase==="playing"',timeout=9000)
  def rules(p,**values):
+  selected_mode=values.pop('mode',None)
+  if selected_mode is not None:
+   p.locator('[data-room-mode="'+selected_mode+'"]').click();p.wait_for_function('(mode)=>leqra.getState().rules.mode===mode',arg=selected_mode)
   p.locator('#roomRulesBtn').click()
   for k,v in values.items():
    e=p.locator('#rule-'+k)
-   if k in ['mapSize','mode','teamMode','pickupRate']:e.select_option(str(v))
+   if k in ['mapSize','teamMode','pickupRate']:
+    if e.is_disabled():assert e.input_value()==str(v)
+    else:e.select_option(str(v))
    else:e.fill(str(v))
   p.locator('#applyRulesBtn').click();p.wait_for_function('!document.querySelector("#rulesDialog").open')
  def arena(p):return p.locator('#arenaWrap').bounding_box()

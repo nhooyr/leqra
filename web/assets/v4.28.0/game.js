@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.27.0';
+const GAME_VERSION='4.28.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -70,6 +70,7 @@ migrateLegacyStorage(sessionStorage,['session','kicked']);
 
 const pilotFeedback=[{text:'',until:0},{text:'',until:0}];
 let bindings=loadBindings(),bindingCapture=null,combatPrefs=readCombatPrefs(),savedPresets=loadPresets(),localObjectives=null,rulesPending=false,presetsPending=false;
+let pendingRoomMode=null,roomModePreview=null,roomModeObserved='',roomModeError='',roomModeContext='';
 let localMatchStats=null,localMatchReport=null,localMatchResult=null;
 const lastLocks={},lastLockTone={};
 const teamName=(team,rules=currentRules())=>rules?.teamNames?.[team-1]||('Team '+team);
@@ -120,17 +121,18 @@ const isEnemy=(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team);
 // handler itself. Friendly-fire rules never suppress self damage, in any seat.
 // Human self-ricochets and grenade damage deliberately remain enabled.
 function canDamage(owner,target){const shooter=tanks.find(t=>t.id===owner);return !!shooter&&(shooter.id===target.id||!!currentRules().friendlyFire||isEnemy(shooter,target));}
+function botLevelName(level){return {easy:'Chill',normal:'Normal',hard:'Fierce',godlike:'Godlike'}[level]||'Normal';}
 function scoreboardEntries(){
  if(mode==='room'||mode==='online'){
   const data=roomData(),result=[],groups=new Map();
   for(const p of data?.players||[]){const key=teamKey(p);let entry=groups.get(key);const alive=tanks.find(t=>t.id===p.id)?.alive??true;
    if(!entry){entry={...p,color:p.team>0?teamColor(p.id,p.team):p.color,name:p.team>0?teamName(p.team):p.name,alive:false,meta:'',members:[]};groups.set(key,entry);result.push(entry);}
-   entry.alive ||= alive;entry.members.push(p.name);entry.meta=p.team>0?entry.members.join(' + '):p.kind==='bot'?(p.difficulty||'normal').toUpperCase()+' BOT':p.id===localPlayerID()?'YOU':p.kind==='local'?'LOCAL PLAYER 2':'ONLINE PILOT';
+   entry.alive ||= alive;entry.members.push(p.kind==='bot'?p.name+' ('+botLevelName(p.difficulty)+' bot)':p.name);entry.meta=p.team>0?entry.members.join(' + '):p.kind==='bot'?botLevelName(p.difficulty).toUpperCase()+' BOT':p.id===localPlayerID()?'YOU':p.kind==='local'?'LOCAL PLAYER 2':'ONLINE PILOT';
   }return result;
  }
  if(mode==='duel')return tanks.map(t=>({...t,meta:t.alive?'HUMAN PILOT':'ELIMINATED'}));
  const player=tanks[0],bots=tanks.filter(t=>!t.human);if(!player)return[];
- return[{...player,meta:player.alive?'HUMAN PILOT':'ELIMINATED'},{id:1,name:'BOT SQUAD',color:COLORS[1],alive:bots.some(t=>t.alive),human:false,meta:bots.map(t=>t.name+(t.alive?'':' ×')).join(' + ')}];
+ return[{...player,meta:player.alive?'HUMAN PILOT':'ELIMINATED'},{id:1,name:'BOT SQUAD',color:COLORS[1],alive:bots.some(t=>t.alive),human:false,meta:bots.map(t=>t.name+' ('+botLevelName(t.difficulty||difficulty)+' bot)'+(t.alive?'':' ×')).join(' + ')}];
 }
 function winnerName(winner){
  const report=mode==='online'?online.snapshots.at(-1)?.matchStats:localMatchReport;
@@ -804,20 +806,26 @@ function planBotPath(t,enemy){
  if(prev[goal]<0)return bfs(from,goal,a);
  return tracePath(from,goal,prev,a);
 }
-function routeControl(t,enemy){
+// Interaction goals need a precise approach; the enemy stand-off distance is
+// deliberately larger than pickup, flag and hill contact radii.
+function routeControl(t,enemy,precise=false){
  const a=t.ai;
  while(a.path.length&&distance(t,center(a.path[0]))<10)a.path.shift();
- if(!a.path.length)return{angle:Math.atan2(enemy.y-t.y,enemy.x-t.x),drive:distance(t,enemy)>CELL*.9?.8:0};
- let point=center(a.path[0]);
- // Skip a waypoint only if the full tank fits through the shortcut.
+ if(precise&&!rayWalls(t.x,t.y,enemy.x-t.x,enemy.y-t.y,t.r+1))a.path.length=0;
+ if(!a.path.length&&!precise)return{angle:Math.atan2(enemy.y-t.y,enemy.x-t.x),drive:distance(t,enemy)>CELL*.9?.8:0};
+ let point=a.path.length?center(a.path[0]):enemy,skip=0;
+ // Commit skipped waypoints so the next think cannot steer back to one.
  for(let i=1;i<Math.min(a.path.length,4);i++){
-  const next=center(a.path[i]);if(rayWalls(t.x,t.y,next.x-t.x,next.y-t.y,t.r+2))break;point=next;
+  const next=center(a.path[i]);if(rayWalls(t.x,t.y,next.x-t.x,next.y-t.y,t.r+2))break;point=next;skip=i;
  }
+ if(skip)a.path.splice(0,skip);
  const here=center(cellAt(t.x,t.y));
  if(rayWalls(t.x,t.y,point.x-t.x,point.y-t.y,t.r+1)&&distance(t,here)>5)point=here;
- let angle=Math.atan2(point.y-t.y,point.x-t.x),drive=1;
+ let angle=Math.atan2(point.y-t.y,point.x-t.x),drive=precise&&distance(t,enemy)<10?0:1;
  const ally=tanks.find(o=>o.alive&&o.id!==t.id&&!isEnemy(t,o)&&distance(t,o)<CELL*.95);
- if(ally){
+ // Let allies converge on an interaction point instead of continually shifting
+ // the final approach sideways. Wall and projectile avoidance still apply.
+ if(ally&&!(precise&&distance(t,enemy)<CELL)){
   const parallel=Math.cos(angleDelta(t.angle,ally.angle))>.25;
   const side=parallel?(t.id<ally.id?1:-1):1;
   const shifted={x:point.x-Math.sin(angle)*18*side,y:point.y+Math.cos(angle)*18*side};
@@ -825,6 +833,9 @@ function routeControl(t,enemy){
   else if(distance(t,ally)<t.r*2+8&&Math.cos(Math.atan2(ally.y-t.y,ally.x-t.x)-angle)>.7)drive=.15;
  }
  return{angle,drive};
+}
+function botHoldingHill(t){
+ const o=localObjectives;return o?.mode==='koth'&&!o.suddenDeath&&distance(t,{x:o.hillX,y:o.hillY})<o.radius-3&&!rayWalls(o.hillX,o.hillY,t.x-o.hillX,t.y-o.hillY,0);
 }
 // Short, wall-aware projectile forecasts. Friendly bot rounds are never threats.
 function forecastThreats(t,horizon,sources=bullets){
@@ -933,7 +944,7 @@ function godlikeDistances(t,from){
 function godlikeObjectiveGoal(t){
  const o=localObjectives;if(!o||o.suddenDeath)return null;
  if(o.mode==='koth'){
-  const hill={x:o.hillX,y:o.hillY},inside=distance(t,hill)<o.radius-3&&!rayWalls(hill.x,hill.y,t.x-hill.x,t.y-hill.y,0);
+  const hill={x:o.hillX,y:o.hillY},inside=botHoldingHill(t);
   return inside?{x:t.x,y:t.y,urgent:true}:{...hill,urgent:true};
  }
  const own=o.flags.find(f=>f.team===t.team),flag=o.flags.find(f=>f.team!==t.team);if(!own||!flag)return null;
@@ -1094,7 +1105,7 @@ function godlikeSafeShot(t,enemy,angle){
 function godlikeProgress(t,goal,dt){
  const a=t.ai;if(!(a.godProgressClock>0)){a.godProgressClock=1.4;a.godProgressX=t.x;a.godProgressY=t.y;}
  a.godProgressClock-=dt;if(a.godProgressClock>0||!goal)return;
- const hold=localObjectives?.mode==='koth'&&!localObjectives.suddenDeath&&distance(t,{x:localObjectives.hillX,y:localObjectives.hillY})<localObjectives.radius-3;
+ const hold=botHoldingHill(t);
  if(!hold&&distance(t,goal)>CELL*.8&&Math.hypot(t.x-a.godProgressX,t.y-a.godProgressY)<CELL*.3){a.godAdvance=1.1;a.pathClock=0;a.bankAim=null;}
 }
 function godlikeBotControl(t,dt){
@@ -1114,10 +1125,10 @@ function godlikeBotControl(t,dt){
   if(!dest){a.godControl={angle:t.angle,drive:0};return;}
   const goal=cellAt(dest.x,dest.y);
   if(t.ghostTime<=0&&(a.pathClock<=0||a.goal!==goal&&!a.path.length)){a.pathClock=.42+(t.id%3)*.02;a.goal=goal;a.path=planBotPath(t,dest);}
-  let control=t.ghostTime>0?{angle:Math.atan2(dest.y-t.y,dest.x-t.x),drive:distance(t,dest)>10?1:0}:routeControl(t,dest);
+  let control=t.ghostTime>0?{angle:Math.atan2(dest.y-t.y,dest.x-t.x),drive:distance(t,dest)>10?1:0}:routeControl(t,dest,!!objective||!!a.godPickup);
   if(distance(t,dest)<10)control.drive=0;
-  if(a.aim!==null&&a.godAdvance<=0&&!a.godPickup&&(!objective||distance(t,objective)<26)){const range=distance(t,enemy);a.godRetreat=range<CELL*.8||a.godRetreat&&range<CELL*1.2;control={angle:a.aim,drive:a.godRetreat?-.7:.65};}
-  if(localObjectives?.mode==='koth'&&!localObjectives.suddenDeath&&distance(t,{x:localObjectives.hillX,y:localObjectives.hillY})<localObjectives.radius-3)control.drive=0;
+  if(a.aim!==null&&a.godAdvance<=0&&!a.godPickup&&(!objective||botHoldingHill(t)||distance(t,objective)<10&&!rayWalls(t.x,t.y,objective.x-t.x,objective.y-t.y,0))){const range=distance(t,enemy);a.godRetreat=range<CELL*.8||a.godRetreat&&range<CELL*1.2;control={angle:a.aim,drive:a.godRetreat?-.7:.65};}
+  if(botHoldingHill(t))control.drive=0;
   if(a.recoverTime>0)control={angle:a.recoverAngle,drive:a.recoverDrive};
   a.godControl=godlikeDodge(t,control,d);
  }
@@ -1145,12 +1156,13 @@ function botControl(t,dt){
   if(!enemy.alive&&!objective){a.aim=null;return;}
   a.aim=enemy.alive?chooseBotAim(t,enemy,d):null;
   const goal=cellAt((objective||enemy).x,(objective||enemy).y);
-  if(t.ghostTime<=0&&(a.pathClock<=0||goal!==a.goal||!a.path.length)){a.pathClock=.55+(t.id%2)*.06;a.goal=goal;a.path=objective?bfs(cellAt(t.x,t.y),goal,a):planBotPath(t,enemy);}
+  if(t.ghostTime<=0&&(a.pathClock<=0||goal!==a.goal)){a.pathClock=.55+(t.id%2)*.06;a.goal=goal;a.path=objective?bfs(cellAt(t.x,t.y),goal,a):planBotPath(t,enemy);}
  }
  let control;
- if(a.aim!==null&&(!objective||distance(t,objective)<26||(Math.floor(time*2)+t.id)%5===0&&distance(t,enemy)<CELL*2)){const range=distance(t,enemy);control={angle:a.aim,drive:range<CELL*.95?-.65:range>CELL*2.7?.42:0};}
+ if(a.aim!==null&&(!objective||botHoldingHill(t)||distance(t,objective)<10&&!rayWalls(t.x,t.y,objective.x-t.x,objective.y-t.y,0))){const range=distance(t,enemy);control={angle:a.aim,drive:range<CELL*.95?-.65:range>CELL*2.7?.42:0};}
  else if(t.ghostTime>0){const dest=objective||enemy;control={angle:Math.atan2(dest.y-t.y,dest.x-t.x),drive:distance(t,dest)>12?1:0};}
  else control=objective?objectiveRoute(t,objective):routeControl(t,enemy);
+ if(botHoldingHill(t))control.drive=0;
  if(d.dodge&&a.dodgeClock<=0){a.dodgeClock=(t.difficulty||difficulty)==='hard'?.10:.16;const dodge=chooseDodge(t,control,d);
   if(dodge){a.dodgeAngle=dodge.angle;a.dodgeDrive=dodge.drive;a.dodgeTime=.24;}
  }
@@ -1742,7 +1754,8 @@ function connectOnline(request,reconnecting=false){
    if(msg.action==='chat'){const channel=msg.channel==='opponent'?'opponent':'room',st=chatState(channel),pending=st.pending;st.pending=null;if(pending?.text&&!roomChat.draft)roomChat.draft=pending.text;st.error=msg.message;if(roomChat.open&&roomChat.sendTarget===channel){$('chatInput').value=roomChat.draft;$('chatError').textContent=st.error;}syncChatStatus();break;}
    if(msg.action==='rename_room'){online.roomRenamePending=false;$('onlineRoomCode').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='unshare'){online.unsharePending=false;online.unshareSnapshot=null;$('unshareRoomBtn').disabled=false;$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
-   if(msg.action==='rules'||msg.action==='preset'){rulesPending=presetsPending=false;featureNotice(msg.action==='rules'?'rulesNotice':'presetsNotice',msg.message,true);break;}
+   if(msg.action==='rules'&&pendingRoomMode){rejectRoomMode(msg.message);break;}
+   if(msg.action==='rules'||msg.action==='preset'){rulesPending=presetsPending=false;syncRoomModeSlider();featureNotice(msg.action==='rules'?'rulesNotice':'presetsNotice',msg.message,true);break;}
    if(online.publishing&&!online.connected){if(matchmaking.pending||matchmaking.pendingKey)matchmakingError(msg.message);clearTimeout(timeout);online.publishing=false;online.manual=true;online.socket=null;ws.close();online.connecting=false;netBusy(false);mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent=msg.message;break;}
    if(msg.action==='spectate'||msg.action==='swap'){rolePending=false;cancelSwap();syncSpectators();$('roomStatus').textContent=msg.message;toast(msg.message,4);break;}
    if(msg.action==='kick'){cancelKick();$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
@@ -1757,7 +1770,7 @@ function connectOnline(request,reconnecting=false){
  };
  ws.onerror=()=>{}; // onclose handles both failed upgrades and transport loss.
  ws.onclose=()=>{
-  clearTimeout(timeout);if(online.socket!==ws)return;online.connected=false;online.connecting=false;rolePending=false;cancelSwap();cancelKick();cancelCallsignSave('Connection lost. Check your callsign after reconnecting.');syncCallsignEditors();netBusy(false);clearInput();
+  clearTimeout(timeout);if(online.socket!==ws)return;online.connected=false;online.connecting=false;rolePending=false;clearRoomModePending();syncRoomModeSlider();cancelSwap();cancelKick();cancelCallsignSave('Connection lost. Check your callsign after reconnecting.');syncCallsignEditors();netBusy(false);clearInput();
   syncChatStatus();if(mode!=='online'||online.manual)return;
   if(online.code&&online.token){showReconnecting();scheduleReconnect();}
   else {if(online.publishing){online.publishing=false;mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent='Could not reach the Go server. Local play is still available.';return;}phase='menu';setScreen('online');setNetStatus('Could not reach the Go game server. Start it with go run . and open its webpage.',true);}
@@ -2334,6 +2347,71 @@ function modeInstructions(){return survivalMode()?'Clear every enemy wave togeth
 function displayScoreTarget(){const r=currentRules();return r.mode==='survival'?r.scoreTarget+' WAVES':r.mode==='koth'?r.scoreTarget+' HILL POINTS':r.mode==='ctf'?r.scoreTarget+' CAPTURES':'FIRST TO '+r.scoreTarget;}
 function isRoomHost(){return roomData()?.host===localPlayerID();}
 function isRoomEditable(){const r=roomData();return isRoomHost()&&!r?.queue&&!r?.matchmaking&&!r?.awayMatch&&['menu','onlineLobby','matchOver'].includes(phase);}
+const ROOM_MODES=[
+ {id:'elimination',name:'Elimination',help:'Outlast every opposing tank or team.',icon:'<circle cx="12" cy="12" r="6"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="1"/>'},
+ {id:'ctf',name:'Capture the Flag',help:'Steal the enemy flag and bring it home.',icon:'<path d="M5 22V3m0 1c5-5 9 5 14 0v10c-5 5-9-5-14 0"/>'},
+ {id:'koth',name:'King of the Hill',help:'Control the hill. Contest it to stop rivals scoring.',icon:'<path d="m2 21 7-10 4 5 3-4 6 9H2ZM8 7 6 2l6 3 6-3-2 5H8Z"/>'},
+ {id:'survival',name:'Co-op Survival',help:'Survive together. Godlike bosses arrive every fifth wave.',icon:'<path d="m12 2 8 3v7c0 5-8 10-8 10S4 17 4 12V5l8-3Z"/><path d="M12 7v9m-4-5h8"/>'}
+];
+function roomModeEditable(){return isRoomEditable()&&(mode!=='online'||online.connected)&&!pendingRoomMode&&!rulesPending&&!presetsPending;}
+function rulesForRoomMode(value){
+ if(!ROOM_MODES.some(m=>m.id===value))throw Error('Choose an available game mode.');
+ const r=currentRules();if(value===r.mode)return validateRoomRules(r);
+ return validateRoomRules({...r,mode:value,teamMode:value==='ctf'||value==='survival'?'teams':r.teamMode,scoreTarget:value==='survival'?10:value==='koth'?60:value==='ctf'?3:5,timeLimit:value==='elimination'||value==='survival'?75:180});
+}
+function clearRoomModePending(){if(pendingRoomMode)clearTimeout(pendingRoomMode.timer);pendingRoomMode=null;}
+function paintRoomModeChoice(value){
+ const index=ROOM_MODES.findIndex(m=>m.id===value);if(index<0)return;
+ const choice=ROOM_MODES[index],slider=$('roomModeSlider');slider.value=index;slider.setAttribute('aria-valuetext',choice.name);
+ $('roomModeChoices').style.setProperty('--mode-position',index);
+ for(const b of document.querySelectorAll('[data-room-mode]'))b.setAttribute('aria-pressed',String(b.dataset.roomMode===value));
+ $('roomModeDescription').textContent=choice.help;
+}
+function syncRoomModeSlider(){
+ if(!$('roomModeSlider'))return;
+ const context=mode==='online'?'online:'+online.code+':'+online.member:'local:'+localRoom.code,value=currentRules().mode;
+ if(context!==roomModeContext){clearRoomModePending();roomModePreview=null;roomModeError='';roomModeContext=context;}
+ if(value!==roomModeObserved){roomModePreview=null;roomModeError='';roomModeObserved=value;}
+ if(pendingRoomMode&&(pendingRoomMode.socket!==online.socket||!online.connected||!isRoomEditable()||currentRules().mode===pendingRoomMode.value))clearRoomModePending();
+ const editable=roomModeEditable();if(!editable)roomModePreview=null;paintRoomModeChoice(roomModePreview||value);$('roomModeSlider').disabled=!editable;
+ for(const b of document.querySelectorAll('[data-room-mode]'))b.disabled=!editable;
+ const choice=pendingRoomMode&&ROOM_MODES.find(m=>m.id===pendingRoomMode.value),notice=roomModeError||(choice?'Applying '+choice.name+'…':rulesPending||presetsPending?'Applying room settings…':mode==='online'&&!online.connected?'Reconnect to change the mode.':!isRoomHost()?'The host chooses the mode.':!isRoomEditable()?'Mode is fixed until this match ends.':'');
+ $('roomModeNotice').textContent=notice;$('roomModeNotice').hidden=!notice;$('roomModeNotice').classList.toggle('error',!!roomModeError);
+}
+function rejectRoomMode(message){clearRoomModePending();roomModeError=message||'The mode could not be changed.';syncRoomModeSlider();syncFeatureSummary();}
+function selectRoomMode(value){
+ roomModePreview=null;
+ if(!roomModeEditable()){syncRoomModeSlider();return false;}
+ if(value===currentRules().mode){roomModeError='';syncRoomModeSlider();return true;}
+ roomModeError='';
+ try{
+  const rules=rulesForRoomMode(value);
+  if(value==='survival'&&roomData().players.length>4)throw Error('Co-op Survival supports up to four squad tanks. Remove a bot or move a pilot to spectating first.');
+  if(mode==='online'){
+   if(!sendOnline({type:'rules',rules}))throw Error('Connection unavailable. The mode was not changed.');
+   const request={value,socket:online.socket,timer:0};pendingRoomMode=request;
+   request.timer=setTimeout(()=>{if(pendingRoomMode===request)rejectRoomMode('No confirmation received. Check the selected mode before trying again.');},8000);
+   syncFeatureSummary();
+  }else setLocalRules(rules);
+  syncRoomModeSlider();return true;
+ }catch(e){rejectRoomMode(e.message);return false;}
+}
+function previewRoomMode(index){
+ const choice=ROOM_MODES[Number(index)];if(!choice||!roomModeEditable()){syncRoomModeSlider();return;}
+ roomModePreview=choice.id;paintRoomModeChoice(choice.id);
+}
+function cancelRoomModePreview(){roomModePreview=null;syncRoomModeSlider();}
+function initRoomModeSlider(toolbar){
+ const picker=document.createElement('section');picker.className='room-mode-picker';picker.setAttribute('aria-label','Game mode');
+ picker.innerHTML='<label class="field-label" for="roomModeSlider">GAME MODE</label><div class="room-mode-choices" id="roomModeChoices">'+ROOM_MODES.map(m=>'<button type="button" class="room-mode-choice" data-room-mode="'+m.id+'" tabindex="-1" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true">'+m.icon+'</svg><span>'+m.name+'</span></button>').join('')+'</div><input class="room-mode-slider" id="roomModeSlider" type="range" min="0" max="3" step="1" value="0" aria-label="Game mode" aria-valuetext="Elimination" aria-describedby="roomModeDescription roomModeNotice"><p class="room-mode-help" id="roomModeDescription"></p><p class="room-mode-notice" id="roomModeNotice" role="status" hidden></p>';
+ toolbar.before(picker);
+ for(const b of document.querySelectorAll('[data-room-mode]'))b.onclick=()=>selectRoomMode(b.dataset.roomMode);
+ $('roomModeSlider').oninput=e=>previewRoomMode(e.target.value);
+ $('roomModeSlider').onchange=e=>{const choice=ROOM_MODES[Number(e.target.value)];if(choice)selectRoomMode(choice.id);};
+ $('roomModeSlider').addEventListener('pointercancel',cancelRoomModePreview);
+ $('roomModeSlider').addEventListener('blur',cancelRoomModePreview);
+ syncRoomModeSlider();
+}
 function featureNotice(id,text,error=false){const n=$(id);n.textContent=text;n.classList.toggle('error',error);}
 function openFeature(kind){
  closeChat();clearInput();if(mode==='online')sendOnlineInput(true);
@@ -2343,20 +2421,21 @@ function openFeature(kind){
 function closeFeature(d){bindingCapture=null;d.close();clearInput();if(mode==='online')sendOnlineInput(true);}
 function syncFeatureSummary(){
  if(!$('rulesSummary'))return;
+ syncRoomModeSlider();
  const r=currentRules(),host=isRoomHost();
  $('rulesSummary').textContent=modeLabel()+' · '+(r.teamMode==='ffa'?'FREE-FOR-ALL':'TEAMS')+' · '+displayScoreTarget();
  if(r.teamMode==='teams')$('rulesSummary').textContent+=' · FRIENDLY FIRE '+(r.friendlyFire?'ON':'OFF');
- $('rulesSummary').title=modeInstructions();$('roomRulesBtn').textContent=host?'RULES & MODE':'VIEW RULES';
- $('roomPresetsBtn').disabled=!host;
+ $('rulesSummary').title=modeInstructions();$('roomRulesBtn').textContent=host?'RULES':'VIEW RULES';$('roomRulesBtn').disabled=!!pendingRoomMode;
+ $('roomPresetsBtn').disabled=!host||!!pendingRoomMode;
  $('readyHint').textContent=roomStartError()|| (mode==='online'&&!online.roomData?.canStart?'WAITING FOR GUESTS TO READY UP':displayScoreTarget()+' · START WHEN READY');
- $('startRoomBtn').disabled=!isRoomEditable()||!!roomStartError()||mode==='online'&&!online.roomData?.canStart;
+ $('startRoomBtn').disabled=!isRoomEditable()||!!roomStartError()||!!pendingRoomMode||mode==='online'&&(!online.connected||!online.roomData?.canStart);
  $('localControlsNote').textContent=controlSummary(0)+' · '+controlSummary(1)+'. Player 2 needs a keyboard.';
  const manual=fieldManualHTML();if($('manualContent').dataset.content!==manual){$('manualContent').innerHTML=manual;$('manualContent').dataset.content=manual;}
- if($('rulesDialog').open){$('rulesFields').disabled=!isRoomEditable();$('applyRulesBtn').disabled=!isRoomEditable();updateRuleHelp();}
+ if($('rulesDialog').open){if($('rulesDialog').dataset.mode!==r.mode)fillRulesForm();else{$('rulesFields').disabled=!isRoomEditable();$('applyRulesBtn').disabled=!isRoomEditable();updateRuleHelp();}}
  if($('presetsDialog').open){$('loadPresetBtn').disabled=!canLoadPreset();$('savePresetBtn').disabled=!host;}
 }
 function fillRulesForm(){
- const r=currentRules();for(const k of ['mode','teamMode','mapSize','scoreTarget','timeLimit','respawnSeconds','pickupRate'])$('rule-'+k).value=r[k];
+ const r=currentRules();$('rulesDialog').dataset.mode=r.mode;for(const k of ['teamMode','mapSize','scoreTarget','timeLimit','respawnSeconds','pickupRate'])$('rule-'+k).value=r[k];
  $('rule-friendlyFire').checked=!!r.friendlyFire;
  for(let i=1;i<=4;i++){$('rule-teamName'+i).value=teamName(i,r);const box=$('rule-teamName'+i).parentElement;if(!box.querySelector('[data-team-palette]')){const picker=makeColorSelect(r.teamColors?.[i-1]??i-1,()=>{},'Color for team '+i);picker.querySelector('select').id='rule-teamColor'+i;picker.dataset.teamPalette=i;box.append(picker);}const sel=$('rule-teamColor'+i);sel.value=r.teamColors?.[i-1]??i-1;sel.previousElementSibling.style.background=Theme.colors[+sel.value];}
  for(const c of document.querySelectorAll('[data-weapon-toggle]'))c.checked=r.weapons.includes(c.dataset.weaponToggle);
@@ -2364,7 +2443,7 @@ function fillRulesForm(){
  featureNotice('rulesNotice',isRoomEditable()?'Changes reset guest readiness. Rules are fixed for the match.':'Only the host can change rules, between matches.');updateRuleHelp();renderPowerLegend();
 }
 function updateRuleHelp(){
- const m=$('rule-mode').value;
+ const m=currentRules().mode;$('rulesModeName').textContent=modeLabel();
  $('rule-teamMode').disabled=m==='ctf'||m==='survival'||!isRoomEditable();if(m==='ctf'||m==='survival')$('rule-teamMode').value='teams';
  const count=activeTeamCount({mode:m,teamMode:$('rule-teamMode').value}),editable=isRoomEditable();
  $('teamNamesEditor').hidden=count===0;
@@ -2389,9 +2468,9 @@ function readRuleTeamSettings(rules){
  };
 }
 function submitRules(e){
- e.preventDefault();if(!isRoomEditable())return;
- try{const r={};for(const k of ['mode','teamMode','mapSize','pickupRate'])r[k]=$('rule-'+k).value;for(const k of ['scoreTarget','timeLimit','respawnSeconds'])r[k]=k==='respawnSeconds'&&['elimination','survival'].includes(r.mode)?currentRules().respawnSeconds:Number($('rule-'+k).value);Object.assign(r,readRuleTeamSettings(r));r.friendlyFire=$('rule-friendlyFire').checked;r.weapons=[...document.querySelectorAll('[data-weapon-toggle]:checked')].map(c=>c.dataset.weaponToggle);validateRoomRules(r);
-  if(mode==='online'){if(!sendOnline({type:'rules',rules:r}))throw Error('Connection unavailable. Rules were not sent.');featureNotice('rulesNotice','Waiting for the server…');rulesPending=true;}
+ e.preventDefault();if(!isRoomEditable()||pendingRoomMode)return;
+ try{const r={mode:currentRules().mode};for(const k of ['teamMode','mapSize','pickupRate'])r[k]=$('rule-'+k).value;for(const k of ['scoreTarget','timeLimit','respawnSeconds'])r[k]=k==='respawnSeconds'&&['elimination','survival'].includes(r.mode)?currentRules().respawnSeconds:Number($('rule-'+k).value);Object.assign(r,readRuleTeamSettings(r));r.friendlyFire=$('rule-friendlyFire').checked;r.weapons=[...document.querySelectorAll('[data-weapon-toggle]:checked')].map(c=>c.dataset.weaponToggle);validateRoomRules(r);
+  if(mode==='online'){if(!sendOnline({type:'rules',rules:r}))throw Error('Connection unavailable. Rules were not sent.');featureNotice('rulesNotice','Waiting for the server…');rulesPending=true;syncRoomModeSlider();}
   else{setLocalRules(r);closeFeature($('rulesDialog'));}
  }catch(e){featureNotice('rulesNotice',e.message,true);}
 }
@@ -2474,7 +2553,7 @@ function validatePreset(p){
  if(local>1)throw Error('Only one secondary local player is supported.');normalizeRoomTeams(roster,rules);return{rules,roster};
 }
 function snapshotPreset(){const r=roomData(),me=roomMember(localPlayerID(),r);const ffa=currentRules().teamMode==='ffa';return{rules:validateRoomRules(currentRules()),roster:[{name:me.name,kind:'human',team:me.team,...(ffa?{colorIndex:me.colorIndex??-1}:{})},...r.players.filter(p=>p.kind==='bot'||p.kind==='local'&&p.owner===me.id).map(({name,kind,team,difficulty,colorIndex})=>({name,kind,team,difficulty,...(ffa?{colorIndex:colorIndex??-1}:{})}))]};}
-function canLoadPreset(){return isRoomEditable()&&!roomData()?.spectators?.length&&(mode!=='online'||!roomData().players.some(p=>p.id!==online.id&&p.kind!=='bot'&&p.kind!=='local'));}
+function canLoadPreset(){return isRoomEditable()&&!pendingRoomMode&&!roomData()?.spectators?.length&&(mode!=='online'||!roomData().players.some(p=>p.id!==online.id&&p.kind!=='bot'&&p.kind!=='local'));}
 function renderPresets(){
  const select=$('presetSelect');const chosen=select.value;select.replaceChildren();const builtins=builtinPresets();for(const [group,items,prefix]of [['QUICK SETUPS',builtins,'builtin'],['SAVED ON THIS DEVICE',savedPresets,'saved']]){const opt=document.createElement('optgroup');opt.label=group;items.forEach((p,i)=>{const o=document.createElement('option');o.value=prefix+':'+i;o.textContent=p.name;opt.append(o);});select.append(opt);}
  if([...select.options].some(o=>o.value===chosen))select.value=chosen;
@@ -2488,7 +2567,7 @@ function applyLocalPreset(p){
  phase='menu';gameStarted=false;online.menu=false;scores=Array(MAX_TANKS).fill(0);clearInput();resetPreviewIfLobby({regenerateMaze:mapChanged,resetPickups:true});setScreen('room');renderOnlineRoom();
 }
 function selectedPreset(){const [type,index]=$('presetSelect').value.split(':');return(type==='builtin'?builtinPresets():savedPresets)[Number(index)];}
-function applySelectedPreset(){try{if(!canLoadPreset())throw Error('Presets cannot replace spectators, online guests, or an active match.');const p=validatePreset(selectedPreset());if(mode==='online'){if(!sendOnline({type:'preset',...p}))throw Error('Connection unavailable.');presetsPending=true;featureNotice('presetsNotice','Waiting for the server…');}else{applyLocalPreset(p);closeFeature($('presetsDialog'));}}catch(e){featureNotice('presetsNotice',e.message,true);}}
+function applySelectedPreset(){try{if(!canLoadPreset())throw Error('Presets cannot replace spectators, online guests, or an active match.');const p=validatePreset(selectedPreset());if(mode==='online'){if(!sendOnline({type:'preset',...p}))throw Error('Connection unavailable.');presetsPending=true;syncRoomModeSlider();featureNotice('presetsNotice','Waiting for the server…');}else{applyLocalPreset(p);closeFeature($('presetsDialog'));}}catch(e){featureNotice('presetsNotice',e.message,true);}}
 async function saveCurrentPreset(){
  try{
   if(!isRoomHost())throw Error('Only the host can save the room setup.');
@@ -2633,7 +2712,7 @@ function stepLocalObjectives(dt){
  if(roundClock<=0){const leader=objectiveLeader();if(leader>=0)endLocalObjective(leader);else beginLocalSuddenDeath();}
 }
 function objectiveGoal(t){const o=localObjectives;if(!o||o.suddenDeath)return null;if(o.mode==='koth')return{x:o.hillX,y:o.hillY};const own=o.flags.find(f=>f.team===t.team),enemy=o.flags.find(f=>f.team!==t.team),carried=o.flags.find(f=>f.carrier===t.id);if(!own||!enemy)return null;if(!own.home&&(carried||t.id%2===0))return own;if(carried)return{x:own.homeX,y:own.homeY};if(enemy.carrier>=0){const c=tanks.find(t=>t.id===enemy.carrier);if(c?.team===t.team)return !own.home?own:{x:own.homeX,y:own.homeY};}return enemy;}
-function objectiveRoute(t,point){const a=t.ai,goal=cellAt(point.x,point.y);if(a.goal!==goal||a.pathClock<=0||!a.path.length){a.goal=goal;a.pathClock=.45;a.path=bfs(cellAt(t.x,t.y),goal,a);}const v=routeControl(t,{...point,r:RADIUS});if(distance(t,point)<10)v.drive=0;return v;}
+function objectiveRoute(t,point){const a=t.ai,goal=cellAt(point.x,point.y);if(a.goal!==goal||a.pathClock<=0){a.goal=goal;a.pathClock=.45;a.path=bfs(cellAt(t.x,t.y),goal,a);}const v=routeControl(t,{...point,r:RADIUS},true);if(distance(t,point)<10)v.drive=0;return v;}
 function shortTeamName(team){const s=Array.from(teamName(team));return s.length>14?s.slice(0,13).join('')+'…':s.join('');}
 function drawObjectives(){
  const o=objectiveState();if(!o||!objectiveMode()||o.suddenDeath||['menu','onlineLobby','matchOver'].includes(phase))return;
@@ -2718,14 +2797,13 @@ function drawMissileWarnings(){
  }}ctx.restore();
 }
 function initFeatures(){
- const toolbar=document.createElement('div');toolbar.className='room-config-actions';toolbar.innerHTML='<button class="secondary" type="button" id="roomRulesBtn">RULES & MODE</button><button class="secondary" type="button" id="roomPresetsBtn">PRESETS</button><button class="secondary" type="button" id="roomControlsBtn">CONTROLS</button>';
- const summary=document.querySelector('.room-rules');summary.id='rulesSummary';summary.before(toolbar);
+ const toolbar=document.createElement('div');toolbar.className='room-config-actions';toolbar.innerHTML='<button class="secondary" type="button" id="roomRulesBtn">RULES</button><button class="secondary" type="button" id="roomPresetsBtn">PRESETS</button><button class="secondary" type="button" id="roomControlsBtn">CONTROLS</button>';
+ const summary=document.querySelector('.room-rules');summary.id='rulesSummary';summary.before(toolbar);initRoomModeSlider(toolbar);
  const menuControl=document.createElement('button');menuControl.className='secondary';menuControl.textContent='Controls';menuControl.type='button';menuControl.id='menuControlsBtn';$('returnRoomBtn').before(menuControl);
  const objectiveBar=document.createElement('div');objectiveBar.id='objectiveBar';objectiveBar.className='objective-bar';objectiveBar.hidden=true;objectiveBar.innerHTML='<strong id="objectiveModeLabel"></strong><span id="objectiveStatus"></span>';$('arenaWrap').before(objectiveBar);
  for(let n=1;n<=2;n++){const p=$('pilotLoadout'+n),warning=document.createElement('span');warning.id='missileWarning'+n;warning.className='lock-status';warning.hidden=true;p.querySelector('.loadout-identity').append(warning);const line=document.createElement('div');line.className='cooldown-line';line.innerHTML='<span id="cooldownText'+n+'">READY</span><div class="cooldown-track" id="cooldownTrack'+n+'" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i id="cooldownFill'+n+'"></i></div>';p.append(line);}
  const dialogs=document.createElement('div');dialogs.innerHTML=`
- <dialog class="feature-dialog" id="rulesDialog" aria-labelledby="rulesTitle"><form id="rulesForm"><header class="feature-header"><div><div class="eyebrow">HOST CONFIGURATION</div><h2 id="rulesTitle">Your match. Your rules.</h2></div><button type="button" class="dialog-close" data-close-dialog="rulesDialog" aria-label="Close match rules">×</button></header><div class="feature-body"><fieldset id="rulesFields"><div class="rules-grid">
- <label>GAME MODE<select id="rule-mode"><option value="elimination">Elimination</option><option value="ctf">Capture the Flag</option><option value="koth">King of the Hill</option><option value="survival">Co-op Survival</option></select></label>
+ <dialog class="feature-dialog" id="rulesDialog" aria-labelledby="rulesTitle"><form id="rulesForm"><header class="feature-header"><div><div class="eyebrow" id="rulesModeName">ELIMINATION</div><h2 id="rulesTitle">Your match. Your rules.</h2></div><button type="button" class="dialog-close" data-close-dialog="rulesDialog" aria-label="Close match rules">×</button></header><div class="feature-body"><fieldset id="rulesFields"><div class="rules-grid">
  <label>BATTLE FORMAT<select id="rule-teamMode"><option value="teams">Teams</option><option value="ffa">Free-for-all · no teams</option></select></label>
  <label>MAP SIZE<select id="rule-mapSize"><option value="compact">Compact · 7 × 7</option><option value="standard">Standard · 9 × 8</option><option value="large">Large · 12 × 10 (default)</option><option value="huge">Huge · 14 × 12</option><option value="giant">Giant · 16 × 14</option><option value="ultrawide">Ultra Wide · 24 × 14</option></select></label>
  <label><span id="ruleScoreLabel">ROUND WINS TO WIN</span><input id="rule-scoreTarget" type="number" min="1" max="20" step="1" required></label>
@@ -2738,7 +2816,7 @@ function initFeatures(){
  <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">Bindings use physical keys. P / Esc opens the menu; M toggles sound; F toggles fullscreen. Both fire keys can also detonate your grenade. When Player 2 is not active, all their configured keys also control Player 1. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><p class="mode-help">The midpoint is the original leqra volume and the slider snaps to 50% near the center. The header sound button still provides instant mute.</p><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional missile warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Missile-lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
  document.body.append(dialogs);$('roomRulesBtn').onclick=()=>openFeature('rules');$('roomPresetsBtn').onclick=()=>openFeature('presets');$('roomControlsBtn').onclick=$('menuControlsBtn').onclick=()=>openFeature('controls');
  for(const b of document.querySelectorAll('[data-close-dialog]'))b.onclick=()=>closeFeature($(b.dataset.closeDialog));for(const d of document.querySelectorAll('.feature-dialog'))d.addEventListener('close',()=>{bindingCapture=null;clearInput();});
- $('rulesForm').onsubmit=submitRules;$('rule-mode').onchange=()=>{const m=$('rule-mode').value;$('rule-scoreTarget').value=m==='survival'?10:m==='koth'?60:m==='ctf'?3:5;$('rule-timeLimit').value=m==='elimination'||m==='survival'?75:180;updateRuleHelp();};
+ $('rulesForm').onsubmit=submitRules;
  $('rule-teamMode').onchange=$('rule-mapSize').onchange=$('rule-pickupRate').onchange=updateRuleHelp;
  $('loadPresetBtn').onclick=applySelectedPreset;$('savePresetBtn').onclick=saveCurrentPreset;$('deletePresetBtn').onclick=deleteSelectedPreset;$('presetSelect').onchange=()=>$('deletePresetBtn').disabled=!$('presetSelect').value.startsWith('saved:');
  $('presetName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveCurrentPreset();}});

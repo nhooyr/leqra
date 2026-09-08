@@ -56,7 +56,7 @@ with sync_playwright() as pw:
     page.add_script_tag(content=(web / 'theme.js').read_text())
     page.add_script_tag(content=(web / 'netcode.js').read_text())
     page.add_script_tag(content=js)
-    page.wait_for_function("window.__test && leqra.version === '4.27.0'")
+    page.wait_for_function("window.__test && leqra.version === '4.28.0'")
     page.wait_for_timeout(100)
 
     check(len(sockets) == 0, 'Local startup opens no WebSocket')
@@ -96,7 +96,7 @@ with sync_playwright() as pw:
     page.wait_for_function("leqra.getState().online?.connected === true", timeout=10000)
     page.wait_for_function("leqra.getState().phase === 'onlineLobby'", timeout=10000)
     check(len(sockets) == 1, 'Explicit Share Room Online opens exactly one WebSocket')
-    check(page.evaluate('__test.online.serverVersion') == '4.27.0', 'Online connection completes the v4.23 version handshake')
+    check(page.evaluate('__test.online.serverVersion') == '4.28.0', 'Online connection completes the v4.23 version handshake')
 
     before = page.evaluate('JSON.stringify(__test.walls)')
     page.evaluate('__test.unshareOnlineRoom()')
@@ -148,6 +148,6 @@ with sync_playwright() as pw:
     context.close()
     browser.close()
 
-report = {'version': '4.27.0', 'passed': len(checks), 'checks': checks, 'errors': errors}
+report = {'version': '4.28.0', 'passed': len(checks), 'checks': checks, 'errors': errors}
 (out / 'results.json').write_text(json.dumps(report, indent=2))
 print('TOTAL', len(checks))

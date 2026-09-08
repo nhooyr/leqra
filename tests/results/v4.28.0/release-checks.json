@@ -1,0 +1,9 @@
+{
+  "version": "4.28.0",
+  "htmlAssets": 9,
+  "rootProductionCopiesMatch": true,
+  "javascriptSyntax": "passed",
+  "oldAssetFolders": false,
+  "productionBuild": "passed",
+  "vet": "passed"
+}

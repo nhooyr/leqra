@@ -591,5 +591,29 @@ body.ios-webkit .touch-controls{-webkit-touch-callout:none}
 .shutdown-dialog strong{display:block;color:#ffd2d6;font:900 12px/1.5 var(--mono);letter-spacing:1.3px;margin-bottom:22px}
 .shutdown-dialog .shutdown-ack{min-width:170px;background:#ff4f5f;color:#fff;border-color:#ff8791;box-shadow:0 3px 0 #9d2530,0 0 24px rgb(255 79 95 / .32);font-weight:900}
 
+/* The home screen exposes every mode with a native touch/keyboard slider. */
+.room-mode-picker{min-width:0;margin-top:15px}
+body #roomScreen.unified-room .room-mode-picker>.field-label{margin:0 0 8px}
+.room-mode-choices{--mode-position:0;position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:3px;border:1px solid var(--border-strong);border-radius:9px;background:var(--surface-sunken)}
+.room-mode-choices::before{content:"";position:absolute;z-index:-1;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/4);transform:translateX(calc(var(--mode-position)*100%));border-radius:6px;background:var(--accent-wash);box-shadow:inset 0 0 0 1px var(--accent-shade);transition:transform .16s ease}
+.room-mode-choice{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:73px;padding:7px 3px;background:transparent;border:0;border-radius:6px;color:var(--text-muted);font:600 10px/1.2 var(--sans);text-align:center;touch-action:manipulation}
+.room-mode-choice svg{width:22px;height:22px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.room-mode-choice span{display:block;min-height:24px;max-width:70px}
+.room-mode-choice[aria-pressed=true]{color:var(--accent-ink)}
+.room-mode-choice:not(:disabled):hover{color:var(--text-main);background:var(--surface-hover)}
+.room-mode-choice:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.room-mode-choice:disabled{cursor:default}
+.room-mode-slider{display:block;width:calc(75% - 6px);height:26px;margin:0 auto;padding:0;accent-color:var(--accent);cursor:ew-resize;touch-action:pan-y;background:transparent}
+.room-mode-slider:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:5px}
+.room-mode-slider:disabled{cursor:default;opacity:.5}
+body #roomScreen.unified-room .room-mode-help,body #roomScreen.unified-room .room-mode-notice{font:10px/1.45 var(--sans);color:var(--text-soft);margin:0;letter-spacing:0}
+body #roomScreen.unified-room .room-mode-help{min-height:29px}
+body #roomScreen.unified-room .room-mode-notice{margin-top:4px;color:var(--accent-ink)}
+body #roomScreen.unified-room .room-mode-notice.error{color:var(--danger)}
+.room-mode-picker+.room-config-actions{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:8px}
+@media(max-width:370px){.room-mode-choice{font-size:9px;padding-inline:1px}.room-mode-choice svg{width:21px;height:21px}}
+@media(prefers-reduced-motion:reduce){.room-mode-choices::before{transition:none}}
+body.reduce-motion .room-mode-choices::before{transition:none}
+
 /* Contextual room controls must stay hidden even inside grid/flex layouts. */
 [hidden]{display:none!important}

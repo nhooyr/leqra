@@ -35,11 +35,17 @@ with sync_playwright() as pw:
   if state(p)['mode']=='room':p.evaluate('__test.returnToRoom()');return
   p.locator('#roomBtn').click();p.locator('#returnRoomBtn').click();p.wait_for_function('["menu","onlineLobby"].includes(leqra.getState().phase)')
  def rules(p,**values):
-  closewin(p);p.locator('#roomRulesBtn').click()
+  closewin(p)
+  selected_mode=values.pop('mode',None)
+  if selected_mode is not None:
+   p.locator('[data-room-mode="'+selected_mode+'"]').click();p.wait_for_function('(mode)=>leqra.getState().rules.mode===mode',arg=selected_mode)
+  p.locator('#roomRulesBtn').click()
   for k,v in values.items():
    n=p.locator('#rule-'+k)
    if k=='friendlyFire':n.set_checked(v)
-   elif k in ['mode','teamMode','mapSize','pickupRate']:n.select_option(str(v))
+   elif k in ['teamMode','mapSize','pickupRate']:
+    if n.is_disabled():assert n.input_value()==str(v)
+    else:n.select_option(str(v))
    else:n.fill(str(v))
   p.locator('#applyRulesBtn').click();p.wait_for_function('!document.querySelector("#rulesDialog").open')
  def box(p):return p.evaluate('''()=>{const r=document.querySelector('#arenaWrap').getBoundingClientRect(),u=document.querySelector('.underbar').getBoundingClientRect();return {width:r.width,height:r.height,x:r.x,y:r.y,hud:u.height,canvasW:document.querySelector('#arena').width,canvasH:document.querySelector('#arena').height};}''')

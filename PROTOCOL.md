@@ -1,13 +1,17 @@
-# leqra v4.27.0 — survival and firing budgets (protocol 1)
+# leqra v4.28.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.27.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.28.0**:
 
 ```json
-{"type":"server_hello","version":"4.27.0","protocol":1}
-{"type":"client_hello","version":"4.27.0","protocol":1}
+{"type":"server_hello","version":"4.28.0","protocol":1}
+{"type":"client_hello","version":"4.28.0","protocol":1}
 ```
 
-The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the v4.27 rules here and the current source take precedence.
+The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
+
+## Home-screen mode selection
+
+The home-screen mode slider uses the existing host-owned `rules` command with a complete validated rules object. Selecting a mode adds no new protocol fields or commands. Guests and active-match controls remain read-only, normal server authorization applies, and online clients display an accepted mode only after authoritative room state confirms it. The Rules dialog edits the other settings for that mode.
 
 ## Survival rules and membership
 
