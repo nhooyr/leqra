@@ -54,7 +54,7 @@ function networkBoot(){
  Object.assign(s.online,{generation:1,eventsInitialized:true,lastEvent:0,ownedIDs:new Set([0]),activeIDs:new Set([0]),trailIDs:new Set(),trails:new Map(),localBullets:new Map(),buffer:new Net.SnapshotBuffer(),predictor:new Net.Predictor(s.moveTank)});
  Object.assign(first,{tick:60,phase:'playing',round:1,roundClock:75,phaseTime:0,scores:[],pickups:[],bulletMap:new Map()});
  s.online.buffer.push(first,s.now);s.online.snapshots=s.online.buffer.items;s.online.predictor.reset(first.tankMap.get(0));
- for(const name of ['netTank','receiveOnlineState','renderOnlineMotion'])vm.runInContext(declaration(name),s);
+ for(const name of ['netTank','receiveOnlineState','applyOnlineTankEffects','renderOnlineMotion'])vm.runInContext(declaration(name),s);
  s.sequence=[];const laserEffect=s.laserEffect;s.laserEffect=(...args)=>{s.sequence.push('laser:'+args[0]);return laserEffect(...args);};s.shotSound=kind=>s.sequence.push('shot:'+kind);s.boom=()=>s.sequence.push('hit');s.shieldSound=()=>s.sequence.push('shield');
  s.packet=(events,tick=62,damage='hit')=>({...first,tick,received:undefined,tanks:first.tanks.map(t=>({...t,alive:t.id===0?damage!=='hit':true,invulnerable:t.id===0&&damage==='shield'?.35:0})),events});
  return s;

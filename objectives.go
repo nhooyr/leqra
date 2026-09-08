@@ -218,7 +218,9 @@ func (g *Game) respawnPlayers(dt float64, players [maxTanks]*Player) (respawned 
 			t.Color = selectedColor(id, t.Team, players[id].ColorIndex, g.settings())
 			g.respawnTank(t)
 			respawned[id] = t.Alive
-			players[id].Input = Input{}
+			// Held controls still belong to the current socket and expire through
+			// the hub's normal timeout. Keep their sequence too: clearing this
+			// record stopped movement and rewound acknowledgements one tick later.
 			players[id].FirePending = false
 		}
 	}

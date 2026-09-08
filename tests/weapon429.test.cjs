@@ -8,12 +8,12 @@ function declaration(name){
  const end=source.indexOf('\n',start),line=source.slice(start,end);
  return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);
 }
-function tank(id,rounds=180){return{id,alive:true,power:'rapid',machineRounds:rounds,charges:5,cooldown:0,ghostTime:0,spawnSerial:1,shotSerial:0};}
+function tank(id,rounds=180){return{id,alive:true,power:'rapid',powerTime:10,machineRounds:rounds,charges:5,cooldown:0,ghostTime:0,spawnSerial:1,shotSerial:0};}
 function boot(){
  const nodes=new Map(),a=tank(0),b=tank(7);
  const $=id=>{if(!nodes.has(id)){const attrs=new Map(),styles=new Map(),classes=new Set();nodes.set(id,{hidden:false,textContent:'',dataset:{},classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,v)},getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v)});}return nodes.get(id);};
  const s={$,now:1000,MACHINE_FIRING_ROUNDS:vm.runInNewContext(source.match(/MACHINE_FIRING_ROUNDS=([^,;]+)/)[1]),performance:{now:()=>s.now},feedbackAt:-Infinity,time:1,bullets:[],canDamage:()=>false,mode:'solo',phase:'playing',tanks:[a,b],controlledTank:()=>a,secondaryID:()=>7,survivalBreak:()=>false,survivalMode:()=>false,objectiveMode:()=>false,missileLocks:()=>[],combatPrefs:{visual:true,audio:false},lastLocks:{},lastLockTone:{},ownedGrenades:()=>[],powerCapacity:()=>96,activeAmmo:()=>0,clearTankAt:()=>true,cooldownDuration:()=>0,clamp:(v,a,b)=>Math.max(a,Math.min(b,v))};
- vm.createContext(s);for(const name of ['setText','setStyle','setAttr','pilotProjectileState','liveFeedbackTank','updateMachineBudget','updateCombatFeedback'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);for(const name of ['setText','setStyle','setAttr','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','updateMachineBudget','updateCombatFeedback'])vm.runInContext(declaration(name),s);
  return s;
 }
 test('both ammo readouts show their own remaining productive firing time, rounded up to tenths',()=>{
@@ -28,7 +28,7 @@ test('ammo budget survives pauses and ammo waits, and hides when dead, expired o
  assert.equal(s.$('cooldownText1').textContent,'WAITING FOR AMMO');assert.equal(s.$('machineBudgetTime1').textContent,'1.0 / 3s');
  s.phase='paused';s.updateCombatFeedback(true);assert.equal(s.$('cooldownText1').textContent,'PAUSED');assert.equal(s.$('machineBudget1').hidden,false);
  for(const patch of [{alive:false},{alive:true,power:null},{power:'laser'}]){Object.assign(s.tanks[0],patch);s.updateCombatFeedback(true);assert.equal(s.$('machineBudget1').hidden,true);assert.equal(s.$('ammoDots').hidden,false);}
- Object.assign(s.tanks[0],{power:'rapid',machineRounds:180});s.updateCombatFeedback(true);assert.equal(s.$('machineBudget1').hidden,false);assert.equal(s.$('machineBudgetTime1').textContent,'3.0 / 3s');
+ Object.assign(s.tanks[0],{power:'rapid',powerTime:10,machineRounds:180});s.updateCombatFeedback(true);assert.equal(s.$('machineBudget1').hidden,false);assert.equal(s.$('machineBudgetTime1').textContent,'3.0 / 3s');
 });
 test('online ammo readouts include unacknowledged shots independently without mutating snapshots',()=>{
  const s=boot(),shots=new N.ShotPresentation(),a=tank(0,61),b=tank(7,121);
