@@ -12,7 +12,7 @@
  const STEP=1/60, STEP_MS=1000/60;
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
  const delta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
- const neutral=()=>({forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0});
+ const neutral=()=>({forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0,aimOnly:false});
  // Wire-only expansion: physics and replay consume the unchanged bullet shape.
  // Bounding and finite checks keep malformed frames from creating NaN renders.
  function expandMachineBullets(records,colors){
@@ -23,7 +23,7 @@
   }return out;
  }
  function controlsEqual(a,b){
-  return !!a&&!!b&&a.forward===b.forward&&a.reverse===b.reverse&&a.left===b.left&&a.right===b.right&&a.fire===b.fire&&Math.abs(a.stickX-b.stickX)<.001&&Math.abs(a.stickY-b.stickY)<.001;
+  return !!a&&!!b&&a.forward===b.forward&&a.reverse===b.reverse&&a.left===b.left&&a.right===b.right&&a.fire===b.fire&&!!a.aimOnly===!!b.aimOnly&&Math.abs(a.stickX-b.stickX)<.001&&Math.abs(a.stickY-b.stickY)<.001;
  }
  // Identical movement order, rates, angle normalization and wall collision to Go.
  // No fire, damage or scoring is performed here.
@@ -40,7 +40,7 @@
   if(mag>.10){
    const diff=delta(t.angle,Math.atan2(input.stickY,input.stickX));
    t.angle+=clamp(diff,-5.8*turnScale*dt,5.8*turnScale*dt);
-   throttle=Math.min(mag,1)*Math.max(0,Math.cos(diff));
+   if(!input.aimOnly)throttle=Math.min(mag,1)*Math.max(0,Math.cos(diff));
   }else t.angle+=((input.right?1:0)-(input.left?1:0))*3.65*turnScale*dt;
   t.angle=Math.atan2(Math.sin(t.angle),Math.cos(t.angle));
   moveTank(t,Math.cos(t.angle)*128*speedScale*throttle*dt,Math.sin(t.angle)*128*speedScale*throttle*dt);

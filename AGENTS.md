@@ -4,18 +4,18 @@
 
 - `src/`: Go server, authoritative simulation, WebSocket transport, rooms, matchmaking, and adjacent `*_test.go` files; one `leqra` module using `package main`.
 - `src/web/`: browser game, styles, and HTML; `assets/v<version>/` holds production assets. `src/tests/` contains JavaScript tests, optional browser/protocol harnesses, and historical results.
-- `tests/`: mocked deployment tests. `scripts/`: local launchers and utilities. `deploy/`: SSH deployment, systemd service, environment settings, and a Caddy example. `docs/`: development, protocol, and release guides.
+- `tests/`: mocked deployment tests. `scripts/`: local launchers and utilities. `deploy/`: deployment script, service, and environment settings. `docs/`: player guides, protocol, and release notes.
 
 ## Build, Test, and Development Commands
 
 Run from the repository root. Use Go 1.23+, Node.js for JavaScript tests, and Python 3 for deployment tests.
 
-- `go run ./src`: start locally at `http://localhost:8080`; `sh scripts/run.sh` is the launcher equivalent.
+- `go run ./src` or `./dev.sh`: start locally at `http://localhost:8080`.
 - `go build -trimpath -o bin/leqra ./src`: build the executable with embedded assets.
 - `go test -race -count=1 ./...`: run Go tests with race detection.
 - `node --test src/tests/*.test.cjs`: run Node's built-in test suite.
 - `python3 -m unittest discover -s tests -p 'test_deploy.py' -v`: run deployment tests without contacting a host.
-- `go vet ./...`, `node --check src/web/game.js`, and `sh -n deploy/run.sh`: run static checks.
+- `go vet ./...`, `node --check src/web/game.js`, and `sh -n deploy/ensure.sh`: run static checks.
 
 ## Coding Style & Naming Conventions
 
@@ -27,7 +27,7 @@ Add deterministic regressions for bugs. Name Go tests `TestBehavior` in `*_test.
 
 ## Assets & Configuration
 
-Keep existing unversioned source files and versioned production counterparts synchronized. Releases must align server/client versions, HTML references, and PWA cache paths. Rebuild after asset changes. Configure locally through `PORT`, `ADDR`, `MAX_ROOMS`, and `ALLOWED_ORIGINS`. `deploy/run.sh` performs real remote deployment and restarts the service.
+Keep versioned symlinks pointing to their shared sources. Align server/client versions, HTML references, and PWA cache paths. Rebuild after asset changes. Configure locally through `PORT`, `ADDR`, `MAX_ROOMS`, and `ALLOWED_ORIGINS`. `deploy/ensure.sh` performs real remote deployment and restarts the service.
 
 ## Commit & Pull Request Guidelines
 

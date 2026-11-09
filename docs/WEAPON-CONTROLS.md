@@ -71,34 +71,6 @@ The **“Leave blank for a random room.”** hint beside the Join area is remove
 The existing blank-name Create Room behaviour, arbitrary-text room names,
 automatic invite URLs, direct joins, host kicks, and callsign editing are retained.
 
-## Update the game
-
-Stop the current server. Keep a backup of any custom deployment settings, then
-replace **both the Go sources and the complete `web/` directory** with this
-package. From the extracted folder:
-
-```sh
-cd leqra-online
-go run .
-```
-
-Refresh every player's browser. `/healthz` and `leqra.version` report **2.7.0**.
-Do not mix old clients and the new server: older clients draw a single straight
-laser line and show obsolete grenade controls/fuse information. Restarting clears
-in-memory rooms and scores. Existing invites can recreate fresh rooms as before.
-
-For a compiled deployment, rebuild because the web assets are embedded:
-
-```sh
-go build -trimpath -o leqra .
-./leqra
-```
-
-Use `leqra.exe` on Windows. For an existing Docker Compose deployment, keep
-custom settings and run `docker compose up --build -d`. There are no new game
-runtime dependencies or build steps. This is an updated source package, not a
-newly hosted public server.
-
 ## Verification
 
 Passed **147 Go tests with the race detector** (231 including subtests),

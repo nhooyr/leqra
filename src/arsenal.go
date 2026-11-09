@@ -42,10 +42,14 @@ func speedCount(t *Tank) int {
 	return t.SpeedStacks
 }
 func pickupWeight(kind string) int {
-	if kind == "shield" || kind == "speed" {
-		return 3
+	switch kind {
+	case "shield", "speed":
+		return 6
+	case "starman":
+		return 1
+	default:
+		return 2
 	}
-	return 1
 }
 func (g *Game) choosePickup(types []string) string {
 	total := 0

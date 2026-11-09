@@ -11,14 +11,14 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.47.0/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.47.0/theme.css">
-<link rel="stylesheet" href="assets/v4.47.0/style.css">
-<link rel="manifest" href="assets/v4.47.0/manifest.webmanifest">
-<link rel="icon" href="assets/v4.47.0/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.47.0/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.47.0/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.47.0/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.48.0/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.48.0/theme.css">
+<link rel="stylesheet" href="assets/v4.48.0/style.css">
+<link rel="manifest" href="assets/v4.48.0/manifest.webmanifest">
+<link rel="icon" href="assets/v4.48.0/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.48.0/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.48.0/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.48.0/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -35,7 +35,7 @@
   <div class="arena-bar"><div class="arena-title"><span class="status-dot"></span><span id="arenaStatus">READY ROOM</span></div><div class="mobile-scores" id="miniScores" aria-label="Scores"></div><div class="bar-right"><span class="round-chip" id="roundLabel">ROUND 01</span><span class="clock" id="clock">01:15</span></div></div>
   <div class="arena-stage">
   <div class="arena-wrap" id="arenaWrap">
-   <canvas id="arena" tabindex="0" aria-label="Tank maze game. Keyboard bindings can be changed in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
+   <canvas id="arena" tabindex="0" aria-label="Tank maze game. Move the mouse to aim Player 1 and left-click to fire. Keyboard bindings are in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
    <div class="toast" id="toast" role="status" hidden></div>
    <div class="announcer" id="announcer" hidden><span class="announce-top" id="announceTop"></span><strong id="announceMain"></strong><span class="announce-sub" id="announceSub"></span></div>
   </div>
@@ -98,10 +98,11 @@
  </section>
  <aside class="sidebar" aria-label="Scoreboard and instructions">
   <section class="panel"><div class="panel-title"><span>THE LINEUP</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
-  <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"><div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line manual-fire-line"><span>Fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>C</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd><span class="manual-or">OR</span><kbd>ENTER</kbd></div></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through their allies. Bank shots off walls to reach tanks around corners.</div></div></section>
-  <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">9 PICKUPS</span></div><div class="power-list">
+  <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"><div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line manual-fire-line"><span>Fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>C</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd><span class="manual-or">OR</span><kbd>ENTER</kbd></div></div><div class="manual-line"><span>Mouse (P1)</span><span>Move to aim · Left-click to fire</span></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through their allies. Bank shots off walls to reach tanks around corners.</div></div></section>
+  <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 PICKUPS</span></div><div class="power-list">
 <div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Through walls. Edge bounces. 4× size/speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#cce4ff"><canvas data-power-icon="ghost" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Ghost<span>Through walls. Stacks with speed.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#f9ed75"><canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Starman<span>Rare. Invincible and through walls for 3s.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#f57cff"><canvas data-power-icon="laser" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Laser<span>Instant ricochets. Long dotted aim.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#ff83bd"><canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Homing missile<span>Aggressive tracking. Half-perimeter range.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Tank impact. Tap again. Cruises, then brakes near its 10s fuse.</span></div></div>
@@ -109,7 +110,7 @@
 <div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing · tiny rounds · quarter-perimeter range.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread · shooter-safe.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#73cee4"><canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shield<span>Stack up to five protective rings.</span></div></div>
-<p class="power-note">Weapons use FIRE. Timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 3 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or when you press Fire again. Walls stop blasts. Grenades cannot hurt their thrower.</p>
+<p class="power-note">Weapons use FIRE. Most timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 3 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or when you press Fire again. Walls stop blasts. Grenades cannot hurt their thrower.</p>
 </div></section>
   <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Pick your battle.</div></div></section>
  </aside>
@@ -122,8 +123,36 @@
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
  <div class="kick-actions"><button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button></div>
 </dialog>
-<script src="assets/v4.47.0/netcode.js" defer></script>
-<script src="assets/v4.47.0/game.js" defer></script>
-<script src="assets/v4.47.0/pwa.js" defer></script>
+<dialog id="introTourDialog" class="feature-dialog intro-tour" aria-labelledby="introTourTitle">
+ <header class="feature-header"><div><div id="introTourStep" class="eyebrow">QUICK TOUR · 1 OF 3</div><h2 id="introTourTitle" tabindex="-1" aria-describedby="introTourStep">Drive and aim</h2></div></header>
+ <div class="feature-body">
+  <div data-intro-page="0">
+   <p id="introTourDesktop">Move the pointer over the maze to aim Player 1. Left-click or hold to fire. Drive with the keyboard and press a turn key to switch back to keyboard steering.</p>
+   <p id="introTourTouch">Drag the joystick to steer and drive. Tap or hold <strong>Fire</strong> to shoot.</p>
+   <p id="introTourKeys"></p>
+  </div>
+  <div data-intro-page="1" hidden>
+   <p>Bank shots around corners and use walls for cover. Your own shots and grenade blasts leave your tank unharmed.</p>
+   <p>Drive over a glowing pickup to collect it. Laser previews its ricochet path, grenades can detonate when you press <strong>Fire</strong> again, and a rare Starman lets you pass through walls unharmed for a few seconds.</p>
+  </div>
+  <div data-intro-page="2" hidden>
+   <ul>
+    <li><strong>Elimination</strong> · Be the last tank or team standing.</li>
+    <li><strong>Capture the Flag</strong> · Bring the enemy flag home while yours is at base.</li>
+    <li><strong>King of the Hill</strong> · Control the hill to earn points.</li>
+    <li><strong>Survival</strong> · Fight off waves of enemy tanks with your squad.</li>
+   </ul>
+   <p>Select a mode under <strong>Room settings</strong>, then press <strong>Play</strong> to start.</p>
+  </div>
+ </div>
+ <footer class="feature-footer intro-tour-actions">
+  <button id="introTourSkip" class="secondary" type="button">Skip tour</button>
+  <button id="introTourBack" class="secondary" type="button" disabled>Back</button>
+  <button id="introTourNext" class="primary" type="button">Next</button>
+ </footer>
+</dialog>
+<script src="assets/v4.48.0/netcode.js" defer></script>
+<script src="assets/v4.48.0/game.js" defer></script>
+<script src="assets/v4.48.0/pwa.js" defer></script>
 </body>
 </html>

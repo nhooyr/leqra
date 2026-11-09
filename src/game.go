@@ -48,6 +48,7 @@ const (
 	laserRadius        = 3.0
 	laserCooldown      = .85
 	ghostDuration      = powerEffectDuration
+	starmanDuration    = 3.0
 	// Cannon scales normal round radius (and diameter) and speed, not damage.
 	cannonRadius   = 3.5 * 4
 	cannonSpeed    = 282.0 * 4
@@ -86,6 +87,7 @@ type Input struct {
 	FirePressed bool    `json:"-"` // Server-latched edge; clients cannot forge it.
 	StickX      float64 `json:"stickX"`
 	StickY      float64 `json:"stickY"`
+	AimOnly     bool    `json:"aimOnly,omitempty"` // The direction turns the tank; keyboard drive still sets throttle.
 }
 type Tank struct {
 	ShotSerial    uint64            `json:"shotSerial"` // Accepted volleys in this life; cosmetic reconciliation only.
@@ -122,6 +124,7 @@ type Tank struct {
 	SpeedTime     float64 `json:"speedTime"`
 	SpeedStacks   int     `json:"speedStacks"`
 	GhostTime     float64 `json:"ghostTime"`
+	StarmanTime   float64 `json:"starmanTime,omitempty"`
 	PowerTime     float64 `json:"powerTime"`
 	MachineRounds int     `json:"machineRounds"` // Successful rapid projectiles left, at 60 per second.
 	Charges       int     `json:"charges"`
@@ -640,7 +643,9 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 		desired := math.Atan2(in.StickY, in.StickX)
 		diff := delta(t.Angle, desired)
 		t.Angle += clamp(diff, -5.8*turnScale*dt, 5.8*turnScale*dt)
-		throttle = math.Min(1, mag) * math.Max(0, math.Cos(diff))
+		if !in.AimOnly {
+			throttle = math.Min(1, mag) * math.Max(0, math.Cos(diff))
+		}
 	} else {
 		turn := 0.0
 		if in.Right {
@@ -1193,7 +1198,7 @@ func (g *Game) updateBullets(dt float64) {
 	g.Bullets = live
 }
 
-var pickupTypes = []string{"rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost"}
+var pickupTypes = []string{"rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"}
 
 func (g *Game) grantPower(t *Tank, kind string) {
 	duration := powerDuration(g.World.Cols, g.World.Rows)
@@ -1206,6 +1211,11 @@ func (g *Game) grantPower(t *Tank, kind string) {
 		t.SpeedTime = duration
 	case "ghost":
 		t.GhostTime = duration
+	case "starman":
+		// Reuse the existing damage and wall-phasing timers without shortening either.
+		t.StarmanTime = starmanDuration
+		t.Invulnerable = math.Max(t.Invulnerable, starmanDuration)
+		t.GhostTime = math.Max(t.GhostTime, starmanDuration)
 	case "rapid", "scatter":
 		t.MachineRounds = 0
 		if kind == "rapid" {
@@ -1366,6 +1376,7 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		}
 		t.Cooldown = math.Max(0, t.Cooldown-dt)
 		t.Invulnerable = math.Max(0, t.Invulnerable-dt)
+		t.StarmanTime = math.Max(0, t.StarmanTime-dt)
 		t.Shield = math.Max(0, t.Shield-dt)
 		if t.Shield <= 0 {
 			t.ShieldCharges = 0

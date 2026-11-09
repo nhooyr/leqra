@@ -81,32 +81,6 @@ As before, another device needs your server's reachable LAN/public address.
 A URL beginning with `localhost` only works on the hosting device; the Copy
 Invite button explains that rather than copying an unusable remote invitation.
 
-## Apply the update
-
-Stop the existing server. Preserve custom deployment settings, then replace
-**both the Go sources and the entire `web/` folder** with this package.
-
-```sh
-cd leqra-online
-go run .
-```
-
-Refresh every player's browser. `/healthz` and `leqra.version` report **2.6.0**.
-Do not mix old clients with the new server: old clients reject custom room names
-and do not understand the laser. Restarting resets in-memory rooms and scores.
-An old valid invite can create a fresh room, with its first visitor as host.
-
-Compiled deployments must rebuild because the web files are embedded:
-
-```sh
-go build -trimpath -o leqra .
-./leqra
-```
-
-Use `leqra.exe` on Windows. Existing Docker Compose deployments can rebuild
-with `docker compose up --build -d`. No npm or database step is needed. This
-package updates your server; it does not deploy a new public service.
-
 ## Verification
 
 Passed **126 top-level Go tests with the race detector** (206 including

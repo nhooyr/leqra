@@ -1,62 +1,19 @@
 # leqra
 
-https://leqra.com
+A multiplayer tank arena with four game modes, ten power-ups, and local or online rooms. [Play at leqra.com](https://leqra.com).
 
-An online multiplayer tank arena battle game.
+![Tanks battling in the leqra maze](docs/screenshot.png)
+
+## Play locally
+
+Open [index.html](./index.html) from a checkout for offline play. For a local server with online rooms, run `./dev.sh` from the repository root and open [localhost:8080](http://localhost:8080).
+
+On desktop, move the pointer over the maze to aim Player 1 and left-click to fire. On touchscreens, use the joystick and Fire. The first visit opens a skippable quick tour, which you can replay from **Room settings → Controls**.
+
+[Player guide](docs/README.md) · [Power-ups](docs/POWERUPS.md) · [Tests](docs/TESTING.md) · [Protocol](docs/PROTOCOL.md)
 
 Generated 100% by ChatGPT Astra.
 
-![screenshot of the game](docs/screenshot.png)
-
-- 4 fun free-for-all and team based game modes:
-    1. Elimination
-    2. Capture the flag
-    3. King of the hill
-    4. Survival
-- 9 collectable power-ups:
-    1. Cannon
-    2. Ghost
-    3. Laser with a ricochet aim guide
-    4. Homing missile
-    5. Grenade
-    6. Super speed
-    7. Machine gun
-    8. Shotgun
-    9. Shield
-- Flexible lobby rooms supporting:
-    1. Local players
-    2. Bots
-    3. Online players
-    4. Teams
-    5. Spectators
-    6. Online matchmaking
-- 4 bot levels:
-    1. Chill
-    2. Normal
-    3. Fierce
-    4. Godlike
-- 6 map sizes.
-- 8 tanks at a time.
-- A second local player.
-- Mobile & PWA support.
-- Managed deployments to minimize downtime.
-
-## Getting Started
-
-You can open [index.html](./index.html) from your local checkout to play.
-
-To run from the server:
-
-```sh
-./dev.sh
-```
-
-You can deploy the binary anywhere as all assets are embedded.
-
 ## TODO
 
-1. The src/web/assets that duplicate from src should be symlinks instead of having entirely duplicate versions.
-2. Add mouse pointer aiming + click to fire to the controls for player 1 on desktop.
-3. Maybe add health bars to let tanks have 3 shots?
-4. Add a intro mode to explain the controls & mechanics.
-5. On Mobile, mazes should be larger vertically than horizontally to use screen real estate effectively.
+Consider three-hit tanks with health bars.

@@ -6,12 +6,14 @@ function declaration(name){const start=source.indexOf('function '+name+'(');asse
 class Element{constructor(){this.value='';this.dataset={};this.attributes={};this.hidden=false;this.disabled=false;this.textContent='';this.style={setProperty:(k,v)=>this[k]=v};this.classList={toggle(){}};}setAttribute(k,v){this.attributes[k]=v;}getAttribute(k){return this.attributes[k];}focus(){this.focused=true;}scrollIntoView(){this.revealed=true;}}
 function boot({online=false,count=4}={}){
  const elements=new Map(),$=id=>{if(!elements.has(id)){const el=new Element();el.parentElement=new Element();elements.set(id,el);}return elements.get(id);};
+ $('roomMapSize').options=[{value:'compact',textContent:'Compact · 7 × 7'},{value:'large',textContent:'Large · 12 × 10'}];
  const choices=['elimination','ctf','koth','survival'].map(id=>{const el=new Element();el.dataset.roomMode=id;return el;});
  const timers=new Map();let timer=0;
  const s={console,mode:online?'online':'room',phase:online?'onlineLobby':'menu',MAX_TANKS:8,pendingRoomMode:null,roomModeObserved:'',roomModeError:'',roomModeContext:'',rulesPending:false,presetsPending:false,escapeHTML:v=>String(v),POWER:{rapid:{},shield:{}},localRoom:{code:'LOCAL',self:0,players:Array.from({length:count},(_,id)=>({id,kind:id?'bot':'human',team:0,connected:true})),rules:null},online:{id:0,member:1,code:'ONLINE',connected:true,socket:{},roomData:null},$,document:{querySelectorAll:selector=>selector==='[data-room-mode]'?choices:[],createElement:()=>new Element()},sent:[],sendOnline(message){s.sent.push(message);return !s.sendFails;},setTimeout(fn){timers.set(++timer,fn);return timer;},clearTimeout(id){timers.delete(id);},rememberedRulesForMode(){return null;},persistLocalRoomRules(r){s.persisted=r;},resetPreviewIfLobby(options){s.preview=options;},renderOnlineRoom(){s.syncRoomModePicker();},syncFeatureSummary(){s.syncRoomModePicker();},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>r?.players||s.localRoom.players};
  s.roomData=()=>s.mode==='online'?s.online.roomData:{host:0,players:s.localRoom.players.filter(p=>!p.spectating),rules:s.localRoom.rules};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const ROOM_MODES='),source.indexOf('function roomModeEditable(')),s);
- for(const name of ['cleanPilotName','defaultRoomRules','defaultModeRules','currentRules','validateTeamNames','validateRoomRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','setLocalRules','isRoomHost','isRoomEditable','roomModeEditable','rulesForRoomMode','clearRoomModePending','paintRoomModeChoice','syncRoomModePicker','rejectRoomMode','selectRoomMode','selectRoomSetting','roomModeKeydown','initRoomModePicker','modeLabel','updateRuleHelp','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest'])vm.runInContext(declaration(name),s);
+ vm.runInContext(source.match(/const MAZE_SIZES=[^\n]+/)[0],s);
+ for(const name of ['cleanPilotName','defaultRoomRules','defaultModeRules','currentRules','validateTeamNames','validateRoomRules','mapDimensions','mapSetupChanged','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','setLocalRules','isRoomHost','isRoomEditable','roomModeEditable','rulesForRoomMode','clearRoomModePending','paintRoomModeChoice','syncRoomModePicker','rejectRoomMode','selectRoomMode','selectRoomSetting','roomModeKeydown','initRoomModePicker','modeLabel','updateRuleHelp','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.defaultRoomRules();s.online.roomData={host:0,phase:'lobby',players:s.localRoom.players,rules:s.defaultRoomRules()};s.syncRoomModePicker();s.choices=choices;return {s,$,choices,timers};
 }
 test('home selection applies mode defaults while preserving map, power-ups and team identity',()=>{
@@ -54,7 +56,7 @@ test('preset changes, authoritative updates and reconnects refresh the selector 
 });
 test('Rules use the selected mode without a second mode dropdown',()=>{
  const {s,$}=boot();Object.assign(s,{mapDimensions:()=>[12,10],pickupLimitText:()=>'',pickupLifetime:()=>30});s.updateRuleHelp();assert.equal($('ruleScoreLabel').textContent,'ROUNDS TO WIN');s.selectRoomMode('survival');s.updateRuleHelp();assert.equal($('roomTeamMode').value,'teams');assert.equal($('roomTeamMode').disabled,true);assert.equal($('ruleScoreLabel').textContent,'WAVES TO SURVIVE');assert.equal($('rulesModeName').textContent,'SURVIVAL');assert.equal($('rule-respawnSeconds').parentElement.hidden,true);
- assert.doesNotMatch(source,/id="rule-mode"|\$\('rule-mode'\)|RULES & MODE/);assert.doesNotMatch(source,/id="rule-(teamMode|mapSize)"|\$\('rule-(teamMode|mapSize)'\)/);assert.match(declaration('submitRules'),/mapSize:current\.mapSize,teamMode:current\.teamMode/);
+ assert.doesNotMatch(source,/id="rule-mode"|\$\('rule-mode'\)|RULES & MODE/);assert.doesNotMatch(source,/id="rule-(teamMode|mapSize)"|\$\('rule-(teamMode|mapSize)'\)/);
 });
 test('arrow keys wrap across mode choices; Home and End reach the first and last',()=>{
  const {s,choices}=boot();let index=0;
@@ -110,8 +112,35 @@ test('lobby selectors follow mode in reading order and replace the Rules fields'
  const {s,$}=boot();let html='';s.initRoomModePicker({before(p){html=p.innerHTML;}});
  assert.ok(html.indexOf('id="roomModeChoices"')<html.indexOf('id="roomTeamMode"'));assert.ok(html.indexOf('id="roomTeamMode"')<html.indexOf('id="roomMapSize"'));assert.equal((html.match(/id="roomMapSize"/g)||[]).length,1);
  $('roomTeamMode').onchange({target:{value:'teams'}});assert.equal(s.currentRules().teamMode,'teams');$('roomMapSize').onchange({target:{value:'giant'}});assert.equal(s.currentRules().mapSize,'giant');
+ assert.match(html,/id="roomPortraitMaze" type="checkbox"[^>]*>Portrait maze/);
+ assert.ok(html.indexOf('id="roomMapSize"')<html.indexOf('id="roomPortraitMaze"'));
+ $('roomPortraitMaze').onchange({target:{checked:true}});assert.equal(s.currentRules().portraitMaze,true);
  assert.doesNotMatch(declaration('initFeatures'),/rule-(teamMode|mapSize)/);
  const index=readFileSync(path.join(__dirname,'../web/index.html'),'utf8');assert.match(index,/id="startRoomBtn"[^>]*><span>PLAY<\/span>/);assert.match(declaration('renderOnlineRoom'),/firstElementChild.textContent='PLAY'/);
+});
+
+test('portrait changes rectangular geometry, keeps square previews, and survives a mode switch',()=>{
+ const {s,$}=boot();
+ assert.equal(s.selectRoomSetting('portraitMaze',true),true);
+ assert.deepEqual(Array.from(s.mapDimensions()),[10,12]);
+ assert.equal(s.preview.regenerateMaze,true);
+ assert.equal($('roomMapSize').options[1].label,'Large · 10 × 12');
+ s.selectRoomMode('survival');assert.equal(s.currentRules().portraitMaze,true);
+ s.selectRoomSetting('mapSize','compact');
+ s.selectRoomSetting('portraitMaze',false);assert.equal(s.preview.regenerateMaze,false);
+ assert.deepEqual(Array.from(s.mapDimensions()),[7,7]);
+ assert.match($('roomPortraitHelp').textContent,/Compact is square/);
+});
+
+test('online portrait checkbox reflects only accepted rules and stays read-only for guests',()=>{
+ const {s,$}=boot({online:true}),checkbox=$('roomPortraitMaze');
+ assert.equal(s.selectRoomSetting('portraitMaze',true),true);
+ assert.equal(s.sent[0].rules.portraitMaze,true);assert.equal(checkbox.checked,false);assert.equal(checkbox.disabled,true);
+ s.online.roomData.rules=s.sent[0].rules;s.syncRoomModePicker();
+ assert.equal(checkbox.checked,true);assert.equal(checkbox.disabled,false);
+ s.online.roomData.host=1;s.syncRoomModePicker();
+ assert.equal(checkbox.disabled,true);assert.equal(s.selectRoomSetting('portraitMaze',false),false);
+ assert.equal(s.sent.length,1);assert.equal(checkbox.checked,true);
 });
 
 test('Hill and Survival defaults agree with presets while custom targets survive setup edits',()=>{
@@ -121,8 +150,8 @@ test('Hill and Survival defaults agree with presets while custom targets survive
  assert.match(source,/key:'koth-3'[^\n]+target:30,seconds:180/);assert.doesNotMatch(source,/First to 60 hill points/);
 });
 
-test('Rules submission retains current lobby format and map without reading removed fields',()=>{
- const {s,$}=boot({online:true});s.online.roomData.rules={...s.currentRules(),mode:'koth',teamMode:'ffa',mapSize:'giant',scoreTarget:44,timeLimit:222};
+test('Rules submission retains current lobby format, map and orientation',()=>{
+ const {s,$}=boot({online:true});s.online.roomData.rules={...s.currentRules(),mode:'koth',teamMode:'ffa',mapSize:'giant',portraitMaze:true,scoreTarget:44,timeLimit:222};
  Object.assign(s,{teamName:(i,r)=>r.teamNames[i-1],featureNotice(){}});$('rule-scoreTarget').value='51';$('rule-timeLimit').value='333';$('rule-respawnSeconds').value='4';$('rule-pickupRate').value='slow';$('rule-friendlyFire').checked=false;
- s.submitRules({preventDefault(){}});assert.equal(s.sent.length,1);const r=s.sent[0].rules;assert.equal(r.mode,'koth');assert.equal(r.teamMode,'ffa');assert.equal(r.mapSize,'giant');assert.equal(r.scoreTarget,51);assert.equal(r.timeLimit,333);assert.equal(r.pickupRate,'slow');assert.equal(s.rulesPending,true);
+ s.submitRules({preventDefault(){}});assert.equal(s.sent.length,1);const r=s.sent[0].rules;assert.equal(r.mode,'koth');assert.equal(r.teamMode,'ffa');assert.equal(r.mapSize,'giant');assert.equal(r.portraitMaze,true);assert.equal(r.scoreTarget,51);assert.equal(r.timeLimit,333);assert.equal(r.pickupRate,'slow');assert.equal(s.rulesPending,true);
 });

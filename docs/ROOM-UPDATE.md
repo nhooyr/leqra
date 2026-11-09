@@ -33,36 +33,6 @@ The v2.1 smoothing improvements, mobile steering/firing, solo bot squad, and
 local two-player mode remain intact. The underlying Go gameplay simulation and
 JavaScript smoothing module are unchanged from v2.1.
 
-## Apply the update
-
-Stop the current server, keep a backup of custom deployment settings, and replace
-the project with the new `leqra-online` folder. Update **both the Go source and
-all of `web/`**. Then run:
-
-```sh
-cd leqra-online
-go run .
-```
-
-Refresh every player's browser. Existing rooms reset when the server restarts,
-so create a new room and share its new invite link.
-
-A compiled deployment must be rebuilt because the web files are embedded:
-
-```sh
-go build -trimpath -o leqra .
-./leqra
-```
-
-On Windows, build as `leqra.exe`. Docker Compose deployments should rebuild:
-
-```sh
-docker compose up --build -d
-```
-
-`GET /healthz` and `leqra.version` in the browser console report **2.2.0**.
-This is source for your server, not a newly hosted public service.
-
 ## Verification
 
 57 Go tests passed with the race detector, 16 JavaScript networking tests passed,

@@ -2,24 +2,6 @@
 
 # leqra v2.1 — multiplayer movement update
 
-## Apply the update
-
-1. Stop the old Go server. Keep a backup of any custom deployment configuration.
-2. Replace the project sources and the entire `web/` directory with this package.
-3. In the `leqra-online` folder, run `go run .` and open the same server address.
-4. Refresh every player's browser. A hard refresh clears any old client code.
-
-For an executable deployment, rebuild with `go build -trimpath -o leqra .`
-(`leqra.exe` on Windows), then launch the new executable. Its web files are
-embedded, so replacing loose JavaScript without rebuilding the binary is not
-enough. Docker Compose deployments use `docker compose up --build -d` with their
-existing deployment settings.
-
-The server reports **2.1.0** at `/healthz`; `leqra.version` in the browser
-console is also **2.1.0**. Rooms and scores are in memory, so restarting closes
-existing rooms. Create a fresh room after updating. No npm or database step is
-required. Go is still needed only on the hosting computer.
-
 ## What changed
 
 **Your tank responds locally.** Controls are predicted with the same 60 Hz
