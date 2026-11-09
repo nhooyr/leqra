@@ -220,11 +220,10 @@ func main() {
 	}
 	addrs, _ := net.InterfaceAddrs()
 	openURL, lanURLs := startupURLs(listener.Addr().(*net.TCPAddr), addrs, lanHostname)
-	fmt.Printf("\nleqra online v%s\nOpen %s\n", version, openURL)
+	fmt.Printf("leqra server v%s\n%s\n", version, openURL)
 	for _, lanURL := range lanURLs {
-		fmt.Printf("Same Wi-Fi: %s\n", lanURL)
+		fmt.Println(lanURL)
 	}
-	fmt.Print("Start locally, or choose Share Room Online. Invite players or spectators.\nCtrl+C stops the server.\n\n")
 	stopped := make(chan os.Signal, 1)
 	signal.Notify(stopped, os.Interrupt, syscall.SIGTERM)
 	go func() {
