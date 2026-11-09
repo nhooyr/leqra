@@ -36,7 +36,7 @@ The production history-building functions run in a Node.js v24.19.0 benchmark wi
 | 20 messages | 0.9711 ms | 0.1620 ms |
 | 120 messages | 6.3950 ms | 0.8430 ms |
 
-The 120-message case is about 7.6× faster in this fixture. It excludes browser layout/paint, networking and simulation, and does not measure game FPS or physical-device speed. Detailed method, reproduction commands and raw results are in `tests/results/v4.42.0/chat-performance.md` and adjacent JSON files.
+The 120-message case is about 7.6× faster in this fixture. It excludes browser layout/paint, networking and simulation, and does not measure game FPS or physical-device speed. See the [chat performance report](PERFORMANCE-CHAT-v4.42.0.md) for the method and reproduction commands.
 
 ## Verification limits
 

@@ -16,7 +16,7 @@ Survival intermissions no longer advance the pilot HUD's cooldown/respawn displa
 
 Reopening or replacing chat history now creates one timestamp formatter for the batch rather than repeatedly setting up locale formatting for every message. Empty histories skip it; each fresh batch and each live appended message still follows current device locale/timezone settings. Timestamp text, message order, channel labels and scrolling behavior are preserved.
 
-A 120-message history render measured **6.395 ms before and 0.843 ms after** (about **7.6× faster**) in a Node fixture executing the production rendering functions with native date formatting and a lightweight DOM. This excludes browser layout, painting and game simulation; it is not a game-FPS or physical-device measurement. Method and raw evidence are under `tests/results/v4.42.0/chat-performance.md`.
+A 120-message history render measured **6.395 ms before and 0.843 ms after** (about **7.6× faster**) in a Node fixture executing the production rendering functions with native date formatting and a lightweight DOM. The measurement excludes browser layout, painting and game simulation. See the [chat performance report](PERFORMANCE-CHAT-v4.42.0.md).
 
 ## Install
 

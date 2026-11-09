@@ -1,2 +1,0 @@
-PASS
-ok  	leqra	0.025s

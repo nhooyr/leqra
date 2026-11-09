@@ -13,6 +13,8 @@ python3 -m unittest discover -s tests -p 'test_deploy.py' -v
 
 The Python suite exercises the deployment script with mocked builds, SSH, transfers, and remote commands.
 
+Keep generated reports and screenshots local. Older raw results are available in the repository history.
+
 For browser checks, start the local server and load the actual page. Check desktop and touch layouts, a match between two browser contexts, and offline startup through the service worker. For deterministic browser and protocol tests, the opt-in Go fixture is available locally.
 
 ```sh

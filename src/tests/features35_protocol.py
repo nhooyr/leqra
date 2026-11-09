@@ -66,6 +66,9 @@ async def main():
   msg=await say(players[7],'Now watching');check(msg['message']['spectating'],'Chat updates role after switching')
   e=await error(watching,'kick',target=0,member=w['member']);check(e['code']=='not_host','Spectator cannot kick chat peers')
   check(all(len(s.get('scores',[]))==8 for s in host.messages if s['type']=='state'),'Every state has eight score slots')
-  report={'version':'3.5.0','passed':len(checks),'checks':checks,'handler':'Production HTTP/WebSocket with normal origin validation; no fixture endpoints.'};(Path(__file__).parent/'results/features35-protocol.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
+  report={'version':'3.5.0','passed':len(checks),'checks':checks,'handler':'Production HTTP/WebSocket with normal origin validation; no fixture endpoints.'}
+  output = Path(__file__).parent / 'results/features35-protocol.json'
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
  finally:await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())

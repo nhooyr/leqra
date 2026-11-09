@@ -24,7 +24,7 @@ These are function, simulation, stub-DOM and CSS-source checks. The arena bounds
 
 New server regressions reproduce delayed input in both P1/P2 seat-swap directions: sequence 5001 previously entered the replacement’s channel, could set a fire edge and blocked valid sequence 31. With the fix, stale presses/releases are ignored and the current pilot’s commands work. Two client tests verify the actual packet identities. Existing ownership, spectator, respawn, independent-input and timeout checks pass with race detection.
 
-Four metadata tests compare the typed encoder byte-for-byte with the reference across modes, phases, optional fields, queue/party travel, empty rosters and subsequent member edits. Private tokens remain excluded. Median full-gallery broadcast timing is 105.873 → 15.336 microseconds across five 300-ms runs; allocations are 869 → 7. The raw before/after files and method are in `../../src/tests/results/v4.43.0/room-metadata-performance.md`. This is an isolated operation benchmark, not FPS.
+Four metadata tests compare the typed encoder byte-for-byte with the reference across modes, phases, optional fields, queue/party travel, empty rosters and subsequent member edits. Private tokens remain excluded. Across five 300-ms runs of the isolated full-gallery broadcast benchmark, median time fell from 105.873 to 15.336 microseconds and allocations fell from 869 to 7. See the [room metadata performance report](PERFORMANCE-ROOM-METADATA-v4.43.0.md).
 
 ## Native browser and screenshot limits
 

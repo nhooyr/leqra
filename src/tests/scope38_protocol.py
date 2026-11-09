@@ -36,6 +36,8 @@ async def main():
    e=await op(host,'rules',lambda m:m['type']=='error',rules=rules);check(e['code']=='match_active',name+': live match keeps map/rules locked')
    for p in [host,guest,viewer]:await p.close()
   report={'version':'3.8.0','passed':len(checks),'checks':checks,'handler':'Production server, real WebSockets and ordinary origin validation; no fixture endpoints.'}
-  (Path(__file__).parent/'results/scope38-protocol.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
+  output = Path(__file__).parent / 'results/scope38-protocol.json'
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
  finally:await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())

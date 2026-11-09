@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 - `src/`: Go server, authoritative simulation, WebSocket transport, rooms, matchmaking, and adjacent `*_test.go` files; one `leqra` module using `package main`.
-- `src/web/`: `index.html` and the versioned browser assets under `assets/v<version>/`. `src/tests/` contains JavaScript tests, optional browser/protocol harnesses, and historical results.
+- `src/web/`: `index.html` and the versioned browser assets under `assets/v<version>/`. `src/tests/` contains JavaScript tests and optional browser/protocol harnesses.
 - `tests/`: mocked deployment tests. `scripts/`: optional asset-generation utilities. `deploy/`: deployment script, service, and environment settings. `docs/`: player guides, protocol, and release notes.
 
 ## Build, Test, and Development Commands
@@ -28,6 +28,8 @@ Leave letter spacing at its default in CSS.
 ## Testing Guidelines
 
 Add deterministic regressions for bugs. Name Go tests `TestBehavior` in `*_test.go`; place Node tests in `src/tests/*.test.cjs`. Keep shared gameplay behavior consistent between Go and JavaScript, using parity fixtures where applicable. Benchmark performance claims. Run focused tests first, then relevant full suites. No numeric coverage threshold is configured. Historical browser results are not current verification; record skipped browser/device checks.
+
+Keep generated test results out of version control, including logs, benchmark output, and test screenshots.
 
 ## Assets & Configuration
 
