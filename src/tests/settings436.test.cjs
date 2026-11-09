@@ -7,16 +7,74 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 function boot(storage=new Map(),touchUI=false){
  const elements=new Map(),toggles=['rapid','shield','laser'].map(weapon=>({dataset:{weaponToggle:weapon},checked:true}));
  const $=id=>{if(!elements.has(id))elements.set(id,{value:'',checked:false,disabled:false,dataset:{},style:{},classList:{toggle(){}},previousElementSibling:{style:{}},parentElement:{querySelector(){return true;}}});return elements.get(id);};
- const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'].map(kind=>[kind,{}])),DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
+ const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'].map(kind=>[kind,{}])),DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival','infinity'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
  localStorage:{getItem:key=>storage.get(key)||null,setItem(key,value){if(s.storageFails)throw Error('Storage unavailable');storage.set(key,value);s.writes++;}},writes:0,
  $,document:{querySelectorAll:selector=>selector.endsWith(':checked')?toggles.filter(c=>c.checked):toggles},Theme:{colors:['a','b','c','d','e','f','g','h']},teamName:(n,r)=>r.teamNames[n-1],featureNotice(id,message){$(id).textContent=message;},updateRuleHelp(){},renderPowerLegend(){},isRoomEditable:()=>s.editable!==false,roomData:()=>({rules:s.localRoom.rules,players:s.localRoom.players.filter(p=>!p.spectating)}),roomModeEditable:()=>s.editable!==false,rejectRoomMode(message){s.rejected=message;},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>[...r.players,...(r.spectators||[])],setLocalRules(r){s.localRoom.rules=s.validateRoomRules(r);s.persistLocalRoomRules(r);},setTimeout(){return 1;},clearTimeout(){},syncFeatureSummary(){},syncRoomModePicker(){},sendOnline(message){s.sent=message;return !s.sendFails;},closeFeature(){s.closed=true;}};
- s.infinityOffline=false;
+ Object.assign(s,{infinityOffline:false,infinityOnline:true,renderOnlineRoom(){},save(key,value){storage.set('leqra.'+key,String(value));}});
+ try{s.infinityOffline=storage.get('leqra.infinityOffline')==='1';}catch(_){}
  vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
- for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest'])vm.runInContext(declaration(name),s);
+ for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','selectLocalInfinity','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','startInfinity'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.loadLocalRoomRules();return {s,$,storage,toggles};
 }
 const pilot=(options={})=>({id:0,kind:'human',name:'PILOT',team:0,...options});
 const bot=(options={})=>({id:1,kind:'bot',name:'RUST',team:0,difficulty:'normal',...options});
+
+test('Infinity room target and teams persist separately from fixed-maze settings',()=>{
+ const {s,$,storage}=boot();s.localRoom.players=[pilot(),bot()];
+ s.localRoom.rules={...s.localRoom.rules,scoreTarget:9,timeLimit:300};s.persistLocalRoomRules();
+ assert.equal(s.selectRoomMode('infinity'),true);
+ assert.equal(s.selectRoomSetting('teamMode','teams'),true);
+ s.fillRulesForm();assert.equal($('rulesDialog').dataset.mode,'infinity');
+ assert.equal($('rule-infinityTarget').value,0);
+ $('rule-infinityTarget').value='35';$('rule-teamName1').value='North';$('rule-friendlyFire').checked=true;
+ s.submitRules({preventDefault(){}});
+ const restored=boot(storage).s;
+ assert.equal(restored.localRoom.rules.infinity,true);
+ assert.equal(restored.localRoom.rules.infinityTarget,35);
+ assert.equal(restored.localRoom.rules.teamMode,'teams');
+ assert.equal(restored.localRoom.rules.teamNames[0],'North');
+ assert.equal(restored.localRoom.rules.friendlyFire,true);
+ assert.equal(s.selectRoomMode('elimination'),true);
+ assert.equal(s.localRoom.rules.infinity,false);
+ assert.equal(s.localRoom.rules.scoreTarget,9);
+ assert.equal(s.localRoom.rules.timeLimit,300);
+ assert.equal(s.localRoom.rules.teamMode,'ffa');
+ assert.equal(s.selectRoomMode('infinity'),true);
+ assert.equal(s.localRoom.rules.infinityTarget,35);
+});
+
+test('old offline Infinity selection remains endless and room rule requests include the target',()=>{
+ const {s,$}=boot(new Map([['leqra.infinityOffline','1']]));
+ assert.equal(s.localRoom.rules.infinity,true);
+ assert.equal(s.localRoom.rules.infinityTarget,0);
+ for(const target of [-1,1000,1.5,'1',null])assert.throws(()=>s.validateRoomRules({...s.localRoom.rules,infinityTarget:target}),/Infinity score target/);
+ s.mode='online';s.online.roomData={rules:s.localRoom.rules};
+ s.fillRulesForm();$('rule-infinityTarget').value='70';
+ s.submitRules({preventDefault(){}});
+ assert.equal(s.sent.rules.infinityTarget,70);
+ assert.equal(s.online.roomData.rules.infinityTarget,0);
+ assert.notEqual(s.roomSetupRulesKey(s.sent.rules),s.roomSetupRulesKey(s.online.roomData.rules));
+});
+
+test('Infinity start passes both local pilots and reserves room rules for room runs',()=>{
+ const {s}=boot(),local={id:7,kind:'local',name:'Wing'};
+ s.localRoom.self=4;s.localRoom.rules={...s.localRoom.rules,infinity:true,infinityTarget:12};s.localRoom.players=[local,pilot({id:4,name:'Lead'})];
+ Object.assign(s,{window:{leqraInfinity:{start:(kind,options)=>s.launch={kind,options}}},roomMember:id=>s.localRoom.players.find(p=>p.id===id),secondLocal:()=>local,
+  bindings:[],closeVictory(){},clearInput(){},cancelPendingAudio(){}});
+ s.startInfinity('offline');
+ assert.equal(s.launch.options.roomRules.infinityTarget,12);
+ assert.deepEqual(Array.from(s.launch.options.roster,p=>p.id),[7,4]);
+ assert.equal(s.launch.options.primaryId,4);
+ assert.equal(s.launch.options.localId,7);
+ assert.equal(s.launch.options.localName,'Wing');
+ s.startInfinity('online');
+ assert.equal(s.launch.options.roomRules,null);
+ assert.equal(s.launch.options.roster.length,0);
+ assert.equal(s.launch.options.localName,'Wing');
+ s.startInfinity('online',{code:'ROOM',token:'test'});
+ assert.equal(s.launch.options.roomRules.infinityTarget,12);
+ assert.equal(s.launch.options.token,'test');
+});
 
 test('each mode remembers its rules through mode changes and a fresh page load, keeping the selected map',()=>{
  const {s,storage}=boot();s.localRoom.players=[pilot(),bot()];

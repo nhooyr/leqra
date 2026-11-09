@@ -70,8 +70,8 @@ func TestRoomInfinityAuthorizationFollowsRoomMembershipAndGeneration(t *testing.
 	r.Game.Rules.Infinity = true
 	action(t, h, guest, map[string]any{"type": "ready", "ready": true})
 	action(t, h, host, map[string]any{"type": "start"})
-	room, member, generation, name := h.infiniteMember(code, token)
-	if room != r || member != pilot || generation == 0 || name != pilot.Name {
+	room, member, generation, setup := h.infiniteMember(code, token)
+	if room != r || member != pilot || generation == 0 || setup.pilot.name != pilot.Name {
 		t.Fatal("active combat pilot could not authenticate")
 	}
 	for _, invalid := range []struct{ code, token string }{{"other room", token}, {code, ""}, {code, "wrong token"}} {
@@ -151,5 +151,75 @@ func TestRoomInfinityDisconnectGraceAndKick(t *testing.T) {
 	action(t, h, host, map[string]any{"type": "kick", "target": pilot.ID, "member": pilot.Member})
 	if _, p, _, _ := h.infiniteMember(r.Code, pilot.Token); p != nil || h.validInfiniteMember(r, pilot, generation) {
 		t.Fatal("removed pilot retained Infinity combat access")
+	}
+}
+
+func TestPrivateInfinityAuthenticatesLocalRosterAndKeepsRoomResult(t *testing.T) {
+	h, clients, r := makeRoom(t, 2)
+	host, guest := clients[0], clients[1]
+	rules := r.Game.settings()
+	rules.Mode, rules.Infinity, rules.InfinityTarget = "ctf", true, 12
+	rules.TeamColors[2] = 7
+	action(t, h, host, map[string]any{"type": "rules", "rules": rules})
+	action(t, h, host, map[string]any{"type": "add", "kind": "local", "name": "CO-PILOT", "team": 3})
+	action(t, h, guest, map[string]any{"type": "ready", "ready": true})
+	action(t, h, host, map[string]any{"type": "start"})
+	s := newInfiniteServer(h)
+	now := time.Now()
+	join := func(controller *Player) (infiniteConnection, *Client) {
+		t.Helper()
+		c := fakeClient()
+		if !s.admit(c) {
+			t.Fatal("failed to admit socket")
+		}
+		conn, reject := s.join(c, infiniteMessage{Code: r.Code, Token: controller.Token, Name: "FORGED", LocalName: "FORGED LOCAL"}, now)
+		if reject != "" {
+			t.Fatal(reject)
+		}
+		return conn, c
+	}
+	pair, pairSocket := join(host.player)
+	solo, soloSocket := join(guest.player)
+	if pair.local == nil || pair.local.Name != "CO-PILOT" || pair.local.Team != 3 || pair.local.ColorIndex != 7 ||
+		pair.pilot.Name != host.player.Name || solo.local != nil || solo.arena != pair.arena ||
+		pair.arena.rules.Target != 12 || s.privateCount != 3 {
+		t.Fatalf("local seat, roster color, or capacity did not match the room: %+v %+v", pair.local, pair.arena.rules)
+	}
+	winner := infiniteResult{Team: 1, Name: "Team 1", Score: 12}
+	pair.arena.result = &winner
+	pair.arena.teamScores[0] = 12
+	s.remove(pairSocket)
+	s.remove(soloSocket)
+	if s.privateCount != 0 || pair.arena.players != 0 || pair.arena.maze != nil || len(s.private) != 1 {
+		t.Fatal("private score arena was not retained after both controllers left")
+	}
+	rejoined, socket := join(host.player)
+	if rejoined.arena != pair.arena || *rejoined.arena.result != winner || rejoined.arena.teamScores[0] != 12 {
+		t.Fatal("rejoining replaced the match instead of retaining it")
+	}
+	if got := drain(socket); len(got) != 2 || got[1]["type"] != "state" || got[1]["result"] == nil {
+		t.Fatalf("rejoining did not receive the final result: %v", got)
+	}
+	action(t, h, host, map[string]any{"type": "lobby"})
+	s.step(now)
+	if len(s.private) != 0 || s.privateCount != 0 {
+		t.Fatal("ending Infinity did not release the arena")
+	}
+}
+
+func TestInfinityRulesValidateTargetAndOverrideLegacyModeTeams(t *testing.T) {
+	rules := defaultRules()
+	rules.Mode, rules.Infinity = "survival", true
+	for _, target := range []int{0, 1, 999} {
+		rules.InfinityTarget = target
+		if err := validateRules(rules); err != nil || activeTeamCount(normalizedRules(rules)) != 0 {
+			t.Fatalf("legacy mode did not accept Infinity FFA and target %d: %v", target, err)
+		}
+	}
+	for _, target := range []int{-1, 1000} {
+		rules.InfinityTarget = target
+		if err := validateRules(rules); err == nil {
+			t.Fatalf("invalid target accepted: %d", target)
+		}
 	}
 }

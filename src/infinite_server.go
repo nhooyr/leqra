@@ -20,10 +20,12 @@ type infiniteRoom struct {
 }
 
 type infiniteConnection struct {
-	arena *infiniteArena
-	pilot *infinitePilot
-	room  infiniteRoom
-	seat  *Player
+	arena     *infiniteArena
+	pilot     *infinitePilot
+	local     *infinitePilot
+	room      infiniteRoom
+	seat      *Player
+	localSeat *Player
 }
 
 type infiniteServer struct {
@@ -34,15 +36,18 @@ type infiniteServer struct {
 	private      map[infiniteRoom]*infiniteArena
 	connections  map[*Client]infiniteConnection // A nil arena is still joining.
 	privateCount int
+	nextSweep    time.Time
 }
 
 type infiniteMessage struct {
-	Type    string `json:"type"`
-	Version string `json:"version"`
-	Name    string `json:"name"`
-	Code    string `json:"code"`
-	Token   string `json:"token"`
-	Paused  bool   `json:"paused"`
+	Type      string `json:"type"`
+	Version   string `json:"version"`
+	Name      string `json:"name"`
+	LocalName string `json:"localName"`
+	Code      string `json:"code"`
+	Token     string `json:"token"`
+	Local     bool   `json:"local"`
+	Paused    bool   `json:"paused"`
 	Input
 }
 
@@ -95,7 +100,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 	go c.writeLoop()
 	window := time.Now()
 	var lastTouch time.Time
-	count := 0
+	var count [2]int
 	for {
 		data, err = c.ws.readMessage()
 		if err != nil {
@@ -104,12 +109,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 		}
 		now := time.Now()
 		if now.Sub(window) >= time.Second {
-			window, count = now, 0
-		}
-		count++
-		if count > clientMessageLimit {
-			c.ws.writeClose(1008, "Input rate exceeded")
-			return
+			window, count = now, [2]int{}
 		}
 		var msg infiniteMessage
 		if json.Unmarshal(data, &msg) != nil {
@@ -120,11 +120,24 @@ func (s *infiniteServer) readLoop(c *Client) {
 			c.ws.writeClose(1008, "Unsupported Infinity message")
 			return
 		}
+		pilot, seat := connection.pilot, 0
+		if msg.Local {
+			if connection.local == nil {
+				c.ws.writeClose(1008, "This connection has no local Player 2")
+				return
+			}
+			pilot, seat = connection.local, 1
+		}
+		count[seat]++
+		if count[seat] > clientMessageLimit {
+			c.ws.writeClose(1008, "Input rate exceeded")
+			return
+		}
 		if connection.seat != nil && !msg.Paused && now.Sub(lastTouch) >= time.Second && infiniteActiveInput(msg.Input) {
 			s.hub.touchInfiniteMember(connection.room.room, connection.seat, connection.room.generation, now)
 			lastTouch = now
 		}
-		connection.arena.setInput(connection.pilot, msg.Input, msg.Paused, now)
+		connection.arena.setInput(pilot, msg.Input, msg.Paused, now)
 	}
 }
 
@@ -159,12 +172,18 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		return infiniteConnection{}, "Could not join Infinity."
 	}
 	connection := infiniteConnection{arena: s.public}
+	first := infiniteSeat{name: msg.Name, colorIndex: -1}
+	var local *infiniteSeat
+	seats := 1
 	if msg.Code != "" || msg.Token != "" {
-		room, seat, generation, name := s.hub.infiniteMember(msg.Code, msg.Token)
+		room, seat, generation, setup := s.hub.infiniteMember(msg.Code, msg.Token)
 		if generation == 0 {
 			return infiniteConnection{}, "Join the room as a pilot to play private Infinity."
 		}
-		if s.privateCount >= infinitePrivateCapacity {
+		if setup.local != nil {
+			seats++
+		}
+		if s.privateCount+seats > infinitePrivateCapacity {
 			return infiniteConnection{}, "Private Infinity is full. Try again when a pilot leaves."
 		}
 		key := infiniteRoom{room: room, generation: generation}
@@ -173,24 +192,30 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 				return infiniteConnection{}, "This pilot is already playing Infinity."
 			}
 		}
-		connection.room, connection.seat = key, seat
+		connection.room, connection.seat, connection.localSeat = key, seat, setup.seat
 		connection.arena = s.private[key]
 		if connection.arena == nil {
-			connection.arena = newInfiniteArena()
+			connection.arena = newRoomInfiniteArena(setup.rules)
 		}
-		msg.Name = name
-	} else if s.public.players >= infiniteCapacity {
-		return infiniteConnection{}, "Infinity Online is full. Try again when a pilot leaves."
+		first, local = setup.pilot, setup.local
+	} else {
+		if cleanCallsign(msg.LocalName) != "" {
+			local = &infiniteSeat{name: msg.LocalName, colorIndex: -1}
+			seats++
+		}
+		if s.public.players+seats > infiniteCapacity {
+			return infiniteConnection{}, "Infinity Online is full. Try again when enough pilots leave."
+		}
 	}
 
-	connection.pilot = connection.arena.join(c, msg.Name, now)
+	connection.pilot, connection.local = connection.arena.joinSeats(c, first, local, now)
 	if connection.pilot == nil {
 		return infiniteConnection{}, "Could not join Infinity."
 	}
 	s.connections[c] = connection
 	if connection.seat != nil {
 		s.private[connection.room] = connection.arena
-		s.privateCount++
+		s.privateCount += seats
 	}
 	return connection, ""
 }
@@ -210,8 +235,13 @@ func (s *infiniteServer) removeLocked(c *Client) {
 	connection.arena.remove(connection.pilot)
 	if connection.seat != nil {
 		s.privateCount--
-		if connection.arena.players == 0 {
-			delete(s.private, connection.room)
+		if connection.local != nil {
+			s.privateCount--
+		}
+		if a := connection.arena; a.players == 0 {
+			if !a.teams() && a.rules.Target == 0 || !s.hub.validInfiniteRoom(connection.room.room, connection.room.generation) {
+				delete(s.private, connection.room)
+			}
 		}
 	}
 }
@@ -245,14 +275,24 @@ func (s *infiniteServer) step(now time.Time) {
 	}
 	for c, connection := range s.connections {
 		publicIdle := connection.arena == s.public && s.public.idle(connection.pilot, now)
-		privateRevoked := connection.seat != nil && !s.hub.validInfiniteMember(connection.room.room, connection.seat, connection.room.generation)
+		privateRevoked := connection.seat != nil && !s.hub.infiniteConnectionValid(connection.room.room, connection.seat, connection.localSeat, connection.room.generation, now)
 		if publicIdle || privateRevoked {
 			c.stop()
 			s.removeLocked(c)
 		}
 	}
 	s.public.step(now)
-	for _, arena := range s.private {
+	sweep := !now.Before(s.nextSweep)
+	if sweep {
+		s.nextSweep = now.Add(time.Second)
+	}
+	for key, arena := range s.private {
+		if arena.players == 0 {
+			if sweep && !s.hub.validInfiniteRoom(key.room, key.generation) {
+				delete(s.private, key)
+			}
+			continue
+		}
 		arena.step(now)
 	}
 }

@@ -61,9 +61,10 @@ function harness(url = 'https://example.test/', openField = false) {
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
   colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
-  tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, badge() {}, bullets() {},
+  tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, drawBadges() {}, bullets() {},
+  ageTank: tank => tank,
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
-  missileTurn: 4.8, grenadeTurn: 3.2,
+  missileTurn: 4.8,
   openControls: () => byID('controlsDialog').showModal(),
   toggleSound: () => sounds.push('mute'),
   shot: kind => sounds.push('shot:' + kind),
@@ -124,6 +125,50 @@ test('Infinity runs offline directly from a file and adds nearby bots to the sta
  assert.equal(byID('infiniteArena').open, false);
 });
 
+test('offline Infinity routes two independent keyboard layouts to separate tanks', () => {
+ const {infinity,byID,state,advance}=harness(undefined,true);
+ infinity.start('offline',{localName:'Local wingmate'});
+ const world=state(),[pilot,local]=world.tanks,arena=byID('infiniteArena');
+ world.nextBot=world.nextPickup=Infinity;
+ Object.assign(pilot,{x:100,y:100,angle:0});
+ Object.assign(local,{x:280,y:300,angle:0});
+ for(const code of ['KeyW','ArrowDown','KeyQ','Space'])arena.emit('keydown',{code});
+ advance();
+ assert.ok(pilot.x>100 && local.x<280);
+ assert.deepEqual(Array.from(world.bullets,b=>b.owner).sort(),[local.id,pilot.id].sort());
+ assert.equal(byID('infiniteLocalLoadout').hidden,false);
+ assert.equal(arena.dataset.split,'stacked');
+ assert.match(byID('infiniteControlsHint').textContent,/P1 .* · P2 /);
+ infinity.close();
+});
+
+test('offline room Infinity passes allied tanks and freezes on the first team score target', () => {
+ const {infinity,byID,state,advance}=harness(undefined,true);
+ infinity.start('offline',{
+  primaryId:0,localId:1,localName:'Wingmate',
+  roster:[{id:0,team:1},{id:1,team:1}],
+  roomRules:{teamMode:'teams',teamNames:['Blue','Red'],teamColors:[3,5],infinityTarget:1}
+ });
+ const world=state(),[pilot,local]=world.tanks,arena=byID('infiniteArena');
+ world.nextBot=world.nextPickup=Infinity;
+ Object.assign(pilot,{x:100,y:100,angle:0,power:'laser',charges:3,powerTime:4});
+ Object.assign(local,{x:160,y:100,invulnerable:0});
+ world.tanks.push({...local,id:'opponent',name:'Opponent',x:220,team:2,score:0});
+ arena.emit('keydown',{code:'KeyQ'});
+ advance();
+ assert.equal(local.hp,1,'friendly fire is disabled');
+ assert.equal(pilot.colorIndex,3);
+ assert.deepEqual(Array.from(world.teamScores),[1,-1,0,0]);
+ assert.equal(world.result.name,'Blue');
+ assert.equal(byID('infiniteResultTitle').textContent,'Blue wins');
+ assert.equal(byID('infiniteResult').open,true);
+ const finish=world.time;
+ advance(180);
+ assert.equal(world.time,finish);
+ byID('infiniteResultExit').emit('click');
+ assert.equal(arena.open,false);
+});
+
 test('offline Infinity spawns every pickup and equips a collected grenade', () => {
  const {infinity, state, advance, window} = harness('file:///leqra/index.html');
  infinity.start('offline');
@@ -181,7 +226,7 @@ test('simultaneous Infinity laser hits rotate priority between live actors', () 
  }
 });
 
-test('offline Infinity grenades steer at two-thirds the missile rate', () => {
+test('offline Infinity grenades steer at the full missile rate', () => {
  const {infinity, state, advance} = harness(undefined, true);
  infinity.start('offline');
  const world = state(), pilot = world.tanks[0];
@@ -199,8 +244,33 @@ test('offline Infinity grenades steer at two-thirds the missile rate', () => {
  assert.equal(grenade.target, target.id);
  const missileTurn = Math.atan2(missile.vy, missile.vx);
  assert.ok(Math.abs(missileTurn - 4.8/60) < 1e-12);
- assert.ok(Math.abs(Math.atan2(grenade.vy, grenade.vx) - missileTurn*2/3) < 1e-12);
+ assert.ok(Math.abs(Math.atan2(grenade.vy, grenade.vx) - missileTurn) < 1e-12);
  infinity.close();
+});
+
+test('Starman contact in offline Infinity kills shielded tanks, with walls and invulnerability respected', () => {
+ for(const [label,protection,wall,eliminated] of [
+  ['shield',0,null,true],
+  ['spawn protection',1,null,false],
+  ['wall between centers',0,{x:111,y:78,w:8,h:48},false],
+  ['attacker inside wall',0,{x:98,y:78,w:8,h:48},false],
+ ]) {
+  const {infinity,state,advance,window}=harness(undefined,true);
+  infinity.start('offline');
+  const world=state(),pilot=world.tanks[0];
+  world.nextPickup=world.nextBot=Infinity;
+  if(wall)world.maze.wallsNear=()=>[wall];
+  Object.assign(pilot,{x:100,y:100});
+  window.leqraInfinityArt.grantPower(pilot,'starman',15,4);
+  const target={...pilot,id:'target',x:134,starmanTime:0,ghostTime:0,invulnerable:protection,shield:10,shieldCharges:3};
+  world.tanks.push(target);
+  advance();
+  assert.equal(target.hp,eliminated?0:1,label);
+  assert.equal(target.score,eliminated?-1:0,label);
+  assert.equal(pilot.score,eliminated?1:0,label);
+  if(eliminated)assert.equal(target.respawn,2.5);
+  infinity.close();
+ }
 });
 
 test('the Infinity pause menu freezes the offline simulation until Resume', () => {
@@ -369,6 +439,38 @@ test('private Infinity sends room credentials, honors keyboard remaps, and uses 
  infinity.close();
  assert.equal(socket.sent.at(-1).forward, false);
  assert.equal(socket.readyState, 3);
+});
+
+test('online room Infinity routes Player 2 separately and displays the authoritative team result', () => {
+ const {infinity,byID,sockets,state,advance}=harness(undefined,true);
+ infinity.start('online',{code:'TEAM',token:'secret',localName:'Local wingmate'});
+ const [socket]=sockets,arena=byID('infiniteArena');
+ socket.emit('open');
+ assert.equal(socket.sent[0].localName,undefined,'private Player 2 comes from the authenticated room roster');
+ socket.receive({type:'welcome',id:4,localId:9,seed:0});
+ const packet={
+  type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1,team:1},{id:9,x:210,y:210,angle:0,hp:1,team:1}],
+  bullets:[],players:2,leaderboard:[],rules:{infinityTarget:3,teamMode:'teams',teamNames:['Blue','Red']},teamScores:[0,0,0,0]
+ };
+ socket.receive(packet);
+ arena.emit('keydown',{code:'KeyW'});
+ arena.emit('keydown',{code:'ArrowDown'});
+ arena.emit('keydown',{code:'Space'});
+ assert.ok(socket.sent.some(input=>!input.local&&input.forward&&!input.reverse&&!input.fire));
+ assert.ok(socket.sent.some(input=>input.local&&input.reverse&&input.fire&&!input.forward));
+ advance();
+ assert.ok(state().predictor.state.x>42 && state().local.predictor.state.x<210);
+ arena.emit('keydown',{code:'Escape'});
+ assert.deepEqual(socket.sent.slice(-2).map(input=>[!!input.local,input.paused,input.fire]),[[false,true,false],[true,true,false]]);
+ socket.receive({...packet,teamScores:[3,-3,0,0],result:{name:'Blue',team:1,score:3}});
+ advance();
+ assert.equal(byID('infinitePauseMenu').open,false);
+ assert.equal(byID('infiniteResultTitle').textContent,'Blue wins');
+ assert.equal(byID('infiniteResult').open,true);
+ const sent=socket.sent.length;
+ advance(120);
+ assert.equal(socket.sent.length,sent);
+ infinity.close();
 });
 
 test('failed public Infinity connection points to offline mode', () => {

@@ -152,11 +152,11 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		fail("bad_team", "Choose one of the four teams. Free-for-all is a room-wide rule.")
 		return
 	}
-	if r.Game.settings().Mode == "ctf" && m.Team != nil && (*m.Team < 1 || *m.Team > 2) {
+	if rules := r.Game.settings(); !rules.Infinity && rules.Mode == "ctf" && m.Team != nil && (*m.Team < 1 || *m.Team > 2) {
 		fail("bad_team", "Capture the Flag uses Team 1 and Team 2.")
 		return
 	}
-	if r.Game.survivalMode() && m.Team != nil && *m.Team != 1 {
+	if !r.Game.settings().Infinity && r.Game.survivalMode() && m.Team != nil && *m.Team != 1 {
 		fail("bad_team", "Survival players share Team 1.")
 		return
 	}

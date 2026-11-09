@@ -61,6 +61,22 @@ test('Rules use the selected mode without a second mode dropdown',()=>{
  const {s,$}=boot();Object.assign(s,{mapDimensions:()=>[12,10],pickupLimitText:()=>'',pickupLifetime:()=>30});s.updateRuleHelp();assert.equal($('ruleScoreLabel').textContent,'ROUNDS TO WIN');s.selectRoomMode('survival');s.updateRuleHelp();assert.equal($('roomTeamMode').value,'teams');assert.equal($('roomTeamMode').disabled,true);assert.equal($('ruleScoreLabel').textContent,'WAVES TO SURVIVE');assert.equal($('rulesModeName').textContent,'SURVIVAL');assert.equal($('rule-respawnSeconds').parentElement.hidden,true);
  assert.doesNotMatch(source,/id="rule-mode"|\$\('rule-mode'\)|RULES & MODE/);assert.doesNotMatch(source,/id="rule-(teamMode|mapSize)"|\$\('rule-(teamMode|mapSize)'\)/);
 });
+test('room Infinity shows battle format and its target while hiding fixed-maze fields',()=>{
+ const {s,$}=boot();
+ assert.equal(s.selectRoomMode('infinity'),true);
+ assert.equal($('roomTeamMode').disabled,false);
+ assert.equal($('roomMapSize').hidden,true);
+ assert.equal($('roomPortraitLabel').hidden,true);
+ assert.equal(s.selectRoomSetting('teamMode','teams'),true);
+ s.updateRuleHelp();
+ assert.equal($('rulesModeName').textContent,'INFINITY');
+ assert.equal($('rule-infinityTarget').parentElement.hidden,false);
+ assert.equal($('rule-infinityTarget').disabled,false);
+ assert.equal($('rule-timeLimit').parentElement.hidden,true);
+ assert.equal($('rule-respawnSeconds').parentElement.hidden,true);
+ assert.equal($('rule-weapon-options').hidden,true);
+ assert.equal($('rule-teamName4').parentElement.hidden,false);
+});
 test('arrow keys wrap across mode choices; Home and End reach the first and last',()=>{
  const {s,choices}=boot();let index=0;
  for(const [code,want] of [['ArrowRight',1],['ArrowDown',2],['End',4],['ArrowRight',0],['ArrowLeft',4],['Home',0],['ArrowUp',4]]){

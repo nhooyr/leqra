@@ -51,7 +51,7 @@ def check_landscape(browser, devices, errors, has_safe_area_override):
         layout = page.evaluate("""() => {
             const panel = document.querySelector('#infiniteLeaderboardPanel');
             const summary = panel.querySelector('summary');
-            const list = panel.querySelector('ol');
+            const list = panel.querySelector('#infiniteLeaderboard');
             list.replaceChildren(...Array.from({length: 10}, () => {
                 const row = document.createElement('li');
                 const name = document.createElement('span');
@@ -97,6 +97,34 @@ def check_landscape(browser, devices, errors, has_safe_area_override):
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
     print("PASS landscape rules, notch clearance, and Infinity leaderboard and pause layouts", flush=True)
+
+
+def check_split_infinity(browser, devices, errors):
+    index = Path(__file__).resolve().parents[1] / "web" / "index.html"
+    with mobile_context(browser, devices, 280, 520) as context:
+        page = open_page(context, index.as_uri(), errors)
+        page.evaluate("leqraInfinity.start('offline', {localName: 'Wingmate'})")
+        for width, height, split in ((280, 520, "stacked"), (568, 320, "side")):
+            page.set_viewport_size({"width": width, "height": height})
+            expect(page.locator("#infiniteArena")).to_have_attribute("data-split", split)
+            boxes = page.evaluate("""() => {
+                document.querySelector('#infiniteKills').textContent = 'P1 -999 · P2 -999';
+                return Object.fromEntries(['infiniteCanvas','infiniteFire','infiniteStick','infinitePauseBtn','infiniteLocalLoadout'].map(id => {
+                    const {left,top,right,bottom} = document.getElementById(id).getBoundingClientRect();
+                    return [id,[left,top,right,bottom]];
+                }));
+            }""")
+            for left, top, right, bottom in boxes.values():
+                assert 0 <= left < right <= width + 1 and 0 <= top < bottom <= height + 1, boxes
+            left, top, right, bottom = boxes["infinitePauseBtn"]
+            assert right - left >= 44 and bottom - top >= 44, boxes
+            left, top, right, bottom = boxes["infiniteCanvas"]
+            for control in ("infiniteFire", "infiniteStick"):
+                if split == "stacked":
+                    assert boxes[control][3] <= (top + bottom) / 2 + 1, boxes
+                else:
+                    assert boxes[control][2] <= (left + right) / 2 + 1, boxes
+    print("PASS Player 2 split, long scores, and primary touch controls", flush=True)
 
 
 def check_narrow_online(browser, devices, url, errors):
@@ -146,6 +174,7 @@ if __name__ == "__main__":
         errors = []
         try:
             check_landscape(browser, playwright.devices, errors, args.engine == "chromium")
+            check_split_infinity(browser, playwright.devices, errors)
             check_narrow_online(browser, playwright.devices, args.url, errors)
             assert not errors, errors
         finally:
