@@ -63,7 +63,7 @@ function harness(url = 'https://example.test/', openField = false) {
   colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
   tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, badge() {}, bullets() {},
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
-  missileTurn: 4.8, grenadeTurn: 2.4,
+  missileTurn: 4.8, grenadeTurn: 3.2,
   openControls: () => byID('controlsDialog').showModal(),
   toggleSound: () => sounds.push('mute'),
   shot: kind => sounds.push('shot:' + kind),
@@ -181,7 +181,7 @@ test('simultaneous Infinity laser hits rotate priority between live actors', () 
  }
 });
 
-test('offline Infinity grenades steer at half the missile rate', () => {
+test('offline Infinity grenades steer at two-thirds the missile rate', () => {
  const {infinity, state, advance} = harness(undefined, true);
  infinity.start('offline');
  const world = state(), pilot = world.tanks[0];
@@ -199,7 +199,7 @@ test('offline Infinity grenades steer at half the missile rate', () => {
  assert.equal(grenade.target, target.id);
  const missileTurn = Math.atan2(missile.vy, missile.vx);
  assert.ok(Math.abs(missileTurn - 4.8/60) < 1e-12);
- assert.ok(Math.abs(Math.atan2(grenade.vy, grenade.vx) - missileTurn/2) < 1e-12);
+ assert.ok(Math.abs(Math.atan2(grenade.vy, grenade.vx) - missileTurn*2/3) < 1e-12);
  infinity.close();
 });
 
@@ -268,6 +268,28 @@ test('Starman keeps an equipped Infinity machine gun firing beyond its usual bud
  advance();
  assert.equal(world.lastBullet,201);
  assert.equal(tank.power,'');
+ infinity.close();
+});
+
+test('ordinary Infinity shells can fire immediately after Starman with boosted shells still in flight', () => {
+ const {infinity, byID, state, advance, window} = harness(undefined,true);
+ infinity.start('offline');
+ const world = state(), tank = world.tanks[0];
+ world.nextPickup = world.nextBot = Infinity;
+ tank.angle = 0;
+ window.leqraInfinityArt.grantPower(tank,'starman',15,4);
+ byID('infiniteArena').emit('keydown',{code:'KeyQ'});
+ advance(140);
+ const cap = window.leqraNet.MACHINE_CAPACITY, oldest = world.bullets[0], recent = world.bullets.at(-1);
+ assert.equal(world.bullets.length,cap);
+ assert.ok(oldest.boosted && recent.boosted);
+ tank.starmanTime = 1/60;
+ for(let i=0;i<6;i++){tank.cooldown=0;advance();}
+ assert.equal(tank.starmanTime,0);
+ assert.equal(world.lastBullet,145);
+ assert.equal(world.bullets.length,cap);
+ assert.equal(world.bullets.filter(b=>!b.boosted).length,5);
+ assert.ok(oldest.dead && world.bullets.includes(recent));
  infinity.close();
 });
 

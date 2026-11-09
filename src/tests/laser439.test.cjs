@@ -82,6 +82,19 @@ function networkBoot(){
  return s;
 }
 
+test('fixed snapshots mark boosted shots in both projectile encodings',()=>{
+ const s=networkBoot(),packet=s.packet([],62,'none');
+ packet.bullets=[{id:11,owner:0},{id:12,owner:0}];
+ packet.machineBullets=[[13,0,1,1,300,200,846,0,0,1,0,0]];
+ packet.boostedBulletIds=[11,13];
+ s.receiveOnlineState(packet);
+ const {bulletMap}=s.online.snapshots.at(-1);
+ assert.equal(bulletMap.get(11).boosted,true);
+ assert.equal(bulletMap.get(12).boosted,undefined);
+ assert.equal(bulletMap.get(13).kind,'rapid');
+ assert.equal(bulletMap.get(13).boosted,true);
+});
+
 test('an authoritative hit or shield save presents its queued laser first, once, without draining unrelated fire',()=>{
  for(const damage of ['hit','shield'])for(const [player,tick]of [[3,62],[1,61]]){
   const s=networkBoot(),unrelated={...s.authority(),id:1,tick,player,owner:player,x:412,points:[{x:412,y:168},{x:500,y:168}]},laser={...s.authority(),id:2,tick:62,player:1,owner:1},shot={...laser,id:3,type:'shot',text:'laser'},hit={id:4,tick:62,generation:1,type:damage,player:0,owner:1,x:300,y:168};

@@ -1,10 +1,10 @@
-# leqra v4.49.10 — current game protocol (protocol 1)
+# leqra v4.49.11 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.10**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.11**.
 
 ```json
-{"type":"server_hello","version":"4.49.10","protocol":1}
-{"type":"client_hello","version":"4.49.10","protocol":1}
+{"type":"server_hello","version":"4.49.11","protocol":1}
+{"type":"client_hello","version":"4.49.11","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -33,9 +33,9 @@ Desktop Player 1 sends the cursor direction using the existing bounded `stickX` 
 
 Every projectile passes through the tank that fired it, and grenade blasts skip their owner. Grenades still detonate on contact with other living tanks, including allies and tanks with spawn protection. Friendly fire controls whether a weapon can damage a different tank on the same team.
 
-Grenades use the same server-owned line-of-sight seeker and reacquisition delays as homing missiles, with half the maximum turn rate. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
+Grenades use the same server-owned line-of-sight seeker and reacquisition delays as homing missiles, with two-thirds of the maximum turn rate. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
 
-While `starmanTime` is positive, firing has no cooldown and preserves the equipped weapon's ammo and remaining lifetime. At the projectile safety limit, new shots replace the pilot's oldest active projectiles.
+While `starmanTime` is positive, firing has no cooldown and preserves the equipped weapon's ammo and remaining lifetime. Starman shots stay live after the boost ends and leave ordinary projectile slots free. At the safety limit, boosted fire replaces the oldest active shots, and ordinary fire replaces the oldest boosted shots. Fixed-maze snapshots include optional `boostedBulletIds` for active shots fired during Starman, covering both `bullets` and `machineBullets`.
 
 Frozen match reports use the public `controllerMember` field on local Player 2 rows to attribute wins to that device after a roster change. The field carries a member ID and cannot authenticate a session.
 

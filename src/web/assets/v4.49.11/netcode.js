@@ -259,8 +259,8 @@
    const boosted=t.starmanTime>0,fast=boosted||t.power==='rapid';
    let pending=0,normalPending=0,slots=0,chargeUse=0;
    for(const v of this.previews.values())if(v.owner===t.id&&!v.accepted){
-    pending++;slots+=v.shells.length;
-    if(!v.boosted){normalPending++;if(v.power===t.power)chargeUse++;}
+    pending++;
+    if(!v.boosted){normalPending++;slots+=v.shells.length;if(v.power===t.power)chargeUse++;}
    }
    if(options.blocked||pending>=48||!fast&&normalPending>=4)return null;
    if(!boosted&&(this.cooldown(t,now)>.001||options.free-slots<options.need||

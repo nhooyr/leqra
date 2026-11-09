@@ -63,7 +63,7 @@ func Test48GrenadeDragCurveIsStepInvariant(t *testing.T) {
 	}
 }
 
-func TestGrenadeHomingTurnsAtHalfMissileRateAndKeepsFuseBraking(t *testing.T) {
+func TestGrenadeHomingTurnsAtTwoThirdsMissileRateAndKeepsFuseBraking(t *testing.T) {
 	g := battle(4)
 	g.Rules.FriendlyFire = true
 	g.Tanks[0].X, g.Tanks[0].Y, g.Tanks[0].Team = 60, 210, 1
@@ -76,7 +76,7 @@ func TestGrenadeHomingTurnsAtHalfMissileRateAndKeepsFuseBraking(t *testing.T) {
 	if b.Target != 3 || b.Dead {
 		t.Fatalf("grenade must steer toward the vulnerable opponent, got %+v", b)
 	}
-	if angle, want := math.Atan2(b.VY, b.VX), missileTurn*tickDT/2; math.Abs(angle-want) > 1e-12 {
+	if angle, want := math.Atan2(b.VY, b.VX), missileTurn*tickDT*(2.0/3); math.Abs(angle-want) > 1e-12 {
 		t.Fatalf("grenade turn = %v, want %v", angle, want)
 	}
 	if speed, want := math.Hypot(b.VX, b.VY), 80*grenadeDragFactor(1.1, 1.1-tickDT); math.Abs(speed-want) > 1e-12 {

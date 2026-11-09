@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"slices"
+	"testing"
+)
 
 func TestStarmanBlocksHitsAndSafelyEndsWallPhasing(t *testing.T) {
 	const duration = 5
@@ -129,5 +133,75 @@ func TestStarmanRetiresOldestProjectileAtSafetyLimit(t *testing.T) {
 	}
 	if !g.Bullets[0].Dead || g.Bullets[1].Dead || foreign.Dead || g.Bullets[len(g.Bullets)-1].Dead {
 		t.Fatal("ceiling did not retire exactly the oldest owned shot")
+	}
+}
+
+func TestStarmanShotsDoNotOccupyWeaponSlotsAfterExpiry(t *testing.T) {
+	g := battle(2)
+	pilot, other := g.Tanks[0], g.Tanks[1]
+	other.Y = 350
+	g.SpawnClock = 999
+	if !g.fire(pilot) {
+		t.Fatal("fixture needs an ordinary shot before Starman")
+	}
+	ordinary := g.Bullets[0]
+	g.grantPower(pilot, "starman")
+	for range machineCapacity - 1 {
+		if !g.fire(pilot) {
+			t.Fatal("Starman unexpectedly ran out of slots")
+		}
+	}
+	oldestBoosted, nextBoosted := g.Bullets[1], g.Bullets[2]
+	if ordinary.boosted || !oldestBoosted.boosted || oldestBoosted.Dead {
+		t.Fatal("Starman's volley did not distinguish bonus shots")
+	}
+	pilot.StarmanTime = tickDT
+	inputs := [maxTanks]Input{{Fire: true}}
+	g.step(tickDT, inputs, testPlayers(2))
+	if pilot.StarmanTime != 0 || pilot.ShotSerial != uint64(machineCapacity+1) {
+		t.Fatal("bonus rounds blocked the first shot after expiry")
+	}
+	if len(g.Bullets) != machineCapacity || ordinary.Dead || !oldestBoosted.Dead || nextBoosted.Dead || g.Bullets[len(g.Bullets)-1].boosted {
+		t.Fatal("the safety cap must retain ordinary rounds and replace only the oldest bonus round")
+	}
+	for range capacity(pilot) - 2 {
+		pilot.Cooldown = 0
+		if !g.fire(pilot) {
+			t.Fatal("a free ordinary slot was blocked")
+		}
+	}
+	pilot.Cooldown = 0
+	if g.fire(pilot) {
+		t.Fatal("ordinary shots exceeded their usual slot limit")
+	}
+}
+
+func TestBoostedBulletIDsCoverBothFixedMazeShotEncodings(t *testing.T) {
+	g := battle(2)
+	g.Bullets = []*Bullet{
+		{ID: 1, boosted: true},
+		{ID: 2, Kind: "rapid", boosted: true},
+		{ID: 3},
+		{ID: 4, boosted: true, Dead: true},
+	}
+	h, room := newHub(2), &Room{Game: g}
+	wire := h.stateWire(room)
+	if !slices.Equal(wire.BoostedBulletIDs, []int{1, 2}) || len(wire.MachineBullets) != 1 || wire.MachineBullets[0][0] != 2 {
+		t.Fatalf("boosted ID list did not cover both live shot encodings: %+v", wire)
+	}
+	actual, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := json.Marshal(h.stateMessage(room))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(actual) != string(canonical) {
+		t.Fatalf("boosted snapshot differs from canonical wire: %s", actual)
+	}
+	g.Bullets = g.Bullets[2:3]
+	if len(h.stateWire(room).BoostedBulletIDs) != 0 {
+		t.Fatal("snapshot retained a previous boosted projectile ID")
 	}
 }

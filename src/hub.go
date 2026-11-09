@@ -999,6 +999,7 @@ func rounded(v float64) float64 { return math.Round(v*100) / 100 }
 type stateScratch struct {
 	tanks          []Tank
 	bullets        []Bullet
+	boostedIDs     []int
 	machineBullets [][12]float64
 	pickups        []Pickup
 }
@@ -1006,6 +1007,8 @@ type stateScratch struct {
 type stateWire struct {
 	// Field order matches encoding/json's lexicographic map-key order from the
 	// canonical stateMessage so the optimized packet remains byte-for-byte stable.
+	BoostedBulletIDs []int `json:"boostedBulletIds,omitempty"`
+
 	Bullets        []Bullet        `json:"bullets"`
 	Events         []Event         `json:"events"`
 	Generation     int             `json:"generation"`
@@ -1032,6 +1035,7 @@ func (h *Hub) stateWire(r *Room) stateWire {
 	g, z := r.Game, &r.state
 	z.tanks = z.tanks[:0]
 	z.bullets = z.bullets[:0]
+	z.boostedIDs = z.boostedIDs[:0]
 	z.machineBullets = z.machineBullets[:0]
 	z.pickups = z.pickups[:0]
 	if cap(z.tanks) < maxTanks {
@@ -1066,6 +1070,9 @@ func (h *Hub) stateWire(r *Room) stateWire {
 	}
 	for _, b := range g.Bullets {
 		v := *b
+		if b.boosted && !b.Dead {
+			z.boostedIDs = append(z.boostedIDs, b.ID)
+		}
 		v.X = rounded(v.X)
 		v.Y = rounded(v.Y)
 		v.VX = rounded(v.VX)
@@ -1085,7 +1092,7 @@ func (h *Hub) stateWire(r *Room) stateWire {
 		v.Life = rounded(v.Life)
 		z.pickups = append(z.pickups, v)
 	}
-	wire := stateWire{Type: "state", Tick: g.Tick, Generation: g.Generation, Phase: g.Phase, PhaseTime: rounded(g.PhaseTime), Round: g.Round, RoundClock: rounded(g.Clock), Winner: g.Winner, Scores: g.Scores, Tanks: z.tanks, Bullets: z.bullets, MachineBullets: z.machineBullets, Pickups: z.pickups, Events: g.events, Rules: g.settings(), Objectives: g.Objectives}
+	wire := stateWire{Type: "state", Tick: g.Tick, Generation: g.Generation, Phase: g.Phase, PhaseTime: rounded(g.PhaseTime), Round: g.Round, RoundClock: rounded(g.Clock), Winner: g.Winner, Scores: g.Scores, Tanks: z.tanks, Bullets: z.bullets, BoostedBulletIDs: z.boostedIDs, MachineBullets: z.machineBullets, Pickups: z.pickups, Events: g.events, Rules: g.settings(), Objectives: g.Objectives}
 	if g.Phase == "matchOver" && g.matchReportWire != nil {
 		wire.MatchStats = g.matchReportWire
 	}

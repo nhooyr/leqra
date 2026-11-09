@@ -42,8 +42,8 @@ test('online ammo readouts include unacknowledged shots independently without mu
 });
 
 test('unforced live feedback follows actual shots while idle time preserves both firing budgets',()=>{
- const s=boot();Object.assign(s,{bullets:[],bulletId:0,projectileSpec:power=>({kind:power,cooldown:0}),muzzleProjectile:t=>({owner:t.id,kind:t.power}),burst(){},shotSound(){}});
- vm.runInContext(declaration('fire'),s);
+ const s=boot();Object.assign(s,{MACHINE_CAPACITY:N.MACHINE_CAPACITY,bullets:[],bulletId:0,projectileSpec:power=>({kind:power,cooldown:0}),muzzleProjectile:t=>({owner:t.id,kind:t.power}),burst(){},shotSound(){}});
+ for(const name of ['recycleStarmanProjectiles','fire'])vm.runInContext(declaration(name),s);
  s.updateCombatFeedback();
  for(let i=0;i<72;i++){s.now+=1000/60;s.time=s.now/1000;assert.equal(s.fire(s.tanks[0]),true);if(i%2===0)assert.equal(s.fire(s.tanks[1]),true);s.updateCombatFeedback();}
  s.now+=40;s.updateCombatFeedback();

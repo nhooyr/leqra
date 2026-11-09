@@ -57,6 +57,33 @@ def is_packet(frame, kind, **fields):
     return packet.get("type") == kind and all(packet.get(key, False) == value for key, value in fields.items())
 
 
+def check_pause_style(page, online):
+    pause = page.locator("#infinitePauseMenu")
+    assert pause.evaluate("dialog => dialog.matches(':modal')")
+    card = pause.locator(".screen-card")
+    fixed = page.locator("#onlineMenuScreen" if online else "#pauseScreen")
+    heading = card.get_by_role("heading", name="STAY CONNECTED." if online else "HOLD YOUR FIRE.", exact=True)
+    back = card.get_by_role("button", name="BACK TO THE ARENA" if online else "BACK TO THE BATTLE", exact=True)
+    expect(heading).to_be_visible()
+    expect(back).to_be_focused()
+    message = card.locator("p").filter(has_text="respawning waits" if online else "Your tank is safe")
+    expect(message).to_be_visible()
+
+    def style(locator, properties):
+        return locator.evaluate("""(node, properties) => {
+            const computed = getComputedStyle(node);
+            return properties.map(name => computed.getPropertyValue(name));
+        }""", properties)
+
+    for actual, reference, properties in (
+        (card, fixed, ["background-image", "border-radius", "box-shadow"]),
+        (heading, fixed.locator(".compact-title"), ["font-weight", "font-family"]),
+        (back, fixed.locator(".back-action"), ["background-color", "border-radius", "font-weight"]),
+    ):
+        actual_style, reference_style = style(actual, properties), style(reference, properties)
+        assert actual_style == reference_style, (properties, actual_style, reference_style)
+
+
 def check_online_pause(page, socket):
     arena = page.locator("#infiniteArena")
     pause = page.locator("#infinitePauseMenu")
@@ -72,7 +99,7 @@ def check_online_pause(page, socket):
         page.keyboard.up("w")
     expect(arena).to_be_visible()
     expect(pause).to_be_visible()
-    expect(resume).to_be_focused()
+    check_pause_style(page, online=True)
 
     pause.locator("#infiniteControlsBtn").click()
     controls = page.locator("#controlsDialog")
@@ -93,6 +120,13 @@ def check_online_pause(page, socket):
         page.keyboard.down("e")
     page.keyboard.up("e")
     page.keyboard.press("Escape")
+    expect(pause).to_be_visible()
+    with socket.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", paused=False, **neutral)):
+        page.keyboard.press("Escape")
+    expect(pause).to_be_hidden()
+    expect(canvas).to_be_focused()
+    with socket.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", paused=True, **neutral)):
+        page.keyboard.press("p")
     expect(pause).to_be_visible()
 
 
@@ -192,6 +226,7 @@ def check_offline(browser, errors):
         expect(panel.locator("#infiniteLeaderboard")).to_contain_text("Bot ")
         check_touch_controls(context, page)
         page.locator("#infinitePauseBtn").tap()
+        check_pause_style(page, online=False)
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
         expect(page.locator("html")).not_to_have_class(re.compile(r"\bmatch-active\b"))

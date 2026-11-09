@@ -85,13 +85,13 @@ def check_landscape(browser, devices, errors, has_safe_area_override):
         pause_button.tap()
         pause = page.locator("#infinitePauseMenu")
         expect(pause).to_be_visible()
-        expect(pause.get_by_text("The battle is paused.")).to_be_visible()
-        for name in ("Resume", "Controls", "Exit Infinity"):
+        expect(pause.get_by_text("The battle is paused. Your tank is safe.")).to_be_visible()
+        for name in ("BACK TO THE BATTLE", "Controls", "Exit Infinity"):
             button = pause.get_by_role("button", name=name, exact=True)
             expect(button).to_be_in_viewport(ratio=1)
             assert button.bounding_box()["height"] >= 44, name
         if has_safe_area_override:
-            bounds = pause.bounding_box()
+            bounds = pause.locator(".screen-card").bounding_box()
             assert bounds["x"] >= 48 and bounds["x"] + bounds["width"] <= 520, bounds
             assert bounds["y"] >= 8 and bounds["y"] + bounds["height"] <= 299, bounds
         page.locator("#infiniteExit").tap()

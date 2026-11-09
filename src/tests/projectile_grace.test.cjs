@@ -42,7 +42,7 @@ test('owner immunity applies to grenade fuse and remote blasts even with friendl
  }
 });
 
-test('grenades turn at half the missile rate in flight and forecasts while braking',()=>{
+test('grenades turn at two-thirds the missile rate in flight and forecasts while braking',()=>{
  const {s,owner,shell}=boot('grenade',80,6,{x:100,y:210,age:8.9,life:1.1,target:-1,seekDelay:0});
  owner.x=60;owner.y=210;
  const ally=tank(1,150,185),protectedTank=tank(2,147,255),enemy=tank(3,320,300);
@@ -54,7 +54,7 @@ test('grenades turn at half the missile rate in flight and forecasts while braki
  assert.equal(shell.target,3);
  const missileTurn=Math.atan2(missile.vy,missile.vx),grenadeTurn=Math.atan2(shell.vy,shell.vx);
  assert.ok(Math.abs(missileTurn-4.8*dt)<1e-12);
- assert.ok(Math.abs(grenadeTurn-missileTurn/2)<1e-12);
+ assert.ok(Math.abs(grenadeTurn-missileTurn*2/3)<1e-12);
  assert.ok(Math.abs(Math.hypot(shell.vx,shell.vy)-80*s.grenadeDragFactor(1.1,1.1-dt))<1e-12);
  for(const key of ['x','y','vx','vy','age','life','target'])assert.equal(shell[key],forecast[key],key);
  enemy.invulnerable=1;s.updateBullets(dt);

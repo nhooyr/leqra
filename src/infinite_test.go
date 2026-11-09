@@ -207,7 +207,7 @@ func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	}
 }
 
-func TestInfiniteGrenadeHomingTurnsAtHalfMissileRate(t *testing.T) {
+func TestInfiniteGrenadeHomingTurnsAtTwoThirdsMissileRate(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	a.pilots = []*infinitePilot{{infiniteTank: infiniteTank{ID: 1, X: 63, Y: 67, HP: 1}}}
 	for _, weapon := range []struct {
@@ -215,7 +215,7 @@ func TestInfiniteGrenadeHomingTurnsAtHalfMissileRate(t *testing.T) {
 		speed, turn float64
 	}{
 		{"homing", missileSpeed, missileTurn},
-		{"grenade", grenadeSpeed, missileTurn / 2},
+		{"grenade", grenadeSpeed, missileTurn * (2.0 / 3)},
 	} {
 		a.bullets = []infiniteBullet{{Kind: weapon.kind, X: 42, Y: 42, VX: weapon.speed, Life: 9, age: 1, radius: 6, target: -1}}
 		a.advanceBullets()
@@ -284,6 +284,37 @@ func TestInfiniteStarmanRetiresOldestProjectileAtSafetyLimit(t *testing.T) {
 	}
 	if !a.bullets[0].dead || a.bullets[1].dead || a.bullets[machineCapacity].dead || a.bullets[len(a.bullets)-1].dead {
 		t.Fatal("ceiling did not retire exactly the oldest owned shot")
+	}
+}
+
+func TestInfiniteStarmanShotsDoNotOccupyWeaponSlotsAfterExpiry(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	p := a.join(fakeClient(), "Pilot", time.Now())
+	a.fire(p)
+	applyPower(&p.kit, "starman", infinitePowerDuration, infiniteStarDuration)
+	for range machineCapacity - 1 {
+		a.fire(p)
+	}
+	if len(a.bullets) != machineCapacity || a.bullets[0].boosted || !a.bullets[1].boosted {
+		t.Fatal("fixture needs ordinary and Starman shots at the safety limit")
+	}
+	p.kit.StarmanTime = tickDT
+	a.advanceEquipment(p)
+	a.fire(p)
+	if p.kit.StarmanTime != 0 || p.kit.ShotSerial != uint64(machineCapacity+1) {
+		t.Fatal("bonus rounds blocked the first shot after expiry")
+	}
+	if a.bullets[0].dead || !a.bullets[1].dead || a.bullets[2].dead || a.bullets[len(a.bullets)-1].boosted {
+		t.Fatal("the safety cap must retain ordinary rounds and replace only the oldest bonus round")
+	}
+	for range capacity(&p.kit) - 2 {
+		p.kit.Cooldown = 0
+		a.fire(p)
+	}
+	p.kit.Cooldown = 0
+	a.fire(p)
+	if p.kit.ShotSerial != uint64(machineCapacity+capacity(&p.kit)-1) {
+		t.Fatal("ordinary slots did not return to their usual limit")
 	}
 }
 

@@ -8,6 +8,7 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 	g := r.Game
 	ts := make([]Tank, 0, maxTanks)
 	bs := make([]Bullet, 0, len(g.Bullets))
+	var boosted []int
 	ms := make([][12]float64, 0, len(g.Bullets)) // Compact Machine gun records; same authoritative samples.
 	ps := make([]Pickup, 0, len(g.Pickups))
 	for _, t := range g.Tanks {
@@ -31,6 +32,9 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 	}
 	for _, b := range g.Bullets {
 		v := *b
+		if b.boosted && !b.Dead {
+			boosted = append(boosted, b.ID)
+		}
 		v.X = rounded(v.X)
 		v.Y = rounded(v.Y)
 		v.VX = rounded(v.VX)
@@ -51,6 +55,9 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 		ps = append(ps, v)
 	}
 	s := map[string]any{"type": "state", "tick": g.Tick, "generation": g.Generation, "phase": g.Phase, "phaseTime": rounded(g.PhaseTime), "round": g.Round, "roundClock": rounded(g.Clock), "winner": g.Winner, "scores": g.Scores, "tanks": ts, "bullets": bs, "pickups": ps, "events": g.events, "rules": g.settings(), "objectives": snapshotObjectives(g.Objectives)}
+	if len(boosted) > 0 {
+		s["boostedBulletIds"] = boosted
+	}
 	if len(ms) > 0 {
 		s["machineBullets"] = ms
 	}

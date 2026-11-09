@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.10';
+const GAME_VERSION='4.49.11';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -30,7 +30,7 @@ const DIFFICULTY={
 };
 const POWER_EFFECT_DURATION=10;
 const BOOST_SPEED_PER_STACK=.65, BOOST_TURN_PER_STACK=.25, MAX_SPEED_STACKS=5, MISSILE_SPEED=235, MISSILE_TURN=4.8, MISSILE_VIEW_COS=-.75, MISSILE_LOCK_DELAY=.06, MISSILE_WALL_DELAY=.04, GRENADE_SPEED=205, GRENADE_FUSE=10, GRENADE_CRUISE_DRAG=.025, GRENADE_BRAKE_START=7, GRENADE_BRAKE_DRAG=2, BLAST_RADIUS=220, GRENADE_AVOID_PADDING=10;
-const GRENADE_TURN=MISSILE_TURN/2;
+const GRENADE_TURN=MISSILE_TURN*2/3;
 const POWER={rapid:{color:'#d2f65a',name:'MACHINE GUN',short:'MACHINE GUN'},scatter:{color:'#c5a2ff',name:'SHOTGUN'},shield:{color:'#73cee4',name:'SHIELD'},
  homing:{color:'#ff83bd',name:'HOMING MISSILE',short:'HOMING'},
  grenade:{color:'#ffc46b',name:'GRENADE'},
@@ -410,10 +410,14 @@ function toast(message,duration=2.5){$('toast').textContent=message;$('toast').h
 function addLog(message){logLines.unshift(message);logLines=logLines.slice(0,3);$('combatLog').replaceChildren(...logLines.map(s=>{const d=document.createElement('div');d.textContent=s;return d;}));}
 function spawnPower(){if(pickups.length>=pickupCap()||currentRules().pickupRate==='off'||!currentRules().weapons.length)return;let pos=null;for(let tries=0;tries<60;tries++){const cell=Math.floor(Math.random()*grid.length),p=center(cell);if(tanks.every(t=>!t.alive||distance(p,t)>CELL*.85)&&pickups.every(t=>distance(p,t)>CELL*1.1)){pos=p;break;}}if(!pos)return;const types=currentRules().weapons;pickups.push({...pos,type:choosePickup(types),age:0,life:pickupLifetime()});}
 function powerCapacity(t){return t.power==='rapid'?MACHINE_CAPACITY:t.power==='scatter'?12:['homing','grenade','laser','cannon'].includes(t.power)?3:5;}
-function activeAmmo(t){if(t.power==='laser')return Math.max(0,3-t.charges);const list=mode==='online'?(online.snapshots.at(-1)?.bullets||[]):bullets;return list.reduce((n,b)=>n+(b.owner===t.id&&!b.dead?1:0),0);}
-function recycleStarmanProjectiles(list,owner){
- let count=0;
- for(let i=list.length-1;i>=0;i--){const b=list[i];if(!b.dead&&b.owner===owner&&++count>MACHINE_CAPACITY)b.dead=true;}
+function activeAmmo(t){if(t.power==='laser')return Math.max(0,3-t.charges);const list=mode==='online'?(online.snapshots.at(-1)?.bullets||[]):bullets;return list.reduce((n,b)=>n+(b.owner===t.id&&!b.dead&&!b.boosted?1:0),0);}
+function recycleStarmanProjectiles(list,owner,boosted){
+ if(list.length<=MACHINE_CAPACITY)return;
+ let excess=-MACHINE_CAPACITY;
+ for(const b of list)if(!b.dead&&b.owner===owner)excess++;
+ for(let i=0;excess>0&&i<list.length;i++){
+  const b=list[i];if(!b.dead&&b.owner===owner&&(boosted||b.boosted)){b.dead=true;excess--;}
+ }
 }
 // Earliest entry into an expanded wall rectangle, with simultaneous corner normals.
 // Static maze broad phase. Preserve wall order for identical corner handling.
@@ -597,12 +601,12 @@ function fire(t){
  const spread=t.power==='scatter'?[-.21,0,.21]:[0];
  if(!boosted&&powerCapacity(t)-activeAmmo(t)<spread.length)return false;
  const spec=projectileSpec(t.power);if(fast)t.rapidTick=tick;t.cooldown=boosted?0:spec.cooldown;t.cooldownTotal=t.cooldown;t.recoil=1;
- for(const offset of spread){const angle=t.angle+offset,b=muzzleProjectile(t,angle);b.id=++bulletId;
+ for(const offset of spread){const angle=t.angle+offset,b=muzzleProjectile(t,angle);b.id=++bulletId;b.boosted=boosted;
   if(b.launchHit!==undefined)projectileTankImpact(b,tanks.find(other=>other.id===b.launchHit));
   if(!b.dead)bullets.push(b);
   if(!fast||spec.kind==='grenade'||tick%4===0)burst(t.x+Math.cos(angle)*27,t.y+Math.sin(angle)*27,t.color,3,40);
  }
- if(boosted)recycleStarmanProjectiles(bullets,t.id);
+ recycleStarmanProjectiles(bullets,t.id,boosted);
  shotSound(spec.kind,t.human,undefined,boosted);
  if(boosted)return true;
  if(spec.kind==='rapid'&&--t.machineRounds===0){t.power=null;t.powerTime=0;t.charges=0;}
@@ -2306,6 +2310,11 @@ function receiveOnlineState(s){
  if(s.world){cols=s.world.cols;rows=s.world.rows;W=s.world.width;H=s.world.height;walls=s.world.walls;grid=[];cacheMap();resize();}
  if(newMap){closeVictory();goUntil=0;online.generation=s.generation;resetOnlineMotion();particles=[];rings=[];traces=[];bullets=[];if(s.generation>0)pickups=[];shake=0;clearInput();}
  s.bullets=(s.bullets||[]).concat(Net.expandMachineBullets(s.machineBullets,COLORS));delete s.machineBullets;
+ if(s.boostedBulletIds?.length){
+  const boosted=new Set(s.boostedBulletIds);
+  for(const b of s.bullets)if(boosted.has(b.id))b.boosted=true;
+ }
+ delete s.boostedBulletIds;
  const priorTanks=online.snapshots.at(-1)?.tankMap;
  s.received=now;s.tanks=s.tanks.map(t=>netTank(t,priorTanks?.get(t.id),t.invulnerable>0&&s.events?.some(e=>e.type==='shield'&&e.player===t.id&&(e.spawnSerial||0)===(t.spawnSerial||0)&&(e.generation===undefined||e.generation===s.generation))));s.tankMap=new Map(s.tanks.map(t=>[t.id,t]));s.bulletMap=new Map(s.bullets.map(b=>[b.id,b]));
  online.buffer.push(s,now);
@@ -3619,7 +3628,7 @@ function pilotProjectileState(t,checkLocks=false){
  let ammo=0,grenades=0,grenadeLife=0,locked=false;
  for(const b of list){
   if(b.dead)continue;
-  if(b.owner===t.id){ammo++;if(b.kind==='grenade'){grenades++;grenadeLife=Math.max(grenadeLife,b.life);}}
+  if(b.owner===t.id){if(!b.boosted)ammo++;if(b.kind==='grenade'){grenades++;grenadeLife=Math.max(grenadeLife,b.life);}}
   else if(checkLocks&&!locked&&(b.kind==='homing'||b.kind==='grenade')&&b.target===t.id&&canDamage(b.owner,t))locked=true;
  }
  return{ammo:t.power==='laser'?Math.max(0,3-t.charges):ammo,grenades,grenadeLife,locked};
