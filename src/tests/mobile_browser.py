@@ -49,6 +49,21 @@ def require_on_screen(page, *selectors):
         assert box["y"] + box["height"] <= viewport["y"] + viewport["height"] + 1, (selector, box, viewport)
 
 
+def hold_joystick(page, selector, pointer_type):
+    zone = page.locator(selector)
+    base = zone.locator(".stick-base").bounding_box()
+    zone.dispatch_event("pointerdown", {
+        "pointerId": 7, "pointerType": pointer_type, "button": 0, "buttons": 1,
+        "clientX": base["x"] + base["width"] * .9, "clientY": base["y"] + base["height"] * .5,
+    })
+
+
+def release_joystick(page, selector, pointer_type):
+    page.locator(selector).dispatch_event("pointerup", {
+        "pointerId": 7, "pointerType": pointer_type, "button": 0, "buttons": 0,
+    })
+
+
 def play_offline(browser, device, url, errors):
     with browser.new_context(**device) as context:
         page = load(context, url + "?test=1", "MOBILE LOCAL", errors)
@@ -122,6 +137,10 @@ def play_shared_room(browser, device, url, errors):
         for page in (host, guest):
             page.wait_for_function("() => leqra.getState().phase === 'playing'")
             require_on_screen(page, "#arena", "#stickZone", "#fireBtn")
+        hold_joystick(guest, "#stickZone", "touch")
+        guest.wait_for_function("() => __test.onlineControls().touchAim === true")
+        release_joystick(guest, "#stickZone", "touch")
+        assert guest.evaluate("() => !__test.onlineControls().touchAim")
         guest.locator("#fireBtn").tap()
         guest.wait_for_function("""() => {
             const self = __test.online.id;
@@ -152,6 +171,13 @@ def play_public_infinity(browser, device, url, errors):
             assert any("permessage-deflate" in value for headers in upgrades for name, value in headers.items()
                        if name.lower() == "sec-websocket-extensions"), upgrades
         require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire")
+        for pointer_type in ("touch", "mouse"):
+            first_packet = len(messages)
+            hold_joystick(page, "#infiniteStick", pointer_type)
+            release_joystick(page, "#infiniteStick", pointer_type)
+            inputs = [json.loads(frame) for frame in messages[first_packet:] if isinstance(frame, str)]
+            assert any(packet.get("stickX", 0) > .5 and bool(packet.get("touchAim")) == (pointer_type == "touch")
+                       for packet in inputs), (pointer_type, inputs)
         page.locator("#infiniteFire").tap()
         assert any(isinstance(frame, str) and json.loads(frame).get("fire") is True for frame in messages), messages
         page.locator("#infiniteSoundBtn").tap()

@@ -14,11 +14,11 @@ function boot(){
  }
  const $=id=>elements.get(id);for(const id of ['roomStatus','joinDialog','queueDialog']){const e=new Element();e.id=id;e.open=id!=='roomStatus';}
  const players=[{id:0,name:'PILOT'},{id:1,name:'BOT'}];
- s={URL,GAME_VERSION:'test-client',mode:'room',phase:'menu',localRoom:{players},online:{connected:false,connecting:false,code:'',token:'',roomData:null},$,
+ s={URL,window:{},GAME_VERSION:'test-client',mode:'room',phase:'menu',localRoom:{players},online:{connected:false,connecting:false,code:'',token:'',roomData:null},$,
   document:{body:new Element(),createElement:()=>new Element()},location:{protocol:'https:',href:'https://leqra.test/',reload(){s.reloads++;}},reloads:0,
   performance:{now:()=>1000},setTimeout:()=>1,clearTimeout(){},netBusy(){},setNetStatus(){},setScreen(screen){s.screen=screen;},renderOnlineRoom(){s.rendered=true;},
   sendOnline(message){s.sent.push(message);},sent:[],WebSocket:class{constructor(){s.socket=this;}close(code,reason){this.closed={code,reason};this.onclose?.();}}};
- vm.createContext(s);vm.runInContext(declaration('showVersionMismatch')+'\n'+declaration('connectOnline'),s);
+ vm.createContext(s);for(const name of ['showVersionMismatch','closeRoomInfinity','connectOnline'])vm.runInContext(declaration(name),s);
  s.connectOnline({type:'join',code:'ROOM'},true);
  return{s,$,players,receive:message=>s.socket.onmessage({data:JSON.stringify(message)})};
 }

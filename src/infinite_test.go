@@ -55,10 +55,10 @@ func TestInfiniteShotBounceAndRespawn(t *testing.T) {
 	if a.advanceBullet(&bullet, -20, 0) || second.HP != 0 || first.Score != 1 || second.Score != -1 {
 		t.Fatal("a lethal hit must consume the projectile, add a point, and deduct a point")
 	}
-	if death := second.wireTank(a.tick); death.KilledBy != "First" || death.RespawnTime != 1.5 {
-		t.Fatalf("death did not report the shooter and 1.5-second timer: %+v", death)
+	if death := second.wireTank(a.tick); death.KilledBy != "First" || death.RespawnTime != 1 {
+		t.Fatalf("death did not report the shooter and one-second timer: %+v", death)
 	}
-	for range 89 {
+	for range 59 {
 		a.step(now)
 	}
 	if second.HP != 0 {
@@ -182,7 +182,7 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 		hud.AmmoUsed != 2 || hud.Grenades != 2 || hud.GrenadeLife != 7 || !hud.Locked {
 		t.Fatalf("incorrect combat state: %+v", hud)
 	}
-	if packet.Tanks[1].RespawnTime != 1.5 {
+	if packet.Tanks[1].RespawnTime != 1 {
 		t.Fatalf("incorrect respawn time: %+v", packet.Tanks[1])
 	}
 }
@@ -655,9 +655,9 @@ func TestPrivateInfinityTeamsCreditDepartedBotAndFreezeAtTarget(t *testing.T) {
 	rules.TeamNames[0] = "Amber"
 	a := newRoomInfiniteArena(rules, nil)
 	now := time.Now()
-	first, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "First", team: 1}, nil, now)
-	second, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Second", team: 2}, nil, now)
-	ally, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Ally", team: 1}, nil, now)
+	first, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "First", team: 1}, nil, 0, now)
+	second, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Second", team: 2}, nil, 0, now)
+	ally, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Ally", team: 1}, nil, 0, now)
 	ally.Protected, second.Protected = false, false
 	a.hurt(ally, first.ID, first.Team, first.Name)
 	if ally.HP == 0 || first.Score != 0 {

@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.15';
+const GAME_VERSION='4.49.16';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -58,11 +58,11 @@ const WEBKIT_ENGINE=/AppleWebKit\//.test(UA)&&(!/(?:Chrome|Chromium|Edg|OPR)\//.
 const SAFARI_BROWSER=WEBKIT_ENGINE&&/Safari\//.test(UA)&&!/(?:CriOS|FxiOS|EdgiOS|OPiOS)\//.test(UA);
 document.body.classList.toggle('webkit-engine',WEBKIT_ENGINE);document.body.classList.toggle('safari-browser',SAFARI_BROWSER);document.body.classList.toggle('ios-webkit',IOS_WEBKIT);
 const keys=new Set(), firePointers=new Set(), firePresses=new Set();
-const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36};
+const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36,assisted:false};
 const mouseAim={active:false,x:0,y:0};
 const Net=window.leqraNet;
 const {MACHINE_CAPACITY}=Net;
-const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,serverVersion:'',seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
+const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,serverVersion:'',seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,restoreInfinity:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const localRoom={code:'',players:[],self:0,nextViewer:MAX_TANKS,nextMember:0,rules:defaultRoomRules()};
 let infinityOnline=true,infinityOffline=false;
@@ -415,7 +415,7 @@ function syncPauseButton(){
  const title=label+' (P / Esc)';if(button.title!==title)button.title=title;
 }
 function setScreen(which){if($('inviteDialog')?.open)$('inviteDialog').close();if(which)pendingMatchPresentation=null;syncPauseButton();syncRestartWaveActions();if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=mode!=='online';document.body.classList.toggle('room-setup',which==='room');if(which==='online'){which='room';if(!$('joinDialog').open)$('joinDialog').showModal();}document.body.classList.toggle('overlay-open',!!which);$('overlay').hidden=!which;for(const id of ['lobby','pause','match','online','room','onlineMenu'])$(id+'Screen').hidden=id!==which;syncArenaAudio();stabilizeArenaLayout();}
-function clearInput(){keys.clear();firePointers.clear();firePresses.clear();clearMouseAim();for(const t of tanks){t.fireHeld=false;t.fireBlocked=false;}stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
+function clearInput(){keys.clear();firePointers.clear();firePresses.clear();clearMouseAim();for(const t of tanks){t.fireHeld=false;t.fireBlocked=false;}stick.id=null;stick.assisted=false;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
 function setMode(value){delete $('manualContent').dataset.content;if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS · ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').textContent=mode==='duel'?controlSummary(0)+' · '+controlSummary(1):'FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES';$('manualContent').innerHTML=fieldManualHTML();
  if(phase==='menu'){resetPreview();setLayout();}}
 function setDifficulty(value){if(!Object.prototype.hasOwnProperty.call(DIFFICULTY,value))return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
@@ -555,16 +555,21 @@ function moveTank(t,dx,dy,ghostExpired=false){
 // Re-query after a push: it may bring a later wall into contact. Never revisit
 // an earlier wall within the same pass; this preserves the exhaustive algorithm.
 function resolveWalls(t){
+ const radius2=t.r*t.r;
  for(let pass=0;pass<2;pass++){
+  let pushed=false;
   let candidates=nearbyWalls(t.x,t.y,0,0,t.r);
   for(let i=0;i<candidates.length;i++){
-   const w=candidates[i],wi=candidates===walls?i:wallIndex.order.get(w);
+   const w=candidates[i];
    const qx=clamp(t.x,w.x,w.x+w.w),qy=clamp(t.y,w.y,w.y+w.h),dx=t.x-qx,dy=t.y-qy,ds=dx*dx+dy*dy;
-   if(ds>=t.r*t.r)continue;
+   if(ds>=radius2)continue;
+   const wi=candidates===walls?i:wallIndex.order.get(w);
+   pushed=true;
    if(ds>.000001){const d=Math.sqrt(ds),push=t.r-d+.002;t.x+=dx/d*push;t.y+=dy/d*push;}
    else{const choices=[{v:t.x-w.x,dx:-1,dy:0},{v:w.x+w.w-t.x,dx:1,dy:0},{v:t.y-w.y,dx:0,dy:-1},{v:w.y+w.h-t.y,dx:0,dy:1}];let choice=choices[0];for(let k=1;k<4;k++)if(choices[k].v<choice.v)choice=choices[k];t.x+=choice.dx*(choice.v+t.r+.002);t.y+=choice.dy*(choice.v+t.r+.002);}
    candidates=nearbyWalls(t.x,t.y,0,0,t.r);i=0;while(i<candidates.length&&(candidates===walls?i:wallIndex.order.get(candidates[i]))<=wi)i++;i--;
   }
+  if(!pushed)return;
  }
 }
 
@@ -841,7 +846,7 @@ function humanControl(t,dt){
  let throttle=(forward?1:0)-(reverse?.72:0);
  const joystick=p1&&stick.mag>.10,desired=joystick?Math.atan2(stick.y,stick.x):p1&&!left&&!right?mouseAimHeading(t):null;
  if(desired!==null){
-  const diff=angleDelta(t.angle,desired);t.angle+=clamp(diff,-5.8*turnScale*dt,5.8*turnScale*dt);
+  const diff=angleDelta(t.angle,desired);t.angle+=Net.steeringTurn(diff,stick.mag,joystick&&stick.assisted,turnScale*dt);
   if(joystick)throttle=stick.mag*Math.max(0,Math.cos(diff));
  }else t.angle+=((right?1:0)-(left?1:0))*3.65*turnScale*dt;
  const speed=128*speedScale;moveTank(t,Math.cos(t.angle)*speed*throttle*dt,Math.sin(t.angle)*speed*throttle*dt);
@@ -1716,7 +1721,7 @@ function drawBullet(b,c=ctx,clock=fxTime){
   const v=Math.hypot(b.vx,b.vy)||1;c.globalAlpha=.55;c.beginPath();c.moveTo(b.x-b.vx/v*8,b.y-b.vy/v*8);c.lineTo(b.x,b.y);c.stroke();c.globalAlpha=1;c.fillStyle=paintColor(b.color);c.beginPath();c.arc(b.x,b.y,b.r,0,TAU);c.fill();c.restore();return;
  }
  c.save();c.lineWidth=b.kind==='cannon'?12:b.kind==='homing'?4:3;c.lineCap='round';c.strokeStyle=paintColor(b.color);
- for(let i=1;i<b.trail.length;i++){c.globalAlpha=i/b.trail.length*.23;c.beginPath();c.moveTo(b.trail[i-1].x,b.trail[i-1].y);c.lineTo(b.trail[i].x,b.trail[i].y);c.stroke();}
+ const trail=b.trail;for(let i=1;i<(trail?.length||0);i++){c.globalAlpha=i/trail.length*.23;c.beginPath();c.moveTo(trail[i-1].x,trail[i-1].y);c.lineTo(trail[i].x,trail[i].y);c.stroke();}
  c.globalAlpha=1;c.translate(b.x,b.y);c.shadowColor=paintColor(b.color);c.shadowBlur=combatPrefs.performance||WEBKIT_ENGINE?0:12;c.fillStyle=paintColor(b.color);
  if(b.kind==='homing'){
   c.rotate(Math.atan2(b.vy,b.vx));c.beginPath();c.moveTo(10,0);c.lineTo(-4,-5);c.lineTo(-8,-8);c.lineTo(-6,0);c.lineTo(-8,8);c.lineTo(-4,5);c.closePath();c.fill();c.shadowBlur=combatPrefs.performance?0:(0);c.fillStyle=paintColor('#fff6e5');c.fillRect(-1,-1.5,6,3);
@@ -2030,8 +2035,10 @@ function onlineControls(second=false){
  if(!active)return Net.neutral();
  const index=second?1:0,left=heldAction(index,'left'),right=heldAction(index,'right');
  const aim=!second&&!left&&!right&&stick.mag<=.10?mouseAimHeading(online.predictor?.state||tank):null;
- return{forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:second?heldAction(1,'fire'):primaryFireHeld(),
+ const input={forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:second?heldAction(1,'fire'):primaryFireHeld(),
   stickX:aim!==null?Math.cos(aim):second?0:stick.x,stickY:aim!==null?Math.sin(aim):second?0:stick.y,aimOnly:aim!==null};
+ if(!second&&stick.assisted&&stick.mag>.10)input.touchAim=true;
+ return input;
 }
 function resetOnlineMotion(){
  updateOnlineBounceSounds([],null);
@@ -2092,7 +2099,7 @@ function connectOnline(request,reconnecting=false){
   case 'server_hello':
    if(msg.version!==GAME_VERSION||msg.protocol!==1){
     clearTimeout(timeout);const serverVersion=typeof msg.version==='string'?msg.version:'unknown',notice='This page is leqra v'+GAME_VERSION+', but the server is v'+serverVersion+'. Reload the page to update before playing online.';
-    online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.serverVersion=serverVersion;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;
+    closeRoomInfinity();online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.serverVersion=serverVersion;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;
    }
    online.serverVersion=msg.version;sendOnline({type:'client_hello',version:GAME_VERSION,protocol:1});sendOnline(request);break;
   case 'client_ready':break;
@@ -2118,7 +2125,7 @@ function connectOnline(request,reconnecting=false){
    if(changed){cancelCallsignSave();clearInput();resetOnlineMotion();online.generation=-1;}
    rolePending=false;syncOnlineURL();break; }
   case 'swapped':cancelSwap();toast(msg.message,3);break;
-  case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}if(online.roomData?.infinityActive&&!msg.infinityActive){window.leqraInfinity?.close();clearEndMatchPending();}online.roomData=msg;online.publishing=false;rolePending=false;const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);break;}
+  case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}if(online.roomData?.infinityActive&&!msg.infinityActive)clearEndMatchPending();online.roomData=msg;online.publishing=false;rolePending=false;const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);syncOnlineRoomInfinity();break;}
   case 'infinity_start':startRoomInfinity();break;
   case 'renamed':acceptCallsign(msg);break;
   case 'kicked':clearTimeout(timeout);receiveKick(msg);break;
@@ -2132,7 +2139,7 @@ function connectOnline(request,reconnecting=false){
   case 'error':
    if(msg.action==='lobby'){clearEndMatchPending(msg.message);break;}
    if(msg.action==='restart_wave'){clearRestartWavePending(msg.message);break;}
-   if(msg.action==='version'){clearTimeout(timeout);const notice=msg.message||'This leqra page does not match the server. Reload the page before playing online.';online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;}
+   if(msg.action==='version'){clearTimeout(timeout);const notice=msg.message||'This leqra page does not match the server. Reload the page before playing online.';closeRoomInfinity();online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;}
    if(msg.action==='rematch'){matchmaking.rematchPending=false;syncResultActions();toast(msg.message,3);break;}
    if(msg.action?.startsWith('queue_')||msg.action==='return_party'){matchmakingError(msg.message);break;}
    if(msg.action==='chat'){const channel=msg.channel==='opponent'?'opponent':'room',st=chatState(channel),pending=st.pending;st.pending=null;if(pending?.text&&!roomChat.draft)roomChat.draft=pending.text;st.error=msg.message;if(roomChat.open&&roomChat.sendTarget===channel){$('chatInput').value=roomChat.draft;$('chatError').textContent=st.error;}syncChatStatus();break;}
@@ -2148,14 +2155,13 @@ function connectOnline(request,reconnecting=false){
    if(request.token&&online.inviteCode&&(msg.code==='resume_expired'||msg.code==='room_missing'||msg.code==='session_active'&&++online.inviteResumeRetries>=3)){clearTimeout(timeout);joinInviteAsNewPilot(ws);break;}
    if(online.connected&&!['resume_expired','room_missing','session_active'].includes(msg.code)){ $('roomStatus').textContent=msg.message;toast(msg.message,3);break; }
    if(msg.code==='session_active'&&request.token){clearTimeout(timeout);online.connecting=false;ws.close();break;}
-   clearTimeout(timeout);online.inviteCode='';cancelCallsignSave();online.manual=true;online.connected=false;online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;clearTimeout(online.retryTimer);forgetOnlineSession();ws.close();netBusy(false);phase='menu';online.menu=false;setScreen('online');setNetStatus(msg.message,true);break;
+   clearTimeout(timeout);closeRoomInfinity();online.inviteCode='';cancelCallsignSave();online.manual=true;online.connected=false;online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;clearTimeout(online.retryTimer);forgetOnlineSession();ws.close();netBusy(false);phase='menu';online.menu=false;setScreen('online');setNetStatus(msg.message,true);break;
   case 'left':break;
   }
  };
  ws.onerror=()=>{}; // onclose handles both failed upgrades and transport loss.
  ws.onclose=()=>{
   if(online.socket===ws)clearRestartWavePending();
-  if(online.socket===ws&&online.roomData?.infinityActive)window.leqraInfinity?.close();
   clearTimeout(timeout);if(online.socket!==ws)return;online.connected=false;online.connecting=false;rolePending=false;clearRoomModePending();syncRoomModePicker();cancelSwap();cancelKick();cancelCallsignSave('Connection lost. Check your callsign after reconnecting.');syncCallsignEditors();netBusy(false);clearInput();
   clearEndMatchPending();
   online.unsharePending=false;online.unshareSnapshot=null;
@@ -2171,12 +2177,13 @@ function showReconnecting(){
 function scheduleReconnect(){
  if(online.manual||mode!=='online')return;
  if(!online.retryAt)online.retryAt=performance.now();
- if(performance.now()-online.retryAt>18000){online.manual=true;online.code='';online.token='';online.id=-1;forgetOnlineSession();phase='menu';online.menu=false;setScreen('online');setNetStatus('The connection could not be restored. Rejoin with the room code when the server is reachable.',true);return;}
+ if(performance.now()-online.retryAt>18000){closeRoomInfinity();online.manual=true;online.code='';online.token='';online.id=-1;forgetOnlineSession();phase='menu';online.menu=false;setScreen('online');setNetStatus('The connection could not be restored. Rejoin with the room code when the server is reachable.',true);return;}
  const delay=Math.min(3000,450*2**Math.min(online.retries++,3));clearTimeout(online.retryTimer);
  online.retryTimer=setTimeout(()=>{if(mode==='online'&&!online.manual)connectOnline({type:'join',code:online.code,token:online.token,name:$('pilotName').value},true);},delay);
 }
 function leaveOnline(){
  if(mode==='online')window.leqraInfinity?.close();
+ online.restoreInfinity=false;
  online.unsharePending=false;online.unshareSnapshot=null;
  clearEndMatchPending();
  clearRestartWavePending();
@@ -2591,9 +2598,22 @@ function startInfinity(kind,credentials={}){
  window.leqraInfinity.start(kind,{name:roomMember(primaryId)?.name,bindings:()=>bindings,roomRules,
   roster:roomRules?room?.players||[]:[],primaryId,localId:secondary?.id,localName:secondary?.name,...credentials});
 }
-function startRoomInfinity(){
+function startRoomInfinity(resumeGeneration){
  if(!online.connected||!online.roomData?.infinityActive||online.spectating)return;
- closeChat();startInfinity('online',{code:online.code,token:online.token});
+ closeChat();startInfinity('online',{code:online.code,token:online.token,resumeGeneration});
+}
+function syncOnlineRoomInfinity(){
+ const infinity=window.leqraInfinity,active=!!online.roomData?.infinityActive&&!online.spectating;
+ if(!infinity||!online.roomData)return;
+ infinity.syncRoom(online.code,online.token,active);
+ if(!online.restoreInfinity)return;
+ online.restoreInfinity=false;
+ const generation=infinity.savedRoomGeneration(online.token);
+ if(active&&generation)startRoomInfinity(generation);
+}
+function closeRoomInfinity(){
+ online.restoreInfinity=false;
+ window.leqraInfinity?.closeRoom();
 }
 function initOnlineUI(){
  $('confirmKickBtn').addEventListener('click',confirmKick);
@@ -2637,7 +2657,7 @@ function initOnlineUI(){
   // never silently allocate a new seat or replace the server's current callsign.
   watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
   online.inviteCode='';online.inviteResumeRetries=0;
-  online.code=session.code;online.token=session.token;online.spectating=!!session.spectating;online.retryAt=performance.now();
+  online.code=session.code;online.token=session.token;online.spectating=!!session.spectating;online.retryAt=performance.now();online.restoreInfinity=true;
   if(session.localSetup===true)online.localSetupToken=session.token;
   $('joinCode').value=session.code;$('pilotName').value=typeof session.name==='string'?session.name:$('pilotName').value;
   showReconnecting();connectOnline({type:'join',code:session.code,token:session.token,name:$('pilotName').value},true);return;
@@ -4108,9 +4128,9 @@ window.addEventListener('keyup',e=>{if(keys.delete(e.code)&&isWeaponKey(e.code)&
 function cacheStickGeometry(){const r=$('stickBase').getBoundingClientRect();stick.cx=r.left+r.width/2;stick.cy=r.top+r.height/2;stick.max=Math.max(24,Math.min(r.width,r.height)*.375);}
 function stickMove(e){if(!stick.cx&&!stick.cy)cacheStickGeometry();const dx=e.clientX-stick.cx,dy=e.clientY-stick.cy,length=Math.hypot(dx,dy),max=stick.max||36,factor=length>max?max/length:1;stick.x=dx*factor/max;stick.y=dy*factor/max;stick.mag=Math.min(1,length/max);$('stickKnob').style.transform=`translate(${dx*factor}px,${dy*factor}px)`;}
 function capturePointer(el,id){try{el.setPointerCapture?.(id);return el.hasPointerCapture?.(id)!==false;}catch(_){return false;}}
-$('stickZone').addEventListener('pointerdown',e=>{if(e.button!==0||stick.id!==null)return;e.preventDefault();initAudio();stick.id=e.pointerId;cacheStickGeometry();capturePointer($('stickZone'),e.pointerId);stickMove(e);});
+$('stickZone').addEventListener('pointerdown',e=>{if(e.button!==0||stick.id!==null)return;e.preventDefault();initAudio();stick.id=e.pointerId;stick.assisted=e.pointerType==='touch'||e.pointerType==='pen';cacheStickGeometry();capturePointer($('stickZone'),e.pointerId);stickMove(e);});
 window.addEventListener('pointermove',e=>{if(e.pointerId===stick.id){e.preventDefault();stickMove(e);}},true);
-function endStick(e){if(e.pointerId!==stick.id)return;stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';if(e.type==='pointerup')primeAudioUnlock(e);if(mode==='online')sendOnlineInput(true);}
+function endStick(e){if(e.pointerId!==stick.id)return;stick.id=null;stick.assisted=false;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';if(e.type==='pointerup')primeAudioUnlock(e);if(mode==='online')sendOnlineInput(true);}
 $('stickZone').addEventListener('pointerup',endStick);$('stickZone').addEventListener('pointercancel',endStick);$('stickZone').addEventListener('lostpointercapture',endStick);
 function beginPointerFire(e,element){e.preventDefault();initAudio();const was=primaryFireHeld();firePointers.add(e.pointerId);if(!was)firePresses.add(localPlayerID());capturePointer(element,e.pointerId);$('fireBtn').classList.add('held');if(!was&&mode==='online')sendOnlineInput(true);}
 $('fireBtn').addEventListener('pointerdown',e=>{if(e.button===0)beginPointerFire(e,$('fireBtn'));});
@@ -4732,7 +4752,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work)=>sampleFrame(now,work,'infiniteFPSIndicator',null),
  theme,colors:Theme.colors,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
- openControls:()=>openFeature('controls'),arenaKeyBlocked,keyLabel,isTouchUI:()=>touchUI,
+ openControls:()=>openFeature('controls'),arenaKeyBlocked,keyLabel,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,
  recycleStarmanProjectiles,
  missileTurn:MISSILE_TURN,

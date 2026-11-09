@@ -10,7 +10,7 @@ function boot({spectating=false,p2=true}={}){
  const $=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);};
  const players=[{id:spectating?8:0,member:4,name:'HOST',kind:'human',owner:0,team:1,spectating},...(p2?[{id:3,member:5,name:'P2',kind:'local',owner:spectating?8:0,team:1}]:[]),{id:6,member:6,name:'BOT',kind:'bot',owner:0,team:1,difficulty:'godlike'}];
  const rules={mode:'survival',mapSize:'huge',teamMode:'teams',scoreTarget:15};
- const s={URL,Map,Set,mode:'room',phase:'menu',infinityOffline:false,localRoom:{self:players[0].id,code:'',players,rules},online:{connected:false,connecting:false,code:'',token:'',id:-1,roomData:null,effectQueue:[],snapshots:[],generation:-1,ownedIDs:new Set(),activeIDs:new Set(),shots:{sync:noop,prune:noop},localBullets:new Map()},
+ const s={URL,Map,Set,window:{},mode:'room',phase:'menu',infinityOffline:false,localRoom:{self:players[0].id,code:'',players,rules},online:{connected:false,connecting:false,code:'',token:'',id:-1,roomData:null,effectQueue:[],snapshots:[],generation:-1,ownedIDs:new Set(),activeIDs:new Set(),shots:{sync:noop,prune:noop},localBullets:new Map()},
   tanks:players.filter(p=>!p.spectating).map(p=>({...p,alive:true,power:null})),pickups:[{id:11,type:'shield',x:42,y:42,life:30}],walls:[{x:0,y:0,w:84,h:8}],cols:14,rows:12,W:1176,H:1008,grid:[],particles:[],rings:[],traces:[],bullets:[],shake:0,goUntil:0,gameStarted:false,
   GAME_VERSION:'test',MAX_TANKS:8,COLORS:Array(8).fill('#fff'),Net:{expandMachineBullets:()=>[]},$,performance:{now:()=>1000},
   location:{protocol:'https:',href:'https://leqra.test/'},document:{body:element(),documentElement:element(),querySelectorAll:()=>[],createElement:element},
@@ -24,7 +24,7 @@ function boot({spectating=false,p2=true}={}){
   WebSocket:class{constructor(){s.socket=this;this.readyState=1;}close(){this.readyState=3;this.onclose?.();}}};
  vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(declaration('findRoomMember'),s);
  for(const name of ['roomData','roomMembers','roomMember','localPlayerID','secondaryMember','secondLocal','secondaryID']){const line=source.split('\n').find(line=>line.startsWith('const '+name+'='));vm.runInContext(line+'\nglobalThis.'+name+'='+name+';',s);}
- for(const name of ['shareLocalRoom','connectOnline','currentRules','applyOnlineTankEffects','liveFeedbackTank','pilotLoadoutTank','receiveOnlineState','netTank','showVersionMismatch'])vm.runInContext(declaration(name),s);
+ for(const name of ['shareLocalRoom','connectOnline','syncOnlineRoomInfinity','closeRoomInfinity','currentRules','applyOnlineTankEffects','liveFeedbackTank','pilotLoadoutTank','receiveOnlineState','netTank','showVersionMismatch'])vm.runInContext(declaration(name),s);
  return{s,$,players,rules,receive:packet=>s.socket.onmessage({data:JSON.stringify(packet)}),snapshot:(extra={})=>({type:'state',tick:0,generation:0,phase:'lobby',round:1,roundClock:75,phaseTime:0,winner:-1,scores:Array(8).fill(0),tanks:[],bullets:[],pickups:[],events:[],rules,objectives:null,...extra})};
 }
 test('sharing preserves the current pilots, rules, maze and pickups through handshake and generation zero',()=>{

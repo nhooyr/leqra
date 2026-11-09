@@ -101,7 +101,8 @@ type Input struct {
 	FirePressed bool    `json:"-"` // Server-latched edge; clients cannot forge it.
 	StickX      float64 `json:"stickX"`
 	StickY      float64 `json:"stickY"`
-	AimOnly     bool    `json:"aimOnly,omitempty"` // The direction turns the tank; keyboard drive still sets throttle.
+	AimOnly     bool    `json:"aimOnly,omitempty"`  // The direction turns the tank; keyboard drive still sets throttle.
+	TouchAim    bool    `json:"touchAim,omitempty"` // Touch joystick steering uses the faster turn curve.
 }
 type Tank struct {
 	ShotSerial    uint64            `json:"shotSerial"` // Accepted volleys in this life; cosmetic reconciliation only.
@@ -245,7 +246,7 @@ type Game struct {
 	rng                               *rand.Rand
 }
 
-func clamp(v, a, b float64) float64 { return math.Max(a, math.Min(b, v)) }
+func clamp(v, a, b float64) float64 { return max(a, min(b, v)) }
 
 // Grenades keep most of their launch speed for the first seven seconds of the
 // ten-second fuse, then brake progressively harder as detonation approaches.
@@ -511,7 +512,7 @@ func (g *Game) rayWallsQuery(x, y, dx, dy, r float64, firstOnly bool) (RayHit, b
 // sweepWall resolves a segment against one radius-expanded wall box.
 func sweepWall(w Wall, x, y, dx, dy, r float64) (RayHit, bool) {
 	minX, maxX, minY, maxY := w.X-r, w.X+w.W+r, w.Y-r, w.Y+w.H+r
-	if math.Max(x, x+dx) < minX || math.Min(x, x+dx) > maxX || math.Max(y, y+dy) < minY || math.Min(y, y+dy) > maxY {
+	if max(x, x+dx) < minX || min(x, x+dx) > maxX || max(y, y+dy) < minY || min(y, y+dy) > maxY {
 		return RayHit{}, false
 	}
 	tx1, tx2, ty1, ty2 := math.Inf(-1), math.Inf(1), math.Inf(-1), math.Inf(1)
@@ -537,11 +538,11 @@ func sweepWall(w Wall, x, y, dx, dy, r float64) (RayHit, bool) {
 			ty1, ty2 = ty2, ty1
 		}
 	}
-	entry, exit := math.Max(tx1, ty1), math.Min(tx2, ty2)
+	entry, exit := max(tx1, ty1), min(tx2, ty2)
 	if entry > exit || exit < 0 || entry > 1 || entry < -.0001 {
 		return RayHit{}, false
 	}
-	hit := math.Max(0, entry)
+	hit := max(0, entry)
 	nx, ny := 0.0, 0.0
 	if math.Abs(tx1-ty1) < 1e-7 {
 		nx = 1
@@ -698,7 +699,14 @@ func steerTank(angle float64, in Input, turnScale, dt float64) (float64, float64
 	if mag > .1 {
 		desired := math.Atan2(in.StickY, in.StickX)
 		diff := delta(angle, desired)
-		angle += clamp(diff, -5.8*turnScale*dt, 5.8*turnScale*dt)
+		rate := 5.8
+		if in.TouchAim && !in.AimOnly {
+			tilt := smoothStep((min(mag, 1) - .35) / .65)
+			corner := smoothStep((math.Abs(diff) - math.Pi/12) / (math.Pi/2 - math.Pi/12))
+			rate += 3.2 * tilt * corner
+		}
+		step := rate * turnScale * dt
+		angle += clamp(diff, -step, step)
 		if !in.AimOnly {
 			throttle = math.Min(1, mag) * math.Max(0, math.Cos(diff))
 		}
@@ -714,6 +722,11 @@ func steerTank(angle float64, in Input, turnScale, dt float64) (float64, float64
 	}
 	angle = math.Atan2(math.Sin(angle), math.Cos(angle))
 	return angle, throttle
+}
+
+func smoothStep(value float64) float64 {
+	t := clamp(value, 0, 1)
+	return t * t * (3 - 2*t)
 }
 
 // A press launches a grenade; the next fresh press detonates owned live grenades.

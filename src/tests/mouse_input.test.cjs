@@ -41,6 +41,20 @@ function boot(mode='room'){
 }
 function close(a,b){assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);}
 
+test('fixed offline steering and online controls both use touch assist for P1 only',()=>{
+ const {s,p1,p2}=boot();
+ Object.assign(s.stick,{x:0,y:1,mag:1,assisted:true});
+ s.humanControl(p1,Net.STEP);
+ s.humanControl(p2,Net.STEP);
+ close(p1.angle,9*Net.STEP);
+ close(p2.angle,0);
+ assert.equal(s.onlineControls().touchAim,true);
+ assert.equal(s.onlineControls(true).touchAim,undefined);
+ s.clearInput();
+ assert.equal(s.stick.assisted,false);
+ assert.equal(s.onlineControls().touchAim,undefined);
+});
+
 test('mouse steers only P1, preserves forward and reverse controls and yields to a keyboard turn',()=>{
  const {s,p1,p2,canvas,window}=boot();
  canvas.emit('pointermove');

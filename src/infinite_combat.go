@@ -413,11 +413,15 @@ func (a *infiniteArena) canDamage(owner, team int, target *infinitePilot) bool {
 
 func (a *infiniteArena) hitTarget(owner, ownerTeam int, x, y, dx, dy, radius, limit float64, contact bool) (*infinitePilot, float64) {
 	var target *infinitePilot
+	r := tankRadius + radius
+	minX, maxX := min(x, x+dx)-r, max(x, x+dx)+r
+	minY, maxY := min(y, y+dy)-r, max(y, y+dy)+r
 	for _, p := range a.pilots {
-		if p.ID == owner || p.HP == 0 || !contact && (p.Protected || !a.canDamage(owner, ownerTeam, p)) {
+		if p.X < minX || p.X > maxX || p.Y < minY || p.Y > maxY ||
+			p.ID == owner || p.HP == 0 || !contact && (p.Protected || !a.canDamage(owner, ownerTeam, p)) {
 			continue
 		}
-		if hit, ok := circleHit(x, y, dx, dy, p.X, p.Y, tankRadius+radius); ok && hit < limit {
+		if hit, ok := circleHit(x, y, dx, dy, p.X, p.Y, r); ok && hit < limit {
 			limit, target = hit, p
 		}
 	}
@@ -507,7 +511,7 @@ func (a *infiniteArena) detonate(b *infiniteBullet) {
 		if p.ID == b.Owner || p.HP == 0 || p.Protected || math.Hypot(p.X-b.X, p.Y-b.Y) > blastRadius+tankRadius {
 			continue
 		}
-		if _, hit := a.rayWalls(b.X, b.Y, p.X-b.X, p.Y-b.Y, 0); !hit {
+		if !a.rayBlocked(b.X, b.Y, p.X-b.X, p.Y-b.Y, 0) {
 			a.hurt(p, b.Owner, b.ownerTeam, b.ownerName)
 		}
 	}
@@ -585,7 +589,7 @@ func (a *infiniteArena) guide(b *infiniteBullet, dt float64) {
 		if d >= best || dx*b.VX+dy*b.VY < missileViewCos*d*speed {
 			continue
 		}
-		if _, hit := a.rayWalls(b.X, b.Y, dx, dy, b.radius); !hit {
+		if !a.rayBlocked(b.X, b.Y, dx, dy, b.radius) {
 			best, target = d, p
 		}
 	}

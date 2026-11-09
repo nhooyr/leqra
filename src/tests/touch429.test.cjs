@@ -79,13 +79,14 @@ test('repeated HUD refreshes register one capture guard per event and leave no i
 });
 test('joystick plus Fire keep independent pointers through a prevented pinch and release without stuck input',()=>{
  const b=boot();b.setPhase('playing');
- b.$('stickZone').emit('pointerdown',{pointerId:1,clientX:48,clientY:48});
+ b.$('stickZone').emit('pointerdown',{pointerId:1,pointerType:'touch',clientX:48,clientY:48});
+ assert.equal(b.s.stick.assisted,true);
  b.$('fireBtn').emit('pointerdown',{pointerId:2});
  assert.equal(b.pinch('touchmove',{touches:[{},{}]}).defaultPrevented,true);
  b.window.emit('pointermove',{pointerId:1,clientX:84,clientY:48});
  assert.equal(b.s.stick.mag,1);assert.equal(b.s.stick.x,1);assert.equal(b.s.firePointers.has(2),true);assert.equal(b.s.firePresses.has(0),true);
  b.window.emit('pointerup',{pointerId:2});assert.equal(b.s.firePointers.size,0);assert.equal(b.s.stick.id,1);
- b.window.emit('pointercancel',{pointerId:1});assert.equal(b.s.stick.id,null);assert.equal(b.s.stick.mag,0);assert.equal(b.$('fireBtn').classList.contains('held'),false);
+ b.window.emit('pointercancel',{pointerId:1});assert.equal(b.s.stick.id,null);assert.equal(b.s.stick.assisted,false);assert.equal(b.s.stick.mag,0);assert.equal(b.$('fireBtn').classList.contains('held'),false);
 });
 
 test('Infinity keeps the active touch policy until the arena closes',()=>{

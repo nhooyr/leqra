@@ -4,6 +4,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const {assetPath}=require('./web_assets.cjs');
 const Net=require(assetPath('netcode.js'));
+const touchSteering=require('./fixtures/touch-steering.json');
 const game=fs.readFileSync(assetPath('game.js'),'utf8');
 function wallMover(world){
  const context={walls:world.walls,W:world.width,H:world.height,WALL:8,CELL:84,cols:world.cols||Math.ceil(world.width/84),rows:world.rows||Math.ceil(world.height/84),clamp:Net.clamp,Math};
@@ -32,11 +33,27 @@ test('stick movement and angle wrapping stay finite and bounded',()=>{
  assert.ok(Math.abs(Net.delta(start.angle,t.angle))<=5.8/60+1e-6);
  assert.ok(Math.abs(t.angle)<=Math.PI);
 });
-test('changing the same direction vector between mouse and joystick sends a new input',()=>{
- const stick=input({stickX:1}),aim={...stick,aimOnly:true};
+test('changing the same direction vector between mouse, ordinary analog and touch sends a new input',()=>{
+ const stick=input({stickX:1}),aim={...stick,aimOnly:true},touch={...stick,touchAim:true};
  assert.equal(Net.controlsEqual(stick,aim),false);
  assert.equal(Net.controlsEqual(aim,{...aim}),true);
  assert.equal(Net.controlsEqual(stick,{...stick,aimOnly:undefined}),true);
+ assert.equal(Net.controlsEqual(stick,touch),false);
+ assert.equal(Net.controlsEqual(stick,{...stick,touchAim:false}),true);
+});
+test('client touch prediction follows the shared authoritative steering and throttle cases',()=>{
+ for(const example of touchSteering){
+  const stacks=Math.round((example.turnScale-1)/.25);
+  const start=tank({angle:example.angle,speedTime:stacks?1:0,speedStacks:stacks});
+  const prediction=new Net.Predictor(free);
+  prediction.reset(start);
+  prediction.advance(Net.STEP,input(example.input));
+  const {angle,x,y}=prediction.state;
+  assert.ok(Math.abs(Net.delta(angle,example.angleAfter))<1e-9,example.name+' angle');
+  const distance=(x-start.x)*Math.cos(angle)+(y-start.y)*Math.sin(angle);
+  const throttle=distance/(128*(1+.65*stacks)*Net.STEP);
+  assert.ok(Math.abs(throttle-example.throttle)<1e-9,example.name+' throttle');
+ }
 });
 test('real client wall collision never crosses a solid wall',()=>{
  const move=wallMover({width:600,height:500,walls:[{x:300,y:0,w:8,h:500}]});

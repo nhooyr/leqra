@@ -1,10 +1,10 @@
-# leqra v4.49.15 — current game protocol (protocol 1)
+# leqra v4.49.16 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.15**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.16**.
 
 ```json
-{"type":"server_hello","version":"4.49.15","protocol":1}
-{"type":"client_hello","version":"4.49.15","protocol":1}
+{"type":"server_hello","version":"4.49.16","protocol":1}
+{"type":"client_hello","version":"4.49.16","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -21,7 +21,7 @@ The server negotiates no context takeover in either direction. Compressed client
 
 Public joins may send `localName` for a second tank. Private joins derive Player 2 from the authenticated pilot's active local seat in the room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
 
-Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for 1.5 seconds after the tank's destruction, even if the hold ends sooner.
+Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for one second after the tank's destruction, even if the hold ends sooner.
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
@@ -29,13 +29,17 @@ Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, 
 
 For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots. Room packets include `infinityActive` so pilots can rejoin a running arena. The Infinity socket join includes the room `code` and the pilot's existing room `token`. The host's `lobby` command ends the private run.
 
+Private `welcome` includes the run's `generation`. If the Infinity socket disconnects, both local tanks and their scores stay in the arena for up to 20 seconds with neutral controls. They can still be hit, and destroyed tanks wait for their controller before respawning. Reconnect with the same room credentials and `resume:true`, echoing the original `generation` when known. A resumed `welcome` carries `resumed:true` and the same tank IDs. Reset each seat's input sequence and prediction history. A still-active prior socket returns `session_active`, which the client can retry. An expired seat, revoked membership, or ended run returns `resume_expired`. Send `leave` on the Infinity socket to retire both tanks immediately.
+
 Room Infinity supports `infinityTarget` from 0 to 999. Zero is endless. The first tank or team to reach a positive target wins. Kills add one point and deaths subtract one. Team scores accumulate those changes across team members. Private snapshots carry `rules` with the target, team mode, names, colors and friendly-fire setting. Team snapshots also carry four `teamScores`, starting with Team 1. A completed match freezes and publishes `result` with the winner's name, score, and team for team wins or ID for individual wins. The result remains available until the host ends that room's run. Public Infinity is endless and free-for-all.
 
 Room Infinity uses configured bot seats from the room roster. The host can set `infinityRandomBots` to true to allow additional roaming bots. `infinityBotDifficulty` defaults to `normal` and supports `easy`, `normal`, `hard`, and `godlike`. With `infinityRandomDifficulty` enabled, each roaming bot draws a level from Chill through the selected difficulty. Public Infinity continues to spawn roaming bots.
 
-## Mouse steering
+## Mouse and touch steering
 
 Desktop Player 1 sends the cursor direction using the existing bounded `stickX` and `stickY` controls with `aimOnly:true`. The server and client prediction turn toward this direction at the usual 5.8 radians per second before speed boosts. Forward and reverse inputs supply the throttle. When `aimOnly` is omitted or false, a joystick direction also supplies its own throttle as before. A mouse click uses the existing Fire input and server-latched press edge.
+
+The touch joystick sends `touchAim:true` with its direction. Its turn cap eases from 5.8 to 9 radians per second before speed boosts as stick deflection rises from 35% to full and the angle to the desired heading rises from 15° to 90°. Small adjustments retain the standard turn rate. The same curve runs in fixed mazes and Infinity. Keyboard steering, mouse aiming, and bot steering use their existing rates.
 
 ## Projectile ownership
 

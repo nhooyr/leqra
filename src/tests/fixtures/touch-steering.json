@@ -1,0 +1,74 @@
+[
+  {
+    "name": "full reverse direction",
+    "angle": 0,
+    "input": {"stickX": -1, "stickY": 0, "touchAim": true},
+    "turnScale": 1,
+    "angleAfter": 0.15,
+    "throttle": 0
+  },
+  {
+    "name": "full tilt with speed boosts",
+    "angle": 0,
+    "input": {"stickX": 0, "stickY": -1, "touchAim": true},
+    "turnScale": 1.5,
+    "angleAfter": -0.225,
+    "throttle": 0
+  },
+  {
+    "name": "halfway through both ramps",
+    "angle": 0,
+    "input": {"stickX": 0.41091396458088647, "stickY": 0.5355135046965838, "touchAim": true},
+    "turnScale": 1,
+    "angleAfter": 0.11,
+    "throttle": 0.41091396458088647
+  },
+  {
+    "name": "small tilt",
+    "angle": 0,
+    "input": {"stickX": 0, "stickY": 0.35, "touchAim": true},
+    "turnScale": 1,
+    "angleAfter": 0.09666666666666666,
+    "throttle": 0
+  },
+  {
+    "name": "small heading error",
+    "angle": 0.1,
+    "input": {"stickX": 1, "stickY": 0, "touchAim": true},
+    "turnScale": 1,
+    "angleAfter": 0.00333333333333334,
+    "throttle": 0.9950041652780258
+  },
+  {
+    "name": "heading inside the turn cap",
+    "angle": 0,
+    "input": {"stickX": 0.9992001066609779, "stickY": 0.03998933418663416, "touchAim": true},
+    "turnScale": 1,
+    "angleAfter": 0.04,
+    "throttle": 0.9992001066609779
+  },
+  {
+    "name": "ordinary analog steering",
+    "angle": 0,
+    "input": {"stickX": 0, "stickY": 1},
+    "turnScale": 1,
+    "angleAfter": 0.09666666666666666,
+    "throttle": 0
+  },
+  {
+    "name": "mouse aim takes precedence",
+    "angle": 0,
+    "input": {"stickX": 0, "stickY": 1, "aimOnly": true, "touchAim": true, "forward": true},
+    "turnScale": 1,
+    "angleAfter": 0.09666666666666666,
+    "throttle": 1
+  },
+  {
+    "name": "keyboard below the stick dead zone",
+    "angle": 0,
+    "input": {"stickX": 0.1, "stickY": 0, "touchAim": true, "left": true, "reverse": true},
+    "turnScale": 1,
+    "angleAfter": -0.06083333333333333,
+    "throttle": -0.72
+  }
+]

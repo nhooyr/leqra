@@ -279,6 +279,16 @@ def check_audio(browser, errors):
 def check_private(browser, url, errors):
     with browser.new_context() as first, browser.new_context() as second, browser.new_context() as public:
         first.add_init_script("localStorage.setItem('leqra.local2Name', 'ROOM WING')")
+        for context in (first, second):
+            context.add_init_script("""
+                window.gameSockets = [];
+                window.WebSocket = class extends WebSocket {
+                    constructor(...args) {
+                        super(...args);
+                        gameSockets.push(this);
+                    }
+                };
+            """)
         host = load(first, url, "ROOM HOST", errors)
         select_room_infinity(host)
         host.locator("#roomTeamMode").select_option("teams")
@@ -301,12 +311,16 @@ def check_private(browser, url, errors):
         guest.locator("#readyBtn").click()
         expect(host.locator("#startRoomBtn")).to_be_enabled()
         host_frames = []
+        guest_frames = []
 
-        def record_infinity(socket):
-            if socket.url.endswith("/ws/infinite"):
-                socket.on("framereceived", lambda frame: host_frames.append(frame))
+        def record_infinity(page, frames):
+            def listen(socket):
+                if socket.url.endswith("/ws/infinite"):
+                    socket.on("framereceived", lambda frame: frames.append(frame))
+            page.on("websocket", listen)
 
-        host.on("websocket", record_infinity)
+        record_infinity(host, host_frames)
+        record_infinity(guest, guest_frames)
         with host.expect_websocket(predicate=lambda socket: socket.url.endswith("/ws/infinite")) as socket:
             host.locator("#startRoomBtn").click()
         for page in (host, guest):
@@ -320,6 +334,7 @@ def check_private(browser, url, errors):
         expect(host.locator("#infiniteLocalLoadout")).to_be_visible()
         expect(guest.locator("#infiniteLocalLoadout")).to_be_hidden()
         welcome = next(json.loads(frame) for frame in host_frames if is_packet(frame, "welcome"))
+        guest_welcome = next(json.loads(frame) for frame in guest_frames if is_packet(frame, "welcome"))
         assert welcome["id"] != welcome["localId"]
         host.locator("#infiniteCanvas").focus()
         with socket.value.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", local=True, forward=True)):
@@ -328,6 +343,28 @@ def check_private(browser, url, errors):
                                        any(pilot["id"] == welcome["localId"] and pilot.get("ack", 0) > 0
                                            for pilot in json.loads(frame)["tanks"])):
             host.keyboard.up("ArrowUp")
+
+        def drop(page, paths):
+            closed = page.evaluate("""paths => gameSockets.filter(socket => {
+                if (socket.readyState !== WebSocket.OPEN || !paths.includes(new URL(socket.url).pathname)) return false;
+                socket.close();
+                return true;
+            }).length""", paths)
+            assert closed == len(paths), (closed, paths)
+
+        for paths in (["/ws/infinite"], ["/ws", "/ws/infinite"], None):
+            before = len(host_frames)
+            with host.expect_websocket(predicate=lambda socket: socket.url.endswith("/ws/infinite")):
+                if paths is None:
+                    host.reload()
+                else:
+                    drop(host, paths)
+            expect_pilots(host, 3)
+            resumed = next(json.loads(frame) for frame in host_frames[before:]
+                           if is_packet(frame, "welcome"))
+            assert resumed.get("resumed") is True, resumed
+            assert all(resumed[key] == welcome[key] for key in ("id", "localId", "seed", "generation")), resumed
+            expect(host.locator("#infiniteLocalLoadout")).to_be_visible()
 
         outsider = load(public, url, "PUBLIC SOLO", errors)
         outsider.locator("#startRoomBtn").click()
@@ -341,24 +378,34 @@ def check_private(browser, url, errors):
         guest.locator("#infiniteExit").click()
         expect(guest.locator("#infiniteArena")).to_be_hidden()
         expect_pilots(host, 2)
-        expect(guest.locator("#readyBtn")).to_have_accessible_name("JOIN INFINITY")
-        guest.locator("#readyBtn").click()
-        expect_pilots(guest, 3)
-        guest.locator("#infinitePauseBtn").click()
-        guest.locator("#infiniteControlsBtn").click()
-        expect(guest.locator("#controlsDialog")).to_be_visible()
-        host.locator("#infinitePauseBtn").click()
-        host.locator("#infiniteExit").click()
-        host.locator("#endInfinityBtn").click()
-        host.locator("#actionConfirmAccept").click()
+        with guest.expect_websocket(predicate=lambda socket: socket.url.endswith("/ws")):
+            drop(guest, ["/ws"])
+        guest.wait_for_function("() => !!leqra.getState().online?.connected")
         expect(guest.locator("#infiniteArena")).to_be_hidden()
-        expect(guest.locator("#infinitePauseMenu")).to_be_hidden()
-        expect(guest.locator("#controlsDialog")).to_be_hidden()
-        expect(guest.locator("#readyBtn")).to_contain_text("READY")
-        expect(host.locator("#endInfinityBtn")).to_be_hidden()
+        # A room transport disconnect can promote the remaining member to host.
+        before = len(guest_frames)
+        guest.locator("#readyBtn:visible, #startRoomBtn:visible").click()
+        expect_pilots(guest, 3)
+        rejoined = next(json.loads(frame) for frame in guest_frames[before:] if is_packet(frame, "welcome"))
+        assert rejoined["id"] != guest_welcome["id"] and not rejoined.get("resumed"), rejoined
+        moderator, other = ((host, guest) if host.evaluate(
+            "() => leqra.getState().online.id === leqra.getState().room.host"
+        ) else (guest, host))
+        other.locator("#infinitePauseBtn").click()
+        other.locator("#infiniteControlsBtn").click()
+        expect(other.locator("#controlsDialog")).to_be_visible()
+        moderator.locator("#infinitePauseBtn").click()
+        moderator.locator("#infiniteExit").click()
+        moderator.locator("#endInfinityBtn").click()
+        moderator.locator("#actionConfirmAccept").click()
+        expect(other.locator("#infiniteArena")).to_be_hidden()
+        expect(other.locator("#infinitePauseMenu")).to_be_hidden()
+        expect(other.locator("#controlsDialog")).to_be_hidden()
+        expect(other.locator("#readyBtn")).to_contain_text("READY")
+        expect(moderator.locator("#endInfinityBtn")).to_be_hidden()
         assert all(page.evaluate("leqra.getState().online.connected") for page in (host, guest))
         expect_pilots(outsider, 1)
-    print("PASS invited teams and target, local P2 input, public isolation, re-entry and end", flush=True)
+    print("PASS private teams, P2 input, automatic reconnect and reload, public isolation, exit and end", flush=True)
 
 
 if __name__ == "__main__":

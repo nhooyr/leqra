@@ -142,9 +142,10 @@ func (m *infiniteMaze) visitWalls(x0, y0, x1, y1 float64, visit func(Wall) bool)
 		return false
 	}
 	const halfWall = wallSize / 2
-	// Include walls owned by adjacent cells whose rectangles cross the query edge.
-	firstX := int(math.Floor((x0-halfWall)/cellSize)) - 1
-	firstY := int(math.Floor((y0-halfWall)/cellSize)) - 1
+	// A wall owned by the previous cell can reach the query only if its
+	// far edge touches the query. Keep tangencies without scanning a spare row or column.
+	firstX := int(math.Ceil((x0-halfWall)/cellSize)) - 1
+	firstY := int(math.Ceil((y0-halfWall)/cellSize)) - 1
 	lastX := int(math.Floor((x1 + halfWall) / cellSize))
 	lastY := int(math.Floor((y1 + halfWall) / cellSize))
 	const cells = infiniteChunkCells

@@ -67,8 +67,8 @@ function create(seed){
  function visitWalls(x0,y0,x1,y1,visit){
   if(!Number.isFinite(x0)||!Number.isFinite(y0)||!Number.isFinite(x1)||!Number.isFinite(y1)||x0>x1||y0>y1)return false;
   const halfWall=WALL/2;
-  const firstX=Math.floor((x0-halfWall)/CELL)-1, lastX=Math.floor((x1+halfWall)/CELL);
-  const firstY=Math.floor((y0-halfWall)/CELL)-1, lastY=Math.floor((y1+halfWall)/CELL);
+  const firstX=Math.ceil((x0-halfWall)/CELL)-1, lastX=Math.floor((x1+halfWall)/CELL);
+  const firstY=Math.ceil((y0-halfWall)/CELL)-1, lastY=Math.floor((y1+halfWall)/CELL);
   const lastChunkX=Math.floor(lastX/CHUNK), lastChunkY=Math.floor(lastY/CHUNK);
   function visitWall(x,y,w,h,axis,line){
    return x<=x1&&x+w>=x0&&y<=y1&&y+h>=y0&&visit(x,y,w,h,axis,line);
@@ -100,7 +100,7 @@ function create(seed){
    return dx*dx+dy*dy<radius*radius;
   });
  }
- return {wallsNear,blocked};
+ return {visitWalls,wallsNear,blocked};
 }
 
 window.leqraInfiniteMaze=Object.freeze({create,cellSize:CELL});

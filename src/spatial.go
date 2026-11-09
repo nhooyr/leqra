@@ -51,10 +51,10 @@ func (g *Game) wallCandidates(x, y, dx, dy, r float64) []int {
 		}
 		g.spatial = z
 	}
-	x0 := int(clamp(math.Floor((math.Min(x, x+dx)-r)/cellSize), 0, float64(cols-1)))
-	x1 := int(clamp(math.Floor((math.Max(x, x+dx)+r)/cellSize), 0, float64(cols-1)))
-	y0 := int(clamp(math.Floor((math.Min(y, y+dy)-r)/cellSize), 0, float64(rows-1)))
-	y1 := int(clamp(math.Floor((math.Max(y, y+dy)+r)/cellSize), 0, float64(rows-1)))
+	x0 := int(clamp(math.Floor((min(x, x+dx)-r)/cellSize), 0, float64(cols-1)))
+	x1 := int(clamp(math.Floor((max(x, x+dx)+r)/cellSize), 0, float64(cols-1)))
+	y0 := int(clamp(math.Floor((min(y, y+dy)-r)/cellSize), 0, float64(rows-1)))
+	y1 := int(clamp(math.Floor((max(y, y+dy)+r)/cellSize), 0, float64(rows-1)))
 	if len(ws) < 24 || (x1-x0+1)*(y1-y0+1) > cols*rows/3 {
 		return z.all
 	}
