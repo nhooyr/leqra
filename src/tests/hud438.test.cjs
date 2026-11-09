@@ -43,6 +43,16 @@ test('team changes, friendly fire and a removed missile owner immediately update
  s.bullets[0].owner=0;assert.equal(s.pilotProjectileState(t,true).locked,false,'self-owned missiles do not warn of an enemy lock');
 });
 
+test('a hostile grenade lock warns the target in both simulation modes',()=>{
+ for(const mode of ['room','online']){
+  const s=boot({mode,projectileCount:0}),t=s.tanks[0];
+  s.bullets.push({owner:1,kind:'grenade',target:0,life:6});
+  assert.deepEqual(s.pilotProjectileState(t,true),{ammo:0,grenades:0,grenadeLife:0,locked:true});
+  s.run();assert.equal(s.$('missileWarning1').hidden,false);
+  assert.equal(s.$('missileWarning1').textContent,'⚠ HOMING LOCK');
+ }
+});
+
 test('two-pilot loadout and combat feedback retain detonation, ammo, pause and death behavior',()=>{
  for(const mode of ['room','online']){
   const s=boot({mode,projectileCount:0}),a=s.tanks[0],b=s.tanks[7];a.power=null;a.cooldown=0;b.power='laser';b.charges=1;b.cooldown=0;

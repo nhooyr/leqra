@@ -44,3 +44,50 @@ func Test48GrenadeDragCurveIsStepInvariant(t *testing.T) {
 		t.Fatalf("unexpected end-of-fuse speed fraction %.3f", whole)
 	}
 }
+
+func TestGrenadeHomingUsesMissileTurnAndKeepsFuseBraking(t *testing.T) {
+	g := battle(4)
+	g.Rules.FriendlyFire = true
+	g.Tanks[0].X, g.Tanks[0].Y, g.Tanks[0].Team = 60, 210, 1
+	g.Tanks[1].X, g.Tanks[1].Y, g.Tanks[1].Team = 150, 185, 1
+	g.Tanks[2].X, g.Tanks[2].Y, g.Tanks[2].Invulnerable = 147, 255, 1
+	g.Tanks[3].X, g.Tanks[3].Y = 320, 300
+	b := &Bullet{Kind: "grenade", Owner: 0, Target: -1, X: 100, Y: 210, VX: 80, R: 6, Age: 8.9, Life: 1.1}
+	g.Bullets = []*Bullet{b}
+	g.updateBullets(tickDT)
+	if b.Target != 3 || b.Dead {
+		t.Fatalf("grenade must steer toward the vulnerable opponent, got %+v", b)
+	}
+	if angle := math.Atan2(b.VY, b.VX); math.Abs(angle-missileTurn*tickDT) > 1e-12 {
+		t.Fatalf("grenade turn = %v, want %v", angle, missileTurn*tickDT)
+	}
+	if speed, want := math.Hypot(b.VX, b.VY), 80*grenadeDragFactor(1.1, 1.1-tickDT); math.Abs(speed-want) > 1e-12 {
+		t.Fatalf("grenade speed = %v, want %v", speed, want)
+	}
+	g.Tanks[3].Invulnerable = 1
+	g.updateBullets(tickDT)
+	if b.Target != -1 || b.SeekDelay != missileLockDelay {
+		t.Fatalf("grenade failed to coast on losing its lock: %+v", b)
+	}
+}
+
+func TestGrenadeHomingCoastsAfterWallRebound(t *testing.T) {
+	g := battle(2)
+	g.Tanks[0].X, g.Tanks[0].Y = 60, 210
+	g.Tanks[1].X, g.Tanks[1].Y = 160, 230
+	g.World.Walls = append(g.World.Walls, Wall{X: 248, Y: 0, W: 8, H: 420, Axis: "v", Line: 252})
+	b := &Bullet{Kind: "grenade", Owner: 0, Target: -1, X: 240, Y: 210, VX: grenadeSpeed, R: 6, Age: 1, Life: 9}
+	g.Bullets = []*Bullet{b}
+	g.updateBullets(tickDT)
+	if b.Bounces != 1 || b.VX >= 0 || b.Target != -1 || b.SeekDelay != missileWallDelay {
+		t.Fatalf("grenade failed to reset guidance at rebound: %+v", b)
+	}
+	g.updateBullets(missileWallDelay / 2)
+	if b.Target != -1 || b.VY != 0 {
+		t.Fatalf("grenade steered before rebound delay expired: %+v", b)
+	}
+	g.updateBullets(missileWallDelay / 2)
+	if b.Target != 1 || b.VY <= 0 {
+		t.Fatalf("grenade failed to reacquire after rebound: %+v", b)
+	}
+}

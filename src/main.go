@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	version         = "4.48.2"
+	version         = "4.49.0"
 	protocolVersion = 1
 )
 
@@ -225,14 +225,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, boundPort, _ := net.SplitHostPort(listener.Addr().String())
-	fmt.Printf("\nleqra online v%s\nOpen http://localhost:%s\n", version, boundPort)
-	if addrs, err := net.InterfaceAddrs(); err == nil {
-		for _, a := range addrs {
-			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && !n.IP.IsLoopback() {
-				fmt.Printf("Same Wi-Fi: http://%s:%s\n", n.IP.String(), boundPort)
-			}
-		}
+	addrs, _ := net.InterfaceAddrs()
+	openURL, lanURLs := startupURLs(listener.Addr().(*net.TCPAddr), addrs, lanHostname)
+	fmt.Printf("\nleqra online v%s\nOpen %s\n", version, openURL)
+	for _, lanURL := range lanURLs {
+		fmt.Printf("Same Wi-Fi: %s\n", lanURL)
 	}
 	fmt.Print("Start locally, or choose Share Room Online. Invite players or spectators.\nCtrl+C stops the server.\n\n")
 	stopped := make(chan os.Signal, 1)

@@ -472,10 +472,9 @@ func (g *Game) godlikeForecast(t *Tank, d botTuning) ([]godlikeThreat, []*Bullet
 			dt := math.Min(godlikeHorizon/godlikeSteps, b.Life)
 			before := b.Life
 			b.Life -= dt
+			b.Age += dt
 			if b.Kind == "grenade" {
-				drag := grenadeDragFactor(before, b.Life)
-				b.VX *= drag
-				b.VY *= drag
+				g.guideGrenade(&b, dt, before)
 			}
 			left := dt
 			elapsed := 0.0
@@ -495,12 +494,7 @@ func (g *Game) godlikeForecast(t *Tank, d botTuning) ([]godlikeThreat, []*Bullet
 				}
 				b.X += w.NX * .08
 				b.Y += w.NY * .08
-				if w.NX != 0 {
-					b.VX = -b.VX
-				}
-				if w.NY != 0 {
-					b.VY = -b.VY
-				}
+				b.reflect(w)
 			}
 		}
 	}
@@ -737,14 +731,7 @@ func (g *Game) godlikeMissileRisk(t *Tank, source *Bullet, path *[godlikeSteps +
 			}
 			b.X += w.NX * .08
 			b.Y += w.NY * .08
-			if w.NX != 0 {
-				b.VX = -b.VX
-			}
-			if w.NY != 0 {
-				b.VY = -b.VY
-			}
-			b.Target = -1
-			b.SeekDelay = missileWallDelay
+			b.reflect(w)
 			b.RangeLeft -= .08
 		}
 	}
