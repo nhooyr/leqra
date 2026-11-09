@@ -286,8 +286,8 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .intro-tour p{margin:0 0 12px}.intro-tour p:last-child{margin-bottom:0}
 .intro-tour ul{margin:0 0 12px;padding-left:20px}
 .intro-tour li+li{margin-top:4px}.intro-tour strong{color:var(--text)}
-.intro-tour-actions{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:8px}
-.intro-tour .intro-tour-actions>button{min-width:0;min-height:44px;margin:0;padding:9px 6px;justify-content:center;font-size:12px}
+.intro-tour-actions{display:grid;grid-template-columns:1.2fr 1fr 1fr;align-items:stretch;gap:8px}
+#introTourDialog .intro-tour-actions>button{display:grid;place-items:center;min-width:0;min-height:44px;margin:0;padding:9px 6px;font-size:12px;box-shadow:none;transform:none}
 #openIntroTour{margin-top:8px}
 @media(max-height:430px){.intro-tour :is(.feature-header,.feature-footer){position:static}}
 
