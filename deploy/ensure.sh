@@ -9,7 +9,7 @@ GOOS=linux GOARCH=amd64 go build -trimpath -o "$build_dir/leqra" ../src
 
 ssh leqra sh -s <<'EOF'
 set -eu
-if ! command -v rsync 2>/dev/null; then
+if ! command -v rsync >/dev/null; then
 	sudo apt-get update
 	sudo apt-get install -y rsync
 fi
