@@ -37,6 +37,7 @@ An online multiplayer tank arena battle game.
 - 6 map sizes.
 - 8 tanks at a time.
 - Mouse, keyboard and touch controls.
+- Quick tour on first startup.
 - A second local player.
 - Mobile & PWA support.
 - Managed deployments to minimize downtime.
