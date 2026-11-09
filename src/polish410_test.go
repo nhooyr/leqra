@@ -6,8 +6,8 @@ import (
 )
 
 func Test410EveryEquippedTimedPowerupUsesTenSeconds(t *testing.T) {
-	if powerEffectDuration != 10 || pickupLifetime(16, 14) != 61 || boostDuration != 10 || shieldDuration != 10 || scopeDuration != 10 || ghostDuration != 10 {
-		t.Fatalf("duration values: effect=%v giantPickup=%v boost=%v shield=%v scope=%v ghost=%v", powerEffectDuration, pickupLifetime(16, 14), boostDuration, shieldDuration, scopeDuration, ghostDuration)
+	if powerEffectDuration != 10 || pickupLifetime(16, 14) != 61 || boostDuration != 10 || shieldDuration != 10 || ghostDuration != 10 {
+		t.Fatalf("duration values: effect=%v giantPickup=%v boost=%v shield=%v ghost=%v", powerEffectDuration, pickupLifetime(16, 14), boostDuration, shieldDuration, ghostDuration)
 	}
 	for _, kind := range pickupTypes {
 		g := battle(2)
@@ -21,10 +21,6 @@ func Test410EveryEquippedTimedPowerupUsesTenSeconds(t *testing.T) {
 		case "speed":
 			if p.SpeedTime != powerEffectDuration {
 				t.Fatalf("%s duration=%v", kind, p.SpeedTime)
-			}
-		case "scope":
-			if p.ScopeTime != powerEffectDuration {
-				t.Fatalf("%s duration=%v", kind, p.ScopeTime)
 			}
 		case "ghost":
 			if p.GhostTime != powerEffectDuration {
@@ -47,7 +43,7 @@ func Test410SpawnedPickupUsesMazeLifetime(t *testing.T) {
 	}
 }
 
-func Test410BotsIgnoreHarmlessFriendlyGrenadesButAvoidOwnAndDangerous(t *testing.T) {
+func Test410BotsIgnoreTheirOwnAndHarmlessFriendlyGrenades(t *testing.T) {
 	g := battle(3)
 	bot, ally, enemy := g.Tanks[0], g.Tanks[1], g.Tanks[2]
 	bot.Bot, bot.Difficulty = true, "easy"
@@ -65,8 +61,8 @@ func Test410BotsIgnoreHarmlessFriendlyGrenadesButAvoidOwnAndDangerous(t *testing
 		t.Fatalf("harmless friendly grenade produced %d avoidance threats", got)
 	}
 	grenade.Owner = bot.ID
-	if got := len(g.botGrenadeThreats(bot, d, .7)); got == 0 {
-		t.Fatal("bot did not avoid its own grenade")
+	if got := len(g.botGrenadeThreats(bot, d, .7)); got != 0 {
+		t.Fatal("bot avoided its own grenade")
 	}
 	grenade.Owner = enemy.ID
 	if got := len(g.botGrenadeThreats(bot, d, .7)); got == 0 {
@@ -80,7 +76,7 @@ func Test410BotsIgnoreHarmlessFriendlyGrenadesButAvoidOwnAndDangerous(t *testing
 }
 
 func Test410Version(t *testing.T) {
-	if version != "4.46.0" {
+	if version != "4.47.0" {
 		t.Fatalf("version=%q", version)
 	}
 }

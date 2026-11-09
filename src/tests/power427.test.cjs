@@ -9,8 +9,8 @@ function declaration(name){
  const end=source.indexOf('\n',start),line=source.slice(start,end);
  return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);
 }
-const kinds=['rapid','scatter','shield','homing','grenade','speed','laser','scope','cannon','ghost'];
-function tank(id=0){return {id,x:100+id*200,y:100,angle:0,r:17,human:true,alive:true,cooldown:0,invulnerable:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,scopeTime:0,ghostTime:0,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,track:0};}
+const kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost'];
+function tank(id=0){return {id,x:100+id*200,y:100,angle:0,r:17,human:true,alive:true,cooldown:0,invulnerable:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,track:0};}
 function boot(){
  const noop=()=>{},s={POWER_EFFECT_DURATION:10,MACHINE_FIRING_ROUNDS:firingRounds,MACHINE_CAPACITY:96,MAX_SPEED_STACKS:5,POWER:Object.fromEntries(kinds.map(k=>[k,{name:k.toUpperCase()}])),cols:12,rows:10,time:0,mode:'solo',phase:'playing',fxTime:0,phaseTime:0,toastTime:0,particles:[],rings:[],shake:0,roundClock:120,spawnClock:Infinity,uiClock:Infinity,bullets:[],pickups:[],bulletId:0,tanks:[tank(),tank(1)],updateTraces:noop,compactLife:noop,objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,liveLocalStats:()=>false,advanceGhost:(t,dt)=>t.ghostTime=Math.max(0,t.ghostTime-dt),humanControl:noop,botControl:noop,updateBullets:noop,finishRound:noop,updateHUD:noop,clearTankAt:()=>true,burst:noop,shotSound:noop,
   projectileSpec:power=>({kind:power,cooldown:0}),muzzleProjectile:(t,a)=>({owner:t.id,kind:t.power}),
@@ -21,15 +21,15 @@ test('local equipped and ground durations match each of the six map tiers',()=>{
  const s=boot();
  for(const [c,r,duration,ground]of [[7,7,10,30],[9,8,10,30],[12,10,10,32],[14,12,15,45],[16,14,15,61],[24,14,15,90]]){
   s.cols=c;s.rows=r;assert.equal(s.pickupLifetime(),ground);
-  for(const kind of kinds){const t=tank();s.grantPower(t,kind);const field={shield:'shield',speed:'speedTime',scope:'scopeTime',ghost:'ghostTime'}[kind]||'powerTime';assert.equal(t[field],duration,kind+' '+c+'x'+r);}
+  for(const kind of kinds){const t=tank();s.grantPower(t,kind);const field={shield:'shield',speed:'speedTime',ghost:'ghostTime'}[kind]||'powerTime';assert.equal(t[field],duration,kind+' '+c+'x'+r);}
  }
  assert.equal(s.pickupLifetime(0,0),0);
 });
 test('local larger-map buffs refresh independently and respect stack and charge caps',()=>{
  const s=boot();s.cols=14;s.rows=12;const t=tank();s.grantPower(t,'cannon');
- for(const kind of ['shield','speed','scope','ghost'])for(let i=0;i<7;i++)s.grantPower(t,kind);
+ for(const kind of ['shield','speed','ghost'])for(let i=0;i<7;i++)s.grantPower(t,kind);
  assert.equal(t.power,'cannon');assert.equal(t.charges,3);assert.equal(t.powerTime,15);assert.equal(t.shieldCharges,5);assert.equal(t.speedStacks,5);
- for(const field of ['shield','speedTime','scopeTime','ghostTime'])assert.equal(t[field],15);
+ for(const field of ['shield','speedTime','ghostTime'])assert.equal(t[field],15);
 });
 test('local machine gun fires exactly 180 rapid projectiles at 60 Hz on a 120 Hz simulation',()=>{
  const s=boot(),t=tank();s.grantPower(t,'rapid');let fired=0;
@@ -79,6 +79,6 @@ test('predicted firing budget is independent for P2 and resets with a new life',
  a.spawnSerial++;a.machineRounds=180;p.sync(a,'playing',100);assert.equal(p.machineRounds(a),180);
 });
 test('pickup feedback explains map duration separately from machine-gun firing time and grenade fuse',()=>{
- const s=boot();s.cols=14;s.rows=12;assert.match(s.pickupMessage('speed'),/15 SECONDS/);assert.match(s.pickupMessage('scope'),/15 SECONDS/);
+ const s=boot();s.cols=14;s.rows=12;assert.match(s.pickupMessage('speed'),/15 SECONDS/);assert.match(s.pickupMessage('laser'),/LONG AIM GUIDE/);
  assert.match(s.pickupMessage('rapid'),/3s FIRING · 15s TO USE/);assert.match(s.pickupMessage('grenade'),/10s FUSE/);
 });

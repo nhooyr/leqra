@@ -47,7 +47,6 @@ const (
 	laserMaxSegments   = 128
 	laserRadius        = 3.0
 	laserCooldown      = .85
-	scopeDuration      = powerEffectDuration
 	ghostDuration      = powerEffectDuration
 	// Cannon scales normal round radius (and diameter) and speed, not damage.
 	cannonRadius   = 3.5 * 4
@@ -122,7 +121,6 @@ type Tank struct {
 	Power         string  `json:"power"`
 	SpeedTime     float64 `json:"speedTime"`
 	SpeedStacks   int     `json:"speedStacks"`
-	ScopeTime     float64 `json:"scopeTime"`
 	GhostTime     float64 `json:"ghostTime"`
 	PowerTime     float64 `json:"powerTime"`
 	MachineRounds int     `json:"machineRounds"` // Successful rapid projectiles left, at 60 per second.
@@ -698,8 +696,7 @@ func (g *Game) detonateOwned(t *Tank) bool {
 	if !t.Alive {
 		return false
 	}
-	// Capture the set first: the first explosion can kill its owner, but all
-	// grenades selected by the same valid detonation press still go off.
+	// One press detonates all of the shooter's live grenades.
 	var owned [3]*Bullet
 	count := 0
 	for _, b := range g.Bullets {
@@ -798,7 +795,7 @@ func (g *Game) fire(t *Tank) bool {
 		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: t.X + cs*muzzle, Y: t.Y + sn*muzzle, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1}
 		// Cannon ignores internal walls, but even its muzzle respects the arena rim.
 		hit, hitOK := g.projectileWallHit(kind, t.X, t.Y, cs*muzzle, sn*muzzle, b.R)
-		target, targetAt := g.projectileTankHit(b, t.X, t.Y, cs*muzzle, sn*muzzle, b.Age, 0)
+		target, targetAt := g.projectileTankHit(b, t.X, t.Y, cs*muzzle, sn*muzzle)
 		if target != nil && hitOK && targetAt > hit.T {
 			target = nil
 		}
@@ -818,7 +815,7 @@ func (g *Game) fire(t *Tank) bool {
 			b.Bounces++
 		}
 		if kind == "homing" || kind == "rapid" {
-			// Count the hidden muzzle section toward total path budgets, matching Laser/Scope semantics.
+			// Count the hidden muzzle section toward total path budgets, matching Laser.
 			launchDistance := muzzle
 			if target != nil {
 				launchDistance = muzzle * targetAt
@@ -883,7 +880,7 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 		}
 		var target *Tank
 		for _, other := range g.Tanks {
-			if other == nil || other.ID == t.ID || !g.canDamage(t.ID, other) || !other.Alive || other.Invulnerable > 0 {
+			if !g.canDamage(t.ID, other) || !other.Alive || other.Invulnerable > 0 {
 				continue
 			}
 			if at, ok := circleHit(x, y, dx, dy, other.X, other.Y, other.R+laserRadius); ok && at < stop {
@@ -951,7 +948,7 @@ func (g *Game) fireLaser(t *Tank) bool {
 }
 
 func (g *Game) hurt(t *Tank, b *Bullet) {
-	if !t.Alive || t.Invulnerable > 0 || !g.canDamage(b.Owner, t) || ((b.Kind == "scatter" || b.Kind == "rapid") && b.Owner == t.ID) {
+	if !t.Alive || t.Invulnerable > 0 || !g.canDamage(b.Owner, t) {
 		return
 	}
 	if t.Shield > 0 {
@@ -972,12 +969,7 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 	t.VX = 0
 	t.VY = 0
 	text := t.Name + " was eliminated."
-	if b.Owner == t.ID {
-		text = t.Name + " caught their own ricochet."
-		if b.Kind == "grenade" {
-			text = t.Name + " was caught in their own blast."
-		}
-	} else if owner := g.Tanks[b.Owner]; owner != nil {
+	if owner := g.Tanks[b.Owner]; owner != nil {
 		text = owner.Name + " eliminated " + t.Name + "."
 	}
 	g.emit("hit", t, b.Owner, text)
@@ -1054,9 +1046,9 @@ func (g *Game) detonate(b *Bullet) {
 	b.Dead = true
 	g.projectileEvent("blast", b, blastRadius)
 	// Resolve the complete blast before checking the round winner. A single
-	// explosion may remove several tanks, including its owner, or cause a draw.
+	// explosion may remove several tanks.
 	for _, t := range g.Tanks {
-		if t == nil || !t.Alive || dist(b.X, b.Y, t.X, t.Y) > blastRadius+t.R {
+		if !g.canDamage(b.Owner, t) || !t.Alive || dist(b.X, b.Y, t.X, t.Y) > blastRadius+t.R {
 			continue
 		}
 		if g.rayBlocked(b.X, b.Y, t.X-b.X, t.Y-b.Y, 0) {
@@ -1067,40 +1059,18 @@ func (g *Game) detonate(b *Bullet) {
 }
 
 // Muzzle placement and live flight use the same collision eligibility. Grenades
-// physically contact allies and protected tanks; only their damage is filtered.
-func (g *Game) projectileTankHit(b *Bullet, x, y, dx, dy, ageStart, span float64) (*Tank, float64) {
+// physically contact allies and protected tanks. All shots pass through the shooter.
+func (g *Game) projectileTankHit(b *Bullet, x, y, dx, dy float64) (*Tank, float64) {
 	var target *Tank
 	first := 2.0
 	for _, t := range g.Tanks {
-		if t == nil || !t.Alive {
+		if t == nil || !t.Alive || t.ID == b.Owner {
 			continue
 		}
 		if b.Kind != "grenade" && (!g.canDamage(b.Owner, t) || t.Invulnerable > 0) {
 			continue
 		}
-		ownerStart := 0.0
-		if t.ID == b.Owner {
-			if b.Kind == "scatter" || b.Kind == "rapid" {
-				continue
-			}
-			if ageStart < .20 {
-				if span <= 0 || ageStart+span < .20 {
-					continue
-				}
-				// Only the portion after muzzle grace can touch the owner.
-				// Starting this suffix inside the tank is an immediate hit.
-				ownerStart = clamp((.20-ageStart)/span, 0, 1)
-			}
-		}
-		var at float64
-		var ok bool
-		if ownerStart > 0 {
-			at, ok = circleHit(x+dx*ownerStart, y+dy*ownerStart, dx*(1-ownerStart), dy*(1-ownerStart), t.X, t.Y, t.R+b.R)
-			at = ownerStart + at*(1-ownerStart)
-		} else {
-			at, ok = circleHit(x, y, dx, dy, t.X, t.Y, t.R+b.R)
-		}
-		if ok && at < first {
+		if at, ok := circleHit(x, y, dx, dy, t.X, t.Y, t.R+b.R); ok && at < first {
 			first, target = at, t
 		}
 	}
@@ -1137,7 +1107,7 @@ func (g *Game) updateBullets(dt float64) {
 		if b.Kind == "homing" {
 			span = math.Min(span, math.Max(0, b.RangeLeft)/missileSpeed)
 		}
-		ageBefore, lifeBefore := b.Age, b.Life
+		lifeBefore := b.Life
 		b.Age += span
 		b.Life -= span
 		if b.Kind == "homing" {
@@ -1148,14 +1118,14 @@ func (g *Game) updateBullets(dt float64) {
 			b.VX *= drag
 			b.VY *= drag
 		}
-		remaining, elapsed := span, 0.0
+		remaining := span
 		for step := 0; step < 4 && remaining > .00001 && !b.Dead; step++ {
 			if b.Kind == "homing" {
 				remaining = math.Min(remaining, math.Max(0, b.RangeLeft)/missileSpeed)
 			}
 			dx, dy := b.VX*remaining, b.VY*remaining
 			wall, wallOK := g.projectileWallHit(b.Kind, b.X, b.Y, dx, dy, b.R)
-			target, first := g.projectileTankHit(b, b.X, b.Y, dx, dy, ageBefore+elapsed, remaining)
+			target, first := g.projectileTankHit(b, b.X, b.Y, dx, dy)
 			if target != nil && (!wallOK || first <= wall.T) {
 				b.X += dx * first
 				b.Y += dy * first
@@ -1183,7 +1153,6 @@ func (g *Game) updateBullets(dt float64) {
 					b.VY = -b.VY
 				}
 				b.Bounces++
-				elapsed += remaining * wall.T
 				remaining *= 1 - wall.T
 				if (b.Kind != "homing" && b.Kind != "rapid" && b.Bounces > 22) || b.Bounces > 128 {
 					if b.Kind == "grenade" {
@@ -1224,7 +1193,7 @@ func (g *Game) updateBullets(dt float64) {
 	g.Bullets = live
 }
 
-var pickupTypes = []string{"rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "scope", "cannon", "ghost"}
+var pickupTypes = []string{"rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost"}
 
 func (g *Game) grantPower(t *Tank, kind string) {
 	duration := powerDuration(g.World.Cols, g.World.Rows)
@@ -1235,10 +1204,8 @@ func (g *Game) grantPower(t *Tank, kind string) {
 	case "speed":
 		t.SpeedStacks = min(maxSpeedStacks, speedCount(t)+1)
 		t.SpeedTime = duration
-	case "scope":
-		t.ScopeTime = duration // Independent aiming buff; no weapon-slot changes.
 	case "ghost":
-		t.GhostTime = duration // Refresh only. Weapon, speed, scope and shield stay intact.
+		t.GhostTime = duration
 	case "rapid", "scatter":
 		t.MachineRounds = 0
 		if kind == "rapid" {
@@ -1403,7 +1370,6 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		if t.Shield <= 0 {
 			t.ShieldCharges = 0
 		}
-		t.ScopeTime = math.Max(0, t.ScopeTime-dt)
 		t.Recoil = math.Max(0, t.Recoil-dt*9)
 		if t.Power != "" {
 			t.PowerTime -= dt

@@ -1,8 +1,8 @@
-# leqra v4.45.1
+# leqra v4.47.0
 
-Leave room now uses the same neon-red outline color as REMOVE/KICK. New tanks appear at the bottom of room rosters, independent of their reusable gameplay seat numbers; Add Bot inherits the last roster bot’s difficulty. A recognized recent saved session reconnects automatically, preserving the server’s callsign and player/spectator role. New invite visitors still choose a callsign and press JOIN. Expired or kicked memberships also require explicit JOIN. The organized source tree and earlier maze stability fixes are retained.
+The ready room puts Play or Ready first and folds setup into **Room settings** and **Players and bots**. Laser now includes a dotted ricochet aim guide. Tanks are immune to their own shots and grenade blasts.
 
-See [UPDATE-v4.45.1.md](releases/UPDATE-v4.45.1.md) for release changes and [TEST-NOTES-v4.45.1.md](releases/TEST-NOTES-v4.45.1.md) for verification. Earlier versioned guides remain available in [releases/](releases/) as historical records; use the commands in this guide for the current repository layout. See the [changelog](../CHANGELOG.md) for the complete release history.
+Earlier versioned guides and their verification notes are available in [releases/](releases/). See the [changelog](../CHANGELOG.md) for the release history.
 
 ## Repository layout
 
@@ -23,7 +23,7 @@ Run all setup, build, test and deployment commands below from the repository roo
 
 leqra is an installable Progressive Web App with fully local play. The served page includes a manifest, Apple/Android icons and a root-scoped service worker. The app shell is cached for offline startup, while `/ws`, `/api/*` and `/healthz` remain network-only. Opening the game locally does not create a WebSocket or fetch online configuration; the browser connects only when a player explicitly shares/joins an online room, confirms an online invite, resumes a connection, or starts matchmaking.
 
-The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.45.1/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
+The static deployment is now version-safe. `index.html` is always revalidated, and every other browser asset served by Go lives under **`/assets/v4.47.0/`** and is sent with an immutable one-year cache policy. A future release therefore gets a new asset URL instead of waiting for an old JavaScript/CSS cache entry to expire. The service worker follows the same versioned shell and removes older `leqra-app-*` caches after activation.
 
 Online connections now begin with an explicit page/server compatibility handshake. The server sends its application version and wire protocol before accepting room or matchmaking commands; the client confirms both before continuing. A stale or incompatible page receives a clear **reload the page to update** message instead of attempting to play against mismatched code.
 
@@ -31,7 +31,7 @@ Graceful shutdown is now visible to players. On SIGTERM/SIGINT the Go process qu
 
 Retained room/game polish includes the **Leave match** action in the online pause menu, removal of the obsolete **New local room** action, preservation of the current maze when a host Unshares a room, even distribution across all four teams in Elimination/Hill (the first two for Capture the Flag) when Teams is activated, and gameplay input while chat remains visible as long as focus is outside the chat panel. A reconnect audit also fixed Leave match remaining hidden on the interrupted-connection screen before the menu had previously been opened.
 
-The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See [UPDATE-v4.26.0.md](releases/UPDATE-v4.26.0.md) for that release and its physical-device testing limits; the current changes and verification are in [UPDATE-v4.45.1.md](releases/UPDATE-v4.45.1.md) and [TEST-NOTES-v4.45.1.md](releases/TEST-NOTES-v4.45.1.md).
+The Safari audio fixes, game-styled confirmations and remappable alternate fire keys from v4.26 are retained. See [UPDATE-v4.26.0.md](releases/UPDATE-v4.26.0.md) for that release and its physical-device testing limits.
 
 The v4.15 lobby behavior still keeps editing from replacing the maze. Renaming, recoloring,
 adding/removing pilots, changing bot difficulty, team-format edits, and other non-map
@@ -67,7 +67,7 @@ cannot be confused with Shotgun.
 
 The dark-only neon-blue theme, authoritative team colors, self-owned FFA paint,
 five-stack Speed/Shields, objectives, spectators, matchmaking, chat and post-match
-statistics remain intact. See [UPDATE-v4.45.1.md](releases/UPDATE-v4.45.1.md) for current behavior and installation and [TEST-NOTES-v4.45.1.md](releases/TEST-NOTES-v4.45.1.md) for current verification. Older weapon guides describe the releases named in their headings; the power-up table below gives current timing.
+statistics remain intact. Older weapon guides describe the releases named in their headings. The power-up table below gives current timing.
 
 ## Previous combat improvements (retained)
 
@@ -83,7 +83,7 @@ for behavior and installation, and [TEST-NOTES-v4.2.md](releases/TEST-NOTES-v4.2
 
 **Cannon now fires 4×-diameter, 4×-speed rounds** through internal walls and
 ricochets them off the arena rim. **Ghost** lets tanks phase through internal
-walls for the map-dependent 10- or 15-second duration and stacks with Super Speed, Shield, Scope and weapons.
+walls for the map-dependent 10- or 15-second duration and stacks with Super Speed, Shield and weapons.
 Bots can now be removed with one click; human kicks still require confirmation.
 See [POWERUPS.md](POWERUPS.md) and the retained [UPDATE-v4.1.md](releases/UPDATE-v4.1.md) for weapon and expiry rules.
 
@@ -129,9 +129,8 @@ go run ./src
 ```
 
 Open **http://localhost:8080**. The game opens directly into your local room,
-with you plus three Normal bots. A fresh desktop setup uses Free-for-all on a 12×10 map; phones start with Compact, and saved room rules are restored. Press **PLAY** or change the roster.
-Local play works without a WebSocket connection; `src/web/index.html` can also be
-opened directly for local-only play.
+with you plus three Normal bots. A fresh desktop setup uses Free-for-all on a 12×10 map. Phones start with Compact, and saved room rules are restored. Press **PLAY** to start, or expand **Room settings** or **Players and bots** to change the setup.
+You can also open the root `index.html` directly for local play.
 
 ### Install on iPhone / Android
 
@@ -153,7 +152,7 @@ Chill / Normal / Fierce / Godlike selector. THE LINEUP shows each bot's level be
 in RULES. Free-for-all is a room-wide host format, not an individual team option. Numbered teammates share round points and cannot hurt each other unless the host
 enables friendly fire;
 default first side to five wins in Elimination and 30 points in King of the Hill. Elimination, Capture the Flag and Hill require at least two opposing sides; Survival requires one to four available squad tanks, including an all-bot squad.
-Choose Elimination, Capture the Flag, King of the Hill or Survival using the home-screen icon selector. Tap an icon, or focus the selector and use arrows, Home or End. Choose **Teams / Free-for-all** directly beneath it, then **map size** beneath the format. Capture the Flag and Survival use fixed Teams format. Open **RULES** to change the score target, timer, weapon availability, pickup rate or friendly fire. The lobby action reads **GO**, with centered text; **PLAY AGAIN** belongs to the results screen. The selected mode stays colored on touch devices, and the rules summary wraps between complete items without a leading dot on a new line. **F** toggles fullscreen inside menus when text entry, select typeahead or key remapping is not using it. Active matches suppress pinch zoom throughout the page, including pause menus; single-finger scrolling and joystick + Fire input are retained.
+Open **Room settings** to choose Elimination, Capture the Flag, King of the Hill or Survival. Tap an icon, or focus the selector and use arrows, Home or End. Choose **Teams / Free-for-all** directly beneath it, then **map size** beneath the format. Capture the Flag and Survival use fixed Teams format. Open **RULES** to change the score target, timer, weapon availability, pickup rate or friendly fire. The lobby action reads **PLAY**. **PLAY AGAIN** belongs to the results screen. The selected mode stays colored on touch devices, and the rules summary wraps between complete items without a leading dot on a new line. **F** toggles fullscreen inside menus when text entry, select typeahead or key remapping is not using it. Active matches suppress pinch zoom throughout the page, including pause menus; single-finger scrolling and joystick + Fire input are retained.
 A tied objective time limit enters sudden death: one final life, last side wins. Only the host
 can change the battle format or teams. Global Free-for-all hides the per-tank team selectors entirely. Survival also hides them because squad membership is fixed.
 
@@ -217,22 +216,17 @@ join-or-create invites, and multiplayer smoothing remain supported.
 
 See [GAMEPLAY-v3.2.md](releases/GAMEPLAY-v3.2.md) for the rules and objectives introduced in that version and [UNIFIED-ROOMS.md](UNIFIED-ROOMS.md) for the unified-room behavior, controls, safety rules,
 reconnection/ownership details and upgrade instructions. Earlier release guides
-are retained as historical notes; current behavior is described in this README and [UPDATE-v4.45.1.md](releases/UPDATE-v4.45.1.md), with the retained
-room/objective/spectator features in their versioned guides.
+are retained as historical notes.
 
 ## Power-ups
 
-All ten pickups use the **same icon drawing** in the legend and maze.
-Lasers bounce for up to the full perimeter. Homing missiles bounce for up to
+All nine pickups use the **same icon drawing** in the legend and maze.
+Lasers bounce for up to the full perimeter and show a dotted ricochet aim guide while equipped. Homing missiles bounce for up to
 half the perimeter. Grenades detonate on tank impact or a ten-second fuse:
-throw, release Fire, then press Fire again to trigger an early blast. Their blast radius is 220 world units. Equipped weapons and timed buffs last **10 seconds on Compact, Standard and Large**, or **15 seconds on Huge, Giant and Ultra Wide**. Projectile lifetimes, range limits and the grenade fuse keep their own limits. Machine gun, Shotgun and stacked shields remain available. Teammate hits do not consume shields with friendly fire off. Ordinary returning shells, missiles and grenade blasts can hurt their owner; **Machine gun, Shotgun and Laser are shooter-safe**. Cannon rounds pass through internal walls, bounce
+throw, release Fire, then press Fire again to trigger an early blast. Their blast radius is 220 world units. Equipped weapons and timed buffs last **10 seconds on Compact, Standard and Large**, or **15 seconds on Huge, Giant and Ultra Wide**. Projectile lifetimes, range limits and the grenade fuse keep their own limits. Machine gun, Shotgun and stacked shields remain available. Teammate hits do not consume shields with friendly fire off. Tanks are immune to their own projectiles and grenade blasts. Cannon rounds pass through internal walls, bounce
 at the rim and last at most 5.3 seconds. Ghost lets tanks cross internal walls for
 the map-dependent duration, stacks with speed, and safely clears a wall overlap on expiry.
 See [POWERUPS.md](POWERUPS.md).
-
-Scope is independent of weapons, speed and shields. Its timer refreshes to the map-dependent duration
-when collected again; it never stacks extra range or damage. Both local
-pilots see their own extended guide and a separate `SCP` timer.
 
 | Map | Cells | Starting pickups | Uncollected cap | Pickup expiry | Equipped/buff duration |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -244,7 +238,7 @@ pilots see their own extended guide and a separate `SCP` timer.
 | Ultra Wide | 24×14 | 7 | 34 | 90 s | 15 s |
 
 Extra spawn attempts remain one live second after start, then every 1–2 seconds
-by default. The host can change frequency or disable any/all of the ten types.
+by default. The host can change frequency or disable any/all of the nine types.
 Safe placement and the area cap remain; uncollected pickup lifetime is derived from the
 maze cap as `floor(cap × 8/3)` seconds, raised to at least 30 seconds on Large and smaller maps. A cap is a maximum, not a promise that every
 arena will always fill to it.
@@ -254,7 +248,7 @@ arena will always fill to it.
 Back up custom deployment settings. Update the complete source package, including **all of `src/`** and the root `go.mod`, `scripts/` and `deploy/` files. When migrating from the old flat layout, remove the superseded root Go files and `web/` after backing them up.
 Rebuild and restart the server, and refresh every player's browser. Rebuild executables or
 Docker images because they embed the web files. In-memory rooms and scores reset
-on restart. Both the health endpoint and browser version should show **4.45.1**.
+on restart. Both the health endpoint and browser version should show **4.47.0**.
 
 ## Build one standalone server
 

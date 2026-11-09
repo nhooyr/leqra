@@ -284,8 +284,8 @@ func TestUnifiedTeamDamageRulesAcrossWeapons(t *testing.T) {
 				t.Fatal("enemy immune")
 			}
 			g.hurt(g.Tanks[0], &Bullet{Owner: 0, Kind: kind})
-			if g.Tanks[0].Alive {
-				t.Fatal("human self damage rule unexpectedly removed")
+			if !g.Tanks[0].Alive {
+				t.Fatal("human damaged by their own weapon")
 			}
 		})
 	}
@@ -394,8 +394,8 @@ func TestUnifiedBotTargetingRespectsAssignedSides(t *testing.T) {
 		t.Fatal("bot targeted teammate")
 	}
 	g.hurt(g.Tanks[1], &Bullet{Owner: 1})
-	if g.Tanks[1].Alive {
-		t.Fatal("bot self damage was incorrectly blocked by team protection")
+	if !g.Tanks[1].Alive {
+		t.Fatal("bot damaged by its own weapon")
 	}
 }
 func TestUnifiedNavigationConnectedForSeededMazes(t *testing.T) {

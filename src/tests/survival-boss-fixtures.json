@@ -12,7 +12,7 @@
   {"name":"only-shield","wave":5,"pickupRate":"normal","weapons":["shield"],"shieldCharges":1,"speedStacks":0,"weapon":"","difficulty":"normal","bossName":"NORMAL BOSS"},
   {"name":"only-speed","wave":5,"pickupRate":"normal","weapons":["speed"],"shieldCharges":0,"speedStacks":0,"weapon":"","difficulty":"normal","bossName":"NORMAL BOSS"},
   {"name":"support-only","wave":10,"pickupRate":"normal","weapons":["shield","speed"],"shieldCharges":2,"speedStacks":1,"weapon":"","difficulty":"hard","bossName":"FIERCE BOSS"},
-  {"name":"other-weapons-only","wave":5,"pickupRate":"normal","weapons":["rapid","scatter","grenade","ghost","scope"],"shieldCharges":0,"speedStacks":0,"weapon":"","difficulty":"normal","bossName":"NORMAL BOSS"},
+  {"name":"other-weapons-only","wave":5,"pickupRate":"normal","weapons":["rapid","scatter","grenade","ghost"],"shieldCharges":0,"speedStacks":0,"weapon":"","difficulty":"normal","bossName":"NORMAL BOSS"},
   {"name":"no-pickups","wave":5,"pickupRate":"off","weapons":["shield","speed","homing","cannon","laser"],"shieldCharges":0,"speedStacks":0,"weapon":"","difficulty":"normal","bossName":"NORMAL BOSS"},
   {"name":"no-pickups-rotation","wave":15,"pickupRate":"off","weapons":["shield","speed","laser"],"shieldCharges":0,"speedStacks":0,"weapon":"","difficulty":"godlike","bossName":"GODLIKE BOSS"}
 ]

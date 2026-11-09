@@ -304,7 +304,7 @@ func TestRemoteGrenadeBlastRetainsWallAndShieldRules(t *testing.T) {
 	g.World.Walls = append(g.World.Walls, Wall{250, 0, 8, 420, "v", 254})
 	g.Bullets = []*Bullet{{Kind: "grenade", Owner: 0, X: 210, Y: 210, Life: 5}}
 	g.weaponControl(p, false, true)
-	if p.Alive || !g.Tanks[1].Alive || g.Tanks[1].Shield != 0 || !g.Tanks[2].Alive {
+	if !p.Alive || !g.Tanks[1].Alive || g.Tanks[1].Shield != 0 || !g.Tanks[2].Alive {
 		t.Fatal("remote blast altered damage rules")
 	}
 }
@@ -312,8 +312,8 @@ func TestRemoteGrenadeMultipleOwnedDetonateTogether(t *testing.T) {
 	g, p := grenadeGame()
 	g.Bullets = []*Bullet{{Kind: "grenade", Owner: 0, X: p.X, Y: p.Y, Life: 5}, {Kind: "grenade", Owner: 0, X: 350, Y: 50, Life: 5}}
 	g.detonateOwned(p)
-	if p.Alive || !g.Bullets[0].Dead || !g.Bullets[1].Dead {
-		t.Fatal("owner death interrupted one valid detonation")
+	if !p.Alive || !g.Bullets[0].Dead || !g.Bullets[1].Dead {
+		t.Fatal("expected both grenades to detonate and their shooter to survive")
 	}
 }
 func TestRemoteGrenadeRoundResetClearsPendingPress(t *testing.T) {

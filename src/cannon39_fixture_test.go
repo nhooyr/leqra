@@ -54,7 +54,6 @@ func handleCannon39Fixture(app *App, w http.ResponseWriter, r *http.Request) boo
 		p.Alive = true
 		p.Invulnerable = 0
 		p.Shield = 0
-		p.ScopeTime = 0
 		p.SpeedTime = 0
 		p.Cooldown = 0
 		p.CooldownTotal = 0

@@ -28,8 +28,6 @@ func Test427PowerDurationByArenaForEveryPickup(t *testing.T) {
 				got = p.Shield
 			case "speed":
 				got = p.SpeedTime
-			case "scope":
-				got = p.ScopeTime
 			case "ghost":
 				got = p.GhostTime
 			}
@@ -48,12 +46,12 @@ func Test427LargeArenaBuffRefreshKeepsIndependentCapsAndCharges(t *testing.T) {
 	g.World.Cols, g.World.Rows = 14, 12
 	p := g.Tanks[0]
 	g.grantPower(p, "cannon")
-	for _, kind := range []string{"shield", "speed", "scope", "ghost"} {
+	for _, kind := range []string{"shield", "speed", "ghost"} {
 		for n := 0; n < 7; n++ {
 			g.grantPower(p, kind)
 		}
 	}
-	if p.Power != "cannon" || p.Charges != 3 || p.PowerTime != 15 || p.SpeedStacks != 5 || p.ShieldCharges != 5 || p.SpeedTime != 15 || p.Shield != 15 || p.ScopeTime != 15 || p.GhostTime != 15 {
+	if p.Power != "cannon" || p.Charges != 3 || p.PowerTime != 15 || p.SpeedStacks != 5 || p.ShieldCharges != 5 || p.SpeedTime != 15 || p.Shield != 15 || p.GhostTime != 15 {
 		t.Fatalf("lost independent power state: %+v", p)
 	}
 	g.grantPower(p, "rapid")
