@@ -62,6 +62,7 @@ function harness(url = 'https://example.test/', openField = false) {
   colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
   tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, badge() {}, bullets() {},
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
+  missileTurn: 4.8, grenadeTurn: 1.6,
   toggleSound: () => sounds.push('mute'),
   shot: kind => sounds.push('shot:' + kind),
   ricochet: () => sounds.push('ricochet'), collect: () => sounds.push('pickup'), shield: () => sounds.push('shield'),
@@ -172,6 +173,28 @@ test('simultaneous Infinity laser hits rotate priority between live actors', () 
   assert.equal(world.tanks[1 - winner].score, -1);
   infinity.close();
  }
+});
+
+test('offline Infinity grenades steer at one-third the missile rate', () => {
+ const {infinity, state, advance} = harness(undefined, true);
+ infinity.start('offline');
+ const world = state(), pilot = world.tanks[0];
+ world.nextPickup = world.nextBot = Infinity;
+ const target = {...pilot, id:'target', x:175, y:240, invulnerable:0};
+ world.tanks.push(target);
+ const shots = ['homing','grenade'].map((kind,id)=>({
+  id, kind, owner:pilot.id, x:100, y:100, vx:kind==='grenade'?205:235, vy:0,
+  r:kind==='grenade'?6:5, age:.2, life:1, bounces:0, seekDelay:0, target:null, trail:[]
+ }));
+ world.bullets.push(...shots);
+ advance();
+ const [missile, grenade] = shots;
+ assert.equal(missile.target, target.id);
+ assert.equal(grenade.target, target.id);
+ const missileTurn = Math.atan2(missile.vy, missile.vx);
+ assert.ok(Math.abs(missileTurn - 4.8/60) < 1e-12);
+ assert.ok(Math.abs(Math.atan2(grenade.vy, grenade.vx) - missileTurn/3) < 1e-12);
+ infinity.close();
 });
 
 test('offline Infinity equips maze pickups and sounds a weapon before another frame arrives online', () => {
