@@ -69,6 +69,9 @@ type Room struct {
 	NextMember       uint64
 	Kicked           map[[32]byte]time.Time
 
+	infinityActive     bool
+	infinityGeneration uint64
+
 	state      stateScratch // reusable snapshot buffers; encoded before reuse
 	stateDirty bool         // Idle snapshots are sent on room changes.
 }
@@ -361,18 +364,23 @@ func connectedPlayers(r *Room) int {
 	}
 	return n
 }
+func (r *Room) setupOpen() bool {
+	return !r.infinityActive && (r.Game.Phase == "lobby" || r.Game.Phase == "matchOver")
+}
 func canStart(r *Room) bool {
 	if r.Queue != nil || r.Match != nil || r.hasAway() {
 		return false
 	}
-	if r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+	if !r.setupOpen() {
 		return false
 	}
-	if connectedPlayers(r) < 1 || r.Game.lineupError(r.Players) != "" {
+	if connectedPlayers(r) < 1 || r.lineupError() != "" {
 		return false
 	}
+	infinity := r.Game.settings().Infinity
 	for _, p := range r.Players {
-		if p != nil && p.Client != nil && p.ID != r.Host && !p.Ready {
+		if p != nil && p.Client != nil && p.ID != r.Host && !p.Ready &&
+			(!infinity || infinityCanPlay(p)) {
 			return false
 		}
 	}
@@ -522,10 +530,10 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 	}
 	code = cleanCode(code)
 	if !create && token != "" {
-		if route, ok := h.resumeRoutes[resumeRouteKey{code, sha256.Sum256([]byte(token))}]; ok && now.Before(route.Until) && h.rooms[route.Room.Code] == route.Room {
+		if room := h.resumedRoom(code, token, now); room != nil {
 			// Routes hold the destination room itself, whose current code already
 			// follows later renames. Recursing can loop forever after A -> B -> A.
-			code = route.Room.Code
+			code = room.Code
 		}
 	}
 	var r *Room
@@ -918,14 +926,14 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			return nil
 		}
 		r := c.room
-		if r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+		if !r.setupOpen() {
 			return nil
 		}
 		c.player.Ready = m.Ready
 		r.LastAction = now
 		h.broadcastRoom(r)
 	case "start":
-		if c.room == nil || c.player == nil {
+		if c.room == nil || c.player == nil || c.player.Client != c || !c.room.contains(c.player) {
 			return nil
 		}
 		r := c.room
@@ -933,8 +941,12 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			c.enqueue(roomError("not_host", "Only the host can start the match."))
 			return nil
 		}
+		if r.infinityActive {
+			c.enqueue(roomError("match_active", "Infinity is already running in this room."))
+			return nil
+		}
 		if !canStart(r) {
-			message := r.Game.lineupError(r.Players)
+			message := r.lineupError()
 			if message == "" {
 				message = "Ask connected guests to ready up before starting the match."
 			}
@@ -942,6 +954,10 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			return nil
 		}
 		r.LastAction = now
+		if r.Game.settings().Infinity {
+			h.startRoomInfinity(r)
+			return nil
+		}
 		r.Game.startMatch(r.Players)
 		for _, p := range r.Players {
 			if p != nil {

@@ -8,9 +8,10 @@ class Element{constructor(){this.value='';this.dataset={};this.attributes={};thi
 function boot({online=false,count=4}={}){
  const elements=new Map(),$=id=>{if(!elements.has(id)){const el=new Element();el.parentElement=new Element();elements.set(id,el);}return elements.get(id);};
  $('roomMapSize').options=[{value:'compact',textContent:'Compact · 7 × 7'},{value:'large',textContent:'Large · 12 × 10'}];
- const choices=['elimination','ctf','koth','survival'].map(id=>{const el=new Element();el.dataset.roomMode=id;return el;});
+ const choices=['elimination','ctf','koth','survival','infinity'].map(id=>{const el=new Element();el.dataset.roomMode=id;return el;});
  const timers=new Map();let timer=0;
  const s={console,mode:online?'online':'room',phase:online?'onlineLobby':'menu',MAX_TANKS:8,pendingRoomMode:null,roomModeObserved:'',roomModeError:'',roomModeContext:'',rulesPending:false,presetsPending:false,escapeHTML:v=>String(v),POWER:{rapid:{},shield:{}},localRoom:{code:'LOCAL',self:0,players:Array.from({length:count},(_,id)=>({id,kind:id?'bot':'human',team:0,connected:true})),rules:null},online:{id:0,member:1,code:'ONLINE',connected:true,socket:{},roomData:null},$,document:{querySelectorAll:selector=>selector==='[data-room-mode]'?choices:[],createElement:()=>new Element()},sent:[],sendOnline(message){s.sent.push(message);return !s.sendFails;},setTimeout(fn){timers.set(++timer,fn);return timer;},clearTimeout(id){timers.delete(id);},rememberedRulesForMode(){return null;},persistLocalRoomRules(r){s.persisted=r;},resetPreviewIfLobby(options){s.preview=options;},renderOnlineRoom(){s.syncRoomModePicker();},syncFeatureSummary(){s.syncRoomModePicker();},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>r?.players||s.localRoom.players};
+ Object.assign(s,{infinityOffline:false,infinityOnline:true,location:{protocol:'https:'},navigator:{onLine:true},save(){}});
  s.roomData=()=>s.mode==='online'?s.online.roomData:{host:0,players:s.localRoom.players.filter(p=>!p.spectating),rules:s.localRoom.rules};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const ROOM_MODES='),source.indexOf('function roomModeEditable(')),s);
  vm.runInContext(source.match(/const MAZE_SIZES=[^\n]+/)[0],s);
@@ -37,8 +38,8 @@ test('oversized survival squads roll back before local mutation or any online me
 });
 test('icon buttons expose one checked mode and one tab stop without a range slider',()=>{
  const {s,choices}=boot();let markup='';s.initRoomModePicker({before(picker){markup=picker.innerHTML;}});
- assert.doesNotMatch(markup,/type="range"|roomModeSlider/);assert.match(markup,/role="radiogroup"/);assert.equal((markup.match(/role="radio"/g)||[]).length,4);
- for(const [index,choice] of choices.entries()){choice.onclick();assert.equal(s.currentRules().mode,choice.dataset.roomMode);assert.equal(choices.filter(b=>b.getAttribute('aria-checked')==='true').length,1);assert.equal(choices.filter(b=>b.tabIndex===0).length,1);assert.equal(choices[index].tabIndex,0);}
+ assert.doesNotMatch(markup,/type="range"|roomModeSlider/);assert.match(markup,/role="radiogroup"/);assert.equal((markup.match(/role="radio"/g)||[]).length,5);
+ for(const choice of choices){choice.onclick();assert.equal(s.infinityOffline?'infinity':s.currentRules().mode,choice.dataset.roomMode);assert.equal(choices.filter(b=>b.getAttribute('aria-checked')==='true').length,1);assert.equal(choices.filter(b=>b.tabIndex===0).length,1);assert.equal(choice.tabIndex,0);}
 });
 test('online selection waits for the matching authoritative mode and blocks duplicate requests',()=>{
  const {s,$,timers}=boot({online:true});s.selectRoomMode('ctf');assert.equal(s.sent[0].type,'rules');assert.equal(s.sent[0].rules.teamMode,'teams');assert.equal(s.currentRules().mode,'elimination');assert.ok(s.choices.every(b=>!b.disabled&&b.getAttribute('aria-disabled')==='true'),'pending radios retain focus');assert.match($('roomModeNotice').textContent,/Applying Capture/);assert.equal(s.selectRoomMode('koth'),false);assert.equal(s.sent.length,1);
@@ -62,8 +63,8 @@ test('Rules use the selected mode without a second mode dropdown',()=>{
 });
 test('arrow keys wrap across mode choices; Home and End reach the first and last',()=>{
  const {s,choices}=boot();let index=0;
- for(const [code,want] of [['ArrowRight',1],['ArrowDown',2],['End',3],['ArrowRight',0],['ArrowLeft',3],['Home',0],['ArrowUp',3]]){
-  let prevented=false;s.roomModeKeydown({code,currentTarget:choices[index],preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.equal(s.currentRules().mode,choices[want].dataset.roomMode);assert.equal(choices[want].focused,true);assert.equal(choices[want].tabIndex,0);index=want;
+ for(const [code,want] of [['ArrowRight',1],['ArrowDown',2],['End',4],['ArrowRight',0],['ArrowLeft',4],['Home',0],['ArrowUp',4]]){
+  let prevented=false;s.roomModeKeydown({code,currentTarget:choices[index],preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.equal(s.infinityOffline?'infinity':s.currentRules().mode,choices[want].dataset.roomMode);assert.equal(choices[want].focused,true);assert.equal(choices[want].tabIndex,0);index=want;
  }
 });
 test('mode keys ignore shortcuts, unrelated keys, repeats and unavailable editing',()=>{

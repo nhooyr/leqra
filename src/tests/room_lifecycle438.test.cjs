@@ -10,7 +10,7 @@ function boot(){
  const room={code:'ROOM',host:0,phase:'lobby',players:[{id:0,member:1,name:'HOST',kind:'human'}]};
  const s={URL,mode:'room',phase:'menu',MAX_TANKS:8,COLORS:Array(8).fill('#fff'),GAME_VERSION:'test',localMatchStats:null,localRoom:{players:[],self:0},
   online:{connected:false,connecting:false,roomData:room,code:'',token:'',id:0,member:1,generation:1,snapshots:[]},matchmaking:{},roomChat:{code:'ROOM'},$,performance:{now:()=>1000},
-  document:{body:$('body'),documentElement:$('root'),querySelectorAll:()=>[]},location:{protocol:'https:',href:'https://leqra.test/'},history:{replaceState:noop},sessionStorage:{removeItem:noop},
+  document:{body:$('body'),documentElement:$('root'),querySelectorAll:()=>[]},window:{},location:{protocol:'https:',href:'https://leqra.test/'},history:{replaceState:noop},sessionStorage:{removeItem:noop},
   setTimeout(fn){timers.set(++serial,fn);return serial;},clearTimeout:id=>timers.delete(id),
   WebSocket:class{constructor(){this.readyState=1;s.socket=this;}close(){this.readyState=3;this.onclose?.();}},
   netBusy:noop,setNetStatus:noop,clearInput:noop,sendOnlineInput:noop,toast:noop,renderOnlineRoom:noop,setScreen:noop,syncChatStatus:noop,recoverPendingChat:noop,scheduleReconnect:noop,

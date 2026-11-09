@@ -11,7 +11,11 @@ Open **Room settings → Controls** to remap keys, adjust audio, or replay the q
 
 ## Rooms
 
-Press **Play** to start with bots. Open **Players and bots** to edit the roster or add Player 2. **Room settings** holds the mode, format, map, rules, and presets. **Portrait maze** makes rectangular maps taller than they are wide. The square Compact map keeps its dimensions.
+The **Infinity** switch is on by default. Press **Play** to roam a public endless maze with other pilots and bots. You gain a point for each tank you destroy and lose a point each time you die. Tanks respawn, and the leaderboard shows the ten highest current scores in the arena.
+
+Select **Infinity** under **Room settings → Game mode** and press **Play** to explore solo against bots. Use **Share Infinity room** to invite friends to a private arena. You can also select **Infinity** in an already shared room. Guests ready up and the host presses **Play**.
+
+Turn off **Infinity** to play the selected room mode. Open **Players and bots** to edit the roster or add Player 2. **Room settings** holds the mode, format, map, rules, and presets. **Portrait maze** makes rectangular maps taller than they are wide. The square Compact map keeps its dimensions.
 
 Selecting **Teams** puts the top half of the active roster on Team 1 and the bottom half on Team 2. Team 1 gets the extra pilot when the count is odd. The player list keeps teammates together as assignments change.
 
@@ -25,6 +29,7 @@ Selecting **Teams** puts the top half of the active roster on Team 1 and the bot
 | Capture the Flag | Return the enemy flag while your flag is at base. |
 | King of the Hill | Hold the hill to earn points. |
 | Survival | Clear waves with your squad. |
+| Infinity | Explore an endless maze and score by destroying tanks. |
 
 Bank shots around corners and collect glowing pickups. Your own shots and grenade blasts leave your tank unharmed. [Power-up guide](POWERUPS.md)
 

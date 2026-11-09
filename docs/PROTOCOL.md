@@ -1,13 +1,19 @@
-# leqra v4.49.5 — current game protocol (protocol 1)
+# leqra v4.49.6 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.5**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.6**.
 
 ```json
-{"type":"server_hello","version":"4.49.5","protocol":1}
-{"type":"client_hello","version":"4.49.5","protocol":1}
+{"type":"server_hello","version":"4.49.6","protocol":1}
+{"type":"client_hello","version":"4.49.6","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
+
+## Infinity
+
+`/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with the usual movement, aim and fire fields. The server sends `state` with `tick`, nearby `tanks` and `bullets`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`.
+
+For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots. Room packets include `infinityActive` so pilots can rejoin a running arena. The Infinity socket join includes the room `code` and the pilot's existing room `token`. The host's `lobby` command ends the private run.
 
 ## Mouse steering
 

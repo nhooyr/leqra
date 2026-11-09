@@ -22,7 +22,7 @@ function boot(){
  }
  doc={body:new Element('body'),documentElement:new Element('html'),createElement:tag=>new Element(tag),activeElement:null,querySelectorAll:selector=>[...elements.values()].filter(e=>selector==='dialog[open]'&&e.tagName==='DIALOG'&&e.open),querySelector:selector=>doc.querySelectorAll(selector)[0]||null};
  const $=id=>elements.get(id)||null,add=(id,tag='div')=>{const e=new Element(tag);e.id=id;doc.body.append(e);return e;};
- for(const id of ['returnRoomBtn','leaveMatchBtn','pilotName','roomBtn','bestInline','barHint','announcer','onlineMenuMessage'])add(id,id.endsWith('Btn')?'button':'input');
+ for(const id of ['returnRoomBtn','endInfinityBtn','leaveMatchBtn','pilotName','roomBtn','bestInline','barHint','announcer','onlineMenuMessage'])add(id,id.endsWith('Btn')?'button':'input');
  const players=[{id:0,member:101,name:'HOST',kind:'human'},{id:1,member:102,name:'PLAYER 2',kind:'local',owner:0}];
  for(const id of ['roomCallsignForm','menuCallsignForm','roomP2CallsignForm','menuP2CallsignForm']){
   const form=add(id,'form');if(id.includes('P2'))form.dataset.pilot='secondary';form.elements={callsign:new Element('input')};form.status=new Element('p');form.status.hidden=true;form.append(form.elements.callsign,form.status);
@@ -30,7 +30,7 @@ function boot(){
  const socket={readyState:1,bufferedAmount:0,send(data){if(s.sendFails)throw Error('closed');wire.push(JSON.parse(data));events.push('send:'+JSON.parse(data).type);},close(){events.push('close');this.readyState=3;}};
  const s={console,Promise,WebSocket:{OPEN:1},mode:'online',phase:'playing',pendingGameConfirmation:null,pendingMatchPresentation:null,localMatchReport:null,localObjectives:null,localMatchStats:{},localRoom:{self:0,players},
   online:{socket,code:'ROOM',member:101,id:0,generation:2,connected:true,menu:true,roomData:{host:0,phase:'playing',players},renamePending:null,endMatchPending:null},
-  document:doc,$,setTimeout(fn){const id=++serial;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
+  document:doc,window:{},$,setTimeout(fn){const id=++serial;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
   roomData:()=>s.online.roomData,roomMember:id=>s.online.roomData?.players.find(p=>p.id===id),localPlayerID:()=>s.online.id,secondaryMember:()=>s.online.roomData?.players.find(p=>p.kind==='local'),cleanPilotName:n=>String(n).trim().replace(/[^\w -]/g,'').slice(0,16),
   rememberCallsign(name){$('pilotName').value=name;},rememberLocalCallsign(){},initAudio(){},updateHUD(){},syncPauseButton(){},renderOnlineRoom(){s.syncCallsignEditors();s.syncEndMatchAction();},
   clearInput(){},sendOnlineInput(){},toast(message){s.notice=message;},performance:{now:()=>1000},closeVictory(){s.pendingMatchPresentation=null;},setScreen(){},

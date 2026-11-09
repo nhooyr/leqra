@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	version         = "4.49.5"
+	version         = "4.49.6"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 )
@@ -73,6 +73,7 @@ type ipBudget struct {
 }
 type App struct {
 	hub       *Hub
+	infinite  *infiniteServer
 	origins   []string
 	mu        sync.Mutex
 	ips       map[string]*ipBudget
@@ -81,7 +82,8 @@ type App struct {
 }
 
 func newApp(maxRooms int, origins []string) *App {
-	return &App{hub: newHub(maxRooms), origins: origins, ips: map[string]*ipBudget{}}
+	hub := newHub(maxRooms)
+	return &App{hub: hub, infinite: newInfiniteServer(hub), origins: origins, ips: map[string]*ipBudget{}}
 }
 func (a *App) reserve(ip string, now time.Time) bool {
 	a.mu.Lock()
@@ -124,6 +126,17 @@ func (a *App) release(ip string) {
 	}
 }
 func (a *App) socket(w http.ResponseWriter, r *http.Request) {
+	a.serveSocket(w, r, func(c *Client) bool {
+		if !a.hub.addClient(c) {
+			return false
+		}
+		c.enqueue(map[string]any{"type": "server_hello", "version": version, "protocol": protocolVersion})
+		go c.writeLoop()
+		return true
+	}, a.hub.readLoop)
+}
+
+func (a *App) serveSocket(w http.ResponseWriter, r *http.Request, admit func(*Client) bool, read func(*Client)) {
 	key, err := validateUpgrade(w, r, a.origins)
 	if err != nil {
 		return
@@ -132,15 +145,15 @@ func (a *App) socket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		ip = r.RemoteAddr
 	}
-	c := a.openSocket(w, key, ip)
+	c := a.openSocket(w, key, ip, admit)
 	if c == nil {
 		return
 	}
 	defer a.release(ip)
-	a.hub.readLoop(c)
+	read(c)
 }
 
-func (a *App) openSocket(w http.ResponseWriter, key, ip string) *Client {
+func (a *App) openSocket(w http.ResponseWriter, key, ip string, admit func(*Client) bool) *Client {
 	a.upgradeMu.RLock()
 	defer a.upgradeMu.RUnlock()
 	if a.stopping {
@@ -157,14 +170,12 @@ func (a *App) openSocket(w http.ResponseWriter, key, ip string) *Client {
 		return nil
 	}
 	c := &Client{ws: ws, sourceIP: ip, send: make(chan []byte, 12), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: -1, born: time.Now(), requireVersion: true}
-	if !a.hub.addClient(c) {
+	if !admit(c) {
 		ws.writeClose(1013, "Server full")
 		ws.close()
 		a.release(ip)
 		return nil
 	}
-	c.enqueue(map[string]any{"type": "server_hello", "version": version, "protocol": protocolVersion})
-	go c.writeLoop()
 	return c
 }
 func (a *App) handler() http.Handler {
@@ -175,6 +186,7 @@ func (a *App) handler() http.Handler {
 	static := http.FileServer(http.FS(sub))
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", a.socket)
+	mux.HandleFunc("/ws/infinite", a.infiniteSocket)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			w.WriteHeader(405)
@@ -195,7 +207,7 @@ func (a *App) handler() http.Handler {
 	assets := map[string]bool{
 		"theme.js": true, "theme.css": true, "style.css": true, "favicon.svg": true,
 		"netcode.js": true, "game.js": true, "pwa.js": true, "manifest.webmanifest": true,
-		"sw.js": true,
+		"infinite-maze.js": true, "infinite.js": true, "sw.js": true,
 	}
 	for _, name := range appIconPNGs {
 		assets[name] = true
@@ -251,12 +263,14 @@ func env(key, fallback string) string {
 func (a *App) serve(srv *http.Server, listener net.Listener, stopped <-chan os.Signal) error {
 	done := make(chan struct{})
 	go a.hub.run(done)
+	go a.infinite.run(done)
 	serving := make(chan error, 1)
 	go func() { serving <- srv.Serve(listener) }()
 	select {
 	case err := <-serving:
 		close(done)
 		a.hub.close()
+		a.infinite.close()
 		return err
 	case <-stopped:
 	}
@@ -266,11 +280,12 @@ func (a *App) serve(srv *http.Server, listener net.Listener, stopped <-chan os.S
 	a.upgradeMu.Unlock()
 	// Give browsers time to render the terminal notice before closing their
 	// hijacked connections, which net/http cannot drain for us.
-	if a.hub.notifyShutdown() > 0 {
+	if a.hub.notifyShutdown()+a.infinite.notifyShutdown() > 0 {
 		time.Sleep(200 * time.Millisecond)
 	}
 	close(done)
 	a.hub.close()
+	a.infinite.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Serve returns as soon as Shutdown closes the listener. Keep main alive

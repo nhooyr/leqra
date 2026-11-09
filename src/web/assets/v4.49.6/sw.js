@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.49.5';
+const VERSION = 'v4.49.6';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
@@ -11,6 +11,8 @@ const SHELL = [
   BASE + 'favicon-256.png',
   BASE + 'netcode.js',
   BASE + 'game.js',
+  BASE + 'infinite-maze.js',
+  BASE + 'infinite.js',
   BASE + 'pwa.js',
   BASE + 'manifest.webmanifest',
   BASE + 'icon-192.png',
@@ -38,9 +40,8 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Online APIs and sockets remain network-only. Local/offline play never opens
-  // them unless the player explicitly shares/joins a room or uses matchmaking.
-  if (url.pathname === '/ws' || url.pathname === '/healthz' || url.pathname.startsWith('/api/')) return;
+  // Online APIs and sockets remain network-only.
+  if (url.pathname === '/ws' || url.pathname === '/ws/infinite' || url.pathname === '/healthz' || url.pathname.startsWith('/api/')) return;
 
   let cacheWrite = Promise.resolve();
   const storeResponse = (key, response) => {
