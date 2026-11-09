@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestGrenadeKeepsItsFuseThroughRepeatedRicochets(t *testing.T) {
+	g := battle(1)
+	g.World.Walls = append(g.World.Walls, Wall{X: 80, Y: 160, W: 8, H: 100}, Wall{X: 164, Y: 160, W: 8, H: 100})
+	shooter := g.Tanks[0]
+	shooter.X, shooter.Y = 126, 210
+	g.grantPower(shooter, "grenade")
+	if !g.fire(shooter) || len(g.Bullets) != 1 {
+		t.Fatal("grenade did not launch into the corridor")
+	}
+	b := g.Bullets[0]
+	for !b.Dead && b.Age < grenadeFuse {
+		g.updateBullets(tickDT)
+	}
+	if b.Bounces <= 22 || !b.Dead || math.Abs(b.Age-grenadeFuse) > 1e-6 || blastCount(g) != 1 {
+		t.Fatalf("expected one blast at the fuse after more than 22 bounces, got age %.3f, bounces %d, blasts %d", b.Age, b.Bounces, blastCount(g))
+	}
+}
+
 func Test48GrenadeKeepsSpeedUntilLateFuse(t *testing.T) {
 	g := &Game{World: World{Width: 10000, Height: 10000}}
 	b := &Bullet{ID: 1, Owner: 7, Kind: "grenade", X: 5000, Y: 5000, VX: grenadeSpeed, R: 6, Life: grenadeFuse}

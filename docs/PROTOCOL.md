@@ -1,10 +1,10 @@
-# leqra v4.49.3 — current game protocol (protocol 1)
+# leqra v4.49.4 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.3**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.4**.
 
 ```json
-{"type":"server_hello","version":"4.49.3","protocol":1}
-{"type":"client_hello","version":"4.49.3","protocol":1}
+{"type":"server_hello","version":"4.49.4","protocol":1}
+{"type":"client_hello","version":"4.49.4","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -293,7 +293,7 @@ must both be updated: older rules validators do not understand `giant` or `scope
 
 The game page and the backend are served by the same Go process. Connect to `/ws` using WS on HTTP or WSS on HTTPS. The production upgrade requires an HTTP(S) Origin whose host matches the request Host, or an explicitly configured additional exact origin. Missing, opaque (`null`), and unrelated origins are rejected. No subprotocol, compression, or binary message format is negotiated.
 
-All application messages are UTF-8 JSON objects with a `type`. Client messages are limited to 8,192 bytes, including the aggregate size of fragmented messages. The application allows up to 100 messages and 8 non-input/non-ping actions per connection per second. The transport separately bounds frame rates at 180 per second. These are abuse ceilings, not recommended sending rates.
+All application messages are UTF-8 JSON objects with a `type`. Client messages are limited to 8,192 bytes, including the aggregate size of fragmented messages. Each connection has a 100-message budget per second and a separate 100-message budget for input addressed to its attached local Player 2. Each connection may send eight room actions per second. The first successful handshake, input, and ping do not count as room actions. Excess room actions return an `action_rate` error with the rejected `action`. The transport separately caps connections at 220 frames per second.
 
 ## Client → server
 
@@ -954,7 +954,7 @@ the next interval. The pickup lifetime remains 19 seconds.
 `phase: "matchOver"` includes `matchStats` for a normally completed match:
 
 ```json
-{"mode":"ctf","duration":123.45,"rounds":1,"limited":false,"players":[
+{"id":"e69c7841980f4297933ed86485e4ae1c0","mode":"ctf","duration":123.45,"rounds":1,"limited":false,"players":[
   {"id":1,"member":7,"seat":0,"name":"PILOT","team":1,"kind":"human",
    "eliminations":4,"deaths":2,"selfDestructs":1,"teamKills":0,
    "captures":3,"flagReturns":1,"hillSeconds":0,
@@ -962,7 +962,8 @@ the next interval. The pickup lifetime remains 19 seconds.
 ]}
 ```
 
-`id` is a report-local row identity; `member` is the existing public room-member
+The report's top-level `id` identifies the completed match across reloads and reconnects.
+Each player's `id` is a report-local row identity; `member` is the existing public room-member
 incarnation, **not a token**. `seat` is the last combat seat. `active` means the
 participant still belonged to the combat lineup at completion, not that their
 tank survived. `winner` marks members of the winning side still in that lineup,

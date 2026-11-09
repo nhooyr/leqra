@@ -55,6 +55,7 @@ func (h *Hub) unshareRoom(c *Client, now time.Time) {
 		cl.room = nil
 		cl.player = nil
 		cl.mapGeneration = -1
+		cl.born = now // Give the writer time to deliver the terminal notice.
 	}
 	for _, p := range r.members() {
 		if p == nil {

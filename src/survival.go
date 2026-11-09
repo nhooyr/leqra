@@ -335,23 +335,3 @@ func (g *Game) stepSurvival(players [maxTanks]*Player) {
 		g.endSurvival(players, false)
 	}
 }
-
-// Read-only snapshots must not alias live wave counters or flag state.
-func snapshotObjectives(o *ObjectiveState) *ObjectiveState {
-	if o == nil {
-		return nil
-	}
-	v := *o
-	v.Flags = make([]*Flag, len(o.Flags))
-	for i, f := range o.Flags {
-		if f != nil {
-			copyFlag := *f
-			v.Flags[i] = &copyFlag
-		}
-	}
-	if o.Survival != nil {
-		s := *o.Survival
-		v.Survival = &s
-	}
-	return &v
-}

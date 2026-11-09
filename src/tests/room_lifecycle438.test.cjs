@@ -15,11 +15,11 @@ function boot(){
   WebSocket:class{constructor(){this.readyState=1;s.socket=this;}close(){this.readyState=3;this.onclose?.();}},
   netBusy:noop,setNetStatus:noop,clearInput:noop,sendOnlineInput:noop,toast:noop,renderOnlineRoom:noop,setScreen:noop,syncChatStatus:noop,recoverPendingChat:noop,scheduleReconnect:noop,
   clearRestartWavePending:noop,clearRoomModePending:noop,syncRoomModePicker:noop,cancelSwap:noop,cancelKick:noop,cancelCallsignSave:noop,syncCallsignEditors:noop,clearEndMatchPending:noop,
-  resetMatchmaking:noop,closeChat:noop,clearRoomChat:noop,resetWatchDialog:noop,callsignForms:()=>[],callsignStatus:noop,resetOnlineMotion:noop,forgetOnlineSession:noop,createLocalRoom:noop,
+  resetMatchmaking:noop,closeChat:noop,clearRoomChat:noop,resetWatchDialog:noop,callsignForms:()=>[],callsignStatus:noop,resetOnlineMotion:noop,forgetOnlineSession:noop,createLocalRoom:noop,persistLocalRoomRules:noop,restoreUnsharedPreview:()=>true,
   roomData:()=>s.online.roomData,localPlayerID:()=>s.online.id,confirmGameAction:async()=>true,
   localSnapshotFromOnline:()=>({code:s.online.code,attempt:s.sent.length,preview:{walls:[1,2,3]}}),sent:[],sendOnline(message){s.sent.push(message);return !s.sendFails;}};
  vm.createContext(s);
- for(const name of ['captureActionScope','unshareOnlineRoom','connectOnline','showReconnecting','leaveOnline'])vm.runInContext(declaration(name),s);
+ for(const name of ['captureActionScope','unshareOnlineRoom','completeUnshare','connectOnline','showReconnecting','leaveOnline'])vm.runInContext(declaration(name),s);
  s.connectOnline({type:'join',code:'ROOM'});Object.assign(s.online,{connecting:false,connected:true,code:'ROOM',token:'token'});s.phase='onlineLobby';
  return {s,$,room,receive:packet=>s.socket.onmessage({data:JSON.stringify(packet)})};
 }
@@ -47,4 +47,15 @@ test('a rejected or unsent Unshare releases its snapshot and permits retry',asyn
   assert.equal(s.online.unsharePending,false,failure);assert.equal(s.online.unshareSnapshot,null,failure);
   s.sendFails=false;await s.unshareOnlineRoom();assert.equal(s.online.unsharePending,true);assert.equal(s.sent.filter(p=>p.type==='unshare').length,2);
  }
+});
+
+test('unsharing advances the offline viewer allocator past the preserved secondary pilot',()=>{
+ const {s,receive}=boot();
+ const players=[{id:0,member:1,kind:'human'},{id:8,member:2,kind:'local',owner:0,spectating:true}];
+ s.online.unshareSnapshot={code:'ROOM',self:0,players,nextMember:2,rules:{},preview:{}};
+ s.localRoom.nextViewer=8;
+ receive({type:'unshared'});
+ assert.equal(s.mode,'room');
+ assert.deepEqual(s.localRoom.players,players);
+ assert.equal(s.localRoom.nextViewer,9);
 });

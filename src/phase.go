@@ -86,6 +86,26 @@ func (g *Game) clearTankAt(x, y, r float64) bool {
 	return true
 }
 
+func (g *Game) muzzleBlocked(t *Tank, r float64) bool {
+	if t.GhostTime <= 0 || t.Power == "cannon" {
+		return false
+	}
+	x, y := t.X, t.Y
+	margin := wallSize/2 + r
+	if x < margin || x > g.World.Width-margin || y < margin || y > g.World.Height-margin {
+		return true
+	}
+	// The sweep ignores initial overlaps, so start outside the same expanded
+	// rectangles it uses to trace walls, including their corners.
+	for _, wi := range g.wallCandidates(x, y, 0, 0, r) {
+		w := g.World.Walls[wi]
+		if x >= w.X-r && x <= w.X+w.W+r && y >= w.Y-r && y <= w.Y+w.H+r {
+			return true
+		}
+	}
+	return false
+}
+
 // Expiry is not a new life and does not grant invulnerability. If the tank is
 // embedded, choose the nearest clear point in a cell's safe interior. All maps
 // are grid mazes; no distant random teleport or repeated wall-push loop occurs.

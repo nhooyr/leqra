@@ -24,6 +24,7 @@ import (
 
 // Accommodates escaped-Unicode chat and eight-seat preset payloads, still bounded.
 const maxMessage = 8192
+const maxFramesPerSecond = 220 // Two input streams plus control frames.
 const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 type wsConn struct {
@@ -163,7 +164,7 @@ func (c *wsConn) readMessage() ([]byte, error) {
 			c.frames = 0
 		}
 		c.frames++
-		if c.frames > 180 {
+		if c.frames > maxFramesPerSecond {
 			return nil, &wsError{1008, "Too many frames"}
 		}
 		fin := h[0]&0x80 != 0

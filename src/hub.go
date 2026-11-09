@@ -19,6 +19,8 @@ import (
 const reconnectGrace = 20 * time.Second
 const roomIdleLimit = 30 * time.Minute
 const inputTimeout = 350 * time.Millisecond
+const clientMessageLimit = 100
+const clientActionLimit = 8
 
 // Keep kick tombstones beyond the entire reconnect window, even if the removal
 // notification was lost. This is not an IP/account ban; fresh manual joins work.
@@ -82,6 +84,7 @@ type Client struct {
 	mapGeneration         int
 	msgWindow             time.Time
 	msgCount, actionCount int
+	secondaryInputCount   int
 	born                  time.Time
 	kickedRoom            string // Terminal for this socket, protected by Hub.mu.
 }
@@ -199,6 +202,7 @@ type Hub struct {
 	rooms    map[string]*Room
 	clients  map[*Client]bool
 	maxRooms int
+	closed   bool
 }
 
 func newHub(maxRooms int) *Hub {
@@ -292,7 +296,7 @@ func versionError() map[string]any {
 func (h *Hub) addClient(c *Client) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(h.clients) >= h.maxRooms*(maxTanks+maxSpectators)+32 {
+	if h.closed || len(h.clients) >= h.maxRooms*(maxTanks+maxSpectators)+32 {
 		return false
 	}
 	h.clients[c] = true
@@ -756,16 +760,37 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 	if now.Sub(c.msgWindow) >= time.Second {
 		c.msgWindow = now
 		c.msgCount = 0
+		c.secondaryInputCount = 0
 		c.actionCount = 0
 	}
-	c.msgCount++
-	if c.msgCount > 100 {
+	// Give authenticated P2 controls their own budget on the shared socket.
+	// Unowned seat IDs cannot bypass the primary/socket message limit.
+	var secondary *Player
+	count := &c.msgCount
+	if m.Type == "input" && c.room != nil && c.player != nil && c.player.Client == c && m.PlayerID != nil {
+		id := *m.PlayerID
+		if id != c.player.ID && id >= 0 && id < len(c.room.Players) {
+			if p := c.room.Players[id]; p != nil && p.Kind == "local" && p.Owner == c.player.ID {
+				secondary = p
+				count = &c.secondaryInputCount
+			}
+		}
+	}
+	(*count)++
+	if *count > clientMessageLimit {
 		return &wsError{1008, "Input rate exceeded"}
 	}
-	if m.Type != "input" && m.Type != "ping" {
+	firstHandshake := m.Type == "client_hello" && !c.versionOK && m.Version == version && m.Protocol == protocolVersion
+	if m.Type != "input" && m.Type != "ping" && !firstHandshake {
 		c.actionCount++
-		if c.actionCount > 8 {
-			return &wsError{1008, "Action rate exceeded"}
+		if c.actionCount > clientActionLimit {
+			e := roomError("action_rate", "Too many room actions. Try again shortly.")
+			e["action"] = m.Type
+			if m.Type == "chat" {
+				e["channel"] = m.chatChannel()
+			}
+			c.enqueue(e)
+			return nil
 		}
 	}
 	// Once kicked, an old socket cannot send inputs or rejoin behind the UI.
@@ -872,12 +897,11 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		}
 		p := c.player
 		if m.PlayerID != nil && *m.PlayerID != p.ID {
-			id := *m.PlayerID
-			if id < 0 || id >= len(c.room.Players) || c.room.Players[id] == nil || c.room.Players[id].Kind != "local" || c.room.Players[id].Owner != p.ID {
+			if secondary == nil {
 				c.enqueue(roomError("not_owned", "You cannot control another pilot."))
 				return nil
 			}
-			p = c.room.Players[id]
+			p = secondary
 		}
 		// A seat can change between sending and receiving an input, including
 		// swaps between this controller's own P1 and P2. Do not let the old
@@ -991,8 +1015,8 @@ type stateWire struct {
 	World          *World          `json:"world,omitempty"`
 }
 
-// The 60 Hz broadcast path reuses room-owned slice capacity. JSON encoding is
-// synchronous, so the buffers are never mutated while queued packet bytes use them.
+// Direct and periodic snapshots reuse room-owned slice capacity. JSON encoding
+// is synchronous under Hub.mu, so queued packets keep only immutable bytes.
 func (h *Hub) stateWire(r *Room) stateWire {
 	g, z := r.Game, &r.state
 	z.tanks = z.tanks[:0]
@@ -1057,68 +1081,14 @@ func (h *Hub) stateWire(r *Room) stateWire {
 	return wire
 }
 
-func (h *Hub) stateMessage(r *Room) map[string]any {
-	g := r.Game
-	ts := make([]Tank, 0, maxTanks)
-	bs := make([]Bullet, 0, len(g.Bullets))
-	ms := make([][12]float64, 0, len(g.Bullets)) // Compact Machine gun records; same authoritative samples.
-	ps := make([]Pickup, 0, len(g.Pickups))
-	for _, t := range g.Tanks {
-		if t == nil {
-			continue
-		}
-		v := *t
-		v.X = rounded(v.X)
-		v.Y = rounded(v.Y)
-		v.Angle = math.Round(v.Angle*10000) / 10000
-		v.VX = rounded(v.VX)
-		v.VY = rounded(v.VY)
-		v.Cooldown = rounded(v.Cooldown)
-		v.Invulnerable = rounded(v.Invulnerable)
-		v.Shield = rounded(v.Shield)
-		v.PowerTime = rounded(v.PowerTime)
-		// SpeedTime stays full precision: input replay must match the exact expiry tick.
-		v.Recoil = rounded(v.Recoil)
-		v.Track = rounded(v.Track)
-		ts = append(ts, v)
-	}
-	for _, b := range g.Bullets {
-		v := *b
-		v.X = rounded(v.X)
-		v.Y = rounded(v.Y)
-		v.VX = rounded(v.VX)
-		v.VY = rounded(v.VY)
-		v.Age = rounded(v.Age)
-		v.Life = rounded(v.Life)
-		if v.Kind == "rapid" {
-			color := tankColorIndex[v.Color]
-			ms = append(ms, [12]float64{float64(v.ID), float64(v.Owner), float64(v.ShotSerial), float64(v.SpawnSerial), v.X, v.Y, v.VX, v.VY, v.Age, v.Life, float64(v.Bounces), float64(color)})
-		} else {
-			bs = append(bs, v)
-		}
-	}
-	for _, p := range g.Pickups {
-		v := *p
-		v.Age = rounded(v.Age)
-		v.Life = rounded(v.Life)
-		ps = append(ps, v)
-	}
-	s := map[string]any{"type": "state", "tick": g.Tick, "generation": g.Generation, "phase": g.Phase, "phaseTime": rounded(g.PhaseTime), "round": g.Round, "roundClock": rounded(g.Clock), "winner": g.Winner, "scores": g.Scores, "tanks": ts, "bullets": bs, "pickups": ps, "events": g.events, "rules": g.settings(), "objectives": snapshotObjectives(g.Objectives)}
-	if len(ms) > 0 {
-		s["machineBullets"] = ms
-	}
-	if g.Phase == "matchOver" && g.matchReportWire != nil {
-		s["matchStats"] = g.matchReportWire
-	}
-	return s
-}
 func (h *Hub) sendState(c *Client, r *Room) {
-	s := h.stateMessage(r)
-	if c.mapGeneration != r.Game.Generation && r.Game.Generation > 0 {
-		s["world"] = r.Game.World
+	s := h.stateWire(r)
+	reliable := c.mapGeneration != s.Generation
+	if reliable && s.Generation > 0 {
+		s.World = &r.Game.World
 	}
-	if c.enqueueState(s, c.mapGeneration != r.Game.Generation) {
-		c.mapGeneration = r.Game.Generation
+	if c.enqueueState(s, reliable) {
+		c.mapGeneration = s.Generation
 	}
 }
 
@@ -1329,6 +1299,7 @@ func (h *Hub) notifyShutdown() int {
 func (h *Hub) close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.closed = true
 	for c := range h.clients {
 		c.stop()
 	}

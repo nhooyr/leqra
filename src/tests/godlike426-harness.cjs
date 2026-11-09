@@ -18,14 +18,14 @@ function boot({cols=12,rows=8,wallList=[],lexical=false}={}){
   currentRules:()=>({friendlyFire:s.friendlyFire||false}),clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),rnd:(a,b)=>(a+b)/2,
   angleDelta:(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a)),distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),
   cellAt:(x,y)=>s.clamp(Math.floor(y/84),0,s.rows-1)*s.cols+s.clamp(Math.floor(x/84),0,s.cols-1),
-  center:i=>({x:(i%s.cols+.5)*84,y:(Math.floor(i/s.cols)+.5)*84}),isEnemy:(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team),
+  center:i=>({x:(i%s.cols+.5)*84,y:(Math.floor(i/s.cols)+.5)*84}),teamKey:p=>p.team>0?'team'+p.team:'pilot'+p.id,isEnemy:(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team),
   detonateOwned(t){let n=0;for(const b of s.bullets)if(b.owner===t.id&&!b.dead&&b.kind==='grenade'){b.dead=true;n++;}return n>0;},
   fire(t){s.fired=(s.fired||0)+1;return true;}
  };
  s.grid=Array.from({length:cols*rows},(_,i)=>({neighbors:[i-cols,i+cols,...(i%cols?[i-1]:[]),...(i%cols<cols-1?[i+1]:[])].filter(n=>n>=0&&n<cols*rows)}));
  const constants=source.slice(source.indexOf('const DIFFICULTY='),source.indexOf("let phase='menu'"));
  const names=['shieldCount','speedCount','canDamage','nearbyWalls','rayWalls','circleHit','tankHit','rayBounds','projectileWall','movementWall','resolveWalls','moveTank',
-  'pathScratch','tracePath','bfs','targetMotion','leadPoint','projectileSpec','muzzleProjectile','grenadeDragIntegral','grenadeDragFactor','grenadeForecast',
+  'pathScratch','tracePath','bfs','targetMotion','leadPoint','projectileSpec','muzzleBlocked','muzzleProjectile','grenadeDragIntegral','grenadeDragFactor','grenadeForecast',
   'ownedGrenades','steerMissile','guideGrenade','spendMissileRange','missileWallNudge','laserTrace','evaluateBotShot','findBankAim','chooseBotAim',
   'planBotPath','routeControl','botHoldingHill','ctfCoverGoal','objectiveGoal','objectiveRoute','chooseDodge','chooseGrenadeAvoid','forecastThreats','movementRisk','forecastGrenadeBodies','godlikeDistances','godlikeObjectiveGoal',
   'godlikeWeaponValue','godlikePickupValue','godlikePointDanger','godlikeDestination','godlikeRouteDanger','godlikeBlastSafe','godlikeDetonate','godlikeGrenadeShot',

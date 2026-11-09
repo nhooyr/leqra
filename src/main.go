@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -21,12 +22,35 @@ import (
 )
 
 const (
-	version         = "4.49.3"
+	version         = "4.49.4"
 	protocolVersion = 1
+	maxRoomLimit    = 32768
 )
 
 //go:embed web/index.html web/assets
 var embeddedWeb embed.FS
+
+func checkAppIcons(web fs.FS) error {
+	dir := "web/assets/v" + version
+	entries, err := fs.ReadDir(web, dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".png") {
+			continue
+		}
+		path := dir + "/" + entry.Name()
+		data, err := fs.ReadFile(web, path)
+		if err != nil {
+			return err
+		}
+		if bytes.HasPrefix(data, []byte("version https://git-lfs.github.com/spec/v1")) {
+			return fmt.Errorf("embedded app icon %s is a Git LFS pointer. Run git lfs pull and rebuild", path)
+		}
+	}
+	return nil
+}
 
 type ipBudget struct {
 	active, attempts int
@@ -189,17 +213,54 @@ func env(key, fallback string) string {
 	}
 	return fallback
 }
+
+func (a *App) serve(srv *http.Server, listener net.Listener, stopped <-chan os.Signal) error {
+	done := make(chan struct{})
+	go a.hub.run(done)
+	serving := make(chan error, 1)
+	go func() { serving <- srv.Serve(listener) }()
+	select {
+	case err := <-serving:
+		close(done)
+		a.hub.close()
+		return err
+	case <-stopped:
+	}
+	// Give browsers time to render the terminal notice before closing their
+	// hijacked connections, which net/http cannot drain for us.
+	if a.hub.notifyShutdown() > 0 {
+		time.Sleep(200 * time.Millisecond)
+	}
+	close(done)
+	a.hub.close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// Serve returns as soon as Shutdown closes the listener. Keep main alive
+	// until active HTTP handlers finish or the shutdown deadline expires.
+	if err := srv.Shutdown(ctx); err != nil {
+		return err
+	}
+	return <-serving
+}
+
 func main() {
 	port := env("PORT", "8080")
 	address := flag.String("addr", env("ADDR", ":"+port), "HTTP listen address")
-	roomLimitDefault := 64
-	if n, err := strconv.Atoi(env("MAX_ROOMS", "64")); err == nil && n > 0 {
+	roomLimitDefault := maxRoomLimit
+	if n, err := strconv.Atoi(os.Getenv("MAX_ROOMS")); err == nil && n > 0 {
 		roomLimitDefault = n
 	}
 	maxRooms := flag.Int("max-rooms", roomLimitDefault, "Maximum in-memory rooms")
+	checkAssets := flag.Bool("check-assets", false, "Check embedded app icons and exit")
 	flag.Parse()
-	if *maxRooms < 1 || *maxRooms > 512 {
-		log.Fatal("max-rooms must be between 1 and 512")
+	if err := checkAppIcons(embeddedWeb); err != nil {
+		log.Fatal(err)
+	}
+	if *checkAssets {
+		return
+	}
+	if *maxRooms < 1 || *maxRooms > maxRoomLimit {
+		log.Fatalf("max-rooms must be between 1 and %d", maxRoomLimit)
 	}
 	var origins []string
 	for _, v := range strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",") {
@@ -211,35 +272,21 @@ func main() {
 		}
 	}
 	app := newApp(*maxRooms, origins)
-	done := make(chan struct{})
-	go app.hub.run(done)
 	srv := &http.Server{Addr: *address, Handler: app.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {
 		log.Fatal(err)
 	}
+	stopped := make(chan os.Signal, 1)
+	signal.Notify(stopped, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(stopped)
 	addrs, _ := net.InterfaceAddrs()
 	openURL, lanURLs := startupURLs(listener.Addr().(*net.TCPAddr), addrs, lanHostname)
 	fmt.Printf("leqra server v%s\n%s\n", version, openURL)
 	for _, lanURL := range lanURLs {
 		fmt.Println(lanURL)
 	}
-	stopped := make(chan os.Signal, 1)
-	signal.Notify(stopped, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-stopped
-		// Reliable control messages are queued ahead of replaceable snapshots. Give
-		// connected browsers a brief chance to render the shutdown notice before
-		// closing their sockets and stopping the simulation.
-		app.hub.notifyShutdown()
-		time.Sleep(200 * time.Millisecond)
-		close(done)
-		app.hub.close()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	}()
-	if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := app.serve(srv, listener, stopped); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 }

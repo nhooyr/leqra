@@ -8,7 +8,19 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
+
+func TestCheckAppIconsRejectsLFSPointer(t *testing.T) {
+	path := "web/assets/v" + version + "/apple-touch-icon.png"
+	web := fstest.MapFS{path: {Data: []byte("version https://git-lfs.github.com/spec/v1\noid sha256:0123456789abcdef\nsize 180\n")}}
+	if err := checkAppIcons(web); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "git lfs pull") {
+		t.Fatalf("checkAppIcons = %v, want the pointer path and recovery command", err)
+	}
+	if err := checkAppIcons(embeddedWeb); err != nil {
+		t.Fatalf("checkAppIcons rejected the embedded icons: %v", err)
+	}
+}
 
 func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 	h := newApp(4, nil).handler()

@@ -2,6 +2,8 @@
 set -eu
 cd "$(dirname "$0")"
 
+go run ../src -check-assets
+
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/leqra-deploy.XXXXXX")
 trap 'rm -rf "$build_dir"' 0
 trap 'exit 1' HUP INT TERM
@@ -20,9 +22,9 @@ sudo mkdir -p /opt/leqra /etc/leqra /var/lib/leqra
 sudo chown leqra:leqra /opt/leqra /var/lib/leqra
 EOF
 
-rsync --rsync-path='sudo rsync' -avzP "$build_dir/leqra" leqra:/opt/leqra/leqra-server
-rsync --rsync-path='sudo rsync' -avzP leqra.service leqra:/etc/systemd/system/leqra.service
-rsync --rsync-path='sudo rsync' -avzP leqra.env leqra:/etc/leqra/leqra.env
+rsync --rsync-path='sudo rsync' -avz --progress "$build_dir/leqra" leqra:/opt/leqra/leqra-server
+rsync --rsync-path='sudo rsync' -avz --progress leqra.service leqra:/etc/systemd/system/leqra.service
+rsync --rsync-path='sudo rsync' -avz --progress leqra.env leqra:/etc/leqra/leqra.env
 ssh leqra sh -s <<'EOF'
 set -eu
 sudo chown leqra:leqra /opt/leqra/leqra-server

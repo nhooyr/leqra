@@ -31,14 +31,14 @@ function boot({teams=false,target=1}={}){
   COLORS:['#fff'],$,document:{createElement:()=>new Element(),querySelectorAll:()=>[]},
   teamKey:p=>p.team>0?'team'+p.team:'pilot'+p.id,teamName:id=>'TEAM '+id,teamColor:()=>'#fff',paintColor:c=>c,
   currentRules:()=>rules,objectiveMode:()=>false,suddenDeath:()=>false,
-  clearInput(){},dropLocalFlags(){},addLog(){},tone(){},updateHUD(){},syncPauseButton(){},updateTraces(){},compactLife(){},save(){s.saves=(s.saves||0)+1;},setScreen(screen){s.screen=screen;},renderOnlineRoom(){},syncResultActions(){},
+  clearInput(){},dropLocalFlags(){},addLog(){},tone(){},updateHUD(){},syncPauseButton(){},updateTraces(){},compactLife(){},save(){s.saves=(s.saves||0)+1;},renderDeviceWins(){},setScreen(screen){s.screen=screen;},renderOnlineRoom(){},syncResultActions(){},
   renderMatchStats(report){s.renderedReport=report;},startRound(){s.starts=(s.starts||0)+1;s.phase='countdown';},
   localPlayerID:()=>s.localRoom.self,controlledTank:()=>s.tanks.find(t=>t.id===s.localRoom.self),
-  roomData:()=>({players:s.localRoom.players.filter(p=>!p.spectating),spectators:s.localRoom.players.filter(p=>p.spectating)}),
+  roomData:()=>({players:s.localRoom.players.filter(p=>!p.spectating),spectators:s.localRoom.players.filter(p=>p.spectating)}),readyRoom(){s.phase='menu';s.screen='room';},
   roomMember:id=>s.localRoom.players.find(p=>p.id===id),secondaryMember:()=>s.localRoom.players.find(p=>p.kind==='local'&&p.owner===s.localRoom.self),
   winnerName:id=>s.tanks.find(t=>t.id===id)?.name||'MISSING',newTank:id=>({...s.localRoom.players.find(p=>p.id===id),alive:true,color:'#fff'})};
  vm.createContext(s);
- const names=['survivalMode','beginLocalMatchStats','bindLocalTankStats','finishLocalMatchStats','finishRound','clearLocalSeat','moveLocalMember','update','finishMatch','queueMatchPresentation','flushMatchPresentation','closeVictory','showVictory','restartLocalMatch','endLocalSurvival','survivalResultText'];
+ const names=['survivalMode','roomStartError','beginLocalMatchStats','bindLocalTankStats','finishLocalMatchStats','finishRound','clearLocalSeat','moveLocalMember','update','finishMatch','queueMatchPresentation','flushMatchPresentation','closeVictory','showVictory','restartLocalMatch','endLocalObjective','stepLocalObjectives','endLocalSurvival','survivalResultText'];
  for(const helper of ['matchResultEntries','resultMemberMatches'])if(source.includes('function '+helper+'('))names.push(helper);
  for(const name of names)vm.runInContext(declaration(name),s);
  s.beginLocalMatchStats();for(const tank of s.tanks)s.bindLocalTankStats(tank);
@@ -96,6 +96,29 @@ test('a nonfinal round remains open and starts the next round after its result d
  s.moveLocalMember(players[0],s.localRoom.nextViewer++,true);complete(s);
  assert.equal(s.phase,'countdown');assert.equal(s.round,2);assert.equal(s.starts,1);
  assert.equal(s.localMatchReport,null);
+});
+test('Elimination returns to the room when the last opposing side spectates',()=>{
+ for(const restart of [false,true]){
+  const {s,players}=boot({target:5});
+  s.finishRound(0);
+  s.moveLocalMember(players[1],s.localRoom.nextViewer++,true);
+  if(restart){s.phase='paused';s.restartLocalMatch();}else complete(s);
+  assert.equal(s.phase,'menu');assert.equal(s.screen,'room');
+  assert.equal(s.round,1);assert.equal(s.starts,undefined);
+ }
+});
+test('CTF and KOTH end when the last opposing side spectates, even during a respawn',()=>{
+ for(const gameMode of ['ctf','koth']){
+  const {s,players}=boot({teams:true});
+  s.currentRules().mode=gameMode;s.localObjectives={mode:gameMode,flags:[]};
+  s.tanks[2].alive=false;
+  s.stepLocalObjectives(1/120);
+  assert.equal(s.phase,'playing','a dead opponent still has a combat seat');
+  s.moveLocalMember(players[2],s.localRoom.nextViewer++,true);
+  s.stepLocalObjectives(1/120);
+  assert.equal(s.phase,'matchOver');assert.equal(s.roundWinner,1);
+  assert.equal(winnerRow(s)?.winner,true);
+ }
 });
 test('starting a new local match clears the frozen result from the previous match',()=>{
  const {s}=boot();s.finishRound(0);complete(s);assert.ok(s.localMatchReport);assert.ok(s.localMatchResult);

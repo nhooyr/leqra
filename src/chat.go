@@ -113,11 +113,15 @@ func (h *Hub) sendChatHistory(c *Client, r *Room) {
 	c.enqueue(map[string]any{"type": "chat_history", "room": r.Code, "channel": "opponent", "messages": opponents})
 }
 
-func (h *Hub) chat(c *Client, m clientMessage, now time.Time) {
-	channel := m.Channel
-	if channel == "" {
-		channel = "room"
+func (m clientMessage) chatChannel() string {
+	if m.Channel == "" {
+		return "room"
 	}
+	return m.Channel
+}
+
+func (h *Hub) chat(c *Client, m clientMessage, now time.Time) {
+	channel := m.chatChannel()
 	fail := func(code, text string) {
 		v := roomError(code, text)
 		v["action"] = "chat"

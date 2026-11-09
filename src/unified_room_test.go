@@ -207,6 +207,7 @@ func TestUnifiedRejectCrossControllerAndBotInput(t *testing.T) {
 func TestUnifiedBothControllersRunThroughHubTick(t *testing.T) {
 	h, cs, r := makeRoom(t, 1)
 	p2 := addSeat(t, h, cs[0], "local", "", 2)
+	r.Game.Rules.PickupRate = "off" // Keep random speed pickups out of the movement measurement.
 	r.Game.startMatch(r.Players)
 	openArena(r.Game)
 	r.Game.Phase = "playing"
@@ -223,7 +224,7 @@ func TestUnifiedBothControllersRunThroughHubTick(t *testing.T) {
 		h.tick(time.Now())
 	}
 	if math.Abs(r.Game.Tanks[0].X-125.6) > .01 || math.Abs(r.Game.Tanks[p2.ID].X-125.6) > .01 {
-		t.Fatal("secondary controls not simulated")
+		t.Fatalf("both pilots should reach x=125.6, got P1=%.3f and P2=%.3f", r.Game.Tanks[0].X, r.Game.Tanks[p2.ID].X)
 	}
 }
 func TestUnifiedLocalReconnectAndOwnershipSurviveHostHandoff(t *testing.T) {

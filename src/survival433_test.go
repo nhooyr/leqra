@@ -383,20 +383,15 @@ func TestSurvival433RetryRequiresAuthenticatedPrivateHost(t *testing.T) {
 				c.requireVersion, c.versionOK = true, false
 				code = "version_mismatch"
 			case "rate":
-				c.msgWindow, c.actionCount = time.Now(), 8
+				c.msgWindow, c.actionCount = time.Now(), clientActionLimit
+				code = "action_rate"
 			}
 			before, generation := mustJSON433(t, h.stateMessage(r)), g.Generation
 			drain(c)
 			b := mustJSON433(t, map[string]any{"type": "restart_wave", "generation": generation, "wave": 1})
 			err := h.handle(c, b, time.Now())
-			if scenario == "rate" {
-				if err == nil || err.Error() != "Action rate exceeded" {
-					t.Fatal("restart did not honor action rate limit", err)
-				}
-			} else {
-				if err != nil || !hasError(c, code) {
-					t.Fatal("restart bypassed authenticated host, queue, or version guard", code, err)
-				}
+			if err != nil || !hasError(c, code) {
+				t.Fatal("restart bypassed the host, queue, version, or rate guard", code, err)
 			}
 			if g.Generation != generation || !bytes.Equal(before, mustJSON433(t, h.stateMessage(r))) {
 				t.Fatal("unauthorized restart changed match state")

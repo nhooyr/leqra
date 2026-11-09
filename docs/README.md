@@ -13,7 +13,7 @@ Open **Room settings → Controls** to remap keys, adjust audio, or replay the q
 
 Press **Play** to start with bots. Open **Players and bots** to edit the roster or add Player 2. **Room settings** holds the mode, format, map, rules, and presets. **Portrait maze** makes rectangular maps taller than they are wide. The square Compact map keeps its dimensions.
 
-**Share room online** opens the room to friends. Share the invite link or room code. Guests select **I'm Ready**, then the host starts the match. **Find online battle** opens public matchmaking. To watch a private room, use its spectator link.
+**Share room online** opens the room to friends. Share the invite link or room code. Guests select **I'm Ready**, then the host starts the match. When another combatant joins, guests who already marked themselves ready keep their status. **Find online battle** opens public matchmaking. To watch a private room, use its spectator link.
 
 ## Game modes
 
@@ -28,8 +28,10 @@ Bank shots around corners and collect glowing pickups. Your own shots and grenad
 
 ## Local development
 
-Run `./dev.sh` or `go run ./src` from the repository root. The server uses port 8080 by default. Open the root `index.html` directly for offline play.
+Run `./dev.sh` or `go run ./src` from the repository root. The server uses port 8080 by default. Open [`src/web/index.html`](../src/web/index.html) directly in a browser for offline play.
 
-The authoritative simulation and transport live in `src/`. The browser game lives in `src/web/`. Versioned browser paths symlink to their shared sources for local play. The Go binary embeds those sources directly and serves them at the same versioned URLs.
+The server allows up to 32,768 rooms by default. Use `MAX_ROOMS` or `-max-rooms` to set a lower limit.
+
+The authoritative simulation and transport live in `src/`. The browser entry point is `src/web/index.html`, with assets under `src/web/assets/v<version>/`. The Go binary embeds the entry point and assets and serves the same versioned asset URLs.
 
 [Test commands](TESTING.md) · [WebSocket protocol](PROTOCOL.md) · [Release notes](releases/) · [Changelog](../CHANGELOG.md)

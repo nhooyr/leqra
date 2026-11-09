@@ -21,6 +21,8 @@ with open(os.environ["DEPLOY_TEST_LOG"], "a") as log:
                           "goos": os.environ.get("GOOS"),
                           "goarch": os.environ.get("GOARCH")}) + "\n")
 if name == "go":
+    if args == ["run", "../src", "-check-assets"]:
+        sys.exit(6 if os.environ.get("DEPLOY_TEST_ASSETS_FAIL") == "1" else 0)
     if os.environ.get("DEPLOY_TEST_GO_FAIL") == "1":
         sys.exit(7)
     assert args[0] == "build", args
@@ -99,16 +101,19 @@ class DeployTests(unittest.TestCase):
         result, events = self.run_deploy(NEW_USER="1" if new_user else "0")
         self.assertEqual(result.returncode, 0, result.stderr)
         names = [event["command"] for event in events]
-        self.assertEqual(names[0], "go")
+        self.assertEqual(names[:2], ["go", "go"])
+        self.assertEqual(events[0]["args"], ["run", "../src", "-check-assets"])
         self.assertEqual(names.count("ssh"), 2)
         self.assertEqual(names.count("useradd"), int(new_user))
         self.assertEqual(events[0]["cwd"], str(self.deploy))
-        self.assertEqual((events[0]["goos"], events[0]["goarch"]),
+        self.assertEqual((events[1]["goos"], events[1]["goarch"]),
                          ("linux", "amd64"))
         mkdir = next(event for event in events if event["command"] == "mkdir")
         for directory in ("/opt/leqra", "/etc/leqra", "/var/lib/leqra"):
             self.assertIn(directory, mkdir["args"])
         transfers = [event["args"] for event in events if event["command"] == "rsync"]
+        for args in transfers:
+            self.assertEqual(args[:-2], ["--rsync-path=sudo rsync", "-avz", "--progress"])
         self.assertEqual([args[-1] for args in transfers], [
             "leqra:/opt/leqra/leqra-server",
             "leqra:/etc/systemd/system/leqra.service",
@@ -128,15 +133,20 @@ class DeployTests(unittest.TestCase):
     def test_new_user(self):
         self.check_success(new_user=True)
 
+    def test_asset_check_failure_prevents_build_and_remote_commands(self):
+        result, events = self.run_deploy(ASSETS_FAIL="1")
+        self.assertEqual(result.returncode, 6)
+        self.assertEqual([event["args"] for event in events], [["run", "../src", "-check-assets"]])
+
     def test_build_failure_never_contacts_remote(self):
         result, events = self.run_deploy(GO_FAIL="1")
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual([event["command"] for event in events], ["go"])
+        self.assertEqual([event["command"] for event in events], ["go", "go"])
 
     def test_ssh_failure_prevents_transfer(self):
         result, events = self.run_deploy(SSH_FAIL="1")
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual([event["command"] for event in events], ["go", "ssh"])
+        self.assertEqual([event["command"] for event in events], ["go", "go", "ssh"])
 
     def test_transfer_failure_prevents_service_changes(self):
         result, events = self.run_deploy(RSYNC_FAIL="1")

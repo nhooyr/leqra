@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"math"
 )
@@ -33,6 +35,7 @@ type PlayerMatchStats struct {
 }
 
 type MatchReport struct {
+	ID       string             `json:"id,omitempty"`
 	Survival *SurvivalState     `json:"survival,omitempty"`
 	Mode     string             `json:"mode"`
 	Duration float64            `json:"duration"` // Simulated live time; excludes countdowns and round breaks.
@@ -136,6 +139,10 @@ func (g *Game) finishMatchStats(winner int) {
 		return
 	}
 	report := &MatchReport{Mode: g.settings().Mode, Duration: math.Round(g.stats.duration*100) / 100, Rounds: g.Round, Players: make([]PlayerMatchStats, 0, len(g.stats.rows)), Limited: g.stats.limited}
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err == nil {
+		report.ID = hex.EncodeToString(id[:])
+	}
 	if s := g.survivalState(); s != nil {
 		copySurvival := *s
 		report.Survival = &copySurvival

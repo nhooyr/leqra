@@ -223,7 +223,7 @@ func TestMalformedAndFloodedInputRejected(t *testing.T) {
 	if err := h.handle(c, []byte(`{"type":"input","seq":2,"stickX":1e999}`), time.Now()); err == nil {
 		t.Fatal("invalid JSON float accepted")
 	}
-	c.msgCount = 100
+	c.msgCount = clientMessageLimit
 	c.msgWindow = time.Now()
 	if err := h.handle(c, []byte(`{"type":"input","seq":3}`), time.Now()); err == nil {
 		t.Fatal("message flood allowed")
