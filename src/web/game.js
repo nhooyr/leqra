@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.48.1';
+const GAME_VERSION='4.48.2';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -3003,7 +3003,8 @@ function heldAction(index,action){const fallback=aliasesActive();if(index===1&&f
 function isWeaponKey(code){return keyForAction(0,'fire',code)||hasLocalP2()&&keyForAction(1,'fire',code);}
 function isControlKey(code){return ['forward','reverse','left','right','fire'].some(a=>keyForAction(0,a,code)||hasLocalP2()&&keyForAction(1,a,code));}
 function fireAliasLabels(index){const codes=[bindings[index].fireAlt];if(index===0&&aliasesActive())codes.push(bindings[1].fire,bindings[1].fireAlt);return codes.map(keyLabel);}
-function controlSummary(index,prefix=true){const moves=b=>[b.forward,b.left,b.reverse,b.right].map(keyLabel).join(' '),b=bindings[index];return(prefix?'P'+(index+1)+': ':'')+moves(b)+(index===0&&aliasesActive()?' (or '+moves(bindings[1])+')':'')+' + '+[keyLabel(b.fire),...fireAliasLabels(index)].join(' / ');}
+function movementKeySummary(index){const moves=b=>[b.forward,b.left,b.reverse,b.right].map(keyLabel).join(' ');return moves(bindings[index])+(index===0&&aliasesActive()?' (or '+moves(bindings[1])+')':'');}
+function controlSummary(index,prefix=true){return(prefix?'P'+(index+1)+': ':'')+movementKeySummary(index)+' + '+[keyLabel(bindings[index].fire),...fireAliasLabels(index)].join(' / ');}
 function manualKeyRow(codes){return '<div class="keys">'+codes.map(code=>'<kbd>'+escapeHTML(keyLabel(code))+'</kbd>').join('')+'</div>';}
 function fieldManualHTML(){
  let html='';
@@ -3481,7 +3482,8 @@ function initIntroTour(){
  function open(){
   $('introTourDesktop').hidden=!window.matchMedia('(any-pointer: fine)').matches;
   $('introTourTouch').hidden=!touchUI;
-  $('introTourKeys').textContent='Player 1 keys: '+controlSummary(0,false)+'. Use Controls to rebind keys.';
+  const fireKeys=[keyLabel(bindings[0].fire),...fireAliasLabels(0)].join(' / ');
+  $('introTourKeys').textContent='Use '+movementKeySummary(0)+' to move and steer. Press '+fireKeys+' to fire from the keyboard. Rebind keys in Controls.';
   openFeature('introTour');showStep(0);
  }
  $('resetBindingsBtn').insertAdjacentHTML('afterend','<button class="secondary" type="button" id="openIntroTour">Replay quick tour</button>');

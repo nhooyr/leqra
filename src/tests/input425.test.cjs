@@ -10,7 +10,7 @@ function declaration(name){
 function boot(p2=false,stored=null){
  const storage=new Map(stored?[['leqra.bindings.v1',JSON.stringify(stored)]]:[]);
  const sandbox={keys:new Set(),hasLocalP2:()=>p2,escapeHTML:s=>String(s),modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
- for(const name of ['defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','controlSummary','manualKeyRow','fieldManualHTML'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlSummary','manualKeyRow','fieldManualHTML'])vm.runInContext(declaration(name),sandbox);
  sandbox.bindings=sandbox.loadBindings();sandbox.storage=storage;return sandbox;
 }
 function assign(s,player,action,code){s.bindings[player][action]=code;assert.ok(s.validateBindings(s.bindings),'the controls editor accepts this remap');}
