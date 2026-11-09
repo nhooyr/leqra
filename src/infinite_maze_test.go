@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"testing"
@@ -115,5 +116,49 @@ func TestInfiniteMazeWallQueriesAndCache(t *testing.T) {
 	}
 	if regenerated := m.wallsNear(x, edge, x, edge); !slices.Equal(walls, regenerated) {
 		t.Fatalf("wall changed after chunk eviction: %+v became %+v", walls, regenerated)
+	}
+}
+
+func TestInfiniteMazeQueriesKeepPreviousCellTangencies(t *testing.T) {
+	m := newInfiniteMaze(32)
+	const halfWall = wallSize / 2
+	const chunkSize = infiniteChunkCells * cellSize
+	for _, edge := range []float64{-chunkSize, 0, chunkSize} {
+		end := edge + halfWall
+		for _, axis := range []string{"h", "v"} {
+			check := func(low float64) bool {
+				x, y := low, edge
+				if axis == "v" {
+					x, y = y, x
+				}
+				return slices.ContainsFunc(m.wallsNear(x, y, x, y), func(w Wall) bool {
+					return w.Axis == axis && (axis == "h" && w.X+w.W == end || axis == "v" && w.Y+w.H == end)
+				})
+			}
+			if !check(end) || check(math.Nextafter(end, math.Inf(1))) {
+				t.Fatalf("%s wall at chunk boundary %g lost its exact endpoint", axis, edge)
+			}
+		}
+	}
+}
+
+func TestInfiniteProjectileSweepKeepsTangencies(t *testing.T) {
+	const r = tankRadius + infiniteBulletRadius
+	a := newSeededInfiniteArena(32)
+	target := &infinitePilot{infiniteTank: infiniteTank{ID: 2, HP: 1}}
+	a.pilots = []*infinitePilot{target}
+	for _, tc := range []struct {
+		name       string
+		x, y, time float64
+	}{
+		{"start", -r, 0, 0},
+		{"side", 50, r, .5},
+		{"end", 100 + r, 0, 1},
+	} {
+		target.X, target.Y = tc.x, tc.y
+		pilot, at := a.hitTarget(1, 0, 0, 0, 100, 0, infiniteBulletRadius, 1+1e-8, false)
+		if pilot != target || at != tc.time {
+			t.Errorf("%s tangent: got %v at %g, want target at %g", tc.name, pilot != nil, at, tc.time)
+		}
 	}
 }

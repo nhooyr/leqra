@@ -28,3 +28,20 @@ test('Infinity walls allow tangency and regenerate after distant exploration',()
  for(let i=1;i<=256;i++)maze.wallsNear(i*chunkSize,0,i*chunkSize,0);
  assert.deepEqual(maze.wallsNear(x,edge,x,edge),walls);
 });
+
+test('Infinity wall visits include rectangles tangent to the query and can stop early',()=>{
+ const maze=create(32),edge=-8*cellSize;
+ const wall=maze.wallsNear(edge+cellSize/2,edge,edge+cellSize/2,edge)[0];
+ assert.equal(wall.axis,'h');
+ const x=wall.x+wall.w, y=wall.y+wall.h/2;
+ let visits=0;
+ assert.equal(maze.visitWalls(x,y,x,y,(wx,wy,w,h)=>{
+  visits++;
+  return wx===wall.x&&wy===wall.y&&w===wall.w&&h===wall.h;
+ }),true);
+ assert.ok(visits>0);
+ assert.equal(maze.wallsNear(x+.001,y,x+.001,y).some(w=>w.x===wall.x&&w.y===wall.y&&w.axis===wall.axis),false);
+ visits=0;
+ assert.equal(maze.visitWalls(edge,edge,edge+cellSize*4,edge+cellSize*4,()=>++visits===1),true);
+ assert.equal(visits,1);
+});
