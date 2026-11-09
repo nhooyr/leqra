@@ -101,6 +101,38 @@ func TestRoomInfinityAuthorizationFollowsRoomMembershipAndGeneration(t *testing.
 	}
 }
 
+func TestRoomInfinityLaunchClearsPriorFiniteMatchResult(t *testing.T) {
+	h, clients, r := makeRoom(t, 2)
+	host, guest := clients[0], clients[1]
+	r.Game.startMatch(r.Players)
+	r.Game.Scores[0] = 5
+	r.Game.Winner = 0
+	r.Game.finishMatchStats(0)
+	r.Game.Phase = "matchOver"
+	r.Game.Rules.Infinity = true
+	action(t, h, guest, map[string]any{"type": "ready", "ready": true})
+	action(t, h, host, map[string]any{"type": "start"})
+	if !r.infinityActive || h.roomWire(r).Phase != "lobby" {
+		t.Fatal("starting Infinity did not replace the finished finite match")
+	}
+	late := fakeClient()
+	h.addClient(late)
+	action(t, h, late, map[string]any{"type": "join", "code": r.Code, "name": "MOBILE PILOT"})
+	gotLobby := false
+	for _, packet := range drain(late) {
+		if packet["type"] != "state" {
+			continue
+		}
+		if packet["phase"] != "lobby" || packet["matchStats"] != nil || packet["winner"] != float64(-1) {
+			t.Fatalf("late Infinity pilot got a stale finite result: %v", packet)
+		}
+		gotLobby = true
+	}
+	if !gotLobby {
+		t.Fatal("late Infinity pilot received no lobby state")
+	}
+}
+
 func TestRoomInfinityDisconnectGraceAndKick(t *testing.T) {
 	h, clients, r := makeRoom(t, 2)
 	host, guest := clients[0], clients[1]

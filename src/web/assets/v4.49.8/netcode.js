@@ -68,7 +68,9 @@
    while(this.accumulator+1e-9>=STEP&&count++<6){
     if(beforeStep)beforeStep(this.input,this.stepID+1);
     this.stepID++;
+    const phasing=this.state.ghostTime>0;
     move(this.state,this.input,STEP,this.moveTank);
+    if(phasing&&!(this.state.ghostTime>0))this.offset={x:0,y:0,angle:0};
     this.frames.push({step:this.stepID,input:{...this.input}});
     if(this.frames.length>240)this.frames.shift();
     this.accumulator=Math.max(0,this.accumulator-STEP);
@@ -92,14 +94,19 @@
    if(error>.025||Math.abs(delta(next.angle,before.angle))>.001)this.metrics.corrections++;
    // Only the *rendered* offset is softened. Physics immediately uses the
    // authoritative state plus unacknowledged inputs, never a blended position.
-   const ghosting=(before.ghostTime||0)>0||(next.ghostTime||0)>0;
-   if(!historyOK||!authority.alive||error>64||ghosting){
-    // Ghost movement passes through interior walls. Blending an old correction
-    // vector while phasing can visibly tug the tank sideways across a wall even
-    // though replayed physics is correct, so render the replayed trajectory directly.
-    this.offset={x:0,y:0,angle:0};if(!ghosting)this.metrics.hardResets++;
+   const phasing=next.ghostTime>0,phaseChanged=(before.ghostTime>0)!==phasing;
+   if(!historyOK||!authority.alive||error>64||phaseChanged){
+    // Corrections cannot cross a change in wall collision policy.
+    this.offset={x:0,y:0,angle:0};this.metrics.hardResets++;
    }else{
     this.offset.x+=before.x-next.x;this.offset.y+=before.y-next.y;
+    if(phasing){
+     // During Ghost or Starman, smooth timing errors along the tank's path
+     // without carrying a sideways correction through a wall.
+     const vx=before.vx||0,vy=before.vy||0,speed=Math.hypot(vx,vy);
+     const correction=speed>1e-6?clamp((this.offset.x*vx+this.offset.y*vy)/speed,-12,12)/speed:0;
+     this.offset.x=vx*correction;this.offset.y=vy*correction;
+    }
     this.offset.angle=delta(0,this.offset.angle+delta(next.angle,before.angle));
     const length=Math.hypot(this.offset.x,this.offset.y);
     if(length>48){this.offset.x*=48/length;this.offset.y*=48/length;}
@@ -113,7 +120,7 @@
    // Sub-tick render prediction keeps 90/120/144 Hz displays smooth without
    // changing the 60 Hz authoritative-compatible history.
    if(active&&t.alive&&this.accumulator>0)move(t,this.input,this.accumulator,this.moveTank);
-   if(active&&t.alive){
+   if(active&&t.alive&&(t.ghostTime>0)===(this.state.ghostTime>0)){
     this.moveTank(t,this.offset.x,this.offset.y);t.angle+=this.offset.angle;
    }
    const f=Math.exp(-clamp(dt,0,.1)/.11);

@@ -230,10 +230,49 @@ test('Independent predictors replay Ghost and Super Speed with delayed correctio
  }
  }
 });
-test('Ghost reconciliation never carries a sideways visual correction through walls',()=>{
+test('phasing keeps along-track prediction corrections smooth and discards sideways drift',()=>{
  const move=wallMover({width:1008,height:840,cols:12,rows:10,walls:[{x:248,y:0,w:8,h:840}]});
- const p=new Net.Predictor(move);p.reset(tank({x:270,y:210,ghostTime:5}));
- p.offset={x:18,y:-11,angle:.2};
- p.reconcile(tank({x:260,y:210,ghostTime:4.9,ack:0,ackSteps:0}));
- assert.equal(p.offset.x,0);assert.equal(p.offset.y,0);assert.equal(p.offset.angle,0);
+ for(const starmanTime of [0,5]){
+  const p=new Net.Predictor(move);p.reset(tank({x:260,y:210,vx:128,ghostTime:5,starmanTime}));
+  p.offset={x:0,y:11,angle:0};
+  p.reconcile(tank({x:258,y:209,ghostTime:4.9,starmanTime}));
+  assert.equal(p.state.x,258);
+  assert.equal(p.visual(0).x,260);
+  assert.equal(p.visual(0).y,209);
+  assert.equal(p.offset.y,0);
+  assert.equal(p.metrics.hardResets,0);
+  p.visual(.1);
+  assert.ok(p.visual(0).x<260);
+  p.reconcile(tank({x:278,y:210,ghostTime:0}));
+  assert.equal(p.visual(0).x,278);
+  assert.equal(p.offset.x,0);
+ }
+});
+test('subtick phasing expiry drops offsets before a solid-wall frame',()=>{
+ const move=wallMover({width:1008,height:840,cols:12,rows:10,walls:[{x:248,y:0,w:8,h:840}]});
+ const p=new Net.Predictor(move);p.reset(tank({x:252,y:210,ghostTime:.005}));
+ p.offset={x:0,y:8,angle:.2};
+ p.advance(1/120,input({}));
+ const shown=p.visual(0);
+ close(shown.y,210);
+ close(shown.angle,0);
+ assert.ok(shown.x<232);
+ p.advance(1/120,input({}));
+ close(p.offset.y,0);
+ close(p.offset.angle,0);
+});
+test('alternating snapshot corrections do not move an active Starman backward',()=>{
+ const p=new Net.Predictor(free),start=tank({ghostTime:8,starmanTime:8,vx:128}),step=128*Net.STEP;
+ p.reset(start);
+ let last=start.x;
+ for(let frame=1;frame<=120;frame++){
+  p.advance(Net.STEP,input({forward:true}),()=>p.sentInput(frame));
+  if(frame%2===0){
+   const correction=frame%4===0?-step:step;
+   p.reconcile({...start,x:start.x+frame*step+correction,ghostTime:8-frame*Net.STEP,ack:frame,ackSteps:1});
+  }
+  const next=p.visual(Net.STEP).x;
+  assert.ok(next>last,`frame ${frame} moved back from ${last} to ${next}`);
+  last=next;
+ }
 });

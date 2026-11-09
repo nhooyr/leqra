@@ -929,6 +929,9 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		}
 		// Preserve even a quick press+release that both arrive between ticks.
 		// FirePressed is never decoded from JSON; it is derived from button edges.
+		if now.Sub(p.InputAt) > inputTimeout {
+			p.FirePending = false
+		}
 		if in.Fire && !p.Input.Fire {
 			p.FirePending = true
 		}

@@ -11,7 +11,8 @@ function harness(url = 'https://example.test/', openField = false) {
   listeners = {};
   children = [];
   style = {removeProperty() {}, setProperty() {}};
-  classList = {remove() {}, add() {}, toggle() {}};
+  classes = new Set();
+  classList = {remove: name => this.classes.delete(name), add: name => this.classes.add(name), toggle() {}};
   dataset = {};
   clientWidth = 390;
   clientHeight = 740;
@@ -19,10 +20,11 @@ function harness(url = 'https://example.test/', openField = false) {
   closest() { return false; }
   setAttribute() {}
   getContext() { return new Proxy({}, {get: () => () => {}}); }
+  getBoundingClientRect() { return {left:0,top:0,width:96,height:96}; }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
   emit(type, event = {}) {
    for (const listener of this.listeners[type] || []) {
-    listener({target: this, stopPropagation() {}, preventDefault() {}, ...event});
+   listener({type,target: this, stopPropagation() {}, preventDefault() {}, ...event});
    }
   }
   showModal() { this.open = true; }
@@ -58,9 +60,9 @@ function harness(url = 'https://example.test/', openField = false) {
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
   colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
-  choosePickup: () => 'shield',
   tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, badge() {}, bullets() {},
-  primeAudioUnlock() {}, grenadeDragFactor: () => 1,
+  primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
+  toggleSound: () => sounds.push('mute'),
   shot: kind => sounds.push('shot:' + kind),
   ricochet: () => sounds.push('ricochet'), collect: () => sounds.push('pickup'), shield: () => sounds.push('shield'),
   blast: () => sounds.push('blast'), impact: () => sounds.push('impact'),
@@ -80,6 +82,8 @@ function harness(url = 'https://example.test/', openField = false) {
  vm.runInContext(readFileSync(assetPath('netcode.js'), 'utf8'), context);
  window.leqraNet = context.leqraNet;
  const game = readFileSync(assetPath('game.js'), 'utf8');
+ vm.runInContext(game.slice(game.indexOf('function choosePickup('), game.indexOf('// Power-up colors')), context);
+ window.leqraInfinityArt.choosePickup = context.choosePickup;
  const grant = game.slice(game.indexOf('function grantPower('), game.indexOf('function pickupMessage('));
  Object.assign(context, {POWER:powers, MAX_SPEED_STACKS:5, MACHINE_FIRING_ROUNDS:180, shieldCount:t=>t.shieldCharges||0, speedCount:t=>t.speedStacks||0});
  vm.runInContext(grant, context);
@@ -113,6 +117,29 @@ test('Infinity runs offline directly from a file and adds nearby bots to the sta
  assert.equal(byID('infiniteArena').open, false);
 });
 
+test('offline Infinity spawns every pickup and equips a collected grenade', () => {
+ const {infinity, state, advance, window} = harness('file:///leqra/index.html');
+ infinity.start('offline');
+ const world = state(), tank = world.tanks[0], seen = new Set();
+ world.nextBot = Infinity;
+ for (let i = 0; i < 90; i++) {
+  world.pickups.length = 0;
+  world.nextPickup = 0;
+  advance();
+  for (const pickup of world.pickups) {
+   seen.add(pickup.type);
+   if (pickup.type !== 'grenade' || tank.power === 'grenade') continue;
+   const {x, y} = tank;
+   Object.assign(tank, {x: pickup.x, y: pickup.y});
+   advance();
+   assert.equal(tank.power, 'grenade');
+   assert.equal(tank.charges, 3);
+   Object.assign(tank, {x, y});
+  }
+ }
+ assert.deepEqual([...seen].sort(), Object.keys(window.leqraInfinityArt.powers).sort());
+});
+
 test('offline Infinity awards the kill and keeps the death penalty after respawn', () => {
  const {infinity, byID, advance} = harness(undefined, true);
  infinity.start('offline');
@@ -126,6 +153,25 @@ test('offline Infinity awards the kill and keeps the death penalty after respawn
  advance(156);
  assert.match(status.textContent, /Weapons live/);
  assert.equal(byID('infiniteKills').textContent, 'Score -1');
+});
+
+test('simultaneous Infinity laser hits rotate priority between live actors', () => {
+ for (const winner of [0, 1]) {
+  const {infinity, byID, state, advance} = harness(undefined, true);
+  infinity.start('offline');
+  const world = state();
+  world.nextPickup = world.nextBot = Infinity;
+  world.time = (1 - winner) / 60;
+  const pilot = world.tanks[0];
+  Object.assign(pilot, {x: 42, y: 42, angle: 0, power: 'laser', powerTime: 3, charges: 1, invulnerable: 0});
+  const bot = {...pilot, id: 'bot-1', name: 'Bot', bot: true, x: 126, angle: Math.PI};
+  world.tanks.push(bot);
+  byID('infiniteArena').emit('keydown', {code: 'KeyQ'});
+  advance();
+  assert.equal(world.tanks[winner].score, 1);
+  assert.equal(world.tanks[1 - winner].score, -1);
+  infinity.close();
+ }
 });
 
 test('offline Infinity equips maze pickups and sounds a weapon before another frame arrives online', () => {
@@ -151,6 +197,24 @@ test('offline Infinity equips maze pickups and sounds a weapon before another fr
  socket.receive({type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1}],bullets:[],players:1,leaderboard:[],
   effects:[{id:1,kind:'shot:',x:42,y:42,owner:4}]});
  assert.equal(sounds.filter(sound=>sound==='shot:').length, 1, 'authoritative copy must not echo the preview');
+ infinity.close();
+});
+
+test('Infinity ignores round endings and sounds tank destruction and grenade blasts', () => {
+ const {infinity, sockets, state, sounds} = harness();
+ infinity.start('online');
+ const [socket] = sockets;
+ socket.receive({type:'welcome',id:4,seed:0});
+ const update = effects => socket.receive({
+  type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1}],bullets:[],players:1,leaderboard:[],
+  effects:effects.map((kind,index)=>({id:index+1,kind,x:42,y:42,owner:4}))
+ });
+ update(['roundEnd','matchEnd']);
+ assert.deepEqual(sounds,[]);
+ assert.equal(state().visualEffects.length,0);
+ update(['roundEnd','matchEnd','hit','blast']);
+ assert.deepEqual(sounds,['blast','blast']);
+ assert.equal(state().visualEffects.map(effect=>effect.kind).join(),'hit,blast');
  infinity.close();
 });
 
@@ -194,4 +258,49 @@ test('failed public Infinity connection points to offline mode', () => {
  sockets[0].receive({type: 'error', message: 'Arena is full.'});
  assert.match(byID('infiniteStatus').textContent, /Arena is full.*Room settings.*offline/);
  assert.equal(sockets[0].readyState, 3);
+});
+
+test('Infinity steers and fires together without capture and clears both controls on page hide', () => {
+ const {infinity, byID, sockets, window} = harness(undefined, true);
+ infinity.start('online');
+ const [socket] = sockets;
+ socket.receive({type:'welcome',id:4,seed:0});
+ socket.receive({type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1}],bullets:[],players:1,leaderboard:[]});
+ const stick=byID('infiniteStick'),fire=byID('infiniteFire');
+ stick.setPointerCapture=fire.setPointerCapture=()=>{throw new Error('Pointer capture unavailable');};
+ stick.emit('pointerdown',{button:0,pointerId:1,clientX:80,clientY:48});
+ window.emit('pointermove',{pointerId:1,clientX:48,clientY:145});
+ fire.emit('pointerdown',{button:0,pointerId:2});
+ assert.equal(fire.classes.has('held'),true);
+ assert.equal(socket.sent.at(-1).stickY,1);
+ assert.equal(socket.sent.at(-1).fire,true);
+ window.emit('pointercancel',{pointerId:2});
+ assert.equal(socket.sent.at(-1).stickY,1);
+ assert.equal(socket.sent.at(-1).fire,false);
+ window.emit('pagehide');
+ assert.equal(socket.sent.at(-1).stickY,0);
+ assert.equal(socket.sent.at(-1).fire,false);
+});
+
+test('a tap completed while Infinity connects does not fire after joining', () => {
+ const {infinity, byID, sockets, window, advance} = harness();
+ infinity.start('online');
+ byID('infiniteFire').emit('pointerdown',{button:0,pointerId:2});
+ window.emit('pointerup',{pointerId:2});
+ const [socket] = sockets;
+ socket.receive({type:'welcome',id:4,seed:0});
+ socket.receive({type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1}],bullets:[],players:1,leaderboard:[]});
+ advance();
+ assert.equal(socket.sent.at(-1).type,'input');
+ assert.equal(socket.sent.at(-1).fire,false);
+});
+
+test('the shared M sound shortcut works inside the Infinity dialog', () => {
+ const {infinity, byID, sounds} = harness();
+ infinity.start('offline');
+ const arena=byID('infiniteArena');
+ arena.emit('keydown',{code:'KeyM'});
+ arena.emit('keydown',{code:'KeyM',repeat:true});
+ arena.emit('keydown',{code:'KeyM',metaKey:true});
+ assert.deepEqual(sounds,['mute']);
 });

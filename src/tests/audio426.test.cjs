@@ -7,7 +7,7 @@ const flush=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
 
 function boot(options={}){
  const audioSource=options.source||source,audioCode=audioSource.slice(audioSource.indexOf('let audioLevel='),audioSource.indexOf('function setLayout('));
- let clock=0,nextTimer=0,nextBlob=0;const listeners=new Map(),timers=new Map(),blobs=new Map(),contexts=[],native=[],plays=[],playEvents=[],nodes=[];
+ let clock=0,nextTimer=0,nextBlob=0,focused=true;const listeners=new Map(),timers=new Map(),blobs=new Map(),contexts=[],native=[],plays=[],playEvents=[],nodes=[];
  function param(){return{value:1,events:[],setValueAtTime(value,t){this.value=value;this.events.push(['set',value,t]);},linearRampToValueAtTime(value,t){this.value=value;this.events.push(['ramp',value,t]);},exponentialRampToValueAtTime(value,t){this.value=value;this.events.push(['exponential',value,t]);},cancelAndHoldAtTime(t){this.events.push(['hold',t]);},cancelScheduledValues(t){this.events.push(['cancel',t]);}};}
  function node(kind){const n={kind,disconnected:false,connections:[],connect(target){this.connections.push(target);},disconnect(){this.disconnected=true;},start(t){this.started=t;},stop(t){this.stopped=t;}};nodes.push(n);return n;}
  class Context{
@@ -29,12 +29,12 @@ function boot(options={}){
  }
  const controls=new Map();const $=id=>{if(!controls.has(id))controls.set(id,{value:'',textContent:'',classList:{toggle(){}},setAttribute(){}});return controls.get(id);};
  const s={muted:false,audioVolume:50,audio:null,audioMaster:null,audioResume:null,noiseBuffer:null,lastChatNotify:0,SAFARI_BROWSER:options.safari!==false,TAU:Math.PI*2,
-  document:{hidden:false},performance:{now:()=>clock},clamp:(n,a,b)=>Math.max(a,Math.min(b,n)),save(){},$,Blob,
+  document:{hidden:false,hasFocus:()=>focused,addEventListener:(event,fn)=>listeners.set(event,fn)},performance:{now:()=>clock},clamp:(n,a,b)=>Math.max(a,Math.min(b,n)),save(){},$,Blob,
   window:{AudioContext:options.noWebAudio?undefined:Context,addEventListener:(event,fn)=>listeners.set(event,fn)},Audio:NativeAudio,
   URL:{createObjectURL(blob){const url='blob:test-'+nextBlob++;blobs.set(url,blob);return url;},revokeObjectURL(url){blobs.delete(url);}},
   setTimeout(fn,delay){const id=++nextTimer;timers.set(id,{fn,time:clock+delay});return id;},clearTimeout:id=>timers.delete(id)};
  vm.createContext(s);vm.runInContext(audioCode+'\nthis.audioInspection=()=>({audioLevel,audioEpoch,pendingAudioEffects,delayed:nativeAudioTimers.size,bounces:typeof onlineBounceCounts!=="undefined"?onlineBounceCounts.size:0});',s);
- return{s,contexts,native,plays,playEvents,nodes,blobs,listeners,timers,advance(ms){clock+=ms;for(const [id,timer]of [...timers])if(timer.time<=clock){timers.delete(id);timer.fn();}},fire(event,extra={}){listeners.get(event)?.({isTrusted:true,...extra});}};
+ return{s,contexts,native,plays,playEvents,nodes,blobs,listeners,timers,advance(ms){clock+=ms;for(const [id,timer]of [...timers])if(timer.time<=clock){timers.delete(id);timer.fn();}},fire(event,extra={}){listeners.get(event)?.({isTrusted:true,...extra});},focus(value){focused=value;listeners.get(value?'focus':'blur')();}};
 }
 
 test('Controls opening and repeated scrolling never play native unlock tones',async()=>{
@@ -53,6 +53,18 @@ test('unlock ignores synthetic clicks, held-key repeats, muted audio, and hidden
 test('duplicate unlock events coalesce and a later activation can retry an interrupted context',async()=>{
  const b=boot({state:'interrupted',deferResume:true});b.fire('click');b.fire('keydown');assert.equal(b.contexts[0].resumeCount,1);
  b.advance(101);b.fire('click');assert.equal(b.contexts[0].resumeCount,2);b.contexts[0].finishResume();await flush();assert.equal(await b.s.initAudio(),true);
+});
+test('a touch release can unlock audio immediately after a passive resume attempt',async()=>{
+ const b=boot({state:'interrupted',deferResume:true});
+ b.s.initAudio(true);
+ b.s.primeAudioUnlock({type:'pointerdown',pointerType:'touch',isTrusted:true});
+ assert.equal(b.contexts[0].resumeCount,1);
+ b.advance(20);
+ b.s.primeAudioUnlock({type:'pointerup',pointerType:'touch',isTrusted:true});
+ assert.equal(b.contexts[0].resumeCount,2,'a genuine gesture retries the passive attempt inside the coalescing window');
+ b.fire('click');
+ assert.equal(b.contexts[0].resumeCount,2,'the compatibility click coalesces with the successful gesture');
+ b.contexts[0].finishResume();await flush();assert.equal(await b.s.initAudio(),true);
 });
 test('running audio does not reschedule gain for every click; volume changes ramp',async()=>{
  const b=boot();await b.s.initAudio();const gain=b.s.audioMaster.gain;const initial=gain.events.length;
@@ -73,6 +85,30 @@ test('muting stops native playback and cancels delayed tones across subsequent u
  const b=boot({noWebAudio:true});b.s.nativeTone(500,700,.1);b.s.nativeTone(700,900,.1,.035,'sine',.1);assert.equal(b.s.audioInspection().delayed,1);
  b.s.muted=true;b.s.syncSound();assert.equal(b.native[0].paused,true);assert.equal(b.native[0].muted,true);assert.equal(b.s.audioInspection().delayed,0);
  b.s.muted=false;b.s.syncSound();b.advance(150);await flush();assert.equal(b.plays.length,1);
+});
+test('a visible background window stops effects and restores sound on focus',async()=>{
+ const b=boot();await b.s.initAudio();b.s.boom();
+ const effects=b.nodes.length;
+ b.focus(false);
+ assert.equal(b.s.document.hidden,false);
+ assert.equal(b.s.audioMaster.gain.value,0);
+ b.s.boom();b.s.pickupSound();b.s.chatNotificationSound();
+ assert.equal(b.nodes.length,effects);
+ b.focus(true);
+ assert.equal(b.s.audioMaster.gain.value,2);
+ b.s.boom();assert.ok(b.nodes.length>effects);
+ b.s.document.hidden=true;b.fire('visibilitychange');
+ assert.equal(b.s.audioMaster.gain.value,0);
+});
+test('losing window focus stops the native fallback and discards delayed cues',async()=>{
+ const b=boot({noWebAudio:true});b.s.pickupSound();
+ assert.equal(b.plays.length,1);
+ assert.equal(b.s.audioInspection().delayed,2);
+ b.focus(false);
+ assert.ok(b.native[0].paused&&b.native[0].muted);
+ assert.equal(b.s.audioInspection().delayed,0);
+ b.s.boom();b.focus(true);b.advance(200);await flush();
+ assert.equal(b.plays.length,1);
 });
 test('a delayed tone uses Web Audio when the context recovers before playback',async()=>{
  const b=boot({state:'suspended'});b.s.nativeTone(500,700,.1,.035,'sine',.1);await b.s.initAudio();b.advance(100);await flush();

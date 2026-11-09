@@ -1,17 +1,17 @@
-# leqra v4.49.7 — current game protocol (protocol 1)
+# leqra v4.49.8 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.7**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.8**.
 
 ```json
-{"type":"server_hello","version":"4.49.7","protocol":1}
-{"type":"client_hello","version":"4.49.7","protocol":1}
+{"type":"server_hello","version":"4.49.8","protocol":1}
+{"type":"client_hello","version":"4.49.8","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
 
 ## Snapshot compression
 
-Fixed-maze clients that offer WebSocket per-message DEFLATE can receive compressed periodic snapshots. Each compressed frame contains the complete existing JSON message and uses an independent dictionary. Replaceable snapshots can still be dropped without breaking later frames. Reliable world updates and control messages use ordinary JSON text frames. Clients without the extension continue to receive all snapshots as ordinary text frames. [RFC 7692](https://www.rfc-editor.org/rfc/rfc7692.html)
+Fixed-maze and Infinity clients that offer WebSocket per-message DEFLATE can receive compressed periodic snapshots. Each compressed frame contains the complete existing JSON message and uses an independent dictionary. Replaceable snapshots can still be dropped without breaking later frames. Reliable world updates and control messages use ordinary JSON text frames. Clients without the extension continue to receive all snapshots as ordinary text frames. [RFC 7692](https://www.rfc-editor.org/rfc/rfc7692.html)
 
 The server negotiates no context takeover in either direction. Compressed client messages follow the same 8 KiB size limit before and after inflation, and must decode to UTF-8 text.
 

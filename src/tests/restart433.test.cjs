@@ -40,6 +40,20 @@ test('online restart uses the game confirmation and sends one host-scoped wave c
  await s.requestRestartSurvivalWave();s.quickReplay();assert.equal(s.sent.length,1);assert.equal(b.timers.size,1);
 });
 function docFocus(b){return b.s.document.activeElement.id;}
+test('starting private Infinity drops old fixed-maze results and sounds',()=>{
+ const {s,room,snapshot}=boot(),heard=[];
+ room.infinityActive=true;s.online.eventsInitialized=true;s.online.lastEvent=0;
+ s.onlineEffect=event=>heard.push(event.type);
+ const lateResult=statePacket({generation:1,tick:11,phase:'matchOver',status:'lost'});
+ lateResult.events=[{id:1,type:'roundEnd'}];
+ s.receiveOnlineState(lateResult);
+ assert.equal(s.online.snapshots.at(-1),snapshot);
+ assert.equal(s.pendingMatchPresentation,null);
+ s.receiveOnlineState({...lateResult,tick:12,phase:'lobby',objectives:null});
+ assert.equal(s.phase,'onlineLobby');
+ assert.deepEqual(heard,[]);
+});
+
 test('cancel and authoritative state changes invalidate online restart confirmation',async()=>{
  for(const change of ['cancel','wave','break','host','connection','generation','phase']){
   const b=boot(),{s,$}=b,action=s.requestRestartSurvivalWave();

@@ -7,8 +7,8 @@ function declaration(name){const start=source.indexOf('function '+name+'(');asse
 function node(){const classes=new Set();return{hidden:false,textContent:'',open:false,disabled:false,classList:{toggle:(k,on)=>on?classes.add(k):classes.delete(k),contains:k=>classes.has(k)},setAttribute(){},replaceChildren(){},querySelectorAll:()=>[]};}
 function boot(width,height,coarse=false){
  const nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);};
- const s={$,innerWidth:width,innerHeight:height,window:{visualViewport:{height},matchMedia:()=>({matches:coarse})},navigator:{maxTouchPoints:coarse?1:0},IOS_WEBKIT:false,document:{body:node()},renderPowerLegend(){},clearMatchSelection(){},controlSummary:()=>'',modeInstructions:()=>'',hasLocalP2:()=>false,
-  wrap:{getBoundingClientRect:()=>({width:width-20,height:height-180})},renderPixelRatio:()=>1,cssW:0,cssH:0,dpr:1,scale:0,offsetX:0,offsetY:0,W:588,H:588,touchUI:false,touchLandscape:false,watching:false,isSpectating:()=>s.watching};
+ const s={$,innerWidth:width,innerHeight:height,window:{visualViewport:{height},matchMedia:()=>({matches:coarse})},navigator:{maxTouchPoints:coarse?1:0},IOS_WEBKIT:false,document:{body:node()},renderPowerLegend(){},clearMatchSelection(){},controlSummary:()=>'',modeInstructions:()=>'',hasLocalP2:()=>false,focusLost(){},
+  wrap:{getBoundingClientRect:()=>({width:width-20,height:height-180})},stick:{},renderPixelRatio:()=>1,cssW:0,cssH:0,dpr:1,scale:0,offsetX:0,offsetY:0,W:588,H:588,touchUI:false,touchLandscape:false,watching:false,isSpectating:()=>s.watching};
  vm.createContext(s);vm.runInContext(declaration('resize')+'\n'+declaration('setLayout'),s);return s;
 }
 
@@ -31,6 +31,18 @@ test('a phone keyboard cannot change the layout orientation or maze transform',(
   const s=boot(width,height,true);s.W=2016;s.H=1176;s.setLayout();const before=[s.touchLandscape,s.scale,s.offsetX,s.offsetY];
   for(const visualHeight of [height,330,220,height]){s.window.visualViewport.height=visualHeight;s.setLayout();assert.deepEqual([s.touchLandscape,s.scale,s.offsetX,s.offsetY],before);}
  }
+});
+
+test('rotation releases both arenas’ controls and invalidates the old joystick center',()=>{
+ const s=boot(390,844,true),cleared=[];
+ s.focusLost=()=>cleared.push('fixed');
+ s.window.leqraInfinity={resetControls:()=>cleared.push('Infinity')};
+ s.setLayout();assert.deepEqual(cleared,[]);
+ s.stick.cx=48;s.stick.cy=750;
+ s.innerWidth=844;s.innerHeight=390;s.setLayout();
+ assert.deepEqual(cleared,['fixed','Infinity']);
+ assert.deepEqual(s.stick,{cx:0,cy:0});
+ s.setLayout();assert.equal(cleared.length,2);
 });
 
 test('role CSS retains touch controls and cockpit slots, with the banner outside normal flow',()=>{

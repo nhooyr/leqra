@@ -174,7 +174,12 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, now time.Time) {
 	defer a.mu.Unlock()
 	input.StickX = clamp(input.StickX, -1, 1)
 	input.StickY = clamp(input.StickY, -1, 1)
-	if p.HP > 0 && input.Fire && (!p.input.Fire || now.Sub(p.inputAt) > inputTimeout) {
+	if now.Sub(p.inputAt) > inputTimeout {
+		p.firePending = false
+	}
+	// A timeout suppresses stale controls, but a held heartbeat remains held.
+	// Wait for a release and a new press before throwing or detonating.
+	if p.HP > 0 && input.Fire && !p.input.Fire {
 		p.firePending = true
 	}
 	// An idle desktop pointer keeps sending its last aim direction.
@@ -257,9 +262,20 @@ func (a *infiniteArena) step(now time.Time) {
 		}
 		a.advanceEquipment(p)
 	}
+	// Rotate live actors so a simultaneous hit does not always favor the
+	// first pilot to join, matching the fixed-maze simulation.
+	var actors [infiniteCapacity + infiniteBotLimit]*infinitePilot
+	count := 0
 	for _, p := range a.pilots {
+		if p.HP > 0 {
+			actors[count] = p
+			count++
+		}
+	}
+	for i := 0; i < count; i++ {
+		p := actors[(a.tick+uint64(i))%uint64(count)]
 		if p.HP == 0 {
-			continue
+			continue // An earlier attack can eliminate this actor.
 		}
 		input := p.input
 		if p.Bot {
@@ -450,33 +466,64 @@ func (a *infiniteArena) broadcast() {
 	for i, p := range a.pilots {
 		tanks[i] = p.wireTank()
 	}
+	// Pilots with the same visible entities can share the encoded snapshot.
+	// The mask represents exact membership, including at the edge of sight.
+	type encodedView struct{ plain, deflated snapshotFrame }
+	views := make(map[string]encodedView, a.players)
+	pickupOffset := len(a.pilots)
+	effectOffset := pickupOffset + len(a.pickups)
+	bulletOffset := effectOffset + len(a.effects)
+	mask := make([]byte, (bulletOffset+len(a.bullets)+7)/8)
+	mark := func(index int) { mask[index/8] |= 1 << (index % 8) }
 	for _, viewer := range a.pilots {
 		if viewer.Bot {
 			continue
 		}
+		clear(mask)
 		packet.Tanks, packet.Bullets, packet.Pickups, packet.Effects = packet.Tanks[:0], packet.Bullets[:0], packet.Pickups[:0], packet.Effects[:0]
 		for i, p := range a.pilots {
 			if math.Abs(p.X-viewer.X) <= infiniteSight && math.Abs(p.Y-viewer.Y) <= infiniteSight {
+				mark(i)
 				packet.Tanks = append(packet.Tanks, tanks[i])
 			}
 		}
-		for _, pickup := range a.pickups {
+		for i, pickup := range a.pickups {
 			if pickup.Life > 0 && math.Abs(pickup.X-viewer.X) <= infiniteSight && math.Abs(pickup.Y-viewer.Y) <= infiniteSight {
 				pickup.Life, pickup.Age = infinitePrecision(pickup.Life), infinitePrecision(pickup.Age)
+				mark(pickupOffset + i)
 				packet.Pickups = append(packet.Pickups, pickup)
 			}
 		}
-		for _, effect := range a.effects {
+		for i, effect := range a.effects {
 			if math.Abs(effect.X-viewer.X) <= infiniteSight && math.Abs(effect.Y-viewer.Y) <= infiniteSight {
+				mark(effectOffset + i)
 				packet.Effects = append(packet.Effects, effect)
 			}
 		}
-		for _, b := range a.bullets {
+		for i, b := range a.bullets {
 			if math.Abs(b.X-viewer.X) <= infiniteSight && math.Abs(b.Y-viewer.Y) <= infiniteSight {
 				b.X, b.Y, b.VX, b.VY, b.Life = infinitePrecision(b.X), infinitePrecision(b.Y), infinitePrecision(b.VX), infinitePrecision(b.VY), infinitePrecision(b.Life)
+				mark(bulletOffset + i)
 				packet.Bullets = append(packet.Bullets, b)
 			}
 		}
-		viewer.client.enqueueState(packet, false)
+		key := string(mask)
+		view := views[key]
+		if view.plain.data == nil {
+			data, ok := encodePacket(packet)
+			if !ok {
+				continue
+			}
+			view.plain.data = data
+		}
+		frame := view.plain
+		if viewer.client.supportsSnapshotDeflate() {
+			if view.deflated.data == nil {
+				view.deflated = compressSnapshot(view.plain.data)
+			}
+			frame = view.deflated
+		}
+		views[key] = view
+		viewer.client.enqueueStateFrame(frame, false)
 	}
 }

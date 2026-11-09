@@ -105,6 +105,22 @@ func resetReady(r *Room) {
 		}
 	}
 }
+
+func (g *Game) resetLobby() {
+	g.Phase = "lobby"
+	g.PhaseTime = 0
+	g.Winner = -1
+	g.Bullets = nil
+	g.Pickups = nil
+	g.Tanks = [maxTanks]*Tank{}
+	g.Objectives = nil
+	g.survivalCheckpoint = nil
+	g.Scores = [maxTanks]int{}
+	g.events = nil
+	g.stats = nil
+	g.matchReport, g.matchReportWire = nil, nil
+}
+
 func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 	r, ok := h.editableHost(c, m.Type)
 	if !ok {
@@ -113,15 +129,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 	fail := func(code, msg string) { e := roomError(code, msg); e["action"] = m.Type; c.enqueue(e) }
 	if m.Type == "lobby" {
 		r.infinityActive = false
-		r.Game.Phase = "lobby"
-		r.Game.PhaseTime = 0
-		r.Game.Winner = -1
-		r.Game.Bullets = []*Bullet{}
-		r.Game.Pickups = []*Pickup{}
-		r.Game.Tanks = [maxTanks]*Tank{}
-		r.Game.Objectives = nil
-		r.Game.survivalCheckpoint = nil
-		r.Game.Scores = [maxTanks]int{}
+		r.Game.resetLobby()
 		resetReady(r)
 		r.LastAction = now
 		h.broadcastRoom(r)

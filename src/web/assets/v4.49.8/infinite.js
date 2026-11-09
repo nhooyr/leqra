@@ -453,7 +453,10 @@ function offlineStep(world, input, dt) {
   if (tank.powerTime === 0) Object.assign(tank, {power: '', charges: 0, machineRounds: 0});
   tank.recoil = Math.max(0, tank.recoil - 9 * dt);
  }
- for (const tank of world.tanks) {
+ const actors = world.tanks.filter(tank => tank.hp);
+ const tick = Math.round(world.time / STEP);
+ for (let i = 0; i < actors.length; i++) {
+  const tank = actors[(tick + i) % actors.length];
   if (!tank.hp) continue;
   const controls = tank.bot ? botInput(world, tank, pilot) : input;
   if (tank.bot && tank.fireBlocked) controls.fire = false;
@@ -516,6 +519,7 @@ function updateHint(keys) {
 
 function interpolate(previous, current, alpha) {
  if (!previous || previous.hp === 0 || current.hp === 0 ||
+     previous.spawnSerial !== current.spawnSerial || (previous.ghostTime > 0) !== (current.ghostTime > 0) ||
      Math.hypot(previous.x - current.x, previous.y - current.y) > CELL) return current;
  return {
   ...current,
@@ -643,6 +647,7 @@ function presentEffect(world, effect, now) {
  else if (kind === 'shield') art.shield();
  else if (kind === 'hit' || kind === 'blast') art.blast();
  else if (kind === 'impact') art.impact();
+ else return;
  if (world.visualEffects.length >= 32) world.visualEffects.shift();
  let outline;
  if (kind === 'blast') {
@@ -839,6 +844,7 @@ function connectionFailed(message) {
  clearTimeout(connectTimer);
  session.failed = true;
  session.joined = false;
+ resetControls();
  setStatus(message + (session.room ? ' Leave to return to your room.' :
   ' Choose Infinity in Room settings to play offline.'));
  if (retry) retry.hidden = false;
@@ -967,6 +973,7 @@ function resetControls() {
 }
 
 function stop() {
+ if (!session) return;
  resetControls();
  cancelAnimationFrame(frame);
  clearTimeout(connectTimer);
@@ -974,6 +981,7 @@ function stop() {
  socket = null;
  session = null;
  ws?.close();
+ art.touchPolicy();
 }
 
 function start(mode, options = {}) {
@@ -995,6 +1003,7 @@ function start(mode, options = {}) {
  arena.dataset.mode = mode;
  updateHint(session.keys);
  arena.showModal();
+ art.touchPolicy();
  canvas.focus({preventScroll: true});
  if (online) {
   connect();
@@ -1019,6 +1028,7 @@ function updateMouse(event) {
 }
 
 function pressFire(event) {
+ if (!session || session.online && !session.joined) return;
  art.primeAudioUnlock(event);
  fireTap = true;
  const now = performance.now(), world = session;
@@ -1046,7 +1056,7 @@ function updateStick(event) {
 
 function capturePointer(element, event) {
  event.preventDefault();
- element.setPointerCapture(event.pointerId);
+ try { element.setPointerCapture?.(event.pointerId); } catch (_) {}
 }
 
 function endPointer(event) {
@@ -1063,14 +1073,21 @@ function endPointer(event) {
  } else {
   return;
  }
+ if (event.type === 'pointerup') art.primeAudioUnlock(event);
  sendInput(performance.now(), true);
 }
 
 arena.addEventListener('keydown', event => {
  if (!session) return;
  event.stopPropagation();
+ if (event.ctrlKey || event.metaKey || event.altKey) return;
+ if (event.code === 'KeyM') {
+  event.preventDefault();
+  if (!event.repeat) art.toggleSound();
+  return;
+ }
  const action = session.keys[event.code];
- if (!action || event.ctrlKey || event.metaKey || event.altKey ||
+ if (!action ||
      (event.code === 'Enter' || event.code === 'Space') && event.target.closest('button, a, input, summary')) return;
  event.preventDefault();
  if (pressed.has(event.code)) return;
@@ -1109,9 +1126,11 @@ stick.addEventListener('pointerdown', event => {
  updateStick(event);
  sendInput(performance.now(), true);
 });
-stick.addEventListener('pointermove', event => {
- if (event.pointerId === stickPointer) updateStick(event);
-});
+window.addEventListener('pointermove', event => {
+ if (event.pointerId !== stickPointer) return;
+ event.preventDefault();
+ updateStick(event);
+}, true);
 fire.addEventListener('pointerdown', event => {
  if (event.button !== 0 || firePointer !== null) return;
  capturePointer(fire, event);
@@ -1142,9 +1161,10 @@ arena.addEventListener('close', () => {
  if (!arena.open) stop();
 });
 window.addEventListener('blur', resetControls);
+window.addEventListener('pagehide', resetControls);
 document.addEventListener('visibilitychange', () => {
  if (document.hidden) resetControls();
 });
 
-window.leqraInfinity = Object.freeze({start, close});
+window.leqraInfinity = Object.freeze({start, close, resetControls});
 })();
