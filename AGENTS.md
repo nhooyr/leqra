@@ -23,6 +23,8 @@ Format Go with `gofmt`; use tabs, exported `CamelCase`, and unexported `camelCas
 
 Get the user's approval before editing the root `README.md`.
 
+Leave letter spacing at its default in CSS.
+
 ## Testing Guidelines
 
 Add deterministic regressions for bugs. Name Go tests `TestBehavior` in `*_test.go`; place Node tests in `src/tests/*.test.cjs`. Keep shared gameplay behavior consistent between Go and JavaScript, using parity fixtures where applicable. Benchmark performance claims. Run focused tests first, then relevant full suites. No numeric coverage threshold is configured. Historical browser results are not current verification; record skipped browser/device checks.
