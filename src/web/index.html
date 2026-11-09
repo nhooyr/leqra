@@ -8,18 +8,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="leqra">
-<meta name="leqra-version" content="v4.49.10">
+<meta name="leqra-version" content="v4.49.11">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.10/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.10/theme.css">
-<link rel="stylesheet" href="assets/v4.49.10/style.css">
-<link rel="manifest" href="assets/v4.49.10/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.10/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.10/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.10/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.10/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.11/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.11/theme.css">
+<link rel="stylesheet" href="assets/v4.49.11/style.css">
+<link rel="manifest" href="assets/v4.49.11/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.11/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.11/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.11/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.11/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -222,23 +222,25 @@
   <div class="infinite-loadout"><span class="pilot-slot">P1</span><span class="weapon" id="infiniteWeapon">STANDARD</span></div>
   <div class="infinite-readout"><p id="infiniteStatus" role="status"></p><p id="infiniteControlsHint" class="bar-hint"></p></div>
  </footer>
- <dialog id="infinitePauseMenu" class="feature-dialog infinite-pause-menu" aria-labelledby="infinitePauseTitle" aria-describedby="infinitePauseHelp">
-  <header class="feature-header"><div><div class="eyebrow">Infinity</div><h2 id="infinitePauseTitle">Pause menu</h2></div></header>
-  <div class="feature-body" id="infinitePauseHelp">
-   <p class="infinite-pause-offline">The battle is paused.</p>
-   <p class="infinite-pause-online">The battle continues. If your tank is destroyed, respawning waits until you resume.</p>
+ <dialog id="infinitePauseMenu" class="overlay infinite-pause-menu" aria-labelledby="infinitePauseTitle" aria-describedby="infinitePauseHelp">
+  <div class="screen-card">
+   <div class="online-menu-intro">
+    <div class="eyebrow"><span class="infinite-pause-offline">TAKE A BREATHER</span><span class="infinite-pause-online">ONLINE MATCH</span></div>
+    <h2 id="infinitePauseTitle" class="compact-title"><span class="infinite-pause-offline">HOLD YOUR<br><em>FIRE.</em></span><span class="infinite-pause-online">STAY<br><em>CONNECTED.</em></span></h2>
+    <p id="infinitePauseHelp"><span class="infinite-pause-offline">The battle is paused. Your tank is safe.</span><span class="infinite-pause-online">The match keeps running. Your tank is still vulnerable. If it’s destroyed, respawning waits until you return.</span></p>
+   </div>
+   <div class="online-menu-actions">
+    <button class="primary back-action" id="infiniteResumeBtn" type="button" autofocus><span class="infinite-pause-offline">BACK TO THE BATTLE</span><span class="infinite-pause-online">BACK TO THE ARENA</span><span aria-hidden="true">←</span></button>
+    <button class="secondary" id="infiniteControlsBtn" type="button">Controls</button>
+    <button class="secondary" id="infiniteExit" type="button">Exit Infinity</button>
+   </div>
   </div>
-  <footer class="feature-footer">
-   <button class="primary" id="infiniteResumeBtn" type="button" autofocus>Resume</button>
-   <button class="secondary" id="infiniteControlsBtn" type="button">Controls</button>
-   <button class="secondary" id="infiniteExit" type="button">Exit Infinity</button>
-  </footer>
  </dialog>
 </dialog>
-<script src="assets/v4.49.10/netcode.js" defer></script>
-<script src="assets/v4.49.10/game.js" defer></script>
-<script src="assets/v4.49.10/infinite-maze.js" defer></script>
-<script src="assets/v4.49.10/infinite.js" defer></script>
-<script src="assets/v4.49.10/pwa.js" defer></script>
+<script src="assets/v4.49.11/netcode.js" defer></script>
+<script src="assets/v4.49.11/game.js" defer></script>
+<script src="assets/v4.49.11/infinite-maze.js" defer></script>
+<script src="assets/v4.49.11/infinite.js" defer></script>
+<script src="assets/v4.49.11/pwa.js" defer></script>
 </body>
 </html>

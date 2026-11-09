@@ -262,27 +262,32 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 	if kind == "scatter" {
 		offsets = []float64{-.21, 0, .21}
 	}
+	ordinary, boosted := 0, 0
 	if starman {
 		spec.cooldown = 0
 	} else {
-		ammo := 0
 		for _, b := range a.bullets {
 			if !b.dead && b.Owner == p.ID {
-				ammo++
+				if b.boosted {
+					boosted++
+				} else {
+					ordinary++
+				}
 			}
 		}
-		if capacity(k)-ammo < len(offsets) {
+		if capacity(k)-ordinary < len(offsets) {
 			return
 		}
 	}
 	k.ShotSerial++
 	k.Cooldown, k.Recoil = spec.cooldown, 1
+	before := len(a.bullets)
 	for _, offset := range offsets {
 		angle := p.Angle + offset
 		cs, sn := math.Cos(angle), math.Sin(angle)
 		a.nextBullet++
 		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
-			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, target: -1}
+			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, target: -1, boosted: starman}
 		muzzle := 28.0
 		if kind == "cannon" {
 			muzzle = tankRadius + spec.radius + 1
@@ -298,11 +303,15 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 	if audible {
 		a.effect("shot:"+kind, p.X, p.Y, p.ID, nil)
 	}
-	if starman {
+	spawned := len(a.bullets) - before
+	if starman || ordinary+boosted+spawned > machineCapacity {
 		remaining := machineCapacity
+		if !starman {
+			remaining -= ordinary + spawned
+		}
 		for i := len(a.bullets) - 1; i >= 0; i-- {
 			b := &a.bullets[i]
-			if b.Owner != p.ID || b.dead {
+			if b.Owner != p.ID || b.dead || !starman && !b.boosted {
 				continue
 			}
 			b.dead = remaining == 0

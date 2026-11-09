@@ -754,7 +754,8 @@ select:disabled{cursor:not-allowed}
 .preset-actions>button{min-width:0}
 
 /* Match controls have a clear boundary and compact, readable moderation rows. */
-body #onlineMenuScreen .online-menu-actions{margin-top:18px;padding-top:16px;border-top:1px solid var(--border-strong);min-width:0}
+body #onlineMenuScreen .online-menu-actions,
+.infinite-arena[data-mode=online] .infinite-pause-menu .online-menu-actions{margin-top:18px;padding-top:16px;border-top:1px solid var(--border-strong);min-width:0}
 body #onlineMenuScreen .online-menu-actions>.callsign-editor:first-child{margin-top:0}
 body #onlineMenuScreen .callsign-label{font-size:10px;line-height:1.4;margin-bottom:7px}
 body #onlineMenuScreen .host-controls{margin:16px 0 0}
@@ -770,7 +771,8 @@ body #onlineMenuScreen .host-controls{margin:16px 0 0}
 .moderation-row .seat-controls{flex:0 0 auto;flex-direction:row;align-items:center;gap:5px}
 .host-controls .seat-controls .kick-button,.host-controls .seat-controls button[data-spectate-player]{min-height:36px;font-size:10px;padding:7px 9px;line-height:1.3}
 body.touch-ui .host-controls .seat-controls .kick-button,body.touch-ui .host-controls .seat-controls button[data-spectate-player]{min-height:40px}
-body.touch-landscape #onlineMenuScreen .online-menu-actions{margin-top:0;padding-top:0;border-top:0}
+body.touch-landscape #onlineMenuScreen .online-menu-actions,
+body.touch-landscape .infinite-arena[data-mode=online] .infinite-pause-menu .online-menu-actions{margin-top:0;padding-top:0;border-top:0}
 body.touch-landscape #onlineMenuScreen .host-controls{margin-top:12px}
 body.touch-landscape #onlineMenuScreen .moderation-row{padding:7px 8px}
 
@@ -848,13 +850,15 @@ body .infinite-arena .infinite-header{padding:max(7px,env(safe-area-inset-top)) 
 .infinite-header .bar-right{gap:9px}
 body .infinite-header .icon-btn{width:44px;height:44px}
 #infiniteKills{white-space:nowrap;color:var(--accent-ink);font:700 12px var(--mono);font-variant-numeric:tabular-nums}
-.infinite-pause-menu{width:min(380px,calc(100vw - 24px))}
-.infinite-pause-menu :is(.feature-header,.feature-footer){position:static}
-.infinite-pause-menu .feature-body p{margin:0;color:var(--text-soft);font-size:13px;line-height:1.6}
+.infinite-pause-menu:not([open]){display:none}
+body .infinite-pause-menu[open]{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;color:var(--text);padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+.infinite-pause-menu::backdrop{background:transparent}
 .infinite-arena[data-mode=online] .infinite-pause-offline,.infinite-arena[data-mode=offline] .infinite-pause-online{display:none}
-.infinite-pause-menu .feature-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.infinite-pause-menu .primary{grid-column:1/-1}
-.infinite-pause-menu .secondary{margin:0;min-height:44px;padding:9px}
+body.touch-ui .infinite-pause-menu :is(.primary,.secondary){min-height:44px}
+body.touch-landscape .infinite-pause-menu .screen-card{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;max-width:650px}
+body.touch-landscape .infinite-pause-menu .compact-title{font-size:24px;margin:7px 0}
+body.touch-landscape .infinite-pause-menu .primary{margin-top:0}
+body.touch-landscape .infinite-pause-menu .secondary{padding:8px 10px;margin-top:8px}
 .infinite-underbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:45px;background:var(--surface);border-top:1px solid var(--border);padding:6px max(12px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
 .infinite-loadout{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .infinite-readout{text-align:right}
