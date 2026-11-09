@@ -43,6 +43,8 @@ async def main():
   await host.send(type='input',room=code,seq=91,fire=False)
   e=await op(host,'rules',lambda m:m['type']=='error',rules=rules);check(e['code']=='match_active','Weapon rules stay locked during play')
   report={'version':VERSION,'passed':len(checks),'checks':checks,'handler':'Production HTTP/WebSocket handler; no fixture or grants.'}
-  (Path(__file__).parent/('results/phase41-protocol-v'+VERSION+'.json')).write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
+  output = Path(__file__).parent / ('results/phase41-protocol-v'+VERSION+'.json')
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
  finally:await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())

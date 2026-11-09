@@ -37,6 +37,8 @@ async def main():
   check(True,'Original controller can rename its local pilot after host handoff')
   check(rr['host']==2,'Host handoff does not transfer secondary controller ownership')
   report={'version':'3.1.0','checks_passed':len(checks),'checks':checks,'handler':'normal production HTTP/WebSocket over loopback TCP'}
-  (Path(__file__).parent/'results/gameplay-protocol-v3.1.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
+  output = Path(__file__).parent / 'results/gameplay-protocol-v3.1.json'
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
  finally:await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())

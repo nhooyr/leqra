@@ -45,4 +45,4 @@ node tests/chat442.bench.cjs
 node --test --test-reporter=tap tests/chat429.test.cjs tests/chat442.test.cjs
 ```
 
-Raw before/after timings and test output are adjacent to this report.
+The v4.42.0 release commit (`96cac03`) preserves the raw timings and test output in `tests/results/v4.42.0/`.

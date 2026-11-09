@@ -71,7 +71,9 @@ async def main():
         r=await back.wait(lambda m:m['type']=='room')
         check(rw['resumed'] and rw['spectating'] and r['rules']['pickupRate']=='superfast','Reconnect preserves spectator role and frequency')
         report={'version':'3.7.2','passed':len(checks),'checks':checks,'spawnTimes':transitions,'handler':'Unmodified production HTTP/WebSocket handler, local loopback. No grant/map fixture endpoints.'}
-        (Path(__file__).parent/'results/defaults-protocol-v3.7.2.json').write_text(json.dumps(report,indent=2))
+        output = Path(__file__).parent / 'results/defaults-protocol-v3.7.2.json'
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report,indent=2))
         print('TOTAL',len(checks))
     finally:
         await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)

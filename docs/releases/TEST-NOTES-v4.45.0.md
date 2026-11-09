@@ -5,7 +5,7 @@
 - Production build passed with Go 1.23.12.
 - Independent static checks passed: six source/production asset pairs match byte-for-byte, all eleven HTML asset references and five manifest icon paths resolve, only the current versioned asset directory ships, eight source/shipped JavaScript files pass syntax checks, server/client/PWA/cache versions agree, the shell launcher parses in both sh and bash, and the root contains the requested five files.
 
-Raw results are in [src/tests/results/v4.45.0](../../src/tests/results/v4.45.0/).
+The v4.45.0 release commit (`db67bfb`) preserves raw results in `src/tests/results/v4.45.0/`.
 
 ## Roster regressions
 

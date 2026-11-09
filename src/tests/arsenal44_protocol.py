@@ -49,7 +49,9 @@ async def main():
   await host.send(type='input',room=code,seq=552,fire=False)
   check('machineBullets' not in s,'Compact stream omitted when no machine gun is equipped')
   report=dict(version='4.4.0',passed=len(checks),checks=checks,handler='Production Go HTTP/WebSocket, real sockets; no fixture grants.')
-  (Path(__file__).parent/'results/v4.4/production-protocol.json').write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
+  output = Path(__file__).parent / 'results/v4.4/production-protocol.json'
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print('TOTAL',len(checks))
  finally:
   await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())

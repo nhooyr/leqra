@@ -54,4 +54,4 @@ go test -run '^$' -bench '^BenchmarkBroadcastRoomFullGallery$' -count=5 -benchti
 go test -race -count=1 -run 'Test(RoomWire443|BroadcastRoomWireParityAndImmutableSnapshots|Rules32SnapshotAndRoom|UnifiedRoomAndSnapshotExposeOnlyPublicSeatData|TeamNames36AtomicHostAuthorityAndSnapshot)' ./...
 ```
 
-Raw benchmark and race output are adjacent to this report.
+The v4.43.0 release commit (`33a8bb5`) preserves the raw benchmark and race output in `src/tests/results/v4.43.0/`.

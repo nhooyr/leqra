@@ -40,7 +40,9 @@ async def main():
   await h.send(type='leave');r3=await g.wait(lambda m:m['type']=='room' and len(m['players'])==2)
   check(r3['host']==3 and not any(p['kind']=='local' for p in r3['players']),'Owner leave cleans secondary and elects human guest')
   report={'version':'3.1.0','checks_passed':len(checks),'checks':checks,'handler':'normal production HTTP/WebSocket handler; loopback TCP'}
-  (Path(__file__).parent/'results/unified-protocol-v3.1.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
+  output = Path(__file__).parent / 'results/unified-protocol-v3.1.json'
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
  finally:
   await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())
