@@ -302,5 +302,16 @@
       "y": 295.2368859466571,
       "angle": 0.5416010022966609
     }
+  },
+  {
+    "name": "mouse direction turns in place and preserves keyboard throttle",
+    "world": {"width": 600, "height": 600, "walls": []},
+    "initial": {"id": 0, "x": 200, "y": 200, "angle": 0, "r": 17, "alive": true},
+    "segments": [
+      {"steps": 30, "input": {"stickX": 0, "stickY": 1, "aimOnly": true}},
+      {"steps": 15, "input": {"stickX": 0, "stickY": 1, "aimOnly": true, "forward": true}},
+      {"steps": 15, "input": {"stickX": 0, "stickY": 1, "aimOnly": true, "reverse": true}}
+    ],
+    "expected": {"x": 200, "y": 208.96, "angle": 1.5707963267948966}
   }
 ]

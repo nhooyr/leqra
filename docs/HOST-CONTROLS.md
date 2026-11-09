@@ -44,36 +44,6 @@ The v2.1 movement smoothing, v2.2 callsign editing, direct invite joins, matchin
 Join/Create buttons, offline solo bots, and local keyboard duels remain included.
 `game.go` and `web/netcode.js` are byte-for-byte unchanged from v2.2.
 
-## Apply the update
-
-Stop the old server, keep a backup of custom deployment settings, and replace
-**both the Go source files and the entire `web/` directory** with this package.
-Then run:
-
-```sh
-cd leqra-online
-go run .
-```
-
-Refresh every player's browser. The server restart closes existing in-memory
-rooms; create a new room and share the new invite link. The health endpoint and
-`leqra.version` in the browser console should both report **2.3.0**.
-
-For a compiled deployment, rebuild because the browser files are embedded:
-
-```sh
-go build -trimpath -o leqra .
-./leqra
-```
-
-Use `leqra.exe` on Windows. For an existing Docker Compose deployment:
-
-```sh
-docker compose up --build -d
-```
-
-This is an updated source package for your server, not a newly hosted service.
-
 ## Verification
 
 Passed **76 top-level Go tests with the race detector**, **16 JavaScript networking

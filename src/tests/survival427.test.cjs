@@ -160,12 +160,12 @@ test('Survival restart eligibility rejects breaks, empty squads and stale lobby 
 });
 
 test('editing a finished Survival setup invalidates retry while preserving its frozen results',()=>{
- for(const edit of ['map','mode','time','roster']){
+ for(const edit of ['map','portrait','mode','time','roster']){
   const s=boot();s.endLocalSurvival(false);const report=s.localMatchReport;
   Object.assign(s,{validateRoomRules:r=>r,activeTeamCount:()=>1,normalizeRoomTeams(){},persistLocalRoomRules(){},renderOnlineRoom(){},resetTanks(){},makeMaze(){s.grid=[];}});
-  vm.runInContext(declaration('resetPreviewIfLobby')+'\n'+declaration('setLocalRules'),s);
+  vm.runInContext(declaration('resetPreviewIfLobby')+'\n'+declaration('mapSetupChanged')+'\n'+declaration('setLocalRules'),s);
   if(edit==='roster'){s.localRoom.players[0]={...s.localRoom.players[0],member:999};s.resetPreviewIfLobby();}
-  else s.setLocalRules({...s.currentRules(),...(edit==='map'?{mapSize:'huge'}:edit==='mode'?{mode:'ctf'}:{timeLimit:90})});
+  else s.setLocalRules({...s.currentRules(),...(edit==='map'?{mapSize:'huge'}:edit==='portrait'?{portraitMaze:true}:edit==='mode'?{mode:'ctf'}:{timeLimit:90})});
   assert.equal(s.localObjectives,null,edit);assert.equal(s.localSurvivalCheckpoint,null,edit);assert.equal(s.restartLocalSurvivalWave(),false,edit);assert.equal(s.localMatchReport,report,edit);assert.equal(report.survival.status,'lost',edit);
  }
 });

@@ -6,11 +6,11 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 function boot(storage=new Map(),touchUI=false){
  const elements=new Map(),toggles=['rapid','shield','laser'].map(weapon=>({dataset:{weaponToggle:weapon},checked:true}));
  const $=id=>{if(!elements.has(id))elements.set(id,{value:'',checked:false,disabled:false,dataset:{},style:{},classList:{toggle(){}},previousElementSibling:{style:{}},parentElement:{querySelector(){return true;}}});return elements.get(id);};
- const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:{rapid:{},shield:{},laser:{}},DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
+ const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'].map(kind=>[kind,{}])),DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
  localStorage:{getItem:key=>storage.get(key)||null,setItem(key,value){if(s.storageFails)throw Error('Storage unavailable');storage.set(key,value);s.writes++;}},writes:0,
  $,document:{querySelectorAll:selector=>selector.endsWith(':checked')?toggles.filter(c=>c.checked):toggles},Theme:{colors:['a','b','c','d','e','f','g','h']},teamName:(n,r)=>r.teamNames[n-1],featureNotice(id,message){$(id).textContent=message;},updateRuleHelp(){},renderPowerLegend(){},isRoomEditable:()=>s.editable!==false,roomData:()=>({rules:s.localRoom.rules,players:s.localRoom.players.filter(p=>!p.spectating)}),roomModeEditable:()=>s.editable!==false,rejectRoomMode(message){s.rejected=message;},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>[...r.players,...(r.spectators||[])],setLocalRules(r){s.localRoom.rules=s.validateRoomRules(r);s.persistLocalRoomRules(r);},setTimeout(){return 1;},clearTimeout(){},syncFeatureSummary(){},syncRoomModePicker(){},sendOnline(message){s.sent=message;return !s.sendFails;},closeFeature(){s.closed=true;}};
  vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
- for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest'])vm.runInContext(declaration(name),s);
+ for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.loadLocalRoomRules();return {s,$,storage,toggles};
 }
 const pilot=(options={})=>({id:0,kind:'human',name:'PILOT',team:0,...options});
@@ -19,9 +19,9 @@ const bot=(options={})=>({id:1,kind:'bot',name:'RUST',team:0,difficulty:'normal'
 test('each mode remembers its rules through mode changes and a fresh page load, keeping the selected map',()=>{
  const {s,storage}=boot();s.localRoom.players=[pilot(),bot()];
  const choices=[['elimination',9,90,'slow'],['ctf',7,210,'fast'],['koth',61,240,'off'],['survival',18,300,'normal']];
- for(const [mode,scoreTarget,timeLimit,pickupRate]of choices){s.localRoom.rules={...s.rulesForRoomMode(mode),scoreTarget,timeLimit,pickupRate,mapSize:'ultrawide',weapons:['shield']};assert.equal(s.persistLocalRoomRules(),true);}
+ for(const [mode,scoreTarget,timeLimit,pickupRate]of choices){s.localRoom.rules={...s.rulesForRoomMode(mode),scoreTarget,timeLimit,pickupRate,mapSize:'ultrawide',portraitMaze:true,weapons:['shield']};assert.equal(s.persistLocalRoomRules(),true);}
  const next=boot(storage).s;assert.equal(next.localRoom.rules.mode,'survival');assert.equal(next.localRoom.rules.scoreTarget,18);next.restoreSavedLocalRoster();
- for(const [mode,scoreTarget,timeLimit,pickupRate]of choices){const rules=next.rulesForRoomMode(mode);assert.equal(rules.scoreTarget,scoreTarget);assert.equal(rules.timeLimit,timeLimit);assert.equal(rules.pickupRate,pickupRate);assert.equal(rules.mapSize,'ultrawide');assert.deepEqual(Array.from(rules.weapons),['shield']);next.localRoom.rules=rules;}
+ for(const [mode,scoreTarget,timeLimit,pickupRate]of choices){const rules=next.rulesForRoomMode(mode);assert.equal(rules.scoreTarget,scoreTarget);assert.equal(rules.timeLimit,timeLimit);assert.equal(rules.pickupRate,pickupRate);assert.equal(rules.mapSize,'ultrawide');assert.equal(rules.portraitMaze,true);assert.deepEqual(Array.from(rules.weapons),['shield']);next.localRoom.rules=rules;}
  next.localRoom.rules.mapSize='compact';assert.equal(next.rulesForRoomMode('ctf').mapSize,'compact');assert.equal(next.rulesForRoomMode('ctf').teamMode,'teams');
 });
 
@@ -57,8 +57,19 @@ test('accepted online host settings save only the host, their local P2 and bots'
 
 test('legacy rules migrate including mobile map preference and omitted future defaults',()=>{
  const legacy={version:1,rules:{mode:'koth',teamMode:'ffa',scoreTarget:88,timeLimit:200,mapSize:'giant'}};
- const storage=new Map([['leqra.roomRules.v1',JSON.stringify(legacy)]]),{s}=boot(storage,true);assert.equal(s.localRoom.rules.mode,'koth');assert.equal(s.localRoom.rules.scoreTarget,88);assert.equal(s.localRoom.rules.mapSize,'giant');assert.equal(s.localRoom.rules.respawnSeconds,3);
+ const storage=new Map([['leqra.roomRules.v1',JSON.stringify(legacy)]]),{s}=boot(storage,true);assert.equal(s.localRoom.rules.mode,'koth');assert.equal(s.localRoom.rules.scoreTarget,88);assert.equal(s.localRoom.rules.mapSize,'giant');assert.equal(s.localRoom.rules.portraitMaze,false);assert.equal(s.localRoom.rules.respawnSeconds,3);
  s.localRoom.players=[pilot(),bot()];s.persistLocalRoomRules();assert.equal(JSON.parse(storage.get('leqra.roomSetup.v2')).version,2);assert.equal(boot(new Map(),true).s.localRoom.rules.mapSize,'compact');
+});
+
+test('old all-pickup rooms gain Starman while custom and current disabled choices stay disabled',()=>{
+ const original=boot().s.defaultRoomRules(),weapons=Array.from(original.weapons).filter(kind=>kind!=='starman');
+ const setup={version:2,selectedMode:'elimination',modes:{elimination:{...original,weapons},ctf:{...original,mode:'ctf',teamMode:'teams',weapons:['ghost']}}};
+ const storage=new Map([['leqra.roomSetup.v2',JSON.stringify(setup)]]),{s}=boot(storage);
+ assert.deepEqual(Array.from(s.localRoom.rules.weapons),[...weapons,'starman']);
+ assert.deepEqual(Array.from(s.rememberedRulesForMode('ctf').weapons),['ghost']);
+ s.localRoom.players=[pilot(),bot()];s.localRoom.rules.weapons=weapons;
+ assert.equal(s.persistLocalRoomRules(),true);
+ assert.deepEqual(Array.from(boot(storage).s.localRoom.rules.weapons),weapons);
 });
 
 test('invalid saved rule profiles and rosters recover independently without loading unsafe seats',()=>{
@@ -82,9 +93,9 @@ test('storage failure does not interrupt editing and in-session mode memory rema
 
 test('DEFAULT RULES stages mode defaults, leaves the lobby setup intact and saves only on Apply',()=>{
  for(const [mode,score,time]of [['elimination',5,75],['ctf',3,180],['koth',30,180],['survival',15,75]]){
-  const {s,$,toggles}=boot();s.localRoom.players=[pilot({team:1}),bot({team:2})];s.localRoom.rules={...s.defaultModeRules(mode),teamMode:'teams',mapSize:'ultrawide',scoreTarget:19,timeLimit:500,respawnSeconds:7,friendlyFire:true,pickupRate:'off',weapons:[],teamNames:['A','B','C','D']};
+  const {s,$,toggles}=boot();s.localRoom.players=[pilot({team:1}),bot({team:2})];s.localRoom.rules={...s.defaultModeRules(mode),teamMode:'teams',mapSize:'ultrawide',portraitMaze:true,scoreTarget:19,timeLimit:500,respawnSeconds:7,friendlyFire:true,pickupRate:'off',weapons:[],teamNames:['A','B','C','D']};
   const before=JSON.stringify(s.localRoom.rules),roster=JSON.stringify(s.localRoom.players);s.resetRuleDefaults();assert.equal(JSON.stringify(s.localRoom.rules),before);assert.equal(s.writes,0);assert.equal($('rule-scoreTarget').value,score);assert.equal($('rule-timeLimit').value,time);assert.equal($('rule-friendlyFire').checked,false);assert.equal($('rule-pickupRate').value,'superfast');assert.equal(toggles.every(c=>c.checked),true);assert.match($('rulesNotice').textContent,/APPLY RULES/);
-  s.submitRules({preventDefault(){}});assert.equal(s.localRoom.rules.scoreTarget,score);assert.equal(s.localRoom.rules.timeLimit,time);assert.equal(s.localRoom.rules.respawnSeconds,3);assert.deepEqual(Array.from(s.localRoom.rules.teamNames),['Team 1','Team 2','Team 3','Team 4']);assert.equal(s.localRoom.rules.mapSize,'ultrawide');assert.equal(s.localRoom.rules.teamMode,'teams');assert.equal(JSON.stringify(s.localRoom.players),roster);assert.equal(s.writes,1);assert.equal(s.closed,true);
+  s.submitRules({preventDefault(){}});assert.equal(s.localRoom.rules.scoreTarget,score);assert.equal(s.localRoom.rules.timeLimit,time);assert.equal(s.localRoom.rules.respawnSeconds,3);assert.deepEqual(Array.from(s.localRoom.rules.teamNames),['Team 1','Team 2','Team 3','Team 4']);assert.equal(s.localRoom.rules.mapSize,'ultrawide');assert.equal(s.localRoom.rules.portraitMaze,true);assert.equal(s.localRoom.rules.teamMode,'teams');assert.equal(JSON.stringify(s.localRoom.players),roster);assert.equal(s.writes,1);assert.equal(s.closed,true);
  }
 });
 

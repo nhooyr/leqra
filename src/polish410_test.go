@@ -5,11 +5,14 @@ import (
 	"testing"
 )
 
-func Test410EveryEquippedTimedPowerupUsesTenSeconds(t *testing.T) {
+func Test410ClassicTimedPowerupsUseTenSeconds(t *testing.T) {
 	if powerEffectDuration != 10 || pickupLifetime(16, 14) != 61 || boostDuration != 10 || shieldDuration != 10 || ghostDuration != 10 {
 		t.Fatalf("duration values: effect=%v giantPickup=%v boost=%v shield=%v ghost=%v", powerEffectDuration, pickupLifetime(16, 14), boostDuration, shieldDuration, ghostDuration)
 	}
 	for _, kind := range pickupTypes {
+		if kind == "starman" {
+			continue // Starman has its own fixed duration.
+		}
 		g := battle(2)
 		p := g.Tanks[0]
 		g.grantPower(p, kind)
@@ -76,7 +79,7 @@ func Test410BotsIgnoreTheirOwnAndHarmlessFriendlyGrenades(t *testing.T) {
 }
 
 func Test410Version(t *testing.T) {
-	if version != "4.47.0" {
+	if version != "4.48.0" {
 		t.Fatalf("version=%q", version)
 	}
 }

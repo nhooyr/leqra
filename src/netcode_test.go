@@ -184,7 +184,7 @@ func TestProductionServesEveryGameScript(t *testing.T) {
 		name := string(m[1])
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/"+name, nil))
-		expected, err := embeddedWeb.ReadFile("web/" + name)
+		expected, err := os.ReadFile("web/" + name)
 		if err != nil {
 			t.Fatal(err)
 		}

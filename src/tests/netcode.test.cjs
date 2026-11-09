@@ -31,6 +31,12 @@ test('stick movement and angle wrapping stay finite and bounded',()=>{
  assert.ok(Math.abs(Net.delta(start.angle,t.angle))<=5.8/60+1e-6);
  assert.ok(Math.abs(t.angle)<=Math.PI);
 });
+test('changing the same direction vector between mouse and joystick sends a new input',()=>{
+ const stick=input({stickX:1}),aim={...stick,aimOnly:true};
+ assert.equal(Net.controlsEqual(stick,aim),false);
+ assert.equal(Net.controlsEqual(aim,{...aim}),true);
+ assert.equal(Net.controlsEqual(stick,{...stick,aimOnly:undefined}),true);
+});
 test('real client wall collision never crosses a solid wall',()=>{
  const move=wallMover({width:600,height:500,walls:[{x:300,y:0,w:8,h:500}]});
  const t=tank();for(let i=0;i<240;i++)Net.move(t,input({forward:true}),Net.STEP,move);

@@ -144,32 +144,6 @@ The seven shared legend/pickup icons, full-perimeter bouncing laser, five-second
 remotely detonated grenade, speed boosts, fast pickup spawning and previous
 network smoothing remain included.
 
-## Apply the update
-
-Stop your existing server. Keep a backup of custom deployment settings and
-replace **both the Go sources and the complete `web/` directory**.
-
-```sh
-cd leqra-online
-go run .
-```
-
-Refresh every player's browser. `/healthz` and `leqra.version` should report
-**3.0.0**. Existing in-memory rooms and scores reset when the server restarts.
-Do not mix the old frontend with this backend: it lacks the new roster and
-secondary controller behavior.
-
-For compiled deployments, rebuild because the browser assets are embedded:
-
-```sh
-go build -trimpath -o leqra .
-./leqra
-```
-
-Use `leqra.exe` on Windows. Existing Docker Compose deployments can use
-`docker compose up --build -d`, retaining their custom configuration. No new
-runtime packages, database, npm step, or third-party Go modules are needed.
-
 ## Verification and limits
 
 Passed **191 Go tests with the race detector** (289 including subtests), **22

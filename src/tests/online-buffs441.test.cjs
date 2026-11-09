@@ -47,6 +47,23 @@ test('Survival breaks discard prior-wave prediction and freeze both local pilots
  s.now=7100;s.receive({},'wave');s.predictOnlineTank(Net.STEP);assert.ok(s.online.predictor.stepID>0,'live prediction resumes for the next active wave');
 });
 
+test('online Starman uses the authoritative timer without displaying spawn protection or hiding longer Ghost permanently',()=>{
+ const s=boot(),snapshot=s.receive({starmanTime:3,invulnerable:3,ghostTime:7});
+ assert.equal(snapshot.tankMap.get(0).spawnProtected,false);
+ s.renderOnlineMotion(0,2200);
+ for(const t of s.tanks){
+  close(t.starmanTime,1.8);close(t.invulnerable,1.8);close(t.ghostTime,5.8);
+  const badges=Array.from(s.activeTankPowerBadges(t));
+  assert.ok(badges.includes('starman'));assert.ok(!badges.includes('ghost'));
+ }
+ s.renderOnlineMotion(0,4100);
+ for(const t of s.tanks){
+  assert.equal(t.starmanTime,0);assert.equal(t.invulnerable,0);
+  assert.ok(Array.from(s.activeTankPowerBadges(t)).includes('ghost'));
+ }
+ assert.equal(snapshot.tankMap.get(0).starmanTime,3);
+});
+
 test('countdowns and completed scenes keep timer values fixed',()=>{
  for(const phase of ['countdown','roundOver','matchOver','paused']){
   const s=boot(),p=s.receive({ghostTime:.1},'wave',phase);s.renderOnlineMotion(0,9000);

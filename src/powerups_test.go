@@ -21,6 +21,10 @@ func TestNewPickupGrantsAndIndependentBuffs(t *testing.T) {
 				if p.GhostTime != ghostDuration {
 					t.Fatal("ghost duration")
 				}
+			case "starman":
+				if p.StarmanTime != starmanDuration {
+					t.Fatal("Starman duration")
+				}
 			case "speed":
 				if p.SpeedTime != boostDuration {
 					t.Fatal("speed duration")

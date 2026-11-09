@@ -9,21 +9,42 @@ function declaration(name){
  const end=source.indexOf('\n',start),line=source.slice(start,end);
  return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);
 }
-const kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost'];
+const kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
 function tank(id=0){return {id,x:100+id*200,y:100,angle:0,r:17,human:true,alive:true,cooldown:0,invulnerable:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,track:0};}
 function boot(){
  const noop=()=>{},s={POWER_EFFECT_DURATION:10,MACHINE_FIRING_ROUNDS:firingRounds,MACHINE_CAPACITY:96,MAX_SPEED_STACKS:5,POWER:Object.fromEntries(kinds.map(k=>[k,{name:k.toUpperCase()}])),cols:12,rows:10,time:0,mode:'solo',phase:'playing',fxTime:0,phaseTime:0,toastTime:0,particles:[],rings:[],shake:0,roundClock:120,spawnClock:Infinity,uiClock:Infinity,bullets:[],pickups:[],bulletId:0,tanks:[tank(),tank(1)],updateTraces:noop,compactLife:noop,objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,liveLocalStats:()=>false,advanceGhost:(t,dt)=>t.ghostTime=Math.max(0,t.ghostTime-dt),humanControl:noop,botControl:noop,updateBullets:noop,finishRound:noop,updateHUD:noop,clearTankAt:()=>true,burst:noop,shotSound:noop,
   projectileSpec:power=>({kind:power,cooldown:0}),muzzleProjectile:(t,a)=>({owner:t.id,kind:t.power}),
   activeAmmo:t=>s.bullets.filter(b=>!b.dead&&b.owner===t.id).length,shieldCount:t=>t.shield>0?t.shieldCharges||1:0,speedCount:t=>t.speedTime>0?t.speedStacks||1:0};
- vm.createContext(s);for(const name of ['powerEffectDuration','pickupCap','pickupLifetime','grantPower','pickupMessage','powerCapacity','fire','update'])vm.runInContext(declaration(name),s);return s;
+ s.STARMAN_DURATION=3;vm.createContext(s);for(const name of ['choosePickup','powerEffectDuration','pickupCap','pickupLifetime','grantPower','pickupMessage','powerCapacity','fire','update'])vm.runInContext(declaration(name),s);return s;
 }
 test('local equipped and ground durations match each of the six map tiers',()=>{
  const s=boot();
  for(const [c,r,duration,ground]of [[7,7,10,30],[9,8,10,30],[12,10,10,32],[14,12,15,45],[16,14,15,61],[24,14,15,90]]){
   s.cols=c;s.rows=r;assert.equal(s.pickupLifetime(),ground);
-  for(const kind of kinds){const t=tank();s.grantPower(t,kind);const field={shield:'shield',speed:'speedTime',ghost:'ghostTime'}[kind]||'powerTime';assert.equal(t[field],duration,kind+' '+c+'x'+r);}
+  for(const kind of kinds){const t=tank();s.grantPower(t,kind);const field={shield:'shield',speed:'speedTime',ghost:'ghostTime',starman:'starmanTime'}[kind]||'powerTime';assert.equal(t[field],kind==='starman'?3:duration,kind+' '+c+'x'+r);}
  }
  assert.equal(s.pickupLifetime(0,0),0);
+});
+test('Starman uses a single slot out of 27 and does not appear when disabled',()=>{
+ const s=boot(),counts={};
+ for(let slot=0;slot<27;slot++){
+  s.Math=Object.create(Math);s.Math.random=()=>(slot+.5)/27;
+  const kind=s.choosePickup(kinds);
+  counts[kind]=(counts[kind]||0)+1;
+  assert.notEqual(s.choosePickup(kinds.filter(k=>k!=='starman')),'starman');
+ }
+ assert.equal(counts.starman,1);
+ for(const kind of kinds.filter(k=>k!=='starman'))assert.equal(counts[kind],['shield','speed'].includes(kind)?6:2);
+});
+test('Starman refreshes a short phase and immunity without replacing longer Ghost or equipped gear',()=>{
+ const s=boot(),t=s.tanks[0];
+ for(const kind of ['cannon','shield','speed','ghost','starman'])s.grantPower(t,kind);
+ assert.equal(t.starmanTime,3);assert.equal(t.invulnerable,3);assert.equal(t.ghostTime,10);
+ s.update(.5);
+ assert.equal(t.starmanTime,2.5);assert.equal(t.invulnerable,2.5);
+ s.grantPower(t,'starman');s.update(3);
+ assert.equal(t.starmanTime,0);assert.equal(t.invulnerable,0);assert.equal(t.ghostTime,6.5);
+ assert.equal(t.power,'cannon');assert.equal(t.charges,3);assert.equal(t.shieldCharges,1);assert.equal(t.speedStacks,1);
 });
 test('local larger-map buffs refresh independently and respect stack and charge caps',()=>{
  const s=boot();s.cols=14;s.rows=12;const t=tank();s.grantPower(t,'cannon');

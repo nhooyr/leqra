@@ -13,6 +13,7 @@ type MatchRules struct {
 	Mode           string   `json:"mode"`
 	TeamMode       string   `json:"teamMode"`
 	MapSize        string   `json:"mapSize"`
+	PortraitMaze   bool     `json:"portraitMaze"`
 	ScoreTarget    int      `json:"scoreTarget"`
 	TimeLimit      int      `json:"timeLimit"`
 	RespawnSeconds int      `json:"respawnSeconds"`
@@ -89,20 +90,24 @@ func validateRules(r MatchRules) error {
 	return nil
 }
 func (g *Game) mapDimensions() (int, int) {
-	switch g.settings().MapSize {
+	rules := g.settings()
+	cols, rows := 9, 8
+	switch rules.MapSize {
 	case "compact":
-		return 7, 7
+		cols, rows = 7, 7
 	case "large":
-		return 12, 10
+		cols, rows = 12, 10
 	case "huge":
-		return 14, 12
+		cols, rows = 14, 12
 	case "giant":
-		return 16, 14
+		cols, rows = 16, 14
 	case "ultrawide":
-		return 24, 14
-	default:
-		return 9, 8
+		cols, rows = 24, 14
 	}
+	if rules.PortraitMaze {
+		return rows, cols
+	}
+	return cols, rows
 }
 
 // Pickup density is based on the actual maze, not a fixed room-wide cap.

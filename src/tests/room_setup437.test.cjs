@@ -40,11 +40,19 @@ test('applying identical rules still waits for a fresh room packet',()=>{
 });
 
 test('Preset waits for both rules and the complete authoritative roster, with a host in a nonzero seat',()=>{
- const b=boot(),{s,$}=b;s.preset={rules:{...s.defaultRoomRules(),weapons:['shield'],scoreTarget:7},roster:[{kind:'human',name:'NEW HOST',team:0,colorIndex:4},{kind:'local',name:'P2',team:0,colorIndex:7},{kind:'bot',name:'NEW BOT',team:0,difficulty:'godlike',colorIndex:-1}]};
+ const b=boot(),{s,$}=b;s.preset={rules:{...s.defaultRoomRules(),weapons:['shield'],scoreTarget:7,portraitMaze:true},roster:[{kind:'human',name:'NEW HOST',team:0,colorIndex:4},{kind:'local',name:'P2',team:0,colorIndex:7},{kind:'bot',name:'NEW BOT',team:0,difficulty:'godlike',colorIndex:-1}]};
  $('presetsDialog').open=true;s.applySelectedPreset();assert.equal(s.presetsPending,true);s.applySelectedPreset();assert.equal(s.sent.length,1);
  b.receive({...b.room(),rules:s.sent[0].rules});assert.equal(s.presetsPending,true);assert.equal($('presetsDialog').open,true);
  const [host,p2,bot]=s.sent[0].roster;b.receive({...b.room(),players:[{...p2,id:0,owner:3},{...bot,id:1,owner:3},{...host,id:3}],rules:s.sent[0].rules});
  assert.equal(s.presetsPending,false);assert.deepEqual(s.closed,['presetsDialog']);assert.equal(b.timers.size,0);
+});
+
+test('portrait rules default off for old presets and reject non-boolean selections',()=>{
+ const {s}=boot(),rules=s.defaultRoomRules(),roster=[{kind:'human',name:'HOST',team:0}];
+ delete rules.portraitMaze;
+ assert.equal(s.validatePreset({rules,roster}).rules.portraitMaze,false);
+ assert.equal(s.validatePreset({rules:{...rules,portraitMaze:true},roster}).rules.portraitMaze,true);
+ assert.throws(()=>s.validateRoomRules({...rules,portraitMaze:'yes'}),/Portrait maze must be on or off/);
 });
 
 test('disconnect cancels the pending edit, keeps the draft and permits local setup after leaving',()=>{

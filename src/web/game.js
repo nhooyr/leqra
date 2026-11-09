@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.47.0';
+const GAME_VERSION='4.48.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -28,14 +28,14 @@ const DIFFICULTY={
  hard:{speed:123,turn:4.3,think:.13,aim:.012,reaction:.26,lead:1,dodge:true,dodgeLook:.88,bank:true},
  godlike:{speed:123,turn:4.3,think:.075,aim:.003,reaction:.12,lead:1,dodge:true,dodgeLook:1.05,bank:true}
 };
-const POWER_EFFECT_DURATION=10;
+const POWER_EFFECT_DURATION=10,STARMAN_DURATION=3;
 const BOOST_SPEED_PER_STACK=.65, BOOST_TURN_PER_STACK=.25, MAX_SPEED_STACKS=5, MISSILE_SPEED=235, MISSILE_TURN=4.8, MISSILE_VIEW_COS=-.75, MISSILE_LOCK_DELAY=.06, MISSILE_WALL_DELAY=.04, GRENADE_SPEED=205, GRENADE_FUSE=10, GRENADE_CRUISE_DRAG=.025, GRENADE_BRAKE_START=7, GRENADE_BRAKE_DRAG=2, BLAST_RADIUS=220, GRENADE_AVOID_PADDING=10;
 const POWER={rapid:{color:'#d2f65a',name:'MACHINE GUN',short:'MACHINE GUN'},scatter:{color:'#c5a2ff',name:'SHOTGUN'},shield:{color:'#73cee4',name:'SHIELD'},
  homing:{color:'#ff83bd',name:'HOMING MISSILE',short:'HOMING'},
  grenade:{color:'#ffc46b',name:'GRENADE'},
  speed:{color:'#75f0cb',name:'SUPER SPEED'},
  laser:{color:'#f57cff',name:'LASER'},
- cannon:{color:'#ffad70',name:'CANNON'},ghost:{color:'#cce4ff',name:'GHOST'}};
+ cannon:{color:'#ffad70',name:'CANNON'},ghost:{color:'#cce4ff',name:'GHOST'},starman:{color:'#f9ed75',name:'STARMAN'}};
 const LASER_MAX_SEGMENTS=128,LASER_RADIUS=3,LASER_COOLDOWN=.85,GHOST_DURATION=POWER_EFFECT_DURATION;
 const MACHINE_SPEED=282*3,MACHINE_RADIUS=3.5/3,MACHINE_CAPACITY=96,MACHINE_FIRING_ROUNDS=3*60;
 const CANNON_RADIUS=3.5*4,CANNON_SPEED=282*4,CANNON_LIFETIME=5.3,CANNON_COOLDOWN=.85;
@@ -56,6 +56,7 @@ const SAFARI_BROWSER=WEBKIT_ENGINE&&/Safari\//.test(UA)&&!/(?:CriOS|FxiOS|EdgiOS
 document.body.classList.toggle('webkit-engine',WEBKIT_ENGINE);document.body.classList.toggle('safari-browser',SAFARI_BROWSER);document.body.classList.toggle('ios-webkit',IOS_WEBKIT);
 const keys=new Set(), firePointers=new Set(), firePresses=new Set();
 const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36};
+const mouseAim={active:false,x:0,y:0};
 const Net=window.leqraNet;
 const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,serverVersion:'',seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -85,7 +86,7 @@ const teamColor=(id,team,selection,rules=currentRules())=>COLORS[colorIndex(id,t
 const paintColor=(c)=>Theme.assetColor(c);
 function shieldCount(t){return t?.shield>0?clamp(t.shieldCharges||1,1,5):0;}
 function speedCount(t){return t?.speedTime>0?clamp(t.speedStacks||1,1,MAX_SPEED_STACKS):0;}
-function choosePickup(types){const weight=k=>k==='shield'||k==='speed'?3:1,total=types.reduce((n,k)=>n+weight(k),0);let n=Math.random()*total;for(const k of types){n-=weight(k);if(n<0)return k;}return types.at(-1);}
+function choosePickup(types){const weight=k=>k==='shield'||k==='speed'?6:k==='starman'?1:2,total=types.reduce((n,k)=>n+weight(k),0);let n=Math.random()*total;for(const k of types){n-=weight(k);if(n<0)return k;}return types.at(-1);}
 // Power-up colors use one dark palette shared by all icons.
 for(const [kind,def] of Object.entries(POWER)){const raw=def.color;Object.defineProperty(def,'color',{get:()=>Theme.powerColor(kind,raw)});}
 // Keep local assignments available while an online publish is still importing.
@@ -358,7 +359,7 @@ function pathScratch(a){
 }
 function tracePath(from,to,prev,a){const path=a?.pathScratch||[];path.length=0;for(let at=to;at!==from;at=prev[at]){if(at<0||path.length>grid.length){path.length=0;return path;}path.push(at);}path.reverse();return path;}
 function bfs(from,to,a=null){if(from===to){if(a?.pathScratch)a.pathScratch.length=0;return a?.pathScratch||[];}const scratch=pathScratch(a),prev=scratch?.pathPrev||new Int16Array(grid.length),q=scratch?.pathQueue||[];prev.fill(-1);prev[from]=from;q.length=0;q.push(from);for(let p=0;p<q.length;p++){const i=q[p];for(const n of grid[i].neighbors){if(prev[n]!==-1)continue;prev[n]=i;if(n===to)return tracePath(from,to,prev,scratch);q.push(n);}}if(scratch?.pathScratch)scratch.pathScratch.length=0;return scratch?.pathScratch||[];}
-function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRoom.players.find(p=>p.id===i):null;return{id:i,name:member?member.name:mode==='duel'?(i===0?'PLAYER 1':'PLAYER 2'):NAMES[i],color:member?teamColor(i,member.team,member.colorIndex):COLORS[i],x:p.x,y:p.y,angle:i===0?-Math.PI/2:Math.PI/2,r:RADIUS,alive:true,human:member?member.kind!=='bot':i===0||mode==='duel',difficulty:member?.difficulty||difficulty,localIndex:member?.kind==='local'?1:0,team:member?member.team:mode==='duel'?'p'+i:i===0?'player':'bots',cooldown:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,invulnerable:.75,spawnProtected:true,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,vx:0,vy:0,track:0,ai:{think:rnd(.15,.5),path:[],pathClock:0,target:-1,aim:null,shotClock:rnd(.6,1.6),bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,dodgeAngle:0,dodgeDrive:1,recoverTime:0,recoverAngle:0,recoverDrive:0,stuck:0,lastX:p.x,lastY:p.y}};}
+function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRoom.players.find(p=>p.id===i):null;return{id:i,name:member?member.name:mode==='duel'?(i===0?'PLAYER 1':'PLAYER 2'):NAMES[i],color:member?teamColor(i,member.team,member.colorIndex):COLORS[i],x:p.x,y:p.y,angle:i===0?-Math.PI/2:Math.PI/2,r:RADIUS,alive:true,human:member?member.kind!=='bot':i===0||mode==='duel',difficulty:member?.difficulty||difficulty,localIndex:member?.kind==='local'?1:0,team:member?member.team:mode==='duel'?'p'+i:i===0?'player':'bots',cooldown:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,starmanTime:0,invulnerable:.75,spawnProtected:true,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,vx:0,vy:0,track:0,ai:{think:rnd(.15,.5),path:[],pathClock:0,target:-1,aim:null,shotClock:rnd(.6,1.6),bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,dodgeAngle:0,dodgeDrive:1,recoverTime:0,recoverAngle:0,recoverDrive:0,stuck:0,lastX:p.x,lastY:p.y}};}
 function spawnCells(){return [(rows-1)*cols,cols-1,rows*cols-1,0,Math.floor(cols/2),Math.floor(rows/2)*cols+cols-1,(rows-1)*cols+Math.floor(cols/2),Math.floor(rows/2)*cols];}
 function resetTanks(){const spawn=spawnCells();if(mode==='room'){tanks=localRoom.players.filter(p=>!p.spectating).map(p=>newTank(p.id,spawn[p.id]));return;}if(mode==='solo'&&Math.random()<.5)spawn[2]=0;tanks=spawn.slice(0,mode==='duel'?2:3).map((s,i)=>newTank(i,s));}
 function resetPreview(){localSurvivalCheckpoint=null;localObjectives=null;makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];seedPickups();if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);}
@@ -371,7 +372,7 @@ function syncPauseButton(){
  const title=label+' (P / Esc)';if(button.title!==title)button.title=title;
 }
 function setScreen(which){if(which)pendingMatchPresentation=null;syncPauseButton();syncRestartWaveActions();if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=mode!=='online';document.body.classList.toggle('room-setup',which==='room');if(which==='online'){which='room';if(!$('joinDialog').open)$('joinDialog').showModal();}document.body.classList.toggle('overlay-open',!!which);$('overlay').hidden=!which;for(const id of ['lobby','pause','match','online','room','onlineMenu'])$(id+'Screen').hidden=id!==which;stabilizeArenaLayout();}
-function clearInput(){keys.clear();firePointers.clear();firePresses.clear();for(const t of tanks){t.fireHeld=false;t.fireBlocked=false;}stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
+function clearInput(){keys.clear();firePointers.clear();firePresses.clear();clearMouseAim();for(const t of tanks){t.fireHeld=false;t.fireBlocked=false;}stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
 function setMode(value){delete $('manualContent').dataset.content;if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS · ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').textContent=mode==='duel'?controlSummary(0)+' · '+controlSummary(1):'FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES';$('manualContent').innerHTML=fieldManualHTML();
  if(phase==='menu'){resetPreview();setLayout();}}
 function setDifficulty(value){if(!Object.prototype.hasOwnProperty.call(DIFFICULTY,value))return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
@@ -705,9 +706,10 @@ function grantPower(t,type){
  if(type==='shield'){t.shieldCharges=Math.min(5,shieldCount(t)+1);t.shield=duration;}
  else if(type==='speed'){t.speedStacks=Math.min(MAX_SPEED_STACKS,speedCount(t)+1);t.speedTime=duration;}
  else if(type==='ghost')t.ghostTime=duration;
+ else if(type==='starman'){t.starmanTime=STARMAN_DURATION;t.invulnerable=Math.max(t.invulnerable||0,STARMAN_DURATION);t.ghostTime=Math.max(t.ghostTime||0,STARMAN_DURATION);t.spawnProtected=false;}
  else{t.power=type;t.machineRounds=type==='rapid'?MACHINE_FIRING_ROUNDS:0;if(type==='rapid'){t.cooldown=0;t.cooldownTotal=0;}t.powerTime=duration;t.charges=['homing','grenade','laser','cannon'].includes(type)?3:5;}
 }
-function pickupMessage(type){const duration=powerEffectDuration();return type==='ghost'?'GHOST · THROUGH WALLS · '+duration+' SECONDS':type==='cannon'?'CANNON · EDGE RICOCHETS · 4× SIZE / SPEED':type==='laser'?'LASER · RICOCHETS · LONG AIM GUIDE':type==='homing'?'HOMING · RICOCHETS · HALF-PERIMETER RANGE':type==='grenade'?'GRENADE · IMPACT / TAP AGAIN / 10s FUSE':type==='speed'?'SUPER SPEED · +1 STACK · '+duration+' SECONDS':type==='rapid'?'MACHINE GUN · 3s FIRING · '+duration+'s TO USE':POWER[type].name+' · '+duration+' SECONDS';}
+function pickupMessage(type){const duration=powerEffectDuration();return type==='starman'?'STARMAN · INVINCIBLE + THROUGH WALLS · '+STARMAN_DURATION+'s':type==='ghost'?'GHOST · THROUGH WALLS · '+duration+' SECONDS':type==='cannon'?'CANNON · EDGE RICOCHETS · 4× SIZE / SPEED':type==='laser'?'LASER · RICOCHETS · LONG AIM GUIDE':type==='homing'?'HOMING · RICOCHETS · HALF-PERIMETER RANGE':type==='grenade'?'GRENADE · IMPACT / TAP AGAIN / 10s FUSE':type==='speed'?'SUPER SPEED · +1 STACK · '+duration+' SECONDS':type==='rapid'?'MACHINE GUN · 3s FIRING · '+duration+'s TO USE':POWER[type].name+' · '+duration+' SECONDS';}
 function localPilotIndex(id){if(id===localPlayerID())return 0;const second=secondaryID();return second!==undefined&&id===second?1:-1;}
 function setPilotFeedback(index,text,duration=2.5){if(index<0||index>1)return;pilotFeedback[index].text=text;pilotFeedback[index].until=performance.now()+duration*1000;}
 function showStartingControls(){
@@ -754,13 +756,17 @@ function updateBullets(dt){
 function shotPrediction(t,angle,maxBounces=1,maxLength=CELL*7){let x=t.x,y=t.y,ux=Math.cos(angle),uy=Math.sin(angle),remaining=maxLength;const points=[{x,y}];for(let bounce=0;bounce<=maxBounces;bounce++){const dx=ux*remaining,dy=uy*remaining,w=rayWalls(x,y,dx,dy,3.5);let closest=null;for(const other of tanks){if(!other.alive||!canDamage(t.id,other))continue;const at=circleHit(x,y,dx,dy,other.x,other.y,other.r+2);if(at!==null&&(!w||at<w.t)&&(!closest||at<closest.at))closest={at,tank:other};}if(closest){points.push({x:x+dx*closest.at,y:y+dy*closest.at});return{tank:closest.tank,points};}const f=w?w.t:1;x+=dx*f;y+=dy*f;points.push({x,y});remaining*=1-f;if(!w||remaining<1)break;if(w.nx)ux=-ux;if(w.ny)uy=-uy;x+=w.nx*.12;y+=w.ny*.12;}return{tank:null,points};}
 
 function humanControl(t,dt){
- const single=mode==='solo'||mode==='room'&&!secondLocal(),p1=mode==='room'?t.localIndex!==1:t.id===0,n=speedCount(t),speedScale=1+BOOST_SPEED_PER_STACK*n,turnScale=1+BOOST_TURN_PER_STACK*n;
+ const p1=mode==='room'?t.localIndex!==1:t.id===0,n=speedCount(t),speedScale=1+BOOST_SPEED_PER_STACK*n,turnScale=1+BOOST_TURN_PER_STACK*n;
  const forward=heldAction(p1?0:1,'forward');
  const reverse=heldAction(p1?0:1,'reverse');
  const left=heldAction(p1?0:1,'left');
  const right=heldAction(p1?0:1,'right');
  let throttle=(forward?1:0)-(reverse?.72:0);
- if(p1&&stick.mag>.10){const desired=Math.atan2(stick.y,stick.x),diff=angleDelta(t.angle,desired);t.angle+=clamp(diff,-5.8*turnScale*dt,5.8*turnScale*dt);throttle=stick.mag*Math.max(0,Math.cos(diff));}else t.angle+=((right?1:0)-(left?1:0))*3.65*turnScale*dt;
+ const joystick=p1&&stick.mag>.10,desired=joystick?Math.atan2(stick.y,stick.x):p1&&!left&&!right?mouseAimHeading(t):null;
+ if(desired!==null){
+  const diff=angleDelta(t.angle,desired);t.angle+=clamp(diff,-5.8*turnScale*dt,5.8*turnScale*dt);
+  if(joystick)throttle=stick.mag*Math.max(0,Math.cos(diff));
+ }else t.angle+=((right?1:0)-(left?1:0))*3.65*turnScale*dt;
  const speed=128*speedScale;moveTank(t,Math.cos(t.angle)*speed*throttle*dt,Math.sin(t.angle)*speed*throttle*dt);
  const held=p1?primaryFireHeld():heldAction(1,'fire');
  const pressed=firePresses.delete(t.id)||(held&&!t.fireHeld);t.fireHeld=held;
@@ -1043,6 +1049,7 @@ function godlikePickupValue(t,p){
  if(p.type==='shield')return shieldCount(t)>=5&&t.shield>4?0:shieldCount(t)?2.2:4.5;
  if(p.type==='speed')return speedCount(t)>=MAX_SPEED_STACKS&&t.speedTime>4?0:speedCount(t)<2?3.5:1.5;
  if(p.type==='ghost')return t.ghostTime>4?0:3;
+ if(p.type==='starman')return t.starmanTime>2?0:4;
  if(!t.power||t.powerTime<2||t.power==='rapid'&&(t.machineRounds??180)<120)return godlikeWeaponValue(p.type);
  if(t.power===p.type)return t.powerTime<5||t.charges<=1?1.4:.15;
  return Math.max(0,(godlikeWeaponValue(p.type))-(godlikeWeaponValue(t.power))+.25);
@@ -1308,7 +1315,7 @@ function update(dt){
  if(liveLocalStats())localMatchStats.duration+=dt;
  roundClock=Math.max(0,roundClock-dt);spawnClock-=dt;if(spawnClock<=0){spawnPower();spawnClock=rnd(...pickupInterval());}
  if(objectiveMode())respawnLocalPlayers(dt);
- for(const t of tanks){if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);t.invulnerable=Math.max(0,t.invulnerable-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;t.machineRounds=0;}}
+ for(const t of tanks){if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);t.invulnerable=Math.max(0,t.invulnerable-dt);t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;t.machineRounds=0;}}
   const x=t.x,y=t.y;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.track+=Math.hypot(t.x-x,t.y-y);
  }
  for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){const a=tanks[i],b=tanks[j];if(!a.alive||!b.alive)continue;let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);const over=a.r+b.r-dist;if(over>0){if((a.ghostTime>0||b.ghostTime>0)&&wallBetweenCenters(a.x,a.y,dx,dy))continue;if(dist<.001){dx=1;dy=0;dist=1;}moveTank(a,-dx/dist*over*.5,-dy/dist*over*.5);moveTank(b,dx/dist*over*.5,dy/dist*over*.5);}}
@@ -1362,9 +1369,10 @@ function renderPilotLoadout(player,num,force=false){
  label.title=label.textContent;
  label.style.color=paintColor(remoteReady?POWER.grenade.color:power?.color||player.color||COLORS[0]);
  setStyle(label,'--weapon-color',label.style.color);
- const buffs=[];if(player.shield>0)buffs.push('SHD×'+shieldCount(player)+' '+Math.ceil(player.shield)+'s');if(player.speedTime>0)buffs.push('SPD×'+speedCount(player)+' '+Math.ceil(player.speedTime)+'s');if(player.ghostTime>0)buffs.push('GHO '+Math.ceil(player.ghostTime)+'s');
+ const buffs=[];if(player.shield>0)buffs.push('SHD×'+shieldCount(player)+' '+Math.ceil(player.shield)+'s');if(player.speedTime>0)buffs.push('SPD×'+speedCount(player)+' '+Math.ceil(player.speedTime)+'s');
+ const starman=player.starmanTime>0;if(starman)buffs.push('STAR '+Math.ceil(player.starmanTime)+'s');else if(player.ghostTime>0)buffs.push('GHO '+Math.ceil(player.ghostTime)+'s');
  const buffText=buffs.length>2?buffs.map(b=>b.startsWith('SHD')?b.split(' ')[0]:b.replace(/ (\d+)s$/,'$1')).join(' '):buffs.join(' · '),feedback=pilotFeedback[num-1],feedbackText=feedback?.until>performance.now()?feedback.text:'';
- const detailText=player.alive?(feedbackText||buffText):'',detail=$('buffLabel'+suffix);setText('buffLabel'+suffix,detailText);detail.hidden=!detailText;detail.title=feedbackText||('Speed: '+speedCount(player)+' stacks, '+Math.ceil(player.speedTime||0)+'s · Shield: '+shieldCount(player)+' charges, '+Math.ceil(player.shield||0)+'s · Ghost: '+Math.ceil(player.ghostTime||0)+'s');
+ const detailText=player.alive?(feedbackText||buffText):'',detail=$('buffLabel'+suffix);setText('buffLabel'+suffix,detailText);detail.hidden=!detailText;detail.title=feedbackText||('Speed: '+speedCount(player)+' stacks, '+Math.ceil(player.speedTime||0)+'s · Shield: '+shieldCount(player)+' charges, '+Math.ceil(player.shield||0)+'s · '+(starman?'Starman: '+Math.ceil(player.starmanTime):'Ghost: '+Math.ceil(player.ghostTime||0))+'s');
  return {power,remoteReady};
 }
 function renderLineup(force=false){
@@ -1390,7 +1398,7 @@ function updateHUD(force=false){
  const state=renderPilotLoadout(player,1,force);renderPilotLoadout(p2,2,force);
  if(player&&state){const {power,remoteReady}=state;
   // Weapon button text, state and progress are written only by updateCombatFeedback().
-  setText('touchStatus',phase==='menu'?'GOOD LUCK':!player.alive?'TANK DOWN':player.ghostTime>0?'GHOST ACTIVE':player.speedTime>0?'SUPER SPEED':power?(power.short||power.name):player.shield>0?'SHIELDED':'STAY SHARP');
+  setText('touchStatus',phase==='menu'?'GOOD LUCK':!player.alive?'TANK DOWN':player.starmanTime>0?'STARMAN ACTIVE':player.ghostTime>0?'GHOST ACTIVE':player.speedTime>0?'SUPER SPEED':power?(power.short||power.name):player.shield>0?'SHIELDED':'STAY SHARP');
  }
  const announce=$('announcer'),intermission=phase==='playing'&&survivalBreak(),bossPreview=phase==='countdown'&&survivalMode()?survivalBossPreview({...survivalState(),status:'break',wave:round-1}):null,resultPreview=phase==='matchOver'&&pendingMatchPresentation?matchResultPreview():null;announce.classList.toggle('round-result',phase==='roundOver'||intermission||!!resultPreview);announce.classList.toggle('boss-preview',!!bossPreview);
  if(phase==='countdown'){const preview=bossPreview;announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0')+(preview?' · '+preview.name:''));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(330,300,.07,.03,'triangle');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',preview?'Equipment: '+preview.equipment:getCountdownTip());}
@@ -1439,7 +1447,7 @@ function activeTankPowerBadges(t,out=[]){
  if(t?.power&&t.powerTime>0&&POWER[t.power])out.push(t.power);
  if(shieldCount(t)>0)out.push('shield');
  if(speedCount(t)>0)out.push('speed');
- if((t?.ghostTime||0)>0)out.push('ghost');
+ if(t?.starmanTime>0)out.push('starman');else if(t?.ghostTime>0)out.push('ghost');
  return out;
 }
 function tankPowerBadgeImage(kind){
@@ -1470,8 +1478,8 @@ function tankPowerBadgePositions(t,layout,count,out=tankPowerBadgePositionScratc
  }
  return out;
 }
-function powerExpiryAlpha(remaining){return remaining<3?.5+.4*Math.sin(fxTime*12):1;}
-function tankPowerBadgeLife(t,kind){return kind==='shield'?t.shield:kind==='speed'?t.speedTime:kind==='ghost'?t.ghostTime:t.powerTime;}
+function powerExpiryAlpha(remaining,warning=3){return remaining<warning?.5+.4*Math.sin(fxTime*12):1;}
+function tankPowerBadgeLife(t,kind){return kind==='shield'?t.shield:kind==='speed'?t.speedTime:kind==='ghost'?t.ghostTime:kind==='starman'?t.starmanTime:t.powerTime;}
 function tankPowerBadgeCount(t,kind){
  if(kind==='shield')return shieldCount(t);if(kind==='speed')return speedCount(t);
  if(kind==='rapid')return clamp(Math.floor(t.machineRounds||0),0,MACHINE_FIRING_ROUNDS);
@@ -1490,7 +1498,7 @@ function drawTankPowerBadges(t,layout){
  const remoteOrBot=mode==='online'?(t.id!==localPlayerID()&&t.id!==secondaryID()):!t.human;if(!remoteOrBot)return;
  const kinds=activeTankPowerBadges(t,tankPowerBadgeScratch);if(!kinds.length)return;
  layout=layout||tankStatusLayout(t);const positions=tankPowerBadgePositions(t,layout,kinds.length),size=layout.size;
- ctx.save();for(let i=0;i<positions.length;i++){const kind=kinds[i],position=positions[i];ctx.globalAlpha=powerExpiryAlpha(tankPowerBadgeLife(t,kind));ctx.drawImage(tankPowerBadgeImage(kind),position.x,position.y,size,size);drawTankPowerBadgeCount(tankPowerBadgeCount(t,kind),position,size);}ctx.restore();
+ ctx.save();for(let i=0;i<positions.length;i++){const kind=kinds[i],position=positions[i];ctx.globalAlpha=powerExpiryAlpha(tankPowerBadgeLife(t,kind),kind==='starman'?1:3);ctx.drawImage(tankPowerBadgeImage(kind),position.x,position.y,size,size);drawTankPowerBadgeCount(tankPowerBadgeCount(t,kind),position,size);}ctx.restore();
 }
 function protectionRingAlpha(t){
  // Fade only inside the remaining protection window; never imply extra grace.
@@ -1512,20 +1520,24 @@ function drawLocalSpawnGuide(t){
 }
 function drawTank(t,withLabel=true){
  if(!t.alive){ctx.save();ctx.translate(t.x,t.y);ctx.rotate(t.angle);ctx.globalAlpha=.6;ctx.fillStyle=paintColor('#091116');roundRect(ctx,-18,-16,36,32,5);ctx.fill();ctx.strokeStyle=paintColor('#46545a');ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-8,-8);ctx.lineTo(8,8);ctx.moveTo(8,-8);ctx.lineTo(-8,8);ctx.stroke();ctx.restore();return;}
- const inv=t.invulnerable>0;
+ const inv=t.invulnerable>0,starman=t.starmanTime>0;
  ctx.save();ctx.translate(t.x,t.y);
  if(t.shield>0){
   ctx.strokeStyle=paintColor(POWER.shield.color);ctx.lineWidth=1.6;
   const count=shieldCount(t),pulse=reduceMotion?0:Math.sin(fxTime*4)*.6;
   for(let ring=0;ring<count;ring++){ctx.globalAlpha=.78;ctx.beginPath();ctx.arc(0,0,26+ring*4+pulse,0,TAU);ctx.stroke();}
   ctx.globalAlpha=.035;ctx.fillStyle=paintColor(POWER.shield.color);ctx.beginPath();ctx.arc(0,0,26+Math.max(0,count-1)*4,0,TAU);ctx.fill();ctx.globalAlpha=1;
- }else if(inv){ctx.strokeStyle=paintColor(theme.protection);ctx.lineWidth=1.5;ctx.globalAlpha=.35*protectionRingAlpha(t);ctx.beginPath();ctx.arc(0,0,27,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+ }else if(inv&&!starman){ctx.strokeStyle=paintColor(theme.protection);ctx.lineWidth=1.5;ctx.globalAlpha=.35*protectionRingAlpha(t);ctx.beginPath();ctx.arc(0,0,27,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+ if(starman){
+  const colors=['#ff758f','#f9ed75','#79d878','#62dcff','#ba91ff'];
+  ctx.lineWidth=2.5;for(let i=0;i<colors.length;i++){ctx.strokeStyle=colors[i];ctx.beginPath();ctx.arc(0,0,24,i*TAU/colors.length,(i+.85)*TAU/colors.length);ctx.stroke();}
+ }
  drawLocalSpawnGuide(t);
  // Player halo keeps the controlled tank easy to find on a phone.
  if(t.id===localPlayerID()){ctx.strokeStyle=paintColor(t.color);ctx.globalAlpha=.15;ctx.lineWidth=1;ctx.setLineDash([3,6]);ctx.beginPath();ctx.arc(0,0,23,0,TAU);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
  ctx.rotate(t.angle);
  if(t.speedTime>0){ctx.save();ctx.strokeStyle=paintColor(POWER.speed.color);ctx.lineWidth=2;ctx.globalAlpha=.65;const stacks=speedCount(t);for(let n=0;n<stacks;n++)for(const side of [-1,1]){const y=side*(8+n*2.2);ctx.beginPath();ctx.moveTo(-22,y);ctx.lineTo(-34-n*3-(reduceMotion?0:Math.sin(fxTime*22+n)*5),y);ctx.stroke();}ctx.restore();}
- if(t.ghostTime>0){ctx.save();ctx.strokeStyle=paintColor(POWER.ghost.color);ctx.lineWidth=1.5;ctx.setLineDash([3,4]);roundRect(ctx,-23,-21,46,42,9);ctx.stroke();ctx.restore();ctx.globalAlpha=.58;}
+ if(t.ghostTime>0){ctx.save();ctx.strokeStyle=paintColor(starman?POWER.starman.color:POWER.ghost.color);ctx.lineWidth=1.5;ctx.setLineDash([3,4]);roundRect(ctx,-23,-21,46,42,9);ctx.stroke();ctx.restore();ctx.globalAlpha=starman?.84:.58;}
  drawCachedTankHull(t);
  const recoil=t.recoil*4;ctx.fillStyle=paintColor('#0a121a');roundRect(ctx,4-recoil,-4.5,26,9,2);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.fillRect(5-recoil,-3,23,6);ctx.fillStyle=paintColor('#e4f0d98a');ctx.fillRect(26-recoil,-3.5,3,7);
  ctx.fillStyle=paintColor('#00000042');ctx.beginPath();ctx.arc(0,2,9.5,0,TAU);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.beginPath();ctx.arc(0,0,9,0,TAU);ctx.fill();ctx.strokeStyle=paintColor('#09121970');ctx.lineWidth=2;ctx.stroke();ctx.fillStyle=paintColor('#172124');ctx.beginPath();ctx.arc(-1,0,3.2,0,TAU);ctx.fill();ctx.restore();
@@ -1556,6 +1568,7 @@ function powerIcon(kind,c=ctx){
  }
  else if(kind==='grenade'){c.beginPath();c.arc(0,2,6,0,TAU);c.stroke();c.strokeRect(-2,-7,4,3);c.beginPath();c.moveTo(1,-8);c.quadraticCurveTo(6,-11,8,-5);c.stroke();c.fillRect(-1,0,2,4);}
  else if(kind==='ghost'){c.beginPath();c.moveTo(-8,9);c.lineTo(-8,-2);c.bezierCurveTo(-8,-12,8,-12,8,-2);c.lineTo(8,9);c.lineTo(4,6);c.lineTo(0,9);c.lineTo(-4,6);c.closePath();c.stroke();for(const x of [-3,3]){c.beginPath();c.arc(x,-1,1.2,0,TAU);c.fill();}}
+ else if(kind==='starman'){c.beginPath();for(let i=0;i<10;i++){const angle=i*TAU/10-Math.PI/2,radius=i%2?4.5:10;const x=radius*Math.cos(angle),y=radius*Math.sin(angle);if(i)c.lineTo(x,y);else c.moveTo(x,y);}c.closePath();c.stroke();}
  else if(kind==='cannon'){c.beginPath();c.arc(4,0,5,0,TAU);c.fill();c.beginPath();c.moveTo(-10,-4);c.lineTo(-5,-4);c.moveTo(-12,0);c.lineTo(-4,0);c.moveTo(-10,4);c.lineTo(-5,4);c.stroke();}
  else if(kind==='speed'){for(const x of [-5,2]){c.beginPath();c.moveTo(x-2,-7);c.lineTo(x+4,0);c.lineTo(x-2,7);c.stroke();}}
  else{c.beginPath();c.moveTo(0,-8);c.lineTo(7,-5);c.lineTo(6,3);c.quadraticCurveTo(4,7,0,9);c.quadraticCurveTo(-4,7,-6,3);c.lineTo(-7,-5);c.closePath();c.stroke();}
@@ -1861,10 +1874,13 @@ function joinInviteAsNewPilot(ws){
 }
 function chatHasFocus(){return roomChat.open&&!!document.activeElement?.closest?.('#chatPanel');}
 function onlineControls(second=false){
- const pilot=second?secondLocal()?.id:online.id;
- const active=online.connected&&!online.menu&&!chatHasFocus()&&!document.querySelector('.feature-dialog[open]')&&!document.hidden&&phase==='playing'&&!survivalBreak()&&performance.now()-(online.snapshots.at(-1)?.received||0)<450&&tanks.find(t=>t.id===pilot)?.alive;
- if(!active)return{forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0};
- return{forward:heldAction(second?1:0,'forward'),reverse:heldAction(second?1:0,'reverse'),left:heldAction(second?1:0,'left'),right:heldAction(second?1:0,'right'),fire:second?heldAction(1,'fire'):primaryFireHeld(),stickX:second?0:stick.x,stickY:second?0:stick.y};
+ const pilot=second?secondLocal()?.id:online.id,tank=tanks.find(t=>t.id===pilot);
+ const active=online.connected&&!online.menu&&!chatHasFocus()&&!document.querySelector('dialog[open]')&&!document.hidden&&phase==='playing'&&!survivalBreak()&&performance.now()-(online.snapshots.at(-1)?.received||0)<450&&tank?.alive;
+ if(!active)return Net.neutral();
+ const index=second?1:0,left=heldAction(index,'left'),right=heldAction(index,'right');
+ const aim=!second&&!left&&!right&&stick.mag<=.10?mouseAimHeading(online.predictor?.state||tank):null;
+ return{forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:second?heldAction(1,'fire'):primaryFireHeld(),
+  stickX:aim!==null?Math.cos(aim):second?0:stick.x,stickY:aim!==null?Math.sin(aim):second?0:stick.y,aimOnly:aim!==null};
 }
 function resetOnlineMotion(){
  updateOnlineBounceSounds([],null);
@@ -2087,6 +2103,10 @@ function renderOnlineRoom(){
  if($('chatBtn'))syncChatStatus();
  const r=roomData();if(!r)return;rememberRenderedRoomSetup(r);syncCallsignEditors();
  const isOnline=mode==='online',host=r.host===localPlayerID(),editable=['lobby','matchOver'].includes(r.phase)&&!r.queue&&!r.matchmaking&&!r.awayMatch,own=roomMember(localPlayerID(),r);
+ if(isOnline&&phase==='onlineLobby'&&r.phase==='lobby'){
+  const [mapCols,mapRows]=mapDimensions(r.rules.mapSize,r.rules.portraitMaze);
+  if(cols!==mapCols||rows!==mapRows){makeMaze();tanks=[];pickups=[];}
+ }
  const count=r.players.length,capacity=roomCapacity(r.rules),sides=new Set(r.players.filter(p=>p.connected).map(teamKey)).size;
  document.documentElement.style.setProperty('--pilot',paintColor(own?.color||COLORS[0]));
  $('roomCallsignForm').querySelector('label').textContent=host?'YOUR CALLSIGN · HOST':'YOUR CALLSIGN';
@@ -2132,7 +2152,7 @@ async function copyOnlineInvite(watch=false){
 }
 function netTank(t,previous=null,shieldHit=false){
  const fresh=!previous||previous.spawnSerial!==t.spawnSerial||!previous.alive;
- const spawnProtected=t.alive&&t.invulnerable>0&&!shieldHit&&(fresh||previous.spawnProtected&&t.invulnerable<=previous.invulnerable+1e-8);
+ const spawnProtected=t.alive&&t.invulnerable>0&&!(t.starmanTime>0)&&!shieldHit&&(fresh||previous.spawnProtected&&t.invulnerable<=previous.invulnerable+1e-8);
  return{...t,human:!t.bot,team:t.team??0,spawnProtected,ai:{target:-1}};
 }
 function receiveOnlineState(s){
@@ -2301,6 +2321,7 @@ function applyOnlineTankEffects(t,source,age){
  t.shield=Math.max(0,(source?.shield||0)-age);t.shieldCharges=t.shield>0?(source?.shieldCharges||0):0;
  t.speedTime=Math.max(0,(source?.speedTime||0)-age);t.speedStacks=t.speedTime>0?(source?.speedStacks||0):0;
  t.ghostTime=Math.max(0,(source?.ghostTime||0)-age);
+ t.starmanTime=Math.max(0,(source?.starmanTime||0)-age);
  return t;
 }
 // One render pass per animation frame. Own fire is cosmetic-predicted; other
@@ -2499,7 +2520,8 @@ function localSnapshotFromOnline(){
  if(!keep.some(p=>p.id===self))return null;const preview=walls.length&&cols>0&&rows>0?{cols,rows,width:W,height:H,walls:walls.map(w=>({...w})),pickups:pickups.map(p=>({...p}))}:null;return{code:r.code||online.code,self,players:keep,nextMember:Math.max(0,...keep.map(p=>p.member||0)),rules:validateRoomRules({...defaultRoomRules(),...(r.rules||{})}),preview};
 }
 function restoreUnsharedPreview(preview){
- if(!preview||!Array.isArray(preview.walls)||!preview.walls.length||!Number.isInteger(preview.cols)||!Number.isInteger(preview.rows))return false;
+ const [mapCols,mapRows]=mapDimensions();
+ if(!preview||!Array.isArray(preview.walls)||!preview.walls.length||preview.cols!==mapCols||preview.rows!==mapRows)return false;
  cols=preview.cols;rows=preview.rows;W=preview.width||cols*CELL;H=preview.height||rows*CELL;walls=preview.walls.map(w=>({...w}));grid=Array.from({length:cols*rows},()=>({neighbors:[]}));cacheMap();resize();localObjectives=null;resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=Array.isArray(preview.pickups)?preview.pickups.map(p=>({...p})):[];if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);return true;
 }
 function completeUnshare(){
@@ -2551,7 +2573,7 @@ async function openJoinDialog(){
 
 // v3.2 room rules, local presets, keyboard bindings, combat feedback and objectives.
 // All game state below is local-only unless it is received in a server snapshot.
-function defaultRoomRules(){return{mode:'elimination',teamMode:'ffa',teamNames:['Team 1','Team 2','Team 3','Team 4'],teamColors:[0,1,2,3],mapSize:'large',scoreTarget:5,timeLimit:75,respawnSeconds:3,pickupRate:'superfast',friendlyFire:false,weapons:Object.keys(POWER)};}
+function defaultRoomRules(){return{mode:'elimination',teamMode:'ffa',teamNames:['Team 1','Team 2','Team 3','Team 4'],teamColors:[0,1,2,3],mapSize:'large',portraitMaze:false,scoreTarget:5,timeLimit:75,respawnSeconds:3,pickupRate:'superfast',friendlyFire:false,weapons:Object.keys(POWER)};}
 function defaultModeRules(value='elimination'){
  const r=defaultRoomRules();r.mode=value;r.teamMode=value==='ctf'||value==='survival'?'teams':'ffa';r.scoreTarget=value==='survival'?15:value==='koth'?30:value==='ctf'?3:5;r.timeLimit=value==='ctf'||value==='koth'?180:75;return r;
 }
@@ -2572,19 +2594,25 @@ function validateSavedRoster(value,rules){
  if(active>roomCapacity(rules))return null;
  normalizeRoomTeams(roster,rules);return roster;
 }
+function restoreRoomRules(defaults,raw,legacyPickups){
+ const rules=validateRoomRules({...defaults,...raw});
+ // An old room with every pickup enabled keeps that behavior. Preserve explicit subsets.
+ if(legacyPickups&&rules.weapons.length===9&&!rules.weapons.includes('starman'))rules.weapons.push('starman');
+ return rules;
+}
 function loadRememberedRoomSetup(){
  if(rememberedRoomSetup)return rememberedRoomSetup;
- const setup={version:2,selectedMode:'elimination',modes:{},roster:null};
+ const setup={version:2,pickupCatalogVersion:2,selectedMode:'elimination',modes:{},roster:null};
  try{
   const saved=JSON.parse(localStorage.getItem(ROOM_SETUP_KEY)||'null');
   if(saved?.version===2){
-   for(const key of ['elimination','ctf','koth','survival'])try{const raw=saved.modes?.[key];if(raw&&typeof raw==='object'&&raw.mode===key)setup.modes[key]=validateRoomRules({...defaultModeRules(key),...raw});}catch(_){}
+   for(const key of ['elimination','ctf','koth','survival'])try{const raw=saved.modes?.[key];if(raw&&typeof raw==='object'&&raw.mode===key)setup.modes[key]=restoreRoomRules(defaultModeRules(key),raw,saved.pickupCatalogVersion===undefined);}catch(_){}
    if(['elimination','ctf','koth','survival'].includes(saved.selectedMode)&&setup.modes[saved.selectedMode])setup.selectedMode=saved.selectedMode;
    setup.roster=validateSavedRoster(saved.roster,setup.modes[setup.selectedMode]||defaultLocalRoomRules());
   }
  }catch(_){}
  if(!setup.modes[setup.selectedMode]){
-  try{const saved=JSON.parse(localStorage.getItem(LOCAL_RULES_KEY)||'null'),raw=saved?.rules||saved;if(raw&&typeof raw==='object'){const rules=validateRoomRules({...defaultLocalRoomRules(),...raw});setup.selectedMode=rules.mode;setup.modes[rules.mode]=rules;}}catch(_){}
+  try{const saved=JSON.parse(localStorage.getItem(LOCAL_RULES_KEY)||'null'),raw=saved?.rules||saved;if(raw&&typeof raw==='object'){const rules=restoreRoomRules(defaultLocalRoomRules(),raw,true);setup.selectedMode=rules.mode;setup.modes[rules.mode]=rules;}}catch(_){}
  }
  if(!setup.modes[setup.selectedMode])setup.modes[setup.selectedMode]=defaultLocalRoomRules();
  rememberedRoomSetup=setup;return setup;
@@ -2634,8 +2662,9 @@ function validateRoomRules(r){
  // Saved rooms and presets may still list the retired Scope pickup.
  const weapons=[...new Set(r.weapons.map(w=>w==='scope'?'laser':w))];
  if(r.friendlyFire!==undefined&&typeof r.friendlyFire!=='boolean')throw Error('Friendly fire must be on or off.');
+ if(r.portraitMaze!==undefined&&typeof r.portraitMaze!=='boolean')throw Error('Portrait maze must be on or off.');
  const teamNames=validateTeamNames(r.teamNames);const teamColors=r.teamColors??[0,1,2,3];if(!Array.isArray(teamColors)||teamColors.length!==4||teamColors.some(i=>!Number.isInteger(i)||i<0||i>7))throw Error('Choose a palette color for each team.');
- return {...JSON.parse(JSON.stringify(r)),weapons,teamNames,teamColors:[...teamColors],friendlyFire:r.friendlyFire??false};
+ return {...JSON.parse(JSON.stringify(r)),weapons,teamNames,teamColors:[...teamColors],friendlyFire:r.friendlyFire??false,portraitMaze:r.portraitMaze??false};
 }
 function validateTeamNames(names){
  if(names===undefined||names===null)return ['Team 1','Team 2','Team 3','Team 4'];
@@ -2643,7 +2672,11 @@ function validateTeamNames(names){
  return names.map(value=>{if(typeof value!=='string'||/[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cs}]/u.test(value))throw Error('Team names must be on one line without control characters.');const name=value.trim();if(!name||[...name].length>24||!/[^\s\p{Cf}]/u.test(name))throw Error('Team names must contain 1–24 visible characters.');return name;});
 }
 const MAZE_SIZES={compact:[7,7],standard:[9,8],large:[12,10],huge:[14,12],giant:[16,14],ultrawide:[24,14]};
-function mapDimensions(size=currentRules().mapSize){return MAZE_SIZES[size]||MAZE_SIZES.standard;}
+function mapDimensions(size=currentRules().mapSize,portrait=currentRules().portraitMaze){
+ const [c,r]=MAZE_SIZES[size]||MAZE_SIZES.standard;
+ return portrait?[r,c]:[c,r];
+}
+function mapSetupChanged(previous,next){return previous?.mapSize!==next.mapSize||next.mapSize!=='compact'&&!!previous.portraitMaze!==!!next.portraitMaze;}
 function pickupCap(c=cols,r=rows){return c>0&&r>0?Math.round(c*r/9.8):0;}
 function startingPickups(c=cols,r=rows){const area=c*r;return area>0?2+[49,72,120,168,224].filter(n=>area>n).length:0;}
 // Equipped timers grow at Huge; thrown-projectile lifetimes stay independent.
@@ -2652,7 +2685,7 @@ function powerEffectDuration(c=cols,r=rows){return c*r>=14*12?15:POWER_EFFECT_DU
 function pickupLifetime(c=cols,r=rows){const cap=pickupCap(c,r);return cap>0?Math.max(c*r<=12*10?30:0,Math.floor(cap*8/3)):0;}
 function seedPickups(){for(let i=0;i<startingPickups();i++)spawnPower();}
 function pickupLimitText(size=currentRules().mapSize){const [c,r]=mapDimensions(size);return startingPickups(c,r)+' starting pickups · '+pickupCap(c,r)+' maximum on this maze.';}
-function syncControlsPickupInfo(){const el=$('controlsPickupInfo');if(!el)return;const [c,r]=mapDimensions();el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Power-ups last '+powerEffectDuration(c,r)+' seconds after pickup. Machine gun: 3 seconds of firing. Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));}
+function syncControlsPickupInfo(){const el=$('controlsPickupInfo');if(!el)return;const [c,r]=mapDimensions();el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Most power-ups last '+powerEffectDuration(c,r)+' seconds after pickup. Starman: '+STARMAN_DURATION+' seconds. Machine gun: 3 seconds of firing. Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));}
 function pickupInterval(){return currentRules().pickupRate==='off'?[Infinity,Infinity]:currentRules().pickupRate==='superfast'?[1,2]:currentRules().pickupRate==='normal'?[4,6]:currentRules().pickupRate==='slow'?[7,10]:[2,3.5];}
 function roomStartError(data=roomData()){
  const players=data?.players.filter(p=>p.connected!==false)||[],r=data?.rules||currentRules();
@@ -2663,7 +2696,7 @@ function roomStartError(data=roomData()){
 }
 function setLocalRules(value){
  if(value?.mode==='survival'&&localRoom.players.filter(p=>!p.spectating).length>4)throw Error('Survival supports up to four squad tanks. Remove a bot or move a pilot to spectating first.');
- const previous=localRoom.rules||defaultRoomRules(),rules=validateRoomRules(value),teamCountChanged=activeTeamCount(previous)!==activeTeamCount(rules),mapChanged=previous.mapSize!==rules.mapSize,pickupSetupChanged=previous.pickupRate!==rules.pickupRate||previous.weapons.join('|')!==rules.weapons.join('|');localRoom.rules=rules;roundClock=rules.timeLimit;
+ const previous=localRoom.rules||defaultRoomRules(),rules=validateRoomRules(value),teamCountChanged=activeTeamCount(previous)!==activeTeamCount(rules),mapChanged=mapSetupChanged(previous,rules),pickupSetupChanged=previous.pickupRate!==rules.pickupRate||previous.weapons.join('|')!==rules.weapons.join('|');localRoom.rules=rules;roundClock=rules.timeLimit;
  if(rules.teamMode==='teams'&&teamCountChanged)balanceLocalTeams();normalizeRoomTeams(localRoom.players,rules);
  persistLocalRoomRules(rules);
  resetPreviewIfLobby({regenerateMaze:mapChanged,resetPickups:pickupSetupChanged});renderOnlineRoom();
@@ -2714,7 +2747,7 @@ function countdownTipPool(rules=currentRules()){
  add(generalTips,'owner-immunity','Your shots pass through your own tank, and your own grenades cannot hurt you.');
  add(generalTips,'countdown','Movement and firing begin when the countdown reaches GO.');
  if(rules.pickupRate!=='off'&&rules.weapons.length){
-  const [c,r]=mapDimensions(rules.mapSize),duration=powerEffectDuration(c,r);
+  const [c,r]=mapDimensions(rules.mapSize,!!rules.portraitMaze),duration=powerEffectDuration(c,r);
   const powerText={
    rapid:'Machine gun: '+MACHINE_FIRING_ROUNDS/60+' seconds of firing; watch FIRE LEFT.',
    scatter:'The shotgun fires a spread of bouncing pellets.',
@@ -2724,7 +2757,8 @@ function countdownTipPool(rules=currentRules()){
    speed:'Speed pickups stack for faster movement and turning.',
    laser:'Laser gives you a long dotted guide for reflected shots.',
    cannon:'Cannon shells ignore interior walls and bounce off the outer rim.',
-   ghost:'Ghost lets you drive through interior walls temporarily.'
+   ghost:'Ghost lets you drive through interior walls temporarily.',
+   starman:'Starman grants brief invincibility and wall phasing.'
   };
   for(const kind of rules.weapons)if(Object.prototype.hasOwnProperty.call(powerText,kind))add(powerTips,'power-'+kind,powerText[kind]);
   add(generalTips,'power-duration','Equipped power-ups last up to '+duration+' seconds on this map.');
@@ -2754,7 +2788,7 @@ function rulesForRoomMode(value){
  if(!ROOM_MODES.some(m=>m.id===value))throw Error('Choose an available game mode.');
  const r=currentRules();if(value===r.mode)return validateRoomRules(r);
  const saved=rememberedRulesForMode(value),defaults=defaultModeRules(value);
- return validateRoomRules({...r,scoreTarget:defaults.scoreTarget,timeLimit:defaults.timeLimit,...(saved||{}),mode:value,mapSize:r.mapSize,teamMode:value==='ctf'||value==='survival'?'teams':r.teamMode});
+ return validateRoomRules({...r,scoreTarget:defaults.scoreTarget,timeLimit:defaults.timeLimit,...(saved||{}),mode:value,mapSize:r.mapSize,portraitMaze:!!r.portraitMaze,teamMode:value==='ctf'||value==='survival'?'teams':r.teamMode});
 }
 function clearRoomModePending(){if(pendingRoomMode)clearTimeout(pendingRoomMode.timer);pendingRoomMode=null;}
 function paintRoomModeChoice(value){
@@ -2765,14 +2799,26 @@ function paintRoomModeChoice(value){
 function syncRoomModePicker(){
  syncRoomSetupPending();
  if(!$('roomModeChoices'))return;
- const context=mode==='online'?'online:'+online.code+':'+online.member:'local:'+localRoom.code,rules=currentRules(),value=rules.mode,observed=JSON.stringify([value,rules.teamMode,rules.mapSize]);
+ const context=mode==='online'?'online:'+online.code+':'+online.member:'local:'+localRoom.code,rules=currentRules(),value=rules.mode,observed=JSON.stringify([value,rules.teamMode,rules.mapSize,!!rules.portraitMaze]);
  if(context!==roomModeContext){clearRoomModePending();roomModeError='';roomModeContext=context;}
  if(observed!==roomModeObserved){roomModeError='';roomModeObserved=observed;}
  if(pendingRoomMode&&(pendingRoomMode.socket!==online.socket||!online.connected||!isRoomEditable()||rules[pendingRoomMode.field||'mode']===pendingRoomMode.value))clearRoomModePending();
  const editable=roomModeEditable();paintRoomModeChoice(value);
  for(const b of document.querySelectorAll('[data-room-mode]'))b.disabled=!editable;
- const format=$('roomTeamMode'),map=$('roomMapSize'),teamsOnly=value==='ctf'||value==='survival';
- if(format){format.value=rules.teamMode;format.disabled=!editable||teamsOnly;}if(map){map.value=rules.mapSize;map.disabled=!editable;}
+ const format=$('roomTeamMode'),map=$('roomMapSize'),portrait=$('roomPortraitMaze'),teamsOnly=value==='ctf'||value==='survival';
+ if(format){format.value=rules.teamMode;format.disabled=!editable||teamsOnly;}
+ if(map){
+  map.value=rules.mapSize;map.disabled=!editable;
+  if(map.dataset.portrait!==String(!!rules.portraitMaze)){
+   map.dataset.portrait=String(!!rules.portraitMaze);
+   for(const option of map.options){
+    const [c,r]=mapDimensions(option.value,!!rules.portraitMaze);
+    option.label=option.textContent.split(' · ')[0]+' · '+c+' × '+r;
+   }
+  }
+ }
+ if(portrait){portrait.checked=!!rules.portraitMaze;portrait.disabled=!editable;}
+ $('roomPortraitHelp').textContent=rules.mapSize==='compact'?'Compact is square. Portrait applies to larger maps.':'Swaps width and height for a taller maze.';
  if($('roomFormatHelp')){$('roomFormatHelp').textContent=teamsOnly?(value==='ctf'?'Capture the Flag uses two teams.':'All squad tanks share one team.') :'';$('roomFormatHelp').hidden=!teamsOnly;}
  const notice=roomModeError||(pendingRoomMode?'Applying '+pendingRoomMode.label+'…':rulesPending||presetsPending?'Applying room settings…':mode==='online'&&!online.connected?'Reconnect to change room settings.':!isRoomHost()?'The host chooses room settings.':!isRoomEditable()?'Room settings are fixed until this match ends.':'');
  $('roomModeNotice').textContent=notice;$('roomModeNotice').hidden=!notice;$('roomModeNotice').classList.toggle('error',!!roomModeError);$('roomModeNotice').setAttribute('role',roomModeError?'alert':'status');
@@ -2785,7 +2831,7 @@ function rejectRoomMode(message){
 function selectRoomMode(value){return selectRoomSetting('mode',value);}
 function selectRoomSetting(field,value){
  if(!roomModeEditable()){syncRoomModePicker();return false;}
- if(!['mode','teamMode','mapSize'].includes(field))return false;
+ if(!['mode','teamMode','mapSize','portraitMaze'].includes(field))return false;
  if(value===currentRules()[field]){roomModeError='';syncRoomModePicker();return true;}
  roomModeError='';
  try{
@@ -2793,7 +2839,7 @@ function selectRoomSetting(field,value){
   if(rules.mode==='survival'&&roomData().players.length>4)throw Error('Survival supports up to four squad tanks. Remove a bot or move a pilot to spectating first.');
   if(mode==='online'){
    if(!sendOnline({type:'rules',rules}))throw Error('Connection unavailable. Room settings were not changed.');
-   const label=field==='mode'?ROOM_MODES.find(m=>m.id===value).name:field==='teamMode'?'battle format':'map size';
+   const label=field==='mode'?ROOM_MODES.find(m=>m.id===value).name:field==='teamMode'?'battle format':field==='mapSize'?'map size':'maze orientation';
    const request={field,value,label,socket:online.socket,timer:0};pendingRoomMode=request;
    request.timer=setTimeout(()=>{if(pendingRoomMode===request)rejectRoomMode('No confirmation received. Check room settings before trying again.');},8000);
    syncFeatureSummary();
@@ -2813,9 +2859,11 @@ function roomModeKeydown(e){
 }
 function initRoomModePicker(toolbar){
  const picker=document.createElement('section');picker.className='room-mode-picker';picker.setAttribute('aria-label','Match setup');
- picker.innerHTML='<div class="field-label" id="roomModeLabel">GAME MODE</div><div class="room-mode-choices" id="roomModeChoices" role="radiogroup" aria-labelledby="roomModeLabel" aria-describedby="roomModeDescription roomModeNotice">'+ROOM_MODES.map(m=>'<button type="button" class="room-mode-choice" role="radio" data-room-mode="'+m.id+'" tabindex="-1" aria-checked="false"><svg viewBox="0 0 24 24" aria-hidden="true">'+m.icon+'</svg><span>'+m.name+'</span></button>').join('')+'</div><p class="room-mode-notice" id="roomModeNotice" role="status" tabindex="-1" hidden></p><p class="room-mode-help" id="roomModeDescription"></p><div class="room-setup-fields"><label for="roomTeamMode">BATTLE FORMAT</label><select id="roomTeamMode" aria-describedby="roomFormatHelp roomModeNotice"><option value="ffa">Free-for-all</option><option value="teams">Teams</option></select><p class="room-mode-help" id="roomFormatHelp" hidden></p><label for="roomMapSize">MAP SIZE</label><select id="roomMapSize" aria-describedby="roomModeNotice"><option value="compact">Compact · 7 × 7</option><option value="standard">Standard · 9 × 8</option><option value="large">Large · 12 × 10</option><option value="huge">Huge · 14 × 12</option><option value="giant">Giant · 16 × 14</option><option value="ultrawide">Ultra Wide · 24 × 14</option></select></div>';
+ picker.innerHTML='<div class="field-label" id="roomModeLabel">GAME MODE</div><div class="room-mode-choices" id="roomModeChoices" role="radiogroup" aria-labelledby="roomModeLabel" aria-describedby="roomModeDescription roomModeNotice">'+ROOM_MODES.map(m=>'<button type="button" class="room-mode-choice" role="radio" data-room-mode="'+m.id+'" tabindex="-1" aria-checked="false"><svg viewBox="0 0 24 24" aria-hidden="true">'+m.icon+'</svg><span>'+m.name+'</span></button>').join('')+'</div><p class="room-mode-notice" id="roomModeNotice" role="status" tabindex="-1" hidden></p><p class="room-mode-help" id="roomModeDescription"></p><div class="room-setup-fields"><label for="roomTeamMode">BATTLE FORMAT</label><select id="roomTeamMode" aria-describedby="roomFormatHelp roomModeNotice"><option value="ffa">Free-for-all</option><option value="teams">Teams</option></select><p class="room-mode-help" id="roomFormatHelp" hidden></p><label for="roomMapSize">MAP SIZE</label><select id="roomMapSize" aria-describedby="roomModeNotice"><option value="compact">Compact · 7 × 7</option><option value="standard">Standard · 9 × 8</option><option value="large">Large · 12 × 10</option><option value="huge">Huge · 14 × 12</option><option value="giant">Giant · 16 × 14</option><option value="ultrawide">Ultra Wide · 24 × 14</option></select>'+
+  '<label class="check-label"><input id="roomPortraitMaze" type="checkbox" aria-describedby="roomPortraitHelp roomModeNotice">Portrait maze</label><p class="room-mode-help" id="roomPortraitHelp"></p></div>';
  toolbar.before(picker);
  $('roomTeamMode').onchange=e=>selectRoomSetting('teamMode',e.target.value);$('roomMapSize').onchange=e=>selectRoomSetting('mapSize',e.target.value);
+ $('roomPortraitMaze').onchange=e=>selectRoomSetting('portraitMaze',e.target.checked);
  for(const b of document.querySelectorAll('[data-room-mode]')){b.onclick=()=>selectRoomMode(b.dataset.roomMode);b.onkeydown=roomModeKeydown;}
  syncRoomModePicker();
 }
@@ -2823,7 +2871,7 @@ function initRoomModePicker(toolbar){
 // confirms Apply; disconnects and timeouts keep the draft available for retry.
 function roomSetupRulesKey(rules){
  const r=validateRoomRules(rules);
- return JSON.stringify([r.mode,r.teamMode,r.mapSize,r.scoreTarget,r.timeLimit,r.respawnSeconds,r.pickupRate,[...r.weapons].sort(),r.friendlyFire,r.teamNames,r.teamColors]);
+ return JSON.stringify([r.mode,r.teamMode,r.mapSize,r.portraitMaze,r.scoreTarget,r.timeLimit,r.respawnSeconds,r.pickupRate,[...r.weapons].sort(),r.friendlyFire,r.teamNames,r.teamColors]);
 }
 function roomSetupRosterKey(roster,rules){
  return JSON.stringify(roster.map((p,i)=>[i===0?'human':p.kind,cleanPilotName(p.name),p.team,p.kind==='bot'?p.difficulty:'',rules.teamMode==='ffa'?(p.colorIndex??-1):-1]));
@@ -2895,7 +2943,7 @@ function fillRulesForm(r=currentRules()){
 }
 function resetRuleDefaults(){
  if(!roomModeEditable())return;
- const current=currentRules();fillRulesForm({...defaultModeRules(current.mode),mapSize:current.mapSize,teamMode:current.teamMode});$('rulesDialog').dataset.defaults='true';
+ const current=currentRules();fillRulesForm({...defaultModeRules(current.mode),mapSize:current.mapSize,portraitMaze:!!current.portraitMaze,teamMode:current.teamMode});$('rulesDialog').dataset.defaults='true';
  featureNotice('rulesNotice','Default '+modeLabel().toLowerCase()+' rules loaded. Select APPLY RULES to save.');
 }
 function updateRuleHelp(){
@@ -2924,7 +2972,7 @@ function readRuleTeamSettings(rules){
 }
 function submitRules(e){
  e.preventDefault();if(!roomModeEditable())return;
- try{const current=currentRules(),base=$('rulesDialog').dataset.defaults==='true'?defaultModeRules(current.mode):current,r={...base,mapSize:current.mapSize,teamMode:current.teamMode,pickupRate:$('rule-pickupRate').value};for(const k of ['scoreTarget','timeLimit','respawnSeconds'])r[k]=k==='respawnSeconds'&&['elimination','survival'].includes(r.mode)?base.respawnSeconds:Number($('rule-'+k).value);Object.assign(r,readRuleTeamSettings(r));r.friendlyFire=$('rule-friendlyFire').checked;r.weapons=[...document.querySelectorAll('[data-weapon-toggle]:checked')].map(c=>c.dataset.weaponToggle);validateRoomRules(r);
+ try{const current=currentRules(),base=$('rulesDialog').dataset.defaults==='true'?defaultModeRules(current.mode):current,r={...base,mapSize:current.mapSize,portraitMaze:!!current.portraitMaze,teamMode:current.teamMode,pickupRate:$('rule-pickupRate').value};for(const k of ['scoreTarget','timeLimit','respawnSeconds'])r[k]=k==='respawnSeconds'&&['elimination','survival'].includes(r.mode)?base.respawnSeconds:Number($('rule-'+k).value);Object.assign(r,readRuleTeamSettings(r));r.friendlyFire=$('rule-friendlyFire').checked;r.weapons=[...document.querySelectorAll('[data-weapon-toggle]:checked')].map(c=>c.dataset.weaponToggle);validateRoomRules(r);
   if(mode==='online')sendRoomSetupRequest('rules',{rules:r});
   else{setLocalRules(r);closeFeature($('rulesDialog'));}
  }catch(e){featureNotice('rulesNotice',e.message,true);}
@@ -2967,6 +3015,7 @@ function fieldManualHTML(){
   html+='<div class="manual-line"><span>Player 1</span><kbd>'+escapeHTML(controlSummary(0,false))+'</kbd></div>';
   if(hasLocalP2())html+='<div class="manual-line"><span>Player 2</span><kbd>'+escapeHTML(controlSummary(1,false))+'</kbd></div>';
  }
+ html+='<div class="manual-line"><span>Mouse (P1)</span><span>Move to aim · Left-click to fire</span></div>';
  html+='<div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>'+escapeHTML(modeLabel())+'</b><br>'+escapeHTML(modeInstructions())+'<br>Use Controls menu to change keys.</div>';
  return html;
 }
@@ -2974,6 +3023,7 @@ function renderBindings(){
  const grid=$('bindingGrid');grid.replaceChildren();
  for(let p=0;p<2;p++){const section=document.createElement('section');section.className='binding-player';section.innerHTML='<h3>PLAYER '+(p+1)+'</h3>';
   for(const [action,label]of [['forward','Forward'],['reverse','Reverse'],['left','Turn left'],['right','Turn right'],['fire','Fire'],['fireAlt','Fire (alternate)']]){const row=document.createElement('div');row.className='binding-row';const span=document.createElement('span');span.textContent=label;const button=document.createElement('button');button.type='button';button.className='secondary binding-key';button.dataset.bind=p+':'+action;button.textContent=keyLabel(bindings[p][action]);button.setAttribute('aria-label','Rebind player '+(p+1)+' '+label);button.onclick=()=>{bindingCapture={p,action};for(const b of grid.querySelectorAll('button'))b.classList.remove('capturing');button.classList.add('capturing');button.textContent='PRESS KEY';featureNotice('controlsNotice','Press a key. Escape cancels. P, M, F, Tab and system shortcuts are reserved.');};row.append(span,button);section.append(row);}grid.append(section);
+  if(p===0){const hint=document.createElement('p');hint.className='mode-help';hint.textContent='Move the mouse over the arena to aim. Left-click to fire. Use your forward and reverse keys to drive, or a turn key to switch back to keyboard steering.';section.append(hint);}
  }
  $('missileVisuals').checked=combatPrefs.visual;$('missileAudio').checked=combatPrefs.audio;if($('showFPS'))$('showFPS').checked=combatPrefs.fps;if($('performanceMode'))$('performanceMode').checked=combatPrefs.performance;
  syncControlsPickupInfo();featureNotice('controlsNotice','Click a binding to change it. Conflicts are rejected. Settings are saved on this device.');
@@ -3016,7 +3066,7 @@ function renderPresets(){
  featureNotice('presetsNotice',canLoadPreset()?'Presets save names, local seats, bots, teams and rules. Online guests and credentials are never saved.':'Loading requires a host-only lobby without spectators or online guests, including reconnecting members. It never replaces someone else’s place.');
 }
 function applyLocalPreset(p){
- const valid=validatePreset(p),mapChanged=(localRoom.rules?.mapSize||'')!==valid.rules.mapSize;localRoom.self=0;localRoom.nextViewer=MAX_TANKS;localRoom.rules=valid.rules;roundClock=valid.rules.timeLimit;round=1;localRoom.players=valid.roster.map((s,id)=>({...s,id,member:++localRoom.nextMember,owner:0}));
+ const valid=validatePreset(p),mapChanged=mapSetupChanged(localRoom.rules,valid.rules);localRoom.self=0;localRoom.nextViewer=MAX_TANKS;localRoom.rules=valid.rules;roundClock=valid.rules.timeLimit;round=1;localRoom.players=valid.roster.map((s,id)=>({...s,id,member:++localRoom.nextMember,owner:0}));
  persistLocalRoomRules(valid.rules);
  rememberCallsign(localRoom.players[0].name);const p2=localRoom.players.find(p=>p.kind==='local');if(p2)rememberLocalCallsign(p2.name);
  phase='menu';gameStarted=false;online.menu=false;scores=Array(MAX_TANKS).fill(0);clearInput();resetPreviewIfLobby({regenerateMaze:mapChanged,resetPickups:true});setScreen('room');renderOnlineRoom();
@@ -3415,6 +3465,35 @@ function initFeatures(){
  window.addEventListener('keydown',captureBinding,true);
 }
 
+function initIntroTour(){
+ const dialog=$('introTourDialog'),pages=dialog.querySelectorAll('[data-intro-page]');
+ const titles=['Drive and aim','Use the maze','Choose a battle'];
+ let step=0;
+ function showStep(index){
+  step=index;
+  for(const [i,page] of pages.entries())page.hidden=i!==step;
+  $('introTourStep').textContent='QUICK TOUR · '+(step+1)+' OF '+pages.length;
+  $('introTourTitle').textContent=titles[step];
+  $('introTourBack').disabled=step===0;
+  $('introTourNext').textContent=step===pages.length-1?'Done':'Next';
+  $('introTourTitle').focus({preventScroll:true});dialog.scrollTop=0;
+ }
+ function open(){
+  $('introTourDesktop').hidden=touchUI;
+  $('introTourTouch').hidden=!touchUI;
+  $('introTourKeys').textContent='Player 1 keys: '+controlSummary(0,false)+'. Use Controls to rebind keys.';
+  openFeature('introTour');showStep(0);
+ }
+ $('resetBindingsBtn').insertAdjacentHTML('afterend','<button class="secondary" type="button" id="openIntroTour">Replay quick tour</button>');
+ $('openIntroTour').onclick=open;
+ $('introTourSkip').onclick=()=>closeFeature(dialog);
+ $('introTourBack').onclick=()=>showStep(step-1);
+ $('introTourNext').onclick=()=>{if(step===pages.length-1)closeFeature(dialog);else showStep(step+1);};
+ dialog.addEventListener('close',()=>save('introTour.v1',1));
+ try{if(localStorage.getItem('leqra.introTour.v1')==='1')return;}catch(_){}
+ if(mode==='room'&&phase==='menu'&&!document.querySelector('dialog[open]'))open();
+}
+
 
 // v3.3 spectator membership. A spectator is never represented by a hidden tank.
 function resetWatchDialog(){
@@ -3592,7 +3671,7 @@ function initSpectators(){
  $('cancelSwapBtn').onclick=cancelSwap;$('confirmSwapBtn').onclick=confirmSwap;$('swapDialog').addEventListener('cancel',e=>{e.preventDefault();cancelSwap();});
 }
 
-// All input paths (keyboard, multi-touch, focus loss) share the same cleanup.
+// All input paths (keyboard, mouse, multi-touch, focus loss) share the same cleanup.
 window.addEventListener('keydown',e=>{
  if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||['SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable||e.target.tagName==='INPUT'&&!['button','submit','reset','checkbox','radio','range'].includes(e.target.type))return;
  // Fullscreen is available throughout menus, while text entry and binding capture retain their keys.
@@ -3605,6 +3684,7 @@ window.addEventListener('keydown',e=>{
  if(isControlKey(e.code)){
   e.preventDefault();if(e.repeat&&!keys.has(e.code)&&isWeaponKey(e.code))return;
   const fresh=!keys.has(e.code),wasFire=primaryFireHeld(),wasSecond=heldAction(1,'fire');keys.add(e.code);
+  if(fresh&&(keyForAction(0,'left',e.code)||keyForAction(0,'right',e.code)))clearMouseAim();
   if(fresh&&isWeaponKey(e.code)){
    if(primaryFireKey(e.code)&&!wasFire)firePresses.add(localPlayerID());
    const second=secondaryID();if(second!==undefined&&keyForAction(1,'fire',e.code)&&!wasSecond)firePresses.add(second);
@@ -3620,13 +3700,39 @@ $('stickZone').addEventListener('pointerdown',e=>{if(stick.id!==null)return;e.pr
 $('stickZone').addEventListener('pointermove',e=>{if(e.pointerId===stick.id){e.preventDefault();stickMove(e);}});
 function endStick(e){if(e.pointerId!==stick.id)return;stick.id=null;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';}
 $('stickZone').addEventListener('pointerup',endStick);$('stickZone').addEventListener('pointercancel',endStick);$('stickZone').addEventListener('lostpointercapture',endStick);
-$('fireBtn').addEventListener('pointerdown',e=>{e.preventDefault();initAudio();const was=primaryFireHeld();firePointers.add(e.pointerId);if(!was)firePresses.add(localPlayerID());capturePointer($('fireBtn'),e.pointerId);$('fireBtn').classList.add('held');if(!was&&mode==='online')sendOnlineInput(true);});
+function beginPointerFire(e,element){e.preventDefault();initAudio();const was=primaryFireHeld();firePointers.add(e.pointerId);if(!was)firePresses.add(localPlayerID());capturePointer(element,e.pointerId);$('fireBtn').classList.add('held');if(!was&&mode==='online')sendOnlineInput(true);}
+$('fireBtn').addEventListener('pointerdown',e=>beginPointerFire(e,$('fireBtn')));
 function endFire(e){const was=firePointers.delete(e.pointerId);if(!firePointers.size)$('fireBtn').classList.remove('held');if(was&&mode==='online')sendOnlineInput(true);}
 $('fireBtn').addEventListener('pointerup',endFire);$('fireBtn').addEventListener('pointercancel',endFire);$('fireBtn').addEventListener('lostpointercapture',endFire);
 // WebKit occasionally loses element-level pointer capture during a two-finger
 // joystick + fire gesture. Window-level release handlers prevent stuck inputs.
 window.addEventListener('pointerup',e=>{endStick(e);endFire(e);},true);window.addEventListener('pointercancel',e=>{endStick(e);endFire(e);},true);
 $('touchControls').addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('contextmenu',e=>e.preventDefault());
+function clearMouseAim(){if(mouseAim.active){mouseAim.active=false;canvas.classList.remove('mouse-aiming');}}
+function updateMouseAim(e){
+ if(phase!=='playing'||survivalBreak()||mode==='online'&&(!online.connected||online.menu)||!controlledTank()?.alive||
+    e.offsetX<0||e.offsetY<0||e.offsetX>=cssW||e.offsetY>=cssH){clearMouseAim();return false;}
+ // The offsets are CSS pixels on the canvas, before its world transform.
+ mouseAim.x=e.offsetX;mouseAim.y=e.offsetY;
+ if(!mouseAim.active){mouseAim.active=true;canvas.classList.add('mouse-aiming');}
+ return true;
+}
+function mouseAimHeading(t){
+ if(!mouseAim.active)return null;
+ const dx=mouseAim.x-offsetX-t.x*scale,dy=mouseAim.y-offsetY-t.y*scale;
+ return dx*dx+dy*dy>=4?Math.atan2(dy,dx):null;
+}
+canvas.addEventListener('pointermove',e=>{
+ if(e.pointerType!=='mouse')return;
+ updateMouseAim(e);
+ if(!(e.buttons&1)&&firePointers.has(e.pointerId))endFire(e);
+});
+canvas.addEventListener('pointerdown',e=>{
+ if(e.pointerType!=='mouse'||e.button!==0||!updateMouseAim(e))return;
+ canvas.focus({preventScroll:true});beginPointerFire(e,canvas);
+});
+for(const type of ['pointerleave','pointercancel'])canvas.addEventListener(type,e=>{if(e.pointerType==='mouse'){clearMouseAim();endFire(e);}});
+canvas.addEventListener('lostpointercapture',endFire);
 // Dialogs and the sidebar are part of the match too. Keep single-finger
 // scrolling and independent pointer controls, but prevent browser zoom and
 // native selection/callouts across the whole mobile match, including its HUD.
@@ -4156,8 +4262,8 @@ function initMatchmaking(){
 
 function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<760)return;try{if(sessionStorage.getItem('leqra.safariNoticeDismissed')==='1')return;}catch(_){}const n=document.createElement('aside');n.id='browserNotice';n.className='safari-recommendation';n.setAttribute('role','status');n.innerHTML='<span><strong>Safari detected.</strong> leqra works here, but Chrome or Firefox is recommended for optimal performance.</span><button type="button" aria-label="Dismiss browser recommendation">×</button>';n.querySelector('button').onclick=()=>{try{sessionStorage.setItem('leqra.safariNoticeDismissed','1');}catch(_){}n.remove();};document.body.append(n);}
 // Read-only public state is handy for embedding and smoke testing.
-window.leqra=Object.freeze({version:GAME_VERSION,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,survivalEnemy:!!t.survivalEnemy,survivalBoss:!!t.survivalBoss,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,machineRounds:t.machineRounds||0,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),ghostTime:t.ghostTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
+window.leqra=Object.freeze({version:GAME_VERSION,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,survivalEnemy:!!t.survivalEnemy,survivalBoss:!!t.survivalBoss,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,machineRounds:t.machineRounds||0,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),ghostTime:t.ghostTime||0,starmanTime:t.starmanTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
 // Deterministic hooks are only present in explicit development/test mode.
 if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,restartLocalSurvivalWave,requestRestartSurvivalWave,canRestartSurvivalWave,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initLocalSurvival,stepLocalSurvival,startLocalSurvivalWave,endLocalSurvival,survivalWavePlan,initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,restoreUnsharedPreview,unshareOnlineRoom,chatHasFocus,onlineControls,balanceLocalTeams,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
-initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();requestAnimationFrame(frame);
+initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();initIntroTour();requestAnimationFrame(frame);
 })();

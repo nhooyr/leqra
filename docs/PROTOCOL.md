@@ -1,13 +1,17 @@
-# leqra v4.47.0 — current game protocol (protocol 1)
+# leqra v4.48.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.47.0**:
+The JSON framing protocol is **1**. The application-version handshake requires **4.48.0**.
 
 ```json
-{"type":"server_hello","version":"4.47.0","protocol":1}
-{"type":"client_hello","version":"4.47.0","protocol":1}
+{"type":"server_hello","version":"4.48.0","protocol":1}
+{"type":"client_hello","version":"4.48.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
+
+## Mouse steering
+
+Desktop Player 1 sends the cursor direction using the existing bounded `stickX` and `stickY` controls with `aimOnly:true`. The server and client prediction turn toward this direction at the usual 5.8 radians per second before speed boosts. Forward and reverse inputs supply the throttle. When `aimOnly` is omitted or false, a joystick direction also supplies its own throttle as before. A mouse click uses the existing Fire input and server-latched press edge.
 
 ## Projectile ownership
 
@@ -15,7 +19,9 @@ Every projectile passes through the tank that fired it, and grenade blasts skip 
 
 ## Home-screen mode selection
 
-The home-screen icon selector and the battle-format/map-size selectors beneath it use the existing host-owned `rules` command with a complete validated rules object. They add no new protocol fields or commands. Guests and active-match controls remain read-only, normal server authorization applies, and online clients display accepted settings only after authoritative room state confirms them. The Rules dialog edits the remaining settings for that mode. New King of the Hill selections, its built-in preset and public Hill queue default to 30 points; explicit saved/custom targets remain valid.
+The home-screen mode selector, battle format, map size and Portrait maze use the existing host-owned `rules` command with a complete validated rules object. Guests and active-match controls remain read-only. Online clients display accepted settings after authoritative room state confirms them. The Rules dialog edits the remaining settings for that mode. New King of the Hill selections, its built-in preset and public Hill queue default to 30 points. Explicit saved or custom targets remain valid.
+
+`rules.portraitMaze` is a boolean shared by room rules, published lobbies and presets. It defaults to `false` when omitted. Enabling it swaps the selected maze's columns and rows in rounds and Survival waves. Compact remains 7 × 7. Area-based limits and fixed matchmaking layouts are unchanged.
 
 ## Survival rules and membership
 
@@ -70,6 +76,8 @@ An `add` command with `kind:"bot"` may omit `difficulty`. The server then copies
 ## Map-dependent timers and machine-gun budget
 
 Equipped weapon timers and Shield, Speed and Ghost durations refresh to **10 seconds** on Compact/Standard/Large or **15 seconds** on Huge/Giant/Ultra Wide. This corresponds to 15 seconds at maze area at least `14 * 12` cells. Projectile ranges/lifetimes and the 10-second grenade fuse remain separate.
+
+Starman is a three-second pickup with the rules and pickup ID `starman`. While active, tank snapshots include the authoritative `starmanTime` HUD timer. Collection raises both `invulnerable` and `ghostTime` to at least three seconds, keeping any longer timer. Clients use the normal Ghost movement and expiry path and distinguish Starman from spawn protection.
 
 The Laser pickup supplies three ricocheting shots and a long dotted guide while equipped. Clients calculate the guide for their locally controlled tanks from the current `power: "laser"` state and beam geometry. The separate `scope` value is removed from `rules.weapons` and `GET /api/config`, and snapshots omit `scopeTime`. Saved browser rules and presets merge a legacy Scope selection into Laser.
 

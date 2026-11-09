@@ -42,33 +42,6 @@ Movement smoothing, host kicking, editable callsigns, matching Join/Create
 button colors, mobile controls, offline bots, and local two-player mode remain
 included. The simulation and movement smoothing files are unchanged from v2.3.
 
-## Apply the update
-
-Stop your existing server. Keep a backup of any custom deployment settings and
-replace **both the Go sources and the entire `web/` directory** with this package.
-From the extracted project:
-
-```sh
-cd leqra-online
-go run .
-```
-
-Refresh every player's browser. Server restarts close in-memory rooms; old valid
-codes and invite links can now recreate those rooms, with the first visitor as
-host and all scores reset. `/healthz` and `leqra.version` should report **2.4.0**.
-
-For a compiled deployment, rebuild because the web assets are embedded:
-
-```sh
-go build -trimpath -o leqra .
-./leqra
-```
-
-Use `leqra.exe` on Windows. An existing Docker Compose deployment can rebuild
-with `docker compose up --build -d`. Keep custom hosting settings. Players keep
-using your server's reachable LAN or public address; this package does not
-create a new hosted service.
-
 ## Verification
 
 Passed **90 top-level Go tests with the race detector**, **16 JavaScript

@@ -86,32 +86,6 @@ limits. These safeguards bound exceptional collision cases; they do not refill
 range or grant extra damage. Snapshot fields `rangeLeft` and `seekDelay` are
 server-owned. The client cannot award itself range or choose a homing target.
 
-## Apply the update
-
-Stop the current server. Preserve custom deployment settings and replace **both
-the Go sources and the complete `web/` directory** with this package. Then:
-
-```sh
-cd leqra-online
-go run .
-```
-
-Refresh every player's browser. Both `/healthz` and `leqra.version` should
-report **2.8.0**. Do not combine an older browser client with the updated server:
-the older renderer still treats missile wall contact as termination. Restarting
-resets the in-memory rooms and scores; valid invite names can create new rooms.
-
-Compiled deployments must rebuild because the browser files are embedded:
-
-```sh
-go build -trimpath -o leqra .
-./leqra
-```
-
-Use `leqra.exe` on Windows. Existing Docker Compose deployments can rebuild
-with `docker compose up --build -d`, retaining their custom deployment settings.
-This is an updated source package for your server, not a newly hosted service.
-
 ## Verification
 
 Passed **162 top-level Go tests with the race detector** (253 including
