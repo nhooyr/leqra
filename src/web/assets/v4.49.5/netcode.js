@@ -9,7 +9,7 @@
  else root.leqraNet=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
  'use strict';
- const STEP=1/60, STEP_MS=1000/60;
+ const STEP=1/60, STEP_MS=1000/60, MACHINE_CAPACITY=115;
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
  const delta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
  const neutral=()=>({forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0,aimOnly:false});
@@ -17,7 +17,7 @@
  // Bounding and finite checks keep malformed frames from creating NaN renders.
  function expandMachineBullets(records,colors){
   if(!Array.isArray(records))return[];
-  const out=[];for(const a of records.slice(0,768)){
+  const out=[];for(const a of records.slice(0,8*MACHINE_CAPACITY)){
    if(!Array.isArray(a)||a.length!==12||a.some(n=>!Number.isFinite(n))||!Number.isInteger(a[1])||a[1]<0||a[1]>=8||!Number.isInteger(a[11])||a[11]<0||a[11]>=8)continue;
    out.push({id:a[0],owner:a[1],shotSerial:a[2],spawnSerial:a[3],x:a[4],y:a[5],vx:a[6],vy:a[7],age:a[8],life:a[9],bounces:a[10],color:colors[a[11]],kind:'rapid',r:3.5/3,pellet:0,target:-1});
   }return out;
@@ -269,5 +269,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({expandMachineBullets,STEP,STEP_MS,clamp,delta,neutral,controlsEqual,move,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,move,Predictor,SnapshotBuffer,ShotPresentation});
 });

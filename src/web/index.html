@@ -11,14 +11,14 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.4/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.4/theme.css">
-<link rel="stylesheet" href="assets/v4.49.4/style.css">
-<link rel="manifest" href="assets/v4.49.4/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.4/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.4/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.4/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.4/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.5/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.5/theme.css">
+<link rel="stylesheet" href="assets/v4.49.5/style.css">
+<link rel="manifest" href="assets/v4.49.5/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.5/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.5/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.5/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.5/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -70,7 +70,6 @@
       <button class="secondary share-room" id="copyInviteBtn" type="button">SHARE ROOM ONLINE ↗</button>
       <div class="room-utility"><button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button></div>
       <div class="room-connection-actions"><button class="room-action room-action-unshare" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="room-action room-action-leave" id="leaveRoomBtn" type="button" hidden>Leave room</button></div>
-      <input class="net-input invite-fallback" id="inviteFallback" aria-label="Copy this invite link" readonly hidden>
       <p class="net-status" id="roomStatus" role="status">Local play is ready. Share to invite online friends.</p>
      </div>
      <div class="net-content">
@@ -132,6 +131,10 @@
  <header class="feature-header"><h2 id="sidebarTitle">Sidebar</h2><button class="dialog-close" id="sidebarCloseBtn" data-close-dialog="sidebarDialog" type="button" aria-label="Close sidebar" autofocus>×</button></header>
  <div class="feature-body" id="sidebarDetails"></div>
 </dialog>
+<dialog id="inviteDialog" class="feature-dialog invite-dialog" aria-labelledby="inviteTitle" aria-describedby="inviteInstructions">
+ <header class="feature-header"><h2 id="inviteTitle">Share this room</h2><button class="dialog-close" data-close-dialog="inviteDialog" type="button" aria-label="Close invite">×</button></header>
+ <div class="feature-body"><p id="inviteInstructions"></p><textarea class="net-input invite-fallback" id="inviteFallback" aria-label="Invite to copy" rows="4" readonly autofocus></textarea></div>
+</dialog>
 <dialog id="introTourDialog" class="feature-dialog intro-tour" aria-labelledby="introTourTitle">
  <header class="feature-header"><div><div id="introTourStep" class="eyebrow">QUICK TOUR · 1 OF 3</div><h2 id="introTourTitle" tabindex="-1" aria-describedby="introTourStep">Drive and aim</h2></div></header>
  <div class="feature-body">
@@ -187,8 +190,8 @@
   <button id="introTourNext" class="primary" type="button">Next</button>
  </footer>
 </dialog>
-<script src="assets/v4.49.4/netcode.js" defer></script>
-<script src="assets/v4.49.4/game.js" defer></script>
-<script src="assets/v4.49.4/pwa.js" defer></script>
+<script src="assets/v4.49.5/netcode.js" defer></script>
+<script src="assets/v4.49.5/game.js" defer></script>
+<script src="assets/v4.49.5/pwa.js" defer></script>
 </body>
 </html>

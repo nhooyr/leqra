@@ -31,19 +31,19 @@ function boot(extra={}){
 const players=n=>Array.from({length:n},(_,id)=>({id,member:id+1,name:'P'+id,kind:id?'bot':'human',team:0,difficulty:'normal'}));
 const teams=b=>b.s.localRoom.players.filter(p=>!p.spectating).map(p=>p.team);
 
-test('enabling Teams distributes 1–8 tanks across every eligible team, skipping spectators',()=>{
+test('enabling Teams splits the ordered roster between two sides and skips spectators',()=>{
  for(const mode of ['elimination','koth','ctf'])for(let n=1;n<=8;n++){
   const b=boot();b.s.localRoom.players=players(n);b.s.localRoom.players.push({id:8,spectating:true,team:0});
   b.s.localRoom.rules={...b.s.localRoom.rules,mode,teamMode:'ffa'};
   b.s.setLocalRules({...b.s.localRoom.rules,teamMode:'teams'});
-  assert.deepEqual(teams(b),Array.from({length:n},(_,i)=>1+i%(mode==='ctf'?2:4)));
+  assert.deepEqual(teams(b),Array.from({length:n},(_,i)=>i<Math.ceil(n/2)?1:2));
   assert.equal(b.s.preview.regenerateMaze,false);
  }
 });
 test('new bot and local P2 fill the least-populated team and preserve manual choices',()=>{
  for(const mode of ['elimination','koth','ctf']){
   const b=boot();b.s.localRoom.rules.mode=mode;b.s.localRoom.players=players(1);b.s.localRoom.players[0].team=1;
-  for(let i=1;i<8;i++){b.s.addRoomSeat(i===1?'local':'bot');assert.equal(b.s.localRoom.players[i].team,1+i%(mode==='ctf'?2:4));}
+  for(let i=1;i<8;i++){b.s.addRoomSeat(i===1?'local':'bot');assert.equal(b.s.localRoom.players[i].team,1+i%2);}
   const before=teams(b);b.s.addRoomSeat('bot');assert.deepEqual(teams(b),before);
  }
  const b=boot();b.s.localRoom.players=players(3);b.s.localRoom.players.forEach(p=>p.team=3);b.s.addRoomSeat('bot');assert.deepEqual(teams(b),[3,3,3,1]);
@@ -62,9 +62,9 @@ test('Add Bot inherits the last roster bot through edits and seat reuse, ignorin
 });
 test('changing to and from CTF rebalances, while other rule edits preserve host assignments',()=>{
  const b=boot();b.s.localRoom.players=players(8);b.s.balanceLocalTeams();
- b.s.setLocalRules({...b.s.localRoom.rules,mode:'ctf'});assert.deepEqual(teams(b),[1,2,1,2,1,2,1,2]);
- b.s.localRoom.players[1].team=1;b.s.setLocalRules({...b.s.localRoom.rules,timeLimit:100});assert.equal(teams(b)[1],1);
- b.s.setLocalRules({...b.s.localRoom.rules,mode:'elimination'});assert.deepEqual(teams(b),[1,2,3,4,1,2,3,4]);
+ b.s.setLocalRules({...b.s.localRoom.rules,mode:'ctf'});assert.deepEqual(teams(b),[1,1,1,1,2,2,2,2]);
+ b.s.localRoom.players[1].team=2;b.s.setLocalRules({...b.s.localRoom.rules,timeLimit:100});assert.equal(teams(b)[1],2);
+ b.s.setLocalRules({...b.s.localRoom.rules,mode:'elimination'});assert.deepEqual(teams(b),[1,1,1,1,2,2,2,2]);
 });
 test('CTF roster menus contain only first two teams; FFA has no team menu',()=>{
  for(const [mode,format,want] of [['ctf','teams',[1,2]],['elimination','teams',[1,2,3,4]],['koth','teams',[1,2,3,4]],['elimination','ffa',[]]]){
@@ -80,12 +80,12 @@ test('CTF rejects manual Teams 3/4 locally and before sending an online edit',()
 test('legacy CTF presets migrate to two teams; valid manual presets retain their teams',()=>{
  const b=boot();const rules={...b.s.localRoom.rules,mode:'ctf'};
  const roster=players(4).map((p,i)=>({...p,team:i<2?3:4}));const before=JSON.stringify(roster);
- const migrated=b.s.validatePreset({rules,roster});assert.deepEqual(Array.from(migrated.roster,p=>p.team),[1,2,1,2]);assert.equal(JSON.stringify(roster),before);
+ const migrated=b.s.validatePreset({rules,roster});assert.deepEqual(Array.from(migrated.roster,p=>p.team),[1,1,2,2]);assert.equal(JSON.stringify(roster),before);
  const valid=b.s.validatePreset({rules,roster:roster.map((p,i)=>({...p,team:i<3?1:2}))});assert.deepEqual(Array.from(valid.roster,p=>p.team),[1,1,1,2]);
 });
-test('spectators entering play fill an empty side, including after a CTF transition',()=>{
+test('spectators entering play balance the active teams without opening a third team',()=>{
  const b=boot();b.s.localRoom.players=[...players(2).map((p,i)=>({...p,team:i+1})),{id:8,member:9,kind:'human',spectating:true,team:1}];
- b.s.setPlayerSpectating(b.s.localRoom.players[2],false);assert.deepEqual(teams(b),[1,2,3]);
+ b.s.setPlayerSpectating(b.s.localRoom.players[2],false);assert.deepEqual(teams(b),[1,2,1]);
 });
 test('pause visibility and labels track lobby, match, results, local pause and online connection',()=>{
  const b=boot();

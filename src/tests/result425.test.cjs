@@ -27,7 +27,7 @@ function boot({teams=false,target=1}={}){
  const s={ROUND_END_SECONDS:2,mode:'room',phase:'playing',MAX_TANKS:8,localRoom:{players,self:0,nextMember:103,nextViewer:8},
   tanks:players.map(p=>({...p,alive:p.name!=='RIVAL',human:p.kind!=='bot',color:'#fff'})),scores:Array(8).fill(0),
   round:1,roundWinner:-1,phaseTime:0,roundClock:75,bullets:[],particles:[],rings:[],fxTime:0,time:0,toastTime:0,shake:0,uiClock:1,
-  localObjectives:null,pendingMatchPresentation:null,now:0,performance:{now:()=>s.now},online:{},localMatchStats:null,localMatchReport:null,localMatchResult:null,goUntil:0,bestWins:0,
+  localTick:0,localTankActors:Array(8),localObjectives:null,pendingMatchPresentation:null,now:0,performance:{now:()=>s.now},online:{},localMatchStats:null,localMatchReport:null,localMatchResult:null,goUntil:0,bestWins:0,
   COLORS:['#fff'],$,document:{createElement:()=>new Element(),querySelectorAll:()=>[]},
   teamKey:p=>p.team>0?'team'+p.team:'pilot'+p.id,teamName:id=>'TEAM '+id,teamColor:()=>'#fff',paintColor:c=>c,
   currentRules:()=>rules,objectiveMode:()=>false,suddenDeath:()=>false,
@@ -70,6 +70,14 @@ test('winning team result keeps original members and score when the winning pilo
  assert.equal($('victoryTitle').textContent,'TEAM 1 WINS!');
  assert.match($('victoryMembers').textContent,/ORIGINAL/);
  assert.ok(scoreLabels($).includes('TEAM 1:1'));
+});
+test('the device earns one win for either local pilot, even when both share the winning side',()=>{
+ for(const teamPlay of [false,true]){
+  const {s,players}=boot({teams:true});
+  if(!teamPlay){players[0].team=0;players[1].team=0;s.tanks[0].team=0;s.tanks[1].team=0;}
+  s.finishRound(1);complete(s);s.finishMatch(1);
+  assert.equal(s.bestWins,1);assert.equal(s.saves,1);
+ }
 });
 test('a spectator swapping into the winning seat cannot receive the original pilot win',()=>{
  const {s,$,players}=boot();

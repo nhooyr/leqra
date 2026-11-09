@@ -13,6 +13,8 @@ Open **Room settings → Controls** to remap keys, adjust audio, or replay the q
 
 Press **Play** to start with bots. Open **Players and bots** to edit the roster or add Player 2. **Room settings** holds the mode, format, map, rules, and presets. **Portrait maze** makes rectangular maps taller than they are wide. The square Compact map keeps its dimensions.
 
+Selecting **Teams** puts the top half of the active roster on Team 1 and the bottom half on Team 2. Team 1 gets the extra pilot when the count is odd. The player list keeps teammates together as assignments change.
+
 **Share room online** opens the room to friends. Share the invite link or room code. Guests select **I'm Ready**, then the host starts the match. When another combatant joins, guests who already marked themselves ready keep their status. **Find online battle** opens public matchmaking. To watch a private room, use its spectator link.
 
 ## Game modes
