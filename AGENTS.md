@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 - `src/`: Go server, authoritative simulation, WebSocket transport, rooms, matchmaking, and adjacent `*_test.go` files; one `leqra` module using `package main`.
-- `src/web/`: browser game, styles, and HTML; `assets/v<version>/` holds production assets. `src/tests/` contains JavaScript tests, optional browser/protocol harnesses, and historical results.
+- `src/web/`: `index.html` and the versioned browser assets under `assets/v<version>/`. `src/tests/` contains JavaScript tests, optional browser/protocol harnesses, and historical results.
 - `tests/`: mocked deployment tests. `scripts/`: optional asset-generation utilities. `deploy/`: deployment script, service, and environment settings. `docs/`: player guides, protocol, and release notes.
 
 ## Build, Test, and Development Commands
@@ -15,7 +15,7 @@ Run from the repository root. Use Go 1.23+, Node.js for JavaScript tests, and Py
 - `go test -race -count=1 ./...`: run Go tests with race detection.
 - `node --test src/tests/*.test.cjs`: run Node's built-in test suite.
 - `python3 -m unittest discover -s tests -p 'test_deploy.py' -v`: run deployment tests without contacting a host.
-- `go vet ./...`, `node --check src/web/game.js`, and `sh -n deploy/ensure.sh`: run static checks.
+- `go vet ./...`, `node --check src/web/assets/v*/game.js`, and `sh -n deploy/ensure.sh`: run static checks.
 
 ## Coding Style & Naming Conventions
 
@@ -29,7 +29,7 @@ Add deterministic regressions for bugs. Name Go tests `TestBehavior` in `*_test.
 
 ## Assets & Configuration
 
-Keep versioned symlinks pointing to their shared sources. Align server/client versions, HTML references, and PWA cache paths. Rebuild after asset changes. Configure locally through `PORT`, `ADDR`, `MAX_ROOMS`, and `ALLOWED_ORIGINS`. `deploy/ensure.sh` performs real remote deployment and restarts the service.
+Keep `index.html` at the web root and all other browser files in the current versioned asset directory. Align server/client versions, HTML references, and PWA cache paths. Rebuild after asset changes. Configure locally through `PORT`, `ADDR`, `MAX_ROOMS`, and `ALLOWED_ORIGINS`. `deploy/ensure.sh` performs real remote deployment and restarts the service.
 
 ## Commit & Pull Request Guidelines
 

@@ -1,11 +1,12 @@
 'use strict';
-const assert=require('node:assert/strict'),{readFileSync}=require('node:fs'),path=require('node:path');
+const assert=require('node:assert/strict'),{readFileSync}=require('node:fs');
 function declaration(source,name){
  const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);
  const end=source.indexOf('\n',start),line=source.slice(start,end);
  return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);
 }
-function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||path.join(__dirname,'../web/game.js'),mode='room',projectileCount=192}={}){
+const {assetPath}=require('./web_assets.cjs');
+function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||assetPath('game.js'),mode='room',projectileCount=192}={}){
  const source=readFileSync(sourcePath,'utf8'),nodes=new Map();
  const $=id=>{if(!nodes.has(id)){
   const attrs=new Map(),styles=new Map(),classes=new Set();

@@ -10,6 +10,7 @@ import secrets
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser = argparse.ArgumentParser()
 parser.add_argument('url', nargs='?', default='http://localhost:8080')
@@ -18,6 +19,7 @@ parser.add_argument('--browser', default=None)
 parser.add_argument('--output', default='test-output/room-features')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1] / 'web'
+assets = asset_directory(root)
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 checks, errors = [], []
@@ -80,13 +82,13 @@ function memoryStorage(initial){const data={...initial};return {
             html = root.joinpath('index.html').read_text()
             html = re.sub(r'<link[^>]*>', '', html)
             html = html.replace('<script src="game.js" defer></script>', '').replace('<script src="netcode.js" defer></script>', '')
-            html = html.replace('</head>', '<style>' + root.joinpath('style.css').read_text() + '</style></head>')
+            html = html.replace('</head>', '<style>' + assets.joinpath('style.css').read_text() + '</style></head>')
             page.set_content(html)
             page.evaluate('()=>{' + setup + '}')
-            js = root.joinpath('game.js').read_text().replace('(() => {', '((location) => {', 1)
+            js = assets.joinpath('game.js').read_text().replace('(() => {', '((location) => {', 1)
             pos = js.rfind('})();')
             js = js[:pos] + f'}})(new URL({json.dumps(url)}));' + js[pos+5:]
-            page.add_script_tag(content=root.joinpath('netcode.js').read_text())
+            page.add_script_tag(content=assets.joinpath('netcode.js').read_text())
             page.add_script_tag(content=js)
         else:
             if name is not None:

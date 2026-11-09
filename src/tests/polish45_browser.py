@@ -3,10 +3,11 @@ import argparse,json,re,time
 from pathlib import Path
 from urllib.parse import urlencode
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:8455');ap.add_argument('--output',default='test-output/polish45');a=ap.parse_args()
-r=Path(__file__).resolve().parents[1];web=r/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[];contexts=[]
 def check(ok,label): assert ok,label; checks.append(label); print('PASS',label,flush=True)
 def wait(p,s,**kwargs): return p.wait_for_function(s,polling=30,**kwargs)
@@ -15,7 +16,7 @@ def load(b,size=(1365,950),live=False,code=None,name='ALPHA'):
  q={'test':'1'}
  if code:q['room']=code
  p.evaluate('''a=>{window.__location=new URL(a.url);window.__history={state:null,replaceState(s,t,u){this.state=s;window.__updatedURL=String(u)}};const d={'leqra.name':a.name,'leqra.muted':'1'};Object.defineProperty(window,'localStorage',{value:{getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]}});Object.defineProperty(window,'sessionStorage',{value:{getItem:()=>null,setItem(){},removeItem(){}}});if(!a.live)window.requestAnimationFrame=()=>0;}''',dict(url=a.url+'/?'+urlencode(q),live=live,name=name))
- for f in ['theme.js','netcode.js']:p.add_script_tag(content=(web/f).read_text())
+ for f in ['theme.js','netcode.js']:p.add_script_tag(content=(assets/f).read_text())
  p.add_script_tag(content=js);wait(p,'window.__test&&leqra.version==="4.5.0"');p.evaluate('__test.render()');return p
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium')

@@ -7,11 +7,12 @@ import argparse,json,re,secrets
 from pathlib import Path
 from urllib.parse import urlencode
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:8431');ap.add_argument('--output',default='test-output/theme43');a=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
 html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text())
-html=html.replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+html=html.replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[];pages=[];contexts=[]
 def wait(p,expression,**kwargs):return p.wait_for_function(expression,polling=50,**kwargs)
 def check(ok,label):
@@ -29,7 +30,7 @@ def load(b,size=(1365,950),scheme='dark',stored=None,blocked=False,live=False,co
  if(!a.live)window.requestAnimationFrame=()=>0;
  const WS=WebSocket;window.WebSocket=class extends WS{send(v){__sent.push(JSON.parse(v));return super.send(v)}};
  }''',dict(url=a.url+'/?'+urlencode(query),stored=stored if stored is not None else {'leqra.name':'PILOT','leqra.muted':'1'},blocked=blocked,live=live))
- for name in ['theme.js','netcode.js']:p.add_script_tag(content=(web/name).read_text())
+ for name in ['theme.js','netcode.js']:p.add_script_tag(content=(assets/name).read_text())
  p.add_script_tag(content=js);wait(p, 'window.__test && leqra.version==="4.3.0"');p.evaluate('__test.render()');return p,c
 
 def shape(p):return p.evaluate('''()=>{const e=document.querySelector('#arenaWrap'),r=e.getBoundingClientRect(),c=document.querySelector('#arena');return [r.x,r.y,r.width,r.height,c.width,c.height];}''')

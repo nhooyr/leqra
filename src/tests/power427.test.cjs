@@ -1,8 +1,9 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const N=require('../web/netcode.js');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const N=require(assetPath('netcode.js'));
+const source=readFileSync(assetPath('game.js'),'utf8');
 const firingRounds=vm.runInNewContext(source.match(/MACHINE_FIRING_ROUNDS=([^,;]+)/)[1]);
 function declaration(name){
  const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);
