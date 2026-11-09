@@ -3,6 +3,7 @@ package main
 import "testing"
 
 func TestStarmanBlocksHitsAndSafelyEndsWallPhasing(t *testing.T) {
+	const duration = 5
 	g := ghostArena41()
 	pilot, opponent := g.Tanks[0], g.Tanks[1]
 	opponent.X, opponent.Y = 100, pilot.Y
@@ -10,8 +11,8 @@ func TestStarmanBlocksHitsAndSafelyEndsWallPhasing(t *testing.T) {
 	g.Pickups = []*Pickup{{X: pilot.X, Y: pilot.Y, Type: "starman", Life: 20}}
 	players := testPlayers(2)
 	g.step(tickDT, [maxTanks]Input{}, players)
-	if len(g.Pickups) != 0 || pilot.StarmanTime != 3 || pilot.Invulnerable != 3 || pilot.GhostTime != 3 {
-		t.Fatalf("Starman pickup did not grant three seconds of both effects: %+v", pilot)
+	if len(g.Pickups) != 0 || pilot.StarmanTime != duration || pilot.Invulnerable != duration || pilot.GhostTime != duration {
+		t.Fatalf("Starman pickup did not grant %d seconds of both effects: %+v", duration, pilot)
 	}
 	if hit, _ := g.projectileTankHit(&Bullet{Owner: opponent.ID, R: 3.5}, opponent.X, opponent.Y, 160, 0); hit != nil {
 		t.Fatal("an enemy round stopped on an invincible tank")
@@ -33,7 +34,7 @@ func TestStarmanBlocksHitsAndSafelyEndsWallPhasing(t *testing.T) {
 	}
 	pilot.X = 252
 	spawn := pilot.SpawnSerial
-	g.step(starmanDuration+.01, [maxTanks]Input{}, players)
+	g.step(duration+.01, [maxTanks]Input{}, players)
 	if pilot.StarmanTime != 0 || pilot.Invulnerable != 0 || pilot.GhostTime != 0 || !g.clearTankAt(pilot.X, pilot.Y, pilot.R) || pilot.SpawnSerial != spawn {
 		t.Fatalf("Starman did not safely expire inside a wall: %+v", pilot)
 	}
@@ -44,6 +45,7 @@ func TestStarmanBlocksHitsAndSafelyEndsWallPhasing(t *testing.T) {
 }
 
 func TestStarmanRefreshKeepsExistingGearAndPublishesItsTimer(t *testing.T) {
+	const duration = 5
 	h, clients, room := makeRoom(t, 2)
 	room.Game = ghostArena41()
 	g := room.Game
@@ -58,11 +60,11 @@ func TestStarmanRefreshKeepsExistingGearAndPublishesItsTimer(t *testing.T) {
 	g.step(.5, [maxTanks]Input{}, testPlayers(2))
 	ghostTime := pilot.GhostTime
 	g.grantPower(pilot, "starman")
-	if pilot.StarmanTime != 3 || pilot.Invulnerable != 3 || pilot.GhostTime != ghostTime || pilot.Power != "cannon" || pilot.Charges != 3 || shieldCount(pilot) != 1 || speedCount(pilot) != 1 {
+	if pilot.StarmanTime != duration || pilot.Invulnerable != duration || pilot.GhostTime != ghostTime || pilot.Power != "cannon" || pilot.Charges != 3 || shieldCount(pilot) != 1 || speedCount(pilot) != 1 {
 		t.Fatalf("Starman refresh changed other pickups or stacked duration: %+v", pilot)
 	}
 	tanks := h.stateMessage(room)["tanks"].([]Tank)
-	if tanks[0].StarmanTime != 3 || tanks[0].GhostTime != ghostTime || tanks[0].Invulnerable != 3 {
+	if tanks[0].StarmanTime != duration || tanks[0].GhostTime != ghostTime || tanks[0].Invulnerable != duration {
 		t.Fatal("Starman and its movement and damage state are missing from snapshots")
 	}
 	g.respawnTank(pilot)

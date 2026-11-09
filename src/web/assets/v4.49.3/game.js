@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.2';
+const GAME_VERSION='4.49.3';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -28,7 +28,7 @@ const DIFFICULTY={
  hard:{speed:123,turn:4.3,think:.13,aim:.012,reaction:.26,lead:1,dodge:true,dodgeLook:.88,bank:true},
  godlike:{speed:123,turn:4.3,think:.075,aim:.003,reaction:.12,lead:1,dodge:true,dodgeLook:1.05,bank:true}
 };
-const POWER_EFFECT_DURATION=10,STARMAN_DURATION=3;
+const POWER_EFFECT_DURATION=10;
 const BOOST_SPEED_PER_STACK=.65, BOOST_TURN_PER_STACK=.25, MAX_SPEED_STACKS=5, MISSILE_SPEED=235, MISSILE_TURN=4.8, MISSILE_VIEW_COS=-.75, MISSILE_LOCK_DELAY=.06, MISSILE_WALL_DELAY=.04, GRENADE_SPEED=205, GRENADE_FUSE=10, GRENADE_CRUISE_DRAG=.025, GRENADE_BRAKE_START=7, GRENADE_BRAKE_DRAG=2, BLAST_RADIUS=220, GRENADE_AVOID_PADDING=10;
 const POWER={rapid:{color:'#d2f65a',name:'MACHINE GUN',short:'MACHINE GUN'},scatter:{color:'#c5a2ff',name:'SHOTGUN'},shield:{color:'#73cee4',name:'SHIELD'},
  homing:{color:'#ff83bd',name:'HOMING MISSILE',short:'HOMING'},
@@ -713,10 +713,10 @@ function grantPower(t,type){
  if(type==='shield'){t.shieldCharges=Math.min(5,shieldCount(t)+1);t.shield=duration;}
  else if(type==='speed'){t.speedStacks=Math.min(MAX_SPEED_STACKS,speedCount(t)+1);t.speedTime=duration;}
  else if(type==='ghost')t.ghostTime=duration;
- else if(type==='starman'){t.starmanTime=STARMAN_DURATION;t.invulnerable=Math.max(t.invulnerable||0,STARMAN_DURATION);t.ghostTime=Math.max(t.ghostTime||0,STARMAN_DURATION);t.spawnProtected=false;}
+ else if(type==='starman'){const duration=starmanDuration();t.starmanTime=duration;t.invulnerable=Math.max(t.invulnerable||0,duration);t.ghostTime=Math.max(t.ghostTime||0,duration);t.spawnProtected=false;}
  else{t.power=type;t.machineRounds=type==='rapid'?MACHINE_FIRING_ROUNDS:0;if(type==='rapid'){t.cooldown=0;t.cooldownTotal=0;}t.powerTime=duration;t.charges=['homing','grenade','laser','cannon'].includes(type)?3:5;}
 }
-function pickupMessage(type){const duration=powerEffectDuration();return type==='starman'?'STARMAN · INVINCIBLE + THROUGH WALLS · '+STARMAN_DURATION+'s':type==='ghost'?'GHOST · THROUGH WALLS · '+duration+' SECONDS':type==='cannon'?'CANNON · EDGE RICOCHETS · 4× SIZE / SPEED':type==='laser'?'LASER · RICOCHETS · LONG AIM GUIDE':type==='homing'?'HOMING · RICOCHETS · HALF-PERIMETER RANGE':type==='grenade'?'GRENADE · HOMING / TAP AGAIN / 10s FUSE':type==='speed'?'SUPER SPEED · +1 STACK · '+duration+' SECONDS':type==='rapid'?'MACHINE GUN · 3s FIRING · '+duration+'s TO USE':POWER[type].name+' · '+duration+' SECONDS';}
+function pickupMessage(type){const duration=powerEffectDuration();return type==='starman'?'STARMAN · INVINCIBLE + THROUGH WALLS · '+starmanDuration()+'s':type==='ghost'?'GHOST · THROUGH WALLS · '+duration+' SECONDS':type==='cannon'?'CANNON · EDGE RICOCHETS · 4× SIZE / SPEED':type==='laser'?'LASER · RICOCHETS · LONG AIM GUIDE':type==='homing'?'HOMING · RICOCHETS · HALF-PERIMETER RANGE':type==='grenade'?'GRENADE · HOMING / TAP AGAIN / 10s FUSE':type==='speed'?'SUPER SPEED · +1 STACK · '+duration+' SECONDS':type==='rapid'?'MACHINE GUN · 3s FIRING · '+duration+'s TO USE':POWER[type].name+' · '+duration+' SECONDS';}
 function localPilotIndex(id){if(id===localPlayerID())return 0;const second=secondaryID();return second!==undefined&&id===second?1:-1;}
 function setPilotFeedback(index,text,duration=2.5){if(index<0||index>1)return;pilotFeedback[index].text=text;pilotFeedback[index].until=performance.now()+duration*1000;}
 function showStartingControls(){
@@ -2688,11 +2688,19 @@ function pickupCap(c=cols,r=rows){return c>0&&r>0?Math.round(c*r/9.8):0;}
 function startingPickups(c=cols,r=rows){const area=c*r;return area>0?2+[49,72,120,168,224].filter(n=>area>n).length:0;}
 // Equipped timers grow at Huge; thrown-projectile lifetimes stay independent.
 function powerEffectDuration(c=cols,r=rows){return c*r>=14*12?15:POWER_EFFECT_DURATION;}
+function starmanDuration(c=cols,r=rows){
+ const area=c*r;
+ if(area>=24*14)return 8;
+ if(area>=16*14)return 7;
+ if(area>=14*12)return 6;
+ if(area>=12*10)return 5;
+ return 4;
+}
 // Ground expiry has a 30s floor through Large; Giant cap 23 still yields 61s.
 function pickupLifetime(c=cols,r=rows){const cap=pickupCap(c,r);return cap>0?Math.max(c*r<=12*10?30:0,Math.floor(cap*8/3)):0;}
 function seedPickups(){for(let i=0;i<startingPickups();i++)spawnPower();}
 function pickupLimitText(size=currentRules().mapSize){const [c,r]=mapDimensions(size);return startingPickups(c,r)+' starting pickups · '+pickupCap(c,r)+' maximum on this maze.';}
-function syncControlsPickupInfo(){const el=$('controlsPickupInfo');if(!el)return;const [c,r]=mapDimensions();el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Most power-ups last '+powerEffectDuration(c,r)+' seconds after pickup. Starman: '+STARMAN_DURATION+' seconds. Machine gun: 3 seconds of firing. Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));}
+function syncControlsPickupInfo(){const el=$('controlsPickupInfo');if(!el)return;const [c,r]=mapDimensions();el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Most power-ups last '+powerEffectDuration(c,r)+' seconds after pickup. Starman: '+starmanDuration(c,r)+' seconds. Machine gun: 3 seconds of firing. Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));}
 function pickupInterval(){return currentRules().pickupRate==='off'?[Infinity,Infinity]:currentRules().pickupRate==='superfast'?[1,2]:currentRules().pickupRate==='normal'?[4,6]:currentRules().pickupRate==='slow'?[7,10]:[2,3.5];}
 function roomStartError(data=roomData()){
  const players=data?.players.filter(p=>p.connected!==false)||[],r=data?.rules||currentRules();
@@ -3014,7 +3022,7 @@ function movementKeySummary(index){const moves=b=>[b.forward,b.left,b.reverse,b.
 function controlSummary(index,prefix=true){return(prefix?'P'+(index+1)+': ':'')+movementKeySummary(index)+' + '+[keyLabel(bindings[index].fire),...fireAliasLabels(index)].join(' / ');}
 function manualKeyRow(codes){return '<div class="keys">'+codes.map(code=>'<kbd>'+escapeHTML(keyLabel(code))+'</kbd>').join('')+'</div>';}
 function fieldManualHTML(){
- let html='';
+ let html='<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Tap or hold Fire to shoot.</span></div>';
  if(aliasesActive()){
   const moves=b=>[b.forward,b.left,b.reverse,b.right];
   html+='<div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options">'+manualKeyRow(moves(bindings[0]))+'<span class="manual-or">OR</span>'+manualKeyRow(moves(bindings[1]))+'</div></div>';
@@ -3493,7 +3501,7 @@ function initIntroTour(){
   $('introTourFireKeys').textContent=[keyLabel(bindings[0].fire),...fireAliasLabels(0)].join(' / ');
   openFeature('introTour');showStep(0);
  }
- $('resetBindingsBtn').insertAdjacentHTML('afterend','<button class="secondary" type="button" id="openIntroTour">Replay quick tour</button>');
+ $('resetBindingsBtn').insertAdjacentHTML('afterend','<button class="secondary" type="button" id="openIntroTour">QUICK TOUR</button>');
  $('openIntroTour').onclick=open;
  $('introTourSkip').onclick=()=>closeFeature(dialog);
  $('introTourBack').onclick=()=>showStep(step-1);
@@ -3995,12 +4003,19 @@ function showVictory(winner,matchTanks=tanks,report=mode==='online'?online.snaps
  if(!d.open){d.showModal();$('victoryTitle').tabIndex=-1;$('victoryTitle').focus({preventScroll:true});d.scrollTop=0;}
 }
 function initPresentation(){
- const sidebar=document.querySelector('.sidebar');sidebar.id='gameSidebar';
+ const sidebar=$('gameSidebar'),sidebarHome=sidebar.parentElement;
  const button=document.createElement('button');button.id='sidebarBtn';button.type='button';button.className='icon-btn sidebar-toggle';button.setAttribute('aria-controls','gameSidebar');button.innerHTML='<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16m3-11h.1M18 12h.1M18 15h.1"/></svg>';
  $('fullscreenBtn').before(button);
  const apply=hidden=>{document.body.classList.toggle('sidebar-hidden',hidden);button.setAttribute('aria-expanded',String(!hidden));button.setAttribute('aria-label',hidden?'Show sidebar':'Hide sidebar');button.title=hidden?'Show sidebar':'Hide sidebar';resize();};
  let hidden=false;try{hidden=localStorage.getItem('leqra.sidebarHidden')==='1';}catch(_){}apply(hidden);
  button.onclick=()=>{const hidden=!document.body.classList.contains('sidebar-hidden');apply(hidden);save('sidebarHidden',hidden?'1':'0');};
+ const detailsButton=$('sidebarDetailsBtn'),sidebarDialog=$('sidebarDialog');
+ detailsButton.onclick=()=>{$('sidebarDetails').append(sidebar);openFeature('sidebar');sidebarDialog.scrollTop=0;detailsButton.setAttribute('aria-expanded','true');};
+ sidebarDialog.addEventListener('close',()=>{if(sidebarDialog.open)return;sidebarHome.append(sidebar);detailsButton.setAttribute('aria-expanded','false');});
+ for(const control of [detailsButton,$('sidebarCloseBtn')]){
+  const buttonActivation=e=>{if(e.code==='Enter'||e.code==='Space')e.stopPropagation();};
+  control.addEventListener('keydown',buttonActivation);control.addEventListener('keyup',buttonActivation);
+ }
  const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><h2 id="victoryTitle"></h2><div class="victory-emblem" id="victoryEmblem" aria-hidden="true">★</div><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="primary back-action" id="victoryCloseBtn" type="button">BACK TO ROOM <span aria-hidden="true">←</span></button><button class="secondary" id="victoryRestartWaveBtn" type="button" hidden>RESTART WAVE</button><button class="secondary result-replay" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button></footer>';
  document.body.append(dialog);$('victoryRestartWaveBtn').onclick=requestRestartSurvivalWave;$('victoryCloseBtn').onclick=resultBackToRoom;$('victoryAgainBtn').onclick=quickReplay;dialog.addEventListener('cancel',e=>{e.preventDefault();resultBackToRoom();});
 }
