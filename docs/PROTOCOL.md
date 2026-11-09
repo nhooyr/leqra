@@ -1,10 +1,10 @@
-# leqra v4.49.14 — current game protocol (protocol 1)
+# leqra v4.49.15 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.14**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.15**.
 
 ```json
-{"type":"server_hello","version":"4.49.14","protocol":1}
-{"type":"client_hello","version":"4.49.14","protocol":1}
+{"type":"server_hello","version":"4.49.15","protocol":1}
+{"type":"client_hello","version":"4.49.15","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -21,7 +21,7 @@ The server negotiates no context takeover in either direction. Compressed client
 
 Public joins may send `localName` for a second tank. Private joins derive Player 2 from the authenticated pilot's active local seat in the room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
 
-Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for the normal delay to elapse, even after the hold ends.
+Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for 1.5 seconds after the tank's destruction, even if the hold ends sooner.
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
@@ -40,6 +40,8 @@ Desktop Player 1 sends the cursor direction using the existing bounded `stickX` 
 ## Projectile ownership
 
 Every projectile passes through the tank that fired it, and grenade blasts skip their owner. Grenades still detonate on contact with other living tanks, including allies and tanks with spawn protection. Friendly fire controls whether a weapon can damage a different tank on the same team.
+
+Fixed-maze and Infinity tank snapshots report the attacker's callsign in `killedBy` when known. A new life clears the field.
 
 Grenades use the same server-owned line-of-sight seeker, turn rate, and reacquisition delays as homing missiles. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
 
