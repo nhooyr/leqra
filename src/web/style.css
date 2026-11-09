@@ -286,6 +286,12 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .intro-tour p{margin:0 0 12px}.intro-tour p:last-child{margin-bottom:0}
 .intro-tour ul{margin:0 0 12px;padding-left:20px}
 .intro-tour li+li{margin-top:4px}.intro-tour strong{color:var(--text)}
+.intro-control-groups{display:grid;gap:12px}
+.intro-tour .intro-control-groups h3{font:700 14px var(--sans);letter-spacing:0;color:var(--accent-ink);margin:0 0 4px}
+.intro-control-groups dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 10px;margin:0}
+.intro-control-groups dt{font-weight:650;color:var(--text)}
+.intro-control-groups dd{margin:0;overflow-wrap:anywhere}
+.intro-tour .intro-control-groups p{margin:4px 0 0;font-size:12px}
 .intro-tour-actions{display:grid;grid-template-columns:1.2fr 1fr 1fr;align-items:stretch;gap:8px}
 #introTourDialog .intro-tour-actions>button{display:grid;place-items:center;min-width:0;min-height:44px;margin:0;padding:9px 6px;font-size:12px;box-shadow:none;transform:none}
 #openIntroTour{margin-top:8px}
@@ -367,16 +373,19 @@ body.touch-landscape .objective-bar{height:24px;min-height:24px}
 body.many-sides .mobile-scores{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px 9px;font-size:9px}body.touch-ui.many-sides .arena-title{max-width:68px;white-space:nowrap;overflow:hidden}body.touch-ui.many-sides .bar-right{gap:5px;flex-direction:column;align-items:flex-end}body.many-sides .mini-score{white-space:nowrap;min-width:0}.roster .player-meta{overflow-wrap:anywhere;line-height:1.5}.room-player .player-info{min-width:0}
 @media(max-width:430px){.chat-panel{right:10px;bottom:max(10px,env(safe-area-inset-bottom));height:min(405px,calc(100dvh - 70px))}.chat-compose input{font-size:16px}body.touch-ui .header-right{gap:4px}body.touch-ui #chatBtn{width:32px}body.touch-ui #fpsIndicator{font-size:8px;right:5px;top:5px}}
 @media(max-height:440px){.chat-panel{height:calc(100dvh - 55px);width:min(345px,calc(100vw - 20px));bottom:5px}.chat-panel>header{padding:7px 12px}.chat-compose small{display:none}}
+.icon-btn.github-link{flex:none;width:32px;height:32px;touch-action:manipulation}
+.icon-btn.github-link svg{width:16px;height:16px;fill:white;stroke:none}
 /* Keep all room/chat actions inside a 320px viewport (no focus-induced panning). */
 @media(max-width:430px){
  body.touch-ui .header{gap:4px;padding-left:0;padding-right:0}
  body.touch-ui .brand{min-width:0;gap:0}
  body.touch-ui .brand-name{font-size:14px}
- body.touch-ui .brand-sub{font-size:6px;letter-spacing:1.5px}
- body.touch-ui .header-right{gap:3px;min-width:0}
+ body.touch-ui .brand-sub{font-size:6px;letter-spacing:1.5px;white-space:nowrap}
+ body.touch-ui .icon-btn.github-link{width:26px;height:30px;margin-inline-start:4px}
+ body.touch-ui .header-right{gap:2px;min-width:0}
  body.touch-ui .header-right .icon-btn{width:30px;min-width:30px;height:34px}
  body.touch-ui #roomBtn{width:54px;min-width:0;max-width:54px;height:34px;padding:5px;font-size:8px}
- body.touch-ui #spectatorsBtn{width:62px;min-width:0;height:34px;padding:5px 3px;font-size:8px}
+ body.touch-ui #spectatorsBtn{width:70px;min-width:0;height:34px;padding:5px 1px;font-size:8px;flex:none}
  .chat-panel{width:calc(100vw - 20px);max-width:370px;right:10px;left:auto}
 }
 
@@ -591,7 +600,7 @@ html.match-active body.touch-ui::selection,html.match-active body.touch-ui *::se
  body.touch-ui.matchmaking-chat .header-right{gap:2px}
  body.touch-ui.matchmaking-chat .header-right .icon-btn{width:26px;min-width:26px;height:32px}
  body.touch-ui.matchmaking-chat #roomBtn{width:46px;max-width:46px;height:32px;padding:4px;font-size:7px}
- body.touch-ui.matchmaking-chat #spectatorsBtn{width:50px;height:32px;padding:4px 2px;font-size:7px}
+ body.touch-ui.matchmaking-chat #spectatorsBtn{width:62px;height:32px;padding:4px 1px;font-size:7px}
  body.touch-ui.matchmaking-chat .brand-name{font-size:13px}
  body.touch-ui.matchmaking-chat .brand-sub{font-size:5px;letter-spacing:1px}
  .room-code-editor{grid-template-columns:1fr}.room-code-editor .secondary{width:100%}

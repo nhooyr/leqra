@@ -486,40 +486,34 @@ func (g *Game) botGrenadeThreats(t *Tank, d botTuning, horizon float64) []botGre
 		if dist(t.X, t.Y, b.X, b.Y) > reach {
 			continue
 		}
-		x, y, vx, vy, life, elapsed := b.X, b.Y, b.VX, b.VY, b.Life, 0.0
-		for elapsed < horizon-1e-9 && life > 1e-9 {
+		projected, elapsed := *b, 0.0
+		for elapsed < horizon-1e-9 && projected.Life > 1e-9 {
 			dt := math.Min(1.0/30.0, horizon-elapsed)
-			dt = math.Min(dt, life)
-			before := life
-			life = math.Max(0, life-dt)
-			drag := grenadeDragFactor(before, life)
-			vx *= drag
-			vy *= drag
+			dt = math.Min(dt, projected.Life)
+			before := projected.Life
+			projected.Life -= dt
+			projected.Age += dt
+			g.guideGrenade(&projected, dt, before)
 			rest, segmentStart := dt, elapsed
 			for step := 0; step < 4 && rest > 1e-6; step++ {
-				dx, dy := vx*rest, vy*rest
-				wall, wallOK := g.rayWallsHit(x, y, dx, dy, b.R)
+				dx, dy := projected.VX*rest, projected.VY*rest
+				wall, wallOK := g.rayWallsHit(projected.X, projected.Y, dx, dy, b.R)
 				fraction := 1.0
 				if wallOK {
 					fraction = wall.T
 				}
 				span := rest * fraction
-				threats = append(threats, botGrenadeThreat{x: x, y: y, vx: vx, vy: vy, start: segmentStart, end: segmentStart + span, r: b.R + botGrenadeAvoidPadding})
-				x += dx * fraction
-				y += dy * fraction
+				threats = append(threats, botGrenadeThreat{x: projected.X, y: projected.Y, vx: projected.VX, vy: projected.VY, start: segmentStart, end: segmentStart + span, r: b.R + botGrenadeAvoidPadding})
+				projected.X += dx * fraction
+				projected.Y += dy * fraction
 				segmentStart += span
 				rest -= span
 				if !wallOK {
 					break
 				}
-				x += wall.NX * .08
-				y += wall.NY * .08
-				if wall.NX != 0 {
-					vx = -vx
-				}
-				if wall.NY != 0 {
-					vy = -vy
-				}
+				projected.X += wall.NX * .08
+				projected.Y += wall.NY * .08
+				projected.reflect(wall)
 			}
 			elapsed += dt
 		}

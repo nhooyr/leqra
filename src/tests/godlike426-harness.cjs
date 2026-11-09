@@ -25,7 +25,7 @@ function boot({cols=12,rows=8,wallList=[],lexical=false}={}){
  const constants=source.slice(source.indexOf('const DIFFICULTY='),source.indexOf("let phase='menu'"));
  const names=['shieldCount','speedCount','canDamage','nearbyWalls','rayWalls','circleHit','tankHit','rayBounds','projectileWall','movementWall','resolveWalls','moveTank',
   'pathScratch','tracePath','bfs','targetMotion','leadPoint','projectileSpec','muzzleProjectile','grenadeDragIntegral','grenadeDragFactor','grenadeForecast',
-  'ownedGrenades','steerMissile','spendMissileRange','missileWallNudge','laserTrace','evaluateBotShot','findBankAim','chooseBotAim',
+  'ownedGrenades','steerMissile','guideGrenade','spendMissileRange','missileWallNudge','laserTrace','evaluateBotShot','findBankAim','chooseBotAim',
   'planBotPath','routeControl','botHoldingHill','ctfCoverGoal','objectiveGoal','objectiveRoute','chooseDodge','chooseGrenadeAvoid','forecastThreats','movementRisk','forecastGrenadeBodies','godlikeDistances','godlikeObjectiveGoal',
   'godlikeWeaponValue','godlikePickupValue','godlikePointDanger','godlikeDestination','godlikeRouteDanger','godlikeBlastSafe','godlikeDetonate','godlikeGrenadeShot',
   'godlikeGrenadeThreats','godlikeMissileRisk','godlikeDodge','godlikeSafeShot','godlikeProgress','godlikeBotControl','botControl'];
