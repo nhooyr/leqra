@@ -7,7 +7,7 @@ go build -o ./bin/leqra ./src
 {
 	for i in $(seq 1 20); do
 		if curl -fsI "http://$(hostname):8080" >/dev/null; then
-			open "http://$(hostname):8080"
+			open -a 'Google Chrome' "http://$(hostname):8080"
 			break
 		fi
 		sleep 0.1
