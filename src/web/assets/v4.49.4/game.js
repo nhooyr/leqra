@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.3';
+const GAME_VERSION='4.49.4';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -45,6 +45,7 @@ let cols=12,rows=8,W=cols*CELL,H=rows*CELL,grid=[],walls=[],tanks=[],bullets=[],
 let scores=Array(MAX_TANKS).fill(0),round=1,roundClock=ROUND_SECONDS,phaseTime=0,time=0,fxTime=0,spawnClock=5,toastTime=0,shake=0,uiClock=0,roundWinner=-1;
 let cssW=0,cssH=0,dpr=1,scale=1,offsetX=0,offsetY=0,mapCanvas=null,touchUI=false,touchLandscape=false;
 let lastFrame=0,accumulator=0,bulletId=0,logLines=[],bestWins=0,resizeTimer=0,arenaResizeFrame=0,gameStarted=false;
+const onlineWins=new Set(),ONLINE_WIN_PREFIX='leqra.onlineWin.';
 let goUntil=0; // One-shot countdown transition, never a cosmetic event timer.
 const countdownTipHistory={current:null,next:Object.create(null),last:Object.create(null)};
 let guideEnabled=true, muted=false, audioVolume=50,audio=null,audioMaster=null,audioResume=null,noiseBuffer=null,lastChatNotify=0;
@@ -167,6 +168,16 @@ function winnerName(winner){
  return mode==='solo'&&winner>0?'BOT SQUAD':p?.team>0?teamName(p.team):p?.name||'PILOT';
 }
 function save(key,val){try{localStorage.setItem('leqra.'+key,String(val));}catch(_){}}
+function renderDeviceWins(){const count=bestWins+onlineWins.size;$('recordLabel').textContent=count+' MATCH WIN'+(count===1?'':'S')+' ON THIS DEVICE';}
+function loadOnlineWins(){
+ try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key?.startsWith(ONLINE_WIN_PREFIX))onlineWins.add(key.slice(ONLINE_WIN_PREFIX.length));}}catch(_){}
+}
+function creditOnlineWin(report,member){
+ const id=report?.id;
+ if(!/^[a-f0-9]{32}$/.test(id||'')||onlineWins.has(id)||!(member>0)||!report.players?.some(p=>p.winner&&p.member===member))return;
+ // A separate key per result also makes simultaneous resumes idempotent.
+ onlineWins.add(id);save('onlineWin.'+id,1);renderDeviceWins();
+}
 function roundRect(c,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 let audioLevel=null,audioEpoch=0,audioResumeStarted=-Infinity,pendingAudioEffects=0;
 const nativeAudioTimers=new Set();
@@ -526,6 +537,14 @@ function projectileSpec(power){
  if(power==='cannon')return{speed:CANNON_SPEED,r:CANNON_RADIUS,life:CANNON_LIFETIME,cooldown:CANNON_COOLDOWN,kind:'cannon'};
  return base;
 }
+function muzzleBlocked(t){
+ if(!(t.ghostTime>0)||t.power==='cannon')return false;
+ const {x,y}=t,r=t.power==='laser'?LASER_RADIUS:projectileSpec(t.power).r,margin=WALL/2+r;
+ if(x<margin||x>W-margin||y<margin||y>H-margin)return true;
+ // Match the swept wall rectangles, including their expanded corners.
+ for(const w of nearbyWalls(x,y,0,0,r))if(x>=w.x-r&&x<=w.x+w.w+r&&y>=w.y-r&&y<=w.y+w.h+r)return true;
+ return false;
+}
 function muzzleProjectile(t,angle){
  const spec=projectileSpec(t.power),cs=Math.cos(angle),sn=Math.sin(angle);
  const muzzle=spec.kind==='cannon'?Math.max(28,t.r+spec.r+1):28;
@@ -547,8 +566,9 @@ function shotSound(kind,local=true){
  for(const [freq,end,duration,near,far,type]of recipe)tone(freq,end,duration,local?near:far,type,0,group);
 }
 function fire(t){
- if(survivalBreak()||!t.alive||t.cooldown>0||(t.ghostTime>0&&t.power!=='cannon'&&!clearTankAt(t.x,t.y,0)))return false;
+ if(survivalBreak()||!t.alive||t.cooldown>0)return false;
  if(t.power==='laser')return fireLaser(t);
+ if(muzzleBlocked(t))return false;
  if(t.power==='cannon'&&t.charges<=0)return false;
  if(t.power==='rapid'&&(!(t.machineRounds>0)||t.rapidTick===Math.floor((time+1e-7)*60)))return false;
  const available=powerCapacity(t)-activeAmmo(t),spread=t.power==='scatter'?[-.21,0,.21]:[0];
@@ -595,7 +615,7 @@ function laserEffect(x,y,endX,endY,color=POWER.laser.color,path=null){
  burst(endX,endY,color,10,95);
 }
 function fireLaser(t){
- if(!t.alive||t.cooldown>0||t.power!=='laser'||t.charges<=0)return false;
+ if(!t.alive||t.cooldown>0||t.power!=='laser'||t.charges<=0||muzzleBlocked(t))return false;
  const beam=laserTrace(t);t.cooldown=LASER_COOLDOWN;t.cooldownTotal=t.cooldown;t.recoil=1;
  laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);shotSound('laser',t.human);
  if(beam.target)hurt(beam.target,{owner:t.id,kind:'laser'});
@@ -605,7 +625,7 @@ function compactLife(list){let write=0;for(let i=0;i<list.length;i++){const item
 function compactNotDead(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(!item.dead)list[write++]=item;}list.length=write;return list;}
 function updateTraces(dt){for(const b of traces)b.life-=dt;compactLife(traces);}
 function aimingGuide(t){
- if(t.ghostTime>0&&t.power!=='cannon'&&!clearTankAt(t.x,t.y,0))return{tank:null,points:[]};
+ if(muzzleBlocked(t))return{tank:null,points:[]};
  if(t.power==='cannon')return cannonGuide(t);
  if(t.power==='laser'){
   const beam=laserTrace(t);
@@ -751,7 +771,7 @@ function updateBullets(dt){
    if(wall){b.x+=dx*wall.t;b.y+=dy*wall.t;spendMissileRange(b,Math.hypot(dx,dy)*wall.t);
     missileWallNudge(b,wall);remaining*=1-wall.t;burst(b.x,b.y,b.color,2,36);
     ricochetSound();
-    if((b.kind!=='homing'&&b.kind!=='rapid'&&b.bounces>22)||b.bounces>128){if(b.kind==='grenade')detonate(b);else b.dead=true;}
+    if((b.kind!=='homing'&&b.kind!=='rapid'&&b.kind!=='grenade'&&b.bounces>22)||b.bounces>128){if(b.kind==='grenade')detonate(b);else b.dead=true;}
    }else{b.x+=dx;b.y+=dy;spendMissileRange(b,Math.hypot(dx,dy));remaining=0;}
   }
   if(!b.dead&&(b.life<=1e-9||(b.kind==='homing'&&b.rangeLeft<=1e-7))){if(b.kind==='grenade')detonate(b);else{b.dead=true;if(b.kind==='homing')impactEffect(b.x,b.y,b.color,20);else burst(b.x,b.y,b.color,3,25);}}
@@ -1299,7 +1319,7 @@ function finishRound(winner){
  }
  updateHUD(true);
 }
-function finishMatch(winner){if(phase==='matchOver')return;const delay=localMatchResult?0:ROUND_END_SECONDS*1000;if(localMatchResult)winner=localMatchResult.winner;finishLocalMatchStats(winner);if(mode==='room'){const winning=(localMatchResult?.tanks||tanks).find(t=>t.id===winner),me=roomMember(localPlayerID()),ownResult=localMatchReport?.players.find(p=>resultMemberMatches({...p,id:p.seat},me));if(ownResult?ownResult.winner:winning&&me&&teamKey(winning)===teamKey(me)){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';}phase='matchOver';roundWinner=winner;clearInput();$('announcer').hidden=true;updateHUD(true);const resultTanks=localMatchResult?.tanks||tanks,report=localMatchReport;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(winner,resultTanks,report);},delay);return;}phase='matchOver';$('announcer').hidden=true;const won=winner===0;$('matchTitle').innerHTML=mode==='duel'?`PLAYER ${winner+1}<br><em>WINS.</em>`:won?'CLEAN<br><em>VICTORY.</em>':'GOOD<br><em>FIGHT.</em>';$('matchSubtitle').textContent=mode==='duel'?'One keyboard. One champion. Time for a rematch?':won?'You ruled the maze. The ricochets were on your side.':winnerName(winner)+' takes the arena. Another round of revenge?';$('matchResults').replaceChildren(...scoreboardEntries().map(t=>{const d=document.createElement('div');d.className='match-result';const name=document.createElement('span');name.style.color=paintColor(t.color);name.textContent=t.name;const score=document.createElement('strong');score.textContent=scores[t.id];score.style.color=paintColor(t.color);d.append(name,score);return d;}));if(won){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';}clearInput();updateHUD();queueMatchPresentation(()=>{setScreen('match');$('rematchBtn').focus({preventScroll:true});},delay);}
+function finishMatch(winner){if(phase==='matchOver')return;const delay=localMatchResult?0:ROUND_END_SECONDS*1000;if(localMatchResult)winner=localMatchResult.winner;finishLocalMatchStats(winner);if(mode==='room'){const winning=(localMatchResult?.tanks||tanks).find(t=>t.id===winner),me=roomMember(localPlayerID()),ownResult=localMatchReport?.players.find(p=>resultMemberMatches({...p,id:p.seat},me));if(ownResult?ownResult.winner:winning&&me&&teamKey(winning)===teamKey(me)){bestWins++;save('wins',bestWins);renderDeviceWins();}phase='matchOver';roundWinner=winner;clearInput();$('announcer').hidden=true;updateHUD(true);const resultTanks=localMatchResult?.tanks||tanks,report=localMatchReport;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(winner,resultTanks,report);},delay);return;}phase='matchOver';$('announcer').hidden=true;const won=winner===0;$('matchTitle').innerHTML=mode==='duel'?`PLAYER ${winner+1}<br><em>WINS.</em>`:won?'CLEAN<br><em>VICTORY.</em>':'GOOD<br><em>FIGHT.</em>';$('matchSubtitle').textContent=mode==='duel'?'One keyboard. One champion. Time for a rematch?':won?'You ruled the maze. The ricochets were on your side.':winnerName(winner)+' takes the arena. Another round of revenge?';$('matchResults').replaceChildren(...scoreboardEntries().map(t=>{const d=document.createElement('div');d.className='match-result';const name=document.createElement('span');name.style.color=paintColor(t.color);name.textContent=t.name;const score=document.createElement('strong');score.textContent=scores[t.id];score.style.color=paintColor(t.color);d.append(name,score);return d;}));if(won){bestWins++;save('wins',bestWins);renderDeviceWins();}clearInput();updateHUD();queueMatchPresentation(()=>{setScreen('match');$('rematchBtn').focus({preventScroll:true});},delay);}
 function update(dt){
  if(mode==='online'){onlineUpdate(dt);return;}
  // Visual shake must settle even while the local simulation is stopped.
@@ -1312,7 +1332,15 @@ function update(dt){
  if(phase==='matchOver')return;
  time+=dt;phaseTime-=dt;
  if(phase==='countdown'){if(phaseTime<=1e-9){phase='playing';phaseTime=.55;goUntil=performance.now()+550;tone(800,950,.15,.04);if(round===1)showStartingControls();}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
- if(phase==='roundOver'){if(phaseTime<=1e-9){phaseTime=0;if(localMatchResult||roundWinner>=0&&scores[roundWinner]>=currentRules().scoreTarget)finishMatch(localMatchResult?.winner??roundWinner);else{round++;startRound();}}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
+ if(phase==='roundOver'){
+  if(phaseTime<=1e-9){
+   phaseTime=0;
+   if(localMatchResult||roundWinner>=0&&scores[roundWinner]>=currentRules().scoreTarget)finishMatch(localMatchResult?.winner??roundWinner);
+   else if(mode==='room'&&roomStartError())readyRoom();
+   else{round++;startRound();}
+  }
+  uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;
+ }
  if(survivalMode()&&survivalBreak()){stepLocalSurvival(dt);uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
  if(survivalMode()){if(roundClock<=0){endLocalSurvival(false);return;}dt=Math.min(dt,roundClock);}
  if(objectiveMode()&&!suddenDeath()){
@@ -1998,7 +2026,7 @@ function connectOnline(request,reconnecting=false){
    if(msg.action==='spectate'||msg.action==='swap'){rolePending=false;cancelSwap();syncSpectators();$('roomStatus').textContent=msg.message;toast(msg.message,4);break;}
    if(msg.action==='kick'){cancelKick();$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.code==='kicked'){clearTimeout(timeout);receiveKick(msg);break;}
-   if(msg.code==='bad_name'||msg.action==='rename_local'){cancelCallsignSave(msg.message);break;}
+   if(msg.code==='bad_name'||msg.action==='rename_local'||msg.code==='action_rate'&&msg.action==='rename'){cancelCallsignSave(msg.message);break;}
    if(request.token&&online.inviteCode&&(msg.code==='resume_expired'||msg.code==='room_missing'||msg.code==='session_active'&&++online.inviteResumeRetries>=3)){clearTimeout(timeout);joinInviteAsNewPilot(ws);break;}
    if(online.connected&&!['resume_expired','room_missing','session_active'].includes(msg.code)){ $('roomStatus').textContent=msg.message;toast(msg.message,3);break; }
    if(msg.code==='session_active'&&request.token){clearTimeout(timeout);online.connecting=false;ws.close();break;}
@@ -2199,7 +2227,7 @@ function receiveOnlineState(s){
   if(phase!==previousPhase||newMap){setScreen('room');renderOnlineRoom();}
  }else if(phase==='matchOver'){online.menu=false;}else if(['onlineLobby','matchOver','menu'].includes(previousPhase)||newMap){online.menu=false;setScreen(null);}
  else if(!online.menu&&phase!==previousPhase)setScreen(null);
- if(phase==='matchOver'&&online.lastMatch!==s.generation){online.lastMatch=s.generation;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(s.winner,s.tanks,s.matchStats);},onlineMatchResultDelay(s,previousPhase,newMap));if(s.matchStats?.players?.length?s.matchStats.players.some(p=>p.winner&&resultMemberMatches({...p,id:p.seat},roomMember(online.id))):me&&s.tankMap.get(s.winner)&&teamKey(me)===teamKey(s.tankMap.get(s.winner))){bestWins++;save('wins',bestWins);$('recordLabel').textContent=bestWins+' MATCH WINS ON THIS DEVICE';}}
+ if(phase==='matchOver'&&online.lastMatch!==s.generation){online.lastMatch=s.generation;queueMatchPresentation(()=>{setScreen('room');renderOnlineRoom();showVictory(s.winner,s.tanks,s.matchStats);},onlineMatchResultDelay(s,previousPhase,newMap));if(s.matchStats)creditOnlineWin(s.matchStats,online.member);}
  const events=s.events||[];
  if(!online.eventsInitialized){online.lastEvent=events.at(-1)?.id||0;online.eventsInitialized=true;}
  else for(const e of events){if(e.id<=online.lastEvent)continue;online.lastEvent=e.id;const own=e.player===online.id||e.player===secondaryID();if(!own&&['shot','laser'].includes(e.type)&&phase==='playing'&&Number.isFinite(e.tick)){online.effectQueue.push({e,s});if(online.effectQueue.length>64)online.effectQueue.shift();}else onlineEffect(e,s);}
@@ -2273,11 +2301,11 @@ function previewOnlineFire(second,controls,now){
  const id=second?secondaryID():online.id,channel=second?online.secondary:online;
  const auth=online.snapshots.at(-1)?.tankMap.get(id),pose=channel?.predictor?.state;
  if(!online.shots||!auth||!pose)return;
- const t={...auth,x:pose.x,y:pose.y,angle:pose.angle,ghostTime:pose.ghostTime};
+ let t={...auth,x:pose.x,y:pose.y,angle:pose.angle,ghostTime:pose.ghostTime};
  const active=phase==='playing'&&online.connected&&controls.fire&&!online.menu&&now-(online.snapshots.at(-1)?.received||0)<450;
  const grenade=ownedGrenades(t).length>0||online.shots.pendingGrenade(id),power=t.power||'';
  const v=online.shots.tryFire(t,!!controls.fire,now,{active,grenade,
-  blocked:t.ghostTime>0&&power!=='cannon'&&!clearTankAt(t.x,t.y,0),
+  blocked:muzzleBlocked(t),
   // Lasers bypass the projectile-slot cap, matching authoritative fireLaser.
   free:power==='laser'?Infinity:powerCapacity(t)-activeAmmo(t),need:power==='laser'?0:power==='scatter'?3:1,
   charged:['laser','cannon','homing','grenade','scatter'].includes(power),cooldown:cooldownDuration(power),
@@ -2285,7 +2313,11 @@ function previewOnlineFire(second,controls,now){
  if(!v)return;
  online.presentationMetrics.previews++;
  // Use the corrected visual pose for the muzzle; movement state is never changed.
- const visual=tanks.find(n=>n.id===id);if(visual&&visual.spawnSerial===auth.spawnSerial){t.x=visual.x;t.y=visual.y;t.angle=visual.angle;}
+ const visual=tanks.find(n=>n.id===id);
+ if(visual&&visual.spawnSerial===auth.spawnSerial){
+  const corrected={...t,x:visual.x,y:visual.y,angle:visual.angle};
+  if(!muzzleBlocked(corrected))t=corrected;
+ }
  if(power==='laser'){const beam=laserTrace(t);laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);if(traces.length)traces.at(-1).previewKey=v.key;}
  else v.shells=(power==='scatter'?[-.21,0,.21]:[0]).map((offset,pellet)=>({...muzzleProjectile(t,t.angle+offset),pellet,shotSerial:v.shot,spawnSerial:v.life,preview:true}));
  if(power!=='rapid'||v.shot%4===1)burst(t.x+Math.cos(t.angle)*27,t.y+Math.sin(t.angle)*27,t.color,3,40);shotSound(power,true);
@@ -2309,7 +2341,12 @@ function localBulletVisual(n,now,since){
  return item;
 }
 function projectileOnTimeline(n,sample){
- const a=sample?.a.bulletMap.get(n.id),b=sample?.b.bulletMap.get(n.id);
+ if(!sample||sample.time<sample.a.netTime)return null;
+ const a=sample.a.bulletMap.get(n.id),b=sample.b.bulletMap.get(n.id);
+ if(sample.alpha===1){
+  if(!b)return null;
+  return sample.extrapolate>0?projectOnlineBullet(b,sample.extrapolate):{...b};
+ }
  // Wait for the first authoritative sample to reach the playback cursor. The
  // previous path drew latest immediately, then jumped BACK to buffered samples.
  if(!a)return null;
@@ -2317,7 +2354,7 @@ function projectileOnTimeline(n,sample){
  if(a.bounces!==b.bounces)return projectOnlineBullet(a,Math.max(0,sample.time-sample.a.netTime)/1000);
  const f=sample.alpha,item={...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,vx:a.vx+(b.vx-a.vx)*f,vy:a.vy+(b.vy-a.vy)*f,
   life:a.life+(b.life-a.life)*f,age:a.age+(b.age-a.age)*f,rangeLeft:typeof a.rangeLeft==='number'?a.rangeLeft+(b.rangeLeft-a.rangeLeft)*f:undefined};
- return sample.extrapolate>0?projectOnlineBullet(item,sample.extrapolate):item;
+ return item;
 }
 function applyOnlineTankEffects(t,source,age){
  // Share equipment expiry between buffered tank drawings and pilot HUDs.
@@ -2344,14 +2381,15 @@ function renderOnlineMotion(dt,now){
  if(playing&&online.connected)for(const t of tanks)if(t.alive&&ownIDs.has(t.id))activeIDs.add(t.id);
  online.shots.prune(now,activeIDs);
  bullets.length=0;
- for(const n of s.bullets){
-  let item=!playing?{...n}:ownIDs.has(n.owner)?localBulletVisual(n,now,since):projectileOnTimeline(n,sample);
-  if(!item)continue;
-  if(n.kind==='rapid'){online.trails.delete(n.id);item.trail=[];present.add(n.id);bullets.push(item);continue;}
+ const appendBullet=(n,item)=>{
+  if(!item)return;
+  if(n.kind==='rapid'){online.trails.delete(n.id);item.trail=[];present.add(n.id);bullets.push(item);return;}
   const trail=online.trails.get(n.id)||[];
   if(playing&&(!trail.length||Math.hypot(trail.at(-1).x-item.x,trail.at(-1).y-item.y)>.01))trail.push({x:item.x,y:item.y});
   if(trail.length>(WEBKIT_ENGINE?7:11))trail.shift();online.trails.set(n.id,trail);present.add(n.id);item.trail=trail;bullets.push(item);
- }
+ };
+ for(const n of s.bullets)if(!playing||ownIDs.has(n.owner))appendBullet(n,playing?localBulletVisual(n,now,since):{...n});
+ if(playing&&sample){const frame=sample.alpha===1?sample.b:sample.a;for(const n of frame.bullets)if(!ownIDs.has(n.owner))appendBullet(n,projectileOnTimeline(n,sample));}
  for(const id of online.trails.keys())if(!present.has(id))online.trails.delete(id);
  for(const id of online.localBullets.keys())if(!s.bulletMap.has(id))online.localBullets.delete(id);
  for(const v of online.shots.previews.values()){
@@ -2535,7 +2573,7 @@ function completeUnshare(){
  const snap=online.unshareSnapshot||localSnapshotFromOnline();online.unshareSnapshot=null;online.unsharePending=false;if(!snap){leaveOnline();return;}
  resetMatchmaking();closeChat();clearRoomChat();cancelSwap();rolePending=false;watchInvite=false;watchResume=null;online.inviteWatch=false;online.spectating=false;resetWatchDialog();cancelKick();cancelCallsignSave();online.inviteCode='';online.inviteResumeRetries=0;online.manual=true;clearTimeout(online.retryTimer);clearInput();sendOnlineInput(true);
  const ws=online.socket;online.socket=null;if(ws&&ws.readyState<2)ws.close(1000,'Room taken offline');online.connected=online.connecting=false;online.publishing=false;online.code=online.token='';online.id=-1;online.roomData=null;resetOnlineMotion();online.generation=-1;online.menu=false;online.lastMatch=-1;forgetOnlineSession();document.body.classList.remove('online-mode');document.documentElement.style.removeProperty('--pilot');$('roomBtn').hidden=true;$('bestInline').textContent='';$('barHint').textContent='Bank shots around corners.';try{const url=new URL(location.href);url.searchParams.delete('room');url.searchParams.delete('spectate');history.replaceState(null,'',url);}catch(_){}
- mode='room';phase='menu';localRoom.code=snap.code;localRoom.self=snap.self;localRoom.players=snap.players;localRoom.nextMember=snap.nextMember;localRoom.rules=snap.rules;$('localRoomName').value=snap.code;persistLocalRoomRules(localRoom.rules);if(!restoreUnsharedPreview(snap.preview))resetPreview();setScreen('room');renderOnlineRoom();toast('ROOM UNSHARED · ONLINE PLAYERS DISCONNECTED',3);
+ mode='room';phase='menu';localRoom.code=snap.code;localRoom.self=snap.self;localRoom.players=snap.players;localRoom.nextViewer=Math.max(MAX_TANKS,...snap.players.map(p=>p.id+1));localRoom.nextMember=snap.nextMember;localRoom.rules=snap.rules;$('localRoomName').value=snap.code;persistLocalRoomRules(localRoom.rules);if(!restoreUnsharedPreview(snap.preview))resetPreview();setScreen('room');renderOnlineRoom();toast('ROOM UNSHARED · ONLINE PLAYERS DISCONNECTED',3);
 }
 async function unshareOnlineRoom(){
  const scope=captureActionScope(),isCurrent=()=>{const r=roomData();return scope()&&mode==='online'&&online.connected&&!online.unsharePending&&!!r&&r.host===localPlayerID()&&!r.queue&&!r.matchmaking&&!r.awayMatch&&['lobby','matchOver'].includes(r.phase);};
@@ -2557,7 +2595,9 @@ function toggleRoomMenu(){
 function restartLocalMatch(){
  if(mode!=='room')return;
  if(localMatchResult){finishMatch(localMatchResult.winner);return;}
- online.menu=false;clearInput();setScreen(null);
+ online.menu=false;clearInput();
+ if(roomStartError()){readyRoom();return;}
+ setScreen(null);
  if(currentRules().mode==='elimination'){addLog('Round '+round+' restarted. Scores preserved.');startRound();canvas.focus({preventScroll:true});return;}
  startMatch();
 }
@@ -2819,7 +2859,7 @@ function syncRoomModePicker(){
  if(observed!==roomModeObserved){roomModeError='';roomModeObserved=observed;}
  if(pendingRoomMode&&(pendingRoomMode.socket!==online.socket||!online.connected||!isRoomEditable()||rules[pendingRoomMode.field||'mode']===pendingRoomMode.value))clearRoomModePending();
  const editable=roomModeEditable();paintRoomModeChoice(value);
- for(const b of document.querySelectorAll('[data-room-mode]'))b.disabled=!editable;
+ for(const b of document.querySelectorAll('[data-room-mode]')){b.disabled=!editable&&!pendingRoomMode;b.setAttribute('aria-disabled',String(!editable));}
  const format=$('roomTeamMode'),map=$('roomMapSize'),portrait=$('roomPortraitMaze'),teamsOnly=value==='ctf'||value==='survival';
  if(format){format.value=rules.teamMode;format.disabled=!editable||teamsOnly;}
  if(map){
@@ -3307,7 +3347,9 @@ function stepLocalObjectives(dt){
   let side=0,owner=null,sideCount=0;for(const t of tanks)if(t.alive&&t.invulnerable<=0&&Math.hypot(t.x-o.hillX,t.y-o.hillY)<=o.radius&&!rayWalls(o.hillX,o.hillY,t.x-o.hillX,t.y-o.hillY,0)){const key=t.team>0?t.team:-t.id-1;if(!sideCount){side=key;owner=t;sideCount=1;}else if(key!==side){sideCount=2;break;}}
   o.contested=sideCount>1;if(sideCount!==1){o.owner=0;o.hold=0;}else{for(const pilot of tanks)if(pilot.alive&&pilot.invulnerable<=0&&(pilot.team>0?pilot.team:-pilot.id-1)===side&&Math.hypot(pilot.x-o.hillX,pilot.y-o.hillY)<=o.radius&&!rayWalls(o.hillX,o.hillY,pilot.x-o.hillX,pilot.y-o.hillY,0))recordLocalObjective(pilot,'hillSeconds',dt);if(o.owner!==side)o.hold=0;o.owner=side;o.hold+=dt;while(o.hold>=1-1e-9){o.hold=Math.max(0,o.hold-1);addObjectivePoint(owner);if(phase!=='playing')return;}}
  }
- if(roundClock<=0){const leader=objectiveLeader();if(leader>=0)endLocalObjective(leader);else beginLocalSuddenDeath();}
+ if(roundClock<=0){const leader=objectiveLeader();if(leader>=0)endLocalObjective(leader);else beginLocalSuddenDeath();return;}
+ const last=tanks.at(-1),side=last&&teamKey(last);
+ if(tanks.every(t=>teamKey(t)===side))endLocalObjective(last?.id??-1);
 }
 // Bounded cover search keeps the base and carrier approach free. Cache the
 // result briefly so defenders commit to leaving instead of changing sides.
@@ -3431,7 +3473,7 @@ function updateCombatFeedback(force=false){
   if(locked&&!lastLocks[num]&&combatPrefs.audio&&time-(lastLockTone[num]||-10)>1.5){tone(850,1050,.07,.025,'sine');tone(850,1150,.08,.025,'sine',.11);lastLockTone[num]=time;}lastLocks[num]=locked;
   updateMachineBudget(t,num);
   const remote=t.alive&&projectiles.grenades>0,cap=powerCapacity(t),free=t.power==='laser'?t.charges:cap-projectiles.ammo,need=t.power==='scatter'?3:1;
-  const inWallBlocked=t.ghostTime>0&&t.power!=='cannon'&&!clearTankAt(t.x,t.y,0);
+  const inWallBlocked=muzzleBlocked(t);
   let text='READY',ready=1;if(phase!=='playing'){text=phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':phase==='countdown'?'GET READY':phase==='paused'?'PAUSED':'READY';ready=phase==='countdown'?0:1;}else if(survivalBreak()){text='NEXT WAVE '+Math.ceil(survivalState().breakTime)+'s';ready=0;}else if(!t.alive){text=survivalMode()?'BACK NEXT WAVE':objectiveMode()&&!suddenDeath()?'RESPAWN '+(t.respawnTime||0).toFixed(1)+'s':'TANK DOWN';ready=0;}else if(remote)text='DETONATE READY';else{
    // Keep the colored cooldown/ammo bar stable while Ghost crosses a wall. Only
    // the text/button message changes; actual cooldown and ammo still animate.
@@ -3690,8 +3732,8 @@ function initSpectators(){
 
 // All input paths (keyboard, mouse, multi-touch, focus loss) share the same cleanup.
 window.addEventListener('keydown',e=>{
- if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||['SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable||e.target.tagName==='INPUT'&&!['button','submit','reset','checkbox','radio','range'].includes(e.target.type))return;
- if(e.key==='Enter'&&e.target.tagName==='A')return;
+ if(e.defaultPrevented||bindingCapture||e.ctrlKey||e.metaKey||e.altKey||['SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable||e.target.tagName==='INPUT'&&!['button','submit','reset','checkbox','radio','range'].includes(e.target.type))return;
+ if((e.code==='Enter'||e.code==='Space')&&['A','BUTTON','SUMMARY'].includes(e.target.tagName))return;
  // Fullscreen is available throughout menus, while text entry and binding capture retain their keys.
  if(e.code==='KeyF'){e.preventDefault();if(!e.repeat)toggleFullscreen();return;}
  if(e.target.tagName==='INPUT')return;
@@ -3710,7 +3752,7 @@ window.addEventListener('keydown',e=>{
   }
  }
 });
-window.addEventListener('keyup',e=>{const was=keys.delete(e.code);if(was&&isWeaponKey(e.code)&&mode==='online')sendOnlineInput(true);if(isControlKey(e.code)&&!['menu','paused','matchOver','onlineLobby'].includes(phase))e.preventDefault();});
+window.addEventListener('keyup',e=>{if(keys.delete(e.code)&&isWeaponKey(e.code)&&mode==='online')sendOnlineInput(true);});
 function cacheStickGeometry(){const r=$('stickBase').getBoundingClientRect();stick.cx=r.left+r.width/2;stick.cy=r.top+r.height/2;stick.max=Math.max(24,Math.min(r.width,r.height)*.375);}
 function stickMove(e){if(!stick.cx&&!stick.cy)cacheStickGeometry();const dx=e.clientX-stick.cx,dy=e.clientY-stick.cy,length=Math.hypot(dx,dy),max=stick.max||36,factor=length>max?max/length:1;stick.x=dx*factor/max;stick.y=dy*factor/max;stick.mag=Math.min(1,length/max);$('stickKnob').style.transform=`translate(${dx*factor}px,${dy*factor}px)`;}
 function capturePointer(el,id){try{el.setPointerCapture?.(id);return el.hasPointerCapture?.(id)!==false;}catch(_){return false;}}
@@ -4012,10 +4054,6 @@ function initPresentation(){
  const detailsButton=$('sidebarDetailsBtn'),sidebarDialog=$('sidebarDialog');
  detailsButton.onclick=()=>{$('sidebarDetails').append(sidebar);openFeature('sidebar');sidebarDialog.scrollTop=0;detailsButton.setAttribute('aria-expanded','true');};
  sidebarDialog.addEventListener('close',()=>{if(sidebarDialog.open)return;sidebarHome.append(sidebar);detailsButton.setAttribute('aria-expanded','false');});
- for(const control of [detailsButton,$('sidebarCloseBtn')]){
-  const buttonActivation=e=>{if(e.code==='Enter'||e.code==='Space')e.stopPropagation();};
-  control.addEventListener('keydown',buttonActivation);control.addEventListener('keyup',buttonActivation);
- }
  const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><h2 id="victoryTitle"></h2><div class="victory-emblem" id="victoryEmblem" aria-hidden="true">★</div><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="primary back-action" id="victoryCloseBtn" type="button">BACK TO ROOM <span aria-hidden="true">←</span></button><button class="secondary" id="victoryRestartWaveBtn" type="button" hidden>RESTART WAVE</button><button class="secondary result-replay" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button></footer>';
  document.body.append(dialog);$('victoryRestartWaveBtn').onclick=requestRestartSurvivalWave;$('victoryCloseBtn').onclick=resultBackToRoom;$('victoryAgainBtn').onclick=quickReplay;dialog.addEventListener('cancel',e=>{e.preventDefault();resultBackToRoom();});
 }
@@ -4103,7 +4141,7 @@ function appendChat(m,history=false,channel='room',render=true){
 function chatPacket(m){if(m.room!==online.code)return;const channel=m.channel==='opponent'?'opponent':'room';if(roomChat.code!==m.room)clearRoomChat(m.room);const st=chatState(channel);if(m.type==='chat_history'){const pending=st.pending,error=st.error;st.messages=[];st.lastID=0;for(const item of m.messages||[])appendChat(item,true,channel,false);st.pending=pending;st.error=error;if(roomChat.open)renderActiveChat();}else appendChat(m.message,false,channel,true);syncChatStatus();}
 function submitChat(e){e.preventDefault();const channel=roomChat.sendTarget==='opponent'&&opponentChatEnabled()?'opponent':'room',st=chatState(channel);if(!online.connected||!online.roomData||st.pending)return;const text=$('chatInput').value.trim();if(!text||[...text].length>280){st.error='Use 1–280 characters.';$('chatError').textContent=st.error;return;}if(sendOnline({type:'chat',channel,text})){st.pending={text};st.unconfirmed=null;st.error='';roomChat.draft='';$('chatInput').value='';$('chatError').textContent=channel==='opponent'?'Sending to opponent…':matchPartyChat()?'Sending to party…':'Sending…';syncChatStatus();}else{st.error='Connection unavailable. Your message was not sent.';$('chatError').textContent=st.error;}}
 function positionChatPanel(){if(!roomChat.open)return;const panel=$('chatPanel'),v=window.visualViewport;if(v&&v.height<innerHeight-40){panel.style.bottom=Math.max(10,innerHeight-v.height-v.offsetTop+10)+'px';panel.style.height=Math.max(160,Math.min(435,v.height-20))+'px';}else{panel.style.removeProperty('bottom');panel.style.removeProperty('height');}}
-function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" maxlength="280" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when you want the enemy side to receive your next message.<br>Enter sends · Esc closes · Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();e.stopPropagation();closeChat();}else e.stopPropagation();});window.addEventListener('keydown',e=>{if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY','A'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
+function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when you want the enemy side to receive your next message.<br>Enter sends · Esc closes · Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();e.stopPropagation();closeChat();}else e.stopPropagation();});window.addEventListener('keydown',e=>{if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY','A'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
 
 // Sampling measures RAF cadence (not server tick rate); no HTML/layout work per frame.
 const frameStats={fps:0,frameMs:0,workMs:0,worstMs:0,count:0,elapsed:0,work:0,worst:0,last:0,at:0};
@@ -4290,5 +4328,5 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 window.leqra=Object.freeze({version:GAME_VERSION,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,survivalEnemy:!!t.survivalEnemy,survivalBoss:!!t.survivalBoss,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,machineRounds:t.machineRounds||0,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),ghostTime:t.ghostTime||0,starmanTime:t.starmanTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
 // Deterministic hooks are only present in explicit development/test mode.
 if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,restartLocalSurvivalWave,requestRestartSurvivalWave,canRestartSurvivalWave,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initLocalSurvival,stepLocalSurvival,startLocalSurvivalWave,endLocalSurvival,survivalWavePlan,initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,restoreUnsharedPreview,unshareOnlineRoom,chatHasFocus,onlineControls,balanceLocalTeams,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
-initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();$('recordLabel').textContent=bestWins+' MATCH WIN'+(bestWins===1?'':'S')+' ON THIS DEVICE';createLocalRoom();initOnlineUI();initIntroTour();requestAnimationFrame(frame);
+initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();loadOnlineWins();renderDeviceWins();createLocalRoom();initOnlineUI();initIntroTour();requestAnimationFrame(frame);
 })();

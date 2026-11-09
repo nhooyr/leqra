@@ -15,11 +15,25 @@ The Python suite exercises the deployment script with mocked builds, SSH, transf
 
 Keep generated reports and screenshots local. Older raw results are available in the repository history.
 
-For browser checks, start the local server and load the actual page. Check desktop and touch layouts, a match between two browser contexts, and offline startup through the service worker. For deterministic browser and protocol tests, the opt-in Go fixture is available locally.
+## Browser checks for the current release
+
+The maintained Playwright harness opens `src/web/index.html` directly and checks the intro tour, keyboard controls, and mobile sidebar in desktop and touch layouts.
+
+```sh
+python3 -m pip install playwright
+python3 -m playwright install chromium
+python3 src/tests/intro_tour_browser.py
+```
+
+For live checks, run `go run ./src` and open the served page in separate browser contexts. Check a shared match and verify that the service worker can reload the app offline after installation.
+
+## Historical harnesses
+
+The other Python browser and protocol scripts in `src/tests/`, including `browser_smoke.py` and `protocol_smoke.py`, are release-specific. Run them against their matching revision. Their assertions can cover retired behavior such as grenade self-damage. For historical scripts that request the opt-in Go fixture, start it from that revision.
 
 ```sh
 LEQRA_BROWSER_FIXTURE=1 LEQRA_BROWSER_ADDR=127.0.0.1:18790 \
   go test -run '^TestBrowserFixture$' -timeout 30m ./src
 ```
 
-Older harnesses in `src/tests/` may contain version-specific assertions. [Historical verification reports](releases/)
+[Historical verification reports](releases/)

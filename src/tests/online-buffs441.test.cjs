@@ -83,3 +83,18 @@ test('online rendering plays new ricochets once, stays silent during a wave brea
  s.resetOnlineMotion();assert.equal(s.onlineBounceCounts.size,0);
  show(2);assert.equal(cues,1,'a reused projectile ID establishes a fresh baseline after reconnect');show(3);assert.equal(cues,2);
 });
+
+test('a short-lived remote projectile renders from the buffered frame until its removal reaches playback',()=>{
+ const s=boot();
+ s.projectOnlineBullet=(n,dt)=>({...n,x:n.x+n.vx*dt});
+ vm.runInContext(declaration('projectileOnTimeline'),s);
+ const previous=s.receive();
+ const shot={id:9,owner:3,kind:'rapid',x:200,y:200,vx:280,vy:0,bounces:0};
+ const appeared=s.packet();appeared.bullets=[shot];s.now+=34;s.receiveOnlineState(appeared);
+ s.now+=34;const removed=s.receive();
+ const renderAt=time=>{s.online.buffer.time=time;s.renderOnlineMotion(0,s.now);return Array.from(s.bullets,n=>n.id);};
+ assert.deepEqual(renderAt(previous.netTime),[]);
+ assert.deepEqual(renderAt(appeared.netTime),[9]);
+ assert.deepEqual(renderAt((appeared.netTime+removed.netTime)/2),[9]);
+ assert.deepEqual(renderAt(removed.netTime),[]);
+});

@@ -123,6 +123,12 @@ with sync_playwright() as playwright:
             expect(page.locator("#sidebarDetailsBtn")).to_be_hidden()
             expect(page.locator("#gameSidebar")).to_be_visible()
             page.locator("#roomSettings > summary").click()
+            room_name = page.locator("#localRoomName")
+            room_name.fill("")
+            room_name.focus()
+            unicode_room = "🎮" * 128
+            page.keyboard.insert_text(unicode_room)
+            expect(room_name).to_have_value(unicode_room)
             page.locator("#roomControlsBtn").click()
             page.locator('[data-bind="0:fire"]').click()
             page.keyboard.press("z")
@@ -142,5 +148,10 @@ with sync_playwright() as playwright:
             })""")
             github.press("Enter")
             expect(github).to_have_attribute("data-activated", "true")
+            for key in ("Space", "Enter"):
+                page.locator("#pauseBtn").press(key)
+                expect(page.locator("#onlineMenuScreen")).to_be_visible()
+                page.locator("#onlineReturnBtn").press(key)
+                expect(page.locator("#onlineMenuScreen")).to_be_hidden()
         context.close()
     browser.close()

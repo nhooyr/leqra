@@ -5,6 +5,43 @@ import (
 	"testing"
 )
 
+func TestPhasedTankNeedsProjectileClearance(t *testing.T) {
+	for _, power := range []string{"ghost", "starman"} {
+		for _, weapon := range []struct {
+			kind   string
+			radius float64
+		}{{"", regularRadius}, {"laser", laserRadius}, {"grenade", 6}, {"rapid", machineRadius}, {"scatter", regularRadius}, {"homing", 5}} {
+			t.Run(power+"/"+weapon.kind, func(t *testing.T) {
+				g := battle(2)
+				wall := Wall{X: 230, Y: 180, W: 8, H: 80}
+				g.World.Walls = append(g.World.Walls, wall)
+				shooter, target := g.Tanks[0], g.Tanks[1]
+				shooter.X, target.X = wall.X-1, wall.X+33
+				g.grantPower(shooter, power)
+				if weapon.kind != "" {
+					g.grantPower(shooter, weapon.kind)
+				}
+				charges, rounds := shooter.Charges, shooter.MachineRounds
+				if g.fire(shooter) || !target.Alive || len(g.Bullets) != 0 {
+					t.Fatal("fired across a wall when the projectile's swept origin overlapped it")
+				}
+				shooter.X, shooter.Y = wall.X-.9*weapon.radius, wall.Y-.9*weapon.radius
+				shooter.Angle = math.Pi / 4
+				if !g.clearTankAt(shooter.X, shooter.Y, weapon.radius) {
+					t.Fatal("fixture must clear the circular radius while overlapping the swept rectangle")
+				}
+				if g.fire(shooter) || shooter.Charges != charges || shooter.MachineRounds != rounds || shooter.ShotSerial != 0 || shooter.Cooldown != 0 {
+					t.Fatal("overlap at a wall corner spent a shot")
+				}
+				shooter.X, shooter.Y = 120, 120
+				if !g.fire(shooter) {
+					t.Fatal("moving into the open must allow an immediate shot")
+				}
+			})
+		}
+	}
+}
+
 func TestMuzzle439CloseGrazingTankCannotBeSkippedByLaunch(t *testing.T) {
 	for _, tc := range []struct {
 		kind string
