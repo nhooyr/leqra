@@ -1241,7 +1241,12 @@ func (g *Game) updateBullets(dt float64) {
 var pickupTypes = []string{"rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"}
 
 func (g *Game) grantPower(t *Tank, kind string) {
-	duration := powerDuration(g.World.Cols, g.World.Rows)
+	if applyPower(t, kind, powerDuration(g.World.Cols, g.World.Rows), starmanDuration(g.World.Cols, g.World.Rows)) {
+		g.emit("pickup", t, t.ID, kind)
+	}
+}
+
+func applyPower(t *Tank, kind string, duration, starDuration float64) bool {
 	switch kind {
 	case "shield":
 		t.ShieldCharges = min(maxShieldCharges, shieldCount(t)+1)
@@ -1253,10 +1258,9 @@ func (g *Game) grantPower(t *Tank, kind string) {
 		t.GhostTime = duration
 	case "starman":
 		// Reuse the existing damage and wall-phasing timers without shortening either.
-		duration := starmanDuration(g.World.Cols, g.World.Rows)
-		t.StarmanTime = duration
-		t.Invulnerable = math.Max(t.Invulnerable, duration)
-		t.GhostTime = math.Max(t.GhostTime, duration)
+		t.StarmanTime = starDuration
+		t.Invulnerable = math.Max(t.Invulnerable, starDuration)
+		t.GhostTime = math.Max(t.GhostTime, starDuration)
 	case "rapid", "scatter":
 		t.MachineRounds = 0
 		if kind == "rapid" {
@@ -1273,9 +1277,9 @@ func (g *Game) grantPower(t *Tank, kind string) {
 		t.PowerTime = duration
 		t.Charges = 3
 	default:
-		return
+		return false
 	}
-	g.emit("pickup", t, t.ID, kind)
+	return true
 }
 func (g *Game) spawnPower() {
 	if len(g.Pickups) >= pickupCap(g.World.Cols, g.World.Rows) || g.World.Cols == 0 || g.settings().PickupRate == "off" || len(g.settings().Weapons) == 0 {
@@ -1409,12 +1413,19 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		}
 	}
 	// Rotate occupied live seats so empty or dead seats cannot bias first action.
+	// Expire defenses before any attack so their lifetime is independent of seat order.
 	var actors [maxTanks]int
 	count := 0
 	for id, t := range g.Tanks {
 		if t != nil && t.Alive {
 			actors[count] = id
 			count++
+			t.Invulnerable = math.Max(0, t.Invulnerable-dt)
+			t.StarmanTime = math.Max(0, t.StarmanTime-dt)
+			t.Shield = math.Max(0, t.Shield-dt)
+			if t.Shield <= 0 {
+				t.ShieldCharges = 0
+			}
 		}
 	}
 	for i := 0; i < count; i++ {
@@ -1424,12 +1435,6 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 			continue
 		}
 		t.Cooldown = math.Max(0, t.Cooldown-dt)
-		t.Invulnerable = math.Max(0, t.Invulnerable-dt)
-		t.StarmanTime = math.Max(0, t.StarmanTime-dt)
-		t.Shield = math.Max(0, t.Shield-dt)
-		if t.Shield <= 0 {
-			t.ShieldCharges = 0
-		}
 		t.Recoil = math.Max(0, t.Recoil-dt*9)
 		if t.Power != "" {
 			t.PowerTime -= dt
@@ -1438,6 +1443,11 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 				t.Power = ""
 				t.PowerTime = 0
 			}
+		}
+		// Resolve the expiry snap before measuring movement. Extrapolation
+		// should only use the distance this tank actually drove this tick.
+		if t.GhostTime > 0 && t.GhostTime <= dt {
+			g.advanceGhost(t, dt)
 		}
 		x, y := t.X, t.Y
 		if t.Bot {

@@ -201,6 +201,15 @@ test('Ghost expiry solidifies only once, including high refresh subtick renderin
  const v=p.visual(1/120);assert.equal(v.ghostTime,0);assert.ok(v.x<232);assert.equal(p.state.ghostTime,.005);
  p.advance(1/120,input({forward:true}));assert.equal(p.state.ghostTime,0);assert.ok(p.state.x<232);
 });
+test('Ghost expiry excludes wall ejection from velocity and tread distance',()=>{
+ const move=wallMover({width:1008,height:840,cols:12,rows:10,walls:[{x:248,y:0,w:8,h:840}]});
+ for(const forward of [false,true]){
+  const t=tank({x:252,y:210,angle:Math.PI/2,ghostTime:.001,track:7}),speed=forward?128:0;
+  Net.move(t,input({forward}),Net.STEP,move);
+  assert.equal(t.ghostTime,0);assert.ok(t.x<232);
+  close(t.vx,0);close(t.vy,speed);close(t.track,7+speed*Net.STEP);
+ }
+});
 test('Remote Ghost inside a wall is not pushed out by interpolation',()=>{
  const b=new Net.SnapshotBuffer(),move=wallMover({width:1008,height:840,cols:12,rows:10,walls:[{x:248,y:0,w:8,h:840}]});
  b.push(snapshot(2,249,{ghostTime:10}),0);b.push(snapshot(4,253,{ghostTime:9.966}),33);

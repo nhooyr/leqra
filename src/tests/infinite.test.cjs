@@ -11,12 +11,13 @@ function harness(url = 'https://example.test/', openField = false) {
   listeners = {};
   children = [];
   style = {removeProperty() {}, setProperty() {}};
-  classList = {remove() {}, add() {}};
+  classList = {remove() {}, add() {}, toggle() {}};
   dataset = {};
   clientWidth = 390;
   clientHeight = 740;
   textContent = '';
   closest() { return false; }
+  setAttribute() {}
   getContext() { return new Proxy({}, {get: () => () => {}}); }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
   emit(type, event = {}) {
@@ -52,6 +53,18 @@ function harness(url = 'https://example.test/', openField = false) {
  const window = new Element();
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
+ const sounds = [];
+ const powers = Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman']
+  .map(name => [name, {name, color: '#fff'}]));
+ window.leqraInfinityArt = {
+  colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
+  choosePickup: () => 'shield',
+  tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, badge() {}, bullets() {},
+  primeAudioUnlock() {}, grenadeDragFactor: () => 1,
+  shot: kind => sounds.push('shot:' + kind),
+  ricochet: () => sounds.push('ricochet'), collect: () => sounds.push('pickup'), shield: () => sounds.push('shield'),
+  blast: () => sounds.push('blast'), impact: () => sounds.push('impact'),
+ };
  let now = 0, scheduled, randomState = 1;
  const math = Object.create(Math);
  math.random = openField ? () => .5 :
@@ -64,10 +77,17 @@ function harness(url = 'https://example.test/', openField = false) {
   setTimeout: () => 1, clearTimeout() {},
  });
  vm.runInContext(readFileSync(assetPath('infinite-maze.js'), 'utf8'), context);
+ vm.runInContext(readFileSync(assetPath('netcode.js'), 'utf8'), context);
+ window.leqraNet = context.leqraNet;
+ const game = readFileSync(assetPath('game.js'), 'utf8');
+ const grant = game.slice(game.indexOf('function grantPower('), game.indexOf('function pickupMessage('));
+ Object.assign(context, {POWER:powers, MAX_SPEED_STACKS:5, MACHINE_FIRING_ROUNDS:180, shieldCount:t=>t.shieldCharges||0, speedCount:t=>t.speedStacks||0});
+ vm.runInContext(grant, context);
+ window.leqraInfinityArt.grantPower = context.grantPower;
  if (openField) {
   window.leqraInfiniteMaze = {cellSize: 84, create: () => ({wallsNear: () => [], blocked: () => false})};
  }
- vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8'), context);
+ vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.leqraInfinity ='), context);
  const advance = (frames = 1) => {
   for (let i = 0; i < frames; i++) {
    now += 1000 / 60;
@@ -76,7 +96,7 @@ function harness(url = 'https://example.test/', openField = false) {
    frame?.(now);
   }
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, window};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, window, state:window.testArena, sounds};
 }
 
 test('Infinity runs offline directly from a file and adds nearby bots to the standings', () => {
@@ -103,9 +123,35 @@ test('offline Infinity awards the kill and keeps the death penalty after respawn
  const rows = byID('infiniteLeaderboard').children;
  assert.deepEqual(rows[0].children.map(cell => cell.textContent), ['Bot 1', 1]);
  assert.deepEqual(rows[1].children.map(cell => cell.textContent), ['Saved pilot (you)', -1]);
- advance(151);
- assert.match(status.textContent, /Health 3\/3/);
+ advance(156);
+ assert.match(status.textContent, /Weapons live/);
  assert.equal(byID('infiniteKills').textContent, 'Score -1');
+});
+
+test('offline Infinity equips maze pickups and sounds a weapon before another frame arrives online', () => {
+ const {infinity, byID, sockets, advance, state, sounds} = harness(undefined, true);
+ infinity.start('offline');
+ const tank = state().tanks[0];
+ state().pickups.push({x:tank.x,y:tank.y,type:'shield',life:30});
+ advance();
+ assert.equal(tank.shieldCharges, 1);
+ assert.equal(byID('infiniteWeapon').textContent, 'shield');
+ assert.ok(sounds.includes('pickup'));
+ infinity.close();
+ infinity.start('online');
+ const [socket] = sockets;
+ socket.receive({type:'welcome',id:4,seed:0});
+ socket.receive({type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1}],bullets:[],players:1,leaderboard:[]});
+ byID('infiniteArena').emit('keydown',{code:'KeyW'});
+ advance();
+ assert.ok(state().predictor.state.x > 42, 'local movement must precede any server acknowledgement');
+ byID('infiniteArena').emit('keydown',{code:'KeyQ'});
+ assert.equal(sounds.at(-1), 'shot:', 'local fire has immediate sound');
+ assert.ok(socket.sent.at(-1).fire);
+ socket.receive({type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1}],bullets:[],players:1,leaderboard:[],
+  effects:[{id:1,kind:'shot:',x:42,y:42,owner:4}]});
+ assert.equal(sounds.filter(sound=>sound==='shot:').length, 1, 'authoritative copy must not echo the preview');
+ infinity.close();
 });
 
 test('private Infinity sends room credentials, honors keyboard remaps, and uses the authoritative leaderboard', () => {

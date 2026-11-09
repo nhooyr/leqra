@@ -161,6 +161,25 @@ func Test41GhostExpiryInOpenSpaceNoTeleport(t *testing.T) {
 		t.Fatal("open exit moved")
 	}
 }
+func TestGhostExpirySnapDoesNotCountAsMovement(t *testing.T) {
+	for _, forward := range []bool{false, true} {
+		g := ghostArena41()
+		p := g.Tanks[0]
+		p.X, p.Y, p.Angle, p.GhostTime, p.Track = 252, 210, math.Pi/2, .001, 7
+		inputs := [maxTanks]Input{0: {Forward: forward}}
+		g.step(tickDT, inputs, testPlayers(2))
+		speed := 0.0
+		if forward {
+			speed = 128
+		}
+		if p.GhostTime != 0 || p.X >= 232 || !g.clearTankAt(p.X, p.Y, p.R) {
+			t.Fatalf("Ghost expiry did not eject the tank: x=%g ghost=%g", p.X, p.GhostTime)
+		}
+		if math.Abs(p.VX) > 1e-8 || math.Abs(p.VY-speed) > 1e-8 || math.Abs(p.Track-(7+speed*tickDT)) > 1e-8 {
+			t.Fatalf("forward=%v, reported vx=%g vy=%g track=%g", forward, p.VX, p.VY, p.Track)
+		}
+	}
+}
 func Test41GhostExpiryRestoresWallCollision(t *testing.T) {
 	g := ghostArena41()
 	p := g.Tanks[0]

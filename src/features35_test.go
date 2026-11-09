@@ -251,7 +251,7 @@ func TestBroadcast35MatchesIndividualState(t *testing.T) {
 		}
 	}
 	for _, c := range cs {
-		c.updates = make(chan []byte, 1)
+		c.updates = make(chan snapshotFrame, 1)
 	}
 	h.broadcastState(r)
 	h.broadcastState(r)
@@ -260,7 +260,7 @@ func TestBroadcast35MatchesIndividualState(t *testing.T) {
 			t.Fatal("coalescing broken")
 		}
 		var m map[string]any
-		_ = json.Unmarshal(<-c.updates, &m)
+		_ = json.Unmarshal((<-c.updates).data, &m)
 		if m["world"] != nil {
 			t.Fatal("unneeded map resent")
 		}
