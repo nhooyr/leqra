@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestBotStopsMovingAfterOwnGrenadeKillsIt425(t *testing.T) {
+func TestBotCanMoveAfterDetonatingItsOwnGrenade425(t *testing.T) {
 	g := battle(2)
 	bot := g.Tanks[0]
 	bot.Bot = true
@@ -15,11 +15,11 @@ func TestBotStopsMovingAfterOwnGrenadeKillsIt425(t *testing.T) {
 	g.Bullets = []*Bullet{{Owner: bot.ID, Kind: "grenade", X: 140, Y: bot.Y, R: 6, Age: 1, Life: 9}}
 	x, y := bot.X, bot.Y
 	g.botControl(bot, tickDT)
-	if bot.Alive || !g.Bullets[0].Dead {
-		t.Fatal("fixture did not trigger a lethal remote grenade blast")
+	if !bot.Alive || g.Tanks[1].Alive || !g.Bullets[0].Dead {
+		t.Fatal("remote grenade should kill the enemy and spare its shooter")
 	}
-	if bot.X != x || bot.Y != y || bot.VX != 0 || bot.VY != 0 {
-		t.Fatalf("eliminated bot kept moving: position=(%v,%v), velocity=(%v,%v)", bot.X, bot.Y, bot.VX, bot.VY)
+	if bot.X == x && bot.Y == y {
+		t.Fatal("surviving bot stopped moving after the blast")
 	}
 }
 

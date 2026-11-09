@@ -16,10 +16,10 @@ test('Godlike flees an enemy remote grenade before its long fuse expires',()=>{
  const base={angle:Math.PI,drive:1},segments=s.godlikeGrenadeThreats(t,s.tune.godlike,1.05,s.bullets),dodge=s.godlikeDodge(t,base,s.tune.godlike);
  assert.ok(segments.some(v=>v.remote));assert.ok(riskFor(s,t,dodge,segments)<riskFor(s,t,base,segments));
 });
-test('Godlike escapes its own expiring grenade without treating safe friendly grenades as threats',()=>{
+test('Godlike ignores its own expiring grenade and safe friendly grenades',()=>{
  const s=boot(),t=tank(0,400,336);s.tanks=[t,tank(1,800,500,{team:1})];s.bullets=[bullet(0,250,336,'grenade',{life:.9})];
  const base={angle:Math.PI,drive:1},segments=s.godlikeGrenadeThreats(t,s.tune.godlike,1.05,s.bullets),dodge=s.godlikeDodge(t,base,s.tune.godlike);
- assert.ok(riskFor(s,t,dodge,segments)<riskFor(s,t,base,segments));
+ assert.equal(segments.length,0);assert.deepEqual(dodge,base);
  s.bullets=[bullet(1,250,336)];assert.deepEqual(s.godlikeDodge(t,base,s.tune.godlike),base);
 });
 test('maze walls shelter a Godlike bot from a remote grenade blast',()=>{
@@ -27,24 +27,23 @@ test('maze walls shelter a Godlike bot from a remote grenade blast',()=>{
  const segments=s.godlikeGrenadeThreats(t,s.tune.godlike,1.05,s.bullets);
  assert.equal(riskFor(s,t,{angle:0,drive:0},segments),0);
 });
-test('grenade detonation checks every owned grenade and avoids self or enabled teammate damage',()=>{
+test('grenade detonation can be close to the shooter and checks each grenade for teammate damage',()=>{
  const s=boot(),t=tank(0,100,100),enemy=tank(1,500,100),ally=tank(2,750,100,{team:1});s.tanks=[t,enemy,ally];
- s.bullets=[bullet(0,480,100),bullet(0,110,100)];assert.equal(s.godlikeDetonate(t),false);assert.equal(s.bullets[0].dead,false);
- s.bullets.pop();assert.equal(s.godlikeDetonate(t),true);
- s.bullets=[bullet(0,480,100)];ally.x=500;s.friendlyFire=true;assert.equal(s.godlikeDetonate(t),false);
- s.friendlyFire=false;assert.equal(s.godlikeDetonate(t),true);
+ s.bullets=[bullet(0,480,100),bullet(0,110,100)];assert.equal(s.godlikeDetonate(t),true);assert.ok(s.bullets.every(b=>b.dead));
+ s.bullets=[bullet(0,480,100),bullet(0,110,100)];ally.x=120;s.friendlyFire=true;assert.equal(s.godlikeDetonate(t),false);
+ assert.ok(s.bullets.every(b=>!b.dead));s.friendlyFire=false;assert.equal(s.godlikeDetonate(t),true);
 });
-test('Godlike throws safe grenades at useful range and rejects close-contact self blasts',()=>{
+test('Godlike throws safe grenades at long and close range',()=>{
  const s=boot(),t=tank(0,100,336,{power:'grenade',charges:3}),enemy=tank(1,480,336);s.tanks=[t,enemy];
- assert.ok(s.evaluateBotShot(t,0,enemy,s.tune.godlike));enemy.x=195;assert.equal(s.evaluateBotShot(t,0,enemy,s.tune.godlike),null);
+ assert.ok(s.evaluateBotShot(t,0,enemy,s.tune.godlike));enemy.x=195;assert.ok(s.evaluateBotShot(t,0,enemy,s.tune.godlike));
 });
 test('harmless teammates still trigger grenade contact blasts, so Godlike avoids unsafe throws',()=>{
  const s=boot(),t=tank(0,100,336,{power:'grenade',charges:3}),enemy=tank(1,480,336),ally=tank(2,190,336,{team:1});s.tanks=[t,enemy,ally];
  assert.equal(s.evaluateBotShot(t,0,enemy,s.tune.godlike),null);
 });
 test('Godlike seeks useful reachable pickups and avoids remote-grenade bait',()=>{
- const s=boot(),t=tank(0,126,126),enemy=tank(1,714,126);s.tanks=[t,enemy];
- const shield={x:210,y:126,type:'shield',life:30},scope={x:126,y:210,type:'scope',life:30};s.pickups=[scope,shield];
+ const s=boot(),t=tank(0,126,126,{ghostTime:8}),enemy=tank(1,714,126);s.tanks=[t,enemy];
+ const shield={x:210,y:126,type:'shield',life:30},ghost={x:126,y:210,type:'ghost',life:30};s.pickups=[ghost,shield];
  assert.equal(s.godlikeDestination(t,enemy,null,s.tune.godlike),shield);
  s.bullets=[bullet(1,250,126)];assert.equal(s.godlikeDestination(t,enemy,null,s.tune.godlike),enemy);
  s.bullets=[];s.grid[s.cellAt(shield.x,shield.y)].neighbors=[];for(const cell of s.grid)cell.neighbors=cell.neighbors.filter(i=>i!==s.cellAt(shield.x,shield.y));
@@ -53,7 +52,7 @@ test('Godlike seeks useful reachable pickups and avoids remote-grenade bait',()=
 test('Godlike does not replace a strong healthy weapon with a weak redundant pickup',()=>{
  const s=boot(),t=tank(0,126,126,{power:'cannon',powerTime:8,charges:3});
  assert.equal(s.godlikePickupValue(t,{type:'grenade'}),0);
- assert.ok(s.godlikePickupValue(t,{type:'shield'})>s.godlikePickupValue(t,{type:'scope'}));
+ assert.ok(s.godlikePickupValue(t,{type:'shield'})>s.godlikePickupValue(t,{type:'laser'}));
 });
 test('CTF Godlike returns its carried flag and recovers a dropped own flag first',()=>{
  const s=boot(),t=tank(0,378,294),enemy=tank(1,798,126);s.tanks=[t,enemy];
@@ -91,14 +90,14 @@ test('Godlike anticipates a ready enemy laser lane but does not grant impossible
  const base={angle:Math.PI/2,drive:0},dodge=s.godlikeDodge(t,base,s.tune.godlike);
  assert.notEqual(dodge.drive,0);assert.equal(s.tune.godlike.turn,4.3);
 });
-test('Godlike begins clearing its own fuse with enough time to leave the complete blast radius',()=>{
- const s=boot(),t=tank(0,400,336);s.tanks=[t];s.bullets=[bullet(0,250,336,'grenade',{life:2.4})];
+test('Godlike begins clearing an enemy fuse with enough time to leave the complete blast radius',()=>{
+ const s=boot(),t=tank(0,400,336);s.tanks=[t,tank(1,200,336,{alive:false})];s.bullets=[bullet(1,250,336,'grenade',{life:2.4})];
  const segments=s.godlikeGrenadeThreats(t,s.tune.godlike,1.05,s.bullets),base={angle:Math.PI,drive:1},dodge=s.godlikeDodge(t,base,s.tune.godlike);
  assert.ok(segments.length,'plans escape before the final one-second threat horizon');assert.ok(riskFor(s,t,dodge,segments)<riskFor(s,t,base,segments));
 });
 test('Godlike forecasts grenade contact with a harmless ally before a distant fuse',()=>{
- const s=boot(),t=tank(0,126,336),ally=tank(1,400,336,{team:1});s.tanks=[t,ally];
- const bomb=bullet(0,350,336,'grenade',{vx:205,life:5}),threats=s.godlikeGrenadeThreats(t,s.tune.godlike,1.05,[bomb]);
+ const s=boot(),t=tank(0,126,336),ally=tank(1,400,336,{team:2});s.tanks=[t,ally,tank(2,800,500,{team:2})];
+ const bomb=bullet(2,350,336,'grenade',{vx:205,life:5}),threats=s.godlikeGrenadeThreats(t,s.tune.godlike,1.05,[bomb]);
  assert.ok(threats.some(v=>v.blast&&!v.remote&&v.end<1),'friendly hull contact starts a real blast forecast');
 });
 test('boosted Godlike can forecast slow rounds reached by its own fast movement',()=>{

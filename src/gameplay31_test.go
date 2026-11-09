@@ -59,7 +59,7 @@ func TestImpactGrenadeStopsAtWallBeforeTank(t *testing.T) {
 		t.Fatal("grenade penetrated wall to trigger contact")
 	}
 }
-func TestImpactGrenadeOwnerGraceThenContact(t *testing.T) {
+func TestImpactGrenadeIgnoresOwnerContact(t *testing.T) {
 	g := battle(2)
 	p := g.Tanks[0]
 	p.X = 90
@@ -68,12 +68,12 @@ func TestImpactGrenadeOwnerGraceThenContact(t *testing.T) {
 	b.Age = 0
 	g.updateBullets(.05)
 	if b.Dead || !p.Alive {
-		t.Fatal("detonated inside owner's launch grace")
+		t.Fatal("new grenade detonated on the owner")
 	}
 	b.Age = .21
 	g.updateBullets(tickDT)
-	if !b.Dead || p.Alive || blastCount(g) != 1 {
-		t.Fatal("returning/stepped-on own grenade did not explode")
+	if b.Dead || !p.Alive || blastCount(g) != 0 {
+		t.Fatal("old grenade detonated on the owner")
 	}
 }
 func TestImpactGrenadeStationaryContact(t *testing.T) {

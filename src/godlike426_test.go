@@ -64,18 +64,14 @@ func TestGodlikeRespectsGrenadeCover426(t *testing.T) {
 	}
 }
 
-func TestGodlikeEscapesOwnFuse426(t *testing.T) {
+func TestGodlikeIgnoresOwnFuse426(t *testing.T) {
 	g, bot := godlikeArena426()
 	bot.X = 260
 	g.Bullets = []*Bullet{{Owner: bot.ID, Kind: "grenade", X: 65, Y: 210, R: 6, Life: .8, Age: 9.2}}
-	for i := 0; i < 50 && bot.Alive; i++ {
-		if i%4 == 0 {
-			bot.AI.MoveAngle, bot.AI.Drive = g.godlikeDodge(bot, tuneBot("godlike"), 0, 0)
+	for i := 0; i < 50; i++ {
+		if a, v := g.godlikeDodge(bot, tuneBot("godlike"), 0, 0); a != 0 || v != 0 {
+			t.Fatal("bot tried to dodge its own grenade")
 		}
-		diff := delta(bot.Angle, bot.AI.MoveAngle)
-		bot.Angle += clamp(diff, -4.3*tickDT, 4.3*tickDT)
-		speed := 123 * bot.AI.Drive * math.Max(0, math.Cos(diff))
-		g.moveTank(bot, math.Cos(bot.Angle)*speed*tickDT, math.Sin(bot.Angle)*speed*tickDT)
 		g.updateBullets(tickDT)
 	}
 	if !bot.Alive || len(g.Bullets) != 0 {
@@ -83,20 +79,15 @@ func TestGodlikeEscapesOwnFuse426(t *testing.T) {
 	}
 }
 
-func TestGodlikeAvoidsSuicidalRemoteDetonation426(t *testing.T) {
+func TestGodlikeDetonatesGrenadeNearItselfAndEnemy426(t *testing.T) {
 	g, bot := godlikeArena426()
 	bot.X = 90
 	g.Tanks[1].X = 190
 	g.Tanks[1].Y = 210
 	g.Bullets = []*Bullet{{Owner: bot.ID, Kind: "grenade", X: 140, Y: 210, R: 6, Life: 9, Age: 1}}
 	g.botControl(bot, tickDT)
-	if !bot.Alive || g.Bullets[0].Dead {
-		t.Fatal("Godlike remotely detonated its own lethal blast")
-	}
-	bot.X = 450
-	bot.Y = 350
-	if !g.godlikeCanDetonate(bot) {
-		t.Fatal("did not identify safe exposed opponent")
+	if !bot.Alive || !g.Bullets[0].Dead || g.Tanks[1].Alive {
+		t.Fatal("Godlike's remote blast must kill the enemy and spare the bot")
 	}
 }
 
@@ -105,9 +96,12 @@ func TestGodlikeDetonationChecksAllOwnedGrenades426(t *testing.T) {
 	bot.X = 90
 	g.Tanks[1].X = 450
 	g.Tanks[1].Y = 210
+	g.Tanks[2] = &Tank{ID: 2, Alive: true, Team: 1, X: 110, Y: 210, R: tankRadius}
+	bot.Team, g.Tanks[1].Team = 1, 2
+	g.Rules.FriendlyFire = true
 	g.Bullets = []*Bullet{{Owner: bot.ID, Kind: "grenade", X: 425, Y: 210, R: 6, Life: 9, Age: 1}, {Owner: bot.ID, Kind: "grenade", X: 120, Y: 210, R: 6, Life: 9, Age: 1}}
 	if g.godlikeCanDetonate(bot) {
-		t.Fatal("a safe target grenade hid another grenade beside the bot")
+		t.Fatal("a safe target grenade hid another grenade beside a teammate")
 	}
 }
 
@@ -192,8 +186,8 @@ func TestGodlikeGrenadeFireHasUsefulRange426(t *testing.T) {
 		t.Fatal("Godlike never throws grenade at a safe target")
 	}
 	e.X = 190
-	if _, ok := g.botAim(bot, e, tuneBot("godlike")); ok {
-		t.Fatal("Godlike throws suicidal contact grenade")
+	if _, ok := g.botAim(bot, e, tuneBot("godlike")); !ok {
+		t.Fatal("Godlike rejected a close shot that cannot hurt its shooter")
 	}
 }
 

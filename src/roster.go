@@ -63,7 +63,7 @@ func availableSides(ps [maxTanks]*Player) int {
 	return len(sides)
 }
 func (g *Game) canDamage(owner int, target *Tank) bool {
-	if target == nil || owner < 0 || owner >= len(g.Tanks) {
+	if target == nil || target.ID == owner || owner < 0 || owner >= len(g.Tanks) {
 		return false
 	}
 	shooter := g.Tanks[owner]
@@ -71,9 +71,6 @@ func (g *Game) canDamage(owner int, target *Tank) bool {
 	// accept such projectiles from clients. Network ownership is socket-derived.
 	if shooter == nil {
 		return true
-	}
-	if shooter.ID == target.ID {
-		return true // Self damage is not friendly fire, for ANY seat or bot.
 	}
 	return g.settings().FriendlyFire || shooter.Team == 0 || shooter.Team != target.Team
 }

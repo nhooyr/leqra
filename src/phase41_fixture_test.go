@@ -61,14 +61,13 @@ func handlePhase41Fixture(app *App, w http.ResponseWriter, r *http.Request) bool
 			p.Shield = 0
 			p.SpeedTime = 0
 			p.GhostTime = 0
-			p.ScopeTime = 0
 			p.Cooldown = 0
 			p.VX = 0
 			p.VY = 0
 			p.fireHeld = false
 			p.fireBlocked = false
 			p.SpawnSerial++
-			for _, power := range []string{"ghost", "speed", "scope", "cannon"} {
+			for _, power := range []string{"ghost", "speed", "cannon"} {
 				g.grantPower(p, power)
 			}
 		}

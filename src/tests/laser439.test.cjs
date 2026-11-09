@@ -46,6 +46,27 @@ test('remote and unpredicted lasers retain their authoritative path and stale ge
  s.onlineEffect({...e,generation:0},snapshot);assert.equal(s.traces.length,1);
 });
 
+test('the equipped Laser previews its reflected beam from the muzzle for either local pilot',()=>{
+ const s=boot(),[primary,secondary]=s.tanks,drawn=[],noop=()=>{};
+ secondary.y=400;Object.assign(secondary,{human:true,power:'laser',powerTime:10,charges:3});
+ s.walls=[{x:-4,y:0,w:8,h:s.H},{x:500,y:0,w:8,h:s.H}];
+ const ctx={save:noop,restore:noop,setLineDash:noop,beginPath(){this.points=[];},moveTo(x,y){this.points.push({x,y});},lineTo(x,y){this.points.push({x,y});},stroke(){drawn.push(this.points);}};
+ Object.assign(s,{ctx,theme:{guideAlpha:.2},guideEnabled:true,guideInk:c=>c,paintColor:c=>c,
+  controlledTank:()=>primary,secondaryID:()=>1,shotPrediction:t=>({points:[{x:t.x,y:t.y},{x:t.x+112,y:t.y}]}),
+  hurt:()=>assert.fail('the fixture should have no targets in either beam')});
+ for(const name of ['aimingGuide','drawAimingGuides','fireLaser','applyOnlineTankEffects'])vm.runInContext(declaration(name),s);
+ s.drawAimingGuides();
+ assert.equal(drawn.length,2);
+ for(const [i,t] of s.tanks.entries()){
+  const beam=s.laserTrace(t);assert.ok(beam.bounces>0);
+  assert.deepEqual(drawn[i],Array.from(beam.points,p=>({x:p.x,y:p.y})));
+ }
+ primary.charges=1;s.fireLaser(primary);assert.equal(primary.power,null);
+ s.applyOnlineTankEffects(secondary,{...secondary},10);assert.equal(secondary.power,null);
+ drawn.length=0;s.drawAimingGuides();
+ assert.deepEqual(drawn,[[{x:primary.x+28,y:primary.y},{x:primary.x+112,y:primary.y}]]);
+});
+
 function networkBoot(){
  const s=boot(),noop=()=>{},first=s.online.snapshots[0];
  Object.assign(s,{performance:{now:()=>s.now},updateOnlineBounceSounds:noop,round:1,roundClock:75,roundWinner:-1,scores:[],goUntil:0,phaseTime:0,gameStarted:true,
