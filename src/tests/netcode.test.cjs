@@ -146,6 +146,18 @@ test('remote extrapolation is capped and cannot tunnel through a wall',()=>{
  assert.ok(f.extrapolate<=.0750001);
  assert.ok(b.tank(1,f,move).x<=283.01);assert.equal(b.underruns,1);
 });
+test('max-speed extrapolation and reconciliation offsets cannot skip across a wall',()=>{
+ const move=wallMover({width:600,height:500,walls:[{x:300,y:0,w:8,h:500}]});
+ const p=new Net.Predictor(move);
+ p.reset(tank({x:331}));
+ p.reconcile(tank({x:283}));
+ assert.equal(p.offset.x,48,'the fixture must retain the full render correction');
+ assert.ok(p.visual(0).x<=283.01);
+ const b=new Net.SnapshotBuffer(),s=snapshot(4,283,{vx:128*4.25});
+ b.push(s,0);
+ const shown=b.tank(1,{a:s,b:s,alpha:1,extrapolate:.075},move);
+ assert.ok(shown.x<=283.01,'a boosted tank must remain on its original side of the wall');
+});
 test('latest death is authoritative even with an older render buffer',()=>{
  const b=new Net.SnapshotBuffer();b.push(snapshot(2,220),0);b.push(snapshot(4,220,{alive:false}),33);
  const t=b.tank(1,b.advance(1/60),free);assert.equal(t.alive,false);

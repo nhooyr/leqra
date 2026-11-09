@@ -122,6 +122,65 @@ func TestPrivateInfinityReconnectReplacesOnlyStaleSocket(t *testing.T) {
 	}
 }
 
+func TestPrivateInfinityRevokingOnlyLocalPlayerPreservesPrimary(t *testing.T) {
+	for _, timing := range []string{"live kick", "live role change", "reserved role change", "reconnect before sweep"} {
+		t.Run(timing, func(t *testing.T) {
+			s, clients, room := startInfinityReconnectRoom(t, 1, true)
+			host, now := clients[0], time.Now()
+			join := infiniteMessage{Code: room.Code, Token: host.player.Token}
+			pair, original, reject := tryInfinityReconnect(t, s, join, now)
+			if reject != "" || pair.local == nil {
+				t.Fatalf("could not join both pilots: %q", reject)
+			}
+			a, primary, local := pair.arena, pair.pilot, pair.local
+			primary.Score = 7
+			primary.kit.Power, primary.kit.PowerTime = "laser", 3
+			a.bullets = append(a.bullets, infiniteBullet{Owner: local.ID, Life: 10})
+			live := timing == "live kick" || timing == "live role change"
+			if !live {
+				s.disconnect(original, now)
+			}
+			if timing == "live kick" {
+				action(t, s.hub, host, kickRequest(pair.localSeat))
+			} else {
+				action(t, s.hub, host, map[string]any{"type": "spectate", "target": pair.localSeat.ID, "member": pair.localSeat.Member, "spectating": true})
+			}
+			now = now.Add(time.Millisecond)
+			if timing != "reconnect before sweep" {
+				s.step(now)
+			}
+			if live {
+				select {
+				case <-original.done:
+				default:
+					t.Fatal("revoked local controller's original socket is still open")
+				}
+				s.disconnect(original, now)
+			}
+			join.Resume, join.Generation = true, room.infinityGeneration
+			resumed, replacement, reject := tryInfinityReconnect(t, s, join, now)
+			if reject != "" || resumed.arena != a || resumed.pilot != primary || resumed.local != nil || primary.local != nil || primary.Score != 7 || primary.kit.Power != "laser" {
+				t.Fatalf("reconnect did not preserve only Player 1 and their score: %q", reject)
+			}
+			if a.players != 1 || a.connected != 1 || s.privateCount != 1 || len(a.pilots) != 1 || len(a.bullets) != 0 || len(s.reservations) != 0 {
+				t.Fatal("revoked local seat or its bullets still occupy the arena")
+			}
+			if got := drain(replacement); len(got) != 1 || got[0]["resumed"] != true || got[0]["id"] != float64(primary.ID) || got[0]["localId"] != nil {
+				t.Fatalf("replacement socket did not receive a solo resumed welcome: %v", got)
+			}
+			a.setConnectionInput(original, primary, primary, Input{Fire: true}, false, now)
+			a.setConnectionInput(replacement, primary, local, Input{Fire: true}, false, now)
+			if primary.firePending || local.firePending {
+				t.Fatal("revoked transport or seat can still control a tank")
+			}
+			a.setConnectionInput(replacement, primary, primary, Input{Fire: true}, false, now)
+			if !primary.firePending {
+				t.Fatal("replacement socket cannot control the surviving primary pilot")
+			}
+		})
+	}
+}
+
 func TestPrivateInfinityReconnectRejectsExpiredOrRetiredTank(t *testing.T) {
 	for _, how := range []string{"expiry", "leave", "new generation", "kick"} {
 		t.Run(how, func(t *testing.T) {

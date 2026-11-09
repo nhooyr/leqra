@@ -162,7 +162,7 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 		infiniteBullet{ID: 3, Owner: p.ID, X: far, Kind: "grenade", Life: 7, boosted: true},
 		infiniteBullet{ID: 4, Owner: p.ID, X: far, Kind: "grenade", Life: 9, dead: true},
 		infiniteBullet{ID: 5, Owner: p.ID, X: far, Kind: "grenade", Life: 0},
-		infiniteBullet{ID: 6, Owner: other.ID, X: far, Kind: "homing", Life: 1, target: p.ID},
+		infiniteBullet{ID: 6, Owner: other.ID, X: far, Kind: "homing", Life: 1, Target: p.ID},
 	)
 	other.HP, other.respawn = 0, a.tick+infiniteRespawnTicks
 	a.broadcast()
@@ -184,6 +184,41 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 	}
 	if packet.Tanks[1].RespawnTime != 1 {
 		t.Fatalf("incorrect respawn time: %+v", packet.Tanks[1])
+	}
+}
+
+func TestInfiniteSnapshotIncludesVisibleGuidedProjectileLocks(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	c := fakeClient()
+	p := a.join(c, "Pilot", now)
+	other := a.join(fakeClient(), "Other", now)
+	drain(c)
+	a.bullets = []infiniteBullet{
+		{ID: 1, Owner: other.ID, X: p.X, Y: p.Y, Kind: "homing", Life: 3, Target: p.ID},
+		{ID: 2, Owner: other.ID, X: p.X, Y: p.Y, Kind: "grenade", Life: 6, Target: p.ID},
+		{ID: 3, Owner: other.ID, X: p.X, Y: p.Y, Kind: "homing", Life: 3},
+		{ID: 4, Owner: other.ID, X: p.X, Y: p.Y, Life: 3},
+	}
+	a.broadcast()
+	var packet struct {
+		Bullets []struct {
+			Target *int `json:"target"`
+		}
+	}
+	if err := json.Unmarshal(<-c.send, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if len(packet.Bullets) != 4 {
+		t.Fatalf("expected four visible bullets, got %d", len(packet.Bullets))
+	}
+	for i, b := range packet.Bullets {
+		if i < 2 && (b.Target == nil || *b.Target != p.ID) {
+			t.Fatalf("guided bullet %d is missing its visible lock", i)
+		}
+		if i >= 2 && b.Target != nil {
+			t.Fatalf("unlocked bullet %d should omit its target", i)
+		}
 	}
 }
 
@@ -254,6 +289,43 @@ func TestInfiniteFireTimeoutPreservesPressIdentity(t *testing.T) {
 	}
 }
 
+func TestInfiniteRespawnDoesNotTurnHeldFireIntoGrenadeDetonation(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	p := a.join(fakeClient(), "Pilot", now)
+	a.nextBot, a.nextPickup = 1000, 1000
+	p.kit.Invulnerable, p.Protected = 0, false
+	a.setInput(p, Input{Seq: 1, Fire: true}, false, now)
+	a.bullets = []infiniteBullet{{Owner: p.ID, Kind: "grenade", X: p.X, Y: p.Y, Life: 10}}
+	a.hurt(p, p.ID+1, 0, "Opponent")
+	for i := 0; i < infiniteRespawnTicks; i++ {
+		a.setInput(p, Input{Seq: uint64(i + 2), Fire: true}, false, now)
+		a.step(now)
+	}
+	if p.HP != infiniteMaxHP {
+		t.Fatal("pilot did not respawn")
+	}
+	a.setInput(p, Input{Seq: 62, Fire: true}, false, now)
+	a.step(now)
+	hasGrenade := func() bool {
+		for _, b := range a.bullets {
+			if b.Kind == "grenade" && !b.dead {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasGrenade() {
+		t.Fatal("the next held-fire heartbeat detonated the grenade without a fresh press")
+	}
+	a.setInput(p, Input{Seq: 63}, false, now)
+	a.setInput(p, Input{Seq: 64, Fire: true}, false, now)
+	a.step(now)
+	if hasGrenade() {
+		t.Fatal("a fresh press could not detonate the previous life's grenade")
+	}
+}
+
 func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Now()
@@ -297,9 +369,9 @@ func TestInfiniteGrenadeHomingTurnsAtMissileRate(t *testing.T) {
 		{"homing", missileSpeed, missileTurn},
 		{"grenade", grenadeSpeed, missileTurn},
 	} {
-		a.bullets = []infiniteBullet{{Kind: weapon.kind, X: 42, Y: 42, VX: weapon.speed, Life: 9, age: 1, radius: 6, target: -1}}
+		a.bullets = []infiniteBullet{{Kind: weapon.kind, X: 42, Y: 42, VX: weapon.speed, Life: 9, age: 1, radius: 6}}
 		a.advanceBullets()
-		if len(a.bullets) != 1 || a.bullets[0].target != 1 {
+		if len(a.bullets) != 1 || a.bullets[0].Target != 1 {
 			t.Fatalf("%s must keep flying and acquire the target, got %+v", weapon.kind, a.bullets)
 		}
 		b := a.bullets[0]

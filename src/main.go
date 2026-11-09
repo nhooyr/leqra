@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	version         = "4.49.16"
+	version         = "4.49.17"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -47,6 +47,12 @@ var appShellFiles = [...]string{
 	"theme.js", "theme.css", "style.css", "favicon.svg",
 	"netcode.js", "game.js", "infinite-maze.js", "infinite.js",
 	"pwa.js", "manifest.webmanifest", "sw.js",
+}
+
+var shellVersionMarkers = map[string]string{
+	"game.js": "const GAME_VERSION='" + version + "';",
+	"pwa.js":  "register('" + assetPath + "sw.js'",
+	"sw.js":   "const VERSION = 'v" + version + "';",
 }
 
 var shellAssetReference = regexp.MustCompile(`[[:space:]](?:src|href)="(assets/[^"]+)"`)
@@ -82,6 +88,14 @@ func checkAppAssets(web fs.FS) error {
 		if len(bytes.TrimSpace(data)) == 0 {
 			return fmt.Errorf("required app asset %s is empty", path)
 		}
+		if marker := shellVersionMarkers[name]; marker != "" && !bytes.Contains(data, []byte(marker)) {
+			return fmt.Errorf("required app asset %s does not use leqra version v%s", path, version)
+		}
+		if name == "manifest.webmanifest" {
+			if err := checkManifest(data); err != nil {
+				return fmt.Errorf("invalid app asset %s: %w", path, err)
+			}
+		}
 		// The PWA script registers the worker. The other shell files are
 		// loaded directly from index.html.
 		if name != "sw.js" && !linked[name] {
@@ -89,6 +103,26 @@ func checkAppAssets(web fs.FS) error {
 		}
 	}
 	return checkAppIcons(web)
+}
+
+func checkManifest(data []byte) error {
+	var manifest struct {
+		StartURL string `json:"start_url"`
+		Scope    string `json:"scope"`
+		Icons    []struct{ Src string }
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return err
+	}
+	if manifest.StartURL != "/" || manifest.Scope != "/" || len(manifest.Icons) == 0 {
+		return errors.New("the manifest must start at the app root and advertise icons")
+	}
+	for _, icon := range manifest.Icons {
+		if !slices.Contains(appIconPNGs[:], icon.Src) {
+			return fmt.Errorf("unavailable icon %q", icon.Src)
+		}
+	}
+	return nil
 }
 
 func checkAppIcons(web fs.FS) error {
@@ -307,6 +341,9 @@ func (a *App) handler() http.Handler {
 		if name == "sw.js" {
 			w.Header().Set("Service-Worker-Allowed", "/")
 		}
+		if name == "manifest.webmanifest" {
+			w.Header().Set("Content-Type", "application/manifest+json")
+		}
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		static.ServeHTTP(w, r)
 	})
@@ -365,8 +402,10 @@ func main() {
 	port := env("PORT", "8080")
 	address := flag.String("addr", env("ADDR", ":"+port), "HTTP listen address")
 	roomLimitDefault := maxRoomLimit
-	if n, err := strconv.Atoi(os.Getenv("MAX_ROOMS")); err == nil && n > 0 {
-		roomLimitDefault = n
+	if value := os.Getenv("MAX_ROOMS"); value != "" {
+		// An invalid configured limit must fail validation rather than silently
+		// opening the server with the much larger default.
+		roomLimitDefault, _ = strconv.Atoi(value)
 	}
 	maxRooms := flag.Int("max-rooms", roomLimitDefault, "Maximum in-memory rooms")
 	checkAssets := flag.Bool("check-assets", false, "Check embedded app shell and assets and exit")
@@ -378,7 +417,7 @@ func main() {
 		return
 	}
 	if *maxRooms < 1 || *maxRooms > maxRoomLimit {
-		log.Fatalf("max-rooms must be between 1 and %d", maxRoomLimit)
+		log.Fatalf("MAX_ROOMS or -max-rooms must be between 1 and %d", maxRoomLimit)
 	}
 	var origins []string
 	for _, v := range strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",") {

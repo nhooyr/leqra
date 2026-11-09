@@ -63,6 +63,65 @@ func TestRoomInfinityLaunchRequiresReadyCombatPilots(t *testing.T) {
 	}
 }
 
+func TestRoomInfinityScoreTargetRequiresAnOpponent(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		teamMode   string
+		target     int
+		botTeam    int
+		randomBots bool
+		canStart   bool
+	}{
+		{name: "solo score target", target: 5, botTeam: -1},
+		{name: "same team", teamMode: "teams", target: 5, botTeam: 1},
+		{name: "opposing team", teamMode: "teams", target: 5, botTeam: 2, canStart: true},
+		{name: "free-for-all bot", target: 5, canStart: true},
+		{name: "random bots", target: 5, botTeam: -1, randomBots: true, canStart: true},
+		{name: "endless exploration", botTeam: -1, canStart: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h, clients, r := makeRoom(t, 1)
+			host := clients[0]
+			rules := r.Game.settings()
+			rules.Infinity, rules.InfinityTarget, rules.InfinityRandomBots = true, test.target, test.randomBots
+			rules.TeamMode = "ffa"
+			if test.teamMode != "" {
+				rules.TeamMode = test.teamMode
+			}
+			action(t, h, host, map[string]any{"type": "rules", "rules": rules})
+			if test.botTeam >= 0 {
+				action(t, h, host, map[string]any{"type": "add", "kind": "bot", "name": "OTHER", "team": test.botTeam})
+			}
+			drain(host)
+			packet := h.roomWire(r)
+			if packet.CanStart != test.canStart || (packet.StartError == "") != test.canStart {
+				t.Fatalf("unexpected start eligibility: can start %v, error %q", packet.CanStart, packet.StartError)
+			}
+			action(t, h, host, map[string]any{"type": "start"})
+			if r.infinityActive != test.canStart || !test.canStart && !hasError(host, "not_ready") {
+				t.Fatal("the host could bypass the score target lineup check")
+			}
+		})
+	}
+}
+
+func TestRoomInfinityDoesNotCountLocalTankOfSpectatingController(t *testing.T) {
+	h, clients, r := makeRoom(t, 2)
+	host, guest := clients[0], clients[1]
+	rules := r.Game.settings()
+	rules.Infinity, rules.TeamMode, rules.InfinityTarget = true, "ffa", 5
+	action(t, h, host, map[string]any{"type": "rules", "rules": rules})
+	action(t, h, host, map[string]any{"type": "add", "kind": "local", "name": "CO-PILOT"})
+	action(t, h, host, map[string]any{"type": "spectate", "spectating": true})
+	action(t, h, guest, map[string]any{"type": "ready", "ready": true})
+	if availableSides(r.Players) != 2 {
+		t.Fatal("test fixture needs a spectator-owned tank in the combat roster")
+	}
+	if got := h.roomWire(r); got.CanStart || got.StartError != "Add an opposing tank or enable random bots to play to a score target." {
+		t.Fatalf("unavailable local player counted as an Infinity opponent: %+v", got)
+	}
+}
+
 func TestRoomInfinityAuthorizationFollowsRoomMembershipAndGeneration(t *testing.T) {
 	h, clients, r := makeRoom(t, 2)
 	host, guest := clients[0], clients[1]

@@ -95,6 +95,20 @@ test('a quick left click latches one P1 shot and releases capture safely',()=>{
  assert.equal(canvas.emit('pointerdown',{buttons:1}).prevented,undefined);
 });
 
+test('a fixed-maze respawn while Fire is held does not synthesize a fresh press',()=>{
+ const {s,p1,window,shots}=boot();
+ window.emit('keydown',{code:'KeyQ'});
+ s.humanControl(p1,Net.STEP);
+ // The same held key survives the respawn, but a fresh tank has no fire state.
+ p1.fireHeld=false;
+ s.humanControl(p1,Net.STEP);
+ assert.deepEqual(shots,[p1.id]);
+ window.emit('keyup',{code:'KeyQ'});
+ window.emit('keydown',{code:'KeyQ'});
+ s.humanControl(p1,Net.STEP);
+ assert.deepEqual(shots,[p1.id,p1.id]);
+});
+
 test('online mouse direction is aim-only and the existing fire edge sends an immediate press and release',()=>{
  const {s,p1,canvas,window,packets}=boot('online');
  canvas.emit('pointermove');

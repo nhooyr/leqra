@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -27,6 +28,7 @@ const maxMessage = 8192
 const maxFramesPerSecond = 220 // Two input streams plus control frames.
 const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 const wsCompressed = 0x40
+const wsReadTimeout = 35 * time.Second
 
 type wsConn struct {
 	conn              net.Conn
@@ -39,6 +41,8 @@ type wsConn struct {
 	message           []byte
 	frameWindow       time.Time
 	frames            int
+	openedAt          time.Time
+	lastPeerRead      atomic.Int64 // Nanoseconds since openedAt, including WebSocket pongs.
 }
 
 type wsError struct {
@@ -126,11 +130,23 @@ func upgradeWS(w http.ResponseWriter, key string, deflate bool) (*wsConn, error)
 		return nil, err
 	}
 	_ = conn.SetWriteDeadline(time.Time{})
-	_ = conn.SetReadDeadline(time.Now().Add(35 * time.Second))
-	return &wsConn{conn: conn, reader: rw.Reader, deflate: deflate, frameWindow: time.Now()}, nil
+	now := time.Now()
+	_ = conn.SetReadDeadline(now.Add(wsReadTimeout))
+	return &wsConn{conn: conn, reader: rw.Reader, deflate: deflate, frameWindow: now, openedAt: now}, nil
 }
 
 func (c *wsConn) close() { c.closeOnce.Do(func() { _ = c.conn.Close() }) }
+
+func (c *wsConn) refreshReadDeadline() {
+	now := time.Now()
+	c.lastPeerRead.Store(int64(now.Sub(c.openedAt)))
+	_ = c.conn.SetReadDeadline(now.Add(wsReadTimeout))
+}
+
+func (c *wsConn) peerReadRecently(now time.Time, limit time.Duration) bool {
+	return now.Sub(c.openedAt)-time.Duration(c.lastPeerRead.Load()) < limit
+}
+
 func (c *wsConn) writeFrame(flags byte, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -247,7 +263,7 @@ func (c *wsConn) readMessage() ([]byte, error) {
 			}
 			continue
 		case 10:
-			_ = c.conn.SetReadDeadline(time.Now().Add(35 * time.Second))
+			c.refreshReadDeadline()
 			continue
 		case 2:
 			return nil, &wsError{1003, "Only JSON text is supported"}
@@ -280,7 +296,7 @@ func (c *wsConn) readMessage() ([]byte, error) {
 		if !utf8.Valid(data) {
 			return nil, &wsError{1007, "Invalid UTF-8"}
 		}
-		_ = c.conn.SetReadDeadline(time.Now().Add(35 * time.Second))
+		c.refreshReadDeadline()
 		return data, nil
 	}
 }

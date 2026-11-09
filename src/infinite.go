@@ -67,7 +67,7 @@ type infinitePilot struct {
 	input                  Input
 	inputAt, activeAt      time.Time
 	lastStickX, lastStickY float64
-	firePending            bool
+	fireDown, firePending  bool // Keep the physical button state across respawns.
 	paused                 bool // Holds respawn independently of control expiry.
 	disconnected           bool
 	respawn                uint64
@@ -90,9 +90,9 @@ type infiniteBullet struct {
 	VY      float64 `json:"vy"`
 	Life    float64 `json:"life"`
 	Bounces int     `json:"bounces,omitempty"`
+	Target  int     `json:"target,omitempty"` // Positive pilot ID when a seeker has a lock.
 
 	radius, age, seekDelay float64
-	target                 int
 	ownerTeam              int
 	ownerName              string
 	dead                   bool
@@ -310,7 +310,7 @@ func (a *infiniteArena) resume(c *Client, p *infinitePilot, generation uint64, n
 }
 
 func (p *infinitePilot) clearControls() {
-	p.input, p.firePending = Input{}, false
+	p.input, p.fireDown, p.firePending = Input{}, false, false
 	p.kit.fireHeld, p.kit.fireBlocked = false, false
 	p.lastStickX, p.lastStickY = 0, 0
 }
@@ -342,6 +342,19 @@ func (a *infiniteArena) removeRoomBots(removed uint64) {
 	if a.result != nil {
 		a.broadcast()
 	}
+}
+
+func (a *infiniteArena) removeLocal(primary *infinitePilot) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	local := primary.local
+	primary.local = nil
+	a.players--
+	if !local.disconnected {
+		a.connected--
+	}
+	a.pilots = slices.DeleteFunc(a.pilots, func(p *infinitePilot) bool { return p == local })
+	a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool { return b.Owner == local.ID })
 }
 
 func (a *infiniteArena) remove(p *infinitePilot) {
@@ -389,9 +402,10 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now
 	}
 	// A timeout suppresses stale controls, but a held heartbeat remains held.
 	// Wait for a release and a new press before throwing or detonating.
-	if p.HP > 0 && input.Fire && !p.input.Fire {
+	if p.HP > 0 && input.Fire && !p.fireDown {
 		p.firePending = true
 	}
+	p.fireDown = input.Fire
 	// An idle desktop pointer keeps sending its last aim direction.
 	aimChanged := input.StickX != p.lastStickX || input.StickY != p.lastStickY
 	if infiniteButtonsDown(input) || (math.Hypot(input.StickX, input.StickY) > .1 && (!input.AimOnly || aimChanged)) {
@@ -404,7 +418,7 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now
 func (a *infiniteArena) setConnectionInput(c *Client, controller, seat *infinitePilot, input Input, paused bool, now time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if controller.client == c {
+	if controller.client == c && (seat == controller || seat == controller.local) {
 		a.setInput(seat, input, paused, now)
 	}
 }
@@ -449,7 +463,7 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 	p.X, p.Y, p.Angle = bestX, bestY, a.random.Float64()*2*math.Pi-math.Pi
 	p.HP, p.Protected, p.hasWaypoint = infiniteMaxHP, true, false
 	p.KilledBy = ""
-	p.input, p.firePending = Input{}, false
+	p.input, p.firePending = Input{Seq: p.input.Seq}, false
 	p.kit = Tank{Invulnerable: 1}
 	p.Spawn++
 	p.Track = 0
@@ -777,7 +791,7 @@ func (a *infiniteArena) broadcast() {
 			}
 		}
 		if b.Kind == "grenade" || b.Kind == "homing" {
-			if i, ok := tankIndex[b.target]; ok && infiniteOpposes(b.Owner, b.ownerTeam, a.pilots[i]) {
+			if i, ok := tankIndex[b.Target]; ok && infiniteOpposes(b.Owner, b.ownerTeam, a.pilots[i]) {
 				tanks[i].Locked = true
 			}
 		}

@@ -82,6 +82,28 @@ func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
 			t.Fatalf("preflight = %v, want empty game.js error", err)
 		}
 	})
+	for _, name := range []string{"game.js", "pwa.js", "sw.js"} {
+		t.Run("stale "+name, func(t *testing.T) {
+			files := maps.Clone(web)
+			path := dir + name
+			files[path] = &fstest.MapFile{Data: bytes.ReplaceAll(web[path].Data, []byte(version), []byte("0.0.0"))}
+			if err := checkAppAssets(files); err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("preflight = %v, want stale %s error", err, path)
+			}
+		})
+	}
+	for _, contents := range []string{
+		`{`,
+		`{"start_url":"/wrong","scope":"/","icons":[{"src":"icon-192.png"}]}`,
+		`{"start_url":"/","scope":"/","icons":[{"src":"missing.png"}]}`,
+	} {
+		files := maps.Clone(web)
+		path := dir + "manifest.webmanifest"
+		files[path] = &fstest.MapFile{Data: []byte(contents)}
+		if err := checkAppAssets(files); err == nil || !strings.Contains(err.Error(), path) {
+			t.Fatalf("preflight = %v for invalid manifest %q", err, contents)
+		}
+	}
 	for _, tc := range []struct{ name, before, after, want string }{
 		{"stale shell", `content="v` + version + `"`, `content="v0.0.0"`, "must declare leqra version"},
 		{"stale script", assetPath + "game.js", "assets/v0.0.0/game.js", "references unavailable asset"},
@@ -172,7 +194,11 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 			Src, Sizes, Type, Purpose string
 		}
 	}
-	if err := json.Unmarshal(get(t, "manifest.webmanifest").Body.Bytes(), &manifest); err != nil {
+	manifestResponse := get(t, "manifest.webmanifest")
+	if got := manifestResponse.Header().Get("Content-Type"); got != "application/manifest+json" {
+		t.Fatalf("manifest content type: %q", got)
+	}
+	if err := json.Unmarshal(manifestResponse.Body.Bytes(), &manifest); err != nil {
 		t.Fatal(err)
 	}
 	highResolution := map[string]bool{}
