@@ -184,10 +184,6 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			fail("bad_difficulty", "Choose Chill, Normal, Fierce, or Godlike.")
 			return
 		}
-		if m.Team != nil && (*m.Team < 0 || *m.Team > 4) {
-			fail("bad_team", "Choose one of the four teams.")
-			return
-		}
 		slot := r.freeCombatSeat()
 		for _, p := range r.members() {
 			if p != nil && p.Kind == "local" && m.Kind == "local" {
@@ -209,9 +205,11 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			}
 		}
 		p := &Player{ID: slot, Member: r.NextMember, Name: cleanName(name), Kind: m.Kind, Owner: c.player.ID, Controller: c.player, Difficulty: difficulty, Ready: true, InputAt: now}
-		// Decide against the current authoritative roster, not a stale client
-		// count. The host can change this assignment after the tank is added.
-		p.Team = joinTeam(r)
+		if m.Team != nil {
+			p.Team = *m.Team
+		} else {
+			p.Team = joinTeam(r)
+		}
 		r.Players[slot] = p
 		r.Game.Scores[slot] = 0
 	} else {

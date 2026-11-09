@@ -14,6 +14,7 @@ function boot({online=false,count=4}={}){
  s.roomData=()=>s.mode==='online'?s.online.roomData:{host:0,players:s.localRoom.players.filter(p=>!p.spectating),rules:s.localRoom.rules};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const ROOM_MODES='),source.indexOf('function roomModeEditable(')),s);
  vm.runInContext(source.match(/const MAZE_SIZES=[^\n]+/)[0],s);
+ vm.runInContext(declaration('orderedRoster'),s);
  for(const name of ['cleanPilotName','defaultRoomRules','defaultModeRules','currentRules','validateTeamNames','validateRoomRules','mapDimensions','mapSetupChanged','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','setLocalRules','isRoomHost','isRoomEditable','roomModeEditable','rulesForRoomMode','clearRoomModePending','paintRoomModeChoice','syncRoomModePicker','rejectRoomMode','selectRoomMode','selectRoomSetting','roomModeKeydown','initRoomModePicker','modeLabel','updateRuleHelp','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.defaultRoomRules();s.online.roomData={host:0,phase:'lobby',players:s.localRoom.players,rules:s.defaultRoomRules()};s.syncRoomModePicker();s.choices=choices;return {s,$,choices,timers};
 }
@@ -29,7 +30,7 @@ test('clicking the current mode preserves custom score and time; Hill keeps FFA 
  assert.equal(s.selectRoomMode('koth'),true);assert.equal(s.currentRules().teamMode,'ffa');
 });
 test('CTF and survival normalize the entire existing lineup without replacing participants',()=>{
- const {s}=boot();const players=s.localRoom.players;s.selectRoomMode('ctf');assert.deepEqual(players.map(p=>p.team),[1,2,1,2]);s.selectRoomMode('survival');assert.deepEqual(players.map(p=>p.team),[1,1,1,1]);s.selectRoomMode('elimination');assert.deepEqual(players.map(p=>p.team),[1,2,3,4]);assert.equal(s.localRoom.players,players);
+ const {s}=boot();const players=s.localRoom.players;s.selectRoomMode('ctf');assert.deepEqual(players.map(p=>p.team),[1,1,2,2]);s.selectRoomMode('survival');assert.deepEqual(players.map(p=>p.team),[1,1,1,1]);s.selectRoomMode('elimination');assert.deepEqual(players.map(p=>p.team),[1,1,2,2]);assert.equal(s.localRoom.players,players);
 });
 test('oversized survival squads roll back before local mutation or any online message',()=>{
  for(const online of [false,true]){const {s,$}=boot({online,count:5}),before=JSON.stringify(s.currentRules());assert.equal(s.selectRoomMode('survival'),false);assert.equal(JSON.stringify(s.currentRules()),before);assert.equal(s.sent.length,0);assert.equal(String(s.choices.findIndex(b=>b.getAttribute('aria-checked')==='true')),'0');assert.match($('roomModeNotice').textContent,/four squad tanks/);assert.equal($('roomModeNotice').getAttribute('role'),'alert');assert.equal($('roomModeNotice').focused,true);assert.equal($('roomModeNotice').revealed,true);assert.equal(s.roomData().players.length,5);}
@@ -85,8 +86,8 @@ test('an open Rules form refreshes when its authoritative mode changes, preservi
 // Lobby setting regressions exercise the shipped request and local rule paths.
 test('lobby format balances teams while map changes alone regenerate the maze',()=>{
  const {s,$}=boot();s.localRoom.rules.scoreTarget=17;s.localRoom.rules.timeLimit=240;
- assert.equal(s.selectRoomSetting('teamMode','teams'),true);assert.deepEqual(s.localRoom.players.map(p=>p.team),[1,2,3,4]);assert.equal(s.preview.regenerateMaze,false);
- s.localRoom.players[1].team=1;assert.equal(s.selectRoomSetting('mapSize','huge'),true);assert.equal(s.preview.regenerateMaze,true);assert.equal(s.localRoom.players[1].team,1);assert.equal(s.currentRules().scoreTarget,17);assert.equal(s.currentRules().timeLimit,240);assert.equal($('roomMapSize').value,'huge');
+ assert.equal(s.selectRoomSetting('teamMode','teams'),true);assert.deepEqual(s.localRoom.players.map(p=>p.team),[1,1,2,2]);assert.equal(s.preview.regenerateMaze,false);
+ s.localRoom.players[1].team=2;assert.equal(s.selectRoomSetting('mapSize','huge'),true);assert.equal(s.preview.regenerateMaze,true);assert.equal(s.localRoom.players[1].team,2);assert.equal(s.currentRules().scoreTarget,17);assert.equal(s.currentRules().timeLimit,240);assert.equal($('roomMapSize').value,'huge');
  s.preview=undefined;assert.equal(s.selectRoomSetting('mapSize','huge'),true);assert.equal(s.preview,undefined);
  assert.equal(s.selectRoomSetting('teamMode','ffa'),true);assert.deepEqual(s.localRoom.players.map(p=>p.team),[0,0,0,0]);assert.equal(s.preview.regenerateMaze,false);
 });

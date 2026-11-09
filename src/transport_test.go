@@ -205,6 +205,15 @@ func TestHTTPAndUpgradeValidation(t *testing.T) {
 }
 func TestRealWebSocketHandshake(t *testing.T) {
 	app := newApp(4, nil)
+	for i := 0; i < 120; i++ {
+		req := httptest.NewRequest("GET", "/ws", nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		w := httptest.NewRecorder()
+		app.socket(w, req)
+		if w.Code != 400 {
+			t.Fatalf("malformed request %d returned %d", i, w.Code)
+		}
+	}
 	srv := httptest.NewServer(app.handler())
 	defer srv.Close()
 	defer app.hub.close()

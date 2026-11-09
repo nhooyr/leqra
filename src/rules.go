@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"sort"
 	"time"
 )
 
@@ -208,17 +209,22 @@ func activeTeamCount(rules MatchRules) int {
 // Ordinary edits preserve the host's manual assignments.
 func balanceRoomTeams(r *Room) {
 	count := activeTeamCount(r.Game.settings())
-	n := 0
+	players := make([]*Player, 0, maxTanks)
 	for _, p := range r.Players {
-		if p == nil {
-			continue
+		if p != nil {
+			players = append(players, p)
 		}
+	}
+	sort.SliceStable(players, func(i, j int) bool { return players[i].Member < players[j].Member })
+	for i, p := range players {
 		p.Team = 0
 		if count > 0 {
-			p.Team = 1 + n%count
+			p.Team = 1
+			if count > 1 && i >= (len(players)+1)/2 {
+				p.Team = 2
+			}
 		}
 		p.ColorIndex = nil
-		n++
 	}
 }
 
@@ -397,7 +403,7 @@ func joinTeam(r *Room) int {
 	}
 	best := 1
 	for t := 2; t <= count; t++ {
-		if counts[t] < counts[best] {
+		if (t <= 2 || counts[t] > 0) && counts[t] < counts[best] {
 			best = t
 		}
 	}

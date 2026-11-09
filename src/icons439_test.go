@@ -5,20 +5,46 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"maps"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
 
-func TestCheckAppIconsRejectsLFSPointer(t *testing.T) {
-	path := "web/assets/v" + version + "/apple-touch-icon.png"
-	web := fstest.MapFS{path: {Data: []byte("version https://git-lfs.github.com/spec/v1\noid sha256:0123456789abcdef\nsize 180\n")}}
-	if err := checkAppIcons(web); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "git lfs pull") {
-		t.Fatalf("checkAppIcons = %v, want the pointer path and recovery command", err)
-	}
+func TestCheckAppIconsRejectsInvalidExports(t *testing.T) {
 	if err := checkAppIcons(embeddedWeb); err != nil {
 		t.Fatalf("checkAppIcons rejected the embedded icons: %v", err)
+	}
+	dir := "web/assets/v" + version + "/"
+	web := fstest.MapFS{}
+	for _, name := range append(appIconPNGs[:], "favicon.svg") {
+		data, err := embeddedWeb.ReadFile(dir + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		web[dir+name] = &fstest.MapFile{Data: data}
+	}
+	for _, tc := range []struct{ name, icon, contents, want string }{
+		{"missing PNG", "icon-maskable-512.png", "", "required app icon"},
+		{"truncated PNG", "favicon-256.png", "\x89PNG\r\n\x1a\n", "invalid app icon"},
+		{"Git LFS pointer", "apple-touch-icon.png", "version https://git-lfs.github.com/spec/v1\n", "git lfs pull"},
+		{"legacy Git LFS pointer", "icon-192.png", "version https://hawser.github.com/spec/v1\n", "git lfs pull"},
+		{"missing SVG", "favicon.svg", "", "required app icon"},
+		{"invalid SVG", "favicon.svg", "<html/>", "invalid app icon"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := maps.Clone(web)
+			path := dir + tc.icon
+			if tc.contents == "" {
+				delete(files, path)
+			} else {
+				files[path] = &fstest.MapFile{Data: []byte(tc.contents)}
+			}
+			if err := checkAppIcons(files); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("checkAppIcons = %v, want %q and %q", err, path, tc.want)
+			}
+		})
 	}
 }
 

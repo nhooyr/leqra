@@ -84,10 +84,14 @@ func (g *Game) dropFlags(id int) {
 		if f.Carrier != id {
 			continue
 		}
+		x, y := f.X, f.Y
 		if id >= 0 && id < maxTanks && g.Tanks[id] != nil {
-			f.X = g.Tanks[id].X
-			f.Y = g.Tanks[id].Y
+			x, y = g.Tanks[id].X, g.Tanks[id].Y
 		}
+		// Apply normal tank clearance so either team can reach the dropped flag.
+		position := Tank{X: x, Y: y, R: tankRadius}
+		g.finishGhost(&position)
+		f.X, f.Y = position.X, position.Y
 		f.Carrier = -1
 		f.Home = false
 		f.ReturnIn = 12

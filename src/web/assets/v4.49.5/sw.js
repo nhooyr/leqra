@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.49.4';
+const VERSION = 'v4.49.5';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
@@ -59,7 +59,11 @@ self.addEventListener('fetch', event => {
   // New-release HTML can load online, but must not replace the offline fallback
   // before its own worker finishes installing the complete replacement.
   if (request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
-    response = fetch(request).catch(() => caches.match('/', {cacheName: CACHE}));
+    const cachedShell = () => caches.match('/', {cacheName: CACHE}).catch(() => undefined);
+    response = fetch(request).then(async result => {
+      if (![502, 503, 504].includes(result.status)) return result;
+      return (await cachedShell()) || result;
+    }, cachedShell);
   } else if (url.pathname.startsWith(BASE)) {
     response = caches.match(request).catch(() => undefined).then(cached =>
       cached || fetch(request).then(result => storeResponse(request, result))

@@ -102,7 +102,7 @@ test('editing a tank rebuilds only that tank row and preserves the other control
 });
 
 test('a removed or reused seat cannot inherit the previous member row or draft',()=>{
- const b=boot();b.render();const original=seatRows(b.container);original[1].querySelector('input').value='OLD MEMBER DRAFT';
+ const b=boot();b.room.rules.teamMode='ffa';b.render();const original=seatRows(b.container);original[1].querySelector('input').value='OLD MEMBER DRAFT';
  let r=snapshot(b.room);r.players[1].member=99;r.players[1].name='REPLACEMENT';b.render(r);
  const replacement=seatRows(b.container).at(-1);assert.notEqual(replacement,original[1]);assert.equal(replacement.querySelector('input').value,'REPLACEMENT');
  assert.equal(original[1].parentElement,null);
@@ -110,6 +110,14 @@ test('a removed or reused seat cannot inherit the previous member row or draft',
  r.players.splice(1,0,{...b.room.players[1],member:99,name:'RETURNED'});b.render(r);
  assert.notEqual(seatRows(b.container).at(-1),replacement);assert.equal(seatRows(b.container)[0],original[0]);assert.equal(seatRows(b.container)[1],original[2]);
  assert.equal(b.creations.length,5);
+});
+
+test('team edits move rows into team order while preserving unaffected player nodes',()=>{
+ const b=boot();b.render();const original=seatRows(b.container);
+ const r=snapshot(b.room);r.players[2].team=1;b.render(r);
+ const rows=seatRows(b.container);
+ assert.deepEqual(rows.map(row=>row.querySelector('input').value),['HOST','BOT','GUEST']);
+ assert.equal(rows[0],original[0]);assert.equal(rows[2],original[1]);
 });
 
 test('packet seat order cannot reorder members or discard input nodes and drafts',()=>{
@@ -175,10 +183,10 @@ test('a bot moves after detonating its grenade when a shielded target survives',
 });
 
 
-test('new bots and local P2 append below existing members when a lower combat seat is reused',()=>{
+test('new bots and local P2 append below existing teammates when a lower combat seat is reused',()=>{
  for(const mode of ['room','online'])for(const kind of ['bot','local'])for(const moderationOnly of [false,true]){
   const b=boot();b.s.mode=mode;b.s.selfID=4;b.room.host=4;
-  b.room.players=[{...b.room.players[0],id:4,member:10},{...b.room.players[2],id:5,member:20}];
+  b.room.players=[{...b.room.players[0],id:4,member:10},{...b.room.players[2],id:5,member:20,team:1}];
   b.render(b.room,{moderationOnly});const original=seatRows(b.container);original[1].querySelector('input').value='UNSAVED EDIT';
   const added={id:0,member:30,name:'NEW '+kind,kind,owner:4,team:1,difficulty:'easy'};
   b.room.players.unshift(added);const before=snapshot(b.room);b.render(b.room,{moderationOnly});

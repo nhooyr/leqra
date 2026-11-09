@@ -14,7 +14,7 @@ function tank(id,x,y,extra={}){
 }
 function bullet(owner,x,y,kind='grenade',extra={}){return{owner,x,y,vx:0,vy:0,r:kind==='grenade'?6:5,kind,age:.5,life:kind==='grenade'?5:3,bounces:0,target:-1,seekDelay:0,rangeLeft:1000,dead:false,...extra};}
 function boot({cols=12,rows=8,wallList=[],lexical=false}={}){
- const s={console,Math,mode:'room',phase:'playing',difficulty:'normal',wallIndex:null,CELL:84,WALL:8,RADIUS:17,TAU:Math.PI*2,cols,rows,W:cols*84,H:rows*84,tanks:[],bullets:[],pickups:[],walls:wallList,localObjectives:null,
+ const s={console,Math,localTick:0,localTankActors:Array(8),MACHINE_CAPACITY:require(assetPath('netcode.js')).MACHINE_CAPACITY,mode:'room',phase:'playing',difficulty:'normal',wallIndex:null,CELL:84,WALL:8,RADIUS:17,TAU:Math.PI*2,cols,rows,W:cols*84,H:rows*84,tanks:[],bullets:[],pickups:[],walls:wallList,localObjectives:null,
   currentRules:()=>({friendlyFire:s.friendlyFire||false}),clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),rnd:(a,b)=>(a+b)/2,
   angleDelta:(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a)),distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),
   cellAt:(x,y)=>s.clamp(Math.floor(y/84),0,s.rows-1)*s.cols+s.clamp(Math.floor(x/84),0,s.cols-1),

@@ -58,7 +58,8 @@ func TestResumeResetsAcknowledgementTimeline(t *testing.T) {
 	}
 }
 func TestSnapshotRateThirtyHz(t *testing.T) {
-	h, cs, _ := makeRoom(t, 2)
+	h, cs, r := makeRoom(t, 2)
+	r.Game.startMatch(r.Players)
 	for _, c := range cs {
 		drain(c)
 	}

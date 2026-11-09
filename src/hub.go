@@ -69,11 +69,13 @@ type Room struct {
 	NextMember       uint64
 	Kicked           map[[32]byte]time.Time
 
-	state stateScratch // reusable 60 Hz snapshot buffers; encoded before reuse
+	state      stateScratch // reusable snapshot buffers; encoded before reuse
+	stateDirty bool         // Idle snapshots are sent on room changes.
 }
 type Client struct {
 	ws                    *wsConn
-	requireVersion        bool // Real WebSocket clients must complete the version handshake.
+	sourceIP              string // Peer address fixed at WebSocket admission.
+	requireVersion        bool   // Real WebSocket clients must complete the version handshake.
 	versionOK             bool
 	send                  chan []byte
 	updates               chan []byte // Replaceable snapshots; reliable messages stay in send.
@@ -376,37 +378,10 @@ func canStart(r *Room) bool {
 	}
 	return true
 }
-func (h *Hub) roomMessage(r *Room) map[string]any {
-	players, viewers := []map[string]any{}, []map[string]any{}
-	for _, p := range r.members() {
-		score := 0
-		if !p.Spectating {
-			score = r.Game.Scores[p.ID]
-		}
-		connected := p.Client != nil
-		if p.Kind == "bot" {
-			connected = true
-		}
-		if p.Kind == "local" {
-			owner := r.member(p.Owner)
-			connected = owner != nil && owner.Client != nil
-		}
-		entry := map[string]any{"id": p.ID, "member": p.Member, "name": p.Name, "color": selectedColor(p.ID, p.Team, p.ColorIndex, r.Game.settings()), "connected": connected, "ready": !p.Spectating && (p.Ready || p.Kind == "bot" || p.Kind == "local"), "score": score, "kind": playerKind(p), "owner": p.Owner, "team": p.Team, "difficulty": p.Difficulty, "spectating": p.Spectating, "away": p.Away != nil, "hasParty": p.Return != nil}
-		if r.Match != nil && r.Game.Phase == "matchOver" && r.Match.Rematch != nil {
-			entry["rematch"] = r.Match.Rematch[p.Member]
-		}
-		if p.ColorIndex != nil && r.Game.settings().TeamMode == "ffa" {
-			entry["colorIndex"] = *p.ColorIndex
-		}
-		if p.Spectating {
-			viewers = append(viewers, entry)
-		} else {
-			players = append(players, entry)
-		}
-	}
-	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "canRestartWave": r.canRestartSurvivalWave(), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.Game.lineupError(r.Players), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
-}
 func (h *Hub) broadcastRoom(r *Room) {
+	if r.Game.Phase == "lobby" || r.Game.Phase == "matchOver" {
+		r.stateDirty = true
+	}
 	// Every controller receives the same metadata. Encode it once into immutable
 	// bytes so a full spectator gallery does not repeat JSON work per socket.
 	data, ok := encodePacket(h.roomWire(r))
@@ -887,6 +862,7 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			r.LastAction = now
 			h.broadcastRoom(r)
 		}
+		c.born = now // Allow the writer to deliver the acknowledgement after detaching.
 		c.enqueue(map[string]any{"type": "left"})
 	case "input":
 		if m.RoomCode != "" && (c.room == nil || c.room.Code != m.RoomCode) {
@@ -1245,9 +1221,11 @@ func (h *Hub) tick(now time.Time) {
 		if changed {
 			h.broadcastRoom(r)
 		}
-		if r.Game.Tick%2 == 0 {
+		active := r.Game.Phase != "lobby" && r.Game.Phase != "matchOver"
+		if active && r.Game.Tick%2 == 0 || !active && r.stateDirty {
 			h.broadcastState(r)
 		}
+		r.stateDirty = false
 	}
 }
 func (h *Hub) run(done <-chan struct{}) {
