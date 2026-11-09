@@ -28,6 +28,8 @@ with sync_playwright() as playwright:
         page.goto(index)
         mouse_help = page.locator("#introTourDesktop")
         expect(page.locator("#introTourDialog")).to_be_visible()
+        expect(page.locator("#introTourKeys")).to_contain_text(
+            "Press Q / C / SPACE / ENTER to fire from the keyboard.")
         if touch:
             expect(mouse_help).to_be_hidden()
         else:
@@ -41,5 +43,13 @@ with sync_playwright() as playwright:
         check_buttons(page, "Done")
         page.locator("#introTourNext").click()
         expect(page.locator("#introTourDialog")).to_be_hidden()
+        if width == 1280:
+            page.locator("#roomSettings > summary").click()
+            page.locator("#roomControlsBtn").click()
+            page.locator('[data-bind="0:fire"]').click()
+            page.keyboard.press("z")
+            page.locator("#openIntroTour").click()
+            expect(page.locator("#introTourKeys")).to_contain_text(
+                "Press Z / C / SPACE / ENTER to fire from the keyboard.")
         context.close()
     browser.close()
