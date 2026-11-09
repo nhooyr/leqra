@@ -30,7 +30,7 @@ function boot(){
  const s={document,window,$,mode:'room',phase:'menu',matchTouchLocked:false,matchTextComposing:false,touchUI:true,pendingMatchPresentation:null,online:{connected:true,menu:false},
   stick:{id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36},firePointers:new Set(),firePresses:new Set(),initAudio(){},localPlayerID:()=>0,sendOnlineInput(){},primaryFireHeld:()=>s.firePointers.size>0};
  vm.createContext(s);
- for(const name of ['syncPauseButton','preventMatchPinch','clearMatchSelection','preventMatchSelection','syncMatchTouchPolicy'])vm.runInContext(declaration(name),s);
+ for(const name of ['syncPauseButton','preventMatchPinch','matchTextField','clearMatchSelection','preventMatchSelection','syncMatchTouchPolicy'])vm.runInContext(declaration(name),s);
  // The actual joystick/Fire handlers are exercised alongside document guards.
  vm.runInContext(source.slice(source.indexOf('function cacheStickGeometry('),source.indexOf("$('touchControls').addEventListener('contextmenu'")),s);
  return{s,$,document,window,selection,setPhase(phase){s.phase=phase;s.syncPauseButton();},pinch(type='gesturechange',values={}){return document.emit(type,values);}};
@@ -88,6 +88,19 @@ test('joystick plus Fire keep independent pointers through a prevented pinch and
  b.window.emit('pointercancel',{pointerId:1});assert.equal(b.s.stick.id,null);assert.equal(b.s.stick.mag,0);assert.equal(b.$('fireBtn').classList.contains('held'),false);
 });
 
+test('native Fire activation pulses the online controls and never duplicates pointer fire',()=>{
+ const b=boot(),button=b.$('fireBtn');
+ button.emit('click',{detail:0});assert.equal(b.s.firePresses.size,0,'the room menu cannot fire');
+ b.setPhase('playing');button.emit('click',{detail:1});assert.equal(b.s.firePresses.size,0,'pointer clicks are already handled on pointerdown');
+ button.emit('click',{detail:0});assert.equal(b.s.firePresses.delete(0),true);
+ assert.equal(b.s.firePointers.size,0,'native activation is a press without a held pointer');
+ const controls={forward:true,fire:false},sent=[];
+ Object.assign(b.s,{mode:'online',onlineControls:()=>controls,sendOnlineInput:(force,input)=>sent.push({force,...input})});
+ button.emit('click',{detail:0});
+ assert.deepEqual(sent,[{force:true,forward:true,fire:true},{force:true,forward:true,fire:false}]);
+ b.s.online.menu=true;button.emit('click',{detail:0});assert.equal(sent.length,2);
+});
+
 function resumeConnection(b){
  Object.assign(b.s,{location:{protocol:'https:',href:'https://leqra.test/'},URL,WebSocket:class{},setTimeout(){return 1;},clearTimeout(){},netBusy(){},setNetStatus(){}});
  Object.assign(b.s.online,{connected:false,connecting:false,code:'ROOM',token:'resume-token',manual:false});
@@ -140,14 +153,17 @@ test('mobile HUD, ammo status, sidebar and dialogs reject native selection, call
  b.s.touchUI=false;b.setPhase('playing');assert.equal(b.document.emit('selectstart').defaultPrevented,false,'desktop text stays selectable');
 });
 
-test('selection changes clear text ranges once while retaining a typing caret and IME composition',()=>{
- const b=boot();b.setPhase('playing');const field={value:'PILOT',selectionStart:0,selectionEnd:5,calls:0,setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end;this.calls++;}};
+test('mobile text fields retain selection while other surfaces suppress it',()=>{
+ const b=boot();b.setPhase('playing');const field={tagName:'INPUT',value:'PILOT',selectionStart:0,selectionEnd:5,setSelectionRange(){assert.fail('native text selection should be left intact');}};
  b.document.activeElement=field;b.selection.isCollapsed=false;b.document.emit('selectionchange',{cancelable:false});
- assert.equal(field.selectionStart,5);assert.equal(field.selectionEnd,5);assert.equal(field.value,'PILOT');assert.equal(b.selection.cleared,1);
- for(let i=0;i<20;i++)b.document.emit('selectionchange',{cancelable:false});assert.equal(field.calls,1);assert.equal(b.selection.cleared,1,'collapsed selection does not cause recursive changes');
- assert.equal(b.document.emit('compositionstart').defaultPrevented,false);field.selectionStart=1;field.selectionEnd=3;b.selection.isCollapsed=false;
- b.document.emit('selectionchange',{cancelable:false});assert.equal(field.calls,1);assert.equal(b.selection.cleared,1,'do not interrupt active IME replacement');
- assert.equal(b.document.emit('compositionend').defaultPrevented,false);assert.equal(field.calls,2);assert.equal(field.selectionStart,3);assert.equal(field.value,'PILOT');
+ assert.equal(field.selectionStart,0);assert.equal(field.selectionEnd,5);assert.equal(b.selection.cleared,0);
+ for(const target of [field,{tagName:'TEXTAREA',readOnly:true},{isContentEditable:true}])for(const type of ['selectstart','contextmenu','dblclick'])assert.equal(b.document.emit(type,{target}).defaultPrevented,false);
+ assert.equal(b.document.emit('compositionstart',{target:field}).defaultPrevented,false);
+ assert.equal(b.document.emit('compositionend',{target:field}).defaultPrevented,false);
+ assert.equal(b.selection.cleared,0,'finishing composition leaves the text selection alone');
+ b.document.activeElement=b.$('weaponLabel');b.document.emit('selectionchange',{cancelable:false});
+ assert.equal(b.selection.cleared,1);
+ for(let i=0;i<20;i++)b.document.emit('selectionchange',{cancelable:false});assert.equal(b.selection.cleared,1,'collapsed selection does not cause recursive changes');
  b.document.emit('compositionstart');b.setPhase('menu');b.setPhase('playing');assert.equal(b.s.matchTextComposing,false,'a later match cannot inherit stale composition state');
 });
 

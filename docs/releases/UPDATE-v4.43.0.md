@@ -33,4 +33,4 @@ Windows: build `bin/leqra.exe` with the same `./src` package argument. Launchers
 
 The current browser explicitly rejected the local game page under its URL security policy and prohibited alternate capture routes. A genuine browser screenshot could not be produced. `docs/screenshot.png` is unchanged from the previous staged production-Canvas render, and is not browser verification for this release. Native desktop/mobile appearance, including the new neon buttons and geometry, still needs a device retest.
 
-See [TEST-NOTES-v4.43.0.md](TEST-NOTES-v4.43.0.md) for executed checks and their limits, and [the full guide](../README-verbose.md) for setup.
+See [TEST-NOTES-v4.43.0.md](TEST-NOTES-v4.43.0.md) for executed checks and their limits, and [the full guide](../README.md) for setup.

@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+const (
+	maxQueueTickets       = 40 // Per queue, so one battle format cannot block the others.
+	maxSourceQueueTickets = 16 // Per source address and queue.
+	queueSearchTimeout    = 5 * time.Minute
+)
+
 type QueueDefinition struct {
 	Key      string `json:"key"`
 	Name     string `json:"name"`
@@ -67,6 +73,7 @@ type QueueTicket struct {
 	Definition        QueueDefinition
 	Room              *Room
 	Leader            *Player
+	SourceIP          string
 	Pilots            []*Player // No bots or spectators count toward the party size.
 	Controllers       []*Player // Includes an observing primary who controls active P2.
 	Accepted          map[*Player]bool
@@ -170,8 +177,21 @@ func (h *Hub) joinQueue(c *Client, m clientMessage, now time.Time) {
 		fail("bad_queue", "Choose one of the six supported queues.")
 		return
 	}
-	if len(h.queues) >= 256 {
-		fail("queue_full", "The matchmaking service is at its queue limit. Try again later.")
+	queued, sourceTickets := 0, 0
+	for _, q := range h.queues {
+		if q.Definition.Key == def.Key {
+			queued++
+			if c.sourceIP != "" && q.SourceIP == c.sourceIP {
+				sourceTickets++
+			}
+		}
+	}
+	if sourceTickets >= maxSourceQueueTickets {
+		fail("queue_source_full", "Too many searches from your network for this battle. Try again shortly.")
+		return
+	}
+	if queued >= maxQueueTickets {
+		fail("queue_full", "This battle is at its queue limit. Try again later or choose another battle.")
 		return
 	}
 	pilots := []*Player{}
@@ -212,7 +232,7 @@ func (h *Hub) joinQueue(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	h.nextQueueID++
-	q := &QueueTicket{ID: h.nextQueueID, Definition: def, Room: r, Leader: p, Pilots: pilots, Controllers: controllers, Accepted: map[*Player]bool{}, Created: now}
+	q := &QueueTicket{ID: h.nextQueueID, Definition: def, Room: r, Leader: p, SourceIP: c.sourceIP, Pilots: pilots, Controllers: controllers, Accepted: map[*Player]bool{}, Created: now}
 	// A host click consents for their keyboard pilots, never for remote friends.
 	for _, controller := range controllers {
 		q.Accepted[controller] = controller == p
@@ -468,6 +488,8 @@ func (h *Hub) tickQueues(now time.Time) {
 			h.cancelQueue(q.Room, "The party changed or disconnected. Join the queue again when ready.")
 		} else if q.Enqueued.IsZero() && now.Sub(q.Created) > 2*time.Minute {
 			h.cancelQueue(q.Room, "The party invitation expired before everyone confirmed.")
+		} else if !q.Enqueued.IsZero() && now.Sub(q.Enqueued) >= queueSearchTimeout {
+			h.cancelQueue(q.Room, "The search timed out. Join the queue again to keep looking.")
 		}
 	}
 	if len(h.queues) == 0 {

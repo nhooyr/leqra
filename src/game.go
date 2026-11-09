@@ -1393,11 +1393,19 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 			}
 		}
 	}
-	// Alternating order avoids always giving slot zero the first shot/move.
-	for i := 0; i < maxTanks; i++ {
-		id := (i + g.Tick) % maxTanks
+	// Rotate occupied live seats so empty or dead seats cannot bias first action.
+	var actors [maxTanks]int
+	count := 0
+	for id, t := range g.Tanks {
+		if t != nil && t.Alive {
+			actors[count] = id
+			count++
+		}
+	}
+	for i := 0; i < count; i++ {
+		id := actors[(i+g.Tick)%count]
 		t := g.Tanks[id]
-		if t == nil || !t.Alive {
+		if !t.Alive {
 			continue
 		}
 		t.Cooldown = math.Max(0, t.Cooldown-dt)
@@ -1457,9 +1465,9 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		if p.Life <= 0 {
 			continue
 		}
-		for i := 0; i < maxTanks; i++ {
-			t := g.Tanks[(i+g.Tick)%maxTanks]
-			if t != nil && t.Alive && dist(t.X, t.Y, p.X, p.Y) < t.R+13 {
+		for i := 0; i < count; i++ {
+			t := g.Tanks[actors[(i+g.Tick)%count]]
+			if t.Alive && dist(t.X, t.Y, p.X, p.Y) < t.R+13 {
 				g.grantPower(t, p.Type)
 				p.Life = 0
 				break

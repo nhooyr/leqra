@@ -112,6 +112,34 @@ test('offline navigation falls back to the cached shell', async () => {
   assert.equal(h.calls.open, 0);
 });
 
+test('temporary upstream errors use this release’s cached shell when available', async () => {
+  for (const status of [502, 503, 504]) {
+    const h = boot({
+      fetchResponse: () => new Response('upstream unavailable', {status}),
+      match: async (key, options) => {
+        assert.equal(key, '/');
+        assert.equal(options.cacheName, 'leqra-app-' + assetVersion);
+        return new Response('installed shell');
+      }
+    });
+    const event = h.dispatch('/index.html?room=ARENA');
+    assert.equal(await (await event.response).text(), 'installed shell');
+    await Promise.all(event.waits);
+    assert.equal(h.calls.open, 0);
+  }
+});
+
+test('failed cache reads and non-temporary HTTP responses preserve navigation responses', async () => {
+  const upstream = boot({
+    fetchResponse: () => new Response('upstream unavailable', {status: 503}),
+    match: async () => { throw Error('cache read unavailable'); }
+  });
+  assert.equal((await upstream.dispatch().response).status, 503);
+  const missing = boot({fetchResponse: () => new Response('missing', {status: 404})});
+  assert.equal((await missing.dispatch().response).status, 404);
+  assert.equal(missing.calls.match.length, 0);
+});
+
 test('APIs, sockets, foreign origins, non-GETs and unrelated files remain network-only', () => {
   const h = boot();
   for (const [pathname, mode, method] of [

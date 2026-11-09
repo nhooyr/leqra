@@ -1,4 +1,4 @@
-> Historical guide: command paths below reflect its original release. For the current repository layout and commands, use the [setup and development guide](README-verbose.md).
+> Historical guide: command paths below reflect its original release. For the current repository layout and commands, use the [setup and development guide](README.md).
 
 > Historical release notes. Current controls, rules, presets and objectives are documented in [GAMEPLAY-v3.2.md](releases/GAMEPLAY-v3.2.md).
 

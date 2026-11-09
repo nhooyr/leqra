@@ -139,7 +139,7 @@ func Test423ActivatingTeamsBalancesTanks(t *testing.T) {
 			counts[p.Team]++
 		}
 	}
-	if counts != [5]int{0, 2, 1, 1, 1} {
-		t.Fatalf("expected all four teams: %v", counts)
+	if counts != [5]int{0, 3, 2, 0, 0} {
+		t.Fatalf("expected two teams with the extra tank on Team 1: %v", counts)
 	}
 }

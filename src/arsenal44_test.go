@@ -255,7 +255,9 @@ func Test44MachineGunShooterImmunity(t *testing.T) {
 	}
 }
 func Test44MachineGunEightTanksStressAndCompactWire(t *testing.T) {
-	g := battle(8)
+	g := newGame(42)
+	g.Rules.MapSize = "ultrawide"
+	g.startMatch(testPlayers(maxTanks))
 	for _, tank := range g.Tanks {
 		tank.Invulnerable = 100
 		g.grantPower(tank, "rapid")
@@ -276,15 +278,18 @@ func Test44MachineGunEightTanksStressAndCompactWire(t *testing.T) {
 		g.updateBullets(tickDT)
 		high = max(high, len(g.Bullets))
 	}
-	maxLive := int(math.Ceil((g.machineTravelRange()/machineSpeed)/tickDT)) + 2
-	if high > 8*maxLive {
-		t.Fatal("projectile cloud unbounded")
+	if high > maxTanks*machineCapacity || high <= maxTanks*96 {
+		t.Fatalf("Ultra Wide peak %d rounds, want between %d and %d", high, maxTanks*96+1, maxTanks*machineCapacity)
 	}
 	h := newHub(2)
-	wire := h.stateMessage(&Room{Game: g})
-	packed := wire["machineBullets"].([][12]float64)
-	if len(packed) != len(g.Bullets) || len(wire["bullets"].([]Bullet)) != 0 {
+	wire := h.stateWire(&Room{Game: g})
+	packed := wire.MachineBullets
+	if len(packed) != len(g.Bullets) || len(wire.Bullets) != 0 {
 		t.Fatal("packing dropped/duplicated bullets")
+	}
+	packet, ok := encodePacket(wire)
+	if !ok {
+		t.Fatal("could not encode Ultra Wide snapshot")
 	}
 	for i, row := range packed {
 		b := g.Bullets[i]
@@ -308,7 +313,7 @@ func Test44MachineGunEightTanksStressAndCompactWire(t *testing.T) {
 	if len(compact) >= len(verbose)/2 {
 		t.Fatalf("packing ineffective %d / %d", len(compact), len(verbose))
 	}
-	t.Logf("eight-stream peak=%d records=%d compact=%d legacy=%d bytes", high, len(packed), len(compact), len(verbose))
+	t.Logf("Ultra Wide eight-stream peak=%d records=%d compact=%d legacy=%d snapshot=%d bytes", high, len(packed), len(compact), len(verbose), len(packet))
 }
 func Test44MachineGunShieldStackSurvivesBurstGrace(t *testing.T) {
 	g := battle(2)

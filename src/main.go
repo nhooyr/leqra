@@ -5,9 +5,11 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
+	"image/png"
 	"io/fs"
 	"log"
 	"net"
@@ -22,7 +24,7 @@ import (
 )
 
 const (
-	version         = "4.49.4"
+	version         = "4.49.5"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 )
@@ -30,24 +32,37 @@ const (
 //go:embed web/index.html web/assets
 var embeddedWeb embed.FS
 
+var appIconPNGs = [...]string{
+	"apple-touch-icon-512.png", "apple-touch-icon.png", "favicon-256.png",
+	"icon-1024.png", "icon-192.png", "icon-512.png", "icon-maskable-1024.png", "icon-maskable-512.png",
+}
+
 func checkAppIcons(web fs.FS) error {
-	dir := "web/assets/v" + version
-	entries, err := fs.ReadDir(web, dir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".png") {
-			continue
-		}
-		path := dir + "/" + entry.Name()
+	dir := "web/assets/v" + version + "/"
+	for _, name := range appIconPNGs {
+		path := dir + name
 		data, err := fs.ReadFile(web, path)
 		if err != nil {
-			return err
+			return fmt.Errorf("required app icon: %w", err)
 		}
-		if bytes.HasPrefix(data, []byte("version https://git-lfs.github.com/spec/v1")) {
+		if bytes.HasPrefix(data, []byte("version https://git-lfs.github.com/spec/v1")) ||
+			bytes.HasPrefix(data, []byte("version https://hawser.github.com/spec/v1")) {
 			return fmt.Errorf("embedded app icon %s is a Git LFS pointer. Run git lfs pull and rebuild", path)
 		}
+		if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+			return fmt.Errorf("invalid app icon %s: %w", path, err)
+		}
+	}
+	path := dir + "favicon.svg"
+	data, err := fs.ReadFile(web, path)
+	if err != nil {
+		return fmt.Errorf("required app icon: %w", err)
+	}
+	var icon struct {
+		XMLName xml.Name `xml:"svg"`
+	}
+	if err := xml.Unmarshal(data, &icon); err != nil {
+		return fmt.Errorf("invalid app icon %s: %w", path, err)
 	}
 	return nil
 }
@@ -57,10 +72,12 @@ type ipBudget struct {
 	window           time.Time
 }
 type App struct {
-	hub     *Hub
-	origins []string
-	mu      sync.Mutex
-	ips     map[string]*ipBudget
+	hub       *Hub
+	origins   []string
+	mu        sync.Mutex
+	ips       map[string]*ipBudget
+	upgradeMu sync.RWMutex
+	stopping  bool
 }
 
 func newApp(maxRooms int, origins []string) *App {
@@ -107,31 +124,48 @@ func (a *App) release(ip string) {
 	}
 }
 func (a *App) socket(w http.ResponseWriter, r *http.Request) {
+	key, err := validateUpgrade(w, r, a.origins)
+	if err != nil {
+		return
+	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		ip = r.RemoteAddr
 	}
-	if !a.reserve(ip, time.Now()) {
-		http.Error(w, "Too many connections. Try again shortly.", 429)
+	c := a.openSocket(w, key, ip)
+	if c == nil {
 		return
 	}
 	defer a.release(ip)
-	ws, err := upgradeWS(w, r, a.origins)
-	if err != nil {
-		return
+	a.hub.readLoop(c)
+}
+
+func (a *App) openSocket(w http.ResponseWriter, key, ip string) *Client {
+	a.upgradeMu.RLock()
+	defer a.upgradeMu.RUnlock()
+	if a.stopping {
+		http.Error(w, "Server shutting down", http.StatusServiceUnavailable)
+		return nil
 	}
-	c := &Client{ws: ws, send: make(chan []byte, 12), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: -1, born: time.Now(), requireVersion: true}
+	if !a.reserve(ip, time.Now()) {
+		http.Error(w, "Too many connections. Try again shortly.", 429)
+		return nil
+	}
+	ws, err := upgradeWS(w, key)
+	if err != nil {
+		a.release(ip)
+		return nil
+	}
+	c := &Client{ws: ws, sourceIP: ip, send: make(chan []byte, 12), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: -1, born: time.Now(), requireVersion: true}
 	if !a.hub.addClient(c) {
 		ws.writeClose(1013, "Server full")
 		ws.close()
-		return
+		a.release(ip)
+		return nil
 	}
-	if !c.enqueue(map[string]any{"type": "server_hello", "version": version, "protocol": protocolVersion}) {
-		c.stop()
-		return
-	}
+	c.enqueue(map[string]any{"type": "server_hello", "version": version, "protocol": protocolVersion})
 	go c.writeLoop()
-	a.hub.readLoop(c)
+	return c
 }
 func (a *App) handler() http.Handler {
 	sub, err := fs.Sub(embeddedWeb, "web")
@@ -161,10 +195,10 @@ func (a *App) handler() http.Handler {
 	assets := map[string]bool{
 		"theme.js": true, "theme.css": true, "style.css": true, "favicon.svg": true,
 		"netcode.js": true, "game.js": true, "pwa.js": true, "manifest.webmanifest": true,
-		"sw.js": true, "icon-192.png": true, "icon-512.png": true,
-		"icon-maskable-512.png": true, "apple-touch-icon.png": true,
-		"icon-1024.png": true, "icon-maskable-1024.png": true,
-		"favicon-256.png": true, "apple-touch-icon-512.png": true,
+		"sw.js": true,
+	}
+	for _, name := range appIconPNGs {
+		assets[name] = true
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
@@ -226,6 +260,10 @@ func (a *App) serve(srv *http.Server, listener net.Listener, stopped <-chan os.S
 		return err
 	case <-stopped:
 	}
+	// Finish in-flight upgrades and seal admission before selecting recipients.
+	a.upgradeMu.Lock()
+	a.stopping = true
+	a.upgradeMu.Unlock()
 	// Give browsers time to render the terminal notice before closing their
 	// hijacked connections, which net/http cannot drain for us.
 	if a.hub.notifyShutdown() > 0 {
@@ -264,7 +302,7 @@ func main() {
 	}
 	var origins []string
 	for _, v := range strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",") {
-		if v = strings.TrimSpace(strings.TrimRight(v, "/")); v != "" {
+		if v = strings.TrimRight(strings.TrimSpace(v), "/"); v != "" {
 			if strings.Contains(v, "*") {
 				log.Fatal("ALLOWED_ORIGINS must contain exact origins, not wildcards")
 			}

@@ -13,7 +13,7 @@ function declaration(name){
 const kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
 function tank(id=0){return {id,x:100+id*200,y:100,angle:0,r:17,human:true,alive:true,cooldown:0,invulnerable:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,track:0};}
 function boot(){
- const noop=()=>{},s={POWER_EFFECT_DURATION:10,MACHINE_FIRING_ROUNDS:firingRounds,MACHINE_CAPACITY:96,MAX_SPEED_STACKS:5,POWER:Object.fromEntries(kinds.map(k=>[k,{name:k.toUpperCase()}])),cols:12,rows:10,time:0,mode:'solo',phase:'playing',fxTime:0,phaseTime:0,toastTime:0,particles:[],rings:[],shake:0,roundClock:120,spawnClock:Infinity,uiClock:Infinity,bullets:[],pickups:[],bulletId:0,tanks:[tank(),tank(1)],updateTraces:noop,compactLife:noop,objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,liveLocalStats:()=>false,advanceGhost:(t,dt)=>t.ghostTime=Math.max(0,t.ghostTime-dt),humanControl:noop,botControl:noop,updateBullets:noop,finishRound:noop,updateHUD:noop,muzzleBlocked:()=>false,burst:noop,shotSound:noop,
+ const noop=()=>{},s={POWER_EFFECT_DURATION:10,MACHINE_FIRING_ROUNDS:firingRounds,MACHINE_CAPACITY:N.MACHINE_CAPACITY,MAX_SPEED_STACKS:5,POWER:Object.fromEntries(kinds.map(k=>[k,{name:k.toUpperCase()}])),cols:12,rows:10,time:0,localTick:0,localTankActors:Array(8),mode:'solo',phase:'playing',fxTime:0,phaseTime:0,toastTime:0,particles:[],rings:[],shake:0,roundClock:120,spawnClock:Infinity,uiClock:Infinity,bullets:[],pickups:[],bulletId:0,tanks:[tank(),tank(1)],updateTraces:noop,compactLife:noop,objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,liveLocalStats:()=>false,advanceGhost:(t,dt)=>t.ghostTime=Math.max(0,t.ghostTime-dt),humanControl:noop,botControl:noop,updateBullets:noop,finishRound:noop,updateHUD:noop,muzzleBlocked:()=>false,burst:noop,shotSound:noop,
   projectileSpec:power=>({kind:power,cooldown:0}),muzzleProjectile:(t,a)=>({owner:t.id,kind:t.power}),
   activeAmmo:t=>s.bullets.filter(b=>!b.dead&&b.owner===t.id).length,shieldCount:t=>t.shield>0?t.shieldCharges||1:0,speedCount:t=>t.speedTime>0?t.speedStacks||1:0};
  vm.createContext(s);for(const name of ['choosePickup','powerEffectDuration','starmanDuration','pickupCap','pickupLifetime','grantPower','pickupMessage','powerCapacity','fire','update'])vm.runInContext(declaration(name),s);return s;
@@ -65,7 +65,7 @@ test('local machine gun fires exactly 180 rapid projectiles at 60 Hz on a 120 Hz
 test('local cooldown, wall, slot and same-tick blocks never spend firing budget',()=>{
  const s=boot(),t=tank();s.grantPower(t,'rapid');t.cooldown=1;assert.equal(s.fire(t),false);t.cooldown=0;
  t.ghostTime=5;s.muzzleBlocked=()=>true;assert.equal(s.fire(t),false);s.muzzleBlocked=()=>false;
- s.bullets=Array.from({length:96},()=>({owner:0}));assert.equal(s.fire(t),false);assert.equal(t.machineRounds,180);
+ s.bullets=Array.from({length:N.MACHINE_CAPACITY},()=>({owner:0}));assert.equal(s.fire(t),false);assert.equal(t.machineRounds,180);
  s.bullets=[];assert.equal(s.fire(t),true);assert.equal(s.fire(t),false);assert.equal(t.machineRounds,179);
 });
 test('local released fire preserves budget but the regular timer still expires unused guns',()=>{

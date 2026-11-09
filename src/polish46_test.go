@@ -26,8 +26,10 @@ func TestMachineGunQuarterPerimeterRangeAndShooterImmunity(t *testing.T) {
 }
 
 func Test46MachineCapacityCoversLargestContinuousRange(t *testing.T) {
-	width, height := 16*cellSize, 14*cellSize
-	flight := (width + height) / (2 * machineSpeed)
+	g := newGame(42)
+	g.Rules.MapSize = "ultrawide"
+	g.startMatch(testPlayers(2))
+	flight := g.machineTravelRange() / machineSpeed
 	required := int(math.Ceil(flight/tickDT)) + 1
 	if machineCapacity < required {
 		t.Fatalf("capacity %d cannot sustain %d live rounds", machineCapacity, required)

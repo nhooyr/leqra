@@ -1,4 +1,4 @@
-> Historical guide: command paths below reflect its original release. For the current repository layout and commands, use the [setup and development guide](README-verbose.md).
+> Historical guide: command paths below reflect its original release. For the current repository layout and commands, use the [setup and development guide](README.md).
 
 > Historical v2.8 release notes. The icons and range rules remain; [UNIFIED-ROOMS.md](UNIFIED-ROOMS.md) and [POWERUPS.md](POWERUPS.md) describe the stronger v3.0 missile tuning and teams.
 

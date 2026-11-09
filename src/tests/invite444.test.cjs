@@ -2,7 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 const {assetPath}=require('./web_assets.cjs');
 const source=fs.readFileSync(process.env.LEQRA_INVITE_SOURCE||assetPath('game.js'),'utf8');
-function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
+function declaration(name){let start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);if(source.slice(start-6,start)==='async ')start-=6;const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot({query='?room=Friday+tanks',session=null,name='SAVED PILOT',kicked=''}={}){
  const nodes=new Map(),noop=()=>{},saved=new Map([['leqra.name',name]]),stored=new Map([['leqra.session',JSON.stringify(session)],['leqra.kicked',kicked]]),connections=[];
  const $=id=>{if(!nodes.has(id))nodes.set(id,{id,value:'',open:false,disabled:false,hidden:false,textContent:'',dataset:{},listeners:{},firstElementChild:{},style:{setProperty:noop},classList:{toggle:noop,add:noop,remove:noop},addEventListener(kind,fn){this.listeners[kind]=fn;},focus(){this.focused=true;},select(){this.selected=true;},showModal(){this.open=true;},close(){this.open=false;},querySelector(){return this.heading||(this.heading={});}});return nodes.get(id);};
@@ -13,7 +13,7 @@ function boot({query='?room=Friday+tanks',session=null,name='SAVED PILOT',kicked
   connectOnline(request,reconnecting=false){connections.push({request:{...request},reconnecting});s.online.connecting=true;}};
  for(const name of ['confirmKick','cancelKick','leaveOnline','unshareOnlineRoom','openJoinDialog','submitRoomRename','returnToRoom','restartLocalMatch','requestRestartSurvivalWave','leaveOnlineMatch','copyOnlineInvite','toggleRoomMenu','toggleOnlineMenu'])s[name]=noop;
  vm.createContext(s);
- for(const name of ['cleanPilotName','cleanRoomCode','validRoomCode','rememberCallsign','setNetStatus','netBusy','openOnline','resetWatchDialog','openPilotInvite','joinOnlineRoom','openWatchInvite','joinWatchInvite','initOnlineUI'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
+ for(const name of ['cleanPilotName','cleanRoomCode','validRoomCode','rememberCallsign','setNetStatus','netBusy','openOnline','resetWatchDialog','openPilotInvite','joinOnlineRoom','openWatchInvite','joinWatchInvite','composingKey','initOnlineUI'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
  s.initOnlineUI();
  return{s,$,stored,saved,join:()=>$('joinRoomBtn').listeners.click(),enter:id=>$(id).listeners.keydown({key:'Enter',preventDefault:noop})};
 }
@@ -37,6 +37,28 @@ test('Back and Escape cancel a fresh invite without erasing another room’s sav
 test('Enter in callsign submits manually and invalid room names stay in the join menu',()=>{
  const {s,$,enter}=boot();$('pilotName').value='ENTER PILOT';enter('pilotName');assert.equal(s.connections.length,1);assert.equal(s.connections[0].request.name,'ENTER PILOT');
  const invalid=boot({query:'?room=%0A'});assert.equal(invalid.s.connections.length,0);invalid.$('joinCode').value='';invalid.join();assert.equal(invalid.s.connections.length,0);assert.equal(invalid.$('joinCode').focused,true);
+});
+test('composition Enter commits text without initiating a join or room rename',()=>{
+ const {s,$,enter}=boot();
+ for(const id of ['pilotName','joinCode','onlineRoomCode'])for(const state of [{isComposing:true},{keyCode:229}]){
+  $(id).listeners.keydown({key:'Enter',...state,preventDefault(){assert.fail('leave composition commit to the browser');}});
+ }
+ assert.equal(s.connections.length,0);
+ enter('pilotName');assert.equal(s.connections.length,1);
+});
+test('manual invite dialog works in the match menu and stays current through rename',async()=>{
+ const {s,$}=boot({query:''});
+ Object.assign(s,{mode:'online',phase:'playing',roomChat:{code:'Original name'},syncOnlineURL(){},toast(){},openFeature:id=>$(id+'Dialog').showModal(),navigator:{clipboard:{async writeText(){throw Error('denied');}}}});
+ Object.assign(s.online,{code:'Original name',connected:true,member:1,socket:{},roomData:{code:'Original name'}});
+ for(const name of ['onlineInviteURL','captureOnlineRoomActionScope','inviteCopyDetails','syncInviteFallback','copyOnlineInvite','acceptOnlineRoomCode'])vm.runInContext(declaration(name),s);
+ await s.copyOnlineInvite(true);
+ assert.equal($('inviteDialog').open,true);assert.equal($('inviteFallback').focused,true);assert.equal($('inviteFallback').selected,true);
+ assert.equal(new URL($('inviteFallback').value).searchParams.get('room'),'Original name');
+ s.acceptOnlineRoomCode('Current name',false,false);
+ const updated=new URL($('inviteFallback').value);
+ assert.equal(updated.searchParams.get('room'),'Current name');assert.equal(updated.searchParams.get('spectate'),'1');
+ s.location.href='http://localhost:8080/';await s.copyOnlineInvite();
+ assert.match($('inviteFallback').value,/^Room Current name/);
 });
 test('a removed player must explicitly JOIN and is not given the removed session token',()=>{
  const {s,$,join,stored}=boot({session:recent(),kicked:'Friday tanks'});assert.equal(s.connections.length,0);assert.match($('netStatus').textContent,/removed/);join();assert.equal(s.connections.length,1);assert.equal(s.connections[0].request.token,undefined);assert.equal(stored.has('leqra.kicked'),false);

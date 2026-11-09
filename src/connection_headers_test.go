@@ -12,11 +12,7 @@ import (
 )
 
 func TestWebSocketConnectionHeaderFields(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ws, err := upgradeWS(w, r, nil); err == nil {
-			ws.close()
-		}
-	}))
+	server := httptest.NewServer(newApp(4, nil).handler())
 	defer server.Close()
 	host := strings.TrimPrefix(server.URL, "http://")
 	for _, tc := range []struct {

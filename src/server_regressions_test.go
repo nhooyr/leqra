@@ -7,11 +7,156 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestQueueAdmissionIsolatedAndConfirmedSearchesExpire(t *testing.T) {
+	h := newHub(256)
+	now := time.Now()
+	join := func(source, queue string, at time.Time) *Client {
+		t.Helper()
+		c := fakeClient()
+		c.sourceIP = source
+		action(t, h, c, map[string]any{"type": "create"})
+		if queue == "ctf-3" {
+			action(t, h, c, map[string]any{"type": "add", "kind": "local"})
+		}
+		h.joinQueue(c, clientMessage{QueueKey: queue}, at)
+		return c
+	}
+	for i := 0; i < maxQueueTickets; i++ {
+		source := "192.0.2.1"
+		if i >= maxSourceQueueTickets {
+			source = fmt.Sprintf("198.51.100.%d", i)
+		}
+		if c := join(source, "ctf-3", now); c.room.Queue == nil || c.room.Queue.Enqueued.IsZero() {
+			t.Fatalf("ticket %d was rejected", i)
+		}
+		if i+1 == maxSourceQueueTickets && !hasError(join(source, "ctf-3", now), "queue_source_full") {
+			t.Fatal("one source exceeded its queue quota")
+		}
+	}
+	if !hasError(join("192.0.2.2", "ctf-3", now), "queue_full") {
+		t.Fatal("full queue accepted a new ticket")
+	}
+	legit := join("192.0.2.1", "elimination-1", now.Add(time.Minute))
+	if legit.room.Queue == nil {
+		t.Fatal("a full queue blocked a different format")
+	}
+	h.tickQueues(now.Add(queueSearchTimeout - time.Second))
+	if len(h.queues) != maxQueueTickets+1 {
+		t.Fatal("confirmed searches expired early or unmatchable parties were packed")
+	}
+	h.tickQueues(now.Add(queueSearchTimeout))
+	if len(h.queues) != 1 || legit.room.Queue == nil {
+		t.Fatal("expired searches occupied admission capacity")
+	}
+}
+
+func TestIdleRoomSnapshotsFollowChangesAndReconnects(t *testing.T) {
+	h, clients, r := makeRoom(t, 1)
+	c := clients[0]
+	now := time.Now()
+	drain(c)
+	h.tick(now)
+	initial := drain(c)
+	if len(initial) != 1 || initial[0]["type"] != "state" {
+		t.Fatalf("initial room change did not publish state: %v", initial)
+	}
+	for i := 1; i <= 12; i++ {
+		h.tick(now.Add(time.Duration(i) * time.Second / 60))
+	}
+	if packets := drain(c); len(packets) != 0 {
+		t.Fatalf("unchanged idle room kept sending: %v", packets)
+	}
+	rules := r.Game.settings()
+	rules.TimeLimit = 90
+	action(t, h, c, map[string]any{"type": "rules", "rules": rules})
+	drain(c)
+	h.tick(now.Add(time.Second))
+	if packets := drain(c); len(packets) != 1 || packets[0]["type"] != "state" || packets[0]["roundClock"] != float64(90) {
+		t.Fatalf("idle state did not reflect a rule change: %v", packets)
+	}
+	token := c.player.Token
+	h.removeClient(c)
+	resumed := fakeClient()
+	action(t, h, resumed, map[string]any{"type": "join", "code": r.Code, "token": token})
+	for _, packet := range drain(resumed) {
+		if packet["type"] == "state" && packet["roundClock"] == float64(90) {
+			return
+		}
+	}
+	t.Fatal("resume did not get current idle state immediately")
+}
+
+func TestLeaveAcknowledgementSurvivesNextTick(t *testing.T) {
+	h, clients, _ := makeRoom(t, 2)
+	c := clients[1]
+	drain(c)
+	now := time.Now()
+	c.born = now.Add(-time.Minute)
+	if err := h.handle(c, []byte(`{"type":"leave"}`), now); err != nil {
+		t.Fatal(err)
+	}
+	h.tick(now.Add(time.Millisecond))
+	select {
+	case <-c.done:
+		t.Fatal("socket closed before acknowledging leave")
+	default:
+	}
+	if packets := drain(c); len(packets) != 1 || packets[0]["type"] != "left" || c.room != nil {
+		t.Fatalf("leave did not detach and acknowledge: %v", packets)
+	}
+}
+
+func TestShutdownSealsWebSocketAdmissionBeforeNotice(t *testing.T) {
+	app := newApp(1, nil)
+	client := fakeClient()
+	if !app.hub.addClient(client) {
+		t.Fatal("could not register the existing client")
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	stopped := make(chan os.Signal, 1)
+	finished := make(chan error, 1)
+	handler := app.handler()
+	srv := &http.Server{Handler: handler}
+	defer srv.Close()
+	go func() { finished <- app.serve(srv, listener, stopped) }()
+	stopped <- os.Interrupt
+	select {
+	case notice := <-client.send:
+		if !strings.Contains(string(notice), `"type":"server_shutdown"`) {
+			t.Fatalf("unexpected notice: %s", notice)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("shutdown notice timed out")
+	}
+	req := httptest.NewRequest("GET", "http://test.example/ws", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Origin", "http://test.example")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("upgrade during shutdown got %d: %s", w.Code, w.Body)
+	}
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("shutdown did not finish")
+	}
+}
 
 func TestTwoPilotInputBudgets(t *testing.T) {
 	h, clients, r := makeRoom(t, 2)

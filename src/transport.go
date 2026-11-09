@@ -77,8 +77,8 @@ func validOrigin(r *http.Request, allowed []string) bool {
 	return false
 }
 
-func upgradeWS(w http.ResponseWriter, r *http.Request, allowed []string) (*wsConn, error) {
-	fail := func(status int, msg string) (*wsConn, error) { http.Error(w, msg, status); return nil, errors.New(msg) }
+func validateUpgrade(w http.ResponseWriter, r *http.Request, allowed []string) (string, error) {
+	fail := func(status int, msg string) (string, error) { http.Error(w, msg, status); return "", errors.New(msg) }
 	if r.Method != http.MethodGet || !headerToken(r.Header.Values("Connection"), "upgrade") || !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		return fail(400, "WebSocket upgrade required")
 	}
@@ -94,9 +94,14 @@ func upgradeWS(w http.ResponseWriter, r *http.Request, allowed []string) (*wsCon
 	if err != nil || len(raw) != 16 {
 		return fail(400, "Invalid WebSocket key")
 	}
+	return key, nil
+}
+
+func upgradeWS(w http.ResponseWriter, key string) (*wsConn, error) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		return fail(500, "WebSocket upgrade unavailable")
+		http.Error(w, "WebSocket upgrade unavailable", 500)
+		return nil, errors.New("WebSocket upgrade unavailable")
 	}
 	conn, rw, err := hj.Hijack()
 	if err != nil {

@@ -9,7 +9,7 @@ const (
 	machineSpeed        = regularSpeed * 3
 	machineRadius       = regularRadius / 3
 	machineFiringRounds = 3 * 60 // Three seconds of productive firing; idle or blocked ticks cost nothing.
-	machineCapacity     = 96     // Covers a continuous 60 Hz stream across the largest quarter-perimeter range.
+	machineCapacity     = 115    // ceil(24×14 quarter-perimeter flight at 60 Hz) + 1.
 	shieldDuration      = powerEffectDuration
 	maxShieldCharges    = 5
 )

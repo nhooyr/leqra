@@ -12,11 +12,24 @@ function arena(level,escorts=1,corridor=false){
   humanControl(t,dt){if(t.id===0&&s.walking)s.moveTank(t,-128*dt,0);},addObjectivePoint(t){for(const ally of s.tanks)if(ally.team===t.team)s.scores[ally.id]++;}
  });
  const own={team:1,x:126,y:210,homeX:126,homeY:210,home:true,carrier:-1},other={team:2,x:378,y:210,homeX:462,homeY:42,home:false,carrier:0};s.localObjectives={mode:'ctf',flags:[own,other]};
- for(const name of ['wallBetweenCenters','resetLocalFlag','dropLocalFlags','stepLocalObjectives','update'])vm.runInContext(declaration(name),s);
+ for(const name of ['wallBetweenCenters','clearTankAt','finishGhost','resetLocalFlag','dropLocalFlags','stepLocalObjectives','update'])vm.runInContext(declaration(name),s);
  for(let i=0;i<s.grid.length;i++)s.grid[i].neighbors=s.grid[i].neighbors.filter(j=>{const a=s.center(i),b=s.center(j);return !s.rayWalls(a.x,a.y,b.x-a.x,b.y-a.y,18);});
  return{s,carrier,own,other};
 }
 function advance(s,seconds,done=()=>false){for(let i=0;i<seconds*120&&!done();i++)s.update(1/120);}
+
+test('a flag dropped by a phased carrier leaves the wall and can be returned immediately',()=>{
+ const {s,carrier,other}=arena('normal');
+ s.walls.push({x:80,y:80,w:8,h:84,axis:'v'});
+ Object.assign(carrier,{x:85,y:126,ghostTime:5,alive:false});
+ Object.assign(s.tanks[2],{x:106,y:126,invulnerable:0});
+ s.dropLocalFlags(carrier.id);
+ assert.equal(carrier.x,85,'the defeated carrier stays in place');
+ assert.equal(other.carrier,-1);
+ assert.ok(s.clearTankAt(other.x,other.y,17));
+ s.stepLocalObjectives(1/120);
+ assert.equal(other.home,true);
+});
 
 test('all difficulties vacate the capture point and leave a returning human room to score',()=>{
  for(const level of levels){const {s,own}=arena(level);s.walking=false;advance(s,2.5);assert.ok(s.distance(s.tanks[1],own)>44,level+' is still occupying the capture point');s.walking=true;advance(s,3,()=>s.scores[0]>0);assert.ok(s.scores[0]>0,level+' moved back into the carrier');}

@@ -1,10 +1,10 @@
-# leqra v4.49.4 — current game protocol (protocol 1)
+# leqra v4.49.5 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.4**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.5**.
 
 ```json
-{"type":"server_hello","version":"4.49.4","protocol":1}
-{"type":"client_hello","version":"4.49.4","protocol":1}
+{"type":"server_hello","version":"4.49.5","protocol":1}
+{"type":"client_hello","version":"4.49.5","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -205,6 +205,8 @@ Remote controllers must accept the current ticket; a false acceptance cancels.
 The host's request accepts only their own keyboard pilots. Queue IDs increase
 within the process. Stale IDs, nonparticipants and foreign-room operations fail.
 A party has 1–3 active real pilots and must fit a team; FFA requires exactly one.
+Each queue accepts up to 40 tickets, with up to 16 from one source address.
+Confirmed searches expire after five minutes. Invitations awaiting confirmation expire after two minutes.
 
 A queue is cancelled by an involved disconnect, role change, removal or leave.
 Setup/start operations are refused while queued or while source members are away.
@@ -1030,8 +1032,8 @@ row additionally records canonical `color` to retain the played appearance.
 
 Weapon IDs remain `rapid` and `scatter` for compatibility with saved selections;
 UI labels are Machine gun and Shotgun. Their projectile `kind` is now explicit.
-`rapid`: radius 3.5/3, speed 846, 1.5-second life, no cooldown, at most one shot per
-60 Hz simulation tick, 96 active slots. `scatter`: radius 3.5, speed 846, three
+`rapid`: radius 3.5/3, speed 846, quarter-perimeter range, no cooldown, at most one shot per
+60 Hz simulation tick, 115 active slots. `scatter`: radius 3.5, speed 846, three
 pellets per volley, .54 cooldown, 3.9-second life; its owner is excluded from hits
 and shield consumption even after a weapon swap. Other damage rules are unchanged.
 
@@ -1044,7 +1046,7 @@ rounds. Optional `state.machineBullets` carries those rounds as numeric tuples:
 
 Geometry/time samples use the same rounding as conventional bullet objects.
 The decoder reconstructs `kind:"rapid"`, `r:3.5/3`, `pellet:0`, `target:-1` and
-canonical color. It accepts at most 768 well-formed records, combines them with
+canonical color. It accepts at most 920 well-formed records, combines them with
 normal bullets before buffering, and preserves volley/life reconciliation.
 Machine gun `shot` cosmetic events are emitted once per four volleys; actual
 rounds and shotSerial always advance at the allowed rate. Client sound, trail
