@@ -173,8 +173,8 @@ func TestRenameUsesExistingActionRateLimit(t *testing.T) {
 	h, cs, _ := makeRoom(t, 1)
 	c := cs[0]
 	c.msgWindow = time.Now()
-	c.actionCount = 8
-	if h.handle(c, []byte(`{"type":"rename","name":"SPAM"}`), time.Now()) == nil {
+	c.actionCount = clientActionLimit
+	if err := h.handle(c, []byte(`{"type":"rename","name":"SPAM"}`), time.Now()); err != nil || !hasError(c, "action_rate") {
 		t.Fatal("rename bypasses action rate limit")
 	}
 	if c.player.Name != "HOST" {

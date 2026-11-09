@@ -24,15 +24,35 @@ func TestUnshareRoomHostOnlyAndDetachesRemotePlayers(t *testing.T) {
 		t.Fatal("guest was able to unshare room")
 	}
 
-	if err := h.handle(cs[0], bad, time.Now()); err != nil {
+	now := time.Now()
+	for _, c := range cs {
+		c.born = now.Add(-time.Minute)
+		drain(c)
+	}
+	if err := h.handle(cs[0], bad, now); err != nil {
 		t.Fatal(err)
 	}
 	if h.rooms[code] != nil {
 		t.Fatal("online room still published after unshare")
 	}
+	// The next tick may precede any progress from the socket writer.
+	h.tick(now.Add(time.Second / 60))
 	for i, c := range cs {
 		if c.room != nil || c.player != nil {
 			t.Fatalf("client %d still attached", i)
+		}
+		select {
+		case <-c.done:
+			t.Fatalf("client %d closed before its terminal notice could flush", i)
+		default:
+		}
+		kind := "room_offline"
+		if i == 0 {
+			kind = "unshared"
+		}
+		packets := drain(c)
+		if len(packets) != 1 || packets[0]["type"] != kind {
+			t.Fatalf("client %d terminal notice: %#v", i, packets)
 		}
 	}
 }

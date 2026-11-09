@@ -334,6 +334,24 @@ func TestMatchStatsFrozenAfterRenameRoleAndDamage(t *testing.T) {
 		t.Fatal("finished report mutated")
 	}
 }
+
+func TestMatchReportIDIsStableAndUniqueAcrossMatches(t *testing.T) {
+	g, _ := statsBattle("koth", 2)
+	g.endObjective(0)
+	id := g.matchReport.ID
+	if len(id) != 32 {
+		t.Fatalf("invalid match report ID %q", id)
+	}
+	g.finishMatchStats(1)
+	if g.matchReport.ID != id {
+		t.Fatal("a second finish changed the existing report ID")
+	}
+	next, _ := statsBattle("koth", 2)
+	next.endObjective(0)
+	if next.matchReport.ID == id {
+		t.Fatal("a distinct match reused the same report ID")
+	}
+}
 func TestMatchStatsEliminationReportIncludesAllRounds(t *testing.T) {
 	g, ps := statsBattle("elimination", 3)
 	g.Rules.ScoreTarget = 2

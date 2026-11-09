@@ -760,7 +760,7 @@ func (g *Game) fire(t *Tank) bool {
 	if s := g.survivalState(); s != nil && s.Status != "wave" {
 		return false
 	}
-	if !t.Alive || t.Cooldown > 0 || (t.GhostTime > 0 && t.Power != "cannon" && !g.clearTankAt(t.X, t.Y, 0)) {
+	if !t.Alive || t.Cooldown > 0 {
 		return false
 	}
 	if t.Power == "rapid" && (t.MachineRounds <= 0 || t.rapidFired && t.rapidTick == g.Tick) {
@@ -785,15 +785,15 @@ func (g *Game) fire(t *Tank) bool {
 	if capacity(t)-ammo < len(spread) {
 		return false
 	}
-	t.Cooldown = .34
+	cooldown := .34
 	speed, life := 282.0, 5.3
 	if t.Power == "rapid" {
-		t.Cooldown = 0
+		cooldown = 0
 		speed = machineSpeed
 		life = g.machineTravelRange() / machineSpeed
 	}
 	if t.Power == "scatter" {
-		t.Cooldown = .54
+		cooldown = .54
 		life = 3.9
 		speed = shotgunSpeed
 	}
@@ -803,21 +803,26 @@ func (g *Game) fire(t *Tank) bool {
 	}
 	if t.Power == "rapid" {
 		kind, radius = "rapid", machineRadius
+	}
+	if t.Power == "homing" {
+		kind, radius, speed, life, cooldown = "homing", 5, missileSpeed, g.missileTravelRange()/missileSpeed+.5, .72
+	}
+	if t.Power == "grenade" {
+		kind, radius, speed, life, cooldown = "grenade", 6, grenadeSpeed, grenadeFuse, .8
+	}
+	if t.Power == "cannon" {
+		kind, radius, speed, life, cooldown = "cannon", cannonRadius, cannonSpeed, cannonLifetime, cannonCooldown
+	}
+	if g.muzzleBlocked(t, radius) {
+		return false
+	}
+	if kind == "rapid" {
 		t.rapidTick = g.Tick
 		t.rapidFired = true
 	}
-	if t.Power == "homing" {
-		kind, radius, speed, life, t.Cooldown = "homing", 5, missileSpeed, g.missileTravelRange()/missileSpeed+.5, .72
-	}
-	if t.Power == "grenade" {
-		kind, radius, speed, life, t.Cooldown = "grenade", 6, grenadeSpeed, grenadeFuse, .8
-	}
-	if t.Power == "cannon" {
-		kind, radius, speed, life, t.Cooldown = "cannon", cannonRadius, cannonSpeed, cannonLifetime, cannonCooldown
-	}
 	t.ShotSerial++
 	t.Recoil = 1
-	t.CooldownTotal = t.Cooldown
+	t.Cooldown, t.CooldownTotal = cooldown, cooldown
 	muzzle := 28.0
 	if kind == "cannon" {
 		muzzle = math.Max(muzzle, t.R+radius+1)
@@ -943,7 +948,7 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 	return points, nil
 }
 func (g *Game) fireLaser(t *Tank) bool {
-	if !t.Alive || t.Cooldown > 0 || t.Power != "laser" || t.Charges <= 0 {
+	if !t.Alive || t.Cooldown > 0 || t.Power != "laser" || t.Charges <= 0 || g.muzzleBlocked(t, laserRadius) {
 		return false
 	}
 	points, target := g.traceLaser(t)
@@ -1179,7 +1184,7 @@ func (g *Game) updateBullets(dt float64) {
 				b.Y += dy*wall.T + wall.NY*nudge
 				b.reflect(wall)
 				remaining *= 1 - wall.T
-				if (b.Kind != "homing" && b.Kind != "rapid" && b.Bounces > 22) || b.Bounces > 128 {
+				if (b.Kind != "homing" && b.Kind != "rapid" && b.Kind != "grenade" && b.Bounces > 22) || b.Bounces > 128 {
 					if b.Kind == "grenade" {
 						g.detonate(b)
 					} else {
