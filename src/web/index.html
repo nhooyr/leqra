@@ -11,14 +11,14 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.1/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.1/theme.css">
-<link rel="stylesheet" href="assets/v4.49.1/style.css">
-<link rel="manifest" href="assets/v4.49.1/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.1/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.1/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.1/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.1/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.2/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.2/theme.css">
+<link rel="stylesheet" href="assets/v4.49.2/style.css">
+<link rel="manifest" href="assets/v4.49.2/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.2/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.2/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.2/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.2/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -157,7 +157,13 @@
   </div>
   <div data-intro-page="1" hidden>
    <p>Bank shots around corners and use walls for cover. Your own shots and grenade blasts leave your tank unharmed.</p>
-   <p>Drive over a glowing pickup to collect it. Laser previews its ricochet path. Grenades home in on opponents and detonate early when you press <strong>Fire</strong> again. Starman lets you pass through walls unharmed for a few seconds.</p>
+   <p>Drive over a glowing pickup to collect it.</p>
+   <ul>
+    <li><strong>Laser</strong> · Fires an instant ricocheting beam with a dotted aim guide.</li>
+    <li><strong>Grenade</strong> · Homes in and explodes on impact, another Fire press, or after 10 seconds.</li>
+    <li><strong>Starman</strong> · Makes you invincible and lets you drive through walls for 3 seconds.</li>
+   </ul>
+   <p>There are more power-ups. Check the desktop sidebar for the full list and details.</p>
   </div>
   <div data-intro-page="2" hidden>
    <ul>
@@ -175,8 +181,8 @@
   <button id="introTourNext" class="primary" type="button">Next</button>
  </footer>
 </dialog>
-<script src="assets/v4.49.1/netcode.js" defer></script>
-<script src="assets/v4.49.1/game.js" defer></script>
-<script src="assets/v4.49.1/pwa.js" defer></script>
+<script src="assets/v4.49.2/netcode.js" defer></script>
+<script src="assets/v4.49.2/game.js" defer></script>
+<script src="assets/v4.49.2/pwa.js" defer></script>
 </body>
 </html>
