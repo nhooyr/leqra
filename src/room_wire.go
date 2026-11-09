@@ -28,6 +28,7 @@ type roomMetadataWire struct {
 	CanStart       bool             `json:"canStart"`
 	Code           string           `json:"code"`
 	Host           int              `json:"host"`
+	InfinityActive bool             `json:"infinityActive"`
 	Matchmaking    any              `json:"matchmaking"`
 	MaxPlayers     int              `json:"maxPlayers"`
 	MaxSpectators  int              `json:"maxSpectators"`
@@ -74,5 +75,5 @@ func (h *Hub) roomWire(r *Room) roomMetadataWire {
 			players = append(players, entry)
 		}
 	}
-	return roomMetadataWire{Type: "room", Code: r.Code, Host: r.Host, Phase: r.Game.Phase, Players: players, Spectators: viewers, CanStart: canStart(r), CanRestartWave: r.canRestartSurvivalWave(), MaxPlayers: r.combatCapacity(), MaxSpectators: maxSpectators, Rules: rules, StartError: r.Game.lineupError(r.Players), Sides: availableSides(r.Players), Queue: h.queueView(r.Queue), Matchmaking: matchView(r), AwayMatch: r.awayMatchCode()}
+	return roomMetadataWire{Type: "room", Code: r.Code, Host: r.Host, InfinityActive: r.infinityActive, Phase: r.Game.Phase, Players: players, Spectators: viewers, CanStart: canStart(r), CanRestartWave: r.canRestartSurvivalWave(), MaxPlayers: r.combatCapacity(), MaxSpectators: maxSpectators, Rules: rules, StartError: r.lineupError(), Sides: availableSides(r.Players), Queue: h.queueView(r.Queue), Matchmaking: matchView(r), AwayMatch: r.awayMatchCode()}
 }

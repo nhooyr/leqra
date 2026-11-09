@@ -11,14 +11,14 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.5/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.5/theme.css">
-<link rel="stylesheet" href="assets/v4.49.5/style.css">
-<link rel="manifest" href="assets/v4.49.5/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.5/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.5/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.5/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.5/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.6/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.6/theme.css">
+<link rel="stylesheet" href="assets/v4.49.6/style.css">
+<link rel="manifest" href="assets/v4.49.6/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.6/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.6/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.6/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.6/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -64,12 +64,16 @@
      <div class="net-intro">
       <div class="eyebrow" id="roomEyebrow">LOCAL ROOM · YOU ARE THE HOST</div>
       <h2 class="net-title" id="roomTitle">YOUR<br><em>ARENA.</em></h2>
-      <button class="primary" id="startRoomBtn" type="button"><span>PLAY</span><span aria-hidden="true">→</span></button>
+      <label class="infinity-toggle" id="infinityToggleLabel" hidden>
+       <input type="checkbox" role="switch" id="infinityToggle" aria-describedby="readyHint" checked>
+       <span class="infinity-toggle-track" aria-hidden="true"></span><strong>Infinity</strong>
+      </label>
+      <button class="primary" id="startRoomBtn" type="button" aria-describedby="readyHint"><span>PLAY</span><span aria-hidden="true">→</span></button>
       <button class="primary ready-button" id="readyBtn" type="button" aria-pressed="false" aria-describedby="readyHint" hidden><span>I’M READY</span><span class="ready-mark" aria-hidden="true">✓</span></button>
       <div class="small-note" id="readyHint">YOU VS. THE BOT SQUAD · START WHEN YOU’RE READY</div>
       <button class="secondary share-room" id="copyInviteBtn" type="button">SHARE ROOM ONLINE ↗</button>
       <div class="room-utility"><button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button></div>
-      <div class="room-connection-actions"><button class="room-action room-action-unshare" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="room-action room-action-leave" id="leaveRoomBtn" type="button" hidden>Leave room</button></div>
+      <div class="room-connection-actions"><button class="room-action room-action-unshare" id="endInfinityBtn" type="button" hidden>End Infinity</button><button class="room-action room-action-unshare" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="room-action room-action-leave" id="leaveRoomBtn" type="button" hidden>Leave room</button></div>
       <p class="net-status" id="roomStatus" role="status">Local play is ready. Share to invite online friends.</p>
      </div>
      <div class="net-content">
@@ -180,8 +184,9 @@
     <li><strong>Capture the Flag</strong> · Bring the enemy flag home while yours is at base.</li>
     <li><strong>King of the Hill</strong> · Control the hill to earn points.</li>
     <li><strong>Survival</strong> · Fight off waves of enemy tanks with your squad.</li>
+    <li><strong>Infinity</strong> · Roam an endless maze where tanks respawn. The Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play against bots or share your room to play with invited pilots.</li>
    </ul>
-   <p>Select a mode under <strong>Room settings</strong>, then press <strong>Play</strong> to start.</p>
+   <p>To play a room match, turn off Infinity, choose a mode in <strong>Room settings</strong>, and press <strong>Play</strong>.</p>
   </div>
  </div>
  <footer class="feature-footer intro-tour-actions">
@@ -190,8 +195,31 @@
   <button id="introTourNext" class="primary" type="button">Next</button>
  </footer>
 </dialog>
-<script src="assets/v4.49.5/netcode.js" defer></script>
-<script src="assets/v4.49.5/game.js" defer></script>
-<script src="assets/v4.49.5/pwa.js" defer></script>
+<dialog id="infiniteArena" class="feature-dialog infinite-arena" aria-labelledby="infiniteArenaTitle" aria-describedby="infiniteControlsHint">
+ <header class="infinite-header">
+  <div><h2 id="infiniteArenaTitle">Infinity</h2><p id="infiniteStatus" role="status"></p></div>
+  <strong id="infiniteKills" title="+1 per kill, −1 per death">Score 0</strong>
+  <button class="secondary" id="infiniteExit" type="button">Leave</button>
+ </header>
+ <div class="infinite-stage">
+  <canvas id="infiniteCanvas" tabindex="0" aria-label="Infinity tank maze">Your browser needs HTML canvas to play.</canvas>
+  <button class="secondary" id="infiniteRetry" type="button" hidden>Try again</button>
+  <details class="infinite-leaderboard" id="infiniteLeaderboardPanel">
+   <summary>Top 10 tanks</summary>
+   <ol id="infiniteLeaderboard"></ol>
+   <p>+1 per kill · −1 per death</p>
+  </details>
+  <div class="infinite-touch-controls" aria-label="Touch controls">
+   <div class="stick-zone" id="infiniteStick" role="group" aria-label="Drag to drive and aim"><div class="stick-base"><div class="stick-knob" id="infiniteKnob"></div></div></div>
+   <button class="fire-button" id="infiniteFire" type="button" aria-label="Hold to fire">FIRE</button>
+  </div>
+ </div>
+ <p id="infiniteControlsHint" class="infinite-controls-hint"></p>
+</dialog>
+<script src="assets/v4.49.6/netcode.js" defer></script>
+<script src="assets/v4.49.6/game.js" defer></script>
+<script src="assets/v4.49.6/infinite-maze.js" defer></script>
+<script src="assets/v4.49.6/infinite.js" defer></script>
+<script src="assets/v4.49.6/pwa.js" defer></script>
 </body>
 </html>

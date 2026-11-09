@@ -31,7 +31,7 @@ func (r *Room) survivalRunning() bool {
 	return r.Game.survivalMode() && r.Game.Phase != "lobby" && r.Game.Phase != "matchOver"
 }
 func (r *Room) combatCapacity() int {
-	if r.Game.survivalMode() {
+	if r.Game.survivalMode() && !r.Game.settings().Infinity {
 		return survivalMaxPlayers
 	}
 	return maxTanks

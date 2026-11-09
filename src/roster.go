@@ -112,6 +112,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 	}
 	fail := func(code, msg string) { e := roomError(code, msg); e["action"] = m.Type; c.enqueue(e) }
 	if m.Type == "lobby" {
+		r.infinityActive = false
 		r.Game.Phase = "lobby"
 		r.Game.PhaseTime = 0
 		r.Game.Winner = -1
@@ -131,7 +132,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		}
 		return
 	}
-	if r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+	if !r.setupOpen() {
 		fail("match_active", "Return to the room before changing the roster or teams.")
 		return
 	}
@@ -156,7 +157,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	if m.Type == "add" {
-		if r.Game.survivalMode() && participantCount(r.Players) >= survivalMaxPlayers {
+		if r.combatCapacity() == survivalMaxPlayers && participantCount(r.Players) >= survivalMaxPlayers {
 			fail("survival_full", "The four-player survival squad is full.")
 			return
 		}
@@ -261,7 +262,7 @@ func (h *Hub) paintTank(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	r := c.room
-	if r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+	if !r.setupOpen() {
 		fail("match_active", "Change tank color between matches.")
 		return
 	}
@@ -344,7 +345,7 @@ func (h *Hub) publishRoom(c *Client, m clientMessage, now time.Time) {
 			active++
 		}
 	}
-	if m.Rules != nil && m.Rules.Mode == "survival" && active > survivalMaxPlayers {
+	if m.Rules != nil && !m.Rules.Infinity && m.Rules.Mode == "survival" && active > survivalMaxPlayers {
 		fail("survival_full", "Survival supports up to four allied tanks.")
 		return
 	}
