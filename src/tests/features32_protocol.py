@@ -50,6 +50,8 @@ async def main():
   check(s['objectives']['mode']=='koth' and s['objectives']['radius']>0,'Production KOTH snapshot includes authoritative hill')
   oldtoken=welcome['token'];await h.close();h2=await peer();await h2.send(type='join',code=code,token=oldtoken);w=await h2.wait(lambda m:m['type']=='welcome');r=await h2.wait(lambda m:m['type']=='room');check(w['resumed'] and r['rules']['mode']=='koth','Reconnect restores objective room and configured rules')
   report={'version':'3.2.0','checks_passed':len(checks),'checks':checks,'handler':'production HTTP/WebSocket with normal origin validation; no test fixture'}
-  (Path(__file__).parent/'results/features-protocol-v3.2.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
+  output = Path(__file__).parent / 'results/features-protocol-v3.2.json'
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
  finally:await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())

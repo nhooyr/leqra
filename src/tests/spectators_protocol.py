@@ -64,6 +64,8 @@ async def main():
   extra=await peer();e=await error(extra,'join',code=cw['room'],name='TOO MANY',spectating=True);check(e['code']=='room_capacity','Spectator capacity is enforced with clear separate limit')
   ar=await op(extra,'join',lambda m:m['type']=='welcome',code=cw['room'],name='TANK');check(not ar['spectating'],'Full gallery does not prevent taking free combat seat')
   report={'version':'3.3.0','checks_passed':len(checks),'checks':checks,'handler':'production HTTP/WebSocket, normal origin validation, no fixtures'}
-  (Path(__file__).parent/'results/spectators-protocol-v3.3.json').write_text(json.dumps(report,indent=2));print(json.dumps({'passed':len(checks)}))
+  output = Path(__file__).parent / 'results/spectators-protocol-v3.3.json'
+  output.parent.mkdir(parents=True, exist_ok=True)
+  output.write_text(json.dumps(report,indent=2));print(json.dumps({'passed':len(checks)}))
  finally:await asyncio.gather(*(p.close() for p in peers),return_exceptions=True)
 if __name__=='__main__':asyncio.run(main())
