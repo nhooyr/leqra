@@ -7,8 +7,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:8878');ap.add_argument('--browser',default='/usr/bin/chromium');ap.add_argument('--output',default='test-output/spectators33');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def dismissVictory(p):
  if p.locator('#victoryDialog').count() and p.locator('#victoryDialog').is_visible():p.locator('#victoryCloseBtn').click()
@@ -25,11 +26,11 @@ with sync_playwright() as pw:
  def load(name='HOST',code=None,size=(1365,950),storage=None,watch=False,session=None):
   mobile=size[0]<760 or size[1]<620;ctx=browser.new_context(viewport={'width':size[0],'height':size[1]},is_mobile=mobile,has_touch=mobile,device_scale_factor=2 if mobile else 1);contexts.append(ctx)
   p=ctx.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.on('dialog',lambda d:d.accept())
-  html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+web.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
+  html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
   url='http://game.test/tanks/?test=1'+('&'+urlencode({'room':code}) if code else '')+('&spectate=1' if watch else '')
   p.evaluate(r'''([url,ws,name,storage,session])=>{window.__location=new URL(url);window.__messages=[];window.__sockets=[];window.__sent=[];window.__historyCalls=[];window.__copied='';const WS=WebSocket;window.WebSocket=class extends WS{constructor(){super(ws);__sockets.push(this);this.addEventListener('message',e=>__messages.push(JSON.parse(e.data)))}send(v){__sent.push(JSON.parse(v));return super.send(v)}};const store=(data)=>({getItem:k=>Object.hasOwn(data,k)?data[k]:null,setItem:(k,v)=>data[k]=String(v),removeItem:k=>delete data[k]});window.__store=Object.assign({'leqra.name':name,'leqra.muted':'1'},storage||{});Object.defineProperty(window,'localStorage',{value:store(__store)});window.__session=Object.assign({},session||{});Object.defineProperty(window,'sessionStorage',{value:store(__session)});history.replaceState=(s,t,u)=>{__historyCalls.push(String(u));__location.href=String(u)};Object.defineProperty(navigator,'clipboard',{value:{writeText:async v=>{__copied=v}}});}''',[url,args.url.replace('http:','ws:')+'/ws',name,storage,session])
-  js=web.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
-  p.add_script_tag(content=web.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
+  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+  p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
  def close(p,kind):p.locator('[data-close-dialog="'+kind+'Dialog"]').click()
  def preset(p,index):dismissVictory(p);p.locator('#roomPresetsBtn').click();p.locator('#presetSelect').select_option('builtin:'+str(index));p.locator('#loadPresetBtn').click();p.wait_for_function('!document.querySelector("#presetsDialog").open')
  def start(p):dismissVictory(p);p.locator('#startRoomBtn').click();p.wait_for_function('leqra.getState().phase==="playing"',timeout=9000)

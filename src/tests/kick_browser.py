@@ -8,6 +8,7 @@ import json
 import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser = argparse.ArgumentParser()
 parser.add_argument('url', nargs='?', default='http://localhost:8080')
@@ -16,6 +17,7 @@ parser.add_argument('--browser', default=None)
 parser.add_argument('--output', default='test-output/kick')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1] / 'web'
+assets = asset_directory(root)
 out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
 checks, errors = [], []
 
@@ -72,12 +74,12 @@ window.WebSocket=class extends RealSocket{
             setup += f"Object.defineProperty(window,'sessionStorage',{{configurable:true,value:memoryStorage({json.dumps(tab or {})})}});"
             html = re.sub(r'<link[^>]*>', '', root.joinpath('index.html').read_text())
             for f in ['netcode.js','game.js']: html = html.replace(f'<script src="{f}" defer></script>', '')
-            html = html.replace('</head>', '<style>'+root.joinpath('style.css').read_text()+'</style></head>')
+            html = html.replace('</head>', '<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
             page.set_content(html)
             page.evaluate('()=>{'+setup+'}')
-            js = root.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
+            js = assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
             pos = js.rfind('})();'); js=js[:pos]+f'}})(new URL({json.dumps(url)}));'+js[pos+5:]
-            page.add_script_tag(content=root.joinpath('netcode.js').read_text())
+            page.add_script_tag(content=assets.joinpath('netcode.js').read_text())
             page.add_script_tag(content=js)
         else:
             setup += f"localStorage.setItem('leqra.name',{json.dumps(name)});"
@@ -196,7 +198,7 @@ window.WebSocket=class extends RealSocket{
     guests[1].wait_for_function('leqra.getState().phase==="onlineLobby"',timeout=6000)
     check(not guests[1].locator('#startRoomBtn').is_enabled(),'Last-opponent kick ends the round and leaves a one-player lobby')
     check(not errors,'No JavaScript runtime errors in kick flows')
-    report={'checks_passed':len(checks),'checks':checks,'javascript_errors':errors,'isolated_assets':args.isolated,'browser_version':browser.version,'version':root.joinpath('game.js').read_text().split("version:'")[-1].split("'")[0]}
+    report={'checks_passed':len(checks),'checks':checks,'javascript_errors':errors,'isolated_assets':args.isolated,'browser_version':browser.version,'version':assets.joinpath('game.js').read_text().split("version:'")[-1].split("'")[0]}
     (out/'kick-results.json').write_text(json.dumps(report,indent=2))
     print(json.dumps(report,indent=2),flush=True)
     browser.close()

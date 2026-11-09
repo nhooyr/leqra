@@ -2,14 +2,15 @@
 import json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-root=Path(__file__).resolve().parents[1];web=root/'web';out=root/'tests/results/v4.35.0-polish';out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>','',html);html=html.replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+from web_assets import asset_directory
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=root/'tests/results/v4.35.0-polish';out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>','',html);html=html.replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
 def check(ok,label):
  assert ok,label;checks.append(label);print('PASS',label,flush=True)
 def setup(page,data):
- page.on('pageerror',lambda exc:errors.append(str(exc)));page.set_content(html);page.evaluate('''data=>{window.__location=new URL('http://example.test/?test=1');window.__history={state:null,replaceState(){}};const store=obj=>({getItem:k=>Object.hasOwn(obj,k)?obj[k]:null,setItem:(k,v)=>obj[k]=String(v),removeItem:k=>delete obj[k]});Object.defineProperty(window,'localStorage',{value:store(data)});Object.defineProperty(window,'sessionStorage',{value:store({})});}''',data);page.add_script_tag(content=(web/'theme.js').read_text());page.add_script_tag(content=(web/'netcode.js').read_text());page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.35.0'")
+ page.on('pageerror',lambda exc:errors.append(str(exc)));page.set_content(html);page.evaluate('''data=>{window.__location=new URL('http://example.test/?test=1');window.__history={state:null,replaceState(){}};const store=obj=>({getItem:k=>Object.hasOwn(obj,k)?obj[k]:null,setItem:(k,v)=>obj[k]=String(v),removeItem:k=>delete obj[k]});Object.defineProperty(window,'localStorage',{value:store(data)});Object.defineProperty(window,'sessionStorage',{value:store({})});}''',data);page.add_script_tag(content=(assets/'theme.js').read_text());page.add_script_tag(content=(assets/'netcode.js').read_text());page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.35.0'")
 def tap(page,code):
  page.evaluate("c=>window.dispatchEvent(new KeyboardEvent('keydown',{code:c,bubbles:true}))",code);page.wait_for_timeout(45);page.evaluate("c=>window.dispatchEvent(new KeyboardEvent('keyup',{code:c,bubbles:true}))",code);page.wait_for_timeout(90)
 with sync_playwright() as pw:

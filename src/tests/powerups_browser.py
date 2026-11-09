@@ -7,13 +7,14 @@ import argparse,json,re,time
 from pathlib import Path
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser=argparse.ArgumentParser()
 parser.add_argument('url',nargs='?',default='http://127.0.0.1:8790')
 parser.add_argument('--isolated',action='store_true')
 parser.add_argument('--browser',default=None)
 parser.add_argument('--output',default='test-output/powerups')
-a=parser.parse_args();root=Path(__file__).resolve().parents[1]/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+a=parser.parse_args();root=Path(__file__).resolve().parents[1]/'web';assets=asset_directory(root);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(ok,label):
  assert ok,label
@@ -39,10 +40,10 @@ const RealSocket=WebSocket;window.WebSocket=class extends RealSocket{constructor
   if a.isolated:
    setup+='''function store(data){return {getItem:k=>data[k]??null,setItem:(k,v)=>data[k]=String(v),removeItem:k=>delete data[k]}};
 Object.defineProperty(window,'localStorage',{value:store({'leqra.name':NAME,'leqra.muted':'1'})});Object.defineProperty(window,'sessionStorage',{value:store({})});'''.replace('NAME',json.dumps(name))
-   html=re.sub(r'<link[^>]*>','',root.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+root.joinpath('style.css').read_text()+'</style></head>')
+   html=re.sub(r'<link[^>]*>','',root.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
    p.set_content(html);p.evaluate('()=>{'+setup+'}')
-   js=root.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})();');js=js[:pos]+f'}})(new URL({json.dumps(url)}));'+js[pos+5:]
-   p.add_script_tag(content=root.joinpath('netcode.js').read_text());p.add_script_tag(content=js)
+   js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})();');js=js[:pos]+f'}})(new URL({json.dumps(url)}));'+js[pos+5:]
+   p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js)
   else:
    p.add_init_script(setup+f'localStorage.setItem("leqra.name",{json.dumps(name)});localStorage.setItem("leqra.muted","1");');p.goto(url)
   p.wait_for_function('window.leqra');return p,context

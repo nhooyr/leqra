@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--browser', default='/usr/bin/chromium')
@@ -14,6 +15,7 @@ parser.add_argument('--output', default='test-output/defaults372')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 web = root/'web'
+assets = asset_directory(web)
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 checks, errors = [], []
@@ -25,8 +27,8 @@ def check(value, label):
 
 html = re.sub(r'<link[^>]*>', '', (web/'index.html').read_text())
 html = re.sub(r'<script src="[^"]+" defer></script>', '', html)
-html = html.replace('</head>', '<style>'+(web/'style.css').read_text()+'</style></head>')
-js = (web/'game.js').read_text().replace('(() => {', '((location) => {', 1)
+html = html.replace('</head>', '<style>'+(assets/'style.css').read_text()+'</style></head>')
+js = (assets/'game.js').read_text().replace('(() => {', '((location) => {', 1)
 i = js.rfind('})();')
 assert i >= 0
 js = js[:i] + '})(window.__location);' + js[i+5:]
@@ -50,7 +52,7 @@ def load(context, storage=None, broken=False):
             window.__oscillators++;return create.call(this);
         };}
     }''', {'data': storage or {}, 'broken': broken})
-    p.add_script_tag(content=(web/'netcode.js').read_text())
+    p.add_script_tag(content=(assets/'netcode.js').read_text())
     p.add_script_tag(content=js)
     p.wait_for_function('window.leqra && window.__test')
     return p

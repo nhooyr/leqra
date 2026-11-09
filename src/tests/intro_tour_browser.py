@@ -24,7 +24,7 @@ def check_control_rows(section, labels):
     assert all(first < second for first, second in zip(tops, tops[1:])), tops
 
 
-index = (Path(__file__).resolve().parents[2] / "index.html").as_uri()
+index = (Path(__file__).resolve().parents[1] / "web" / "index.html").as_uri()
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(chromium_sandbox=True)
     for width, height, touch in [(1280, 900, False), (620, 900, False),

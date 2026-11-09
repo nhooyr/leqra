@@ -7,8 +7,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:18790');ap.add_argument('--browser',default='/usr/bin/chromium');ap.add_argument('--output',default='test-output/unified-room');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def dismissVictory(p):
  if p.locator('#victoryDialog').count() and p.locator('#victoryDialog').is_visible():p.locator('#victoryCloseBtn').click()
@@ -24,7 +25,7 @@ with sync_playwright() as pw:
   mobile=size[0]<760 or size[1]<620
   ctx=browser.new_context(viewport={'width':size[0],'height':size[1]},is_mobile=mobile,has_touch=mobile,device_scale_factor=2 if mobile else 1);contexts.append(ctx)
   p=ctx.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.on('dialog',lambda d:d.accept())
-  html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+web.joinpath('style.css').read_text()+'</style></head>')
+  html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
   p.set_content(html);url='http://game.test/tanks/?test=1'+('&'+urlencode({'room':code}) if code is not None else '')
   p.evaluate(r'''([url,ws,name,session,delay])=>{
    window.__location=new URL(url);window.__historyCalls=[];window.__copied='';window.__sockets=[];window.__messages=[];window.__sent=[];
@@ -39,8 +40,8 @@ with sync_playwright() as pw:
    history.replaceState=(s,t,u)=>{__historyCalls.push(String(u));__location.href=String(u)};
    Object.defineProperty(navigator,'clipboard',{value:{writeText:async v=>{__copied=v}}});
   }''',[url,args.url.replace('http:','ws:')+'/ws',name,session,delay])
-  js=web.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
-  p.add_script_tag(content=web.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
+  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+  p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
  def remove(p,id):
   p.locator(f'#roomRoster [data-kick-target="{id}"]').click();p.locator('#confirmKickBtn').click();p.wait_for_function('id=>!leqra.getState().room.players.some(p=>p.id===id)',arg=id)
  def waitplayers(p,n):p.wait_for_function('n=>leqra.getState().room.players.length===n',arg=n)

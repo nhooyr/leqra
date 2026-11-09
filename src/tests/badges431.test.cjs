@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function recorder(){
  let matrix={x:0,y:0,angle:0},stack=[],shape,clipped=false;
@@ -209,7 +210,7 @@ test('a real shield save clears the local spawn tag instead of lighting the purp
 function onlineBoot(){
  const {s}=boot(),noop=()=>{};
  Object.assign(s,{mode:'online',phase:'onlineLobby',round:0,roundClock:0,phaseTime:0,roundWinner:-1,scores:[],gameStarted:false,tanks:[],particles:[],rings:[],traces:[],bullets:[],pickups:[],cols:12,rows:8,grid:[],walls:[],goUntil:0,shake:0,now:1000,
-  performance:{now:()=>s.now},updateOnlineBounceSounds:noop,Net:require('../web/netcode.js'),COLORS:[],cacheMap:noop,resize:noop,clearInput:noop,sendOnlineInput:noop,closeVictory:noop,setScreen:noop,renderOnlineRoom:noop,updateHUD:noop,showStartingControls:noop,secondLocal:()=>({id:1}),moveTank:noop,onlineEffect:noop,syncRestartWaveActions:noop,
+  performance:{now:()=>s.now},updateOnlineBounceSounds:noop,Net:require(assetPath('netcode.js')),COLORS:[],cacheMap:noop,resize:noop,clearInput:noop,sendOnlineInput:noop,closeVictory:noop,setScreen:noop,renderOnlineRoom:noop,updateHUD:noop,showStartingControls:noop,secondLocal:()=>({id:1}),moveTank:noop,onlineEffect:noop,syncRestartWaveActions:noop,
   online:{connected:true,id:0,generation:0,snapshots:[],ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set(),trails:new Map(),localBullets:new Map(),effectQueue:[],shots:{sync:noop,prune:noop,heard:()=>false,previews:new Map()},eventsInitialized:true,lastEvent:0,buffer:{push:packet=>s.online.snapshots.push(packet),advance:()=>null,tank:id=>({...s.online.snapshots.at(-1).tankMap.get(id)})}},
   survivalState:()=>s.online.snapshots.at(-1)?.objectives?.survival,survivalBreak:()=>s.survivalState()?.status==='break',
   resetOnlineMotion:()=>{s.online.snapshots.length=0;}

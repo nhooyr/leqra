@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);return source.slice(start,source.indexOf('\n}',start)+2);}
 function boot(gameMode,network=false){
  const calls=[],noop=()=>{},ctx=new Proxy({arc(...args){calls.push(['arc',...args]);},fillText(...args){calls.push(['text',...args]);}},{get:(target,key)=>target[key]??noop});

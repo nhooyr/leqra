@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=process.env.LEQRA_HUD_SOURCE?readFileSync(process.env.LEQRA_HUD_SOURCE,'utf8'):readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=process.env.LEQRA_HUD_SOURCE?readFileSync(process.env.LEQRA_HUD_SOURCE,'utf8'):readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot(mode='room',gameMode='survival'){
  const writes=[],elements=new Map(),headerIDs=new Set(['arenaStatus','roundLabel','clock','objectiveModeLabel','objectiveStatus','target']);

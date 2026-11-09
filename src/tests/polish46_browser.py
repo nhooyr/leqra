@@ -2,16 +2,17 @@
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--output',default='test-output/polish46');a=ap.parse_args()
-r=Path(__file__).resolve().parents[1];web=r/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
 def check(ok,label): assert ok,label;checks.append(label);print('PASS',label,flush=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');c=b.new_context(viewport={'width':390,'height':844},has_touch=True,is_mobile=True,color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={'leqra.name':'ALPHA','leqra.muted':'1'};Object.defineProperty(window,'localStorage',{value:{getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]}});Object.defineProperty(window,'sessionStorage',{value:{getItem:()=>null,setItem(){},removeItem(){}}});window.requestAnimationFrame=()=>0;}""")
- for f in ['theme.js','netcode.js']:p.add_script_tag(content=(web/f).read_text())
+ for f in ['theme.js','netcode.js']:p.add_script_tag(content=(assets/f).read_text())
  p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.6.0'")
  check(p.evaluate("__test.bindings[0].fire")=='KeyQ','Player 1 default Fire is Q')
  check('Q / SPACE' in p.locator('#manualContent').inner_text(),'single-player Space alias is retained with Q')

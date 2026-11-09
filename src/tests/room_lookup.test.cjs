@@ -1,7 +1,8 @@
 "use strict";
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
-const {readFileSync}=require('node:fs'),path=require('node:path');
-const source=readFileSync(process.env.LEQRA_ROOM_LOOKUP_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(process.env.LEQRA_ROOM_LOOKUP_SOURCE||assetPath('game.js'),'utf8');
 const declarations=source.slice(source.indexOf('const roomMembers='),source.indexOf('const isSpectating='));
 function boot(){
  const primary={id:0,kind:'human'},local={id:1,kind:'local',owner:0},other={id:2,kind:'local',owner:3};

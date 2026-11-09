@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot({online=false,survival=false,ffa=false}={}){
  const rules={mode:survival?'survival':'elimination',teamMode:ffa?'ffa':'teams',scoreTarget:5,teamNames:['SQUAD','RAIDERS','THREE','FOUR']};

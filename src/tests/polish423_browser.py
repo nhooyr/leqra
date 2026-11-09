@@ -13,6 +13,7 @@ import re
 import urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--server', default='http://127.0.0.1:18790')
@@ -20,13 +21,14 @@ parser.add_argument('--output', default='tests/results/v4.23-polish')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 web = root / 'web'
+assets = asset_directory(web)
 out = (root / args.output) if not Path(args.output).is_absolute() else Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 
 html = re.sub(r'<link[^>]*>', '', (web / 'index.html').read_text())
 html = re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>', '', html)
-html = html.replace('</head>', '<style>' + (web / 'theme.css').read_text() + (web / 'style.css').read_text() + '</style></head>')
-js = (web / 'game.js').read_text().replace('(() => {', '((location,history) => {', 1)
+html = html.replace('</head>', '<style>' + (assets / 'theme.css').read_text() + (assets / 'style.css').read_text() + '</style></head>')
+js = (assets / 'game.js').read_text().replace('(() => {', '((location,history) => {', 1)
 i = js.rfind('})();')
 js = js[:i] + '})(window.__location,window.__history);' + js[i + 5:]
 checks, errors = [], []
@@ -53,8 +55,8 @@ with sync_playwright() as pw:
       Object.defineProperty(window,'localStorage',{value:store(data)});
       Object.defineProperty(window,'sessionStorage',{value:store({})});
     }''', args.server)
-    page.add_script_tag(content=(web / 'theme.js').read_text())
-    page.add_script_tag(content=(web / 'netcode.js').read_text())
+    page.add_script_tag(content=(assets / 'theme.js').read_text())
+    page.add_script_tag(content=(assets / 'netcode.js').read_text())
     page.add_script_tag(content=js)
     page.wait_for_function("window.__test && leqra.version === '4.35.0'")
     page.wait_for_timeout(100)

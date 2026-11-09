@@ -4,21 +4,22 @@ Uses exact assets with synthetic URL/storage and deterministic simulation steppi
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 pa=argparse.ArgumentParser();pa.add_argument('--output',default='test-output/scope38');pa.add_argument('--browser',default='/usr/bin/chromium');args=pa.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(x,s):
  assert x,s
  checks.append(s);print('PASS',s,flush=True)
-html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
 def load(c,data=None):
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''data=>{window.__location=new URL('http://game.test/?test=1');window.__store=data;
  const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});
  Object.defineProperty(window,'localStorage',{value:store(data)});Object.defineProperty(window,'sessionStorage',{value:store({})});window.requestAnimationFrame=()=>0;
  }''',data or {'leqra.muted':'1'})
- p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra && window.__test');return p
+ p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra && window.__test');return p
 sizes=[('compact',7,7,2,5),('standard',9,8,3,7),('large',12,10,4,12),('huge',14,12,5,17),('giant',16,14,6,23)]
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path=args.browser)

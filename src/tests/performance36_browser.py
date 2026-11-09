@@ -4,12 +4,13 @@ Run: python tests/performance36_browser.py PROJECT_ROOT OUTPUT
 import json,re,sys,statistics
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 root=Path(sys.argv[1]).resolve();out=Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');p=b.new_page(viewport={'width':1365,'height':950});errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
- web=root/'web';html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+web.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
+ web=root/'web';assets=asset_directory(web);html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
  p.evaluate("window.__location=new URL('http://game.test/?test=1');const store={'leqra.muted':'1'};Object.defineProperty(window,'localStorage',{value:{getItem:k=>store[k]||null,setItem:(k,v)=>store[k]=v,removeItem:k=>delete store[k]}})")
- js=web.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:];p.add_script_tag(content=web.joinpath('netcode.js').read_text());p.add_script_tag(content=js)
+ js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:];p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js)
  p.evaluate("()=>{let seed=360;Math.random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};const T=__test;T.setLocalRules({...T.currentRules(),mode:'koth',mapSize:'huge',teamMode:'ffa',timeLimit:600,scoreTarget:300});while(leqra.getState().room.players.length<8)T.addRoomSeat('bot');}")
  p.locator('#startRoomBtn').click();p.wait_for_function('leqra.getState().phase==="playing"');p.evaluate("()=>{__test.setPhase('paused');__test.clearBullets();for(const t of __test.tanks){t.alive=true;t.invulnerable=0;t.speedTime=0;t.shield=0;t.angle=t.id*.51;t.track=2*(t.id%4);}__test.render();}")
  calls=p.evaluate('''()=>{const T=__test,c=document.querySelector('#arena').getContext('2d'),methods=['beginPath','moveTo','lineTo','arc','arcTo','fill','stroke','fillRect','drawImage','measureText'],originals={},result={};let counts={};for(const k of methods){originals[k]=c[k];c[k]=function(...args){counts[k]=(counts[k]||0)+1;return originals[k].apply(this,args)}}for(const on of [false,true]){T.setHullCache(on);T.render();counts={};T.render();result[on?'cached':'vector']={...counts};}for(const k of methods)c[k]=originals[k];return result;}''')

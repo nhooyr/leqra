@@ -2,17 +2,18 @@
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 ap=argparse.ArgumentParser();ap.add_argument('--output',default='test-output/local-rules47');a=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[];contexts=[]
 def check(ok,label): assert ok,label; checks.append(label); print('PASS',label,flush=True)
 def load(browser,store=None):
     c=browser.new_context(viewport={'width':1100,'height':820},color_scheme='dark');contexts.append(c);p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
     p.evaluate('''a=>{window.__location=new URL('https://leqra.test/?test=1');window.__history={state:null,replaceState(){}};window.__store=a.store||{};Object.defineProperty(window,'localStorage',{value:{getItem:k=>window.__store[k]??null,setItem:(k,v)=>window.__store[k]=String(v),removeItem:k=>delete window.__store[k]}});Object.defineProperty(window,'sessionStorage',{value:{getItem:()=>null,setItem(){},removeItem(){}}});window.requestAnimationFrame=()=>0;}''',{'store':store or {}})
-    for f in ['theme.js','netcode.js']:p.add_script_tag(content=(web/f).read_text())
+    for f in ['theme.js','netcode.js']:p.add_script_tag(content=(assets/f).read_text())
     p.add_script_tag(content=js);p.wait_for_function('window.__test && leqra.version==="4.7.0"');return p
 
 def state(p): return p.evaluate('leqra.getState()')

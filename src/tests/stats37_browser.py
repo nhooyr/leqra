@@ -6,8 +6,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:8878');ap.add_argument('--output',default='test-output/stats37');ap.add_argument('--browser',default='/usr/bin/chromium');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(ok,label):
  if not ok:raise AssertionError(label)
@@ -19,11 +20,11 @@ with sync_playwright() as pw:
  browser=pw.chromium.launch(headless=True,executable_path=args.browser);contexts=[];pages=[]
  def load(name='HOST',size=(1365,950),code=None,watch=False):
   mobile=size[0]<760 or size[1]<620;context=browser.new_context(viewport={'width':size[0],'height':size[1]},is_mobile=mobile,has_touch=mobile,device_scale_factor=2 if mobile else 1);contexts.append(context);p=context.new_page();pages.append(p);p.set_default_timeout(8000);p.on('pageerror',lambda e:errors.append(str(e)));p.on('dialog',lambda d:d.accept())
-  html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+web.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
+  html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
   url='http://game.test/tanks/?test=1'+('&'+urlencode({'room':code,**({'spectate':1} if watch else {})}) if code else '')
   p.evaluate(r'''([url,ws,name])=>{window.__location=new URL(url);window.__messages=[];window.__sockets=[];window.__sent=[];const WS=WebSocket;window.WebSocket=class extends WS{constructor(){super(ws);__sockets.push(this);this.addEventListener('message',e=>__messages.push(JSON.parse(e.data)))}send(v){__sent.push(JSON.parse(v));return super.send(v)}};const store=data=>({getItem:k=>Object.hasOwn(data,k)?data[k]:null,setItem:(k,v)=>data[k]=String(v),removeItem:k=>delete data[k]});window.__store={'leqra.name':name,'leqra.muted':'1'};Object.defineProperty(window,'localStorage',{value:store(__store)});Object.defineProperty(window,'sessionStorage',{value:store({})});history.replaceState=(s,t,u)=>{__location.href=String(u)};Object.defineProperty(navigator,'clipboard',{value:{writeText:async v=>{}}});}''',[url,args.url.replace('http:','ws:')+'/ws',name])
-  js=web.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
-  p.add_script_tag(content=web.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
+  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+  p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
  def setup(p,mode='elimination',count=8,ff=False):
   p.evaluate('''({mode,count,ff})=>{__test.closeVictory();const T=__test,rules={...T.defaultRoomRules(),mode,teamMode:mode==='elimination'?'ffa':'teams',scoreTarget:mode==='koth'?60:1,timeLimit:600,pickupRate:'off',friendlyFire:ff,teamNames:['Aurora 🌟','Red Foxes','Tidal & Co','Violet Guard']};const roster=Array.from({length:count},(_,i)=>({name:i===0?'PILOT ONE':i===1?'PLAYER TWO':['RUST','VAPOR','EMBER','PIXEL','NOVA','COMET'][i-2],kind:i===0?'human':i===1?'local':'bot',team:rules.teamMode==='ffa'?0:i<2?1:2,...(i>1?{difficulty:'normal'}:{})}));T.applyLocalPreset({rules,roster});}''',dict(mode=mode,count=count,ff=ff))
  def start(p):

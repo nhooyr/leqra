@@ -5,16 +5,17 @@ Controls, firing, collision, damage, snapshots and drawing are production code.
 import argparse,json,re,time,urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('url',nargs='?',default='http://127.0.0.1:8851');ap.add_argument('--output',default='test-output/cannon39-online');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(ok,s):assert ok,s;checks.append(s);print('PASS',s,flush=True)
-html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[i+5:]
+html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[i+5:]
 def load(c,name):
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''()=>{const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});Object.defineProperty(window,'localStorage',{value:store({'leqra.muted':'1'})});Object.defineProperty(window,'sessionStorage',{value:store({})});}''')
- p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');p.locator('#joinOtherBtn').click();p.locator('#pilotName').fill(name);return p
+ p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');p.locator('#joinOtherBtn').click();p.locator('#pilotName').fill(name);return p
 
 def track(p):
  p.evaluate('''()=>{window.wire39=[];__test.online.socket.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.type==='state')wire39.push(m);});}''')

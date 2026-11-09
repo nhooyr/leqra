@@ -5,15 +5,16 @@ import json,sys,time,re
 from pathlib import Path
 from collections import Counter
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 count=int(sys.argv[3]) if len(sys.argv)>3 else 4
 root=Path(sys.argv[1]);out=Path(sys.argv[2]);out.mkdir(exist_ok=True,parents=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
  p=b.new_page(viewport={'width':1365,'height':950}); errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
- web=root/'web';html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+web.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
+ web=root/'web';assets=asset_directory(web);html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
  p.evaluate("window.__location=new URL('http://game.test/?test=1');const store={};Object.defineProperty(window,'localStorage',{value:{getItem:k=>store[k]||null,setItem:(k,v)=>store[k]=v,removeItem:k=>delete store[k]}});localStorage.setItem('leqra.muted','1');")
- js=web.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
- p.add_script_tag(content=web.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
+ js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+ p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
  p.evaluate('''count=>{let seed=35;Math.random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};const T=__test;T.setLocalRules({...T.currentRules(),mode:'koth',mapSize:'large',teamMode:'ffa',timeLimit:600,scoreTarget:300});while(leqra.getState().room.players.length<count)T.addRoomSeat('bot');}''',count)
  p.locator('#startRoomBtn').click();p.wait_for_function('leqra.getState().phase==="playing"')
  p.evaluate('''()=>{__test.tanks.forEach(t=>t.invulnerable=999);window.__perfFrames=[];window.__mutations=0;let last=0;new MutationObserver(m=>__mutations+=m.length).observe(document.querySelector('.app'),{subtree:true,attributes:true,characterData:true,childList:true});function f(now){if(last)__perfFrames.push(now-last);last=now;requestAnimationFrame(f);}requestAnimationFrame(f);}''')

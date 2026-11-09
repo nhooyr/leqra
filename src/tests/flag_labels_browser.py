@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--browser', default='/usr/bin/chromium')
@@ -14,6 +15,7 @@ parser.add_argument('--output', default='test-output/flag-labels')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 web = root / 'web'
+assets = asset_directory(web)
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 checks, errors = [], []
@@ -36,7 +38,7 @@ with sync_playwright() as pw:
                 page.on('pageerror', lambda e: errors.append(str(e)))
                 html = re.sub(r'<link[^>]*>', '', (web / 'index.html').read_text())
                 html = re.sub(r'<script src="[^"]+" defer></script>', '', html)
-                html = html.replace('</head>', '<style>'+(web/'style.css').read_text()+'</style></head>')
+                html = html.replace('</head>', '<style>'+(assets/'style.css').read_text()+'</style></head>')
                 page.set_content(html)
                 page.evaluate('''()=>{
                     window.__location=new URL('http://game.test/?test=1');
@@ -45,11 +47,11 @@ with sync_playwright() as pw:
                     Object.defineProperty(window,'localStorage',{value:store({'leqra.name':'PILOT','leqra.muted':'1'})});
                     Object.defineProperty(window,'sessionStorage',{value:store({})});
                 }''')
-                js = (web / 'game.js').read_text().replace('(() => {', '((location) => {', 1)
+                js = (assets / 'game.js').read_text().replace('(() => {', '((location) => {', 1)
                 i = js.rfind('})();')
                 assert i >= 0
                 js = js[:i] + '})(window.__location);' + js[i+5:]
-                page.add_script_tag(content=(web/'netcode.js').read_text())
+                page.add_script_tag(content=(assets/'netcode.js').read_text())
                 page.add_script_tag(content=js)
                 page.wait_for_function('window.__test && window.leqra')
                 page.evaluate('''()=>{

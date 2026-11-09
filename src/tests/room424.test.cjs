@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||assetPath('game.js'),'utf8');
 // Execute the shipped functions with small UI/network fixtures; no copied
 // assignment algorithm or browser dependency is used by these regressions.
 function declaration(name){

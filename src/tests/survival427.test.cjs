@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 class Element{constructor(){this.hidden=false;this.textContent='';this.style={setProperty(){}};this.children=[];this.classList={toggle(){},add(){},remove(){}};}setAttribute(k,v){this[k]=v;}replaceChildren(...c){this.children=c;}querySelectorAll(){return this.children.map(c=>c.children[0]).filter(Boolean);}append(...c){this.children.push(...c);}showModal(){this.open=true;}focus(){}close(){this.open=false;}}
 function boot({count=2,ids=[0,1,2,3],target=10,weapons=['shield','speed','homing','cannon','laser'],pickupRate='superfast'}={}){

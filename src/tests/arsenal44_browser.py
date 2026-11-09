@@ -6,10 +6,11 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:8445');ap.add_argument('--output',default='test-output/arsenal44');ap.add_argument('--local-only',action='store_true');a=ap.parse_args()
-r=Path(__file__).resolve().parents[1];web=r/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[];contexts=[]
 def check(ok,label):
  assert ok,label
@@ -25,7 +26,7 @@ def load(b,size=(1365,950),scheme='dark',live=False,code=None,watch=False,name='
  if(!a.live)window.requestAnimationFrame=()=>0;
  const WS=WebSocket;window.WebSocket=class extends WS{constructor(...args){super(...args);this.addEventListener('message',e=>{const s=JSON.parse(e.data);if(s.type==='state')window.__lastRaw=s;});}};
  }''',dict(url=a.url+'/?'+urlencode(q),live=live,name=name))
- for f in ['theme.js','netcode.js']:p.add_script_tag(content=(web/f).read_text())
+ for f in ['theme.js','netcode.js']:p.add_script_tag(content=(assets/f).read_text())
  p.add_script_tag(content=js);wait(p,'window.__test&&leqra.version==="4.4.0"');p.evaluate('__test.render()');return p
 
 def fixture(code,route='arsenal44',**kw):

@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(assetPath('game.js'),'utf8');
 const start=source.indexOf("window.addEventListener('keydown',e=>{",source.indexOf('// All input paths'));
 const keyboard=source.slice(start,source.indexOf("window.addEventListener('keyup'",start));
 function boot({phase='menu',dialog}={}){

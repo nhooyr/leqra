@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
 const {boot:combatBoot,tank,declaration}=require('./godlike426-harness.cjs');
-const Net=require('../web/netcode.js');
+const {assetPath}=require('./web_assets.cjs');
+const Net=require(assetPath('netcode.js'));
 
 function boot(){
  const s=combatBoot(),noop=()=>{};

@@ -1,6 +1,7 @@
 'use strict';
-const {readFileSync}=require('node:fs'),path=require('node:path'),{performance}=require('node:perf_hooks');
-const source=readFileSync(process.env.LEQRA_PICKUP_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),{performance}=require('node:perf_hooks');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(process.env.LEQRA_PICKUP_SOURCE||assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');if(start<0)return '';const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 const score=new Function('shieldCount','speedCount','MAX_SPEED_STACKS',declaration('godlikeWeaponValue')+'\n'+declaration('godlikePickupValue')+';return godlikePickupValue;')(()=>0,()=>0,5);
 const pickups=['rapid','scatter','homing','grenade','laser','cannon'].map(type=>({type})),results=[];let checksum=0;

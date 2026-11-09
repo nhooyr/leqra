@@ -2,16 +2,17 @@
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--output',default='tests/results/v4.14-browser');a=ap.parse_args()
-r=Path(__file__).resolve().parents[1];web=r/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
 def check(ok,label): assert ok,label;checks.append(label);print('PASS',label,flush=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');c=b.new_context(viewport={'width':1365,'height':950},color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={'leqra.name':'ALPHA','leqra.muted':'1'};Object.defineProperty(window,'localStorage',{value:{getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]}});Object.defineProperty(window,'sessionStorage',{value:{getItem:()=>null,setItem(){},removeItem(){}}});window.requestAnimationFrame=()=>0;}""")
- for f in ['theme.js','netcode.js']:p.add_script_tag(content=(web/f).read_text())
+ for f in ['theme.js','netcode.js']:p.add_script_tag(content=(assets/f).read_text())
  p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.14.0'")
  # Summary scores are visible even with the normal desktop sidebar present.
  check(p.locator('.sidebar').is_visible() and 'sidebar-hidden' not in (p.locator('body').get_attribute('class') or ''),'desktop sidebar is present for scoreboard visibility check')

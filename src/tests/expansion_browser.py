@@ -8,9 +8,10 @@ from pathlib import Path
 from urllib.parse import urlencode,urlsplit,parse_qs
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 ap=argparse.ArgumentParser();ap.add_argument('url',nargs='?',default='http://127.0.0.1:8790');ap.add_argument('--browser',default='/usr/bin/chromium');ap.add_argument('--output',default='test-output/expansion');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1]/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1]/'web';assets=asset_directory(root);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(v,label):
  assert v,label
@@ -29,7 +30,7 @@ with sync_playwright() as pw:
   # A synthetic reachable public URL exercises the normal Copy Invite path.
   url='http://game.test/tanks/?test=1'+('&'+urlencode({'room':code}) if code is not None else '')
   ws=args.url.replace('http:','ws:').replace('https:','wss:')+'/ws'
-  html=re.sub(r'<link[^>]*>','',root.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+root.joinpath('style.css').read_text()+'</style></head>')
+  html=re.sub(r'<link[^>]*>','',root.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
   p.set_content(html)
   p.evaluate(r'''([url,ws,name,session,historyThrows])=>{
    window.__location=new URL(url);window.__historyCalls=[];window.__copied='';window.__sockets=[];window.__messages=[];window.__sent=[];
@@ -40,8 +41,8 @@ with sync_playwright() as pw:
    history.replaceState=(s,t,u)=>{if(historyThrows)throw Error('Restricted History');__historyCalls.push(String(u));__location.href=String(u)};
    Object.defineProperty(navigator,'clipboard',{value:{writeText:async v=>{__copied=v}}});
   }''',[url,ws,name,session,history_throws])
-  js=root.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})();');js=js[:pos]+'})(window.__location);'+js[pos+5:]
-  p.add_script_tag(content=root.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
+  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})();');js=js[:pos]+'})(window.__location);'+js[pos+5:]
+  p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
  def connected(p):p.wait_for_function('leqra.getState().online?.connected',timeout=10000)
 
  # The actual offline simulation: no replacement movement or damage code.

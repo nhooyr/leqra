@@ -2,17 +2,18 @@
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 ap=argparse.ArgumentParser();ap.add_argument('--output',default='tests/results/v4.17-branding');a=ap.parse_args()
-r=Path(__file__).resolve().parents[1];web=r/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
 def check(ok,label): assert ok,label;checks.append(label);print('PASS',label,flush=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');c=b.new_context(viewport={'width':1365,'height':950},color_scheme='dark');p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};window.__store={'ricochet.name':'LEGACY PILOT','ricochet.muted':'1','ricochet.difficulty':'hard','ricochet.local2Name':'LEGACY P2','leqra.wins':'7'};window.__session={'ricochet.session':'{\"code\":\"OLD\",\"token\":\"tok\",\"name\":\"LEGACY PILOT\",\"spectating\":false,\"at\":1}'};const store=d=>({getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});Object.defineProperty(window,'localStorage',{value:store(window.__store)});Object.defineProperty(window,'sessionStorage',{value:store(window.__session)});window.requestAnimationFrame=()=>0;}""")
- for f in ['theme.js','netcode.js']: p.add_script_tag(content=(web/f).read_text())
+ for f in ['theme.js','netcode.js']: p.add_script_tag(content=(assets/f).read_text())
  p.add_script_tag(content=js);p.wait_for_function("window.__test&&window.leqra&&leqra.version==='4.35.0'")
  check(p.title()=='leqra — Tank Arena','document title uses lowercase leqra')
  check(p.locator('.brand-name').inner_text()=='leqra','header wordmark is exactly lowercase leqra')

@@ -6,9 +6,10 @@ import argparse,json,re,threading,time
 from pathlib import Path
 from urllib.parse import urlparse,parse_qs
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 from websockets.sync.client import connect
 ap=argparse.ArgumentParser();ap.add_argument('url',nargs='?',default='http://127.0.0.1:18041');ap.add_argument('--output',default='test-output/matchmaking40');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[];peers=[]
 def check(ok,text):
  assert ok,text
@@ -36,15 +37,15 @@ class Peer:
  def leave(self):
   try:self.send(type='leave');time.sleep(.04);self.ws.close()
   except Exception:pass
-html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 def load(b,name,w=1365,h=950,invite=''):
  mobile=w<760 or h<620;c=b.new_context(viewport={'width':w,'height':h},has_touch=mobile,is_mobile=mobile,device_scale_factor=2 if mobile else 1)
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.on('dialog',lambda d:d.accept());p.set_content(html)
  p.evaluate('''a=>{window.__location=new URL(a.url);window.__history={state:null,replaceState(state,title,url){this.state=state;window.__updatedURL=String(url);}};
  const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});
  Object.defineProperty(window,'localStorage',{value:store({'leqra.muted':'1','leqra.name':a.name})});Object.defineProperty(window,'sessionStorage',{value:store({})});}''',{'url':args.url+'/?test=1'+invite,'name':name})
- p.add_script_tag(content=(web/'theme.js').read_text());p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p,c
+ p.add_script_tag(content=(assets/'theme.js').read_text());p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p,c
 
 def queue_party_wire(n,key):
  people=[Peer() for _ in range(n)];w=people[0].op('create',lambda m:m['type']=='welcome',name='Opponent 1');code=w['room']

@@ -1,6 +1,7 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
+const {assetPath}=require('./web_assets.cjs');
+const source=fs.readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),first=source.slice(start,end);return first.endsWith('}')?first:source.slice(start,source.indexOf('\n}',end)+2);}
 class Element{
  constructor(tag='div'){this.tagName=tag.toUpperCase();this.children=[];this.parentElement=null;this.className='';this.dataset={};this.events={};this.style={setProperty(){}};this.classList={toggle(){}};this.disabled=false;this.hidden=false;this.textContent='';this.open=false;}

@@ -2,17 +2,18 @@
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 ap=argparse.ArgumentParser();ap.add_argument('--output',default='tests/results/v4.18-browser');a=ap.parse_args()
-r=Path(__file__).resolve().parents[1];web=r/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
 def check(ok,label): assert ok,label;checks.append(label);print('PASS',label,flush=True)
 def install(page,name='ALPHA',disable_ua_data=False):
  page.set_content(html)
  page.evaluate("""a=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={'leqra.name':a.name,'leqra.muted':'1'};const store=x=>({getItem:k=>x[k]??null,setItem:(k,v)=>x[k]=String(v),removeItem:k=>delete x[k]});Object.defineProperty(window,'localStorage',{value:store(d)});Object.defineProperty(window,'sessionStorage',{value:store({})});if(a.noUAData){try{Object.defineProperty(navigator,'userAgentData',{value:undefined,configurable:true});}catch(_){}}}""",{'name':name,'noUAData':disable_ua_data})
- for f in ['theme.js','netcode.js']: page.add_script_tag(content=(web/f).read_text())
+ for f in ['theme.js','netcode.js']: page.add_script_tag(content=(assets/f).read_text())
  page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.35.0'")
 
 with sync_playwright() as pw:
