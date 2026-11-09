@@ -6,11 +6,12 @@ An online multiplayer tank arena battle game.
 
 ![screenshot of the game](docs/screenshot.png)
 
-- 4 fun free-for-all and team based game modes:
-    1. Elimination
-    2. Capture the flag
-    3. King of the hill
-    4. Survival
+- 5 fun free-for-all and team based game modes:
+    1. Infinity
+    2. Elimination
+    3. Capture the flag
+    4. King of the hill
+    5. Survival
 - 10 collectable power-ups:
     1. Cannon
     2. Ghost
@@ -23,19 +24,21 @@ An online multiplayer tank arena battle game.
     9. Shield
    10. Starman
 - Flexible lobby rooms supporting:
-    1. Local players
-    2. Bots
-    3. Online players
-    4. Teams
-    5. Spectators
-    6. Online matchmaking
+    1. Public Infinity
+    2. Local players
+    3. Bots
+    4. Online players
+    5. Teams
+    6. Spectators
+    7. Online matchmaking
 - 4 bot levels:
     1. Chill
     2. Normal
     3. Fierce
     4. Godlike
-- 6 map sizes.
-- 8 tanks at a time.
+- 6 map sizes. 11 including the portrait toggle.
+- Public Infinity supports up to 32 player tanks and 24 roaming bots, for up to 56 tanks in one arena.
+- Private Rooms support 8 tanks at a time in any game mode.
 - Mouse, keyboard and touch controls.
 - Quick tour on first startup.
 - A second local player.
