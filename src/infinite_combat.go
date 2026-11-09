@@ -490,8 +490,7 @@ func (a *infiniteArena) guide(b *infiniteBullet, dt float64) {
 		return
 	}
 	b.target = target.ID
-	angle := math.Atan2(b.VY, b.VX)
-	angle += clamp(delta(angle, math.Atan2(target.Y-b.Y, target.X-b.X)), -missileTurn*dt, missileTurn*dt)
+	angle := guidedProjectileAngle(b.Kind, math.Atan2(b.VY, b.VX), math.Atan2(target.Y-b.Y, target.X-b.X), dt)
 	b.VX, b.VY = math.Cos(angle)*speed, math.Sin(angle)*speed
 }
 

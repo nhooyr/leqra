@@ -335,7 +335,8 @@ function guide(world, bullet, dt) {
  }
  bullet.target = target.id;
  const angle = Math.atan2(bullet.vy, bullet.vx);
- const turn = clamp(angleOf(Math.atan2(target.y - bullet.y, target.x - bullet.x) - angle), -4.8 * dt, 4.8 * dt);
+ const maxTurn = (bullet.kind === 'grenade' ? art.grenadeTurn : art.missileTurn) * dt;
+ const turn = clamp(angleOf(Math.atan2(target.y - bullet.y, target.x - bullet.x) - angle), -maxTurn, maxTurn);
  bullet.vx = Math.cos(angle + turn) * speed;
  bullet.vy = Math.sin(angle + turn) * speed;
 }

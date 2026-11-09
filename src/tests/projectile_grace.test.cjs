@@ -42,16 +42,19 @@ test('owner immunity applies to grenade fuse and remote blasts even with friendl
  }
 });
 
-test('guided grenade follows the same bounded turn in flight and forecasts while braking',()=>{
+test('grenades turn at one-third the missile rate in flight and forecasts while braking',()=>{
  const {s,owner,shell}=boot('grenade',80,6,{x:100,y:210,age:8.9,life:1.1,target:-1,seekDelay:0});
  owner.x=60;owner.y=210;
  const ally=tank(1,150,185),protectedTank=tank(2,147,255),enemy=tank(3,320,300);
  ally.team=owner.team;protectedTank.invulnerable=1;s.tanks.push(ally,protectedTank,enemy);
  s.currentRules=()=>({friendlyFire:true});
- const dt=1/60,forecast=s.grenadeForecast(shell,dt);
+ const dt=1/60,forecast=s.grenadeForecast(shell,dt),missile={...shell,kind:'homing',vx:235};
+ s.steerMissile(missile,dt);
  s.updateBullets(dt);
  assert.equal(shell.target,3);
- assert.ok(Math.abs(Math.atan2(shell.vy,shell.vx)-4.8*dt)<1e-12);
+ const missileTurn=Math.atan2(missile.vy,missile.vx),grenadeTurn=Math.atan2(shell.vy,shell.vx);
+ assert.ok(Math.abs(missileTurn-4.8*dt)<1e-12);
+ assert.ok(Math.abs(grenadeTurn-missileTurn/3)<1e-12);
  assert.ok(Math.abs(Math.hypot(shell.vx,shell.vy)-80*s.grenadeDragFactor(1.1,1.1-dt))<1e-12);
  for(const key of ['x','y','vx','vy','age','life','target'])assert.equal(shell[key],forecast[key],key);
  enemy.invulnerable=1;s.updateBullets(dt);

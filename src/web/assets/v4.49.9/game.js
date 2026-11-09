@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.8';
+const GAME_VERSION='4.49.9';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -30,6 +30,7 @@ const DIFFICULTY={
 };
 const POWER_EFFECT_DURATION=10;
 const BOOST_SPEED_PER_STACK=.65, BOOST_TURN_PER_STACK=.25, MAX_SPEED_STACKS=5, MISSILE_SPEED=235, MISSILE_TURN=4.8, MISSILE_VIEW_COS=-.75, MISSILE_LOCK_DELAY=.06, MISSILE_WALL_DELAY=.04, GRENADE_SPEED=205, GRENADE_FUSE=10, GRENADE_CRUISE_DRAG=.025, GRENADE_BRAKE_START=7, GRENADE_BRAKE_DRAG=2, BLAST_RADIUS=220, GRENADE_AVOID_PADDING=10;
+const GRENADE_TURN=MISSILE_TURN/3;
 const POWER={rapid:{color:'#d2f65a',name:'MACHINE GUN',short:'MACHINE GUN'},scatter:{color:'#c5a2ff',name:'SHOTGUN'},shield:{color:'#73cee4',name:'SHIELD'},
  homing:{color:'#ff83bd',name:'HOMING MISSILE',short:'HOMING'},
  grenade:{color:'#ffc46b',name:'GRENADE'},
@@ -718,7 +719,8 @@ function steerMissile(b,dt,candidates=tanks){
  if(b.target>=0){target=candidates.find(t=>t.id===b.target&&visible(t));if(!target){b.target=-1;b.seekDelay=MISSILE_LOCK_DELAY;return;}}
  if(!target){let best=Infinity;for(const t of candidates){if(!visible(t))continue;const d=distance(b,t);if(d<best){best=d;target=t;}}}
  b.target=target?target.id:-1;if(!target)return;
- let angle=Math.atan2(b.vy,b.vx);angle+=clamp(angleDelta(angle,Math.atan2(target.y-b.y,target.x-b.x)),-MISSILE_TURN*dt,MISSILE_TURN*dt);
+ const turn=(b.kind==='grenade'?GRENADE_TURN:MISSILE_TURN)*dt;
+ let angle=Math.atan2(b.vy,b.vx);angle+=clamp(angleDelta(angle,Math.atan2(target.y-b.y,target.x-b.x)),-turn,turn);
  const speed=b.kind==='grenade'?Math.hypot(b.vx,b.vy):MISSILE_SPEED;
  b.vx=Math.cos(angle)*speed;b.vy=Math.sin(angle)*speed;
 }
@@ -4521,6 +4523,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 // Infinity keeps its own camera and streamed world, while sharing the finite arena's art and audio.
 window.leqraInfinityArt=Object.freeze({
  theme,colors:Theme.colors,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:syncPauseButton,
+ missileTurn:MISSILE_TURN,grenadeTurn:GRENADE_TURN,
  rect:roundRect,tile:paintArenaTile,wall:paintArenaWall,hull:drawCachedTankHull,turret:paintTankTurret,pickup:drawPickup,bullets:drawBullets,badge:tankPowerBadgeImage,
  shot:shotSound,ricochet:ricochetSound,collect:pickupSound,shield:shieldSound,blast:boom,
  impact:()=>tone(160,65,.10,SOUND_LEVELS.impact,'triangle')
