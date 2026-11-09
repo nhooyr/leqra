@@ -1,10 +1,10 @@
-# leqra v4.49.2 — current game protocol (protocol 1)
+# leqra v4.49.3 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.2**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.3**.
 
 ```json
-{"type":"server_hello","version":"4.49.2","protocol":1}
-{"type":"client_hello","version":"4.49.2","protocol":1}
+{"type":"server_hello","version":"4.49.3","protocol":1}
+{"type":"client_hello","version":"4.49.3","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -79,7 +79,7 @@ An `add` command with `kind:"bot"` may omit `difficulty`. The server then copies
 
 Equipped weapon timers and Shield, Speed and Ghost durations refresh to **10 seconds** on Compact/Standard/Large or **15 seconds** on Huge/Giant/Ultra Wide. This corresponds to 15 seconds at maze area at least `14 * 12` cells. Projectile ranges/lifetimes and the 10-second grenade fuse remain separate.
 
-Starman is a three-second pickup with the rules and pickup ID `starman`. While active, tank snapshots include the authoritative `starmanTime` HUD timer. Collection raises both `invulnerable` and `ghostTime` to at least three seconds, keeping any longer timer. Clients use the normal Ghost movement and expiry path and distinguish Starman from spawn protection.
+Starman uses the rules and pickup ID `starman`. Its duration is 4 seconds on Compact and Standard, 5 on Large, 6 on Huge, 7 on Giant, and 8 on Ultra Wide. While active, tank snapshots include the authoritative `starmanTime` HUD timer. Collection raises each of `invulnerable` and `ghostTime` to the pickup's duration if the timer is shorter. Clients use the normal Ghost movement and expiry path and distinguish Starman from spawn protection.
 
 The Laser pickup supplies three ricocheting shots and a long dotted guide while equipped. Clients calculate the guide for their locally controlled tanks from the current `power: "laser"` state and beam geometry. The separate `scope` value is removed from `rules.weapons` and `GET /api/config`, and snapshots omit `scopeTime`. Saved browser rules and presets merge a legacy Scope selection into Laser.
 

@@ -15,7 +15,7 @@ Weapons and most buffs last **10 seconds** on Compact, Standard, and Large, or *
 | Machine gun | Fires small, fast ricocheting rounds while Fire is held. Range is a quarter of the maze perimeter. | 3 seconds of firing within 10/15 seconds |
 | Shotgun | Fires three fast pellets in a spread. | 5 volleys or 10/15 seconds |
 | Shield | Adds a ring that absorbs a damaging hit. | Up to 5 charges with a shared 10/15-second timer |
-| Starman | A gold star and rainbow glow mark temporary invulnerability and wall phasing. | 3 seconds |
+| Starman | A gold star and rainbow glow mark temporary invulnerability and wall phasing. | 4–8 seconds, depending on maze size |
 
 ## Combat rules
 
@@ -23,6 +23,6 @@ Your own shots and grenade blasts leave your tank and shields unharmed. Friendly
 
 Ghost and Starman let you cross internal walls. If phasing ends inside a wall, the game moves you to a safe position. Ordinary weapons need a clear muzzle. Cannon can shoot through internal walls.
 
-Starman protects existing shields and refreshes on another pickup. It pauses objective interaction while invulnerability is active. With all pickups enabled, about **1 in 27** spawns is Starman. Shield and Super Speed each have six times its spawn weight, and other pickups each have twice its weight.
+Starman lasts 4 seconds on Compact and Standard, 5 on Large, 6 on Huge, 7 on Giant, and 8 on Ultra Wide. It protects existing shields, refreshes on another pickup, and pauses objective interaction while invulnerability is active. With all pickups enabled, about **1 in 27** spawns is Starman. Shield and Super Speed each have six times its spawn weight, and other pickups each have twice its weight.
 
 Use **Room settings → Rules** to change pickup frequency or which types can spawn.

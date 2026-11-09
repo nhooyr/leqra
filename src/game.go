@@ -18,6 +18,21 @@ func powerDuration(cols, rows int) float64 {
 	return powerEffectDuration
 }
 
+func starmanDuration(cols, rows int) float64 {
+	switch area := cols * rows; {
+	case area >= 24*14:
+		return 8
+	case area >= 16*14:
+		return 7
+	case area >= 14*12:
+		return 6
+	case area >= 12*10:
+		return 5
+	default:
+		return 4
+	}
+}
+
 const (
 	cellSize           = 84.0
 	wallSize           = 8.0
@@ -48,7 +63,6 @@ const (
 	laserRadius        = 3.0
 	laserCooldown      = .85
 	ghostDuration      = powerEffectDuration
-	starmanDuration    = 3.0
 	// Cannon scales normal round radius (and diameter) and speed, not damage.
 	cannonRadius   = 3.5 * 4
 	cannonSpeed    = 282.0 * 4
@@ -1219,9 +1233,10 @@ func (g *Game) grantPower(t *Tank, kind string) {
 		t.GhostTime = duration
 	case "starman":
 		// Reuse the existing damage and wall-phasing timers without shortening either.
-		t.StarmanTime = starmanDuration
-		t.Invulnerable = math.Max(t.Invulnerable, starmanDuration)
-		t.GhostTime = math.Max(t.GhostTime, starmanDuration)
+		duration := starmanDuration(g.World.Cols, g.World.Rows)
+		t.StarmanTime = duration
+		t.Invulnerable = math.Max(t.Invulnerable, duration)
+		t.GhostTime = math.Max(t.GhostTime, duration)
 	case "rapid", "scatter":
 		t.MachineRounds = 0
 		if kind == "rapid" {

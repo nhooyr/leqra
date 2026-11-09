@@ -8,11 +8,11 @@ import (
 
 func Test427PowerDurationByArenaForEveryPickup(t *testing.T) {
 	for _, size := range []struct {
-		cols, rows       int
-		duration, ground float64
+		cols, rows                int
+		duration, ground, starman float64
 	}{
-		{7, 7, 10, 30}, {9, 8, 10, 30}, {12, 10, 10, 32},
-		{14, 12, 15, 45}, {16, 14, 15, 61}, {24, 14, 15, 90},
+		{7, 7, 10, 30, 4}, {9, 8, 10, 30, 4}, {12, 10, 10, 32, 5},
+		{14, 12, 15, 45, 6}, {16, 14, 15, 61, 7}, {24, 14, 15, 90, 8},
 	} {
 		g := battle(2)
 		g.World.Cols, g.World.Rows = size.cols, size.rows
@@ -31,11 +31,20 @@ func Test427PowerDurationByArenaForEveryPickup(t *testing.T) {
 			case "ghost":
 				got = p.GhostTime
 			case "starman":
-				got, want = p.StarmanTime, 3
+				got, want = p.StarmanTime, size.starman
+				if p.GhostTime != want || p.Invulnerable != want {
+					t.Fatalf("Starman on %dx%d: wall phasing=%v invulnerability=%v, want %v", size.cols, size.rows, p.GhostTime, p.Invulnerable, want)
+				}
 			}
 			if got != want {
 				t.Fatalf("%s on %dx%d: %v, want %v", kind, size.cols, size.rows, got, want)
 			}
+		}
+		g.World.Cols, g.World.Rows = size.rows, size.cols
+		p := &Tank{Alive: true}
+		g.grantPower(p, "starman")
+		if p.StarmanTime != size.starman {
+			t.Fatalf("Starman on portrait %dx%d: %v, want %v", size.rows, size.cols, p.StarmanTime, size.starman)
 		}
 	}
 	if pickupLifetime(0, 0) != 0 {

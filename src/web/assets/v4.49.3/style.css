@@ -349,6 +349,16 @@ body.game-fullscreen:not(.touch-ui) .arena-wrap{min-height:0;height:auto}
 body.game-fullscreen .offline{display:none}
 @media(max-width:920px){.sidebar-toggle{display:none}}
 body.touch-ui .sidebar-toggle{display:none}
+.sidebar-details-toggle{display:none}
+@media(max-width:920px){.sidebar-details-toggle{display:grid}}
+body.touch-ui .sidebar-details-toggle{display:grid}
+.arena-bar .icon-btn.sidebar-details-toggle{width:32px;height:32px;flex:none;margin-block:-7px;touch-action:manipulation}
+.sidebar-dialog{width:min(460px,calc(100vw - 24px))}
+.sidebar-dialog .feature-body{padding:12px}
+.sidebar-dialog[open] .sidebar{display:flex;overflow:visible}
+.manual-line.manual-touch{display:none}
+body.touch-ui .manual-touch{display:flex}
+.manual-touch>span:last-child{flex-shrink:1;margin-right:0;text-align:right}
 /* Fixed-height objective bar prevents a capture/contest/sudden-death reflow. */
 .objective-bar{height:30px;min-height:30px;overflow:hidden}
 .objective-bar strong{flex-shrink:0}
@@ -547,6 +557,12 @@ body.many-sides .mobile-scores{
 }
 
 body.touch-ui.many-sides .bar-right{flex-direction:row;align-items:center;gap:5px}
+@media(max-width:430px){
+ body.touch-ui.many-sides .arena-bar .mobile-scores{font-size:9px;gap:2px;justify-content:flex-start;justify-content:safe center;overflow-x:auto;scrollbar-width:none}
+ body.touch-ui.many-sides .mini-score{flex:none;gap:1px}
+ body.touch-ui.many-sides .mini-score i{width:4px;height:4px}
+}
+@media(max-width:360px){body.touch-ui .arena-bar{column-gap:2px}}
 
 /* v4.18: clearer single-player controls and queue results. */
 .manual-move-line{align-items:flex-start}.manual-key-options{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0;max-width:78%}.manual-key-options .keys{justify-content:flex-end;flex-wrap:wrap}.manual-line>.keys{flex-wrap:wrap;justify-content:flex-end;max-width:78%}.manual-line>kbd{min-width:0;max-width:78%;overflow-wrap:anywhere}.manual-line>span{flex-shrink:0;margin-right:8px}.manual-or{align-self:center;font:7px var(--mono);color:var(--muted);padding:0 2px}

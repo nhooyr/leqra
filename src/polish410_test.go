@@ -11,7 +11,7 @@ func Test410ClassicTimedPowerupsUseTenSeconds(t *testing.T) {
 	}
 	for _, kind := range pickupTypes {
 		if kind == "starman" {
-			continue // Starman has its own fixed duration.
+			continue // Starman scales separately.
 		}
 		g := battle(2)
 		p := g.Tanks[0]
@@ -79,7 +79,7 @@ func Test410BotsIgnoreTheirOwnAndHarmlessFriendlyGrenades(t *testing.T) {
 }
 
 func Test410Version(t *testing.T) {
-	if version != "4.49.2" {
+	if version != "4.49.3" {
 		t.Fatalf("version=%q", version)
 	}
 }
