@@ -18,7 +18,7 @@ function boot(){
  const rules={mode:'survival'},own={id:8,member:108,spectating:true,name:'HOST'},room={host:8,canStart:true,canRestartWave:true,phase:'playing',rules,players:[{id:0,member:100,kind:'bot',connected:true}],spectators:[own]};
  const snapshot={tick:10,generation:1,phase:'playing',objectives:{survival:{wave:5,wavesCleared:4,waveTarget:15,status:'wave'}},tanks:[]};
  const s={console,Promise,ROUND_END_SECONDS:2,mode:'online',phase:'playing',pausedFrom:'playing',localMatchStats:{},localRoom:{self:8,players:[]},localSurvivalCheckpoint:null,pendingGameConfirmation:null,pendingMatchPresentation:null,localMatchReport:null,localObjectives:null,
-  online:{code:'ARENA',socket:{},member:108,generation:1,id:8,connected:true,menu:true,roomData:room,snapshots:[snapshot],restartWavePending:null,lastMatch:1,ownedIDs:new Set(),activeIDs:new Set(),localBullets:new Map(),shots:{sync(){},prune(){}},buffer:{push(state){s.online.snapshots.push(state);}}},
+  online:{code:'ARENA',socket:{},member:108,generation:1,id:8,connected:true,menu:true,roomData:room,snapshots:[snapshot],restartWavePending:null,lastMatch:1,ownedIDs:new Set(),activeIDs:new Set(),effectQueue:[],localBullets:new Map(),shots:{sync(){},prune(){}},buffer:{push(state){s.online.snapshots.push(state);}}},
   $ ,document:doc,currentRules:()=>rules,roomData:()=>room,localPlayerID:()=>s.online.id,roomMember:()=>own,secondaryMember:()=>null,secondaryID:()=>undefined,secondLocal:()=>null,
   clearInput(){s.clears=(s.clears||0)+1;},sendOnlineInput(){s.releases=(s.releases||0)+1;},toast(message){s.notice=message;},
   sendOnline(message){s.sent.push(message);return s.sendSucceeds;},sent:[],sendSucceeds:true,setTimeout(fn){const id=++timerID;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
@@ -51,6 +51,21 @@ test('starting private Infinity drops old fixed-maze results and sounds',()=>{
  assert.equal(s.pendingMatchPresentation,null);
  s.receiveOnlineState({...lateResult,tick:12,phase:'lobby',objectives:null});
  assert.equal(s.phase,'onlineLobby');
+ assert.deepEqual(heard,[]);
+});
+test('returning to the start menu consumes stale round sounds without replaying them',()=>{
+ const {s}=boot(),heard=[];
+ s.survivalBreak=()=>false;
+ s.online.eventsInitialized=true;s.online.lastEvent=0;
+ s.online.effectQueue.push({e:{id:1,type:'shot'}});
+ s.onlineEffect=e=>heard.push(e.type);
+ const ending={id:2,type:'roundEnd',generation:1};
+ const lobby=statePacket({generation:1,tick:11,phase:'lobby'});
+ s.receiveOnlineState({...lobby,events:[ending]});
+ assert.equal(s.phase,'onlineLobby');
+ assert.equal(s.online.effectQueue.length,0);
+ assert.equal(s.online.lastEvent,2);
+ s.receiveOnlineState({...lobby,tick:12,phase:'playing',events:[ending]});
  assert.deepEqual(heard,[]);
 });
 

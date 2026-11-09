@@ -9,7 +9,7 @@ function boot(options={}){
  const audioSource=options.source||source,audioCode=audioSource.slice(audioSource.indexOf('let audioLevel='),audioSource.indexOf('function setLayout('));
  let clock=0,nextTimer=0,nextBlob=0,focused=true;const listeners=new Map(),timers=new Map(),blobs=new Map(),contexts=[],native=[],plays=[],playEvents=[],nodes=[];
  function param(){return{value:1,events:[],setValueAtTime(value,t){this.value=value;this.events.push(['set',value,t]);},linearRampToValueAtTime(value,t){this.value=value;this.events.push(['ramp',value,t]);},exponentialRampToValueAtTime(value,t){this.value=value;this.events.push(['exponential',value,t]);},cancelAndHoldAtTime(t){this.events.push(['hold',t]);},cancelScheduledValues(t){this.events.push(['cancel',t]);}};}
- function node(kind){const n={kind,disconnected:false,connections:[],connect(target){this.connections.push(target);},disconnect(){this.disconnected=true;},start(t){this.started=t;},stop(t){this.stopped=t;}};nodes.push(n);return n;}
+ function node(kind){const n={kind,disconnected:false,connections:[],connect(target){this.connections.push(target);},disconnect(){this.disconnected=true;},start(t){this.started=t;},stop(t){this.stopped=t;this.stopCalls=(this.stopCalls||0)+1;}};nodes.push(n);return n;}
  class Context{
   constructor(){this.state=options.state||'running';this.currentTime=0;this.sampleRate=48000;this.destination={};this.resumeCount=0;this.pending=[];contexts.push(this);}
   createGain(){const n=node('gain');n.gain=param();return n;}
@@ -33,7 +33,7 @@ function boot(options={}){
   window:{AudioContext:options.noWebAudio?undefined:Context,addEventListener:(event,fn)=>listeners.set(event,fn)},Audio:NativeAudio,
   URL:{createObjectURL(blob){const url='blob:test-'+nextBlob++;blobs.set(url,blob);return url;},revokeObjectURL(url){blobs.delete(url);}},
   setTimeout(fn,delay){const id=++nextTimer;timers.set(id,{fn,time:clock+delay});return id;},clearTimeout:id=>timers.delete(id)};
- vm.createContext(s);vm.runInContext(audioCode+'\nthis.audioInspection=()=>({audioLevel,audioEpoch,pendingAudioEffects,delayed:nativeAudioTimers.size,bounces:typeof onlineBounceCounts!=="undefined"?onlineBounceCounts.size:0});',s);
+ vm.createContext(s);vm.runInContext(audioCode+'\nsetArenaAudio(true);this.audioInspection=()=>({audioLevel,audioEpoch,pendingAudioEffects,delayed:nativeAudioTimers.size,bounces:typeof onlineBounceCounts!=="undefined"?onlineBounceCounts.size:0});',s);
  return{s,contexts,native,plays,playEvents,nodes,blobs,listeners,timers,advance(ms){clock+=ms;for(const [id,timer]of [...timers])if(timer.time<=clock){timers.delete(id);timer.fn();}},fire(event,extra={}){listeners.get(event)?.({isTrusted:true,...extra});},focus(value){focused=value;listeners.get(value?'focus':'blur')();}};
 }
 
@@ -109,6 +109,26 @@ test('losing window focus stops the native fallback and discards delayed cues',a
  assert.equal(b.s.audioInspection().delayed,0);
  b.s.boom();b.focus(true);b.advance(200);await flush();
  assert.equal(b.plays.length,1);
+});
+test('the start menu is silent for automatic cues and still allows a volume preview',async()=>{
+ const b=boot();b.s.setArenaAudio(false);await b.s.initAudio();b.advance(200);
+ b.s.tone(430,550,.12);b.s.boom();b.s.pickupSound();b.s.chatNotificationSound();
+ assert.equal(b.nodes.filter(n=>n.kind==='oscillator'||n.kind==='buffer').length,0);
+ b.s.setAudioVolume(60,false,true);
+ assert.equal(b.nodes.filter(n=>n.kind==='oscillator').length,1);
+});
+test('returning to the menu cancels scheduled Web Audio and native round notes',async()=>{
+ const web=boot();await web.s.initAudio();
+ web.s.tone(430,550,.12);web.s.tone(650,800,.19,.04,'triangle',.13);
+ const oscillators=web.nodes.filter(n=>n.kind==='oscillator');
+ assert.equal(oscillators[1].started,.13);
+ web.s.setArenaAudio(false);
+ assert.ok(oscillators.every(n=>n.stopCalls===2&&n.stopped===undefined));
+ const native=boot({noWebAudio:true});
+ native.s.tone(430,550,.12);native.s.tone(650,800,.19,.04,'triangle',.13);
+ native.s.setArenaAudio(false);native.s.setArenaAudio(true);native.advance(200);await flush();
+ assert.equal(native.plays.length,1);
+ assert.ok(native.native[0].paused&&native.native[0].muted);
 });
 test('a delayed tone uses Web Audio when the context recovers before playback',async()=>{
  const b=boot({state:'suspended'});b.s.nativeTone(500,700,.1,.035,'sine',.1);await b.s.initAudio();b.advance(100);await flush();

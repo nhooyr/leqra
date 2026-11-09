@@ -14,7 +14,7 @@ function boot(){
  const nodes=new Map(),a=tank(0),b=tank(7);
  const $=id=>{if(!nodes.has(id)){const attrs=new Map(),styles=new Map(),classes=new Set();nodes.set(id,{hidden:false,textContent:'',dataset:{},classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,v)},getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v)});}return nodes.get(id);};
  const s={$,now:1000,MACHINE_FIRING_ROUNDS:vm.runInNewContext(source.match(/MACHINE_FIRING_ROUNDS=([^,;]+)/)[1]),performance:{now:()=>s.now},feedbackAt:-Infinity,time:1,bullets:[],canDamage:()=>false,mode:'solo',phase:'playing',tanks:[a,b],controlledTank:()=>a,secondaryID:()=>7,survivalBreak:()=>false,survivalMode:()=>false,objectiveMode:()=>false,missileLocks:()=>[],combatPrefs:{visual:true,audio:false},lastLocks:{},lastLockTone:{},ownedGrenades:()=>[],powerCapacity:()=>96,activeAmmo:()=>0,muzzleBlocked:()=>false,cooldownDuration:()=>0,clamp:(v,a,b)=>Math.max(a,Math.min(b,v))};
- vm.createContext(s);for(const name of ['setText','setStyle','setAttr','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','updateMachineBudget','updateCombatFeedback'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);for(const name of ['setText','setStyle','setAttr','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','updateMachineBudget','renderPilotReadiness','updateCombatFeedback'])vm.runInContext(declaration(name),s);
  return s;
 }
 test('both ammo readouts show their own remaining productive firing time, rounded up to tenths',()=>{

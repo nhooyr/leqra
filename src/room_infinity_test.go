@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math/rand/v2"
 	"testing"
 	"time"
 )
@@ -204,6 +205,156 @@ func TestPrivateInfinityAuthenticatesLocalRosterAndKeepsRoomResult(t *testing.T)
 	s.step(now)
 	if len(s.private) != 0 || s.privateCount != 0 {
 		t.Fatal("ending Infinity did not release the arena")
+	}
+}
+
+func TestPrivateInfinitySpawnsOnlyConfiguredBots(t *testing.T) {
+	for _, configured := range []bool{false, true} {
+		name := "empty roster"
+		if configured {
+			name = "configured bot"
+		}
+		t.Run(name, func(t *testing.T) {
+			h, clients, r := makeRoom(t, 1)
+			host := clients[0]
+			rules := r.Game.settings()
+			rules.Infinity, rules.TeamMode = true, "teams"
+			rules.TeamColors[2] = 7
+			action(t, h, host, map[string]any{"type": "rules", "rules": rules})
+			if configured {
+				action(t, h, host, map[string]any{"type": "add", "kind": "bot", "name": "ROSTER BOT", "team": 3, "difficulty": "hard"})
+			}
+			action(t, h, host, map[string]any{"type": "start"})
+			s := newInfiniteServer(h)
+			now := time.Now()
+			join := func() (infiniteConnection, *Client) {
+				t.Helper()
+				c := fakeClient()
+				s.admit(c)
+				conn, reject := s.join(c, infiniteMessage{Code: r.Code, Token: host.player.Token}, now)
+				if reject != "" {
+					t.Fatal(reject)
+				}
+				return conn, c
+			}
+			conn, socket := join()
+			a := conn.arena
+			wantPilots := 1
+			if configured {
+				wantPilots++
+				if len(a.pilots) != wantPilots {
+					t.Fatalf("expected configured bot at launch, got %d pilots", len(a.pilots))
+				}
+				bot := a.pilots[1]
+				if !bot.Bot || bot.Name != "ROSTER BOT" || bot.Team != 3 || bot.ColorIndex != 7 || bot.botLevel != infiniteBotLevel("hard") {
+					t.Fatalf("bot did not use its roster seat: %+v", bot.infiniteTank)
+				}
+				bot.X, bot.HP, bot.respawn = conn.pilot.X+infiniteSight*2, 0, a.tick+1
+				spawn := bot.Spawn
+				a.step(now)
+				if len(a.pilots) != wantPilots || a.pilots[1] != bot || bot.HP == 0 || bot.Spawn != spawn+1 {
+					t.Fatal("distant configured bot did not keep its seat and respawn")
+				}
+			}
+			for i := range 10 {
+				a.tick = a.nextBot + uint64(i)
+				a.populate()
+			}
+			if len(a.pilots) != wantPilots {
+				t.Fatalf("room spawned an unconfigured bot: got %d pilots, want %d", len(a.pilots), wantPilots)
+			}
+			s.remove(socket)
+			rejoined, socket := join()
+			if rejoined.arena != a || len(a.pilots) != wantPilots {
+				t.Fatal("reopening an empty room changed its configured bot roster")
+			}
+			if configured {
+				bot := a.pilots[1]
+				a.bullets = append(a.bullets, infiniteBullet{Owner: bot.ID, Life: 10})
+				action(t, h, host, kickRequest(bot.roomBot))
+				s.step(now)
+				if len(a.roomBots) != 0 || len(a.pilots) != 1 || len(a.bullets) != 0 {
+					t.Fatal("kicked bot kept its seat, tank or in-flight bullets")
+				}
+				s.remove(socket)
+				join()
+				if len(a.pilots) != 1 {
+					t.Fatal("kicked bot respawned when a pilot rejoined")
+				}
+			}
+		})
+	}
+}
+
+func TestPrivateInfinityRandomBotsKeepConfiguredRosterAndUseRoomDifficulty(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		random bool
+	}{{"fixed", false}, {"random up to maximum", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, clients, r := makeRoom(t, 1)
+			host := clients[0]
+			rules := r.Game.settings()
+			rules.Infinity, rules.TeamMode = true, "teams"
+			rules.InfinityRandomBots, rules.InfinityBotDifficulty, rules.InfinityRandomDifficulty = true, "hard", tc.random
+			action(t, h, host, map[string]any{"type": "rules", "rules": rules})
+			action(t, h, host, map[string]any{"type": "add", "kind": "bot", "name": "ALLY", "team": 1, "difficulty": "godlike"})
+			action(t, h, host, map[string]any{"type": "start"})
+			s := newInfiniteServer(h)
+			c := fakeClient()
+			s.admit(c)
+			conn, reject := s.join(c, infiniteMessage{Code: r.Code, Token: host.player.Token}, time.Now())
+			if reject != "" {
+				t.Fatal(reject)
+			}
+			a := conn.arena
+			a.random = rand.New(rand.NewPCG(17, 1))
+			roster := a.pilots[1]
+			if roster.Name != "ALLY" || roster.Team != 1 || roster.botLevel != infiniteBotLevel("godlike") {
+				t.Fatal("roster bot inherited the ambient bot configuration")
+			}
+			far := conn.pilot.X + infiniteSight*2
+			roster.X = far
+			maxLevel := infiniteBotLevel("hard")
+			var seen uint64
+			for range 24 {
+				a.tick = a.nextBot
+				a.populate()
+				if len(a.pilots) != 3 || a.pilots[1] != roster {
+					t.Fatal("spawn cycle did not preserve the roster and replace only the distant roaming bot")
+				}
+				bot := a.pilots[2]
+				if !bot.Bot || bot.roomBot != nil || bot.Team != 2 || bot.botLevel > maxLevel || !tc.random && bot.botLevel != maxLevel {
+					t.Fatalf("roaming bot ignored the room setup: team %d, level %d", bot.Team, bot.botLevel)
+				}
+				seen |= 1 << bot.botLevel
+				bot.X = far
+			}
+			if tc.random && seen != (1<<(maxLevel+1))-1 {
+				t.Fatalf("seeded spawn sequence did not use all selected levels: %b", seen)
+			}
+		})
+	}
+}
+
+func TestInfinityBotDifficultyRulesAcceptLegacyDefaults(t *testing.T) {
+	rules := defaultRules()
+	if rules.InfinityRandomBots || rules.InfinityRandomDifficulty || rules.InfinityBotDifficulty != "normal" {
+		t.Fatal("unexpected default Infinity bot settings")
+	}
+	for _, level := range []string{"", "easy", "normal", "hard", "godlike"} {
+		rules.InfinityBotDifficulty = level
+		if err := validateRules(rules); err != nil {
+			t.Fatalf("rejected valid Infinity difficulty %q: %v", level, err)
+		}
+	}
+	rules.InfinityBotDifficulty = ""
+	if normalizedRules(rules).InfinityBotDifficulty != "normal" {
+		t.Fatal("legacy rules did not default to Normal difficulty")
+	}
+	rules.InfinityBotDifficulty = "impossible"
+	if validateRules(rules) == nil {
+		t.Fatal("accepted an invalid Infinity bot difficulty")
 	}
 }
 

@@ -32,11 +32,17 @@ func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []Be
 	a.effects = append(a.effects, infiniteEffect{a.effectID, kind, x, y, owner, points, a.tick})
 }
 
-func (p *infinitePilot) wireTank() infiniteTank {
+func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
 	t, k := p.infiniteTank, &p.kit
 	t.X, t.Y, t.Angle = infinitePrecision(t.X), infinitePrecision(t.Y), infinitePrecision(t.Angle)
 	t.Track, t.Recoil, t.Invuln = infinitePrecision(t.Track), infinitePrecision(k.Recoil), infinitePrecision(k.Invulnerable)
 	t.Cooldown = infinitePrecision(k.Cooldown)
+	if t.Cooldown > 0 {
+		t.CooldownTotal = infinitePrecision(k.CooldownTotal)
+	}
+	if p.HP == 0 && p.respawn > tick {
+		t.RespawnTime = infinitePrecision(float64(p.respawn-tick) * tickDT)
+	}
 	t.Power, t.PowerTime, t.Charges, t.Machine = k.Power, infinitePrecision(k.PowerTime), k.Charges, k.MachineRounds
 	t.Shield, t.Shields = infinitePrecision(k.Shield), k.ShieldCharges
 	t.SpeedTime, t.Speed = infinitePrecision(k.SpeedTime), k.SpeedStacks
@@ -280,7 +286,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 		}
 	}
 	k.ShotSerial++
-	k.Cooldown, k.Recoil = spec.cooldown, 1
+	k.Cooldown, k.CooldownTotal, k.Recoil = spec.cooldown, spec.cooldown, 1
 	before := len(a.bullets)
 	for _, offset := range offsets {
 		angle := p.Angle + offset
@@ -350,7 +356,7 @@ func (a *infiniteArena) fireLaser(p *infinitePilot) {
 	if starman {
 		cooldown = 0
 	}
-	k.Cooldown, k.Recoil = cooldown, 1
+	k.Cooldown, k.CooldownTotal, k.Recoil = cooldown, cooldown, 1
 	points, target := a.traceLaser(p)
 	if !starman || k.ShotSerial%4 == 1 {
 		a.effect("laser", p.X, p.Y, p.ID, points)
