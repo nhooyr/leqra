@@ -1,17 +1,25 @@
-# leqra v4.49.6 — current game protocol (protocol 1)
+# leqra v4.49.7 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.6**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.7**.
 
 ```json
-{"type":"server_hello","version":"4.49.6","protocol":1}
-{"type":"client_hello","version":"4.49.6","protocol":1}
+{"type":"server_hello","version":"4.49.7","protocol":1}
+{"type":"client_hello","version":"4.49.7","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
 
+## Snapshot compression
+
+Fixed-maze clients that offer WebSocket per-message DEFLATE can receive compressed periodic snapshots. Each compressed frame contains the complete existing JSON message and uses an independent dictionary. Replaceable snapshots can still be dropped without breaking later frames. Reliable world updates and control messages use ordinary JSON text frames. Clients without the extension continue to receive all snapshots as ordinary text frames. [RFC 7692](https://www.rfc-editor.org/rfc/rfc7692.html)
+
+The server negotiates no context takeover in either direction. Compressed client messages follow the same 8 KiB size limit before and after inflation, and must decode to UTF-8 text.
+
 ## Infinity
 
-`/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with the usual movement, aim and fire fields. The server sends `state` with `tick`, nearby `tanks` and `bullets`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`.
+`/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
+
+The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
 For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots. Room packets include `infinityActive` so pilots can rejoin a running arena. The Infinity socket join includes the room `code` and the pilot's existing room `token`. The host's `lobby` command ends the private run.
 
@@ -24,6 +32,8 @@ Desktop Player 1 sends the cursor direction using the existing bounded `stickX` 
 Every projectile passes through the tank that fired it, and grenade blasts skip their owner. Grenades still detonate on contact with other living tanks, including allies and tanks with spawn protection. Friendly fire controls whether a weapon can damage a different tank on the same team.
 
 Grenades use the same server-owned line-of-sight seeker, turn rate, and reacquisition delays as homing missiles. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
+
+Frozen match reports use the public `controllerMember` field on local Player 2 rows to attribute wins to that device after a roster change. The field carries a member ID and cannot authenticate a session.
 
 ## Home-screen mode selection
 
@@ -299,9 +309,11 @@ must both be updated: older rules validators do not understand `giant` or `scope
 
 # leqra WebSocket protocol · version 1
 
-The game page and the backend are served by the same Go process. Connect to `/ws` using WS on HTTP or WSS on HTTPS. The production upgrade requires an HTTP(S) Origin whose host matches the request Host, or an explicitly configured additional exact origin. Missing, opaque (`null`), and unrelated origins are rejected. No subprotocol, compression, or binary message format is negotiated.
+The game page and the backend are served by the same Go process. Connect to `/ws` using WS on HTTP or WSS on HTTPS. The production upgrade requires an HTTP(S) Origin whose host matches the request Host, or an explicitly configured additional exact origin. Missing, opaque (`null`), and unrelated origins are rejected. Messages are JSON text with optional [snapshot compression](#snapshot-compression).
 
 All application messages are UTF-8 JSON objects with a `type`. Client messages are limited to 8,192 bytes, including the aggregate size of fragmented messages. Each connection has a 100-message budget per second and a separate 100-message budget for input addressed to its attached local Player 2. Each connection may send eight room actions per second. The first successful handshake, input, and ping do not count as room actions. Excess room actions return an `action_rate` error with the rejected `action`. The transport separately caps connections at 220 frames per second.
+
+Upgrade budgets allow 120 attempts per minute and up to 256 active connections per IPv4 address or IPv6 /64. Matchmaking uses the same source identity.
 
 ## Client → server
 
@@ -389,10 +401,8 @@ host-only `rules` action validates/applies it between matches and clears readine
 Omitting it in an older rules object uses false; a non-boolean JSON value fails
 validation. Clients still cannot directly request damage or alter target locks.
 
-All tank owners can hurt themselves with shells, missiles and grenade explosions,
-regardless of this rule. Other same-team damage is filtered only while the rule
-is false. Laser shooter immunity is retained. Bot/seeker enemy selection is
-independent of friendly fire and never intentionally targets allies.
+Projectiles and explosions skip the firing tank. Friendly fire controls damage
+to other tanks on the same team. Bots and seekers continue to choose enemies.
 
 Objective snapshots add `suddenDeath: boolean` and `showdown: integer`. A tied
 objective timer stays `phase: "playing"`, sets `roundClock`/`phaseTime` to zero,
@@ -560,14 +570,15 @@ Host-only lobby/match-over controls:
 Difficulty is `easy`, `normal`, `hard`, or `godlike`. The host may edit human teams, but
 humans rename themselves using `rename`. Bots/local names are host-editable.
 `configure` and `kick` require the current occupant's public `member` value.
-Roster edits clear online guest readiness. The host's Start action is sufficient
+Host roster edits and changes to an existing player's role clear online guest
+readiness. Fresh combat joins preserve the other guests' readiness. The host's Start action is sufficient
 consent; bots and the dependent local tank need no ready handshake. Two opposing
 available sides are required, not two WebSocket clients.
 
 `lobby` is host-only in any phase: it ends the match, clears combat state/scores,
 and keeps the roster. It is not a pause. Mid-match add/team edits return
-`match_active`; kicking remains allowed. Existing four-seat limits include
-bots, local participants and remote humans.
+`match_active`; kicking remains allowed. The combat seat limit counts bots,
+local participants and remote humans.
 
 A primary socket's input remains unchanged. Its secondary local seat uses an
 independent `seq` with an explicit `player`:
@@ -579,15 +590,17 @@ independent `seq` with an explicit `player`:
 The socket may only control its own primary ID or a `kind: local` seat whose
 `owner` matches it. Bots and other humans reject forged inputs with `not_owned`.
 Each tank snapshot has its own `ack`/`ackSteps`. New-map prediction resets must
-not rewind input sequence numbers within a live connection. Frame/input budgets
-are per socket, not per seat.
+not rewind input sequence numbers within a live connection. The socket has a
+primary message budget. Authenticated input for its owned secondary seat has
+an independent budget. Transport size and room-action limits apply to the
+socket as a whole.
 
 Room entries add `kind`, `owner`, `team`, and `difficulty`. Bots/local seats
 have no separate token or Client. Tank snapshots add `team`, `bot`, and
 `difficulty`; internal bot navigation state is not serialized. Team points are
 mirrored across teammates' score slots. Same-team damage is filtered in
-collision/prediction/damage while friendlyFire is false. All owners take their
-own shell/missile/grenade damage; lasers still ignore their owner.
+collision/prediction/damage while friendlyFire is false. Tanks are immune to
+their own weapons, including banked shots and grenade blasts.
 
 A disconnected primary releases its local dependent's input as well. Resume
 restores ownership. Leave/kick/expiry removes the dependent local participant;

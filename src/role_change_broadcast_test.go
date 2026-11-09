@@ -25,7 +25,7 @@ func TestRoleChangePreservesReliableIdentityRoomAndStateOrder(t *testing.T) {
 				p.Ready = true
 				if p.Client != nil {
 					p.Client.mapGeneration = r.Game.Generation
-					p.Client.updates <- []byte("obsolete snapshot")
+					p.Client.updates <- snapshotFrame{data: []byte("obsolete snapshot")}
 				}
 			}
 			h.roleChanged(r, now)

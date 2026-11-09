@@ -16,6 +16,7 @@ function boot(){
   sendOnline(message){if(s.sendFails)return false;s.sent.push(clone(message));return true;},sent:[],WebSocket:class{constructor(){s.socket=this;this.readyState=1;}close(){this.readyState=3;this.onclose?.();}},
   localPlayerID:()=>s.online.id,roomData:()=>s.online.roomData,teamName:(n,r)=>r.teamNames[n-1],Theme:{colors:[]},updateRuleHelp:noop,renderPowerLegend:noop,
   closeFeature(dialog){dialog.close();s.closed.push(dialog.id);},closed:[],
+  rememberRenderedRoomSetup(room,accepted){if(accepted)s.savedSetup=room;},
   syncRoomModePicker(){s.syncRoomSetupPending();},syncFeatureSummary(){s.syncRoomModePicker();const editable=s.roomModeEditable();$('applyRulesBtn').disabled=!editable;$('rulesFields').disabled=!editable;},renderOnlineRoom(){s.syncFeatureSummary();},
   selectedPreset:()=>s.preset};
  vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);
@@ -33,6 +34,7 @@ test('Rules waits through unrelated live room broadcasts and closes only after a
  b.apply();assert.equal(s.sent.length,1,'duplicate Apply cannot overlap');
  const partial=b.room();partial.rules.scoreTarget=9;b.receive(partial);assert.equal(s.rulesPending,true,'matching only the score is insufficient');
  b.receive({...b.room(),rules:s.sent[0].rules});assert.equal(s.rulesPending,false);assert.equal($('rulesDialog').open,false);assert.deepEqual(s.closed,['rulesDialog']);assert.equal(b.timers.size,0);
+ assert.equal(s.savedSetup.rules.scoreTarget,9);
 });
 
 test('applying identical rules still waits for a fresh room packet',()=>{

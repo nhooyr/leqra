@@ -11,19 +11,14 @@ import (
 )
 
 const (
-	infiniteCapacity      = 32
-	infiniteBotLimit      = 24
-	infiniteSight         = 1200
-	infiniteTankSpeed     = 128
-	infiniteMaxHP         = 3
-	infiniteRespawnTicks  = 150
-	infiniteShieldTicks   = 60
-	infiniteShotTicks     = 21
-	infiniteBulletSpeed   = 282
-	infiniteBulletRadius  = 3.5
-	infiniteBulletTicks   = 318
-	infiniteRicochetLimit = 3
-	infiniteLeaderCount   = 10
+	infiniteCapacity     = 32
+	infiniteBotLimit     = 24
+	infiniteSight        = 1200
+	infiniteTankSpeed    = 128
+	infiniteMaxHP        = 1
+	infiniteRespawnTicks = 150
+	infiniteBulletRadius = 3.5
+	infiniteLeaderCount  = 10
 )
 
 type infiniteTank struct {
@@ -37,30 +32,54 @@ type infiniteTank struct {
 	Score      int     `json:"score"`
 	Name       string  `json:"name"`
 	Protected  bool    `json:"protected,omitempty"`
+	Ack        uint64  `json:"ack,omitempty"`
+	AckSteps   uint32  `json:"ackSteps,omitempty"`
+	Spawn      int     `json:"spawnSerial,omitempty"`
+	Track      float64 `json:"track,omitempty"`
+	Recoil     float64 `json:"recoil,omitempty"`
+	Cooldown   float64 `json:"cooldown,omitempty"`
+	Invuln     float64 `json:"invulnerable,omitempty"`
+	Power      string  `json:"power,omitempty"`
+	PowerTime  float64 `json:"powerTime,omitempty"`
+	Charges    int     `json:"charges,omitempty"`
+	Machine    int     `json:"machineRounds,omitempty"`
+	Shield     float64 `json:"shield,omitempty"`
+	Shields    int     `json:"shieldCharges,omitempty"`
+	SpeedTime  float64 `json:"speedTime,omitempty"`
+	Speed      int     `json:"speedStacks,omitempty"`
+	Ghost      float64 `json:"ghostTime,omitempty"`
+	Starman    float64 `json:"starmanTime,omitempty"`
 }
 
 type infinitePilot struct {
 	infiniteTank
-	client                    *Client
-	input                     Input
-	inputAt, activeAt         time.Time
-	lastStickX, lastStickY    float64
-	firePending               bool
-	respawn, shield, nextShot uint64
+	client                 *Client
+	input                  Input
+	inputAt, activeAt      time.Time
+	lastStickX, lastStickY float64
+	firePending            bool
+	respawn                uint64
+	kit                    Tank // Reuses fixed-maze equipment state and pickup rules.
 
 	waypoint, previous [2]int
 	hasWaypoint        bool
 }
 
 type infiniteBullet struct {
-	ID    int     `json:"id"`
-	X     float64 `json:"x"`
-	Y     float64 `json:"y"`
-	Owner int     `json:"owner"`
+	ID      int     `json:"id"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Owner   int     `json:"owner"`
+	Kind    string  `json:"kind,omitempty"`
+	Color   int     `json:"colorIndex"`
+	VX      float64 `json:"vx"`
+	VY      float64 `json:"vy"`
+	Life    float64 `json:"life"`
+	Bounces int     `json:"bounces,omitempty"`
 
-	vx, vy  float64
-	expires uint64
-	bounces int
+	radius, age, seekDelay float64
+	target                 int
+	dead                   bool
 }
 
 type infiniteSnapshot struct {
@@ -68,6 +87,8 @@ type infiniteSnapshot struct {
 	Tick    uint64           `json:"tick"`
 	Tanks   []infiniteTank   `json:"tanks"`
 	Bullets []infiniteBullet `json:"bullets"`
+	Pickups []Pickup         `json:"pickups"`
+	Effects []infiniteEffect `json:"effects,omitempty"`
 	Players int              `json:"players"`
 	Leaders []infiniteLeader `json:"leaderboard"`
 }
@@ -84,11 +105,15 @@ type infiniteArena struct {
 	players            int
 	pilots             []*infinitePilot
 	bullets            []infiniteBullet
+	pickups            []Pickup
+	effects            []infiniteEffect
 	seed               uint32
 	maze               *infiniteMaze
 	random             *rand.Rand
 	tick, nextBot      uint64
+	nextPickup         uint64
 	nextID, nextBullet int
+	pickupID, effectID int
 	snapshot           infiniteSnapshot // Reused after immediate encoding under mu.
 }
 
@@ -102,7 +127,7 @@ func newSeededInfiniteArena(seed uint32) *infiniteArena {
 		maze:   newInfiniteMaze(seed),
 		random: rand.New(rand.NewPCG(uint64(seed), 1)),
 		snapshot: infiniteSnapshot{
-			Type: "state", Tanks: []infiniteTank{}, Bullets: []infiniteBullet{}, Leaders: []infiniteLeader{},
+			Type: "state", Tanks: []infiniteTank{}, Bullets: []infiniteBullet{}, Pickups: []Pickup{}, Leaders: []infiniteLeader{},
 		},
 	}
 }
@@ -136,7 +161,11 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 	if a.players == 0 {
 		clear(a.pilots)
 		a.pilots, a.bullets = a.pilots[:0], a.bullets[:0]
+		a.pickups = a.pickups[:0]
+		clear(a.effects)
+		a.effects = a.effects[:0]
 		a.nextBot = a.tick
+		a.nextPickup = a.tick
 	}
 }
 
@@ -197,7 +226,9 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 	p.X, p.Y, p.Angle = bestX, bestY, a.random.Float64()*2*math.Pi-math.Pi
 	p.HP, p.Protected, p.hasWaypoint = infiniteMaxHP, true, false
 	p.input, p.firePending = Input{}, false
-	p.shield = a.tick + infiniteShieldTicks
+	p.kit = Tank{Invulnerable: 1}
+	p.Spawn++
+	p.Track = 0
 }
 
 func infiniteCell(x, y float64) (int, int) {
@@ -216,9 +247,7 @@ func (a *infiniteArena) step(now time.Time) {
 	}
 	a.tick++
 	a.populate()
-	for _, p := range a.pilots {
-		p.Protected = p.HP > 0 && a.tick < p.shield
-	}
+	a.populatePickups()
 	for _, p := range a.pilots {
 		if p.HP == 0 {
 			if a.tick >= p.respawn {
@@ -226,47 +255,54 @@ func (a *infiniteArena) step(now time.Time) {
 			}
 			continue
 		}
+		a.advanceEquipment(p)
+	}
+	for _, p := range a.pilots {
+		if p.HP == 0 {
+			continue
+		}
 		input := p.input
 		if p.Bot {
 			input = a.botInput(p)
 		} else if now.Sub(p.inputAt) > inputTimeout {
-			input = Input{}
+			input = Input{Seq: input.Seq}
 		} else {
-			input.Fire = input.Fire || p.firePending
+			input.FirePressed = p.firePending
 		}
 		p.firePending = false
-		a.drive(p, input)
-		if input.Fire && a.tick >= p.nextShot {
-			a.fire(p)
+		if p.Ack != input.Seq {
+			p.Ack, p.AckSteps = input.Seq, 0
 		}
+		if p.AckSteps < 1<<30 {
+			p.AckSteps++
+		}
+		a.drive(p, input)
+		a.collectPickup(p)
+		a.weaponControl(p, input.Fire, input.FirePressed || p.Bot && input.Fire && !p.kit.fireHeld)
 	}
 	// Bullets may outlive a bot or a player's previous life. Owner IDs are
 	// never reused, so a late bounce cannot damage its original shooter.
-	a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool {
-		return a.tick >= b.expires
-	})
-	alive := a.bullets[:0]
-	for _, b := range a.bullets {
-		if a.advanceBullet(&b, b.vx*tickDT, b.vy*tickDT) {
-			alive = append(alive, b)
-		}
-	}
-	a.bullets = alive
-	if a.tick%3 == 0 {
+	a.advanceBullets()
+	a.effects = slices.DeleteFunc(a.effects, func(e infiniteEffect) bool { return a.tick-e.tick >= 9 })
+	if a.tick%2 == 0 {
 		a.broadcast()
 	}
 }
 
 func (a *infiniteArena) drive(p *infinitePilot, input Input) {
-	angle, throttle := steerTank(p.Angle, input, 1, tickDT)
+	boost := float64(speedCount(&p.kit))
+	angle, throttle := steerTank(p.Angle, input, 1+boostTurnPerStack*boost, tickDT)
 	p.Angle = angle
-	dx, dy := math.Cos(angle)*infiniteTankSpeed*throttle*tickDT, math.Sin(angle)*infiniteTankSpeed*throttle*tickDT
-	if dx != 0 && !a.maze.blocked(p.X+dx, p.Y, tankRadius) {
+	speed := infiniteTankSpeed * (1 + boostSpeedPerStack*boost)
+	dx, dy := math.Cos(angle)*speed*throttle*tickDT, math.Sin(angle)*speed*throttle*tickDT
+	x, y := p.X, p.Y
+	if dx != 0 && (p.kit.GhostTime > 0 || !a.maze.blocked(p.X+dx, p.Y, tankRadius)) {
 		p.X += dx
 	}
-	if dy != 0 && !a.maze.blocked(p.X, p.Y+dy, tankRadius) {
+	if dy != 0 && (p.kit.GhostTime > 0 || !a.maze.blocked(p.X, p.Y+dy, tankRadius)) {
 		p.Y += dy
 	}
+	p.Track += math.Hypot(p.X-x, p.Y-y)
 }
 
 func (a *infiniteArena) populate() {
@@ -321,7 +357,13 @@ func (a *infiniteArena) botInput(p *infinitePilot) Input {
 		dx, dy := target.X-p.X, target.Y-p.Y
 		if _, wall := a.rayWalls(p.X, p.Y, dx, dy, infiniteBulletRadius); !wall {
 			angle := math.Atan2(dy, dx)
-			return Input{StickX: math.Cos(angle), StickY: math.Sin(angle), AimOnly: true, Fire: !target.Protected && math.Abs(delta(p.Angle, angle)) < .12}
+			fire := !target.Protected && math.Abs(delta(p.Angle, angle)) < .12
+			// Alternate the AI's trigger after a grenade throw so a fresh
+			// press can detonate it without cancelling the launch immediately.
+			if p.kit.fireBlocked {
+				fire = false
+			}
+			return Input{StickX: math.Cos(angle), StickY: math.Sin(angle), AimOnly: true, Fire: fire}
 		}
 	}
 	cx, cy := infiniteCell(p.X, p.Y)
@@ -363,16 +405,6 @@ func (a *infiniteArena) botInput(p *infinitePilot) Input {
 	return Input{}
 }
 
-func (a *infiniteArena) fire(p *infinitePilot) {
-	p.nextShot = a.tick + infiniteShotTicks
-	cs, sn := math.Cos(p.Angle), math.Sin(p.Angle)
-	a.nextBullet++
-	b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, X: p.X, Y: p.Y, vx: cs * infiniteBulletSpeed, vy: sn * infiniteBulletSpeed, expires: a.tick + infiniteBulletTicks}
-	if a.advanceBullet(&b, cs*28, sn*28) {
-		a.bullets = append(a.bullets, b)
-	}
-}
-
 func (a *infiniteArena) rayWalls(x, y, dx, dy, radius float64) (RayHit, bool) {
 	var nearest RayHit
 	found := false
@@ -396,60 +428,6 @@ func (a *infiniteArena) rayWalls(x, y, dx, dy, radius float64) (RayHit, bool) {
 	return nearest, found
 }
 
-func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
-	for {
-		wall, wallHit := a.rayWalls(b.X, b.Y, dx, dy, infiniteBulletRadius)
-		nearest := 1.0 + 1e-8
-		if wallHit {
-			nearest = wall.T
-		}
-		var target *infinitePilot
-		for _, p := range a.pilots {
-			if p.ID == b.Owner || p.HP == 0 || p.Protected {
-				continue
-			}
-			if hit, ok := circleHit(b.X, b.Y, dx, dy, p.X, p.Y, tankRadius+infiniteBulletRadius); ok && hit < nearest {
-				nearest, target = hit, p
-			}
-		}
-		if target != nil {
-			target.HP--
-			if target.HP == 0 {
-				target.Score--
-				target.respawn = a.tick + infiniteRespawnTicks
-				for _, pilot := range a.pilots {
-					if pilot.ID == b.Owner {
-						pilot.Score++
-						break
-					}
-				}
-			}
-			return false
-		}
-		if !wallHit {
-			b.X += dx
-			b.Y += dy
-			return true
-		}
-		if b.bounces >= infiniteRicochetLimit {
-			return false
-		}
-		b.bounces++
-		b.X += dx*wall.T + wall.NX*.12
-		b.Y += dy*wall.T + wall.NY*.12
-		dx, dy = dx*(1-wall.T), dy*(1-wall.T)
-		if wall.NX != 0 {
-			dx, b.vx = -dx, -b.vx
-		}
-		if wall.NY != 0 {
-			dy, b.vy = -dy, -b.vy
-		}
-		if wall.T == 1 {
-			return true
-		}
-	}
-}
-
 func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 	entries = entries[:0]
 	for _, p := range a.pilots {
@@ -468,18 +446,34 @@ func (a *infiniteArena) broadcast() {
 	packet := &a.snapshot
 	packet.Tick, packet.Players = a.tick, a.players
 	packet.Leaders = a.leaderboard(packet.Leaders)
+	var tanks [infiniteCapacity + infiniteBotLimit]infiniteTank
+	for i, p := range a.pilots {
+		tanks[i] = p.wireTank()
+	}
 	for _, viewer := range a.pilots {
 		if viewer.Bot {
 			continue
 		}
-		packet.Tanks, packet.Bullets = packet.Tanks[:0], packet.Bullets[:0]
-		for _, p := range a.pilots {
+		packet.Tanks, packet.Bullets, packet.Pickups, packet.Effects = packet.Tanks[:0], packet.Bullets[:0], packet.Pickups[:0], packet.Effects[:0]
+		for i, p := range a.pilots {
 			if math.Abs(p.X-viewer.X) <= infiniteSight && math.Abs(p.Y-viewer.Y) <= infiniteSight {
-				packet.Tanks = append(packet.Tanks, p.infiniteTank)
+				packet.Tanks = append(packet.Tanks, tanks[i])
+			}
+		}
+		for _, pickup := range a.pickups {
+			if pickup.Life > 0 && math.Abs(pickup.X-viewer.X) <= infiniteSight && math.Abs(pickup.Y-viewer.Y) <= infiniteSight {
+				pickup.Life, pickup.Age = infinitePrecision(pickup.Life), infinitePrecision(pickup.Age)
+				packet.Pickups = append(packet.Pickups, pickup)
+			}
+		}
+		for _, effect := range a.effects {
+			if math.Abs(effect.X-viewer.X) <= infiniteSight && math.Abs(effect.Y-viewer.Y) <= infiniteSight {
+				packet.Effects = append(packet.Effects, effect)
 			}
 		}
 		for _, b := range a.bullets {
 			if math.Abs(b.X-viewer.X) <= infiniteSight && math.Abs(b.Y-viewer.Y) <= infiniteSight {
+				b.X, b.Y, b.VX, b.VY, b.Life = infinitePrecision(b.X), infinitePrecision(b.Y), infinitePrecision(b.VX), infinitePrecision(b.VY), infinitePrecision(b.Life)
 				packet.Bullets = append(packet.Bullets, b)
 			}
 		}

@@ -180,8 +180,7 @@ func (r *Room) moveMember(p *Player, id int, spectating bool) {
 		}
 	}
 }
-func (h *Hub) roleChanged(r *Room, now time.Time) {
-	r.LastAction = now
+func clearRosterReadiness(r *Room) {
 	// A different member changing roles must not release unrelated players'
 	// held controls or rewind their acknowledgement history.
 	for _, p := range r.Players {
@@ -189,6 +188,10 @@ func (h *Hub) roleChanged(r *Room, now time.Time) {
 			p.Ready = false
 		}
 	}
+}
+func (h *Hub) roleChanged(r *Room, now time.Time) {
+	r.LastAction = now
+	clearRosterReadiness(r)
 	h.electHost(r)
 	// This reliable identity message precedes the roster and forced world state.
 	// It invalidates local input history without issuing a new reconnect token.

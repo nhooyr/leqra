@@ -77,11 +77,11 @@ type Room struct {
 }
 type Client struct {
 	ws                    *wsConn
-	sourceIP              string // Peer address fixed at WebSocket admission.
+	sourceIP              string // IPv4 address or IPv6 prefix fixed at admission.
 	requireVersion        bool   // Real WebSocket clients must complete the version handshake.
 	versionOK             bool
 	send                  chan []byte
-	updates               chan []byte // Replaceable snapshots; reliable messages stay in send.
+	updates               chan snapshotFrame // Replaceable snapshots; reliable messages stay in send.
 	done                  chan struct{}
 	stopOnce              sync.Once
 	room                  *Room // Everything below is guarded by Hub.mu.
@@ -132,11 +132,18 @@ func (c *Client) enqueueState(v any, reliable bool) bool {
 	if !ok {
 		return false
 	}
-	return c.enqueueStateBytes(data, reliable)
+	frame := snapshotFrame{data: data}
+	if !reliable && c.supportsSnapshotDeflate() {
+		frame = compressSnapshot(data)
+	}
+	return c.enqueueStateFrame(frame, reliable)
 }
-func (c *Client) enqueueStateBytes(data []byte, reliable bool) bool {
+func (c *Client) supportsSnapshotDeflate() bool {
+	return c.updates != nil && c.ws != nil && c.ws.deflate
+}
+func (c *Client) enqueueStateFrame(frame snapshotFrame, reliable bool) bool {
 	if c.updates == nil {
-		return c.enqueueBytes(data)
+		return c.enqueueBytes(frame.data)
 	}
 	select {
 	case <-c.done:
@@ -148,14 +155,14 @@ func (c *Client) enqueueStateBytes(data []byte, reliable bool) bool {
 		case <-c.updates:
 		default:
 		}
-		return c.enqueueBytes(data)
+		return c.enqueueBytes(frame.data)
 	}
 	select {
 	case <-c.updates:
 	default:
 	}
 	select {
-	case c.updates <- data:
+	case c.updates <- frame:
 		return true
 	default:
 		return false
@@ -181,7 +188,11 @@ func (c *Client) writeLoop() {
 		case <-c.done:
 			return
 		case msg := <-c.updates:
-			if err := c.ws.writeFrame(1, msg); err != nil {
+			flags := byte(1)
+			if msg.compressed {
+				flags |= wsCompressed
+			}
+			if err := c.ws.writeFrame(flags, msg.data); err != nil {
 				return
 			}
 		case msg := <-c.send:
@@ -613,9 +624,13 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 				c.enqueue(roomError("resume_expired", "Your reconnect window expired. Join as a new pilot."))
 				return
 			}
-			if spectating && !p.Spectating && len(r.Spectators) >= maxSpectators {
+			becameSpectator := spectating && !p.Spectating
+			if becameSpectator && len(r.Spectators) >= maxSpectators {
 				c.enqueue(roomError("room_capacity", "This room's spectator gallery is full."))
 				return
+			}
+			if becameSpectator {
+				h.cancelQueue(r, "A player changed roles. Join the queue again when the party is ready.")
 			}
 			p.Client = c
 			p.Input = Input{}
@@ -638,8 +653,9 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 			}
 			if spectating {
 				p.Name = cleanName(name)
-				if !p.Spectating {
+				if becameSpectator {
 					r.moveMember(p, r.viewerID(), true)
+					clearRosterReadiness(r)
 				}
 			}
 			c.player = p
@@ -869,8 +885,8 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			h.expirePlayer(r, id)
 			r.LastAction = now
 			h.broadcastRoom(r)
+			c.born = now // Give the writer time to deliver the acknowledgement.
 		}
-		c.born = now // Allow the writer to deliver the acknowledgement after detaching.
 		c.enqueue(map[string]any{"type": "left"})
 	case "input":
 		if m.RoomCode != "" && (c.room == nil || c.room.Code != m.RoomCode) {
@@ -1111,24 +1127,29 @@ func (h *Hub) broadcastState(r *Room) {
 	if !ok {
 		return
 	}
-	var full []byte
+	var full, compressed snapshotFrame
 	send := func(c *Client) bool {
 		if c == nil {
 			return true
 		}
 		reliable := c.mapGeneration != r.Game.Generation
-		payload := data
+		payload := snapshotFrame{data: data}
 		if reliable && r.Game.Generation > 0 {
-			if full == nil {
+			if full.data == nil {
 				s.World = &r.Game.World
-				full, ok = encodePacket(s)
+				full.data, ok = encodePacket(s)
 				if !ok {
 					return false
 				}
 			}
 			payload = full
+		} else if !reliable && c.supportsSnapshotDeflate() {
+			if compressed.data == nil {
+				compressed = compressSnapshot(data)
+			}
+			payload = compressed
 		}
-		if c.enqueueStateBytes(payload, reliable) {
+		if c.enqueueStateFrame(payload, reliable) {
 			c.mapGeneration = r.Game.Generation
 		}
 		return true

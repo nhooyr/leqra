@@ -40,8 +40,8 @@ func TestInfiniteShotBounceAndRespawn(t *testing.T) {
 		t.Fatalf("tank moved through wall: x=%f, wall=%+v", first.X, wall)
 	}
 
-	bullet := infiniteBullet{Owner: first.ID, X: first.X, Y: y, vx: 282}
-	if !a.advanceBullet(&bullet, 60, 0) || bullet.bounces != 1 || bullet.vx >= 0 {
+	bullet := infiniteBullet{Owner: first.ID, X: first.X, Y: y, VX: 282}
+	if !a.advanceBullet(&bullet, 60, 0) || bullet.Bounces != 1 || bullet.VX >= 0 {
 		t.Fatalf("expected a surviving reflected bullet, got %+v", bullet)
 	}
 	if first.HP != infiniteMaxHP || second.HP != infiniteMaxHP {
@@ -97,6 +97,39 @@ func TestInfiniteFireEdgeAndProximitySnapshot(t *testing.T) {
 	a.remove(other)
 	if len(a.pilots)+len(a.bullets) != 0 {
 		t.Fatal("empty arena retained match state")
+	}
+}
+
+func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	shooter := a.join(fakeClient(), "Shooter", now)
+	target := a.join(fakeClient(), "Target", now)
+	a.tick = 1
+	a.populatePickups()
+	if len(a.pickups) == 0 {
+		t.Fatal("joining a live arena did not populate nearby pickups")
+	}
+	target.kit.Invulnerable, target.Protected = 0, false
+	a.pickups = []Pickup{{X: target.X, Y: target.Y, Type: "shield", Life: 30}}
+	a.collectPickup(target)
+	if target.kit.ShieldCharges != 1 || a.pickups[0].Life != 0 {
+		t.Fatal("a shield must be collected and removed exactly once")
+	}
+	a.hurt(target, shooter.ID)
+	if target.HP != 1 || target.kit.ShieldCharges != 0 || !target.Protected {
+		t.Fatal("shield did not absorb the shot")
+	}
+	for range 21 {
+		a.advanceEquipment(target)
+	}
+	a.hurt(target, target.ID)
+	if target.HP != 1 {
+		t.Fatal("a tank damaged itself")
+	}
+	a.hurt(target, shooter.ID)
+	if target.HP != 0 || target.Score != -1 || shooter.Score != 1 {
+		t.Fatal("one unshielded hit must kill and adjust both scores")
 	}
 }
 

@@ -1,0 +1,523 @@
+package main
+
+import (
+	"math"
+	"slices"
+)
+
+// Infinity uses a local encounter radius where finite modes use map dimensions.
+// The weapon durations and other limits still bound work in an endless maze.
+const (
+	infinitePowerDuration = 15.0
+	infiniteStarDuration  = 8.0
+	infiniteShotRange     = 18 * cellSize
+	infinitePickupLife    = 30.0
+)
+
+type infiniteEffect struct {
+	ID     int         `json:"id"`
+	Kind   string      `json:"kind"`
+	X      float64     `json:"x"`
+	Y      float64     `json:"y"`
+	Owner  int         `json:"owner"`
+	Points []BeamPoint `json:"points,omitempty"`
+	tick   uint64
+}
+
+func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []BeamPoint) {
+	a.effectID++
+	if len(a.effects) == 48 {
+		a.effects = slices.Delete(a.effects, 0, 1)
+	}
+	a.effects = append(a.effects, infiniteEffect{a.effectID, kind, x, y, owner, points, a.tick})
+}
+
+func (p *infinitePilot) wireTank() infiniteTank {
+	t, k := p.infiniteTank, &p.kit
+	t.X, t.Y, t.Angle = infinitePrecision(t.X), infinitePrecision(t.Y), infinitePrecision(t.Angle)
+	t.Track, t.Recoil, t.Invuln = infinitePrecision(t.Track), infinitePrecision(k.Recoil), infinitePrecision(k.Invulnerable)
+	t.Cooldown = infinitePrecision(k.Cooldown)
+	t.Power, t.PowerTime, t.Charges, t.Machine = k.Power, infinitePrecision(k.PowerTime), k.Charges, k.MachineRounds
+	t.Shield, t.Shields = infinitePrecision(k.Shield), k.ShieldCharges
+	t.SpeedTime, t.Speed = infinitePrecision(k.SpeedTime), k.SpeedStacks
+	t.Ghost, t.Starman = infinitePrecision(k.GhostTime), infinitePrecision(k.StarmanTime)
+	return t
+}
+
+func infinitePrecision(value float64) float64 { return math.Round(value*1000) / 1000 }
+
+func (a *infiniteArena) advanceEquipment(p *infinitePilot) {
+	k := &p.kit
+	k.Invulnerable = max(0, k.Invulnerable-tickDT)
+	p.Protected = k.Invulnerable > 1e-9
+	k.Shield = max(0, k.Shield-tickDT)
+	if k.Shield < 1e-9 {
+		k.Shield, k.ShieldCharges = 0, 0
+	}
+	k.StarmanTime = max(0, k.StarmanTime-tickDT)
+	k.SpeedTime = max(0, k.SpeedTime-tickDT)
+	if k.SpeedTime < 1e-9 {
+		k.SpeedTime, k.SpeedStacks = 0, 0
+	}
+	wasGhost := k.GhostTime > 0
+	k.GhostTime = max(0, k.GhostTime-tickDT)
+	if k.GhostTime < 1e-9 {
+		k.GhostTime = 0
+		if wasGhost {
+			p.X, p.Y = a.phaseExit(p.X, p.Y)
+			p.hasWaypoint = false
+		}
+	}
+	k.PowerTime = max(0, k.PowerTime-tickDT)
+	if k.PowerTime < 1e-9 {
+		k.Power, k.PowerTime, k.Charges, k.MachineRounds = "", 0, 0, 0
+	}
+	k.Cooldown = max(0, k.Cooldown-tickDT)
+	k.Recoil = max(0, k.Recoil-9*tickDT)
+}
+
+// Any overlapping wall is in the current or adjacent cell. Each cell has a
+// safe interior even when both boundary segments meet at a corner.
+func (a *infiniteArena) phaseExit(x, y float64) (float64, float64) {
+	if !a.maze.blocked(x, y, tankRadius) {
+		return x, y
+	}
+	cx, cy := infiniteCell(x, y)
+	const margin = wallSize/2 + tankRadius + .01
+	best, bestX, bestY := math.Inf(1), x, y
+	for row := cy - 1; row <= cy+1; row++ {
+		for col := cx - 1; col <= cx+1; col++ {
+			xx := clamp(x, float64(col)*cellSize+margin, float64(col+1)*cellSize-margin)
+			yy := clamp(y, float64(row)*cellSize+margin, float64(row+1)*cellSize-margin)
+			if distance := math.Hypot(xx-x, yy-y); distance < best-1e-8 {
+				best, bestX, bestY = distance, xx, yy
+			}
+		}
+	}
+	return bestX, bestY
+}
+
+func (a *infiniteArena) populatePickups() {
+	for i := range a.pickups {
+		a.pickups[i].Age += tickDT
+		a.pickups[i].Life -= tickDT
+	}
+	a.pickups = slices.DeleteFunc(a.pickups, func(p Pickup) bool { return p.Life <= 0 })
+	if a.tick < a.nextPickup {
+		return
+	}
+	a.nextPickup = a.tick + uint64(75+a.random.IntN(76))
+	a.pickups = slices.DeleteFunc(a.pickups, func(p Pickup) bool {
+		for _, pilot := range a.pilots {
+			if !pilot.Bot && math.Hypot(pilot.X-p.X, pilot.Y-p.Y) < cellSize*11 {
+				return false
+			}
+		}
+		return true
+	})
+	for _, p := range a.pilots {
+		if p.Bot || p.HP == 0 {
+			continue
+		}
+		nearby := 0
+		for _, pickup := range a.pickups {
+			if math.Hypot(p.X-pickup.X, p.Y-pickup.Y) < cellSize*5 {
+				nearby++
+			}
+		}
+		for nearby < 3 && len(a.pickups) < a.players*6 {
+			if !a.spawnPickup(p) {
+				break
+			}
+			nearby++
+		}
+	}
+}
+
+func (a *infiniteArena) spawnPickup(p *infinitePilot) bool {
+	cx, cy := infiniteCell(p.X, p.Y)
+	for range 30 {
+		dx, dy := a.random.IntN(7)-3, a.random.IntN(7)-3
+		if dx*dx+dy*dy > 12 {
+			continue
+		}
+		x, y := infiniteCenter(cx+dx, cy+dy)
+		if slices.ContainsFunc(a.pilots, func(t *infinitePilot) bool {
+			return t.HP > 0 && math.Hypot(t.X-x, t.Y-y) < .85*cellSize
+		}) || slices.ContainsFunc(a.pickups, func(q Pickup) bool {
+			return math.Hypot(q.X-x, q.Y-y) < 1.1*cellSize
+		}) {
+			continue
+		}
+		total := 0
+		for _, kind := range pickupTypes {
+			total += pickupWeight(kind)
+		}
+		choice := a.random.IntN(total)
+		for _, kind := range pickupTypes {
+			choice -= pickupWeight(kind)
+			if choice < 0 {
+				a.pickupID++
+				a.pickups = append(a.pickups, Pickup{ID: a.pickupID, X: x, Y: y, Type: kind, Life: infinitePickupLife})
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (a *infiniteArena) collectPickup(p *infinitePilot) {
+	for i := range a.pickups {
+		pickup := &a.pickups[i]
+		if pickup.Life > 0 && math.Hypot(pickup.X-p.X, pickup.Y-p.Y) < tankRadius+13 {
+			pickup.Life = 0
+			applyPower(&p.kit, pickup.Type, infinitePowerDuration, infiniteStarDuration)
+			if p.Bot && pickup.Type == "grenade" {
+				p.kit.fireHeld = false
+			}
+			p.Protected = p.kit.Invulnerable > 0
+			a.effect("pickup", p.X, p.Y, p.ID, nil)
+		}
+	}
+}
+
+type infiniteProjectileSpec struct {
+	speed, radius, life, cooldown float64
+}
+
+func infiniteSpec(kind string) infiniteProjectileSpec {
+	switch kind {
+	case "rapid":
+		return infiniteProjectileSpec{machineSpeed, machineRadius, infiniteShotRange / machineSpeed, 0}
+	case "scatter":
+		return infiniteProjectileSpec{shotgunSpeed, regularRadius, 3.9, .54}
+	case "homing":
+		return infiniteProjectileSpec{missileSpeed, 5, infiniteShotRange / missileSpeed, .72}
+	case "grenade":
+		return infiniteProjectileSpec{grenadeSpeed, 6, grenadeFuse, .8}
+	case "cannon":
+		return infiniteProjectileSpec{cannonSpeed, cannonRadius, cannonLifetime, cannonCooldown}
+	default:
+		return infiniteProjectileSpec{regularSpeed, regularRadius, 5.3, .34}
+	}
+}
+
+func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
+	k := &p.kit
+	k.fireHeld = held
+	if !held {
+		k.fireBlocked = false
+	}
+	if pressed {
+		detonated := false
+		for i := range a.bullets {
+			b := &a.bullets[i]
+			if b.Owner == p.ID && b.Kind == "grenade" && !b.dead {
+				a.detonate(b)
+				detonated = true
+			}
+		}
+		if detonated {
+			k.fireBlocked = held
+			return
+		}
+		if k.Power == "grenade" {
+			k.fireBlocked = held
+			a.fire(p)
+			return
+		}
+	}
+	if !k.fireBlocked && k.Power != "grenade" && (held || pressed) {
+		a.fire(p)
+	}
+}
+
+func (a *infiniteArena) muzzleBlocked(p *infinitePilot, radius float64) bool {
+	return p.kit.GhostTime > 0 && a.maze.visitWalls(p.X-radius, p.Y-radius, p.X+radius, p.Y+radius, func(w Wall) bool {
+		return p.X >= w.X-radius && p.X <= w.X+w.W+radius && p.Y >= w.Y-radius && p.Y <= w.Y+w.H+radius
+	})
+}
+
+func (a *infiniteArena) fire(p *infinitePilot) {
+	k := &p.kit
+	if p.HP == 0 || k.Cooldown > 1e-9 || k.Power == "rapid" && k.MachineRounds == 0 {
+		return
+	}
+	kind := k.Power
+	spec := infiniteSpec(kind)
+	if kind == "laser" {
+		spec.radius = laserRadius
+	}
+	if kind != "cannon" && a.muzzleBlocked(p, spec.radius) {
+		return
+	}
+	if kind == "laser" {
+		a.fireLaser(p)
+		return
+	}
+	ammo := 0
+	for _, b := range a.bullets {
+		if !b.dead && b.Owner == p.ID {
+			ammo++
+		}
+	}
+	offsets := []float64{0}
+	if kind == "scatter" {
+		offsets = []float64{-.21, 0, .21}
+	}
+	if capacity(k)-ammo < len(offsets) {
+		return
+	}
+	k.Cooldown, k.Recoil = spec.cooldown, 1
+	for _, offset := range offsets {
+		angle := p.Angle + offset
+		cs, sn := math.Cos(angle), math.Sin(angle)
+		a.nextBullet++
+		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
+			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, target: -1}
+		muzzle := 28.0
+		if kind == "cannon" {
+			muzzle = tankRadius + spec.radius + 1
+		}
+		if a.advanceBullet(&b, cs*muzzle, sn*muzzle) {
+			a.bullets = append(a.bullets, b)
+		}
+	}
+	if kind != "rapid" || k.MachineRounds%4 == 0 {
+		a.effect("shot:"+kind, p.X, p.Y, p.ID, nil)
+	}
+	a.spendWeapon(k)
+}
+
+func (a *infiniteArena) spendWeapon(k *Tank) {
+	switch k.Power {
+	case "":
+		return
+	case "rapid":
+		k.MachineRounds--
+		if k.MachineRounds > 0 {
+			return
+		}
+	default:
+		k.Charges--
+		if k.Charges > 0 {
+			return
+		}
+	}
+	k.Power, k.PowerTime, k.Charges = "", 0, 0
+}
+
+func (a *infiniteArena) fireLaser(p *infinitePilot) {
+	k := &p.kit
+	k.Cooldown, k.Recoil = laserCooldown, 1
+	points, target := a.traceLaser(p)
+	a.effect("laser", p.X, p.Y, p.ID, points)
+	if target != nil {
+		a.hurt(target, p.ID)
+	}
+	a.spendWeapon(k)
+}
+
+func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilot) {
+	x, y, ux, uy := p.X, p.Y, math.Cos(p.Angle), math.Sin(p.Angle)
+	points := make([]BeamPoint, 0, 12)
+	remaining := infiniteShotRange
+	for i := 0; i < laserMaxSegments && remaining > 1e-7; i++ {
+		dx, dy := ux*remaining, uy*remaining
+		wall, hasWall := a.rayWalls(x, y, dx, dy, laserRadius)
+		stop := 1.0
+		if hasWall {
+			stop = wall.T
+		}
+		target, stop := a.hitTarget(p.ID, x, y, dx, dy, laserRadius, stop, false)
+		length := remaining * stop
+		if i == 0 {
+			muzzle := min(28, length)
+			points = append(points, BeamPoint{x + ux*muzzle, y + uy*muzzle})
+		}
+		x, y = x+ux*length, y+uy*length
+		points = append(points, BeamPoint{x, y})
+		remaining -= length
+		if target != nil || !hasWall || remaining <= 1e-7 {
+			return points, target
+		}
+		if wall.NX != 0 {
+			ux = -ux
+		}
+		if wall.NY != 0 {
+			uy = -uy
+		}
+		nudge := min(.001, remaining)
+		x, y = x+ux*nudge, y+uy*nudge
+		remaining -= nudge
+	}
+	return points, nil
+}
+
+func (a *infiniteArena) hitTarget(owner int, x, y, dx, dy, radius, limit float64, contact bool) (*infinitePilot, float64) {
+	var target *infinitePilot
+	for _, p := range a.pilots {
+		if p.ID == owner || p.HP == 0 || p.Protected && !contact {
+			continue
+		}
+		if hit, ok := circleHit(x, y, dx, dy, p.X, p.Y, tankRadius+radius); ok && hit < limit {
+			limit, target = hit, p
+		}
+	}
+	return target, limit
+}
+
+func (a *infiniteArena) hurt(target *infinitePilot, owner int) {
+	if target.HP == 0 || target.Protected || target.ID == owner {
+		return
+	}
+	k := &target.kit
+	if k.Shield > 0 {
+		k.ShieldCharges = shieldCount(k) - 1
+		if k.ShieldCharges == 0 {
+			k.Shield = 0
+		}
+		k.Invulnerable = .35
+		target.Protected = true
+		a.effect("shield", target.X, target.Y, owner, nil)
+		return
+	}
+	target.HP = 0
+	target.Score--
+	target.respawn = a.tick + infiniteRespawnTicks
+	a.effect("hit", target.X, target.Y, owner, nil)
+	for _, pilot := range a.pilots {
+		if pilot.ID == owner {
+			pilot.Score++
+			break
+		}
+	}
+}
+
+func (a *infiniteArena) detonate(b *infiniteBullet) {
+	b.dead = true
+	a.effect("blast", b.X, b.Y, b.Owner, nil)
+	for _, p := range a.pilots {
+		if p.ID == b.Owner || p.HP == 0 || p.Protected || math.Hypot(p.X-b.X, p.Y-b.Y) > blastRadius+tankRadius {
+			continue
+		}
+		if _, hit := a.rayWalls(b.X, b.Y, p.X-b.X, p.Y-b.Y, 0); !hit {
+			a.hurt(p, b.Owner)
+		}
+	}
+}
+
+func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
+	radius := b.radius
+	if radius <= 0 {
+		radius = regularRadius
+	}
+	for range 4 {
+		nearest := 1.0 + 1e-8
+		var wall RayHit
+		hasWall := false
+		if b.Kind != "cannon" {
+			wall, hasWall = a.rayWalls(b.X, b.Y, dx, dy, radius)
+		}
+		if hasWall {
+			nearest = wall.T
+		}
+		target, contact := a.hitTarget(b.Owner, b.X, b.Y, dx, dy, radius, nearest, b.Kind == "grenade")
+		if target != nil {
+			b.X, b.Y = b.X+dx*contact, b.Y+dy*contact
+			if b.Kind == "grenade" {
+				a.detonate(b)
+			} else {
+				if b.Kind == "cannon" || b.Kind == "homing" {
+					a.effect("impact", b.X, b.Y, b.Owner, nil)
+				}
+				a.hurt(target, b.Owner)
+			}
+			return false
+		}
+		if !hasWall {
+			b.X, b.Y = b.X+dx, b.Y+dy
+			return true
+		}
+		b.Bounces++
+		if b.Bounces > 128 || b.Bounces > 22 && b.Kind != "homing" && b.Kind != "rapid" && b.Kind != "grenade" {
+			if b.Kind == "grenade" {
+				a.detonate(b)
+			}
+			return false
+		}
+		b.X += dx*wall.T + wall.NX*.12
+		b.Y += dy*wall.T + wall.NY*.12
+		dx, dy = dx*(1-wall.T), dy*(1-wall.T)
+		if wall.NX != 0 {
+			dx, b.VX = -dx, -b.VX
+		}
+		if wall.NY != 0 {
+			dy, b.VY = -dy, -b.VY
+		}
+		b.target, b.seekDelay = -1, missileWallDelay
+		if wall.T == 1 {
+			return true
+		}
+	}
+	return true
+}
+
+func (a *infiniteArena) guide(b *infiniteBullet, dt float64) {
+	b.seekDelay = max(0, b.seekDelay-dt)
+	if b.age < .1 || b.seekDelay > 0 {
+		return
+	}
+	var target *infinitePilot
+	best, speed := missileRange, math.Hypot(b.VX, b.VY)
+	for _, p := range a.pilots {
+		if p.ID == b.Owner || p.HP == 0 || p.Protected || b.target >= 0 && p.ID != b.target {
+			continue
+		}
+		dx, dy := p.X-b.X, p.Y-b.Y
+		d := math.Hypot(dx, dy)
+		if d >= best || dx*b.VX+dy*b.VY < missileViewCos*d*speed {
+			continue
+		}
+		if _, hit := a.rayWalls(b.X, b.Y, dx, dy, b.radius); !hit {
+			best, target = d, p
+		}
+	}
+	if target == nil {
+		if b.target >= 0 {
+			b.target, b.seekDelay = -1, missileLockDelay
+		}
+		return
+	}
+	b.target = target.ID
+	angle := math.Atan2(b.VY, b.VX)
+	angle += clamp(delta(angle, math.Atan2(target.Y-b.Y, target.X-b.X)), -missileTurn*dt, missileTurn*dt)
+	b.VX, b.VY = math.Cos(angle)*speed, math.Sin(angle)*speed
+}
+
+func (a *infiniteArena) advanceBullets() {
+	live := a.bullets[:0]
+	for _, b := range a.bullets {
+		if b.dead {
+			continue
+		}
+		dt := min(tickDT, b.Life)
+		b.age += dt
+		b.Life -= dt
+		if b.Kind == "homing" || b.Kind == "grenade" {
+			a.guide(&b, dt)
+		}
+		if b.Kind == "grenade" {
+			drag := grenadeDragFactor(b.Life+dt, b.Life)
+			b.VX, b.VY = b.VX*drag, b.VY*drag
+		}
+		if a.advanceBullet(&b, b.VX*dt, b.VY*dt) {
+			if b.Life > 1e-9 {
+				live = append(live, b)
+			} else if b.Kind == "grenade" {
+				a.detonate(&b)
+			}
+		}
+	}
+	a.bullets = live
+}

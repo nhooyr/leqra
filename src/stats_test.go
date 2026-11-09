@@ -352,6 +352,25 @@ func TestMatchReportIDIsStableAndUniqueAcrossMatches(t *testing.T) {
 		t.Fatal("a distinct match reused the same report ID")
 	}
 }
+
+func TestMatchReportKeepsWinningSecondaryController(t *testing.T) {
+	players := testPlayers(2)
+	players[0].Member, players[1].Member = 101, 102
+	players[1].Kind, players[1].Controller = "local", players[0]
+	g := newGame(101)
+	g.startMatch(players)
+	g.finishMatchStats(1)
+	players[1].Controller = nil
+	g.Tanks[1] = nil
+
+	var report MatchReport
+	if err := json.Unmarshal(g.matchReportWire, &report); err != nil {
+		t.Fatal(err)
+	}
+	if winner := report.Players[1]; !winner.Winner || winner.Member != 102 || winner.ControllerMember != 101 {
+		t.Fatalf("lost secondary ownership in frozen result: %+v", winner)
+	}
+}
 func TestMatchStatsEliminationReportIncludesAllRounds(t *testing.T) {
 	g, ps := statsBattle("elimination", 3)
 	g.Rules.ScoreTarget = 2

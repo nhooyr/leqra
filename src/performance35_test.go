@@ -13,12 +13,12 @@ func BenchmarkRoomBroadcast35(b *testing.B) {
 	r := &Room{Game: g, Players: ps, Spectators: map[int]*Player{}}
 	for _, p := range ps {
 		if p != nil {
-			p.Client = &Client{send: make(chan []byte, 32), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: g.Generation}
+			p.Client = &Client{send: make(chan []byte, 32), updates: make(chan snapshotFrame, 1), done: make(chan struct{}), mapGeneration: g.Generation}
 		}
 	}
 	for i := 0; i < 16; i++ {
 		id := len(ps) + i
-		r.Spectators[id] = &Player{ID: id, Member: uint64(id + 1), Spectating: true, Name: "WATCHER", Client: &Client{send: make(chan []byte, 32), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: g.Generation}}
+		r.Spectators[id] = &Player{ID: id, Member: uint64(id + 1), Spectating: true, Name: "WATCHER", Client: &Client{send: make(chan []byte, 32), updates: make(chan snapshotFrame, 1), done: make(chan struct{}), mapGeneration: g.Generation}}
 	}
 	for j := 0; j < 12; j++ {
 		g.Bullets = append(g.Bullets, &Bullet{ID: j, Owner: j % 4, X: 100, Y: 100, VX: 235, R: 5, Life: 4, Kind: "homing"})

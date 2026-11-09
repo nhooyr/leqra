@@ -57,6 +57,21 @@ test('local larger-map buffs refresh independently and respect stack and charge 
  assert.equal(t.power,'cannon');assert.equal(t.charges,3);assert.equal(t.powerTime,15);assert.equal(t.shieldCharges,5);assert.equal(t.speedStacks,5);
  for(const field of ['shield','speedTime','ghostTime'])assert.equal(t[field],15);
 });
+test('local defenses expire before attacks in either rotated seat order',()=>{
+ for(const localTick of [0,1])for(const remaining of [.001,.1]){
+  const s=boot(),target=s.tanks[1],dt=1/120;
+  Object.assign(target,{shield:remaining,shieldCharges:1,invulnerable:remaining,starmanTime:remaining});
+  s.localTick=localTick;
+  s.humanControl=shooter=>{
+   if(shooter.id!==0)return;
+   for(const field of ['shield','invulnerable','starmanTime'])assert.equal(target[field],Math.max(0,remaining-dt),field);
+   assert.equal(target.shieldCharges,remaining>dt?1:0);
+   target.invulnerable=.35; // Protection just granted by a shield hit.
+  };
+  s.update(dt);
+  assert.equal(target.invulnerable,.35);
+ }
+});
 test('local machine gun fires exactly 180 rapid projectiles at 60 Hz on a 120 Hz simulation',()=>{
  const s=boot(),t=tank();s.grantPower(t,'rapid');let fired=0;
  for(let i=0;i<600;i++){s.time=i/120;if(t.power==='rapid'&&s.fire(t)){fired++;assert.equal(s.bullets.at(-1).kind,'rapid');}s.bullets=[];}
