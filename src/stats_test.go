@@ -59,14 +59,14 @@ func TestMatchStatsEnemyDeathsAndDuplicateHits(t *testing.T) {
 		})
 	}
 }
-func TestMatchStatsSelfNotEnemyElimination(t *testing.T) {
+func TestMatchStatsOwnerHitsRecordNoDeaths(t *testing.T) {
 	for seat := 0; seat < maxTanks; seat++ {
 		t.Run(fmt.Sprint(seat), func(t *testing.T) {
 			g, _ := statsBattle("ctf", 8)
 			v := g.Tanks[seat]
 			v.Bot = seat%2 == 1
 			g.hurt(v, &Bullet{Owner: seat, Kind: "grenade"})
-			if v.stats.Deaths != 1 || v.stats.SelfDestructs != 1 || v.stats.Eliminations != 0 || v.stats.TeamKills != 0 {
+			if !v.Alive || v.stats.Deaths != 0 || v.stats.SelfDestructs != 0 || v.stats.Eliminations != 0 || v.stats.TeamKills != 0 {
 				t.Fatal(v.stats)
 			}
 		})
@@ -111,8 +111,9 @@ func TestMatchStatsBlastCreditsAfterShooterDeath(t *testing.T) {
 	a.Y = 160
 	b.X = 170
 	b.Y = 160
+	g.hurt(a, &Bullet{Owner: 2})
 	g.detonate(&Bullet{Owner: 0, X: 160, Y: 160, Kind: "grenade"})
-	if a.stats.SelfDestructs != 1 || a.stats.Eliminations != 1 || b.stats.Deaths != 1 {
+	if a.Alive || a.stats.Deaths != 1 || a.stats.Eliminations != 1 || b.stats.Deaths != 1 {
 		t.Fatal("blast ownership lost on shooter death", a.stats, b.stats)
 	}
 }
@@ -127,7 +128,7 @@ func TestMatchStatsPersistThroughRoundsAndRespawns(t *testing.T) {
 	}
 	g.Phase = "playing"
 	g.Tanks[0].Invulnerable = 0
-	g.hurt(g.Tanks[0], &Bullet{Owner: 0})
+	g.hurt(g.Tanks[0], &Bullet{Owner: 1})
 	g.respawnTank(g.Tanks[0])
 	if g.Tanks[0].stats != row || row.Deaths != 1 {
 		t.Fatal("respawn reset")

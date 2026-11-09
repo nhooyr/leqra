@@ -77,7 +77,7 @@ func Test38StartsAndCapsEveryModeEightTanks(t *testing.T) {
 		}
 	}
 }
-func Test38DisabledPickupsAndFilteredScope(t *testing.T) {
+func Test38DisabledPickupsAndFilteredLaser(t *testing.T) {
 	for _, v := range sizeCases38 {
 		for _, off := range []bool{true, false} {
 			g := newGame(38)
@@ -98,16 +98,16 @@ func Test38DisabledPickupsAndFilteredScope(t *testing.T) {
 	}
 	g := newGame(38)
 	g.Rules.MapSize = "giant"
-	g.Rules.Weapons = []string{"scope"}
+	g.Rules.Weapons = []string{"laser"}
 	g.startMatch(testPlayers(8))
 	for i := 0; i < 100; i++ {
 		g.spawnPower()
 	}
 	if len(g.Pickups) != 23 {
-		t.Fatal("scope did not fill capacity")
+		t.Fatal("laser did not fill capacity")
 	}
 	for _, p := range g.Pickups {
-		if p.Type != "scope" {
+		if p.Type != "laser" {
 			t.Fatal("filter bypassed")
 		}
 	}
@@ -146,85 +146,74 @@ func Test38GiantConnectedAndHighSeats(t *testing.T) {
 		}
 	}
 }
-func Test38ScopeIndependentRefreshAndWeapon(t *testing.T) {
+func TestLaserRefreshKeepsIndependentBuffs(t *testing.T) {
 	g := battle(2)
 	p := g.Tanks[0]
-	g.grantPower(p, "grenade")
+	g.grantPower(p, "laser")
 	g.grantPower(p, "shield")
 	g.grantPower(p, "speed")
 	p.Cooldown = .5
-	before := *p
-	g.grantPower(p, "scope")
-	if p.ScopeTime != 10 || p.Power != before.Power || p.PowerTime != before.PowerTime || p.Charges != before.Charges || p.Shield != before.Shield || p.SpeedTime != before.SpeedTime || p.Cooldown != before.Cooldown {
-		t.Fatal("scope replaced weapon or other buffs")
-	}
-	p.ScopeTime = 2
-	g.grantPower(p, "scope")
-	if p.ScopeTime != 10 {
-		t.Fatal("scope must refresh, not stack")
-	}
-	for _, kind := range []string{"laser", "homing", "grenade", "rapid", "scatter", "shield", "speed"} {
-		g.grantPower(p, kind)
-		if p.ScopeTime != 10 {
-			t.Fatal("another pickup cleared scope")
-		}
+	p.Charges, p.PowerTime = 1, 2
+	g.grantPower(p, "laser")
+	if p.Power != "laser" || p.PowerTime != 10 || p.Charges != 3 || p.ShieldCharges != 1 || p.SpeedStacks != 1 || p.Cooldown != .5 {
+		t.Fatalf("laser refresh changed unrelated state: %+v", p)
 	}
 }
-func Test38ScopeTickExpiryRespawnAndNewRound(t *testing.T) {
+func TestLaserTickExpiryRespawnAndNewRound(t *testing.T) {
 	for _, slot := range []int{0, 1, 7} {
 		t.Run(string(rune('0'+slot)), func(t *testing.T) {
 			g := battle(8)
 			ps := testPlayers(8)
 			g.Pickups = nil
 			p := g.Tanks[slot]
-			g.grantPower(p, "scope")
+			g.grantPower(p, "laser")
 			g.Phase = "countdown"
 			g.PhaseTime = 2
 			g.step(tickDT, [maxTanks]Input{}, ps)
-			if p.ScopeTime != 10 {
-				t.Fatal("countdown drained scope")
+			if p.PowerTime != 10 {
+				t.Fatal("countdown drained laser")
 			}
 			g.Phase = "playing"
 			g.step(.1, [maxTanks]Input{}, ps)
-			if math.Abs(p.ScopeTime-9.9) > 1e-8 {
+			if math.Abs(p.PowerTime-9.9) > 1e-8 {
 				t.Fatal("wrong timer")
 			}
-			p.ScopeTime = .001
+			p.PowerTime = .001
 			g.step(tickDT, [maxTanks]Input{}, ps)
-			if p.ScopeTime != 0 {
-				t.Fatal("expiry underflow")
+			if p.Power != "" || p.PowerTime != 0 {
+				t.Fatal("expired laser stayed equipped")
 			}
-			g.grantPower(p, "scope")
+			g.grantPower(p, "laser")
 			g.respawnTank(p)
-			if p.ScopeTime != 0 {
-				t.Fatal("respawn retained scope")
+			if p.Power != "" || p.PowerTime != 0 {
+				t.Fatal("respawn retained laser")
 			}
-			g.grantPower(p, "scope")
+			g.grantPower(p, "laser")
 			g.startRound(ps)
-			if g.Tanks[slot].ScopeTime != 0 {
-				t.Fatal("new round retained scope")
+			if next := g.Tanks[slot]; next.Power != "" || next.PowerTime != 0 {
+				t.Fatal("new round retained laser")
 			}
 		})
 	}
 	g, ps := objectiveFixture("ctf")
 	for _, p := range g.Tanks {
 		if p != nil {
-			g.grantPower(p, "scope")
+			g.grantPower(p, "laser")
 		}
 	}
 	g.beginSuddenDeath(ps, false)
 	for _, p := range g.Tanks {
-		if p != nil && p.ScopeTime != 0 {
-			t.Fatal("sudden death retained scope")
+		if p != nil && (p.Power != "" || p.PowerTime != 0) {
+			t.Fatal("sudden death retained laser")
 		}
 	}
 }
-func Test38ScopeCollectionAndSnapshot(t *testing.T) {
+func TestLaserCollectionAndSnapshot(t *testing.T) {
 	g := battle(2)
 	p := g.Tanks[1]
-	g.Pickups = []*Pickup{{X: p.X, Y: p.Y, Type: "scope", Life: pickupLifetime(g.World.Cols, g.World.Rows)}}
+	g.Pickups = []*Pickup{{X: p.X, Y: p.Y, Type: "laser", Life: pickupLifetime(g.World.Cols, g.World.Rows)}}
 	g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
-	if p.ScopeTime != 10 || len(g.Pickups) != 0 {
+	if p.Power != "laser" || p.PowerTime != 10 || p.Charges != 3 || len(g.Pickups) != 0 {
 		t.Fatal("collection failed")
 	}
 	data, err := json.Marshal(p)
@@ -233,16 +222,11 @@ func Test38ScopeCollectionAndSnapshot(t *testing.T) {
 	}
 	var wire map[string]any
 	json.Unmarshal(data, &wire)
-	if wire["scopeTime"] != float64(10) {
-		t.Fatal("scope missing in tank snapshot")
+	if wire["power"] != "laser" || wire["powerTime"] != float64(10) || wire["charges"] != float64(3) {
+		t.Fatal("laser missing in tank snapshot")
 	}
-}
-func Test38ScopeCannotBeForged(t *testing.T) {
-	h, cs, r := makeRoom(t, 2)
-	r.Game = battle(2)
-	action(t, h, cs[0], map[string]any{"type": "input", "seq": 1, "scopeTime": 999, "power": "scope", "forward": true})
-	if r.Game.Tanks[0].ScopeTime != 0 || r.Game.Tanks[0].Power != "" {
-		t.Fatal("client granted scope")
+	if _, ok := wire["scopeTime"]; ok {
+		t.Fatal("tank snapshot still carries a separate scope timer")
 	}
 }
 func Test38HostRulesAndPresetValidation(t *testing.T) {
@@ -255,7 +239,7 @@ func Test38HostRulesAndPresetValidation(t *testing.T) {
 	}
 	action(t, h, cs[0], map[string]any{"type": "rules", "rules": rules})
 	if r.Game.Rules.MapSize != "giant" || len(r.Game.Rules.Weapons) != len(pickupTypes) {
-		t.Fatal("giant/scope settings not saved")
+		t.Fatal("giant map and pickup settings not saved")
 	}
 	for _, bad := range []string{"", "18x16", "unbounded"} {
 		rules.MapSize = bad
@@ -264,24 +248,24 @@ func Test38HostRulesAndPresetValidation(t *testing.T) {
 		}
 	}
 	rules.MapSize = "giant"
-	rules.Weapons = []string{"scope", "scope"}
-	if validateRules(rules) == nil {
-		t.Fatal("duplicate scope accepted")
-	}
 	rules.Weapons = []string{"scope"}
+	if validateRules(rules) == nil {
+		t.Fatal("retired scope pickup accepted")
+	}
+	rules.Weapons = []string{"laser"}
 	if validateRules(rules) != nil {
-		t.Fatal("scope-only rejected")
+		t.Fatal("laser-only rejected")
 	}
 	data, _ := json.Marshal(rules)
 	var loaded MatchRules
 	json.Unmarshal(data, &loaded)
-	if loaded.MapSize != "giant" || loaded.Weapons[0] != "scope" {
+	if loaded.MapSize != "giant" || loaded.Weapons[0] != "laser" {
 		t.Fatal("preset lost fields")
 	}
 }
-func Test38ScopeDoesNotChangeMovementOrShots(t *testing.T) {
+func TestLaserDoesNotChangeMovement(t *testing.T) {
 	a, b := battle(2), battle(2)
-	a.grantPower(a.Tanks[0], "scope")
+	a.grantPower(a.Tanks[0], "laser")
 	for i := 0; i < 20; i++ {
 		in := Input{Forward: true, Right: i > 5}
 		a.control(a.Tanks[0], in, tickDT)
@@ -289,12 +273,6 @@ func Test38ScopeDoesNotChangeMovementOrShots(t *testing.T) {
 	}
 	x, y := a.Tanks[0], b.Tanks[0]
 	if x.X != y.X || x.Y != y.Y || x.Angle != y.Angle {
-		t.Fatal("scope changed movement")
-	}
-	a.fire(x)
-	b.fire(y)
-	wa, wb := a.Bullets[0], b.Bullets[0]
-	if wa.Kind != wb.Kind || wa.VX != wb.VX || wa.VY != wb.VY || wa.Life != wb.Life {
-		t.Fatal("scope changed projectile")
+		t.Fatal("laser changed movement")
 	}
 }

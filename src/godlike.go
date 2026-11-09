@@ -11,9 +11,9 @@ const godlikeThreatLimit = 48
 
 type godlikeThreat struct {
 	botProjectileThreat
-	kind      string
-	owner     int
-	fuse, age float64
+	kind  string
+	owner int
+	fuse  float64
 }
 
 // An unproductive bank shot or oscillating turn must not pin an attacker in a
@@ -215,11 +215,6 @@ func godlikePickupValue(t *Tank, kind string) float64 {
 			return 0
 		}
 		return 3.8
-	case "scope":
-		if t.ScopeTime > 3 {
-			return 0
-		}
-		return .65
 	}
 	value := godlikeWeaponValue(kind)
 	if t.Power != "" && t.PowerTime > 3 && t.Charges > 0 && (t.Power != "rapid" || t.MachineRounds >= 120) {
@@ -310,9 +305,6 @@ func (g *Game) godlikeRoutePenalty(t *Tank, penalty []float64) {
 		if b == nil || b.Dead || b.Kind != "grenade" || !g.canDamage(b.Owner, t) {
 			continue
 		}
-		if b.Owner == t.ID && b.Life > 2 {
-			continue
-		}
 		for cell := range penalty {
 			x, y := g.cellCenter(cell)
 			r := dist(x, y, b.X, b.Y)
@@ -333,7 +325,7 @@ func (g *Game) godlikeCanDetonate(t *Tank) bool {
 			if other == nil || !other.Alive || !g.canDamage(t.ID, other) || dist(b.X, b.Y, other.X, other.Y) > blastRadius+other.R || g.rayBlocked(b.X, b.Y, other.X-b.X, other.Y-b.Y, 0) {
 				continue
 			}
-			if other.ID == t.ID || !g.isOpponent(t.ID, other) {
+			if !g.isOpponent(t.ID, other) {
 				return false
 			}
 			if b.Age > .22 && other.Invulnerable <= 0 {
@@ -346,43 +338,46 @@ func (g *Game) godlikeCanDetonate(t *Tank) bool {
 
 func (g *Game) godlikeSafeShot(t, e *Tank, angle float64) bool {
 	if t.Power == "grenade" {
-		// Contact detonation makes close-range grenade shots suicidal even
-		// before the owner can press detonate. Leave time and room to escape.
-		if dist(t.X, t.Y, e.X, e.Y) < blastRadius+t.R+35 {
-			return false
-		}
 		ux, uy := math.Cos(angle), math.Sin(angle)
-		unsafeRange := blastRadius + t.R + 35
-		for _, other := range g.Tanks {
-			if other == nil || !other.Alive || other.ID == t.ID {
-				continue
-			}
-			// All living tanks trigger contact blasts, even protected enemies
-			// and allies with friendly fire disabled.
-			if _, hit := circleHit(t.X, t.Y, ux*unsafeRange, uy*unsafeRange, other.X, other.Y, other.R+6); hit {
+		length := blastRadius + t.R + 35
+		if wall, ok := g.rayWallsHit(t.X, t.Y, ux*length, uy*length, 6); ok {
+			length *= wall.T
+			if length < cellSize*1.5 {
 				return false
 			}
 		}
-		return !g.rayBlocked(t.X, t.Y, ux*cellSize*1.5, uy*cellSize*1.5, 6)
+		dx, dy := ux*length, uy*length
+		b := &Bullet{Kind: "grenade", Owner: t.ID, R: 6}
+		if target, at := g.projectileTankHit(b, t.X, t.Y, dx, dy); target != nil {
+			if !g.isOpponent(t.ID, target) {
+				return false
+			}
+			if g.settings().FriendlyFire {
+				x, y := t.X+dx*at, t.Y+dy*at
+				for _, ally := range g.Tanks {
+					if g.canDamage(t.ID, ally) && ally.Alive && !g.isOpponent(t.ID, ally) && dist(x, y, ally.X, ally.Y) <= blastRadius+ally.R && !g.rayBlocked(x, y, ally.X-x, ally.Y-y, 0) {
+						return false
+					}
+				}
+			}
+		}
+		return true
 	}
 	if t.Power == "homing" {
 		return !g.rayBlocked(t.X, t.Y, math.Cos(angle)*35, math.Sin(angle)*35, 5)
 	}
-	radius, speed, left := regularRadius, 282.0, cellSize*7
+	radius, left := regularRadius, cellSize*7
 	if t.Power == "cannon" {
-		radius, speed, left = cannonRadius, cannonSpeed, cannonSpeed*cannonLifetime
+		radius, left = cannonRadius, cannonSpeed*cannonLifetime
 	}
 	if t.Power == "laser" {
 		radius, left = laserRadius, g.laserRange()
 	}
 	if t.Power == "rapid" {
-		radius, speed, left = machineRadius, machineSpeed, g.machineTravelRange()
-	}
-	if t.Power == "scatter" {
-		speed = shotgunSpeed
+		radius, left = machineRadius, g.machineTravelRange()
 	}
 	ex, ey := g.botLead(t, e, tuneBot("godlike"))
-	x, y, ux, uy, travel := t.X, t.Y, math.Cos(angle), math.Sin(angle), 0.0
+	x, y, ux, uy := t.X, t.Y, math.Cos(angle), math.Sin(angle)
 	for k := 0; k < 24 && left > 1; k++ {
 		w, ok := g.projectileWallHit(t.Power, x, y, ux*left, uy*left, radius)
 		span := left
@@ -397,13 +392,8 @@ func (g *Game) godlikeSafeShot(t, e *Tank, angle float64) bool {
 			if ally == nil || !ally.Alive || g.isOpponent(t.ID, ally) || !g.canDamage(t.ID, ally) {
 				continue
 			}
-			if ally.ID == t.ID && (k == 0 || t.Power == "laser" || t.Power == "rapid" || t.Power == "scatter") {
-				continue
-			}
 			if at, yes := circleHit(x, y, ux*span, uy*span, ally.X, ally.Y, ally.R+radius); yes && at < hit {
-				if ally.ID != t.ID || travel+at*span >= speed*.2 {
-					return false
-				}
+				return false
 			}
 		}
 		if hit <= 1 {
@@ -415,7 +405,6 @@ func (g *Game) godlikeSafeShot(t, e *Tank, angle float64) bool {
 		x += ux*span + w.NX*.12
 		y += uy*span + w.NY*.12
 		left -= span
-		travel += span
 		if w.NX != 0 {
 			ux = -ux
 		}
@@ -434,7 +423,7 @@ func (g *Game) godlikeForecast(t *Tank, d botTuning) ([]godlikeThreat, []*Bullet
 	var priority [godlikeThreatLimit]float64
 	n := 0
 	for _, b := range g.Bullets {
-		if b == nil || b.Dead || b.Life <= 0 || !g.canDamage(b.Owner, t) || (b.Owner == t.ID && (b.Kind == "rapid" || b.Kind == "scatter")) {
+		if b == nil || b.Dead || b.Life <= 0 || !g.canDamage(b.Owner, t) {
 			continue
 		}
 		reach := math.Hypot(b.VX, b.VY)*godlikeHorizon + d.speed*godlikeHorizon + t.R + b.R + 30
@@ -491,7 +480,7 @@ func (g *Game) godlikeForecast(t *Tank, d botTuning) ([]godlikeThreat, []*Bullet
 				if ok {
 					span *= w.T
 				}
-				threats = append(threats, godlikeThreat{botProjectileThreat: botProjectileThreat{b.X, b.Y, b.VX, b.VY, start + elapsed, start + elapsed + span, b.R}, kind: b.Kind, owner: b.Owner, fuse: source.Life, age: source.Age})
+				threats = append(threats, godlikeThreat{botProjectileThreat: botProjectileThreat{b.X, b.Y, b.VX, b.VY, start + elapsed, start + elapsed + span, b.R}, kind: b.Kind, owner: b.Owner, fuse: source.Life})
 				b.X += b.VX * span
 				b.Y += b.VY * span
 				left -= span
@@ -603,7 +592,7 @@ func (g *Game) godlikeDodge(t *Tank, d botTuning, angle, drive float64) (float64
 			if t.Invulnerable > hi {
 				continue
 			}
-			remote := s.owner != t.ID && s.owner >= 0 && s.owner < maxTanks && g.Tanks[s.owner] != nil && g.Tanks[s.owner].Alive
+			remote := s.owner >= 0 && s.owner < maxTanks && g.Tanks[s.owner] != nil && g.Tanks[s.owner].Alive
 			fusing := s.fuse <= godlikeHorizon+.4
 			if remote || fusing {
 				penetration := clamp((blastRadius+t.R+24-r)/(blastRadius+t.R+24), 0, 1)
@@ -612,7 +601,7 @@ func (g *Game) godlikeDodge(t *Tank, d botTuning, angle, drive float64) (float64
 					total += 4500 + penetration*2000
 				}
 			}
-			if clearance < 10 && (s.owner != t.ID || s.age+lo >= .2) {
+			if clearance < 10 {
 				total += 3000 + (10-clearance)*70
 			}
 		}

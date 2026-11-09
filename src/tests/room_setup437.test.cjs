@@ -7,7 +7,7 @@ const clone=value=>JSON.parse(JSON.stringify(value));
 function boot(){
  const nodes=new Map(),timers=new Map(),noop=()=>{};let nextTimer=0;
  const $=id=>{if(!nodes.has(id))nodes.set(id,{id,value:'',open:false,disabled:false,dataset:{},classList:{add:noop,remove:noop,toggle:noop},style:{setProperty:noop},parentElement:{querySelector:()=>true},previousElementSibling:{style:{}},close(){this.open=false;}});return nodes.get(id);};
- const s={URL,$,console,mode:'room',phase:'menu',GAME_VERSION:'test',MAX_TANKS:8,POWER:{shield:{},rapid:{}},DIFFICULTY:{normal:{},hard:{},godlike:{},easy:{}},pendingRoomMode:null,rulesPending:false,presetsPending:false,
+ const s={URL,$,console,mode:'room',phase:'menu',GAME_VERSION:'test',MAX_TANKS:8,POWER:{shield:{},rapid:{},laser:{}},DIFFICULTY:{normal:{},hard:{},godlike:{},easy:{}},pendingRoomMode:null,rulesPending:false,presetsPending:false,
   online:{connected:false,connecting:false,code:'',token:'',id:3,member:50,snapshots:[]},localRoom:{},matchmaking:{},rolePending:false,
   location:{protocol:'https:',href:'https://leqra.test/'},document:{body:$('body'),querySelectorAll:selector=>selector==='[data-weapon-toggle]'||selector==='[data-weapon-toggle]:checked'?[{dataset:{weaponToggle:'shield'},checked:true}]:[]},
   performance:{now:()=>1000},setTimeout(fn){timers.set(++nextTimer,fn);return nextTimer;},clearTimeout(id){timers.delete(id);},sessionStorage:{removeItem:noop},
@@ -89,6 +89,18 @@ test('saved rule profiles and presets reject inherited object names as power-ups
   assert.throws(()=>s.validatePreset({rules,roster:[{kind:'human',name:'HOST',team:0}]}),/Invalid power-up selection/);
  }
  for(const difficulty of ['easy','normal','hard','godlike'])assert.equal(s.validatePreset({rules:s.defaultRoomRules(),roster:[{kind:'human',name:'HOST',team:0},{kind:'bot',name:'BOT',team:0,difficulty}]}).roster[1].difficulty,difficulty);
+});
+
+test('saved room rules and presets migrate the retired Scope pickup to Laser',()=>{
+ const {s}=boot(),roster=[{kind:'human',name:'HOST',team:0}];
+ for(const [weapons,expected] of [[['scope'],['laser']],[['shield','laser','scope'],['shield','laser']],[[],[]]]){
+  const rules={...s.defaultRoomRules(),weapons,mapSize:'giant',scoreTarget:7};
+  const migrated=clone(s.validateRoomRules(rules));
+  assert.deepEqual(migrated,clone({...rules,weapons:expected}));
+  assert.deepEqual(clone(s.validatePreset({rules,roster})).rules,migrated);
+  assert.equal(rules.weapons,weapons);
+ }
+ assert.throws(()=>s.validateRoomRules({...s.defaultRoomRules(),weapons:['scope','scope']}),/Invalid power-up selection/);
 });
 
 test('saved and direct global difficulty selection ignore inherited names',()=>{

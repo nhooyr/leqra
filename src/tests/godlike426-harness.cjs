@@ -8,7 +8,7 @@ function declaration(name){
  return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);
 }
 function tank(id,x,y,extra={}){
- return{id,x,y,r:17,angle:0,team:id+1,alive:true,human:false,difficulty:'godlike',vx:0,vy:0,invulnerable:0,cooldown:0,power:null,powerTime:0,charges:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,scopeTime:0,
+ return{id,x,y,r:17,angle:0,team:id+1,alive:true,human:false,difficulty:'godlike',vx:0,vy:0,invulnerable:0,cooldown:0,power:null,powerTime:0,charges:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,
   ai:{think:0,path:[],pathClock:0,target:-1,aim:null,shotClock:0,bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,recoverTime:0,stuck:0,lastX:x,lastY:y},...extra};
 }
 function bullet(owner,x,y,kind='grenade',extra={}){return{owner,x,y,vx:0,vy:0,r:kind==='grenade'?6:5,kind,age:.5,life:kind==='grenade'?5:3,bounces:0,target:-1,seekDelay:0,rangeLeft:1000,dead:false,...extra};}

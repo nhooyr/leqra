@@ -55,7 +55,7 @@ func Test41CannonCornerAndMuzzle(t *testing.T) {
 		t.Fatal(hit)
 	}
 }
-func Test41ReturningCannonSelfDamageAllSeats(t *testing.T) {
+func Test41ReturningCannonIgnoresShooterInAllSeats(t *testing.T) {
 	for id := 0; id < maxTanks; id++ {
 		g := battle(8)
 		g.Rules.FriendlyFire = false
@@ -73,8 +73,8 @@ func Test41ReturningCannonSelfDamageAllSeats(t *testing.T) {
 		for i := 0; i < 180 && p.Alive; i++ {
 			g.updateBullets(tickDT)
 		}
-		if p.Alive || !b.Dead || p.stats.SelfDestructs != 1 || p.stats.Deaths != 1 {
-			t.Fatalf("self damage slot %d", id)
+		if !p.Alive || b.Bounces < 2 || p.stats.SelfDestructs != 0 || p.stats.Deaths != 0 {
+			t.Fatalf("returning cannon round hit its shooter in seat %d", id)
 		}
 	}
 }
@@ -89,13 +89,13 @@ func ghostArena41() *Game {
 	return g
 }
 func Test41GhostIndependentRefreshAndSpeed(t *testing.T) {
-	for _, order := range [][]string{{"cannon", "scope", "shield", "speed", "ghost"}, {"ghost", "speed", "cannon", "shield", "scope"}} {
+	for _, order := range [][]string{{"cannon", "shield", "speed", "ghost"}, {"ghost", "speed", "cannon", "shield"}} {
 		g := ghostArena41()
 		p := g.Tanks[0]
 		for _, power := range order {
 			g.grantPower(p, power)
 		}
-		if p.GhostTime != 10 || p.SpeedTime != boostDuration || p.ScopeTime != 10 || p.Shield != 10 || p.Power != "cannon" || p.Charges != 3 {
+		if p.GhostTime != 10 || p.SpeedTime != boostDuration || p.Shield != 10 || p.Power != "cannon" || p.Charges != 3 {
 			t.Fatal("stacking")
 		}
 		for i := 0; i < 30; i++ {

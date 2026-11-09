@@ -201,7 +201,7 @@ func TestAggressiveMissileWiderConeAndBoundedTurn(t *testing.T) {
 		t.Fatal("seeker tracked through cover")
 	}
 }
-func TestMissileReflectedOwnerDamageAndShield(t *testing.T) {
+func TestMissileRicochetDoesNotDamageOwnerOrShield(t *testing.T) {
 	for _, shield := range []float64{0, 10} {
 		g := battle(2)
 		p := g.Tanks[0]
@@ -214,8 +214,8 @@ func TestMissileReflectedOwnerDamageAndShield(t *testing.T) {
 		for i := 0; i < 60 && !b.Dead; i++ {
 			g.updateBullets(tickDT)
 		}
-		if !b.Dead || b.Bounces < 1 || p.Alive != (shield > 0) || p.Shield != 0 {
-			t.Fatalf("owner damage/shield wrong %+v", p)
+		if b.Dead || b.Bounces < 1 || b.X >= p.X || !p.Alive || p.Shield != shield {
+			t.Fatalf("ricochet should pass through the owner untouched: tank=%+v missile=%+v", p, b)
 		}
 	}
 }

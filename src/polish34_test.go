@@ -25,7 +25,7 @@ func TestFriendlyFire34RulesDefaultsAndSerialization(t *testing.T) {
 		t.Fatal("valid friendly fire rejected")
 	}
 }
-func TestFriendlyFire34EverySeatOwnDamage(t *testing.T) {
+func TestFriendlyFire34EverySeatOwnerImmunity(t *testing.T) {
 	for _, ff := range []bool{false, true} {
 		for _, bot := range []bool{false, true} {
 			for id := 0; id < maxTanks; id++ {
@@ -37,12 +37,12 @@ func TestFriendlyFire34EverySeatOwnDamage(t *testing.T) {
 					}
 					p := g.Tanks[id]
 					p.Bot = bot
-					if !g.canDamage(id, p) {
-						t.Fatal("own damage incorrectly gated by team or bot")
+					if g.canDamage(id, p) {
+						t.Fatal("owner immunity depended on team or bot")
 					}
 					g.hurt(p, &Bullet{Owner: id})
-					if p.Alive {
-						t.Fatal("own shot survived")
+					if !p.Alive {
+						t.Fatal("own shot killed its shooter")
 					}
 				})
 			}
@@ -102,7 +102,7 @@ func TestFriendlyFire34ActualWeapons(t *testing.T) {
 		}
 	}
 }
-func TestFriendlyFire34OwnReturningShellAllSeats(t *testing.T) {
+func TestFriendlyFire34ReturningShellIgnoresAllShooterSeats(t *testing.T) {
 	for id := 0; id < maxTanks; id++ {
 		g := battle(maxTanks)
 		p := g.Tanks[id]
@@ -111,8 +111,8 @@ func TestFriendlyFire34OwnReturningShellAllSeats(t *testing.T) {
 		}
 		g.Bullets = []*Bullet{{Owner: id, X: p.X + 22, Y: p.Y, VX: -282, R: 3.5, Life: 2, Age: .8}}
 		g.updateBullets(.02)
-		if p.Alive {
-			t.Fatalf("seat %d immune", id)
+		if !p.Alive || len(g.Bullets) != 1 {
+			t.Fatalf("returning shell hit its shooter in seat %d", id)
 		}
 	}
 }
@@ -197,7 +197,7 @@ func TestSuddenDeath34NoRespawnsOrScoring(t *testing.T) {
 		g.beginSuddenDeath(ps, false)
 		p := g.Tanks[2]
 		p.Invulnerable = 0
-		g.hurt(p, &Bullet{Owner: 2})
+		g.hurt(p, &Bullet{Owner: 1})
 		g.respawnPlayers(99, ps)
 		if p.Alive || p.RespawnTime > 0 {
 			t.Fatal("extra life")

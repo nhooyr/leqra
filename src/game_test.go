@@ -127,7 +127,7 @@ func TestRicochetReflectsWithoutTunneling(t *testing.T) {
 		t.Fatalf("bad reflection %+v", b)
 	}
 }
-func TestProjectileDamageAndSelfRicochet(t *testing.T) {
+func TestProjectileDamageSkipsOwner(t *testing.T) {
 	for _, owner := range []int{0, 1} {
 		g := battle(2)
 		tank := g.Tanks[1]
@@ -136,8 +136,8 @@ func TestProjectileDamageAndSelfRicochet(t *testing.T) {
 		for i := 0; i < 8; i++ {
 			g.updateBullets(tickDT)
 		}
-		if tank.Alive {
-			t.Fatalf("owner %d did not damage target", owner)
+		if tank.Alive != (owner == tank.ID) {
+			t.Fatalf("owner %d: target alive=%v", owner, tank.Alive)
 		}
 	}
 }
@@ -160,19 +160,19 @@ func TestShieldAbsorbsExactlyOneHit(t *testing.T) {
 		t.Fatal("second hit should eliminate")
 	}
 }
-func TestMuzzleGraceThenSelfDamage(t *testing.T) {
+func TestMuzzleAndReturningShellIgnoreOwner(t *testing.T) {
 	g := battle(2)
 	tank := g.Tanks[0]
 	b := &Bullet{Owner: 0, X: tank.X, Y: tank.Y, R: 3.5, Life: 5}
 	g.Bullets = []*Bullet{b}
 	g.updateBullets(tickDT)
 	if !tank.Alive {
-		t.Fatal("muzzle grace failed")
+		t.Fatal("owner was hit by a new shell")
 	}
 	b.Age = .3
 	g.updateBullets(tickDT)
-	if tank.Alive {
-		t.Fatal("owner incorrectly immune")
+	if !tank.Alive || b.Dead {
+		t.Fatal("owner was hit by an older shell")
 	}
 }
 func TestCooldownAndAmmoCapacity(t *testing.T) {

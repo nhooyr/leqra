@@ -12,7 +12,7 @@ function boot(){
  });
  s.online.predictor=new Net.Predictor(s.moveTank);s.online.secondary={predictor:new Net.Predictor(s.moveTank)};
  for(const name of ['netTank','receiveOnlineState','predictOnlineTank','applyOnlineTankEffects','renderOnlineMotion','activeTankPowerBadges'])vm.runInContext(declaration(name),s);
- let tick=58;s.packet=(patch={},status='wave',phase='playing')=>({tick:tick+=2,generation:1,phase,round:1,roundClock:75,phaseTime:2,winner:-1,scores:[],bullets:[],pickups:[],events:[],objectives:{survival:{wave:1,status}},tanks:[0,1,3].map(id=>tank(id,126+id*100,126,{bot:id===3,spawnSerial:1,ack:0,ackSteps:0,power:'laser',powerTime:10,charges:3,machineRounds:0,shield:10,shieldCharges:1,speedTime:10,speedStacks:1,scopeTime:10,ghostTime:10,...patch}))});
+ let tick=58;s.packet=(patch={},status='wave',phase='playing')=>({tick:tick+=2,generation:1,phase,round:1,roundClock:75,phaseTime:2,winner:-1,scores:[],bullets:[],pickups:[],events:[],objectives:{survival:{wave:1,status}},tanks:[0,1,3].map(id=>tank(id,126+id*100,126,{bot:id===3,spawnSerial:1,ack:0,ackSteps:0,power:'laser',powerTime:10,charges:3,machineRounds:0,shield:10,shieldCharges:1,speedTime:10,speedStacks:1,ghostTime:10,...patch}))});
  s.receive=(patch,status,phase)=>{const p=s.packet(patch,status,phase);s.receiveOnlineState(p);return p;};
  return s;
 }
@@ -25,7 +25,7 @@ test('buffered tank positions use newest authoritative equipment and ammo withou
 });
 
 test('all visual power-up timers progress between snapshots, refresh immediately and expire without stale icons',()=>{
- const s=boot(),fields=['powerTime','shield','speedTime','scopeTime','ghostTime'],values=Object.fromEntries(fields.map(k=>[k,3.02]));
+ const s=boot(),fields=['powerTime','shield','speedTime','ghostTime'],values=Object.fromEntries(fields.map(k=>[k,3.02]));
  const snapshot=s.receive(values),original=JSON.stringify(snapshot.tanks);s.renderOnlineMotion(0,1120);
  for(const t of s.tanks)for(const field of fields)close(t[field],2.9);
  assert.equal(JSON.stringify(snapshot.tanks),original);assert.equal(s.online.predictor.state.powerTime,3.02,'drawing does not change prediction state');
@@ -36,21 +36,21 @@ test('all visual power-up timers progress between snapshots, refresh immediately
 });
 
 test('Survival breaks discard prior-wave prediction and freeze both local pilots, remote positions and every buff timer',()=>{
- const s=boot();s.receive({ghostTime:.1,scopeTime:.1});s.predictOnlineTank(.05);
+ const s=boot();s.receive({ghostTime:.1});s.predictOnlineTank(.05);
  assert.ok(s.online.predictor.stepID>0);assert.ok(s.online.secondary.predictor.stepID>0);
- s.now+=34;const held=s.receive({ghostTime:.1,scopeTime:.1},'break'),before=JSON.stringify(held.tanks);
+ s.now+=34;const held=s.receive({ghostTime:.1},'break'),before=JSON.stringify(held.tanks);
  for(const [id,channel] of [[0,s.online],[1,s.online.secondary]]){assert.equal(channel.predictor.stepID,0,'break must discard unprocessed old-wave controls');close(channel.predictor.state.x,held.tankMap.get(id).x);}
  for(let i=0;i<20;i++)s.predictOnlineTank(.1);
  s.renderOnlineMotion(.05,7000);
- for(const t of s.tanks){const authoritative=held.tankMap.get(t.id);for(const field of ['x','y','powerTime','shield','speedTime','scopeTime','ghostTime'])close(t[field],authoritative[field]);}
+ for(const t of s.tanks){const authoritative=held.tankMap.get(t.id);for(const field of ['x','y','powerTime','shield','speedTime','ghostTime'])close(t[field],authoritative[field]);}
  assert.equal(JSON.stringify(held.tanks),before);assert.equal(s.online.predictor.stepID,0);assert.equal(s.online.secondary.predictor.stepID,0);
  s.now=7100;s.receive({},'wave');s.predictOnlineTank(Net.STEP);assert.ok(s.online.predictor.stepID>0,'live prediction resumes for the next active wave');
 });
 
 test('countdowns and completed scenes keep timer values fixed',()=>{
  for(const phase of ['countdown','roundOver','matchOver','paused']){
-  const s=boot(),p=s.receive({scopeTime:.1,ghostTime:.1},'wave',phase);s.renderOnlineMotion(0,9000);
-  for(const t of s.tanks)for(const field of ['powerTime','shield','speedTime','scopeTime','ghostTime'])close(t[field],p.tankMap.get(t.id)[field]);
+  const s=boot(),p=s.receive({ghostTime:.1},'wave',phase);s.renderOnlineMotion(0,9000);
+  for(const t of s.tanks)for(const field of ['powerTime','shield','speedTime','ghostTime'])close(t[field],p.tankMap.get(t.id)[field]);
  }
 });
 

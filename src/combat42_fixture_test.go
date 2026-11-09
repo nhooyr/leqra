@@ -83,7 +83,6 @@ func handleCombat42Fixture(app *App, w http.ResponseWriter, r *http.Request) boo
 			t.Invulnerable = 600
 			t.Shield = 0
 			t.SpeedTime = 0
-			t.ScopeTime = 0
 			t.GhostTime = 0
 			t.Power = ""
 			t.PowerTime = 0

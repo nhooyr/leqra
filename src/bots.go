@@ -372,7 +372,7 @@ func (g *Game) botDodge(t *Tank, d botTuning, angle, drive float64) (float64, fl
 	}
 	threats := t.AI.dodgeThreats[:0]
 	for _, b := range g.Bullets {
-		if b.Dead || !g.canDamage(b.Owner, t) || ((b.Kind == "scatter" || b.Kind == "rapid") && b.Owner == t.ID) || dist(t.X, t.Y, b.X, b.Y) > math.Max(350, math.Hypot(b.VX, b.VY)*horizon+80) {
+		if b.Dead || !g.canDamage(b.Owner, t) || dist(t.X, t.Y, b.X, b.Y) > math.Max(350, math.Hypot(b.VX, b.VY)*horizon+80) {
 			continue
 		}
 		if b.Kind == "grenade" {
@@ -479,10 +479,7 @@ func (g *Game) botGrenadeThreats(t *Tank, d botTuning, horizon float64) []botGre
 		if b == nil || b.Dead || b.Kind != "grenade" || b.Life <= 0 {
 			continue
 		}
-		// Avoid enemy grenades and our own grenade body. Friendly grenades are
-		// harmless obstacles when friendly fire is off, so do not steer away from
-		// them merely because an ally threw them.
-		if b.Owner != t.ID && !g.canDamage(b.Owner, t) {
+		if !g.canDamage(b.Owner, t) {
 			continue
 		}
 		reach := d.speed*horizon + math.Hypot(b.VX, b.VY)*horizon + t.R + b.R + botGrenadeAvoidPadding + 24
@@ -706,9 +703,6 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		for _, b := range g.Bullets {
 			if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && b.Age > .22 && dist(b.X, b.Y, enemy.X, enemy.Y) < blastRadius+enemy.R && !g.rayBlocked(b.X, b.Y, enemy.X-b.X, enemy.Y-b.Y, 0) {
 				g.detonateOwned(t)
-				if !t.Alive {
-					return
-				}
 				a.Shot = d.reaction
 				break
 			}

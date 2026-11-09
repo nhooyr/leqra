@@ -13,17 +13,16 @@ Generated 100% by ChatGPT Astra.
     2. Capture the flag
     3. King of the hill
     4. Survival
-- 10 collectable power-ups:
+- 9 collectable power-ups:
     1. Cannon
     2. Ghost
-    3. Laser
+    3. Laser with a ricochet aim guide
     4. Homing missile
     5. Grenade
-    6. Scope
-    7. Super speed
-    8. Machine gun
-    9. Shotgun
-    10. Shield
+    6. Super speed
+    7. Machine gun
+    8. Shotgun
+    9. Shield
 - Flexible lobby rooms supporting:
     1. Local players
     2. Bots
@@ -44,23 +43,20 @@ Generated 100% by ChatGPT Astra.
 
 ## Getting Started
 
-You can open [index.html](./src/web/index.html) to play locally.
+You can open [index.html](./index.html) from your local checkout to play.
 
 To run from the server:
 
 ```sh
-go build  -o ./bin/leqra ./src && ./bin/leqra
+./dev.sh
 ```
 
 You can deploy the binary anywhere as all assets are embedded.
 
 ## TODO
 
-1. Increase version to cache bust for the safari detection message change. 1077aea
 1. The src/web/assets that duplicate from src should be symlinks instead of having entirely duplicate versions.
 2. Add mouse pointer aiming + click to fire to the controls for player 1 on desktop.
-3. Simplify the initial UI to just a big PLAY button and then add an advanced button that reveals the current lobby UI to allow making changes. Or maybe there should be more intermediate buttons like another button to show the full roster?
-4. Maybe add health bars to let tanks have 3 shots?
-5. Add a intro mode to explain the controls & mechanics.
-6. On Mobile, mazes should be larger vertically than horizontally to use screen real estate effectively.
-7. Maybe tanks should be protected against all of their own projectiles?
+3. Maybe add health bars to let tanks have 3 shots?
+4. Add a intro mode to explain the controls & mechanics.
+5. On Mobile, mazes should be larger vertically than horizontally to use screen real estate effectively.

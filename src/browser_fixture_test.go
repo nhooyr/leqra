@@ -70,9 +70,9 @@ func TestBrowserFixture(t *testing.T) {
 			}
 			for _, tank := range room.Game.Tanks {
 				if tank != nil {
-					room.Game.grantPower(tank, "scope")
+					room.Game.grantPower(tank, "laser")
 					if body.Expire {
-						tank.ScopeTime = .02
+						tank.PowerTime = .02
 					}
 				}
 			}
@@ -207,7 +207,12 @@ func TestBrowserFixture(t *testing.T) {
 				}
 			case "kill":
 				tank.Alive = true
-				g.hurt(tank, &Bullet{Owner: tank.ID})
+				for id := range g.Tanks {
+					if g.canDamage(id, tank) && g.Tanks[id] != nil {
+						g.hurt(tank, &Bullet{Owner: id})
+						break
+					}
+				}
 			case "warning":
 				g.Bullets = nil
 				owner := -1

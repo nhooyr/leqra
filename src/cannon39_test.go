@@ -197,11 +197,10 @@ func Test39CannonFriendlyFireAllSeats(t *testing.T) {
 func Test39CannonChargeCooldownAndWeaponExpiry(t *testing.T) {
 	g := cannonBattle39(2)
 	p := g.Tanks[0]
-	g.grantPower(p, "scope")
 	g.grantPower(p, "speed")
 	g.grantPower(p, "shield")
 	g.grantPower(p, "cannon")
-	if p.Charges != 3 || p.PowerTime != 10 || capacity(p) != 3 || p.ScopeTime != 10 || p.SpeedTime != boostDuration || p.Shield != 10 {
+	if p.Charges != 3 || p.PowerTime != 10 || capacity(p) != 3 || p.SpeedTime != boostDuration || p.Shield != 10 {
 		t.Fatal("grant/stacking")
 	}
 	if !g.fire(p) || g.fire(p) || p.Charges != 2 || p.Cooldown != cannonCooldown || p.CooldownTotal != cannonCooldown {
@@ -332,7 +331,7 @@ func Test39CannonSettingsAndClientAuthority(t *testing.T) {
 			found = true
 		}
 	}
-	if !found || len(rules.Weapons) != 10 {
+	if !found {
 		t.Fatal("default Cannon missing")
 	}
 	rules.Weapons = []string{"cannon"}

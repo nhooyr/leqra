@@ -158,17 +158,19 @@ test('the open-seat notice stays unique, follows capacity, and disappears when f
  b.render(r);assert.deepEqual(freeRows(b.container),[free]);
 });
 
-test('a bot killed by remote grenade detonation stops before movement even when its target survives',()=>{
- const bot={id:0,alive:true,x:90,y:210,angle:0,r:17,ghostTime:0,ai:{target:1,think:0,pathClock:1,shotClock:0,bankClock:1,dodgeTime:0,dodgeClock:1,recoverTime:0,aim:null,path:[1],goal:0,lastX:90,lastY:210,stuck:0}},enemy={id:1,alive:true,x:190,y:210,r:17,invulnerable:0};
- let moves=0,detonations=0;
- const s={difficulty:'normal',DIFFICULTY:{normal:{think:.2,speed:108,turn:3.4,reaction:.4,dodge:false}},tanks:[bot,enemy],BLAST_RADIUS:220,CELL:84,RADIUS:17,
+test('a bot moves after detonating its grenade when a shielded target survives',()=>{
+ const bot={id:0,alive:true,x:90,y:210,angle:0,r:17,ghostTime:0,ai:{target:1,think:0,pathClock:1,shotClock:0,bankClock:1,dodgeTime:0,dodgeClock:1,recoverTime:0,aim:null,path:[1],goal:0,lastX:90,lastY:210,stuck:0}},enemy={id:1,alive:true,x:190,y:210,r:17,invulnerable:0,shield:1};
+ const grenade={kind:'grenade',owner:0,x:140,y:210},hits=[];
+ const s={mode:'room',difficulty:'normal',DIFFICULTY:{normal:{think:.2,speed:108,turn:3.4,reaction:.4,dodge:false}},tanks:[bot,enemy],bullets:[grenade],BLAST_RADIUS:220,CELL:84,RADIUS:17,
   speedCount:()=>0,isEnemy:(a,b)=>a.id!==b.id,distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),objectiveGoal:()=>null,rnd:()=>1,
-  ownedGrenades:()=>[{x:140,y:210}],rayWalls:()=>null,detonateOwned(t){t.alive=false;detonations++;},
+  currentRules:()=>({friendlyFire:false}),rayWalls:()=>null,blastEffect(){},hurt(t){hits.push(t.id);if(t.shield)t.shield=0;else t.alive=false;},
   botHoldingHill:()=>false,chooseBotAim:()=>null,cellAt:()=>0,routeControl:()=>({angle:0,drive:1}),chooseGrenadeAvoid:()=>null,angleDelta:(a,b)=>b-a,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
-  moveTank(t,dx,dy){moves++;t.x+=dx;t.y+=dy;}
+  moveTank(t,dx,dy){t.x+=dx;t.y+=dy;}
  };
- vm.createContext(s);vm.runInContext(declaration('botControl'),s);s.botControl(bot,1/60);
- assert.equal(detonations,1);assert.equal(bot.alive,false);assert.equal(enemy.alive,true);assert.equal(moves,0);assert.equal(bot.x,90);assert.equal(bot.y,210);
+ vm.createContext(s);
+ for(const name of ['canDamage','ownedGrenades','detonate','detonateOwned','botControl'])vm.runInContext(declaration(name),s);
+ s.botControl(bot,1/60);
+ assert.equal(grenade.dead,true);assert.deepEqual(hits,[1]);assert.equal(enemy.shield,0);assert.ok(bot.x>90);assert.equal(bot.y,210);
 });
 
 

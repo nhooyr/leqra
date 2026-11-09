@@ -39,7 +39,7 @@ func TestSurvival433RetryRestoresBoundaryWithoutRegeneratingMaze(t *testing.T) {
 		}
 	}
 	g.Tanks[1].Invulnerable = 0
-	g.hurt(g.Tanks[1], &Bullet{Owner: 1})
+	g.hurt(g.Tanks[1], &Bullet{Owner: 2})
 	g.stepSurvival(r.Players)
 	g.prepareSurvival(2, r.Players)
 	s, cp := g.survivalState(), g.survivalCheckpoint
@@ -55,7 +55,7 @@ func TestSurvival433RetryRestoresBoundaryWithoutRegeneratingMaze(t *testing.T) {
 	g.Tanks[0].Power, g.Tanks[0].PowerTime, g.Tanks[0].MachineRounds = "rapid", 8, 30
 	g.Tanks[0].Shield, g.Tanks[0].ShieldCharges = 8, 3
 	g.Tanks[0].SpeedTime, g.Tanks[0].SpeedStacks = 8, 3
-	g.Tanks[0].ScopeTime, g.Tanks[0].GhostTime = 8, 8
+	g.Tanks[0].GhostTime = 8
 	g.Tanks[0].fireHeld, g.Tanks[0].fireBlocked = true, true
 	g.Tanks[0].AI = &BotState{}
 	r.Players[0].Input = Input{Seq: 97, Fire: true, Forward: true}
@@ -81,7 +81,7 @@ func TestSurvival433RetryRestoresBoundaryWithoutRegeneratingMaze(t *testing.T) {
 	if s.Status != "wave" || s.Wave != 2 || s.WavesCleared != 1 || s.EnemiesRemaining != 2 || s.BreakTime != 0 || g.survivalCheckpoint != cp {
 		t.Fatal("retry changed the wave or discarded its checkpoint", s)
 	}
-	if g.matchReport != nil || g.matchReportWire != nil || g.stats.duration != 9.5 || g.stats.rows[0].Eliminations != 2 || g.stats.rows[1].Deaths != 1 || g.stats.rows[1].SelfDestructs != 1 {
+	if g.matchReport != nil || g.matchReportWire != nil || g.stats.duration != 9.5 || g.stats.rows[0].Eliminations != 2 || g.stats.rows[1].Deaths != 1 {
 		t.Fatal("failed-attempt statistics survived the retry")
 	}
 	if finished.Duration != 52 || !bytes.Equal(finishedWire, mustJSON433(t, finished)) {
@@ -95,7 +95,7 @@ func TestSurvival433RetryRestoresBoundaryWithoutRegeneratingMaze(t *testing.T) {
 			continue
 		}
 		tank := g.Tanks[id]
-		if !tank.Alive || tank.stats != g.stats.members[p] || tank.stats == &cp.rows[id] || g.Scores[id] != 1 || tank.Power != "" || tank.PowerTime != 0 || tank.MachineRounds != 0 || tank.Shield != 0 || tank.ShieldCharges != 0 || tank.SpeedTime != 0 || tank.SpeedStacks != 0 || tank.ScopeTime != 0 || tank.GhostTime != 0 || tank.AI != nil || tank.fireHeld || tank.fireBlocked {
+		if !tank.Alive || tank.stats != g.stats.members[p] || tank.stats == &cp.rows[id] || g.Scores[id] != 1 || tank.Power != "" || tank.PowerTime != 0 || tank.MachineRounds != 0 || tank.Shield != 0 || tank.ShieldCharges != 0 || tank.SpeedTime != 0 || tank.SpeedStacks != 0 || tank.GhostTime != 0 || tank.AI != nil || tank.fireHeld || tank.fireBlocked {
 			t.Fatal("squad did not revive cleanly with its own restored statistics")
 		}
 	}
@@ -144,7 +144,7 @@ func TestSurvival433RepeatedLossRetriesDoNotFarmStatsOrKeepResults(t *testing.T)
 		g.Phase = "playing"
 		g.stats.duration += 12
 		g.Tanks[0].Invulnerable = 0
-		g.hurt(g.Tanks[0], &Bullet{Owner: 0})
+		g.hurt(g.Tanks[0], &Bullet{Owner: 1})
 		g.stepSurvival(r.Players)
 		if g.matchReport == nil || g.matchReport.Players[0].Deaths != 1 || g.matchReport.Duration != 12 || g.survivalState().Status != "lost" {
 			t.Fatal("repeated attempt did not freeze its own independent result")

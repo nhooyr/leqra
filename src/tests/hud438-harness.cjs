@@ -11,7 +11,7 @@ function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||path.join(__dirname,'../
   const attrs=new Map(),styles=new Map(),classes=new Set();
   nodes.set(id,{hidden:false,textContent:'',innerHTML:'',dataset:{},title:'',classList:{toggle:(k,on)=>on?classes.add(k):classes.delete(k),contains:k=>classes.has(k)},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,String(v))},getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,String(v))});
  }return nodes.get(id);};
- const tanks=Array.from({length:8},(_,id)=>({id,name:'PILOT '+id,color:'#73cee4',team:id===0||id===7?1:2,alive:true,power:id===0?'grenade':'scatter',charges:3,powerTime:8,machineRounds:180,cooldown:.2,cooldownTotal:.54,ghostTime:0,shield:0,speedTime:0,scopeTime:0}));
+ const tanks=Array.from({length:8},(_,id)=>({id,name:'PILOT '+id,color:'#73cee4',team:id===0||id===7?1:2,alive:true,power:id===0?'grenade':'scatter',charges:3,powerTime:8,machineRounds:180,cooldown:.2,cooldownTotal:.54,ghostTime:0,shield:0,speedTime:0}));
  const bullets=Array.from({length:projectileCount},(_,n)=>({owner:n%8,kind:n%17===0?'homing':n%29===0?'grenade':'rapid',life:2.2+n%8/10,dead:n%31===0,target:n%2?7:0}));
  const rules={friendlyFire:false},online={snapshots:[{bullets,tankMap:new Map(tanks.map(t=>[t.id,t])),received:1000}]};
  const env={mode,phase:'playing',bullets,tanks,online,rules,$,nodes,now:1000,performance:{now:()=>env.now},feedbackAt:-Infinity,time:1,

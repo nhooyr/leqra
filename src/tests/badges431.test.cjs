@@ -16,7 +16,7 @@ function boot(){
  for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','powerExpiryAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
-function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,charges:3,machineRounds:180,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,scopeTime:10,ghostTime:10,...patch};}
+function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,charges:3,machineRounds:180,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,ghostTime:10,...patch};}
 function pictures(ctx){return ctx.events.filter(e=>e.type==='image');}
 
 function badgeOverlap(a,b){return Math.hypot(a.x+a.w/2-b.x-b.w/2,a.y+a.h/2-b.y-b.h/2)<(a.w+b.w)*28.5/64-1e-8;}
@@ -28,7 +28,7 @@ test('bot and remote power icons proceed clockwise below stable names without co
   const {s,ctx}=boot();s.mode=mode;s.scale=scale;
   const t=tank({shield:charges?10:0,shieldCharges:charges,angle:1.35,human:mode==='online'});s.drawTank(t);
   const text=ctx.events.findLast(e=>e.type==='text'),label=labelRect(ctx),icons=pictures(ctx);
-  assert.equal(text.text,'GODLIKE BOSS');assert.equal(icons.length,charges?5:4);
+  assert.equal(text.text,'GODLIKE BOSS');assert.equal(icons.length,charges?4:3);
   const textDescent=parseFloat(text.font.replace('bold ',''))*.25;
   for(const icon of icons){
    assert.ok(icon.y+icon.w*(.5-28.5/64)>=label.y+label.h,'name background stays above the lower icon arc');
@@ -42,16 +42,16 @@ test('bot and remote power icons proceed clockwise below stable names without co
   assert.ok(icons[0].x>t.x,'first badge starts right of the tank below its name');
   assert.ok(icons[1].x<icons[0].x&&icons[1].y>icons[0].y);
   assert.ok(Math.abs(icons[2].x+icons[2].w/2-t.x)<1e-8,'third badge is below the tank');
-  assert.ok(icons[2].y>icons[1].y&&icons[3].y<icons[2].y&&icons[3].x<icons[2].x);
-  if(icons.length===5){assert.ok(icons[4].x<icons[3].x);assert.equal(icons[4].y,icons[0].y);}
+  assert.ok(icons[2].y>icons[1].y);
+  if(charges)assert.ok(icons[3].y<icons[2].y&&icons[3].x<icons[2].x);
  }
 });
 test('name position and dimensions never change as weapons, shields and other effects are acquired or lost',()=>{
  for(const mode of ['room','online'])for(const scale of [1,.25,.08])for(const [x,y] of [[1200,700],[42,42],[2358,1458]]){
   const {s,ctx}=boot();s.mode=mode;s.scale=scale;
-  const t=tank({x,y,powerTime:0,shield:0,shieldCharges:0,speedTime:0,scopeTime:0,ghostTime:0});
+  const t=tank({x,y,powerTime:0,shield:0,shieldCharges:0,speedTime:0,ghostTime:0});
   s.drawTank(t);const before=nameGeometry(ctx);
-  for(const patch of [{powerTime:15},{shield:10,shieldCharges:1},{shieldCharges:5},{speedTime:10},{scopeTime:10},{ghostTime:10},{powerTime:0,shield:0,speedTime:0,scopeTime:0,ghostTime:0}]){
+  for(const patch of [{powerTime:15},{shield:10,shieldCharges:1},{shieldCharges:5},{speedTime:10},{ghostTime:10},{powerTime:0,shield:0,speedTime:0,ghostTime:0}]){
    Object.assign(t,patch);ctx.events.length=0;s.drawTank(t);assert.deepEqual(nameGeometry(ctx),before);
   }
  }
@@ -60,22 +60,22 @@ test('local pilots retain HUD-only power status while bots, remote pilots and sp
  for(const mode of ['room','online'])for(const id of [0,1,3])for(const human of [false,true]){
   const {s,ctx}=boot();s.mode=mode;s.drawTank(tank({id,human}));
   const expected=mode==='online'?id!==0&&id!==1:!human;
-  assert.equal(pictures(ctx).length,expected?5:0,`${mode} id=${id} human=${human}`);
+  assert.equal(pictures(ctx).length,expected?4:0,`${mode} id=${id} human=${human}`);
  }
- const {s,ctx}=boot();s.mode='online';s.localPlayerID=()=>-1;s.secondaryID=()=>-1;s.drawTank(tank({id:0,human:true}));assert.equal(pictures(ctx).length,5);
+ const {s,ctx}=boot();s.mode='online';s.localPlayerID=()=>-1;s.secondaryID=()=>-1;s.drawTank(tank({id:0,human:true}));assert.equal(pictures(ctx).length,4);
 });
 test('badge orbits reuse cached icon sprites across movement and rotation, removing expired effects',()=>{
- const {s,ctx,made}=boot(),t=tank();s.drawTank(t);const first=pictures(ctx).map(e=>e.image);assert.equal(made.length,5);
+ const {s,ctx,made}=boot(),t=tank();s.drawTank(t);const first=pictures(ctx).map(e=>e.image);assert.equal(made.length,4);
  for(let i=0;i<20;i++){ctx.events.length=0;t.x+=1;t.y+=2;t.angle+=.1;s.drawTank(t);assert.deepEqual(pictures(ctx).map(e=>e.image),first);}
- assert.equal(made.length,5,'moving tanks do not rebuild icon sprites');
- ctx.events.length=0;Object.assign(t,{powerTime:0,shield:0,speedTime:0,scopeTime:0,ghostTime:0});s.drawTank(t);assert.equal(pictures(ctx).length,0);
+ assert.equal(made.length,4,'moving tanks do not rebuild icon sprites');
+ ctx.events.length=0;Object.assign(t,{powerTime:0,shield:0,speedTime:0,ghostTime:0});s.drawTank(t);assert.equal(pictures(ctx).length,0);
  Object.assign(t,{alive:false,powerTime:10});ctx.events.length=0;s.drawTank(t);assert.equal(pictures(ctx).length,0);assert.equal(ctx.events.filter(e=>e.type==='text').length,0);
 });
 
 test('bot and remote power icons keep their tank-relative offsets through every edge and corner',()=>{
- for(const mode of ['room','online'])for(const scale of [1,.25,.08])for(const count of [1,2,3,4,5]){
+ for(const mode of ['room','online'])for(const scale of [1,.25,.08])for(const count of [1,2,3,4]){
   const {s,ctx}=boot();Object.assign(s,{mode,scale});
-  const t=tank({human:mode==='online',shield:count>=2?10:0,shieldCharges:count>=2?5:0,speedTime:count>=3?10:0,scopeTime:count>=4?10:0,ghostTime:count>=5?10:0});
+  const t=tank({human:mode==='online',shield:count>=2?10:0,shieldCharges:count>=2?5:0,speedTime:count>=3?10:0,ghostTime:count>=4?10:0});
   s.drawTank(t);const offsets=pictures(ctx).map(icon=>({kind:icon.image.kind,x:icon.x-t.x,y:icon.y-t.y,w:icon.w}));assert.equal(offsets.length,count);
   for(const x of [17,42,1200,2358,2383])for(const y of [17,42,700,1458,1483]){
    Object.assign(t,{x,y,angle:t.angle+.17,powerTime:9,shieldCharges:count>=2?3:0,speedStacks:4});ctx.events.length=0;s.drawTank(t);
@@ -92,16 +92,16 @@ test('bot and remote power icons keep their tank-relative offsets through every 
 test('gaining or losing a power-up may repack badges but moving cannot create an alternate orbit',()=>{
  const {s,ctx}=boot(),t=tank({x:2383,y:1483});
  const draw=()=>{ctx.events.length=0;s.drawTank(t);return pictures(ctx).map(icon=>({kind:icon.image.kind,x:icon.x-t.x,y:icon.y-t.y}));};
- const full=draw();t.powerTime=0;const expired=draw();assert.equal(expired.length,4);assert.equal(expired[0].kind,'shield');assert.equal(expired[0].x,full[0].x);assert.equal(expired[0].y,full[0].y);
+ const full=draw();t.powerTime=0;const expired=draw();assert.equal(expired.length,3);assert.equal(expired[0].kind,'shield');assert.equal(expired[0].x,full[0].x);assert.equal(expired[0].y,full[0].y);
  t.powerTime=15;assert.deepEqual(draw(),full,'regaining the weapon restores the same slots even at a corner');
  const icons=pictures(ctx);assert.ok(icons.some(icon=>icon.x+icon.w>s.W||icon.y+icon.h>s.H),'near-edge icons may clip instead of moving away from the tank');
 });
 
 test('expiring bot and remote badges use each effect timer and the exact pickup pulse phase below three seconds',()=>{
  for(const mode of ['room','online'])for(const clock of [0,Math.PI/24,Math.PI/8,7.21]){
-  const {s,ctx}=boot();Object.assign(s,{mode,fxTime:clock});const t=tank({human:mode==='online',powerTime:2.99,shield:3,speedTime:3.01,scopeTime:.01,ghostTime:1.4});
-  s.drawTank(t);const icons=pictures(ctx),labels=ctx.events.filter(e=>e.type==='text');assert.equal(icons.length,5);assert.equal(labels.at(-1).text,t.name);assert.equal(labels.at(-1).alpha,1,'badge pulse cannot fade the tank name');assert.equal(labels.at(-1).textBaseline,'alphabetic');
-  for(const icon of icons){const kind=icon.image.kind,life={laser:t.powerTime,shield:t.shield,speed:t.speedTime,scope:t.scopeTime,ghost:t.ghostTime}[kind];
+  const {s,ctx}=boot();Object.assign(s,{mode,fxTime:clock});const t=tank({human:mode==='online',powerTime:2.99,shield:3,speedTime:3.01,ghostTime:1.4});
+  s.drawTank(t);const icons=pictures(ctx),labels=ctx.events.filter(e=>e.type==='text');assert.equal(icons.length,4);assert.equal(labels.at(-1).text,t.name);assert.equal(labels.at(-1).alpha,1,'badge pulse cannot fade the tank name');assert.equal(labels.at(-1).textBaseline,'alphabetic');
+  for(const icon of icons){const kind=icon.image.kind,life={laser:t.powerTime,shield:t.shield,speed:t.speedTime,ghost:t.ghostTime}[kind];
    ctx.events.length=0;s.drawPickup({type:kind,x:84,y:84,life});const pickup=ctx.events.find(e=>e.type==='rect');assert.equal(icon.alpha,pickup.alpha,kind+' uses the same pulse as the pickup');
    assert.equal(icon.alpha,life<3?.5+.4*Math.sin(clock*12):1);assert.ok(icon.alpha>=.1-1e-8&&icon.alpha<=1);
   }
@@ -110,7 +110,7 @@ test('expiring bot and remote badges use each effect timer and the exact pickup 
 
 test('weapon corners report actual charges or machine-gun rounds and do not allocate per-count sprites',()=>{
  for(const mode of ['room','online'])for(const power of ['laser','homing','grenade','cannon','scatter','rapid']){
-  const {s,ctx,made}=boot();s.mode=mode;const t=tank({human:mode==='online',power,shield:0,speedTime:0,scopeTime:0,ghostTime:0});
+  const {s,ctx,made}=boot();s.mode=mode;const t=tank({human:mode==='online',power,shield:0,speedTime:0,ghostTime:0});
   const maximum=power==='rapid'?180:power==='scatter'?5:3;let sprite;
   for(let remaining=maximum;remaining>=0;remaining--){
    Object.assign(t,{charges:remaining,machineRounds:remaining,powerTime:remaining%2?2:10});s.fxTime=remaining/20;ctx.events.length=0;s.drawTankPowerBadges(t);
@@ -122,19 +122,19 @@ test('weapon corners report actual charges or machine-gun rounds and do not allo
  }
 });
 
-test('stack counters reflect shield and speed stacks while Scope and Ghost remain unnumbered',()=>{
+test('stack counters reflect shield and speed stacks while Ghost remains unnumbered',()=>{
  for(const mode of ['room','online'])for(const stacks of [1,2,5]){
   const {s,ctx}=boot();s.mode=mode;const t=tank({human:mode==='online',power:null,shieldCharges:stacks,speedStacks:stacks});s.drawTankPowerBadges(t);
-  assert.deepEqual(pictures(ctx).map(e=>e.image.kind),['shield','speed','scope','ghost']);assert.deepEqual(ctx.events.filter(e=>e.type==='text').map(e=>e.text),[String(stacks),String(stacks)]);
-  Object.assign(t,{shield:0,speedTime:0});ctx.events.length=0;s.drawTankPowerBadges(t);assert.equal(pictures(ctx).length,2);assert.equal(ctx.events.some(e=>e.type==='text'),false);
+  assert.deepEqual(pictures(ctx).map(e=>e.image.kind),['shield','speed','ghost']);assert.deepEqual(ctx.events.filter(e=>e.type==='text').map(e=>e.text),[String(stacks),String(stacks)]);
+  Object.assign(t,{shield:0,speedTime:0});ctx.events.length=0;s.drawTankPowerBadges(t);assert.equal(pictures(ctx).length,1);assert.equal(ctx.events.some(e=>e.type==='text'),false);
  }
 });
 
-test('blinking and changing counts keep all five fixed slots at a maze corner',()=>{
- const {s,ctx}=boot(),t=tank({x:2383,y:1483,powerTime:2,shield:2,speedTime:2,scopeTime:2,ghostTime:2});let positions;
+test('blinking and changing counts keep all four fixed slots at a maze corner',()=>{
+ const {s,ctx}=boot(),t=tank({x:2383,y:1483,powerTime:2,shield:2,speedTime:2,ghostTime:2});let positions;
  for(const clock of [0,Math.PI/24,Math.PI/8,12]){
   s.fxTime=clock;t.charges=Math.ceil(clock)%3+1;t.shieldCharges=Math.ceil(clock)%5+1;ctx.events.length=0;s.drawTankPowerBadges(t);
-  const current=pictures(ctx).map(e=>[e.image.kind,e.x,e.y]);if(positions)assert.deepEqual(current,positions);else positions=current;assert.equal(current.length,5);
+  const current=pictures(ctx).map(e=>[e.image.kind,e.x,e.y]);if(positions)assert.deepEqual(current,positions);else positions=current;assert.equal(current.length,4);
  }
 });
 
@@ -243,7 +243,7 @@ test('online shield history applies to the matching life and generation before d
 
 test('the render pass paints edge labels above tanks after restoring the maze clip',()=>{
  const {s,ctx}=boot(),noop=()=>{};
- Object.assign(s,{dpr:1,cssW:2400,cssH:1500,offsetX:0,offsetY:0,shake:0,mapCanvas:null,tanks:[tank({x:1200,y:21,powerTime:0,shield:0,speedTime:0,scopeTime:0,ghostTime:0})],pickups:[],bullets:[],rings:[],particles:[],drawObjectives:noop,drawAimingGuides:noop,drawFlags:noop,drawMissileWarnings:noop,drawLasers:noop,syncCanvasSize:noop});
+ Object.assign(s,{dpr:1,cssW:2400,cssH:1500,offsetX:0,offsetY:0,shake:0,mapCanvas:null,tanks:[tank({x:1200,y:21,powerTime:0,shield:0,speedTime:0,ghostTime:0})],pickups:[],bullets:[],rings:[],particles:[],drawObjectives:noop,drawAimingGuides:noop,drawFlags:noop,drawMissileWarnings:noop,drawLasers:noop,syncCanvasSize:noop});
  vm.runInContext(declaration('render'),s);s.render();
  const labels=ctx.events.filter(e=>e.type==='text');assert.equal(labels.length,1);assert.equal(labels[0].clipped,false,'the maze boundary must not cut off the name');
  const rect=labelRect(ctx);assert.equal(rect.y+rect.h,s.tanks[0].y-32);assert.ok(rect.y<0,'fixed above-tank position can extend into the canvas margin');

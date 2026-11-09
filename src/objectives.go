@@ -194,7 +194,6 @@ func (g *Game) respawnTank(t *Tank) {
 	t.ShieldCharges = 0
 	t.SpeedTime = 0
 	t.SpeedStacks = 0
-	t.ScopeTime = 0
 	t.GhostTime = 0
 	t.Cooldown = 0
 	t.CooldownTotal = 0

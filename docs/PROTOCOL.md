@@ -1,13 +1,17 @@
-# leqra v4.46.0 — current game protocol (protocol 1)
+# leqra v4.47.0 — current game protocol (protocol 1)
 
-Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.46.0**:
+Deploy the server and complete browser assets together. The JSON framing protocol remains **1**, and the application-version handshake now requires **4.47.0**:
 
 ```json
-{"type":"server_hello","version":"4.46.0","protocol":1}
-{"type":"client_hello","version":"4.46.0","protocol":1}
+{"type":"server_hello","version":"4.47.0","protocol":1}
+{"type":"client_hello","version":"4.47.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
+
+## Projectile ownership
+
+Every projectile passes through the tank that fired it, and grenade blasts skip their owner. Grenades still detonate on contact with other living tanks, including allies and tanks with spawn protection. Friendly fire controls whether a weapon can damage a different tank on the same team.
 
 ## Home-screen mode selection
 
@@ -65,7 +69,9 @@ An `add` command with `kind:"bot"` may omit `difficulty`. The server then copies
 
 ## Map-dependent timers and machine-gun budget
 
-Equipped weapon timers and Shield, Speed, Scope and Ghost durations refresh to **10 seconds** on Compact/Standard/Large or **15 seconds** on Huge/Giant/Ultra Wide. This corresponds to 15 seconds at maze area at least `14 * 12` cells. Projectile ranges/lifetimes and the 10-second grenade fuse remain separate.
+Equipped weapon timers and Shield, Speed and Ghost durations refresh to **10 seconds** on Compact/Standard/Large or **15 seconds** on Huge/Giant/Ultra Wide. This corresponds to 15 seconds at maze area at least `14 * 12` cells. Projectile ranges/lifetimes and the 10-second grenade fuse remain separate.
+
+The Laser pickup supplies three ricocheting shots and a long dotted guide while equipped. Clients calculate the guide for their locally controlled tanks from the current `power: "laser"` state and beam geometry. The separate `scope` value is removed from `rules.weapons` and `GET /api/config`, and snapshots omit `scopeTime`. Saved browser rules and presets merge a legacy Scope selection into Laser.
 
 Uncollected lifetime remains `floor(pickupCap * 8 / 3)` seconds, with a 30-second minimum for maze area at most `12 * 10` cells. The current six map values are **30, 30, 32, 45, 61 and 90 seconds**. These values are derived by the simulation; clients cannot supply expiry times.
 

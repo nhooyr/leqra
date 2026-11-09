@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),{boot}=require('./hud438-harness.cjs');
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
-const timers=['powerTime','shield','speedTime','scopeTime','ghostTime'];
+const timers=['powerTime','shield','speedTime','ghostTime'];
 function equipped(s,id,life=.1){
  const t=s.tanks[id];Object.assign(t,{power:'rapid',machineRounds:120,charges:2,cooldown:.6,shieldCharges:2,speedStacks:3,...Object.fromEntries(timers.map(k=>[k,life]))});return t;
 }
@@ -20,7 +20,7 @@ test('both online pilot HUDs expire weapons and buffs between snapshots without 
 
 test('fresh authoritative loadouts replace stale rendered equipment and then age continuously',()=>{
  const s=boot({mode:'online',projectileCount:0});equipped(s,0);equipped(s,7);s.now+=120;refresh(s);
- const current=s.online.snapshots[0],a={...s.tanks[0],power:'laser',powerTime:2.05,charges:1,shield:2.05,speedTime:2.05,scopeTime:2.05,ghostTime:2.05},b={...a,id:7,name:'SECOND',charges:3};
+ const current=s.online.snapshots[0],a={...s.tanks[0],power:'laser',powerTime:2.05,charges:1,shield:2.05,speedTime:2.05,ghostTime:2.05},b={...a,id:7,name:'SECOND',charges:3};
  s.online.snapshots.push({...current,received:s.now,tankMap:new Map([[0,a],[7,b]])});s.now+=120;refresh(s);
  assert.equal(s.$('weaponLabel').textContent,'LASER ×1 · 2s');assert.equal(s.$('weaponLabel2').textContent,'LASER ×3 · 2s');assert.equal(s.$('ammoDots').getAttribute('aria-label'),'PILOT 0: 1 of 3 laser charges available');
  for(const id of [0,7])for(const field of timers)close(s.pilotLoadoutTank(id)[field],1.93);

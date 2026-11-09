@@ -21,10 +21,6 @@ func TestNewPickupGrantsAndIndependentBuffs(t *testing.T) {
 				if p.GhostTime != ghostDuration {
 					t.Fatal("ghost duration")
 				}
-			case "scope":
-				if p.ScopeTime != scopeDuration {
-					t.Fatal("scope duration")
-				}
 			case "speed":
 				if p.SpeedTime != boostDuration {
 					t.Fatal("speed duration")
@@ -248,7 +244,7 @@ func TestGrenadeContactDetonates(t *testing.T) {
 		t.Fatal("grenade did not detonate on tank contact before fuse")
 	}
 }
-func TestGrenadeBlastHitsAllInRangeIncludingOwner(t *testing.T) {
+func TestGrenadeBlastHitsOpponentsInRangeAndSpareShooter(t *testing.T) {
 	g := battle(4)
 	g.Tanks[0].X = 180
 	g.Tanks[1].X = 210
@@ -256,7 +252,10 @@ func TestGrenadeBlastHitsAllInRangeIncludingOwner(t *testing.T) {
 	g.Tanks[3].X = 470
 	b := &Bullet{Kind: "grenade", Owner: 0, X: 210, Y: 210}
 	g.detonate(b)
-	for i := 0; i < 3; i++ {
+	if !g.Tanks[0].Alive {
+		t.Fatal("grenade blast hurt its owner")
+	}
+	for i := 1; i < 3; i++ {
 		if g.Tanks[i].Alive {
 			t.Fatalf("tank %d incorrectly immune", i)
 		}
@@ -276,8 +275,8 @@ func TestGrenadeBlastBlockedByCover(t *testing.T) {
 	g.Tanks[1].X = 280
 	g.World.Walls = append(g.World.Walls, Wall{X: 248, Y: 0, W: 8, H: 420, Axis: "v", Line: 252})
 	g.detonate(&Bullet{Kind: "grenade", Owner: 0, X: 225, Y: 210})
-	if !g.Tanks[1].Alive || g.Tanks[0].Alive {
-		t.Fatal("cover or uncovered blast incorrect")
+	if !g.Tanks[1].Alive || !g.Tanks[0].Alive {
+		t.Fatal("blast bypassed cover or owner immunity")
 	}
 }
 func TestGrenadeShieldAndSpawnProtection(t *testing.T) {
@@ -288,15 +287,16 @@ func TestGrenadeShieldAndSpawnProtection(t *testing.T) {
 	g.Tanks[1].Shield = 10
 	g.Tanks[2].Invulnerable = .5
 	g.detonate(&Bullet{Kind: "grenade", Owner: 0, X: 140, Y: 210})
-	if g.Tanks[0].Alive || !g.Tanks[1].Alive || g.Tanks[1].Shield != 0 || !g.Tanks[2].Alive {
+	if !g.Tanks[0].Alive || !g.Tanks[1].Alive || g.Tanks[1].Shield != 0 || !g.Tanks[2].Alive {
 		t.Fatal("shield/spawn grace not respected")
 	}
 }
-func TestGrenadeDoubleKnockoutIsDraw(t *testing.T) {
-	g := battle(2)
+func TestGrenadeBlastResolvesAllKillsBeforeScoring(t *testing.T) {
+	g := battle(3)
+	g.Tanks[2].X = 250
 	g.Bullets = []*Bullet{{Kind: "grenade", Owner: 0, X: 140, Y: 210, R: 6, Life: tickDT}}
-	g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
-	if g.Phase != "roundOver" || g.Winner != -1 || g.Scores != [maxTanks]int{} {
+	g.step(tickDT, [maxTanks]Input{}, testPlayers(3))
+	if g.Phase != "roundOver" || g.Winner != 0 || g.Scores[0] != 1 || g.Tanks[1].Alive || g.Tanks[2].Alive {
 		t.Fatal("blast did not resolve simultaneously")
 	}
 }

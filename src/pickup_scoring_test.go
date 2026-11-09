@@ -20,11 +20,6 @@ func originalGodlikePickupValue(t *Tank, kind string) float64 {
 			return 0
 		}
 		return 3.8
-	case "scope":
-		if t.ScopeTime > 3 {
-			return 0
-		}
-		return .65
 	}
 	value := map[string]float64{"rapid": 3.7, "scatter": 3, "homing": 4.2, "grenade": 3, "laser": 5, "cannon": 5.2}[kind]
 	if t.Power != "" && t.PowerTime > 3 && t.Charges > 0 && (t.Power != "rapid" || t.MachineRounds >= 120) {
@@ -58,7 +53,7 @@ func TestGodlikePickupValuesPreserveScoring(t *testing.T) {
 	}
 	for _, duration := range []float64{0, 3, 3.0001, 4, 4.0001, 10} {
 		for _, stacks := range []int{0, 1, 5, 6} {
-			check(&Tank{Shield: duration, ShieldCharges: stacks, SpeedTime: duration, SpeedStacks: stacks, GhostTime: duration, ScopeTime: duration})
+			check(&Tank{Shield: duration, ShieldCharges: stacks, SpeedTime: duration, SpeedStacks: stacks, GhostTime: duration})
 		}
 	}
 }
