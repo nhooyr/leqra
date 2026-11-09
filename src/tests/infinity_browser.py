@@ -223,7 +223,7 @@ def check_offline(browser, errors):
         panel = page.locator("#infiniteLeaderboardPanel")
         panel.locator("summary").tap()
         expect(panel.locator("#infiniteLeaderboard")).to_contain_text("OFFLINE PILOT (you)")
-        expect(panel.locator("#infiniteLeaderboard")).to_contain_text("Bot ")
+        expect(panel.locator("#infiniteLeaderboard")).to_contain_text("RUST")
         check_touch_controls(context, page)
         page.locator("#infinitePauseBtn").tap()
         check_pause_style(page, online=False)
@@ -231,7 +231,7 @@ def check_offline(browser, errors):
         expect(page.locator("#infiniteArena")).to_be_hidden()
         expect(page.locator("html")).not_to_have_class(re.compile(r"\bmatch-active\b"))
         expect(page.locator('[data-room-mode="infinity"]')).to_have_attribute("aria-checked", "true")
-    print("PASS offline file launch, mobile controls, random bots, and standings", flush=True)
+    print("PASS offline file launch, mobile controls, roster bots, and standings", flush=True)
 
 
 def check_audio(browser, errors):

@@ -50,6 +50,13 @@ type infiniteTank struct {
 	Speed      int     `json:"speedStacks,omitempty"`
 	Ghost      float64 `json:"ghostTime,omitempty"`
 	Starman    float64 `json:"starmanTime,omitempty"`
+
+	CooldownTotal float64 `json:"cooldownTotal,omitempty"`
+	RespawnTime   float64 `json:"respawnTime,omitempty"`
+	AmmoUsed      int     `json:"ammoUsed,omitempty"`
+	Grenades      int     `json:"grenades,omitempty"`
+	GrenadeLife   float64 `json:"grenadeLife,omitempty"`
+	Locked        bool    `json:"locked,omitempty"`
 }
 
 type infinitePilot struct {
@@ -63,6 +70,8 @@ type infinitePilot struct {
 	paused                 bool // Holds respawn independently of control expiry.
 	respawn                uint64
 	kit                    Tank // Reuses fixed-maze equipment state and pickup rules.
+	roomBot                *Player
+	botLevel               int
 
 	waypoint, previous [2]int
 	hasWaypoint        bool
@@ -115,6 +124,9 @@ type infiniteRules struct {
 	TeamNames    []string `json:"teamNames"`
 	TeamColors   []int    `json:"teamColors"`
 	FriendlyFire bool     `json:"friendlyFire"`
+
+	randomBots, randomDifficulty bool
+	botLevel                     int
 }
 
 type infiniteResult struct {
@@ -145,7 +157,9 @@ type infiniteArena struct {
 	nextID, nextBullet int
 	pickupID, effectID int
 	snapshot           infiniteSnapshot // Reused after immediate encoding under mu.
+	snapshotTankIndex  map[int]int
 	rules              *infiniteRules
+	roomBots           []infiniteRoomBot
 	teamScores         [4]int
 	result             *infiniteResult
 }
@@ -154,10 +168,16 @@ func newInfiniteArena() *infiniteArena {
 	return newSeededInfiniteArena(rand.Uint32())
 }
 
-func newRoomInfiniteArena(rules MatchRules) *infiniteArena {
+func newRoomInfiniteArena(rules MatchRules, bots []infiniteRoomBot) *infiniteArena {
 	a := newInfiniteArena()
 	rules = normalizedRules(rules)
-	a.rules = &infiniteRules{rules.InfinityTarget, rules.TeamMode, rules.TeamNames, rules.TeamColors, rules.FriendlyFire}
+	a.rules = &infiniteRules{
+		Target: rules.InfinityTarget, TeamMode: rules.TeamMode, TeamNames: rules.TeamNames,
+		TeamColors: rules.TeamColors, FriendlyFire: rules.FriendlyFire,
+		randomBots: rules.InfinityRandomBots, randomDifficulty: rules.InfinityRandomDifficulty,
+		botLevel: infiniteBotLevel(rules.InfinityBotDifficulty),
+	}
+	a.roomBots = bots
 	return a
 }
 
@@ -213,6 +233,12 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 	a.players += len(a.pilots) - before
 	if a.result != nil {
 		a.broadcast()
+	} else if before == 0 {
+		for _, spec := range a.roomBots {
+			bot := a.addPilot(spec.seat.name, true, p.X, p.Y, 3, 6)
+			bot.roomBot, bot.botLevel = spec.member, infiniteBotLevel(spec.difficulty)
+			a.setSeat(bot, spec.seat, now)
+		}
 	}
 	return p, local
 }
@@ -221,6 +247,28 @@ func (a *infiniteArena) setSeat(p *infinitePilot, seat infiniteSeat, now time.Ti
 	p.Team, p.inputAt, p.activeAt = seat.team, now, now
 	if seat.colorIndex >= 0 {
 		p.ColorIndex = seat.colorIndex
+	}
+}
+
+func (a *infiniteArena) removeRoomBots(removed uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i := len(a.roomBots) - 1; i >= 0; i-- {
+		if removed&(1<<i) == 0 {
+			continue
+		}
+		member := a.roomBots[i].member
+		a.roomBots = slices.Delete(a.roomBots, i, i+1)
+		for j, pilot := range a.pilots {
+			if pilot.roomBot == member {
+				a.pilots = slices.Delete(a.pilots, j, j+1)
+				a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool { return b.Owner == pilot.ID })
+				break
+			}
+		}
+	}
+	if a.result != nil {
+		a.broadcast()
 	}
 }
 
@@ -242,6 +290,7 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 		a.pilots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil
 		a.maze = nil
 		a.snapshot = emptyInfiniteSnapshot()
+		a.snapshotTankIndex = nil
 		a.nextBot = a.tick
 		a.nextPickup = a.tick
 	}
@@ -282,7 +331,7 @@ func (a *infiniteArena) idle(p *infinitePilot, now time.Time) bool {
 
 func (a *infiniteArena) addPilot(name string, bot bool, nearX, nearY float64, minCells, maxCells int) *infinitePilot {
 	a.nextID++
-	p := &infinitePilot{infiniteTank: infiniteTank{ID: a.nextID, Name: name, Bot: bot, ColorIndex: (a.nextID - 1) % len(tankColors)}}
+	p := &infinitePilot{infiniteTank: infiniteTank{ID: a.nextID, Name: name, Bot: bot, ColorIndex: (a.nextID - 1) % len(tankColors)}, botLevel: infiniteNormalBot}
 	a.spawn(p, nearX, nearY, minCells, maxCells)
 	a.pilots = append(a.pilots, p)
 	return p
@@ -413,13 +462,13 @@ func (a *infiniteArena) drive(p *infinitePilot, input Input) {
 }
 
 func (a *infiniteArena) populate() {
-	if a.tick < a.nextBot {
+	if a.rules != nil && !a.rules.randomBots || a.tick < a.nextBot {
 		return
 	}
 	a.nextBot = a.tick + uint64(60+a.random.IntN(61))
 	bots := 0
 	a.pilots = slices.DeleteFunc(a.pilots, func(p *infinitePilot) bool {
-		if !p.Bot {
+		if !p.Bot || p.roomBot != nil {
 			return false
 		}
 		if a.nearestPilot(p, cellSize*13, false) == nil {
@@ -442,6 +491,12 @@ func (a *infiniteArena) populate() {
 	if n > 0 {
 		p := pilots[a.random.IntN(n)]
 		bot := a.addPilot("Bot "+strconv.Itoa(a.nextID+1), true, p.X, p.Y, 3, 6)
+		if a.rules != nil {
+			bot.botLevel = a.rules.botLevel
+			if a.rules.randomDifficulty {
+				bot.botLevel = a.random.IntN(bot.botLevel + 1)
+			}
+		}
 		if a.teams() {
 			var counts [5]int
 			for _, other := range a.pilots {
@@ -474,13 +529,35 @@ func (a *infiniteArena) nearestPilot(p *infinitePilot, maxDist float64, findOppo
 	return nearest
 }
 
+const infiniteNormalBot = 1
+
+var infiniteBotTunings = [...]struct {
+	name             string
+	sight, roam, aim float64
+}{
+	{"easy", .7, .75, 1.65},
+	{"normal", 1, 1, 1},
+	{"hard", 1.15, 1.15, .7},
+	{"godlike", 1.3, 1.3, .45},
+}
+
+func infiniteBotLevel(name string) int {
+	for level, tuning := range infiniteBotTunings {
+		if name == tuning.name {
+			return level
+		}
+	}
+	return infiniteNormalBot
+}
+
 func (a *infiniteArena) botInput(p *infinitePilot) Input {
-	target := a.nearestPilot(p, cellSize*8, true)
+	tuning := infiniteBotTunings[p.botLevel]
+	target := a.nearestPilot(p, cellSize*8*tuning.sight, true)
 	if target != nil {
 		dx, dy := target.X-p.X, target.Y-p.Y
 		if _, wall := a.rayWalls(p.X, p.Y, dx, dy, infiniteBulletRadius); !wall {
 			angle := math.Atan2(dy, dx)
-			fire := !target.Protected && math.Abs(delta(p.Angle, angle)) < .12
+			fire := !target.Protected && math.Abs(delta(p.Angle, angle)) < .12*tuning.aim
 			// Alternate the AI's trigger after a grenade throw so a fresh
 			// press can detonate it without cancelling the launch immediately.
 			if p.kit.fireBlocked {
@@ -494,7 +571,7 @@ func (a *infiniteArena) botInput(p *infinitePilot) Input {
 		x, y := infiniteCenter(p.waypoint[0], p.waypoint[1])
 		if math.Hypot(x-p.X, y-p.Y) > 4 {
 			angle := math.Atan2(y-p.Y, x-p.X)
-			return Input{StickX: .72 * math.Cos(angle), StickY: .72 * math.Sin(angle)}
+			return Input{StickX: .72 * tuning.roam * math.Cos(angle), StickY: .72 * tuning.roam * math.Sin(angle)}
 		}
 		p.hasWaypoint = false
 	}
@@ -574,8 +651,35 @@ func (a *infiniteArena) broadcast() {
 	}
 	packet.Leaders = a.leaderboard(packet.Leaders)
 	var tanks [infiniteCapacity + infiniteBotLimit]infiniteTank
+	if a.snapshotTankIndex == nil {
+		a.snapshotTankIndex = make(map[int]int, len(a.pilots))
+	}
+	tankIndex := a.snapshotTankIndex
+	clear(tankIndex)
 	for i, p := range a.pilots {
-		tanks[i] = p.wireTank()
+		tanks[i] = p.wireTank(a.tick)
+		tankIndex[p.ID] = i
+	}
+	// A projectile can leave a pilot's view and still occupy an ammo slot.
+	// Summarize the arena once so views with identical entities share the wire.
+	for _, b := range a.bullets {
+		if b.dead || b.Life <= 1e-9 {
+			continue
+		}
+		if i, ok := tankIndex[b.Owner]; ok {
+			if !b.boosted {
+				tanks[i].AmmoUsed++
+			}
+			if b.Kind == "grenade" {
+				tanks[i].Grenades++
+				tanks[i].GrenadeLife = max(tanks[i].GrenadeLife, infinitePrecision(b.Life))
+			}
+		}
+		if b.Kind == "grenade" || b.Kind == "homing" {
+			if i, ok := tankIndex[b.target]; ok && infiniteOpposes(b.Owner, b.ownerTeam, a.pilots[i]) {
+				tanks[i].Locked = true
+			}
+		}
 	}
 	// Pilots with the same visible entities can share the encoded snapshot.
 	// The mask represents exact membership, including at the edge of sight.

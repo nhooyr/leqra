@@ -140,6 +140,50 @@ func TestInfiniteFireEdgeAndProximitySnapshot(t *testing.T) {
 	}
 }
 
+func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	c := fakeClient()
+	p := a.join(c, "Pilot", now)
+	other := a.join(fakeClient(), "Other", now)
+	other.X, other.Y = p.X, p.Y+100
+	drain(c)
+	applyPower(&p.kit, "cannon", infinitePowerDuration, infiniteStarDuration)
+	a.fire(p)
+	// A pickup can change the weapon while the previous weapon is reloading.
+	applyPower(&p.kit, "homing", infinitePowerDuration, infiniteStarDuration)
+	a.advanceEquipment(p)
+	far := p.X + 2*infiniteSight
+	a.bullets = append(a.bullets,
+		infiniteBullet{ID: 2, Owner: p.ID, X: far, Kind: "grenade", Life: 4},
+		infiniteBullet{ID: 3, Owner: p.ID, X: far, Kind: "grenade", Life: 7, boosted: true},
+		infiniteBullet{ID: 4, Owner: p.ID, X: far, Kind: "grenade", Life: 9, dead: true},
+		infiniteBullet{ID: 5, Owner: p.ID, X: far, Kind: "grenade", Life: 0},
+		infiniteBullet{ID: 6, Owner: other.ID, X: far, Kind: "homing", Life: 1, target: p.ID},
+	)
+	other.HP, other.respawn = 0, a.tick+infiniteRespawnTicks
+	a.broadcast()
+	var packet infiniteSnapshot
+	if err := json.Unmarshal(<-c.send, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if len(packet.Bullets) != 1 || packet.Bullets[0].Kind != "cannon" {
+		t.Fatalf("out-of-view combat state leaked extra projectile positions: %+v", packet.Bullets)
+	}
+	if len(packet.Tanks) != 2 {
+		t.Fatalf("expected both nearby tanks: %+v", packet.Tanks)
+	}
+	hud := packet.Tanks[0]
+	if hud.ID != p.ID || hud.Power != "homing" || hud.CooldownTotal != cannonCooldown ||
+		hud.Cooldown != infinitePrecision(cannonCooldown-tickDT) ||
+		hud.AmmoUsed != 2 || hud.Grenades != 2 || hud.GrenadeLife != 7 || !hud.Locked {
+		t.Fatalf("incorrect combat state: %+v", hud)
+	}
+	if packet.Tanks[1].RespawnTime != 2.5 {
+		t.Fatalf("incorrect respawn time: %+v", packet.Tanks[1])
+	}
+}
+
 func TestInfiniteFireTimeoutPreservesPressIdentity(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Now()
@@ -573,7 +617,7 @@ func TestPrivateInfinityTeamsCreditDepartedBotAndFreezeAtTarget(t *testing.T) {
 	rules := defaultRules()
 	rules.Infinity, rules.TeamMode, rules.InfinityTarget = true, "teams", 2
 	rules.TeamNames[0] = "Amber"
-	a := newRoomInfiniteArena(rules)
+	a := newRoomInfiniteArena(rules, nil)
 	now := time.Now()
 	first, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "First", team: 1}, nil, now)
 	second, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Second", team: 2}, nil, now)
@@ -614,7 +658,7 @@ func TestPrivateInfinityTeamsCreditDepartedBotAndFreezeAtTarget(t *testing.T) {
 func TestPrivateInfinityFreeForAllReachesPersonalTarget(t *testing.T) {
 	rules := defaultRules()
 	rules.Infinity, rules.InfinityTarget = true, 1
-	a := newRoomInfiniteArena(rules)
+	a := newRoomInfiniteArena(rules, nil)
 	now := time.Now()
 	winner, target := a.join(fakeClient(), "Winner", now), a.join(fakeClient(), "Target", now)
 	target.Protected = false

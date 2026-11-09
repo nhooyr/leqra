@@ -22,6 +22,7 @@ function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||assetPath('game.js'),mod
  const names=['canDamage','activeAmmo','ownedGrenades','missileLocks','setText','setStyle','setAttr','powerCapacity','cooldownDuration','pilotLoadoutTank','liveFeedbackTank','updateMachineBudget','renderPilotLoadout','updateCombatFeedback'];
  if(source.includes('function applyOnlineTankEffects('))names.push('applyOnlineTankEffects');
  if(source.includes('function pilotProjectileState('))names.push('pilotProjectileState');
+ if(source.includes('function renderPilotReadiness('))names.push('renderPilotReadiness','infinityHUDId','renderInfinityLoadout');
  const constants=source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS='));
  const factory=new Function('env','let {'+Object.keys(env).join(',')+'}=env;\n'+constants+'\n'+names.map(n=>declaration(source,n)).join('\n')+'\nreturn {'+names.join(',')+',setPhase(value){phase=value;},run(){renderPilotLoadout(tanks[0],1);renderPilotLoadout(tanks[7],2);updateCombatFeedback(true);}};');
  return Object.assign(env,factory(env));

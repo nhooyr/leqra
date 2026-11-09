@@ -8,18 +8,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="leqra">
-<meta name="leqra-version" content="v4.49.13">
+<meta name="leqra-version" content="v4.49.14">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.13/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.13/theme.css">
-<link rel="stylesheet" href="assets/v4.49.13/style.css">
-<link rel="manifest" href="assets/v4.49.13/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.13/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.13/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.13/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.13/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.14/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.14/theme.css">
+<link rel="stylesheet" href="assets/v4.49.14/style.css">
+<link rel="manifest" href="assets/v4.49.14/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.14/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.14/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.14/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.14/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -185,7 +185,7 @@
     <li><strong>Capture the Flag</strong> · Bring the enemy flag home while yours is at base.</li>
     <li><strong>King of the Hill</strong> · Control the hill to earn points.</li>
     <li><strong>Survival</strong> · Fight off waves of enemy tanks with your squad.</li>
-    <li><strong>Infinity</strong> · Roam an endless maze where tanks respawn. The Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play against bots or share your room to play with invited pilots.</li>
+    <li><strong>Infinity</strong> · Roam an unbounded maze where tanks respawn. The Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play with your room roster and set whether roaming bots can spawn.</li>
    </ul>
    <p>To play a room match, turn off Infinity, choose a mode in <strong>Room settings</strong>, and press <strong>Play</strong>.</p>
   </div>
@@ -220,8 +220,7 @@
   </div>
  </div>
  <footer class="infinite-underbar">
-  <div class="infinite-loadouts"><div class="infinite-loadout"><span class="pilot-slot">P1</span><span class="weapon" id="infiniteWeapon">STANDARD</span></div>
-   <div class="infinite-loadout" id="infiniteLocalLoadout" hidden><span class="pilot-slot">P2</span><span class="weapon" id="infiniteLocalWeapon">STANDARD</span></div></div>
+  <div class="local-loadouts infinite-loadouts" id="infiniteLoadouts"></div>
   <div class="infinite-readout"><p id="infiniteStatus" role="status"></p><p id="infiniteControlsHint" class="bar-hint"></p></div>
  </footer>
  <dialog id="infinitePauseMenu" class="overlay infinite-pause-menu" aria-labelledby="infinitePauseTitle" aria-describedby="infinitePauseHelp">
@@ -244,10 +243,10 @@
   <footer class="feature-footer"><button class="primary" id="infiniteResultExit" type="button" autofocus>Back to room</button></footer>
  </dialog>
 </dialog>
-<script src="assets/v4.49.13/netcode.js" defer></script>
-<script src="assets/v4.49.13/game.js" defer></script>
-<script src="assets/v4.49.13/infinite-maze.js" defer></script>
-<script src="assets/v4.49.13/infinite.js" defer></script>
-<script src="assets/v4.49.13/pwa.js" defer></script>
+<script src="assets/v4.49.14/netcode.js" defer></script>
+<script src="assets/v4.49.14/game.js" defer></script>
+<script src="assets/v4.49.14/infinite-maze.js" defer></script>
+<script src="assets/v4.49.14/infinite.js" defer></script>
+<script src="assets/v4.49.14/pwa.js" defer></script>
 </body>
 </html>

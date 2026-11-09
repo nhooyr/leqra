@@ -11,8 +11,6 @@ const knob = byID('infiniteKnob');
 const fire = byID('infiniteFire');
 const status = byID('infiniteStatus');
 const personalScore = byID('infiniteKills');
-const weapon = byID('infiniteWeapon');
-const localWeapon = byID('infiniteLocalWeapon');
 const leaderboard = byID('infiniteLeaderboard');
 const teamLeaderboard = byID('infiniteTeamScores');
 const resultDialog = byID('infiniteResult');
@@ -40,6 +38,11 @@ const PROJECTILES = Object.freeze({
 });
 const TAU = Math.PI * 2;
 const MAX_BOTS = 7;
+const BOT_LEVELS = ['easy','normal','hard','godlike'];
+const BOT_TUNING = {
+ easy:{range:.7,roam:.75,aim:1.65}, normal:{range:1,roam:1,aim:1},
+ hard:{range:1.15,roam:1.15,aim:.7}, godlike:{range:1.3,roam:1.3,aim:.45},
+};
 const PRIMARY_KEYS = {KeyW:'forward', KeyS:'reverse', KeyA:'left', KeyD:'right', KeyQ:'fire', KeyC:'fire'};
 const LOCAL_KEYS = {ArrowUp:'forward', ArrowDown:'reverse', ArrowLeft:'left', ArrowRight:'right', Space:'fire', Enter:'fire'};
 const pressed = new Set();
@@ -91,6 +94,13 @@ function setTeam(world, tank, team) {
  if (world.rules?.teamMode !== 'teams') return;
  tank.team = team || nextBotTeam(world);
  tank.colorIndex = world.rules.teamColors?.[tank.team - 1] ?? tank.team - 1;
+}
+
+function roamingDifficulty(rules) {
+ const ceiling = rules?.infinityBotDifficulty || 'normal';
+ if (!rules?.infinityRandomDifficulty) return ceiling;
+ const levels = BOT_LEVELS.indexOf(ceiling)+1;
+ return BOT_LEVELS[Math.floor(Math.random()*levels)];
 }
 
 function inputState(seat) {
@@ -296,7 +306,7 @@ function fireShot(world, tank) {
  const showShot = !boosted || kind === 'grenade' || world.time + 1e-9 >= (tank.nextBoostEffect || 0);
  if (kind === 'laser') {
   const {points, target} = traceLaser(world, tank);
-  Object.assign(tank, {cooldown, recoil: 1});
+  Object.assign(tank, {cooldown, cooldownTotal:cooldown, recoil:1});
   if (showShot) {
    tank.nextBoostEffect = world.time + 4 * STEP;
    effect(world, 'laser', tank.x, tank.y, tank.id, points);
@@ -311,7 +321,7 @@ function fireShot(world, tank) {
   for (const bullet of world.bullets) if (!bullet.dead && !bullet.boosted && bullet.owner === tank.id) ammo++;
   if (ammo + offsets.length > spec.ammo) return;
  }
- Object.assign(tank, {cooldown, recoil: 1});
+ Object.assign(tank, {cooldown, cooldownTotal:cooldown, recoil:1});
  for (const offset of offsets) {
   const angle = tank.angle + offset, ux = Math.cos(angle), uy = Math.sin(angle);
   const bullet = {
@@ -447,18 +457,19 @@ function botInput(world, tank, locals) {
   if (distance < best) { pilot = target; best = distance; }
  }
  if (!pilot) return net.neutral();
+ const tune = BOT_TUNING[tank.difficulty] || BOT_TUNING.normal;
  const dx = pilot.x - tank.x, dy = pilot.y - tank.y, distance = Math.hypot(dx, dy);
- const seesPilot = pilot.hp && distance < CELL * 6 && !wallHit(world.maze, tank.x, tank.y, dx, dy, BULLET_RADIUS);
+ const seesPilot = distance < CELL * 6 * tune.range && !wallHit(world.maze, tank.x, tank.y, dx, dy, BULLET_RADIUS);
  if (!seesPilot && world.time >= tank.nextDecision) {
   tank.course = botCourse(world.maze, tank, pilot);
-  tank.nextDecision = world.time + between(.25, .5);
+  tank.nextDecision = world.time + between(.25,.5)/tune.roam;
  }
  const tx = seesPilot ? dx : (tank.course?.x ?? tank.x) - tank.x;
  const ty = seesPilot ? dy : (tank.course?.y ?? tank.y) - tank.y;
  const aim = Math.atan2(ty, tx);
  return {
-  stickX: Math.cos(aim), stickY: Math.sin(aim), aimOnly: Math.hypot(tx, ty) < 5 || seesPilot && distance < 115,
-  fire: seesPilot && !(pilot.invulnerable > 0) && Math.abs(angleOf(aim - tank.angle)) < .16,
+  stickX: Math.cos(aim)*tune.roam, stickY: Math.sin(aim)*tune.roam, aimOnly: Math.hypot(tx, ty) < 5 || seesPilot && distance < 115,
+  fire: seesPilot && !(pilot.invulnerable > 0) && Math.abs(angleOf(aim - tank.angle)) < .16*tune.aim,
  };
 }
 
@@ -487,16 +498,20 @@ function populatePickups(world, locals, dt) {
 function offlineStep(world, dt) {
  world.time += dt;
  const locals = world.tanks.slice(0, world.controllers.length);
- world.tanks = world.tanks.filter(tank => !tank.bot || locals.some(pilot=>Math.hypot(pilot.x-tank.x,pilot.y-tank.y)<CELL*16));
- if (world.time >= world.nextBot && world.tanks.length - locals.length < MAX_BOTS) {
-  const pilot = locals[world.lastBot % locals.length];
-  const point = clearCell(world, pilot, 2.4 * CELL, 5.7 * CELL, 1.9 * CELL);
-  if (point) {
-   const bot = makeTank('bot-' + ++world.lastBot, point.x, point.y, true);
-   setTeam(world,bot);
-   world.tanks.push(bot);
+ if (!world.rules || world.rules.infinityRandomBots) {
+  world.tanks = world.tanks.filter(tank => !tank.ambient || locals.some(pilot=>Math.hypot(pilot.x-tank.x,pilot.y-tank.y)<CELL*16));
+  if (world.time >= world.nextBot && world.tanks.filter(tank=>tank.ambient).length < MAX_BOTS) {
+   const pilot = locals[world.lastBot % locals.length];
+   const point = clearCell(world, pilot, 2.4 * CELL, 5.7 * CELL, 1.9 * CELL);
+   if (point) {
+    const bot = makeTank('bot-' + ++world.lastBot,point.x,point.y,true);
+    bot.ambient = true;
+    bot.difficulty = roamingDifficulty(world.rules);
+    setTeam(world,bot);
+    world.tanks.push(bot);
+   }
+   world.nextBot = world.time + between(1.2, 3.4);
   }
-  world.nextBot = world.time + between(1.2, 3.4);
  }
  populatePickups(world, locals, dt);
  for (const tank of world.tanks) {
@@ -810,34 +825,36 @@ function renderScores(world, pilot, second) {
  teamLeaderboard.replaceChildren(...teams.map(makeRow));
 }
 
-function updateWeapon(element,pilot) {
- if(!element || !pilot)return;
- const active = pilot.power || (pilot.starmanTime > 0 ? 'starman' : pilot.shield > 0 ? 'shield' :
-  pilot.ghostTime > 0 ? 'ghost' : pilot.speedTime > 0 ? 'speed' : '');
- const label = (powers[active]?.name || 'Standard shell') + (pilot.starmanTime > 0 ? ' · ∞ AMMO' : '');
- if (element.textContent !== label) element.textContent = label;
- const color = powers[active]?.color || '';
- if (element.style.color !== color) element.style.color = color;
+function updatePilotLoadout(world, pilot, num, now) {
+ if (!pilot) {art.renderLoadout(null,num);return;}
+ const age = world.online&&!world.result ? clamp((now-world.arrived)/1000,0,.25) : 0;
+ const tank = {...pilot,color:COLORS[pilot.colorIndex]||COLORS[0],
+  cooldown:Math.max(0,(pilot.cooldown||0)-age),respawnTime:Math.max(0,(pilot.respawnTime||pilot.respawn||0)-age)};
+ const grenadeLife = Math.max(0,(pilot.grenadeLife||0)-age);
+ const projectiles = world.online ? {
+  ammo:tank.power==='laser'?Math.max(0,3-tank.charges):pilot.ammoUsed||0,
+  grenades:grenadeLife>0?pilot.grenades||0:0,grenadeLife,locked:!!pilot.locked,
+ } : art.projectileState(tank,true,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
+ const spec = PROJECTILES[tank.power||'regular'];
+ const state = world.result?'complete':pauseMenu.open?(world.online&&!tank.alive?'held':'paused'):'playing';
+ art.renderLoadout(tank,num,projectiles,tank.power!=='cannon'&&muzzleBlocked(world.maze,tank,spec.r),state);
 }
 
 function updateHUD(world, pilot, second, now) {
  if (!pilot || world.failed || world.online && !world.joined || now < world.nextHUD) return;
- world.nextHUD = now + 80;
+ world.nextHUD = now + 1000 / 30;
  renderScores(world,pilot,second);
  const counts = world.online ? ` · ${world.players} online` : ` · ${world.tanks.filter(tank=>tank.bot).length} bots`;
  const target = world.rules?.infinityTarget ? ` · First to ${world.rules.infinityTarget}` : '';
  const state = tank => tank?.hp ? 'Weapons live' : pauseMenu.open ? 'Respawn held' : 'Respawning…';
  setStatus((world.result ? world.result.name + ' wins' : second ? `P1 ${state(pilot)} · P2 ${state(second)}` : state(pilot)) + counts + target);
- updateWeapon(weapon,pilot);
- updateWeapon(localWeapon,second);
- const fireLabel = byID('infiniteFireLabel');
- const canDetonate = pilot.hp && world.bullets.some(b => !b.dead && b.owner === world.id && b.kind === 'grenade');
- if (fireLabel && canDetonate !== world.canDetonate) {
-  world.canDetonate = canDetonate;
-  fireLabel.textContent = canDetonate ? 'DETONATE' : 'FIRE';
-  fire.classList.toggle('detonate-ready', !!canDetonate);
-  fire.setAttribute('aria-label', canDetonate ? 'Press to detonate your grenade' : 'Hold to fire');
- }
+ updatePilotLoadout(world,pilot,1,now);
+ updatePilotLoadout(world,second,2,now);
+}
+
+function syncLocalLoadout(local) {
+ byID('infiniteLocalLoadout').hidden = !local;
+ byID('infiniteLoadouts').classList.toggle('two-pilots',!!local);
 }
 
 function primaryView(width,height,split) {
@@ -875,6 +892,9 @@ function draw(world, now, dt) {
   const left = firstWidth < width ? firstWidth : 0, top = firstHeight < height ? firstHeight : 0;
   drawView(world,world.local,left,top,width-left,height-top,ratio,alpha,now,age);
   ctx.fillStyle = art.theme.arena;
+  if (left) ctx.fillRect(left-5,0,10,height);
+  else ctx.fillRect(0,top-5,width,10);
+  ctx.fillStyle = art.theme.accent;
   if (left) ctx.fillRect(left-1,0,2,height);
   else ctx.fillRect(0,top-1,width,2);
  }
@@ -926,12 +946,19 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
  drawEffects(world, now);
  ctx.restore();
  if (world.local) {
+  ctx.save();
   ctx.fillStyle = art.theme.arena;
-  ctx.fillRect(left+8,top+8,29,19);
-  ctx.fillStyle = COLORS[pilot?.colorIndex] || COLORS[0];
-  ctx.textAlign = 'left';
-  ctx.font = 'bold 11px ui-monospace,monospace';
-  ctx.fillText(seat===world?'P1':'P2',left+14,top+22);
+  art.rect(ctx,left+9,top+9,36,24,5);
+  ctx.fill();
+  ctx.strokeStyle = COLORS[pilot?.colorIndex] || COLORS[seat===world?0:1];
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#f3f8ff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 12px ui-monospace,monospace';
+  ctx.fillText(seat===world?'P1':'P2',left+27,top+21);
+  ctx.restore();
  }
 }
 
@@ -1025,7 +1052,7 @@ function receive(ws, event) {
    session.local = null;
    refreshBindings(session);
   }
-  byID('infiniteLocalLoadout').hidden = !session.local;
+  syncLocalLoadout(session.local);
   session.maze = geometry.create(message.seed);
   return;
  }
@@ -1087,6 +1114,8 @@ function connect() {
  session.leaderboard = [];
  session.visualEffects = [];
  session.lastEffect = 0;
+ art.renderLoadout(null,1);
+ art.renderLoadout(null,2);
  for (const seat of session.controllers) {
   seat.previewShotAt = seat.pendingShotAt = -Infinity;
   seat.lastSent = null;
@@ -1193,7 +1222,7 @@ function start(mode, options = {}) {
  if (world.localName) world.local = addController(world,{id:online?null:'local'});
  if (retry) retry.hidden = true;
  arena.dataset.mode = mode;
- byID('infiniteLocalLoadout').hidden = !world.local;
+ syncLocalLoadout(world.local);
  refreshBindings(world);
  arena.showModal();
  art.touchPolicy();
@@ -1215,8 +1244,19 @@ function start(mode, options = {}) {
    setTeam(world,second,roster.find(member=>member.id===options.localId)?.team);
    world.tanks.push(second);
   }
-  setStatus('Weapons live · 0 bots');
-  renderScores(session,player,world.tanks[1]);
+  if (world.rules) for (const member of roster) {
+   if (member.kind!=='bot'||member.spectating) continue;
+   const point = clearCell(world,player,2.4*CELL,5.7*CELL,1.9*CELL) ||
+    {x:player.x+world.tanks.length*8*CELL,y:player.y};
+   const bot = makeTank('bot-' + ++world.lastBot,point.x,point.y,true);
+   bot.name = member.name || bot.name;
+   bot.colorIndex = member.colorIndex ?? bot.colorIndex;
+   bot.difficulty = member.difficulty || 'normal';
+   setTeam(world,bot,member.team);
+   world.tanks.push(bot);
+  }
+  setStatus('Weapons live · ' + world.lastBot + ' bots');
+  renderScores(session,player,world.local?world.tanks[1]:null);
  }
  lastTime = performance.now();
  accumulator = 0;
@@ -1244,7 +1284,7 @@ function pressFire(event,seat=session) {
  const now = performance.now(), world = session;
  const pilot = seat.predictor.state;
  const age = now - world.arrived, boosted = pilot?.starmanTime > age / 1000;
- const canDetonate = world.bullets.some(b=>!b.dead&&b.owner===seat.id&&b.kind==='grenade');
+ const canDetonate = pilot?.grenades > 0;
  if (world.online && pilot?.alive && now - seat.previewShotAt >= (boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
      (boosted || age >= (pilot.cooldown || 0) * 1000) &&
      pilot.power !== 'grenade' && !canDetonate && !muzzleBlocked(world.maze, pilot, PROJECTILES[pilot.power || 'regular'].r)) {

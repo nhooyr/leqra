@@ -16,6 +16,13 @@ type infiniteRoomSetup struct {
 	pilot infiniteSeat
 	local *infiniteSeat
 	seat  *Player
+	bots  []infiniteRoomBot
+}
+
+type infiniteRoomBot struct {
+	seat       infiniteSeat
+	member     *Player
+	difficulty string
 }
 
 func infiniteRoomSeat(p *Player, rules MatchRules) infiniteSeat {
@@ -76,11 +83,15 @@ func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, infini
 		if p != nil && p.Token == token && h.infiniteMemberValid(r, p, r.infinityGeneration, now) {
 			rules := r.Game.settings()
 			setup := infiniteRoomSetup{rules: rules, pilot: infiniteRoomSeat(p, rules)}
-			for _, local := range r.Players {
-				if infinityOwnsLocal(p, local) {
-					spec := infiniteRoomSeat(local, rules)
-					setup.local, setup.seat = &spec, local
-					break
+			for _, member := range r.Players {
+				if member == nil || member.Spectating || member.Away != nil {
+					continue
+				}
+				if playerKind(member) == "bot" {
+					setup.bots = append(setup.bots, infiniteRoomBot{infiniteRoomSeat(member, rules), member, member.Difficulty})
+				} else if setup.local == nil && infinityOwnsLocal(p, member) {
+					spec := infiniteRoomSeat(member, rules)
+					setup.local, setup.seat = &spec, member
 				}
 			}
 			return r, p, r.infinityGeneration, setup
@@ -95,11 +106,19 @@ func (h *Hub) validInfiniteMember(r *Room, p *Player, generation uint64) bool {
 	return h.infiniteMemberValid(r, p, generation, time.Now())
 }
 
-func (h *Hub) infiniteConnectionValid(r *Room, p, local *Player, generation uint64, now time.Time) bool {
+func (h *Hub) infiniteConnectionStatus(r *Room, p, local *Player, generation uint64, bots []infiniteRoomBot, now time.Time) (bool, uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.infiniteMemberValid(r, p, generation, now) &&
-		(local == nil || r.contains(local) && infinityOwnsLocal(p, local))
+	if !h.infiniteMemberValid(r, p, generation, now) || local != nil && (!r.contains(local) || !infinityOwnsLocal(p, local)) {
+		return false, 0
+	}
+	var removed uint64
+	for i, bot := range bots {
+		if !r.contains(bot.member) {
+			removed |= 1 << i
+		}
+	}
+	return true, removed
 }
 
 func (h *Hub) validInfiniteRoom(r *Room, generation uint64) bool {

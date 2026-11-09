@@ -1,10 +1,10 @@
-# leqra v4.49.13 — current game protocol (protocol 1)
+# leqra v4.49.14 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.13**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.14**.
 
 ```json
-{"type":"server_hello","version":"4.49.13","protocol":1}
-{"type":"client_hello","version":"4.49.13","protocol":1}
+{"type":"server_hello","version":"4.49.14","protocol":1}
+{"type":"client_hello","version":"4.49.14","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -25,9 +25,13 @@ Infinity inputs can set `paused: true` to neutralize the pilot's controls and ho
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
+Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts live projectiles even outside the pilot's view, and boosted Starman shots do not occupy ordinary ammo slots.
+
 For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots. Room packets include `infinityActive` so pilots can rejoin a running arena. The Infinity socket join includes the room `code` and the pilot's existing room `token`. The host's `lobby` command ends the private run.
 
 Room Infinity supports `infinityTarget` from 0 to 999. Zero is endless. The first tank or team to reach a positive target wins. Kills add one point and deaths subtract one. Team scores accumulate those changes across team members. Private snapshots carry `rules` with the target, team mode, names, colors and friendly-fire setting. Team snapshots also carry four `teamScores`, starting with Team 1. A completed match freezes and publishes `result` with the winner's name, score, and team for team wins or ID for individual wins. The result remains available until the host ends that room's run. Public Infinity is endless and free-for-all.
+
+Room Infinity uses configured bot seats from the room roster. The host can set `infinityRandomBots` to true to allow additional roaming bots. `infinityBotDifficulty` defaults to `normal` and supports `easy`, `normal`, `hard`, and `godlike`. With `infinityRandomDifficulty` enabled, each roaming bot draws a level from Chill through the selected difficulty. Public Infinity continues to spawn roaming bots.
 
 ## Mouse steering
 

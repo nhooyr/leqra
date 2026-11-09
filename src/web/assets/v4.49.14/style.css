@@ -860,13 +860,19 @@ body.touch-landscape .infinite-pause-menu .compact-title{font-size:24px;margin:7
 body.touch-landscape .infinite-pause-menu .primary{margin-top:0}
 body.touch-landscape .infinite-pause-menu .secondary{padding:8px 10px;margin-top:8px}
 .infinite-underbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:45px;background:var(--surface);border-top:1px solid var(--border);padding:6px max(12px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
-.infinite-loadout{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.infinite-loadouts{display:grid;gap:4px;flex-shrink:0}
-.infinite-loadout[hidden],#infiniteTeamScores[hidden]{display:none}
+.infinite-loadouts{min-height:0}
+.infinite-loadouts .pilot-loadout[hidden],#infiniteTeamScores[hidden]{display:none}
 #infiniteTeamScores{border-bottom:1px solid var(--border);margin-bottom:5px}
-.infinite-readout{text-align:right}
+.infinite-readout{flex:0 1 28%;max-width:300px;min-width:0;text-align:right;overflow-wrap:anywhere}
 #infiniteStatus{font:10px/1.4 var(--mono);color:var(--text-main);margin:0}
 #infiniteControlsHint{margin:2px 0 0}
+body.touch-landscape .infinite-underbar{display:grid;grid-template-columns:minmax(0,1fr);gap:3px}
+body.touch-landscape .infinite-readout{display:flex;align-items:baseline;gap:8px;max-width:none;text-align:left}
+body.touch-landscape #infiniteControlsHint{min-width:0;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:560px){
+ .infinite-underbar{display:grid;grid-template-columns:minmax(0,1fr);gap:3px}
+ .infinite-readout{max-width:none;text-align:left}
+}
 .infinite-stage{position:relative;min-height:0;overflow:hidden}
 #infiniteCanvas{width:100%;height:100%;cursor:crosshair}
 #infiniteRetry{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:auto;min-height:44px;margin:0}
@@ -888,6 +894,9 @@ body.touch-ui .infinite-touch-controls{display:flex}
 .infinite-touch-controls>*{pointer-events:auto;touch-action:none}
 #infiniteKnob{left:50%;top:50%;transform:translate(calc(-50% + var(--stick-x,0px)),calc(-50% + var(--stick-y,0px)))}
 #infiniteFire{width:78px;height:78px}
-@media(max-width:360px){.infinite-header .bar-right{gap:6px}.infinite-underbar{gap:6px}.infinite-loadout{gap:4px}}
+@media(max-width:360px){
+ .infinite-header .bar-right{gap:6px}
+ .infinite-loadouts.two-pilots .pilot-loadout{grid-template-columns:56px minmax(0,1fr)}
+}
 
 #arena.mouse-aiming{cursor:crosshair}

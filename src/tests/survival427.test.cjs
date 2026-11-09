@@ -238,6 +238,7 @@ test('Survival holds its cleared maze for 240 ticks, then freezes a fresh boss a
 test('actual Survival wave starts, retries and full replays rotate one stable countdown tip',()=>{
  const s=boot({target:15});s.GRENADE_FUSE=10;s.logLines=[];
  vm.runInContext(source.match(/const MAZE_SIZES=[^\n]+/)[0]+'\n'+source.match(/const countdownTipHistory=[^\n]+/)[0],s);
+ s.setArenaAudio=()=>{};
  for(const name of ['mapDimensions','pickupCap','pickupLifetime','countdownTipPool','getCountdownTip','resetTanks','initObjectives','startRound','startMatch'])vm.runInContext(declaration(name),s);
  s.startMatch();assert.equal(s.phase,'countdown');const first=s.getCountdownTip(),serial=s.localRoom.countdownSerial;
  for(let n=0;n<30;n++)assert.equal(s.getCountdownTip(),first);

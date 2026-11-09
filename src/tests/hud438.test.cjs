@@ -77,6 +77,31 @@ test('two-pilot loadout and combat feedback retain detonation, ammo, pause and d
  }
 });
 
+test('Infinity and fixed mazes share detailed cockpit readouts for both pilots',()=>{
+ const s=boot({projectileCount:0}),a=s.tanks[0],b=s.tanks[7];
+ Object.assign(a,{power:'rapid',machineRounds:73,shield:4,shieldCharges:2});
+ Object.assign(b,{power:null,cooldown:.4,cooldownTotal:.8,speedTime:4,speedStacks:2});
+ s.bullets.push({owner:1,kind:'homing',target:7});
+ s.run();
+ for(const [num,t] of [[1,a],[2,b]])s.renderInfinityLoadout(t,num,s.pilotProjectileState(t,true),false,'playing');
+ for(const [fixed,infinity] of [['weaponLabel','infiniteWeapon'],['machineBudgetTime1','infiniteMachineBudgetTime1'],['buffLabel','infiniteBuffLabel'],['buffLabel2','infiniteBuffLabel2'],['cooldownText2','infiniteCooldownText2'],['missileWarning2','infiniteMissileWarning2']]){
+  assert.equal(s.$(infinity).textContent,s.$(fixed).textContent,infinity);
+ }
+ assert.equal(s.$('infiniteCooldownFill2').style.getPropertyValue('transform'),'scaleX(0.5)');
+ assert.equal(s.$('infiniteMissileWarning2').hidden,false);
+ assert.equal(s.$('infiniteAmmoDots').hidden,true);
+ a.starmanTime=3;
+ s.renderInfinityLoadout(a,1,s.pilotProjectileState(a),false,'playing');
+ assert.equal(s.$('infiniteWeapon').textContent,'MACHINE GUN · ∞ AMMO');
+ assert.equal(s.$('infiniteBuffLabel').textContent,'SHD×2 4s · STAR 3s');
+ assert.equal(s.$('infiniteMachineBudget1').hidden,true);
+ b.alive=false;b.respawnTime=1.25;
+ s.renderInfinityLoadout(b,2,s.pilotProjectileState(b),false,'playing');
+ assert.equal(s.$('infiniteCooldownText2').textContent,'RESPAWN 1.3s');
+ s.renderInfinityLoadout(b,2,s.pilotProjectileState(b),false,'held');
+ assert.equal(s.$('infiniteCooldownText2').textContent,'RESPAWN HELD');
+});
+
 test('a full two-pilot HUD refresh reads each projectile only once per pilot and pass',()=>{
  for(const mode of ['room','online']){
   const s=boot({mode,projectileCount:192});let reads=0;
