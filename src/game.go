@@ -119,6 +119,7 @@ type Tank struct {
 	fireBlocked   bool              // A grenade action consumes the entire hold, even after expiry.
 	ID            int               `json:"id"`
 	Name          string            `json:"name"`
+	KilledBy      string            `json:"killedBy,omitempty"`
 	Color         string            `json:"color"`
 	X             float64           `json:"x"`
 	Y             float64           `json:"y"`
@@ -1057,6 +1058,7 @@ func (g *Game) starmanRam(attacker, target *Tank) bool {
 func (g *Game) eliminateTank(t *Tank, attacker int) {
 	g.recordDeath(t, attacker)
 	t.Alive = false
+	t.KilledBy = ""
 	if g.objectiveMode() && !g.suddenDeath() {
 		t.RespawnTime = float64(g.settings().RespawnSeconds)
 		g.dropFlags(t.ID)
@@ -1065,7 +1067,8 @@ func (g *Game) eliminateTank(t *Tank, attacker int) {
 	t.VY = 0
 	text := t.Name + " was eliminated."
 	if owner := g.Tanks[attacker]; owner != nil {
-		text = owner.Name + " eliminated " + t.Name + "."
+		t.KilledBy = owner.Name
+		text = t.KilledBy + " eliminated " + t.Name + "."
 	}
 	g.emit("hit", t, attacker, text)
 }

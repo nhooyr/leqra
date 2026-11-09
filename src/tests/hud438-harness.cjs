@@ -17,12 +17,13 @@ function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||assetPath('game.js'),mod
  const rules={friendlyFire:false},online={snapshots:[{bullets,tankMap:new Map(tanks.map(t=>[t.id,t])),received:1000}]};
  const env={mode,phase:'playing',bullets,tanks,online,rules,$,nodes,now:1000,performance:{now:()=>env.now},feedbackAt:-Infinity,time:1,
   controlledTank:()=>tanks[0],secondaryID:()=>7,roomData:()=>({players:tanks}),currentRules:()=>rules,isEnemy:(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team),
-  survivalState:()=>env.survival,survivalBreak:()=>env.survival?.status==='break',survivalMode:()=>!!env.survival,objectiveMode:()=>false,combatPrefs:{visual:true,audio:false},lastLocks:{},lastLockTone:{},clearTankAt:()=>true,muzzleBlocked:()=>false,
+  survivalState:()=>env.survival,survivalBreak:()=>env.survival?.status==='break',survivalMode:()=>!!env.survival,objectiveMode:()=>false,combatPrefs:{visual:true,audio:false},homingAlerts:[{},{}],clearTankAt:()=>true,muzzleBlocked:()=>false,
   clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),paintColor:c=>c,pilotFeedback:[],shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,COLORS:['#fff'],MACHINE_CAPACITY:96,MACHINE_FIRING_ROUNDS:180,CANNON_COOLDOWN:.85};
- const names=['canDamage','activeAmmo','ownedGrenades','missileLocks','setText','setStyle','setAttr','powerCapacity','cooldownDuration','pilotLoadoutTank','liveFeedbackTank','updateMachineBudget','renderPilotLoadout','updateCombatFeedback'];
+ const names=['canDamage','activeAmmo','ownedGrenades','missileLocks','setText','setStyle','setAttr','powerCapacity','cooldownDuration','pilotLoadoutTank','liveFeedbackTank','updateMachineBudget','renderPilotLoadout','updateHomingAlert','updateCombatFeedback'];
  if(source.includes('function applyOnlineTankEffects('))names.push('applyOnlineTankEffects');
  if(source.includes('function pilotProjectileState('))names.push('pilotProjectileState');
  if(source.includes('function renderPilotReadiness('))names.push('renderPilotReadiness','infinityHUDId','renderInfinityLoadout');
+ if(source.includes('function renderDeathNotice('))names.push('renderDeathNotice');
  const constants=source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS='));
  const factory=new Function('env','let {'+Object.keys(env).join(',')+'}=env;\n'+constants+'\n'+names.map(n=>declaration(source,n)).join('\n')+'\nreturn {'+names.join(',')+',setPhase(value){phase=value;},run(){renderPilotLoadout(tanks[0],1);renderPilotLoadout(tanks[7],2);updateCombatFeedback(true);}};');
  return Object.assign(env,factory(env));

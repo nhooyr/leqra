@@ -3,13 +3,14 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),vm=require('node:vm');
 const {assetPath}=require('./web_assets.cjs');
 const source=readFileSync(assetPath('game.js'),'utf8');
-const start=source.indexOf("window.addEventListener('keydown',e=>{",source.indexOf('// All input paths'));
+const start=source.indexOf('function arenaKeyBlocked(');
+const composition=source.match(/^function composingKey\(e\).*$/m)[0];
 const keyboard=source.slice(start,source.indexOf("window.addEventListener('keyup'",start));
 function boot({phase='menu',dialog}={}){
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,{open:id===dialog});return elements.get(id);};
  const s={mode:'room',phase,bindingCapture:null,keys:new Set(),firePresses:new Set(),fullscreen:0,pause:0,sound:0,$,document:{querySelectorAll:()=>dialog&&['rulesDialog','presetsDialog','controlsDialog','queueDialog'].includes(dialog)?[$(dialog)]:[]},window:{addEventListener(type,fn){if(type==='keydown')s.keydown=fn;}},toggleFullscreen(){s.fullscreen++;},togglePause(){s.pause++;},toggleSound(){s.sound++;},isControlKey:code=>code==='KeyQ',isWeaponKey:code=>code==='KeyQ',primaryFireHeld:()=>false,heldAction:()=>false,primaryFireKey:()=>true,localPlayerID:()=>0,secondaryID:()=>undefined};
  s.keyForAction=()=>false;
- vm.createContext(s);vm.runInContext(keyboard,s);
+ vm.createContext(s);vm.runInContext(composition+'\n'+keyboard,s);
  s.press=(extra={})=>{const e={code:'KeyF',target:{tagName:'BUTTON'},preventDefault(){this.prevented=true;},...extra};s.keydown(e);return e;};return s;
 }
 test('F toggles fullscreen from Rules, Presets, Controls and Find Online Battle dialogs',()=>{

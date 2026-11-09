@@ -26,7 +26,8 @@ const CELL = geometry.cellSize;
 const RADIUS = 17;
 const BULLET_RADIUS = 3.5;
 const COLORS = art.colors, powers = art.powers, powerTypes = Object.keys(powers);
-const POWER_DURATION = 15, STAR_DURATION = 8, SHOT_RANGE = 18 * CELL, BLAST_RADIUS = 220;
+const POWER_DURATION = 15, STAR_DURATION = 8, PICKUP_LIFETIME = 30, SHOT_RANGE = 18 * CELL, BLAST_RADIUS = 220;
+const RESPAWN_DELAY = 1.5;
 const PROJECTILES = Object.freeze({
  regular: {speed: 282, r: BULLET_RADIUS, life: 5.3, cooldown: .34, ammo: 5},
  rapid: {speed: 846, r: BULLET_RADIUS / 3, life: SHOT_RANGE / 846, cooldown: 0, ammo: 115},
@@ -204,7 +205,7 @@ function effect(world, kind, x, y, owner, points) {
  presentEffect(world, {kind, x, y, owner, points}, performance.now());
 }
 
-function hurt(world, target, ownerID, ownerTeam, starmanContact = false) {
+function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false) {
  if (world.result || !target.hp || target.invulnerable > 0 || !canDamage(world, ownerID, ownerTeam, target)) return;
  if (target.shield > 0 && !starmanContact) {
   target.shieldCharges = Math.max(0, (target.shieldCharges || 1) - 1);
@@ -215,9 +216,10 @@ function hurt(world, target, ownerID, ownerTeam, starmanContact = false) {
  }
  target.hp = 0;
  target.alive = false;
- target.respawn = 2.5;
+ target.respawn = RESPAWN_DELAY;
  target.score--;
  const owner = world.tanks.find(tank => tank.id === ownerID);
+ target.killedBy = owner?.name || ownerName || 'an unknown tank';
  if (owner) owner.score++;
  if (target.team) world.teamScores[target.team - 1]--;
  if (ownerTeam) world.teamScores[ownerTeam - 1]++;
@@ -235,7 +237,7 @@ function detonate(world, bullet) {
  for (const tank of world.tanks) {
   const dx = tank.x - bullet.x, dy = tank.y - bullet.y;
   if (tank.hp && tank.id !== bullet.owner && Math.hypot(dx, dy) <= BLAST_RADIUS + RADIUS &&
-      !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team);
+      !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team, bullet.ownerName);
  }
 }
 
@@ -311,7 +313,7 @@ function fireShot(world, tank) {
    tank.nextBoostEffect = world.time + 4 * STEP;
    effect(world, 'laser', tank.x, tank.y, tank.id, points);
   }
-  if (target) hurt(world, target, tank.id, tank.team);
+  if (target) hurt(world, target, tank.id, tank.team, tank.name);
   spendWeapon(tank);
   return;
  }
@@ -325,7 +327,7 @@ function fireShot(world, tank) {
  for (const offset of offsets) {
   const angle = tank.angle + offset, ux = Math.cos(angle), uy = Math.sin(angle);
   const bullet = {
-   ...spec, id: ++world.lastBullet, owner: tank.id, team:tank.team, kind, boosted, x: tank.x, y: tank.y, colorIndex: tank.colorIndex,
+   ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, x: tank.x, y: tank.y, colorIndex: tank.colorIndex,
    vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: 0, seekDelay: 0, target: null, trail: [],
   };
   if (advanceBullet(world, bullet, (kind === 'cannon' ? RADIUS + spec.r + 1 : 28) / spec.speed)) world.bullets.push(bullet);
@@ -349,7 +351,7 @@ function advanceBullet(world, bullet, remaining) {
    if (bullet.kind === 'grenade') detonate(world, bullet);
    else {
     if (bullet.kind === 'cannon' || bullet.kind === 'homing') effect(world, 'impact', bullet.x, bullet.y, bullet.owner);
-    hurt(world, hit.tank, bullet.owner, bullet.team);
+    hurt(world, hit.tank, bullet.owner, bullet.team, bullet.ownerName);
    }
    return false;
   }
@@ -490,7 +492,7 @@ function populatePickups(world, locals, dt) {
   const x = cx + dx * CELL, y = cy + dy * CELL;
   if (world.tanks.some(tank => tank.hp && Math.hypot(tank.x-x, tank.y-y) < .85*CELL) ||
       world.pickups.some(pickup => Math.hypot(pickup.x-x, pickup.y-y) < 1.1*CELL)) continue;
-  world.pickups.push({x, y, life: 30, type: art.choosePickup(powerTypes)});
+  world.pickups.push({x, y, life: PICKUP_LIFETIME, type: art.choosePickup(powerTypes)});
   nearby++;
  }
 }
@@ -522,7 +524,7 @@ function offlineStep(world, dt) {
     if (point) {
      const fresh = makeTank(tank.id, point.x, point.y, tank.bot);
      Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
-      spawnSerial: tank.spawnSerial + 1, power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
+      spawnSerial: tank.spawnSerial + 1, killedBy: '', power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
       ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld: false, fireBlocked: false});
     }
    }
@@ -565,7 +567,7 @@ function offlineStep(world, dt) {
        !canDamage(world,attacker.id,attacker.team,target)) continue;
    const dx = target.x - attacker.x, dy = target.y - attacker.y;
    if (dx * dx + dy * dy <= 4 * RADIUS * RADIUS && !wallHit(world.maze, attacker.x, attacker.y, dx, dy, 0, true)) {
-    hurt(world,target,attacker.id,attacker.team,true);
+    hurt(world,target,attacker.id,attacker.team,attacker.name,true);
     if (world.result) return;
    }
   }
@@ -611,11 +613,9 @@ function refreshBindings(world) {
  if (world.local) world.local.keys = setupBindings(layout[1],LOCAL_KEYS);
  const hint = byID('infiniteControlsHint');
  if (!hint) return;
- const arrows = {ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→'};
- const label = code => arrows[code] || code.replace(/^(Key|Digit)/, '').replace(/^Numpad/, 'Num ');
- const codes = (keys,action) => Object.keys(keys).filter(code => keys[code] === action).map(label).join('/');
+ const codes = (keys,action) => Object.keys(keys).filter(code => keys[code] === action).map(art.keyLabel).join('/');
  const summary = keys => `Move ${codes(keys,'forward')}/${codes(keys,'reverse')} · Turn ${codes(keys,'left')}/${codes(keys,'right')} · Fire ${codes(keys,'fire')}`;
- const primary = window.matchMedia('(pointer: coarse)').matches ?
+ const primary = art.isTouchUI() ?
   'Drag the stick to move and aim. Tap or hold Fire.' : summary(world.keys) + ' · Mouse aim and fire';
  hint.textContent = world.local ? `P1 ${primary} · P2 ${summary(world.local.keys)}` : primary;
 }
@@ -825,7 +825,7 @@ function renderScores(world, pilot, second) {
  teamLeaderboard.replaceChildren(...teams.map(makeRow));
 }
 
-function updatePilotLoadout(world, pilot, num, now) {
+function updatePilotLoadout(world, pilot, seat, num, now) {
  if (!pilot) {art.renderLoadout(null,num);return;}
  const age = world.online&&!world.result ? clamp((now-world.arrived)/1000,0,.25) : 0;
  const tank = {...pilot,color:COLORS[pilot.colorIndex]||COLORS[0],
@@ -837,7 +837,8 @@ function updatePilotLoadout(world, pilot, num, now) {
  } : art.projectileState(tank,true,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
  const spec = PROJECTILES[tank.power||'regular'];
  const state = world.result?'complete':pauseMenu.open?(world.online&&!tank.alive?'held':'paused'):'playing';
- art.renderLoadout(tank,num,projectiles,tank.power!=='cannon'&&muzzleBlocked(world.maze,tank,spec.r),state);
+ art.updateHomingAlert(seat.homingAlert,state==='playing'&&tank.alive&&projectiles.locked,now/1000);
+ art.renderLoadout(tank,num,projectiles,tank.power!=='cannon'&&muzzleBlocked(world.maze,tank,spec.r),state,!!world.local);
 }
 
 function updateHUD(world, pilot, second, now) {
@@ -848,8 +849,8 @@ function updateHUD(world, pilot, second, now) {
  const target = world.rules?.infinityTarget ? ` · First to ${world.rules.infinityTarget}` : '';
  const state = tank => tank?.hp ? 'Weapons live' : pauseMenu.open ? 'Respawn held' : 'Respawning…';
  setStatus((world.result ? world.result.name + ' wins' : second ? `P1 ${state(pilot)} · P2 ${state(second)}` : state(pilot)) + counts + target);
- updatePilotLoadout(world,pilot,1,now);
- updatePilotLoadout(world,second,2,now);
+ updatePilotLoadout(world,pilot,world,1,now);
+ updatePilotLoadout(world,second,world.local,2,now);
 }
 
 function syncLocalLoadout(local) {
@@ -943,6 +944,9 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
    color: COLORS[bullet.colorIndex] || COLORS[0], trail: bullet.trail || (blend ? [previous, bullet] : [])});
  }
  art.bullets(bullets, ctx, now / 1000);
+ if (!world.result && !world.failed && !pauseMenu.open) {
+  art.drawHomingWarnings(ctx,pilot,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
+ }
  drawEffects(world, now);
  ctx.restore();
  if (world.local) {
@@ -980,18 +984,24 @@ function sendInput(seat = session, now = performance.now(), immediate = false, i
  seat.fireTap = false;
 }
 
-function showResult(world) {
+function showResult(world, now) {
  if (!world.result || resultDialog.open) return;
- resetControls();
- dismissPause();
+ if (world.resultAt === undefined) {
+  resetControls();
+  dismissPause();
+  const localDeath = world.controllers.some(seat=>world.tanks.some(tank=>tank.id===seat.id&&!tank.hp&&tank.killedBy));
+  world.resultAt = now + (localDeath ? RESPAWN_DELAY * 1000 : 0);
+  world.nextHUD = 0;
+ }
+ if (now < world.resultAt) return;
  byID('infiniteResultTitle').textContent = world.result.name + ' wins';
  byID('infiniteResultScore').textContent = 'Final score ' + world.result.score;
- world.nextHUD = 0;
  resultDialog.showModal();
 }
 
 function loop(now) {
  if (!arena.open || !session) return;
+ const workStart = performance.now();
  const dt = clamp((now - lastTime) / 1000, 0, .1);
  if (session.online && !session.result) {
   for (const seat of session.controllers) {
@@ -1008,8 +1018,9 @@ function loop(now) {
   }
  }
  lastTime = now;
- showResult(session);
+ showResult(session, now);
  if (session.online || !pauseMenu.open) draw(session, now, dt);
+ art.sampleFrame(now,performance.now()-workStart);
  frame = requestAnimationFrame(loop);
 }
 
@@ -1019,6 +1030,8 @@ function connectionFailed(message) {
  session.failed = true;
  session.joined = false;
  resetControls();
+ art.renderLoadout(null,1);
+ art.renderLoadout(null,2);
  setStatus(message + (session.room ? ' Use Exit Infinity in the pause menu to return to your room.' :
   ' Choose Infinity in Room settings to play offline.'));
  if (retry) retry.hidden = false;
@@ -1118,6 +1131,7 @@ function connect() {
  art.renderLoadout(null,2);
  for (const seat of session.controllers) {
   seat.previewShotAt = seat.pendingShotAt = -Infinity;
+  seat.homingAlert = {};
   seat.lastSent = null;
   seat.seq = 0;
   seat.predictor.reset(null);
@@ -1190,6 +1204,8 @@ function stop() {
  const ws = socket;
  socket = null;
  session = null;
+ art.renderLoadout(null,1);
+ art.renderLoadout(null,2);
  dismissPause();
  if (resultDialog.open) resultDialog.close();
  if (arena.open) arena.close();
@@ -1199,7 +1215,7 @@ function stop() {
 
 function addController(world,seat) {
  Object.assign(seat,{camera:{x:CELL/2,y:CELL/2},fireTap:false,nextSend:0,keepAlive:0,seq:0,
-  previewShotAt:-Infinity,pendingShotAt:-Infinity,predictor:new net.Predictor(world.moveTank)});
+  homingAlert:{},previewShotAt:-Infinity,pendingShotAt:-Infinity,predictor:new net.Predictor(world.moveTank)});
  world.controllers.push(seat);
  return seat;
 }
@@ -1332,8 +1348,14 @@ function endPointer(event) {
 arena.addEventListener('keydown', event => {
  if (!session) return;
  event.stopPropagation();
+ if (art.arenaKeyBlocked(event)) return;
+ if (event.code === 'KeyF') {
+  event.preventDefault();
+  if (!event.repeat) art.toggleFullscreen();
+  return;
+ }
  if (session.result) return;
- if (event.ctrlKey || event.metaKey || event.altKey) return;
+ if (event.target.tagName === 'INPUT') return;
  if (event.code === 'Escape' || event.code === 'KeyP') {
   event.preventDefault();
   if (!event.repeat) {
@@ -1350,8 +1372,7 @@ arena.addEventListener('keydown', event => {
  if (pauseMenu.open) return;
  const seat = session.controllers.find(controller=>controller.keys[event.code]);
  const action = seat?.keys[event.code];
- if (!action ||
-     (event.code === 'Enter' || event.code === 'Space') && event.target.closest('button, a, input, summary')) return;
+ if (!action) return;
  event.preventDefault();
  if (event.repeat || pressed.has(event.code)) return;
  pressed.add(event.code);
@@ -1451,5 +1472,6 @@ document.addEventListener('visibilitychange', () => {
  if (document.hidden) resetControls();
 });
 
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls});
+const pickupHelp = `Power-ups spawn near active pilots. Most last ${POWER_DURATION} seconds after pickup. Starman lasts ${STAR_DURATION} seconds. Machine gun allows 3 seconds of firing. Uncollected power-ups expire after ${PICKUP_LIFETIME} seconds.`;
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, pickupHelp});
 })();

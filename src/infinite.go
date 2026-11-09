@@ -16,7 +16,7 @@ const (
 	infiniteSight        = 1200
 	infiniteTankSpeed    = 128
 	infiniteMaxHP        = 1
-	infiniteRespawnTicks = 150
+	infiniteRespawnTicks = 90
 	infiniteBulletRadius = 3.5
 	infiniteLeaderCount  = 10
 )
@@ -53,6 +53,7 @@ type infiniteTank struct {
 
 	CooldownTotal float64 `json:"cooldownTotal,omitempty"`
 	RespawnTime   float64 `json:"respawnTime,omitempty"`
+	KilledBy      string  `json:"killedBy,omitempty"`
 	AmmoUsed      int     `json:"ammoUsed,omitempty"`
 	Grenades      int     `json:"grenades,omitempty"`
 	GrenadeLife   float64 `json:"grenadeLife,omitempty"`
@@ -92,6 +93,7 @@ type infiniteBullet struct {
 	radius, age, seekDelay float64
 	target                 int
 	ownerTeam              int
+	ownerName              string
 	dead                   bool
 	boosted                bool
 }
@@ -362,6 +364,7 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 	}
 	p.X, p.Y, p.Angle = bestX, bestY, a.random.Float64()*2*math.Pi-math.Pi
 	p.HP, p.Protected, p.hasWaypoint = infiniteMaxHP, true, false
+	p.KilledBy = ""
 	p.input, p.firePending = Input{}, false
 	p.kit = Tank{Invulnerable: 1}
 	p.Spawn++

@@ -187,6 +187,7 @@ func (g *Game) respawnTank(t *Tank) {
 	t.VX = 0
 	t.VY = 0
 	t.Alive = true
+	t.KilledBy = ""
 	t.RespawnTime = 0
 	t.SpawnSerial++
 	t.Angle = -math.Pi / 2

@@ -12,7 +12,7 @@ function boot({p2=false,spectating=false}={}){
  const s={mode:'online',phase:'onlineLobby',round:1,phaseTime:2.6,goUntil:0,bullets:[],tanks:[],COLORS:['#f80','#08f'],online:{roomData:room,snapshots:[{generation:0,tanks:[],tankMap:new Map()}]},$: $,document:{body},performance:{now:()=>1000},POWER:{shield:{color:'#0ff'}},pilotFeedback:[{},{}],
   roomData:()=>room,localPlayerID:()=>0,secondaryID:()=>room.players.find(p=>p.kind==='local')?.id,secondaryMember:()=>[...room.players,...room.spectators].find(p=>p.kind==='local'),paintColor:c=>c,powerCapacity:()=>5,activeAmmo:()=>0,ownedGrenades:()=>[],shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,
   syncPauseButton:noop,renderLineup:noop,survivalBreak:()=>false,survivalMode:()=>false,survivalBossPreview:()=>null,suddenDeath:()=>false,modeInstructions:()=>'',getCountdownTip:()=> 'Get ready.',tone:noop,onlineHUD:noop,updateObjectiveHUD:noop,updateCombatFeedback:noop,syncSpectatingHUD:noop};
- vm.createContext(s);for(const name of ['setText','setStyle','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','pilotLoadoutTank','renderPilotLoadout','updateHUD'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);for(const name of ['setText','setStyle','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','pilotLoadoutTank','renderPilotLoadout','renderDeathNotice','updateHUD'])vm.runInContext(declaration(name),s);
  function snapshot(phase,bodies){s.phase=phase;room.phase=phase==='onlineLobby'?'lobby':phase;s.online.snapshots=[{generation:1,received:1000,tanks:bodies,tankMap:new Map(bodies.map(t=>[t.id,t]))}];s.updateHUD(true);}
  return{s,$,room,primary,secondary,body,snapshot};
 }
@@ -31,6 +31,16 @@ test('online HUD uses the arriving authoritative tank before rendered bodies cat
  const b=boot({p2:true}),{s,$,primary,secondary}=b;s.tanks=[{...primary,alive:false,power:null},{...secondary,alive:false,power:null}];
  s.POWER.laser={short:'LASER',color:'#f0f'};b.snapshot('countdown',[{...primary,alive:true,power:'laser',powerTime:10,charges:3},{...secondary,alive:true,power:null}]);
  assert.equal($('weaponLabel').textContent,'LASER ×3 · 10s');assert.equal($('weaponLabel2').textContent,'STANDARD');assert.equal($('pilotLoadout2').hidden,false);
+});
+test('online fixed-maze notices show each killed pilot their killer until respawn',()=>{
+ const b=boot({p2:true}),{$,primary,secondary}=b,p1=$('deathNotice1'),p2=$('deathNotice2');
+ const first={...primary,alive:true,power:null},second={...secondary,alive:true,power:null};
+ b.snapshot('playing',[first,{...second,alive:false,killedBy:'RUST <2>'}]);
+ assert.equal(p1.hidden,true);assert.equal(p2.hidden,false);assert.equal(p2.textContent,'P2 · Killed by RUST <2>');
+ b.snapshot('playing',[{...first,alive:false,killedBy:'VAPOR'},second]);
+ assert.equal(p1.textContent,'P1 · Killed by VAPOR');assert.equal(p2.hidden,true);
+ b.snapshot('onlineLobby',[]);
+ assert.equal(p1.hidden,true);assert.equal(p2.hidden,true);
 });
 test('spectator and local P2 assignments define HUD presence without inventing controlled tanks',()=>{
  const b=boot({p2:true,spectating:true}),{s,$}=b;s.updateHUD(true);assert.equal($('pilotLoadout1').hidden,true);assert.equal($('pilotLoadout2').hidden,false);assert.equal(b.body.classList.contains('two-local-pilots'),true);
