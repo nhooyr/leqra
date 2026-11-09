@@ -13,6 +13,7 @@ import (
 type MatchRules struct {
 	Mode           string   `json:"mode"`
 	Infinity       bool     `json:"infinity,omitempty"`
+	InfinityTarget int      `json:"infinityTarget,omitempty"`
 	TeamMode       string   `json:"teamMode"`
 	MapSize        string   `json:"mapSize"`
 	PortraitMaze   bool     `json:"portraitMaze"`
@@ -48,10 +49,10 @@ func validateRules(r MatchRules) error {
 	if r.TeamMode != "teams" && r.TeamMode != "ffa" {
 		return errors.New("Choose Teams or Free-for-all.")
 	}
-	if r.Mode == "survival" && r.TeamMode != "teams" {
+	if !r.Infinity && r.Mode == "survival" && r.TeamMode != "teams" {
 		return errors.New("Survival requires Teams; every player joins the same squad.")
 	}
-	if r.Mode == "ctf" && r.TeamMode != "teams" {
+	if !r.Infinity && r.Mode == "ctf" && r.TeamMode != "teams" {
 		return errors.New("Capture the Flag requires two numbered teams, not Free-for-all.")
 	}
 	if r.MapSize != "compact" && r.MapSize != "standard" && r.MapSize != "large" && r.MapSize != "huge" && r.MapSize != "giant" && r.MapSize != "ultrawide" {
@@ -63,6 +64,9 @@ func validateRules(r MatchRules) error {
 	}
 	if r.ScoreTarget < 1 || r.ScoreTarget > max {
 		return errors.New("Score target is out of range (1–20, or 1–300 for Hill).")
+	}
+	if r.InfinityTarget < 0 || r.InfinityTarget > 999 {
+		return errors.New("Infinity score target must be 0–999 (0 for endless play).")
 	}
 	if r.TimeLimit < 30 || r.TimeLimit > 600 {
 		return errors.New("Time limit must be 30–600 seconds.")
@@ -194,6 +198,12 @@ func (g *Game) lineupError(ps [maxTanks]*Player) string {
 }
 
 func activeTeamCount(rules MatchRules) int {
+	if rules.Infinity {
+		if rules.TeamMode == "teams" {
+			return 4
+		}
+		return 0
+	}
 	if rules.Mode == "survival" {
 		return 1
 	}

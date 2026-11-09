@@ -844,12 +844,12 @@ body #roomScreen.unified-room :is(#startRoomBtn,#readyBtn[aria-pressed=false]):d
 .infinity-toggle:has(input:disabled){opacity:.55;cursor:default}
 body #roomScreen.unified-room .infinity-toggle:not([hidden])+#startRoomBtn{margin-top:3px}
 
-.infinite-arena[open]{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;border-radius:0;overflow:hidden;background:var(--surface-sunken)}
+.infinite-arena[open]{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;border-radius:0;overflow:hidden;background:var(--surface-sunken)}
 body .infinite-arena .infinite-header{padding:max(7px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 7px max(12px,env(safe-area-inset-left))}
 .infinite-header h2{font:700 12px var(--mono);text-transform:uppercase;margin:0}
-.infinite-header .bar-right{gap:9px}
-body .infinite-header .icon-btn{width:44px;height:44px}
-#infiniteKills{white-space:nowrap;color:var(--accent-ink);font:700 12px var(--mono);font-variant-numeric:tabular-nums}
+.infinite-header .bar-right{gap:9px;min-width:0}
+body .infinite-header .icon-btn{width:44px;height:44px;flex:none}
+#infiniteKills{min-width:0;white-space:normal;overflow-wrap:anywhere;color:var(--accent-ink);font:700 12px var(--mono);font-variant-numeric:tabular-nums}
 .infinite-pause-menu:not([open]){display:none}
 body .infinite-pause-menu[open]{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;color:var(--text);padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
 .infinite-pause-menu::backdrop{background:transparent}
@@ -861,6 +861,9 @@ body.touch-landscape .infinite-pause-menu .primary{margin-top:0}
 body.touch-landscape .infinite-pause-menu .secondary{padding:8px 10px;margin-top:8px}
 .infinite-underbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:45px;background:var(--surface);border-top:1px solid var(--border);padding:6px max(12px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
 .infinite-loadout{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.infinite-loadouts{display:grid;gap:4px;flex-shrink:0}
+.infinite-loadout[hidden],#infiniteTeamScores[hidden]{display:none}
+#infiniteTeamScores{border-bottom:1px solid var(--border);margin-bottom:5px}
 .infinite-readout{text-align:right}
 #infiniteStatus{font:10px/1.4 var(--mono);color:var(--text-main);margin:0}
 #infiniteControlsHint{margin:2px 0 0}
@@ -880,6 +883,8 @@ body.touch-ui .infinite-leaderboard[open]{max-height:max(38px,calc(100% - 112px)
 .infinite-leaderboard p{margin:0;padding:7px 12px;border-top:1px solid var(--border);color:var(--text-soft);font-size:11px}
 .infinite-touch-controls{display:none;position:absolute;inset:auto 0 0;align-items:center;justify-content:space-between;padding:0 max(18px,env(safe-area-inset-right)) 8px max(18px,env(safe-area-inset-left));pointer-events:none}
 body.touch-ui .infinite-touch-controls{display:flex}
+.infinite-arena[data-split=side] .infinite-touch-controls{right:50%}
+.infinite-arena[data-split=stacked] .infinite-touch-controls{bottom:50%}
 .infinite-touch-controls>*{pointer-events:auto;touch-action:none}
 #infiniteKnob{left:50%;top:50%;transform:translate(calc(-50% + var(--stick-x,0px)),calc(-50% + var(--stick-y,0px)))}
 #infiniteFire{width:78px;height:78px}

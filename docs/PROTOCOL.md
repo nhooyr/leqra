@@ -1,10 +1,10 @@
-# leqra v4.49.11 — current game protocol (protocol 1)
+# leqra v4.49.13 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.11**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.13**.
 
 ```json
-{"type":"server_hello","version":"4.49.11","protocol":1}
-{"type":"client_hello","version":"4.49.11","protocol":1}
+{"type":"server_hello","version":"4.49.13","protocol":1}
+{"type":"client_hello","version":"4.49.13","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -19,11 +19,15 @@ The server negotiates no context takeover in either direction. Compressed client
 
 `/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
+Public joins may send `localName` for a second tank. Private joins derive Player 2 from the authenticated pilot's active local seat in the room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
+
 Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for the normal delay to elapse, even after the hold ends.
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
 For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots. Room packets include `infinityActive` so pilots can rejoin a running arena. The Infinity socket join includes the room `code` and the pilot's existing room `token`. The host's `lobby` command ends the private run.
+
+Room Infinity supports `infinityTarget` from 0 to 999. Zero is endless. The first tank or team to reach a positive target wins. Kills add one point and deaths subtract one. Team scores accumulate those changes across team members. Private snapshots carry `rules` with the target, team mode, names, colors and friendly-fire setting. Team snapshots also carry four `teamScores`, starting with Team 1. A completed match freezes and publishes `result` with the winner's name, score, and team for team wins or ID for individual wins. The result remains available until the host ends that room's run. Public Infinity is endless and free-for-all.
 
 ## Mouse steering
 
@@ -33,9 +37,11 @@ Desktop Player 1 sends the cursor direction using the existing bounded `stickX` 
 
 Every projectile passes through the tank that fired it, and grenade blasts skip their owner. Grenades still detonate on contact with other living tanks, including allies and tanks with spawn protection. Friendly fire controls whether a weapon can damage a different tank on the same team.
 
-Grenades use the same server-owned line-of-sight seeker and reacquisition delays as homing missiles, with two-thirds of the maximum turn rate. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
+Grenades use the same server-owned line-of-sight seeker, turn rate, and reacquisition delays as homing missiles. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
 
 While `starmanTime` is positive, firing has no cooldown and preserves the equipped weapon's ammo and remaining lifetime. Starman shots stay live after the boost ends and leave ordinary projectile slots free. At the safety limit, boosted fire replaces the oldest active shots, and ordinary fire replaces the oldest boosted shots. Fixed-maze snapshots include optional `boostedBulletIds` for active shots fired during Starman, covering both `bullets` and `machineBullets`.
+
+An active Starman also destroys tanks on body contact, including tanks with Shield charges. Contact respects wall separation, temporary invulnerability, and team friendly-fire rules. The kill uses the same scoring, flag drop, and respawn rules as projectile damage.
 
 Frozen match reports use the public `controllerMember` field on local Player 2 rows to attribute wins to that device after a roster change. The field carries a member ID and cannot authenticate a session.
 
