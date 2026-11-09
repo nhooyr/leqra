@@ -17,13 +17,15 @@ Keep generated reports and screenshots local. Older raw results are available in
 
 ## Browser checks for the current release
 
-The maintained Playwright harness opens `src/web/index.html` directly and checks the intro tour, keyboard controls, and mobile sidebar in desktop and touch layouts.
+The maintained Playwright harnesses check the quick tour, keyboard controls, and mobile sidebar, plus public, private, and offline Infinity.
 
 ```sh
 python3 -m pip install playwright
 python3 -m playwright install chromium
 python3 src/tests/intro_tour_browser.py
 ```
+
+With a dedicated local server running, check Infinity with `python3 src/tests/infinity_browser.py http://localhost:8080`.
 
 For live checks, run `go run ./src` and open the served page in separate browser contexts. Check a shared match and verify that the service worker can reload the app offline after installation.
 

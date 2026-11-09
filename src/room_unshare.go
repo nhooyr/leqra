@@ -20,7 +20,7 @@ func (h *Hub) unshareRoom(c *Client, now time.Time) {
 		fail("room_busy", "Return from matchmaking before taking this room offline.")
 		return
 	}
-	if r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+	if !r.setupOpen() {
 		fail("match_active", "End the match before taking this room offline.")
 		return
 	}

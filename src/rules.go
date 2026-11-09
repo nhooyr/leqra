@@ -12,6 +12,7 @@ import (
 // Never trust a browser to set objective scores, respawns, or pickup state.
 type MatchRules struct {
 	Mode           string   `json:"mode"`
+	Infinity       bool     `json:"infinity,omitempty"`
 	TeamMode       string   `json:"teamMode"`
 	MapSize        string   `json:"mapSize"`
 	PortraitMaze   bool     `json:"portraitMaze"`
@@ -258,7 +259,7 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	fail := func(code, text string) { v := roomError(code, text); v["action"] = "rules"; c.enqueue(v) }
-	if r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+	if !r.setupOpen() {
 		fail("match_active", "End the match before changing its rules.")
 		return
 	}
@@ -271,7 +272,7 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 		fail("bad_rules", err.Error())
 		return
 	}
-	if rules.Mode == "survival" && participantCount(r.Players) > survivalMaxPlayers {
+	if !rules.Infinity && rules.Mode == "survival" && participantCount(r.Players) > survivalMaxPlayers {
 		fail("survival_full", "Survival supports up to four allied tanks. Remove extra tanks or move players to Spectators first.")
 		return
 	}
@@ -299,7 +300,7 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	fail := func(code, text string) { v := roomError(code, text); v["action"] = "preset"; c.enqueue(v) }
-	if r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+	if !r.setupOpen() {
 		fail("match_active", "End the match before loading a preset.")
 		return
 	}
@@ -325,7 +326,7 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 		fail("bad_roster", err.Error())
 		return
 	}
-	if m.Rules.Mode == "survival" && len(m.Roster) > survivalMaxPlayers {
+	if !m.Rules.Infinity && m.Rules.Mode == "survival" && len(m.Roster) > survivalMaxPlayers {
 		fail("survival_full", "Survival presets support up to four allied tanks.")
 		return
 	}

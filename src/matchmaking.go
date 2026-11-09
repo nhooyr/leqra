@@ -168,7 +168,7 @@ func (h *Hub) joinQueue(c *Client, m clientMessage, now time.Time) {
 		fail("already_queued", "This room already has a search. Cancel it before choosing another queue.")
 		return
 	}
-	if r.Match != nil || r.hasAway() || r.Game.Phase != "lobby" && r.Game.Phase != "matchOver" {
+	if r.Match != nil || r.hasAway() || !r.setupOpen() {
 		fail("match_active", "Return everyone to your room before joining a queue.")
 		return
 	}

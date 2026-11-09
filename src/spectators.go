@@ -62,7 +62,7 @@ func (r *Room) putViewer(p *Player) {
 	r.Spectators[p.ID] = p
 }
 func (r *Room) freeJoinSeat() int {
-	if r.Game.survivalMode() && (r.survivalRunning() || participantCount(r.Players) >= survivalMaxPlayers) {
+	if r.combatCapacity() == survivalMaxPlayers && (r.survivalRunning() || participantCount(r.Players) >= survivalMaxPlayers) {
 		return -1
 	}
 	for id, p := range r.Players {
@@ -240,7 +240,7 @@ func (h *Hub) setSpectating(c *Client, m clientMessage, now time.Time) {
 		h.broadcastRoom(r)
 		return
 	}
-	if !*m.Spectating && r.Game.survivalMode() {
+	if !*m.Spectating && r.combatCapacity() == survivalMaxPlayers {
 		if r.survivalRunning() {
 			fail("survival_active", "Join the squad between survival runs. This run is already underway.")
 			return

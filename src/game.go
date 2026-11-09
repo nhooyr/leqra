@@ -484,63 +484,14 @@ func (g *Game) rayWallsQuery(x, y, dx, dy, r float64, firstOnly bool) (RayHit, b
 	hasBest := false
 	nearest := 1.0 + 1e-8
 	for _, wi := range g.wallCandidates(x, y, dx, dy, r) {
-		w := g.World.Walls[wi]
-		minX, maxX, minY, maxY := w.X-r, w.X+w.W+r, w.Y-r, w.Y+w.H+r
-		if math.Max(x, x+dx) < minX || math.Min(x, x+dx) > maxX || math.Max(y, y+dy) < minY || math.Min(y, y+dy) > maxY {
+		wall, ok := sweepWall(g.World.Walls[wi], x, y, dx, dy, r)
+		if !ok {
 			continue
 		}
-		tx1, tx2, ty1, ty2 := math.Inf(-1), math.Inf(1), math.Inf(-1), math.Inf(1)
-		if math.Abs(dx) < 1e-9 {
-			if x < minX || x > maxX {
-				continue
-			}
-		} else {
-			tx1 = (minX - x) / dx
-			tx2 = (maxX - x) / dx
-			if tx1 > tx2 {
-				tx1, tx2 = tx2, tx1
-			}
-		}
-		if math.Abs(dy) < 1e-9 {
-			if y < minY || y > maxY {
-				continue
-			}
-		} else {
-			ty1 = (minY - y) / dy
-			ty2 = (maxY - y) / dy
-			if ty1 > ty2 {
-				ty1, ty2 = ty2, ty1
-			}
-		}
-		entry, exit := math.Max(tx1, ty1), math.Min(tx2, ty2)
-		if entry > exit || exit < 0 || entry > 1 || entry < -.0001 {
-			continue
-		}
-		hit := math.Max(0, entry)
 		if firstOnly {
-			return RayHit{T: hit}, true
+			return wall, true
 		}
-		nx, ny := 0.0, 0.0
-		if math.Abs(tx1-ty1) < 1e-7 {
-			nx = 1
-			ny = 1
-			if dx > 0 {
-				nx = -1
-			}
-			if dy > 0 {
-				ny = -1
-			}
-		} else if tx1 > ty1 {
-			nx = 1
-			if dx > 0 {
-				nx = -1
-			}
-		} else {
-			ny = 1
-			if dy > 0 {
-				ny = -1
-			}
-		}
+		hit, nx, ny := wall.T, wall.NX, wall.NY
 		if !hasBest || hit < nearest-1e-7 {
 			nearest = hit
 			best = RayHit{hit, nx, ny}
@@ -555,6 +506,64 @@ func (g *Game) rayWallsQuery(x, y, dx, dy, r float64, firstOnly bool) (RayHit, b
 		}
 	}
 	return best, hasBest
+}
+
+// sweepWall resolves a segment against one radius-expanded wall box.
+func sweepWall(w Wall, x, y, dx, dy, r float64) (RayHit, bool) {
+	minX, maxX, minY, maxY := w.X-r, w.X+w.W+r, w.Y-r, w.Y+w.H+r
+	if math.Max(x, x+dx) < minX || math.Min(x, x+dx) > maxX || math.Max(y, y+dy) < minY || math.Min(y, y+dy) > maxY {
+		return RayHit{}, false
+	}
+	tx1, tx2, ty1, ty2 := math.Inf(-1), math.Inf(1), math.Inf(-1), math.Inf(1)
+	if math.Abs(dx) < 1e-9 {
+		if x < minX || x > maxX {
+			return RayHit{}, false
+		}
+	} else {
+		tx1 = (minX - x) / dx
+		tx2 = (maxX - x) / dx
+		if tx1 > tx2 {
+			tx1, tx2 = tx2, tx1
+		}
+	}
+	if math.Abs(dy) < 1e-9 {
+		if y < minY || y > maxY {
+			return RayHit{}, false
+		}
+	} else {
+		ty1 = (minY - y) / dy
+		ty2 = (maxY - y) / dy
+		if ty1 > ty2 {
+			ty1, ty2 = ty2, ty1
+		}
+	}
+	entry, exit := math.Max(tx1, ty1), math.Min(tx2, ty2)
+	if entry > exit || exit < 0 || entry > 1 || entry < -.0001 {
+		return RayHit{}, false
+	}
+	hit := math.Max(0, entry)
+	nx, ny := 0.0, 0.0
+	if math.Abs(tx1-ty1) < 1e-7 {
+		nx = 1
+		ny = 1
+		if dx > 0 {
+			nx = -1
+		}
+		if dy > 0 {
+			ny = -1
+		}
+	} else if tx1 > ty1 {
+		nx = 1
+		if dx > 0 {
+			nx = -1
+		}
+	} else {
+		ny = 1
+		if dy > 0 {
+			ny = -1
+		}
+	}
+	return RayHit{hit, nx, ny}, true
 }
 
 // Pointer compatibility is retained for test fixtures and low-frequency helpers.
@@ -660,32 +669,8 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 	g.advanceGhost(t, dt)
 	n := speedCount(t)
 	speedScale, turnScale := 1+boostSpeedPerStack*float64(n), 1+boostTurnPerStack*float64(n)
-	throttle := 0.0
-	if in.Forward {
-		throttle++
-	}
-	if in.Reverse {
-		throttle -= .72
-	}
-	mag := math.Hypot(in.StickX, in.StickY)
-	if mag > .1 {
-		desired := math.Atan2(in.StickY, in.StickX)
-		diff := delta(t.Angle, desired)
-		t.Angle += clamp(diff, -5.8*turnScale*dt, 5.8*turnScale*dt)
-		if !in.AimOnly {
-			throttle = math.Min(1, mag) * math.Max(0, math.Cos(diff))
-		}
-	} else {
-		turn := 0.0
-		if in.Right {
-			turn++
-		}
-		if in.Left {
-			turn--
-		}
-		t.Angle += turn * 3.65 * turnScale * dt
-	}
-	t.Angle = math.Atan2(math.Sin(t.Angle), math.Cos(t.Angle))
+	angle, throttle := steerTank(t.Angle, in, turnScale, dt)
+	t.Angle = angle
 	g.moveTank(t, math.Cos(t.Angle)*128*speedScale*throttle*dt, math.Sin(t.Angle)*128*speedScale*throttle*dt)
 	// Count server simulation ticks under this held input, not received packets.
 	// The browser uses (ack, ackSteps) to replay only movement not included here.
@@ -699,6 +684,36 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 	pressed := in.FirePressed // Only the hub may create an online press edge.
 	t.fireHeld = in.Fire
 	g.weaponControl(t, in.Fire, pressed)
+}
+
+func steerTank(angle float64, in Input, turnScale, dt float64) (float64, float64) {
+	throttle := 0.0
+	if in.Forward {
+		throttle++
+	}
+	if in.Reverse {
+		throttle -= .72
+	}
+	mag := math.Hypot(in.StickX, in.StickY)
+	if mag > .1 {
+		desired := math.Atan2(in.StickY, in.StickX)
+		diff := delta(angle, desired)
+		angle += clamp(diff, -5.8*turnScale*dt, 5.8*turnScale*dt)
+		if !in.AimOnly {
+			throttle = math.Min(1, mag) * math.Max(0, math.Cos(diff))
+		}
+	} else {
+		turn := 0.0
+		if in.Right {
+			turn++
+		}
+		if in.Left {
+			turn--
+		}
+		angle += turn * 3.65 * turnScale * dt
+	}
+	angle = math.Atan2(math.Sin(angle), math.Cos(angle))
+	return angle, throttle
 }
 
 // A press launches a grenade; the next fresh press detonates owned live grenades.

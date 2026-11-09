@@ -29,5 +29,5 @@ func (h *Hub) roomMessage(r *Room) map[string]any {
 			players = append(players, entry)
 		}
 	}
-	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "canRestartWave": r.canRestartSurvivalWave(), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.Game.lineupError(r.Players), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
+	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "infinityActive": r.infinityActive, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "canRestartWave": r.canRestartSurvivalWave(), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.lineupError(), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
 }
