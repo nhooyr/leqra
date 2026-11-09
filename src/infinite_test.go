@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -100,6 +102,40 @@ func TestInfiniteFireEdgeAndProximitySnapshot(t *testing.T) {
 	}
 }
 
+func TestInfiniteFireTimeoutPreservesPressIdentity(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	p := a.join(fakeClient(), "Pilot", now)
+	a.nextBot = 1000
+	applyPower(&p.kit, "grenade", infinitePowerDuration, infiniteStarDuration)
+	a.setInput(p, Input{Fire: true}, now)
+	afterTimeout := now.Add(inputTimeout + time.Millisecond)
+	a.setInput(p, Input{}, afterTimeout)
+	a.step(afterTimeout)
+	if a.nextBullet != 0 {
+		t.Fatal("fresh neutral input revived an expired press")
+	}
+
+	a.setInput(p, Input{Fire: true}, afterTimeout)
+	a.step(afterTimeout)
+	if len(a.bullets) != 1 || a.bullets[0].Kind != "grenade" {
+		t.Fatal("fresh press did not throw a grenade")
+	}
+	afterTimeout = afterTimeout.Add(inputTimeout + time.Millisecond)
+	a.step(afterTimeout)
+	a.setInput(p, Input{Fire: true}, afterTimeout)
+	a.step(afterTimeout)
+	if len(a.bullets) != 1 {
+		t.Fatal("held heartbeat detonated a grenade after timeout")
+	}
+	a.setInput(p, Input{}, afterTimeout)
+	a.setInput(p, Input{Fire: true}, afterTimeout)
+	a.step(afterTimeout)
+	if len(a.bullets) != 0 {
+		t.Fatal("release and fresh press did not detonate the grenade")
+	}
+}
+
 func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Now()
@@ -130,6 +166,39 @@ func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	a.hurt(target, shooter.ID)
 	if target.HP != 0 || target.Score != -1 || shooter.Score != 1 {
 		t.Fatal("one unshielded hit must kill and adjust both scores")
+	}
+}
+
+func TestInfiniteSimultaneousLaserPriorityRotates(t *testing.T) {
+	for winner := range 2 {
+		a := newSeededInfiniteArena(37)
+		now := time.Now()
+		pilots := []*infinitePilot{a.join(fakeClient(), "First", now), a.join(fakeClient(), "Second", now)}
+		a.nextBot, a.nextPickup = 1000, 1000
+		a.tick = uint64(99 + winner)
+		foundLane := false
+		for x := range 8 {
+			px, py := infiniteCenter(x, 0)
+			if _, blocked := a.rayWalls(px, py, cellSize, 0, laserRadius); blocked {
+				continue
+			}
+			pilots[0].X, pilots[0].Y, pilots[0].Angle = px, py, 0
+			pilots[1].X, pilots[1].Y, pilots[1].Angle = px+cellSize, py, math.Pi
+			foundLane = true
+			break
+		}
+		if !foundLane {
+			t.Fatal("fixture needs a clear two-cell lane")
+		}
+		for _, p := range pilots {
+			p.kit.Invulnerable = 0
+			applyPower(&p.kit, "laser", infinitePowerDuration, infiniteStarDuration)
+			a.setInput(p, Input{Fire: true}, now)
+		}
+		a.step(now)
+		if pilots[winner].Score != 1 || pilots[1-winner].Score != -1 {
+			t.Fatalf("tick %d wanted pilot %d to win the simultaneous attack, got %d / %d", a.tick, winner, pilots[0].Score, pilots[1].Score)
+		}
 	}
 }
 
@@ -166,7 +235,7 @@ func TestInfiniteWebSocketSharesAnAuthoritativeArena(t *testing.T) {
 	server := httptest.NewServer(app.handler())
 	t.Cleanup(server.Close)
 
-	_, bad := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": "outdated"})
+	_, bad := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": "outdated"}, false)
 	var refusal infiniteMessage
 	readInfinitePacket(t, bad, &refusal)
 	if refusal.Type != "error" {
@@ -180,15 +249,14 @@ func TestInfiniteWebSocketSharesAnAuthoritativeArena(t *testing.T) {
 	}
 	var clients [2]welcome
 	for i, name := range []string{"First", "Second"} {
-		_, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": name})
+		_, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": name}, false)
 		w := &clients[i]
 		readInfinitePacket(t, reader, w)
 		if w.Type != "welcome" || w.Seed != 99 || w.ID == 0 {
 			t.Fatalf("invalid welcome: %+v", w)
 		}
 		var state infiniteSnapshot
-		readInfinitePacket(t, reader, &state)
-		if state.Type != "state" || state.Players != i+1 {
+		if readInfinitePacket(t, reader, &state) || state.Type != "state" || state.Players != i+1 {
 			t.Fatalf("invalid initial world state: %+v", state)
 		}
 		for _, client := range clients[:i+1] {
@@ -206,7 +274,69 @@ func TestInfiniteWebSocketSharesAnAuthoritativeArena(t *testing.T) {
 	}
 }
 
-func dialInfinite(t *testing.T, url string, first map[string]string) (net.Conn, *bufio.Reader) {
+func TestInfiniteWebSocketNegotiatesSnapshotDeflate(t *testing.T) {
+	app := newApp(4, nil)
+	t.Cleanup(app.infinite.close)
+	server := httptest.NewServer(app.handler())
+	t.Cleanup(server.Close)
+	_, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": "Pilot"}, true)
+	var welcome infiniteMessage
+	if readInfinitePacket(t, reader, &welcome) || welcome.Type != "welcome" {
+		t.Fatalf("expected a plain reliable welcome, got %+v", welcome)
+	}
+	a := app.infinite.public
+	a.mu.Lock()
+	p := a.pilots[0]
+	for i := range 30 {
+		a.bullets = append(a.bullets, infiniteBullet{ID: i + 1, X: p.X, Y: p.Y, Owner: p.ID, Kind: "rapid", Life: 2})
+	}
+	a.broadcast()
+	a.mu.Unlock()
+	var state infiniteSnapshot
+	if !readInfinitePacket(t, reader, &state) || state.Type != "state" || len(state.Bullets) != 30 {
+		t.Fatalf("expected compressed state with 30 projectiles, got %s with %d", state.Type, len(state.Bullets))
+	}
+}
+
+func TestInfiniteSnapshotSharesOnlyEqualVisibility(t *testing.T) {
+	a := newSeededInfiniteArena(9)
+	now := time.Now()
+	for i, x := range []float64{0, 0, 0, 1} {
+		c := fakeClient()
+		c.updates = make(chan snapshotFrame, 1)
+		c.ws = &wsConn{deflate: i != 2}
+		p := a.join(c, "Pilot", now)
+		p.X, p.Y = x, 0
+	}
+	for i := range 30 {
+		a.bullets = append(a.bullets, infiniteBullet{ID: i + 1, Owner: 1, Kind: "rapid", Life: 2})
+	}
+	a.pickups = append(a.pickups, Pickup{ID: 1, X: -infiniteSight, Life: 1})
+	a.broadcast()
+	first, same, plain, edge := <-a.pilots[0].client.updates, <-a.pilots[1].client.updates, <-a.pilots[2].client.updates, <-a.pilots[3].client.updates
+	if !first.compressed || !same.compressed || plain.compressed || !edge.compressed || &first.data[0] != &same.data[0] {
+		t.Fatal("equal views did not share an encoded snapshot across compatible peers")
+	}
+	if decoded, err := inflateMessage(first.data, lenLimitForTest); err != nil || !bytes.Equal(decoded, plain.data) {
+		t.Fatalf("compressed and plain views differ: %v", err)
+	}
+	var nearState, edgeState infiniteSnapshot
+	if err := json.Unmarshal(plain.data, &nearState); err != nil {
+		t.Fatal(err)
+	}
+	edgeData, err := inflateMessage(edge.data, lenLimitForTest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(edgeData, &edgeState); err != nil {
+		t.Fatal(err)
+	}
+	if len(nearState.Pickups) != 1 || len(edgeState.Pickups) != 0 || len(edgeState.Tanks) != 4 || len(edgeState.Bullets) != 30 {
+		t.Fatal("sharing snapshots changed the viewport at the edge of sight")
+	}
+}
+
+func dialInfinite(t *testing.T, url string, first map[string]string, deflate bool) (net.Conn, *bufio.Reader) {
 	t.Helper()
 	host := strings.TrimPrefix(url, "http://")
 	c, err := net.Dial("tcp", host)
@@ -217,7 +347,11 @@ func dialInfinite(t *testing.T, url string, first map[string]string) (net.Conn, 
 	if err := c.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	_, err = fmt.Fprintf(c, "GET /ws/infinite HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nOrigin: %s\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", host, url)
+	extension := ""
+	if deflate {
+		extension = "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n"
+	}
+	_, err = fmt.Fprintf(c, "GET /ws/infinite HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nOrigin: %s\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n%s\r\n", host, url, extension)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +363,13 @@ func dialInfinite(t *testing.T, url string, first map[string]string) (net.Conn, 
 	if response.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("expected WebSocket upgrade, got %s", response.Status)
 	}
+	want := ""
+	if deflate {
+		want = "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+	}
+	if got := response.Header.Get("Sec-WebSocket-Extensions"); got != want {
+		t.Fatalf("unexpected negotiated extension %q, want %q", got, want)
+	}
 	message, err := json.Marshal(first)
 	if err != nil {
 		t.Fatal(err)
@@ -239,15 +380,16 @@ func dialInfinite(t *testing.T, url string, first map[string]string) (net.Conn, 
 	return c, reader
 }
 
-func readInfinitePacket(t *testing.T, reader *bufio.Reader, target any) {
+func readInfinitePacket(t *testing.T, reader *bufio.Reader, target any) bool {
 	t.Helper()
 	var header [2]byte
 	if _, err := io.ReadFull(reader, header[:]); err != nil {
 		t.Fatal(err)
 	}
-	if header[0] != 129 {
+	if header[0]&^wsCompressed != 129 {
 		t.Fatalf("expected a text frame, got %d", header[0])
 	}
+	compressed := header[0]&wsCompressed != 0
 	size := int(header[1])
 	if size == 126 {
 		if _, err := io.ReadFull(reader, header[:]); err != nil {
@@ -259,9 +401,17 @@ func readInfinitePacket(t *testing.T, reader *bufio.Reader, target any) {
 	if _, err := io.ReadFull(reader, packet); err != nil {
 		t.Fatal(err)
 	}
+	if compressed {
+		var err error
+		packet, err = inflateMessage(packet, lenLimitForTest)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := json.Unmarshal(packet, target); err != nil {
 		t.Fatalf("decoding %q: %v", packet, err)
 	}
+	return compressed
 }
 
 func TestPublicInfinityReclaimsIdleSeat(t *testing.T) {

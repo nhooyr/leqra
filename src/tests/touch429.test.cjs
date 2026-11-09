@@ -13,7 +13,7 @@ function eventTarget(){
  return{handlers,changes,
   addEventListener(type,fn,options){const list=handlers.get(type)||[];list.push({fn,options});handlers.set(type,list);changes.push(['add',type]);},
   removeEventListener(type,fn){handlers.set(type,(handlers.get(type)||[]).filter(h=>h.fn!==fn));changes.push(['remove',type]);},
-  emit(type,values={}){const e={type,cancelable:true,defaultPrevented:false,preventDefault(){this.defaultPrevented=true;},stopPropagation(){throw Error('Game input must still propagate');},...values};for(const {fn}of handlers.get(type)||[])fn(e);return e;}
+  emit(type,values={}){const e={type,button:0,cancelable:true,defaultPrevented:false,preventDefault(){this.defaultPrevented=true;},stopPropagation(){throw Error('Game input must still propagate');},...values};for(const {fn}of handlers.get(type)||[])fn(e);return e;}
  };
 }
 function element(){
@@ -28,7 +28,7 @@ function boot(){
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
  const selection={isCollapsed:true,cleared:0,removeAllRanges(){this.isCollapsed=true;this.cleared++;}},document={...eventTarget(),documentElement:element(),body:element(),getSelection:()=>selection},window=eventTarget();
  const s={document,window,$,mode:'room',phase:'menu',matchTouchLocked:false,matchTextComposing:false,touchUI:true,pendingMatchPresentation:null,online:{connected:true,menu:false},
-  stick:{id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36},firePointers:new Set(),firePresses:new Set(),initAudio(){},localPlayerID:()=>0,sendOnlineInput(){},primaryFireHeld:()=>s.firePointers.size>0};
+  stick:{id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36},firePointers:new Set(),firePresses:new Set(),initAudio(){},primeAudioUnlock(){},localPlayerID:()=>0,sendOnlineInput(){},primaryFireHeld:()=>s.firePointers.size>0};
  vm.createContext(s);
  for(const name of ['syncPauseButton','preventMatchPinch','matchTextField','clearMatchSelection','preventMatchSelection','syncMatchTouchPolicy'])vm.runInContext(declaration(name),s);
  // The actual joystick/Fire handlers are exercised alongside document guards.
@@ -82,10 +82,36 @@ test('joystick plus Fire keep independent pointers through a prevented pinch and
  b.$('stickZone').emit('pointerdown',{pointerId:1,clientX:48,clientY:48});
  b.$('fireBtn').emit('pointerdown',{pointerId:2});
  assert.equal(b.pinch('touchmove',{touches:[{},{}]}).defaultPrevented,true);
- b.$('stickZone').emit('pointermove',{pointerId:1,clientX:84,clientY:48});
+ b.window.emit('pointermove',{pointerId:1,clientX:84,clientY:48});
  assert.equal(b.s.stick.mag,1);assert.equal(b.s.stick.x,1);assert.equal(b.s.firePointers.has(2),true);assert.equal(b.s.firePresses.has(0),true);
  b.window.emit('pointerup',{pointerId:2});assert.equal(b.s.firePointers.size,0);assert.equal(b.s.stick.id,1);
  b.window.emit('pointercancel',{pointerId:1});assert.equal(b.s.stick.id,null);assert.equal(b.s.stick.mag,0);assert.equal(b.$('fireBtn').classList.contains('held'),false);
+});
+
+test('Infinity keeps the active touch policy until the arena closes',()=>{
+ const b=boot();
+ b.$('infiniteArena').open=true;b.setPhase('menu');
+ assert.equal(b.document.documentElement.classList.contains('match-active'),true);
+ assert.equal(b.pinch('gesturechange').defaultPrevented,true);
+ assert.equal(b.pinch('touchmove',{touches:[{},{}]}).defaultPrevented,true);
+ assert.equal(b.pinch('touchmove',{touches:[{}]}).defaultPrevented,false);
+ b.$('infiniteArena').open=false;b.setPhase('menu');
+ assert.equal(b.document.documentElement.classList.contains('match-active'),false);
+ assert.equal(b.pinch('gesturechange').defaultPrevented,false);
+});
+
+test('fixed steering tracks the finger without pointer capture and sends its release immediately',()=>{
+ const b=boot(),sent=[],gestures=[];
+ b.setPhase('playing');b.s.mode='online';
+ b.$('stickZone').setPointerCapture=()=>{throw new Error('Pointer capture unavailable');};
+ b.s.sendOnlineInput=force=>sent.push([force,b.s.stick.x,b.s.stick.y]);
+ b.s.primeAudioUnlock=e=>gestures.push(e.type);
+ b.$('stickZone').emit('pointerdown',{pointerId:1,clientX:48,clientY:48});
+ assert.equal(b.window.emit('pointermove',{pointerId:1,clientX:125,clientY:48}).defaultPrevented,true);
+ assert.equal(b.s.stick.x,1);
+ b.window.emit('pointerup',{pointerId:1});
+ assert.deepEqual(sent,[[true,0,0]]);
+ assert.deepEqual(gestures,['pointerup']);
 });
 
 test('native Fire activation pulses the online controls and never duplicates pointer fire',()=>{

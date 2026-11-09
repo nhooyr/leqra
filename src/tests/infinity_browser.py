@@ -54,21 +54,44 @@ def check_touch_controls(context, page):
     stick = page.locator("#infiniteStick")
     knob = page.locator("#infiniteKnob")
     fire = page.locator("#infiniteFire")
+    expect(page.locator("html")).to_have_class(re.compile(r"\bmatch-active\b"))
+    assert page.evaluate("""() => {
+        const pinch = new Event('gesturechange', {bubbles:true, cancelable:true});
+        document.dispatchEvent(pinch);
+        return pinch.defaultPrevented;
+    }""")
+    page.evaluate("""() => {
+        Element.prototype.setPointerCapture = () => { throw new DOMException('Pointer expired', 'NotFoundError'); };
+    }""")
     expect(stick).to_be_visible()
     expect(fire).to_be_visible()
-    stick_box = stick.bounding_box()
-    fire_box = fire.bounding_box()
-    points = [
-        {"x": stick_box["x"] + .7 * stick_box["width"], "y": stick_box["y"] + .5 * stick_box["height"], "id": 11},
-        {"x": fire_box["x"] + .5 * fire_box["width"], "y": fire_box["y"] + .5 * fire_box["height"], "id": 12},
-    ]
     cdp = context.new_cdp_session(page)
-    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": points})
-    expect(fire).to_have_class(re.compile(r"\bheld\b"))
-    assert knob.evaluate("element => element.style.getPropertyValue('--stick-x')") not in ("", "0px")
-    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
-    expect(fire).not_to_have_class(re.compile(r"\bheld\b"))
-    assert knob.evaluate("element => element.style.getPropertyValue('--stick-x')") == ""
+
+    def press_both():
+        stick_box, fire_box = stick.bounding_box(), fire.bounding_box()
+        points = [
+            {"x": stick_box["x"] + .7 * stick_box["width"], "y": stick_box["y"] + .5 * stick_box["height"], "id": 11},
+            {"x": fire_box["x"] + .5 * fire_box["width"], "y": fire_box["y"] + .5 * fire_box["height"], "id": 12},
+        ]
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": points})
+        expect(fire).to_have_class(re.compile(r"\bheld\b"))
+        assert knob.evaluate("element => element.style.getPropertyValue('--stick-x')") not in ("", "0px")
+
+    def expect_released():
+        expect(fire).not_to_have_class(re.compile(r"\bheld\b"))
+        assert knob.evaluate("element => element.style.getPropertyValue('--stick-x')") == ""
+
+    portrait = page.viewport_size
+    press_both()
+    page.set_viewport_size({"width": portrait["height"], "height": portrait["width"]})
+    page.wait_for_function("() => leqra.getState().touchLandscape")
+    expect_released()
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchCancel", "touchPoints": []})
+    press_both()
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchCancel", "touchPoints": []})
+    expect_released()
+    page.set_viewport_size(portrait)
+    page.wait_for_function("() => !leqra.getState().touchLandscape")
 
 
 def check_public(browser, url, errors):
@@ -115,6 +138,7 @@ def check_offline(browser, errors):
         check_touch_controls(context, page)
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
+        expect(page.locator("html")).not_to_have_class(re.compile(r"\bmatch-active\b"))
         expect(page.locator('[data-room-mode="infinity"]')).to_have_attribute("aria-checked", "true")
     print("PASS offline file launch, mobile controls, random bots, and standings", flush=True)
 
