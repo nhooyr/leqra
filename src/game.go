@@ -440,38 +440,36 @@ type RayHit struct{ T, NX, NY float64 }
 
 func (g *Game) wallBetweenCenters(x, y, dx, dy float64) bool {
 	for _, wi := range g.wallCandidates(x, y, dx, dy, 0) {
-		w := g.World.Walls[wi]
-		if math.Max(x, x+dx) < w.X || math.Min(x, x+dx) > w.X+w.W || math.Max(y, y+dy) < w.Y || math.Min(y, y+dy) > w.Y+w.H {
-			continue
-		}
-		enter, exit := math.Inf(-1), math.Inf(1)
-		if math.Abs(dx) < 1e-9 {
-			if x < w.X || x > w.X+w.W {
-				continue
-			}
-		} else {
-			a, b := (w.X-x)/dx, (w.X+w.W-x)/dx
-			if a > b {
-				a, b = b, a
-			}
-			enter, exit = math.Max(enter, a), math.Min(exit, b)
-		}
-		if math.Abs(dy) < 1e-9 {
-			if y < w.Y || y > w.Y+w.H {
-				continue
-			}
-		} else {
-			a, b := (w.Y-y)/dy, (w.Y+w.H-y)/dy
-			if a > b {
-				a, b = b, a
-			}
-			enter, exit = math.Max(enter, a), math.Min(exit, b)
-		}
-		if enter <= exit && exit >= 0 && enter <= 1 {
+		if g.World.Walls[wi].intersectsSegment(x, y, dx, dy) {
 			return true
 		}
 	}
 	return false
+}
+
+// Include segments that start or end inside a wall, unlike a projectile sweep.
+func (w Wall) intersectsSegment(x, y, dx, dy float64) bool {
+	if math.Max(x, x+dx) < w.X || math.Min(x, x+dx) > w.X+w.W || math.Max(y, y+dy) < w.Y || math.Min(y, y+dy) > w.Y+w.H {
+		return false
+	}
+	enter, exit := math.Inf(-1), math.Inf(1)
+	if math.Abs(dx) < 1e-9 {
+		if x < w.X || x > w.X+w.W {
+			return false
+		}
+	} else {
+		a, b := (w.X-x)/dx, (w.X+w.W-x)/dx
+		enter, exit = math.Max(enter, min(a, b)), math.Min(exit, max(a, b))
+	}
+	if math.Abs(dy) < 1e-9 {
+		if y < w.Y || y > w.Y+w.H {
+			return false
+		}
+	} else {
+		a, b := (w.Y-y)/dy, (w.Y+w.H-y)/dy
+		enter, exit = math.Max(enter, min(a, b)), math.Min(exit, max(a, b))
+	}
+	return enter <= exit && exit >= 0 && enter <= 1
 }
 
 func (g *Game) rayWallsHit(x, y, dx, dy, r float64) (RayHit, bool) {
@@ -1045,7 +1043,19 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 		g.emit("shield", t, b.Owner, "")
 		return
 	}
-	g.recordDeath(t, b.Owner)
+	g.eliminateTank(t, b.Owner)
+}
+
+func (g *Game) starmanRam(attacker, target *Tank) bool {
+	if attacker.StarmanTime <= 0 || target.StarmanTime > 0 || target.Invulnerable > 0 || !g.canDamage(attacker.ID, target) {
+		return false
+	}
+	g.eliminateTank(target, attacker.ID)
+	return true
+}
+
+func (g *Game) eliminateTank(t *Tank, attacker int) {
+	g.recordDeath(t, attacker)
 	t.Alive = false
 	if g.objectiveMode() && !g.suddenDeath() {
 		t.RespawnTime = float64(g.settings().RespawnSeconds)
@@ -1054,10 +1064,10 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 	t.VX = 0
 	t.VY = 0
 	text := t.Name + " was eliminated."
-	if owner := g.Tanks[b.Owner]; owner != nil {
+	if owner := g.Tanks[attacker]; owner != nil {
 		text = owner.Name + " eliminated " + t.Name + "."
 	}
-	g.emit("hit", t, b.Owner, text)
+	g.emit("hit", t, attacker, text)
 }
 
 // One distance budget for the entire flight, including every bend and bounce.
@@ -1112,7 +1122,7 @@ func (g *Game) steerMissile(b *Bullet, dt float64) {
 		return
 	}
 	b.Target = target.ID
-	a := guidedProjectileAngle(b.Kind, math.Atan2(b.VY, b.VX), math.Atan2(target.Y-b.Y, target.X-b.X), dt)
+	a := guidedProjectileAngle(math.Atan2(b.VY, b.VX), math.Atan2(target.Y-b.Y, target.X-b.X), dt)
 	speed := missileSpeed
 	if b.Kind == "grenade" {
 		speed = math.Hypot(b.VX, b.VY)
@@ -1120,11 +1130,8 @@ func (g *Game) steerMissile(b *Bullet, dt float64) {
 	b.VX, b.VY = math.Cos(a)*speed, math.Sin(a)*speed
 }
 
-func guidedProjectileAngle(kind string, angle, targetAngle, dt float64) float64 {
+func guidedProjectileAngle(angle, targetAngle, dt float64) float64 {
 	maxTurn := missileTurn * dt
-	if kind == "grenade" {
-		maxTurn *= 2.0 / 3
-	}
 	return angle + clamp(delta(angle, targetAngle), -maxTurn, maxTurn)
 }
 
@@ -1516,10 +1523,16 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 			dx, dy := b.X-a.X, b.Y-a.Y
 			d := math.Hypot(dx, dy)
 			over := a.R + b.R - d
+			if over < 0 {
+				continue
+			}
+			if (a.GhostTime > 0 || b.GhostTime > 0 || a.StarmanTime > 0 || b.StarmanTime > 0) && g.wallBetweenCenters(a.X, a.Y, dx, dy) {
+				continue
+			}
+			if g.starmanRam(a, b) || g.starmanRam(b, a) {
+				continue
+			}
 			if over > 0 {
-				if (a.GhostTime > 0 || b.GhostTime > 0) && g.wallBetweenCenters(a.X, a.Y, dx, dy) {
-					continue
-				}
 				if d < .001 {
 					dx = 1
 					dy = 0

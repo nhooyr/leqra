@@ -77,6 +77,57 @@ func TestStarmanRefreshKeepsExistingGearAndPublishesItsTimer(t *testing.T) {
 	}
 }
 
+func TestStarmanContactEliminatesShieldedTankAndDropsItsFlag(t *testing.T) {
+	g := battle(2)
+	g.Rules.Mode, g.Rules.RespawnSeconds = "ctf", 3
+	attacker, target := g.Tanks[0], g.Tanks[1]
+	attacker.Team, target.Team = 1, 2
+	target.X, target.Y = attacker.X+attacker.R+target.R, attacker.Y
+	flag := &Flag{Team: 1, Carrier: target.ID}
+	g.Objectives = &ObjectiveState{Mode: "ctf", Flags: []*Flag{flag}}
+	g.grantPower(target, "shield")
+	g.grantPower(attacker, "starman")
+	g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
+	if target.Alive || !attacker.Alive || target.RespawnTime != 3 || flag.Carrier != -1 || flag.ReturnIn <= 0 {
+		t.Fatalf("Starman contact failed to eliminate or drop the flag: attacker=%+v target=%+v flag=%+v", attacker, target, flag)
+	}
+	if attacker.stats.Eliminations != 1 || target.stats.Deaths != 1 {
+		t.Fatal("Starman contact was not credited as a normal elimination")
+	}
+}
+
+func TestStarmanContactRespectsWallsProtectionAndTeams(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		setup       func(g *Game, attacker, target *Tank)
+		targetAlive bool
+	}{
+		{"outside contact", func(_ *Game, a, b *Tank) { b.X += .01 }, true},
+		{"through wall", func(_ *Game, a, b *Tank) { a.X, b.X = 240, 273 }, true},
+		{"inside wall", func(_ *Game, a, b *Tank) { a.X, b.X = 252, 273 }, true},
+		{"spawn protected", func(_ *Game, a, b *Tank) { b.Invulnerable = 1 }, true},
+		{"other Starman", func(g *Game, a, b *Tank) { g.grantPower(b, "starman") }, true},
+		{"friendly fire off", func(g *Game, a, b *Tank) { a.Team, b.Team = 1, 1; g.Rules.FriendlyFire = false }, true},
+		{"friendly fire on", func(g *Game, a, b *Tank) { a.Team, b.Team = 1, 1; g.Rules.FriendlyFire = true }, false},
+		{"expired boost", func(_ *Game, a, b *Tank) { a.StarmanTime = tickDT }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := ghostArena41()
+			// Put the attacker in the higher seat to check both sides of the
+			// tank-pair iteration across the Starman contact tests.
+			attacker, target := g.Tanks[1], g.Tanks[0]
+			attacker.X, attacker.Y = 120, 210
+			target.X, target.Y = attacker.X+attacker.R+target.R, attacker.Y
+			g.grantPower(attacker, "starman")
+			tc.setup(g, attacker, target)
+			g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
+			if !attacker.Alive || target.Alive != tc.targetAlive {
+				t.Fatalf("attacker alive = %t, target alive = %t, want true and %t", attacker.Alive, target.Alive, tc.targetAlive)
+			}
+		})
+	}
+}
+
 func TestStarmanWeaponsFireWithoutSpendingAmmoOrReloading(t *testing.T) {
 	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade", "laser", "cannon"} {
 		t.Run(kind, func(t *testing.T) {

@@ -88,7 +88,7 @@ func TestInfinitePauseHoldsRespawnAndKeepsArenaLive(t *testing.T) {
 	}
 
 	paused.kit.Invulnerable, paused.Protected = 0, false
-	a.hurt(paused, other.ID)
+	a.hurt(paused, other.ID, other.Team)
 	if paused.HP != 0 || paused.Score != -1 || other.Score != 1 {
 		t.Fatal("a paused pilot must still take damage and lose a point on death")
 	}
@@ -190,24 +190,24 @@ func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	if target.kit.ShieldCharges != 1 || a.pickups[0].Life != 0 {
 		t.Fatal("a shield must be collected and removed exactly once")
 	}
-	a.hurt(target, shooter.ID)
+	a.hurt(target, shooter.ID, shooter.Team)
 	if target.HP != 1 || target.kit.ShieldCharges != 0 || !target.Protected {
 		t.Fatal("shield did not absorb the shot")
 	}
 	for range 21 {
 		a.advanceEquipment(target)
 	}
-	a.hurt(target, target.ID)
+	a.hurt(target, target.ID, target.Team)
 	if target.HP != 1 {
 		t.Fatal("a tank damaged itself")
 	}
-	a.hurt(target, shooter.ID)
+	a.hurt(target, shooter.ID, shooter.Team)
 	if target.HP != 0 || target.Score != -1 || shooter.Score != 1 {
 		t.Fatal("one unshielded hit must kill and adjust both scores")
 	}
 }
 
-func TestInfiniteGrenadeHomingTurnsAtTwoThirdsMissileRate(t *testing.T) {
+func TestInfiniteGrenadeHomingTurnsAtMissileRate(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	a.pilots = []*infinitePilot{{infiniteTank: infiniteTank{ID: 1, X: 63, Y: 67, HP: 1}}}
 	for _, weapon := range []struct {
@@ -215,7 +215,7 @@ func TestInfiniteGrenadeHomingTurnsAtTwoThirdsMissileRate(t *testing.T) {
 		speed, turn float64
 	}{
 		{"homing", missileSpeed, missileTurn},
-		{"grenade", grenadeSpeed, missileTurn * (2.0 / 3)},
+		{"grenade", grenadeSpeed, missileTurn},
 	} {
 		a.bullets = []infiniteBullet{{Kind: weapon.kind, X: 42, Y: 42, VX: weapon.speed, Life: 9, age: 1, radius: 6, target: -1}}
 		a.advanceBullets()
@@ -226,6 +226,74 @@ func TestInfiniteGrenadeHomingTurnsAtTwoThirdsMissileRate(t *testing.T) {
 		if angle, want := math.Atan2(b.VY, b.VX), weapon.turn*tickDT; math.Abs(angle-want) > 1e-12 {
 			t.Fatalf("%s turn = %v, want %v", weapon.kind, angle, want)
 		}
+	}
+}
+
+func TestInfiniteStarmanContactAwardsOneKillAndRespectsProtection(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	attacker := a.join(fakeClient(), "Attacker", now)
+	target := a.join(fakeClient(), "Target", now)
+	a.nextBot, a.nextPickup = 1000, 1000
+	a.pickups = nil
+	attacker.X, attacker.Y = 24, 42
+	target.X, target.Y = attacker.X+2*tankRadius, attacker.Y
+	applyPower(&attacker.kit, "starman", infinitePowerDuration, infiniteStarDuration)
+	applyPower(&target.kit, "starman", infinitePowerDuration, infiniteStarDuration)
+	a.step(now)
+	if attacker.HP == 0 || target.HP == 0 {
+		t.Fatal("contact killed one of two active Starmen")
+	}
+	target.kit.StarmanTime, target.kit.GhostTime = 0, 0
+	target.kit.Invulnerable = 1
+	a.step(now)
+	if target.HP == 0 {
+		t.Fatal("contact ignored temporary invulnerability")
+	}
+	target.kit.Invulnerable = 0
+	applyPower(&target.kit, "shield", infinitePowerDuration, infiniteStarDuration)
+	a.step(now)
+	if target.HP != 0 || target.respawn != a.tick+infiniteRespawnTicks || target.Score != -1 || attacker.Score != 1 {
+		t.Fatalf("contact should bypass the shield and award a normal kill: attacker=%+v target=%+v", attacker, target)
+	}
+	a.step(now)
+	if attacker.Score != 1 || target.Score != -1 {
+		t.Fatal("continued contact with a dead tank scored more than once")
+	}
+}
+
+func TestInfiniteStarmanContactCannotCrossWalls(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	attacker := a.join(fakeClient(), "Attacker", now)
+	target := a.join(fakeClient(), "Target", now)
+	a.nextBot, a.nextPickup = 1000, 1000
+	a.pickups = nil
+	var wall Wall
+	for _, candidate := range a.maze.wallsNear(-500, -500, 500, 500) {
+		if candidate.Axis == "v" {
+			wall = candidate
+			break
+		}
+	}
+	if wall.H == 0 {
+		t.Fatal("fixture needs a vertical wall")
+	}
+	target.X, target.Y = wall.X+wall.W+tankRadius, wall.Y+wall.H/2
+	target.kit.Invulnerable = 0
+	attacker.Y = target.Y
+	applyPower(&attacker.kit, "starman", infinitePowerDuration, infiniteStarDuration)
+	for _, x := range []float64{wall.X - 1, wall.X + wall.W/2} {
+		attacker.X = x
+		a.step(now)
+		if target.HP == 0 {
+			t.Fatalf("contact from x=%f reached a tank through wall %+v", x, wall)
+		}
+	}
+	attacker.X = wall.X + wall.W + 1
+	a.step(now)
+	if target.HP != 0 {
+		t.Fatal("Starman did not eliminate a tank after reaching the same side of the wall")
 	}
 }
 
@@ -444,6 +512,115 @@ func TestInfiniteWebSocketNegotiatesSnapshotDeflate(t *testing.T) {
 	var state infiniteSnapshot
 	if !readInfinitePacket(t, reader, &state) || state.Type != "state" || len(state.Bullets) != 30 {
 		t.Fatalf("expected compressed state with 30 projectiles, got %s with %d", state.Type, len(state.Bullets))
+	}
+}
+
+func TestInfinitySocketControlsTwoPilotsAndUnionsTheirViews(t *testing.T) {
+	app := newApp(4, nil)
+	t.Cleanup(app.infinite.close)
+	server := httptest.NewServer(app.handler())
+	t.Cleanup(server.Close)
+	conn, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": "FIRST", "localName": "SECOND"}, false)
+	var welcome struct {
+		Type  string `json:"type"`
+		ID    int    `json:"id"`
+		Local int    `json:"localId"`
+	}
+	readInfinitePacket(t, reader, &welcome)
+	if welcome.Type != "welcome" || welcome.ID == 0 || welcome.Local == 0 || welcome.ID == welcome.Local {
+		t.Fatalf("invalid two-seat welcome: %+v", welcome)
+	}
+	for _, input := range []string{
+		`{"type":"input","seq":11,"paused":true,"forward":true}`,
+		`{"type":"input","seq":22,"local":true,"left":true}`,
+	} {
+		if _, err := conn.Write(maskedFrame(1, true, []byte(input))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := app.infinite.public
+	deadline := time.Now().Add(time.Second)
+	for {
+		a.mu.Lock()
+		first, local := a.pilots[0], a.pilots[1]
+		if first.input.Seq == 11 && local.input.Seq == 22 {
+			if !first.paused || first.input.Forward || local.paused || !local.input.Left {
+				t.Fatalf("controllers shared pause or input: %v %v", first.input, local.input)
+			}
+			first.X, local.X = 42, 5000
+			first.Y, local.Y = 42, 42
+			a.pickups = []Pickup{{X: first.X, Y: first.Y, Life: 1}, {X: local.X, Y: local.Y, Life: 1}, {X: 2500, Y: 42, Life: 1}}
+			a.broadcast()
+			a.mu.Unlock()
+			break
+		}
+		a.mu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("independent input sequences never reached both pilots")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	var state infiniteSnapshot
+	readInfinitePacket(t, reader, &state)
+	if state.Players != 2 || len(state.Tanks) != 2 || len(state.Pickups) != 2 ||
+		state.Tanks[0].ID != welcome.ID || state.Tanks[1].ID != welcome.Local || state.Tanks[1].Name != "SECOND" ||
+		state.Rules != nil || state.Result != nil {
+		t.Fatalf("incorrect combined public snapshot: %+v", state)
+	}
+}
+
+func TestPrivateInfinityTeamsCreditDepartedBotAndFreezeAtTarget(t *testing.T) {
+	rules := defaultRules()
+	rules.Infinity, rules.TeamMode, rules.InfinityTarget = true, "teams", 2
+	rules.TeamNames[0] = "Amber"
+	a := newRoomInfiniteArena(rules)
+	now := time.Now()
+	first, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "First", team: 1}, nil, now)
+	second, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Second", team: 2}, nil, now)
+	ally, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Ally", team: 1}, nil, now)
+	ally.Protected, second.Protected = false, false
+	a.hurt(ally, first.ID, first.Team)
+	if ally.HP == 0 || first.Score != 0 {
+		t.Fatal("friendly fire off did not protect an ally")
+	}
+	a.hurt(second, a.nextID+1, 1) // A departed bot's projectile still belongs to its team.
+	if a.teamScores != [4]int{1, -1, 0, 0} || a.result != nil || first.Score != 0 || second.Score != -1 {
+		t.Fatalf("unexpected team scores: %v", a.teamScores)
+	}
+	second.HP, second.kit.Invulnerable = 1, 0
+	a.rules.FriendlyFire = true
+	a.hurt(ally, first.ID, first.Team)
+	if ally.HP != 0 || a.teamScores != [4]int{1, -1, 0, 0} || a.result != nil {
+		t.Fatal("a permitted friendly kill should net zero team points")
+	}
+	first.X, first.Y, second.X, second.Y = 35, 42, 65, 42
+	applyPower(&first.kit, "starman", infinitePowerDuration, infiniteStarDuration)
+	a.nextBot, a.nextPickup = 1<<32, 1<<32
+	a.step(now)
+	if a.result == nil || *a.result != (infiniteResult{Team: 1, Name: "Amber", Score: 2}) ||
+		a.teamScores != [4]int{2, -2, 0, 0} || first.Score != 2 || second.Score != -2 {
+		t.Fatalf("wrong final score or winner: %v %+v", a.teamScores, a.result)
+	}
+	if got := drain(first.client); len(got) != 2 || got[1]["type"] != "state" || got[1]["result"] == nil {
+		t.Fatalf("the score target did not send a final state: %v", got)
+	}
+	tick := a.tick
+	a.step(now.Add(time.Second))
+	if a.tick != tick || len(first.client.send) != 0 {
+		t.Fatal("completed arena continued simulating or broadcasting")
+	}
+}
+
+func TestPrivateInfinityFreeForAllReachesPersonalTarget(t *testing.T) {
+	rules := defaultRules()
+	rules.Infinity, rules.InfinityTarget = true, 1
+	a := newRoomInfiniteArena(rules)
+	now := time.Now()
+	winner, target := a.join(fakeClient(), "Winner", now), a.join(fakeClient(), "Target", now)
+	target.Protected = false
+	a.hurt(target, winner.ID, winner.Team)
+	if a.result == nil || *a.result != (infiniteResult{ID: winner.ID, Name: winner.Name, Score: 1}) {
+		t.Fatalf("incorrect free-for-all result: %+v", a.result)
 	}
 }
 

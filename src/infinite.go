@@ -29,6 +29,7 @@ type infiniteTank struct {
 	HP         int     `json:"hp"`
 	Bot        bool    `json:"bot"`
 	ColorIndex int     `json:"colorIndex"`
+	Team       int     `json:"team,omitempty"`
 	Score      int     `json:"score"`
 	Name       string  `json:"name"`
 	Protected  bool    `json:"protected,omitempty"`
@@ -54,6 +55,7 @@ type infiniteTank struct {
 type infinitePilot struct {
 	infiniteTank
 	client                 *Client
+	local                  *infinitePilot // A controller's second seat shares this snapshot.
 	input                  Input
 	inputAt, activeAt      time.Time
 	lastStickX, lastStickY float64
@@ -80,6 +82,7 @@ type infiniteBullet struct {
 
 	radius, age, seekDelay float64
 	target                 int
+	ownerTeam              int
 	dead                   bool
 	boosted                bool
 }
@@ -93,6 +96,9 @@ type infiniteSnapshot struct {
 	Effects []infiniteEffect `json:"effects,omitempty"`
 	Players int              `json:"players"`
 	Leaders []infiniteLeader `json:"leaderboard"`
+	Rules   *infiniteRules   `json:"rules,omitempty"`
+	Scores  *[4]int          `json:"teamScores,omitempty"`
+	Result  *infiniteResult  `json:"result,omitempty"`
 }
 
 type infiniteLeader struct {
@@ -100,6 +106,28 @@ type infiniteLeader struct {
 	Name  string `json:"name"`
 	Score int    `json:"score"`
 	Bot   bool   `json:"bot"`
+	Team  int    `json:"team,omitempty"`
+}
+
+type infiniteRules struct {
+	Target       int      `json:"infinityTarget"`
+	TeamMode     string   `json:"teamMode"`
+	TeamNames    []string `json:"teamNames"`
+	TeamColors   []int    `json:"teamColors"`
+	FriendlyFire bool     `json:"friendlyFire"`
+}
+
+type infiniteResult struct {
+	ID    int    `json:"id,omitempty"`
+	Name  string `json:"name"`
+	Team  int    `json:"team"`
+	Score int    `json:"score"`
+}
+
+type infiniteSeat struct {
+	name       string
+	team       int
+	colorIndex int
 }
 
 type infiniteArena struct {
@@ -117,26 +145,48 @@ type infiniteArena struct {
 	nextID, nextBullet int
 	pickupID, effectID int
 	snapshot           infiniteSnapshot // Reused after immediate encoding under mu.
+	rules              *infiniteRules
+	teamScores         [4]int
+	result             *infiniteResult
 }
 
 func newInfiniteArena() *infiniteArena {
 	return newSeededInfiniteArena(rand.Uint32())
 }
 
+func newRoomInfiniteArena(rules MatchRules) *infiniteArena {
+	a := newInfiniteArena()
+	rules = normalizedRules(rules)
+	a.rules = &infiniteRules{rules.InfinityTarget, rules.TeamMode, rules.TeamNames, rules.TeamColors, rules.FriendlyFire}
+	return a
+}
+
+func (a *infiniteArena) teams() bool { return a.rules != nil && a.rules.TeamMode == "teams" }
+
 func newSeededInfiniteArena(seed uint32) *infiniteArena {
 	return &infiniteArena{
-		seed:   seed,
-		maze:   newInfiniteMaze(seed),
-		random: rand.New(rand.NewPCG(uint64(seed), 1)),
-		snapshot: infiniteSnapshot{
-			Type: "state", Tanks: []infiniteTank{}, Bullets: []infiniteBullet{}, Pickups: []Pickup{}, Leaders: []infiniteLeader{},
-		},
+		seed:     seed,
+		maze:     newInfiniteMaze(seed),
+		random:   rand.New(rand.NewPCG(uint64(seed), 1)),
+		snapshot: emptyInfiniteSnapshot(),
 	}
 }
 
+func emptyInfiniteSnapshot() infiniteSnapshot {
+	return infiniteSnapshot{Type: "state", Tanks: []infiniteTank{}, Bullets: []infiniteBullet{}, Pickups: []Pickup{}, Leaders: []infiniteLeader{}}
+}
+
 func (a *infiniteArena) join(c *Client, name string, now time.Time) *infinitePilot {
+	p, _ := a.joinSeats(c, infiniteSeat{name: name, colorIndex: -1}, nil, now)
+	return p
+}
+
+func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infiniteSeat, now time.Time) (*infinitePilot, *infinitePilot) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.maze == nil {
+		a.maze = newInfiniteMaze(a.seed)
+	}
 	x, y, minCells, maxCells := 0.0, 0.0, 0, 0
 	for _, other := range a.pilots {
 		if !other.Bot {
@@ -144,28 +194,54 @@ func (a *infiniteArena) join(c *Client, name string, now time.Time) *infinitePil
 			break
 		}
 	}
-	p := a.addPilot(cleanName(name), false, x, y, minCells, maxCells)
-	if !c.enqueue(map[string]any{"type": "welcome", "id": p.ID, "seed": a.seed}) {
-		a.pilots = a.pilots[:len(a.pilots)-1]
-		return nil
+	before := len(a.pilots)
+	p := a.addPilot(cleanName(first.name), false, x, y, minCells, maxCells)
+	a.setSeat(p, first, now)
+	var local *infinitePilot
+	welcome := map[string]any{"type": "welcome", "id": p.ID, "seed": a.seed}
+	if second != nil {
+		local = a.addPilot(cleanName(second.name), false, p.X, p.Y, 1, 3)
+		a.setSeat(local, *second, now)
+		welcome["localId"] = local.ID
 	}
-	p.client, p.inputAt, p.activeAt = c, now, now
-	a.players++
-	return p
+	if !c.enqueue(welcome) {
+		clear(a.pilots[before:])
+		a.pilots = a.pilots[:before]
+		return nil, nil
+	}
+	p.client, p.local = c, local
+	a.players += len(a.pilots) - before
+	if a.result != nil {
+		a.broadcast()
+	}
+	return p, local
+}
+
+func (a *infiniteArena) setSeat(p *infinitePilot, seat infiniteSeat, now time.Time) {
+	p.Team, p.inputAt, p.activeAt = seat.team, now, now
+	if seat.colorIndex >= 0 {
+		p.ColorIndex = seat.colorIndex
+	}
 }
 
 func (a *infiniteArena) remove(p *infinitePilot) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.players--
-	a.pilots = slices.DeleteFunc(a.pilots, func(other *infinitePilot) bool { return p == other })
-	a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool { return b.Owner == p.ID })
+	localID := 0
+	if p.local != nil {
+		localID = p.local.ID
+		a.players--
+	}
+	a.pilots = slices.DeleteFunc(a.pilots, func(other *infinitePilot) bool { return p == other || p.local == other })
+	a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool { return b.Owner == p.ID || localID != 0 && b.Owner == localID })
 	if a.players == 0 {
-		clear(a.pilots)
-		a.pilots, a.bullets = a.pilots[:0], a.bullets[:0]
-		a.pickups = a.pickups[:0]
-		clear(a.effects)
-		a.effects = a.effects[:0]
+		// A scored private room may retain its totals/result after all
+		// controllers leave. Release the world and snapshot buffers until it
+		// has viewers again; the maze is reproducible from the seed.
+		a.pilots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil
+		a.maze = nil
+		a.snapshot = emptyInfiniteSnapshot()
 		a.nextBot = a.tick
 		a.nextPickup = a.tick
 	}
@@ -201,7 +277,7 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now
 func (a *infiniteArena) idle(p *infinitePilot, now time.Time) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return now.Sub(p.activeAt) >= infinitePublicIdle
+	return now.Sub(p.activeAt) >= infinitePublicIdle && (p.local == nil || now.Sub(p.local.activeAt) >= infinitePublicIdle)
 }
 
 func (a *infiniteArena) addPilot(name string, bot bool, nearX, nearY float64, minCells, maxCells int) *infinitePilot {
@@ -254,7 +330,7 @@ func infiniteCenter(x, y int) (float64, float64) {
 func (a *infiniteArena) step(now time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.players == 0 {
+	if a.players == 0 || a.result != nil {
 		return
 	}
 	a.tick++
@@ -280,6 +356,9 @@ func (a *infiniteArena) step(now time.Time) {
 		}
 	}
 	for i := 0; i < count; i++ {
+		if a.result != nil {
+			break
+		}
 		p := actors[(a.tick+uint64(i))%uint64(count)]
 		if p.HP == 0 {
 			continue // An earlier attack can eliminate this actor.
@@ -303,11 +382,16 @@ func (a *infiniteArena) step(now time.Time) {
 		a.collectPickup(p)
 		a.weaponControl(p, input.Fire, input.FirePressed || p.Bot && input.Fire && !p.kit.fireHeld)
 	}
+	if a.result == nil {
+		a.resolveStarmanContacts(actors[:count])
+	}
 	// Bullets may outlive a bot or a player's previous life. Owner IDs are
 	// never reused, so a late bounce cannot damage its original shooter.
-	a.advanceBullets()
+	if a.result == nil {
+		a.advanceBullets()
+	}
 	a.effects = slices.DeleteFunc(a.effects, func(e infiniteEffect) bool { return a.tick-e.tick >= 9 })
-	if a.tick%2 == 0 {
+	if a.tick%2 == 0 || a.result != nil {
 		a.broadcast()
 	}
 }
@@ -338,7 +422,7 @@ func (a *infiniteArena) populate() {
 		if !p.Bot {
 			return false
 		}
-		if a.nearestHuman(p, cellSize*13, true) == nil {
+		if a.nearestPilot(p, cellSize*13, false) == nil {
 			return true
 		}
 		bots++
@@ -357,14 +441,30 @@ func (a *infiniteArena) populate() {
 	}
 	if n > 0 {
 		p := pilots[a.random.IntN(n)]
-		a.addPilot("Bot "+strconv.Itoa(a.nextID+1), true, p.X, p.Y, 3, 6)
+		bot := a.addPilot("Bot "+strconv.Itoa(a.nextID+1), true, p.X, p.Y, 3, 6)
+		if a.teams() {
+			var counts [5]int
+			for _, other := range a.pilots {
+				counts[other.Team]++
+			}
+			// Always populate two sides. Extra numbered sides participate if
+			// the room roster assigned someone to them.
+			team := 1
+			for i := 2; i < len(counts); i++ {
+				if (i == 2 || counts[i] > 0) && counts[i] < counts[team] {
+					team = i
+				}
+			}
+			bot.Team, bot.ColorIndex = team, a.rules.TeamColors[team-1]
+		}
 	}
 }
 
-func (a *infiniteArena) nearestHuman(p *infinitePilot, maxDist float64, includeRespawning bool) *infinitePilot {
+func (a *infiniteArena) nearestPilot(p *infinitePilot, maxDist float64, findOpponent bool) *infinitePilot {
 	var nearest *infinitePilot
 	for _, other := range a.pilots {
-		if other.Bot || (other.HP == 0 && !includeRespawning) {
+		if (!findOpponent || !a.teams()) && other.Bot ||
+			findOpponent && (other.HP == 0 || !infiniteOpposes(p.ID, p.Team, other)) {
 			continue
 		}
 		if d := math.Hypot(other.X-p.X, other.Y-p.Y); d < maxDist {
@@ -375,7 +475,7 @@ func (a *infiniteArena) nearestHuman(p *infinitePilot, maxDist float64, includeR
 }
 
 func (a *infiniteArena) botInput(p *infinitePilot) Input {
-	target := a.nearestHuman(p, cellSize*8, false)
+	target := a.nearestPilot(p, cellSize*8, true)
 	if target != nil {
 		dx, dy := target.X-p.X, target.Y-p.Y
 		if _, wall := a.rayWalls(p.X, p.Y, dx, dy, infiniteBulletRadius); !wall {
@@ -454,7 +554,7 @@ func (a *infiniteArena) rayWalls(x, y, dx, dy, radius float64) (RayHit, bool) {
 func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 	entries = entries[:0]
 	for _, p := range a.pilots {
-		entries = append(entries, infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot})
+		entries = append(entries, infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team})
 	}
 	slices.SortFunc(entries, func(left, right infiniteLeader) int {
 		if order := cmp.Compare(right.Score, left.Score); order != 0 {
@@ -468,6 +568,10 @@ func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 func (a *infiniteArena) broadcast() {
 	packet := &a.snapshot
 	packet.Tick, packet.Players = a.tick, a.players
+	packet.Rules, packet.Result = a.rules, a.result
+	if a.teams() {
+		packet.Scores = &a.teamScores
+	}
 	packet.Leaders = a.leaderboard(packet.Leaders)
 	var tanks [infiniteCapacity + infiniteBotLimit]infiniteTank
 	for i, p := range a.pilots {
@@ -483,32 +587,32 @@ func (a *infiniteArena) broadcast() {
 	mask := make([]byte, (bulletOffset+len(a.bullets)+7)/8)
 	mark := func(index int) { mask[index/8] |= 1 << (index % 8) }
 	for _, viewer := range a.pilots {
-		if viewer.Bot {
+		if viewer.client == nil {
 			continue
 		}
 		clear(mask)
 		packet.Tanks, packet.Bullets, packet.Pickups, packet.Effects = packet.Tanks[:0], packet.Bullets[:0], packet.Pickups[:0], packet.Effects[:0]
 		for i, p := range a.pilots {
-			if math.Abs(p.X-viewer.X) <= infiniteSight && math.Abs(p.Y-viewer.Y) <= infiniteSight {
+			if viewer.sees(p.X, p.Y) {
 				mark(i)
 				packet.Tanks = append(packet.Tanks, tanks[i])
 			}
 		}
 		for i, pickup := range a.pickups {
-			if pickup.Life > 0 && math.Abs(pickup.X-viewer.X) <= infiniteSight && math.Abs(pickup.Y-viewer.Y) <= infiniteSight {
+			if pickup.Life > 0 && viewer.sees(pickup.X, pickup.Y) {
 				pickup.Life, pickup.Age = infinitePrecision(pickup.Life), infinitePrecision(pickup.Age)
 				mark(pickupOffset + i)
 				packet.Pickups = append(packet.Pickups, pickup)
 			}
 		}
 		for i, effect := range a.effects {
-			if math.Abs(effect.X-viewer.X) <= infiniteSight && math.Abs(effect.Y-viewer.Y) <= infiniteSight {
+			if viewer.sees(effect.X, effect.Y) {
 				mark(effectOffset + i)
 				packet.Effects = append(packet.Effects, effect)
 			}
 		}
 		for i, b := range a.bullets {
-			if math.Abs(b.X-viewer.X) <= infiniteSight && math.Abs(b.Y-viewer.Y) <= infiniteSight {
+			if viewer.sees(b.X, b.Y) {
 				b.X, b.Y, b.VX, b.VY, b.Life = infinitePrecision(b.X), infinitePrecision(b.Y), infinitePrecision(b.VX), infinitePrecision(b.VY), infinitePrecision(b.Life)
 				mark(bulletOffset + i)
 				packet.Bullets = append(packet.Bullets, b)
@@ -533,4 +637,11 @@ func (a *infiniteArena) broadcast() {
 		views[key] = view
 		viewer.client.enqueueStateFrame(frame, false)
 	}
+}
+
+func (p *infinitePilot) sees(x, y float64) bool {
+	if math.Abs(x-p.X) <= infiniteSight && math.Abs(y-p.Y) <= infiniteSight {
+		return true
+	}
+	return p.local != nil && math.Abs(x-p.local.X) <= infiniteSight && math.Abs(y-p.local.Y) <= infiniteSight
 }

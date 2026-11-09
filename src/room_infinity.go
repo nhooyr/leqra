@@ -6,6 +6,26 @@ func infinityCanPlay(p *Player) bool {
 	return p != nil && !p.Spectating && p.Away == nil && playerKind(p) == "human"
 }
 
+func infinityOwnsLocal(owner, local *Player) bool {
+	return local != nil && local.Kind == "local" && !local.Spectating && local.Away == nil &&
+		(local.Controller == owner || local.Controller == nil && local.Owner == owner.ID)
+}
+
+type infiniteRoomSetup struct {
+	rules MatchRules
+	pilot infiniteSeat
+	local *infiniteSeat
+	seat  *Player
+}
+
+func infiniteRoomSeat(p *Player, rules MatchRules) infiniteSeat {
+	team := p.Team
+	if rules.TeamMode != "teams" {
+		team = 0
+	}
+	return infiniteSeat{p.Name, team, tankColorIndex[selectedColor(p.ID, team, p.ColorIndex, rules)]}
+}
+
 func (r *Room) lineupError() string {
 	if !r.Game.settings().Infinity {
 		return r.Game.lineupError(r.Players)
@@ -37,9 +57,9 @@ func (h *Hub) startRoomInfinity(r *Room) {
 
 // Authenticate the separate Infinity socket with the current room identity.
 // The pilot's callsign is copied while Hub.mu protects the roster.
-func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, string) {
+func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, infiniteRoomSetup) {
 	if token == "" {
-		return nil, nil, 0, ""
+		return nil, nil, 0, infiniteRoomSetup{}
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -50,20 +70,42 @@ func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, string
 		r = resumed
 	}
 	if r == nil || !r.infinityActive {
-		return nil, nil, 0, ""
+		return nil, nil, 0, infiniteRoomSetup{}
 	}
 	for _, p := range r.Players {
 		if p != nil && p.Token == token && h.infiniteMemberValid(r, p, r.infinityGeneration, now) {
-			return r, p, r.infinityGeneration, p.Name
+			rules := r.Game.settings()
+			setup := infiniteRoomSetup{rules: rules, pilot: infiniteRoomSeat(p, rules)}
+			for _, local := range r.Players {
+				if infinityOwnsLocal(p, local) {
+					spec := infiniteRoomSeat(local, rules)
+					setup.local, setup.seat = &spec, local
+					break
+				}
+			}
+			return r, p, r.infinityGeneration, setup
 		}
 	}
-	return nil, nil, 0, ""
+	return nil, nil, 0, infiniteRoomSetup{}
 }
 
 func (h *Hub) validInfiniteMember(r *Room, p *Player, generation uint64) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.infiniteMemberValid(r, p, generation, time.Now())
+}
+
+func (h *Hub) infiniteConnectionValid(r *Room, p, local *Player, generation uint64, now time.Time) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.infiniteMemberValid(r, p, generation, now) &&
+		(local == nil || r.contains(local) && infinityOwnsLocal(p, local))
+}
+
+func (h *Hub) validInfiniteRoom(r *Room, generation uint64) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.infiniteRoomValid(r, generation)
 }
 
 func (h *Hub) touchInfiniteMember(r *Room, p *Player, generation uint64, now time.Time) bool {
@@ -82,7 +124,11 @@ func (h *Hub) touchInfiniteMember(r *Room, p *Player, generation uint64, now tim
 // remains connected. The usual room reconnect window still applies.
 // Called while Hub.mu is held.
 func (h *Hub) infiniteMemberValid(r *Room, p *Player, generation uint64, now time.Time) bool {
-	return !h.closed && r != nil && r.infinityActive && generation != 0 && r.infinityGeneration == generation &&
-		h.rooms[r.Code] == r && infinityCanPlay(p) && r.contains(p) &&
+	return h.infiniteRoomValid(r, generation) && infinityCanPlay(p) && r.contains(p) &&
 		(p.Client != nil || now.Sub(p.DisconnectedAt) <= reconnectGrace)
+}
+
+func (h *Hub) infiniteRoomValid(r *Room, generation uint64) bool {
+	return !h.closed && r != nil && r.infinityActive && generation != 0 &&
+		r.infinityGeneration == generation && h.rooms[r.Code] == r
 }

@@ -286,7 +286,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 		angle := p.Angle + offset
 		cs, sn := math.Cos(angle), math.Sin(angle)
 		a.nextBullet++
-		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
+		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
 			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, target: -1, boosted: starman}
 		muzzle := 28.0
 		if kind == "cannon" {
@@ -356,7 +356,7 @@ func (a *infiniteArena) fireLaser(p *infinitePilot) {
 		a.effect("laser", p.X, p.Y, p.ID, points)
 	}
 	if target != nil {
-		a.hurt(target, p.ID)
+		a.hurt(target, p.ID, p.Team)
 	}
 	a.spendWeapon(k)
 }
@@ -372,7 +372,7 @@ func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilo
 		if hasWall {
 			stop = wall.T
 		}
-		target, stop := a.hitTarget(p.ID, x, y, dx, dy, laserRadius, stop, false)
+		target, stop := a.hitTarget(p.ID, p.Team, x, y, dx, dy, laserRadius, stop, false)
 		length := remaining * stop
 		if i == 0 {
 			muzzle := min(28, length)
@@ -397,10 +397,18 @@ func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilo
 	return points, nil
 }
 
-func (a *infiniteArena) hitTarget(owner int, x, y, dx, dy, radius, limit float64, contact bool) (*infinitePilot, float64) {
+func infiniteOpposes(owner, team int, target *infinitePilot) bool {
+	return owner != target.ID && (team == 0 || team != target.Team)
+}
+
+func (a *infiniteArena) canDamage(owner, team int, target *infinitePilot) bool {
+	return owner != target.ID && (infiniteOpposes(owner, team, target) || a.rules != nil && a.rules.FriendlyFire)
+}
+
+func (a *infiniteArena) hitTarget(owner, ownerTeam int, x, y, dx, dy, radius, limit float64, contact bool) (*infinitePilot, float64) {
 	var target *infinitePilot
 	for _, p := range a.pilots {
-		if p.ID == owner || p.HP == 0 || p.Protected && !contact {
+		if p.ID == owner || p.HP == 0 || !contact && (p.Protected || !a.canDamage(owner, ownerTeam, p)) {
 			continue
 		}
 		if hit, ok := circleHit(x, y, dx, dy, p.X, p.Y, tankRadius+radius); ok && hit < limit {
@@ -410,8 +418,8 @@ func (a *infiniteArena) hitTarget(owner int, x, y, dx, dy, radius, limit float64
 	return target, limit
 }
 
-func (a *infiniteArena) hurt(target *infinitePilot, owner int) {
-	if target.HP == 0 || target.Protected || target.ID == owner {
+func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int) {
+	if a.result != nil || target.HP == 0 || target.Protected || !a.canDamage(owner, ownerTeam, target) {
 		return
 	}
 	k := &target.kit
@@ -425,15 +433,62 @@ func (a *infiniteArena) hurt(target *infinitePilot, owner int) {
 		a.effect("shield", target.X, target.Y, owner, nil)
 		return
 	}
+	a.eliminatePilot(target, owner, ownerTeam)
+}
+
+func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
+	for i := range actors {
+		attacker := actors[(a.tick+uint64(i))%uint64(len(actors))]
+		if attacker.HP == 0 || attacker.kit.StarmanTime <= 0 {
+			continue
+		}
+		for _, target := range actors {
+			if target.HP == 0 || target.Protected || target.kit.StarmanTime > 0 || !a.canDamage(attacker.ID, attacker.Team, target) {
+				continue
+			}
+			dx, dy := target.X-attacker.X, target.Y-attacker.Y
+			if dx*dx+dy*dy > 4*tankRadius*tankRadius {
+				continue
+			}
+			if a.maze.visitWalls(min(attacker.X, target.X), min(attacker.Y, target.Y), max(attacker.X, target.X), max(attacker.Y, target.Y), func(w Wall) bool {
+				return w.intersectsSegment(attacker.X, attacker.Y, dx, dy)
+			}) {
+				continue
+			}
+			a.eliminatePilot(target, attacker.ID, attacker.Team)
+			if a.result != nil {
+				return
+			}
+		}
+	}
+}
+
+func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam int) {
 	target.HP = 0
 	target.Score--
 	target.respawn = a.tick + infiniteRespawnTicks
 	a.effect("hit", target.X, target.Y, owner, nil)
+	var shooter *infinitePilot
 	for _, pilot := range a.pilots {
 		if pilot.ID == owner {
 			pilot.Score++
+			shooter = pilot
 			break
 		}
+	}
+	if a.teams() {
+		if target.Team > 0 {
+			a.teamScores[target.Team-1]--
+		}
+		if ownerTeam > 0 {
+			a.teamScores[ownerTeam-1]++
+			score := a.teamScores[ownerTeam-1]
+			if a.rules.Target > 0 && score >= a.rules.Target {
+				a.result = &infiniteResult{Name: a.rules.TeamNames[ownerTeam-1], Team: ownerTeam, Score: score}
+			}
+		}
+	} else if shooter != nil && a.rules != nil && a.rules.Target > 0 && shooter.Score >= a.rules.Target {
+		a.result = &infiniteResult{ID: owner, Name: shooter.Name, Score: shooter.Score}
 	}
 }
 
@@ -445,7 +500,7 @@ func (a *infiniteArena) detonate(b *infiniteBullet) {
 			continue
 		}
 		if _, hit := a.rayWalls(b.X, b.Y, p.X-b.X, p.Y-b.Y, 0); !hit {
-			a.hurt(p, b.Owner)
+			a.hurt(p, b.Owner, b.ownerTeam)
 		}
 	}
 }
@@ -465,7 +520,7 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 		if hasWall {
 			nearest = wall.T
 		}
-		target, contact := a.hitTarget(b.Owner, b.X, b.Y, dx, dy, radius, nearest, b.Kind == "grenade")
+		target, contact := a.hitTarget(b.Owner, b.ownerTeam, b.X, b.Y, dx, dy, radius, nearest, b.Kind == "grenade")
 		if target != nil {
 			b.X, b.Y = b.X+dx*contact, b.Y+dy*contact
 			if b.Kind == "grenade" {
@@ -474,7 +529,7 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 				if b.Kind == "cannon" || b.Kind == "homing" {
 					a.effect("impact", b.X, b.Y, b.Owner, nil)
 				}
-				a.hurt(target, b.Owner)
+				a.hurt(target, b.Owner, b.ownerTeam)
 			}
 			return false
 		}
@@ -514,7 +569,7 @@ func (a *infiniteArena) guide(b *infiniteBullet, dt float64) {
 	var target *infinitePilot
 	best, speed := missileRange, math.Hypot(b.VX, b.VY)
 	for _, p := range a.pilots {
-		if p.ID == b.Owner || p.HP == 0 || p.Protected || b.target >= 0 && p.ID != b.target {
+		if !infiniteOpposes(b.Owner, b.ownerTeam, p) || p.HP == 0 || p.Protected || b.target >= 0 && p.ID != b.target {
 			continue
 		}
 		dx, dy := p.X-b.X, p.Y-b.Y
@@ -533,7 +588,7 @@ func (a *infiniteArena) guide(b *infiniteBullet, dt float64) {
 		return
 	}
 	b.target = target.ID
-	angle := guidedProjectileAngle(b.Kind, math.Atan2(b.VY, b.VX), math.Atan2(target.Y-b.Y, target.X-b.X), dt)
+	angle := guidedProjectileAngle(math.Atan2(b.VY, b.VX), math.Atan2(target.Y-b.Y, target.X-b.X), dt)
 	b.VX, b.VY = math.Cos(angle)*speed, math.Sin(angle)*speed
 }
 
@@ -541,6 +596,10 @@ func (a *infiniteArena) advanceBullets() {
 	live := a.bullets[:0]
 	for _, b := range a.bullets {
 		if b.dead {
+			continue
+		}
+		if a.result != nil {
+			live = append(live, b)
 			continue
 		}
 		dt := min(tickDT, b.Life)

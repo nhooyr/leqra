@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),vm=require('node:vm');
 const {assetPath}=require('./web_assets.cjs');
 const source=readFileSync(assetPath('game.js'),'utf8');
-function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
+function declaration(name,code=source){const start=code.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=code.indexOf('\n',start),line=code.slice(start,end);return line.endsWith('}')?line:code.slice(start,code.indexOf('\n}',end)+2);}
 function recorder(){
  let matrix={x:0,y:0,angle:0},stack=[],shape,clipped=false;
  const events=[],c={events,canvas:{},globalAlpha:1,textBaseline:'alphabetic',save(){stack.push({matrix:{...matrix},clipped,alpha:this.globalAlpha,textBaseline:this.textBaseline});},restore(){const state=stack.pop();({matrix,clipped}=state);this.globalAlpha=state.alpha;this.textBaseline=state.textBaseline;},clip(){clipped=true;},translate(x,y){matrix.x+=Math.cos(matrix.angle)*x-Math.sin(matrix.angle)*y;matrix.y+=Math.sin(matrix.angle)*x+Math.cos(matrix.angle)*y;},rotate(a){matrix.angle+=a;},beginPath(){shape=null;},rect(x,y,w,h){shape={x,y,w,h};},arc(x,y,r,start,end){shape={arc:true,x,y,r,start,end};},stroke(){if(shape?.arc)events.push({type:'arc',...shape,color:this.strokeStyle,alpha:this.globalAlpha,width:this.lineWidth,matrix:{...matrix}});},fill(){if(shape&&!shape.arc)events.push({type:'rect',...shape,alpha:this.globalAlpha,matrix:{...matrix}});},fillText(text,x,y){events.push({type:'text',text,x,y,font:this.font,alpha:this.globalAlpha,textBaseline:this.textBaseline,clipped,matrix:{...matrix}});},drawImage(image,x,y,w,h){events.push({type:'image',image,x,y,w,h,alpha:this.globalAlpha,matrix:{...matrix}});},measureText(text){return{width:text.length*6};}};
@@ -14,7 +14,7 @@ function boot(){
  const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,MACHINE_FIRING_ROUNDS:180,reduceMotion:true,fxTime:0,shake:0,combatPrefs:{performance:true},WEBKIT_ENGINE:false,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c=ctx)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
  vm.runInContext(source.slice(source.indexOf('const tankPowerBadgeCache='),source.indexOf('function activeTankPowerBadges(')),s);
- for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','powerExpiryAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
+ for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','powerExpiryAlpha','expiryFadeAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
 function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,charges:3,machineRounds:180,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,ghostTime:10,...patch};}
@@ -57,11 +57,10 @@ test('name position and dimensions never change as weapons, shields and other ef
   }
  }
 });
-test('local pilots retain HUD-only power status while bots, remote pilots and spectated tanks receive badges',()=>{
+test('both local pilots, bots, remote pilots and spectated tanks receive badges',()=>{
  for(const mode of ['room','online'])for(const id of [0,1,3])for(const human of [false,true]){
   const {s,ctx}=boot();s.mode=mode;s.drawTank(tank({id,human}));
-  const expected=mode==='online'?id!==0&&id!==1:!human;
-  assert.equal(pictures(ctx).length,expected?4:0,`${mode} id=${id} human=${human}`);
+  assert.equal(pictures(ctx).length,4,`${mode} id=${id} human=${human}`);
  }
  const {s,ctx}=boot();s.mode='online';s.localPlayerID=()=>-1;s.secondaryID=()=>-1;s.drawTank(tank({id:0,human:true}));assert.equal(pictures(ctx).length,4);
 });
@@ -98,15 +97,50 @@ test('gaining or losing a power-up may repack badges but moving cannot create an
  const icons=pictures(ctx);assert.ok(icons.some(icon=>icon.x+icon.w>s.W||icon.y+icon.h>s.H),'near-edge icons may clip instead of moving away from the tank');
 });
 
-test('expiring bot and remote badges use each effect timer and the exact pickup pulse phase below three seconds',()=>{
- for(const mode of ['room','online'])for(const clock of [0,Math.PI/24,Math.PI/8,7.21]){
-  const {s,ctx}=boot();Object.assign(s,{mode,fxTime:clock});const t=tank({human:mode==='online',powerTime:2.99,shield:3,speedTime:3.01,ghostTime:1.4});
-  s.drawTank(t);const icons=pictures(ctx),labels=ctx.events.filter(e=>e.type==='text');assert.equal(icons.length,4);assert.equal(labels.at(-1).text,t.name);assert.equal(labels.at(-1).alpha,1,'badge pulse cannot fade the tank name');assert.equal(labels.at(-1).textBaseline,'alphabetic');
-  for(const icon of icons){const kind=icon.image.kind,life={laser:t.powerTime,shield:t.shield,speed:t.speedTime,ghost:t.ghostTime}[kind];
-   ctx.events.length=0;s.drawPickup({type:kind,x:84,y:84,life});const pickup=ctx.events.find(e=>e.type==='rect');assert.equal(icon.alpha,pickup.alpha,kind+' uses the same pulse as the pickup');
-   assert.equal(icon.alpha,life<3?.5+.4*Math.sin(clock*12):1);assert.ok(icon.alpha>=.1-1e-8&&icon.alpha<=1);
-  }
+test('badges ease from full visibility to transparent according to their own timers',()=>{
+ for(const mode of ['room','online'])for(const clock of [0,7.21]){
+  const {s,ctx}=boot();Object.assign(s,{mode,fxTime:clock});const t=tank({id:0,human:true,powerTime:2.25,shield:3,speedTime:.75,ghostTime:1.5});
+  s.drawTank(t);const icons=pictures(ctx),labels=ctx.events.filter(e=>e.type==='text');assert.equal(icons.length,4);assert.equal(labels.at(-1).text,t.name);assert.equal(labels.at(-1).alpha,1,'badge fade cannot dim the tank name');assert.equal(labels.at(-1).textBaseline,'alphabetic');
+  assert.deepEqual(icons.map(icon=>icon.alpha),[.84375,1,.15625,.5]);
+  assert.ok(s.expiryFadeAlpha(.001,3)<.000001);
+  assert.equal(s.expiryFadeAlpha(0,3),0);
  }
+});
+
+test('Infinity and fixed tanks use the same badge positions, sprite counts and expiry fades',()=>{
+ const {s,ctx}=boot(),infinite=readFileSync(assetPath('infinite.js'),'utf8');
+ Object.assign(s,{COLORS:['#73cee4'],powers:vm.runInContext('POWER',s),
+  art:{theme:s.theme,rect:s.roundRect,hull(){},turret(){},drawBadges:s.drawTankPowerBadges}});
+ vm.runInContext(declaration('drawTank',infinite).replace('function drawTank','function drawInfinityTank'),s);
+ for(const zoom of [.5,1,1.2])for(const mine of [false,true]){
+  const t=tank({id:mine?1:3,human:mine,colorIndex:0,power:'rapid',powerTime:1,machineRounds:76,shield:3,speedTime:2,starmanTime:.5});
+  s.scale=zoom;ctx.events.length=0;s.drawTank(t);
+  const fixed=pictures(ctx),fixedCounts=ctx.events.filter(e=>e.type==='text').slice(0,-1);
+  assert.deepEqual(fixed.map(icon=>icon.image.kind),['rapid','shield','speed','starman']);
+  assert.equal(fixed[0].alpha,.5,'the weapon timer is held until Starman ends');
+  assert.equal(fixed[3].alpha,.5,'Starman fades during its final second');
+  ctx.events.length=0;s.drawInfinityTank(t,mine,zoom,1);
+  assert.deepEqual(pictures(ctx),fixed);
+  assert.deepEqual(ctx.events.filter(e=>e.type==='text').slice(1),fixedCounts);
+ }
+});
+
+test('shared online effect aging fades badges between snapshots without changing authority',()=>{
+ const {s,ctx}=boot(),authority=tank({powerTime:.5,starmanTime:.25,ghostTime:.375,shield:.5,speedTime:1});
+ const before=JSON.stringify(authority);
+ vm.runInContext(declaration('applyOnlineTankEffects'),s);
+ const draw=age=>{
+  ctx.events.length=0;
+  s.drawTankPowerBadges(s.applyOnlineTankEffects({...authority},authority,age));
+  return Object.fromEntries(pictures(ctx).map(icon=>[icon.image.kind,icon.alpha]));
+ };
+ const first=draw(0),nearExpiry=draw(.125);
+ for(const kind of Object.keys(first))assert.ok(nearExpiry[kind]<first[kind],kind);
+ assert.deepEqual(Object.keys(draw(.25)),['laser','shield','speed','ghost']);
+ assert.deepEqual(Object.keys(draw(.5)),['laser','speed']);
+ assert.deepEqual(Object.keys(draw(.75)),['speed']);
+ assert.deepEqual(draw(1),{});
+ assert.equal(JSON.stringify(authority),before);
 });
 
 test('weapon corners report actual charges or machine-gun rounds and do not allocate per-count sprites',()=>{
@@ -131,7 +165,7 @@ test('stack counters reflect shield and speed stacks while Ghost remains unnumbe
  }
 });
 
-test('blinking and changing counts keep all four fixed slots at a maze corner',()=>{
+test('fading effects and changing counts keep all four fixed slots at a maze corner',()=>{
  const {s,ctx}=boot(),t=tank({x:2383,y:1483,powerTime:2,shield:2,speedTime:2,ghostTime:2});let positions;
  for(const clock of [0,Math.PI/24,Math.PI/8,12]){
   s.fxTime=clock;t.charges=Math.ceil(clock)%3+1;t.shieldCharges=Math.ceil(clock)%5+1;ctx.events.length=0;s.drawTankPowerBadges(t);
@@ -139,11 +173,11 @@ test('blinking and changing counts keep all four fixed slots at a maze corner',(
  }
 });
 
-test('a paused local game keeps equipment timers frozen while matching the existing pickup animation',()=>{
+test('a paused local game freezes both equipment timers and their fade',()=>{
  const {s,ctx}=boot(),t=tank({powerTime:2.9,shield:3.1});s.phase='paused';s.tanks=[t];
  const before=JSON.stringify(t);for(const dt of [.03,.7,4]){
   s.update(dt);assert.equal(JSON.stringify(t),before);ctx.events.length=0;s.drawTankPowerBadges(t);const icons=pictures(ctx);
-  assert.equal(icons[0].alpha,.5+.4*Math.sin(s.fxTime*12));assert.equal(icons[1].alpha,1,'pause cannot move the shield across the three-second boundary');
+  assert.equal(icons[0].alpha,s.expiryFadeAlpha(t.powerTime,3));assert.equal(icons[1].alpha,1,'pause cannot move the shield across the three-second boundary');
  }
 });
 
