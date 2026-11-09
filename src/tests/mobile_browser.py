@@ -79,15 +79,28 @@ def play_offline(browser, device, url, errors):
         arena = page.locator("#infiniteArena")
         expect(arena).to_have_attribute("data-mode", "offline")
         expect(page.locator("#infiniteStatus")).to_contain_text(re.compile(r"\b[1-7] bots\b"))
-        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire", "#infiniteExit")
+        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire", "#infinitePauseBtn")
         page.set_viewport_size({"width": 568, "height": 320})
         page.wait_for_function("() => leqra.getState().touchLandscape")
-        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire", "#infiniteExit")
+        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire", "#infinitePauseBtn")
         page.locator("#infiniteLeaderboardPanel summary").tap()
         expect(page.locator("#infiniteLeaderboard")).to_contain_text("MOBILE LOCAL (you)")
+        page.locator("#infinitePauseBtn").tap()
+        pause = page.locator("#infinitePauseMenu")
+        expect(pause).to_be_visible()
+        require_on_screen(page, "#infiniteResumeBtn", "#infiniteControlsBtn", "#infiniteExit")
+        page.locator("#infiniteControlsBtn").tap()
+        controls = page.locator("#controlsDialog")
+        expect(controls).to_be_visible()
+        controls.get_by_role("button", name="Close controls").tap()
+        expect(controls).to_be_hidden()
+        expect(pause).to_be_visible()
+        page.locator("#infiniteResumeBtn").tap()
+        expect(pause).to_be_hidden()
+        page.locator("#infinitePauseBtn").tap()
         page.locator("#infiniteExit").tap()
         expect(arena).to_be_hidden()
-    print("PASS installed offline app, all five modes, touch Fire, and portrait/landscape", flush=True)
+    print("PASS installed offline app, all five modes, touch Fire, and landscape pause controls", flush=True)
 
 
 def play_shared_room(browser, device, url, errors):
@@ -142,9 +155,12 @@ def play_public_infinity(browser, device, url, errors):
         assert any(isinstance(frame, str) and json.loads(frame).get("fire") is True for frame in messages), messages
         page.locator("#infiniteSoundBtn").tap()
         expect(page.locator("#infiniteSoundBtn")).to_have_attribute("aria-label", "Unmute sound")
+        page.locator("#infinitePauseBtn").tap()
+        expect(page.locator("#infinitePauseMenu")).to_be_visible()
+        assert any(isinstance(frame, str) and json.loads(frame).get("paused") is True for frame in messages), messages
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
-    print("PASS public Infinity touch Fire and mute", flush=True)
+    print("PASS public Infinity touch Fire, mute, and pause", flush=True)
 
 
 if __name__ == "__main__":

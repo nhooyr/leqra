@@ -42,6 +42,7 @@ type infiniteMessage struct {
 	Name    string `json:"name"`
 	Code    string `json:"code"`
 	Token   string `json:"token"`
+	Paused  bool   `json:"paused"`
 	Input
 }
 
@@ -119,11 +120,11 @@ func (s *infiniteServer) readLoop(c *Client) {
 			c.ws.writeClose(1008, "Unsupported Infinity message")
 			return
 		}
-		if connection.seat != nil && now.Sub(lastTouch) >= time.Second && infiniteActiveInput(msg.Input) {
+		if connection.seat != nil && !msg.Paused && now.Sub(lastTouch) >= time.Second && infiniteActiveInput(msg.Input) {
 			s.hub.touchInfiniteMember(connection.room.room, connection.seat, connection.room.generation, now)
 			lastTouch = now
 		}
-		connection.arena.setInput(connection.pilot, msg.Input, now)
+		connection.arena.setInput(connection.pilot, msg.Input, msg.Paused, now)
 	}
 }
 

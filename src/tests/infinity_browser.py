@@ -50,6 +50,52 @@ def standings(page):
     return panel.locator("#infiniteLeaderboard")
 
 
+def is_packet(frame, kind, **fields):
+    if not isinstance(frame, str):
+        return False
+    packet = json.loads(frame)
+    return packet.get("type") == kind and all(packet.get(key, False) == value for key, value in fields.items())
+
+
+def check_online_pause(page, socket):
+    arena = page.locator("#infiniteArena")
+    pause = page.locator("#infinitePauseMenu")
+    resume = pause.locator("#infiniteResumeBtn")
+    canvas = page.locator("#infiniteCanvas")
+    canvas.focus()
+    with socket.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", forward=True)):
+        page.keyboard.down("w")
+    neutral = dict(forward=False, reverse=False, left=False, right=False, fire=False, stickX=0, stickY=0)
+    with socket.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", paused=True, **neutral)):
+        page.keyboard.press("Escape")
+    with socket.expect_event("framereceived", predicate=lambda frame: is_packet(frame, "state")):
+        page.keyboard.up("w")
+    expect(arena).to_be_visible()
+    expect(pause).to_be_visible()
+    expect(resume).to_be_focused()
+
+    pause.locator("#infiniteControlsBtn").click()
+    controls = page.locator("#controlsDialog")
+    expect(controls).to_be_visible()
+    forward = controls.get_by_role("button", name="Rebind player 1 Forward")
+    forward.click()
+    page.keyboard.press("e")
+    expect(forward).to_have_text("E")
+    page.keyboard.press("Escape")
+    expect(controls).to_be_hidden()
+    expect(pause).to_be_visible()
+
+    with socket.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", paused=False, **neutral)):
+        resume.click()
+    expect(pause).to_be_hidden()
+    expect(canvas).to_be_focused()
+    with socket.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", paused=False, forward=True)):
+        page.keyboard.down("e")
+    page.keyboard.up("e")
+    page.keyboard.press("Escape")
+    expect(pause).to_be_visible()
+
+
 def check_touch_controls(context, page):
     stick = page.locator("#infiniteStick")
     knob = page.locator("#infiniteKnob")
@@ -101,7 +147,9 @@ def check_public(browser, url, errors):
         for page in (host, guest):
             expect(page.locator("#infinityToggle")).to_be_checked()
             expect(page.get_by_role("button", name=re.compile(r"^play$", re.IGNORECASE))).to_have_count(1)
-            page.locator("#startRoomBtn").click()
+        with host.expect_websocket(predicate=lambda ws: ws.url.endswith("/ws/infinite")) as connection:
+            host.locator("#startRoomBtn").click()
+        guest.locator("#startRoomBtn").click()
         for page in (host, guest):
             expect_pilots(page, 2)
             expect(page.locator("#infiniteKills")).to_have_text("Score 0")
@@ -109,7 +157,9 @@ def check_public(browser, url, errors):
             expect(leaders).to_contain_text("PUBLIC HOST")
             expect(leaders).to_contain_text("PUBLIC GUEST")
             assert leaders.locator("li").count() <= 10
-        host.keyboard.press("Escape")
+        check_online_pause(host, connection.value)
+        expect_pilots(guest, 2)
+        host.locator("#infiniteExit").click()
         expect(host.locator("#infiniteArena")).to_be_hidden()
         expect(host.locator("#startRoomBtn")).to_be_focused()
         expect_pilots(guest, 1)
@@ -118,7 +168,12 @@ def check_public(browser, url, errors):
         host.locator("#startRoomBtn").click()
         host.wait_for_function("() => ['countdown','playing'].includes(leqra.getState().phase)")
         expect(host.locator("#infiniteArena")).to_be_hidden()
-    print("PASS public Infinity default, remote standings, and classic Play when switched off", flush=True)
+        host.keyboard.press("Escape")
+        expect(host.locator("#onlineMenuScreen")).to_be_visible()
+        assert host.evaluate("leqra.getState().phase") == "paused"
+        host.keyboard.press("Escape")
+        expect(host.locator("#onlineMenuScreen")).to_be_hidden()
+    print("PASS public Infinity pause, control rebinding, remote standings, and classic Escape", flush=True)
 
 
 def check_offline(browser, errors):
@@ -136,6 +191,7 @@ def check_offline(browser, errors):
         expect(panel.locator("#infiniteLeaderboard")).to_contain_text("OFFLINE PILOT (you)")
         expect(panel.locator("#infiniteLeaderboard")).to_contain_text("Bot ")
         check_touch_controls(context, page)
+        page.locator("#infinitePauseBtn").tap()
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
         expect(page.locator("html")).not_to_have_class(re.compile(r"\bmatch-active\b"))
@@ -171,6 +227,7 @@ def check_audio(browser, errors):
         page.wait_for_timeout(400)
         page.keyboard.up("q")
         assert page.evaluate("oscillatorStarts") == muted
+        page.locator("#infinitePauseBtn").click()
         page.locator("#infiniteExit").click()
         expect(page.locator("#soundBtn")).to_have_attribute("aria-label", "Unmute sound")
     print("PASS Infinity uses the shared firing audio and mute setting", flush=True)
@@ -204,16 +261,23 @@ def check_private(browser, url, errors):
         expect(leaders).to_contain_text("PUBLIC SOLO")
         expect(leaders).not_to_contain_text("ROOM HOST")
 
+        guest.locator("#infinitePauseBtn").click()
         guest.locator("#infiniteExit").click()
         expect(guest.locator("#infiniteArena")).to_be_hidden()
         expect_pilots(host, 1)
         expect(guest.locator("#readyBtn")).to_have_accessible_name("JOIN INFINITY")
         guest.locator("#readyBtn").click()
         expect_pilots(guest, 2)
+        guest.locator("#infinitePauseBtn").click()
+        guest.locator("#infiniteControlsBtn").click()
+        expect(guest.locator("#controlsDialog")).to_be_visible()
+        host.locator("#infinitePauseBtn").click()
         host.locator("#infiniteExit").click()
         host.locator("#endInfinityBtn").click()
         host.locator("#actionConfirmAccept").click()
         expect(guest.locator("#infiniteArena")).to_be_hidden()
+        expect(guest.locator("#infinitePauseMenu")).to_be_hidden()
+        expect(guest.locator("#controlsDialog")).to_be_hidden()
         expect(guest.locator("#readyBtn")).to_contain_text("READY")
         expect(host.locator("#endInfinityBtn")).to_be_hidden()
         assert all(page.evaluate("leqra.getState().online.connected") for page in (host, guest))

@@ -79,9 +79,24 @@ def check_landscape(browser, devices, errors, has_safe_area_override):
             assert layout["top"] >= 8 and layout["left"] >= 48 and layout["right"] >= 48, layout
         page.locator("#infiniteLeaderboardPanel > summary").tap()
         expect(page.locator("#infiniteLeaderboardPanel")).not_to_have_attribute("open", "")
+        pause_button = page.locator("#infinitePauseBtn")
+        trigger = pause_button.bounding_box()
+        assert trigger["width"] >= 44 and trigger["height"] >= 44, trigger
+        pause_button.tap()
+        pause = page.locator("#infinitePauseMenu")
+        expect(pause).to_be_visible()
+        expect(pause.get_by_text("The battle is paused.")).to_be_visible()
+        for name in ("Resume", "Controls", "Exit Infinity"):
+            button = pause.get_by_role("button", name=name, exact=True)
+            expect(button).to_be_in_viewport(ratio=1)
+            assert button.bounding_box()["height"] >= 44, name
+        if has_safe_area_override:
+            bounds = pause.bounding_box()
+            assert bounds["x"] >= 48 and bounds["x"] + bounds["width"] <= 520, bounds
+            assert bounds["y"] >= 8 and bounds["y"] + bounds["height"] <= 299, bounds
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
-    print("PASS landscape rules, notch clearance, and expanded Infinity leaderboard", flush=True)
+    print("PASS landscape rules, notch clearance, and Infinity leaderboard and pause layouts", flush=True)
 
 
 def check_narrow_online(browser, devices, url, errors):
