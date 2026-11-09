@@ -43,7 +43,7 @@ An online multiplayer tank arena battle game.
 
 ## Getting Started
 
-You can open [index.html](./index.html) to play offline.
+You can open [./src/web/index.html](./src/web/index.html) to play offline.
 
 To run a local server:
 
