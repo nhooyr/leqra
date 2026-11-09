@@ -26,6 +26,14 @@ function boot({host=0,phase='playing',teamMode='teams'}={}){
 }
 const bot={id:2,member:42,name:'RICOCHET',kind:'bot',team:2,color:'#58f',difficulty:'hard'};
 
+test('Free-for-all paint is locked while room Infinity is running',()=>{
+ const {s,room}=boot({phase:'lobby',teamMode:'ffa'});
+ room.rules.infinity=true;
+ assert.equal(s.canEditTankPaint(bot,room),true);
+ room.infinityActive=true;
+ assert.equal(s.canEditTankPaint(bot,room),false);
+});
+
 test('host moderation keeps team, public difficulty name and status with the tank identity',()=>{
  const b=boot(),row=b.row(bot),identity=row.querySelector('.seat-identity'),details=identity.querySelector('.seat-details');
  assert.equal(identity.querySelector('.pilot-name').textContent,'RICOCHET');

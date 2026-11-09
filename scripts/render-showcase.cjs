@@ -1,7 +1,7 @@
 'use strict';
-// Capture a staged battle with the shipped Infinity page and renderer.
+// Create a standalone page to open in Chrome for a native window screenshot.
 // Install Playwright and Chromium with `npm install playwright` and `npx playwright install chromium`.
-//   NODE_PATH=/path/to/node_modules node scripts/render-showcase.cjs [output.png]
+//   NODE_PATH=/path/to/node_modules node scripts/render-showcase.cjs [output.html]
 const fs = require('node:fs');
 const path = require('node:path');
 const {chromium} = require('playwright');
@@ -9,7 +9,7 @@ const {assetPath} = require('../src/tests/web_assets.cjs');
 
 const root = path.join(__dirname, '..');
 const web = path.join(root, 'src/web');
-const out = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, 'docs/screenshot.png');
+const out = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, 'bin/showcase.html');
 const origin = 'http://leqra-showcase.test';
 const viewport = {width:1560, height:930};
 const deviceScaleFactor = 2;
@@ -117,7 +117,29 @@ function stageBattle() {
   projectiles:world.bullets.length,laserSegments:best.beam.points.length-1};
 }
 
+function showcasePage(screenshot) {
+ const favicon = fs.readFileSync(assetPath('favicon.svg')).toString('base64');
+ return `<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>leqra — Tank Arena</title>
+ <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,${favicon}">
+ <style>
+  html, body { height:100%; margin:0; background:#10171d; }
+  img { display:block; width:100%; height:100%; object-fit:contain; }
+ </style>
+</head>
+<body>
+ <img alt="Eight tanks battling in the Infinity maze" src="data:image/png;base64,${screenshot.toString('base64')}">
+</body>
+</html>
+`;
+}
+
 async function main() {
+ if (!/\.html?$/i.test(out)) throw Error('Showcase output must end in .html or .htm');
  const browser = await chromium.launch({chromiumSandbox:true});
  try {
   const page = await browser.newPage({viewport,deviceScaleFactor,serviceWorkers:'block'});
@@ -136,8 +158,9 @@ async function main() {
   await page.evaluate(() => document.fonts.ready);
   const scene = await page.evaluate(stageBattle);
   if (scene.tanks!==8 || scene.activePowers.length!==10 || scene.projectiles<40) throw Error('Incomplete Infinity showcase');
+  const screenshot = await page.screenshot({animations:'disabled'});
   fs.mkdirSync(path.dirname(out),{recursive:true});
-  await page.screenshot({path:out,animations:'disabled'});
+  fs.writeFileSync(out,showcasePage(screenshot));
   console.log(JSON.stringify({output:process.argv[2]?out:path.relative(root,out),width:viewport.width*deviceScaleFactor,
    height:viewport.height*deviceScaleFactor,mode:'Infinity',...scene,renderer:'production Infinity page and Canvas renderer'},null,2));
  } finally {

@@ -95,10 +95,9 @@ function nextBotTeam(world) {
  return team + 1;
 }
 
-function setTeam(world, tank, team) {
- if (world.rules?.teamMode !== 'teams') return;
- tank.team = team || nextBotTeam(world);
- tank.colorIndex = world.rules.teamColors?.[tank.team - 1] ?? tank.team - 1;
+function applyTankAppearance(world, tank, member) {
+ if (world.rules?.teamMode === 'teams') tank.team = member?.team || nextBotTeam(world);
+ if (member || tank.team) tank.colorIndex = art.colorIndex(member?.id ?? 0,tank.team,member?.colorIndex,world.rules);
 }
 
 function roamingDifficulty(rules) {
@@ -513,7 +512,7 @@ function offlineStep(world, dt) {
     const bot = makeTank('bot-' + ++world.lastBot,point.x,point.y,true);
     bot.ambient = true;
     bot.difficulty = roamingDifficulty(world.rules);
-    setTeam(world,bot);
+    applyTankAppearance(world,bot);
     world.tanks.push(bot);
    }
    world.nextBot = world.time + between(1.2, 3.4);
@@ -527,9 +526,10 @@ function offlineStep(world, dt) {
     const point = clearCell(world, tank, 2 * CELL, 5 * CELL, 1.9 * CELL);
     if (point) {
      const fresh = makeTank(tank.id, point.x, point.y, tank.bot);
+     const fireHeld = !tank.bot && inputState(tank.id === world.local?.id ? world.local : world).fire;
      Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
       spawnSerial: tank.spawnSerial + 1, killedBy: '', power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
-      ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld: false, fireBlocked: false});
+      ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});
     }
    }
    continue;
@@ -1297,6 +1297,14 @@ function stop() {
  art.touchPolicy();
 }
 
+function exitArena() {
+ const launcher = session?.launcher?.();
+ stop();
+ if (launcher?.getClientRects().length && !launcher.disabled && !document.querySelector('dialog[open]')) {
+  launcher.focus({preventScroll:true});
+ }
+}
+
 function syncRoom(code,token,active) {
  if (!session?.room || session.room.token !== token) return;
  if (active) session.room.code = code;
@@ -1320,7 +1328,7 @@ function start(mode, options = {}) {
  const online = mode === 'online', name = options.name?.trim() || pilotName();
  const readBindings = typeof options.bindings === 'function' ? options.bindings : () => options.bindings;
  session = {
-  online, name, localName:options.localName, readBindings, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
+  online, name, localName:options.localName, readBindings, launcher:options.launcher, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,
   rules:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
@@ -1346,14 +1354,14 @@ function start(mode, options = {}) {
   const player = makeTank(session.id, session.camera.x, session.camera.y);
   player.name = name;
   const roster = options.roster || [];
-  setTeam(world,player,roster.find(member=>member.id===options.primaryId)?.team);
+  applyTankAppearance(world,player,roster.find(member=>member.id===options.primaryId));
   session.tanks.push(player);
   if (world.local) {
    const point = clearCell(world,player,2*CELL,4*CELL,2*CELL) || {x:player.x+2*CELL,y:player.y};
    const second = makeTank(world.local.id,point.x,point.y);
    second.name = world.localName;
    second.colorIndex = 1;
-   setTeam(world,second,roster.find(member=>member.id===options.localId)?.team);
+   applyTankAppearance(world,second,roster.find(member=>member.id===options.localId));
    world.tanks.push(second);
   }
   if (world.rules) for (const member of roster) {
@@ -1362,9 +1370,8 @@ function start(mode, options = {}) {
     {x:player.x+world.tanks.length*8*CELL,y:player.y};
    const bot = makeTank('bot-' + ++world.lastBot,point.x,point.y,true);
    bot.name = member.name || bot.name;
-   bot.colorIndex = member.colorIndex ?? bot.colorIndex;
    bot.difficulty = member.difficulty || 'normal';
-   setTeam(world,bot,member.team);
+   applyTankAppearance(world,bot,member);
    world.tanks.push(bot);
   }
   setStatus('Weapons live · ' + world.lastBot + ' bots');
@@ -1549,9 +1556,9 @@ function resume() {
 byID('infinitePauseBtn').addEventListener('click', openPause);
 byID('infiniteResumeBtn').addEventListener('click', resume);
 byID('infiniteControlsBtn').addEventListener('click', art.openControls);
-byID('infiniteExit').addEventListener('click', stop);
-byID('infiniteResultExit').addEventListener('click',stop);
-resultDialog.addEventListener('cancel',event=>{event.preventDefault();stop();});
+byID('infiniteExit').addEventListener('click', exitArena);
+byID('infiniteResultExit').addEventListener('click',exitArena);
+resultDialog.addEventListener('cancel',event=>{event.preventDefault();exitArena();});
 retry?.addEventListener('click', () => {
  if (!session?.failed) return;
  session.resumeGeneration = session.retryAt = undefined;

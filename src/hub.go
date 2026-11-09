@@ -21,6 +21,8 @@ const roomIdleLimit = 30 * time.Minute
 const inputTimeout = 350 * time.Millisecond
 const clientMessageLimit = 100
 const clientActionLimit = 8
+const socketHeartbeatInterval = 10 * time.Second
+const roomTransportIdle = socketHeartbeatInterval + 2*time.Second
 
 // Keep kick tombstones beyond the entire reconnect window, even if the removal
 // notification was lost. This is not an IP/account ban; fresh manual joins work.
@@ -170,7 +172,7 @@ func (c *Client) enqueueStateFrame(frame snapshotFrame, reliable bool) bool {
 }
 func (c *Client) writeLoop() {
 	defer c.stop()
-	heartbeat := time.NewTicker(10 * time.Second)
+	heartbeat := time.NewTicker(socketHeartbeatInterval)
 	defer heartbeat.Stop()
 	for {
 		// Reliable room/world/control messages precede replaceable snapshots.
@@ -326,6 +328,12 @@ func (h *Hub) removeClient(c *Client) {
 	if p == nil || r == nil || p.Client != c {
 		return
 	}
+	h.detachController(r, p, time.Now())
+	h.electHost(r)
+	h.broadcastRoom(r)
+}
+
+func (h *Hub) detachController(r *Room, p *Player, now time.Time) {
 	if r.Queue != nil && r.Queue.involves(p) {
 		h.cancelQueue(r, "A party member disconnected. Rejoin the queue when everyone is connected.")
 	}
@@ -342,9 +350,7 @@ func (h *Hub) removeClient(c *Client) {
 	}
 	p.Input = Input{}
 	p.FirePending = false
-	p.DisconnectedAt = time.Now()
-	h.electHost(r)
-	h.broadcastRoom(r)
+	p.DisconnectedAt = now
 }
 func (h *Hub) electHost(r *Room) {
 	if r.Match != nil {
@@ -616,11 +622,12 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 			if p.Token != token {
 				continue
 			}
-			if p.Client != nil {
+			previous := p.Client
+			if socketLive(p) && (previous.ws == nil || previous.ws.peerReadRecently(now, roomTransportIdle)) {
 				c.enqueue(roomError("session_active", "This pilot is already connected in another window."))
 				return
 			}
-			if now.Sub(p.DisconnectedAt) > reconnectGrace {
+			if previous == nil && now.Sub(p.DisconnectedAt) > reconnectGrace {
 				c.enqueue(roomError("resume_expired", "Your reconnect window expired. Join as a new pilot."))
 				return
 			}
@@ -631,6 +638,13 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 			}
 			if becameSpectator {
 				h.cancelQueue(r, "A player changed roles. Join the queue again when the party is ready.")
+			}
+			// A half-open connection can still hold the seat after the browser
+			// starts retrying. Replace only an authenticated, stale transport.
+			if previous != nil {
+				previous.stop()
+				previous.room, previous.player = nil, nil
+				h.detachController(r, p, now)
 			}
 			p.Client = c
 			p.Input = Input{}
@@ -756,6 +770,11 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	select {
+	case <-c.done:
+		return nil // A replaced socket can still have an already-read packet.
+	default:
+	}
 	if now.Sub(c.msgWindow) >= time.Second {
 		c.msgWindow = now
 		c.msgCount = 0

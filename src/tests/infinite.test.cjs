@@ -59,6 +59,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  const document = new Element();
  document.getElementById = byID;
  document.createElement = () => new Element();
+ document.querySelector = selector => selector === 'dialog[open]' && [...elements.values()].find(element => element.open);
  const window = new Element();
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
@@ -107,6 +108,8 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  window.leqraNet = context.leqraNet;
  const game = readFileSync(assetPath('game.js'), 'utf8');
  Object.assign(context, {$:byID,combatPrefs});
+ vm.runInContext('const MAX_TANKS=8;'+game.match(/^const colorIndex=.*$/m)[0]+';this.colorIndex=colorIndex;',context);
+ window.leqraInfinityArt.colorIndex = context.colorIndex;
  vm.runInContext(game.slice(game.indexOf('function infinityHUDId('),game.indexOf('function renderInfinityLoadout(')),context);
  vm.runInContext(game.slice(game.indexOf('const frameStats='),game.indexOf('function initFrameSettings(')), context);
  const keyPolicy = game.slice(game.indexOf('function arenaKeyBlocked('), game.indexOf('// All input paths'));
@@ -164,6 +167,19 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  };
  return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, combatPrefs};
 }
+
+test('explicit Infinity exits restore launcher focus while forced closure keeps the current focus', () => {
+ const {infinity,byID} = harness();
+ let focused = 0;
+ const launcher = {getClientRects:() => [1],focus:() => focused++};
+ const start = () => infinity.start('offline',{launcher:() => launcher});
+ start();infinity.close();assert.equal(focused,0);
+ start();byID('joinDialog').showModal();byID('infiniteExit').emit('click');assert.equal(focused,0);
+ byID('joinDialog').close();
+ start();launcher.disabled = true;byID('infiniteExit').emit('click');assert.equal(focused,0);
+ start();launcher.disabled = false;byID('infiniteExit').emit('click');assert.equal(focused,1);
+ start();byID('infiniteResultExit').emit('click');assert.equal(focused,2);
+});
 
 test('Infinity runs offline directly from a file and adds nearby bots to the standings', () => {
  const {infinity, byID, sockets, advance} = harness('file:///leqra/index.html');
@@ -223,6 +239,17 @@ test('offline room Infinity spawns only its listed bots and preserves their team
  assert.equal(state().tanks.length,2);
  assert.equal(state().tanks[1],bot);
  assert.deepEqual([bot.name,bot.team,bot.colorIndex,bot.difficulty],['ROOM BOT',2,5,'hard']);
+ infinity.close();
+});
+
+test('offline Infinity uses room paint for both local pilots and roster bots', () => {
+ const {infinity,state}=harness(undefined,true);
+ infinity.start('offline',{primaryId:3,localId:5,localName:'Wingmate',roomRules:{teamMode:'ffa'},roster:[
+  {id:3,kind:'human',colorIndex:4},
+  {id:5,kind:'local',colorIndex:7},
+  {id:2,kind:'bot',name:'DEFAULT BOT',colorIndex:-1},
+ ]});
+ assert.deepEqual(Array.from(state().tanks,t=>t.colorIndex),[4,7,2]);
  infinity.close();
 });
 test('roaming room bots use the fixed difficulty or roll up to it',()=>{
@@ -328,6 +355,39 @@ test('offline Infinity respawns Player 2 in 60 ticks and clears just their death
  assert.equal(second.killedBy,'');
  advance(2);
  assert.equal(notice.hidden,true);
+});
+
+test('offline Infinity keeps an old grenade armed through a held-fire respawn', () => {
+ const {infinity,byID,state,advance}=harness(undefined,true);
+ infinity.start('offline',{roomRules:{}});
+ const world=state(),pilot=world.tanks[0],arena=byID('infiniteArena');
+ Object.assign(pilot,{power:'grenade',powerTime:3,charges:1});
+ arena.emit('keydown',{code:'KeyQ'});
+ advance();
+ const grenade=world.bullets.find(b=>b.kind==='grenade');
+ assert.ok(grenade);
+ Object.assign(pilot,{alive:false,hp:0,respawn:1});
+ advance(60);
+ assert.equal(pilot.hp,1);
+ assert.ok(world.bullets.includes(grenade),'held Fire must not detonate the previous life’s grenade');
+ arena.emit('keyup',{code:'KeyQ'});
+ advance();
+ arena.emit('keydown',{code:'KeyQ'});
+ advance();
+ assert.ok(!world.bullets.includes(grenade),'a fresh press can still detonate it');
+});
+
+test('Infinity prediction keeps render corrections on the authoritative side of a wall', () => {
+ const {infinity,state}=harness();
+ infinity.start('offline',{roomRules:{}});
+ const world=state(),pilot=world.tanks[0];
+ const wall=world.maze.wallsNear(-84,-84,168,168).find(w=>w.axis==='v');
+ assert.ok(wall);
+ const y=wall.y+wall.h/2;
+ world.predictor.reset({...pilot,x:wall.x+31,y});
+ world.predictor.reconcile({...pilot,x:wall.x-17,y});
+ assert.equal(world.predictor.offset.x,48);
+ assert.ok(world.predictor.visual(0).x<=wall.x-17);
 });
 
 test('simultaneous Infinity laser hits rotate priority between live actors', () => {

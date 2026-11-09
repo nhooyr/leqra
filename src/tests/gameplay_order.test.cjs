@@ -27,6 +27,20 @@ test('simultaneous local shots and pickup claims rotate through occupied seats i
  }
 });
 
+test('the short aiming guide follows the equipped weapon’s tank collision rules',()=>{
+ const s=boot(),shooter=tank(0,100,100),protectedTank=tank(1,146,100,{invulnerable:1}),target=tank(2,190,100);
+ s.tanks=[shooter,protectedTank,target];
+ vm.runInContext(declaration('shotPrediction'),s);
+ let guide=s.shotPrediction(shooter,0,1,112);
+ assert.equal(guide.tank,target,'a standard shell passes through an invulnerable tank');
+ assert.equal(guide.points.at(-1).x,target.x-target.r-3.5);
+ shooter.power='grenade';
+ protectedTank.team=shooter.team;
+ guide=s.shotPrediction(shooter,0,1,112);
+ assert.equal(guide.tank,protectedTank,'a grenade makes contact even with a protected ally');
+ assert.equal(guide.points.at(-1).x,protectedTank.x-protectedTank.r-6);
+});
+
 test('fixed-maze Starman destroys shielded tanks at contact and honors protection and team rules',()=>{
  for(const [label,targetPatch,friendlyFire,walls,killed] of [
   ['shield',{},false,[],true],

@@ -217,7 +217,7 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		key := infiniteRoom{room: room, generation: generation}
 		for old, other := range s.connections {
 			if other.room == key && other.seat == seat {
-				if !msg.Resume || other.localSeat != setup.seat {
+				if !msg.Resume || other.localSeat != nil && other.localSeat != setup.seat {
 					return infiniteConnection{}, infiniteSessionActive
 				}
 				if reason := other.arena.resume(c, other.pilot, generation, now); reason != "" {
@@ -231,8 +231,12 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		}
 		reservationKey := infiniteRoomPilot{key, seat}
 		if reservation, exists := s.reservations[reservationKey]; exists {
-			previous := reservation.connection
-			if !now.After(reservation.until) && previous.localSeat == setup.seat {
+			if !now.After(reservation.until) {
+				if local := reservation.connection.localSeat; local != nil && local != setup.seat {
+					s.retireLocal(&reservation.connection)
+					s.reservations[reservationKey] = reservation
+				}
+				previous := reservation.connection
 				if reason := previous.arena.resume(c, previous.pilot, generation, now); reason != "" {
 					return infiniteConnection{}, reason
 				}
@@ -290,6 +294,10 @@ func (s *infiniteServer) disconnect(c *Client, now time.Time) {
 		s.retire(connection)
 		return
 	}
+	s.reserve(connection, now)
+}
+
+func (s *infiniteServer) reserve(connection infiniteConnection, now time.Time) {
 	connection.arena.suspend(connection.pilot)
 	s.reservations[infiniteRoomPilot{connection.room, connection.seat}] = infiniteReservation{connection, now.Add(reconnectGrace)}
 }
@@ -309,6 +317,12 @@ func (s *infiniteServer) removeLocked(c *Client) {
 func (s *infiniteServer) expireReservation(key infiniteRoomPilot, reservation infiniteReservation) {
 	delete(s.reservations, key)
 	s.retire(reservation.connection)
+}
+
+func (s *infiniteServer) retireLocal(connection *infiniteConnection) {
+	connection.arena.removeLocal(connection.pilot)
+	connection.local, connection.localSeat = nil, nil
+	s.privateCount--
 }
 
 func (s *infiniteServer) retire(connection infiniteConnection) {
@@ -357,18 +371,27 @@ func (s *infiniteServer) step(now time.Time) {
 		return
 	}
 	for c, connection := range s.connections {
-		publicIdle := connection.arena == s.public && s.public.idle(connection.pilot, now)
-		privateRevoked := false
-		if connection.seat != nil {
-			valid, removed := s.hub.infiniteConnectionStatus(connection.room.room, connection.seat, connection.localSeat, connection.room.generation, connection.arena.roomBots, now)
-			privateRevoked = !valid
-			if removed != 0 {
-				connection.arena.removeRoomBots(removed)
+		if connection.seat == nil {
+			if connection.arena == s.public && s.public.idle(connection.pilot, now) {
+				c.stop()
+				s.removeLocked(c)
 			}
+			continue
 		}
-		if publicIdle || privateRevoked {
+		valid, localRevoked, removed := s.hub.infiniteConnectionStatus(connection.room.room, connection.seat, connection.localSeat, connection.room.generation, connection.arena.roomBots, now)
+		if removed != 0 {
+			connection.arena.removeRoomBots(removed)
+		}
+		if !valid {
 			c.stop()
 			s.removeLocked(c)
+		} else if localRevoked {
+			// Reuse the authenticated reconnect to deliver the solo seat binding.
+			// Keep the primary tank and invalidate the old transport first.
+			s.retireLocal(&connection)
+			delete(s.connections, c)
+			s.reserve(connection, now)
+			c.stop()
 		}
 	}
 	s.public.step(now)
@@ -377,10 +400,16 @@ func (s *infiniteServer) step(now time.Time) {
 		s.nextSweep = now.Add(time.Second)
 		for key, reservation := range s.reservations {
 			connection := reservation.connection
-			valid, removed := s.hub.infiniteConnectionStatus(key.room.room, key.seat, connection.localSeat, key.room.generation, connection.arena.roomBots, now)
+			valid, localRevoked, removed := s.hub.infiniteConnectionStatus(key.room.room, key.seat, connection.localSeat, key.room.generation, connection.arena.roomBots, now)
 			if !valid || now.After(reservation.until) {
 				s.expireReservation(key, reservation)
-			} else if removed != 0 {
+				continue
+			}
+			if localRevoked {
+				s.retireLocal(&reservation.connection)
+				s.reservations[key] = reservation
+			}
+			if removed != 0 {
 				connection.arena.removeRoomBots(removed)
 			}
 		}

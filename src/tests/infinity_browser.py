@@ -302,6 +302,9 @@ def check_private(browser, url, errors):
         expect(host.locator("#roomRoster")).to_contain_text("ROOM WING")
         host.locator("#copyInviteBtn").click()
         host.wait_for_function("() => !!leqra.getState().online?.connected")
+        expect(host.locator("#copySpectateBtn")).to_be_hidden()
+        expect(host.locator("#copyWatchInGameBtn")).to_have_attribute("hidden", "")
+        expect(host.locator("#roomRoleHelp")).to_contain_text("lobby-only")
         room_code = host.evaluate("leqra.getState().online.code")
         guest = load(second, url + "?room=" + quote(room_code, safe=""), "ROOM GUEST", errors)
         guest.locator("#pilotName").fill("ROOM GUEST")
@@ -366,6 +369,24 @@ def check_private(browser, url, errors):
             assert all(resumed[key] == welcome[key] for key in ("id", "localId", "seed", "generation")), resumed
             expect(host.locator("#infiniteLocalLoadout")).to_be_visible()
 
+        # Kicking just the local seat should reopen the same arena for P1.
+        moderator = host if host.evaluate(
+            "() => leqra.getState().online.id === leqra.getState().room.host"
+        ) else guest
+        before = len(host_frames)
+        with host.expect_websocket(predicate=lambda socket: socket.url.endswith("/ws/infinite")):
+            moderator.evaluate("""() => {
+                const seat = leqra.getState().room.players.find(player => player.kind === 'local');
+                const room = gameSockets.find(socket => socket.readyState === WebSocket.OPEN &&
+                    new URL(socket.url).pathname === '/ws');
+                room.send(JSON.stringify({type:'kick', target:seat.id, member:seat.member}));
+            }""")
+        expect_pilots(host, 2)
+        resumed = next(json.loads(frame) for frame in host_frames[before:] if is_packet(frame, "welcome"))
+        assert resumed.get("resumed") is True and "localId" not in resumed, resumed
+        assert all(resumed[key] == welcome[key] for key in ("id", "seed", "generation")), resumed
+        expect(host.locator("#infiniteLocalLoadout")).to_be_hidden()
+
         outsider = load(public, url, "PUBLIC SOLO", errors)
         outsider.locator("#startRoomBtn").click()
         expect_pilots(outsider, 1)
@@ -377,7 +398,7 @@ def check_private(browser, url, errors):
         guest.locator("#infinitePauseBtn").click()
         guest.locator("#infiniteExit").click()
         expect(guest.locator("#infiniteArena")).to_be_hidden()
-        expect_pilots(host, 2)
+        expect_pilots(host, 1)
         with guest.expect_websocket(predicate=lambda socket: socket.url.endswith("/ws")):
             drop(guest, ["/ws"])
         guest.wait_for_function("() => !!leqra.getState().online?.connected")
@@ -385,7 +406,7 @@ def check_private(browser, url, errors):
         # A room transport disconnect can promote the remaining member to host.
         before = len(guest_frames)
         guest.locator("#readyBtn:visible, #startRoomBtn:visible").click()
-        expect_pilots(guest, 3)
+        expect_pilots(guest, 2)
         rejoined = next(json.loads(frame) for frame in guest_frames[before:] if is_packet(frame, "welcome"))
         assert rejoined["id"] != guest_welcome["id"] and not rejoined.get("resumed"), rejoined
         moderator, other = ((host, guest) if host.evaluate(
@@ -405,7 +426,7 @@ def check_private(browser, url, errors):
         expect(moderator.locator("#endInfinityBtn")).to_be_hidden()
         assert all(page.evaluate("leqra.getState().online.connected") for page in (host, guest))
         expect_pilots(outsider, 1)
-    print("PASS private teams, P2 input, automatic reconnect and reload, public isolation, exit and end", flush=True)
+    print("PASS private teams, P2 input and removal, automatic reconnect and reload, public isolation, exit and end", flush=True)
 
 
 if __name__ == "__main__":

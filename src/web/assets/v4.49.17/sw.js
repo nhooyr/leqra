@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.49.16';
+const VERSION = 'v4.49.17';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
@@ -45,6 +45,29 @@ self.addEventListener('activate', event => {
   )).then(() => self.clients.claim()));
 });
 
+async function appNavigation(request) {
+  const cachedShell = () => caches.match('/', {cacheName: CACHE}).catch(() => undefined);
+  const controller = new AbortController();
+  const network = fetch(request, {signal: controller.signal}).then(async result => {
+    if (![502, 503, 504].includes(result.status)) return result;
+    return (await cachedShell()) || result;
+  }, cachedShell);
+  let timer;
+  const slow = new Promise(resolve => {
+    timer = setTimeout(async () => {
+      const response = await cachedShell();
+      if (response) resolve({response, fallback: true});
+    }, 3000);
+  });
+  try {
+    const {response, fallback} = await Promise.race([network.then(response => ({response})), slow]);
+    if (fallback) controller.abort();
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -71,11 +94,7 @@ self.addEventListener('fetch', event => {
   // New-release HTML can load online, but must not replace the offline fallback
   // before its own worker finishes installing the complete replacement.
   if (request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
-    const cachedShell = () => caches.match('/', {cacheName: CACHE}).catch(() => undefined);
-    response = fetch(request).then(async result => {
-      if (![502, 503, 504].includes(result.status)) return result;
-      return (await cachedShell()) || result;
-    }, cachedShell);
+    response = appNavigation(request);
   } else if (url.pathname.startsWith(BASE)) {
     response = caches.match(request).catch(() => undefined).then(cached =>
       cached || fetch(request).then(result => storeResponse(request, result))

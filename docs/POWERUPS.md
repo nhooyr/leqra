@@ -2,7 +2,7 @@
 
 Drive over a glowing pickup to collect it. Weapons use the same Fire control. A new weapon replaces the equipped weapon. Shield, Super Speed, Ghost, and Starman can coexist with weapons and each other.
 
-Weapons and most buffs last **10 seconds** on Compact, Standard, and Large, or **15 seconds** on Huge, Giant, and Ultra Wide. Projectile range, flight time, and grenade fuses have separate limits.
+In fixed mazes, weapons and most buffs last **10 seconds** on Compact, Standard, and Large, or **15 seconds** on Huge, Giant, and Ultra Wide. Projectile range, flight time, and grenade fuses have separate limits.
 
 | Pickup | Effect | Charges or duration |
 | --- | --- | --- |
@@ -23,6 +23,8 @@ Your own shots and grenade blasts leave your tank and shields unharmed. Friendly
 
 Ghost and Starman let you cross internal walls. If phasing ends inside a wall, the game moves you to a safe position. Ordinary weapons need a clear muzzle. Cannon can shoot through internal walls.
 
-Starman lasts 4 seconds on Compact and Standard, 5 on Large, 6 on Huge, 7 on Giant, and 8 on Ultra Wide. It protects existing shields, refreshes on another pickup, and pauses objective interaction while invulnerability is active. With all pickups enabled, about **1 in 27** spawns is Starman. Shield and Super Speed each have six times its spawn weight, and other pickups each have twice its weight.
+Starman lasts 4 seconds on Compact and Standard, 5 on Large, 6 on Huge, 7 on Giant, and 8 on Ultra Wide. It protects existing shields, refreshes on another pickup, and pauses fixed-maze objective interaction while invulnerability is active. With all pickups enabled, about **1 in 27** spawns is Starman. Shield and Super Speed each have six times its spawn weight, and other pickups each have twice its weight.
 
-Use **Room settings → Rules** to change pickup frequency or which types can spawn.
+In Infinity, most timed power-ups last **15 seconds** and Starman lasts **8 seconds**. Cannon passes through walls, and guided and ricocheting weapons have fixed ranges or flight times suited to the unbounded maze.
+
+Use **Room settings → Rules** to change pickup frequency or which types can spawn in fixed mazes.
