@@ -13,25 +13,26 @@ import (
 const maxMatchStatParticipants = 256
 
 type PlayerMatchStats struct {
-	ID            int     `json:"id"`
-	Member        uint64  `json:"member"`
-	Seat          int     `json:"seat"`
-	Name          string  `json:"name"`
-	Color         string  `json:"color"`
-	Team          int     `json:"team"`
-	Score         int     `json:"score"`
-	Kind          string  `json:"kind"`
-	Eliminations  int     `json:"eliminations"`
-	Deaths        int     `json:"deaths"`
-	SelfDestructs int     `json:"selfDestructs"`
-	TeamKills     int     `json:"teamKills"`
-	Captures      int     `json:"captures"`
-	FlagReturns   int     `json:"flagReturns"`
-	HillSeconds   float64 `json:"hillSeconds"`
-	Active        bool    `json:"active"`
-	Winner        bool    `json:"winner"`
-	MixedTeams    bool    `json:"mixedTeams"`
-	participant   *Player
+	ID               int     `json:"id"`
+	Member           uint64  `json:"member"`
+	ControllerMember uint64  `json:"controllerMember,omitempty"`
+	Seat             int     `json:"seat"`
+	Name             string  `json:"name"`
+	Color            string  `json:"color"`
+	Team             int     `json:"team"`
+	Score            int     `json:"score"`
+	Kind             string  `json:"kind"`
+	Eliminations     int     `json:"eliminations"`
+	Deaths           int     `json:"deaths"`
+	SelfDestructs    int     `json:"selfDestructs"`
+	TeamKills        int     `json:"teamKills"`
+	Captures         int     `json:"captures"`
+	FlagReturns      int     `json:"flagReturns"`
+	HillSeconds      float64 `json:"hillSeconds"`
+	Active           bool    `json:"active"`
+	Winner           bool    `json:"winner"`
+	MixedTeams       bool    `json:"mixedTeams"`
+	participant      *Player
 }
 
 type MatchReport struct {
@@ -73,6 +74,9 @@ func (g *Game) bindTankStats(t *Tank, p *Player) {
 			kind = "human"
 		}
 		row = &PlayerMatchStats{ID: len(g.stats.rows) + 1, Member: p.Member, Seat: t.ID, Name: p.Name, Team: t.Team, Kind: kind, participant: p}
+		if kind == "local" && p.Controller != nil {
+			row.ControllerMember = p.Controller.Member
+		}
 		g.stats.members[p] = row
 		g.stats.rows = append(g.stats.rows, row)
 	} else if row.Team != t.Team {

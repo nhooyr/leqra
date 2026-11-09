@@ -153,7 +153,7 @@ func TestRules32SnapshotAndRoom(t *testing.T) {
 	select {
 	case raw := <-cs[0].updates:
 		var m map[string]any
-		_ = json.Unmarshal(raw, &m)
+		_ = json.Unmarshal(raw.data, &m)
 		if m["objectives"] == nil || m["rules"] == nil {
 			t.Fatal("objectives absent from state")
 		}

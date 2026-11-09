@@ -34,10 +34,14 @@ func maskedFrame(op byte, fin bool, data []byte) []byte {
 }
 func parseFrames(t *testing.T, frames []byte) ([]byte, error) {
 	t.Helper()
+	return parseFramesWithDeflate(t, frames, false)
+}
+func parseFramesWithDeflate(t *testing.T, frames []byte, deflate bool) ([]byte, error) {
+	t.Helper()
 	server, client := net.Pipe()
 	defer server.Close()
 	defer client.Close()
-	c := &wsConn{conn: server, reader: bufio.NewReader(server), frameWindow: time.Now()}
+	c := &wsConn{conn: server, reader: bufio.NewReader(server), deflate: deflate, frameWindow: time.Now()}
 	done := make(chan struct{})
 	go func() { defer close(done); _, _ = client.Write(frames) }()
 	data, err := c.readMessage()

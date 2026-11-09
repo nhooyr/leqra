@@ -14,17 +14,17 @@ function boot(storage){
 
 test('online wins count each match once across result replays and preserve the previous device total',()=>{
  const storage=new Map([['leqra.wins','3']]);
- const report={id:'ab'.repeat(16),players:[{member:21,winner:true},{member:22,winner:false}]};
+ const report={id:'ab'.repeat(16),players:[{member:21,controllerMember:22,winner:true},{member:22,winner:false}]};
  const first=boot(storage);
- first.s.creditOnlineWin(report,22);
+ first.s.creditOnlineWin(report,23);
  assert.equal(first.label.textContent,'3 MATCH WINS ON THIS DEVICE');
- first.s.creditOnlineWin(report,22,21);
- first.s.creditOnlineWin(report,22,21);
+ first.s.creditOnlineWin(report,22);
+ first.s.creditOnlineWin(report,22);
  assert.equal(first.label.textContent,'4 MATCH WINS ON THIS DEVICE');
  const reloaded=boot(storage);
- reloaded.s.creditOnlineWin(report,22,21);
+ reloaded.s.creditOnlineWin(report,22);
  assert.equal(reloaded.label.textContent,'4 MATCH WINS ON THIS DEVICE');
- reloaded.s.creditOnlineWin({id:'bc'.repeat(16),players:[{member:21,winner:true},{member:22,winner:true}]},22,21);
+ reloaded.s.creditOnlineWin({id:'bc'.repeat(16),players:[{member:21,controllerMember:22,winner:true},{member:22,winner:true}]},22);
  assert.equal(reloaded.label.textContent,'5 MATCH WINS ON THIS DEVICE');
  assert.equal(storage.get('leqra.wins'),'3');
 });

@@ -119,6 +119,39 @@ def check_offline(browser, errors):
     print("PASS offline file launch, mobile controls, random bots, and standings", flush=True)
 
 
+def check_audio(browser, errors):
+    index = Path(__file__).resolve().parents[1] / "web" / "index.html"
+    with browser.new_context() as context:
+        context.add_init_script("""
+            window.oscillatorStarts = 0;
+            const start = OscillatorNode.prototype.start;
+            OscillatorNode.prototype.start = function (...args) {
+                window.oscillatorStarts++;
+                return start.apply(this, args);
+            };
+        """)
+        page = load(context, index.as_uri(), "SOUND PILOT", errors)
+        select_room_infinity(page)
+        page.locator("#startRoomBtn").click()
+        expect(page.locator("#infiniteStatus")).to_contain_text("Weapons live")
+        initial = page.evaluate("oscillatorStarts")
+        page.keyboard.press("q")
+        page.wait_for_function("(initial) => oscillatorStarts > initial", arg=initial)
+
+        sound = page.locator("#infiniteSoundBtn")
+        sound.click()
+        expect(sound).to_have_attribute("aria-label", "Unmute sound")
+        muted = page.evaluate("oscillatorStarts")
+        page.locator("#infiniteCanvas").focus()
+        page.keyboard.down("q")
+        page.wait_for_timeout(400)
+        page.keyboard.up("q")
+        assert page.evaluate("oscillatorStarts") == muted
+        page.locator("#infiniteExit").click()
+        expect(page.locator("#soundBtn")).to_have_attribute("aria-label", "Unmute sound")
+    print("PASS Infinity uses the shared firing audio and mute setting", flush=True)
+
+
 def check_private(browser, url, errors):
     with browser.new_context() as first, browser.new_context() as second, browser.new_context() as public:
         host = load(first, url, "ROOM HOST", errors)
@@ -175,6 +208,7 @@ if __name__ == "__main__":
         try:
             check_public(browser, url, errors)
             check_offline(browser, errors)
+            check_audio(browser, errors)
             check_private(browser, url, errors)
         finally:
             browser.close()

@@ -14,8 +14,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,9 +27,12 @@ import (
 )
 
 const (
-	version         = "4.49.6"
+	version         = "4.49.7"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
+	assetPath       = "assets/v" + version + "/"
+	budgetCapacity  = 8192
+	budgetWindow    = time.Minute
 )
 
 //go:embed web/index.html web/assets
@@ -37,8 +43,56 @@ var appIconPNGs = [...]string{
 	"icon-1024.png", "icon-192.png", "icon-512.png", "icon-maskable-1024.png", "icon-maskable-512.png",
 }
 
+var appShellFiles = [...]string{
+	"theme.js", "theme.css", "style.css", "favicon.svg",
+	"netcode.js", "game.js", "infinite-maze.js", "infinite.js",
+	"pwa.js", "manifest.webmanifest", "sw.js",
+}
+
+var shellAssetReference = regexp.MustCompile(`[[:space:]](?:src|href)="(assets/[^"]+)"`)
+
+func allowedAsset(name string) bool {
+	return slices.Contains(appShellFiles[:], name) || slices.Contains(appIconPNGs[:], name)
+}
+
+func checkAppAssets(web fs.FS) error {
+	const index = "web/index.html"
+	shell, err := fs.ReadFile(web, index)
+	if err != nil {
+		return fmt.Errorf("required app shell: %w", err)
+	}
+	if !bytes.Contains(shell, []byte(`<meta name="leqra-version" content="v`+version+`">`)) {
+		return fmt.Errorf("%s must declare leqra version v%s", index, version)
+	}
+	linked := make(map[string]bool)
+	for _, match := range shellAssetReference.FindAllSubmatch(shell, -1) {
+		path := string(match[1])
+		name, current := strings.CutPrefix(path, assetPath)
+		if !current || !allowedAsset(name) {
+			return fmt.Errorf("%s references unavailable asset %s", index, path)
+		}
+		linked[name] = true
+	}
+	for _, name := range appShellFiles {
+		path := "web/" + assetPath + name
+		data, err := fs.ReadFile(web, path)
+		if err != nil {
+			return fmt.Errorf("required app asset: %w", err)
+		}
+		if len(bytes.TrimSpace(data)) == 0 {
+			return fmt.Errorf("required app asset %s is empty", path)
+		}
+		// The PWA script registers the worker. The other shell files are
+		// loaded directly from index.html.
+		if name != "sw.js" && !linked[name] {
+			return fmt.Errorf("%s is missing asset reference %s", index, assetPath+name)
+		}
+	}
+	return checkAppIcons(web)
+}
+
 func checkAppIcons(web fs.FS) error {
-	dir := "web/assets/v" + version + "/"
+	dir := "web/" + assetPath
 	for _, name := range appIconPNGs {
 		path := dir + name
 		data, err := fs.ReadFile(web, path)
@@ -72,19 +126,39 @@ type ipBudget struct {
 	window           time.Time
 }
 type App struct {
-	hub       *Hub
-	infinite  *infiniteServer
-	origins   []string
-	mu        sync.Mutex
-	ips       map[string]*ipBudget
-	upgradeMu sync.RWMutex
-	stopping  bool
+	hub             *Hub
+	infinite        *infiniteServer
+	origins         []string
+	mu              sync.Mutex
+	ips             map[string]*ipBudget
+	nextBudgetSweep time.Time
+	upgradeMu       sync.RWMutex
+	stopping        bool
 }
 
 func newApp(maxRooms int, origins []string) *App {
 	hub := newHub(maxRooms)
 	return &App{hub: hub, infinite: newInfiniteServer(hub), origins: origins, ips: map[string]*ipBudget{}}
 }
+
+// Matchmaking and upgrades share one normalized source identity. IPv6 privacy
+// addresses on one /64 share a budget, and IPv4-mapped addresses use IPv4.
+func connectionSource(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return host
+	}
+	addr = addr.Unmap()
+	if addr.Is6() {
+		return netip.PrefixFrom(addr.WithZone(""), 64).Masked().String()
+	}
+	return addr.String()
+}
+
 func (a *App) reserve(ip string, now time.Time) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -92,22 +166,23 @@ func (a *App) reserve(ip string, now time.Time) bool {
 	// not trusted; a public reverse proxy should also enforce its own limits.
 	b := a.ips[ip]
 	if b == nil {
-		// Existing addresses already have storage. Only new addresses need to
-		// reclaim capacity, avoiding a full-table scan on every retry.
-		if len(a.ips) > 4096 {
+		// Only new sources may need to reclaim capacity. Bound sweep frequency
+		// when many of them arrive at once.
+		if len(a.ips) > budgetCapacity/2 && !now.Before(a.nextBudgetSweep) {
+			a.nextBudgetSweep = now.Add(time.Second)
 			for k, v := range a.ips {
-				if v.active == 0 && now.Sub(v.window) >= time.Minute {
+				if v.active == 0 && now.Sub(v.window) >= budgetWindow {
 					delete(a.ips, k)
 				}
 			}
 		}
-		if len(a.ips) >= 8192 {
+		if len(a.ips) >= budgetCapacity {
 			return false
 		}
 		b = &ipBudget{window: now}
 		a.ips[ip] = b
 	}
-	if now.Sub(b.window) >= time.Minute {
+	if now.Sub(b.window) >= budgetWindow {
 		b.window = now
 		b.attempts = 0
 	}
@@ -141,11 +216,9 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request, admit func(*Cl
 	if err != nil {
 		return
 	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		ip = r.RemoteAddr
-	}
-	c := a.openSocket(w, key, ip, admit)
+	ip := connectionSource(r.RemoteAddr)
+	deflate := r.URL.Path == "/ws" && acceptsSnapshotDeflate(r.Header.Values("Sec-WebSocket-Extensions"))
+	c := a.openSocket(w, key, ip, admit, deflate)
 	if c == nil {
 		return
 	}
@@ -153,7 +226,7 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request, admit func(*Cl
 	read(c)
 }
 
-func (a *App) openSocket(w http.ResponseWriter, key, ip string, admit func(*Client) bool) *Client {
+func (a *App) openSocket(w http.ResponseWriter, key, ip string, admit func(*Client) bool, deflate bool) *Client {
 	a.upgradeMu.RLock()
 	defer a.upgradeMu.RUnlock()
 	if a.stopping {
@@ -164,12 +237,12 @@ func (a *App) openSocket(w http.ResponseWriter, key, ip string, admit func(*Clie
 		http.Error(w, "Too many connections. Try again shortly.", 429)
 		return nil
 	}
-	ws, err := upgradeWS(w, key)
+	ws, err := upgradeWS(w, key, deflate)
 	if err != nil {
 		a.release(ip)
 		return nil
 	}
-	c := &Client{ws: ws, sourceIP: ip, send: make(chan []byte, 12), updates: make(chan []byte, 1), done: make(chan struct{}), mapGeneration: -1, born: time.Now(), requireVersion: true}
+	c := &Client{ws: ws, sourceIP: ip, send: make(chan []byte, 12), updates: make(chan snapshotFrame, 1), done: make(chan struct{}), mapGeneration: -1, born: time.Now(), requireVersion: true}
 	if !admit(c) {
 		ws.writeClose(1013, "Server full")
 		ws.close()
@@ -203,15 +276,7 @@ func (a *App) handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": protocolVersion, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unshareRoom": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth", "survival"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
 	})
-	assetPrefix := "/assets/v" + version + "/"
-	assets := map[string]bool{
-		"theme.js": true, "theme.css": true, "style.css": true, "favicon.svg": true,
-		"netcode.js": true, "game.js": true, "pwa.js": true, "manifest.webmanifest": true,
-		"infinite-maze.js": true, "infinite.js": true, "sw.js": true,
-	}
-	for _, name := range appIconPNGs {
-		assets[name] = true
-	}
+	assetPrefix := "/" + assetPath
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
 			w.WriteHeader(405)
@@ -235,7 +300,7 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		name := strings.TrimPrefix(r.URL.Path, assetPrefix)
-		if !assets[name] {
+		if !allowedAsset(name) {
 			http.NotFound(w, r)
 			return
 		}
@@ -304,9 +369,9 @@ func main() {
 		roomLimitDefault = n
 	}
 	maxRooms := flag.Int("max-rooms", roomLimitDefault, "Maximum in-memory rooms")
-	checkAssets := flag.Bool("check-assets", false, "Check embedded app icons and exit")
+	checkAssets := flag.Bool("check-assets", false, "Check embedded app shell and assets and exit")
 	flag.Parse()
-	if err := checkAppIcons(embeddedWeb); err != nil {
+	if err := checkAppAssets(embeddedWeb); err != nil {
 		log.Fatal(err)
 	}
 	if *checkAssets {

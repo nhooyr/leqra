@@ -1,9 +1,8 @@
 'use strict';
-const VERSION = 'v4.49.6';
+const VERSION = 'v4.49.7';
 const CACHE = 'leqra-app-' + VERSION;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
-  '/',
   BASE + 'theme.js',
   BASE + 'theme.css',
   BASE + 'style.css',
@@ -24,9 +23,21 @@ const SHELL = [
   BASE + 'apple-touch-icon-512.png'
 ];
 
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
-});
+async function installShell() {
+  const response = await fetch('/', {cache: 'reload'});
+  if (!response.ok) throw new Error('The leqra shell is unavailable.');
+  const html = await response.clone().text();
+  const shellVersion = '<meta name="leqra-version" content="' + VERSION + '">';
+  if (!html.includes(shellVersion) || !html.includes('src="' + BASE.slice(1) + 'game.js"')) {
+    throw new Error('The leqra shell changed while installing.');
+  }
+  const cache = await caches.open(CACHE);
+  await cache.addAll(SHELL);
+  await cache.put('/', response);
+  await self.skipWaiting();
+}
+
+self.addEventListener('install', event => event.waitUntil(installShell()));
 
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(

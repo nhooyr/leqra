@@ -28,11 +28,11 @@
  // Identical movement order, rates, angle normalization and wall collision to Go.
  // No fire, damage or scoring is performed here.
  function move(t,input,dt,moveTank){
-  const x=t.x,y=t.y;
   t.speedTime=Math.max(0,(t.speedTime||0)-dt);
   if(t.speedTime<=0)t.speedStacks=0;
   const wasGhost=t.ghostTime>0;t.ghostTime=Math.max(0,(t.ghostTime||0)-dt);
   if(wasGhost&&t.ghostTime===0)moveTank(t,0,0,true);
+  const x=t.x,y=t.y;
   const stacks=t.speedTime>0?Math.max(1,Math.min(5,t.speedStacks||1)):0;
   const speedScale=1+.65*stacks,turnScale=1+.25*stacks;
   let throttle=(input.forward?1:0)-(input.reverse?.72:0);

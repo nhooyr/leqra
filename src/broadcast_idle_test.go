@@ -86,7 +86,7 @@ func TestBroadcastStateReconnectAfterRecipientFreeBroadcast(t *testing.T) {
 				t.Fatal("reconnect omitted its maze")
 			}
 			// The reconnect is the room's only live socket, including spectator-only rooms.
-			next.updates = make(chan []byte, 1)
+			next.updates = make(chan snapshotFrame, 1)
 			h.broadcastState(r)
 			if len(next.updates) != 1 {
 				t.Fatal("reconnected controller did not receive subsequent broadcasts")

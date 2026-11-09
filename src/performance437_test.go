@@ -11,14 +11,14 @@ func performanceRoom437(spectators int) (*Hub, *Room, time.Time) {
 	h := newHub(4)
 	r := &Room{Code: "PERF", Game: newGame(437), LastAction: now, Spectators: map[int]*Player{}}
 	for id := 0; id < maxTanks; id++ {
-		c := &Client{send: make(chan []byte, 32), updates: make(chan []byte, 1), done: make(chan struct{}), born: now}
+		c := &Client{send: make(chan []byte, 32), updates: make(chan snapshotFrame, 1), done: make(chan struct{}), born: now}
 		p := &Player{ID: id, Member: uint64(id + 1), Name: "PILOT", Client: c, InputAt: now}
 		c.player, c.room = p, r
 		r.Players[id] = p
 	}
 	for n := 0; n < spectators; n++ {
 		id := maxTanks + n*3
-		c := &Client{send: make(chan []byte, 32), updates: make(chan []byte, 1), done: make(chan struct{}), born: now}
+		c := &Client{send: make(chan []byte, 32), updates: make(chan snapshotFrame, 1), done: make(chan struct{}), born: now}
 		p := &Player{ID: id, Member: uint64(id + 1), Name: "SPECTATOR", Client: c, Spectating: true}
 		c.player, c.room = p, r
 		r.Spectators[id] = p

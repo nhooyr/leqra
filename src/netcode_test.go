@@ -81,7 +81,7 @@ func TestSnapshotQueueCoalescesWithoutLosingMaze(t *testing.T) {
 	h, _, r := makeRoom(t, 2)
 	r.Game.startMatch(r.Players)
 	c := fakeClient()
-	c.updates = make(chan []byte, 1)
+	c.updates = make(chan snapshotFrame, 1)
 	h.sendState(c, r)
 	if len(c.send) != 1 || len(c.updates) != 0 {
 		t.Fatal("first maze must be reliable")
@@ -99,7 +99,7 @@ func TestSnapshotQueueCoalescesWithoutLosingMaze(t *testing.T) {
 		t.Fatal("stale snapshots accumulated")
 	}
 	var latest map[string]any
-	_ = json.Unmarshal(<-c.updates, &latest)
+	_ = json.Unmarshal((<-c.updates).data, &latest)
 	if int(latest["tick"].(float64)) != r.Game.Tick {
 		t.Fatal("queue did not retain newest tick")
 	}

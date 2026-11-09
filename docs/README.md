@@ -11,7 +11,7 @@ Open **Room settings → Controls** to remap keys, adjust audio, or replay the q
 
 ## Rooms
 
-The **Infinity** switch is on by default. Press **Play** to roam a public endless maze with other pilots and bots. You gain a point for each tank you destroy and lose a point each time you die. Tanks respawn, and the leaderboard shows the ten highest current scores in the arena.
+The **Infinity** switch is on by default. Press **Play** to roam a public endless maze with other pilots and bots. All ten power-ups can spawn. One unshielded hit destroys a tank. You gain a point for each tank you destroy and lose a point each time you die. Tanks respawn, and the leaderboard shows the ten highest current scores in the arena.
 
 Select **Infinity** under **Room settings → Game mode** and press **Play** to explore solo against bots. Use **Share Infinity room** to invite friends to a private arena. You can also select **Infinity** in an already shared room. Guests ready up and the host presses **Play**.
 

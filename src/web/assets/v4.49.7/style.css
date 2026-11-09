@@ -827,16 +827,22 @@ body #roomScreen.unified-room :is(#startRoomBtn,#readyBtn[aria-pressed=false]):d
 body #roomScreen.unified-room .infinity-toggle:not([hidden])+#startRoomBtn{margin-top:3px}
 
 .infinite-arena[open]{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;border-radius:0;overflow:hidden;background:var(--surface-sunken)}
-.infinite-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:max(9px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 9px max(12px,env(safe-area-inset-left));background:var(--surface);border-bottom:1px solid var(--border)}
-.infinite-header h2{font-size:19px;margin:0}
-.infinite-header .secondary{width:auto;min-height:44px;margin:0}
-#infiniteKills{margin-left:auto;white-space:nowrap;color:var(--accent-ink);font:700 13px var(--mono);font-variant-numeric:tabular-nums}
-#infiniteStatus,.infinite-controls-hint{font:11px/1.4 var(--sans);color:var(--text-soft);margin:3px 0 0}
+body .infinite-header{padding:max(7px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 7px max(12px,env(safe-area-inset-left))}
+.infinite-header h2{font:700 12px var(--mono);text-transform:uppercase;margin:0}
+.infinite-header .bar-right{gap:9px}
+.infinite-header .secondary{width:auto;min-height:44px;margin:0;padding:8px 13px}
+#infiniteSoundBtn{width:44px;height:44px}
+#infiniteKills{white-space:nowrap;color:var(--accent-ink);font:700 12px var(--mono);font-variant-numeric:tabular-nums}
+.infinite-underbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:45px;background:var(--surface);border-top:1px solid var(--border);padding:6px max(12px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+.infinite-loadout{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.infinite-readout{text-align:right}
+#infiniteStatus{font:10px/1.4 var(--mono);color:var(--text-main);margin:0}
+#infiniteControlsHint{margin:2px 0 0}
 .infinite-stage{position:relative;min-height:0;overflow:hidden}
 #infiniteCanvas{width:100%;height:100%;cursor:crosshair}
 #infiniteRetry{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:auto;min-height:44px;margin:0}
 .infinite-leaderboard{position:absolute;top:10px;right:max(10px,env(safe-area-inset-right));z-index:1;width:min(205px,60vw);max-height:calc(100% - 20px);overflow:auto;background:var(--surface);border:1px solid var(--border-strong);border-radius:8px;color:var(--text-main);font:12px var(--sans)}
-.infinite-leaderboard summary{padding:12px;cursor:pointer}
+.infinite-leaderboard summary{padding:12px;cursor:pointer;color:var(--accent-ink);font:10px var(--mono);text-transform:uppercase}
 .infinite-leaderboard:not([open]){width:auto}
 .infinite-leaderboard ol{margin:0;padding:0 12px 8px 30px;font-variant-numeric:tabular-nums}
 .infinite-leaderboard li{padding:4px 0;overflow-wrap:anywhere}
@@ -844,11 +850,11 @@ body #roomScreen.unified-room .infinity-toggle:not([hidden])+#startRoomBtn{margi
 .infinite-leaderboard li strong{float:right;color:var(--accent-ink)}
 .infinite-leaderboard ol:empty::before{content:"No tanks yet";color:var(--text-soft)}
 .infinite-leaderboard p{margin:0;padding:7px 12px;border-top:1px solid var(--border);color:var(--text-soft);font-size:11px}
-.infinite-touch-controls{display:none;position:absolute;inset:auto 0 0;align-items:center;justify-content:space-between;padding:0 max(18px,env(safe-area-inset-right)) 4px max(18px,env(safe-area-inset-left));pointer-events:none}
+.infinite-touch-controls{display:none;position:absolute;inset:auto 0 0;align-items:center;justify-content:space-between;padding:0 max(18px,env(safe-area-inset-right)) 8px max(18px,env(safe-area-inset-left));pointer-events:none}
 body.touch-ui .infinite-touch-controls{display:flex}
 .infinite-touch-controls>*{pointer-events:auto;touch-action:none}
 #infiniteKnob{left:50%;top:50%;transform:translate(calc(-50% + var(--stick-x,0px)),calc(-50% + var(--stick-y,0px)))}
-#infiniteFire{width:76px;height:76px;background:var(--surface-raised)}
-.infinite-controls-hint{background:var(--surface);border-top:1px solid var(--border);margin:0;padding:6px max(12px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+#infiniteFire{width:78px;height:78px}
+@media(max-width:360px){.infinite-header .bar-right{gap:6px}.infinite-underbar{gap:6px}.infinite-loadout{gap:4px}}
 
 #arena.mouse-aiming{cursor:crosshair}

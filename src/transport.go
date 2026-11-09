@@ -1,8 +1,8 @@
 package main
 
-// A bounded, text-only RFC 6455 server transport. No extensions or compression
-// are negotiated. It accepts fragmented UTF-8 text and interleaved control
-// frames, requires client masking, and bounds BOTH frames and full messages.
+// A bounded, text-only RFC 6455 server transport. It accepts fragmented UTF-8
+// text and interleaved control frames, requires client masking, and bounds
+// frames, full messages, and inflated messages.
 // Keeping this separate from rooms/physics makes it replaceable independently.
 
 import (
@@ -26,16 +26,19 @@ import (
 const maxMessage = 8192
 const maxFramesPerSecond = 220 // Two input streams plus control frames.
 const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+const wsCompressed = 0x40
 
 type wsConn struct {
-	conn        net.Conn
-	reader      *bufio.Reader
-	writeMu     sync.Mutex
-	closeOnce   sync.Once
-	fragmented  bool
-	message     []byte
-	frameWindow time.Time
-	frames      int
+	conn              net.Conn
+	reader            *bufio.Reader
+	writeMu           sync.Mutex
+	closeOnce         sync.Once
+	deflate           bool
+	fragmented        bool
+	messageCompressed bool
+	message           []byte
+	frameWindow       time.Time
+	frames            int
 }
 
 type wsError struct {
@@ -97,7 +100,7 @@ func validateUpgrade(w http.ResponseWriter, r *http.Request, allowed []string) (
 	return key, nil
 }
 
-func upgradeWS(w http.ResponseWriter, key string) (*wsConn, error) {
+func upgradeWS(w http.ResponseWriter, key string, deflate bool) (*wsConn, error) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "WebSocket upgrade unavailable", 500)
@@ -110,7 +113,11 @@ func upgradeWS(w http.ResponseWriter, key string) (*wsConn, error) {
 	sum := sha1.Sum([]byte(key + wsGUID))
 	accept := base64.StdEncoding.EncodeToString(sum[:])
 	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	_, err = fmt.Fprintf(rw, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
+	extension := ""
+	if deflate {
+		extension = "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n"
+	}
+	_, err = fmt.Fprintf(rw, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n%s\r\n", accept, extension)
 	if err == nil {
 		err = rw.Flush()
 	}
@@ -120,15 +127,15 @@ func upgradeWS(w http.ResponseWriter, key string) (*wsConn, error) {
 	}
 	_ = conn.SetWriteDeadline(time.Time{})
 	_ = conn.SetReadDeadline(time.Now().Add(35 * time.Second))
-	return &wsConn{conn: conn, reader: rw.Reader, frameWindow: time.Now()}, nil
+	return &wsConn{conn: conn, reader: rw.Reader, deflate: deflate, frameWindow: time.Now()}, nil
 }
 
 func (c *wsConn) close() { c.closeOnce.Do(func() { _ = c.conn.Close() }) }
-func (c *wsConn) writeFrame(op byte, payload []byte) error {
+func (c *wsConn) writeFrame(flags byte, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	_ = c.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-	h := []byte{0x80 | op}
+	h := []byte{0x80 | flags}
 	n := len(payload)
 	if n < 126 {
 		h = append(h, byte(n))
@@ -173,8 +180,9 @@ func (c *wsConn) readMessage() ([]byte, error) {
 			return nil, &wsError{1008, "Too many frames"}
 		}
 		fin := h[0]&0x80 != 0
+		compressed := h[0]&wsCompressed != 0
 		op := h[0] & 0x0f
-		if h[0]&0x70 != 0 || h[1]&0x80 == 0 {
+		if h[0]&0x30 != 0 || h[1]&0x80 == 0 || compressed && (!c.deflate || op != 1 && op != 2) {
 			return nil, protocolError("Invalid frame flags or missing mask")
 		}
 		if op != 0 && op != 1 && op != 2 && op != 8 && op != 9 && op != 10 {
@@ -247,6 +255,7 @@ func (c *wsConn) readMessage() ([]byte, error) {
 			if c.fragmented {
 				return nil, protocolError("Nested fragmented message")
 			}
+			c.messageCompressed = compressed
 			c.message = data
 			c.fragmented = !fin
 		case 0:
@@ -261,6 +270,13 @@ func (c *wsConn) readMessage() ([]byte, error) {
 		}
 		data = c.message
 		c.message = nil
+		if c.messageCompressed {
+			c.messageCompressed = false
+			var err error
+			if data, err = inflateMessage(data, maxMessage); err != nil {
+				return nil, err
+			}
+		}
 		if !utf8.Valid(data) {
 			return nil, &wsError{1007, "Invalid UTF-8"}
 		}

@@ -48,6 +48,55 @@ func TestCheckAppIconsRejectsInvalidExports(t *testing.T) {
 	}
 }
 
+func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
+	const index = "web/index.html"
+	dir := "web/" + assetPath
+	if err := checkAppAssets(embeddedWeb); err != nil {
+		t.Fatalf("shipped shell failed preflight: %v", err)
+	}
+	web := fstest.MapFS{}
+	paths := []string{index}
+	for _, name := range append(appShellFiles[:], appIconPNGs[:]...) {
+		paths = append(paths, dir+name)
+	}
+	for _, path := range paths {
+		data, err := embeddedWeb.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		web[path] = &fstest.MapFile{Data: data}
+	}
+	for _, path := range []string{index, dir + "game.js", dir + "infinite.js", dir + "sw.js", dir + "style.css", dir + "manifest.webmanifest"} {
+		t.Run("missing "+path, func(t *testing.T) {
+			files := maps.Clone(web)
+			delete(files, path)
+			if err := checkAppAssets(files); err == nil || !strings.Contains(err.Error(), path) {
+				t.Fatalf("preflight = %v, want error identifying %s", err, path)
+			}
+		})
+	}
+	t.Run("empty script", func(t *testing.T) {
+		files := maps.Clone(web)
+		files[dir+"game.js"] = &fstest.MapFile{Data: []byte(" \n")}
+		if err := checkAppAssets(files); err == nil || !strings.Contains(err.Error(), "game.js is empty") {
+			t.Fatalf("preflight = %v, want empty game.js error", err)
+		}
+	})
+	for _, tc := range []struct{ name, before, after, want string }{
+		{"stale shell", `content="v` + version + `"`, `content="v0.0.0"`, "must declare leqra version"},
+		{"stale script", assetPath + "game.js", "assets/v0.0.0/game.js", "references unavailable asset"},
+		{"unlinked script", `src="` + assetPath + `game.js"`, "", "is missing asset reference"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := maps.Clone(web)
+			files[index] = &fstest.MapFile{Data: bytes.Replace(web[index].Data, []byte(tc.before), []byte(tc.after), 1)}
+			if err := checkAppAssets(files); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("preflight = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 	h := newApp(4, nil).handler()
 	prefix := "/assets/v" + version + "/"

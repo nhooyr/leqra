@@ -248,7 +248,7 @@ func TestLegendUsesSharedCanvasIconForEveryPower(t *testing.T) {
 			t.Fatalf("missing or duplicate legend icon %s", kind)
 		}
 	}
-	if !strings.Contains(string(js), "powerIcon(kind,c)") || !strings.Contains(string(js), "powerIcon(p.type)") {
+	if !strings.Contains(string(js), "powerIcon(kind,c)") || !strings.Contains(string(js), "powerIcon(p.type,c)") {
 		t.Fatal("legend/maze do not share renderer")
 	}
 	if strings.Contains(string(html), ">↗</div>") || strings.Contains(string(html), ">⌁</div>") {

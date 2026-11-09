@@ -52,7 +52,12 @@ test('unchanged room renders write once; individual configuration changes persis
 test('accepted online host settings save only the host, their local P2 and bots',()=>{
  const {s,storage}=boot();s.localRoom.players=[pilot(),bot()];s.persistLocalRoomRules();s.mode='online';s.online.id=2;
  const r={host:2,rules:{...s.defaultModeRules('ctf'),scoreTarget:8},players:[pilot({id:2,name:'HOST',team:1}),pilot({id:0,name:'REMOTE',team:2}),{id:1,kind:'local',owner:0,name:'REMOTE P2',team:2},bot({id:3,team:2,difficulty:'godlike'})],spectators:[{id:9,kind:'local',owner:2,name:'MY P2',team:1,spectating:true}]};
- s.rememberRenderedRoomSetup(r);const next=boot(storage).s;assert.equal(next.localRoom.rules.scoreTarget,8);next.restoreSavedLocalRoster();assert.deepEqual(Array.from(next.localRoom.players,p=>p.name),['HOST','RUST','MY P2']);
+ s.online.token='inherited';
+ const original=storage.get('leqra.roomSetup.v2');
+ s.rememberRenderedRoomSetup({...r,host:0});s.rememberRenderedRoomSetup(r);
+ assert.equal(storage.get('leqra.roomSetup.v2'),original,'host handoff preserves the personal setup');
+ s.rememberRenderedRoomSetup(r,true);const next=boot(storage).s;assert.equal(next.localRoom.rules.scoreTarget,8);next.restoreSavedLocalRoster();assert.deepEqual(Array.from(next.localRoom.players,p=>p.name),['HOST','RUST','MY P2']);
+ s.online.localSetupToken=s.online.token='published';
  const before=storage.get('leqra.roomSetup.v2');for(const changes of [{host:0},{queue:{}},{matchmaking:true},{awayMatch:true}])s.rememberRenderedRoomSetup({...r,...changes,rules:{...r.rules,scoreTarget:9}});
  s.online.connected=false;s.rememberRenderedRoomSetup({...r,rules:{...r.rules,scoreTarget:10}});assert.equal(storage.get('leqra.roomSetup.v2'),before);
 });

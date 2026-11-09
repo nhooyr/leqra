@@ -8,17 +8,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="leqra">
+<meta name="leqra-version" content="v4.49.7">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.6/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.6/theme.css">
-<link rel="stylesheet" href="assets/v4.49.6/style.css">
-<link rel="manifest" href="assets/v4.49.6/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.6/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.6/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.6/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.6/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.7/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.7/theme.css">
+<link rel="stylesheet" href="assets/v4.49.7/style.css">
+<link rel="manifest" href="assets/v4.49.7/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.7/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.7/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.7/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.7/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -196,10 +197,13 @@
  </footer>
 </dialog>
 <dialog id="infiniteArena" class="feature-dialog infinite-arena" aria-labelledby="infiniteArenaTitle" aria-describedby="infiniteControlsHint">
- <header class="infinite-header">
-  <div><h2 id="infiniteArenaTitle">Infinity</h2><p id="infiniteStatus" role="status"></p></div>
-  <strong id="infiniteKills" title="+1 per kill, −1 per death">Score 0</strong>
-  <button class="secondary" id="infiniteExit" type="button">Leave</button>
+ <header class="arena-bar infinite-header">
+  <div class="arena-title"><span class="status-dot"></span><h2 id="infiniteArenaTitle">Infinity</h2></div>
+  <div class="bar-right">
+   <strong id="infiniteKills" title="+1 per kill, −1 per death">Score 0</strong>
+   <button class="icon-btn" id="infiniteSoundBtn" type="button" aria-label="Mute sound" title="Sound (M)" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-wave" d="M15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14"/><path class="sound-off-line" d="m16 9 5 6m0-6-5 6"/></svg></button>
+   <button class="secondary" id="infiniteExit" type="button">Leave</button>
+  </div>
  </header>
  <div class="infinite-stage">
   <canvas id="infiniteCanvas" tabindex="0" aria-label="Infinity tank maze">Your browser needs HTML canvas to play.</canvas>
@@ -210,16 +214,19 @@
    <p>+1 per kill · −1 per death</p>
   </details>
   <div class="infinite-touch-controls" aria-label="Touch controls">
-   <div class="stick-zone" id="infiniteStick" role="group" aria-label="Drag to drive and aim"><div class="stick-base"><div class="stick-knob" id="infiniteKnob"></div></div></div>
-   <button class="fire-button" id="infiniteFire" type="button" aria-label="Hold to fire">FIRE</button>
+   <div class="stick-zone" id="infiniteStick" role="group" aria-label="Drag to drive and aim"><div class="stick-base"><div class="stick-knob" id="infiniteKnob"></div></div><span class="touch-label">STEER</span></div>
+   <button class="fire-button" id="infiniteFire" type="button" aria-label="Hold to fire"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="8"/><path d="M16 3v7m0 12v7M3 16h7m12 0h7"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg><span id="infiniteFireLabel">FIRE</span></button>
   </div>
  </div>
- <p id="infiniteControlsHint" class="infinite-controls-hint"></p>
+ <footer class="infinite-underbar">
+  <div class="infinite-loadout"><span class="pilot-slot">P1</span><span class="weapon" id="infiniteWeapon">STANDARD</span></div>
+  <div class="infinite-readout"><p id="infiniteStatus" role="status"></p><p id="infiniteControlsHint" class="bar-hint"></p></div>
+ </footer>
 </dialog>
-<script src="assets/v4.49.6/netcode.js" defer></script>
-<script src="assets/v4.49.6/game.js" defer></script>
-<script src="assets/v4.49.6/infinite-maze.js" defer></script>
-<script src="assets/v4.49.6/infinite.js" defer></script>
-<script src="assets/v4.49.6/pwa.js" defer></script>
+<script src="assets/v4.49.7/netcode.js" defer></script>
+<script src="assets/v4.49.7/game.js" defer></script>
+<script src="assets/v4.49.7/infinite-maze.js" defer></script>
+<script src="assets/v4.49.7/infinite.js" defer></script>
+<script src="assets/v4.49.7/pwa.js" defer></script>
 </body>
 </html>

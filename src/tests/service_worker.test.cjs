@@ -196,7 +196,7 @@ test('online app navigation returns fresh HTML without replacing the installed f
 function releaseHarness() {
   const current = assetVersion, next = current.replace(/\d+$/, patch => String(Number(patch) + 1)), storage = new Map();
   let serverVersion = current, offline = false, failedAsset = '';
-  const shell = version => '<script src="/assets/' + version + '/game.js"></script>';
+  const shell = version => '<meta name="leqra-version" content="' + version + '"><script src="assets/' + version + '/game.js"></script>';
   const cacheName = version => 'leqra-app-' + version;
   const keyFor = request => new URL(typeof request === 'string' ? request : request.url, origin).href;
   const network = async request => {
@@ -300,4 +300,15 @@ test('a successful release install switches offline shell and assets together', 
   assert.equal(await (await nextWorker.request()).text(), h.shell(h.next));
   assert.match(await (await nextWorker.request('/assets/' + h.next + '/game.js', 'same-origin')).text(),
     /asset .*game\.js/);
+});
+
+test('a worker refuses a root shell served by a different release', async () => {
+  const h = releaseHarness(), installed = h.worker(h.current);
+  await installed.event('install');
+  h.deploy();
+  const stale = h.worker(h.current);
+  await assert.rejects(stale.event('install'), /shell changed/);
+  assert.equal(stale.lifecycle.skipWaiting, 0);
+  h.offline();
+  assert.equal(await (await installed.request()).text(), h.shell(h.current));
 });
