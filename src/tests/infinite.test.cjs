@@ -20,7 +20,13 @@ function harness(url = 'https://example.test/', openField = false) {
   textContent = '';
   closest() { return false; }
   setAttribute() {}
-  getContext() { return new Proxy({}, {get: () => () => {}}); }
+  getContext() {
+   let angle = 0;
+   return new Proxy({
+    rotate: value => {angle = value;},
+    moveTo(x,y) {if (x===41 && y===-6) markers.push({angle,color:this.strokeStyle});},
+   }, {get: (target,key) => target[key] ?? (()=>{})});
+  }
   getBoundingClientRect() { return {left:0,top:0,width:96,height:96}; }
   addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
   emit(type, event = {}) {
@@ -56,17 +62,23 @@ function harness(url = 'https://example.test/', openField = false) {
  const window = new Element();
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
- const sounds = [], loadouts = [];
+ const sounds = [], loadouts = [], markers = [], combatPrefs = {visual:true,audio:true,fps:false};
  const powers = Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman']
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
   colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
   tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, drawBadges() {}, bullets() {},
   ageTank: tank => tank,
-  renderLoadout: (tank, num, projectiles, blocked, phase) => {loadouts[num] = {tank, projectiles, blocked, phase};},
+  sampleFrame: (now,work) => context.sampleFrame(now,work,'infiniteFPSIndicator',null),
+  renderLoadout: (tank, num, projectiles, blocked, phase, twoPilots) => {
+   loadouts[num] = {tank, projectiles, blocked, phase};
+   context.renderDeathNotice(tank,num,twoPilots,context.infinityHUDId);
+  },
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
   missileTurn: 4.8,
   openControls: () => byID('controlsDialog').showModal(),
+  isTouchUI: () => false,
+  toggleFullscreen: () => sounds.push('fullscreen'),
   toggleSound: () => sounds.push('mute'),
   shot: kind => sounds.push('shot:' + kind),
   ricochet: () => sounds.push('ricochet'), collect: () => sounds.push('pickup'), shield: () => sounds.push('shield'),
@@ -87,9 +99,23 @@ function harness(url = 'https://example.test/', openField = false) {
  vm.runInContext(readFileSync(assetPath('netcode.js'), 'utf8'), context);
  window.leqraNet = context.leqraNet;
  const game = readFileSync(assetPath('game.js'), 'utf8');
+ Object.assign(context, {$:byID,combatPrefs});
+ vm.runInContext(game.slice(game.indexOf('function infinityHUDId('),game.indexOf('function renderInfinityLoadout(')),context);
+ vm.runInContext(game.slice(game.indexOf('const frameStats='),game.indexOf('function initFrameSettings(')), context);
+ const keyPolicy = game.slice(game.indexOf('function arenaKeyBlocked('), game.indexOf('// All input paths'));
+ const keyLabel = game.slice(game.indexOf('function keyLabel('), game.indexOf('function aliasesActive('));
+ const composition = game.match(/^function composingKey\(e\).*$/m)[0];
+ vm.runInContext('let bindingCapture=null;\n'+composition+'\n'+keyLabel+keyPolicy, context);
+ Object.assign(window.leqraInfinityArt, {arenaKeyBlocked: context.arenaKeyBlocked, keyLabel: context.keyLabel});
  const projectileState = game.slice(game.indexOf('function pilotProjectileState('), game.indexOf('function liveFeedbackTank('));
  vm.runInContext(projectileState, context);
  window.leqraInfinityArt.projectileState = context.pilotProjectileState;
+ Object.assign(context,{combatPrefs,POWER:powers,paintColor:color=>color,tone:frequency=>sounds.push('tone:'+frequency)});
+ for (const name of ['missileLocks','updateHomingAlert','drawHomingWarnings']) {
+  const start = game.indexOf('function '+name+'(');
+  vm.runInContext(game.slice(start,game.indexOf('\n}',start)+2),context);
+  window.leqraInfinityArt[name] = context[name];
+ }
  vm.runInContext(game.slice(game.indexOf('function choosePickup('), game.indexOf('// Power-up colors')), context);
  window.leqraInfinityArt.choosePickup = context.choosePickup;
  const recycle = game.indexOf('function recycleStarmanProjectiles(');
@@ -112,7 +138,7 @@ function harness(url = 'https://example.test/', openField = false) {
    frame?.(now);
   }
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, window, state:window.testArena, sounds, loadouts};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, window, state:window.testArena, sounds, loadouts, markers, combatPrefs};
 }
 
 test('Infinity runs offline directly from a file and adds nearby bots to the standings', () => {
@@ -127,6 +153,19 @@ test('Infinity runs offline directly from a file and adds nearby bots to the sta
  assert.equal(sockets.length, 0);
  infinity.close();
  assert.equal(byID('infiniteArena').open, false);
+});
+
+test('Infinity sends its render cadence to the shared optional FPS readout', () => {
+ const {infinity,byID,advance,combatPrefs}=harness(undefined,true);
+ infinity.start('offline');
+ advance(60);
+ assert.equal(byID('infiniteFPSIndicator').textContent,'');
+ combatPrefs.fps=true;
+ advance(60);
+ assert.equal(byID('infiniteFPSIndicator').textContent,'60 FPS · 16.7 ms');
+ assert.match(byID('infiniteFPSIndicator').title,/JS update\/render work/);
+ assert.equal(byID('fpsIndicator').textContent,'');
+ infinity.close();
 });
 
 test('offline Infinity routes two independent keyboard layouts to separate tanks', () => {
@@ -235,9 +274,36 @@ test('offline Infinity awards the kill and keeps the death penalty after respawn
  const rows = byID('infiniteLeaderboard').children;
  assert.deepEqual(rows[0].children.map(cell => cell.textContent), ['Bot 1', 1]);
  assert.deepEqual(rows[1].children.map(cell => cell.textContent), ['Saved pilot (you)', -1]);
- advance(156);
+ const notice = byID('infiniteDeathNotice1');
+ assert.equal(notice.textContent,'Killed by Bot 1');
+ assert.equal(notice.hidden,false);
+ advance(94);
  assert.match(status.textContent, /Weapons live/);
  assert.equal(byID('infiniteKills').textContent, 'Score -1');
+ assert.equal(notice.hidden,true);
+});
+
+test('offline Infinity respawns Player 2 in 90 ticks and clears just their death notice', () => {
+ const {infinity,byID,state,advance}=harness(undefined,true);
+ infinity.start('offline',{name:'PILOT ONE',localName:'PILOT TWO',roomRules:{}});
+ const [first,second]=state().tanks;
+ Object.assign(first,{x:100,y:100,angle:0,power:'laser',powerTime:3,charges:1});
+ Object.assign(second,{x:166,y:100,invulnerable:0});
+ byID('infiniteArena').emit('keydown',{code:'KeyQ'});
+ advance();
+ byID('infiniteArena').emit('keyup',{code:'KeyQ'});
+ assert.equal(second.respawn,1.5);
+ const notice=byID('infiniteDeathNotice2');
+ assert.equal(notice.textContent,'P2 · Killed by PILOT ONE');
+ assert.equal(byID('infiniteDeathNotice1').hidden,true);
+ advance(89);
+ assert.equal(second.hp,0);
+ assert.equal(notice.hidden,false);
+ advance();
+ assert.equal(second.hp,1);
+ assert.equal(second.killedBy,'');
+ advance(2);
+ assert.equal(notice.hidden,true);
 });
 
 test('simultaneous Infinity laser hits rotate priority between live actors', () => {
@@ -301,7 +367,7 @@ test('Starman contact in offline Infinity kills shielded tanks, with walls and i
   assert.equal(target.hp,eliminated?0:1,label);
   assert.equal(target.score,eliminated?-1:0,label);
   assert.equal(pilot.score,eliminated?1:0,label);
-  if(eliminated)assert.equal(target.respawn,2.5);
+  if(eliminated)assert.equal(target.respawn,1.5);
   infinity.close();
  }
 });
@@ -447,6 +513,96 @@ test('online Infinity reads per-pilot combat status even when their ordnance is 
  infinity.close();
 });
 
+test('online Infinity follows shared homing visual and audio preferences for both pilots', () => {
+ const {infinity, sockets, advance, markers, sounds, combatPrefs} = harness(undefined,true);
+ infinity.start('online',{localName:'Wingmate'});
+ const [socket] = sockets;
+ socket.receive({type:'welcome',id:4,localId:9,seed:0});
+ const first={id:4,x:42,y:42,angle:0,hp:1},second={id:9,x:210,y:210,angle:0,hp:1};
+ const grenade={id:1,kind:'grenade',owner:99,target:9,x:210,y:126,vx:0,vy:205,life:7};
+ const snapshot=(locked1,locked2,bullets=[])=>socket.receive({type:'state',
+  tanks:[{...first,locked:locked1},{...second,locked:locked2}],bullets,players:2,leaderboard:[]});
+ snapshot(true,true,[grenade]);
+ advance();
+ assert.deepEqual(markers.map(marker=>marker.angle),[-Math.PI/2]);
+ assert.deepEqual(sounds,Array(4).fill('tone:850'),'the visible P2 lock and offscreen P1 lock both chirp');
+ advance(4);
+ assert.equal(sounds.length,4,'a sustained lock does not retrigger');
+ snapshot(false,false);
+ advance(100);
+ markers.length=0;
+ combatPrefs.visual=false;
+ snapshot(false,true,[grenade]);
+ advance(3);
+ assert.equal(markers.length,0);
+ assert.equal(sounds.length,6,'disabling visuals does not silence the next lock');
+ snapshot(false,false);
+ advance(100);
+ combatPrefs.visual=true;
+ combatPrefs.audio=false;
+ snapshot(false,true,[grenade]);
+ advance(3);
+ assert.ok(markers.length>0);
+ assert.equal(sounds.length,6,'disabling audio preserves the directional marker');
+ infinity.close();
+});
+
+test('online Infinity displays only the killed local pilot’s authoritative notice', () => {
+ const {infinity,sockets,byID,advance}=harness(undefined,true);
+ infinity.start('online',{localName:'Wingmate'});
+ const [socket]=sockets;
+ socket.receive({type:'welcome',id:4,localId:9,seed:0});
+ const first={id:4,x:42,y:42,angle:0,hp:1,spawnSerial:1};
+ const second={id:9,x:210,y:210,angle:0,hp:1,spawnSerial:1};
+ const publish = tanks => {
+  socket.receive({type:'state',tanks,bullets:[],players:2,leaderboard:[]});
+  advance(3);
+ };
+ const p1=byID('infiniteDeathNotice1'),p2=byID('infiniteDeathNotice2');
+ publish([first,{...second,hp:0,respawnTime:1.5,killedBy:'Pilot <7>'}]);
+ assert.equal(p1.hidden,true);
+ assert.equal(p2.hidden,false);
+ assert.equal(p2.textContent,'P2 · Killed by Pilot <7>');
+ publish([{...first,hp:0,respawnTime:1.5,killedBy:'Pilot 8'},{...second,spawnSerial:2}]);
+ assert.equal(p1.textContent,'P1 · Killed by Pilot 8');
+ assert.equal(p2.hidden,true);
+ infinity.close();
+ assert.equal(p1.hidden,true);
+});
+
+test('a match-ending Infinity kill leaves time to read the victim’s notice',()=>{
+ const {infinity,sockets,byID,advance}=harness(undefined,true);
+ infinity.start('online');
+ const [socket]=sockets;
+ socket.receive({type:'welcome',id:4,seed:0});
+ socket.receive({type:'state',players:2,bullets:[],leaderboard:[],
+  tanks:[{id:4,x:42,y:42,angle:0,hp:0,spawnSerial:1,killedBy:'Winner'}],
+  result:{id:8,name:'Winner',score:3}});
+ advance();
+ const result=byID('infiniteResult');
+ assert.equal(result.open,false);
+ assert.equal(byID('infiniteDeathNotice1').textContent,'Killed by Winner');
+ advance(91);
+ assert.equal(result.open,true);
+ assert.equal(byID('infiniteResultTitle').textContent,'Winner wins');
+});
+
+test('offline Infinity draws a warning and chirps when a missile locks Player 2', () => {
+ const {infinity, advance, state, loadouts, markers, sounds} = harness(undefined,true);
+ infinity.start('offline',{localName:'Wingmate'});
+ const world=state(),[,second]=world.tanks;
+ world.nextBot=world.nextPickup=Infinity;
+ second.invulnerable=0;
+ world.bullets.push({id:1,owner:'enemy',kind:'homing',x:second.x+100,y:second.y,vx:-235,vy:0,
+  r:5,age:.2,life:4,bounces:0,seekDelay:0,target:null,trail:[]});
+ advance(3);
+ assert.equal(loadouts[1].projectiles.locked,false);
+ assert.equal(loadouts[2].projectiles.locked,true);
+ assert.ok(markers.length>0&&markers.every(marker=>Math.abs(marker.angle)<1e-6));
+ assert.deepEqual(sounds,['tone:850','tone:850']);
+ infinity.close();
+});
+
 test('Infinity ignores round endings and sounds tank destruction and grenade blasts', () => {
  const {infinity, sockets, state, sounds} = harness();
  infinity.start('online');
@@ -582,4 +738,25 @@ test('the shared M sound shortcut works inside the Infinity dialog', () => {
  arena.emit('keydown',{code:'KeyM',repeat:true});
  arena.emit('keydown',{code:'KeyM',metaKey:true});
  assert.deepEqual(sounds,['mute']);
+});
+
+test('Infinity shares fullscreen and protects native keyboard activation and text entry', () => {
+ const {infinity, byID, sounds, state, advance} = harness(undefined,true);
+ const bindings = {fire:'NumpadEnter'};
+ infinity.start('offline',{bindings,roomRules:{}});
+ const arena = byID('infiniteArena'), pauseMenu = byID('infinitePauseMenu');
+ arena.emit('keydown',{code:'KeyF'});
+ arena.emit('keydown',{code:'KeyF',repeat:true});
+ arena.emit('keydown',{code:'KeyF',target:{tagName:'INPUT',type:'text'}});
+ arena.emit('keydown',{code:'KeyM',isComposing:true});
+ arena.emit('keydown',{code:'Escape',defaultPrevented:true});
+ arena.emit('keydown',{code:'NumpadEnter',target:{tagName:'SUMMARY'}});
+ advance();
+ assert.deepEqual(sounds,['fullscreen']);
+ assert.equal(pauseMenu.open,false);
+ assert.equal(state().bullets.length,0);
+ assert.match(byID('infiniteControlsHint').textContent,/Fire NUM ENTER/);
+ arena.emit('keydown',{code:'NumpadEnter',target:{tagName:'CANVAS'}});
+ advance();
+ assert.equal(state().bullets.length,1);
 });

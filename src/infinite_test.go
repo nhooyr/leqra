@@ -55,14 +55,17 @@ func TestInfiniteShotBounceAndRespawn(t *testing.T) {
 	if a.advanceBullet(&bullet, -20, 0) || second.HP != 0 || first.Score != 1 || second.Score != -1 {
 		t.Fatal("a lethal hit must consume the projectile, add a point, and deduct a point")
 	}
-	for range infiniteRespawnTicks - 1 {
+	if death := second.wireTank(a.tick); death.KilledBy != "First" || death.RespawnTime != 1.5 {
+		t.Fatalf("death did not report the shooter and 1.5-second timer: %+v", death)
+	}
+	for range 89 {
 		a.step(now)
 	}
 	if second.HP != 0 {
 		t.Fatal("pilot respawned early")
 	}
 	a.step(now)
-	if second.HP != infiniteMaxHP || second.Score != -1 || !second.Protected || a.maze.blocked(second.X, second.Y, tankRadius) {
+	if second.HP != infiniteMaxHP || second.Score != -1 || !second.Protected || second.KilledBy != "" || a.maze.blocked(second.X, second.Y, tankRadius) {
 		t.Fatalf("respawn lost score, protection, or a valid spawn position: %+v", second)
 	}
 }
@@ -88,19 +91,19 @@ func TestInfinitePauseHoldsRespawnAndKeepsArenaLive(t *testing.T) {
 	}
 
 	paused.kit.Invulnerable, paused.Protected = 0, false
-	a.hurt(paused, other.ID, other.Team)
+	a.hurt(paused, other.ID, other.Team, other.Name)
 	if paused.HP != 0 || paused.Score != -1 || other.Score != 1 {
 		t.Fatal("a paused pilot must still take damage and lose a point on death")
 	}
 	for range infiniteRespawnTicks + 1 {
 		a.step(now.Add(inputTimeout + time.Millisecond))
 	}
-	if paused.HP != 0 || paused.Spawn != spawn {
-		t.Fatal("a paused pilot respawned after the timer or control timeout")
+	if death := paused.wireTank(a.tick); death.HP != 0 || death.Spawn != spawn || death.RespawnTime != 0 || death.KilledBy != other.Name {
+		t.Fatalf("pause did not retain the death and attacker after the timer or control timeout: %+v", death)
 	}
 	a.setInput(paused, Input{Seq: 3}, false, now.Add(inputTimeout+time.Millisecond))
 	a.step(now.Add(inputTimeout + time.Millisecond))
-	if paused.HP != infiniteMaxHP || paused.Spawn != spawn+1 || paused.Score != -1 || !paused.Protected {
+	if paused.HP != infiniteMaxHP || paused.Spawn != spawn+1 || paused.Score != -1 || !paused.Protected || paused.KilledBy != "" {
 		t.Fatalf("resuming after the respawn timer did not restore the pilot with score and protection: %+v", paused)
 	}
 }
@@ -179,8 +182,41 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 		hud.AmmoUsed != 2 || hud.Grenades != 2 || hud.GrenadeLife != 7 || !hud.Locked {
 		t.Fatalf("incorrect combat state: %+v", hud)
 	}
-	if packet.Tanks[1].RespawnTime != 2.5 {
+	if packet.Tanks[1].RespawnTime != 1.5 {
 		t.Fatalf("incorrect respawn time: %+v", packet.Tanks[1])
+	}
+}
+
+func TestInfiniteProjectileReportsCulledBotCallsign(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	c := fakeClient()
+	target := a.join(c, "Pilot", time.Now())
+	drain(c)
+	shooter := a.addPilot("RUST", true, 0, 0, 0, 0)
+	target.X, target.Y, target.Protected = 142, 42, false
+	shooter.X, shooter.Y, shooter.Angle = 42, 42, 0
+	applyPower(&shooter.kit, "cannon", infinitePowerDuration, infiniteStarDuration)
+	a.fire(shooter)
+	if len(a.bullets) != 1 {
+		t.Fatal("expected a live projectile before culling the bot")
+	}
+	shooter.X = target.X + 14*cellSize
+	a.populate()
+	for _, pilot := range a.pilots {
+		if pilot == shooter {
+			t.Fatal("roaming bot was not culled")
+		}
+	}
+	if a.advanceBullet(&a.bullets[0], 100, 0) || target.HP != 0 {
+		t.Fatal("expected the surviving projectile to kill the pilot")
+	}
+	a.broadcast()
+	var packet infiniteSnapshot
+	if err := json.Unmarshal(<-c.send, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if len(packet.Tanks) == 0 || packet.Tanks[0].ID != target.ID || packet.Tanks[0].KilledBy != shooter.Name {
+		t.Fatalf("death snapshot lost the culled bot's callsign: %+v", packet.Tanks)
 	}
 }
 
@@ -234,18 +270,18 @@ func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	if target.kit.ShieldCharges != 1 || a.pickups[0].Life != 0 {
 		t.Fatal("a shield must be collected and removed exactly once")
 	}
-	a.hurt(target, shooter.ID, shooter.Team)
-	if target.HP != 1 || target.kit.ShieldCharges != 0 || !target.Protected {
+	a.hurt(target, shooter.ID, shooter.Team, shooter.Name)
+	if target.HP != 1 || target.kit.ShieldCharges != 0 || !target.Protected || target.KilledBy != "" {
 		t.Fatal("shield did not absorb the shot")
 	}
 	for range 21 {
 		a.advanceEquipment(target)
 	}
-	a.hurt(target, target.ID, target.Team)
+	a.hurt(target, target.ID, target.Team, target.Name)
 	if target.HP != 1 {
 		t.Fatal("a tank damaged itself")
 	}
-	a.hurt(target, shooter.ID, shooter.Team)
+	a.hurt(target, shooter.ID, shooter.Team, shooter.Name)
 	if target.HP != 0 || target.Score != -1 || shooter.Score != 1 {
 		t.Fatal("one unshielded hit must kill and adjust both scores")
 	}
@@ -297,7 +333,7 @@ func TestInfiniteStarmanContactAwardsOneKillAndRespectsProtection(t *testing.T) 
 	target.kit.Invulnerable = 0
 	applyPower(&target.kit, "shield", infinitePowerDuration, infiniteStarDuration)
 	a.step(now)
-	if target.HP != 0 || target.respawn != a.tick+infiniteRespawnTicks || target.Score != -1 || attacker.Score != 1 {
+	if target.HP != 0 || target.respawn != a.tick+infiniteRespawnTicks || target.Score != -1 || attacker.Score != 1 || target.KilledBy != attacker.Name {
 		t.Fatalf("contact should bypass the shield and award a normal kill: attacker=%+v target=%+v", attacker, target)
 	}
 	a.step(now)
@@ -623,17 +659,17 @@ func TestPrivateInfinityTeamsCreditDepartedBotAndFreezeAtTarget(t *testing.T) {
 	second, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Second", team: 2}, nil, now)
 	ally, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Ally", team: 1}, nil, now)
 	ally.Protected, second.Protected = false, false
-	a.hurt(ally, first.ID, first.Team)
+	a.hurt(ally, first.ID, first.Team, first.Name)
 	if ally.HP == 0 || first.Score != 0 {
 		t.Fatal("friendly fire off did not protect an ally")
 	}
-	a.hurt(second, a.nextID+1, 1) // A departed bot's projectile still belongs to its team.
+	a.hurt(second, a.nextID+1, 1, "Bot") // A departed bot's projectile still belongs to its team.
 	if a.teamScores != [4]int{1, -1, 0, 0} || a.result != nil || first.Score != 0 || second.Score != -1 {
 		t.Fatalf("unexpected team scores: %v", a.teamScores)
 	}
 	second.HP, second.kit.Invulnerable = 1, 0
 	a.rules.FriendlyFire = true
-	a.hurt(ally, first.ID, first.Team)
+	a.hurt(ally, first.ID, first.Team, first.Name)
 	if ally.HP != 0 || a.teamScores != [4]int{1, -1, 0, 0} || a.result != nil {
 		t.Fatal("a permitted friendly kill should net zero team points")
 	}
@@ -662,7 +698,7 @@ func TestPrivateInfinityFreeForAllReachesPersonalTarget(t *testing.T) {
 	now := time.Now()
 	winner, target := a.join(fakeClient(), "Winner", now), a.join(fakeClient(), "Target", now)
 	target.Protected = false
-	a.hurt(target, winner.ID, winner.Team)
+	a.hurt(target, winner.ID, winner.Team, winner.Name)
 	if a.result == nil || *a.result != (infiniteResult{ID: winner.ID, Name: winner.Name, Score: 1}) {
 		t.Fatalf("incorrect free-for-all result: %+v", a.result)
 	}

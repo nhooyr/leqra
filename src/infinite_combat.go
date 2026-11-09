@@ -292,7 +292,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 		angle := p.Angle + offset
 		cs, sn := math.Cos(angle), math.Sin(angle)
 		a.nextBullet++
-		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
+		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, ownerName: p.Name, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
 			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, target: -1, boosted: starman}
 		muzzle := 28.0
 		if kind == "cannon" {
@@ -362,7 +362,7 @@ func (a *infiniteArena) fireLaser(p *infinitePilot) {
 		a.effect("laser", p.X, p.Y, p.ID, points)
 	}
 	if target != nil {
-		a.hurt(target, p.ID, p.Team)
+		a.hurt(target, p.ID, p.Team, p.Name)
 	}
 	a.spendWeapon(k)
 }
@@ -424,7 +424,7 @@ func (a *infiniteArena) hitTarget(owner, ownerTeam int, x, y, dx, dy, radius, li
 	return target, limit
 }
 
-func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int) {
+func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int, ownerName string) {
 	if a.result != nil || target.HP == 0 || target.Protected || !a.canDamage(owner, ownerTeam, target) {
 		return
 	}
@@ -439,7 +439,7 @@ func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int) {
 		a.effect("shield", target.X, target.Y, owner, nil)
 		return
 	}
-	a.eliminatePilot(target, owner, ownerTeam)
+	a.eliminatePilot(target, owner, ownerTeam, ownerName)
 }
 
 func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
@@ -461,7 +461,7 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 			}) {
 				continue
 			}
-			a.eliminatePilot(target, attacker.ID, attacker.Team)
+			a.eliminatePilot(target, attacker.ID, attacker.Team, attacker.Name)
 			if a.result != nil {
 				return
 			}
@@ -469,15 +469,17 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 	}
 }
 
-func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam int) {
+func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam int, ownerName string) {
 	target.HP = 0
 	target.Score--
 	target.respawn = a.tick + infiniteRespawnTicks
+	target.KilledBy = ownerName
 	a.effect("hit", target.X, target.Y, owner, nil)
 	var shooter *infinitePilot
 	for _, pilot := range a.pilots {
 		if pilot.ID == owner {
 			pilot.Score++
+			target.KilledBy = pilot.Name
 			shooter = pilot
 			break
 		}
@@ -506,7 +508,7 @@ func (a *infiniteArena) detonate(b *infiniteBullet) {
 			continue
 		}
 		if _, hit := a.rayWalls(b.X, b.Y, p.X-b.X, p.Y-b.Y, 0); !hit {
-			a.hurt(p, b.Owner, b.ownerTeam)
+			a.hurt(p, b.Owner, b.ownerTeam, b.ownerName)
 		}
 	}
 }
@@ -535,7 +537,7 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 				if b.Kind == "cannon" || b.Kind == "homing" {
 					a.effect("impact", b.X, b.Y, b.Owner, nil)
 				}
-				a.hurt(target, b.Owner, b.ownerTeam)
+				a.hurt(target, b.Owner, b.ownerTeam, b.ownerName)
 			}
 			return false
 		}

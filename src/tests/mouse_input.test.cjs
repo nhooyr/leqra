@@ -34,7 +34,7 @@ function boot(mode='room'){
   speedCount:()=>0,moveTank(t,dx,dy){t.x+=dx;t.y+=dy;},weaponControl(t,held,pressed){if(pressed)shots.push(t.id);}
  };
  vm.createContext(s);
- for(const name of ['clearInput','humanControl','onlineControls'])vm.runInContext(declaration(name),s);
+ for(const name of ['clearInput','humanControl','onlineControls','composingKey','arenaKeyBlocked'])vm.runInContext(declaration(name),s);
  const start=source.indexOf('// All input paths');
  vm.runInContext(source.slice(start,source.indexOf('// Dialogs and the sidebar',start)),s);
  return{s,p1,p2,canvas,window,shots,packets};

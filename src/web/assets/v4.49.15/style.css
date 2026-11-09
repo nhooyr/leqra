@@ -874,8 +874,21 @@ body.touch-landscape #infiniteControlsHint{min-width:0;margin:0;white-space:nowr
  .infinite-readout{max-width:none;text-align:left}
 }
 .infinite-stage{position:relative;min-height:0;overflow:hidden}
+#infiniteFPSIndicator{left:max(9px,env(safe-area-inset-left));right:auto}
+.infinite-arena:is([data-split=side],[data-split=stacked]) #infiniteFPSIndicator{left:max(52px,env(safe-area-inset-left))}
 #infiniteCanvas{width:100%;height:100%;cursor:crosshair}
 #infiniteRetry{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:auto;min-height:44px;margin:0}
+.death-notices{position:absolute;inset:0;z-index:1;pointer-events:none}
+.death-notice.toast{top:40%;width:max-content;max-width:min(80%,280px);transform:translate(-50%,-50%);line-height:1.25;text-align:center;white-space:normal;overflow-wrap:anywhere}
+body.two-local-pilots #arenaWrap .death-notice{left:25%;max-width:min(42%,280px)}
+body.two-local-pilots #arenaWrap #deathNotice2{left:75%}
+body.touch-landscape.two-local-pilots #arenaWrap .death-notice{left:33%;max-width:min(31%,280px)}
+body.touch-landscape.two-local-pilots #arenaWrap #deathNotice2{left:67%}
+.infinite-arena .death-notice.toast{top:42%}
+.infinite-arena[data-split=side] .death-notice.toast{left:25%;max-width:min(42%,280px)}
+.infinite-arena[data-split=side] #infiniteDeathNotice2{left:75%}
+.infinite-arena[data-split=stacked] .death-notice.toast{top:21%}
+.infinite-arena[data-split=stacked] #infiniteDeathNotice2{top:71%}
 .infinite-leaderboard{position:absolute;top:10px;right:max(10px,env(safe-area-inset-right));z-index:1;width:min(205px,60vw);max-height:calc(100% - 20px);overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--border-strong);border-radius:8px;color:var(--text-main);font:12px var(--sans)}
 .infinite-leaderboard summary{position:sticky;top:0;padding:12px;cursor:pointer;background:var(--surface);color:var(--accent-ink);font:10px var(--mono);text-transform:uppercase}
 /* Keep the expanded leaderboard above the Fire button and its readiness ring. */

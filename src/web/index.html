@@ -8,18 +8,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="leqra">
-<meta name="leqra-version" content="v4.49.14">
+<meta name="leqra-version" content="v4.49.15">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.14/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.14/theme.css">
-<link rel="stylesheet" href="assets/v4.49.14/style.css">
-<link rel="manifest" href="assets/v4.49.14/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.14/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.14/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.14/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.14/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.15/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.15/theme.css">
+<link rel="stylesheet" href="assets/v4.49.15/style.css">
+<link rel="manifest" href="assets/v4.49.15/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.15/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.15/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.15/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.15/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -43,6 +43,10 @@
   <div class="arena-wrap" id="arenaWrap">
    <canvas id="arena" tabindex="0" aria-label="Tank maze game. Move the mouse to aim Player 1 and left-click to fire. Keyboard bindings are in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
    <div class="toast" id="toast" role="status" hidden></div>
+   <div class="death-notices" role="status">
+    <span class="toast death-notice" id="deathNotice1" hidden></span>
+    <span class="toast death-notice" id="deathNotice2" hidden></span>
+   </div>
    <div class="announcer" id="announcer" hidden><span class="announce-top" id="announceTop"></span><strong id="announceMain"></strong><span class="announce-sub" id="announceSub"></span></div>
   </div>
   <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime1">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime2">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Bank shots around corners.</span><span class="micro-label" id="bestInline"></span></div>
@@ -202,12 +206,17 @@
   <div class="bar-right">
    <strong id="infiniteKills" title="+1 per kill, −1 per death">Score 0</strong>
    <button class="icon-btn" id="infiniteSoundBtn" type="button" aria-label="Mute sound" title="Sound (M)" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-wave" d="M15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14"/><path class="sound-off-line" d="m16 9 5 6m0-6-5 6"/></svg></button>
+   <button class="icon-btn" id="infiniteFullscreenBtn" type="button" aria-label="Enter fullscreen" title="Enter fullscreen (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13 0h5v-5"/></svg></button>
    <button class="icon-btn" id="infinitePauseBtn" type="button" aria-label="Open Infinity pause menu" title="Pause (Esc)" aria-haspopup="dialog" aria-controls="infinitePauseMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke-width="3"/></svg></button>
   </div>
  </header>
  <div class="infinite-stage">
   <canvas id="infiniteCanvas" tabindex="0" aria-label="Infinity tank maze">Your browser needs HTML canvas to play.</canvas>
   <button class="secondary" id="infiniteRetry" type="button" hidden>Try again</button>
+  <div class="death-notices" role="status">
+   <span class="toast death-notice" id="infiniteDeathNotice1" hidden></span>
+   <span class="toast death-notice" id="infiniteDeathNotice2" hidden></span>
+  </div>
   <details class="infinite-leaderboard" id="infiniteLeaderboardPanel">
    <summary>Top 10 tanks</summary>
    <ol id="infiniteTeamScores" aria-label="Team scores" hidden></ol>
@@ -243,10 +252,10 @@
   <footer class="feature-footer"><button class="primary" id="infiniteResultExit" type="button" autofocus>Back to room</button></footer>
  </dialog>
 </dialog>
-<script src="assets/v4.49.14/netcode.js" defer></script>
-<script src="assets/v4.49.14/game.js" defer></script>
-<script src="assets/v4.49.14/infinite-maze.js" defer></script>
-<script src="assets/v4.49.14/infinite.js" defer></script>
-<script src="assets/v4.49.14/pwa.js" defer></script>
+<script src="assets/v4.49.15/netcode.js" defer></script>
+<script src="assets/v4.49.15/game.js" defer></script>
+<script src="assets/v4.49.15/infinite-maze.js" defer></script>
+<script src="assets/v4.49.15/infinite.js" defer></script>
+<script src="assets/v4.49.15/pwa.js" defer></script>
 </body>
 </html>
