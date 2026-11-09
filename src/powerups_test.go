@@ -22,7 +22,7 @@ func TestNewPickupGrantsAndIndependentBuffs(t *testing.T) {
 					t.Fatal("ghost duration")
 				}
 			case "starman":
-				if p.StarmanTime != starmanDuration {
+				if p.StarmanTime != 4 {
 					t.Fatal("Starman duration")
 				}
 			case "speed":

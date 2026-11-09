@@ -16,13 +16,17 @@ function boot(){
  const noop=()=>{},s={POWER_EFFECT_DURATION:10,MACHINE_FIRING_ROUNDS:firingRounds,MACHINE_CAPACITY:96,MAX_SPEED_STACKS:5,POWER:Object.fromEntries(kinds.map(k=>[k,{name:k.toUpperCase()}])),cols:12,rows:10,time:0,mode:'solo',phase:'playing',fxTime:0,phaseTime:0,toastTime:0,particles:[],rings:[],shake:0,roundClock:120,spawnClock:Infinity,uiClock:Infinity,bullets:[],pickups:[],bulletId:0,tanks:[tank(),tank(1)],updateTraces:noop,compactLife:noop,objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,liveLocalStats:()=>false,advanceGhost:(t,dt)=>t.ghostTime=Math.max(0,t.ghostTime-dt),humanControl:noop,botControl:noop,updateBullets:noop,finishRound:noop,updateHUD:noop,clearTankAt:()=>true,burst:noop,shotSound:noop,
   projectileSpec:power=>({kind:power,cooldown:0}),muzzleProjectile:(t,a)=>({owner:t.id,kind:t.power}),
   activeAmmo:t=>s.bullets.filter(b=>!b.dead&&b.owner===t.id).length,shieldCount:t=>t.shield>0?t.shieldCharges||1:0,speedCount:t=>t.speedTime>0?t.speedStacks||1:0};
- s.STARMAN_DURATION=3;vm.createContext(s);for(const name of ['choosePickup','powerEffectDuration','pickupCap','pickupLifetime','grantPower','pickupMessage','powerCapacity','fire','update'])vm.runInContext(declaration(name),s);return s;
+ vm.createContext(s);for(const name of ['choosePickup','powerEffectDuration','starmanDuration','pickupCap','pickupLifetime','grantPower','pickupMessage','powerCapacity','fire','update'])vm.runInContext(declaration(name),s);return s;
 }
 test('local equipped and ground durations match each of the six map tiers',()=>{
  const s=boot();
- for(const [c,r,duration,ground]of [[7,7,10,30],[9,8,10,30],[12,10,10,32],[14,12,15,45],[16,14,15,61],[24,14,15,90]]){
+ for(const [c,r,duration,ground,starman]of [[7,7,10,30,4],[9,8,10,30,4],[12,10,10,32,5],[14,12,15,45,6],[16,14,15,61,7],[24,14,15,90,8]]){
   s.cols=c;s.rows=r;assert.equal(s.pickupLifetime(),ground);
-  for(const kind of kinds){const t=tank();s.grantPower(t,kind);const field={shield:'shield',speed:'speedTime',ghost:'ghostTime',starman:'starmanTime'}[kind]||'powerTime';assert.equal(t[field],kind==='starman'?3:duration,kind+' '+c+'x'+r);}
+  for(const kind of kinds){
+   const t=tank();s.grantPower(t,kind);const field={shield:'shield',speed:'speedTime',ghost:'ghostTime',starman:'starmanTime'}[kind]||'powerTime';assert.equal(t[field],kind==='starman'?starman:duration,kind+' '+c+'x'+r);
+   if(kind==='starman'){assert.equal(t.ghostTime,starman);assert.equal(t.invulnerable,starman);}
+  }
+  s.cols=r;s.rows=c;const t=tank();s.grantPower(t,'starman');assert.equal(t.starmanTime,starman,'portrait '+r+'x'+c);
  }
  assert.equal(s.pickupLifetime(0,0),0);
 });
@@ -40,11 +44,11 @@ test('Starman uses a single slot out of 27 and does not appear when disabled',()
 test('Starman refreshes a short phase and immunity without replacing longer Ghost or equipped gear',()=>{
  const s=boot(),t=s.tanks[0];
  for(const kind of ['cannon','shield','speed','ghost','starman'])s.grantPower(t,kind);
- assert.equal(t.starmanTime,3);assert.equal(t.invulnerable,3);assert.equal(t.ghostTime,10);
+ assert.equal(t.starmanTime,5);assert.equal(t.invulnerable,5);assert.equal(t.ghostTime,10);
  s.update(.5);
- assert.equal(t.starmanTime,2.5);assert.equal(t.invulnerable,2.5);
- s.grantPower(t,'starman');s.update(3);
- assert.equal(t.starmanTime,0);assert.equal(t.invulnerable,0);assert.equal(t.ghostTime,6.5);
+ assert.equal(t.starmanTime,4.5);assert.equal(t.invulnerable,4.5);
+ s.grantPower(t,'starman');s.update(5);
+ assert.equal(t.starmanTime,0);assert.equal(t.invulnerable,0);assert.equal(t.ghostTime,4.5);
  assert.equal(t.power,'cannon');assert.equal(t.charges,3);assert.equal(t.shieldCharges,1);assert.equal(t.speedStacks,1);
 });
 test('local larger-map buffs refresh independently and respect stack and charge caps',()=>{
@@ -100,7 +104,7 @@ test('predicted firing budget is independent for P2 and resets with a new life',
  assert.equal(p.machineRounds(a),0);assert.equal(p.machineRounds(b),2);assert.ok(p.tryFire(b,true,1,previewOptions));
  a.spawnSerial++;a.machineRounds=180;p.sync(a,'playing',100);assert.equal(p.machineRounds(a),180);
 });
-test('pickup feedback explains map duration separately from machine-gun firing time and grenade fuse',()=>{
+test('pickup feedback explains map duration, Starman, machine-gun firing time and grenade fuse',()=>{
  const s=boot();s.cols=14;s.rows=12;assert.match(s.pickupMessage('speed'),/15 SECONDS/);assert.match(s.pickupMessage('laser'),/LONG AIM GUIDE/);
- assert.match(s.pickupMessage('rapid'),/3s FIRING · 15s TO USE/);assert.match(s.pickupMessage('grenade'),/10s FUSE/);
+ assert.match(s.pickupMessage('rapid'),/3s FIRING · 15s TO USE/);assert.match(s.pickupMessage('grenade'),/10s FUSE/);assert.match(s.pickupMessage('starman'),/6s$/);
 });
