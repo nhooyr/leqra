@@ -171,7 +171,7 @@ test('local result reveal is canceled by navigation, restarting or setup replace
  for(const action of ['close','new match','new phase','setup','room screen']){
   const {s,$}=boot();s.currentRules().mode='ctf';s.finishMatch(0);assert.ok(s.pendingMatchPresentation);
   if(action==='close')s.closeVictory();if(action==='new match')s.beginLocalMatchStats();if(action==='new phase')s.phase='countdown';if(action==='setup')s.localObjectives={mode:'koth'};
-  if(action==='room screen'){s.document.body=new Element();s.syncPauseButton=()=>{};s.syncRestartWaveActions=()=>{};s.stabilizeArenaLayout=()=>{};vm.runInContext(declaration('setScreen'),s);s.setScreen('room');}
+  if(action==='room screen'){s.document.body=new Element();s.syncPauseButton=()=>{};s.syncRestartWaveActions=()=>{};s.syncArenaAudio=()=>{};s.stabilizeArenaLayout=()=>{};vm.runInContext(declaration('setScreen'),s);s.setScreen('room');}
   s.flushMatchPresentation(1000);assert.equal($('victoryDialog').open,false,action);assert.equal(s.pendingMatchPresentation,null,action);
  }
 });

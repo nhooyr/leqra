@@ -195,7 +195,9 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		connection.room, connection.seat, connection.localSeat = key, seat, setup.seat
 		connection.arena = s.private[key]
 		if connection.arena == nil {
-			connection.arena = newRoomInfiniteArena(setup.rules)
+			connection.arena = newRoomInfiniteArena(setup.rules, setup.bots)
+		} else if connection.arena.players == 0 {
+			connection.arena.roomBots = setup.bots
 		}
 		first, local = setup.pilot, setup.local
 	} else {
@@ -275,7 +277,14 @@ func (s *infiniteServer) step(now time.Time) {
 	}
 	for c, connection := range s.connections {
 		publicIdle := connection.arena == s.public && s.public.idle(connection.pilot, now)
-		privateRevoked := connection.seat != nil && !s.hub.infiniteConnectionValid(connection.room.room, connection.seat, connection.localSeat, connection.room.generation, now)
+		privateRevoked := false
+		if connection.seat != nil {
+			valid, removed := s.hub.infiniteConnectionStatus(connection.room.room, connection.seat, connection.localSeat, connection.room.generation, connection.arena.roomBots, now)
+			privateRevoked = !valid
+			if removed != 0 {
+				connection.arena.removeRoomBots(removed)
+			}
+		}
 		if publicIdle || privateRevoked {
 			c.stop()
 			s.removeLocked(c)

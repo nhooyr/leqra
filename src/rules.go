@@ -11,24 +11,27 @@ import (
 // Rules are room-owned, validated atomically, and immutable during a match.
 // Never trust a browser to set objective scores, respawns, or pickup state.
 type MatchRules struct {
-	Mode           string   `json:"mode"`
-	Infinity       bool     `json:"infinity,omitempty"`
-	InfinityTarget int      `json:"infinityTarget,omitempty"`
-	TeamMode       string   `json:"teamMode"`
-	MapSize        string   `json:"mapSize"`
-	PortraitMaze   bool     `json:"portraitMaze"`
-	ScoreTarget    int      `json:"scoreTarget"`
-	TimeLimit      int      `json:"timeLimit"`
-	RespawnSeconds int      `json:"respawnSeconds"`
-	PickupRate     string   `json:"pickupRate"`
-	Weapons        []string `json:"weapons"`
-	FriendlyFire   bool     `json:"friendlyFire"`
-	TeamNames      []string `json:"teamNames,omitempty"`
-	TeamColors     []int    `json:"teamColors,omitempty"`
+	Mode                     string   `json:"mode"`
+	Infinity                 bool     `json:"infinity,omitempty"`
+	InfinityTarget           int      `json:"infinityTarget,omitempty"`
+	InfinityRandomBots       bool     `json:"infinityRandomBots,omitempty"`
+	InfinityBotDifficulty    string   `json:"infinityBotDifficulty,omitempty"`
+	InfinityRandomDifficulty bool     `json:"infinityRandomDifficulty,omitempty"`
+	TeamMode                 string   `json:"teamMode"`
+	MapSize                  string   `json:"mapSize"`
+	PortraitMaze             bool     `json:"portraitMaze"`
+	ScoreTarget              int      `json:"scoreTarget"`
+	TimeLimit                int      `json:"timeLimit"`
+	RespawnSeconds           int      `json:"respawnSeconds"`
+	PickupRate               string   `json:"pickupRate"`
+	Weapons                  []string `json:"weapons"`
+	FriendlyFire             bool     `json:"friendlyFire"`
+	TeamNames                []string `json:"teamNames,omitempty"`
+	TeamColors               []int    `json:"teamColors,omitempty"`
 }
 
 func defaultRules() MatchRules {
-	return MatchRules{Mode: "elimination", TeamMode: "ffa", TeamNames: defaultTeamNames(), TeamColors: defaultTeamColors(), MapSize: "large", ScoreTarget: 5, TimeLimit: 75, RespawnSeconds: 3, PickupRate: "superfast", Weapons: append([]string{}, pickupTypes...)}
+	return MatchRules{Mode: "elimination", InfinityBotDifficulty: "normal", TeamMode: "ffa", TeamNames: defaultTeamNames(), TeamColors: defaultTeamColors(), MapSize: "large", ScoreTarget: 5, TimeLimit: 75, RespawnSeconds: 3, PickupRate: "superfast", Weapons: append([]string{}, pickupTypes...)}
 }
 func (g *Game) settings() MatchRules {
 	if g.Rules.Mode == "" {
@@ -67,6 +70,9 @@ func validateRules(r MatchRules) error {
 	}
 	if r.InfinityTarget < 0 || r.InfinityTarget > 999 {
 		return errors.New("Infinity score target must be 0–999 (0 for endless play).")
+	}
+	if r.InfinityBotDifficulty != "" && !validDifficulty(r.InfinityBotDifficulty) {
+		return errors.New("Choose a valid Infinity bot difficulty.")
 	}
 	if r.TimeLimit < 30 || r.TimeLimit > 600 {
 		return errors.New("Time limit must be 30–600 seconds.")

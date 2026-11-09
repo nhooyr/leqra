@@ -107,6 +107,19 @@ def check_split_infinity(browser, devices, errors):
         for width, height, split in ((280, 520, "stacked"), (568, 320, "side")):
             page.set_viewport_size({"width": width, "height": height})
             expect(page.locator("#infiniteArena")).to_have_attribute("data-split", split)
+            divider = page.evaluate("""split => {
+                const canvas = document.getElementById('infiniteCanvas'), c = canvas.getContext('2d');
+                const width = canvas.clientWidth, height = canvas.clientHeight;
+                const vertical = split === 'side';
+                const x = Math.ceil(width / 2), y = Math.ceil(height / 2);
+                const pixel = (px, py) => Array.from(c.getImageData(
+                    Math.floor(px * canvas.width / width), Math.floor(py * canvas.height / height), 1, 1
+                ).data).slice(0, 3);
+                const rgb = color => color.slice(1).match(/../g).map(pair => parseInt(pair, 16));
+                const {accent, arena} = leqraInfinityArt.theme;
+                return [pixel(x, y), pixel(x + (vertical ? 3 : 0), y + (vertical ? 0 : 3)), rgb(accent), rgb(arena)];
+            }""", split)
+            assert divider[:2] == divider[2:], divider
             boxes = page.evaluate("""() => {
                 document.querySelector('#infiniteKills').textContent = 'P1 -999 · P2 -999';
                 return Object.fromEntries(['infiniteCanvas','infiniteFire','infiniteStick','infinitePauseBtn','infiniteLocalLoadout'].map(id => {
@@ -124,7 +137,7 @@ def check_split_infinity(browser, devices, errors):
                     assert boxes[control][3] <= (top + bottom) / 2 + 1, boxes
                 else:
                     assert boxes[control][2] <= (left + right) / 2 + 1, boxes
-    print("PASS Player 2 split, long scores, and primary touch controls", flush=True)
+    print("PASS Player 2 divider, long scores, and primary touch controls", flush=True)
 
 
 def check_narrow_online(browser, devices, url, errors):

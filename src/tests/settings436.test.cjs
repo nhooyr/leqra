@@ -19,28 +19,46 @@ function boot(storage=new Map(),touchUI=false){
 const pilot=(options={})=>({id:0,kind:'human',name:'PILOT',team:0,...options});
 const bot=(options={})=>({id:1,kind:'bot',name:'RUST',team:0,difficulty:'normal',...options});
 
-test('Infinity room target and teams persist separately from fixed-maze settings',()=>{
+test('Infinity room target, teams and random bots persist separately from fixed-maze settings',()=>{
  const {s,$,storage}=boot();s.localRoom.players=[pilot(),bot()];
  s.localRoom.rules={...s.localRoom.rules,scoreTarget:9,timeLimit:300};s.persistLocalRoomRules();
  assert.equal(s.selectRoomMode('infinity'),true);
  assert.equal(s.selectRoomSetting('teamMode','teams'),true);
  s.fillRulesForm();assert.equal($('rulesDialog').dataset.mode,'infinity');
  assert.equal($('rule-infinityTarget').value,0);
+ assert.equal($('rule-infinityRandomBots').checked,false);
+ assert.equal($('rule-infinityBotDifficulty').value,'normal');
+ assert.equal($('rule-infinityRandomDifficulty').value,'fixed');
  $('rule-infinityTarget').value='35';$('rule-teamName1').value='North';$('rule-friendlyFire').checked=true;
+ $('rule-infinityRandomBots').checked=true;$('rule-infinityBotDifficulty').value='hard';$('rule-infinityRandomDifficulty').value='upTo';
  s.submitRules({preventDefault(){}});
- const restored=boot(storage).s;
+ const {s:restored,$:restoredElement}=boot(storage);
  assert.equal(restored.localRoom.rules.infinity,true);
  assert.equal(restored.localRoom.rules.infinityTarget,35);
  assert.equal(restored.localRoom.rules.teamMode,'teams');
  assert.equal(restored.localRoom.rules.teamNames[0],'North');
  assert.equal(restored.localRoom.rules.friendlyFire,true);
+ restored.fillRulesForm();
+ assert.equal(restoredElement('rule-infinityRandomBots').checked,true);
+ assert.equal(restoredElement('rule-infinityBotDifficulty').value,'hard');
+ assert.equal(restoredElement('rule-infinityRandomDifficulty').value,'upTo');
  assert.equal(s.selectRoomMode('elimination'),true);
  assert.equal(s.localRoom.rules.infinity,false);
  assert.equal(s.localRoom.rules.scoreTarget,9);
  assert.equal(s.localRoom.rules.timeLimit,300);
  assert.equal(s.localRoom.rules.teamMode,'ffa');
+ assert.equal(s.localRoom.rules.infinityRandomBots,false);
  assert.equal(s.selectRoomMode('infinity'),true);
  assert.equal(s.localRoom.rules.infinityTarget,35);
+ assert.equal(s.localRoom.rules.infinityRandomBots,true);
+ assert.equal(s.localRoom.rules.infinityBotDifficulty,'hard');
+ assert.equal(s.localRoom.rules.infinityRandomDifficulty,true);
+ s.resetRuleDefaults();
+ assert.equal(s.localRoom.rules.infinityRandomBots,true,'Default Rules stages changes until Apply');
+ s.submitRules({preventDefault(){}});
+ assert.equal(s.localRoom.rules.infinityRandomBots,false);
+ assert.equal(s.localRoom.rules.infinityBotDifficulty,'normal');
+ assert.equal(s.localRoom.rules.infinityRandomDifficulty,false);
 });
 
 test('old offline Infinity selection remains endless and room rule requests include the target',()=>{
@@ -54,6 +72,31 @@ test('old offline Infinity selection remains endless and room rule requests incl
  assert.equal(s.sent.rules.infinityTarget,70);
  assert.equal(s.online.roomData.rules.infinityTarget,0);
  assert.notEqual(s.roomSetupRulesKey(s.sent.rules),s.roomSetupRulesKey(s.online.roomData.rules));
+});
+
+test('random Infinity bot settings validate and each affects authoritative room confirmation',()=>{
+ const {s,$}=boot(new Map([['leqra.infinityOffline','1']]));
+ const {infinityRandomBots,infinityBotDifficulty,infinityRandomDifficulty,...legacy}=s.localRoom.rules;
+ const normalized=s.validateRoomRules(legacy);
+ assert.equal(normalized.infinityRandomBots,false);
+ assert.equal(normalized.infinityBotDifficulty,'normal');
+ assert.equal(normalized.infinityRandomDifficulty,false);
+ assert.equal(s.roomSetupRulesKey(legacy),s.roomSetupRulesKey({...legacy,infinityBotDifficulty:''}));
+ for(const [field,value,error] of [
+  ['infinityRandomBots','true',/must be on or off/],
+  ['infinityBotDifficulty','toString',/valid difficulty/],
+  ['infinityBotDifficulty',null,/valid difficulty/],
+  ['infinityRandomDifficulty',1,/must be Fixed or Up to/],
+ ])assert.throws(()=>s.validateRoomRules({...legacy,[field]:value}),error);
+ s.mode='online';s.online.roomData={rules:normalized};s.fillRulesForm();
+ $('rule-infinityRandomBots').checked=true;$('rule-infinityBotDifficulty').value='godlike';$('rule-infinityRandomDifficulty').value='upTo';
+ s.submitRules({preventDefault(){}});
+ assert.equal(s.sent.rules.infinityRandomBots,true);
+ assert.equal(s.sent.rules.infinityBotDifficulty,'godlike');
+ assert.equal(s.sent.rules.infinityRandomDifficulty,true);
+ for(const field of ['infinityRandomBots','infinityBotDifficulty','infinityRandomDifficulty']){
+  assert.notEqual(s.roomSetupRulesKey({...s.sent.rules,[field]:normalized[field]}),s.online.setupPending.rulesKey);
+ }
 });
 
 test('Infinity start passes both local pilots and reserves room rules for room runs',()=>{

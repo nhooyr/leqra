@@ -56,13 +56,14 @@ function harness(url = 'https://example.test/', openField = false) {
  const window = new Element();
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
- const sounds = [];
+ const sounds = [], loadouts = [];
  const powers = Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman']
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
   colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
   tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, drawBadges() {}, bullets() {},
   ageTank: tank => tank,
+  renderLoadout: (tank, num, projectiles, blocked, phase) => {loadouts[num] = {tank, projectiles, blocked, phase};},
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
   missileTurn: 4.8,
   openControls: () => byID('controlsDialog').showModal(),
@@ -86,6 +87,9 @@ function harness(url = 'https://example.test/', openField = false) {
  vm.runInContext(readFileSync(assetPath('netcode.js'), 'utf8'), context);
  window.leqraNet = context.leqraNet;
  const game = readFileSync(assetPath('game.js'), 'utf8');
+ const projectileState = game.slice(game.indexOf('function pilotProjectileState('), game.indexOf('function liveFeedbackTank('));
+ vm.runInContext(projectileState, context);
+ window.leqraInfinityArt.projectileState = context.pilotProjectileState;
  vm.runInContext(game.slice(game.indexOf('function choosePickup('), game.indexOf('// Power-up colors')), context);
  window.leqraInfinityArt.choosePickup = context.choosePickup;
  const recycle = game.indexOf('function recycleStarmanProjectiles(');
@@ -108,7 +112,7 @@ function harness(url = 'https://example.test/', openField = false) {
    frame?.(now);
   }
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, window, state:window.testArena, sounds};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, window, state:window.testArena, sounds, loadouts};
 }
 
 test('Infinity runs offline directly from a file and adds nearby bots to the standings', () => {
@@ -140,6 +144,35 @@ test('offline Infinity routes two independent keyboard layouts to separate tanks
  assert.equal(arena.dataset.split,'stacked');
  assert.match(byID('infiniteControlsHint').textContent,/P1 .* · P2 /);
  infinity.close();
+});
+
+test('offline room Infinity spawns only its listed bots and preserves their team', () => {
+ const {infinity,state,advance}=harness(undefined,true);
+ const roomRules={teamMode:'teams',teamColors:[3,5],infinityTarget:0};
+ infinity.start('offline',{roomRules});
+ advance(400);
+ assert.equal(state().tanks.length,1);
+ infinity.close();
+ infinity.start('offline',{roomRules,roster:[{id:3,kind:'bot',name:'ROOM BOT',team:2,difficulty:'hard'}]});
+ const [pilot,bot]=state().tanks;
+ pilot.x+=5000;
+ advance(400);
+ assert.equal(state().tanks.length,2);
+ assert.equal(state().tanks[1],bot);
+ assert.deepEqual([bot.name,bot.team,bot.colorIndex,bot.difficulty],['ROOM BOT',2,5,'hard']);
+ infinity.close();
+});
+test('roaming room bots use the fixed difficulty or roll up to it',()=>{
+ for (const [randomDifficulty,expected] of [[false,'hard'],[true,'normal']]) {
+  const {infinity,state,advance}=harness(undefined,true);
+  infinity.start('offline',{roomRules:{
+   teamMode:'ffa',infinityRandomBots:true,infinityBotDifficulty:'hard',infinityRandomDifficulty:randomDifficulty
+  }});
+  advance(90);
+  const bots=state().tanks.filter(tank=>tank.bot);
+  assert.ok(bots.length>0 && bots.every(bot=>bot.ambient&&bot.difficulty===expected));
+  infinity.close();
+ }
 });
 
 test('offline room Infinity passes allied tanks and freezes on the first team score target', () => {
@@ -364,13 +397,13 @@ test('ordinary Infinity shells can fire immediately after Starman with boosted s
 });
 
 test('offline Infinity equips maze pickups and sounds a weapon before another frame arrives online', () => {
- const {infinity, byID, sockets, advance, state, sounds} = harness(undefined, true);
+ const {infinity, byID, sockets, advance, state, sounds, loadouts} = harness(undefined, true);
  infinity.start('offline');
  const tank = state().tanks[0];
  state().pickups.push({x:tank.x,y:tank.y,type:'shield',life:30});
  advance();
  assert.equal(tank.shieldCharges, 1);
- assert.equal(byID('infiniteWeapon').textContent, 'shield');
+ assert.equal(loadouts[1].tank.shieldCharges, 1);
  assert.ok(sounds.includes('pickup'));
  infinity.close();
  infinity.start('online');
@@ -386,6 +419,31 @@ test('offline Infinity equips maze pickups and sounds a weapon before another fr
  socket.receive({type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:1}],bullets:[],players:1,leaderboard:[],
   effects:[{id:1,kind:'shot:',x:42,y:42,owner:4}]});
  assert.equal(sounds.filter(sound=>sound==='shot:').length, 1, 'authoritative copy must not echo the preview');
+ infinity.close();
+});
+
+test('online Infinity reads per-pilot combat status even when their ordnance is off-screen', () => {
+ const {infinity, sockets, advance, loadouts, sounds, byID} = harness(undefined, true);
+ infinity.start('online',{code:'TEAM',token:'secret',localName:'Wingmate'});
+ const [socket] = sockets;
+ socket.receive({type:'welcome',id:4,localId:9,seed:0});
+ socket.receive({type:'state',tanks:[
+  {id:4,x:42,y:42,angle:0,hp:1,ammoUsed:5,grenades:1,grenadeLife:7,cooldown:.4,cooldownTotal:.8,locked:true},
+  {id:9,x:210,y:210,angle:0,hp:1,power:'laser',charges:2,powerTime:7},
+ ],bullets:[],players:2,leaderboard:[]});
+ advance();
+ assert.equal(loadouts[1].projectiles.ammo,5);
+ assert.equal(loadouts[1].projectiles.grenades,1);
+ assert.equal(loadouts[1].projectiles.locked,true);
+ assert.ok(loadouts[1].projectiles.grenadeLife<7);
+ assert.equal(loadouts[1].tank.cooldownTotal,.8);
+ assert.ok(loadouts[1].tank.cooldown>0&&loadouts[1].tank.cooldown<.4);
+ assert.equal(loadouts[2].projectiles.ammo,1);
+ assert.equal(loadouts[2].projectiles.grenades,0);
+ assert.equal(loadouts[2].projectiles.locked,false);
+ advance(30);
+ byID('infiniteArena').emit('keydown',{code:'KeyQ'});
+ assert.ok(!sounds.includes('shot:'),'detonating the off-screen grenade cannot preview a regular shot');
  infinity.close();
 });
 
