@@ -127,6 +127,32 @@ func TestWebSocketPingInterleavesText(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWebSocketPongKeepsPeerFreshWithoutApplicationTraffic(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	now := time.Now()
+	c := &wsConn{conn: server, reader: bufio.NewReader(server), openedAt: now.Add(-roomTransportIdle), frameWindow: now}
+	if c.peerReadRecently(now, roomTransportIdle) {
+		t.Fatal("an idle transport was considered fresh")
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Write(maskedFrame(10, true, []byte("leqra")))
+		_ = client.Close()
+		done <- err
+	}()
+	if _, err := c.readMessage(); err != io.EOF {
+		t.Fatalf("expected EOF after the pong, got %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !c.peerReadRecently(time.Now(), roomTransportIdle) {
+		t.Fatal("the transport forgot the browser's pong")
+	}
+}
+
 func TestWebSocketWritesExtendedLength(t *testing.T) {
 	server, client := net.Pipe()
 	defer server.Close()

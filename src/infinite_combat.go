@@ -293,7 +293,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 		cs, sn := math.Cos(angle), math.Sin(angle)
 		a.nextBullet++
 		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, ownerName: p.Name, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
-			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, target: -1, boosted: starman}
+			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, boosted: starman}
 		muzzle := 28.0
 		if kind == "cannon" {
 			muzzle = tankRadius + spec.radius + 1
@@ -565,7 +565,7 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 		if wall.NY != 0 {
 			dy, b.VY = -dy, -b.VY
 		}
-		b.target, b.seekDelay = -1, missileWallDelay
+		b.Target, b.seekDelay = 0, missileWallDelay
 		if wall.T == 1 {
 			return true
 		}
@@ -581,7 +581,7 @@ func (a *infiniteArena) guide(b *infiniteBullet, dt float64) {
 	var target *infinitePilot
 	best, speed := missileRange, math.Hypot(b.VX, b.VY)
 	for _, p := range a.pilots {
-		if !infiniteOpposes(b.Owner, b.ownerTeam, p) || p.HP == 0 || p.Protected || b.target >= 0 && p.ID != b.target {
+		if !infiniteOpposes(b.Owner, b.ownerTeam, p) || p.HP == 0 || p.Protected || b.Target != 0 && p.ID != b.Target {
 			continue
 		}
 		dx, dy := p.X-b.X, p.Y-b.Y
@@ -594,12 +594,12 @@ func (a *infiniteArena) guide(b *infiniteBullet, dt float64) {
 		}
 	}
 	if target == nil {
-		if b.target >= 0 {
-			b.target, b.seekDelay = -1, missileLockDelay
+		if b.Target != 0 {
+			b.Target, b.seekDelay = 0, missileLockDelay
 		}
 		return
 	}
-	b.target = target.ID
+	b.Target = target.ID
 	angle := guidedProjectileAngle(math.Atan2(b.VY, b.VX), math.Atan2(target.Y-b.Y, target.X-b.X), dt)
 	b.VX, b.VY = math.Cos(angle)*speed, math.Sin(angle)*speed
 }

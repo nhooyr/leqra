@@ -66,7 +66,7 @@ def check_promotion(browser, url, errors):
     print("PASS host promotion keeps the guest's local setup", flush=True)
 
 
-def check_team_focus(browser, url, errors):
+def check_roster_focus(browser, url, errors):
     for online in (False, True):
         with browser.new_context() as context:
             page = load_room(context, url, errors)
@@ -77,6 +77,16 @@ def check_team_focus(browser, url, errors):
             page.locator("#addBotBtn").click()
             roster = page.locator("#roomRoster .seat-row")
             expect(roster).to_have_count(5)
+            for control, value in (('select[data-bot-difficulty="1"]', "hard"),
+                                   ('select[data-tank-color="1"]', "2")):
+                select = page.locator(f"#roomRoster {control}")
+                original = select.element_handle()
+                select.focus()
+                select.select_option(value)
+                # A room broadcast can replace the row after the native select updates.
+                page.wait_for_function("node => !node.isConnected", arg=original)
+                expect(select).to_have_value(value)
+                expect(select).to_be_focused()
             page.locator("#roomTeamMode").select_option("teams")
 
             team = page.locator('#roomRoster select[data-team="1"]')
@@ -86,7 +96,7 @@ def check_team_focus(browser, url, errors):
             expect(team).to_have_value("2")
             expect(team).to_be_focused()
             assert roster.evaluate_all("rows => rows.map(row => row.dataset.seat)") == ["0", "2", "1", "3", "4"]
-    print("PASS local and online team regrouping preserve keyboard focus", flush=True)
+    print("PASS local and online roster changes preserve keyboard focus", flush=True)
 
 
 def check_chat_composition(browser, url, errors):
@@ -158,7 +168,7 @@ if __name__ == "__main__":
         browser = playwright.chromium.launch(chromium_sandbox=True)
         try:
             check_promotion(browser, url, errors)
-            check_team_focus(browser, url, errors)
+            check_roster_focus(browser, url, errors)
             check_chat_composition(browser, url, errors)
             check_queue_notice(browser, url, errors)
         finally:

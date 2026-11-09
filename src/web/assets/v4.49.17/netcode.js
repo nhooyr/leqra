@@ -57,6 +57,16 @@
   t.vx=dt?(t.x-x)/dt:0;t.vy=dt?(t.y-y)/dt:0;
   t.track=(t.track||0)+Math.hypot(t.x-x,t.y-y);
  }
+ function moveRenderPose(t,dx,dy,moveTank){
+  // Render offsets can be much larger than one physics step. Apply them in
+  // wall-width increments so an endpoint on the far side cannot skip the wall.
+  const steps=t.ghostTime>0?1:clamp(Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))/8),1,6);
+  for(let i=0;i<steps;i++){
+   const {x,y}=t;
+   moveTank(t,dx/steps,dy/steps);
+   if(t.x===x&&t.y===y)break;
+  }
+ }
  class Predictor{
   constructor(moveTank){this.moveTank=moveTank;this.reset(null);}
   reset(t){
@@ -131,7 +141,7 @@
    // changing the 60 Hz authoritative-compatible history.
    if(active&&t.alive&&this.accumulator>0)move(t,this.input,this.accumulator,this.moveTank);
    if(active&&t.alive&&(t.ghostTime>0)===(this.state.ghostTime>0)){
-    this.moveTank(t,this.offset.x,this.offset.y);t.angle+=this.offset.angle;
+    moveRenderPose(t,this.offset.x,this.offset.y,this.moveTank);t.angle+=this.offset.angle;
    }
    const f=Math.exp(-clamp(dt,0,.1)/.11);
    this.offset.x*=f;this.offset.y*=f;this.offset.angle*=f;
@@ -205,7 +215,7 @@
    if(frame.extrapolate>0&&t.alive){
     // Extrapolation is short and wall constrained. It never awards a hit.
     const dt=Math.min(.075,frame.extrapolate);
-    moveTank(t,(b.vx||0)*dt,(b.vy||0)*dt);
+    moveRenderPose(t,(b.vx||0)*dt,(b.vy||0)*dt,moveTank);
     const items=this.items,prior=items.length>1?items[items.length-2]:null;
     const prev=prior?.tankMap.get(id),span=prior?(newestTime(items)-prior.netTime)/1000:0;
     if(prev?.alive&&prev.spawnSerial===b.spawnSerial&&span>0&&span<.25){

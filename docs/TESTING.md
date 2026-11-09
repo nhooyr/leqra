@@ -8,10 +8,10 @@ go vet ./...
 go build -trimpath -o bin/leqra ./src
 node --check src/web/assets/v*/game.js
 node --test src/tests/*.test.cjs
-python3 -m unittest discover -s tests -p 'test_deploy.py' -v
+python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-The Python suite exercises the deployment script with mocked builds, SSH, transfers, and remote commands.
+The Python suite exercises local startup and deployment with mocked builds, browser launches, SSH, transfers, and remote commands.
 
 Keep generated reports and screenshots local. Older raw results are available in the repository history.
 
@@ -33,6 +33,7 @@ python3 src/tests/audit_browser.py http://localhost:8080
 python3 src/tests/mobile_browser.py http://localhost:8080
 python3 src/tests/mobile_browser.py http://localhost:8080 --engine webkit
 python3 src/tests/mobile_layout_browser.py http://localhost:8080
+python3 src/tests/mobile_layout_browser.py http://localhost:8080 --engine webkit
 ```
 
 For live checks, run `go run ./src` and open the served page in separate browser contexts. Check a shared match and verify that the service worker can reload the app offline after installation.

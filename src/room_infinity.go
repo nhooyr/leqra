@@ -34,15 +34,44 @@ func infiniteRoomSeat(p *Player, rules MatchRules) infiniteSeat {
 }
 
 func (r *Room) lineupError() string {
-	if !r.Game.settings().Infinity {
+	rules := r.Game.settings()
+	if !rules.Infinity {
 		return r.Game.lineupError(r.Players)
 	}
+	sides := make(map[int]bool)
+	primary := false
 	for _, p := range r.Players {
-		if infinityCanPlay(p) && p.Client != nil {
-			return ""
+		if p == nil || p.Spectating || p.Away != nil {
+			continue
 		}
+		switch playerKind(p) {
+		case "local":
+			owner := p.Controller
+			if owner == nil {
+				owner = r.member(p.Owner)
+			}
+			if !infinityCanPlay(owner) || !socketLive(owner) || !r.contains(owner) {
+				continue
+			}
+		case "human":
+			if !socketLive(p) {
+				continue
+			}
+			primary = true
+		}
+		team := 0
+		if rules.TeamMode == "teams" {
+			team = p.Team
+		}
+		sides[sideKey(p.ID, team)] = true
 	}
-	return "Infinity needs at least one connected player in a combat seat."
+	if !primary {
+		return "Infinity needs at least one connected player in a combat seat."
+	}
+	if rules.InfinityTarget > 0 && !rules.InfinityRandomBots && len(sides) < 2 {
+		return "Add an opposing tank or enable random bots to play to a score target."
+	}
+	return ""
 }
 
 // The room socket stays connected for membership and host authority. A fresh
@@ -106,19 +135,19 @@ func (h *Hub) validInfiniteMember(r *Room, p *Player, generation uint64) bool {
 	return h.infiniteMemberValid(r, p, generation, time.Now())
 }
 
-func (h *Hub) infiniteConnectionStatus(r *Room, p, local *Player, generation uint64, bots []infiniteRoomBot, now time.Time) (bool, uint64) {
+func (h *Hub) infiniteConnectionStatus(r *Room, p, local *Player, generation uint64, bots []infiniteRoomBot, now time.Time) (primaryValid, localRevoked bool, removedBots uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if !h.infiniteMemberValid(r, p, generation, now) || local != nil && (!r.contains(local) || !infinityOwnsLocal(p, local)) {
-		return false, 0
+	if !h.infiniteMemberValid(r, p, generation, now) {
+		return false, false, 0
 	}
-	var removed uint64
+	localRevoked = local != nil && (!r.contains(local) || !infinityOwnsLocal(p, local))
 	for i, bot := range bots {
 		if !r.contains(bot.member) {
-			removed |= 1 << i
+			removedBots |= 1 << i
 		}
 	}
-	return true, removed
+	return true, localRevoked, removedBots
 }
 
 func (h *Hub) validInfiniteRoom(r *Room, generation uint64) bool {

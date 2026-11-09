@@ -26,8 +26,9 @@ function boot(extra={}){
  sandbox.syncMatchTouchPolicy=()=>{};
  Object.assign(sandbox,{infinityOnline:false,infinityOffline:false,location:{protocol:'https:'},navigator:{onLine:true}});
  vm.createContext(sandbox);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),sandbox);
+ vm.runInContext(source.match(/^const teamKey=.*$/m)[0],sandbox);
  for(const name of ['canPlayOnlineInfinity','infinityPlayMode'])vm.runInContext(declaration(name),sandbox);
- for(const name of ['survivalMode','roomCapacity','survivalSeatLocked','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','mapSetupChanged','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['survivalMode','roomCapacity','survivalSeatLocked','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','mapSetupChanged','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','syncPendingSpectatorRole','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
  return {...sandbox,s:sandbox,$,elements};
 }
 const players=n=>Array.from({length:n},(_,id)=>({id,member:id+1,name:'P'+id,kind:id?'bot':'human',team:0,difficulty:'normal'}));
@@ -88,6 +89,36 @@ test('legacy CTF presets migrate to two teams; valid manual presets retain their
 test('spectators entering play balance the active teams without opening a third team',()=>{
  const b=boot();b.s.localRoom.players=[...players(2).map((p,i)=>({...p,team:i+1})),{id:8,member:9,kind:'human',spectating:true,team:1}];
  b.s.setPlayerSpectating(b.s.localRoom.players[2],false);assert.deepEqual(teams(b),[1,2,1]);
+});
+test('only the requested role change or its own timeout releases the spectator control',()=>{
+ const timeouts=[],b=boot({mode:'online',clearInput(){},sendOnlineInput(){},syncSpectators(){},setTimeout:fn=>timeouts.push(fn),roomMembers:r=>[...r.players,...r.spectators]});
+ const {s}=b,[pilot]=players(1),watcher={...pilot,id:8,spectating:true};
+ s.setPlayerSpectating(pilot,true);const first=s.rolePending;
+ s.syncPendingSpectatorRole({players:[pilot],spectators:[]});assert.equal(s.rolePending,first);
+ s.syncPendingSpectatorRole({players:[],spectators:[watcher]});assert.equal(s.rolePending,false);
+ s.setPlayerSpectating(watcher,false);const second=s.rolePending;
+ s.syncPendingSpectatorRole({players:[],spectators:[watcher]});timeouts[0]();assert.equal(s.rolePending,second);
+ timeouts[1]();assert.equal(s.rolePending,false);
+});
+test('score-target Infinity requires an opponent or roaming bots',()=>{
+ const {s}=boot(),[pilot,bot]=players(2),rules={infinity:true,infinityTarget:5,teamMode:'teams'};
+ const check=(players,changes={})=>s.roomStartError({players,rules:{...rules,...changes}});
+ pilot.team=bot.team=1;
+ assert.match(check([pilot]),/opposing tank/);
+ assert.match(check([pilot,bot]),/opposing tank/);
+ assert.equal(check([pilot],{infinityTarget:0}),'');
+ assert.equal(check([pilot],{infinityRandomBots:true}),'');
+ assert.match(check([bot],{infinityRandomBots:true}),/Player 1/);
+ bot.team=2;bot.connected=false;assert.match(check([pilot,bot]),/opposing tank/);
+ bot.connected=true;assert.equal(check([pilot,bot]),'');
+});
+test('online lobby shows the server’s start error instead of a generic readiness hint',()=>{
+ const {s,$}=boot({mode:'online',displayScoreTarget:()=>'',modeInstructions:()=>'',controlSummary:()=>'',fieldManualHTML:()=>''});
+ Object.assign(s.localRoom.rules,{infinity:true,infinityTarget:5});
+ s.online.roomData={canStart:false,startError:'Add an opposing tank or enable random bots to play to a score target.'};
+ s.syncFeatureSummary();
+ assert.match($('readyHint').textContent,/opposing tank/);
+ assert.equal($('startRoomBtn').disabled,true);
 });
 test('pause visibility and labels track lobby, match, results, local pause and online connection',()=>{
  const b=boot();

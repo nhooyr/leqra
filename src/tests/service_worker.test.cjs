@@ -11,11 +11,13 @@ function deferred() {
   return {promise, resolve, reject};
 }
 function boot({fetchResponse = () => new Response('fresh content'),
-  match = async () => undefined, open = async () => ({put: async () => {}})} = {}) {
+  match = async () => undefined, open = async () => ({put: async () => {}}),
+  schedule = setTimeout, cancel = clearTimeout} = {}) {
   const handlers = new Map(), calls = {fetch: 0, open: 0, match: []};
   vm.runInNewContext(source, {
-    URL, self: {location: {origin}, addEventListener: (type, handler) => handlers.set(type, handler)},
-    fetch: request => { calls.fetch++; return Promise.resolve().then(() => fetchResponse(request)); },
+    URL, AbortController, setTimeout: schedule, clearTimeout: cancel,
+    self: {location: {origin}, addEventListener: (type, handler) => handlers.set(type, handler)},
+    fetch: (request, options) => { calls.fetch++; return Promise.resolve().then(() => fetchResponse(request, options)); },
     caches: {
       match: (request, options) => { calls.match.push(request); return Promise.resolve().then(() => match(request, options)); },
       open: key => { calls.open++; return open(key); }
@@ -110,6 +112,36 @@ test('offline navigation falls back to the cached shell', async () => {
   assert.equal(await (await event.response).text(), 'offline shell');
   await Promise.all(event.waits);
   assert.equal(h.calls.open, 0);
+});
+
+test('a stalled navigation uses the installed shell and cancels the network request', async () => {
+  const pending = deferred();
+  let signal, timeout;
+  const h = boot({
+    fetchResponse: (_request, options) => { signal = options.signal; return pending.promise; },
+    match: async () => new Response('installed shell'),
+    schedule: callback => { timeout = callback; }
+  }), event = h.dispatch();
+  await timeout();
+  assert.equal(await (await event.response).text(), 'installed shell');
+  assert.equal(signal.aborted, true);
+  await Promise.all(event.waits);
+});
+
+test('a slow cache lookup cannot abort a navigation that wins the race', async () => {
+  const pending = deferred(), lookup = deferred();
+  let signal, timeout;
+  const h = boot({
+    fetchResponse: (_request, options) => { signal = options.signal; return pending.promise; },
+    match: () => lookup.promise,
+    schedule: callback => { timeout = callback; }
+  }), event = h.dispatch();
+  const expired = timeout();
+  pending.resolve(new Response('fresh shell'));
+  assert.equal(await (await event.response).text(), 'fresh shell');
+  lookup.resolve(new Response('installed shell'));
+  await expired;
+  assert.equal(signal.aborted, false);
 });
 
 test('temporary upstream errors use this release’s cached shell when available', async () => {
@@ -207,7 +239,7 @@ function releaseHarness() {
   function worker(version) {
     const handlers = new Map(), lifecycle = {skipWaiting: 0, claim: 0};
     vm.runInNewContext(source.replace("const VERSION = '" + current + "';", "const VERSION = '" + version + "';"), {
-      URL,
+      URL, AbortController, setTimeout, clearTimeout,
       self: {
         location: {origin}, addEventListener: (type, handler) => handlers.set(type, handler),
         skipWaiting: async () => { lifecycle.skipWaiting++; },

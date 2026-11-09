@@ -4,22 +4,24 @@
 
 - **Player 1 on desktop** uses the mouse to aim and left-clicks or holds to fire. W/S drive forward and back. A/D steer and switch back to keyboard aiming until the pointer moves again. Q/C also fire.
 - **Player 2** uses the arrow keys and Space/Enter. These keys also control Player 1 when Player 2 is inactive.
-- **Touch** uses the joystick to drive and steer, and Fire to shoot. Press Fire again to detonate an active grenade.
+- **Touch** uses the joystick to drive and steer, and Fire to shoot. Push the stick further for a faster wide turn. Press Fire again to detonate an active grenade.
 - **P or Esc** opens the in-game menu. **M** toggles sound and **F** toggles fullscreen.
 
 Open **Room settings → Controls** to remap keys, adjust audio, or replay the quick tour.
 
 ## Rooms
 
-The **Infinity** switch is on by default. Press **Play** to roam a public endless maze with other pilots and bots. All ten power-ups can spawn. One unshielded hit destroys a tank. You gain a point for each tank you destroy and lose a point each time you die. Tanks respawn, and the leaderboard shows the ten highest current scores in the arena.
+The **Infinity** switch is on by default. Press **Play** to roam a public endless maze with up to 32 player tanks and 24 roaming bots. All ten power-ups can spawn. One unprotected hit destroys a tank. You gain a point for each tank you destroy and lose a point each time you die. Tanks respawn after one second, and the leaderboard shows the ten highest current scores.
 
-Select **Infinity** under **Room settings → Game mode** and press **Play** to explore solo against bots. Use **Share Infinity room** to invite friends to a private arena. You can also select **Infinity** in an already shared room. Guests ready up and the host presses **Play**.
+Select **Infinity** under **Room settings → Game mode** to use your own roster. Up to eight tanks can occupy roster seats, including local Player 2 and configured bots. In **Rules**, you can enable additional roaming bots and choose their difficulty. Set a positive score target to play to a win, or leave it at zero for endless exploration. Use **Share Infinity room** to invite friends to the arena. Guests ready up and the host presses **Play**.
 
 Turn off **Infinity** to play the selected room mode. Open **Players and bots** to edit the roster or add Player 2. **Room settings** holds the mode, format, map, rules, and presets. **Portrait maze** makes rectangular maps taller than they are wide. The square Compact map keeps its dimensions.
 
 Selecting **Teams** puts the top half of the active roster on Team 1 and the bottom half on Team 2. Team 1 gets the extra pilot when the count is odd. The player list keeps teammates together as assignments change.
 
-**Share room online** opens the room to friends. Share the invite link or room code. Guests select **I'm Ready**, then the host starts the match. When another combatant joins, guests who already marked themselves ready keep their status. **Find online battle** opens public matchmaking. To watch a private room, use its spectator link.
+**Share room online** opens the room to friends. Share the invite link or room code. Guests select **I'm Ready**, then the host starts the match. When another combatant joins, guests who already marked themselves ready keep their status. **Find online battle** opens public matchmaking. Fixed-maze rooms offer live spectator links. Infinity spectators wait in the lobby.
+
+Fixed-maze rooms have eight combat seats. Survival has four squad seats, with enemy waves generated separately.
 
 ## Game modes
 
