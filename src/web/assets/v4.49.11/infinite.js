@@ -274,19 +274,19 @@ function fireShot(world, tank) {
  const offsets = kind === 'scatter' ? [-.21, 0, .21] : [0];
  if (!boosted) {
   let ammo = 0;
-  for (const bullet of world.bullets) if (!bullet.dead && bullet.owner === tank.id) ammo++;
+  for (const bullet of world.bullets) if (!bullet.dead && !bullet.boosted && bullet.owner === tank.id) ammo++;
   if (ammo + offsets.length > spec.ammo) return;
  }
  Object.assign(tank, {cooldown, recoil: 1});
  for (const offset of offsets) {
   const angle = tank.angle + offset, ux = Math.cos(angle), uy = Math.sin(angle);
   const bullet = {
-   ...spec, id: ++world.lastBullet, owner: tank.id, kind, x: tank.x, y: tank.y, colorIndex: tank.colorIndex,
+   ...spec, id: ++world.lastBullet, owner: tank.id, kind, boosted, x: tank.x, y: tank.y, colorIndex: tank.colorIndex,
    vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: 0, seekDelay: 0, target: null, trail: [],
   };
   if (advanceBullet(world, bullet, (kind === 'cannon' ? RADIUS + spec.r + 1 : 28) / spec.speed)) world.bullets.push(bullet);
  }
- if (boosted) art.recycleStarmanProjectiles(world.bullets, tank.id);
+ art.recycleStarmanProjectiles(world.bullets, tank.id, boosted);
  if (showShot && (boosted || kind !== 'rapid' || tank.machineRounds % 4 === 0)) {
   tank.nextBoostEffect = world.time + 4 * STEP;
   effect(world, 'shot:' + kind, tank.x, tank.y, tank.id);

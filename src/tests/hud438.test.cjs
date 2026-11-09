@@ -22,6 +22,17 @@ test('local HUD follows in-place firing, deaths and grenade expiry without stale
  s.bullets.length=0;assert.deepEqual(s.pilotProjectileState(t,true),{ammo:0,grenades:0,grenadeLife:0,locked:false});
  assert.deepEqual(old,{ammo:2,grenades:2,grenadeLife:7,locked:true},'a later scan cannot mutate a previously returned summary');
 });
+test('boosted projectiles leave ordinary HUD ammo slots free but remain eligible for detonation',()=>{
+ for(const mode of ['room','online']){
+  const s=boot({mode,projectileCount:0}),t=s.tanks[0];t.power=null;t.cooldown=0;
+  s.bullets.push(...Array.from({length:6},()=>({owner:0,boosted:true})));
+  s.run();
+  assert.equal(s.activeAmmo(t),0);
+  assert.equal(s.$('cooldownText1').textContent,'READY');
+  s.bullets.push({owner:0,kind:'grenade',life:4,boosted:true});
+  assert.deepEqual(s.pilotProjectileState(t),{ammo:0,grenades:1,grenadeLife:4,locked:false});
+ }
+});
 
 test('online HUD reads each newest authoritative snapshot and excludes interpolated bullets',()=>{
  const s=boot({mode:'online',projectileCount:32}),a=s.tanks[0],b=s.tanks[7];a.power=null;b.power='laser';b.charges=1;

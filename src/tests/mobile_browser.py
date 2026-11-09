@@ -88,6 +88,7 @@ def play_offline(browser, device, url, errors):
         page.locator("#infinitePauseBtn").tap()
         pause = page.locator("#infinitePauseMenu")
         expect(pause).to_be_visible()
+        expect(pause.get_by_role("button", name="BACK TO THE BATTLE", exact=True)).to_be_visible()
         require_on_screen(page, "#infiniteResumeBtn", "#infiniteControlsBtn", "#infiniteExit")
         page.locator("#infiniteControlsBtn").tap()
         controls = page.locator("#controlsDialog")
@@ -156,7 +157,8 @@ def play_public_infinity(browser, device, url, errors):
         page.locator("#infiniteSoundBtn").tap()
         expect(page.locator("#infiniteSoundBtn")).to_have_attribute("aria-label", "Unmute sound")
         page.locator("#infinitePauseBtn").tap()
-        expect(page.locator("#infinitePauseMenu")).to_be_visible()
+        pause = page.locator("#infinitePauseMenu")
+        expect(pause.get_by_role("button", name="BACK TO THE ARENA", exact=True)).to_be_visible()
         assert any(isinstance(frame, str) and json.loads(frame).get("paused") is True for frame in messages), messages
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()

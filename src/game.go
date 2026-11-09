@@ -155,6 +155,7 @@ type Bullet struct {
 	SpawnSerial int     `json:"spawnSerial"`
 	Pellet      int     `json:"pellet"`
 	rangeSet    bool    // Live simulation only; range cannot be supplied by clients.
+	boosted     bool    // Starman rounds do not occupy ordinary weapon slots.
 	RangeLeft   float64 `json:"rangeLeft,omitempty"`
 	SeekDelay   float64 `json:"seekDelay,omitempty"`
 	Kind        string  `json:"kind,omitempty"`
@@ -792,14 +793,18 @@ func (g *Game) fire(t *Tank) bool {
 	if t.Power == "scatter" {
 		spread = []float64{-.21, 0, .21}
 	}
+	ordinary, boosted := 0, 0
 	if !starman {
-		ammo := 0
 		for _, b := range g.Bullets {
 			if !b.Dead && b.Owner == t.ID {
-				ammo++
+				if b.boosted {
+					boosted++
+				} else {
+					ordinary++
+				}
 			}
 		}
-		if capacity(t)-ammo < len(spread) {
+		if capacity(t)-ordinary < len(spread) {
 			return false
 		}
 	}
@@ -848,11 +853,12 @@ func (g *Game) fire(t *Tank) bool {
 	if kind == "cannon" {
 		muzzle = math.Max(muzzle, t.R+radius+1)
 	}
+	before := len(g.Bullets)
 	for pellet, offset := range spread {
 		a := t.Angle + offset
 		cs, sn := math.Cos(a), math.Sin(a)
 		g.nextBullet++
-		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: t.X + cs*muzzle, Y: t.Y + sn*muzzle, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1}
+		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: t.X + cs*muzzle, Y: t.Y + sn*muzzle, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1, boosted: starman}
 		// Cannon ignores internal walls, but even its muzzle respects the arena rim.
 		hit, hitOK := g.projectileWallHit(kind, t.X, t.Y, cs*muzzle, sn*muzzle, b.R)
 		target, targetAt := g.projectileTankHit(b, t.X, t.Y, cs*muzzle, sn*muzzle)
@@ -894,18 +900,23 @@ func (g *Game) fire(t *Tank) bool {
 	if !sustained || t.ShotSerial%4 == 1 {
 		g.emit("shot", t, t.ID, kind)
 	}
-	if starman {
-		// Keep the newest shots within the existing per-pilot safety budget.
-		// Reaching it never blocks an otherwise valid Starman volley.
+	spawned := len(g.Bullets) - before
+	if starman || ordinary+boosted+spawned > machineCapacity {
+		// After Starman expires, only its bonus rounds yield to new fire.
 		remaining := machineCapacity
+		if !starman {
+			remaining -= ordinary + spawned
+		}
 		for i := len(g.Bullets) - 1; i >= 0; i-- {
 			b := g.Bullets[i]
-			if b.Owner != t.ID || b.Dead {
+			if b.Owner != t.ID || b.Dead || !starman && !b.boosted {
 				continue
 			}
 			b.Dead = remaining == 0
 			remaining = max(0, remaining-1)
 		}
+	}
+	if starman {
 		return true
 	}
 	if kind == "rapid" {
@@ -1112,7 +1123,7 @@ func (g *Game) steerMissile(b *Bullet, dt float64) {
 func guidedProjectileAngle(kind string, angle, targetAngle, dt float64) float64 {
 	maxTurn := missileTurn * dt
 	if kind == "grenade" {
-		maxTurn /= 2
+		maxTurn *= 2.0 / 3
 	}
 	return angle + clamp(delta(angle, targetAngle), -maxTurn, maxTurn)
 }

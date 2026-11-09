@@ -81,6 +81,7 @@ type infiniteBullet struct {
 	radius, age, seekDelay float64
 	target                 int
 	dead                   bool
+	boosted                bool
 }
 
 type infiniteSnapshot struct {

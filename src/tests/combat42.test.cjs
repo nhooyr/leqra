@@ -61,6 +61,16 @@ test('Starman bypasses preview cooldown and charge limits without spending saved
  assert.ok(shot&&!shot.boosted);
  assert.equal(shot.until,970);
 });
+test('pending Starman shells leave ordinary projectile slots available after expiry',()=>{
+ const p=new N.ShotPresentation(),t=tank({starmanTime:4});
+ p.sync(t,'playing',0);
+ for(let n=0;n<6;n++)p.tryFire(t,true,n*20,options()).shells=[{}];
+ const expired={...t,starmanTime:0};
+ const shot=p.tryFire(expired,true,120,options({free:1}));
+ assert.ok(shot&&!shot.boosted);
+ shot.shells=[{}];
+ assert.equal(p.tryFire(expired,true,500,options({free:1})),null);
+});
 test('grenade hold cannot repeatedly throw or accidentally predict a blast',()=>{
  const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:3});p.sync(t,'playing',0);assert.ok(p.tryFire(t,true,0,options({charged:true,cooldown:.8})));
  assert.equal(p.tryFire(t,true,1000,options({charged:true,cooldown:.8})),null);
