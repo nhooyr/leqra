@@ -7,6 +7,7 @@ const pauseMenu = byID('infinitePauseMenu');
 const controlsDialog = byID('controlsDialog');
 const canvas = byID('infiniteCanvas');
 const stick = byID('infiniteStick');
+const stickBase = byID('infiniteStickBase');
 const knob = byID('infiniteKnob');
 const fire = byID('infiniteFire');
 const status = byID('infiniteStatus');
@@ -25,9 +26,10 @@ const STEP = 1 / 60;
 const CELL = geometry.cellSize;
 const RADIUS = 17;
 const BULLET_RADIUS = 3.5;
-const COLORS = art.colors, powers = art.powers, powerTypes = Object.keys(powers);
+const COLORS = art.colors, powers = art.powers, powerTypes = Object.keys(powers), noTrail = [];
 const POWER_DURATION = 15, STAR_DURATION = 8, PICKUP_LIFETIME = 30, SHOT_RANGE = 18 * CELL, BLAST_RADIUS = 220;
-const RESPAWN_DELAY = 1.5;
+const RESPAWN_DELAY = 1;
+const RESULT_NOTICE_MS = 1500;
 const PROJECTILES = Object.freeze({
  regular: {speed: 282, r: BULLET_RADIUS, life: 5.3, cooldown: .34, ammo: 5},
  rapid: {speed: 846, r: BULLET_RADIUS / 3, life: SHOT_RANGE / 846, cooldown: 0, ammo: 115},
@@ -39,6 +41,8 @@ const PROJECTILES = Object.freeze({
 });
 const TAU = Math.PI * 2;
 const MAX_BOTS = 7;
+const RECONNECT_WINDOW = 18000, SNAPSHOT_TIMEOUT = 2500;
+const ROOM_RESUME_KEY = 'leqra.infinityResume.v1';
 const BOT_LEVELS = ['easy','normal','hard','godlike'];
 const BOT_TUNING = {
  easy:{range:.7,roam:.75,aim:1.65}, normal:{range:1,roam:1,aim:1},
@@ -47,7 +51,7 @@ const BOT_TUNING = {
 const PRIMARY_KEYS = {KeyW:'forward', KeyS:'reverse', KeyA:'left', KeyD:'right', KeyQ:'fire', KeyC:'fire'};
 const LOCAL_KEYS = {ArrowUp:'forward', ArrowDown:'reverse', ArrowLeft:'left', ArrowRight:'right', Space:'fire', Enter:'fire'};
 const pressed = new Set();
-const touchAim = {x: 0, y: 0};
+const touchAim = {x: 0, y: 0, cx: 0, cy: 0, reach: 0, assisted: false};
 let session = null, frame = 0, socket = null, mouseAim = null;
 let stickPointer = null, firePointer = null, mousePointer = null;
 let lastTime = 0, accumulator = 0, connectTimer = 0;
@@ -115,6 +119,7 @@ function inputState(seat) {
  if (seat === session) {
   input.stickX = touchAim.x;
   input.stickY = touchAim.y;
+  if (touchAim.assisted) input.touchAim = true;
   input.fire ||= mousePointer !== null || firePointer !== null;
   if (stickPointer === null && mouseAim && !input.left && !input.right) {
    input.stickX = mouseAim.x;
@@ -151,29 +156,29 @@ function mazeMove(maze, tank, dx, dy, phaseEnded) {
  if (dy && (tank.ghostTime > 0 || !maze.blocked(tank.x, tank.y + dy, RADIUS))) tank.y += dy;
 }
 
-function axisHit(origin, delta, min, max) {
- if (Math.abs(delta) < 1e-9) return origin < min || origin > max ? [Infinity, -Infinity] : [-Infinity, Infinity];
- const a = (min - origin) / delta, b = (max - origin) / delta;
- return [Math.min(a, b), Math.max(a, b)];
-}
-
 function wallHit(maze, x, y, dx, dy, radius, includeOrigin = false) {
  let hit = null;
- for (const wall of maze.wallsNear(Math.min(x, x + dx) - radius, Math.min(y, y + dy) - radius,
-                                Math.max(x, x + dx) + radius, Math.max(y, y + dy) + radius)) {
-  const [x0, x1] = axisHit(x, dx, wall.x - radius, wall.x + wall.w + radius);
-  const [y0, y1] = axisHit(y, dy, wall.y - radius, wall.y + wall.h + radius);
+ const flatX = Math.abs(dx) < 1e-9, flatY = Math.abs(dy) < 1e-9, sx = Math.sign(dx), sy = Math.sign(dy);
+ maze.visitWalls(Math.min(x, x + dx) - radius, Math.min(y, y + dy) - radius,
+                 Math.max(x, x + dx) + radius, Math.max(y, y + dy) + radius, (wx, wy, w, h) => {
+  const minX = wx - radius, maxX = wx + w + radius, minY = wy - radius, maxY = wy + h + radius;
+  let x0 = -Infinity, x1 = Infinity, y0 = -Infinity, y1 = Infinity;
+  if (flatX) { if (x < minX || x > maxX) return false; }
+  else { x0 = ((sx > 0 ? minX : maxX) - x) / dx; x1 = ((sx > 0 ? maxX : minX) - x) / dx; }
+  if (flatY) { if (y < minY || y > maxY) return false; }
+  else { y0 = ((sy > 0 ? minY : maxY) - y) / dy; y1 = ((sy > 0 ? maxY : minY) - y) / dy; }
   const entry = Math.max(x0, y0), exit = Math.min(x1, y1);
-  if (entry > 1 || entry > exit || (includeOrigin ? exit < 0 : entry < -.0001)) continue;
+  if (entry > 1 || entry > exit || (includeOrigin ? exit < 0 : entry < -.0001)) return false;
   const fraction = Math.max(0, entry);
-  const nx = x0 >= y0 - 1e-7 ? -Math.sign(dx) : 0;
-  const ny = y0 >= x0 - 1e-7 ? -Math.sign(dy) : 0;
+  const nx = x0 >= y0 - 1e-7 ? -sx : 0;
+  const ny = y0 >= x0 - 1e-7 ? -sy : 0;
   if (!hit || fraction < hit.fraction - 1e-7) hit = {fraction, nx, ny};
   else if (Math.abs(fraction - hit.fraction) < 1e-7) {
    if (nx) hit.nx = nx;
    if (ny) hit.ny = ny;
   }
- }
+  return false;
+ });
  return hit;
 }
 
@@ -295,8 +300,7 @@ function traceLaser(world, tank, preview = false) {
 
 function muzzleBlocked(maze, tank, radius) {
  const {x, y} = tank;
- return tank.ghostTime > 0 && maze.wallsNear(x-radius, y-radius, x+radius, y+radius).some(wall =>
-  x >= wall.x-radius && x <= wall.x+wall.w+radius && y >= wall.y-radius && y <= wall.y+wall.h+radius);
+ return tank.ghostTime > 0 && maze.visitWalls(x-radius, y-radius, x+radius, y+radius, () => true);
 }
 
 function fireShot(world, tank) {
@@ -327,7 +331,7 @@ function fireShot(world, tank) {
  for (const offset of offsets) {
   const angle = tank.angle + offset, ux = Math.cos(angle), uy = Math.sin(angle);
   const bullet = {
-   ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, x: tank.x, y: tank.y, colorIndex: tank.colorIndex,
+   ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, x: tank.x, y: tank.y, color: COLORS[tank.colorIndex] || COLORS[0],
    vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: 0, seekDelay: 0, target: null, trail: [],
   };
   if (advanceBullet(world, bullet, (kind === 'cannon' ? RADIUS + spec.r + 1 : 28) / spec.speed)) world.bullets.push(bullet);
@@ -934,14 +938,17 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
   drawTank(displayed, owner===seat, zoom, ratio);
  }
- const bullets = [];
+ const bullets = world.visibleBullets;
+ bullets.length = 0;
  for (const bullet of world.bullets) {
   if (!visible(bullet)) continue;
-  const previous = world.previousBullets.get(bullet.id);
-  const blend = previous && previous.bounces === bullet.bounces;
-  bullets.push({...bullet, x: blend ? previous.x + (bullet.x - previous.x) * alpha : bullet.x,
-   y: blend ? previous.y + (bullet.y - previous.y) * alpha : bullet.y,
-   color: COLORS[bullet.colorIndex] || COLORS[0], trail: bullet.trail || (blend ? [previous, bullet] : [])});
+  const previous = world.online && world.previousBullets.get(bullet.id);
+  if (previous && previous.bounces === bullet.bounces) {
+   const {kind, color, r, life, vx, vy} = bullet;
+   bullets.push({kind, color, r, life, vx, vy,
+    x: previous.x + (bullet.x - previous.x) * alpha, y: previous.y + (bullet.y - previous.y) * alpha,
+    trail: kind === 'rapid' ? noTrail : bullet.trail || [previous, bullet]});
+  } else bullets.push(bullet);
  }
  art.bullets(bullets, ctx, now / 1000);
  if (!world.result && !world.failed && !pauseMenu.open) {
@@ -990,7 +997,7 @@ function showResult(world, now) {
   resetControls();
   dismissPause();
   const localDeath = world.controllers.some(seat=>world.tanks.some(tank=>tank.id===seat.id&&!tank.hp&&tank.killedBy));
-  world.resultAt = now + (localDeath ? RESPAWN_DELAY * 1000 : 0);
+  world.resultAt = now + (localDeath ? RESULT_NOTICE_MS : 0);
   world.nextHUD = 0;
  }
  if (now < world.resultAt) return;
@@ -1003,7 +1010,7 @@ function loop(now) {
  if (!arena.open || !session) return;
  const workStart = performance.now();
  const dt = clamp((now - lastTime) / 1000, 0, .1);
- if (session.online && !session.result) {
+ if (session.online && session.joined && !session.result) {
   for (const seat of session.controllers) {
    const input = inputState(seat);
    sendInput(seat,now,false,input);
@@ -1019,7 +1026,7 @@ function loop(now) {
  }
  lastTime = now;
  showResult(session, now);
- if (session.online || !pauseMenu.open) draw(session, now, dt);
+ if (session.online ? session.joined || session.retryAt === undefined : !pauseMenu.open) draw(session, now, dt);
  art.sampleFrame(now,performance.now()-workStart);
  frame = requestAnimationFrame(loop);
 }
@@ -1027,6 +1034,7 @@ function loop(now) {
 function connectionFailed(message) {
  if (!session?.online) return;
  clearTimeout(connectTimer);
+ if (session.room) clearRoomResume();
  session.failed = true;
  session.joined = false;
  resetControls();
@@ -1036,6 +1044,53 @@ function connectionFailed(message) {
   ' Choose Infinity in Room settings to play offline.'));
  if (retry) retry.hidden = false;
  socket?.close();
+}
+
+function retryConnection(message) {
+ if (!session.room) {connectionFailed(message);return;}
+ const world = session, now = performance.now();
+ world.retryAt ??= now;
+ const remaining = world.retryAt + RECONNECT_WINDOW - now;
+ if (remaining <= 0) {connectionFailed(message);return;}
+ clearTimeout(connectTimer);
+ const old = socket;
+ socket = null;
+ world.joined = false;
+ resetControls();
+ old?.close();
+ setStatus('Connection interrupted · Reconnecting to room Infinity…');
+ const delay = Math.min(remaining, 3000, 450 * 2 ** Math.min(world.retries++,3));
+ connectTimer = setTimeout(() => {
+  if (session === world) {
+   if (performance.now() >= world.retryAt + RECONNECT_WINDOW) connectionFailed(message);
+   else connect();
+  }
+ },delay);
+}
+
+function watchSnapshots(ws) {
+ const delay = document.hidden ? SNAPSHOT_TIMEOUT : Math.max(1,SNAPSHOT_TIMEOUT + session.arrived - performance.now());
+ connectTimer = setTimeout(() => {
+  if (ws !== socket || !session?.joined || session.result) return;
+  if (!document.hidden && performance.now() - session.arrived >= SNAPSHOT_TIMEOUT) retryConnection('Disconnected from Infinity.');
+  else watchSnapshots(ws);
+ },delay);
+}
+
+function saveRoomResume(token,generation) {
+ try {sessionStorage.setItem(ROOM_RESUME_KEY,JSON.stringify({token,generation}));} catch {}
+}
+
+function clearRoomResume() {
+ try {sessionStorage.removeItem(ROOM_RESUME_KEY);} catch {}
+}
+
+function savedRoomGeneration(token) {
+ try {
+  const saved = JSON.parse(sessionStorage.getItem(ROOM_RESUME_KEY));
+  clearRoomResume();
+  if (saved?.token === token && Number.isSafeInteger(saved.generation) && saved.generation > 0) return saved.generation;
+ } catch {}
 }
 
 function receive(ws, event) {
@@ -1049,10 +1104,13 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'error') {
-  connectionFailed(message.message || 'Unable to join Infinity.');
+  const error = message.message || 'Unable to join Infinity.';
+  if (message.code === 'session_active' && session.resumeGeneration) retryConnection(error);
+  else connectionFailed(error);
   return;
  }
  if (message.type === 'welcome') {
+  session.resumed = !!message.resumed;
   session.id = message.id;
   if (message.localId != null) {
    if (!session.local) {
@@ -1066,7 +1124,15 @@ function receive(ws, event) {
    refreshBindings(session);
   }
   syncLocalLoadout(session.local);
-  session.maze = geometry.create(message.seed);
+  if (!session.maze || session.seed !== message.seed) {
+   session.maze = geometry.create(message.seed);
+   session.seed = message.seed;
+   session.mapCache.clear();
+  }
+  if (session.room && Number.isSafeInteger(message.generation) && message.generation > 0) {
+   session.resumeGeneration = message.generation;
+   saveRoomResume(session.room.token,message.generation);
+  }
   return;
  }
  if (message.type !== 'state' || !session.maze) return;
@@ -1074,13 +1140,14 @@ function receive(ws, event) {
   connectionFailed('Unexpected state from the Infinity server.');
   return;
  }
- const now = performance.now();
+ const now = performance.now(), joined = session.joined, resumed = !joined && session.resumed;
  session.previousTanks = new Map(session.tanks.map(tank => [tank.id, tank]));
  session.previousBullets = new Map(session.bullets.map(bullet => [bullet.id, bullet]));
  session.interval = session.arrived ? clamp(now - session.arrived, 20, 90) : 1000 / 30;
  session.arrived = now;
  session.tanks = message.tanks.map(tank => ({...tank, alive: tank.hp > 0}));
- session.bullets = message.bullets.map(bullet => ({...bullet, r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
+ session.bullets = message.bullets.map(bullet => ({...bullet, trail: bullet.trail || null,
+  color: COLORS[bullet.colorIndex] || COLORS[0], r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
  session.pickups = Array.isArray(message.pickups) ? message.pickups : [];
  session.players = message.players;
  session.leaderboard = message.leaderboard;
@@ -1090,7 +1157,7 @@ function receive(ws, event) {
   const pilot = session.tanks.find(tank=>tank.id===seat.id);
   if (!pilot) continue;
   const old = session.previousTanks.get(pilot.id);
-  const snap = !old || old.spawnSerial !== pilot.spawnSerial;
+  const snap = !joined || !old || old.spawnSerial !== pilot.spawnSerial;
   seat.predictor.reconcile(pilot,snap);
   if (snap) seat.lastSent = null;
  }
@@ -1099,76 +1166,88 @@ function receive(ws, event) {
   const old = session.previousBullets.get(bullet.id);
   if (old && (bullet.bounces || 0) > (old.bounces || 0) && nearCamera(session,bullet.x,bullet.y,CELL*7)) bounced = true;
  }
- if (bounced) art.ricochet();
+ if (!resumed && bounced) art.ricochet();
  for (const event of Array.isArray(message.effects) ? message.effects : []) {
   if (!event || typeof event.kind !== 'string' || !Number.isInteger(event.id) || event.id <= session.lastEffect) continue;
   session.lastEffect = event.id;
-  presentEffect(session, event, now);
+  if (!resumed) presentEffect(session, event, now);
  }
- const joined = session.joined;
+ if (resumed) resetControls();
  session.joined = true;
- if (!joined && pauseMenu.open) for (const seat of session.controllers) sendInput(seat,now,true);
  if (message.result) session.result = message.result;
- clearTimeout(connectTimer);
+ if (!joined) {
+  session.retryAt = undefined;
+  session.retries = 0;
+  session.nextHUD = 0;
+  if (resumed || pauseMenu.open) for (const seat of session.controllers) sendInput(seat,now,true);
+  clearTimeout(connectTimer);
+  if (session.room && !session.result) watchSnapshots(ws);
+ }
 }
 
 function connect() {
  if (!session?.online) return;
+ const world = session;
  clearTimeout(connectTimer);
  const oldSocket = socket;
  socket = null;
  oldSocket?.close();
- session.failed = false;
- session.joined = false;
- session.maze = null;
- session.tanks = [];
- session.bullets = [];
- session.pickups = [];
- session.leaderboard = [];
- session.visualEffects = [];
- session.lastEffect = 0;
- art.renderLoadout(null,1);
- art.renderLoadout(null,2);
- for (const seat of session.controllers) {
+ world.failed = false;
+ world.joined = false;
+ world.visualEffects = [];
+ if (!world.resumeGeneration) {
+  world.maze = null;
+  world.tanks = [];
+  world.bullets = [];
+  world.pickups = [];
+  world.leaderboard = [];
+  world.lastEffect = 0;
+  art.renderLoadout(null,1);
+  art.renderLoadout(null,2);
+  world.mapCache.clear();
+  renderScores(world, null);
+ }
+ for (const seat of world.controllers) {
   seat.previewShotAt = seat.pendingShotAt = -Infinity;
   seat.homingAlert = {};
   seat.lastSent = null;
   seat.seq = 0;
+  seat.nextSend = seat.keepAlive = 0;
   seat.predictor.reset(null);
  }
- session.mapCache.clear();
- renderScores(session, null);
  if (retry) retry.hidden = true;
  if (location.protocol !== 'http:' && location.protocol !== 'https:') {
   connectionFailed('Online Infinity requires the leqra server.');
   if (retry) retry.hidden = true;
   return;
  }
- setStatus(session.room ? 'Connecting to room Infinity…' : 'Connecting to Infinity…');
+ setStatus(world.resumeGeneration || world.retryAt !== undefined ? 'Reconnecting to room Infinity…' :
+  world.room ? 'Connecting to room Infinity…' : 'Connecting to Infinity…');
  const url = new URL('/ws/infinite', location.href);
  url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
  let ws;
  try {
   ws = socket = new WebSocket(url);
  } catch {
-  connectionFailed('Could not connect to Infinity.');
+  retryConnection('Could not connect to Infinity.');
   return;
  }
  ws.addEventListener('open', () => {
-  if (ws === socket && session) {
-   ws.send(JSON.stringify({type:'join',version:window.leqra.version,name:session.name,
-    localName:session.room?undefined:session.localName,...session.room}));
+  if (ws === socket && session === world) {
+   ws.send(JSON.stringify({type:'join',version:window.leqra.version,name:world.name,
+    localName:world.room?undefined:world.localName,...world.room,
+    resume:world.resumeGeneration?true:undefined,generation:world.resumeGeneration}));
   }
  });
  ws.addEventListener('message', event => receive(ws, event));
  ws.addEventListener('close', () => {
-  if (ws === socket && session && !session.failed) {
-   connectionFailed(session.joined ? 'Disconnected from Infinity.' : 'Could not join Infinity.');
+  if (ws === socket && session === world && !world.failed && !world.result) {
+   retryConnection(world.joined ? 'Disconnected from Infinity.' : 'Could not join Infinity.');
   }
  });
  connectTimer = setTimeout(() => {
-  if (ws === socket && session && !session.joined) connectionFailed('Could not connect to Infinity.');
- }, 6500);
+  if (ws === socket && session === world && !world.joined) retryConnection('Could not connect to Infinity.');
+ }, Math.min(6500,(world.retryAt ?? performance.now()) + RECONNECT_WINDOW - performance.now()));
 }
 
 function resetControls() {
@@ -1177,6 +1256,7 @@ function resetControls() {
  stickPointer = firePointer = mousePointer = null;
  fire.classList.remove('held');
  touchAim.x = touchAim.y = 0;
+ touchAim.assisted = false;
  knob.style.removeProperty('--stick-x');
  knob.style.removeProperty('--stick-y');
  if (session) for (const seat of session.controllers) {
@@ -1202,6 +1282,10 @@ function stop() {
  cancelAnimationFrame(frame);
  clearTimeout(connectTimer);
  const ws = socket;
+ if (session.room) {
+  clearRoomResume();
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'leave'}));
+ }
  socket = null;
  session = null;
  art.renderLoadout(null,1);
@@ -1211,6 +1295,16 @@ function stop() {
  if (arena.open) arena.close();
  ws?.close();
  art.touchPolicy();
+}
+
+function syncRoom(code,token,active) {
+ if (!session?.room || session.room.token !== token) return;
+ if (active) session.room.code = code;
+ else stop();
+}
+
+function closeRoom() {
+ if (session?.room) stop();
 }
 
 function addController(world,seat) {
@@ -1228,9 +1322,10 @@ function start(mode, options = {}) {
  session = {
   online, name, localName:options.localName, readBindings, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
+  resumeGeneration:options.resumeGeneration,retries:0,
   rules:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
   time:0,nextBot:between(.4,1.2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,
-  mapCache: new Map(), visualEffects: [], interval: 1000 / 30, arrived: 0,
+  mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
  const world = session;
  world.moveTank = (tank, dx, dy, phaseEnded) => mazeMove(world.maze, tank, dx, dy, phaseEnded);
@@ -1244,6 +1339,7 @@ function start(mode, options = {}) {
  art.touchPolicy();
  canvas.focus({preventScroll: true});
  if (online) {
+  if (world.room && world.resumeGeneration) saveRoomResume(world.room.token,world.resumeGeneration);
   connect();
  } else {
   session.maze = geometry.create(Math.floor(Math.random() * 0x100000000));
@@ -1312,9 +1408,9 @@ function pressFire(event,seat=session) {
 }
 
 function updateStick(event) {
- const rect = stick.getBoundingClientRect(), reach = Math.min(rect.width, rect.height) * .34;
+ const {cx,cy,reach} = touchAim;
  if (!reach) return;
- const x = event.clientX - rect.left - rect.width / 2, y = event.clientY - rect.top - rect.height / 2;
+ const x = event.clientX - cx, y = event.clientY - cy;
  const magnitude = Math.max(reach, Math.hypot(x, y));
  touchAim.x = x / magnitude;
  touchAim.y = y / magnitude;
@@ -1331,6 +1427,7 @@ function endPointer(event) {
  if (event.pointerId === stickPointer) {
   stickPointer = null;
   touchAim.x = touchAim.y = 0;
+  touchAim.assisted = false;
   knob.style.removeProperty('--stick-x');
   knob.style.removeProperty('--stick-y');
  } else if (event.pointerId === firePointer) {
@@ -1369,7 +1466,7 @@ arena.addEventListener('keydown', event => {
   if (!event.repeat) art.toggleSound();
   return;
  }
- if (pauseMenu.open) return;
+ if (pauseMenu.open || session.online && !session.joined) return;
  const seat = session.controllers.find(controller=>controller.keys[event.code]);
  const action = seat?.keys[event.code];
  if (!action) return;
@@ -1407,6 +1504,11 @@ stick.addEventListener('pointerdown', event => {
  art.primeAudioUnlock(event);
  mouseAim = null;
  stickPointer = event.pointerId;
+ touchAim.assisted = event.pointerType === 'touch' || event.pointerType === 'pen';
+ const rect = stickBase.getBoundingClientRect(), size = Math.min(rect.width,rect.height);
+ touchAim.cx = rect.left + rect.width / 2;
+ touchAim.cy = rect.top + rect.height / 2;
+ touchAim.reach = size > 0 ? Math.max(24,size*.375) : 0;
  updateStick(event);
  sendInput(session,performance.now(),true);
 });
@@ -1451,6 +1553,9 @@ byID('infiniteExit').addEventListener('click', stop);
 byID('infiniteResultExit').addEventListener('click',stop);
 resultDialog.addEventListener('cancel',event=>{event.preventDefault();stop();});
 retry?.addEventListener('click', () => {
+ if (!session?.failed) return;
+ session.resumeGeneration = session.retryAt = undefined;
+ session.retries = 0;
  canvas.focus({preventScroll: true});
  connect();
 });
@@ -1473,5 +1578,6 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const pickupHelp = `Power-ups spawn near active pilots. Most last ${POWER_DURATION} seconds after pickup. Starman lasts ${STAR_DURATION} seconds. Machine gun allows 3 seconds of firing. Uncollected power-ups expire after ${PICKUP_LIFETIME} seconds.`;
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls, pickupHelp});
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp});
+art.roomSessionReady?.();
 })();

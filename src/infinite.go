@@ -16,7 +16,7 @@ const (
 	infiniteSight        = 1200
 	infiniteTankSpeed    = 128
 	infiniteMaxHP        = 1
-	infiniteRespawnTicks = 90
+	infiniteRespawnTicks = 60
 	infiniteBulletRadius = 3.5
 	infiniteLeaderCount  = 10
 )
@@ -69,6 +69,7 @@ type infinitePilot struct {
 	lastStickX, lastStickY float64
 	firePending            bool
 	paused                 bool // Holds respawn independently of control expiry.
+	disconnected           bool
 	respawn                uint64
 	kit                    Tank // Reuses fixed-maze equipment state and pickup rules.
 	roomBot                *Player
@@ -146,7 +147,8 @@ type infiniteSeat struct {
 
 type infiniteArena struct {
 	mu                 sync.Mutex
-	players            int
+	players            int // Human seats in the arena, including reservations.
+	connected          int // Human seats with a live controller socket.
 	pilots             []*infinitePilot
 	bullets            []infiniteBullet
 	pickups            []Pickup
@@ -199,11 +201,11 @@ func emptyInfiniteSnapshot() infiniteSnapshot {
 }
 
 func (a *infiniteArena) join(c *Client, name string, now time.Time) *infinitePilot {
-	p, _ := a.joinSeats(c, infiniteSeat{name: name, colorIndex: -1}, nil, now)
+	p, _ := a.joinSeats(c, infiniteSeat{name: name, colorIndex: -1}, nil, 0, now)
 	return p
 }
 
-func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infiniteSeat, now time.Time) (*infinitePilot, *infinitePilot) {
+func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infiniteSeat, generation uint64, now time.Time) (*infinitePilot, *infinitePilot) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.maze == nil {
@@ -220,19 +222,18 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 	p := a.addPilot(cleanName(first.name), false, x, y, minCells, maxCells)
 	a.setSeat(p, first, now)
 	var local *infinitePilot
-	welcome := map[string]any{"type": "welcome", "id": p.ID, "seed": a.seed}
 	if second != nil {
 		local = a.addPilot(cleanName(second.name), false, p.X, p.Y, 1, 3)
 		a.setSeat(local, *second, now)
-		welcome["localId"] = local.ID
 	}
-	if !c.enqueue(welcome) {
+	if !a.welcome(c, p, local, generation, false) {
 		clear(a.pilots[before:])
 		a.pilots = a.pilots[:before]
 		return nil, nil
 	}
 	p.client, p.local = c, local
 	a.players += len(a.pilots) - before
+	a.connected += len(a.pilots) - before
 	if a.result != nil {
 		a.broadcast()
 	} else if before == 0 {
@@ -243,6 +244,75 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 		}
 	}
 	return p, local
+}
+
+func (a *infiniteArena) welcome(c *Client, primary, local *infinitePilot, generation uint64, resumed bool) bool {
+	packet := struct {
+		Type       string `json:"type"`
+		ID         int    `json:"id"`
+		Seed       uint32 `json:"seed"`
+		LocalID    int    `json:"localId,omitempty"`
+		Generation uint64 `json:"generation,omitempty"`
+		Resumed    bool   `json:"resumed,omitempty"`
+	}{Type: "welcome", ID: primary.ID, Seed: a.seed, Generation: generation, Resumed: resumed}
+	if local != nil {
+		packet.LocalID = local.ID
+	}
+	return c.enqueue(packet)
+}
+
+func (a *infiniteArena) suspend(p *infinitePilot) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	p.client = nil
+	for _, seat := range [2]*infinitePilot{p, p.local} {
+		if seat != nil {
+			a.connected--
+			seat.disconnected = true
+			seat.clearControls()
+		}
+	}
+}
+
+func (a *infiniteArena) resume(c *Client, p *infinitePilot, generation uint64, now time.Time) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if p.client != nil {
+		// A half-open socket may not notice a change of networks. Only
+		// replace it when its application heartbeats have gone quiet.
+		select {
+		case <-p.client.done:
+		default:
+			if now.Sub(p.inputAt) < infiniteResumeIdle || p.local != nil && now.Sub(p.local.inputAt) < infiniteResumeIdle {
+				return infiniteSessionActive
+			}
+		}
+	}
+	if !a.welcome(c, p, p.local, generation, true) {
+		return "Could not join Infinity."
+	}
+	for _, seat := range [2]*infinitePilot{p, p.local} {
+		if seat != nil {
+			if seat.disconnected {
+				a.connected++
+			}
+			seat.disconnected = false
+			seat.clearControls()
+			seat.Ack, seat.AckSteps = 0, 0
+			seat.inputAt, seat.activeAt = now, now
+		}
+	}
+	p.client = c
+	if a.result != nil {
+		a.broadcast()
+	}
+	return ""
+}
+
+func (p *infinitePilot) clearControls() {
+	p.input, p.firePending = Input{}, false
+	p.kit.fireHeld, p.kit.fireBlocked = false, false
+	p.lastStickX, p.lastStickY = 0, 0
 }
 
 func (a *infiniteArena) setSeat(p *infinitePilot, seat infiniteSeat, now time.Time) {
@@ -277,11 +347,18 @@ func (a *infiniteArena) removeRoomBots(removed uint64) {
 func (a *infiniteArena) remove(p *infinitePilot) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	p.client = nil
 	a.players--
+	if !p.disconnected {
+		a.connected--
+	}
 	localID := 0
 	if p.local != nil {
 		localID = p.local.ID
 		a.players--
+		if !p.local.disconnected {
+			a.connected--
+		}
 	}
 	a.pilots = slices.DeleteFunc(a.pilots, func(other *infinitePilot) bool { return p == other || p.local == other })
 	a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool { return b.Owner == p.ID || localID != 0 && b.Owner == localID })
@@ -298,9 +375,8 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 	}
 }
 
+// Call with a.mu held when the arena is shared.
 func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now time.Time) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	p.paused = paused
 	if paused {
 		input = Input{Seq: input.Seq}
@@ -323,6 +399,14 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now
 	}
 	p.lastStickX, p.lastStickY = input.StickX, input.StickY
 	p.input, p.inputAt = input, now
+}
+
+func (a *infiniteArena) setConnectionInput(c *Client, controller, seat *infinitePilot, input Input, paused bool, now time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if controller.client == c {
+		a.setInput(seat, input, paused, now)
+	}
 }
 
 func (a *infiniteArena) idle(p *infinitePilot, now time.Time) bool {
@@ -390,7 +474,7 @@ func (a *infiniteArena) step(now time.Time) {
 	a.populatePickups()
 	for _, p := range a.pilots {
 		if p.HP == 0 {
-			if a.tick >= p.respawn && !p.paused {
+			if a.tick >= p.respawn && !p.paused && !p.disconnected {
 				a.spawn(p, p.X, p.Y, 2, 5)
 			}
 			continue
@@ -412,8 +496,10 @@ func (a *infiniteArena) step(now time.Time) {
 			break
 		}
 		p := actors[(a.tick+uint64(i))%uint64(count)]
-		if p.HP == 0 {
-			continue // An earlier attack can eliminate this actor.
+		// An earlier attack can eliminate this actor. Reserved tanks stay
+		// vulnerable while they have no controller.
+		if p.HP == 0 || p.disconnected {
+			continue
 		}
 		input := p.input
 		if p.Bot {
@@ -558,7 +644,7 @@ func (a *infiniteArena) botInput(p *infinitePilot) Input {
 	target := a.nearestPilot(p, cellSize*8*tuning.sight, true)
 	if target != nil {
 		dx, dy := target.X-p.X, target.Y-p.Y
-		if _, wall := a.rayWalls(p.X, p.Y, dx, dy, infiniteBulletRadius); !wall {
+		if !a.rayBlocked(p.X, p.Y, dx, dy, infiniteBulletRadius) {
 			angle := math.Atan2(dy, dx)
 			fire := !target.Protected && math.Abs(delta(p.Angle, angle)) < .12*tuning.aim
 			// Alternate the AI's trigger after a grenade throw so a fresh
@@ -609,6 +695,15 @@ func (a *infiniteArena) botInput(p *infinitePilot) Input {
 }
 
 func (a *infiniteArena) rayWalls(x, y, dx, dy, radius float64) (RayHit, bool) {
+	return a.rayWallsQuery(x, y, dx, dy, radius, false)
+}
+
+func (a *infiniteArena) rayBlocked(x, y, dx, dy, radius float64) bool {
+	_, blocked := a.rayWallsQuery(x, y, dx, dy, radius, true)
+	return blocked
+}
+
+func (a *infiniteArena) rayWallsQuery(x, y, dx, dy, radius float64, firstOnly bool) (RayHit, bool) {
 	var nearest RayHit
 	found := false
 	a.maze.visitWalls(min(x, x+dx)-radius, min(y, y+dy)-radius, max(x, x+dx)+radius, max(y, y+dy)+radius, func(wall Wall) bool {
@@ -626,7 +721,7 @@ func (a *infiniteArena) rayWalls(x, y, dx, dy, radius float64) (RayHit, bool) {
 				nearest.NY = hit.NY
 			}
 		}
-		return false
+		return firstOnly
 	})
 	return nearest, found
 }
@@ -646,8 +741,11 @@ func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 }
 
 func (a *infiniteArena) broadcast() {
+	if a.connected == 0 {
+		return
+	}
 	packet := &a.snapshot
-	packet.Tick, packet.Players = a.tick, a.players
+	packet.Tick, packet.Players = a.tick, a.connected
 	packet.Rules, packet.Result = a.rules, a.result
 	if a.teams() {
 		packet.Scores = &a.teamScores
@@ -687,7 +785,7 @@ func (a *infiniteArena) broadcast() {
 	// Pilots with the same visible entities can share the encoded snapshot.
 	// The mask represents exact membership, including at the edge of sight.
 	type encodedView struct{ plain, deflated snapshotFrame }
-	views := make(map[string]encodedView, a.players)
+	views := make(map[string]encodedView, a.connected)
 	pickupOffset := len(a.pilots)
 	effectOffset := pickupOffset + len(a.pickups)
 	bulletOffset := effectOffset + len(a.effects)

@@ -8,7 +8,7 @@ const clone=value=>JSON.parse(JSON.stringify(value));
 function boot(){
  const nodes=new Map(),timers=new Map(),noop=()=>{};let nextTimer=0;
  const $=id=>{if(!nodes.has(id))nodes.set(id,{id,value:'',open:false,disabled:false,dataset:{},classList:{add:noop,remove:noop,toggle:noop},style:{setProperty:noop},parentElement:{querySelector:()=>true},previousElementSibling:{style:{}},close(){this.open=false;}});return nodes.get(id);};
- const s={URL,$,console,mode:'room',phase:'menu',GAME_VERSION:'test',MAX_TANKS:8,POWER:{shield:{},rapid:{},laser:{}},DIFFICULTY:{normal:{},hard:{},godlike:{},easy:{}},pendingRoomMode:null,rulesPending:false,presetsPending:false,
+ const s={URL,$,window:{},console,mode:'room',phase:'menu',GAME_VERSION:'test',MAX_TANKS:8,POWER:{shield:{},rapid:{},laser:{}},DIFFICULTY:{normal:{},hard:{},godlike:{},easy:{}},pendingRoomMode:null,rulesPending:false,presetsPending:false,
   online:{connected:false,connecting:false,code:'',token:'',id:3,member:50,snapshots:[]},localRoom:{},matchmaking:{},rolePending:false,
   location:{protocol:'https:',href:'https://leqra.test/'},document:{body:$('body'),querySelectorAll:selector=>selector==='[data-weapon-toggle]'||selector==='[data-weapon-toggle]:checked'?[{dataset:{weaponToggle:'shield'},checked:true}]:[]},
   performance:{now:()=>1000},setTimeout(fn){timers.set(++nextTimer,fn);return nextTimer;},clearTimeout(id){timers.delete(id);},sessionStorage:{removeItem:noop},
@@ -20,7 +20,7 @@ function boot(){
   syncRoomModePicker(){s.syncRoomSetupPending();},syncFeatureSummary(){s.syncRoomModePicker();const editable=s.roomModeEditable();$('applyRulesBtn').disabled=!editable;$('rulesFields').disabled=!editable;},renderOnlineRoom(){s.syncFeatureSummary();},
   selectedPreset:()=>s.preset};
  vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);
- for(const name of ['defaultRoomRules','defaultModeRules','currentRules','cleanPilotName','validateRoomRules','validateTeamNames','survivalMode','roomCapacity','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validatePreset','isRoomHost','isRoomEditable','roomModeEditable','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','featureNotice','fillRulesForm','readRuleTeamSettings','submitRules','setDifficulty','canLoadPreset','applySelectedPreset','connectOnline'])vm.runInContext(declaration(name),s);
+ for(const name of ['defaultRoomRules','defaultModeRules','currentRules','cleanPilotName','validateRoomRules','validateTeamNames','survivalMode','roomCapacity','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validatePreset','isRoomHost','isRoomEditable','roomModeEditable','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','featureNotice','fillRulesForm','readRuleTeamSettings','submitRules','setDifficulty','canLoadPreset','applySelectedPreset','syncOnlineRoomInfinity','connectOnline'])vm.runInContext(declaration(name),s);
  s.connectOnline({type:'join',code:'TEST'},true);timers.clear();Object.assign(s.online,{connected:true,connecting:false,code:'TEST',token:'secret'});s.phase='onlineLobby';
  const players=[{id:0,member:51,kind:'bot',name:'OLD BOT',difficulty:'normal',team:0},{id:3,member:50,kind:'human',name:'HOST',team:0}];
  s.online.roomData={type:'room',code:'TEST',host:3,phase:'lobby',players,spectators:[],rules:s.defaultRoomRules()};s.localRoom.rules=s.defaultRoomRules();

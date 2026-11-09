@@ -9,7 +9,7 @@
  else root.leqraNet=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
  'use strict';
- const STEP=1/60, STEP_MS=1000/60, MACHINE_CAPACITY=115;
+ const STEP=1/60, STEP_MS=1000/60, MACHINE_CAPACITY=115, DIRECTION_TURN=5.8, TOUCH_TURN_ASSIST=3.2;
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
  const delta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
  const neutral=()=>({forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0,aimOnly:false});
@@ -23,7 +23,17 @@
   }return out;
  }
  function controlsEqual(a,b){
-  return !!a&&!!b&&a.forward===b.forward&&a.reverse===b.reverse&&a.left===b.left&&a.right===b.right&&a.fire===b.fire&&!!a.aimOnly===!!b.aimOnly&&Math.abs(a.stickX-b.stickX)<.001&&Math.abs(a.stickY-b.stickY)<.001;
+  return !!a&&!!b&&a.forward===b.forward&&a.reverse===b.reverse&&a.left===b.left&&a.right===b.right&&a.fire===b.fire&&!!a.aimOnly===!!b.aimOnly&&!!a.touchAim===!!b.touchAim&&Math.abs(a.stickX-b.stickX)<.001&&Math.abs(a.stickY-b.stickY)<.001;
+ }
+ function smoothstep(value){
+  const x=clamp(value,0,1);
+  return x*x*(3-2*x);
+ }
+ function steeringTurn(diff,mag,assist,step){
+  let rate=DIRECTION_TURN;
+  if(assist)rate+=TOUCH_TURN_ASSIST*smoothstep((Math.min(mag,1)-.35)/.65)*smoothstep((Math.abs(diff)-Math.PI/12)/(Math.PI/2-Math.PI/12));
+  const limit=rate*step;
+  return clamp(diff,-limit,limit);
  }
  // Identical movement order, rates, angle normalization and wall collision to Go.
  // No fire, damage or scoring is performed here.
@@ -39,7 +49,7 @@
   const mag=Math.hypot(input.stickX,input.stickY);
   if(mag>.10){
    const diff=delta(t.angle,Math.atan2(input.stickY,input.stickX));
-   t.angle+=clamp(diff,-5.8*turnScale*dt,5.8*turnScale*dt);
+   t.angle+=steeringTurn(diff,mag,input.touchAim&&!input.aimOnly,turnScale*dt);
    if(!input.aimOnly)throttle=Math.min(mag,1)*Math.max(0,Math.cos(diff));
   }else t.angle+=((input.right?1:0)-(input.left?1:0))*3.65*turnScale*dt;
   t.angle=Math.atan2(Math.sin(t.angle),Math.cos(t.angle));
@@ -281,5 +291,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,move,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,Predictor,SnapshotBuffer,ShotPresentation});
 });

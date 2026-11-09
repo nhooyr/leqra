@@ -83,7 +83,7 @@ test('saved names alone cannot bypass JOIN, and a kicked session cannot resume w
 function sockets(s){
  const noop=()=>{};Object.assign(s,{GAME_VERSION:'test',MAX_TANKS:8,COLORS:Array(8).fill('#fff'),matchmaking:{},roomChat:{code:'Friday tanks'},Net:{},paintColor:v=>v,sent:[],sendOnline:m=>{s.sent.push(m);return true;},WebSocket:class{constructor(){s.socket=this;this.readyState=1;}close(){this.readyState=3;this.onclose?.();}},});
  for(const name of ['clearInput','closeVictory','matchmakingWelcome','resetOnlineMotion','clearRoomChat','syncChatStatus','syncOnlineURL','addLog','cancelCallsignSave','clearRestartWavePending','clearRoomModePending','syncRoomModePicker','cancelSwap','syncCallsignEditors','clearEndMatchPending'])s[name]=noop;
- vm.runInContext(declaration('forgetOnlineSession'),s);vm.runInContext(declaration('connectOnline'),s);
+ for(const name of ['forgetOnlineSession','closeRoomInfinity','connectOnline'])vm.runInContext(declaration(name),s);
  s.scheduleReconnect=()=>{s.retryScheduled=true;};s.receiveKick=()=>{s.kickReceived=true;};s.joinInviteAsNewPilot=()=>{throw new Error('Unconfirmed saved session must never allocate a new seat');};
  s.online.connecting=false;s.connectOnline(s.connections[0].request,true);
 }
