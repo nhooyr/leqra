@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
-const {readFileSync}=require('node:fs'),path=require('node:path');
-const source=readFileSync(process.env.LEQRA_GRACE_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(process.env.LEQRA_GRACE_SOURCE||assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 const specs=[['',282,3.5],['homing',235,5],['grenade',205,6],['cannon',1128,14],['rapid',846,3.5/3],['scatter',846,3.5]];
 function tank(id,x=200,y=200){return{id,x,y,r:17,alive:true,team:id+1,invulnerable:0};}

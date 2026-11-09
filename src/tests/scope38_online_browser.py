@@ -4,18 +4,19 @@ Uses the opt-in _test.go fixture for deterministic grants only. No production ch
 import argparse,json,re,urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 pa=argparse.ArgumentParser();pa.add_argument('url');pa.add_argument('--output',default='test-output/scope38-online');args=pa.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(ok,s):
  assert ok,s
  checks.append(s);print('PASS',s,flush=True)
-html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[i+5:]
+html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[i+5:]
 def load(c):
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''()=>{const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});Object.defineProperty(window,'localStorage',{value:store({'leqra.muted':'1'})});Object.defineProperty(window,'sessionStorage',{value:store({})});}''')
- p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');p.locator('#joinOtherBtn').click();return p
+ p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');p.locator('#joinOtherBtn').click();return p
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium')
  try:

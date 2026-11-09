@@ -1,6 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const N=require('../web/netcode.js');
+const {assetPath}=require('./web_assets.cjs');
+const N=require(assetPath('netcode.js'));
 const tank=(extra={})=>({id:0,spawnSerial:1,shotSerial:0,alive:true,x:200,y:200,angle:0,r:17,power:'',charges:0,cooldown:0,cooldownTotal:.34,...extra});
 const options=(extra={})=>({active:true,grenade:false,blocked:false,free:5,need:1,charged:false,cooldown:.34,ttl:600,...extra});
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} != ${b}`);

@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=readFileSync(path.join(__dirname,'../web/theme.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(assetPath('theme.js'),'utf8');
 function boot(){
  const root={dataset:{},style:{}},meta={setAttribute(k,v){this[k]=v;}};
  const window={};

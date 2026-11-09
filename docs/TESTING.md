@@ -6,7 +6,7 @@ Run from the repository root with Go 1.23+, Node.js, and Python 3.
 go test -race -count=1 ./...
 go vet ./...
 go build -trimpath -o bin/leqra ./src
-node --check src/web/game.js
+node --check src/web/assets/v*/game.js
 node --test src/tests/*.test.cjs
 python3 -m unittest discover -s tests -p 'test_deploy.py' -v
 ```

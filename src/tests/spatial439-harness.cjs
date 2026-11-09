@@ -1,8 +1,9 @@
 'use strict';
-const assert=require('node:assert/strict'),{readFileSync}=require('node:fs'),path=require('node:path');
+const assert=require('node:assert/strict'),{readFileSync}=require('node:fs');
 function declaration(source,name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function random(seed=439){return()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};}
-function boot({sourcePath=process.env.LEQRA_SPATIAL_SOURCE||path.join(__dirname,'../web/game.js'),cols=24,rows=14,seed=439,exhaustive=false}={}){
+const {assetPath}=require('./web_assets.cjs');
+function boot({sourcePath=process.env.LEQRA_SPATIAL_SOURCE||assetPath('game.js'),cols=24,rows=14,seed=439,exhaustive=false}={}){
  const source=readFileSync(sourcePath,'utf8'),math=Object.create(Math);math.random=random(seed);
  const env={Math:math,cols,rows,W:cols*84,H:rows*84,CELL:84,WALL:8,grid:[],walls:[],wallIndex:null,mapDimensions:()=>[cols,rows],cacheMap(){},resize(){},clamp:(v,a,b)=>Math.max(a,Math.min(b,v))};
  const declarations=['makeMaze','nearbyWalls','rayWalls','wallBetweenCenters'].map(n=>declaration(source,n));

@@ -25,7 +25,7 @@ const (
 	protocolVersion = 1
 )
 
-//go:embed web/index.html web/favicon.svg web/game.js web/netcode.js web/style.css web/theme.css web/theme.js web/assets
+//go:embed web/index.html web/assets
 var embeddedWeb embed.FS
 
 type ipBudget struct {
@@ -134,15 +134,13 @@ func (a *App) handler() http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]any{"online": true, "protocol": protocolVersion, "version": version, "maxPlayers": maxTanks, "chat": true, "chatLimit": chatMaxRunes, "opponentChat": true, "roomRename": true, "spectators": true, "maxSpectators": maxSpectators, "watchLinks": true, "tickRate": 60, "snapshotRate": 30, "inputAckSteps": true, "hostKick": true, "unshareRoom": true, "unifiedRooms": true, "localPlayers": 2, "serverBots": true, "teams": true, "matchRules": true, "postMatchStats": true, "matchmaking": true, "queues": queueDefinitions, "presets": true, "objectiveModes": []string{"elimination", "ctf", "koth", "survival"}, "powerUps": pickupTypes, "reconnectSeconds": 20})
 	})
 	assetPrefix := "/assets/v" + version + "/"
-	// True marks assets whose versioned disk paths are symlinks. Go embeds the
-	// source files directly so the server can serve them from a standalone binary.
 	assets := map[string]bool{
 		"theme.js": true, "theme.css": true, "style.css": true, "favicon.svg": true,
-		"netcode.js": true, "game.js": true, "pwa.js": false, "manifest.webmanifest": false,
-		"sw.js": false, "icon-192.png": false, "icon-512.png": false,
-		"icon-maskable-512.png": false, "apple-touch-icon.png": false,
-		"icon-1024.png": false, "icon-maskable-1024.png": false,
-		"favicon-256.png": false, "apple-touch-icon-512.png": false,
+		"netcode.js": true, "game.js": true, "pwa.js": true, "manifest.webmanifest": true,
+		"sw.js": true, "icon-192.png": true, "icon-512.png": true,
+		"icon-maskable-512.png": true, "apple-touch-icon.png": true,
+		"icon-1024.png": true, "icon-maskable-1024.png": true,
+		"favicon-256.png": true, "apple-touch-icon-512.png": true,
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
@@ -167,8 +165,7 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		name := strings.TrimPrefix(r.URL.Path, assetPrefix)
-		fromSource, ok := assets[name]
-		if !ok {
+		if !assets[name] {
 			http.NotFound(w, r)
 			return
 		}
@@ -176,10 +173,6 @@ func (a *App) handler() http.Handler {
 			w.Header().Set("Service-Worker-Allowed", "/")
 		}
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		if fromSource {
-			r = r.Clone(r.Context())
-			r.URL.Path = "/" + name
-		}
 		static.ServeHTTP(w, r)
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

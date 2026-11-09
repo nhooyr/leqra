@@ -1,6 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
-const {boot:base,tank,declaration}=require('./godlike426-harness.cjs'),Net=require('../web/netcode.js');
+const {assetPath}=require('./web_assets.cjs');
+const {boot:base,tank,declaration}=require('./godlike426-harness.cjs'),Net=require(assetPath('netcode.js'));
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
 function boot(){
  const s=base(),noop=()=>{},buffer=new Net.SnapshotBuffer();

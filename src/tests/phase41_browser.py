@@ -5,21 +5,22 @@ import argparse,json,re,time
 from pathlib import Path
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:18041');ap.add_argument('--output',default='test-output/phase41');ap.add_argument('--expect-version',default='4.1.0');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(ok,text):
  assert ok,text
  checks.append(text);print('PASS',text,flush=True)
-html=re.sub(r'<link[^>]*>|<script src="theme.js"></script>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+html=re.sub(r'<link[^>]*>|<script src="theme.js"></script>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 def load(b,w=1365,h=950,live=False,name='TEST',invite='',stored=None):
  mobile=w<760 or h<620;c=b.new_context(viewport={'width':w,'height':h},has_touch=mobile,is_mobile=mobile,device_scale_factor=2 if mobile else 1)
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''a=>{window.__location=new URL(a.url);window.__history={state:null,replaceState(s,t,u){this.state=s;window.__updatedURL=String(u)}};window.__store=a.stored;
  const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});
  Object.defineProperty(window,'localStorage',{value:store(a.stored)});Object.defineProperty(window,'sessionStorage',{value:store({})});if(!a.live)window.requestAnimationFrame=()=>0;}''',{'url':args.url+'/?test=1'+invite,'stored':stored or {'leqra.name':name,'leqra.muted':'1'},'live':live})
- p.add_script_tag(content=(web/'theme.js').read_text());p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
+ p.add_script_tag(content=(assets/'theme.js').read_text());p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
  p.evaluate('''()=>{window.arena41=()=>{const T=__test;T.setPhase('menu');T.applyLocalPreset({rules:{...T.defaultRoomRules(),pickupRate:'off'},roster:[{kind:'human',name:'Alpha',team:0},{kind:'local',name:'Bravo',team:0},{kind:'bot',name:'Target',team:0,difficulty:'normal'}]});T.startRound();T.setPhase('playing');T.clearInput();T.clearBullets();
  T.setWorld({width:1008,height:840,cols:12,rows:10,walls:[{x:-4,y:-4,w:1016,h:8},{x:-4,y:836,w:1016,h:8},{x:-4,y:-4,w:8,h:848},{x:1004,y:-4,w:8,h:848},{x:248,y:-4,w:8,h:848},{x:-4,y:332,w:1016,h:8}]});
  T.tanks.forEach((t,i)=>Object.assign(t,{human:true,x:210+i*250,y:210+i*150,angle:0,alive:true,invulnerable:0,cooldown:0,shield:0,speedTime:0,scopeTime:0,ghostTime:0,team:0,power:null,powerTime:0,charges:0}));return T;};}''')

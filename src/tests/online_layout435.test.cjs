@@ -1,7 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=readFileSync(process.env.LEQRA_LAYOUT_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
+const {readFileSync}=require('node:fs'),vm=require('node:vm');
+const {assetPath}=require('./web_assets.cjs');
+const source=readFileSync(process.env.LEQRA_LAYOUT_SOURCE||assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function element(){const classes=new Set(),styles=new Map();return{hidden:false,textContent:'',innerHTML:'',dataset:{},attributes:{},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,v)},setAttribute(k,v){this.attributes[k]=v;},classList:{toggle(k,v){if(v)classes.add(k);else classes.delete(k);},contains:k=>classes.has(k)}};}
 function boot({p2=false,spectating=false}={}){

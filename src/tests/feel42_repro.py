@@ -5,9 +5,16 @@ This is not a WAN/frame-rate benchmark. No production code is instrumented on di
 import argparse, json, re, zipfile
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--assets');ap.add_argument('--baseline');ap.add_argument('--output',default='test-output/feel42-repro');a=ap.parse_args()
 r=Path(__file__).resolve().parents[1];out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
-def assets(path):return {k:(Path(path)/k).read_text() for k in ['game.js','netcode.js','index.html','style.css']}
+def assets(path):
+    web = Path(path)
+    directory = asset_directory(web)
+    sources = {name: (directory / name).read_text()
+               for name in ('game.js', 'netcode.js', 'style.css')}
+    sources['index.html'] = (web / 'index.html').read_text()
+    return sources
 def load(b,src,w=1365,h=950):
  c=b.new_context(viewport={'width':w,'height':h},is_mobile=w<760 or h<620,has_touch=w<760 or h<620)
  p=c.new_page();errors=[];p.on('pageerror',lambda e:errors.append(str(e)))

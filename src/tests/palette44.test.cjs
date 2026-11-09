@@ -1,6 +1,7 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),N=require('../web/netcode.js');
-function theme(){const w={};vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../web/theme.js'),'utf8'),{window:w,document:{documentElement:{dataset:{},style:{}},querySelector:()=>null}});return w.leqraTheme;}
+const {assetPath}=require('./web_assets.cjs');
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),N=require(assetPath('netcode.js'));
+function theme(){const w={};vm.runInNewContext(fs.readFileSync(assetPath('theme.js'),'utf8'),{window:w,document:{documentElement:{dataset:{},style:{}},querySelector:()=>null}});return w.leqraTheme;}
 const canon=['#d2f65a','#ff9679','#73cee4','#c5a2ff','#ffc46b','#ff83bd','#75f0cb','#b7c6ee'];
 test('eight distinct named dark palettes use neon-blue interface accent',()=>{const t=theme();assert.equal(t.colors.length,8);assert.equal(t.colorNames.length,8);assert.equal(new Set(t.colors).size,8);assert.equal(t.palette.accent,'#00c8ff');assert.equal(t.resolved,'dark');});
 test('canonical color identity maps once into the dark palette',()=>{const t=theme();for(let i=0;i<8;i++){assert.equal(t.assetColor(canon[i]),t.colors[i]);assert.equal(t.assetColor(t.assetColor(canon[i])),t.colors[i]);}});

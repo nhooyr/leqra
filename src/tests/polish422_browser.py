@@ -2,16 +2,17 @@
 import json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-root=Path(__file__).resolve().parents[1];web=root/'web';out=root/'tests/results/v4.22-polish';out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+from web_assets import asset_directory
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=root/'tests/results/v4.22-polish';out.mkdir(parents=True,exist_ok=True)
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
 def check(ok,label):
  assert ok,label;checks.append(label);print('PASS',label,flush=True)
 with sync_playwright() as pw:
  b=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium');c=b.new_context(viewport={'width':1200,'height':900});p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const d={};const st={getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]};Object.defineProperty(window,'localStorage',{value:st});Object.defineProperty(window,'sessionStorage',{value:st});}""")
- p.add_script_tag(content=(web/'theme.js').read_text());p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.35.0'")
+ p.add_script_tag(content=(assets/'theme.js').read_text());p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.35.0'")
  # Callsign is save-on-blur and there are no explicit Save buttons.
  check(p.locator('#roomCallsignForm button').count()==0 and p.locator('#menuCallsignForm button').count()==0,'Callsign editors no longer require explicit Save buttons')
  p.locator('#roomCallsign').fill('Blur Pilot');p.locator('#roomTitle').click();p.wait_for_function("leqra.getState().room.players.some(p=>p.name==='Blur Pilot')")

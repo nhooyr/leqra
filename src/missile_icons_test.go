@@ -235,8 +235,14 @@ func TestMissileRangeAndReboundDelaySerialized(t *testing.T) {
 	}
 }
 func TestLegendUsesSharedCanvasIconForEveryPower(t *testing.T) {
-	html, _ := os.ReadFile("web/index.html")
-	js, _ := os.ReadFile("web/game.js")
+	html, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := os.ReadFile("web/assets/v" + version + "/game.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, kind := range pickupTypes {
 		if strings.Count(string(html), `data-power-icon="`+kind+`"`) != 1 {
 			t.Fatalf("missing or duplicate legend icon %s", kind)

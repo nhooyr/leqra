@@ -2,8 +2,9 @@
 // node --test tests/netcode.test.cjs (no npm packages required)
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const Net=require('../web/netcode.js');
-const game=fs.readFileSync(path.join(__dirname,'../web/game.js'),'utf8');
+const {assetPath}=require('./web_assets.cjs');
+const Net=require(assetPath('netcode.js'));
+const game=fs.readFileSync(assetPath('game.js'),'utf8');
 function wallMover(world){
  const context={walls:world.walls,W:world.width,H:world.height,WALL:8,CELL:84,cols:world.cols||Math.ceil(world.width/84),rows:world.rows||Math.ceil(world.height/84),clamp:Net.clamp,Math};
  vm.createContext(context);

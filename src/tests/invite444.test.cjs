@@ -1,6 +1,7 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
-const source=fs.readFileSync(process.env.LEQRA_INVITE_SOURCE||path.join(__dirname,'../web/game.js'),'utf8');
+const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
+const {assetPath}=require('./web_assets.cjs');
+const source=fs.readFileSync(process.env.LEQRA_INVITE_SOURCE||assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot({query='?room=Friday+tanks',session=null,name='SAVED PILOT',kicked=''}={}){
  const nodes=new Map(),noop=()=>{},saved=new Map([['leqra.name',name]]),stored=new Map([['leqra.session',JSON.stringify(session)],['leqra.kicked',kicked]]),connections=[];

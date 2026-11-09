@@ -6,13 +6,14 @@ import argparse, ast, json, re, time
 from pathlib import Path
 from urllib.request import Request,urlopen
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--url',default='http://127.0.0.1:18042');ap.add_argument('--output',default='test-output/feel42-live');a=ap.parse_args()
-r=Path(__file__).resolve().parents[1];web=r/'web';out=Path(a.output);out.mkdir(parents=True,exist_ok=True);checks=[];errors=[];measurements=[]
+r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True);checks=[];errors=[];measurements=[]
 def check(ok,label):
  assert ok,label
  checks.append(label);print('PASS',label,flush=True)
-html=re.sub(r'<link[^>]*>|<script src="theme.js"></script>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+html=re.sub(r'<link[^>]*>|<script src="theme.js"></script>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 source=(r/'tests/network_smoothing.py').read_text();wrapper=re.search(r'wrapper=r"""(.*?)"""',source,re.S).group(1)
 wrapper=wrapper.replace('base:60,jitter:[0,45,8,27,65,2,30,12]','base:90,jitter:[0,25,8,40,3,12]')
 def load(b,name,w=1365,h=950,invite=''):
@@ -20,7 +21,7 @@ def load(b,name,w=1365,h=950,invite=''):
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''a=>{window.__location=new URL(a.url);window.__history={state:null,replaceState(s,t,u){this.state=s;window.__url=String(u)}};
  for(const name of ['localStorage','sessionStorage']){const d={'leqra.name':a.name,'leqra.muted':'1'};Object.defineProperty(window,name,{value:{getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]}});}}''',{'url':a.url+'/?test=1'+invite,'name':name})
- p.evaluate(wrapper);p.add_script_tag(content=(web/'theme.js').read_text());p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
+ p.evaluate(wrapper);p.add_script_tag(content=(assets/'theme.js').read_text());p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
  p.evaluate('''()=>{window.__fireRecord=false;window.__fireFrames=[];function record(at){if(__fireRecord){const s=__test.online.snapshots.at(-1);__fireFrames.push({at,phase:__test.phase,bullets:__test.bullets.map(b=>({id:b.id??-1,owner:b.owner,x:b.x,y:b.y,preview:!!b.preview,shot:b.shotSerial,pellet:b.pellet||0,age:b.age,bounces:b.bounces})),authority:s?.tanks.map(t=>({id:t.id,shot:t.shotSerial,cooldown:t.cooldown})),label:document.querySelector('#fireLabel').textContent,fill:document.querySelector('#cooldownFill1').style.transform,metrics:{...__test.presentationMetrics}});}requestAnimationFrame(record);}requestAnimationFrame(record);}''')
  return p,c
 

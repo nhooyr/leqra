@@ -8,19 +8,21 @@ Safari is still listed separately in the release limits.
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 root=Path(__file__).resolve().parents[1]; web=root/'web'
+assets = asset_directory(web)
 parser=argparse.ArgumentParser(); parser.add_argument('--output',default=str(root/'tests/results/v4.19-safari')); args=parser.parse_args()
 out=Path(args.output); out.mkdir(parents=True,exist_ok=True)
-html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(web/'theme.css').read_text()+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
 checks=[];errors=[]
 def check(ok,label):
     assert ok,label;checks.append(label);print('PASS',label,flush=True)
 def install(page,platform,max_touch):
     page.set_content(html)
     page.evaluate("""a=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};const store={getItem(){return null},setItem(){},removeItem(){}};Object.defineProperty(window,'localStorage',{value:store});Object.defineProperty(window,'sessionStorage',{value:store});window.__nativeAudioPlays=0;window.Audio=class{constructor(){this.src='';this.volume=1;this.currentTime=0;this.preload='';this.playsInline=false;this.dataset={};}setAttribute(){}pause(){}load(){}play(){window.__nativeAudioPlays++;return Promise.resolve();}};window.AudioContext=undefined;window.webkitAudioContext=undefined;try{Object.defineProperty(navigator,'platform',{value:a.platform,configurable:true});Object.defineProperty(navigator,'maxTouchPoints',{value:a.maxTouch,configurable:true});Object.defineProperty(navigator,'userAgentData',{value:undefined,configurable:true});}catch(_){}}""",{'platform':platform,'maxTouch':max_touch})
-    for f in ['theme.js','netcode.js']:page.add_script_tag(content=(web/f).read_text())
+    for f in ['theme.js','netcode.js']:page.add_script_tag(content=(assets/f).read_text())
     page.add_script_tag(content=js);page.wait_for_function("window.__test&&leqra.version==='4.35.0'")
 
 safari_mac='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15'

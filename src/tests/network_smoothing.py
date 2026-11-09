@@ -7,6 +7,7 @@ Requires optional Playwright; see TESTING.md for the opt-in isolated fixture.
 import argparse,json,math,re,statistics,urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser=argparse.ArgumentParser()
 parser.add_argument('url',nargs='?',default='http://localhost:8080')
@@ -19,12 +20,12 @@ parser.add_argument('--profile',choices=['lan','jitter','heavy'],default='jitter
 parser.add_argument('--local2',action='store_true',help='Also measure a second keyboard pilot with independent prediction')
 parser.add_argument('--roles',action='store_true',help='Exercise spectator role changes under delay; requires --local2')
 parser.add_argument('--legacy',action='store_true',help='Record a comparison run without new-client assertions')
-args=parser.parse_args();root=Path(args.assets);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+args=parser.parse_args();root=Path(args.assets);assets=asset_directory(root);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 html=root.joinpath('index.html').read_text()
 html=re.sub(r'<link[^>]*>','',html)
 html=re.sub(r'<script src="(?:game|netcode)\.js" defer></script>','',html)
-html=html.replace('</head>','<style>'+root.joinpath('style.css').read_text()+'</style></head>')
-js=root.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
+html=html.replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
+js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
 pos=js.rfind('})();');js=js[:pos]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[pos+5:]
 # FIFO scheduling models ordered TCP/WebSocket delivery, including short bursts.
 wrapper=r"""(()=>{
@@ -94,7 +95,7 @@ with sync_playwright() as pw:
   page.on('pageerror',lambda e:errors.append(str(e)))
   if args.isolated:
    page.set_content(html);page.evaluate(wrapper)
-   if root.joinpath('netcode.js').exists():page.add_script_tag(content=root.joinpath('netcode.js').read_text())
+   if assets.joinpath('netcode.js').exists():page.add_script_tag(content=assets.joinpath('netcode.js').read_text())
    page.add_script_tag(content=js)
   else:page.add_init_script(wrapper);page.goto(args.url+'/?test=1')
   page.wait_for_function('window.leqra');page.locator('[data-mode=online]' if args.legacy else '#joinOtherBtn').click()

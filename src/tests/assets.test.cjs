@@ -1,15 +1,12 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {lstatSync,readFileSync,realpathSync}=require('node:fs'),path=require('node:path');
+const {lstatSync,readdirSync}=require('node:fs'),path=require('node:path');
+const {assetPath}=require('./web_assets.cjs');
 
-test('versioned shared assets link to their browser sources',()=>{
+test('browser assets are regular files in the versioned directory',()=>{
  const web=path.join(__dirname,'../web');
- const shell=readFileSync(path.join(web,'index.html'),'utf8');
- const prefix=shell.match(/assets\/v[\d.]+\//)?.[0];
- assert.ok(prefix,'the shell references versioned assets');
+ assert.deepEqual(readdirSync(web).sort(),['assets','index.html']);
  for(const name of ['favicon.svg','game.js','netcode.js','style.css','theme.css','theme.js']){
-  const versioned=path.join(web,prefix,name);
-  assert.ok(lstatSync(versioned).isSymbolicLink(),name);
-  assert.equal(realpathSync(versioned),realpathSync(path.join(web,name)));
+  assert.ok(lstatSync(assetPath(name)).isFile(),name);
  }
 });

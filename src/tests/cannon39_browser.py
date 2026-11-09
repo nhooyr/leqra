@@ -4,20 +4,21 @@ No network mocks alter collision, damage, bots, guides, or rendering.
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--output',default='test-output/cannon39');ap.add_argument('--browser',default='/usr/bin/chromium');args=ap.parse_args()
-root=Path(__file__).resolve().parents[1];web=root/'web';out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+root=Path(__file__).resolve().parents[1];web=root/'web';assets=asset_directory(web);out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[]
 def check(ok,label):
  assert ok,label
  checks.append(label);print('PASS',label,flush=True)
-html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(web/'style.css').read_text()+'</style></head>')
-js=(web/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
+js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
 def load(c,data=None):
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''data=>{window.__location=new URL('http://game.test/?test=1');window.__store=data;
  const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});
  Object.defineProperty(window,'localStorage',{value:store(data)});Object.defineProperty(window,'sessionStorage',{value:store({})});window.requestAnimationFrame=()=>0;}''',data or {'leqra.muted':'1'})
- p.add_script_tag(content=(web/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
+ p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
  p.evaluate('''()=>{window.arena39=(n=3,wall=true)=>{const T=__test;T.setPhase('menu');
  T.applyLocalPreset({rules:{...T.defaultRoomRules(),teamMode:'ffa',pickupRate:'off'},roster:Array.from({length:n},(_,i)=>({kind:i===0?'human':i===1?'local':'bot',name:'P'+i,team:0,difficulty:'normal'}))});T.startRound();T.setPhase('playing');T.clearInput();T.clearBullets();
  T.setWorld({width:1008,height:840,cols:12,rows:10,walls:[{x:-4,y:-4,w:1016,h:8,axis:'h',line:0},{x:-4,y:836,w:1016,h:8,axis:'h',line:840},{x:-4,y:-4,w:8,h:848,axis:'v',line:0},{x:1004,y:-4,w:8,h:848,axis:'v',line:1008},...(wall?[{x:142,y:-4,w:8,h:848,axis:'v',line:146},{x:230,y:-4,w:32,h:848,axis:'v',line:246}]:[])]});

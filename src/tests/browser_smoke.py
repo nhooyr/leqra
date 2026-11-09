@@ -7,6 +7,7 @@ Use --isolated only with TestBrowserFixture (see TESTING.md).
 import argparse,json,re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from web_assets import asset_directory
 
 parser=argparse.ArgumentParser()
 parser.add_argument('url',nargs='?',default='http://localhost:8080')
@@ -15,10 +16,11 @@ parser.add_argument('--browser',default=None)
 parser.add_argument('--output',default='test-output')
 args=parser.parse_args()
 root=Path(__file__).resolve().parents[1]/'web'
+assets = asset_directory(root)
 out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 html=root.joinpath('index.html').read_text()
-html=re.sub(r'<link[^>]*>','',html).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+root.joinpath('style.css').read_text()+'</style></head>')
-js=root.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
+html=re.sub(r'<link[^>]*>','',html).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
+js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
 pos=js.rfind('})();');js=js[:pos]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[pos+5:]
 wrapper="""window.__sockets=[];const RealSocket=window.WebSocket;window.WebSocket=class extends RealSocket{constructor(...args){super(...args);window.__sockets.push(this)}};"""
 checks=[]
@@ -27,7 +29,7 @@ def check(ok,label):
  checks.append(label);print('PASS',label,flush=True)
 def load(page):
  if args.isolated:
-  page.set_content(html);page.evaluate("()=>{"+wrapper+"}");page.add_script_tag(content=root.joinpath('netcode.js').read_text());page.add_script_tag(content=js)
+  page.set_content(html);page.evaluate("()=>{"+wrapper+"}");page.add_script_tag(content=assets.joinpath('netcode.js').read_text());page.add_script_tag(content=js)
  else:
   page.add_init_script(wrapper);page.goto(args.url+'/?test=1')
  page.wait_for_function('window.leqra')
