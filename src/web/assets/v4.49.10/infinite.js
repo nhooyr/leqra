@@ -3,6 +3,8 @@
 
 const byID = id => document.getElementById(id);
 const arena = byID('infiniteArena');
+const pauseMenu = byID('infinitePauseMenu');
+const controlsDialog = byID('controlsDialog');
 const canvas = byID('infiniteCanvas');
 const stick = byID('infiniteStick');
 const knob = byID('infiniteKnob');
@@ -75,10 +77,13 @@ function makeTank(id, x, y, bot = false) {
 
 function inputState() {
  const input = {
-  type: 'input', forward: false, reverse: false, left: false, right: false,
-  stickX: touchAim.x, stickY: touchAim.y, aimOnly: false,
-  fire: fireTap || mousePointer !== null || firePointer !== null,
+  type: 'input', paused: pauseMenu.open, forward: false, reverse: false, left: false, right: false,
+  stickX: 0, stickY: 0, aimOnly: false, fire: false,
  };
+ if (input.paused) return input;
+ input.stickX = touchAim.x;
+ input.stickY = touchAim.y;
+ input.fire = fireTap || mousePointer !== null || firePointer !== null;
  for (const code of pressed) input[session.keys[code]] = true;
  if (stickPointer === null && mouseAim && !input.left && !input.right) {
   input.stickX = mouseAim.x;
@@ -212,7 +217,7 @@ function weaponControl(world, tank, held, pressed) {
 }
 
 function spendWeapon(tank) {
- if (!tank.power) return;
+ if (!tank.power || tank.starmanTime > 0) return;
  if (tank.power === 'rapid' ? --tank.machineRounds > 0 : --tank.charges > 0) return;
  Object.assign(tank, {power: '', powerTime: 0, charges: 0});
 }
@@ -249,22 +254,30 @@ function muzzleBlocked(maze, tank, radius) {
 }
 
 function fireShot(world, tank) {
- if (tank.cooldown > 1e-9 || tank.power === 'rapid' && !tank.machineRounds) return;
+ const boosted = tank.starmanTime > 0;
+ if (!boosted && (tank.cooldown > 1e-9 || tank.power === 'rapid' && !tank.machineRounds)) return;
  const kind = tank.power || '', spec = PROJECTILES[kind || 'regular'];
  if (kind !== 'cannon' && muzzleBlocked(world.maze, tank, spec.r)) return;
+ const cooldown = boosted ? 0 : spec.cooldown;
+ const showShot = !boosted || kind === 'grenade' || world.time + 1e-9 >= (tank.nextBoostEffect || 0);
  if (kind === 'laser') {
   const {points, target} = traceLaser(world, tank, world.tanks);
-  Object.assign(tank, {cooldown: spec.cooldown, recoil: 1});
-  effect(world, 'laser', tank.x, tank.y, tank.id, points);
+  Object.assign(tank, {cooldown, recoil: 1});
+  if (showShot) {
+   tank.nextBoostEffect = world.time + 4 * STEP;
+   effect(world, 'laser', tank.x, tank.y, tank.id, points);
+  }
   if (target) hurt(world, target, tank.id);
   spendWeapon(tank);
   return;
  }
  const offsets = kind === 'scatter' ? [-.21, 0, .21] : [0];
- let ammo = 0;
- for (const bullet of world.bullets) if (!bullet.dead && bullet.owner === tank.id) ammo++;
- if (ammo + offsets.length > spec.ammo) return;
- Object.assign(tank, {cooldown: spec.cooldown, recoil: 1});
+ if (!boosted) {
+  let ammo = 0;
+  for (const bullet of world.bullets) if (!bullet.dead && bullet.owner === tank.id) ammo++;
+  if (ammo + offsets.length > spec.ammo) return;
+ }
+ Object.assign(tank, {cooldown, recoil: 1});
  for (const offset of offsets) {
   const angle = tank.angle + offset, ux = Math.cos(angle), uy = Math.sin(angle);
   const bullet = {
@@ -273,7 +286,11 @@ function fireShot(world, tank) {
   };
   if (advanceBullet(world, bullet, (kind === 'cannon' ? RADIUS + spec.r + 1 : 28) / spec.speed)) world.bullets.push(bullet);
  }
- if (kind !== 'rapid' || tank.machineRounds % 4 === 0) effect(world, 'shot:' + kind, tank.x, tank.y, tank.id);
+ if (boosted) art.recycleStarmanProjectiles(world.bullets, tank.id);
+ if (showShot && (boosted || kind !== 'rapid' || tank.machineRounds % 4 === 0)) {
+  tank.nextBoostEffect = world.time + 4 * STEP;
+  effect(world, 'shot:' + kind, tank.x, tank.y, tank.id);
+ }
  spendWeapon(tank);
 }
 
@@ -446,12 +463,15 @@ function offlineStep(world, input, dt) {
    }
    continue;
   }
-  for (const key of ['invulnerable', 'shield', 'starmanTime', 'powerTime', 'cooldown']) {
+  for (const key of ['invulnerable', 'shield', 'starmanTime', 'cooldown']) {
    const value = (tank[key] || 0) - dt;
    tank[key] = value > 1e-9 ? value : 0;
   }
   if (tank.shield === 0) tank.shieldCharges = 0;
-  if (tank.powerTime === 0) Object.assign(tank, {power: '', charges: 0, machineRounds: 0});
+  if (!(tank.starmanTime > 0)) {
+   tank.powerTime = Math.max(0, (tank.powerTime || 0) - dt);
+   if (tank.powerTime <= 1e-9) Object.assign(tank, {power: '', powerTime: 0, charges: 0, machineRounds: 0});
+  }
   tank.recoil = Math.max(0, tank.recoil - 9 * dt);
  }
  const actors = world.tanks.filter(tank => tank.hp);
@@ -725,11 +745,11 @@ function updateHUD(world, pilot, now) {
  world.nextHUD = now + 80;
  renderScores(world, pilot);
  const counts = world.online ? ` · ${world.players} online` : ` · ${world.tanks.length - 1} bots`;
- setStatus((pilot.hp ? 'Weapons live' : 'Respawning…') + counts);
+ setStatus((pilot.hp ? 'Weapons live' : pauseMenu.open ? 'Respawn held' : 'Respawning…') + counts);
  if (weapon) {
   const active = pilot.power || (pilot.starmanTime > 0 ? 'starman' : pilot.shield > 0 ? 'shield' :
    pilot.ghostTime > 0 ? 'ghost' : pilot.speedTime > 0 ? 'speed' : '');
-  const label = powers[active]?.name || 'Standard shell';
+  const label = (powers[active]?.name || 'Standard shell') + (pilot.starmanTime > 0 ? ' · ∞ AMMO' : '');
   if (weapon.textContent !== label) weapon.textContent = label;
   const color = powers[active]?.color || '';
   if (weapon.style.color !== color) weapon.style.color = color;
@@ -807,7 +827,7 @@ function sendInput(now = performance.now(), immediate = false, input) {
  const world = session;
  if (!world?.online || !world.joined || socket?.readyState !== WebSocket.OPEN || socket.bufferedAmount > 4096) return;
  input ||= inputState();
- const changed = !net.controlsEqual(input, world.lastSent);
+ const changed = input.paused !== world.lastSent?.paused || !net.controlsEqual(input, world.lastSent);
  if (!immediate && now + .5 < world.nextSend || !changed && !immediate && now < world.keepAlive) return;
  if (changed || !world.lastSent) {
   world.seq++;
@@ -827,7 +847,7 @@ function loop(now) {
   const input = inputState();
   sendInput(now, false, input);
   session.predictor.advance(dt, input);
- } else {
+ } else if (!pauseMenu.open) {
   accumulator += dt;
   while (accumulator + 1e-9 >= STEP) {
    offlineStep(session, inputState(), STEP);
@@ -836,7 +856,7 @@ function loop(now) {
   }
  }
  lastTime = now;
- draw(session, now, dt);
+ if (session.online || !pauseMenu.open) draw(session, now, dt);
  frame = requestAnimationFrame(loop);
 }
 
@@ -846,7 +866,7 @@ function connectionFailed(message) {
  session.failed = true;
  session.joined = false;
  resetControls();
- setStatus(message + (session.room ? ' Leave to return to your room.' :
+ setStatus(message + (session.room ? ' Use Exit Infinity in the pause menu to return to your room.' :
   ' Choose Infinity in Room settings to play offline.'));
  if (retry) retry.hidden = false;
  socket?.close();
@@ -904,7 +924,9 @@ function receive(ws, event) {
   session.lastEffect = event.id;
   presentEffect(session, event, now);
  }
+ const joined = session.joined;
  session.joined = true;
+ if (!joined && pauseMenu.open) sendInput(now, true);
  clearTimeout(connectTimer);
 }
 
@@ -981,6 +1003,15 @@ function stop() {
  const ws = socket;
  socket = null;
  session = null;
+ if (pauseMenu.open) {
+  if (controlsDialog?.open) {
+   const tour = byID('introTourDialog');
+   if (tour.open) tour.close();
+   controlsDialog.close();
+  }
+  pauseMenu.close();
+ }
+ if (arena.open) arena.close();
  ws?.close();
  art.touchPolicy();
 }
@@ -989,8 +1020,9 @@ function start(mode, options = {}) {
  if ((mode !== 'offline' && mode !== 'online') || arena.open) return;
  stop();
  const online = mode === 'online', name = options.name?.trim() || pilotName();
+ const readBindings = typeof options.bindings === 'function' ? options.bindings : () => options.bindings;
  session = {
-  online, name, keys: setupBindings(options.bindings), id: 'pilot', tanks: [], bullets: [], pickups: [], leaderboard: [],
+  online, name, keys: setupBindings(readBindings()), readBindings, id: 'pilot', tanks: [], bullets: [], pickups: [], leaderboard: [],
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   camera: {x: CELL / 2, y: CELL / 2}, previousTanks: new Map(), previousBullets: new Map(),
   time: 0, nextBot: between(.4, 1.2), nextPickup: 0, lastBot: 0, lastBullet: 0,
@@ -1029,13 +1061,14 @@ function updateMouse(event) {
 }
 
 function pressFire(event) {
- if (!session || session.online && !session.joined) return;
+ if (!session || pauseMenu.open || session.online && !session.joined) return;
  art.primeAudioUnlock(event);
  fireTap = true;
  const now = performance.now(), world = session;
  const pilot = world?.predictor.state;
- if (world?.online && pilot?.alive && now - world.previewShotAt >= (PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
-     now - world.arrived >= (pilot.cooldown || 0) * 1000 &&
+ const age = now - world.arrived, boosted = pilot?.starmanTime > age / 1000;
+ if (world.online && pilot?.alive && now - world.previewShotAt >= (boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
+     (boosted || age >= (pilot.cooldown || 0) * 1000) &&
      pilot.power !== 'grenade' && !world.canDetonate && !muzzleBlocked(world.maze, pilot, PROJECTILES[pilot.power || 'regular'].r)) {
   world.previewShotAt = world.pendingShotAt = now;
   world.previewRecoilUntil = now + 100;
@@ -1082,16 +1115,25 @@ arena.addEventListener('keydown', event => {
  if (!session) return;
  event.stopPropagation();
  if (event.ctrlKey || event.metaKey || event.altKey) return;
+ if (event.code === 'Escape' || event.code === 'KeyP') {
+  event.preventDefault();
+  if (!event.repeat) {
+   if (pauseMenu.open) resume();
+   else openPause();
+  }
+  return;
+ }
  if (event.code === 'KeyM') {
   event.preventDefault();
   if (!event.repeat) art.toggleSound();
   return;
  }
+ if (pauseMenu.open) return;
  const action = session.keys[event.code];
  if (!action ||
      (event.code === 'Enter' || event.code === 'Space') && event.target.closest('button, a, input, summary')) return;
  event.preventDefault();
- if (pressed.has(event.code)) return;
+ if (event.repeat || pressed.has(event.code)) return;
  pressed.add(event.code);
  if (action === 'left' || action === 'right') mouseAim = null;
  if (action === 'fire') pressFire(event);
@@ -1148,18 +1190,39 @@ for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
  window.addEventListener(event, endPointer, true);
 }
 arena.addEventListener('contextmenu', event => event.preventDefault());
-function close() {
- if (!arena.open) return;
- arena.close();
- stop();
+function openPause() {
+ if (!session || pauseMenu.open) return;
+ pauseMenu.showModal();
+ resetControls();
 }
-byID('infiniteExit').addEventListener('click', close);
+function resume() {
+ if (!session || !pauseMenu.open) return;
+ pauseMenu.close();
+ lastTime = performance.now();
+ session.keys = setupBindings(session.readBindings());
+ updateHint(session.keys);
+ resetControls();
+ canvas.focus({preventScroll: true});
+}
+byID('infinitePauseBtn').addEventListener('click', openPause);
+byID('infiniteResumeBtn').addEventListener('click', resume);
+byID('infiniteControlsBtn').addEventListener('click', art.openControls);
+byID('infiniteExit').addEventListener('click', stop);
 retry?.addEventListener('click', () => {
  canvas.focus({preventScroll: true});
  connect();
 });
-arena.addEventListener('close', () => {
- if (!arena.open) stop();
+arena.addEventListener('cancel', event => {
+ if (event.target !== arena) return;
+ event.preventDefault();
+ openPause();
+});
+pauseMenu.addEventListener('cancel', event => {
+ event.preventDefault();
+ resume();
+});
+arena.addEventListener('close', event => {
+ if (event.target === arena && !arena.open) stop();
 });
 window.addEventListener('blur', resetControls);
 window.addEventListener('pagehide', resetControls);
@@ -1167,5 +1230,5 @@ document.addEventListener('visibilitychange', () => {
  if (document.hidden) resetControls();
 });
 
-window.leqraInfinity = Object.freeze({start, close, resetControls});
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls});
 })();

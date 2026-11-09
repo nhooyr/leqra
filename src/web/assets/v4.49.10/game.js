@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.9';
+const GAME_VERSION='4.49.10';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -30,7 +30,7 @@ const DIFFICULTY={
 };
 const POWER_EFFECT_DURATION=10;
 const BOOST_SPEED_PER_STACK=.65, BOOST_TURN_PER_STACK=.25, MAX_SPEED_STACKS=5, MISSILE_SPEED=235, MISSILE_TURN=4.8, MISSILE_VIEW_COS=-.75, MISSILE_LOCK_DELAY=.06, MISSILE_WALL_DELAY=.04, GRENADE_SPEED=205, GRENADE_FUSE=10, GRENADE_CRUISE_DRAG=.025, GRENADE_BRAKE_START=7, GRENADE_BRAKE_DRAG=2, BLAST_RADIUS=220, GRENADE_AVOID_PADDING=10;
-const GRENADE_TURN=MISSILE_TURN/3;
+const GRENADE_TURN=MISSILE_TURN/2;
 const POWER={rapid:{color:'#d2f65a',name:'MACHINE GUN',short:'MACHINE GUN'},scatter:{color:'#c5a2ff',name:'SHOTGUN'},shield:{color:'#73cee4',name:'SHIELD'},
  homing:{color:'#ff83bd',name:'HOMING MISSILE',short:'HOMING'},
  grenade:{color:'#ffc46b',name:'GRENADE'},
@@ -411,6 +411,10 @@ function addLog(message){logLines.unshift(message);logLines=logLines.slice(0,3);
 function spawnPower(){if(pickups.length>=pickupCap()||currentRules().pickupRate==='off'||!currentRules().weapons.length)return;let pos=null;for(let tries=0;tries<60;tries++){const cell=Math.floor(Math.random()*grid.length),p=center(cell);if(tanks.every(t=>!t.alive||distance(p,t)>CELL*.85)&&pickups.every(t=>distance(p,t)>CELL*1.1)){pos=p;break;}}if(!pos)return;const types=currentRules().weapons;pickups.push({...pos,type:choosePickup(types),age:0,life:pickupLifetime()});}
 function powerCapacity(t){return t.power==='rapid'?MACHINE_CAPACITY:t.power==='scatter'?12:['homing','grenade','laser','cannon'].includes(t.power)?3:5;}
 function activeAmmo(t){if(t.power==='laser')return Math.max(0,3-t.charges);const list=mode==='online'?(online.snapshots.at(-1)?.bullets||[]):bullets;return list.reduce((n,b)=>n+(b.owner===t.id&&!b.dead?1:0),0);}
+function recycleStarmanProjectiles(list,owner){
+ let count=0;
+ for(let i=list.length-1;i>=0;i--){const b=list[i];if(!b.dead&&b.owner===owner&&++count>MACHINE_CAPACITY)b.dead=true;}
+}
 // Earliest entry into an expanded wall rectangle, with simultaneous corner normals.
 // Static maze broad phase. Preserve wall order for identical corner handling.
 let wallIndex=null;
@@ -577,26 +581,30 @@ function muzzleProjectile(t,angle){
  return b;
 }
 let lastMachineTone=-Infinity;
-function shotSound(kind,local=true,clock=time){
- if(kind==='rapid'){if(clock>=lastMachineTone&&clock-lastMachineTone<.065)return;lastMachineTone=clock;}
+function shotSound(kind,local=true,clock=time,boosted=false){
+ if(kind==='rapid'||boosted&&kind!=='grenade'){if(clock>=lastMachineTone&&clock-lastMachineTone<.065)return;lastMachineTone=clock;}
  const recipe=SHOT_SOUNDS[kind]||SHOT_SOUNDS.regular;let group=0;for(const layer of recipe)group+=layer[local?3:4];
  for(const [freq,end,duration,near,far,type]of recipe)tone(freq,end,duration,local?near:far,type,0,group);
 }
 function fire(t){
- if(survivalBreak()||!t.alive||t.cooldown>0)return false;
+ const boosted=t.starmanTime>0;
+ if(survivalBreak()||!t.alive||!boosted&&t.cooldown>0)return false;
  if(t.power==='laser')return fireLaser(t);
  if(muzzleBlocked(t))return false;
- if(t.power==='cannon'&&t.charges<=0)return false;
- if(t.power==='rapid'&&(!(t.machineRounds>0)||t.rapidTick===Math.floor((time+1e-7)*60)))return false;
- const available=powerCapacity(t)-activeAmmo(t),spread=t.power==='scatter'?[-.21,0,.21]:[0];
- if(available<spread.length)return false;
- const spec=projectileSpec(t.power);if(t.power==='rapid')t.rapidTick=Math.floor((time+1e-7)*60);t.cooldown=spec.cooldown;t.cooldownTotal=t.cooldown;t.recoil=1;
+ if(!boosted&&(t.power==='cannon'&&t.charges<=0||t.power==='rapid'&&!(t.machineRounds>0)))return false;
+ const fast=boosted||t.power==='rapid',tick=fast?Math.floor((time+1e-7)*60):0;
+ if(fast&&t.rapidTick===tick)return false;
+ const spread=t.power==='scatter'?[-.21,0,.21]:[0];
+ if(!boosted&&powerCapacity(t)-activeAmmo(t)<spread.length)return false;
+ const spec=projectileSpec(t.power);if(fast)t.rapidTick=tick;t.cooldown=boosted?0:spec.cooldown;t.cooldownTotal=t.cooldown;t.recoil=1;
  for(const offset of spread){const angle=t.angle+offset,b=muzzleProjectile(t,angle);b.id=++bulletId;
   if(b.launchHit!==undefined)projectileTankImpact(b,tanks.find(other=>other.id===b.launchHit));
   if(!b.dead)bullets.push(b);
-  if(spec.kind!=='rapid'||Math.floor(time*60)%4===0)burst(t.x+Math.cos(angle)*27,t.y+Math.sin(angle)*27,t.color,3,40);
+  if(!fast||spec.kind==='grenade'||tick%4===0)burst(t.x+Math.cos(angle)*27,t.y+Math.sin(angle)*27,t.color,3,40);
  }
- shotSound(spec.kind,t.human);
+ if(boosted)recycleStarmanProjectiles(bullets,t.id);
+ shotSound(spec.kind,t.human,undefined,boosted);
+ if(boosted)return true;
  if(spec.kind==='rapid'&&--t.machineRounds===0){t.power=null;t.powerTime=0;t.charges=0;}
  if(['scatter','homing','grenade','cannon'].includes(t.power)){t.charges--;if(t.charges<=0){t.power=null;t.powerTime=0;}}
  return true;
@@ -632,11 +640,13 @@ function laserEffect(x,y,endX,endY,color=POWER.laser.color,path=null){
  burst(endX,endY,color,10,95);
 }
 function fireLaser(t){
- if(!t.alive||t.cooldown>0||t.power!=='laser'||t.charges<=0||muzzleBlocked(t))return false;
- const beam=laserTrace(t);t.cooldown=LASER_COOLDOWN;t.cooldownTotal=t.cooldown;t.recoil=1;
- laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);shotSound('laser',t.human);
+ const boosted=t.starmanTime>0,tick=boosted?Math.floor((time+1e-7)*60):0;
+ if(!t.alive||t.power!=='laser'||(boosted?t.rapidTick===tick:t.cooldown>0||t.charges<=0)||muzzleBlocked(t))return false;
+ if(boosted)t.rapidTick=tick;
+ const beam=laserTrace(t);t.cooldown=boosted?0:LASER_COOLDOWN;t.cooldownTotal=t.cooldown;t.recoil=1;
+ laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);shotSound('laser',t.human,undefined,boosted);
  if(beam.target)hurt(beam.target,{owner:t.id,kind:'laser'});
- t.charges--;if(t.charges<=0){t.power=null;t.powerTime=0;}return true;
+ if(!boosted&&--t.charges<=0){t.power=null;t.powerTime=0;}return true;
 }
 function compactLife(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(item.life>0)list[write++]=item;}list.length=write;return list;}
 function compactNotDead(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(!item.dead)list[write++]=item;}list.length=write;return list;}
@@ -750,7 +760,7 @@ function grantPower(t,type,duration=powerEffectDuration(),starDuration){
  if(type==='shield'){t.shieldCharges=Math.min(5,shieldCount(t)+1);t.shield=duration;}
  else if(type==='speed'){t.speedStacks=Math.min(MAX_SPEED_STACKS,speedCount(t)+1);t.speedTime=duration;}
  else if(type==='ghost')t.ghostTime=duration;
- else if(type==='starman'){starDuration??=starmanDuration();t.starmanTime=starDuration;t.invulnerable=Math.max(t.invulnerable||0,starDuration);t.ghostTime=Math.max(t.ghostTime||0,starDuration);t.spawnProtected=false;}
+ else if(type==='starman'){starDuration??=starmanDuration();t.starmanTime=starDuration;t.invulnerable=Math.max(t.invulnerable||0,starDuration);t.ghostTime=Math.max(t.ghostTime||0,starDuration);t.cooldown=0;t.cooldownTotal=0;t.spawnProtected=false;}
  else{t.power=type;t.machineRounds=type==='rapid'?MACHINE_FIRING_ROUNDS:0;if(type==='rapid'){t.cooldown=0;t.cooldownTotal=0;}t.powerTime=duration;t.charges=['homing','grenade','laser','cannon'].includes(type)?3:5;}
 }
 function pickupMessage(type){const duration=powerEffectDuration();return type==='starman'?'STARMAN · INVINCIBLE + THROUGH WALLS · '+starmanDuration()+'s':type==='ghost'?'GHOST · THROUGH WALLS · '+duration+' SECONDS':type==='cannon'?'CANNON · EDGE RICOCHETS · 4× SIZE / SPEED':type==='laser'?'LASER · RICOCHETS · LONG AIM GUIDE':type==='homing'?'HOMING · RICOCHETS · HALF-PERIMETER RANGE':type==='grenade'?'GRENADE · HOMING / TAP AGAIN / 10s FUSE':type==='speed'?'SUPER SPEED · +1 STACK · '+duration+' SECONDS':type==='rapid'?'MACHINE GUN · 3s FIRING · '+duration+'s TO USE':POWER[type].name+' · '+duration+' SECONDS';}
@@ -1387,7 +1397,7 @@ function update(dt){
  // Every tank's defenses advance before any attacks, regardless of seat order.
  for(const t of tanks)if(t.alive){localTankActors[t.id]=t;t.invulnerable=Math.max(0,t.invulnerable-dt);t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;}
  let actorCount=0;for(const t of localTankActors)if(t)localTankActors[actorCount++]=t;
- for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;t.machineRounds=0;}}
+ for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power&&!(t.starmanTime>0)){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;t.machineRounds=0;}}
   const x=t.x,y=t.y;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.track+=Math.hypot(t.x-x,t.y-y);
  }
  for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){const a=tanks[i],b=tanks[j];if(!a.alive||!b.alive)continue;let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);const over=a.r+b.r-dist;if(over>0){if((a.ghostTime>0||b.ghostTime>0)&&wallBetweenCenters(a.x,a.y,dx,dy))continue;if(dist<.001){dx=1;dy=0;dist=1;}moveTank(a,-dx/dist*over*.5,-dy/dist*over*.5);moveTank(b,dx/dist*over*.5,dy/dist*over*.5);}}
@@ -1425,8 +1435,9 @@ function renderPilotLoadout(player,num,force=false){
  const rosterPilot=roomData()?.players.find(p=>p.id===player.id);
  const name=rosterPilot?.name||player.name;panel.style.setProperty('--loadout-color',paintColor(player.color));
  setText('loadoutName'+num,name);$('loadoutName'+num).title=name;
- // Machine Gun shows its firing budget instead; avoid rebuilding hidden slot dots.
- if(player.power!=='rapid'||!player.alive){
+ const starman=player.starmanTime>0;
+ // Machine Gun shows a firing budget; Starman shows unlimited ammo in the label.
+ if(!starman&&(player.power!=='rapid'||!player.alive)){
   const capacity=powerCapacity(player),available=Math.max(0,capacity-projectiles.ammo),key=[player.id,player.power,capacity,available,player.alive].join(':');
   if(force||dots.dataset.state!==key){
    dots.dataset.state=key;dots.innerHTML=Array.from({length:Math.min(capacity,12)},(_,i)=>`<i class="ammo-dot ${i>=Math.ceil(available/capacity*Math.min(capacity,12))||!player.alive?'empty':''}"></i>`).join('');
@@ -1437,12 +1448,13 @@ function renderPilotLoadout(player,num,force=false){
  panel.setAttribute('aria-label','Player '+num+', '+name+', ammunition and power-ups');
  const remoteReady=player.alive&&projectiles.grenades>0;
  const power=POWER[player.power],charges=['scatter','homing','grenade','laser','cannon'].includes(player.power)?' ×'+player.charges:'';
- const label=$('weaponLabel'+suffix);setText('weaponLabel'+suffix,!player.alive?'TANK DOWN':remoteReady?'DETONATE · '+projectiles.grenadeLife.toFixed(1)+'s':power?(power.short||power.name)+charges+' · '+(player.power==='rapid'?'EXPIRES ':'')+Math.ceil(player.powerTime)+'s':'STANDARD');
+ const weapon=power?.short||power?.name||'STANDARD';
+ const label=$('weaponLabel'+suffix);setText('weaponLabel'+suffix,!player.alive?'TANK DOWN':remoteReady?'DETONATE · '+projectiles.grenadeLife.toFixed(1)+'s':starman?weapon+' · ∞ AMMO':power?weapon+charges+' · '+(player.power==='rapid'?'EXPIRES ':'')+Math.ceil(player.powerTime)+'s':weapon);
  label.title=label.textContent;
  label.style.color=paintColor(remoteReady?POWER.grenade.color:power?.color||player.color||COLORS[0]);
  setStyle(label,'--weapon-color',label.style.color);
  const buffs=[];if(player.shield>0)buffs.push('SHD×'+shieldCount(player)+' '+Math.ceil(player.shield)+'s');if(player.speedTime>0)buffs.push('SPD×'+speedCount(player)+' '+Math.ceil(player.speedTime)+'s');
- const starman=player.starmanTime>0;if(starman)buffs.push('STAR '+Math.ceil(player.starmanTime)+'s');else if(player.ghostTime>0)buffs.push('GHO '+Math.ceil(player.ghostTime)+'s');
+ if(starman)buffs.push('STAR '+Math.ceil(player.starmanTime)+'s');else if(player.ghostTime>0)buffs.push('GHO '+Math.ceil(player.ghostTime)+'s');
  const buffText=buffs.length>2?buffs.map(b=>b.startsWith('SHD')?b.split(' ')[0]:b.replace(/ (\d+)s$/,'$1')).join(' '):buffs.join(' · '),feedback=pilotFeedback[num-1],feedbackText=feedback?.until>performance.now()?feedback.text:'';
  const detailText=player.alive?(feedbackText||buffText):'',detail=$('buffLabel'+suffix);setText('buffLabel'+suffix,detailText);detail.hidden=!detailText;detail.title=feedbackText||('Speed: '+speedCount(player)+' stacks, '+Math.ceil(player.speedTime||0)+'s · Shield: '+shieldCount(player)+' charges, '+Math.ceil(player.shield||0)+'s · '+(starman?'Starman: '+Math.ceil(player.starmanTime):'Ghost: '+Math.ceil(player.ghostTime||0))+'s');
  return {power,remoteReady};
@@ -2401,7 +2413,8 @@ function previewOnlineFire(second,controls,now){
  if(!online.shots||!auth||!pose)return;
  const active=phase==='playing'&&online.connected&&controls.fire&&!online.menu&&now-(online.snapshots.at(-1)?.received||0)<450;
  if(!active||!auth.alive){online.shots.tryFire(auth,!!controls.fire,now,{active:false});return;}
- let t={...auth,x:pose.x,y:pose.y,angle:pose.angle,ghostTime:pose.ghostTime};
+ const age=(now-online.snapshots.at(-1).received)/1000;
+ let t={...auth,x:pose.x,y:pose.y,angle:pose.angle,ghostTime:pose.ghostTime,starmanTime:Math.max(0,(auth.starmanTime||0)-age)};
  const grenade=ownedGrenades(t).length>0||online.shots.pendingGrenade(id),power=t.power||'';
  const v=online.shots.tryFire(t,!!controls.fire,now,{active,grenade,
   blocked:muzzleBlocked(t),
@@ -2419,7 +2432,8 @@ function previewOnlineFire(second,controls,now){
  }
  if(power==='laser'){const beam=laserTrace(t);laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);if(traces.length)traces.at(-1).previewKey=v.key;}
  else v.shells=(power==='scatter'?[-.21,0,.21]:[0]).map((offset,pellet)=>({...muzzleProjectile(t,t.angle+offset),pellet,shotSerial:v.shot,spawnSerial:v.life,preview:true}));
- if(power!=='rapid'||v.shot%4===1)burst(t.x+Math.cos(t.angle)*27,t.y+Math.sin(t.angle)*27,t.color,3,40);shotSound(power,true);
+ if(!(v.boosted||power==='rapid')||power==='grenade'||v.shot%4===1)burst(t.x+Math.cos(t.angle)*27,t.y+Math.sin(t.angle)*27,t.color,3,40);
+ shotSound(power,true,undefined,v.boosted);
  if(power!=='rapid')updateCombatFeedback(true);
 }
 function localBulletVisual(n,now,since){
@@ -2459,7 +2473,8 @@ function applyOnlineTankEffects(t,source,age){
  // Share equipment expiry between buffered tank drawings and pilot HUDs.
  // Only the caller's visual copy changes; snapshots and predictors stay intact.
  t.spawnProtected=!!source?.spawnProtected;t.invulnerable=Math.max(0,(source?.invulnerable||0)-age);
- t.powerTime=Math.max(0,(source?.powerTime||0)-age);t.power=t.powerTime>0?source?.power:null;
+ const weaponAge=Math.max(0,age-(source?.starmanTime||0));
+ t.powerTime=Math.max(0,(source?.powerTime||0)-weaponAge);t.power=t.powerTime>0?source?.power:null;
  t.charges=t.power?(source?.charges||0):0;t.machineRounds=t.power?(source?.machineRounds||0):0;
  t.shield=Math.max(0,(source?.shield||0)-age);t.shieldCharges=t.shield>0?(source?.shieldCharges||0):0;
  t.speedTime=Math.max(0,(source?.speedTime||0)-age);t.speedStacks=t.speedTime>0?(source?.speedStacks||0):0;
@@ -2529,7 +2544,7 @@ function startInfinity(kind,credentials={}){
  if(!window.leqraInfinity){$('roomStatus').textContent='Infinity could not load. Reload the page and try again.';return;}
  if($('infiniteArena').open)return;
  closeVictory();clearInput();cancelPendingAudio();
- window.leqraInfinity.start(kind,{name:roomMember(localPlayerID())?.name,bindings,...credentials});
+ window.leqraInfinity.start(kind,{name:roomMember(localPlayerID())?.name,bindings:()=>bindings,...credentials});
 }
 function startRoomInfinity(){
  if(!online.connected||!online.roomData?.infinityActive||online.spectating)return;
@@ -3625,7 +3640,8 @@ function setText(id,value){const el=$(id);if(el.textContent!==String(value))el.t
 function setStyle(el,key,value){if(el.style.getPropertyValue(key)!==String(value))el.style.setProperty(key,String(value));}
 function setAttr(el,key,value){if(el.getAttribute(key)!==String(value))el.setAttribute(key,value);}
 function updateMachineBudget(t,num){
- const budget=$('machineBudget'+num),shown=t.alive&&t.power==='rapid';budget.hidden=!shown;$('ammoDots'+(num===1?'':'2')).hidden=shown;
+ const budget=$('machineBudget'+num),boosted=t.alive&&t.starmanTime>0,shown=!boosted&&t.alive&&t.power==='rapid';
+ budget.hidden=!shown;$('ammoDots'+(num===1?'':'2')).hidden=shown||boosted;
  if(!shown)return;
  const rounds=clamp(t.machineRounds||0,0,MACHINE_FIRING_ROUNDS),total=MACHINE_FIRING_ROUNDS/60,remaining=(Math.ceil(rounds/6)/10).toFixed(1);
  // The firing budget is separate from the power-up's 10/15-second hold timer.
@@ -3644,17 +3660,18 @@ function updateCombatFeedback(force=false){
   const panel=$('pilotLoadout'+num);panel.classList.toggle('missile-locked',combatPrefs.visual&&locked);
   if(locked&&!lastLocks[num]&&combatPrefs.audio&&time-(lastLockTone[num]||-10)>1.5){tone(850,1050,.07,.025,'sine');tone(850,1150,.08,.025,'sine',.11);lastLockTone[num]=time;}lastLocks[num]=locked;
   updateMachineBudget(t,num);
-  const remote=t.alive&&projectiles.grenades>0,cap=powerCapacity(t),free=t.power==='laser'?t.charges:cap-projectiles.ammo,need=t.power==='scatter'?3:1;
+  const boosted=t.starmanTime>0,remote=t.alive&&projectiles.grenades>0,cap=powerCapacity(t);
+  const cooldown=boosted?0:t.cooldown,free=boosted?Infinity:t.power==='laser'?t.charges:cap-projectiles.ammo,need=t.power==='scatter'?3:1;
   const inWallBlocked=muzzleBlocked(t);
   let text='READY',ready=1;if(phase!=='playing'){text=phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':phase==='countdown'?'GET READY':phase==='paused'?'PAUSED':'READY';ready=phase==='countdown'?0:1;}else if(survivalBreak()){text='NEXT WAVE '+Math.ceil(survivalState().breakTime)+'s';ready=0;}else if(!t.alive){text=survivalMode()?'BACK NEXT WAVE':objectiveMode()&&!suddenDeath()?'RESPAWN '+(t.respawnTime||0).toFixed(1)+'s':'TANK DOWN';ready=0;}else if(remote)text='DETONATE READY';else{
    // Keep the colored cooldown/ammo bar stable while Ghost crosses a wall. Only
    // the text/button message changes; actual cooldown and ammo still animate.
-   if(t.cooldown>0)ready=1-clamp(t.cooldown/(t.cooldownTotal||cooldownDuration(t.power)),0,1);else if(free<need)ready=0;
-   if(inWallBlocked)text='IN WALL · MOVE TO FIRE';else if(t.cooldown>0)text='COOLDOWN '+Math.max(.1,Math.round(t.cooldown*10)/10).toFixed(1)+'s';else if(free<need)text='WAITING FOR AMMO';
+   if(cooldown>0)ready=1-clamp(cooldown/(t.cooldownTotal||cooldownDuration(t.power)),0,1);else if(free<need)ready=0;
+   if(inWallBlocked)text='IN WALL · MOVE TO FIRE';else if(cooldown>0)text='COOLDOWN '+Math.max(.1,Math.round(cooldown*10)/10).toFixed(1)+'s';else if(free<need)text='WAITING FOR AMMO';
   }
   setText('cooldownText'+num,text);setStyle($('cooldownFill'+num),'transform','scaleX('+Number(ready.toFixed(3))+')');setAttr($('cooldownTrack'+num),'aria-valuenow',String(Math.round(ready*100)));setAttr($('cooldownTrack'+num),'aria-label',text);panel.classList.toggle('ammo-blocked',text==='WAITING FOR AMMO');
   if(num===1){const detonate=active&&remote;setStyle($('fireBtn'),'--ready',ready.toFixed(3));$('fireBtn').classList.toggle('detonate-ready',detonate);
-   const label=survivalBreak()?'WAIT':!active?(phase==='playing'?'OUT':phase==='roundOver'||phase==='matchOver'?'DONE':phase==='paused'?'PAUSED':'FIRE'):detonate?'BOOM':text.startsWith('IN WALL')?'MOVE':t.cooldown>.001?Math.max(.1,Math.round(t.cooldown*10)/10).toFixed(1)+'s':free<need?'WAIT':'FIRE';
+   const label=survivalBreak()?'WAIT':!active?(phase==='playing'?'OUT':phase==='roundOver'||phase==='matchOver'?'DONE':phase==='paused'?'PAUSED':'FIRE'):detonate?'BOOM':text.startsWith('IN WALL')?'MOVE':cooldown>.001?Math.max(.1,Math.round(cooldown*10)/10).toFixed(1)+'s':free<need?'WAIT':'FIRE';
    setText('fireLabel',label);setText('fireHint',survivalBreak()?'NEXT WAVE':detonate?'TAP TO DETONATE':t.power==='grenade'?'TAP TO THROW':'HOLD TO FIRE');
    setAttr($('fireBtn'),'aria-label',detonate?'Press to detonate your grenade':text==='READY'?(t.power==='grenade'?'Press to throw a grenade':'Hold to fire'):text);
   }
@@ -4523,6 +4540,8 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 // Infinity keeps its own camera and streamed world, while sharing the finite arena's art and audio.
 window.leqraInfinityArt=Object.freeze({
  theme,colors:Theme.colors,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:syncPauseButton,
+ openControls:()=>openFeature('controls'),
+ recycleStarmanProjectiles,
  missileTurn:MISSILE_TURN,grenadeTurn:GRENADE_TURN,
  rect:roundRect,tile:paintArenaTile,wall:paintArenaWall,hull:drawCachedTankHull,turret:paintTankTurret,pickup:drawPickup,bullets:drawBullets,badge:tankPowerBadgeImage,
  shot:shotSound,ricochet:ricochetSound,collect:pickupSound,shield:shieldSound,blast:boom,

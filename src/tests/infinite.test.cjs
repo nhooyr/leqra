@@ -16,6 +16,7 @@ function harness(url = 'https://example.test/', openField = false) {
   dataset = {};
   clientWidth = 390;
   clientHeight = 740;
+  open = false;
   textContent = '';
   closest() { return false; }
   setAttribute() {}
@@ -62,7 +63,8 @@ function harness(url = 'https://example.test/', openField = false) {
   colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
   tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, badge() {}, bullets() {},
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
-  missileTurn: 4.8, grenadeTurn: 1.6,
+  missileTurn: 4.8, grenadeTurn: 2.4,
+  openControls: () => byID('controlsDialog').showModal(),
   toggleSound: () => sounds.push('mute'),
   shot: kind => sounds.push('shot:' + kind),
   ricochet: () => sounds.push('ricochet'), collect: () => sounds.push('pickup'), shield: () => sounds.push('shield'),
@@ -85,6 +87,10 @@ function harness(url = 'https://example.test/', openField = false) {
  const game = readFileSync(assetPath('game.js'), 'utf8');
  vm.runInContext(game.slice(game.indexOf('function choosePickup('), game.indexOf('// Power-up colors')), context);
  window.leqraInfinityArt.choosePickup = context.choosePickup;
+ const recycle = game.indexOf('function recycleStarmanProjectiles(');
+ context.MACHINE_CAPACITY = window.leqraNet.MACHINE_CAPACITY;
+ vm.runInContext(game.slice(recycle,game.indexOf('\n}',recycle)+2), context);
+ window.leqraInfinityArt.recycleStarmanProjectiles = context.recycleStarmanProjectiles;
  const grant = game.slice(game.indexOf('function grantPower('), game.indexOf('function pickupMessage('));
  Object.assign(context, {POWER:powers, MAX_SPEED_STACKS:5, MACHINE_FIRING_ROUNDS:180, shieldCount:t=>t.shieldCharges||0, speedCount:t=>t.speedStacks||0});
  vm.runInContext(grant, context);
@@ -175,7 +181,7 @@ test('simultaneous Infinity laser hits rotate priority between live actors', () 
  }
 });
 
-test('offline Infinity grenades steer at one-third the missile rate', () => {
+test('offline Infinity grenades steer at half the missile rate', () => {
  const {infinity, state, advance} = harness(undefined, true);
  infinity.start('offline');
  const world = state(), pilot = world.tanks[0];
@@ -193,7 +199,75 @@ test('offline Infinity grenades steer at one-third the missile rate', () => {
  assert.equal(grenade.target, target.id);
  const missileTurn = Math.atan2(missile.vy, missile.vx);
  assert.ok(Math.abs(missileTurn - 4.8/60) < 1e-12);
- assert.ok(Math.abs(Math.atan2(grenade.vy, grenade.vx) - missileTurn/3) < 1e-12);
+ assert.ok(Math.abs(Math.atan2(grenade.vy, grenade.vx) - missileTurn/2) < 1e-12);
+ infinity.close();
+});
+
+test('the Infinity pause menu freezes the offline simulation until Resume', () => {
+ const {infinity, byID, state, advance} = harness();
+ infinity.start('offline');
+ const world = state(), before = world.time;
+ const arena = byID('infiniteArena'), pauseMenu = byID('infinitePauseMenu');
+ arena.emit('keydown',{code:'Escape'});
+ assert.ok(arena.open && pauseMenu.open);
+ arena.emit('keydown',{code:'KeyQ'});
+ advance(180);
+ assert.equal(world.time,before);
+ assert.equal(world.bullets.length,0);
+ byID('infiniteResumeBtn').emit('click');
+ advance();
+ assert.ok(!pauseMenu.open && world.time>before);
+ assert.equal(world.bullets.length,0);
+ infinity.close();
+});
+
+test('online Infinity sends neutral pause heartbeats and clears the respawn hold on resume', () => {
+ const {infinity, byID, sockets, state, advance} = harness();
+ infinity.start('online');
+ const [socket] = sockets, arena = byID('infiniteArena'), menu = byID('infinitePauseMenu');
+ arena.emit('keydown',{code:'Escape'});
+ socket.receive({type:'welcome',id:4,seed:0});
+ socket.receive({type:'state',tanks:[{id:4,x:42,y:42,angle:0,hp:0}],bullets:[],players:1,leaderboard:[]});
+ assert.ok(socket.sent.at(-1).paused);
+ const pauseSeq = socket.sent.at(-1).seq;
+ byID('infiniteControlsBtn').emit('click');
+ advance(40);
+ assert.ok(menu.open && byID('controlsDialog').open);
+ assert.match(byID('infiniteStatus').textContent,/Respawn held/);
+ assert.ok(socket.sent.length>2);
+ assert.ok(socket.sent.every(input=>input.paused&&!input.forward&&!input.fire));
+ byID('controlsDialog').close();
+ menu.emit('cancel');
+ assert.ok(!menu.open);
+ assert.equal(socket.sent.at(-1).paused,false);
+ assert.ok(socket.sent.at(-1).seq>pauseSeq);
+ assert.ok(state().joined);
+ infinity.close();
+});
+
+test('Starman keeps an equipped Infinity machine gun firing beyond its usual budget', () => {
+ const {infinity, byID, state, advance, window} = harness(undefined,true);
+ infinity.start('offline');
+ const world = state(), tank = world.tanks[0], arena = byID('infiniteArena');
+ world.nextPickup = world.nextBot = Infinity;
+ Object.assign(tank,{angle:0,power:'rapid',powerTime:.3,machineRounds:1,charges:5,cooldown:2});
+ window.leqraInfinityArt.grantPower(tank,'starman',15,4);
+ arena.emit('keydown',{code:'KeyQ'});
+ advance(200);
+ assert.equal(world.lastBullet,200);
+ assert.equal(tank.power,'rapid');
+ assert.equal(tank.powerTime,.3);
+ assert.equal(tank.machineRounds,1);
+ assert.equal(tank.cooldown,0);
+ assert.ok(world.bullets.length<=window.leqraNet.MACHINE_CAPACITY);
+ arena.emit('keyup',{code:'KeyQ'});
+ advance(41);
+ assert.equal(tank.starmanTime,0);
+ assert.ok(tank.powerTime<.3 && tank.powerTime>0);
+ arena.emit('keydown',{code:'KeyQ'});
+ advance();
+ assert.equal(world.lastBullet,201);
+ assert.equal(tank.power,'');
  infinity.close();
 });
 

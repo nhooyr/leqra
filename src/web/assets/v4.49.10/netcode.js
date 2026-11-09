@@ -240,10 +240,10 @@
   // Snapshot sync can find a pending shot without materializing every preview.
   hasPending(id){for(const v of this.previews.values())if(v.owner===id&&!v.accepted)return true;return false;}
   remove(id){this.pilots.delete(id);for(const [k,v]of this.previews)if(v.owner===id)this.previews.delete(k);}
-  cooldown(t,now){const p=this.pilots.get(t.id);return p?Math.max(0,(p.until-now)/1000):Math.max(0,t.cooldown||0);}
+  cooldown(t,now){if(t.starmanTime>0)return 0;const p=this.pilots.get(t.id);return p?Math.max(0,(p.until-now)/1000):Math.max(0,t.cooldown||0);}
   machineRounds(t){
    let remaining=Math.max(0,t.machineRounds||0);
-   for(const v of this.previews.values())if(v.owner===t.id&&!v.accepted&&v.power==='rapid')remaining--;
+   for(const v of this.previews.values())if(v.owner===t.id&&!v.accepted&&v.power==='rapid'&&!v.boosted)remaining--;
    return Math.max(0,remaining);
   }
   tryFire(t,held,now,options){
@@ -256,13 +256,18 @@
    // the hold just as it does on Go; it must not fire later by itself.
    if(t.power==='grenade'){if(!pressed)return null;p.blocked=true;}
    // A single pass avoids three temporary arrays on the 60 Hz rapid-fire path.
-   let pending=0,slots=0,chargeUse=0;
-   for(const v of this.previews.values())if(v.owner===t.id&&!v.accepted){pending++;slots+=v.shells.length;if(v.power===t.power)chargeUse++;}
-   if(this.cooldown(t,now)>.001||options.blocked||options.free-slots<options.need||pending>=(t.power==='rapid'?48:4)||
-      (options.charged&&t.charges-chargeUse<=0)||(t.power==='rapid'&&!(t.machineRounds-chargeUse>0)))return null;
-   if(t.power==='rapid'){const tick=Math.floor(now/STEP_MS);if(p.rapidTick===tick)return null;p.rapidTick=tick;}
-   const shot=++p.next,key=this.key(t.id,p.life,shot),total=options.cooldown;
-   const v={key,owner:t.id,life:p.life,shot,power:t.power||'',at:now,until:now+1000*total,
+   const boosted=t.starmanTime>0,fast=boosted||t.power==='rapid';
+   let pending=0,normalPending=0,slots=0,chargeUse=0;
+   for(const v of this.previews.values())if(v.owner===t.id&&!v.accepted){
+    pending++;slots+=v.shells.length;
+    if(!v.boosted){normalPending++;if(v.power===t.power)chargeUse++;}
+   }
+   if(options.blocked||pending>=48||!fast&&normalPending>=4)return null;
+   if(!boosted&&(this.cooldown(t,now)>.001||options.free-slots<options.need||
+      options.charged&&t.charges-chargeUse<=0||t.power==='rapid'&&!(t.machineRounds-chargeUse>0)))return null;
+   if(fast){const tick=Math.floor(now/STEP_MS);if(p.rapidTick===tick)return null;p.rapidTick=tick;}
+   const shot=++p.next,key=this.key(t.id,p.life,shot),total=boosted?0:options.cooldown;
+   const v={key,owner:t.id,life:p.life,shot,power:t.power||'',boosted,at:now,until:now+1000*total,
     expires:now+clamp(options.ttl||600,250,900),shells:[],accepted:false,confirmed:new Set()};
    p.until=v.until;p.total=total;this.previews.set(key,v);this.soundKeys.set(key,now+2000);
    return v;

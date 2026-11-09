@@ -775,30 +775,33 @@ func (g *Game) fire(t *Tank) bool {
 	if s := g.survivalState(); s != nil && s.Status != "wave" {
 		return false
 	}
-	if !t.Alive || t.Cooldown > 0 {
+	starman := t.StarmanTime > 0
+	if !t.Alive || !starman && t.Cooldown > 0 {
 		return false
 	}
-	if t.Power == "rapid" && (t.MachineRounds <= 0 || t.rapidFired && t.rapidTick == g.Tick) {
+	if t.Power == "rapid" && (!starman && t.MachineRounds <= 0 || t.rapidFired && t.rapidTick == g.Tick) {
 		return false
 	}
 	if t.Power == "laser" {
 		return g.fireLaser(t)
 	}
-	if t.Power == "cannon" && t.Charges <= 0 {
+	if t.Power == "cannon" && !starman && t.Charges <= 0 {
 		return false
-	}
-	ammo := 0
-	for _, b := range g.Bullets {
-		if !b.Dead && b.Owner == t.ID {
-			ammo++
-		}
 	}
 	spread := []float64{0}
 	if t.Power == "scatter" {
 		spread = []float64{-.21, 0, .21}
 	}
-	if capacity(t)-ammo < len(spread) {
-		return false
+	if !starman {
+		ammo := 0
+		for _, b := range g.Bullets {
+			if !b.Dead && b.Owner == t.ID {
+				ammo++
+			}
+		}
+		if capacity(t)-ammo < len(spread) {
+			return false
+		}
 	}
 	cooldown := .34
 	speed, life := 282.0, 5.3
@@ -830,6 +833,9 @@ func (g *Game) fire(t *Tank) bool {
 	}
 	if g.muzzleBlocked(t, radius) {
 		return false
+	}
+	if starman {
+		cooldown = 0
 	}
 	if kind == "rapid" {
 		t.rapidTick = g.Tick
@@ -883,9 +889,24 @@ func (g *Game) fire(t *Tank) bool {
 			g.Bullets = append(g.Bullets, b)
 		}
 	}
-	// Throttle cosmetic machine-gun events, never the authoritative bullets.
-	if kind != "rapid" || t.ShotSerial%4 == 1 {
+	// Throttle sustained-fire cosmetics, never authoritative bullets.
+	sustained := kind == "rapid" || starman && kind != "grenade"
+	if !sustained || t.ShotSerial%4 == 1 {
 		g.emit("shot", t, t.ID, kind)
+	}
+	if starman {
+		// Keep the newest shots within the existing per-pilot safety budget.
+		// Reaching it never blocks an otherwise valid Starman volley.
+		remaining := machineCapacity
+		for i := len(g.Bullets) - 1; i >= 0; i-- {
+			b := g.Bullets[i]
+			if b.Owner != t.ID || b.Dead {
+				continue
+			}
+			b.Dead = remaining == 0
+			remaining = max(0, remaining-1)
+		}
+		return true
 	}
 	if kind == "rapid" {
 		t.MachineRounds--
@@ -963,7 +984,8 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 	return points, nil
 }
 func (g *Game) fireLaser(t *Tank) bool {
-	if !t.Alive || t.Cooldown > 0 || t.Power != "laser" || t.Charges <= 0 || g.muzzleBlocked(t, laserRadius) {
+	starman := t.StarmanTime > 0
+	if !t.Alive || t.Power != "laser" || !starman && (t.Cooldown > 0 || t.Charges <= 0) || g.muzzleBlocked(t, laserRadius) {
 		return false
 	}
 	points, target := g.traceLaser(t)
@@ -977,17 +999,24 @@ func (g *Game) fireLaser(t *Tank) bool {
 	if len(g.events) > 24 {
 		g.events = g.events[len(g.events)-24:]
 	}
-	t.Cooldown = laserCooldown
-	t.CooldownTotal = laserCooldown
+	cooldown := laserCooldown
+	if starman {
+		cooldown = 0
+	}
+	t.Cooldown, t.CooldownTotal = cooldown, cooldown
 	t.Recoil = 1
-	g.emit("shot", t, t.ID, "laser")
+	if !starman || t.ShotSerial%4 == 1 {
+		g.emit("shot", t, t.ID, "laser")
+	}
 	if target != nil {
 		g.hurt(target, &Bullet{Owner: t.ID, Kind: "laser"})
 	}
-	t.Charges--
-	if t.Charges <= 0 {
-		t.Power = ""
-		t.PowerTime = 0
+	if !starman {
+		t.Charges--
+		if t.Charges <= 0 {
+			t.Power = ""
+			t.PowerTime = 0
+		}
 	}
 	return true
 }
@@ -1083,7 +1112,7 @@ func (g *Game) steerMissile(b *Bullet, dt float64) {
 func guidedProjectileAngle(kind string, angle, targetAngle, dt float64) float64 {
 	maxTurn := missileTurn * dt
 	if kind == "grenade" {
-		maxTurn /= 3
+		maxTurn /= 2
 	}
 	return angle + clamp(delta(angle, targetAngle), -maxTurn, maxTurn)
 }
@@ -1268,6 +1297,7 @@ func applyPower(t *Tank, kind string, duration, starDuration float64) bool {
 		t.StarmanTime = starDuration
 		t.Invulnerable = math.Max(t.Invulnerable, starDuration)
 		t.GhostTime = math.Max(t.GhostTime, starDuration)
+		t.Cooldown, t.CooldownTotal = 0, 0
 	case "rapid", "scatter":
 		t.MachineRounds = 0
 		if kind == "rapid" {
@@ -1443,7 +1473,7 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		}
 		t.Cooldown = math.Max(0, t.Cooldown-dt)
 		t.Recoil = math.Max(0, t.Recoil-dt*9)
-		if t.Power != "" {
+		if t.Power != "" && t.StarmanTime <= 0 {
 			t.PowerTime -= dt
 			if t.PowerTime <= 0 {
 				t.MachineRounds = 0

@@ -68,9 +68,11 @@ func (a *infiniteArena) advanceEquipment(p *infinitePilot) {
 			p.hasWaypoint = false
 		}
 	}
-	k.PowerTime = max(0, k.PowerTime-tickDT)
-	if k.PowerTime < 1e-9 {
-		k.Power, k.PowerTime, k.Charges, k.MachineRounds = "", 0, 0, 0
+	if k.StarmanTime <= 0 {
+		k.PowerTime = max(0, k.PowerTime-tickDT)
+		if k.PowerTime < 1e-9 {
+			k.Power, k.PowerTime, k.Charges, k.MachineRounds = "", 0, 0, 0
+		}
 	}
 	k.Cooldown = max(0, k.Cooldown-tickDT)
 	k.Recoil = max(0, k.Recoil-9*tickDT)
@@ -240,7 +242,8 @@ func (a *infiniteArena) muzzleBlocked(p *infinitePilot, radius float64) bool {
 
 func (a *infiniteArena) fire(p *infinitePilot) {
 	k := &p.kit
-	if p.HP == 0 || k.Cooldown > 1e-9 || k.Power == "rapid" && k.MachineRounds == 0 {
+	starman := k.StarmanTime > 0
+	if p.HP == 0 || !starman && (k.Cooldown > 1e-9 || k.Power == "rapid" && k.MachineRounds == 0) {
 		return
 	}
 	kind := k.Power
@@ -255,19 +258,24 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 		a.fireLaser(p)
 		return
 	}
-	ammo := 0
-	for _, b := range a.bullets {
-		if !b.dead && b.Owner == p.ID {
-			ammo++
-		}
-	}
 	offsets := []float64{0}
 	if kind == "scatter" {
 		offsets = []float64{-.21, 0, .21}
 	}
-	if capacity(k)-ammo < len(offsets) {
-		return
+	if starman {
+		spec.cooldown = 0
+	} else {
+		ammo := 0
+		for _, b := range a.bullets {
+			if !b.dead && b.Owner == p.ID {
+				ammo++
+			}
+		}
+		if capacity(k)-ammo < len(offsets) {
+			return
+		}
 	}
+	k.ShotSerial++
 	k.Cooldown, k.Recoil = spec.cooldown, 1
 	for _, offset := range offsets {
 		angle := p.Angle + offset
@@ -283,13 +291,31 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 			a.bullets = append(a.bullets, b)
 		}
 	}
-	if kind != "rapid" || k.MachineRounds%4 == 0 {
+	audible := kind != "rapid" || k.MachineRounds%4 == 0
+	if starman && kind != "grenade" {
+		audible = k.ShotSerial%4 == 1
+	}
+	if audible {
 		a.effect("shot:"+kind, p.X, p.Y, p.ID, nil)
+	}
+	if starman {
+		remaining := machineCapacity
+		for i := len(a.bullets) - 1; i >= 0; i-- {
+			b := &a.bullets[i]
+			if b.Owner != p.ID || b.dead {
+				continue
+			}
+			b.dead = remaining == 0
+			remaining = max(0, remaining-1)
+		}
 	}
 	a.spendWeapon(k)
 }
 
 func (a *infiniteArena) spendWeapon(k *Tank) {
+	if k.StarmanTime > 0 {
+		return
+	}
 	switch k.Power {
 	case "":
 		return
@@ -309,9 +335,17 @@ func (a *infiniteArena) spendWeapon(k *Tank) {
 
 func (a *infiniteArena) fireLaser(p *infinitePilot) {
 	k := &p.kit
-	k.Cooldown, k.Recoil = laserCooldown, 1
+	k.ShotSerial++
+	starman := k.StarmanTime > 0
+	cooldown := laserCooldown
+	if starman {
+		cooldown = 0
+	}
+	k.Cooldown, k.Recoil = cooldown, 1
 	points, target := a.traceLaser(p)
-	a.effect("laser", p.X, p.Y, p.ID, points)
+	if !starman || k.ShotSerial%4 == 1 {
+		a.effect("laser", p.X, p.Y, p.ID, points)
+	}
 	if target != nil {
 		a.hurt(target, p.ID)
 	}

@@ -846,9 +846,15 @@ body #roomScreen.unified-room .infinity-toggle:not([hidden])+#startRoomBtn{margi
 body .infinite-arena .infinite-header{padding:max(7px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 7px max(12px,env(safe-area-inset-left))}
 .infinite-header h2{font:700 12px var(--mono);text-transform:uppercase;margin:0}
 .infinite-header .bar-right{gap:9px}
-.infinite-header .secondary{width:auto;min-height:44px;margin:0;padding:8px 13px}
-#infiniteSoundBtn{width:44px;height:44px}
+body .infinite-header .icon-btn{width:44px;height:44px}
 #infiniteKills{white-space:nowrap;color:var(--accent-ink);font:700 12px var(--mono);font-variant-numeric:tabular-nums}
+.infinite-pause-menu{width:min(380px,calc(100vw - 24px))}
+.infinite-pause-menu :is(.feature-header,.feature-footer){position:static}
+.infinite-pause-menu .feature-body p{margin:0;color:var(--text-soft);font-size:13px;line-height:1.6}
+.infinite-arena[data-mode=online] .infinite-pause-offline,.infinite-arena[data-mode=offline] .infinite-pause-online{display:none}
+.infinite-pause-menu .feature-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.infinite-pause-menu .primary{grid-column:1/-1}
+.infinite-pause-menu .secondary{margin:0;min-height:44px;padding:9px}
 .infinite-underbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:45px;background:var(--surface);border-top:1px solid var(--border);padding:6px max(12px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
 .infinite-loadout{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .infinite-readout{text-align:right}
