@@ -158,6 +158,21 @@ type Bullet struct {
 	Bounces     int     `json:"bounces"`
 	Dead        bool    `json:"-"`
 }
+
+func (b *Bullet) reflect(wall RayHit) {
+	if wall.NX != 0 {
+		b.VX = -b.VX
+	}
+	if wall.NY != 0 {
+		b.VY = -b.VY
+	}
+	b.Bounces++
+	if b.Kind == "homing" || b.Kind == "grenade" {
+		b.Target = -1
+		b.SeekDelay = missileWallDelay
+	}
+}
+
 type Pickup struct {
 	ID   int     `json:"id"`
 	X    float64 `json:"x"`
@@ -811,13 +826,7 @@ func (g *Game) fire(t *Tank) bool {
 		} else if hitOK {
 			b.X = t.X + cs*muzzle*hit.T + hit.NX*.12
 			b.Y = t.Y + sn*muzzle*hit.T + hit.NY*.12
-			if hit.NX != 0 {
-				b.VX = -b.VX
-			}
-			if hit.NY != 0 {
-				b.VY = -b.VY
-			}
-			b.Bounces++
+			b.reflect(hit)
 		}
 		if kind == "homing" || kind == "rapid" {
 			// Count the hidden muzzle section toward total path budgets, matching Laser.
@@ -826,9 +835,6 @@ func (g *Game) fire(t *Tank) bool {
 				launchDistance = muzzle * targetAt
 			} else if hitOK {
 				launchDistance = muzzle*hit.T + math.Hypot(hit.NX, hit.NY)*.12
-				if kind == "homing" {
-					b.SeekDelay = missileWallDelay
-				}
 			}
 			if kind == "homing" {
 				b.RangeLeft = math.Max(0, g.missileTravelRange()-launchDistance)
@@ -984,9 +990,8 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 // A half-perimeter is width + height, not half of the diagonal or a straight radius.
 func (g *Game) missileTravelRange() float64 { return g.World.Width + g.World.Height }
 
-// Guidance is server-owned. Limited turn rate and a forward-facing seeker let
-// a tank dodge across the missile's nose. A lost lock does not instantly reacquire.
-// Walls reflect the missile and briefly inhibit steering away from that reflection.
+// Guidance is server-owned. Missiles and grenades share the same seeker,
+// turn limit, and delay after losing a lock or rebounding from a wall.
 func (g *Game) steerMissile(b *Bullet, dt float64) {
 	b.SeekDelay = math.Max(0, b.SeekDelay-dt)
 	if b.Age < .1 || b.SeekDelay > 0 {
@@ -1035,7 +1040,18 @@ func (g *Game) steerMissile(b *Bullet, dt float64) {
 	b.Target = target.ID
 	a := math.Atan2(b.VY, b.VX)
 	a += clamp(delta(a, math.Atan2(target.Y-b.Y, target.X-b.X)), -missileTurn*dt, missileTurn*dt)
-	b.VX, b.VY = math.Cos(a)*missileSpeed, math.Sin(a)*missileSpeed
+	speed := missileSpeed
+	if b.Kind == "grenade" {
+		speed = math.Hypot(b.VX, b.VY)
+	}
+	b.VX, b.VY = math.Cos(a)*speed, math.Sin(a)*speed
+}
+
+func (g *Game) guideGrenade(b *Bullet, dt, lifeBefore float64) {
+	g.steerMissile(b, dt)
+	drag := grenadeDragFactor(lifeBefore, b.Life)
+	b.VX *= drag
+	b.VY *= drag
 }
 func (g *Game) projectileEvent(kind string, b *Bullet, radius float64) {
 	g.nextEvent++
@@ -1115,13 +1131,11 @@ func (g *Game) updateBullets(dt float64) {
 		lifeBefore := b.Life
 		b.Age += span
 		b.Life -= span
-		if b.Kind == "homing" {
+		switch b.Kind {
+		case "homing":
 			g.steerMissile(b, span)
-		}
-		if b.Kind == "grenade" {
-			drag := grenadeDragFactor(lifeBefore, b.Life)
-			b.VX *= drag
-			b.VY *= drag
+		case "grenade":
+			g.guideGrenade(b, span, lifeBefore)
 		}
 		remaining := span
 		for step := 0; step < 4 && remaining > .00001 && !b.Dead; step++ {
@@ -1146,18 +1160,10 @@ func (g *Game) updateBullets(dt float64) {
 					b.RangeLeft = math.Max(0, b.RangeLeft-math.Hypot(dx, dy)*wall.T)
 					nudge = math.Min(nudge, b.RangeLeft/math.Max(1, math.Hypot(wall.NX, wall.NY)))
 					b.RangeLeft = math.Max(0, b.RangeLeft-nudge*math.Hypot(wall.NX, wall.NY))
-					b.Target = -1
-					b.SeekDelay = missileWallDelay
 				}
 				b.X += dx*wall.T + wall.NX*nudge
 				b.Y += dy*wall.T + wall.NY*nudge
-				if wall.NX != 0 {
-					b.VX = -b.VX
-				}
-				if wall.NY != 0 {
-					b.VY = -b.VY
-				}
-				b.Bounces++
+				b.reflect(wall)
 				remaining *= 1 - wall.T
 				if (b.Kind != "homing" && b.Kind != "rapid" && b.Bounces > 22) || b.Bounces > 128 {
 					if b.Kind == "grenade" {

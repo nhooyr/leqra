@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.48.2';
+const GAME_VERSION='4.49.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -535,8 +535,9 @@ function muzzleProjectile(t,angle){
  if(contact){b.x=t.x+cs*muzzle*tank.at;b.y=t.y+sn*muzzle*tank.at;b.launchHit=tank.tank.id;}
  else if(hit){b.x=t.x+cs*muzzle*hit.t+hit.nx*.12;b.y=t.y+sn*muzzle*hit.t+hit.ny*.12;if(hit.nx)b.vx=-b.vx;if(hit.ny)b.vy=-b.vy;b.bounces++;}
  const launchDistance=contact?muzzle*tank.at:hit?muzzle*hit.t+Math.hypot(hit.nx,hit.ny)*.12:muzzle;
- if(b.kind==='homing'){b.rangeLeft=Math.max(0,W+H-launchDistance);b.seekDelay=!contact&&hit?MISSILE_WALL_DELAY:0;}
+ if(b.kind==='homing')b.rangeLeft=Math.max(0,W+H-launchDistance);
  else if(b.kind==='rapid')b.life=Math.max(0,((W+H)/2-launchDistance)/MACHINE_SPEED);
+ if(b.kind==='homing'||b.kind==='grenade')b.seekDelay=!contact&&hit?MISSILE_WALL_DELAY:0;
  return b;
 }
 let lastMachineTone=-Infinity;
@@ -670,8 +671,9 @@ function detonate(b){
 // Match Go's forward seeker, finite turn rate, and lock/rebound cooldowns.
 function steerMissile(b,dt,candidates=tanks){
  b.seekDelay=Math.max(0,(b.seekDelay||0)-dt);if(b.age<.1||b.seekDelay>0)return;
+ const owner=tanks.find(o=>o.id===b.owner)||{id:b.owner,team:0};
  const visible=t=>{
-  if(!t||t.id===b.owner||!t.alive||t.invulnerable>0||!isEnemy(tanks.find(o=>o.id===b.owner)||{id:b.owner,team:0},t))return false;
+  if(!t||t.id===b.owner||!t.alive||t.invulnerable>0||!isEnemy(owner,t))return false;
   const rx=t.x-b.x,ry=t.y-b.y,d=Math.hypot(rx,ry);
   if(d>CELL*10||(d>1e-8&&rx*b.vx+ry*b.vy<MISSILE_VIEW_COS*d*Math.hypot(b.vx,b.vy)))return false;
   return !rayWalls(b.x,b.y,rx,ry,b.r);
@@ -681,7 +683,12 @@ function steerMissile(b,dt,candidates=tanks){
  if(!target){let best=Infinity;for(const t of candidates){if(!visible(t))continue;const d=distance(b,t);if(d<best){best=d;target=t;}}}
  b.target=target?target.id:-1;if(!target)return;
  let angle=Math.atan2(b.vy,b.vx);angle+=clamp(angleDelta(angle,Math.atan2(target.y-b.y,target.x-b.x)),-MISSILE_TURN*dt,MISSILE_TURN*dt);
- b.vx=Math.cos(angle)*MISSILE_SPEED;b.vy=Math.sin(angle)*MISSILE_SPEED;
+ const speed=b.kind==='grenade'?Math.hypot(b.vx,b.vy):MISSILE_SPEED;
+ b.vx=Math.cos(angle)*speed;b.vy=Math.sin(angle)*speed;
+}
+function guideGrenade(b,dt,lifeBefore){
+ steerMissile(b,dt);
+ const drag=grenadeDragFactor(lifeBefore,b.life);b.vx*=drag;b.vy*=drag;
 }
 // Subtract actual path length, including tiny collision-separation movements.
 function spendMissileRange(b,length){if(b.kind==='homing')b.rangeLeft=Math.max(0,(b.rangeLeft??(W+H))-length);}
@@ -689,14 +696,14 @@ function missileWallNudge(b,wall){
  const normal=Math.hypot(wall.nx,wall.ny),nudge=b.kind==='homing'?Math.min(.08,Math.max(0,b.rangeLeft)/Math.max(1,normal)):.08;
  b.x+=wall.nx*nudge;b.y+=wall.ny*nudge;spendMissileRange(b,nudge*normal);
  if(wall.nx)b.vx=-b.vx;if(wall.ny)b.vy=-b.vy;b.bounces=(b.bounces||0)+1;
- if(b.kind==='homing'){b.target=-1;b.seekDelay=MISSILE_WALL_DELAY;}
+ if(b.kind==='homing'||b.kind==='grenade'){b.target=-1;b.seekDelay=MISSILE_WALL_DELAY;}
 }
-// Used only for grenade guidance/AI, not authoritative online damage.
+// Approximate grenade flight against the current arena for AI planning.
 function grenadeForecast(source,seconds=source.life){
  const b={...source};if(b.launchHit!==undefined){b.life=0;return b;}let left=Math.max(0,Math.min(seconds,b.life));
- while(left>1e-6){const dt=Math.min(1/60,left),lifeBefore=b.life;b.life=Math.max(0,b.life-dt);const drag=grenadeDragFactor(lifeBefore,b.life);b.vx*=drag;b.vy*=drag;let rest=dt;
+ while(left>1e-6){const dt=Math.min(1/60,left),lifeBefore=b.life;b.life=Math.max(0,b.life-dt);b.age=(b.age||0)+dt;guideGrenade(b,dt,lifeBefore);let rest=dt;
   for(let i=0;i<4&&rest>1e-5;i++){const dx=b.vx*rest,dy=b.vy*rest,w=rayWalls(b.x,b.y,dx,dy,b.r);if(!w){b.x+=dx;b.y+=dy;break;}
-   b.x+=dx*w.t+w.nx*.08;b.y+=dy*w.t+w.ny*.08;if(w.nx)b.vx=-b.vx;if(w.ny)b.vy=-b.vy;b.bounces++;rest*=1-w.t;
+   b.x+=dx*w.t;b.y+=dy*w.t;missileWallNudge(b,w);rest*=1-w.t;
   }left-=dt;
  }return b;
 }
@@ -709,7 +716,7 @@ function grantPower(t,type){
  else if(type==='starman'){t.starmanTime=STARMAN_DURATION;t.invulnerable=Math.max(t.invulnerable||0,STARMAN_DURATION);t.ghostTime=Math.max(t.ghostTime||0,STARMAN_DURATION);t.spawnProtected=false;}
  else{t.power=type;t.machineRounds=type==='rapid'?MACHINE_FIRING_ROUNDS:0;if(type==='rapid'){t.cooldown=0;t.cooldownTotal=0;}t.powerTime=duration;t.charges=['homing','grenade','laser','cannon'].includes(type)?3:5;}
 }
-function pickupMessage(type){const duration=powerEffectDuration();return type==='starman'?'STARMAN · INVINCIBLE + THROUGH WALLS · '+STARMAN_DURATION+'s':type==='ghost'?'GHOST · THROUGH WALLS · '+duration+' SECONDS':type==='cannon'?'CANNON · EDGE RICOCHETS · 4× SIZE / SPEED':type==='laser'?'LASER · RICOCHETS · LONG AIM GUIDE':type==='homing'?'HOMING · RICOCHETS · HALF-PERIMETER RANGE':type==='grenade'?'GRENADE · IMPACT / TAP AGAIN / 10s FUSE':type==='speed'?'SUPER SPEED · +1 STACK · '+duration+' SECONDS':type==='rapid'?'MACHINE GUN · 3s FIRING · '+duration+'s TO USE':POWER[type].name+' · '+duration+' SECONDS';}
+function pickupMessage(type){const duration=powerEffectDuration();return type==='starman'?'STARMAN · INVINCIBLE + THROUGH WALLS · '+STARMAN_DURATION+'s':type==='ghost'?'GHOST · THROUGH WALLS · '+duration+' SECONDS':type==='cannon'?'CANNON · EDGE RICOCHETS · 4× SIZE / SPEED':type==='laser'?'LASER · RICOCHETS · LONG AIM GUIDE':type==='homing'?'HOMING · RICOCHETS · HALF-PERIMETER RANGE':type==='grenade'?'GRENADE · HOMING / TAP AGAIN / 10s FUSE':type==='speed'?'SUPER SPEED · +1 STACK · '+duration+' SECONDS':type==='rapid'?'MACHINE GUN · 3s FIRING · '+duration+'s TO USE':POWER[type].name+' · '+duration+' SECONDS';}
 function localPilotIndex(id){if(id===localPlayerID())return 0;const second=secondaryID();return second!==undefined&&id===second?1:-1;}
 function setPilotFeedback(index,text,duration=2.5){if(index<0||index>1)return;pilotFeedback[index].text=text;pilotFeedback[index].until=performance.now()+duration*1000;}
 function showStartingControls(){
@@ -735,7 +742,7 @@ function updateBullets(dt){
   if(b.kind==='homing')b.rangeLeft??=W+H;
   const span=Math.min(dt,Math.max(0,b.life),b.kind==='homing'?b.rangeLeft/MISSILE_SPEED:Infinity),lifeBefore=b.life;b.age+=span;b.life-=span;
   if(b.kind==='homing')steerMissile(b,span);
-  if(b.kind==='grenade'){const drag=grenadeDragFactor(lifeBefore,b.life);b.vx*=drag;b.vy*=drag;}
+  else if(b.kind==='grenade')guideGrenade(b,span,lifeBefore);
   if(b.kind!=='rapid'){b.trail.push({x:b.x,y:b.y});if(b.trail.length>11)b.trail.shift();}let remaining=span;
   for(let step=0;step<4&&remaining>.00001&&!b.dead;step++){
    if(b.kind==='homing')remaining=Math.min(remaining,Math.max(0,b.rangeLeft)/MISSILE_SPEED);
@@ -983,13 +990,13 @@ function forecastGrenadeBodies(t,d,horizon,sources=bullets){
   if(distance(t,b)>reach)continue;
   const p={...b};let elapsed=0;
   while(elapsed<horizon-1e-9&&p.life>1e-9){
-   const dt=Math.min(1/30,horizon-elapsed,p.life),before=p.life;p.life=Math.max(0,p.life-dt);
-   const drag=grenadeDragFactor(before,p.life);p.vx*=drag;p.vy*=drag;let rest=dt,segmentStart=elapsed;
+   const dt=Math.min(1/30,horizon-elapsed,p.life),before=p.life;p.life=Math.max(0,p.life-dt);p.age=(p.age||0)+dt;
+   guideGrenade(p,dt,before);let rest=dt,segmentStart=elapsed;
    for(let step=0;step<4&&rest>1e-6;step++){
     const dx=p.vx*rest,dy=p.vy*rest,w=rayWalls(p.x,p.y,dx,dy,p.r),fraction=w?w.t:1,span=rest*fraction;
     segments.push({x:p.x,y:p.y,vx:p.vx,vy:p.vy,start:segmentStart,end:segmentStart+span,r:p.r+GRENADE_AVOID_PADDING});
     p.x+=dx*fraction;p.y+=dy*fraction;segmentStart+=span;rest-=span;
-    if(!w)break;p.x+=w.nx*.08;p.y+=w.ny*.08;if(w.nx)p.vx=-p.vx;if(w.ny)p.vy=-p.vy;
+    if(!w)break;missileWallNudge(p,w);
    }
    elapsed+=dt;
   }
@@ -2753,7 +2760,7 @@ function countdownTipPool(rules=currentRules()){
    scatter:'The shotgun fires a spread of bouncing pellets.',
    shield:'Shield pickups stack charges and refresh the shield timer.',
    homing:'Homing missiles can bounce; use turns and walls to shake them.',
-   grenade:'Grenades have a '+GRENADE_FUSE+'-second fuse; press Fire again to detonate.',
+   grenade:'Grenades home in. Press Fire again to detonate before the '+GRENADE_FUSE+'-second fuse expires.',
    speed:'Speed pickups stack for faster movement and turning.',
    laser:'Laser gives you a long dotted guide for reflected shots.',
    cannon:'Cannon shells ignore interior walls and bounce off the outer rim.',
@@ -3376,7 +3383,7 @@ function pilotProjectileState(t,checkLocks=false){
  for(const b of list){
   if(b.dead)continue;
   if(b.owner===t.id){ammo++;if(b.kind==='grenade'){grenades++;grenadeLife=Math.max(grenadeLife,b.life);}}
-  else if(checkLocks&&!locked&&b.kind==='homing'&&b.target===t.id&&canDamage(b.owner,t))locked=true;
+  else if(checkLocks&&!locked&&(b.kind==='homing'||b.kind==='grenade')&&b.target===t.id&&canDamage(b.owner,t))locked=true;
  }
  return{ammo:t.power==='laser'?Math.max(0,3-t.charges):ammo,grenades,grenadeLife,locked};
 }
@@ -3390,7 +3397,7 @@ function liveFeedbackTank(t){
  view.cooldownTotal=online.shots?.pilots.get(t.id)?.total||auth.cooldownTotal;view.respawnTime=Math.max(0,(auth.respawnTime||0)-Math.min(age,.25));
  return view;
 }
-function missileLocks(t){const bs=mode==='online'?online.snapshots.at(-1)?.bullets||[]:bullets;return bs.filter(b=>b.kind==='homing'&&!b.dead&&b.target===t.id&&b.owner!==t.id&&canDamage(b.owner,t));}
+function missileLocks(t){const bs=mode==='online'?online.snapshots.at(-1)?.bullets||[]:bullets;return bs.filter(b=>(b.kind==='homing'||b.kind==='grenade')&&!b.dead&&b.target===t.id&&b.owner!==t.id&&canDamage(b.owner,t));}
 let feedbackAt=-Infinity;
 function setText(id,value){const el=$(id);if(el.textContent!==String(value))el.textContent=value;}
 function setStyle(el,key,value){if(el.style.getPropertyValue(key)!==String(value))el.style.setProperty(key,String(value));}
@@ -3411,7 +3418,7 @@ function updateCombatFeedback(force=false){
  const now=performance.now();if(!force&&now-feedbackAt<1000/30)return;feedbackAt=now;
  for(const [num,source]of [[1,controlledTank()],[2,tanks.find(t=>t.id===secondaryID())]]){
   if(!source)continue;const t=liveFeedbackTank(source),active=phase==='playing'&&t.alive&&!survivalBreak(),projectiles=pilotProjectileState(t,active),locked=active&&projectiles.locked;
-  const warning=$('missileWarning'+num);warning.hidden=!combatPrefs.visual||!locked;if(warning.textContent!=='⚠ MISSILE LOCK')warning.textContent='⚠ MISSILE LOCK';
+  const warning=$('missileWarning'+num);warning.hidden=!combatPrefs.visual||!locked;setText('missileWarning'+num,'⚠ HOMING LOCK');
   const panel=$('pilotLoadout'+num);panel.classList.toggle('missile-locked',combatPrefs.visual&&locked);
   if(locked&&!lastLocks[num]&&combatPrefs.audio&&time-(lastLockTone[num]||-10)>1.5){tone(850,1050,.07,.025,'sine');tone(850,1150,.08,.025,'sine',.11);lastLockTone[num]=time;}lastLocks[num]=locked;
   updateMachineBudget(t,num);
@@ -3435,7 +3442,7 @@ function cooldownDuration(power){return power==='cannon'?CANNON_COOLDOWN:power==
 function drawMissileWarnings(){
  if(!combatPrefs.visual||phase!=='playing')return;ctx.save();
  for(const t of [controlledTank(),tanks.find(t=>t.id===secondaryID())]){if(!t?.alive)continue;for(const b of missileLocks(t).slice(0,3)){
-  const a=Math.atan2(b.y-t.y,b.x-t.x);ctx.save();ctx.translate(t.x,t.y);ctx.rotate(a);ctx.strokeStyle=paintColor('#ff83bd');ctx.fillStyle=paintColor('#ff83bd');ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(41,-6);ctx.lineTo(35,0);ctx.lineTo(41,6);ctx.stroke();ctx.restore();
+  const a=Math.atan2(b.y-t.y,b.x-t.x);ctx.save();ctx.translate(t.x,t.y);ctx.rotate(a);ctx.strokeStyle=paintColor(POWER[b.kind].color);ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(41,-6);ctx.lineTo(35,0);ctx.lineTo(41,6);ctx.stroke();ctx.restore();
  }}ctx.restore();
 }
 function initFeatures(){
@@ -3453,7 +3460,7 @@ function initFeatures(){
  <label class="pickup-frequency">POWER-UP FREQUENCY<select id="rule-pickupRate"><option value="superfast">Super fast · every 1–2s (default)</option><option value="fast">Fast · every 2–3.5s</option><option value="normal">Normal · every 4–6s</option><option value="slow">Slow · every 7–10s</option><option value="off">Off · no pickups</option></select></label></div>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Your tank is immune to its own weapons.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="secondary" type="button" id="defaultRulesBtn">DEFAULT RULES</button><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span aria-hidden="true">→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP <span aria-hidden="true">→</span></button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
- <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">Bindings use physical keys. P / Esc opens the menu; M toggles sound; F toggles fullscreen. Both fire keys can also detonate your grenade. When Player 2 is not active, all their configured keys also control Player 1. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional missile warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Missile-lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
+ <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">Bindings use physical keys. P / Esc opens the menu; M toggles sound; F toggles fullscreen. Both fire keys can also detonate your grenade. When Player 2 is not active, all their configured keys also control Player 1. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
  document.body.append(dialogs);$('roomRulesBtn').onclick=()=>openFeature('rules');$('roomPresetsBtn').onclick=()=>openFeature('presets');$('roomControlsBtn').onclick=$('menuControlsBtn').onclick=()=>openFeature('controls');
  for(const b of document.querySelectorAll('[data-close-dialog]'))b.onclick=()=>closeFeature($(b.dataset.closeDialog));for(const d of document.querySelectorAll('.feature-dialog'))d.addEventListener('close',()=>{bindingCapture=null;clearInput();});
  $('rulesForm').onsubmit=submitRules;$('defaultRulesBtn').onclick=resetRuleDefaults;
@@ -3482,8 +3489,8 @@ function initIntroTour(){
  function open(){
   $('introTourDesktop').hidden=!window.matchMedia('(any-pointer: fine)').matches;
   $('introTourTouch').hidden=!touchUI;
-  const fireKeys=[keyLabel(bindings[0].fire),...fireAliasLabels(0)].join(' / ');
-  $('introTourKeys').textContent='Use '+movementKeySummary(0)+' to move and steer. Press '+fireKeys+' to fire from the keyboard. Rebind keys in Controls.';
+  $('introTourMoveKeys').textContent=movementKeySummary(0);
+  $('introTourFireKeys').textContent=[keyLabel(bindings[0].fire),...fireAliasLabels(0)].join(' / ');
   openFeature('introTour');showStep(0);
  }
  $('resetBindingsBtn').insertAdjacentHTML('afterend','<button class="secondary" type="button" id="openIntroTour">Replay quick tour</button>');
@@ -3676,6 +3683,7 @@ function initSpectators(){
 // All input paths (keyboard, mouse, multi-touch, focus loss) share the same cleanup.
 window.addEventListener('keydown',e=>{
  if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||['SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable||e.target.tagName==='INPUT'&&!['button','submit','reset','checkbox','radio','range'].includes(e.target.type))return;
+ if(e.key==='Enter'&&e.target.tagName==='A')return;
  // Fullscreen is available throughout menus, while text entry and binding capture retain their keys.
  if(e.code==='KeyF'){e.preventDefault();if(!e.repeat)toggleFullscreen();return;}
  if(e.target.tagName==='INPUT')return;
@@ -4080,7 +4088,7 @@ function appendChat(m,history=false,channel='room',render=true){
 function chatPacket(m){if(m.room!==online.code)return;const channel=m.channel==='opponent'?'opponent':'room';if(roomChat.code!==m.room)clearRoomChat(m.room);const st=chatState(channel);if(m.type==='chat_history'){const pending=st.pending,error=st.error;st.messages=[];st.lastID=0;for(const item of m.messages||[])appendChat(item,true,channel,false);st.pending=pending;st.error=error;if(roomChat.open)renderActiveChat();}else appendChat(m.message,false,channel,true);syncChatStatus();}
 function submitChat(e){e.preventDefault();const channel=roomChat.sendTarget==='opponent'&&opponentChatEnabled()?'opponent':'room',st=chatState(channel);if(!online.connected||!online.roomData||st.pending)return;const text=$('chatInput').value.trim();if(!text||[...text].length>280){st.error='Use 1–280 characters.';$('chatError').textContent=st.error;return;}if(sendOnline({type:'chat',channel,text})){st.pending={text};st.unconfirmed=null;st.error='';roomChat.draft='';$('chatInput').value='';$('chatError').textContent=channel==='opponent'?'Sending to opponent…':matchPartyChat()?'Sending to party…':'Sending…';syncChatStatus();}else{st.error='Connection unavailable. Your message was not sent.';$('chatError').textContent=st.error;}}
 function positionChatPanel(){if(!roomChat.open)return;const panel=$('chatPanel'),v=window.visualViewport;if(v&&v.height<innerHeight-40){panel.style.bottom=Math.max(10,innerHeight-v.height-v.offsetTop+10)+'px';panel.style.height=Math.max(160,Math.min(435,v.height-20))+'px';}else{panel.style.removeProperty('bottom');panel.style.removeProperty('height');}}
-function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" maxlength="280" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when you want the enemy side to receive your next message.<br>Enter sends · Esc closes · Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();e.stopPropagation();closeChat();}else e.stopPropagation();});window.addEventListener('keydown',e=>{if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
+function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" maxlength="280" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when you want the enemy side to receive your next message.<br>Enter sends · Esc closes · Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();e.stopPropagation();closeChat();}else e.stopPropagation();});window.addEventListener('keydown',e=>{if(bindingCapture||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY','A'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
 
 // Sampling measures RAF cadence (not server tick rate); no HTML/layout work per frame.
 const frameStats={fps:0,frameMs:0,workMs:0,worstMs:0,count:0,elapsed:0,work:0,worst:0,last:0,at:0};

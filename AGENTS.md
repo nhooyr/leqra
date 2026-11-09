@@ -4,7 +4,7 @@
 
 - `src/`: Go server, authoritative simulation, WebSocket transport, rooms, matchmaking, and adjacent `*_test.go` files; one `leqra` module using `package main`.
 - `src/web/`: browser game, styles, and HTML; `assets/v<version>/` holds production assets. `src/tests/` contains JavaScript tests, optional browser/protocol harnesses, and historical results.
-- `tests/`: mocked deployment tests. `scripts/`: local launchers and utilities. `deploy/`: deployment script, service, and environment settings. `docs/`: player guides, protocol, and release notes.
+- `tests/`: mocked deployment tests. `scripts/`: optional asset-generation utilities. `deploy/`: deployment script, service, and environment settings. `docs/`: player guides, protocol, and release notes.
 
 ## Build, Test, and Development Commands
 
@@ -20,6 +20,8 @@ Run from the repository root. Use Go 1.23+, Node.js for JavaScript tests, and Py
 ## Coding Style & Naming Conventions
 
 Format Go with `gofmt`; use tabs, exported `CamelCase`, and unexported `camelCase` identifiers. Prefer descriptive snake_case filenames. Preserve surrounding compact JavaScript/CSS formatting and use JavaScript `camelCase`. Python uses four-space indentation. Avoid unrelated reformatting and preserve existing staged and unstaged edits.
+
+Get the user's approval before editing the root `README.md`.
 
 ## Testing Guidelines
 

@@ -1,8 +1,8 @@
 'use strict';
 const {test} = require('node:test'), assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs'), path = require('node:path'), vm = require('node:vm');
-const source = readFileSync(path.join(__dirname, '../web/assets/v4.48.2/sw.js'), 'utf8');
-const origin = 'https://leqra.test', asset = '/assets/v4.48.2/game.js';
+const source = readFileSync(path.join(__dirname, '../web/assets/v4.49.0/sw.js'), 'utf8');
+const origin = 'https://leqra.test', asset = '/assets/v4.49.0/game.js';
 
 function deferred() {
   let resolve, reject;
@@ -165,7 +165,7 @@ test('online app navigation returns fresh HTML without replacing the installed f
 
 
 function releaseHarness() {
-  const current = 'v4.48.2', next = 'v4.49.0', storage = new Map();
+  const current = 'v4.49.0', next = 'v4.50.0', storage = new Map();
   let serverVersion = current, offline = false, failedAsset = '';
   const shell = version => '<script src="/assets/' + version + '/game.js"></script>';
   const cacheName = version => 'leqra-app-' + version;
@@ -177,7 +177,7 @@ function releaseHarness() {
   };
   function worker(version) {
     const handlers = new Map(), lifecycle = {skipWaiting: 0, claim: 0};
-    vm.runInNewContext(source.replace("const VERSION = 'v4.48.2';", "const VERSION = '" + version + "';"), {
+    vm.runInNewContext(source.replace("const VERSION = 'v4.49.0';", "const VERSION = '" + version + "';"), {
       URL,
       self: {
         location: {origin}, addEventListener: (type, handler) => handlers.set(type, handler),

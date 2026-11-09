@@ -11,19 +11,22 @@
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra — Tank Arena</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.48.2/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.48.2/theme.css">
-<link rel="stylesheet" href="assets/v4.48.2/style.css">
-<link rel="manifest" href="assets/v4.48.2/manifest.webmanifest">
-<link rel="icon" href="assets/v4.48.2/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.48.2/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.48.2/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.48.2/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.0/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.0/theme.css">
+<link rel="stylesheet" href="assets/v4.49.0/style.css">
+<link rel="manifest" href="assets/v4.49.0/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.0/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.0/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.0/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.0/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
 <header class="header">
- <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M6 10v15m20-15v15" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><rect x="10" y="10" width="12" height="15" rx="3" fill="currentColor"/><path d="M16 5v12" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="16" cy="18" r="3" fill="#182010"/></svg></div><div><div class="brand-name">leqra</div><div class="brand-sub">TANK ARENA</div></div></div>
+ <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M6 10v15m20-15v15" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><rect x="10" y="10" width="12" height="15" rx="3" fill="currentColor"/><path d="M16 5v12" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="16" cy="18" r="3" fill="#182010"/></svg></div><div><div class="brand-name">leqra</div><div class="brand-sub">TANK ARENA</div></div>
+  <!-- Invertocat from https://brand.github.com/foundations/logo -->
+  <a class="icon-btn github-link" href="https://github.com/nhooyr/leqra" target="_blank" rel="noopener" aria-label="View leqra on GitHub" title="View leqra on GitHub"><svg viewBox="0 0 98 96" aria-hidden="true"><path d="M41.4395 69.3848C28.8066 67.8535 19.9062 58.7617 19.9062 46.9902C19.9062 42.2051 21.6289 37.0371 24.5 33.5918C23.2559 30.4336 23.4473 23.7344 24.8828 20.959C28.7109 20.4805 33.8789 22.4902 36.9414 25.2656C40.5781 24.1172 44.4062 23.543 49.0957 23.543C53.7852 23.543 57.6133 24.1172 61.0586 25.1699C64.0254 22.4902 69.2891 20.4805 73.1172 20.959C74.457 23.543 74.6484 30.2422 73.4043 33.4961C76.4668 37.1328 78.0937 42.0137 78.0937 46.9902C78.0937 58.7617 69.1934 67.6621 56.3691 69.2891C59.623 71.3945 61.8242 75.9883 61.8242 81.252L61.8242 91.2051C61.8242 94.0762 64.2168 95.7031 67.0879 94.5547C84.4102 87.9512 98 70.6289 98 49.1914C98 22.1074 75.9883 6.69539e-07 48.9043 4.309e-07C21.8203 1.92261e-07 -1.9479e-07 22.1074 -4.3343e-07 49.1914C-6.20631e-07 70.4375 13.4941 88.0469 31.6777 94.6504C34.2617 95.6074 36.75 93.8848 36.75 91.3008L36.75 83.6445C35.4102 84.2188 33.6875 84.6016 32.1562 84.6016C25.8398 84.6016 22.1074 81.1563 19.4277 74.7441C18.375 72.1602 17.2266 70.6289 15.0254 70.3418C13.877 70.2461 13.4941 69.7676 13.4941 69.1934C13.4941 68.0449 15.4082 67.1836 17.3223 67.1836C20.0977 67.1836 22.4902 68.9063 24.9785 72.4473C26.8926 75.2227 28.9023 76.4668 31.2949 76.4668C33.6875 76.4668 35.2187 75.6055 37.4199 73.4043C39.0469 71.7773 40.291 70.3418 41.4395 69.3848Z"/></svg></a>
+ </div>
  <div class="header-right"><button class="room-badge" id="roomBtn" type="button" hidden title="Online room and connection status">ROOM</button>
  <button class="icon-btn" id="soundBtn" type="button" aria-label="Mute sound" title="Sound (M)" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-wave" d="M15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14"/><path class="sound-off-line" d="m16 9 5 6m0-6-5 6"/></svg></button>
  <button class="icon-btn" id="fullscreenBtn" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)"><svg viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
@@ -105,7 +108,7 @@
 <div class="power-row"><div class="power-symbol" style="color:#f9ed75"><canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Starman<span>Rare. Invincible and through walls for 3s.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#f57cff"><canvas data-power-icon="laser" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Laser<span>Instant ricochets. Long dotted aim.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#ff83bd"><canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Homing missile<span>Aggressive tracking. Half-perimeter range.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Tank impact. Tap again. Cruises, then brakes near its 10s fuse.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Homes in on opponents. Explodes on impact, a second press, or its 10s fuse.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5 · +65% speed each.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing · tiny rounds · quarter-perimeter range.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread · shooter-safe.</span></div></div>
@@ -126,14 +129,35 @@
 <dialog id="introTourDialog" class="feature-dialog intro-tour" aria-labelledby="introTourTitle">
  <header class="feature-header"><div><div id="introTourStep" class="eyebrow">QUICK TOUR · 1 OF 3</div><h2 id="introTourTitle" tabindex="-1" aria-describedby="introTourStep">Drive and aim</h2></div></header>
  <div class="feature-body">
-  <div data-intro-page="0">
-   <p id="introTourDesktop"><strong>Mouse (Player 1)</strong><br>Move the pointer over the maze to aim. Left-click to fire or hold to keep firing. Use the keyboard to drive, and press a turn key to switch back to keyboard aiming.</p>
-   <p id="introTourTouch">Drag the joystick to steer and drive. Tap or hold <strong>Fire</strong> to shoot.</p>
-   <p id="introTourKeys"></p>
+  <div class="intro-control-groups" data-intro-page="0">
+   <section id="introTourDesktop">
+    <h3>Mouse (Player 1)</h3>
+    <dl>
+     <dt>Movement</dt><dd>Drive with the keyboard.</dd>
+     <dt>Aim</dt><dd>Point over the maze. Press a turn key to switch back to keyboard aiming.</dd>
+     <dt>Fire</dt><dd>Left-click to fire or hold to keep firing.</dd>
+    </dl>
+   </section>
+   <section id="introTourTouch">
+    <h3>Touch</h3>
+    <dl>
+     <dt>Movement</dt><dd>Drag the joystick to drive.</dd>
+     <dt>Aim</dt><dd>Point the same joystick where you want to aim.</dd>
+     <dt>Fire</dt><dd>Tap or hold the Fire button.</dd>
+    </dl>
+   </section>
+   <section id="introTourKeyboard">
+    <h3>Keyboard</h3>
+    <dl>
+     <dt>Movement</dt><dd id="introTourMoveKeys"></dd>
+     <dt>Fire</dt><dd id="introTourFireKeys"></dd>
+    </dl>
+    <p>Rebind keys in Controls.</p>
+   </section>
   </div>
   <div data-intro-page="1" hidden>
    <p>Bank shots around corners and use walls for cover. Your own shots and grenade blasts leave your tank unharmed.</p>
-   <p>Drive over a glowing pickup to collect it. Laser previews its ricochet path, grenades can detonate when you press <strong>Fire</strong> again, and a rare Starman lets you pass through walls unharmed for a few seconds.</p>
+   <p>Drive over a glowing pickup to collect it. Laser previews its ricochet path. Grenades home in on opponents and detonate early when you press <strong>Fire</strong> again. Starman lets you pass through walls unharmed for a few seconds.</p>
   </div>
   <div data-intro-page="2" hidden>
    <ul>
@@ -151,8 +175,8 @@
   <button id="introTourNext" class="primary" type="button">Next</button>
  </footer>
 </dialog>
-<script src="assets/v4.48.2/netcode.js" defer></script>
-<script src="assets/v4.48.2/game.js" defer></script>
-<script src="assets/v4.48.2/pwa.js" defer></script>
+<script src="assets/v4.49.0/netcode.js" defer></script>
+<script src="assets/v4.49.0/game.js" defer></script>
+<script src="assets/v4.49.0/pwa.js" defer></script>
 </body>
 </html>
