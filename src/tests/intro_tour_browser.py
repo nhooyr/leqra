@@ -52,6 +52,15 @@ with sync_playwright() as playwright:
         expect(page.locator("#introTourBack")).to_be_disabled()
         check_buttons(page, "Next")
         page.locator("#introTourNext").click()
+        maze_step = page.locator('[data-intro-page="1"]')
+        expect(maze_step.locator("li > strong")).to_have_text(["Laser", "Grenade", "Starman"])
+        sidebar_note = maze_step.get_by_text(
+            "There are more power-ups. Check the desktop sidebar for the full list and details."
+        )
+        expect(sidebar_note).to_be_visible()
+        if touch:
+            page.locator("#introTourDialog").evaluate("dialog => dialog.scrollTop = dialog.scrollHeight")
+            expect(sidebar_note).to_be_in_viewport(ratio=1)
         check_buttons(page, "Next")
         page.locator("#introTourNext").click()
         check_buttons(page, "Done")
