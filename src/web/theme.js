@@ -5,7 +5,7 @@
  const colorNames=Object.freeze(['Electric blue','Coral','Jade','Amethyst','Amber','Orchid','Leaf','Iris']);
  const colors=Object.freeze(['#32c5ff','#ff758f','#3ee6c5','#ba91ff','#ffcb66','#ff7bd5','#79d878','#91a9ff']);
  const canonical=Object.freeze(['#d2f65a','#ff9679','#73cee4','#c5a2ff','#ffc46b','#ff83bd','#75f0cb','#b7c6ee']);
- const powerColors=Object.freeze({rapid:'#79d878',scatter:'#ba91ff',shield:'#32c5ff',homing:'#ff7bd5',grenade:'#ffcb66',speed:'#3ee6c5',laser:'#e879ff',cannon:'#ff9e66',ghost:'#cedaff'});
+ const powerColors=Object.freeze({rapid:'#79d878',scatter:'#ba91ff',shield:'#32c5ff',homing:'#ff7bd5',grenade:'#ffcb66',speed:'#3ee6c5',laser:'#e879ff',cannon:'#ff9e66',ghost:'#cedaff',starman:'#f9ed75'});
  const legacyPower=Object.freeze({'#f57cff':'laser','#ffad70':'cannon','#cce4ff':'ghost'});
  const lookup=new Map();
  canonical.forEach((c,i)=>lookup.set(c,colors[i]));

@@ -42,6 +42,10 @@ elif name == "rsync":
         sys.exit(9)
 elif name == "getent":
     sys.exit(1 if os.environ.get("DEPLOY_TEST_NEW_USER") == "1" else 0)
+elif name == "sudo":
+    assert args and args[0] in {"useradd", "mkdir", "chown", "systemctl"}, args
+    command = Path(os.environ["DEPLOY_TEST_BIN"]) / args[0]
+    sys.exit(subprocess.run([str(command), *args[1:]]).returncode)
 elif name not in {"useradd", "mkdir", "chown", "systemctl"}:
     raise AssertionError("Unexpected mock command: " + name)
 '''
@@ -54,8 +58,9 @@ class DeployTests(unittest.TestCase):
         self.root = Path(scratch.name).resolve()
         self.deploy = self.root / "project with spaces" / "deploy"
         self.deploy.mkdir(parents=True)
-        original = Path(__file__).resolve().parents[1] / "deploy" / "run.sh"
-        shutil.copy2(original, self.deploy / "run.sh")
+        original = Path(__file__).resolve().parents[1] / "deploy" / "ensure.sh"
+        self.script = self.deploy / original.name
+        shutil.copy2(original, self.script)
         (self.deploy / "leqra.service").write_text("[Service]\n")
         (self.deploy / "leqra.env").write_text("TEST=yes\n")
         (self.deploy / "leqra").write_bytes(b"preserve existing binary")
@@ -63,7 +68,7 @@ class DeployTests(unittest.TestCase):
         self.bin.mkdir()
         # The remote PATH contains only stubs: unexpected commands fail safely.
         for name in ("go", "ssh", "rsync", "getent", "useradd",
-                     "mkdir", "chown", "systemctl"):
+                     "mkdir", "chown", "systemctl", "sudo"):
             command = self.bin / name
             command.write_text("#!" + sys.executable + "\n" + STUB)
             command.chmod(0o755)
@@ -81,7 +86,7 @@ class DeployTests(unittest.TestCase):
     def run_deploy(self, **flags):
         env = dict(self.env)
         env.update({"DEPLOY_TEST_" + key: value for key, value in flags.items()})
-        result = subprocess.run(["/bin/sh", str(self.deploy / "run.sh")],
+        result = subprocess.run(["/bin/sh", str(self.script)],
                                 cwd=self.cwd, env=env, capture_output=True,
                                 text=True, timeout=15)
         events = [json.loads(line) for line in self.log.read_text().splitlines()]

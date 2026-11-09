@@ -215,6 +215,11 @@ func godlikePickupValue(t *Tank, kind string) float64 {
 			return 0
 		}
 		return 3.8
+	case "starman":
+		if t.StarmanTime > 2 {
+			return 0
+		}
+		return 4.5
 	}
 	value := godlikeWeaponValue(kind)
 	if t.Power != "" && t.PowerTime > 3 && t.Charges > 0 && (t.Power != "rapid" || t.MachineRounds >= 120) {

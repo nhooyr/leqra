@@ -37,6 +37,9 @@ func TestGodlikePickupValuesPreserveScoring(t *testing.T) {
 	check := func(bot *Tank) {
 		t.Helper()
 		for _, kind := range kinds {
+			if kind == "starman" {
+				continue // The original scoring predates this pickup.
+			}
 			if got, want := godlikePickupValue(bot, kind), originalGodlikePickupValue(bot, kind); got != want {
 				t.Fatalf("pickup %q with power %q, time %v, charges %v, rounds %v: value %v, want %v", kind, bot.Power, bot.PowerTime, bot.Charges, bot.MachineRounds, got, want)
 			}

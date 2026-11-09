@@ -96,9 +96,14 @@ func Test44ShieldWeightThreeAndSelectionHonorsEnabledKinds(t *testing.T) {
 			t.Fatalf("weighted distribution %v", counts)
 		}
 	}
+	weights := map[string]int{"shield": 6, "speed": 6, "starman": 1}
 	for _, kind := range pickupTypes {
-		if pickupWeight(kind) != 1 && kind != "shield" && kind != "speed" {
-			t.Fatal("other weight changed")
+		want := weights[kind]
+		if want == 0 {
+			want = 2
+		}
+		if got := pickupWeight(kind); got != want {
+			t.Fatalf("%s weight %d, want %d", kind, got, want)
 		}
 		for i := 0; i < 30; i++ {
 			if g.choosePickup([]string{kind}) != kind {

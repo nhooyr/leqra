@@ -22,7 +22,7 @@ func Test427PowerDurationByArenaForEveryPickup(t *testing.T) {
 		for _, kind := range pickupTypes {
 			p := &Tank{Alive: true}
 			g.grantPower(p, kind)
-			got := p.PowerTime
+			got, want := p.PowerTime, size.duration
 			switch kind {
 			case "shield":
 				got = p.Shield
@@ -30,9 +30,11 @@ func Test427PowerDurationByArenaForEveryPickup(t *testing.T) {
 				got = p.SpeedTime
 			case "ghost":
 				got = p.GhostTime
+			case "starman":
+				got, want = p.StarmanTime, 3
 			}
-			if got != size.duration {
-				t.Fatalf("%s on %dx%d: %v, want %v", kind, size.cols, size.rows, got, size.duration)
+			if got != want {
+				t.Fatalf("%s on %dx%d: %v, want %v", kind, size.cols, size.rows, got, want)
 			}
 		}
 	}
