@@ -169,6 +169,28 @@ func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	}
 }
 
+func TestInfiniteGrenadeHomingTurnsAtOneThirdMissileRate(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	a.pilots = []*infinitePilot{{infiniteTank: infiniteTank{ID: 1, X: 63, Y: 67, HP: 1}}}
+	for _, weapon := range []struct {
+		kind        string
+		speed, turn float64
+	}{
+		{"homing", missileSpeed, missileTurn},
+		{"grenade", grenadeSpeed, missileTurn / 3},
+	} {
+		a.bullets = []infiniteBullet{{Kind: weapon.kind, X: 42, Y: 42, VX: weapon.speed, Life: 9, age: 1, radius: 6, target: -1}}
+		a.advanceBullets()
+		if len(a.bullets) != 1 || a.bullets[0].target != 1 {
+			t.Fatalf("%s must keep flying and acquire the target, got %+v", weapon.kind, a.bullets)
+		}
+		b := a.bullets[0]
+		if angle, want := math.Atan2(b.VY, b.VX), weapon.turn*tickDT; math.Abs(angle-want) > 1e-12 {
+			t.Fatalf("%s turn = %v, want %v", weapon.kind, angle, want)
+		}
+	}
+}
+
 func TestInfiniteSimultaneousLaserPriorityRotates(t *testing.T) {
 	for winner := range 2 {
 		a := newSeededInfiniteArena(37)

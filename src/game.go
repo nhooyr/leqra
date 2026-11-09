@@ -1072,13 +1072,20 @@ func (g *Game) steerMissile(b *Bullet, dt float64) {
 		return
 	}
 	b.Target = target.ID
-	a := math.Atan2(b.VY, b.VX)
-	a += clamp(delta(a, math.Atan2(target.Y-b.Y, target.X-b.X)), -missileTurn*dt, missileTurn*dt)
+	a := guidedProjectileAngle(b.Kind, math.Atan2(b.VY, b.VX), math.Atan2(target.Y-b.Y, target.X-b.X), dt)
 	speed := missileSpeed
 	if b.Kind == "grenade" {
 		speed = math.Hypot(b.VX, b.VY)
 	}
 	b.VX, b.VY = math.Cos(a)*speed, math.Sin(a)*speed
+}
+
+func guidedProjectileAngle(kind string, angle, targetAngle, dt float64) float64 {
+	maxTurn := missileTurn * dt
+	if kind == "grenade" {
+		maxTurn /= 3
+	}
+	return angle + clamp(delta(angle, targetAngle), -maxTurn, maxTurn)
 }
 
 func (g *Game) guideGrenade(b *Bullet, dt, lifeBefore float64) {
