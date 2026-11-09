@@ -45,6 +45,22 @@ test('unconfirmed charge use blocks a speculative fourth cannon shot',()=>{
  for(let n=0;n<3;n++)assert.ok(p.tryFire(t,true,n*900,options({charged:true,cooldown:.85})));
  assert.equal(p.tryFire(t,true,2800,options({charged:true,cooldown:.85})),null);
 });
+test('Starman bypasses preview cooldown and charge limits without spending saved ammo',()=>{
+ const p=new N.ShotPresentation(),t=tank({power:'laser',charges:1,cooldown:.8,starmanTime:4});
+ const o=options({free:Infinity,need:0,charged:true,cooldown:.85});
+ p.sync(t,'playing',0);
+ for(let n=0;n<6;n++){
+  const v=p.tryFire(t,true,n*20,o);
+  assert.ok(v?.boosted);
+  assert.equal(v.until,v.at);
+  assert.equal(p.tryFire(t,true,n*20,o),null);
+ }
+ assert.equal(t.charges,1);
+ const expired={...t,cooldown:0,starmanTime:0};
+ const shot=p.tryFire(expired,true,120,o);
+ assert.ok(shot&&!shot.boosted);
+ assert.equal(shot.until,970);
+});
 test('grenade hold cannot repeatedly throw or accidentally predict a blast',()=>{
  const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:3});p.sync(t,'playing',0);assert.ok(p.tryFire(t,true,0,options({charged:true,cooldown:.8})));
  assert.equal(p.tryFire(t,true,1000,options({charged:true,cooldown:.8})),null);

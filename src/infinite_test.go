@@ -67,6 +67,44 @@ func TestInfiniteShotBounceAndRespawn(t *testing.T) {
 	}
 }
 
+func TestInfinitePauseHoldsRespawnAndKeepsArenaLive(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Now()
+	paused, other := a.join(fakeClient(), "Paused", now), a.join(fakeClient(), "Other", now)
+	a.nextBot, a.nextPickup = 1000, 1000
+	pausedX, pausedY, pausedAngle := paused.X, paused.Y, paused.Angle
+	otherX, otherY := other.X, other.Y
+	spawn := paused.Spawn
+
+	a.setInput(paused, Input{Seq: 1, Fire: true}, false, now)
+	a.setInput(paused, Input{Seq: 2, Fire: true, Forward: true, StickY: 1}, true, now)
+	a.setInput(other, Input{Seq: 1, Forward: true}, false, now)
+	a.step(now)
+	if paused.X != pausedX || paused.Y != pausedY || paused.Angle != pausedAngle || a.nextBullet != 0 || paused.Ack != 2 {
+		t.Fatalf("pause failed to neutralize and acknowledge movement, aim or a pending shot: %+v", paused)
+	}
+	if other.X == otherX && other.Y == otherY {
+		t.Fatal("another pilot stopped moving when the menu opened")
+	}
+
+	paused.kit.Invulnerable, paused.Protected = 0, false
+	a.hurt(paused, other.ID)
+	if paused.HP != 0 || paused.Score != -1 || other.Score != 1 {
+		t.Fatal("a paused pilot must still take damage and lose a point on death")
+	}
+	for range infiniteRespawnTicks + 1 {
+		a.step(now.Add(inputTimeout + time.Millisecond))
+	}
+	if paused.HP != 0 || paused.Spawn != spawn {
+		t.Fatal("a paused pilot respawned after the timer or control timeout")
+	}
+	a.setInput(paused, Input{Seq: 3}, false, now.Add(inputTimeout+time.Millisecond))
+	a.step(now.Add(inputTimeout + time.Millisecond))
+	if paused.HP != infiniteMaxHP || paused.Spawn != spawn+1 || paused.Score != -1 || !paused.Protected {
+		t.Fatalf("resuming after the respawn timer did not restore the pilot with score and protection: %+v", paused)
+	}
+}
+
 func TestInfiniteFireEdgeAndProximitySnapshot(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Now()
@@ -76,8 +114,8 @@ func TestInfiniteFireEdgeAndProximitySnapshot(t *testing.T) {
 	other.X = p.X - infiniteSight*2
 	a.nextBot = 1000
 	drain(c)
-	a.setInput(p, Input{Fire: true}, now)
-	a.setInput(p, Input{}, now)
+	a.setInput(p, Input{Fire: true}, false, now)
+	a.setInput(p, Input{}, false, now)
 	a.step(now)
 	if a.nextBullet != 1 {
 		t.Fatal("press and release between ticks lost the shot")
@@ -108,28 +146,28 @@ func TestInfiniteFireTimeoutPreservesPressIdentity(t *testing.T) {
 	p := a.join(fakeClient(), "Pilot", now)
 	a.nextBot = 1000
 	applyPower(&p.kit, "grenade", infinitePowerDuration, infiniteStarDuration)
-	a.setInput(p, Input{Fire: true}, now)
+	a.setInput(p, Input{Fire: true}, false, now)
 	afterTimeout := now.Add(inputTimeout + time.Millisecond)
-	a.setInput(p, Input{}, afterTimeout)
+	a.setInput(p, Input{}, false, afterTimeout)
 	a.step(afterTimeout)
 	if a.nextBullet != 0 {
 		t.Fatal("fresh neutral input revived an expired press")
 	}
 
-	a.setInput(p, Input{Fire: true}, afterTimeout)
+	a.setInput(p, Input{Fire: true}, false, afterTimeout)
 	a.step(afterTimeout)
 	if len(a.bullets) != 1 || a.bullets[0].Kind != "grenade" {
 		t.Fatal("fresh press did not throw a grenade")
 	}
 	afterTimeout = afterTimeout.Add(inputTimeout + time.Millisecond)
 	a.step(afterTimeout)
-	a.setInput(p, Input{Fire: true}, afterTimeout)
+	a.setInput(p, Input{Fire: true}, false, afterTimeout)
 	a.step(afterTimeout)
 	if len(a.bullets) != 1 {
 		t.Fatal("held heartbeat detonated a grenade after timeout")
 	}
-	a.setInput(p, Input{}, afterTimeout)
-	a.setInput(p, Input{Fire: true}, afterTimeout)
+	a.setInput(p, Input{}, false, afterTimeout)
+	a.setInput(p, Input{Fire: true}, false, afterTimeout)
 	a.step(afterTimeout)
 	if len(a.bullets) != 0 {
 		t.Fatal("release and fresh press did not detonate the grenade")
@@ -169,7 +207,7 @@ func TestInfinitePickupsAndOneHitCombat(t *testing.T) {
 	}
 }
 
-func TestInfiniteGrenadeHomingTurnsAtOneThirdMissileRate(t *testing.T) {
+func TestInfiniteGrenadeHomingTurnsAtHalfMissileRate(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	a.pilots = []*infinitePilot{{infiniteTank: infiniteTank{ID: 1, X: 63, Y: 67, HP: 1}}}
 	for _, weapon := range []struct {
@@ -177,7 +215,7 @@ func TestInfiniteGrenadeHomingTurnsAtOneThirdMissileRate(t *testing.T) {
 		speed, turn float64
 	}{
 		{"homing", missileSpeed, missileTurn},
-		{"grenade", grenadeSpeed, missileTurn / 3},
+		{"grenade", grenadeSpeed, missileTurn / 2},
 	} {
 		a.bullets = []infiniteBullet{{Kind: weapon.kind, X: 42, Y: 42, VX: weapon.speed, Life: 9, age: 1, radius: 6, target: -1}}
 		a.advanceBullets()
@@ -188,6 +226,64 @@ func TestInfiniteGrenadeHomingTurnsAtOneThirdMissileRate(t *testing.T) {
 		if angle, want := math.Atan2(b.VY, b.VX), weapon.turn*tickDT; math.Abs(angle-want) > 1e-12 {
 			t.Fatalf("%s turn = %v, want %v", weapon.kind, angle, want)
 		}
+	}
+}
+
+func TestInfiniteStarmanWeaponsFireWithoutSpendingAmmoOrReloading(t *testing.T) {
+	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade", "laser", "cannon"} {
+		t.Run(kind, func(t *testing.T) {
+			a := newSeededInfiniteArena(37)
+			now := time.Now()
+			p := a.join(fakeClient(), "Pilot", now)
+			a.nextBot, a.nextPickup = 1000, 1000
+			k := &p.kit
+			if kind != "regular" {
+				applyPower(k, kind, infinitePowerDuration, infiniteStarDuration)
+				k.Charges, k.MachineRounds, k.PowerTime = 1, 1, 2*tickDT
+			}
+			k.Cooldown = 1
+			applyPower(k, "starman", infinitePowerDuration, infiniteStarDuration)
+			if k.Cooldown != 0 {
+				t.Fatal("Starman pickup left the old cooldown active")
+			}
+			power, charges, rounds, remaining := k.Power, k.Charges, k.MachineRounds, k.PowerTime
+			for tick := range 16 {
+				fire := kind != "grenade" || tick%2 == 0
+				a.setInput(p, Input{Seq: uint64(tick + 1), Fire: fire}, false, now)
+				a.step(now)
+			}
+			shots := uint64(16)
+			if kind == "grenade" {
+				shots = 4
+			}
+			if k.ShotSerial != shots || k.Cooldown != 0 || k.Power != power || k.PowerTime != remaining || k.Charges != charges || k.MachineRounds != rounds {
+				t.Fatalf("want %d volleys with full saved equipment while boosted, got %+v", shots, k)
+			}
+			k.StarmanTime = tickDT
+			a.setInput(p, Input{}, false, now)
+			a.step(now)
+			if kind != "regular" && k.PowerTime != tickDT {
+				t.Fatal("equipped weapon timer did not resume when Starman ended")
+			}
+		})
+	}
+}
+
+func TestInfiniteStarmanRetiresOldestProjectileAtSafetyLimit(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	p := a.join(fakeClient(), "Pilot", time.Now())
+	for id := 1; id <= machineCapacity; id++ {
+		a.bullets = append(a.bullets, infiniteBullet{ID: id, Owner: p.ID})
+	}
+	a.bullets = append(a.bullets, infiniteBullet{ID: machineCapacity + 1, Owner: p.ID + 1})
+	a.nextBullet = machineCapacity + 1
+	applyPower(&p.kit, "starman", infinitePowerDuration, infiniteStarDuration)
+	a.fire(p)
+	if a.nextBullet != machineCapacity+2 {
+		t.Fatal("safety ceiling blocked Starman from firing")
+	}
+	if !a.bullets[0].dead || a.bullets[1].dead || a.bullets[machineCapacity].dead || a.bullets[len(a.bullets)-1].dead {
+		t.Fatal("ceiling did not retire exactly the oldest owned shot")
 	}
 }
 
@@ -215,7 +311,7 @@ func TestInfiniteSimultaneousLaserPriorityRotates(t *testing.T) {
 		for _, p := range pilots {
 			p.kit.Invulnerable = 0
 			applyPower(&p.kit, "laser", infinitePowerDuration, infiniteStarDuration)
-			a.setInput(p, Input{Fire: true}, now)
+			a.setInput(p, Input{Fire: true}, false, now)
 		}
 		a.step(now)
 		if pilots[winner].Score != 1 || pilots[1-winner].Score != -1 {
@@ -447,18 +543,18 @@ func TestPublicInfinityReclaimsIdleSeat(t *testing.T) {
 	if reject != "" {
 		t.Fatal(reject)
 	}
-	server.public.setInput(conn.pilot, Input{}, now.Add(4*time.Minute))
+	server.public.setInput(conn.pilot, Input{}, false, now.Add(4*time.Minute))
 	aim := Input{AimOnly: true, StickX: 1}
 	aimedAt := now.Add(4*time.Minute + 30*time.Second)
-	server.public.setInput(conn.pilot, aim, aimedAt)
+	server.public.setInput(conn.pilot, aim, false, aimedAt)
 	expiry := aimedAt.Add(infinitePublicIdle)
 	server.public.spawn(conn.pilot, conn.pilot.X, conn.pilot.Y, 2, 5)
-	server.public.setInput(conn.pilot, aim, expiry.Add(-time.Second))
+	server.public.setInput(conn.pilot, aim, false, expiry.Add(-time.Second))
 	server.step(expiry.Add(-time.Nanosecond))
 	if server.public.players != 1 {
 		t.Fatal("pilot was removed before five minutes elapsed from the last active control")
 	}
-	server.public.setInput(conn.pilot, Input{}, expiry)
+	server.public.setInput(conn.pilot, Input{}, false, expiry)
 	server.step(expiry)
 	select {
 	case <-c.done:

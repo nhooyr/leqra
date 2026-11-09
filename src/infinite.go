@@ -58,6 +58,7 @@ type infinitePilot struct {
 	inputAt, activeAt      time.Time
 	lastStickX, lastStickY float64
 	firePending            bool
+	paused                 bool // Holds respawn independently of control expiry.
 	respawn                uint64
 	kit                    Tank // Reuses fixed-maze equipment state and pickup rules.
 
@@ -169,9 +170,14 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 	}
 }
 
-func (a *infiniteArena) setInput(p *infinitePilot, input Input, now time.Time) {
+func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	p.paused = paused
+	if paused {
+		input = Input{Seq: input.Seq}
+		p.firePending = false
+	}
 	input.StickX = clamp(input.StickX, -1, 1)
 	input.StickY = clamp(input.StickY, -1, 1)
 	if now.Sub(p.inputAt) > inputTimeout {
@@ -255,7 +261,7 @@ func (a *infiniteArena) step(now time.Time) {
 	a.populatePickups()
 	for _, p := range a.pilots {
 		if p.HP == 0 {
-			if a.tick >= p.respawn {
+			if a.tick >= p.respawn && !p.paused {
 				a.spawn(p, p.X, p.Y, 2, 5)
 			}
 			continue
