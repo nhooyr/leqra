@@ -403,3 +403,23 @@ func TestRemoteGrenadeHubStaleAndRepeatedInputsDoNotDetonate(t *testing.T) {
 		t.Fatal("input timeout turned held heartbeat into detonation")
 	}
 }
+
+func TestExpiredQueuedFirePressIsNotReplayed(t *testing.T) {
+	h, r, clients := preparedRoom(t, 2)
+	r.Game.grantPower(r.Game.Tanks[0], "grenade")
+	now := time.Now()
+	if err := h.handle(clients[0], []byte(`{"type":"input","seq":1,"fire":true}`), now); err != nil {
+		t.Fatal(err)
+	}
+	if !r.Players[0].FirePending {
+		t.Fatal("press was not queued")
+	}
+	afterTimeout := now.Add(inputTimeout + time.Millisecond)
+	if err := h.handle(clients[0], []byte(`{"type":"input","seq":2,"fire":false}`), afterTimeout); err != nil {
+		t.Fatal(err)
+	}
+	h.tick(afterTimeout)
+	if len(r.Game.Bullets) != 0 {
+		t.Fatal("fresh neutral input revived an expired press")
+	}
+}

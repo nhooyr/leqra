@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	version         = "4.49.7"
+	version         = "4.49.8"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -217,7 +217,7 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request, admit func(*Cl
 		return
 	}
 	ip := connectionSource(r.RemoteAddr)
-	deflate := r.URL.Path == "/ws" && acceptsSnapshotDeflate(r.Header.Values("Sec-WebSocket-Extensions"))
+	deflate := acceptsSnapshotDeflate(r.Header.Values("Sec-WebSocket-Extensions"))
 	c := a.openSocket(w, key, ip, admit, deflate)
 	if c == nil {
 		return

@@ -22,6 +22,7 @@ func (r *Room) lineupError() string {
 // generation makes sockets from a previous launch ineligible after a restart.
 // Called while Hub.mu is held.
 func (h *Hub) startRoomInfinity(r *Room) {
+	r.Game.resetLobby()
 	r.infinityActive = true
 	r.infinityGeneration++
 	resetReady(r)
