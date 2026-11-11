@@ -70,6 +70,107 @@ func TestInfiniteShotBounceAndRespawn(t *testing.T) {
 	}
 }
 
+func TestInfiniteCannonLifetimeAndAmmo(t *testing.T) {
+	const lifetime = 5.3
+	const rangeAfterMuzzle = lifetime * cannonSpeed
+	const muzzle = tankRadius + cannonRadius + 1
+	ticksBeforeExpiry := int(math.Round(lifetime/tickDT)) - 1
+	for _, tc := range []struct {
+		name         string
+		boundaryGap  float64
+		target, kill bool
+	}{
+		{name: "miss"},
+		{name: "hit near expiry beyond 18 cells", target: true, boundaryGap: -1, kill: true},
+		{name: "miss just beyond expiry distance", target: true, boundaryGap: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newSeededInfiniteArena(37)
+			now := time.Unix(0, 0)
+			c := fakeClient()
+			shooter := a.join(c, "Shooter", now)
+			shooter.X, shooter.Y, shooter.Angle = 46, 42, 0
+			var target *infinitePilot
+			if tc.target {
+				target = a.join(fakeClient(), "Target", now)
+				target.X = shooter.X + muzzle + rangeAfterMuzzle + tankRadius + cannonRadius + tc.boundaryGap
+				target.Y, target.Protected = shooter.Y, false
+			}
+			drain(c)
+			applyPower(&shooter.kit, "cannon", infinitePowerDuration, infiniteStarDuration)
+			a.fire(shooter)
+			if len(a.bullets) != 1 || a.bullets[0].Kind != "cannon" || a.bullets[0].X != shooter.X+muzzle {
+				t.Fatalf("expected one Cannon projectile at the muzzle: %+v", a.bullets)
+			}
+			for range ticksBeforeExpiry {
+				a.advanceBullets()
+			}
+			if len(a.bullets) != 1 || a.bullets[0].Bounces != 0 || target != nil && target.HP == 0 {
+				t.Fatalf("shot should still be alive with no hit before its final tick: %+v", a.bullets)
+			}
+			if traveled := a.bullets[0].X - shooter.X - muzzle; traveled <= 18*cellSize {
+				t.Fatalf("shot stopped at %.1f units instead of traveling past 18 cells", traveled)
+			}
+			if math.Abs(a.bullets[0].Life-tickDT) > 1e-9 {
+				t.Fatalf("remaining flight time = %.6fs, want one tick", a.bullets[0].Life)
+			}
+			checkAmmo := func(want int) {
+				t.Helper()
+				a.broadcast()
+				var snapshot infiniteSnapshot
+				if err := json.Unmarshal(<-c.send, &snapshot); err != nil {
+					t.Fatal(err)
+				}
+				if len(snapshot.Tanks) != 1 || snapshot.Tanks[0].AmmoUsed != want || len(snapshot.Bullets) != 0 {
+					t.Fatalf("expected %d ammo slots occupied and no visible bullets, got %+v", want, snapshot)
+				}
+			}
+			checkAmmo(1)
+			a.advanceBullets()
+			if len(a.bullets) != 0 {
+				t.Fatalf("shot survived the 5.3-second lifetime: %+v", a.bullets)
+			}
+			if target != nil && (target.HP == 0) != tc.kill {
+				t.Fatalf("target HP = %d with collision point %.1f units relative to the range limit", target.HP, tc.boundaryGap)
+			}
+			checkAmmo(0)
+		})
+	}
+}
+
+func TestInfiniteCannonHitsFirstTankThroughWall(t *testing.T) {
+	a := newSeededInfiniteArena(16)
+	now := time.Unix(0, 0)
+	shooter := a.join(fakeClient(), "Shooter", now)
+	first := a.join(fakeClient(), "First", now)
+	second := a.join(fakeClient(), "Second", now)
+	var wall Wall
+	for _, candidate := range a.maze.wallsNear(-500, -500, 500, 500) {
+		if candidate.Axis == "v" {
+			wall = candidate
+			break
+		}
+	}
+	if wall.H == 0 {
+		t.Fatal("test seed needs a vertical wall")
+	}
+	y := wall.Y + wall.H/2
+	shooter.X, shooter.Y, shooter.Angle = wall.Line-cellSize/2, y, 0
+	first.X, first.Y, first.Protected = wall.Line+cellSize/2, y, false
+	second.X, second.Y, second.Protected = first.X+cellSize, y, false
+	if !a.rayBlocked(shooter.X, y, first.X-shooter.X, 0, cannonRadius) {
+		t.Fatal("test wall must block a conventional shot")
+	}
+	applyPower(&shooter.kit, "cannon", infinitePowerDuration, infiniteStarDuration)
+	a.fire(shooter)
+	for range 8 {
+		a.advanceBullets()
+	}
+	if first.HP != 0 || second.HP != infiniteMaxHP || shooter.Score != 1 || len(a.bullets) != 0 {
+		t.Fatalf("Cannon must pass through the wall and stop at the first tank: first HP=%d, second HP=%d, score=%d, bullets=%+v", first.HP, second.HP, shooter.Score, a.bullets)
+	}
+}
+
 func TestInfinitePauseHoldsRespawnAndKeepsArenaLive(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Now()

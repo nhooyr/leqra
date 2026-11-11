@@ -1,7 +1,10 @@
 'use strict';
-// Create a standalone page to open in Chrome for a native window screenshot.
-// Install Playwright and Chromium with `npm install playwright` and `npx playwright install chromium`.
-//   NODE_PATH=/path/to/node_modules node scripts/render-showcase.cjs [output.html]
+// Create a standalone showcase and a Chrome Local Overrides folder next to it.
+// Run from the repository root. Install dependencies once with
+//   npm install --no-save --package-lock=false playwright
+//   npx playwright install chromium
+// Then generate bin/showcase.html and bin/chrome-overrides with
+//   node scripts/render-showcase.cjs [output.html]
 const fs = require('node:fs');
 const path = require('node:path');
 const {chromium} = require('playwright');
@@ -10,6 +13,8 @@ const {assetPath} = require('../src/tests/web_assets.cjs');
 const root = path.join(__dirname, '..');
 const web = path.join(root, 'src/web');
 const out = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, 'bin/showcase.html');
+const overrides = path.join(path.dirname(out), 'chrome-overrides');
+const overrideFile = path.join(overrides, 'leqra.com', 'index.html');
 const origin = 'http://leqra-showcase.test';
 const viewport = {width:1560, height:930};
 const deviceScaleFactor = 2;
@@ -127,8 +132,8 @@ function showcasePage(screenshot) {
  <title>leqra — Tank Arena</title>
  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,${favicon}">
  <style>
-  html, body { height:100%; margin:0; background:#10171d; }
-  img { display:block; width:100%; height:100%; object-fit:contain; }
+  html, body { margin:0; background:#10171d; }
+  img { display:block; width:100%; height:auto; }
  </style>
 </head>
 <body>
@@ -159,9 +164,11 @@ async function main() {
   const scene = await page.evaluate(stageBattle);
   if (scene.tanks!==8 || scene.activePowers.length!==10 || scene.projectiles<40) throw Error('Incomplete Infinity showcase');
   const screenshot = await page.screenshot({animations:'disabled'});
-  fs.mkdirSync(path.dirname(out),{recursive:true});
-  fs.writeFileSync(out,showcasePage(screenshot));
-  console.log(JSON.stringify({output:process.argv[2]?out:path.relative(root,out),width:viewport.width*deviceScaleFactor,
+  const html = showcasePage(screenshot);
+  fs.mkdirSync(path.dirname(overrideFile),{recursive:true});
+  fs.writeFileSync(out,html);
+  fs.writeFileSync(overrideFile,html);
+  console.log(JSON.stringify({output:process.argv[2]?out:path.relative(root,out),chromeOverrides:overrides,width:viewport.width*deviceScaleFactor,
    height:viewport.height*deviceScaleFactor,mode:'Infinity',...scene,renderer:'production Infinity page and Canvas renderer'},null,2));
  } finally {
   await browser.close();
