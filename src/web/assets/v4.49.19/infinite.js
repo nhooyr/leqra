@@ -811,16 +811,18 @@ function renderScores(world, pilot, second) {
  if (!leaderboard) return;
  const entries = world.online ? world.leaderboard :
   [...world.tanks].sort((a, b) => b.score - a.score || Number(a.bot) - Number(b.bot)).slice(0, 10);
+ const tankCount = world.online ? world.tankCount ?? entries.length : world.tanks.length;
+ const title = tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
  const rows = entries.map(tank => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
   return [tank.name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0]];
  });
  const teams = world.rules?.teamMode==='teams' ? world.teamScores.flatMap((score,i)=>
   i<2||score||entries.some(tank=>tank.team===i+1)?[[teamName(world,i+1),score,0,COLORS[world.rules.teamColors?.[i]] || COLORS[i]]]:[]) : [];
- const signature = JSON.stringify([rows,teams]);
+ const signature = JSON.stringify([title,rows,teams]);
  if (signature === world.scoreRows) return;
  world.scoreRows = signature;
- leaderboardTitle.textContent = `Top ${rows.length} ${rows.length===1?'tank':'tanks'}`;
+ leaderboardTitle.textContent = title;
  const makeRow = ([name, score, local, color]) => {
   const row = document.createElement('li');
   row.style.setProperty('--tank-color',color);
@@ -1161,6 +1163,7 @@ function receive(ws, event) {
   color: COLORS[bullet.colorIndex] || COLORS[0], r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
  session.pickups = Array.isArray(message.pickups) ? message.pickups : [];
  session.players = message.players;
+ session.tankCount = message.tankCount ?? message.leaderboard.length;
  session.leaderboard = message.leaderboard;
  if (message.rules) session.rules = message.rules;
  if (message.teamScores) session.teamScores = message.teamScores;
@@ -1212,6 +1215,7 @@ function connect() {
   world.bullets = [];
   world.pickups = [];
   world.leaderboard = [];
+  world.tankCount = 0;
   world.lastEffect = 0;
   art.renderLoadout(null,1);
   art.renderLoadout(null,2);

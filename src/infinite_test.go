@@ -754,6 +754,46 @@ func TestInfiniteLeaderboardCarriesCurrentTankColors(t *testing.T) {
 	}
 }
 
+func TestInfiniteSnapshotCountsTheWholeLeaderboardPool(t *testing.T) {
+	a := newSeededInfiniteArena(51)
+	c := fakeClient()
+	p := a.join(c, "Pilot", time.Unix(0, 0))
+	for range 9 {
+		bot := a.addPilot("Distant bot", true, p.X, p.Y, 3, 6)
+		bot.X = p.X + 3*infiniteSight
+	}
+	a.pilots[1].HP = 0
+	drain(c)
+	readSnapshot := func(want int) []infiniteLeader {
+		t.Helper()
+		a.broadcast()
+		var packet struct {
+			TankCount *int             `json:"tankCount"`
+			Players   int              `json:"players"`
+			Tanks     []infiniteTank   `json:"tanks"`
+			Leaders   []infiniteLeader `json:"leaderboard"`
+		}
+		if err := json.Unmarshal(<-c.send, &packet); err != nil {
+			t.Fatal(err)
+		}
+		if packet.TankCount == nil || *packet.TankCount != want || packet.Players != 1 || len(packet.Tanks) != 1 || len(packet.Leaders) != 10 {
+			t.Fatalf("expected %d total tanks, one nearby human and ten leaders, got %+v", want, packet)
+		}
+		return packet.Leaders
+	}
+	first := readSnapshot(10)
+	bot := a.addPilot("Eleventh bot", true, p.X, p.Y, 3, 6)
+	bot.X, bot.Score = p.X+3*infiniteSight, -1
+	second := readSnapshot(11)
+	for i, leader := range first {
+		if leader != second[i] {
+			t.Fatalf("adding an eleventh tank changed the top ten at row %d", i)
+		}
+	}
+	a.pilots = a.pilots[:10]
+	readSnapshot(10)
+}
+
 func TestInfiniteWebSocketSharesAnAuthoritativeArena(t *testing.T) {
 	app := newApp(4, nil)
 	app.infinite.public = newSeededInfiniteArena(99)
