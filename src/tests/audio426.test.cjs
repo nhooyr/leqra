@@ -14,6 +14,7 @@ function boot(options={}){
   constructor(){this.state=options.state||'running';this.currentTime=0;this.sampleRate=48000;this.destination={};this.resumeCount=0;this.pending=[];contexts.push(this);}
   createGain(){const n=node('gain');n.gain=param();return n;}
   createDynamicsCompressor(){const n=node('compressor');for(const key of ['threshold','knee','ratio','attack','release'])n[key]=param();return n;}
+  createWaveShaper(){return node('shaper');}
   createOscillator(){const n=node('oscillator');n.frequency=param();return n;}
   createBiquadFilter(){const n=node('filter');n.frequency=param();return n;}
   createBufferSource(){return node('buffer');}
@@ -33,7 +34,7 @@ function boot(options={}){
   window:{AudioContext:options.noWebAudio?undefined:Context,addEventListener:(event,fn)=>listeners.set(event,fn)},Audio:NativeAudio,
   URL:{createObjectURL(blob){const url='blob:test-'+nextBlob++;blobs.set(url,blob);return url;},revokeObjectURL(url){blobs.delete(url);}},
   setTimeout(fn,delay){const id=++nextTimer;timers.set(id,{fn,time:clock+delay});return id;},clearTimeout:id=>timers.delete(id)};
- vm.createContext(s);vm.runInContext(audioCode+'\nsetArenaAudio(true);this.audioInspection=()=>({audioLevel,audioEpoch,pendingAudioEffects,delayed:nativeAudioTimers.size,bounces:typeof onlineBounceCounts!=="undefined"?onlineBounceCounts.size:0});',s);
+ vm.createContext(s);vm.runInContext(audioCode+'\nsetArenaAudio(true);this.audioInspection=()=>({audioLevel,audioMix,audioEpoch,pendingAudioEffects,delayed:nativeAudioTimers.size,bounces:typeof onlineBounceCounts!=="undefined"?onlineBounceCounts.size:0});',s);
  return{s,contexts,native,plays,playEvents,nodes,blobs,listeners,timers,advance(ms){clock+=ms;for(const [id,timer]of [...timers])if(timer.time<=clock){timers.delete(id);timer.fn();}},fire(event,extra={}){listeners.get(event)?.({isTrusted:true,...extra});},focus(value){focused=value;listeners.get(value?'focus':'blur')();}};
 }
 
@@ -69,17 +70,17 @@ test('a touch release can unlock audio immediately after a passive resume attemp
 test('running audio does not reschedule gain for every click; volume changes ramp',async()=>{
  const b=boot();await b.s.initAudio();const gain=b.s.audioMaster.gain;const initial=gain.events.length;
  for(let i=0;i<50;i++){b.fire('click');await b.s.initAudio();}assert.equal(gain.events.length,initial);
- b.s.setAudioVolume(25);assert.equal(gain.events.at(-1)[0],'ramp');assert.equal(gain.events.at(-1)[1],2);assert.equal(gain.events.at(-1)[2],.012);
+ b.s.setAudioVolume(25);assert.equal(gain.events.at(-1)[0],'ramp');assert.equal(gain.events.at(-1)[1],.0625);assert.equal(gain.events.at(-1)[2],.012);
 });
 test('native Safari fallback scales quiet samples with the slider and keeps silent endpoints',async()=>{
- const b=boot({noWebAudio:true});b.s.nativeTone(500,700,.1,.02,'sine');await flush();assert.equal(b.plays.length,1);
+ const b=boot({noWebAudio:true});b.s.nativeTone(500,700,.1,.01,'sine');await flush();assert.equal(b.plays.length,1);
  const data=new DataView(await b.blobs.get(b.plays[0]).arrayBuffer());let peak=0;
  for(let offset=44;offset<data.byteLength;offset+=2)peak=Math.max(peak,Math.abs(data.getInt16(offset,true)));
  assert.ok(peak>1000&&peak<32760*.98,'fallback retains headroom even when iOS ignores the volume property');
  assert.equal(data.getInt16(44,true),0);assert.equal(data.getInt16(data.byteLength-2,true),0);
- b.s.setAudioVolume(25);b.s.nativeTone(500,700,.1,.02,'sine');await flush();const quieter=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());let quietPeak=0;
+ b.s.setAudioVolume(25);b.s.nativeTone(500,700,.1,.01,'sine');await flush();const quieter=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());let quietPeak=0;
  for(let offset=44;offset<quieter.byteLength;offset+=2)quietPeak=Math.max(quietPeak,Math.abs(quieter.getInt16(offset,true)));
- assert.ok(quietPeak<peak*.51&&quietPeak>peak*.49);
+ assert.ok(quietPeak<peak*.26&&quietPeak>peak*.24);
 });
 test('muting stops native playback and cancels delayed tones across subsequent unmute',async()=>{
  const b=boot({noWebAudio:true});b.s.nativeTone(500,700,.1);b.s.nativeTone(700,900,.1,.035,'sine',.1);assert.equal(b.s.audioInspection().delayed,1);
@@ -95,7 +96,7 @@ test('a visible background window stops effects and restores sound on focus',asy
  b.s.boom();b.s.pickupSound();b.s.chatNotificationSound();
  assert.equal(b.nodes.length,effects);
  b.focus(true);
- assert.equal(b.s.audioMaster.gain.value,4);
+ assert.equal(b.s.audioMaster.gain.value,.25);
  b.s.boom();assert.ok(b.nodes.length>effects);
  b.s.document.hidden=true;b.fire('visibilitychange');
  assert.equal(b.s.audioMaster.gain.value,0);
@@ -147,9 +148,8 @@ test('blocked audio queues a bounded number of callbacks and releases them on re
  b.s.audioWhenReady(()=>count++);assert.equal(count,1);
 });
 test('finished oscillators and explosions disconnect their transient graph nodes',async()=>{
- const b=boot();await b.s.initAudio();b.s.webTone(500,700,.1);b.s.boom();
+ const b=boot();await b.s.initAudio();const permanent=new Set(b.nodes);b.s.webTone(500,700,.1);b.s.boom();
  for(const n of b.nodes.filter(n=>n.kind==='oscillator'||n.kind==='buffer')){assert.equal(typeof n.onended,'function');n.onended();assert.equal(n.disconnected,true);}
- const permanent=new Set([b.s.audioMaster,...b.s.audioMaster.connections,...b.s.audioMaster.connections.flatMap(n=>n.connections)]);
  assert.ok(b.nodes.filter(n=>!permanent.has(n)).every(n=>n.disconnected),'all effect nodes release their graph connections');
 });
 test('zero volume prevents both playback paths, while restoring volume allows a fresh effect',async()=>{
@@ -159,14 +159,14 @@ test('zero volume prevents both playback paths, while restoring volume allows a 
 
 test('the louder shared output retains displayed and saved slider percentages',async()=>{
  const b=boot(),saved=[];b.s.save=(...entry)=>saved.push(entry);await b.s.initAudio();
- assert.equal(b.s.audioVolume,50);assert.equal(b.s.audioMaster.gain.value,4);
+ assert.equal(b.s.audioVolume,50);assert.equal(b.s.audioMaster.gain.value,.25);
  for(const level of [0,25,50,75,100]){
-  b.s.setAudioVolume(level,true);assert.equal(b.s.audioScale(),level/12.5);assert.equal(b.s.audioMaster.gain.value,level/12.5);
+  b.s.setAudioVolume(level,true);assert.equal(b.s.audioScale(),Math.pow(level/100,2));assert.equal(b.s.audioMaster.gain.value,Math.pow(level/100,2));
   assert.equal(b.s.$('masterVolume').value,String(level));assert.equal(b.s.$('masterVolumeValue').textContent,level+'%');
   assert.deepEqual(saved.at(-1),['volume',level]);
  }
  b.s.muted=true;b.s.syncSound();assert.equal(b.s.audioMaster.gain.value,0);assert.equal(b.s.audioVolume,100);
- b.s.muted=false;b.s.syncSound();assert.equal(b.s.audioMaster.gain.value,8);
+ b.s.muted=false;b.s.syncSound();assert.equal(b.s.audioMaster.gain.value,1);
 });
 
 test('the volume slider snaps around its default and keyboard arrows can leave the midpoint',()=>{
@@ -194,25 +194,27 @@ test('the volume slider snaps around its default and keyboard arrows can leave t
  slider.onkeydown({key:'ArrowRight',metaKey:true,preventDefault(){assert.fail('system shortcut intercepted');}});
  assert.equal(b.s.audioVolume,50);
 });
-test('v440 tones and explosions share the doubled master and retain single-effect headroom at maximum volume',async()=>{
+test('tones and explosions share fixed mix processing before the output volume control',async()=>{
  for(const level of [50,100]){
   const b=boot();await b.s.initAudio();b.s.setAudioVolume(level);b.s.webTone(500,700,.1);b.s.boom();
-  const gains=b.nodes.filter(n=>n.kind==='gain'&&n.connections.includes(b.s.audioMaster));
-  assert.equal(gains.length,3);assert.ok(gains.every(n=>n.connections.includes(b.s.audioMaster)));
+  const mix=b.s.audioInspection().audioMix;
+  const gains=b.nodes.filter(n=>n.kind==='gain'&&n.connections.includes(mix));
+  assert.equal(gains.length,3);assert.ok(gains.every(n=>n.connections.includes(mix)));
   const peaks=gains.map(n=>Math.max(...n.gain.events.filter(e=>e[0]==='ramp').map(e=>e[1])));
   assert.deepEqual(peaks,[.035,.065,.035],'balanced death layers use their requested recipe levels');
-  assert.equal(b.s.audioMaster.gain.value,level/12.5);
-  assert.ok((peaks[1]+peaks[2])*b.s.audioMaster.gain.value<1,'one explosion and its bass tone retain output headroom');
+  assert.equal(b.s.audioMaster.gain.value,Math.pow(level/100,2));
+  assert.equal(mix.connections[0].kind,'compressor','the combined mix passes through the peak compressor before the slider');
  }
 });
-test('Safari fallback doubles uncapped PCM samples instead of relying on element volume',async()=>{
+test('Safari fallback applies the squared output slider to normalized PCM samples',async()=>{
  const b=boot({noWebAudio:true});
+ b.s.setAudioVolume(100);b.s.nativeTone(500,700,.1,.04,'sine');await flush();
+ const full=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());
  for(const level of [25,50,75,100]){
-  b.s.setAudioVolume(level);const previous=b.s.wavToneURL(500,700,.1,'sine',.01*(level/25)*7);
-  b.s.nativeTone(500,700,.1,.01,'sine');await flush();
-  const before=new DataView(await b.blobs.get(previous).arrayBuffer()),after=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());
-  assert.equal(before.byteLength,after.byteLength);
-  for(let offset=44;offset<after.byteLength;offset+=2)assert.ok(Math.abs(after.getInt16(offset,true)-before.getInt16(offset,true)*2)<=1,'PCM is twice its old amplitude within integer rounding');
+  b.s.setAudioVolume(level);b.s.nativeTone(500,700,.1,.04,'sine');await flush();
+  const after=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());
+  assert.equal(full.byteLength,after.byteLength);
+  for(let offset=44;offset<after.byteLength;offset+=2)assert.ok(Math.abs(after.getInt16(offset,true)-full.getInt16(offset,true)*Math.pow(level/100,2))<=1,'output remains proportional after full-level normalization');
   assert.equal(after.getInt16(44,true),0);assert.equal(after.getInt16(after.byteLength-2,true),0);
   assert.equal(b.native[(b.plays.length-1)%8].volume,1);
  }
@@ -222,7 +224,7 @@ test('v440 loud Safari fallback preserves waveform shape and keeps increasing th
  const b=boot({noWebAudio:true});let previousPeak=0;
  for(const level of [25,50,75,99,100]){
   b.s.setAudioVolume(level);b.s.nativeTone(95,32,.28,.12,'triangle');await flush();
-  const data=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer()),nominal=.12*(level/12.5)*7,gain=nominal<=.7?nominal:.7+.28*(nominal-.7)/(.28+nominal-.7);
+  const data=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer()),nominal=.12*256,full=nominal<=.7?nominal:.7+.28*(nominal-.7)/(.28+nominal-.7),gain=full*Math.pow(level/100,2);
   const expected=new DataView(await b.blobs.get(b.s.wavToneURL(95,32,.28,'triangle',gain)).arrayBuffer());let peak=0;
   for(let offset=44;offset<data.byteLength;offset+=2){const sample=data.getInt16(offset,true);peak=Math.max(peak,Math.abs(sample));assert.equal(sample,expected.getInt16(offset,true),'soft gain mapping scales the whole waveform without hard-clipping samples');}
   assert.ok(peak>previousPeak&&peak<32760*.98);previousPeak=peak;
@@ -239,19 +241,22 @@ test('v440 every native effect level retains headroom and grows at the top of th
   }
  }
 });
-test('v440 one shared peak compressor protects overlapping sounds and compensates automatic makeup gain',async()=>{
- const b=boot();await b.s.initAudio();const master=b.s.audioMaster,peak=master.connections[0],trim=peak.connections[0];
- assert.equal(peak.kind,'compressor');assert.equal(trim.kind,'gain');assert.equal(trim.connections[0],b.s.audio.destination);
+test('one shared compressor and bounded limiter protect the mix before output volume',async()=>{
+ const b=boot();await b.s.initAudio();const master=b.s.audioMaster,mix=b.s.audioInspection().audioMix,peak=mix.connections[0],trim=peak.connections[0],limit=trim.connections[0];
+ assert.equal(mix.gain.value,256);
+ assert.equal(peak.kind,'compressor');assert.equal(trim.kind,'gain');assert.equal(limit.kind,'shaper');
+ assert.deepEqual(Array.from(limit.curve),[-.98,0,.98].map(Math.fround));
+ assert.equal(limit.connections[0],master);assert.equal(master.connections[0],b.s.audio.destination);
  assert.equal(peak.threshold.value,-3);assert.equal(peak.knee.value,0);assert.equal(peak.ratio.value,20);assert.equal(peak.attack.value,0);assert.equal(peak.release.value,.08);
  const fullScaleDb=peak.threshold.value*(1-1/peak.ratio.value),makeup=Math.pow(10,-fullScaleDb*.6/20);
  assert.ok(Math.abs(trim.gain.value*makeup-1)<1e-12,'quiet mix retains its requested gain');
  // Check the configured steady-state transfer, not a mock claim about browser DSP.
- for(const amplitude of [1,2,4,8,10.4]){
+ for(const amplitude of [1,2,4,8,10.4,20.8]){
   const inputDb=20*Math.log10(amplitude),compressedDb=peak.threshold.value+(inputDb-peak.threshold.value)/peak.ratio.value;
-  assert.ok(Math.pow(10,compressedDb/20)<.82,'configured curve has headroom even for eight stacked explosions and shots');
+  assert.ok(Math.pow(10,compressedDb/20)<.85,'configured curve has headroom even for eight stacked explosions and shots');
  }
  for(let i=0;i<20;i++){b.s.webTone(500,700,.1);b.s.boom();await b.s.initAudio();}
- assert.equal(b.nodes.filter(n=>n.kind==='compressor').length,1);assert.equal(master.connections.length,1);
+ assert.equal(b.nodes.filter(n=>n.kind==='compressor').length,1);assert.equal(b.nodes.filter(n=>n.kind==='shaper').length,1);assert.equal(master.connections.length,1);
  b.s.audio.state='closed';await b.s.initAudio();assert.equal(b.nodes.filter(n=>n.kind==='compressor').length,2,'recreated context owns one fresh processor');
 });
 test('v440 startup preserves the default 50 percent and saved volume and mute preferences',()=>{

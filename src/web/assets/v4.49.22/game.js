@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.20';
+const GAME_VERSION='4.49.22';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -184,10 +184,10 @@ function creditOnlineWin(report,member){
  onlineWins.add(id);save('onlineWin.'+id,1);renderDeviceWins();
 }
 function roundRect(c,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
-let audioLevel=null,audioEpoch=0,audioResumeStarted=-Infinity,audioResumeActivated=false,pendingAudioEffects=0;
+let audioLevel=null,audioMix=null,audioEpoch=0,audioResumeStarted=-Infinity,audioResumeActivated=false,pendingAudioEffects=0;
 let arenaAudioActive=false;
 const nativeAudioTimers=new Set(),audioSources=new Set();
-const SOUND_EFFECT_GAIN=4;
+const SOUND_EFFECT_GAIN=256;
 const SOUND_LEVELS=Object.freeze({ricochet:.035,impact:.032,shield:.037,explosionNoise:.065,explosionBass:.035,explosionNativeBass:.045,explosionNativeTail:.027});
 // Keep the weapon timbres and timing, with a narrower gap between nearby and
 // remote fire. Each layer stores frequency, end, duration, local/remote level, type.
@@ -199,7 +199,7 @@ const SHOT_SOUNDS=Object.freeze({
 });
 let lastExplosionSound=-Infinity,lastRicochetSound=-Infinity,onlineBounceGeneration=null;
 const onlineBounceCounts=new Map();
-function audioScale(){return SOUND_EFFECT_GAIN*clamp(audioVolume/50,0,2);}
+function audioScale(){return Math.pow(clamp(audioVolume/100,0,1),2);}
 function canPlayAudio(){return !muted&&audioVolume>0&&!document.hidden&&document.hasFocus();}
 function setArenaAudio(active){
  if(arenaAudioActive===active)return;
@@ -240,15 +240,18 @@ function trackAudioSource(source,cleanup){
  source.onended=()=>{audioSources.delete(source);cleanup();};
 }
 function createAudioGraph(){
- if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;if(audio)cancelPendingAudio();audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;audioMaster=audio.createGain();
+ if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;if(audio)cancelPendingAudio();audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;audioMaster=audio.createGain();audioMix=audio.createGain();audioMix.gain.value=SOUND_EFFECT_GAIN;
  // Protect the combined mix when deaths and shots overlap. Allocate this graph
  // once per context; individual effect shapes and their relative gains stay intact.
- const peak=audio.createDynamicsCompressor(),trim=audio.createGain(),threshold=-3,ratio=20;
+ const peak=audio.createDynamicsCompressor(),trim=audio.createGain(),limit=audio.createWaveShaper(),threshold=-3,ratio=20;
  peak.threshold.value=threshold;peak.knee.value=0;peak.ratio.value=ratio;peak.attack.value=0;peak.release.value=.08;
  // Cancel Web Audio's specified automatic makeup gain so quiet effects retain
  // their requested level: full-range attenuation is threshold*(1-1/ratio) dB.
  trim.gain.value=Math.pow(10,threshold*(1-1/ratio)*.6/20);
- audioMaster.connect(peak);peak.connect(trim);trim.connect(audio.destination);applyAudioLevel();return true;
+ // Catch brief peaks the compressor misses, then apply the slider to the
+ // finished mix so increasing the volume does not just trigger more limiting.
+ limit.curve=new Float32Array([-.98,0,.98]);
+ audioMix.connect(peak);peak.connect(trim);trim.connect(limit);limit.connect(audioMaster);audioMaster.connect(audio.destination);applyAudioLevel();return true;
 }
 function primeWebAudio(activated=false){
  if(!canPlayAudio())return Promise.resolve(false);try{if(audio?.state==='running')return Promise.resolve(true);if(!createAudioGraph())return Promise.resolve(false);
@@ -280,12 +283,13 @@ function nativeTone(freq,end,duration,volume=.035,type='sine',delay=0,groupVolum
   a.src=wavToneURL(freq,end,duration,type,nativeToneGain(groupVolume)*(groupVolume>0?volume/groupVolume:0));a.currentTime=0;a.dataset.baseVolume=String(volume);a.volume=1;const p=a.play();if(p?.then)p.then(()=>{if(epoch!==audioEpoch||!canPlayAudio()){a.muted=true;a.pause();}},fallback);}catch(_){fallback();}};if(delay>0){const timer=setTimeout(()=>{nativeAudioTimers.delete(timer);play();},delay*1000);nativeAudioTimers.add(timer);}else play();
 }
 function nativeToneGain(volume){
- // Scale the entire waveform, preserving its shape. Above the soft knee the
- // slider still increases output through 100%, without reaching PCM full scale.
- const level=Math.max(0,volume*audioScale()*7),knee=.7,headroom=.28;
- return level<=knee?level:knee+headroom*(level-knee)/(headroom+level-knee);
+ // Normalize the full-volume waveform first. Applying the slider afterward
+ // gives Safari the same fourfold increase from 50% to 100% as Web Audio.
+ const level=Math.max(0,volume*SOUND_EFFECT_GAIN),knee=.7,headroom=.28;
+ const full=level<=knee?level:knee+headroom*(level-knee)/(headroom+level-knee);
+ return full*audioScale();
 }
-function audioConnect(node){node.connect(audioMaster||audio.destination);}
+function audioConnect(node){node.connect(audioMix||audio.destination);}
 function ensureNoiseBuffer(){
  if(noiseBuffer||!audio)return noiseBuffer;
  try{const n=Math.floor(audio.sampleRate*.3);noiseBuffer=audio.createBuffer(1,n,audio.sampleRate);const data=noiseBuffer.getChannelData(0);for(let i=0;i<n;i++)data[i]=(Math.random()*2-1)*(1-i/n);}catch(_){noiseBuffer=null;}return noiseBuffer;
@@ -2657,7 +2661,7 @@ function initOnlineUI(){
   if(!infinity){startMatch();return;}
   startInfinity(infinity);
  });
- $('infinityToggle').addEventListener('change',e=>{infinityOnline=e.target.checked;save('infinityOnline',infinityOnline?1:0);syncFeatureSummary();});
+ $('infinityToggle').addEventListener('change',e=>selectPublicInfinity(e.target.checked));
  window.addEventListener('offline',()=>syncFeatureSummary());
  window.addEventListener('online',()=>syncFeatureSummary());
  $('copyInviteBtn').addEventListener('click',copyOnlineInvite);$('copyInGameBtn').addEventListener('click',copyOnlineInvite);$('roomBtn').addEventListener('click',toggleRoomMenu);$('onlineReturnBtn').addEventListener('click',toggleRoomMenu);
@@ -2714,11 +2718,9 @@ function createLocalRoom(){
  localRoom.self=0;localRoom.nextViewer=MAX_TANKS;
  let name='PILOT';try{name=localStorage.getItem('leqra.name')||name;}catch(_){}
  mode='room';phase='menu';online.menu=false;gameStarted=false;document.body.classList.remove('online-mode');if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=true;
- localRoom.rules=loadLocalRoomRules();infinityOffline=!!localRoom.rules.infinity;localRoom.code='';localRoom.players=[{id:0,member:++localRoom.nextMember,kind:'human',name,owner:0,team:localRoom.rules.teamMode==='ffa'?0:1},
-  {id:1,member:++localRoom.nextMember,kind:'bot',name:'RUST',owner:0,team:0,difficulty:'normal'},
-  {id:2,member:++localRoom.nextMember,kind:'bot',name:'VAPOR',owner:0,team:0,difficulty:'normal'},
-  {id:3,member:++localRoom.nextMember,kind:'bot',name:'EMBER',owner:0,team:0,difficulty:'normal'}];
+ localRoom.rules=loadLocalRoomRules();infinityOffline=!!localRoom.rules.infinity;localRoom.code='';localRoom.players=[{id:0,member:++localRoom.nextMember,kind:'human',name,owner:0,team:localRoom.rules.teamMode==='ffa'?0:1}];
  if(!restoreSavedLocalRoster()&&localRoom.rules.teamMode==='teams')balanceLocalTeams();
+ ensureDefaultLocalBots();
  name=localRoom.players.find(p=>p.id===localRoom.self).name;
  $('pilotName').value=name;$('localRoomName').value='';
  document.documentElement.style.removeProperty('--pilot');$('roomBtn').hidden=false;$('roomBtn').textContent='MY ROOM';
@@ -3093,6 +3095,18 @@ function selectLocalInfinity(offline){
  infinityOffline=offline;infinityOnline=false;
  save('infinityOffline',offline?1:0);save('infinityOnline',0);
 }
+function ensureDefaultLocalBots(rules=localRoom.rules){
+ if(mode!=='room'||!['menu','matchOver'].includes(phase)||$('infiniteArena')?.open||rules.infinity||infinityPlayMode()||!localRoom.players.some(p=>p.kind==='human')||localRoom.players.some(p=>p.kind==='bot'||p.kind==='local'||p.kind==='human'&&!p.spectating&&p.id!==localRoom.self))return false;
+ for(const name of ['RUST','VAPOR','EMBER']){
+  let id=0;while(localRoom.players.some(p=>p.id===id))id++;
+  localRoom.players.push({id,member:++localRoom.nextMember,kind:'bot',name,owner:localRoom.self,team:nextRoomTeam(localRoom.players,rules),difficulty:'normal'});
+ }
+ localRoom.players.sort((a,b)=>a.id-b.id);return true;
+}
+function selectPublicInfinity(enabled){
+ infinityOnline=enabled;save('infinityOnline',enabled?1:0);
+ if(ensureDefaultLocalBots()){persistLocalRoomRules();resetPreviewIfLobby();renderOnlineRoom();}else syncFeatureSummary();
+}
 function roomModeEditable(){return isRoomEditable()&&(mode!=='online'||online.connected)&&!pendingRoomMode&&!rulesPending&&!presetsPending;}
 function rulesForRoomMode(value){
  if(!ROOM_MODES.some(m=>m.id===value))throw Error('Choose an available game mode.');
@@ -3161,7 +3175,7 @@ function selectRoomSetting(field,value){
  const current=currentRules();
  if(value===(field==='mode'&&current.infinity?'infinity':current[field])){
   roomModeError='';
-  if(mode==='room'&&field==='mode'){selectLocalInfinity(value==='infinity');renderOnlineRoom();}
+  if(mode==='room'&&field==='mode'){selectLocalInfinity(value==='infinity');if(ensureDefaultLocalBots())setLocalRules(current);else renderOnlineRoom();}
   else syncRoomModePicker();
   return true;
  }
@@ -3176,7 +3190,7 @@ function selectRoomSetting(field,value){
    request.timer=setTimeout(()=>{if(pendingRoomMode===request)rejectRoomMode('No confirmation received. Check room settings before trying again.');},8000);
    syncFeatureSummary();
   }else{
-   if(field==='mode')selectLocalInfinity(value==='infinity');
+   if(field==='mode'){selectLocalInfinity(value==='infinity');ensureDefaultLocalBots(rules);}
    setLocalRules(rules);
   }
   syncRoomModePicker();return true;
@@ -3235,6 +3249,11 @@ function syncRoomSetupPending(){
  }catch(_){} // An incomplete packet cannot acknowledge an edit.
 }
 function sendRoomSetupRequest(type,setup){
+ if(type==='preset'&&online.roomData?.rules?.infinity&&!setup.rules.infinity&&setup.roster.length===1){
+  const roster=setup.roster.map(p=>({...p}));
+  for(const name of ['RUST','VAPOR','EMBER'])roster.push({kind:'bot',name,team:nextRoomTeam(roster,setup.rules),difficulty:'normal'});
+  setup={...setup,roster};
+ }
  const request={type,socket:online.socket,member:online.member,roomData:online.roomData,rulesKey:roomSetupRulesKey(setup.rules),rosterKey:type==='preset'?roomSetupRosterKey(setup.roster,setup.rules):null,timer:0};
  if(!sendOnline({type,...setup}))throw Error('Connection unavailable. Room settings were not sent.');
  online.setupPending=request;rulesPending=type==='rules';presetsPending=type==='preset';
@@ -3382,17 +3401,26 @@ function movementKeySummary(index){const moves=b=>[b.forward,b.left,b.reverse,b.
 function controlSummary(index,prefix=true){return(prefix?'P'+(index+1)+': ':'')+movementKeySummary(index)+' + '+[keyLabel(bindings[index].fire),...fireAliasLabels(index)].join(' / ');}
 function manualKeyRow(codes){return '<div class="keys">'+codes.map(code=>'<kbd>'+escapeHTML(keyLabel(code))+'</kbd>').join('')+'</div>';}
 function fieldManualHTML(){
+ const infinity=typeof window==='undefined'?null:window.leqraInfinity?.sidebarHelp?.();
+ const aliases=infinity?!infinity.twoPilots:aliasesActive();
+ const summary=index=>{
+  if(!infinity)return controlSummary(index,false);
+  const b=bindings[index];
+  return [b.forward,b.left,b.reverse,b.right].map(keyLabel).join(' ')+' + '+[b.fire,b.fireAlt].map(keyLabel).join(' / ');
+ };
  let html='<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Tap or hold Fire to shoot.</span></div>';
- if(aliasesActive()){
+ if(aliases){
   const moves=b=>[b.forward,b.left,b.reverse,b.right];
   html+='<div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options">'+manualKeyRow(moves(bindings[0]))+'<span class="manual-or">OR</span>'+manualKeyRow(moves(bindings[1]))+'</div></div>';
-  html+='<div class="manual-line manual-fire-line"><span>Fire</span><div class="keys">'+[keyLabel(bindings[0].fire),...fireAliasLabels(0)].map(label=>'<kbd>'+escapeHTML(label)+'</kbd>').join('<span class="manual-or">OR</span>')+'</div></div>';
+  const fire=infinity?[bindings[0].fire,bindings[0].fireAlt,bindings[1].fire,bindings[1].fireAlt].map(keyLabel):[keyLabel(bindings[0].fire),...fireAliasLabels(0)];
+  html+='<div class="manual-line manual-fire-line"><span>Fire</span><div class="keys">'+fire.map(label=>'<kbd>'+escapeHTML(label)+'</kbd>').join('<span class="manual-or">OR</span>')+'</div></div>';
  }else{
-  html+='<div class="manual-line"><span>Player 1</span><kbd>'+escapeHTML(controlSummary(0,false))+'</kbd></div>';
-  if(hasLocalP2())html+='<div class="manual-line"><span>Player 2</span><kbd>'+escapeHTML(controlSummary(1,false))+'</kbd></div>';
+  html+='<div class="manual-line"><span>Player 1</span><kbd>'+escapeHTML(summary(0))+'</kbd></div>';
+  if(infinity?.twoPilots||hasLocalP2())html+='<div class="manual-line"><span>Player 2</span><kbd>'+escapeHTML(summary(1))+'</kbd></div>';
  }
  html+='<div class="manual-line"><span>Mouse (P1)</span><span>Move to aim · Left-click to fire</span></div>';
- html+='<div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>'+escapeHTML(modeLabel())+'</b><br>'+escapeHTML(modeInstructions())+'<br>Use Controls menu to change keys.</div>';
+ if(infinity)html+='<div class="manual-line"><span>Pause</span>'+manualKeyRow(['KeyP','Escape'])+'</div>';
+ html+='<div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>'+escapeHTML(infinity?'INFINITY':modeLabel())+'</b><br>'+escapeHTML(infinity?infinity.instructions:modeInstructions())+'<br>Use Controls menu to change keys.</div>';
  return html;
 }
 function renderBindings(){
@@ -3442,8 +3470,9 @@ function renderPresets(){
  featureNotice('presetsNotice',canLoadPreset()?'Presets save names, local seats, bots, teams and rules. Online guests and credentials are never saved.':'Loading requires a host-only lobby without spectators or online guests, including reconnecting members. It never replaces someone else’s place.');
 }
 function applyLocalPreset(p){
- const valid=validatePreset(p),mapChanged=mapSetupChanged(localRoom.rules,valid.rules);localRoom.self=0;localRoom.nextViewer=MAX_TANKS;localRoom.rules=valid.rules;roundClock=valid.rules.timeLimit;round=1;localRoom.players=valid.roster.map((s,id)=>({...s,id,member:++localRoom.nextMember,owner:0}));
+ const valid=validatePreset(p),exitingInfinity=!!localRoom.rules?.infinity&&!valid.rules.infinity,mapChanged=mapSetupChanged(localRoom.rules,valid.rules);localRoom.self=0;localRoom.nextViewer=MAX_TANKS;localRoom.rules=valid.rules;roundClock=valid.rules.timeLimit;round=1;localRoom.players=valid.roster.map((s,id)=>({...s,id,member:++localRoom.nextMember,owner:0}));
  if(valid.rules.infinity||infinityOffline)selectLocalInfinity(!!valid.rules.infinity);
+ if(exitingInfinity)ensureDefaultLocalBots();
  persistLocalRoomRules(valid.rules);
  rememberCallsign(localRoom.players[0].name);const p2=localRoom.players.find(p=>p.kind==='local');if(p2)rememberLocalCallsign(p2.name);
  phase='menu';gameStarted=false;online.menu=false;scores=Array(MAX_TANKS).fill(0);clearInput();resetPreviewIfLobby({regenerateMaze:mapChanged,resetPickups:true});setScreen('room');renderOnlineRoom();
@@ -4490,8 +4519,34 @@ function showVictory(winner,matchTanks=tanks,report=mode==='online'?online.snaps
  for(const other of document.querySelectorAll('dialog[open]'))if(other!==d)other.close();
  if(!d.open){d.showModal();$('victoryTitle').tabIndex=-1;$('victoryTitle').focus({preventScroll:true});d.scrollTop=0;}
 }
+let sidebarHome=null;
+const sidebarPowerText=new Map();
+function syncSidebarContext(){
+ const sidebar=$('gameSidebar'),help=window.leqraInfinity?.sidebarHelp?.();
+ const manual=fieldManualHTML();if($('manualContent').dataset.content!==manual){$('manualContent').innerHTML=manual;$('manualContent').dataset.content=manual;}
+ sidebar.setAttribute('aria-label',help?'Infinity scoreboard and instructions':'Scoreboard and instructions');
+ for(const [element,original]of sidebarPowerText){
+  let text=original;
+  if(help){
+   if(element.classList.contains('power-note'))text=help.pickupHelp+' '+original.slice(original.indexOf('Speed activates'));
+   else text=original.replace('4–8 seconds',help.starDuration+' seconds').replace('Edge bounces.','5.3s flight.').replace(/(?:Half|quarter)-perimeter range/i,help.weaponRange+'-cell range');
+  }
+  if(element.textContent!==text)element.textContent=text;
+ }
+}
+function mountSidebar(container){
+ const sidebar=$('gameSidebar'),dialog=$('sidebarDialog');
+ if(dialog.open)dialog.close();
+ container.append(sidebar);$('sidebarDetailsBtn').setAttribute('aria-expanded','false');syncSidebarContext();
+}
+function restoreSidebar(container){
+ const sidebar=$('gameSidebar');
+ if(sidebar.parentElement===container)sidebarHome.append(sidebar);
+ syncSidebarContext();
+}
 function initPresentation(){
- const sidebar=$('gameSidebar'),sidebarHome=sidebar.parentElement;
+ const sidebar=$('gameSidebar');sidebarHome=sidebar.parentElement;
+ for(const element of sidebar.querySelectorAll('.power-info span,.power-note'))sidebarPowerText.set(element,element.textContent);
  const button=document.createElement('button');button.id='sidebarBtn';button.type='button';button.className='icon-btn sidebar-toggle';button.setAttribute('aria-controls','gameSidebar');button.innerHTML='<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16m3-11h.1M18 12h.1M18 15h.1"/></svg>';
  $('fullscreenBtn').before(button);
  const apply=hidden=>{document.body.classList.toggle('sidebar-hidden',hidden);button.setAttribute('aria-expanded',String(!hidden));button.setAttribute('aria-label',hidden?'Show sidebar':'Hide sidebar');button.title=hidden?'Show sidebar':'Hide sidebar';resize();};
@@ -4499,7 +4554,7 @@ function initPresentation(){
  button.onclick=()=>{const hidden=!document.body.classList.contains('sidebar-hidden');apply(hidden);save('sidebarHidden',hidden?'1':'0');};
  const detailsButton=$('sidebarDetailsBtn'),sidebarDialog=$('sidebarDialog');
  detailsButton.onclick=()=>{$('sidebarDetails').append(sidebar);openFeature('sidebar');sidebarDialog.scrollTop=0;detailsButton.setAttribute('aria-expanded','true');};
- sidebarDialog.addEventListener('close',()=>{if(sidebarDialog.open)return;sidebarHome.append(sidebar);detailsButton.setAttribute('aria-expanded','false');});
+ sidebarDialog.addEventListener('close',()=>{if(sidebarDialog.open)return;if(sidebar.parentElement===$('sidebarDetails'))sidebarHome.append(sidebar);detailsButton.setAttribute('aria-expanded','false');});
  const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><h2 id="victoryTitle"></h2><div class="victory-emblem" id="victoryEmblem" aria-hidden="true">★</div><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="primary back-action" id="victoryCloseBtn" type="button">BACK TO ROOM <span aria-hidden="true">←</span></button><button class="secondary" id="victoryRestartWaveBtn" type="button" hidden>RESTART WAVE</button><button class="secondary result-replay" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button></footer>';
  document.body.append(dialog);$('victoryRestartWaveBtn').onclick=requestRestartSurvivalWave;$('victoryCloseBtn').onclick=resultBackToRoom;$('victoryAgainBtn').onclick=quickReplay;dialog.addEventListener('cancel',e=>{e.preventDefault();resultBackToRoom();});
 }
@@ -4790,7 +4845,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work)=>sampleFrame(now,work,'infiniteFPSIndicator',null),
  theme,colors:Theme.colors,colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
- openControls:()=>openFeature('controls'),arenaKeyBlocked,keyLabel,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
+ openControls:()=>openFeature('controls'),mountSidebar,restoreSidebar,arenaKeyBlocked,keyLabel,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,
  recycleStarmanProjectiles,
  missileTurn:MISSILE_TURN,

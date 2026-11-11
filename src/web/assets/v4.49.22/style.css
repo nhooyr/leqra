@@ -852,6 +852,15 @@ body .infinite-header .icon-btn{width:44px;height:44px;flex:none}
 #infiniteKills{min-width:0;white-space:normal;overflow-wrap:anywhere;color:var(--accent-ink);font:700 12px var(--mono);font-variant-numeric:tabular-nums}
 .infinite-pause-menu:not([open]){display:none}
 body .infinite-pause-menu[open]{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;color:var(--text);padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+.infinite-pause-layout{display:grid;grid-template-columns:minmax(0,410px) minmax(0,300px);gap:20px;width:100%;max-width:730px;margin:auto;align-items:center;flex-shrink:0}
+.infinite-pause-sidebar{max-height:calc(100dvh - max(12px,env(safe-area-inset-top)) - max(12px,env(safe-area-inset-bottom)));overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.infinite-pause-menu .infinite-pause-layout>.screen-card{max-width:none;margin:0}
+#infinitePauseSidebar .sidebar{display:flex;overflow:visible}
+#infinitePauseSidebar .infinite-leaderboard{position:static;width:100%;max-height:none;overflow:visible}
+#infinitePauseSidebar .fixed-maze-panel,#infinitePauseSidebar .log-panel{display:none}
+#infinitePauseSidebar .manual-line{gap:8px;flex-wrap:wrap}
+#infinitePauseSidebar .manual-line kbd{white-space:normal;overflow-wrap:anywhere}
+@media(max-width:920px){.infinite-pause-layout{grid-template-columns:minmax(0,1fr);max-width:650px;gap:14px;align-items:start}.infinite-pause-sidebar{max-height:none;overflow:visible}}
 .infinite-pause-menu::backdrop{background:transparent}
 .infinite-arena[data-mode=online] .infinite-pause-offline,.infinite-arena[data-mode=offline] .infinite-pause-online{display:none}
 body.touch-ui .infinite-pause-menu :is(.primary,.secondary){min-height:44px}
@@ -865,10 +874,10 @@ body.touch-landscape .infinite-pause-menu .secondary{padding:8px 10px;margin-top
 #infiniteTeamScores{border-bottom:1px solid var(--border);margin-bottom:5px}
 .infinite-readout{flex:0 1 28%;max-width:300px;min-width:0;text-align:right;overflow-wrap:anywhere}
 #infiniteStatus{font:10px/1.4 var(--mono);color:var(--text-main);margin:0}
-#infiniteControlsHint{margin:2px 0 0}
+#infiniteControlsHint{margin:2px 0 0;white-space:pre-line}
 body.touch-landscape .infinite-underbar{display:grid;grid-template-columns:minmax(0,1fr);gap:3px}
 body.touch-landscape .infinite-readout{display:flex;align-items:baseline;gap:8px;max-width:none;text-align:left}
-body.touch-landscape #infiniteControlsHint{min-width:0;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.touch-landscape #infiniteControlsHint{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:560px){
  .infinite-underbar{display:grid;grid-template-columns:minmax(0,1fr);gap:3px}
  .infinite-readout{max-width:none;text-align:left}

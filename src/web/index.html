@@ -8,18 +8,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="leqra">
-<meta name="leqra-version" content="v4.49.20">
+<meta name="leqra-version" content="v4.49.22">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.20/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.20/theme.css">
-<link rel="stylesheet" href="assets/v4.49.20/style.css">
-<link rel="manifest" href="assets/v4.49.20/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.20/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.20/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.20/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.20/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.22/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.22/theme.css">
+<link rel="stylesheet" href="assets/v4.49.22/style.css">
+<link rel="manifest" href="assets/v4.49.22/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.22/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.22/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.22/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.22/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -110,7 +110,7 @@
   </div>
  </section>
  <aside class="sidebar" id="gameSidebar" aria-label="Scoreboard and instructions">
-  <section class="panel"><div class="panel-title"><span>THE LINEUP</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
+  <section class="panel fixed-maze-panel"><div class="panel-title"><span>THE LINEUP</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
   <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"><div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line manual-fire-line"><span>Fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>C</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd><span class="manual-or">OR</span><kbd>ENTER</kbd></div></div><div class="manual-line"><span>Mouse (P1)</span><span>Move to aim · Left-click to fire</span></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through their allies. Bank shots off walls to reach tanks around corners.</div></div></section>
   <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 PICKUPS</span></div><div class="power-list">
 <div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Through walls. Edge bounces. 4× size/speed.</span></div></div>
@@ -233,6 +233,7 @@
   <div class="infinite-readout"><p id="infiniteStatus" role="status"></p><p id="infiniteControlsHint" class="bar-hint"></p></div>
  </footer>
  <dialog id="infinitePauseMenu" class="overlay infinite-pause-menu" aria-labelledby="infinitePauseTitle" aria-describedby="infinitePauseHelp">
+  <div class="infinite-pause-layout">
   <div class="screen-card">
    <div class="online-menu-intro">
     <div class="eyebrow"><span class="infinite-pause-offline">TAKE A BREATHER</span><span class="infinite-pause-online">ONLINE MATCH</span></div>
@@ -245,6 +246,8 @@
     <button class="secondary" id="infiniteExit" type="button">Exit Infinity</button>
    </div>
   </div>
+  <div id="infinitePauseSidebar" class="infinite-pause-sidebar"></div>
+  </div>
  </dialog>
  <dialog id="infiniteResult" class="feature-dialog" aria-labelledby="infiniteResultTitle">
   <header class="feature-header"><div><div class="eyebrow">INFINITY · MATCH COMPLETE</div><h2 id="infiniteResultTitle"></h2></div></header>
@@ -252,10 +255,10 @@
   <footer class="feature-footer"><button class="primary" id="infiniteResultExit" type="button" autofocus>Back to room</button></footer>
  </dialog>
 </dialog>
-<script src="assets/v4.49.20/netcode.js" defer></script>
-<script src="assets/v4.49.20/game.js" defer></script>
-<script src="assets/v4.49.20/infinite-maze.js" defer></script>
-<script src="assets/v4.49.20/infinite.js" defer></script>
-<script src="assets/v4.49.20/pwa.js" defer></script>
+<script src="assets/v4.49.22/netcode.js" defer></script>
+<script src="assets/v4.49.22/game.js" defer></script>
+<script src="assets/v4.49.22/infinite-maze.js" defer></script>
+<script src="assets/v4.49.22/infinite.js" defer></script>
+<script src="assets/v4.49.22/pwa.js" defer></script>
 </body>
 </html>

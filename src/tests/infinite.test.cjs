@@ -21,6 +21,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   clientWidth = 390;
   clientHeight = 740;
   open = false;
+  parentElement = null;
   textContent = '';
   closest() { return false; }
   setAttribute() {}
@@ -41,8 +42,17 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   showModal() { this.open = true; }
   close() { this.open = false; this.emit('close'); }
   focus() {}
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.children = children; }
+  get firstChild() {return this.children[0] || null;}
+  get nextSibling() {return this.parentElement?.children[this.parentElement.children.indexOf(this)+1] || null;}
+  remove() {
+   if(this.parentElement){const nodes=this.parentElement.children;nodes.splice(nodes.indexOf(this),1);this.parentElement=null;}
+  }
+  insertBefore(child,next) {
+   child.remove();const index=next?this.children.indexOf(next):this.children.length;
+   this.children.splice(index,0,child);child.parentElement=this;
+  }
+  append(...children) {for(const child of children)this.insertBefore(child,null);}
+  replaceChildren(...children) {for(const child of [...this.children])child.remove();this.append(...children);}
  }
  const sockets = [];
  class WebSocket extends Element {
@@ -61,13 +71,16 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   return elements.get(id);
  };
  const document = new Element();
+ byID('infiniteStage').append(byID('infiniteLeaderboardPanel'),byID('infiniteTouchControls'));
  document.getElementById = byID;
- document.createElement = () => new Element();
+ document.createElement = tag => Object.assign(new Element(),{tagName:tag.toUpperCase()});
  document.querySelector = selector => selector === 'dialog[open]' && [...elements.values()].find(element => element.open);
  const window = new Element();
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
  const sounds = [], loadouts = [], markers = [], combatPrefs = {visual:true,audio:true,fps:false};
+ const sidebarHome = {}, sidebarMoves = [];
+ let sidebarParent = sidebarHome;
  const powers = Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman']
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
@@ -82,6 +95,8 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
   missileTurn: 4.8,
   openControls: () => byID('controlsDialog').showModal(),
+  mountSidebar: container => {sidebarParent = container;sidebarMoves.push('mount');},
+  restoreSidebar: container => {if(sidebarParent===container){sidebarParent=sidebarHome;sidebarMoves.push('restore');}},
   isTouchUI: () => false,
   toggleFullscreen: () => sounds.push('fullscreen'),
   toggleSound: () => sounds.push('mute'),
@@ -169,7 +184,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   }
   now = until;
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, combatPrefs};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;}};
 }
 
 test('explicit Infinity exits restore launcher focus while forced closure keeps the current focus', () => {
@@ -227,7 +242,10 @@ test('offline Infinity routes two independent keyboard layouts to separate tanks
  assert.deepEqual(Array.from(world.bullets,b=>b.owner).sort(),[local.id,pilot.id].sort());
  assert.equal(byID('infiniteLocalLoadout').hidden,false);
  assert.equal(arena.dataset.split,'stacked');
- assert.match(byID('infiniteControlsHint').textContent,/P1 .* · P2 /);
+ const hints=byID('infiniteControlsHint').children;
+ assert.match(hints[0].textContent,/^P1 /);
+ assert.equal(hints[1].tagName,'BR');
+ assert.match(hints[2].textContent,/^P2 /);
  infinity.close();
 });
 
@@ -567,6 +585,40 @@ test('the Infinity pause menu freezes the offline simulation until Resume', () =
  assert.ok(!pauseMenu.open && world.time>before);
  assert.equal(world.bullets.length,0);
  infinity.close();
+});
+
+test('Infinity pause owns the shared sidebar until resume, direct close, or exit', () => {
+ const h=harness(),{infinity,byID}=h;
+ infinity.start('offline',{localName:'Wingmate'});
+ const arena=byID('infiniteArena'),pause=byID('infinitePauseMenu');
+ arena.emit('keydown',{code:'Escape'});
+ assert.equal(h.sidebarParent,byID('infinitePauseSidebar'));
+ assert.equal(infinity.sidebarHelp().twoPilots,true);
+ assert.match(infinity.sidebarHelp().instructions,/Respawn after 1 second/);
+ byID('infiniteControlsBtn').emit('click');byID('introTourDialog').showModal();
+ byID('infiniteResumeBtn').emit('click');
+ assert.equal(h.sidebarParent,h.sidebarHome);
+ assert.ok(!pause.open&&!byID('controlsDialog').open&&!byID('introTourDialog').open);
+ assert.equal(infinity.sidebarHelp(),null);
+ arena.emit('keydown',{code:'Escape'});pause.close();
+ assert.equal(h.sidebarParent,h.sidebarHome);
+ arena.emit('keydown',{code:'Escape'});infinity.close();
+ assert.equal(h.sidebarParent,h.sidebarHome);
+ assert.deepEqual(h.sidebarMoves,['mount','restore','mount','restore','mount','restore']);
+});
+
+test('Infinity pause borrows the actual scoreboard and restores its position and disclosure state', () => {
+ const {infinity,byID}=harness();
+ const panel=byID('infiniteLeaderboardPanel'),home=panel.parentElement,next=panel.nextSibling;
+ infinity.start('offline');
+ for(const open of [false,true]){
+  panel.open=open;byID('infinitePauseBtn').emit('click');
+  assert.equal(panel.parentElement,byID('gameSidebar'));assert.equal(panel.open,true);
+  panel.open=false;byID('infiniteResumeBtn').emit('click');
+  assert.equal(panel.parentElement,home);assert.equal(panel.nextSibling,next);assert.equal(panel.open,open);
+ }
+ byID('infinitePauseBtn').emit('click');infinity.close();
+ assert.equal(panel.parentElement,home);assert.equal(panel.nextSibling,next);
 });
 
 test('online Infinity sends neutral pause heartbeats and clears the respawn hold on resume', () => {
@@ -928,7 +980,7 @@ test('private Infinity reload can only resume a saved generation and stops on ex
 });
 
 test('online room Infinity routes Player 2 separately and displays the authoritative team result', () => {
- const {infinity,byID,sockets,state,advance}=harness(undefined,true);
+ const h=harness(undefined,true),{infinity,byID,sockets,state,advance}=h;
  infinity.start('online',{code:'TEAM',token:'secret',localName:'Local wingmate'});
  const [socket]=sockets,arena=byID('infiniteArena');
  socket.emit('open');
@@ -951,6 +1003,8 @@ test('online room Infinity routes Player 2 separately and displays the authorita
  socket.receive({...packet,teamScores:[3,-3,0,0],result:{name:'Blue',team:1,score:3}});
  advance();
  assert.equal(byID('infinitePauseMenu').open,false);
+ assert.equal(h.sidebarParent,h.sidebarHome);
+ assert.equal(byID('infiniteLeaderboardPanel').parentElement,byID('infiniteStage'));
  assert.equal(byID('infiniteResultTitle').textContent,'Blue wins');
  assert.equal(byID('infiniteResult').open,true);
  const sent=socket.sent.length;
@@ -1038,7 +1092,7 @@ test('Infinity shares fullscreen and protects native keyboard activation and tex
  assert.deepEqual(sounds,['fullscreen']);
  assert.equal(pauseMenu.open,false);
  assert.equal(state().bullets.length,0);
- assert.match(byID('infiniteControlsHint').textContent,/Fire NUM ENTER/);
+ assert.match(byID('infiniteControlsHint').children[0].textContent,/Fire NUM ENTER/);
  arena.emit('keydown',{code:'NumpadEnter',target:{tagName:'CANVAS'}});
  advance();
  assert.equal(state().bullets.length,1);

@@ -68,6 +68,15 @@ def check_pause_style(page, online):
     expect(back).to_be_focused()
     message = card.locator("p").filter(has_text="respawning waits" if online else "Your tank is safe")
     expect(message).to_be_visible()
+    sidebar = pause.locator("#infinitePauseSidebar #gameSidebar")
+    expect(sidebar).to_be_visible()
+    expect(sidebar.locator("#infiniteLeaderboardPanel")).to_have_attribute("open", "")
+    expect(sidebar.locator("#manualContent .warning")).to_contain_text("INFINITY")
+    expect(sidebar.locator(".power-row")).to_have_count(10)
+    expect(sidebar.locator(".power-note")).to_contain_text("Starman lasts 8 seconds")
+    expect(sidebar.locator(".power-row").filter(has_text="Cannon")).to_contain_text("5.3s flight")
+    expect(sidebar.locator(".fixed-maze-panel")).to_be_hidden()
+    expect(sidebar.locator(".log-panel")).to_be_hidden()
 
     def style(locator, properties):
         return locator.evaluate("""(node, properties) => {
@@ -276,6 +285,68 @@ def check_audio(browser, errors):
     print("PASS Infinity uses the shared firing audio and mute setting", flush=True)
 
 
+def check_pause_sidebar(browser, url, errors):
+    for width, height, touch in ((1280, 900, False), (390, 844, True), (320, 568, True), (568, 320, True)):
+        with browser.new_context(viewport={"width": width, "height": height}, is_mobile=touch, has_touch=touch) as context:
+            context.add_init_script("localStorage.setItem('leqra.sidebarHidden','1')")
+            page = load(context, url, "SIDEBAR PILOT", errors)
+            select_room_infinity(page)
+            page.locator("#roomPlayers > summary").click()
+            page.locator("#addLocalBtn").click()
+            player_count = page.evaluate("leqra.getState().room.players.length")
+            page.locator("#startRoomBtn").click()
+            expect(page.locator("#infiniteArena")).to_be_visible()
+            # A queued close event from the mobile dialog must preserve the new owner.
+            page.evaluate("""() => {
+                const sidebar = document.querySelector('#gameSidebar');
+                document.querySelector('#sidebarDetails').append(sidebar);
+                const dialog = document.querySelector('#sidebarDialog');
+                dialog.showModal(); dialog.close();
+                document.querySelector('#infinitePauseBtn').click();
+            }""")
+            sidebar = page.locator("#infinitePauseSidebar #gameSidebar")
+            expect(sidebar).to_be_visible()
+            expect(sidebar.locator("#infiniteLeaderboardPanel")).to_have_attribute("open", "")
+            expect(sidebar.locator("#infiniteLeaderboard li")).to_have_count(player_count)
+            expect(page.locator("#infiniteLeaderboardPanel")).to_have_count(1)
+            expect(sidebar.locator("#manualContent")).to_contain_text("Player 2")
+            expect(sidebar.locator("#manualContent .warning")).to_contain_text("INFINITY")
+            expect(sidebar.locator(".power-row")).to_have_count(10)
+            note = sidebar.locator(".power-note")
+            note.scroll_into_view_if_needed()
+            expect(note).to_be_in_viewport()
+            expect(note).to_contain_text("Starman lasts 8 seconds")
+            assert page.locator("#infinitePauseMenu").evaluate("node => node.scrollWidth <= node.clientWidth + 1")
+
+            page.locator("#infiniteControlsBtn").click()
+            page.get_by_role("button", name="Rebind player 2 Fire", exact=True).click()
+            page.keyboard.press("u")
+            page.locator("#openIntroTour").click()
+            expect(page.locator("#introTourDialog")).to_be_visible()
+            page.locator("#introTourSkip").click()
+            page.keyboard.press("Escape")
+            expect(page.locator("#controlsDialog")).to_be_hidden()
+            expect(page.locator("#infiniteControlsBtn")).to_be_focused()
+            expect(sidebar.locator("#manualContent")).to_contain_text("U / ENTER")
+            expect(sidebar.locator("#manualContent .warning")).to_contain_text("INFINITY")
+            page.locator("#infiniteResumeBtn").click()
+            expect(page.locator(".main-grid > #gameSidebar")).to_have_count(1)
+            expect(page.locator(".infinite-stage > #infiniteLeaderboardPanel")).to_have_count(1)
+            assert not page.locator("#infiniteLeaderboardPanel").evaluate("node => node.open")
+            expect(page.locator("#infiniteCanvas")).to_be_focused()
+            page.locator("#infinitePauseBtn").click()
+            page.locator("#infiniteExit").click()
+            expect(page.locator(".main-grid > #gameSidebar")).to_have_count(1)
+            expect(page.locator(".infinite-stage > #infiniteLeaderboardPanel")).to_have_count(1)
+            expect(page.locator("#gameSidebar .power-note")).to_contain_text("Most timed power-ups last 10 seconds")
+            if touch:
+                page.locator("#sidebarDetailsBtn").click()
+                expect(page.locator("#sidebarDetails > #gameSidebar")).to_be_visible()
+                page.locator("#sidebarCloseBtn").click()
+                expect(page.locator(".main-grid > #gameSidebar")).to_have_count(1)
+    print("PASS shared Infinity pause sidebar, nested tour, bindings, scrolling, and DOM restoration", flush=True)
+
+
 def check_private(browser, url, errors):
     with browser.new_context() as first, browser.new_context() as second, browser.new_context() as public:
         first.add_init_script("localStorage.setItem('leqra.local2Name', 'ROOM WING')")
@@ -415,6 +486,8 @@ def check_private(browser, url, errors):
         other.locator("#infinitePauseBtn").click()
         other.locator("#infiniteControlsBtn").click()
         expect(other.locator("#controlsDialog")).to_be_visible()
+        other.locator("#openIntroTour").click()
+        expect(other.locator("#introTourDialog")).to_be_visible()
         moderator.locator("#infinitePauseBtn").click()
         moderator.locator("#infiniteExit").click()
         moderator.locator("#endInfinityBtn").click()
@@ -422,6 +495,8 @@ def check_private(browser, url, errors):
         expect(other.locator("#infiniteArena")).to_be_hidden()
         expect(other.locator("#infinitePauseMenu")).to_be_hidden()
         expect(other.locator("#controlsDialog")).to_be_hidden()
+        expect(other.locator("#introTourDialog")).to_be_hidden()
+        expect(other.locator(".main-grid > #gameSidebar")).to_have_count(1)
         expect(other.locator("#readyBtn")).to_contain_text("READY")
         expect(moderator.locator("#endInfinityBtn")).to_be_hidden()
         assert all(page.evaluate("leqra.getState().online.connected") for page in (host, guest))
@@ -441,6 +516,7 @@ if __name__ == "__main__":
             check_public(browser, url, errors)
             check_offline(browser, errors)
             check_audio(browser, errors)
+            check_pause_sidebar(browser, url, errors)
             check_private(browser, url, errors)
         finally:
             browser.close()
