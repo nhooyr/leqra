@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.23';
+const GAME_VERSION='4.49.24';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -188,7 +188,7 @@ let audioLevel=null,audioMix=null,audioEpoch=0,audioResumeStarted=-Infinity,audi
 let arenaAudioActive=false;
 const nativeAudioTimers=new Set(),audioSources=new Set();
 const SOUND_EFFECT_GAIN=256;
-const SOUND_LEVELS=Object.freeze({ricochet:.035,impact:.032,shield:.037,explosionNoise:.065,explosionBass:.035,explosionNativeBass:.045,explosionNativeTail:.027});
+const SOUND_LEVELS=Object.freeze({ricochet:.035,impact:.032,shield:.037,explosionNoise:.025,explosionBass:.018,explosionNativeBass:.028,explosionNativeTail:.012});
 // Keep the weapon timbres and timing, with a narrower gap between nearby and
 // remote fire. Each layer stores frequency, end, duration, local/remote level, type.
 const SHOT_SOUNDS=Object.freeze({
@@ -199,7 +199,7 @@ const SHOT_SOUNDS=Object.freeze({
 });
 let lastExplosionSound=-Infinity,lastRicochetSound=-Infinity,onlineBounceGeneration=null;
 const onlineBounceCounts=new Map();
-function audioScale(){return Math.pow(clamp(audioVolume/100,0,1),2);}
+function audioScale(){return clamp(audioVolume/100,0,1);}
 function canPlayAudio(){return !muted&&audioVolume>0&&!document.hidden&&document.hasFocus();}
 function setArenaAudio(active){
  if(arenaAudioActive===active)return;
@@ -284,7 +284,7 @@ function nativeTone(freq,end,duration,volume=.035,type='sine',delay=0,groupVolum
 }
 function nativeToneGain(volume){
  // Normalize the full-volume waveform first. Applying the slider afterward
- // gives Safari the same fourfold increase from 50% to 100% as Web Audio.
+ // gives Safari the same output curve as Web Audio.
  const level=Math.max(0,volume*SOUND_EFFECT_GAIN),knee=.7,headroom=.28;
  const full=level<=knee?level:knee+headroom*(level-knee)/(headroom+level-knee);
  return full*audioScale();
@@ -306,9 +306,9 @@ function boom(){
   // Both native elements play together. Share one gain budget so their summed
   // samples retain headroom, rather than independently approaching full scale.
   const group=SOUND_LEVELS.explosionNativeBass+SOUND_LEVELS.explosionNativeTail;
-  nativeTone(95,32,.28,SOUND_LEVELS.explosionNativeBass,'triangle',0,group);nativeTone(180,55,.14,SOUND_LEVELS.explosionNativeTail,'sawtooth',.015,group);return;
+  nativeTone(90,45,.26,SOUND_LEVELS.explosionNativeBass,'sine',0,group);nativeTone(150,70,.16,SOUND_LEVELS.explosionNativeTail,'sine',.02,group);return;
  }
- audioWhenReady(()=>{if(!ensureNoiseBuffer())return;try{const t=audio.currentTime,s=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();s.buffer=noiseBuffer;f.type='lowpass';f.frequency.value=850;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(SOUND_LEVELS.explosionNoise,t+.004);g.gain.linearRampToValueAtTime(0,t+.3);s.connect(f);f.connect(g);audioConnect(g);trackAudioSource(s,()=>{s.disconnect();f.disconnect();g.disconnect();});s.start(t);tone(100,30,.24,SOUND_LEVELS.explosionBass,'triangle');}catch(_){}});
+ audioWhenReady(()=>{if(!ensureNoiseBuffer())return;try{const t=audio.currentTime,s=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();s.buffer=noiseBuffer;f.type='lowpass';f.frequency.value=320;f.Q.value=.5;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(SOUND_LEVELS.explosionNoise,t+.02);g.gain.linearRampToValueAtTime(0,t+.3);s.connect(f);f.connect(g);audioConnect(g);trackAudioSource(s,()=>{s.disconnect();f.disconnect();g.disconnect();});s.start(t);tone(90,45,.24,SOUND_LEVELS.explosionBass,'sine');}catch(_){}});
 }
 function ricochetSound(){if(!canPlayAudio())return;const now=performance.now();if(now-lastRicochetSound<70)return;lastRicochetSound=now;tone(650,420,.045,SOUND_LEVELS.ricochet);}
 function shieldSound(){tone(680,160,.2,SOUND_LEVELS.shield,'sine');}
@@ -411,10 +411,12 @@ function spawnCells(){return [(rows-1)*cols,cols-1,rows*cols-1,0,Math.floor(cols
 function resetTanks(){const spawn=spawnCells();if(mode==='room'){tanks=localRoom.players.filter(p=>!p.spectating).map(p=>newTank(p.id,spawn[p.id]));return;}if(mode==='solo'&&Math.random()<.5)spawn[2]=0;tanks=spawn.slice(0,mode==='duel'?2:3).map((s,i)=>newTank(i,s));}
 function resetPreview(){localSurvivalCheckpoint=null;localObjectives=null;makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];seedPickups();if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);}
 function syncPauseButton(){
- const button=$('pauseBtn'),active=['countdown','playing','roundOver','paused'].includes(phase);
+ const infinity=!!$('infiniteArena')?.open,button=$('pauseBtn'),active=infinity||['countdown','playing','roundOver','paused'].includes(phase);
  syncMatchTouchPolicy(active);
- button.hidden=!active||(mode==='online'&&!online.connected);
- const label=mode==='online'?'Match menu':phase==='paused'?'Resume game':'Pause game';
+ button.hidden=!active||!infinity&&(mode==='online'&&!online.connected);
+ if(infinity){button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','infinitePauseMenu');$('sidebarBtn')?.setAttribute('aria-expanded',String(!!$('infinitePauseMenu')?.open));}
+ else if(button.getAttribute('aria-controls')==='infinitePauseMenu'){button.removeAttribute('aria-haspopup');button.removeAttribute('aria-controls');}
+ const label=infinity?'Open Infinity pause menu':mode==='online'?'Match menu':phase==='paused'?'Resume game':'Pause game';
  if(button.getAttribute('aria-label')!==label)button.setAttribute('aria-label',label);
  const title=label+' (P / Esc)';if(button.title!==title)button.title=title;
 }
@@ -426,7 +428,7 @@ function setDifficulty(value){if(!Object.prototype.hasOwnProperty.call(DIFFICULT
 function startMatch(){if(mode==='room'&&roomStartError()){toast(roomStartError(),3);return;}initAudio();clearInput();scores=Array(MAX_TANKS).fill(0);round=1;gameStarted=true;beginLocalMatchStats();logLines=[];addLog(mode==='room'?modeLabel()+' · '+displayScoreTarget()+'.':mode==='solo'?'You vs. the bot squad. First to 5.':'Local duel. First to 5.');setArenaAudio(true);startRound();setScreen(null);canvas.focus({preventScroll:true});}
 function startRound(){localRoom.countdownSerial=(localRoom.countdownSerial||0)+1;goUntil=0;closeVictory();clearInput();makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];spawnClock=pickupInterval()[0];roundClock=currentRules().timeLimit;phase='countdown';phaseTime=3;roundWinner=-1;for(const t of tanks)bindLocalTankStats(t);initObjectives();seedPickups();$('toast').hidden=true;toastTime=0;updateHUD(true);}
 function readyRoom(){goUntil=0;closeVictory();if(mode==='online'){leaveOnline();return;}phase='menu';gameStarted=false;clearInput();scores=Array(MAX_TANKS).fill(0);round=1;phaseTime=0;roundClock=ROUND_SECONDS;setScreen(mode==='room'?'room':'lobby');$('announcer').hidden=true;$('toast').hidden=true;resetPreview();if(mode==='room')renderOnlineRoom();setLayout();}
-function togglePause(){if(mode==='room'){toggleRoomMenu();return;}if(mode==='online'){toggleOnlineMenu();return;}if(['menu','matchOver'].includes(phase))return;if(phase==='paused'){phase=pausedFrom;setScreen(null);initAudio();lastFrame=performance.now();accumulator=0;clearInput();canvas.focus({preventScroll:true});}else{pausedFrom=phase;phase='paused';clearInput();setScreen('pause');$('announcer').hidden=true;$('resumeBtn').focus({preventScroll:true});}updateHUD();}
+function togglePause(){if($('infiniteArena')?.open){window.leqraInfinity?.togglePause();return;}if(mode==='room'){toggleRoomMenu();return;}if(mode==='online'){toggleOnlineMenu();return;}if(['menu','matchOver'].includes(phase))return;if(phase==='paused'){phase=pausedFrom;setScreen(null);initAudio();lastFrame=performance.now();accumulator=0;clearInput();canvas.focus({preventScroll:true});}else{pausedFrom=phase;phase='paused';clearInput();setScreen('pause');$('announcer').hidden=true;$('resumeBtn').focus({preventScroll:true});}updateHUD();}
 function toast(message,duration=2.5){$('toast').textContent=message;$('toast').hidden=false;toastTime=duration;}
 function addLog(message){logLines.unshift(message);logLines=logLines.slice(0,3);$('combatLog').replaceChildren(...logLines.map(s=>{const d=document.createElement('div');d.textContent=s;return d;}));}
 function spawnPower(){if(pickups.length>=pickupCap()||currentRules().pickupRate==='off'||!currentRules().weapons.length)return;let pos=null;for(let tries=0;tries<60;tries++){const cell=Math.floor(Math.random()*grid.length),p=center(cell);if(tanks.every(t=>!t.alive||distance(p,t)>CELL*.85)&&pickups.every(t=>distance(p,t)>CELL*1.1)){pos=p;break;}}if(!pos)return;const types=currentRules().weapons;pickups.push({...pos,type:choosePickup(types),age:0,life:pickupLifetime()});}
@@ -2804,6 +2806,7 @@ async function unshareOnlineRoom(){
  online.unshareSnapshot=localSnapshotFromOnline();if(!online.unshareSnapshot){toast('Could not preserve this room locally.',3);return;}online.unsharePending=true;$('unshareRoomBtn').disabled=true;$('roomStatus').textContent='Taking room offline…';if(!sendOnline({type:'unshare'})){online.unsharePending=false;online.unshareSnapshot=null;$('unshareRoomBtn').disabled=false;$('roomStatus').textContent='Connection unavailable. Room is still online.';}
 }
 function toggleRoomMenu(){
+ if($('infiniteArena')?.open){window.leqraInfinity?.togglePause();return;}
  if(mode==='online'){toggleOnlineMenu();return;}
  if(mode!=='room')return;
  if(['menu','matchOver'].includes(phase)){setScreen('room');return;}
@@ -4159,7 +4162,7 @@ function initSpectators(){
  document.body.append(dialogs);
  $('toggleSpectateBtn').onclick=$('menuSpectateBtn').onclick=$('spectatorPlayBtn').onclick=toggleMyRole;
  $('copySpectateBtn').onclick=$('copyWatchInGameBtn').onclick=()=>copyOnlineInvite(true);
- $('spectatorsBtn').onclick=()=>{clearInput();sendOnlineInput(true);syncSpectators();$('spectatorsDialog').showModal();};
+ $('spectatorsBtn').onclick=()=>{clearInput();if($('infiniteArena')?.open)window.leqraInfinity?.resetControls();sendOnlineInput(true);syncSpectators();$('spectatorsDialog').showModal();};
  $('closeSpectatorsBtn').onclick=()=>$('spectatorsDialog').close();
  $('cancelSwapBtn').onclick=cancelSwap;$('confirmSwapBtn').onclick=confirmSwap;$('swapDialog').addEventListener('cancel',e=>{e.preventDefault();cancelSwap();});
 }
@@ -4301,7 +4304,7 @@ async function toggleFullscreen(){
   else toast('Fullscreen is not available in this browser.',3);
  }catch(_){toast('Fullscreen is not available in this browser.',3);}
 }
-const fullscreenButtons=[$('fullscreenBtn'),$('infiniteFullscreenBtn')];
+const fullscreenButtons=[$('fullscreenBtn'),$('infiniteFullscreenBtn')].filter(Boolean);
 function syncFullscreenButtons(){
  const label=document.fullscreenElement?'Exit fullscreen':'Enter fullscreen';
  for(const button of fullscreenButtons){button.hidden=!document.documentElement.requestFullscreen;button.setAttribute('aria-label',label);button.title=label+' (F)';}
@@ -4521,6 +4524,25 @@ function showVictory(winner,matchTanks=tanks,report=mode==='online'?online.snaps
 }
 let sidebarHome=null;
 const sidebarPowerText=new Map();
+let headerLoan=null;
+function mountHeader(container){
+ const header=$('gameHeader'),chat=$('chatPanel'),sidebar=$('sidebarBtn');
+ if(header.parentElement===container)return;
+ closeChat();
+ headerLoan={home:header.parentElement,next:header.nextSibling,chatHome:chat.parentElement,chatNext:chat.nextSibling,chatHost:container.closest('dialog'),sidebarLabel:sidebar.getAttribute('aria-label'),sidebarTitle:sidebar.title,sidebarExpanded:sidebar.getAttribute('aria-expanded')};
+ container.append(header);headerLoan.chatHost.append(chat);
+ document.body.classList.add('infinity-header-active');
+ sidebar.setAttribute('aria-label','Open sidebar');sidebar.title='Open sidebar';
+}
+function restoreHeader(container){
+ const header=$('gameHeader'),loan=headerLoan;
+ if(!loan||header.parentElement!==container)return;
+ closeChat();
+ loan.home.insertBefore(header,loan.next?.parentElement===loan.home?loan.next:null);
+ const chat=$('chatPanel');if(chat.parentElement===loan.chatHost)loan.chatHome.insertBefore(chat,loan.chatNext?.parentElement===loan.chatHome?loan.chatNext:null);
+ $('sidebarBtn').setAttribute('aria-label',loan.sidebarLabel);$('sidebarBtn').setAttribute('aria-expanded',loan.sidebarExpanded);$('sidebarBtn').title=loan.sidebarTitle;
+ document.body.classList.remove('infinity-header-active');headerLoan=null;
+}
 function syncSidebarContext(){
  const sidebar=$('gameSidebar'),help=window.leqraInfinity?.sidebarHelp?.();
  const manual=fieldManualHTML();if($('manualContent').dataset.content!==manual){$('manualContent').innerHTML=manual;$('manualContent').dataset.content=manual;}
@@ -4546,12 +4568,14 @@ function restoreSidebar(container){
 }
 function initPresentation(){
  const sidebar=$('gameSidebar');sidebarHome=sidebar.parentElement;
+ $('headerVersion').textContent='v'+GAME_VERSION;
+ const sourceLink=document.querySelector('.github-link');sourceLink.setAttribute('aria-label','View leqra v'+GAME_VERSION+' source on GitHub');
  for(const element of sidebar.querySelectorAll('.power-info span,.power-note'))sidebarPowerText.set(element,element.textContent);
  const button=document.createElement('button');button.id='sidebarBtn';button.type='button';button.className='icon-btn sidebar-toggle';button.setAttribute('aria-controls','gameSidebar');button.innerHTML='<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16m3-11h.1M18 12h.1M18 15h.1"/></svg>';
  $('fullscreenBtn').before(button);
  const apply=hidden=>{document.body.classList.toggle('sidebar-hidden',hidden);button.setAttribute('aria-expanded',String(!hidden));button.setAttribute('aria-label',hidden?'Show sidebar':'Hide sidebar');button.title=hidden?'Show sidebar':'Hide sidebar';resize();};
  let hidden=false;try{hidden=localStorage.getItem('leqra.sidebarHidden')==='1';}catch(_){}apply(hidden);
- button.onclick=()=>{const hidden=!document.body.classList.contains('sidebar-hidden');apply(hidden);save('sidebarHidden',hidden?'1':'0');};
+ button.onclick=()=>{if($('infiniteArena')?.open){window.leqraInfinity?.togglePause();return;}const hidden=!document.body.classList.contains('sidebar-hidden');apply(hidden);save('sidebarHidden',hidden?'1':'0');};
  const detailsButton=$('sidebarDetailsBtn'),sidebarDialog=$('sidebarDialog');
  detailsButton.onclick=()=>{$('sidebarDetails').append(sidebar);openFeature('sidebar');sidebarDialog.scrollTop=0;detailsButton.setAttribute('aria-expanded','true');};
  sidebarDialog.addEventListener('close',()=>{if(sidebarDialog.open)return;if(sidebar.parentElement===$('sidebarDetails'))sidebarHome.append(sidebar);detailsButton.setAttribute('aria-expanded','false');});
@@ -4618,8 +4642,8 @@ function renderActiveChat(){
 }
 function setChatSendTarget(channel){if(channel!=='room'&&channel!=='opponent')return false;if(channel==='opponent'&&!opponentChatEnabled())return false;roomChat.sendTarget=channel;restoreUnconfirmedChatDraft();syncChatStatus();return true;}
 function switchChatChannel(channel){return setChatSendTarget(channel);}
-function openChat(){if(mode!=='online'||!online.code||!roomChatEnabled()&&!opponentChatEnabled())return;if(roomChat.open){closeChat();return;}roomChat.open=true;roomChat.unread=0;restoreUnconfirmedChatDraft();$('chatPanel').hidden=false;$('chatInput').value=roomChat.draft;renderActiveChat();clearInput();sendOnlineInput(true);syncChatStatus();positionChatPanel();if(online.connected)$('chatInput').focus({preventScroll:true});}
-function closeChat(){roomChat.draft=$('chatInput').value;roomChat.open=false;$('chatPanel').hidden=true;clearInput();if(mode==='online')sendOnlineInput(true);syncChatStatus();if(document.activeElement?.closest('#chatPanel'))document.activeElement.blur();}
+function openChat(){if(mode!=='online'||!online.code||!roomChatEnabled()&&!opponentChatEnabled())return;if(roomChat.open){closeChat(true);return;}roomChat.open=true;roomChat.unread=0;restoreUnconfirmedChatDraft();$('chatPanel').hidden=false;$('chatInput').value=roomChat.draft;renderActiveChat();clearInput();if($('infiniteArena')?.open)window.leqraInfinity?.resetControls();sendOnlineInput(true);syncChatStatus();positionChatPanel();if(online.connected)$('chatInput').focus({preventScroll:true});}
+function closeChat(restoreFocus=false){roomChat.draft=$('chatInput').value;roomChat.open=false;$('chatPanel').hidden=true;clearInput();if(mode==='online')sendOnlineInput(true);syncChatStatus();const focused=!!document.activeElement?.closest('#chatPanel');if(focused)document.activeElement.blur();if((focused||restoreFocus)&&$('infiniteArena')?.open&&!$('infinitePauseMenu').open&&!$('infiniteResult').open)$('infiniteCanvas').focus({preventScroll:true});}
 function appendChat(m,history=false,channel='room',render=true){
  const st=chatState(channel);if(!m||!Number.isSafeInteger(m.id)||m.id<=st.lastID||typeof m.text!=='string')return false;
  st.lastID=m.id;st.messages.push(m);const evicted=st.messages.length>60?st.messages.shift():null,self=roomMember(localPlayerID());
@@ -4654,7 +4678,7 @@ function positionChatPanel(){
   panel.style.removeProperty('bottom');panel.style.removeProperty('height');
  }
 }
-function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when you want the enemy side to receive your next message.<br>Enter sends · Esc closes · Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=closeChat;$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{e.stopPropagation();if(e.code==='Escape'&&!composingKey(e)){e.preventDefault();closeChat();}});window.addEventListener('keydown',e=>{if(bindingCapture||composingKey(e)||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat();return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY','A'].includes(e.target.tagName)&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
+function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when you want the enemy side to receive your next message.<br>Enter sends · Esc closes · Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=()=>closeChat(true);$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{e.stopPropagation();if(e.code==='Escape'&&!composingKey(e)){e.preventDefault();closeChat(true);}});window.addEventListener('keydown',e=>{if(bindingCapture||composingKey(e)||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat(true);return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY','A'].includes(e.target.tagName)&&!document.querySelector('dialog[open]:not(#infiniteArena)')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
 
 // Sampling measures RAF cadence (not server tick rate); no HTML/layout work per frame.
 const frameStats={fps:0,frameMs:0,workMs:0,worstMs:0,count:0,elapsed:0,work:0,worst:0,last:0,at:0,surface:''};
@@ -4845,7 +4869,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work)=>sampleFrame(now,work,'infiniteFPSIndicator',null),
  theme,colors:Theme.colors,colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
- openControls:()=>openFeature('controls'),mountSidebar,restoreSidebar,arenaKeyBlocked,keyLabel,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
+ openControls:()=>openFeature('controls'),mountSidebar,restoreSidebar,mountHeader,restoreHeader,chatOpen:()=>roomChat.open,arenaKeyBlocked,keyLabel,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,
  recycleStarmanProjectiles,
  missileTurn:MISSILE_TURN,

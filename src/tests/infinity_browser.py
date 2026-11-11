@@ -252,7 +252,7 @@ def check_offline(browser, errors):
         expect(panel.locator("#infiniteLeaderboard")).to_contain_text("OFFLINE PILOT (you)")
         expect(panel.locator("#infiniteLeaderboard")).to_contain_text("RUST")
         check_touch_controls(context, page)
-        page.locator("#infinitePauseBtn").tap()
+        page.locator("#pauseBtn").tap()
         check_pause_style(page, online=False)
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
@@ -280,7 +280,7 @@ def check_audio(browser, errors):
         page.keyboard.press("q")
         page.wait_for_function("(initial) => oscillatorStarts > initial", arg=initial)
 
-        sound = page.locator("#infiniteSoundBtn")
+        sound = page.locator("#soundBtn")
         sound.click()
         expect(sound).to_have_attribute("aria-label", "Unmute sound")
         muted = page.evaluate("oscillatorStarts")
@@ -289,7 +289,7 @@ def check_audio(browser, errors):
         page.wait_for_timeout(400)
         page.keyboard.up("q")
         assert page.evaluate("oscillatorStarts") == muted
-        page.locator("#infinitePauseBtn").click()
+        page.locator("#pauseBtn").click()
         page.locator("#infiniteExit").click()
         expect(page.locator("#soundBtn")).to_have_attribute("aria-label", "Unmute sound")
     print("PASS Infinity uses the shared firing audio and mute setting", flush=True)
@@ -312,7 +312,7 @@ def check_pause_sidebar(browser, url, errors):
                 document.querySelector('#sidebarDetails').append(sidebar);
                 const dialog = document.querySelector('#sidebarDialog');
                 dialog.showModal(); dialog.close();
-                document.querySelector('#infinitePauseBtn').click();
+                document.querySelector('#pauseBtn').click();
             }""")
             sidebar = page.locator("#infinitePauseSidebar #gameSidebar")
             expect(sidebar).to_be_visible()
@@ -358,7 +358,7 @@ def check_pause_sidebar(browser, url, errors):
             expect(page.locator(".infinite-stage > #infiniteLeaderboardPanel")).to_have_count(1)
             assert not page.locator("#infiniteLeaderboardPanel").evaluate("node => node.open")
             expect(page.locator("#infiniteCanvas")).to_be_focused()
-            page.locator("#infinitePauseBtn").click()
+            page.locator("#pauseBtn").click()
             page.locator("#infiniteExit").click()
             expect(page.locator(".main-grid > #gameSidebar")).to_have_count(1)
             expect(page.locator(".infinite-stage > #infiniteLeaderboardPanel")).to_have_count(1)
@@ -433,6 +433,20 @@ def check_private(browser, url, errors):
         expect(guest.locator("#infiniteLocalLoadout")).to_be_hidden()
         expect_score_rank(host, split=True)
         expect_score_rank(guest)
+        for close_with_escape in (True, False):
+            host.locator("#chatBtn").click()
+            expect(host.locator("#infiniteArena > #chatPanel")).to_be_visible()
+            expect(host.locator("#chatInput")).to_be_focused()
+            host.locator("#chatInput").fill("Draft stays in this test room")
+            if close_with_escape:
+                host.keyboard.press("Escape")
+            else:
+                host.locator("#chatCloseBtn").click()
+            expect(host.locator("#chatPanel")).to_be_hidden()
+            expect(host.locator("#infiniteCanvas")).to_be_focused()
+            with socket.value.expect_event("framesent", predicate=lambda frame: is_packet(frame, "input", forward=True)):
+                host.keyboard.down("w")
+            host.keyboard.up("w")
         welcome = next(json.loads(frame) for frame in host_frames if is_packet(frame, "welcome"))
         guest_welcome = next(json.loads(frame) for frame in guest_frames if is_packet(frame, "welcome"))
         assert welcome["id"] != welcome["localId"]
@@ -492,7 +506,7 @@ def check_private(browser, url, errors):
         expect(leaders).to_contain_text("PUBLIC SOLO")
         expect(leaders).not_to_contain_text("ROOM HOST")
 
-        guest.locator("#infinitePauseBtn").click()
+        guest.locator("#pauseBtn").click()
         guest.locator("#infiniteExit").click()
         expect(guest.locator("#infiniteArena")).to_be_hidden()
         expect_pilots(host, 1)
@@ -509,12 +523,12 @@ def check_private(browser, url, errors):
         moderator, other = ((host, guest) if host.evaluate(
             "() => leqra.getState().online.id === leqra.getState().room.host"
         ) else (guest, host))
-        other.locator("#infinitePauseBtn").click()
+        other.locator("#pauseBtn").click()
         other.locator("#infiniteControlsBtn").click()
         expect(other.locator("#controlsDialog")).to_be_visible()
         other.locator("#openIntroTour").click()
         expect(other.locator("#introTourDialog")).to_be_visible()
-        moderator.locator("#infinitePauseBtn").click()
+        moderator.locator("#pauseBtn").click()
         moderator.locator("#infiniteExit").click()
         moderator.locator("#endInfinityBtn").click()
         moderator.locator("#actionConfirmAccept").click()
@@ -560,7 +574,7 @@ def check_rank_outside_leaders(browser, url, errors):
         expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
         expect(leaders.locator("li")).to_have_count(10)
         expect(leaders).not_to_contain_text("RANKED PILOT")
-        page.locator("#infinitePauseBtn").click()
+        page.locator("#pauseBtn").click()
         page.locator("#infiniteExit").click()
         page.evaluate("rankPeers.forEach(socket => socket.close())")
     print("PASS personal rank stays visible below the global top ten", flush=True)
@@ -576,7 +590,7 @@ def check_mobile_ranks(browser, url, errors):
             expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
             for split in (False, True):
                 if split:
-                    page.locator("#infinitePauseBtn").tap()
+                    page.locator("#pauseBtn").tap()
                     page.locator("#infiniteExit").tap()
                     select_room_infinity(page)
                     page.locator("#roomPlayers > summary").tap()
@@ -587,7 +601,12 @@ def check_mobile_ranks(browser, url, errors):
                     expect_pilots(page, 2)
                     expect_score_rank(page, split=True)
                     expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Scoreboard")
-                layout = page.locator("#infiniteArena .infinite-header").evaluate("""header => {
+                    colors = page.evaluate("""() => {
+                        const canonical=color=>{const node=document.createElement('span');node.style.color=color;return node.style.color;};
+                        return {actual:[...document.querySelectorAll('#infiniteKills .infinite-personal-score')].map(node=>getComputedStyle(node).color),expected:leqraInfinityArt.colors.slice(0,2).map(canonical)};
+                    }""")
+                    assert colors["actual"] == colors["expected"], colors
+                layout = page.locator("#infiniteArena .infinite-statusbar").evaluate("""header => {
                     const box = node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
                     return {header:box(header),title:box(header.querySelector('.arena-title')),items:[...header.querySelectorAll('.bar-right > *')].filter(node=>node.getClientRects().length).map(box),width:innerWidth,overflow:header.scrollWidth>header.clientWidth};
                 }""")
@@ -597,7 +616,51 @@ def check_mobile_ranks(browser, url, errors):
                     assert previous["right"] <= current["left"] + 1, layout
                 assert all(0 <= item["left"] < item["right"] <= width + 1 for item in layout["items"]), layout
                 assert page.locator("#infiniteArena").evaluate("node => node.scrollWidth <= node.clientWidth + 1")
+                assert page.locator("#gameHeader").evaluate("node => node.scrollWidth <= node.clientWidth + 1")
     print("PASS solo and private P2 ranks fit 320px and 390px online headers", flush=True)
+
+
+def check_shared_header(browser, url, errors):
+    for width, height, touch in ((1280, 900, False), (390, 844, True), (320, 568, True), (844, 390, True)):
+        with browser.new_context(viewport={"width": width, "height": height}, is_mobile=touch, has_touch=touch) as context:
+            page = load(context, url, "HEADER PILOT", errors)
+            page.locator("#infinityToggleLabel").click()
+            page.locator("#startRoomBtn").click()
+            page.wait_for_function("() => ['countdown','playing'].includes(leqra.getState().phase)")
+            page.evaluate("window.originalGameHeader = document.querySelector('#gameHeader')")
+            measure = """() => {
+                const header=document.querySelector('#gameHeader'),brand=header.querySelector('.brand'),controls=header.querySelector('.header-right');
+                const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+                return {header:box(header),brand:box(brand),controls:box(controls),font:getComputedStyle(header.querySelector('.brand-name')).font,overflow:header.scrollWidth>header.clientWidth};
+            }"""
+            fixed = page.evaluate(measure)
+            page.locator("#pauseBtn").click()
+            page.locator("#returnRoomBtn").click()
+            if page.locator("#actionConfirmAccept").is_visible():
+                page.locator("#actionConfirmAccept").click()
+            page.wait_for_function("() => leqra.getState().phase === 'menu'")
+            select_room_infinity(page)
+            page.locator("#startRoomBtn").click()
+            expect(page.locator("#infiniteHeader > #gameHeader")).to_be_visible()
+            expect(page.locator("#infiniteArena > #chatPanel")).to_be_hidden()
+            assert page.evaluate("document.querySelector('#gameHeader') === originalGameHeader")
+            infinite = page.evaluate(measure)
+            assert fixed == infinite, (fixed, infinite)
+            assert not infinite["overflow"] and infinite["header"]["right"] <= width + 1, infinite
+            version = page.evaluate("leqra.version")
+            expect(page.locator("#gameHeader .github-link #headerVersion")).to_have_text("v" + version)
+            expect(page.locator("#gameHeader .github-link")).to_have_attribute("href", "https://github.com/nhooyr/leqra")
+            expect(page.locator("#gameHeader")).to_have_count(1)
+            expect(page.locator("#pauseBtn")).to_be_visible()
+            page.locator("#roomBtn").click()
+            expect(page.locator("#infinitePauseMenu")).to_be_visible()
+            page.locator("#infiniteResumeBtn").click()
+            page.locator("#pauseBtn").click()
+            page.locator("#infiniteExit").click()
+            expect(page.locator(".app > #gameHeader")).to_be_visible()
+            expect(page.locator("body > #chatPanel")).to_be_hidden()
+            assert page.evaluate("document.querySelector('#gameHeader') === originalGameHeader")
+    print("PASS shared header identity, geometry, source version, controls, and restoration", flush=True)
 
 
 if __name__ == "__main__":
@@ -616,6 +679,7 @@ if __name__ == "__main__":
             check_private(browser, url, errors)
             check_rank_outside_leaders(browser, url, errors)
             check_mobile_ranks(browser, url, errors)
+            check_shared_header(browser, url, errors)
         finally:
             browser.close()
     assert not errors, errors

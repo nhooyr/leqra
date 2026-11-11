@@ -20,7 +20,7 @@ function element(){
  const classes=new Set(),attrs=new Map();
  return{...eventTarget(),style:{},hidden:false,title:'',
   classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),contains:c=>classes.has(c),toggle(c,on){if(on)classes.add(c);else classes.delete(c);}},
-  getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v),
+  getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k),
   getBoundingClientRect:()=>({left:0,top:0,width:96,height:96}),setPointerCapture(){},hasPointerCapture:()=>true
  };
 }
@@ -92,11 +92,15 @@ test('joystick plus Fire keep independent pointers through a prevented pinch and
 test('Infinity keeps the active touch policy until the arena closes',()=>{
  const b=boot();
  b.$('infiniteArena').open=true;b.setPhase('menu');
+ assert.equal(b.$('pauseBtn').hidden,false);
+ assert.equal(b.$('pauseBtn').getAttribute('aria-controls'),'infinitePauseMenu');
  assert.equal(b.document.documentElement.classList.contains('match-active'),true);
  assert.equal(b.pinch('gesturechange').defaultPrevented,true);
  assert.equal(b.pinch('touchmove',{touches:[{},{}]}).defaultPrevented,true);
  assert.equal(b.pinch('touchmove',{touches:[{}]}).defaultPrevented,false);
  b.$('infiniteArena').open=false;b.setPhase('menu');
+ assert.equal(b.$('pauseBtn').hidden,true);
+ assert.equal(b.$('pauseBtn').getAttribute('aria-controls'),undefined);
  assert.equal(b.document.documentElement.classList.contains('match-active'),false);
  assert.equal(b.pinch('gesturechange').defaultPrevented,false);
 });
