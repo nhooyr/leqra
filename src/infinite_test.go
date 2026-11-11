@@ -687,9 +687,70 @@ func TestInfiniteLeaderboardRanksTenIncludingBots(t *testing.T) {
 		t.Fatalf("unexpected leaders: %+v", leaders)
 	}
 	a.pilots = a.pilots[:3]
+	bot.ColorIndex = 5
 	leaders = a.leaderboard(leaders)
-	if leaders[0].ID != bot.ID || leaders[1].Score != 0 || leaders[2].ID != p.ID || leaders[2].Score != -1 {
-		t.Fatalf("leaderboard dropped a respawning bot, zero, or negative score: %+v", leaders)
+	if leaders[0].ID != bot.ID || leaders[0].ColorIndex != bot.ColorIndex || leaders[1].Score != 0 || leaders[2].ID != p.ID || leaders[2].Score != -1 {
+		t.Fatalf("leaderboard lost the current color, respawning bot, or zero/negative score: %+v", leaders)
+	}
+}
+
+func TestInfiniteLeaderboardCarriesCurrentTankColors(t *testing.T) {
+	for _, teams := range []bool{false, true} {
+		name := "free for all"
+		if teams {
+			name = "teams"
+		}
+		t.Run(name, func(t *testing.T) {
+			a := newSeededInfiniteArena(51)
+			primaryTeam, secondaryTeam := 0, 0
+			if teams {
+				rules := defaultRules()
+				rules.TeamMode = "teams"
+				rules.TeamColors = []int{0, 7, 3, 5}
+				a = newRoomInfiniteArena(rules, nil)
+				primaryTeam, secondaryTeam = 1, 2
+			}
+			now := time.Unix(0, 0)
+			c := fakeClient()
+			primary, local := a.joinSeats(c,
+				infiniteSeat{name: "Primary", team: primaryTeam, colorIndex: 0},
+				&infiniteSeat{name: "Player 2", team: secondaryTeam, colorIndex: 7}, 0, now)
+			distant, _ := a.joinSeats(fakeClient(), infiniteSeat{name: "Distant", team: primaryTeam, colorIndex: 0}, nil, 0, now)
+			distant.X = primary.X + 3*infiniteSight
+			bot := a.addPilot("Respawning bot", true, primary.X, primary.Y, 3, 6)
+			bot.Team, bot.ColorIndex, bot.HP = secondaryTeam, 7, 0
+			primary.Score, local.Score, distant.Score, bot.Score = 2, 3, 4, -1
+			drain(c)
+			a.broadcast()
+			var packet struct {
+				Tanks   []infiniteTank `json:"tanks"`
+				Leaders []struct {
+					ID         int  `json:"id"`
+					ColorIndex *int `json:"colorIndex"`
+					Team       int  `json:"team"`
+					Bot        bool `json:"bot"`
+				} `json:"leaderboard"`
+			}
+			if err := json.Unmarshal(<-c.send, &packet); err != nil {
+				t.Fatal(err)
+			}
+			for _, tank := range packet.Tanks {
+				if tank.ID == distant.ID {
+					t.Fatal("distant tank unexpectedly entered the primary snapshot view")
+				}
+			}
+			pilots := map[int]*infinitePilot{primary.ID: primary, local.ID: local, distant.ID: distant, bot.ID: bot}
+			if len(packet.Leaders) != len(pilots) || packet.Leaders[0].ID != distant.ID {
+				t.Fatalf("leaderboard lost a pilot or changed score ordering: %+v", packet.Leaders)
+			}
+			for _, leader := range packet.Leaders {
+				pilot := pilots[leader.ID]
+				if pilot == nil || leader.ColorIndex == nil || *leader.ColorIndex != pilot.ColorIndex ||
+					leader.Team != pilot.Team || leader.Bot != pilot.Bot {
+					t.Fatalf("leaderboard does not carry the tank's color and side: %+v", leader)
+				}
+			}
+		})
 	}
 }
 

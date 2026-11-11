@@ -895,9 +895,10 @@ body.touch-landscape.two-local-pilots #arenaWrap #deathNotice2{left:67%}
 body.touch-ui .infinite-leaderboard[open]{max-height:max(38px,calc(100% - 112px))}
 .infinite-leaderboard:not([open]){width:auto}
 .infinite-leaderboard ol{margin:0;padding:0 12px 8px 30px;font-variant-numeric:tabular-nums}
-.infinite-leaderboard li{padding:4px 0;overflow-wrap:anywhere}
+.infinite-leaderboard li{padding:4px 6px;color:var(--tank-color,var(--text-main));overflow-wrap:anywhere}
+.infinite-leaderboard li[data-local]{border-radius:5px;box-shadow:inset 0 0 0 1px var(--local-highlight);background:color-mix(in srgb,var(--local-highlight) 8%,transparent)}
 .infinite-leaderboard li span{margin-right:6px}
-.infinite-leaderboard li strong{float:right;color:var(--accent-ink)}
+.infinite-leaderboard li strong{float:right;color:inherit}
 .infinite-leaderboard ol:empty::before{content:"No tanks yet";color:var(--text-soft)}
 .infinite-leaderboard p{margin:0;padding:7px 12px;border-top:1px solid var(--border);color:var(--text-soft);font-size:11px}
 .infinite-touch-controls{display:none;position:absolute;inset:auto 0 0;align-items:center;justify-content:space-between;padding:0 max(18px,env(safe-area-inset-right)) 8px max(18px,env(safe-area-inset-left));pointer-events:none}
