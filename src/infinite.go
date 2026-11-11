@@ -100,17 +100,18 @@ type infiniteBullet struct {
 }
 
 type infiniteSnapshot struct {
-	Type    string           `json:"type"`
-	Tick    uint64           `json:"tick"`
-	Tanks   []infiniteTank   `json:"tanks"`
-	Bullets []infiniteBullet `json:"bullets"`
-	Pickups []Pickup         `json:"pickups"`
-	Effects []infiniteEffect `json:"effects,omitempty"`
-	Players int              `json:"players"`
-	Leaders []infiniteLeader `json:"leaderboard"`
-	Rules   *infiniteRules   `json:"rules,omitempty"`
-	Scores  *[4]int          `json:"teamScores,omitempty"`
-	Result  *infiniteResult  `json:"result,omitempty"`
+	Type      string           `json:"type"`
+	Tick      uint64           `json:"tick"`
+	Tanks     []infiniteTank   `json:"tanks"`
+	Bullets   []infiniteBullet `json:"bullets"`
+	Pickups   []Pickup         `json:"pickups"`
+	Effects   []infiniteEffect `json:"effects,omitempty"`
+	Players   int              `json:"players"`
+	TankCount int              `json:"tankCount"`
+	Leaders   []infiniteLeader `json:"leaderboard"`
+	Rules     *infiniteRules   `json:"rules,omitempty"`
+	Scores    *[4]int          `json:"teamScores,omitempty"`
+	Result    *infiniteResult  `json:"result,omitempty"`
 }
 
 type infiniteLeader struct {
@@ -760,7 +761,7 @@ func (a *infiniteArena) broadcast() {
 		return
 	}
 	packet := &a.snapshot
-	packet.Tick, packet.Players = a.tick, a.connected
+	packet.Tick, packet.Players, packet.TankCount = a.tick, a.connected, len(a.pilots)
 	packet.Rules, packet.Result = a.rules, a.result
 	if a.teams() {
 		packet.Scores = &a.teamScores
