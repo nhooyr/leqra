@@ -69,15 +69,15 @@ test('a touch release can unlock audio immediately after a passive resume attemp
 test('running audio does not reschedule gain for every click; volume changes ramp',async()=>{
  const b=boot();await b.s.initAudio();const gain=b.s.audioMaster.gain;const initial=gain.events.length;
  for(let i=0;i<50;i++){b.fire('click');await b.s.initAudio();}assert.equal(gain.events.length,initial);
- b.s.setAudioVolume(25);assert.equal(gain.events.at(-1)[0],'ramp');assert.equal(gain.events.at(-1)[1],1);assert.equal(gain.events.at(-1)[2],.012);
+ b.s.setAudioVolume(25);assert.equal(gain.events.at(-1)[0],'ramp');assert.equal(gain.events.at(-1)[1],2);assert.equal(gain.events.at(-1)[2],.012);
 });
-test('native Safari fallback bakes attenuation into samples, with silent endpoints',async()=>{
- const b=boot({noWebAudio:true});b.s.nativeTone(500,700,.1,.035,'sine');await flush();assert.equal(b.plays.length,1);
+test('native Safari fallback scales quiet samples with the slider and keeps silent endpoints',async()=>{
+ const b=boot({noWebAudio:true});b.s.nativeTone(500,700,.1,.02,'sine');await flush();assert.equal(b.plays.length,1);
  const data=new DataView(await b.blobs.get(b.plays[0]).arrayBuffer());let peak=0;
  for(let offset=44;offset<data.byteLength;offset+=2)peak=Math.max(peak,Math.abs(data.getInt16(offset,true)));
- assert.ok(peak>1000&&peak<=Math.ceil(32760*.49),'fallback is attenuated even when iOS ignores the volume property');
+ assert.ok(peak>1000&&peak<32760*.98,'fallback retains headroom even when iOS ignores the volume property');
  assert.equal(data.getInt16(44,true),0);assert.equal(data.getInt16(data.byteLength-2,true),0);
- b.s.setAudioVolume(25);b.s.nativeTone(500,700,.1,.035,'sine');await flush();const quieter=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());let quietPeak=0;
+ b.s.setAudioVolume(25);b.s.nativeTone(500,700,.1,.02,'sine');await flush();const quieter=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());let quietPeak=0;
  for(let offset=44;offset<quieter.byteLength;offset+=2)quietPeak=Math.max(quietPeak,Math.abs(quieter.getInt16(offset,true)));
  assert.ok(quietPeak<peak*.51&&quietPeak>peak*.49);
 });
@@ -95,7 +95,7 @@ test('a visible background window stops effects and restores sound on focus',asy
  b.s.boom();b.s.pickupSound();b.s.chatNotificationSound();
  assert.equal(b.nodes.length,effects);
  b.focus(true);
- assert.equal(b.s.audioMaster.gain.value,2);
+ assert.equal(b.s.audioMaster.gain.value,4);
  b.s.boom();assert.ok(b.nodes.length>effects);
  b.s.document.hidden=true;b.fire('visibilitychange');
  assert.equal(b.s.audioMaster.gain.value,0);
@@ -157,16 +157,42 @@ test('zero volume prevents both playback paths, while restoring volume allows a 
  b.s.setAudioVolume(50);b.s.tone(500,700,.1);assert.equal(b.nodes.filter(n=>n.kind==='oscillator').length,1);
 });
 
-test('v440 doubles the shared output gain while retaining displayed and saved slider percentages',async()=>{
+test('the louder shared output retains displayed and saved slider percentages',async()=>{
  const b=boot(),saved=[];b.s.save=(...entry)=>saved.push(entry);await b.s.initAudio();
- assert.equal(b.s.audioVolume,50);assert.equal(b.s.audioMaster.gain.value,2);
+ assert.equal(b.s.audioVolume,50);assert.equal(b.s.audioMaster.gain.value,4);
  for(const level of [0,25,50,75,100]){
-  b.s.setAudioVolume(level,true);assert.equal(b.s.audioScale(),level/25);assert.equal(b.s.audioMaster.gain.value,level/25);
+  b.s.setAudioVolume(level,true);assert.equal(b.s.audioScale(),level/12.5);assert.equal(b.s.audioMaster.gain.value,level/12.5);
   assert.equal(b.s.$('masterVolume').value,String(level));assert.equal(b.s.$('masterVolumeValue').textContent,level+'%');
   assert.deepEqual(saved.at(-1),['volume',level]);
  }
  b.s.muted=true;b.s.syncSound();assert.equal(b.s.audioMaster.gain.value,0);assert.equal(b.s.audioVolume,100);
- b.s.muted=false;b.s.syncSound();assert.equal(b.s.audioMaster.gain.value,4);
+ b.s.muted=false;b.s.syncSound();assert.equal(b.s.audioMaster.gain.value,8);
+});
+
+test('the volume slider snaps around its default and keyboard arrows can leave the midpoint',()=>{
+ const b=boot(),saved=[];b.s.save=(...entry)=>saved.push(entry);
+ for(const level of [46,49,50,51,54]){
+  b.s.setAudioVolume(level,true);
+  assert.equal(b.s.audioVolume,50);
+  assert.equal(b.s.$('masterVolume').value,'50');
+  assert.deepEqual(saved.at(-1),['volume',50]);
+ }
+ const start=source.indexOf("$('masterVolume').onkeydown=e=>{");
+ const end=source.indexOf('\n };',start)+4;
+ assert.ok(start>=0&&end>start);
+ vm.runInContext(source.slice(start,end),b.s);
+ const slider=b.s.$('masterVolume');
+ for(const [key,want] of [['ArrowRight',55],['ArrowUp',55],['ArrowLeft',45],['ArrowDown',45]]){
+  b.s.setAudioVolume(50);
+  let prevented=false;
+  slider.onkeydown({key,preventDefault(){prevented=true;}});
+  assert.ok(prevented);
+  assert.equal(b.s.audioVolume,want);
+  assert.deepEqual(saved.at(-1),['volume',want]);
+ }
+ b.s.setAudioVolume(50);
+ slider.onkeydown({key:'ArrowRight',metaKey:true,preventDefault(){assert.fail('system shortcut intercepted');}});
+ assert.equal(b.s.audioVolume,50);
 });
 test('v440 tones and explosions share the doubled master and retain single-effect headroom at maximum volume',async()=>{
  for(const level of [50,100]){
@@ -175,15 +201,15 @@ test('v440 tones and explosions share the doubled master and retain single-effec
   assert.equal(gains.length,3);assert.ok(gains.every(n=>n.connections.includes(b.s.audioMaster)));
   const peaks=gains.map(n=>Math.max(...n.gain.events.filter(e=>e[0]==='ramp').map(e=>e[1])));
   assert.deepEqual(peaks,[.035,.065,.035],'balanced death layers use their requested recipe levels');
-  assert.equal(b.s.audioMaster.gain.value,level/25);
+  assert.equal(b.s.audioMaster.gain.value,level/12.5);
   assert.ok((peaks[1]+peaks[2])*b.s.audioMaster.gain.value<1,'one explosion and its bass tone retain output headroom');
  }
 });
-test('v440 Safari fallback doubles uncapped PCM samples instead of relying on element volume',async()=>{
+test('Safari fallback doubles uncapped PCM samples instead of relying on element volume',async()=>{
  const b=boot({noWebAudio:true});
  for(const level of [25,50,75,100]){
-  b.s.setAudioVolume(level);const previous=b.s.wavToneURL(500,700,.1,'sine',.025*(level/50)*7);
-  b.s.nativeTone(500,700,.1,.025,'sine');await flush();
+  b.s.setAudioVolume(level);const previous=b.s.wavToneURL(500,700,.1,'sine',.01*(level/25)*7);
+  b.s.nativeTone(500,700,.1,.01,'sine');await flush();
   const before=new DataView(await b.blobs.get(previous).arrayBuffer()),after=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer());
   assert.equal(before.byteLength,after.byteLength);
   for(let offset=44;offset<after.byteLength;offset+=2)assert.ok(Math.abs(after.getInt16(offset,true)-before.getInt16(offset,true)*2)<=1,'PCM is twice its old amplitude within integer rounding');
@@ -196,7 +222,7 @@ test('v440 loud Safari fallback preserves waveform shape and keeps increasing th
  const b=boot({noWebAudio:true});let previousPeak=0;
  for(const level of [25,50,75,99,100]){
   b.s.setAudioVolume(level);b.s.nativeTone(95,32,.28,.12,'triangle');await flush();
-  const data=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer()),nominal=.12*(level/25)*7,gain=nominal<=.7?nominal:.7+.28*(nominal-.7)/(.28+nominal-.7);
+  const data=new DataView(await b.blobs.get(b.plays.at(-1)).arrayBuffer()),nominal=.12*(level/12.5)*7,gain=nominal<=.7?nominal:.7+.28*(nominal-.7)/(.28+nominal-.7);
   const expected=new DataView(await b.blobs.get(b.s.wavToneURL(95,32,.28,'triangle',gain)).arrayBuffer());let peak=0;
   for(let offset=44;offset<data.byteLength;offset+=2){const sample=data.getInt16(offset,true);peak=Math.max(peak,Math.abs(sample));assert.equal(sample,expected.getInt16(offset,true),'soft gain mapping scales the whole waveform without hard-clipping samples');}
   assert.ok(peak>previousPeak&&peak<32760*.98);previousPeak=peak;
