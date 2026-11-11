@@ -13,6 +13,7 @@ const fire = byID('infiniteFire');
 const status = byID('infiniteStatus');
 const personalScore = byID('infiniteKills');
 const leaderboard = byID('infiniteLeaderboard');
+const leaderboardTitle = byID('infiniteLeaderboardTitle');
 const teamLeaderboard = byID('infiniteTeamScores');
 const resultDialog = byID('infiniteResult');
 const retry = byID('infiniteRetry');
@@ -27,6 +28,7 @@ const CELL = geometry.cellSize;
 const RADIUS = 17;
 const BULLET_RADIUS = 3.5;
 const COLORS = art.colors, powers = art.powers, powerTypes = Object.keys(powers), noTrail = [];
+const LOCAL_HIGHLIGHTS = ['#bf5cff', '#ff4fd8'];
 const POWER_DURATION = 15, STAR_DURATION = 8, PICKUP_LIFETIME = 30, SHOT_RANGE = 18 * CELL, BLAST_RADIUS = 220;
 const RESPAWN_DELAY = 1;
 const RESULT_NOTICE_MS = 1500;
@@ -637,19 +639,19 @@ function interpolate(previous, current, alpha) {
  };
 }
 
-function drawTank(tank, mine, zoom, ratio) {
+function drawTank(tank, highlight, zoom, ratio) {
  const color = COLORS[tank.colorIndex] || COLORS[0];
  ctx.save();
  ctx.translate(tank.x, tank.y);
  const shields = tank.shield > 0 ? tank.shieldCharges || 1 : 0;
- if (shields || tank.invulnerable > 0 || mine) {
-  ctx.strokeStyle = shields ? powers.shield.color : mine ? '#bf5cff' : art.theme.protection;
+ if (shields || tank.invulnerable > 0 || highlight) {
+  ctx.strokeStyle = shields ? powers.shield.color : highlight || art.theme.protection;
   ctx.lineWidth = 1.6;
   ctx.globalAlpha = shields ? .78 : tank.invulnerable > 0 ? .55 : .2;
   if (!shields && !(tank.invulnerable > 0)) ctx.setLineDash([3, 6]);
   for (let i = 0; i < Math.max(1, shields); i++) {
    ctx.beginPath();
-   ctx.arc(0, 0, shields ? 26 + i * 4 : mine && tank.invulnerable > 0 ? 34 : 25, 0, TAU);
+   ctx.arc(0, 0, shields ? 26 + i * 4 : highlight && tank.invulnerable > 0 ? 34 : 25, 0, TAU);
    ctx.stroke();
   }
   ctx.setLineDash([]);
@@ -684,7 +686,7 @@ function drawTank(tank, mine, zoom, ratio) {
  ctx.restore();
  ctx.font = 'bold 11px ui-monospace,SFMono-Regular,Consolas,monospace';
  ctx.textAlign = 'center';
- const label = mine ? 'YOU' : tank.name;
+ const label = highlight ? 'YOU' : tank.name;
  const width = Math.min(ctx.measureText(label)?.width || 30, 120) + 10;
  ctx.fillStyle = '#0e171ddb';
  art.rect(ctx, -width / 2, -48, width, 16, 3);
@@ -809,17 +811,26 @@ function renderScores(world, pilot, second) {
  if (!leaderboard) return;
  const entries = world.online ? world.leaderboard :
   [...world.tanks].sort((a, b) => b.score - a.score || Number(a.bot) - Number(b.bot)).slice(0, 10);
- const rows = entries.map(tank => [tank.name, tank.score, tank.id===world.id?' (you)':tank.id===world.local?.id?' (P2)':'']);
+ const rows = entries.map(tank => {
+  const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
+  return [tank.name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0]];
+ });
  const teams = world.rules?.teamMode==='teams' ? world.teamScores.flatMap((score,i)=>
-  i<2||score||entries.some(tank=>tank.team===i+1)?[[teamName(world,i+1),score,'']]:[]) : [];
+  i<2||score||entries.some(tank=>tank.team===i+1)?[[teamName(world,i+1),score,0,COLORS[world.rules.teamColors?.[i]] || COLORS[i]]]:[]) : [];
  const signature = JSON.stringify([rows,teams]);
  if (signature === world.scoreRows) return;
  world.scoreRows = signature;
- const makeRow = ([name, score, local]) => {
+ leaderboardTitle.textContent = `Top ${rows.length} ${rows.length===1?'tank':'tanks'}`;
+ const makeRow = ([name, score, local, color]) => {
   const row = document.createElement('li');
+  row.style.setProperty('--tank-color',color);
+  if (local) {
+   row.dataset.local = 'p' + local;
+   row.style.setProperty('--local-highlight',LOCAL_HIGHLIGHTS[local-1]);
+  }
   const callsign = document.createElement('span');
   const total = document.createElement('strong');
-  callsign.textContent = name + local;
+  callsign.textContent = name + (local===1?' (you)':local===2?' (P2)':'');
   total.textContent = score;
   row.append(callsign, total);
   return row;
@@ -936,7 +947,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
    art.ageTank({...interpolate(world.previousTanks.get(tank.id),tank,alpha)},tank,age) : tank);
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
-  drawTank(displayed, owner===seat, zoom, ratio);
+  drawTank(displayed, owner===seat ? LOCAL_HIGHLIGHTS[seat===world?0:1] : null, zoom, ratio);
  }
  const bullets = world.visibleBullets;
  bullets.length = 0;
