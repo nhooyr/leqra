@@ -11,3 +11,4 @@ __pycache__/
 *.log
 .env
 /.venv/
+node_modules

@@ -241,7 +241,7 @@ func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 }
 
 func (a *infiniteArena) muzzleBlocked(p *infinitePilot, radius float64) bool {
-	return p.kit.GhostTime > 0 && a.maze.visitWalls(p.X-radius, p.Y-radius, p.X+radius, p.Y+radius, func(w Wall) bool {
+	return p.kit.Power != "cannon" && p.kit.GhostTime > 0 && a.maze.visitWalls(p.X-radius, p.Y-radius, p.X+radius, p.Y+radius, func(w Wall) bool {
 		return p.X >= w.X-radius && p.X <= w.X+w.W+radius && p.Y >= w.Y-radius && p.Y <= w.Y+w.H+radius
 	})
 }
@@ -257,7 +257,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 	if kind == "laser" {
 		spec.radius = laserRadius
 	}
-	if kind != "cannon" && a.muzzleBlocked(p, spec.radius) {
+	if a.muzzleBlocked(p, spec.radius) {
 		return
 	}
 	if kind == "laser" {

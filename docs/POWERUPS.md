@@ -25,6 +25,6 @@ Ghost and Starman let you cross internal walls. If phasing ends inside a wall, t
 
 Starman lasts 4 seconds on Compact and Standard, 5 on Large, 6 on Huge, 7 on Giant, and 8 on Ultra Wide. It protects existing shields, refreshes on another pickup, and pauses fixed-maze objective interaction while invulnerability is active. With all pickups enabled, about **1 in 27** spawns is Starman. Shield and Super Speed each have six times its spawn weight, and other pickups each have twice its weight.
 
-In Infinity, most timed power-ups last **15 seconds** and Starman lasts **8 seconds**. Cannon passes through walls, and guided and ricocheting weapons have fixed ranges or flight times suited to the unbounded maze.
+In Infinity, most timed power-ups last **15 seconds** and Starman lasts **8 seconds**. Cannon shots pass through walls and expire after **5.3 seconds**. Guided and ricocheting weapons have fixed ranges or flight times.
 
 Use **Room settings → Rules** to change pickup frequency or which types can spawn in fixed mazes.
