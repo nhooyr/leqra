@@ -431,6 +431,48 @@ test('offline Infinity grenades steer at the full missile rate', () => {
  infinity.close();
 });
 
+test('offline Infinity Cannon passes through walls and expires after 5.3 seconds', () => {
+ const flightTime = 5.3, speed = 1128, flightTicks = Math.round(flightTime*60);
+ for (const offset of [-4, 4]) {
+  const {infinity, byID, state, advance, loadouts} = harness(undefined,true);
+  infinity.start('offline',{localName:'Wingmate'});
+  const world = state(), [pilot,target] = world.tanks;
+  world.nextPickup = world.nextBot = Infinity;
+  Object.assign(pilot, {x:100,y:100,angle:0,power:'cannon',powerTime:3,charges:3,ghostTime:2});
+  world.maze.wallsNear = () => [{x:96,y:78,w:8,h:48},{x:151,y:78,w:8,h:48}];
+  Object.assign(target,{x:100+32+flightTime*speed+17+14+offset,y:100,invulnerable:0});
+  const arena = byID('infiniteArena');
+  arena.emit('keydown',{code:'KeyQ'});
+  advance();
+  arena.emit('keyup',{code:'KeyQ'});
+  advance(flightTicks-2);
+  assert.equal(world.bullets.length,1);
+  assert.equal(world.bullets[0].bounces,0);
+  assert.equal(loadouts[1].projectiles.ammo,1);
+  assert.equal(target.hp,1);
+  advance();
+  assert.equal(world.bullets.length,0);
+  assert.equal(target.hp,offset<0?0:1);
+  assert.equal(pilot.hp,1);
+  advance(2);
+  assert.equal(loadouts[1].projectiles.ammo,0);
+  infinity.close();
+ }
+});
+
+test('online Infinity previews Cannon shots from inside a wall', () => {
+ const {infinity, byID, state, sockets, sounds} = harness(undefined,true);
+ infinity.start('online');
+ const [socket] = sockets;
+ socket.receive({type:'welcome',id:4,seed:0});
+ socket.receive({type:'state',tick:2,tanks:[{id:4,x:100,y:100,angle:0,hp:1,power:'cannon',ghostTime:2}],bullets:[],players:1,leaderboard:[]});
+ state().maze.wallsNear = () => [{x:96,y:78,w:8,h:48}];
+ byID('infiniteArena').emit('keydown',{code:'KeyQ'});
+ assert.ok(sounds.includes('shot:cannon'));
+ assert.ok(socket.sent.at(-1).fire);
+ infinity.close();
+});
+
 test('Starman contact in offline Infinity kills shielded tanks, with walls and invulnerability respected', () => {
  for(const [label,protection,wall,eliminated] of [
   ['shield',0,null,true],

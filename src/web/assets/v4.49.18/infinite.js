@@ -299,14 +299,14 @@ function traceLaser(world, tank, preview = false) {
 
 function muzzleBlocked(maze, tank, radius) {
  const {x, y} = tank;
- return tank.ghostTime > 0 && maze.visitWalls(x-radius, y-radius, x+radius, y+radius, () => true);
+ return tank.power !== 'cannon' && tank.ghostTime > 0 && maze.visitWalls(x-radius, y-radius, x+radius, y+radius, () => true);
 }
 
 function fireShot(world, tank) {
  const boosted = tank.starmanTime > 0;
  if (!boosted && (tank.cooldown > 1e-9 || tank.power === 'rapid' && !tank.machineRounds)) return;
  const kind = tank.power || '', spec = PROJECTILES[kind || 'regular'];
- if (kind !== 'cannon' && muzzleBlocked(world.maze, tank, spec.r)) return;
+ if (muzzleBlocked(world.maze, tank, spec.r)) return;
  const cooldown = boosted ? 0 : spec.cooldown;
  const showShot = !boosted || kind === 'grenade' || world.time + 1e-9 >= (tank.nextBoostEffect || 0);
  if (kind === 'laser') {
@@ -842,7 +842,7 @@ function updatePilotLoadout(world, pilot, seat, num, now) {
  const spec = PROJECTILES[tank.power||'regular'];
  const state = world.result?'complete':pauseMenu.open?(world.online&&!tank.alive?'held':'paused'):'playing';
  art.updateHomingAlert(seat.homingAlert,state==='playing'&&tank.alive&&projectiles.locked,now/1000);
- art.renderLoadout(tank,num,projectiles,tank.power!=='cannon'&&muzzleBlocked(world.maze,tank,spec.r),state,!!world.local);
+ art.renderLoadout(tank,num,projectiles,muzzleBlocked(world.maze,tank,spec.r),state,!!world.local);
 }
 
 function updateHUD(world, pilot, second, now) {
