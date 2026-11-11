@@ -15,7 +15,7 @@ with sync_playwright() as pw:
  p.evaluate("""()=>{window.__location=new URL('http://127.0.0.1/?test=1');window.__history={state:null,replaceState(){}};window.__store={'ricochet.name':'LEGACY PILOT','ricochet.muted':'1','ricochet.difficulty':'hard','ricochet.local2Name':'LEGACY P2','leqra.wins':'7'};window.__session={'ricochet.session':'{\"code\":\"OLD\",\"token\":\"tok\",\"name\":\"LEGACY PILOT\",\"spectating\":false,\"at\":1}'};const store=d=>({getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});Object.defineProperty(window,'localStorage',{value:store(window.__store)});Object.defineProperty(window,'sessionStorage',{value:store(window.__session)});window.requestAnimationFrame=()=>0;}""")
  for f in ['theme.js','netcode.js']: p.add_script_tag(content=(assets/f).read_text())
  p.add_script_tag(content=js);p.wait_for_function("window.__test&&window.leqra&&leqra.version==='4.16.0'")
- check(p.title()=='leqra — Tank Arena','document title uses lowercase leqra')
+ check(p.title()=='leqra','document title uses lowercase leqra')
  check(p.locator('.brand-name').inner_text()=='leqra','header wordmark is exactly lowercase leqra')
  check('leqra — a mobile-friendly tank maze game' in p.locator('meta[name="description"]').get_attribute('content'),'meta description uses leqra')
  check('leqra.' in p.locator('#lobbyScreen h2').inner_text().lower(),'landing hero uses leqra')

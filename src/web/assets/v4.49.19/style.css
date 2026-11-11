@@ -896,6 +896,7 @@ body.touch-ui .infinite-leaderboard[open]{max-height:max(38px,calc(100% - 112px)
 .infinite-leaderboard:not([open]){width:auto}
 .infinite-leaderboard ol{margin:0;padding:0 12px 8px 30px;font-variant-numeric:tabular-nums}
 .infinite-leaderboard li{padding:4px 6px;color:var(--tank-color,var(--text-main));overflow-wrap:anywhere}
+.infinite-leaderboard li::after{content:"";display:block;clear:both}
 .infinite-leaderboard li[data-local]{border-radius:5px;box-shadow:inset 0 0 0 1px var(--local-highlight);background:color-mix(in srgb,var(--local-highlight) 8%,transparent)}
 .infinite-leaderboard li span{margin-right:6px}
 .infinite-leaderboard li strong{float:right;color:inherit}
