@@ -4,6 +4,7 @@
 const byID = id => document.getElementById(id);
 const arena = byID('infiniteArena');
 const pauseMenu = byID('infinitePauseMenu');
+const pauseSidebar = byID('infinitePauseSidebar');
 const controlsDialog = byID('controlsDialog');
 const canvas = byID('infiniteCanvas');
 const stick = byID('infiniteStick');
@@ -13,6 +14,7 @@ const fire = byID('infiniteFire');
 const status = byID('infiniteStatus');
 const personalScore = byID('infiniteKills');
 const leaderboard = byID('infiniteLeaderboard');
+const leaderboardPanel = byID('infiniteLeaderboardPanel');
 const leaderboardTitle = byID('infiniteLeaderboardTitle');
 const teamLeaderboard = byID('infiniteTeamScores');
 const resultDialog = byID('infiniteResult');
@@ -57,6 +59,7 @@ const touchAim = {x: 0, y: 0, cx: 0, cy: 0, reach: 0, assisted: false};
 let session = null, frame = 0, socket = null, mouseAim = null;
 let stickPointer = null, firePointer = null, mousePointer = null;
 let lastTime = 0, accumulator = 0, connectTimer = 0;
+let pausedLeaderboard = null;
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const angleOf = n => Math.atan2(Math.sin(n), Math.cos(n));
@@ -623,7 +626,14 @@ function refreshBindings(world) {
  const summary = keys => `Move ${codes(keys,'forward')}/${codes(keys,'reverse')} · Turn ${codes(keys,'left')}/${codes(keys,'right')} · Fire ${codes(keys,'fire')}`;
  const primary = art.isTouchUI() ?
   'Drag the stick to move and aim. Tap or hold Fire.' : summary(world.keys) + ' · Mouse aim and fire';
- hint.textContent = world.local ? `P1 ${primary} · P2 ${summary(world.local.keys)}` : primary;
+ const firstLine = document.createElement('span');
+ firstLine.textContent = world.local ? `P1 ${primary}` : primary;
+ hint.replaceChildren(firstLine);
+ if (world.local) {
+  const secondLine = document.createElement('span');
+  secondLine.textContent = `P2 ${summary(world.local.keys)}`;
+  hint.append(document.createElement('br'),secondLine);
+ }
 }
 
 function interpolate(previous, current, alpha) {
@@ -1280,6 +1290,16 @@ function resetControls() {
  }
 }
 
+function restorePauseSidebar() {
+ if (pausedLeaderboard && leaderboardPanel.parentElement === byID('gameSidebar')) {
+  const {parent,next,open} = pausedLeaderboard;
+  parent.insertBefore(leaderboardPanel,next?.parentElement === parent ? next : null);
+  leaderboardPanel.open = open;
+ }
+ pausedLeaderboard = null;
+ art.restoreSidebar(pauseSidebar);
+}
+
 function dismissPause() {
  if (pauseMenu.open) {
   if (controlsDialog?.open) {
@@ -1289,6 +1309,7 @@ function dismissPause() {
   }
   pauseMenu.close();
  }
+ restorePauseSidebar();
 }
 
 function stop() {
@@ -1558,11 +1579,17 @@ arena.addEventListener('contextmenu', event => event.preventDefault());
 function openPause() {
  if (!session || session.result || pauseMenu.open) return;
  pauseMenu.showModal();
+ art.mountSidebar(pauseSidebar);
+ pausedLeaderboard = {parent:leaderboardPanel.parentElement,next:leaderboardPanel.nextSibling,open:leaderboardPanel.open};
+ const sidebar = byID('gameSidebar');
+ sidebar.insertBefore(leaderboardPanel,sidebar.firstChild);
+ leaderboardPanel.open = true;
+ pauseMenu.scrollTop = 0;
  resetControls();
 }
 function resume() {
  if (!session || !pauseMenu.open) return;
- pauseMenu.close();
+ dismissPause();
  lastTime = performance.now();
  refreshBindings(session);
  resetControls();
@@ -1570,7 +1597,10 @@ function resume() {
 }
 byID('infinitePauseBtn').addEventListener('click', openPause);
 byID('infiniteResumeBtn').addEventListener('click', resume);
-byID('infiniteControlsBtn').addEventListener('click', art.openControls);
+byID('infiniteControlsBtn').addEventListener('click', () => {
+ byID('infiniteControlsBtn').focus({preventScroll:true});
+ art.openControls();
+});
 byID('infiniteExit').addEventListener('click', exitArena);
 byID('infiniteResultExit').addEventListener('click',exitArena);
 resultDialog.addEventListener('cancel',event=>{event.preventDefault();exitArena();});
@@ -1590,6 +1620,9 @@ pauseMenu.addEventListener('cancel', event => {
  event.preventDefault();
  resume();
 });
+pauseMenu.addEventListener('close', () => {
+ if (!pauseMenu.open) restorePauseSidebar();
+});
 arena.addEventListener('close', event => {
  if (event.target === arena && !arena.open) stop();
 });
@@ -1600,6 +1633,13 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const pickupHelp = `Power-ups spawn near active pilots. Most last ${POWER_DURATION} seconds after pickup. Starman lasts ${STAR_DURATION} seconds. Machine gun allows 3 seconds of firing. Uncollected power-ups expire after ${PICKUP_LIFETIME} seconds.`;
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp});
+function sidebarHelp() {
+ if (!session || !pauseMenu.open) return null;
+ const target = session.rules?.infinityTarget;
+ return {twoPilots:!!session.local,pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,
+  instructions:'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after '+RESPAWN_DELAY+' second. '+
+   (target?'Reach '+target+' points to win.':'Keep playing and growing your score without a time limit.')};
+}
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp});
 art.roomSessionReady?.();
 })();

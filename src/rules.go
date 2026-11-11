@@ -292,13 +292,17 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 		fail("survival_full", "Survival supports up to four allied tanks. Remove extra tanks or move players to Spectators first.")
 		return
 	}
-	previousTeamCount := activeTeamCount(r.Game.settings())
+	previous := r.Game.settings()
+	previousTeamCount := activeTeamCount(previous)
 	nextRules := normalizedRules(rules)
 	if !reflect.DeepEqual(r.Game.settings(), nextRules) {
 		r.Game.survivalCheckpoint = nil
 	}
 	r.Game.Rules = nextRules
 	r.Game.Clock = float64(rules.TimeLimit)
+	if previous.Infinity && !nextRules.Infinity {
+		addDefaultRoomBots(r, c.player, now)
+	}
 	if rules.TeamMode == "teams" && previousTeamCount != activeTeamCount(rules) {
 		balanceRoomTeams(r)
 	}
@@ -306,6 +310,27 @@ func (h *Hub) setRules(c *Client, m clientMessage, now time.Time) {
 	resetReady(r)
 	r.LastAction = now
 	h.broadcastRoom(r)
+}
+
+// Selecting fixed play gives a lone primary pilot opponents without changing
+// an existing party. Spectators are not combat opponents; reserved seats are.
+func addDefaultRoomBots(r *Room, host *Player, now time.Time) {
+	if r.Game.settings().Infinity || !r.setupOpen() || host == nil || r.Host != host.ID {
+		return
+	}
+	for _, p := range r.members() {
+		if p.Kind == "bot" || p.Kind == "local" || !p.Spectating && p.ID != host.ID {
+			return
+		}
+	}
+	for _, name := range []string{"RUST", "VAPOR", "EMBER"} {
+		id := r.freeCombatSeat()
+		if id < 0 {
+			return
+		}
+		r.NextMember++
+		r.Players[id] = &Player{ID: id, Member: r.NextMember, Kind: "bot", Name: name, Team: joinTeam(r), Owner: host.ID, Controller: host, Difficulty: "normal", InputAt: now}
+	}
 }
 
 // Saved rosters never contain remote people or credentials. Applying a preset
@@ -320,6 +345,7 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 		fail("match_active", "End the match before loading a preset.")
 		return
 	}
+	previousInfinity := r.Game.settings().Infinity
 	for _, p := range r.members() {
 		if p.ID != r.Host && p.Kind != "local" && p.Kind != "bot" {
 			fail("guests_present", "Presets cannot replace online guests. Edit the rules or roster individually.")
@@ -365,6 +391,9 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 	}
 	r.Game.Rules = normalizedRules(*m.Rules)
 	r.Game.Clock = float64(m.Rules.TimeLimit)
+	if previousInfinity && !r.Game.Rules.Infinity {
+		addDefaultRoomBots(r, c.player, now)
+	}
 	applyFormat(r)
 	r.Game.Scores = [maxTanks]int{}
 	r.Game.Tanks = [maxTanks]*Tank{}

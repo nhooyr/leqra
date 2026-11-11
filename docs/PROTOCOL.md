@@ -1,10 +1,10 @@
-# leqra v4.49.20 — current game protocol (protocol 1)
+# leqra v4.49.22 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.20**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.22**.
 
 ```json
-{"type":"server_hello","version":"4.49.20","protocol":1}
-{"type":"client_hello","version":"4.49.20","protocol":1}
+{"type":"server_hello","version":"4.49.22","protocol":1}
+{"type":"client_hello","version":"4.49.22","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -357,9 +357,12 @@ with `bad_team`. There is no per-seat Independent option. Older published/saved
 Teams setups with zero seats are migrated to numbered teams before use (host/owned
 local on 1, others on 2), preserving valid numbered choices.
 
-The normal create/join entry point admits actual network visitors; publishing a
-local setup transfers its default host plus three Normal FFA bots, rather than
-forcing those bots into every empty named room.
+The normal create/join entry point admits actual network visitors. A fresh local
+setup contains only Player 1. Switching from Infinity to fixed play adds three
+Normal bots only when the room has no bot, local Player 2, or other human combat
+seat. Spectators do not block this fallback; reserved reconnecting combat seats
+do. Online changes require the host and an editable lobby. Publishing transfers
+the configured local roster rather than inserting bots into an empty named room.
 
 ### v4.22 take a private room offline
 

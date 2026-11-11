@@ -10,14 +10,99 @@ function boot(storage=new Map(),touchUI=false){
  const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'].map(kind=>[kind,{}])),DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival','infinity'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
  localStorage:{getItem:key=>storage.get(key)||null,setItem(key,value){if(s.storageFails)throw Error('Storage unavailable');storage.set(key,value);s.writes++;}},writes:0,
  $,document:{querySelectorAll:selector=>selector.endsWith(':checked')?toggles.filter(c=>c.checked):toggles},Theme:{colors:['a','b','c','d','e','f','g','h']},teamName:(n,r)=>r.teamNames[n-1],featureNotice(id,message){$(id).textContent=message;},updateRuleHelp(){},renderPowerLegend(){},isRoomEditable:()=>s.editable!==false,roomData:()=>({rules:s.localRoom.rules,players:s.localRoom.players.filter(p=>!p.spectating)}),roomModeEditable:()=>s.editable!==false,rejectRoomMode(message){s.rejected=message;},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>[...r.players,...(r.spectators||[])],setLocalRules(r){s.localRoom.rules=s.validateRoomRules(r);s.persistLocalRoomRules(r);},setTimeout(){return 1;},clearTimeout(){},syncFeatureSummary(){},syncRoomModePicker(){},sendOnline(message){s.sent=message;return !s.sendFails;},closeFeature(){s.closed=true;}};
- Object.assign(s,{infinityOffline:false,infinityOnline:true,renderOnlineRoom(){},save(key,value){storage.set('leqra.'+key,String(value));}});
- try{s.infinityOffline=storage.get('leqra.infinityOffline')==='1';}catch(_){}
+ Object.assign(s,{infinityOffline:false,infinityOnline:true,location:{protocol:'https:'},navigator:{onLine:true},renderOnlineRoom(){},resetPreviewIfLobby(){s.previewReset=true;},readyRoom(){s.persistLocalRoomRules();},callsignForms:()=>[],save(key,value){storage.set('leqra.'+key,String(value));}});
+ Object.assign(s.document,{body:{classList:{remove(){}}},documentElement:{style:{removeProperty(){}}}});
+ try{s.infinityOffline=storage.get('leqra.infinityOffline')==='1';s.infinityOnline=storage.get('leqra.infinityOnline')!=='0';}catch(_){}
  vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
- for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','selectLocalInfinity','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','startInfinity'])vm.runInContext(declaration(name),s);
+ for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','canPlayOnlineInfinity','infinityPlayMode','selectLocalInfinity','ensureDefaultLocalBots','selectPublicInfinity','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','startInfinity','createLocalRoom'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.loadLocalRoomRules();return {s,$,storage,toggles};
 }
 const pilot=(options={})=>({id:0,kind:'human',name:'PILOT',team:0,...options});
 const bot=(options={})=>({id:1,kind:'bot',name:'RUST',team:0,difficulty:'normal',...options});
+
+test('a new public Infinity setup starts with only P1 and switching it off adds three Normal bots once',()=>{
+ const {s,storage}=boot();s.createLocalRoom();
+ assert.deepEqual(Array.from(s.localRoom.players,p=>p.kind),['human']);
+ assert.equal(s.infinityPlayMode(),'online');
+ s.selectPublicInfinity(false);
+ assert.deepEqual(Array.from(s.localRoom.players,p=>[p.id,p.kind,p.name,p.difficulty]),[[0,'human','PILOT',undefined],[1,'bot','RUST','normal'],[2,'bot','VAPOR','normal'],[3,'bot','EMBER','normal']]);
+ assert.equal(new Set(s.localRoom.players.map(p=>p.member)).size,4);
+ assert.equal(s.localRoom.players.every(p=>p.owner===0&&p.team===0),true);
+ assert.equal(s.previewReset,true);
+ assert.equal(JSON.parse(storage.get('leqra.roomSetup.v2')).roster.length,4);
+ s.selectPublicInfinity(false);s.selectPublicInfinity(true);s.selectPublicInfinity(false);
+ assert.equal(s.localRoom.players.length,4);
+});
+
+test('stored fixed selection fills an empty lineup while restored bots or P2 keep their exact roster',()=>{
+ const fixed=new Map([['leqra.infinityOnline','0']]),first=boot(fixed).s;first.createLocalRoom();
+ assert.deepEqual(Array.from(first.localRoom.players,p=>p.kind),['human','bot','bot','bot']);
+ for(const companion of [bot({name:'CUSTOM',difficulty:'godlike'}),{id:2,kind:'local',name:'P2',team:0}, {id:8,kind:'local',name:'P2',team:0,spectating:true}]){
+  const storage=new Map([['leqra.infinityOnline','0']]),saved=boot(storage).s;saved.localRoom.players=[pilot({name:'KEPT'}),companion];saved.persistLocalRoomRules();
+  const restored=boot(storage).s;restored.createLocalRoom();
+  assert.deepEqual(Array.from(restored.localRoom.players,p=>p.name),['KEPT',companion.name]);
+  assert.equal(restored.localRoom.players[1].difficulty,companion.difficulty);
+ }
+ const offline=boot(new Map([['leqra.infinityOffline','1'],['leqra.infinityOnline','0']])).s;offline.createLocalRoom();
+ assert.equal(offline.localRoom.rules.infinity,true);assert.equal(offline.localRoom.players.length,1);
+});
+
+test('selecting any fixed mode from public or room Infinity makes a solo roster playable',()=>{
+ for(const from of ['public','room'])for(const mode of ['elimination','ctf','koth','survival']){
+  const {s}=boot();s.localRoom.players=[pilot({member:1})];s.localRoom.nextMember=1;
+  if(from==='room'){s.localRoom.rules={...s.localRoom.rules,infinity:true};s.infinityOffline=true;s.infinityOnline=false;}
+  s.mapSetupChanged=()=>false;vm.runInContext(declaration('setLocalRules'),s);
+  vm.runInContext(source.match(/^const teamKey=.*$/m)[0]+'\n'+declaration('roomStartError'),s);
+  assert.equal(s.selectRoomMode(mode),true,from+' '+mode);
+  assert.equal(s.localRoom.players.length,4);assert.equal(s.infinityPlayMode(),'');
+  assert.deepEqual(Array.from(s.localRoom.players.slice(1),p=>p.difficulty),['normal','normal','normal']);
+  assert.equal(s.roomStartError(),'');
+  assert.equal(s.selectRoomMode(mode),true);assert.equal(s.localRoom.players.length,4);
+ }
+});
+
+test('automatic default bots never change Infinity, active rounds, existing companions or online rosters',()=>{
+ for(const scenario of ['public','room','open','countdown','playing','paused','roundOver','online','human','bot','local']){
+  const {s,$}=boot();s.localRoom.players=[pilot()];s.infinityOnline=false;
+  if(scenario==='public')s.infinityOnline=true;
+  else if(scenario==='room')s.localRoom.rules={...s.localRoom.rules,infinity:true};
+  else if(scenario==='open')$('infiniteArena').open=true;
+  else if(['countdown','playing','paused','roundOver'].includes(scenario))s.phase=scenario;
+  else if(scenario==='online')s.mode='online';
+  else s.localRoom.players.push(scenario==='bot'?bot({difficulty:'hard'}):scenario==='human'?pilot({id:2,name:'REMOTE'}):{kind:'local',name:'P2'});
+  const before=JSON.stringify(s.localRoom.players);assert.equal(s.ensureDefaultLocalBots(),false,scenario);assert.equal(JSON.stringify(s.localRoom.players),before);
+ }
+});
+
+test('a fixed solo preset adds fallback only when it actually exits room Infinity',()=>{
+ for(const exitingInfinity of [false,true]){
+  const {s}=boot();s.localRoom.players=[pilot()];s.localRoom.rules={...s.localRoom.rules,infinity:exitingInfinity};s.infinityOffline=exitingInfinity;s.infinityOnline=false;
+  Object.assign(s,{mapSetupChanged:()=>false,rememberCallsign(){},rememberLocalCallsign(){},clearInput(){},setScreen(){}});
+  vm.runInContext(declaration('validatePreset')+'\n'+declaration('applyLocalPreset'),s);
+  s.applyLocalPreset({rules:s.defaultModeRules(),roster:[{kind:'human',name:'P1',team:0}]});
+  assert.equal(s.localRoom.players.length,exitingInfinity?4:1);assert.equal(!!s.localRoom.rules.infinity,false);
+ }
+});
+
+test('online Infinity exit presets acknowledge the exact normalized fallback roster',()=>{
+ for(const mode of ['elimination','ctf','koth','survival']){
+  const {s}=boot();s.mode='online';s.phase='onlineLobby';
+  Object.assign(s.online,{id:3,member:50,socket:{},token:'test',roomData:{host:3,phase:'lobby',players:[pilot({id:3,member:50})],spectators:[],rules:{...s.defaultRoomRules(),infinity:true}}});
+  const preset={rules:s.defaultModeRules(mode),roster:[{kind:'human',name:'NEW HOST',team:mode==='ctf'||mode==='survival'?1:0}]};
+  s.selectedPreset=()=>preset;vm.runInContext(declaration('validatePreset')+'\n'+declaration('canLoadPreset')+'\n'+declaration('applySelectedPreset'),s);
+  s.applySelectedPreset();const sent=s.sent;
+  assert.equal(sent.type,'preset');assert.equal(sent.roster.length,4);assert.equal(preset.roster.length,1,'saved preset stays unchanged');
+  assert.deepEqual(Array.from(sent.roster.slice(1),p=>[p.name,p.kind,p.difficulty]),[['RUST','bot','normal'],['VAPOR','bot','normal'],['EMBER','bot','normal']]);
+  assert.deepEqual(Array.from(sent.roster,p=>p.team),mode==='survival'?[1,1,1,1]:mode==='ctf'?[1,2,1,2]:[0,0,0,0]);
+  assert.equal(s.presetsPending,true);assert.notEqual(s.closed,true);
+  const packet={...s.online.roomData,rules:sent.rules,players:sent.roster.map((p,i)=>({...p,id:i===0?3:i-1,member:50+i,owner:3}))};
+  s.online.roomData={...packet,players:packet.players.slice(0,1)};s.syncRoomSetupPending();assert.equal(s.presetsPending,true,'partial roster does not acknowledge');
+  s.online.roomData={...packet,players:packet.players.map((p,i)=>i===1?{...p,difficulty:'hard'}:p)};s.syncRoomSetupPending();assert.equal(s.presetsPending,true,'wrong bot does not acknowledge');
+  s.online.roomData=packet;s.syncRoomSetupPending();assert.equal(s.presetsPending,false);assert.equal(s.closed,true);
+ }
+ const {s}=boot();s.mode='online';s.phase='onlineLobby';s.online.roomData={host:0,phase:'lobby',players:[pilot()],spectators:[],rules:s.defaultRoomRules()};
+ s.sendRoomSetupRequest('preset',{rules:s.defaultRoomRules(),roster:[{kind:'human',name:'SOLO',team:0}]});assert.equal(s.sent.roster.length,1,'ordinary fixed solo preset stays solo');
+});
 
 test('Infinity room target, teams and random bots persist separately from fixed-maze settings',()=>{
  const {s,$,storage}=boot();s.localRoom.players=[pilot(),bot()];

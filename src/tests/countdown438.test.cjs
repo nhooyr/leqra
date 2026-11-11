@@ -80,6 +80,6 @@ test('boss countdown prioritizes its existing gear preview and never leaks it in
 
 test('creating a fresh local room preserves the countdown sequence for the next run',()=>{
  const {s,$}=boot();s.startMatch();const first=s.getCountdownTip(),serial=s.localRoom.countdownSerial;
- Object.assign(s,{loadLocalRoomRules:()=>s.rules,restoreSavedLocalRoster:()=>false,callsignForms:()=>[],readyRoom(){}});s.document.body.classList.remove=()=>{};s.document.documentElement={style:{removeProperty(){}}};s.localRoom.nextMember=0;
+ Object.assign(s,{loadLocalRoomRules:()=>s.rules,restoreSavedLocalRoster:()=>false,ensureDefaultLocalBots:()=>false,callsignForms:()=>[],readyRoom(){}});s.document.body.classList.remove=()=>{};s.document.documentElement={style:{removeProperty(){}}};s.localRoom.nextMember=0;
  vm.runInContext(declaration('createLocalRoom'),s);s.createLocalRoom();assert.equal(s.localRoom.countdownSerial,serial);s.startMatch();assert.equal(s.localRoom.countdownSerial,serial+1);assert.notEqual(s.getCountdownTip(),first);
 });
