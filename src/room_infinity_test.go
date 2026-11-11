@@ -376,18 +376,19 @@ func TestPrivateInfinityRandomBotsKeepConfiguredRosterAndUseRoomDifficulty(t *te
 			roster.X = far
 			maxLevel := infiniteBotLevel("hard")
 			var seen uint64
-			for range 24 {
+			for i := range 24 {
 				a.tick = a.nextBot
 				a.populate()
-				if len(a.pilots) != 3 || a.pilots[1] != roster {
-					t.Fatal("spawn cycle did not preserve the roster and replace only the distant roaming bot")
+				if len(a.pilots) != 2+min(i+1, 8) || a.pilots[1] != roster || roster.X != far {
+					t.Fatal("spawn cycle did not preserve the configured roster and roaming budget")
 				}
-				bot := a.pilots[2]
-				if !bot.Bot || bot.roomBot != nil || bot.Team != 2 || bot.botLevel > maxLevel || !tc.random && bot.botLevel != maxLevel {
-					t.Fatalf("roaming bot ignored the room setup: team %d, level %d", bot.Team, bot.botLevel)
+				for _, bot := range a.pilots[2:] {
+					if !bot.Bot || bot.roomBot != nil || bot.Team < 1 || bot.Team > 2 || bot.botLevel > maxLevel || !tc.random && bot.botLevel != maxLevel {
+						t.Fatalf("roaming bot ignored the room setup: team %d, level %d", bot.Team, bot.botLevel)
+					}
+					seen |= 1 << bot.botLevel
+					bot.X = far
 				}
-				seen |= 1 << bot.botLevel
-				bot.X = far
 			}
 			if tc.random && seen != (1<<(maxLevel+1))-1 {
 				t.Fatalf("seeded spawn sequence did not use all selected levels: %b", seen)

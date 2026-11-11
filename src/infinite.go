@@ -31,6 +31,7 @@ type infiniteTank struct {
 	ColorIndex int     `json:"colorIndex"`
 	Team       int     `json:"team,omitempty"`
 	Score      int     `json:"score"`
+	Rank       int     `json:"rank,omitempty"`
 	Name       string  `json:"name"`
 	Protected  bool    `json:"protected,omitempty"`
 	Ack        uint64  `json:"ack,omitempty"`
@@ -74,6 +75,7 @@ type infinitePilot struct {
 	kit                    Tank // Reuses fixed-maze equipment state and pickup rules.
 	roomBot                *Player
 	botLevel               int
+	ambientNumber          int
 
 	waypoint, previous [2]int
 	hasWaypoint        bool
@@ -152,6 +154,7 @@ type infiniteArena struct {
 	players            int // Human seats in the arena, including reservations.
 	connected          int // Human seats with a live controller socket.
 	pilots             []*infinitePilot
+	inactiveBots       []*infinitePilot // Preserve roaming identities while the connected-player budget is lower.
 	bullets            []infiniteBullet
 	pickups            []Pickup
 	effects            []infiniteEffect
@@ -274,6 +277,7 @@ func (a *infiniteArena) suspend(p *infinitePilot) {
 			seat.clearControls()
 		}
 	}
+	a.trimRoamingBots()
 }
 
 func (a *infiniteArena) resume(c *Client, p *infinitePilot, generation uint64, now time.Time) string {
@@ -357,6 +361,7 @@ func (a *infiniteArena) removeLocal(primary *infinitePilot) {
 	}
 	a.pilots = slices.DeleteFunc(a.pilots, func(p *infinitePilot) bool { return p == local })
 	a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool { return b.Owner == local.ID })
+	a.trimRoamingBots()
 }
 
 func (a *infiniteArena) remove(p *infinitePilot) {
@@ -377,11 +382,12 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 	}
 	a.pilots = slices.DeleteFunc(a.pilots, func(other *infinitePilot) bool { return p == other || p.local == other })
 	a.bullets = slices.DeleteFunc(a.bullets, func(b infiniteBullet) bool { return b.Owner == p.ID || localID != 0 && b.Owner == localID })
+	a.trimRoamingBots()
 	if a.players == 0 {
 		// A scored private room may retain its totals/result after all
 		// controllers leave. Release the world and snapshot buffers until it
 		// has viewers again; the maze is reproducible from the seed.
-		a.pilots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil
+		a.pilots, a.inactiveBots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil, nil
 		a.maze = nil
 		a.snapshot = emptyInfiniteSnapshot()
 		a.snapshotTankIndex = nil
@@ -491,7 +497,15 @@ func (a *infiniteArena) step(now time.Time) {
 	for _, p := range a.pilots {
 		if p.HP == 0 {
 			if a.tick >= p.respawn && !p.paused && !p.disconnected {
-				a.spawn(p, p.X, p.Y, 2, 5)
+				x, y := p.X, p.Y
+				if p.Bot && p.roomBot == nil {
+					anchor := a.nearestActivePilot(p, math.Inf(1))
+					if anchor == nil {
+						continue
+					}
+					x, y = anchor.X, anchor.Y
+				}
+				a.spawn(p, x, y, 2, 5)
 			}
 			continue
 		}
@@ -566,36 +580,112 @@ func (a *infiniteArena) drive(p *infinitePilot, input Input) {
 	p.Track += math.Hypot(p.X-x, p.Y-y)
 }
 
+func (a *infiniteArena) roamingBotBudget() int {
+	if a.rules != nil && !a.rules.randomBots {
+		return 0
+	}
+	return min(infiniteBotLimit, a.connected*8)
+}
+
+func (a *infiniteArena) trimRoamingBots() int {
+	bots := 0
+	for _, p := range a.pilots {
+		if p.Bot && p.roomBot == nil {
+			bots++
+		}
+	}
+	budget := a.roamingBotBudget()
+	for i := len(a.pilots) - 1; i >= 0 && bots > budget; i-- {
+		p := a.pilots[i]
+		if p.Bot && p.roomBot == nil {
+			a.inactiveBots = append(a.inactiveBots, p)
+			a.pilots = slices.Delete(a.pilots, i, i+1)
+			bots--
+		}
+	}
+	return bots
+}
+
+func (a *infiniteArena) nearestActivePilot(p *infinitePilot, maxDist float64) *infinitePilot {
+	var nearest *infinitePilot
+	for _, other := range a.pilots {
+		if other.Bot || other.HP == 0 || other.disconnected {
+			continue
+		}
+		if d := math.Hypot(other.X-p.X, other.Y-p.Y); d < maxDist {
+			maxDist, nearest = d, other
+		}
+	}
+	return nearest
+}
+
+func (a *infiniteArena) outsideActiveViews(p *infinitePilot) bool {
+	for _, viewer := range a.pilots {
+		if !viewer.Bot && !viewer.disconnected && math.Abs(p.X-viewer.X) <= cellSize*16 && math.Abs(p.Y-viewer.Y) <= cellSize*16 {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *infiniteArena) pilotByID(id int) *infinitePilot {
+	for _, pilots := range [2][]*infinitePilot{a.pilots, a.inactiveBots} {
+		for _, p := range pilots {
+			if p.ID == id {
+				return p
+			}
+		}
+	}
+	return nil
+}
+
 func (a *infiniteArena) populate() {
-	if a.rules != nil && !a.rules.randomBots || a.tick < a.nextBot {
+	bots := a.trimRoamingBots()
+	if a.roamingBotBudget() == 0 || a.tick < a.nextBot {
 		return
 	}
 	a.nextBot = a.tick + uint64(60+a.random.IntN(61))
-	bots := 0
-	a.pilots = slices.DeleteFunc(a.pilots, func(p *infinitePilot) bool {
-		if !p.Bot || p.roomBot != nil {
-			return false
-		}
-		if a.nearestPilot(p, cellSize*13, false) == nil {
-			return true
-		}
-		bots++
-		return false
-	})
-	if bots >= min(infiniteBotLimit, a.players*4) {
-		return
-	}
 	var pilots [infiniteCapacity]*infinitePilot
 	n := 0
 	for _, p := range a.pilots {
-		if !p.Bot && p.HP > 0 {
+		if !p.Bot && p.HP > 0 && !p.disconnected {
 			pilots[n] = p
 			n++
 		}
 	}
 	if n > 0 {
+		for _, bot := range a.pilots {
+			if bot.Bot && bot.roomBot == nil && bot.HP > 0 && a.outsideActiveViews(bot) {
+				anchor := pilots[a.random.IntN(n)]
+				a.spawn(bot, anchor.X, anchor.Y, 3, 6)
+			}
+		}
+		if bots >= a.roamingBotBudget() {
+			return
+		}
 		p := pilots[a.random.IntN(n)]
-		bot := a.addPilot("Bot "+strconv.Itoa(a.nextID+1), true, p.X, p.Y, 3, 6)
+		if len(a.inactiveBots) > 0 {
+			i := len(a.inactiveBots) - 1
+			bot := a.inactiveBots[i]
+			a.inactiveBots = slices.Delete(a.inactiveBots, i, i+1)
+			if bot.HP > 0 {
+				a.spawn(bot, p.X, p.Y, 3, 6)
+			}
+			a.pilots = append(a.pilots, bot)
+			return
+		}
+		var used [infiniteBotLimit + 1]bool
+		for _, bot := range a.pilots {
+			if bot.ambientNumber > 0 {
+				used[bot.ambientNumber] = true
+			}
+		}
+		number := 1
+		for used[number] {
+			number++
+		}
+		bot := a.addPilot("Bot "+strconv.Itoa(number), true, p.X, p.Y, 3, 6)
+		bot.ambientNumber = number
 		if a.rules != nil {
 			bot.botLevel = a.rules.botLevel
 			if a.rules.randomDifficulty {
@@ -742,7 +832,7 @@ func (a *infiniteArena) rayWallsQuery(x, y, dx, dy, radius float64, firstOnly bo
 	return nearest, found
 }
 
-func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
+func (a *infiniteArena) rankedLeaders(entries []infiniteLeader) []infiniteLeader {
 	entries = entries[:0]
 	for _, p := range a.pilots {
 		entries = append(entries, infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team, ColorIndex: p.ColorIndex})
@@ -753,6 +843,11 @@ func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 		}
 		return cmp.Compare(left.ID, right.ID)
 	})
+	return entries
+}
+
+func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
+	entries = a.rankedLeaders(entries)
 	return entries[:min(len(entries), infiniteLeaderCount)]
 }
 
@@ -766,7 +861,8 @@ func (a *infiniteArena) broadcast() {
 	if a.teams() {
 		packet.Scores = &a.teamScores
 	}
-	packet.Leaders = a.leaderboard(packet.Leaders)
+	leaders := a.rankedLeaders(packet.Leaders)
+	packet.Leaders = leaders[:min(len(leaders), infiniteLeaderCount)]
 	var tanks [infiniteCapacity + infiniteBotLimit]infiniteTank
 	if a.snapshotTankIndex == nil {
 		a.snapshotTankIndex = make(map[int]int, len(a.pilots))
@@ -776,6 +872,12 @@ func (a *infiniteArena) broadcast() {
 	for i, p := range a.pilots {
 		tanks[i] = p.wireTank(a.tick)
 		tankIndex[p.ID] = i
+	}
+	for rank, leader := range leaders {
+		i := tankIndex[leader.ID]
+		if !tanks[i].Bot {
+			tanks[i].Rank = rank + 1
+		}
 	}
 	// A projectile can leave a pilot's view and still occupy an ammo slot.
 	// Summarize the arena once so views with identical entities share the wire.
