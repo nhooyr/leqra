@@ -1,10 +1,10 @@
-# leqra v4.49.18 — current game protocol (protocol 1)
+# leqra v4.49.19 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.18**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.19**.
 
 ```json
-{"type":"server_hello","version":"4.49.18","protocol":1}
-{"type":"client_hello","version":"4.49.18","protocol":1}
+{"type":"server_hello","version":"4.49.19","protocol":1}
+{"type":"client_hello","version":"4.49.19","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -23,7 +23,7 @@ Public joins may send `localName` for a second tank. Private joins derive Player
 
 Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for one second after the tank's destruction, even if the hold ends sooner.
 
-The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, and `bot`. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
+The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's `players` count, and up to ten `leaderboard` entries with `id`, `name`, `score`, `bot`, `colorIndex`, and optional `team`. Each leaderboard color matches that tank, including distant and respawning pilots. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
 Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts live projectiles even outside the pilot's view, and boosted Starman shots do not occupy ordinary ammo slots. Visible homing missiles and grenades include `target` when locked onto a pilot ID.
 

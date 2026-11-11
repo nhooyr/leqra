@@ -10,7 +10,11 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  class Element {
   listeners = {};
   children = [];
-  style = {removeProperty() {}, setProperty() {}};
+  style = {
+   removeProperty(name) { delete this[name]; },
+   setProperty(name,value) { this[name] = value; },
+   getPropertyValue(name) { return this[name] || ''; },
+  };
   classes = new Set();
   classList = {remove: name => this.classes.delete(name), add: name => this.classes.add(name), toggle() {}};
   dataset = {};
@@ -67,7 +71,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  const powers = Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman']
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
-  colors: ['#32c5ff','#ff758f'], theme: {}, powers, renderPixelRatio: () => 1,
+  colors: ['#32c5ff','#ff758f','#73cee4','#c5a2ff','#ffc46b','#ff83bd','#75f0cb','#b7c6ee'], theme: {}, powers, renderPixelRatio: () => 1,
   tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, drawBadges() {}, bullets() {},
   ageTank: tank => tank,
   sampleFrame: (now,work) => context.sampleFrame(now,work,'infiniteFPSIndicator',null),
@@ -186,10 +190,12 @@ test('Infinity runs offline directly from a file and adds nearby bots to the sta
  infinity.start('offline', {name: 'Explorer'});
  assert.equal(byID('infiniteArena').open, true);
  assert.equal(byID('infiniteKills').textContent, 'Score 0');
+ assert.equal(byID('infiniteLeaderboardTitle').textContent, 'Top 1 tank');
  assert.equal(byID('infiniteLeaderboard').children[0].children[0].textContent, 'Explorer (you)');
  advance(90);
  assert.match(byID('infiniteStatus').textContent, /[1-7] bots/);
  assert.match(byID('infiniteLeaderboard').children[1].children[0].textContent, /^Bot /);
+ assert.equal(byID('infiniteLeaderboardTitle').textContent, `Top ${byID('infiniteLeaderboard').children.length} tanks`);
  assert.equal(sockets.length, 0);
  infinity.close();
  assert.equal(byID('infiniteArena').open, false);
@@ -243,13 +249,35 @@ test('offline room Infinity spawns only its listed bots and preserves their team
 });
 
 test('offline Infinity uses room paint for both local pilots and roster bots', () => {
- const {infinity,state}=harness(undefined,true);
+ const {infinity,state,byID,window}=harness(undefined,true);
  infinity.start('offline',{primaryId:3,localId:5,localName:'Wingmate',roomRules:{teamMode:'ffa'},roster:[
   {id:3,kind:'human',colorIndex:4},
   {id:5,kind:'local',colorIndex:7},
   {id:2,kind:'bot',name:'DEFAULT BOT',colorIndex:-1},
  ]});
  assert.deepEqual(Array.from(state().tanks,t=>t.colorIndex),[4,7,2]);
+ const rows = byID('infiniteLeaderboard').children, colors = window.leqraInfinityArt.colors;
+ assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 3 tanks');
+ assert.deepEqual(rows.map(row=>row.style.getPropertyValue('--tank-color')),[colors[4],colors[7],colors[2]]);
+ assert.equal(rows[0].dataset.local,'p1');
+ assert.equal(rows[0].style.getPropertyValue('--local-highlight'),'#bf5cff');
+ assert.equal(rows[1].dataset.local,'p2');
+ assert.equal(rows[1].style.getPropertyValue('--local-highlight'),'#ff4fd8');
+ assert.equal(rows[2].dataset.local,undefined);
+ infinity.close();
+});
+
+test('the offline Infinity leaderboard caps at ten and updates when tanks leave', () => {
+ const {infinity,state,byID,advance}=harness(undefined,true);
+ infinity.start('offline',{roomRules:{teamMode:'ffa'},roster:Array.from({length:11},(_,id)=>({id,kind:'bot',name:'Bot '+id}))});
+ const world=state();
+ world.nextPickup=world.nextBot=Infinity;
+ assert.equal(byID('infiniteLeaderboard').children.length,10);
+ assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 10 tanks');
+ world.tanks=world.tanks.slice(0,8);
+ advance(4);
+ assert.equal(byID('infiniteLeaderboard').children.length,8);
+ assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 8 tanks');
  infinity.close();
 });
 test('roaming room bots use the fixed difficulty or roll up to it',()=>{
@@ -761,15 +789,25 @@ test('private Infinity sends room credentials, honors keyboard remaps, and uses 
  socket.receive({type: 'welcome', id: 7, seed: 0});
  advance();
  assert.equal(socket.sent.length, 1);
- const pilot = {id: 7, name: 'Explorer', score: -1, hp: 0, x: 42, y: 42, angle: 0};
+ const pilot = {id: 7, name: 'Explorer', score: -1, hp: 0, x: 42, y: 42, angle: 0, colorIndex:0};
  socket.receive({
   type: 'state', tanks: [pilot], bullets: [], players: 2,
-  leaderboard: [{id: 9, name: '<Distant pilot>', score: 5}, pilot],
+  leaderboard: [{id: 9, name: '<Distant pilot>', score: 5, colorIndex:1}, pilot],
  });
  advance();
  assert.equal(byID('infiniteKills').textContent, 'Score -1');
  assert.match(byID('infiniteStatus').textContent, /Respawning/);
  assert.equal(byID('infiniteLeaderboard').children[0].children[0].textContent, '<Distant pilot>');
+ assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 2 tanks');
+ const distantRow=byID('infiniteLeaderboard').children[0];
+ assert.equal(distantRow.style.getPropertyValue('--tank-color'),'#ff758f');
+ assert.equal(distantRow.dataset.local,undefined);
+ assert.equal(byID('infiniteLeaderboard').children[1].dataset.local,'p1');
+ socket.receive({type:'state',tanks:[pilot],bullets:[],players:1,
+  leaderboard:[{id:9,name:'<Distant pilot>',score:5,colorIndex:4},pilot]});
+ advance(4);
+ assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 2 tanks');
+ assert.equal(byID('infiniteLeaderboard').children[0].style.getPropertyValue('--tank-color'),'#ffc46b');
  arena.emit('keydown', {code: 'KeyI'});
  arena.emit('keydown', {code: 'KeyZ'});
  assert.equal(socket.sent.at(-1).forward, true);

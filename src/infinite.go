@@ -114,11 +114,12 @@ type infiniteSnapshot struct {
 }
 
 type infiniteLeader struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Score int    `json:"score"`
-	Bot   bool   `json:"bot"`
-	Team  int    `json:"team,omitempty"`
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	Score      int    `json:"score"`
+	Bot        bool   `json:"bot"`
+	Team       int    `json:"team,omitempty"`
+	ColorIndex int    `json:"colorIndex"`
 }
 
 type infiniteRules struct {
@@ -743,7 +744,7 @@ func (a *infiniteArena) rayWallsQuery(x, y, dx, dy, radius float64, firstOnly bo
 func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 	entries = entries[:0]
 	for _, p := range a.pilots {
-		entries = append(entries, infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team})
+		entries = append(entries, infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team, ColorIndex: p.ColorIndex})
 	}
 	slices.SortFunc(entries, func(left, right infiniteLeader) int {
 		if order := cmp.Compare(right.Score, left.Score); order != 0 {
