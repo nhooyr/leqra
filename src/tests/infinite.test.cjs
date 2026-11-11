@@ -204,7 +204,7 @@ test('Infinity runs offline directly from a file and adds nearby bots to the sta
  const {infinity, byID, sockets, advance} = harness('file:///leqra/index.html');
  infinity.start('offline', {name: 'Explorer'});
  assert.equal(byID('infiniteArena').open, true);
- assert.equal(byID('infiniteKills').textContent, 'Score 0');
+ assert.equal(byID('infiniteKills').textContent, 'Score 0 (#1)');
  assert.equal(byID('infiniteLeaderboardTitle').textContent, 'Scoreboard');
  assert.equal(byID('infiniteLeaderboard').children[0].children[0].textContent, 'Explorer (you)');
  advance(90);
@@ -307,9 +307,9 @@ test('the offline Infinity leaderboard caps at ten and updates when tanks leave'
  infinity.close();
 });
 
-test('the online Infinity scoreboard title follows the arena count when the top ten stay the same', () => {
+test('the private Infinity scoreboard title follows the arena count when the top ten stay the same', () => {
  const {infinity,byID,sockets,advance}=harness();
- infinity.start('online');
+ infinity.start('online',{code:'PRIVATE',token:'secret'});
  const [socket]=sockets;
  socket.receive({type:'welcome',id:1,seed:0});
  const leaders=Array.from({length:10},(_,i)=>({id:i+1,name:'Tank '+i,score:10-i,colorIndex:i%8}));
@@ -320,6 +320,78 @@ test('the online Infinity scoreboard title follows the arena count when the top 
   assert.equal(byID('infiniteLeaderboard').children.length,10);
   assert.equal(byID('infiniteLeaderboardTitle').textContent,count>10?'Top 10 tanks':'Scoreboard');
  }
+ infinity.close();
+});
+
+test('public Infinity always shows Top 10 Tanks and only includes local tanks that rank there', () => {
+ const {infinity,byID,sockets,advance}=harness();
+ infinity.start('online',{localName:'Wingmate'});
+ const [socket]=sockets;
+ socket.receive({type:'welcome',id:1,localId:2,seed:0});
+ const local=[1,2].map(id=>({id,name:'Local '+id,score:-1,hp:1,x:42*id,y:42,angle:0}));
+ const leaders=Array.from({length:10},(_,i)=>({id:i+100,name:'Leader '+i,score:100-i,colorIndex:i%8}));
+ for(const count of [2,10,12]){
+  socket.receive({type:'state',tanks:local,bullets:[],players:2,tankCount:count,leaderboard:[...leaders,...local]});
+  advance(4);
+  assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 10 Tanks');
+  const rows=byID('infiniteLeaderboard').children;
+  assert.equal(rows.length,10);
+  assert.ok(rows.every(row=>row.dataset.local===undefined));
+  assert.deepEqual(rows.map(row=>row.children[0].textContent),leaders.map(tank=>tank.name));
+ }
+ socket.receive({type:'state',tanks:local,bullets:[],players:2,tankCount:2,leaderboard:local});
+ advance(4);
+ assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 10 Tanks');
+ assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>row.dataset.local),['p1','p2']);
+ infinity.close();
+});
+
+test('online Infinity shows each local score and global rank outside the top ten',()=>{
+ for(const room of [false,true]){
+  const {infinity,byID,sockets,advance}=harness();
+  infinity.start('online',{localName:'Wingmate',...(room?{code:'PRIVATE',token:'secret'}:{})});
+  const [socket]=sockets;
+  socket.receive({type:'welcome',id:1,localId:2,seed:0});
+  const tanks=[1,2].map((id,i)=>({id,name:'Local '+id,score:-2+i,rank:12-i,hp:1,x:42*id,y:42,angle:0}));
+  const leaders=Array.from({length:10},(_,i)=>({id:i+100,name:'Leader '+i,score:100-i}));
+  socket.receive({type:'state',tanks,bullets:[],players:2,tankCount:12,leaderboard:leaders});
+  advance(4);
+  assert.equal(byID('infiniteKills').textContent,'P1 -2 (#12) · P2 -1 (#11)');
+  assert.ok(byID('infiniteLeaderboard').children.every(row=>row.dataset.local===undefined));
+  tanks[0].score=200;tanks[0].rank=1;tanks[1].rank=12;
+  socket.receive({type:'state',tanks,bullets:[],players:2,tankCount:12,leaderboard:[tanks[0],...leaders.slice(0,9)]});
+  advance(4);
+  assert.equal(byID('infiniteKills').textContent,'P1 200 (#1) · P2 -1 (#12)');
+  assert.equal(byID('infiniteLeaderboard').children[0].dataset.local,'p1');
+  infinity.close();
+ }
+ const {infinity,byID,sockets,advance}=harness();
+ infinity.start('online');
+ const [socket]=sockets;
+ socket.receive({type:'welcome',id:1,seed:0});
+ socket.receive({type:'state',tanks:[{id:1,score:7,rank:23,hp:1,x:42,y:42,angle:0}],bullets:[],players:1,leaderboard:[]});
+ advance(4);
+ assert.equal(byID('infiniteKills').textContent,'Score 7 (#23)');
+ infinity.close();
+});
+
+test('offline Infinity local ranks follow the full scoreboard including ties and deaths',()=>{
+ const {infinity,state,byID,advance}=harness(undefined,true);
+ infinity.start('offline',{localName:'Wingmate',roomRules:{teamMode:'ffa'},roster:
+  Array.from({length:11},(_,id)=>({id,kind:'bot',name:'Bot '+id}))});
+ const world=state(),[first,second,...bots]=world.tanks;
+ world.nextPickup=world.nextBot=Infinity;
+ first.invulnerable=second.invulnerable=1000;
+ first.score=-2;second.score=-1;
+ bots.forEach(bot=>{bot.score=10;bot.hp=0;bot.respawn=1000;});
+ advance(4);
+ assert.equal(byID('infiniteKills').textContent,'P1 -2 (#13) · P2 -1 (#12)');
+ first.score=second.score=10;
+ advance(4);
+ assert.equal(byID('infiniteKills').textContent,'P1 10 (#1) · P2 10 (#2)');
+ first.score=-1;first.hp=0;first.respawn=1000;
+ advance(4);
+ assert.equal(byID('infiniteKills').textContent,'P1 -1 (#13) · P2 10 (#1)');
  infinity.close();
 });
 
@@ -334,6 +406,82 @@ test('roaming room bots use the fixed difficulty or roll up to it',()=>{
   assert.ok(bots.length>0 && bots.every(bot=>bot.ambient&&bot.difficulty===expected));
   infinity.close();
  }
+});
+
+test('offline Infinity keeps eight roaming bot identities through relocation and respawn',()=>{
+ const {infinity,state,advance}=harness(undefined,true);
+ infinity.start('offline');
+ const world=state(),pilot=world.tanks[0];
+ world.nextPickup=Infinity;
+ pilot.invulnerable=10000;
+ for(let i=0;i<20;i++){world.nextBot=0;advance();}
+ const bots=world.tanks.filter(tank=>tank.ambient);
+ assert.equal(bots.length,8);
+ assert.deepEqual(Array.from(bots,bot=>bot.name),Array.from({length:8},(_,i)=>'Bot '+(i+1)));
+ const ids=Array.from(bots,bot=>bot.id),serial=world.lastBot;
+ bots[0].score=7;
+ pilot.x=pilot.y=10000;
+ world.nextBot=0;
+ advance();
+ assert.deepEqual(Array.from(world.tanks.filter(tank=>tank.ambient),bot=>bot.id),ids);
+ assert.equal(world.lastBot,serial);
+ assert.equal(bots[0].score,7);
+ assert.ok(bots.every(bot=>Math.hypot(bot.x-pilot.x,bot.y-pilot.y)<7*84));
+ const bot=bots[0],spawn=bot.spawnSerial;
+ bot.x=pilot.x+15*84;bot.y=pilot.y+15*84;
+ world.nextBot=0;
+ advance();
+ assert.equal(bot.spawnSerial,spawn,'a diagonally distant bot is still inside the protected view square');
+ Object.assign(bot,{hp:0,respawn:1,score:6});
+ world.nextBot=Infinity;
+ pilot.x=pilot.y=20000;
+ advance(59);
+ assert.equal(bot.hp,0);
+ advance();
+ assert.equal(bot.hp,1);
+ assert.equal(bot.id,ids[0]);
+ assert.equal(bot.name,'Bot 1');
+ assert.equal(bot.score,6);
+ assert.ok(Math.hypot(bot.x-pilot.x,bot.y-pilot.y)<6*84);
+ infinity.close();
+});
+
+test('offline Infinity pools surplus bots without losing identity, death timers, or late kill credit',()=>{
+ const {infinity,state,advance}=harness(undefined,true);
+ infinity.start('offline',{localName:'Wingmate'});
+ const world=state(),[pilot,second]=world.tanks,secondSeat=world.local;
+ world.nextPickup=Infinity;
+ pilot.invulnerable=second.invulnerable=10000;
+ for(let i=0;i<32;i++){world.nextBot=0;advance();}
+ const bots=world.tanks.filter(tank=>tank.ambient),serial=world.lastBot;
+ assert.equal(bots.length,16);
+ const pooledDead=bots[8];
+ Object.assign(pooledDead,{hp:0,respawn:1,score:3});
+ world.tanks=world.tanks.filter(tank=>tank!==second);
+ world.controllers.pop();world.local=null;
+ world.nextBot=Infinity;
+ advance();
+ assert.equal(world.tanks.filter(tank=>tank.ambient).length,8);
+ assert.equal(world.botPool.length,8);
+ assert.ok(world.botPool.includes(pooledDead));
+ const target=bots[0];
+ Object.assign(target,{x:20000,y:20000,invulnerable:0});
+ world.bullets.push({id:999,kind:'cannon',owner:pooledDead.id,ownerName:pooledDead.name,team:0,
+  x:target.x-40,y:target.y,vx:1128,vy:0,r:14,life:1,age:.2,bounces:0,trail:[]});
+ advance();
+ assert.equal(target.hp,0);
+ assert.equal(pooledDead.score,4);
+ advance(65);
+ world.local=secondSeat;world.controllers.push(secondSeat);world.tanks.splice(1,0,second);
+ for(let i=0;i<20;i++){world.nextBot=0;advance();}
+ assert.equal(world.tanks.filter(tank=>tank.ambient).length,16);
+ assert.equal(world.botPool.length,0);
+ assert.equal(world.lastBot,serial);
+ assert.ok(world.tanks.includes(pooledDead));
+ assert.equal(pooledDead.hp,1,'pooled death time elapses before reactivation');
+ assert.equal(pooledDead.score,4);
+ assert.equal(pooledDead.name,'Bot 9');
+ infinity.close();
 });
 
 test('offline room Infinity passes allied tanks and freezes on the first team score target', () => {
@@ -392,7 +540,7 @@ test('offline Infinity awards the kill and keeps the death penalty after respawn
  const status = byID('infiniteStatus');
  for (let i = 0; i < 480 && !status.textContent.includes('Respawning'); i++) advance();
  assert.match(status.textContent, /Respawning/);
- assert.equal(byID('infiniteKills').textContent, 'Score -1');
+ assert.equal(byID('infiniteKills').textContent, 'Score -1 (#2)');
  const rows = byID('infiniteLeaderboard').children;
  assert.deepEqual(rows[0].children.map(cell => cell.textContent), ['Bot 1', 1]);
  assert.deepEqual(rows[1].children.map(cell => cell.textContent), ['Saved pilot (you)', -1]);
@@ -401,7 +549,7 @@ test('offline Infinity awards the kill and keeps the death penalty after respawn
  assert.equal(notice.hidden,false);
  advance(64);
  assert.match(status.textContent, /Weapons live/);
- assert.equal(byID('infiniteKills').textContent, 'Score -1');
+ assert.equal(byID('infiniteKills').textContent, 'Score -1 (#2)');
  assert.equal(notice.hidden,true);
 });
 

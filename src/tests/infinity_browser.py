@@ -42,6 +42,12 @@ def expect_pilots(page, count):
     expect(page.locator("#infiniteStatus")).to_contain_text(re.compile(rf"\b{count} online\b"))
 
 
+def expect_score_rank(page, split=False):
+    score = r"-?\d+ \(#[1-9]\d*\)"
+    pattern = rf"^P1 {score} · P2 {score}$" if split else rf"^Score {score}$"
+    expect(page.locator("#infiniteKills")).to_have_text(re.compile(pattern))
+
+
 def standings(page):
     panel = page.locator("#infiniteLeaderboardPanel")
     if panel.get_attribute("open") is None:
@@ -200,10 +206,13 @@ def check_public(browser, url, errors):
             expect(page.get_by_role("button", name=re.compile(r"^play$", re.IGNORECASE))).to_have_count(1)
         with host.expect_websocket(predicate=lambda ws: ws.url.endswith("/ws/infinite")) as connection:
             host.locator("#startRoomBtn").click()
+        expect_pilots(host, 1)
+        expect(host.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
         guest.locator("#startRoomBtn").click()
         for page in (host, guest):
             expect_pilots(page, 2)
-            expect(page.locator("#infiniteKills")).to_have_text("Score 0")
+            expect_score_rank(page)
+            expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
             leaders = standings(page)
             expect(leaders).to_contain_text("PUBLIC HOST")
             expect(leaders).to_contain_text("PUBLIC GUEST")
@@ -214,6 +223,7 @@ def check_public(browser, url, errors):
         expect(host.locator("#infiniteArena")).to_be_hidden()
         expect(host.locator("#startRoomBtn")).to_be_focused()
         expect_pilots(guest, 1)
+        expect(guest.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
         host.locator("#infinityToggleLabel").click()
         expect(host.locator("#infinityToggle")).not_to_be_checked()
         host.locator("#startRoomBtn").click()
@@ -236,7 +246,7 @@ def check_offline(browser, errors):
         page.locator("#startRoomBtn").tap()
         expect(page.locator("#infiniteArena")).to_be_visible()
         expect(page.locator("#infiniteStatus")).to_contain_text(re.compile(r"\b[1-7] bots\b"))
-        expect(page.locator("#infiniteKills")).to_have_text("Score 0")
+        expect_score_rank(page)
         panel = page.locator("#infiniteLeaderboardPanel")
         panel.locator("summary").tap()
         expect(panel.locator("#infiniteLeaderboard")).to_contain_text("OFFLINE PILOT (you)")
@@ -286,7 +296,7 @@ def check_audio(browser, errors):
 
 
 def check_pause_sidebar(browser, url, errors):
-    for width, height, touch in ((1280, 900, False), (390, 844, True), (320, 568, True), (568, 320, True)):
+    for width, height, touch in ((1560, 900, False), (1280, 900, False), (1000, 800, False), (390, 844, True), (320, 568, True), (568, 320, True)):
         with browser.new_context(viewport={"width": width, "height": height}, is_mobile=touch, has_touch=touch) as context:
             context.add_init_script("localStorage.setItem('leqra.sidebarHidden','1')")
             page = load(context, url, "SIDEBAR PILOT", errors)
@@ -312,6 +322,20 @@ def check_pause_sidebar(browser, url, errors):
             expect(sidebar.locator("#manualContent")).to_contain_text("Player 2")
             expect(sidebar.locator("#manualContent .warning")).to_contain_text("INFINITY")
             expect(sidebar.locator(".power-row")).to_have_count(10)
+            layout = page.locator("#infinitePauseMenu").evaluate("""menu => {
+                const box = node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};};
+                return {sidebar:box(menu.querySelector('#infinitePauseSidebar')),card:box(menu.querySelector('.screen-card')),layout:box(menu.querySelector('.infinite-pause-layout'))};
+            }""")
+            if not touch:
+                expected_width = 239 if width <= 1150 else 266
+                assert abs(layout["sidebar"]["right"] - (width - 14)) <= 1, layout
+                assert abs(layout["sidebar"]["width"] - expected_width) <= 1, layout
+                gap = 15 if width <= 1150 else 20
+                card_center = (layout["card"]["left"] + layout["card"]["right"]) / 2
+                arena_center = (layout["layout"]["left"] + layout["sidebar"]["left"] - gap) / 2
+                assert abs(card_center - arena_center) <= 1, layout
+            else:
+                assert layout["sidebar"]["top"] >= layout["card"]["bottom"], layout
             note = sidebar.locator(".power-note")
             note.scroll_into_view_if_needed()
             expect(note).to_be_in_viewport()
@@ -407,6 +431,8 @@ def check_private(browser, url, errors):
             expect(page.locator("#infiniteTeamScores")).to_contain_text("Orcas")
         expect(host.locator("#infiniteLocalLoadout")).to_be_visible()
         expect(guest.locator("#infiniteLocalLoadout")).to_be_hidden()
+        expect_score_rank(host, split=True)
+        expect_score_rank(guest)
         welcome = next(json.loads(frame) for frame in host_frames if is_packet(frame, "welcome"))
         guest_welcome = next(json.loads(frame) for frame in guest_frames if is_packet(frame, "welcome"))
         assert welcome["id"] != welcome["localId"]
@@ -504,6 +530,76 @@ def check_private(browser, url, errors):
     print("PASS private teams, P2 input and removal, automatic reconnect and reload, public isolation, exit and end", flush=True)
 
 
+def check_rank_outside_leaders(browser, url, errors):
+    with browser.new_context() as context:
+        page = load(context, url, "RANKED PILOT", errors)
+        page.evaluate("""async () => {
+            const url = new URL('/ws/infinite', location.href);
+            url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            window.rankPeers = [];
+            await Promise.all(Array.from({length:11}, (_, index) => new Promise((resolve, reject) => {
+                const socket = new WebSocket(url);
+                rankPeers.push(socket);
+                const timer = setTimeout(() => reject(Error('Rank fixture pilot did not join')), 5000);
+                socket.onopen = () => socket.send(JSON.stringify({type:'join',version:leqra.version,name:'RANK PEER '+index}));
+                socket.onerror = () => {clearTimeout(timer);reject(Error('Rank fixture connection failed'));};
+                socket.onmessage = event => {
+                    const packet = JSON.parse(event.data);
+                    if (packet.type === 'welcome') {clearTimeout(timer);resolve();}
+                    else if (packet.type === 'error') {clearTimeout(timer);reject(Error(packet.message));}
+                };
+            })));
+        }""")
+        page.locator("#startRoomBtn").click()
+        expect_pilots(page, 12)
+        expect_score_rank(page)
+        score = page.locator("#infiniteKills").inner_text()
+        rank = int(re.search(r"#(\d+)", score).group(1))
+        assert rank > 10, score
+        leaders = standings(page)
+        expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
+        expect(leaders.locator("li")).to_have_count(10)
+        expect(leaders).not_to_contain_text("RANKED PILOT")
+        page.locator("#infinitePauseBtn").click()
+        page.locator("#infiniteExit").click()
+        page.evaluate("rankPeers.forEach(socket => socket.close())")
+    print("PASS personal rank stays visible below the global top ten", flush=True)
+
+
+def check_mobile_ranks(browser, url, errors):
+    for width in (320, 390):
+        with browser.new_context(viewport={"width": width, "height": 844}, is_mobile=True, has_touch=True) as context:
+            page = load(context, url, "RANK PILOT", errors)
+            page.locator("#startRoomBtn").tap()
+            expect_pilots(page, 1)
+            expect_score_rank(page)
+            expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
+            for split in (False, True):
+                if split:
+                    page.locator("#infinitePauseBtn").tap()
+                    page.locator("#infiniteExit").tap()
+                    select_room_infinity(page)
+                    page.locator("#roomPlayers > summary").tap()
+                    page.locator("#addLocalBtn").tap()
+                    page.locator("#copyInviteBtn").tap()
+                    page.wait_for_function("() => !!leqra.getState().online?.connected")
+                    page.locator("#startRoomBtn").tap()
+                    expect_pilots(page, 2)
+                    expect_score_rank(page, split=True)
+                    expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Scoreboard")
+                layout = page.locator("#infiniteArena .infinite-header").evaluate("""header => {
+                    const box = node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
+                    return {header:box(header),title:box(header.querySelector('.arena-title')),items:[...header.querySelectorAll('.bar-right > *')].filter(node=>node.getClientRects().length).map(box),width:innerWidth,overflow:header.scrollWidth>header.clientWidth};
+                }""")
+                assert not layout["overflow"] and layout["header"]["right"] <= width + 1, layout
+                assert layout["title"]["right"] <= layout["items"][0]["left"] + 1, layout
+                for previous, current in zip(layout["items"], layout["items"][1:]):
+                    assert previous["right"] <= current["left"] + 1, layout
+                assert all(0 <= item["left"] < item["right"] <= width + 1 for item in layout["items"]), layout
+                assert page.locator("#infiniteArena").evaluate("node => node.scrollWidth <= node.clientWidth + 1")
+    print("PASS solo and private P2 ranks fit 320px and 390px online headers", flush=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", nargs="?", default=os.environ.get("LEQRA_URL", "http://localhost:8080"))
@@ -518,6 +614,8 @@ if __name__ == "__main__":
             check_audio(browser, errors)
             check_pause_sidebar(browser, url, errors)
             check_private(browser, url, errors)
+            check_rank_outside_leaders(browser, url, errors)
+            check_mobile_ranks(browser, url, errors)
         finally:
             browser.close()
     assert not errors, errors

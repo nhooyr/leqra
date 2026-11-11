@@ -44,7 +44,7 @@ const PROJECTILES = Object.freeze({
  laser: {r: 3, cooldown: .85},
 });
 const TAU = Math.PI * 2;
-const MAX_BOTS = 7;
+const MAX_BOTS = 24, BOTS_PER_PLAYER = 8;
 const RECONNECT_WINDOW = 18000, SNAPSHOT_TIMEOUT = 2500;
 const ROOM_RESUME_KEY = 'leqra.infinityResume.v1';
 const BOT_LEVELS = ['easy','normal','hard','godlike'];
@@ -227,7 +227,7 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
  target.alive = false;
  target.respawn = RESPAWN_DELAY;
  target.score--;
- const owner = world.tanks.find(tank => tank.id === ownerID);
+ const owner = world.tanks.find(tank => tank.id === ownerID) || world.botPool?.find(tank => tank.id === ownerID);
  target.killedBy = owner?.name || ownerName || 'an unknown tank';
  if (owner) owner.score++;
  if (target.team) world.teamScores[target.team - 1]--;
@@ -505,36 +505,72 @@ function populatePickups(world, locals, dt) {
  }
 }
 
+function respawnOfflineTank(world, tank, point) {
+ const fresh = makeTank(tank.id, point.x, point.y, tank.bot);
+ const fireHeld = !tank.bot && inputState(tank.id === world.local?.id ? world.local : world).fire;
+ Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
+  spawnSerial: tank.spawnSerial + 1, killedBy: '', power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
+  ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});
+}
+
+function populateBots(world, locals) {
+ const limit = Math.min(MAX_BOTS, locals.length * BOTS_PER_PLAYER);
+ if (world.botBudget !== limit) {
+  let count = 0;
+  world.tanks = world.tanks.filter(tank => {
+   if (!tank.ambient || ++count <= limit) return true;
+   tank.pooledAt = world.time;
+   world.botPool.push(tank);
+   return false;
+  });
+  world.botBudget = limit;
+ }
+ if (world.time < world.nextBot) return;
+ world.nextBot = world.time + between(1.2, 3.4);
+ const living = locals.filter(tank => tank.hp);
+ if (!living.length) return;
+ const roaming = world.tanks.filter(tank => tank.ambient);
+ for (const bot of roaming) {
+  if (!bot.hp || locals.some(pilot => Math.abs(pilot.x-bot.x) <= CELL*16 && Math.abs(pilot.y-bot.y) <= CELL*16)) continue;
+  const pilot = living[Math.floor(Math.random()*living.length)];
+  const point = clearCell(world, pilot, 3 * CELL, 6 * CELL, 1.9 * CELL);
+  if (point) respawnOfflineTank(world,bot,point);
+ }
+ if (roaming.length >= limit) return;
+ const pilot = living[roaming.length % living.length];
+ const point = clearCell(world, pilot, 3 * CELL, 6 * CELL, 1.9 * CELL);
+ if (!point) return;
+ const pooled = world.botPool.shift();
+ if (pooled) {
+  if (pooled.hp) respawnOfflineTank(world,pooled,point);
+  else pooled.respawn = Math.max(0,pooled.respawn-(world.time-pooled.pooledAt));
+  delete pooled.pooledAt;
+  world.tanks.push(pooled);
+  return;
+ }
+ let number = 1;
+ while (roaming.some(bot => bot.botNumber === number)) number++;
+ const bot = makeTank('bot-' + ++world.lastBot,point.x,point.y,true);
+ Object.assign(bot,{ambient:true,botNumber:number,name:'Bot '+number,difficulty:roamingDifficulty(world.rules)});
+ applyTankAppearance(world,bot);
+ world.tanks.push(bot);
+}
+
 function offlineStep(world, dt) {
  world.time += dt;
  const locals = world.tanks.slice(0, world.controllers.length);
- if (!world.rules || world.rules.infinityRandomBots) {
-  world.tanks = world.tanks.filter(tank => !tank.ambient || locals.some(pilot=>Math.hypot(pilot.x-tank.x,pilot.y-tank.y)<CELL*16));
-  if (world.time >= world.nextBot && world.tanks.filter(tank=>tank.ambient).length < MAX_BOTS) {
-   const pilot = locals[world.lastBot % locals.length];
-   const point = clearCell(world, pilot, 2.4 * CELL, 5.7 * CELL, 1.9 * CELL);
-   if (point) {
-    const bot = makeTank('bot-' + ++world.lastBot,point.x,point.y,true);
-    bot.ambient = true;
-    bot.difficulty = roamingDifficulty(world.rules);
-    applyTankAppearance(world,bot);
-    world.tanks.push(bot);
-   }
-   world.nextBot = world.time + between(1.2, 3.4);
-  }
- }
+ if (!world.rules || world.rules.infinityRandomBots) populateBots(world,locals);
  populatePickups(world, locals, dt);
  for (const tank of world.tanks) {
   if (!tank.hp) {
    tank.respawn -= dt;
    if (tank.respawn <= 1e-9) {
-    const point = clearCell(world, tank, 2 * CELL, 5 * CELL, 1.9 * CELL);
+    const origin = tank.ambient ? locals.filter(pilot=>pilot.hp).sort((a,b)=>
+     Math.hypot(a.x-tank.x,a.y-tank.y)-Math.hypot(b.x-tank.x,b.y-tank.y))[0] : tank;
+    if (!origin) continue;
+    const point = clearCell(world, origin, 2 * CELL, 5 * CELL, 1.9 * CELL);
     if (point) {
-     const fresh = makeTank(tank.id, point.x, point.y, tank.bot);
-     const fireHeld = !tank.bot && inputState(tank.id === world.local?.id ? world.local : world).fire;
-     Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
-      spawnSerial: tank.spawnSerial + 1, killedBy: '', power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
-      ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});
+     respawnOfflineTank(world,tank,point);
     }
    }
    continue;
@@ -814,15 +850,20 @@ function drawEffects(world, now) {
 }
 
 function renderScores(world, pilot, second) {
+ const standings = world.online ? world.leaderboard :
+  [...world.tanks].sort((a, b) => b.score - a.score || Number(a.bot) - Number(b.bot));
+ const score = tank => {
+  const rank = world.online ? tank?.rank : standings.indexOf(tank) + 1;
+  return `${tank?.score ?? 0}${rank > 0 ? ` (#${rank})` : ''}`;
+ };
  if (personalScore) {
-  const count = world.local ? `P1 ${pilot?.score ?? 0} · P2 ${second?.score ?? 0}` : 'Score ' + (pilot?.score ?? 0);
+  const count = world.local ? `P1 ${score(pilot)} · P2 ${score(second)}` : 'Score ' + score(pilot);
   if (personalScore.textContent !== count) personalScore.textContent = count;
  }
  if (!leaderboard) return;
- const entries = world.online ? world.leaderboard :
-  [...world.tanks].sort((a, b) => b.score - a.score || Number(a.bot) - Number(b.bot)).slice(0, 10);
+ const entries = standings.slice(0, 10);
  const tankCount = world.online ? world.tankCount ?? entries.length : world.tanks.length;
- const title = tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
+ const title = world.online && !world.room ? 'Top 10 Tanks' : tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
  const rows = entries.map(tank => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
   return [tank.name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0]];
@@ -1368,7 +1409,7 @@ function start(mode, options = {}) {
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,
   rules:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
-  time:0,nextBot:between(.4,1.2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,
+  time:0,nextBot:between(.4,1.2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,botPool:[],botBudget:0,
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
  const world = session;
