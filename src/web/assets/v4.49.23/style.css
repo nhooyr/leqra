@@ -852,15 +852,17 @@ body .infinite-header .icon-btn{width:44px;height:44px;flex:none}
 #infiniteKills{min-width:0;white-space:normal;overflow-wrap:anywhere;color:var(--accent-ink);font:700 12px var(--mono);font-variant-numeric:tabular-nums}
 .infinite-pause-menu:not([open]){display:none}
 body .infinite-pause-menu[open]{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;color:var(--text);padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
-.infinite-pause-layout{display:grid;grid-template-columns:minmax(0,410px) minmax(0,300px);gap:20px;width:100%;max-width:730px;margin:auto;align-items:center;flex-shrink:0}
+.infinite-pause-layout{display:grid;grid-template-columns:minmax(0,1fr) 266px;gap:20px;width:100%;margin:auto;align-items:center;flex-shrink:0}
 .infinite-pause-sidebar{max-height:calc(100dvh - max(12px,env(safe-area-inset-top)) - max(12px,env(safe-area-inset-bottom)));overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
-.infinite-pause-menu .infinite-pause-layout>.screen-card{max-width:none;margin:0}
+.infinite-pause-menu .infinite-pause-layout>.screen-card{max-width:410px;margin:0;justify-self:center}
 #infinitePauseSidebar .sidebar{display:flex;overflow:visible}
 #infinitePauseSidebar .infinite-leaderboard{position:static;width:100%;max-height:none;overflow:visible}
 #infinitePauseSidebar .fixed-maze-panel,#infinitePauseSidebar .log-panel{display:none}
 #infinitePauseSidebar .manual-line{gap:8px;flex-wrap:wrap}
 #infinitePauseSidebar .manual-line kbd{white-space:normal;overflow-wrap:anywhere}
-@media(max-width:920px){.infinite-pause-layout{grid-template-columns:minmax(0,1fr);max-width:650px;gap:14px;align-items:start}.infinite-pause-sidebar{max-height:none;overflow:visible}}
+@media(min-width:921px){body .infinite-pause-menu[open]{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}}
+@media(min-width:921px) and (max-width:1150px){.infinite-pause-layout{grid-template-columns:minmax(0,1fr) 239px;gap:15px}}
+@media(max-width:920px){.infinite-pause-layout{grid-template-columns:minmax(0,1fr);max-width:650px;gap:14px;align-items:start}.infinite-pause-menu .infinite-pause-layout>.screen-card{max-width:none}.infinite-pause-sidebar{max-height:none;overflow:visible}}
 .infinite-pause-menu::backdrop{background:transparent}
 .infinite-arena[data-mode=online] .infinite-pause-offline,.infinite-arena[data-mode=offline] .infinite-pause-online{display:none}
 body.touch-ui .infinite-pause-menu :is(.primary,.secondary){min-height:44px}

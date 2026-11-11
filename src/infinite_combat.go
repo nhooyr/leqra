@@ -479,14 +479,10 @@ func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam i
 	target.respawn = a.tick + infiniteRespawnTicks
 	target.KilledBy = ownerName
 	a.effect("hit", target.X, target.Y, owner, nil)
-	var shooter *infinitePilot
-	for _, pilot := range a.pilots {
-		if pilot.ID == owner {
-			pilot.Score++
-			target.KilledBy = pilot.Name
-			shooter = pilot
-			break
-		}
+	shooter := a.pilotByID(owner)
+	if shooter != nil {
+		shooter.Score++
+		target.KilledBy = shooter.Name
 	}
 	if a.teams() {
 		if target.Team > 0 {

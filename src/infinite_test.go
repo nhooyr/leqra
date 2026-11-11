@@ -323,7 +323,7 @@ func TestInfiniteSnapshotIncludesVisibleGuidedProjectileLocks(t *testing.T) {
 	}
 }
 
-func TestInfiniteProjectileReportsCulledBotCallsign(t *testing.T) {
+func TestInfiniteProjectileReportsRelocatedBotCallsign(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	c := fakeClient()
 	target := a.join(c, "Pilot", time.Now())
@@ -336,12 +336,11 @@ func TestInfiniteProjectileReportsCulledBotCallsign(t *testing.T) {
 	if len(a.bullets) != 1 {
 		t.Fatal("expected a live projectile before culling the bot")
 	}
-	shooter.X = target.X + 14*cellSize
+	shooter.X = target.X + 17*cellSize
+	spawn := shooter.Spawn
 	a.populate()
-	for _, pilot := range a.pilots {
-		if pilot == shooter {
-			t.Fatal("roaming bot was not culled")
-		}
+	if a.pilotByID(shooter.ID) != shooter || shooter.Spawn != spawn+1 || shooter.Name != "RUST" {
+		t.Fatal("distant roaming bot did not relocate with its original identity")
 	}
 	if a.advanceBullet(&a.bullets[0], 100, 0) || target.HP != 0 {
 		t.Fatal("expected the surviving projectile to kill the pilot")
@@ -1013,6 +1012,84 @@ func TestInfiniteSnapshotSharesOnlyEqualVisibility(t *testing.T) {
 	}
 	if len(nearState.Pickups) != 1 || len(edgeState.Pickups) != 0 || len(edgeState.Tanks) != 4 || len(edgeState.Bullets) != 30 {
 		t.Fatal("sharing snapshots changed the viewport at the edge of sight")
+	}
+	for i, tank := range nearState.Tanks {
+		if tank.Rank != tank.ID || edgeState.Tanks[i].Rank != tank.Rank {
+			t.Fatal("shared views lost the global human ranks")
+		}
+	}
+}
+
+func TestInfiniteSnapshotRanksBothLocalHumansBeyondTheTopTen(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	now := time.Unix(0, 0)
+	c := fakeClient()
+	primary, local := a.joinSeats(c, infiniteSeat{name: "P1"}, &infiniteSeat{name: "P2"}, 0, now)
+	otherClient := fakeClient()
+	other := a.join(otherClient, "Other", now)
+	reserved := a.join(fakeClient(), "Reserved", now)
+	a.suspend(reserved)
+	primary.X, primary.Y, local.X, local.Y, other.X, other.Y = 0, 0, 0, 0, 0, 0
+	local.HP, local.respawn = 0, a.tick+infiniteRespawnTicks
+	reserved.X, reserved.Y = 2*infiniteSight, 0
+	for i := range 12 {
+		bot := a.addPilot(fmt.Sprintf("Bot %d", i+1), true, 0, 0, 0, 0)
+		bot.Score, bot.X, bot.Y = 100+i, 2*infiniteSight, 0
+		if i == 0 {
+			bot.X = 0 // Visible bots still omit the human-only rank field.
+		}
+		if i == 11 {
+			bot.HP = 0 // Respawning competitors remain in the standings.
+		}
+	}
+	a.inactiveBots = append(a.inactiveBots, &infinitePilot{infiniteTank: infiniteTank{ID: 999, Bot: true, Score: 999}})
+	drain(c)
+	drain(otherClient)
+	for pass := range 2 {
+		wantRanks := map[int]int{primary.ID: 13, local.ID: 14, other.ID: 15}
+		if pass == 1 {
+			primary.Score, local.Score = 250, 250
+			wantRanks[primary.ID], wantRanks[local.ID] = 1, 2
+			for i, j := 0, len(a.pilots)-1; i < j; i, j = i+1, j-1 {
+				a.pilots[i], a.pilots[j] = a.pilots[j], a.pilots[i]
+			}
+		}
+		leaders := a.leaderboard(nil)
+		a.broadcast()
+		for _, client := range []*Client{c, otherClient} {
+			var packet struct {
+				Tanks []struct {
+					ID   int  `json:"id"`
+					Bot  bool `json:"bot"`
+					Rank *int `json:"rank"`
+				} `json:"tanks"`
+				Leaders []infiniteLeader `json:"leaderboard"`
+			}
+			if err := json.Unmarshal(<-client.send, &packet); err != nil {
+				t.Fatal(err)
+			}
+			seen := 0
+			for _, tank := range packet.Tanks {
+				if tank.Bot {
+					if tank.Rank != nil {
+						t.Fatal("bot wire unexpectedly contains a rank")
+					}
+					continue
+				}
+				if tank.Rank == nil || *tank.Rank != wantRanks[tank.ID] {
+					t.Fatalf("human %d rank=%v, want %d", tank.ID, tank.Rank, wantRanks[tank.ID])
+				}
+				seen++
+			}
+			if seen != 3 || len(packet.Leaders) != infiniteLeaderCount {
+				t.Fatal("snapshot lost a local rank or changed the top-ten limit")
+			}
+			for i, leader := range packet.Leaders {
+				if leader != leaders[i] {
+					t.Fatal("human rank changed the global top-ten ordering")
+				}
+			}
+		}
 	}
 }
 
