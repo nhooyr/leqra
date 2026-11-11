@@ -22,7 +22,9 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   clientHeight = 740;
   open = false;
   parentElement = null;
-  textContent = '';
+  _textContent = '';
+  get textContent() { return this.children.length ? this._textContent + this.children.map(child=>child.textContent).join('') : this._textContent; }
+  set textContent(value) { this.replaceChildren(); this._textContent = value; }
   closest() { return false; }
   setAttribute() {}
   getContext() {
@@ -52,7 +54,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
    this.children.splice(index,0,child);child.parentElement=this;
   }
   append(...children) {for(const child of children)this.insertBefore(child,null);}
-  replaceChildren(...children) {for(const child of [...this.children])child.remove();this.append(...children);}
+  replaceChildren(...children) {this._textContent='';for(const child of [...this.children])child.remove();this.append(...children);}
  }
  const sockets = [];
  class WebSocket extends Element {
@@ -79,8 +81,10 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
  const sounds = [], loadouts = [], markers = [], combatPrefs = {visual:true,audio:true,fps:false};
- const sidebarHome = {}, sidebarMoves = [];
+ let chatOpen = false;
+ const sidebarHome = {}, sidebarMoves = [], headerHome = {}, headerMoves = [];
  let sidebarParent = sidebarHome;
+ let headerParent = headerHome;
  const powers = Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman']
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
@@ -95,8 +99,11 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   primeAudioUnlock() {}, touchPolicy() {}, grenadeDragFactor: () => 1,
   missileTurn: 4.8,
   openControls: () => byID('controlsDialog').showModal(),
+  chatOpen: () => chatOpen,
   mountSidebar: container => {sidebarParent = container;sidebarMoves.push('mount');},
   restoreSidebar: container => {if(sidebarParent===container){sidebarParent=sidebarHome;sidebarMoves.push('restore');}},
+  mountHeader: container => {headerParent=container;headerMoves.push('mount');},
+  restoreHeader: container => {if(headerParent===container){headerParent=headerHome;headerMoves.push('restore');}},
   isTouchUI: () => false,
   toggleFullscreen: () => sounds.push('fullscreen'),
   toggleSound: () => sounds.push('mute'),
@@ -165,6 +172,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   })};
  }
  vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.leqraInfinity ='), context);
+ byID('pauseBtn').addEventListener('click',()=>window.leqraInfinity.togglePause());
  const advance = (frames = 1) => {
   for (let i = 0; i < frames; i++) {
    now += 1000 / 60;
@@ -184,7 +192,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   }
   now = until;
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;}};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
 }
 
 test('explicit Infinity exits restore launcher focus while forced closure keeps the current focus', () => {
@@ -198,6 +206,46 @@ test('explicit Infinity exits restore launcher focus while forced closure keeps 
  start();launcher.disabled = true;byID('infiniteExit').emit('click');assert.equal(focused,0);
  start();launcher.disabled = false;byID('infiniteExit').emit('click');assert.equal(focused,1);
  start();byID('infiniteResultExit').emit('click');assert.equal(focused,2);
+});
+
+test('Infinity borrows the shared header and restores it after every exit path',()=>{
+ const h=harness();
+ for(const exit of [()=>h.infinity.close(),()=>h.byID('infiniteExit').emit('click'),()=>h.byID('infiniteArena').close()]){
+  h.infinity.start('offline');
+  assert.equal(h.headerParent,h.byID('infiniteHeader'));
+  h.byID('pauseBtn').emit('click');
+  assert.equal(h.byID('infinitePauseMenu').open,true);
+  h.infinity.togglePause();
+  assert.equal(h.byID('infinitePauseMenu').open,false);
+  exit();
+  assert.equal(h.headerParent,h.headerHome);
+ }
+ assert.deepEqual(h.headerMoves,['mount','restore','mount','restore','mount','restore']);
+});
+
+test('Infinity chat clears held controls and blocks keyboard and touch firing until closed',()=>{
+ const {infinity,byID,sockets,advance,setChatOpen}=harness();
+ infinity.start('online');
+ const [socket]=sockets,arena=byID('infiniteArena');
+ socket.receive({type:'welcome',id:1,seed:0});
+ socket.receive({type:'state',tanks:[{id:1,hp:1,x:42,y:42,angle:0}],bullets:[],players:1,leaderboard:[]});
+ arena.emit('keydown',{code:'KeyW'});
+ assert.equal(socket.sent.at(-1).forward,true);
+ setChatOpen(true);
+ assert.equal(socket.sent.at(-1).forward,false);
+ assert.equal(socket.sent.at(-1).paused,false);
+ arena.emit('keydown',{code:'KeyW'});
+ arena.emit('keydown',{code:'KeyQ'});
+ byID('infiniteFire').emit('pointerdown',{button:0,pointerId:3,pointerType:'touch'});
+ byID('infiniteStick').emit('pointerdown',{button:0,pointerId:4,pointerType:'touch'});
+ advance(4);
+ assert.equal(socket.sent.at(-1).forward,false);
+ assert.equal(socket.sent.at(-1).fire,false);
+ setChatOpen(false);
+ arena.emit('keydown',{code:'KeyW'});
+ assert.equal(socket.sent.at(-1).forward,true);
+ assert.equal(socket.sent.at(-1).fire,false);
+ infinity.close();
 });
 
 test('Infinity runs offline directly from a file and adds nearby bots to the standings', () => {
@@ -282,6 +330,26 @@ test('offline Infinity uses room paint for both local pilots and roster bots', (
  assert.equal(rows[1].dataset.local,'p2');
  assert.equal(rows[1].style.getPropertyValue('--local-highlight'),'#ff4fd8');
  assert.equal(rows[2].dataset.local,undefined);
+ assert.deepEqual(byID('infiniteKills').children.map(node=>node.style.color),[colors[4],undefined,colors[7]]);
+ infinity.close();
+});
+
+test('online Infinity score and rank colors track both tanks even when scores stay the same',()=>{
+ const {infinity,byID,sockets,advance,window}=harness();
+ infinity.start('online',{localName:'Wingmate'});
+ const [socket]=sockets;
+ socket.receive({type:'welcome',id:1,localId:2,seed:0});
+ const tanks=[{id:1,colorIndex:4,score:7,rank:12,hp:1,x:42,y:42,angle:0},
+  {id:2,colorIndex:7,score:4,rank:18,hp:1,x:126,y:42,angle:0}];
+ const snapshot=()=>socket.receive({type:'state',tanks,bullets:[],players:2,leaderboard:[]});
+ snapshot();advance(4);
+ const read=()=>byID('infiniteKills').children.filter(node=>node.className==='infinite-personal-score');
+ assert.deepEqual(read().map(node=>[node.textContent,node.style.color]),[
+  ['P1 7 (#12)',window.leqraInfinityArt.colors[4]],['P2 4 (#18)',window.leqraInfinityArt.colors[7]],
+ ]);
+ tanks[0].colorIndex=2;tanks[1].colorIndex=5;
+ snapshot();advance(4);
+ assert.deepEqual(read().map(node=>node.style.color),[window.leqraInfinityArt.colors[2],window.leqraInfinityArt.colors[5]]);
  infinity.close();
 });
 
@@ -760,12 +828,12 @@ test('Infinity pause borrows the actual scoreboard and restores its position and
  const panel=byID('infiniteLeaderboardPanel'),home=panel.parentElement,next=panel.nextSibling;
  infinity.start('offline');
  for(const open of [false,true]){
-  panel.open=open;byID('infinitePauseBtn').emit('click');
+  panel.open=open;byID('pauseBtn').emit('click');
   assert.equal(panel.parentElement,byID('gameSidebar'));assert.equal(panel.open,true);
   panel.open=false;byID('infiniteResumeBtn').emit('click');
   assert.equal(panel.parentElement,home);assert.equal(panel.nextSibling,next);assert.equal(panel.open,open);
  }
- byID('infinitePauseBtn').emit('click');infinity.close();
+ byID('pauseBtn').emit('click');infinity.close();
  assert.equal(panel.parentElement,home);assert.equal(panel.nextSibling,next);
 });
 
