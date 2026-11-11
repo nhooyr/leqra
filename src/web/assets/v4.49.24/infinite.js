@@ -5,6 +5,7 @@ const byID = id => document.getElementById(id);
 const arena = byID('infiniteArena');
 const pauseMenu = byID('infinitePauseMenu');
 const pauseSidebar = byID('infinitePauseSidebar');
+const header = byID('infiniteHeader');
 const controlsDialog = byID('controlsDialog');
 const canvas = byID('infiniteCanvas');
 const stick = byID('infiniteStick');
@@ -117,7 +118,7 @@ function inputState(seat) {
   type: 'input', paused: pauseMenu.open, forward: false, reverse: false, left: false, right: false,
   stickX: 0, stickY: 0, aimOnly: false, fire: false,
  };
- if (input.paused) return input;
+ if (input.paused || art.chatOpen()) return input;
  input.fire = seat.fireTap;
  for (const code of pressed) if (seat.keys[code]) input[seat.keys[code]] = true;
  if (seat === session) {
@@ -857,8 +858,27 @@ function renderScores(world, pilot, second) {
   return `${tank?.score ?? 0}${rank > 0 ? ` (#${rank})` : ''}`;
  };
  if (personalScore) {
-  const count = world.local ? `P1 ${score(pilot)} · P2 ${score(second)}` : 'Score ' + score(pilot);
-  if (personalScore.textContent !== count) personalScore.textContent = count;
+  const scores = world.local ? [[`P1 ${score(pilot)}`,pilot,0],[`P2 ${score(second)}`,second,1]] : [['Score '+score(pilot),pilot,0]];
+  const rows = scores.map(([label,tank,seat]) => [label,COLORS[tank?.colorIndex] || COLORS[seat]]);
+  const signature = JSON.stringify(rows);
+  if (signature !== world.personalScoreRows) {
+   world.personalScoreRows = signature;
+   const children = [];
+   for (const [label,color] of rows) {
+    if (children.length) {
+     const separator = document.createElement('span');
+     separator.textContent = ' · ';
+     separator.className = 'infinite-score-separator';
+     children.push(separator);
+    }
+    const counter = document.createElement('span');
+    counter.className = 'infinite-personal-score';
+    counter.style.color = color;
+    counter.textContent = label;
+    children.push(counter);
+   }
+   personalScore.replaceChildren(...children);
+  }
  }
  if (!leaderboard) return;
  const entries = standings.slice(0, 10);
@@ -1370,6 +1390,7 @@ function stop() {
  dismissPause();
  if (resultDialog.open) resultDialog.close();
  if (arena.open) arena.close();
+ art.restoreHeader(header);
  ws?.close();
  art.touchPolicy();
 }
@@ -1420,6 +1441,7 @@ function start(mode, options = {}) {
  arena.dataset.mode = mode;
  syncLocalLoadout(world.local);
  refreshBindings(world);
+ art.mountHeader(header);
  arena.showModal();
  art.touchPolicy();
  canvas.focus({preventScroll: true});
@@ -1460,6 +1482,7 @@ function start(mode, options = {}) {
 }
 
 function updateMouse(event) {
+ if (art.chatOpen()) {mouseAim=null;return false;}
  const rect = canvas.getBoundingClientRect();
  const [width,height] = primaryView(rect.width,rect.height,!!session?.local);
  const px=event.clientX-rect.left,py=event.clientY-rect.top;
@@ -1474,7 +1497,7 @@ function updateMouse(event) {
 }
 
 function pressFire(event,seat=session) {
- if (!session || session.result || pauseMenu.open || session.online && !session.joined) return;
+ if (!session || session.result || pauseMenu.open || art.chatOpen() || session.online && !session.joined) return;
  art.primeAudioUnlock(event);
  seat.fireTap = true;
  const now = performance.now(), world = session;
@@ -1550,7 +1573,7 @@ arena.addEventListener('keydown', event => {
   if (!event.repeat) art.toggleSound();
   return;
  }
- if (pauseMenu.open || session.online && !session.joined) return;
+ if (pauseMenu.open || art.chatOpen() || session.online && !session.joined) return;
  const seat = session.controllers.find(controller=>controller.keys[event.code]);
  const action = seat?.keys[event.code];
  if (!action) return;
@@ -1583,7 +1606,7 @@ canvas.addEventListener('pointerdown', event => {
  pressFire(event);
 });
 stick.addEventListener('pointerdown', event => {
- if (event.button !== 0 || stickPointer !== null) return;
+ if (event.button !== 0 || stickPointer !== null || art.chatOpen()) return;
  capturePointer(stick, event);
  art.primeAudioUnlock(event);
  mouseAim = null;
@@ -1602,7 +1625,7 @@ window.addEventListener('pointermove', event => {
  updateStick(event);
 }, true);
 fire.addEventListener('pointerdown', event => {
- if (event.button !== 0 || firePointer !== null) return;
+ if (event.button !== 0 || firePointer !== null || art.chatOpen()) return;
  capturePointer(fire, event);
  firePointer = event.pointerId;
  fire.classList.add('held');
@@ -1636,7 +1659,10 @@ function resume() {
  resetControls();
  canvas.focus({preventScroll: true});
 }
-byID('infinitePauseBtn').addEventListener('click', openPause);
+function togglePause() {
+ if (pauseMenu.open) resume();
+ else openPause();
+}
 byID('infiniteResumeBtn').addEventListener('click', resume);
 byID('infiniteControlsBtn').addEventListener('click', () => {
  byID('infiniteControlsBtn').focus({preventScroll:true});
@@ -1681,6 +1707,6 @@ function sidebarHelp() {
   instructions:'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after '+RESPAWN_DELAY+' second. '+
    (target?'Reach '+target+' points to win.':'Keep playing and growing your score without a time limit.')};
 }
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp});
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, togglePause});
 art.roomSessionReady?.();
 })();

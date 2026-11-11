@@ -35,14 +35,14 @@ def choose_mode(page, mode):
     settings.locator("summary").tap()
 
 
-def require_on_screen(page, *selectors):
+def require_on_screen(page, *selectors, minimum_size=40):
     viewport = page.evaluate("""() => ({
         width: visualViewport.width, height: visualViewport.height,
         x: visualViewport.offsetLeft, y: visualViewport.offsetTop
     })""")
     for selector in selectors:
         box = page.locator(selector).bounding_box()
-        assert box and box["width"] >= 40 and box["height"] >= 40, (selector, box)
+        assert box and box["width"] >= minimum_size and box["height"] >= minimum_size, (selector, box)
         assert box["x"] >= viewport["x"] - 1, (selector, box, viewport)
         assert box["y"] >= viewport["y"] - 1, (selector, box, viewport)
         assert box["x"] + box["width"] <= viewport["x"] + viewport["width"] + 1, (selector, box, viewport)
@@ -93,14 +93,17 @@ def play_offline(browser, device, url, errors):
         page.locator("#startRoomBtn").tap()
         arena = page.locator("#infiniteArena")
         expect(arena).to_have_attribute("data-mode", "offline")
-        expect(page.locator("#infiniteStatus")).to_contain_text(re.compile(r"\b[1-7] bots\b"))
-        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire", "#infinitePauseBtn")
+        expect(page.locator("#infiniteStatus")).to_contain_text(re.compile(r"\b[1-8] bots\b"))
+        expect(page.locator("#infiniteHeader > #gameHeader")).to_be_visible()
+        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire")
+        require_on_screen(page, "#pauseBtn", minimum_size=30)
         page.set_viewport_size({"width": 568, "height": 320})
         page.wait_for_function("() => leqra.getState().touchLandscape")
-        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire", "#infinitePauseBtn")
+        require_on_screen(page, "#infiniteCanvas", "#infiniteStick", "#infiniteFire")
+        require_on_screen(page, "#pauseBtn", minimum_size=30)
         page.locator("#infiniteLeaderboardPanel summary").tap()
         expect(page.locator("#infiniteLeaderboard")).to_contain_text("MOBILE LOCAL (you)")
-        page.locator("#infinitePauseBtn").tap()
+        page.locator("#pauseBtn").tap()
         pause = page.locator("#infinitePauseMenu")
         expect(pause).to_be_visible()
         expect(pause.get_by_role("button", name="BACK TO THE BATTLE", exact=True)).to_be_visible()
@@ -113,9 +116,10 @@ def play_offline(browser, device, url, errors):
         expect(pause).to_be_visible()
         page.locator("#infiniteResumeBtn").tap()
         expect(pause).to_be_hidden()
-        page.locator("#infinitePauseBtn").tap()
+        page.locator("#pauseBtn").tap()
         page.locator("#infiniteExit").tap()
         expect(arena).to_be_hidden()
+        expect(page.locator(".app > #gameHeader")).to_be_visible()
     print("PASS installed offline app, all five modes, touch Fire, and landscape pause controls", flush=True)
 
 
@@ -180,14 +184,16 @@ def play_public_infinity(browser, device, url, errors):
                        for packet in inputs), (pointer_type, inputs)
         page.locator("#infiniteFire").tap()
         assert any(isinstance(frame, str) and json.loads(frame).get("fire") is True for frame in messages), messages
-        page.locator("#infiniteSoundBtn").tap()
-        expect(page.locator("#infiniteSoundBtn")).to_have_attribute("aria-label", "Unmute sound")
-        page.locator("#infinitePauseBtn").tap()
+        expect(page.locator("#infiniteHeader > #gameHeader")).to_be_visible()
+        page.locator("#soundBtn").tap()
+        expect(page.locator("#soundBtn")).to_have_attribute("aria-label", "Unmute sound")
+        page.locator("#pauseBtn").tap()
         pause = page.locator("#infinitePauseMenu")
         expect(pause.get_by_role("button", name="BACK TO THE ARENA", exact=True)).to_be_visible()
         assert any(isinstance(frame, str) and json.loads(frame).get("paused") is True for frame in messages), messages
         page.locator("#infiniteExit").tap()
         expect(page.locator("#infiniteArena")).to_be_hidden()
+        expect(page.locator(".app > #gameHeader")).to_be_visible()
     print("PASS public Infinity touch Fire, mute, and pause", flush=True)
 
 
