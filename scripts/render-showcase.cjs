@@ -4,7 +4,7 @@
 //   npm install --no-save --package-lock=false playwright
 //   npx playwright install chromium
 // Then generate bin/showcase.html and bin/chrome-overrides with
-//   node scripts/render-showcase.cjs [output.html]
+//   node scripts/render-showcase.cjs
 const fs = require('node:fs');
 const path = require('node:path');
 const {chromium} = require('playwright');
