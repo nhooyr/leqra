@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.19';
+const GAME_VERSION='4.49.20';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -187,7 +187,7 @@ function roundRect(c,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();
 let audioLevel=null,audioEpoch=0,audioResumeStarted=-Infinity,audioResumeActivated=false,pendingAudioEffects=0;
 let arenaAudioActive=false;
 const nativeAudioTimers=new Set(),audioSources=new Set();
-const SOUND_EFFECT_GAIN=2;
+const SOUND_EFFECT_GAIN=4;
 const SOUND_LEVELS=Object.freeze({ricochet:.035,impact:.032,shield:.037,explosionNoise:.065,explosionBass:.035,explosionNativeBass:.045,explosionNativeTail:.027});
 // Keep the weapon timbres and timing, with a narrower gap between nearby and
 // remote fire. Each layer stores frequency, end, duration, local/remote level, type.
@@ -3909,6 +3909,13 @@ function initFeatures(){
  $('presetName').addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();saveCurrentPreset();}});
  $('resetBindingsBtn').onclick=()=>{bindings=defaultBindings();bindingCapture=null;clearInput();try{localStorage.setItem('leqra.bindings.v1',JSON.stringify({version:4,bindings}));}catch(_){}renderBindings();syncFeatureSummary();updateHUD(true);};
  $('masterVolume').oninput=e=>setAudioVolume(e.target.value,false,false);$('masterVolume').onchange=e=>setAudioVolume(e.target.value,true,true);syncVolumeControl();
+ $('masterVolume').onkeydown=e=>{
+  if(e.altKey||e.ctrlKey||e.metaKey||audioVolume!==50)return;
+  const direction={ArrowLeft:-1,ArrowDown:-1,ArrowRight:1,ArrowUp:1}[e.key];
+  if(!direction)return;
+  e.preventDefault();
+  setAudioVolume(50+direction*5,true,true);
+ };
  for(const id of ['missileVisuals','missileAudio'])$(id).onchange=()=>{combatPrefs={...combatPrefs,visual:$('missileVisuals').checked,audio:$('missileAudio').checked};try{localStorage.setItem('leqra.feedback.v1',JSON.stringify(combatPrefs));}catch(_){}initAudio();};
  window.addEventListener('keydown',captureBinding,true);
 }
