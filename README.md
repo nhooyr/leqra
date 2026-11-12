@@ -4,7 +4,7 @@
 
 An online multiplayer tank arena battle game.
 
-![screenshot of the game](docs/screenshot.png)
+![showcase screenshot of the game](docs/showcase.png)
 
 - 5 fun free-for-all and team based game modes:
     1. Infinity
