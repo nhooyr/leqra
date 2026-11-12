@@ -1,6 +1,6 @@
 (() => {
 'use strict';
-const VERSION = 'v4.49.36';
+const VERSION = 'v4.49.37';
 const webOrigin=['http:', 'https:'].includes(location.protocol);
 let serviceWorker=null;
 try{if(webOrigin&&window.isSecureContext!==false)serviceWorker=navigator.serviceWorker;}catch(_){}

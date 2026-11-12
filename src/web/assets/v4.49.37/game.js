@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.36';
+const GAME_VERSION='4.49.37';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -2743,7 +2743,7 @@ function initOnlineUI(){
  window.addEventListener('offline',()=>{syncFeatureSummary();updateHUD(true);});
  window.addEventListener('online',()=>{syncFeatureSummary();updateHUD(true);});
  $('copyInviteBtn').addEventListener('click',copyOnlineInvite);$('copyInGameBtn').addEventListener('click',copyOnlineInvite);$('roomBtn').addEventListener('click',toggleRoomMenu);$('onlineReturnBtn').addEventListener('click',toggleRoomMenu);
- setInterval(()=>{if(mode!=='online')return;if(phase!=='playing'){sendOnlineInput();if(secondLocal())sendOnlineInput(false,onlineControls(true),true);}const now=performance.now();if(online.connected&&now-online.lastPing>=4000){online.lastPing=now;sendOnline({type:'ping',t:now});storeOnlineSession();}},250);
+ setInterval(()=>{if(mode!=='online')return;if(phase!=='playing'){sendOnlineInput();if(secondLocal())sendOnlineInput(false,onlineControls(true),true);}const now=performance.now();if(online.connected&&now-online.lastPing>=1000){online.lastPing=now;sendOnline({type:'ping',t:now});storeOnlineSession();}},250);
  window.addEventListener('pagehide',()=>{if(mode==='online'){clearInput();sendOnlineInput(true);storeOnlineSession();}});
  window.addEventListener('online',()=>{if(mode==='online'&&online.code&&!online.connected&&!online.connecting&&!online.manual){clearTimeout(online.retryTimer);connectOnline({type:'join',code:online.code,token:online.token,name:$('pilotName').value},true);}});
  const params=new URLSearchParams(location.search),invite=cleanRoomCode(params.get('room')||'');
@@ -3664,7 +3664,7 @@ function initInfinityPreview(){
    if(request!==controller||!canPoll())return;
    snapshot={players:data.players,leaders:data.leaders.slice(0,10).filter(p=>p&&typeof p.name==='string'&&Number.isFinite(p.score))};failed=false;setMenuPing(performance.now()-started);
   }catch(_){if(request===controller&&canPoll()){snapshot=null;failed=true;setMenuPing(null);}}
-  finally{clearTimeout(timeout);if(request===controller){request=null;if(canPoll())timer=setTimeout(poll,Math.max(0,4000-(performance.now()-started)));sync();}}
+  finally{clearTimeout(timeout);if(request===controller){request=null;if(canPoll())timer=setTimeout(poll,Math.max(0,1000-(performance.now()-started)));sync();}}
  }
  const observeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog'))observer.observe(dialog,{attributes:true,attributeFilter:['open']});};
  const observer=new MutationObserver(records=>{if(records.some(record=>record.type==='childList'&&record.target===document.body))observeDialogs();sync();});observer.observe(document.body,{attributes:true,attributeFilter:['class'],childList:true});for(const id of ['rulesSummary','roster'])observer.observe($(id),{childList:true,subtree:true});observeDialogs();
@@ -4988,7 +4988,7 @@ function sampleFrame(now,work,surface='fpsIndicator',latency=frameLatency()){
 function initFrameSettings(){
  const indicators=[['fpsIndicator',wrap],['infiniteFPSIndicator',$('infiniteStatusbar')]];
  for(const [id,parent] of indicators)parent.insertAdjacentHTML('beforeend','<div id="'+id+'" class="fps-indicator" aria-label="Rendering performance" hidden>fps: —</div>');
- const host=$('controlsDialog').querySelector('.feature-body');host.insertAdjacentHTML('beforeend','<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every 4 seconds. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra v'+GAME_VERSION+'</p>');
+ const host=$('controlsDialog').querySelector('.feature-body');host.insertAdjacentHTML('beforeend','<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every second. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra v'+GAME_VERSION+'</p>');
  const refresh=()=>{for(const [id] of indicators)$(id).hidden=!combatPrefs.fps;resetFrameSample();resize();};
  $('showFPS').onchange=()=>{combatPrefs.fps=$('showFPS').checked;storePerformancePrefs();refresh();};
  $('performanceMode').onchange=()=>{combatPrefs.performance=$('performanceMode').checked;storePerformancePrefs();refresh();};
@@ -5007,7 +5007,7 @@ function initMenuPing(){
   if(!canPoll()){cancel(!publicPreview());return;}
   if(request&&request.menuContext!==context())cancel();
   if(request)return;
-  clearTimeout(timer);timer=setTimeout(poll,Math.max(0,lastStarted+4000-performance.now()));
+  clearTimeout(timer);timer=setTimeout(poll,Math.max(0,lastStarted+1000-performance.now()));
  }
  async function poll(){
   timer=0;if(!canPoll()||request)return;

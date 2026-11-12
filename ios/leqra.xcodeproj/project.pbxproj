@@ -1,0 +1,384 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+500000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebStyle.swift; sourceTree = "<group>"; };
+500000000000000000000011 = {isa = PBXBuildFile; fileRef = 500000000000000000000001; };
+500000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadyRoomView.swift; sourceTree = "<group>"; };
+500000000000000000000012 = {isa = PBXBuildFile; fileRef = 500000000000000000000002; };
+500000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameChrome.swift; sourceTree = "<group>"; };
+500000000000000000000013 = {isa = PBXBuildFile; fileRef = 500000000000000000000003; };
+500000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDialogs.swift; sourceTree = "<group>"; };
+500000000000000000000014 = {isa = PBXBuildFile; fileRef = 500000000000000000000004; };
+
+/* Begin PBXBuildFile section */
+		00000000000000000000006E /* GameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000000A /* GameApp.swift */; };
+		00000000000000000000006F /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000000B /* GameSession.swift */; };
+		000000000000000000000070 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000000C /* ContentView.swift */; };
+		000000000000000000000071 /* NativeGameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000000D /* NativeGameView.swift */; };
+		000000000000000000000072 /* GameScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000000E /* GameScene.swift */; };
+		000000000000000000000073 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000000F /* Assets.xcassets */; };
+		000000000000000000000074 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000010 /* PrivacyInfo.xcprivacy */; };
+		00000000000000000000007F /* GameAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000001F /* GameAudio.swift */; };
+		300000000000000000000002 /* leqraCore in Frameworks */ = {isa = PBXBuildFile; productRef = 10000000000000000000000B /* leqraCore */; };
+		400000000000000000000009 /* GameUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 400000000000000000000008 /* GameUITests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		40000000000000000000000C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 100000000000000000000001;
+			remoteInfo = leqra;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		00000000000000000000000A /* GameApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameApp.swift; sourceTree = "<group>"; };
+		00000000000000000000000B /* GameSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSession.swift; sourceTree = "<group>"; };
+		00000000000000000000000C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		00000000000000000000000D /* NativeGameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGameView.swift; sourceTree = "<group>"; };
+		00000000000000000000000E /* GameScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameScene.swift; sourceTree = "<group>"; };
+		00000000000000000000000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		000000000000000000000010 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		00000000000000000000001F /* GameAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameAudio.swift; sourceTree = "<group>"; };
+		100000000000000000000009 /* leqra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = leqra.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		400000000000000000000003 /* leqraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = leqraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		400000000000000000000008 /* GameUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameUITests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		100000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				300000000000000000000002 /* leqraCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		100000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				300000000000000000000001 /* leqra */,
+				400000000000000000000002 /* leqraUITests */,
+				100000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		100000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000009 /* leqra.app */,
+				400000000000000000000003 /* leqraUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		300000000000000000000001 /* leqra */ = {
+			isa = PBXGroup;
+			children = (
+				500000000000000000000004,
+				500000000000000000000003,
+				500000000000000000000002,
+				500000000000000000000001,
+				00000000000000000000001F /* GameAudio.swift */,
+				00000000000000000000000A /* GameApp.swift */,
+				00000000000000000000000B /* GameSession.swift */,
+				00000000000000000000000C /* ContentView.swift */,
+				00000000000000000000000D /* NativeGameView.swift */,
+				00000000000000000000000E /* GameScene.swift */,
+				00000000000000000000000F /* Assets.xcassets */,
+				000000000000000000000010 /* PrivacyInfo.xcprivacy */,
+			);
+			path = leqra;
+			sourceTree = "<group>";
+		};
+		400000000000000000000002 /* leqraUITests */ = {
+			isa = PBXGroup;
+			children = (
+				400000000000000000000008 /* GameUITests.swift */,
+			);
+			path = leqraUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		100000000000000000000001 /* leqra */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 100000000000000000000005 /* Build configuration list for PBXNativeTarget "leqra" */;
+			buildPhases = (
+				100000000000000000000006 /* Sources */,
+				100000000000000000000007 /* Frameworks */,
+				100000000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = leqra;
+			packageProductDependencies = (
+				10000000000000000000000B /* leqraCore */,
+			);
+			productName = leqra;
+			productReference = 100000000000000000000009 /* leqra.app */;
+			productType = "com.apple.product-type.application";
+		};
+		400000000000000000000001 /* leqraUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 400000000000000000000004 /* Build configuration list for PBXNativeTarget "leqraUITests" */;
+			buildPhases = (
+				400000000000000000000005 /* Sources */,
+				400000000000000000000006 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				400000000000000000000007 /* PBXTargetDependency */,
+			);
+			name = leqraUITests;
+			productName = leqraUITests;
+			productReference = 400000000000000000000003 /* leqraUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		100000000000000000000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 2720;
+				TargetAttributes = {
+					100000000000000000000001 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+				};
+			};
+			buildConfigurationList = 100000000000000000000002 /* Build configuration list for PBXProject "leqra" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 100000000000000000000003;
+			packageReferences = (
+				10000000000000000000000A /* XCLocalSwiftPackageReference "." */,
+			);
+			productRefGroup = 100000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				100000000000000000000001 /* leqra */,
+				400000000000000000000001 /* leqraUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		100000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000000073 /* Assets.xcassets in Resources */,
+				000000000000000000000074 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		100000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				500000000000000000000014,
+				500000000000000000000013,
+				500000000000000000000012,
+				500000000000000000000011,
+				00000000000000000000007F /* GameAudio.swift in Sources */,
+				00000000000000000000006E /* GameApp.swift in Sources */,
+				00000000000000000000006F /* GameSession.swift in Sources */,
+				000000000000000000000070 /* ContentView.swift in Sources */,
+				000000000000000000000071 /* NativeGameView.swift in Sources */,
+				000000000000000000000072 /* GameScene.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				400000000000000000000009 /* GameUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		400000000000000000000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 100000000000000000000001 /* leqra */;
+			targetProxy = 40000000000000000000000C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		200000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		200000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		200000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = leqra/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios;
+				PRODUCT_NAME = leqra;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		200000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = leqra/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios;
+				PRODUCT_NAME = leqra;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		40000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = leqra;
+			};
+			name = Debug;
+		};
+		40000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = leqra;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		100000000000000000000002 /* Build configuration list for PBXProject "leqra" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				200000000000000000000001 /* Debug */,
+				200000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		100000000000000000000005 /* Build configuration list for PBXNativeTarget "leqra" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				200000000000000000000003 /* Debug */,
+				200000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		400000000000000000000004 /* Build configuration list for PBXNativeTarget "leqraUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				40000000000000000000000A /* Debug */,
+				40000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		10000000000000000000000A /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		10000000000000000000000B /* leqraCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 10000000000000000000000A /* XCLocalSwiftPackageReference "." */;
+			productName = leqraCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 100000000000000000000000 /* Project object */;
+}
