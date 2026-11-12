@@ -1406,8 +1406,10 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'error') {
+  if(message.code==='session_replaced'){art.exposeAccountError?.();connectionFailed((message.seat===1?'P2’s tank':'Your tank')+' was taken over by another device using this account.');return;}
+  if(message.code==='account_key_revoked'){art.exposeAccountError?.();const seat=message.seat===1?1:0;art.forgetRevokedAccount?.(seat?session.localPublicToken:session.publicToken,seat);connectionFailed((seat?'P2’s':'P1’s')+' account key was reset. Import the latest key in Account to continue.');return;}
   if(message.code==='callsign_taken'&&session.onConflict){session.onConflict(message);return;}
-  if(message.code==='public_resume_invalid'&&!session.publicFallback){session.publicFallback=true;session.publicToken='';art.rememberPublicIdentity?.('');retryConnection('Rejoining Public Infinity…');return;}
+  if(message.code==='public_resume_invalid'&&!session.publicFallback){session.publicFallback=true;const previous=session.publicToken;session.publicToken='';art.rememberPublicIdentity?.('',previous||'');retryConnection('Rejoining Public Infinity…');return;}
   if(message.code==='server_shutdown'||message.code==='public_store_busy'){retryConnection(message.message||'Reconnecting…');return;}
   const error = message.message || 'Unable to join '+arenaName(session)+'.';
   if (message.code === 'session_active' && session.resumeGeneration) retryConnection(error);
@@ -1415,8 +1417,11 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'welcome') {
+  if(session.independentAccounts&&message.localId!=null&&message.localPublicToken!==session.localPublicToken){connectionFailed('The server did not confirm the separate P2 account key. Update the server before using P2 online.');return;}
   session.welcomed=true;
-  if(message.publicToken){session.publicToken=message.publicToken;art.rememberPublicIdentity?.(message.publicToken);}
+  if(message.publicToken){art.rememberPublicIdentity?.(message.publicToken,session.publicToken||'');session.publicToken=message.publicToken;}
+  if(message.localPublicToken){art.rememberPublicIdentity?.(message.localPublicToken,session.localPublicToken||'',1);session.localPublicToken=message.localPublicToken;session.localNewAccount=undefined;}
+  if(message.localId==null){session.localPublicToken='';session.localNewAccount=undefined;}
   session.resumed = !!message.resumed;
   if (Array.isArray(message.party)) session.party = message.party;
   session.id = message.id;
@@ -1565,7 +1570,7 @@ function connect() {
     localName:world.room?undefined:world.localName,
     colorIndex:world.room?undefined:world.colorIndex,
     localColorIndex:world.room||!world.localName?undefined:world.localColorIndex,...world.room,
-    updateNames:!world.welcomed?true:undefined,publicToken:world.publicToken||undefined,resume:world.resumeGeneration||world.publicToken?true:undefined,generation:world.resumeGeneration}));
+    independentAccounts:world.independentAccounts||undefined,localPublicToken:world.localPublicToken||undefined,localNewAccount:world.localNewAccount,updateNames:!world.welcomed?true:undefined,publicToken:world.publicToken||undefined,resume:world.resumeGeneration||world.publicToken?true:undefined,generation:world.resumeGeneration}));
   }
  });
  ws.addEventListener('message', event => receive(ws, event));
@@ -1686,7 +1691,7 @@ function start(mode, options = {}) {
  const selectedColor = value => Number.isInteger(value)&&value>=0&&value<COLORS.length?value:undefined;
  session = {
   online, name, localName:options.localName, serial:++sessionSerial,renames:new Map(),confirmedNames:new Map(),readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
-  public:!!options.public,party:[],publicToken:art.publicIdentityToken?.()||'',onConflict:options.onConflict,
+  public:!!options.public,party:[],publicToken:art.publicIdentityToken?.()||'',localPublicToken:options.localName?art.publicIdentityToken?.(1)||'':'',independentAccounts:typeof art.prepareLocalAccount==='function',onConflict:options.onConflict,
   colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,latency:null,pendingPing:null,nextPing:0,latencyAt:0,
@@ -1695,6 +1700,7 @@ function start(mode, options = {}) {
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
  const world = session;
+ if(online&&world.localName&&world.independentAccounts){try{Object.assign(world,art.prepareLocalAccount());}catch(error){setStatus(error.message);session=null;options.onError?.(error);return;}}
  byID('infiniteArenaTitle').textContent=arenaName(world);
  byID('infiniteExit').textContent='Exit '+arenaName(world);
  canvas.style.cursor=mouseEnabled()?'':'auto';

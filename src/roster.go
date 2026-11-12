@@ -215,7 +215,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		}
 		if m.Kind == "local" {
 			names := append(roomControllerNames(r, c.player, nil, ""), name)
-			ownerToken, ok := h.claimRoomCallsigns(c, m.Type, c.player.PublicToken, names)
+			ownerToken, ok := h.claimNewRoomAccounts(c, m.Type, c.player.PublicToken, m.LocalPublicToken, m.LocalNewAccount, m.IndependentAccounts || c.independentAccounts, names)
 			if !ok {
 				return
 			}
@@ -227,6 +227,9 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			p.Team = *m.Team
 		} else {
 			p.Team = joinTeam(r)
+		}
+		if m.Kind == "local" && c.independentAccounts {
+			p.PublicToken = c.localOwnerToken
 		}
 		r.Players[slot] = p
 		r.Game.Scores[slot] = 0
@@ -261,7 +264,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 				fail("not_owner", "That local player's controller is no longer in the room.")
 				return
 			}
-			ownerToken, ok := h.claimRoomCallsigns(c, m.Type, owner.PublicToken, roomControllerNames(r, owner, p, cleanCallsign(m.Name)))
+			ownerToken, ok := h.claimControllerCallsigns(c, m.Type, r, owner, p, cleanCallsign(m.Name))
 			if !ok {
 				return
 			}
@@ -284,6 +287,9 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 	// Ready is consent to this roster/teams, not to an earlier configuration.
 	resetReady(r)
 	r.LastAction = now
+	if c.independentAccounts {
+		h.sendControllerAccounts(c)
+	}
 	h.broadcastRoom(r)
 }
 
@@ -407,7 +413,7 @@ func (h *Hub) publishRoom(c *Client, m clientMessage, now time.Time) {
 			names = append(names, cleanName(seat.Name))
 		}
 	}
-	h.joinRoom(c, code == "", code, cleanName(m.Roster[0].Name), "", now, m.Roster[0].Spectating, true, onlineRoomIdentity{token: m.PublicToken, names: names, action: "publish"})
+	h.joinRoom(c, code == "", code, cleanName(m.Roster[0].Name), "", now, m.Roster[0].Spectating, true, onlineRoomIdentity{token: m.PublicToken, names: names, action: "publish", localToken: m.LocalPublicToken, localNew: m.LocalNewAccount, independent: m.IndependentAccounts})
 	if c.room == nil {
 		return
 	}
@@ -424,6 +430,9 @@ func (h *Hub) publishRoom(c *Client, m clientMessage, now time.Time) {
 		}
 		r.NextMember++
 		p := &Player{ID: id, Member: r.NextMember, Name: cleanName(s.Name), Kind: s.Kind, Owner: c.player.ID, Controller: c.player, Team: s.Team, ColorIndex: copyColorIndex(s.ColorIndex), Difficulty: s.Difficulty, InputAt: now, Ready: true, Spectating: s.Spectating}
+		if p.Kind == "local" && c.independentAccounts {
+			p.PublicToken = c.localOwnerToken
+		}
 		if p.Spectating {
 			r.putViewer(p)
 		} else {
@@ -464,7 +473,7 @@ func (h *Hub) renameLocal(c *Client, m clientMessage, now time.Time) {
 		fail("bad_name", "Use letters, numbers, spaces, hyphens or underscores (up to 16 characters).")
 		return
 	}
-	ownerToken, ok := h.claimRoomCallsigns(c, "rename_local", c.player.PublicToken, roomControllerNames(r, c.player, p, name))
+	ownerToken, ok := h.claimControllerCallsigns(c, "rename_local", r, c.player, p, name)
 	if !ok {
 		return
 	}

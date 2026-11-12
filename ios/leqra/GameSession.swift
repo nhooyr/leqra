@@ -3,6 +3,18 @@ import SpriteKit
 import QuartzCore
 import leqraCore
 
+private enum AccountActionError: LocalizedError {
+    case finishOnline, serverChanged, keychain, duplicateAccount
+    var errorDescription: String? {
+        switch self {
+        case .finishOnline: return "Return to the offline ready room before changing account keys."
+        case .serverChanged: return "The server changed. Check the account key again."
+        case .keychain: return "The pending key could not be saved in Keychain. Your current key is unchanged."
+        case .duplicateAccount: return "P1 and P2 need different account keys. This key is already assigned to the other local player."
+        }
+    }
+}
+
 @MainActor
 final class GameSession: ObservableObject {
     enum Screen { case menu, connecting, lobby, playing }
@@ -21,6 +33,14 @@ final class GameSession: ObservableObject {
     @Published var localID = -1
     @Published var showScores = false
     @Published var showSettings = false
+    @Published var showAccount = false
+    @Published var accountSeatContext = 0
+    @Published var accountInfo: AccountInfo?
+    @Published var accountStatus = ""
+    @Published var accountBusy = false
+    @Published var accountRecoveryKeyPending = false
+    @Published var accountPendingKeyVerified = false
+    @Published var accountSavedActivationCount = 0
     @Published var showRules = false
     @Published var showControls = false
     @Published var showSidebar = false
@@ -52,6 +72,9 @@ final class GameSession: ObservableObject {
     @Published var callsignChecking = false
     @Published var callsign = UserDefaults.standard.string(forKey: "callsign") ?? "SNOW FOX" {
         didSet { UserDefaults.standard.set(callsign, forKey: "callsign"); scheduleCallsignAvailability() }
+    }
+    @Published var localCallsign = UserDefaults.standard.string(forKey: "localCallsign") ?? "CO-PILOT" {
+        didSet { UserDefaults.standard.set(localCallsign, forKey: "localCallsign") }
     }
     @Published var colorIndex = GamePalette.index(UserDefaults.standard.integer(forKey: "tankColor")) {
         didSet { UserDefaults.standard.set(colorIndex, forKey: "tankColor") }
@@ -108,6 +131,8 @@ final class GameSession: ObservableObject {
     private var callsignCheckTask: Task<Void, Never>?
     private var callsignTaken = false
     private var rejectedCallsignMessage: String?
+    private var accountTask: Task<Void, Never>?
+    private var accountOperation = UUID()
 
     init(publicSessions: PublicInfinitySessionStoring? = nil) {
         self.publicSessions = publicSessions ?? KeychainPublicInfinitySessions.applicationStore()
@@ -166,7 +191,265 @@ final class GameSession: ObservableObject {
     var canConfirmQueue: Bool { queueState?.stage == "confirming" && queueState?.members.contains { $0.controller == welcome?.member && !$0.accepted } == true }
     var canCancelQueue: Bool { isHost || queueState?.members.contains { $0.controller == welcome?.member } == true }
     var canQueue: Bool { isHost && (room.map { ["lobby", "matchOver"].contains($0.phase) && !$0.infinityActive && $0.matchmaking == nil && $0.awayMatch.isEmpty } ?? true) }
-    var hasModal: Bool { showSettings || showRules || showControls || showSidebar || showJoin || showChat || showPresets || showQueues }
+    var hasModal: Bool { showSettings || showAccount || showRules || showControls || showSidebar || showJoin || showChat || showPresets || showQueues }
+    var canImportAccount: Bool {
+        screen == .menu && room == nil && !arenaActive && !publicIdentityActive && !publicRecoveryPending
+            && !roomClient.connected && !arenaClient.connected && !pendingShare
+    }
+    var accountOrigin: String { accountServer.flatMap { try? PublicInfinitySession.normalizedOrigin($0) } ?? "Invalid server address" }
+    var accountLocalPlayer: RoomMember? { room?.players.first { $0.kind == "local" && $0.owner == welcome?.id } }
+    var accountContextIdentity: String {
+        accountSeatContext == 1 ? (accountLocalPlayer?.name ?? accountInfo?.publicProfile?.name ?? localCallsign) + " (P2)" : identity
+    }
+    var accountHasKey: Bool { accountServer.map { accountSession(for: $0, seat: accountSeatContext) != nil || publicSessions.pendingKey(for: $0, seat: accountSeatContext) != nil } ?? false }
+    var accountCanCopyKey: Bool {
+        accountPendingKeyVerified || (accountServer.map { accountSession(for: $0, seat: accountSeatContext) != nil && !publicSessions.registrationPending(for: $0, seat: accountSeatContext) } ?? false)
+    }
+    var accountCanResetKey: Bool { accountServer.map { accountHasKey && !publicSessions.registrationPending(for: $0, seat: accountSeatContext) } ?? false }
+    private var accountServer: URL? {
+        guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)),
+              (try? PublicInfinitySession.normalizedOrigin(url)) != nil else { return nil }
+        return url
+    }
+
+    struct CheckedAccount {
+        let credential: PublicInfinitySession
+        let info: AccountInfo
+        let seat: Int
+    }
+
+    private func accountSession(for server: URL, seat: Int = 0) -> PublicInfinitySession? { publicSessions.session(for: server, seat: seat) }
+
+    private func prepareLocalAccount(for server: URL) throws -> (key: String, fresh: Bool) {
+        if let existing = accountSession(for: server, seat: 1) {
+            guard existing.publicToken != accountSession(for: server)?.publicToken else { throw AccountActionError.duplicateAccount }
+            return (existing.publicToken, publicSessions.registrationPending(for: server, seat: 1))
+        }
+        let candidate = try KeychainPublicInfinitySessions.newCredential(for: server)
+        guard publicSessions.rememberNew(candidate, seat: 1) else { throw AccountActionError.keychain }
+        return (candidate.publicToken, true)
+    }
+
+    func openAccount(seat: Int = 0) {
+        accountSeatContext = seat == 1 ? 1 : 0
+        let slot = accountSeatContext
+        // A rejected join may leave an inactive route object behind. It must
+        // not block account import after the client has returned to the menu.
+        if screen == .menu, room == nil, !roomClient.connected, !arenaClient.connected, !publicRecoveryPending {
+            roomClient.disconnect(); arenaClient.disconnect()
+            arenaActive = false; publicIdentityActive = false
+            if slot == 0 { publicSessions.activate(nil) }
+        }
+        showSettings = false; showAccount = true
+        let operation = UUID(); accountOperation = operation
+        accountTask?.cancel(); accountInfo = nil; accountStatus = ""
+        guard let server = accountServer else { accountStatus = "Enter a valid online server address in Settings."; return }
+        accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
+        accountRecoveryKeyPending = publicSessions.pendingKey(for: server, seat: slot) != nil
+        accountPendingKeyVerified = false
+        guard let credential = accountSession(for: server, seat: slot) ?? publicSessions.pendingKey(for: server, seat: slot)?.previous else {
+            accountStatus = slot == 1 ? "Import P2's key, or add P2 to an online room to create its own account." : "Go online once to create an account key, or import one below."
+            return
+        }
+        accountBusy = true
+        accountTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                if let pending = self.publicSessions.pendingKey(for: server, seat: slot) {
+                    do {
+                        let info = try await self.arenaClient.fetchAccountInfo(baseURL: server, publicToken: pending.replacement.publicToken)
+                        guard !Task.isCancelled else { return }
+                        self.finishAccountReset(pending, info: info, seat: slot, operation: operation)
+                        if self.accountOperation == operation { self.accountBusy = false }; return
+                    } catch GameNetworkError.invalidAccountKey {
+                        // No committed replacement exists yet. Keep both keys
+                        // safely in Keychain and permit retrying this candidate.
+                    }
+                }
+                let info = try await self.arenaClient.fetchAccountInfo(baseURL: server, publicToken: credential.publicToken)
+                guard !Task.isCancelled, self.accountOperation == operation, let current = self.accountServer, credential.matches(current), self.showAccount else { return }
+                if self.publicSessions.registrationPending(for: server, seat: slot), self.publicSessions.session(for: server, seat: slot) == credential {
+                    self.publicSessions.remember(credential, seat: slot)
+                }
+                self.accountInfo = info; self.accountBusy = false
+                if self.accountRecoveryKeyPending { self.accountStatus = "A key reset is pending. Retry reset to finish it safely." }
+            } catch {
+                guard !Task.isCancelled, self.accountOperation == operation, self.showAccount else { return }
+                if case GameNetworkError.accountKeyRevoked = error {
+                    await self.resolveRevokedAccount(credential, seat: slot, operation: operation)
+                    if self.accountOperation == operation { self.accountBusy = false }
+                    return
+                }
+                self.accountBusy = false
+                if case GameNetworkError.invalidAccountKey = error, self.publicSessions.registrationPending(for: server, seat: slot) {
+                    self.accountStatus = "This P2 key is saved securely and awaits activation. Go online with P2 to finish registering it."
+                } else { self.accountStatus = error.localizedDescription }
+            }
+        }
+    }
+
+    func closeAccount() {
+        accountOperation = UUID()
+        accountTask?.cancel(); accountBusy = false; showAccount = false
+    }
+
+    func copyAccountKey() {
+        let slot = accountSeatContext
+        guard let server = accountServer,
+              let credential = accountPendingKeyVerified ? publicSessions.pendingKey(for: server, seat: slot)?.replacement : accountSession(for: server, seat: slot) else { return }
+        UIPasteboard.general.setItems([["public.utf8-plain-text": credential.publicToken]],
+                                     options: [.localOnly: false, .expirationDate: Date().addingTimeInterval(600)])
+        accountStatus = "Account key copied. Paste it only on a device you trust."
+    }
+
+    private func savedAccountActivations(for server: URL, seat: Int) -> [PublicInfinitySession] {
+        let selected = accountSession(for: server, seat: seat)
+        return publicSessions.registrationCandidates(for: server, seat: seat).filter { $0 != selected }
+    }
+
+    func checkSavedActivation(_ index: Int) async throws -> CheckedAccount {
+        guard canImportAccount, let server = accountServer else { throw AccountActionError.finishOnline }
+        let slot = accountSeatContext, saved = savedAccountActivations(for: server, seat: accountSeatContext)
+        guard saved.indices.contains(index) else { throw GameNetworkError.invalidResponse }
+        return try await checkAccountKey(saved[index].publicToken)
+    }
+
+    func checkAccountKey(_ draft: String) async throws -> CheckedAccount {
+        let slot = accountSeatContext
+        guard slot == accountSeatContext, canImportAccount, !accountRecoveryKeyPending, let server = accountServer else { throw AccountActionError.finishOnline }
+        let credential = try PublicInfinitySession(baseURL: server, publicToken: draft.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard accountSession(for: server, seat: 1 - slot)?.publicToken != credential.publicToken else { throw AccountActionError.duplicateAccount }
+        let info = try await arenaClient.fetchAccountInfo(baseURL: server, publicToken: credential.publicToken)
+        guard slot == accountSeatContext, canImportAccount, let configured = accountServer, credential.matches(configured) else { throw AccountActionError.serverChanged }
+        return CheckedAccount(credential: credential, info: info, seat: slot)
+    }
+
+    @discardableResult func useAccount(_ checked: CheckedAccount) async -> Bool {
+        let slot = checked.seat
+        guard slot == accountSeatContext, canImportAccount, !accountRecoveryKeyPending, let server = accountServer, checked.credential.matches(server) else {
+            accountStatus = AccountActionError.finishOnline.localizedDescription; return false
+        }
+        let info: AccountInfo
+        do {
+            info = try await arenaClient.fetchAccountInfo(baseURL: server, publicToken: checked.credential.publicToken)
+            try Task.checkCancellation()
+            guard slot == accountSeatContext, canImportAccount, let current = accountServer, checked.credential.matches(current) else { throw AccountActionError.serverChanged }
+        } catch { accountStatus = error.localizedDescription; return false }
+        guard publicSessions.remember(checked.credential, seat: slot) else {
+            accountStatus = "The account key could not be saved in Keychain. Your previous key is unchanged."; return false
+        }
+        clearAccountIntent(for: checked.credential, seat: slot)
+        accountInfo = info
+        if let name = info.preferredCallsign { if slot == 1 { localCallsign = name } else { callsign = name } }
+        accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
+        scheduleCallsignAvailability()
+        accountStatus = "Account imported. PLAY will use its callsign and server score."
+        return true
+    }
+
+    func resetAccountKey() async {
+        let slot = accountSeatContext
+        guard canImportAccount, !accountBusy, let server = accountServer,
+              !publicSessions.registrationPending(for: server, seat: slot),
+              let previous = accountSession(for: server, seat: slot) ?? publicSessions.pendingKey(for: server, seat: slot)?.previous else { return }
+        let operation = UUID(); accountOperation = operation
+        accountBusy = true; accountStatus = "Resetting account key…"
+        do {
+            let pending: PendingAccountKey
+            if let existing = publicSessions.pendingKey(for: server, seat: slot) { pending = existing }
+            else {
+                pending = PendingAccountKey(previous: previous, replacement: try KeychainPublicInfinitySessions.replacement(for: previous))
+                guard clearAccountIntent(for: previous, seat: slot), publicSessions.rememberPendingKey(pending, seat: slot) else {
+                    throw AccountActionError.keychain
+                }
+            }
+            accountRecoveryKeyPending = true
+            // A lost HTTP response or process termination cannot lose the new
+            // key: its candidate was committed to Keychain before this request.
+            let info: AccountInfo
+            do {
+                info = try await arenaClient.fetchAccountInfo(baseURL: server, publicToken: pending.replacement.publicToken)
+            } catch GameNetworkError.invalidAccountKey {
+                info = try await arenaClient.rotateAccountKey(baseURL: server, publicToken: pending.previous.publicToken,
+                                                             newPublicToken: pending.replacement.publicToken).account
+            }
+            finishAccountReset(pending, info: info, seat: slot, operation: operation)
+        } catch {
+            guard accountOperation == operation else { return }
+            if case GameNetworkError.accountKeyRevoked = error { await resolveRevokedAccount(previous, seat: slot, operation: operation) }
+            else {
+                accountStatus = accountRecoveryKeyPending
+                    ? "Reset could not be confirmed. Both keys are saved securely; reopen Account key or retry reset."
+                    : error.localizedDescription
+            }
+        }
+        if accountOperation == operation { accountBusy = false }
+    }
+
+    private func finishAccountReset(_ pending: PendingAccountKey, info: AccountInfo, seat slot: Int, operation: UUID) {
+        let saved = publicSessions.session(for: pending.replacement.baseURL, seat: slot)
+        let latest = publicSessions.pendingKey(for: pending.replacement.baseURL, seat: slot)
+        guard (latest?.replacement == pending.replacement || latest == nil && saved == pending.replacement),
+              saved == nil || saved == pending.previous || saved == pending.replacement else { return }
+        if accountOperation == operation { accountPendingKeyVerified = true }
+        guard publicSessions.remember(pending.replacement, seat: slot) else {
+            if accountOperation == operation { accountStatus = "The new key is saved as pending, but could not be activated. Retry reset to finish saving it." }
+            return
+        }
+        publicSessions.clearPendingKey(pending.replacement.baseURL, ifMatching: pending.replacement.publicToken, seat: slot)
+        clearAccountIntent(for: pending.replacement, seat: slot)
+        guard accountOperation == operation else { return }
+        accountRecoveryKeyPending = accountServer.flatMap { publicSessions.pendingKey(for: $0, seat: accountSeatContext) } != nil
+        accountPendingKeyVerified = false
+        if let current = accountServer, pending.replacement.matches(current) {
+            accountInfo = info
+            if let name = info.preferredCallsign { if slot == 1 { localCallsign = name } else { callsign = name } }
+            scheduleCallsignAvailability()
+        }
+        accountStatus = "New account key saved for \(pending.replacement.origin). All other devices are signed out; names and scores are unchanged."
+    }
+
+    private func resolveRevokedAccount(_ credential: PublicInfinitySession, seat slot: Int, operation: UUID) async {
+        guard let pending = publicSessions.pendingKey(for: credential.baseURL, seat: slot) else {
+            discardRevokedAccount(credential, seat: slot)
+            accountStatus = GameNetworkError.accountKeyRevoked.localizedDescription
+            return
+        }
+        do {
+            // The first candidate check may have raced the original commit.
+            // Check again after learning that the old key was revoked.
+            let info = try await arenaClient.fetchAccountInfo(baseURL: credential.baseURL, publicToken: pending.replacement.publicToken)
+            finishAccountReset(pending, info: info, seat: slot, operation: operation)
+        } catch GameNetworkError.invalidAccountKey {
+            discardRevokedAccount(credential, seat: slot, clearingCandidate: pending.replacement.publicToken)
+            if accountOperation == operation { accountStatus = GameNetworkError.accountKeyRevoked.localizedDescription }
+        } catch GameNetworkError.accountKeyRevoked {
+            discardRevokedAccount(credential, seat: slot, clearingCandidate: pending.replacement.publicToken)
+            if accountOperation == operation { accountStatus = GameNetworkError.accountKeyRevoked.localizedDescription }
+        } catch {
+            discardRevokedAccount(credential, seat: slot)
+            if accountOperation == operation { accountStatus = "The old key was reset. Its pending replacement is saved securely; reopen Account key to finish checking it." }
+        }
+    }
+
+    private func discardRevokedAccount(_ credential: PublicInfinitySession, seat slot: Int, clearingCandidate: String? = nil) {
+        if publicSessions.session(for: credential.baseURL, seat: slot)?.publicToken == credential.publicToken {
+            publicSessions.forget(credential.baseURL, ifMatching: credential.publicToken, seat: slot)
+            clearAccountIntent(for: credential, seat: slot)
+            accountInfo = nil
+        }
+        if let clearingCandidate, let pending = publicSessions.pendingKey(for: credential.baseURL, seat: slot), pending.previous == credential {
+            publicSessions.clearPendingKey(credential.baseURL, ifMatching: clearingCandidate, seat: slot)
+        }
+        accountRecoveryKeyPending = accountServer.flatMap { publicSessions.pendingKey(for: $0, seat: accountSeatContext) } != nil
+        accountPendingKeyVerified = false
+    }
+
+    @discardableResult private func clearAccountIntent(for credential: PublicInfinitySession, seat: Int) -> Bool {
+        guard let active = publicSessions.activeServer, credential.matches(active) else { return true }
+        return seat == 1 ? publicSessions.activate(active, local: false) : publicSessions.activate(nil)
+    }
+
     var currentReadout: PilotReadout {
         let tank = localTank ?? ArenaTank(hp: 0)
         return PilotReadout(tank: tank, snapshot: snapshot, infinity: isInfinity, paused: paused, online: !offline)
@@ -225,8 +508,7 @@ final class GameSession: ObservableObject {
             if room.infinityActive, let baseURL, let welcome, let token = welcome.token {
                 guard welcome.spectating == false else { error = "Return to a combat seat to enter Infinity."; return }
                 if arenaClient.connected { screen = .playing; setPaused(false); return }
-                arenaActive = true
-                arenaClient.connectRoomInfinity(baseURL: baseURL, code: room.code, token: token, resume: arenaGeneration != nil, generation: arenaGeneration)
+                connectRoomArena(server: baseURL, code: room.code, token: token, resume: arenaGeneration != nil)
                 return
             }
             if isHost { roomClient.send(room.infinityPublic ? .startPublicInfinity : .start) }
@@ -323,7 +605,7 @@ final class GameSession: ObservableObject {
         leave()
         baseURL = url; screen = .connecting; pendingShare = true; showQueues = queueOpen
         roomClient.connectPublishedRoom(baseURL: url, code: code.isEmpty ? nil : code, rules: localRules, roster: seats,
-                                        publicToken: publicSessions.session(for: url)?.publicToken)
+                                        publicToken: accountSession(for: url)?.publicToken)
     }
 
     func saveCallsign() {
@@ -346,20 +628,22 @@ final class GameSession: ObservableObject {
         let name = cleanName
         let local = localName ?? room?.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id })?.name
         let names = [name] + (local.map { [String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(16))] } ?? [])
-        let token = publicSessions.session(for: server)?.publicToken
+        let token = accountSession(for: server)?.publicToken
+        let localToken = accountSession(for: server, seat: 1)?.publicToken
+        let localFresh = publicSessions.registrationPending(for: server, seat: 1)
         let address = serverAddress
         callsignChecking = true
         callsignCheckTask = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(nanoseconds: 300_000_000)
                 guard let self else { return }
-                let checks = try await self.arenaClient.fetchCallsignAvailability(baseURL: server, names: names, publicToken: token)
+                let checks = try await self.arenaClient.fetchCallsignAvailability(baseURL: server, names: names, publicToken: token, localPublicToken: localToken, localNewAccount: localFresh)
                 guard !Task.isCancelled, self.cleanName == name, self.serverAddress == address else { return }
                 self.callsignChecking = false
                 self.callsignTaken = checks.first?.available == false
-                self.callsignFeedback = self.callsignTaken ? "Taken online: \(name) (P1). Choose another callsign." : ""
+                self.callsignFeedback = self.callsignTaken ? "\(name) (P1) is taken. Yours? Import its account key." : ""
                 if let local = checks.dropFirst().first, !local.available {
-                    self.localCallsignFeedback = "Taken online: \(local.name) (P2). Choose another callsign."
+                    self.localCallsignFeedback = "\(local.name) (P2) is taken. Yours? Import its account key."
                 } else { self.localCallsignFeedback = "" }
             } catch {
                 guard !Task.isCancelled, let self, self.cleanName == name, self.serverAddress == address else { return }
@@ -375,11 +659,11 @@ final class GameSession: ObservableObject {
         let primary = conflicts?.first(where: { $0.seat == 0 })
         if primary != nil || conflicts?.isEmpty != false {
             callsignTaken = true
-            callsignFeedback = primary.map { "\($0.name) (P1) is taken online. Choose another callsign." }
+            callsignFeedback = primary.map { "\($0.name) (P1) is taken. Yours? Import its account key." }
                 ?? message ?? "This callsign is taken online. Choose another callsign."
         }
         if let local = conflicts?.first(where: { $0.seat == 1 }) {
-            localCallsignFeedback = "\(local.name) (P2) is taken online. Choose another callsign."
+            localCallsignFeedback = "\(local.name) (P2) is taken. Yours? Import its account key."
         }
         status = message ?? "Rename the indicated local players before going online."
     }
@@ -389,7 +673,22 @@ final class GameSession: ObservableObject {
         else { colorIndex = index }
     }
 
-    func send(_ action: NativeRoomCommand) { roomClient.send(action) }
+    func send(_ action: NativeRoomCommand) {
+        var payload = action.payload
+        let type = payload["type"] as? String
+        let roster = payload["roster"] as? [[String: Any]]
+        let addsLocal = type == "add" && payload["kind"] as? String == "local"
+            || type == "preset" && roster?.contains(where: { $0["kind"] as? String == "local" }) == true
+        let editsLocal = ["configure", "rename_local"].contains(type ?? "") && payload["target"] as? Int == accountLocalPlayer?.id
+        if addsLocal || editsLocal, let server = baseURL ?? accountServer {
+            do {
+                let local = try prepareLocalAccount(for: server)
+                payload["independentAccounts"] = true; payload["localPublicToken"] = local.key
+                if local.fresh { payload["localNewAccount"] = true }
+            } catch { self.error = error.localizedDescription; return }
+        }
+        roomClient.sendCommand(payload)
+    }
 
     func openQueue() {
         if room == nil { showQueues = true; shareRoom() }
@@ -424,8 +723,11 @@ final class GameSession: ObservableObject {
     func loadPreset(_ preset: LocalPreset) {
         guard canLoadPreset else { error = "Presets require a host-only lobby without online guests or spectators."; return }
         if room != nil {
-            let seats = preset.roster ?? ([NativeSeatSpec(kind: "human", name: cleanName, team: preset.team, colorIndex: colorIndex)] + preset.bots.map { NativeSeatSpec(kind: "bot", name: $0.name, difficulty: $0.difficulty, team: $0.team, colorIndex: $0.colorIndex) })
-            roomClient.send(.preset(rules: preset.rules, roster: seats))
+            var seats = preset.roster ?? ([NativeSeatSpec(kind: "human", name: cleanName, team: preset.team, colorIndex: colorIndex)] + preset.bots.map { NativeSeatSpec(kind: "bot", name: $0.name, difficulty: $0.difficulty, team: $0.team, colorIndex: $0.colorIndex) })
+            if let server = baseURL, accountSession(for: server, seat: 1) != nil, !publicSessions.registrationPending(for: server, seat: 1) {
+                for index in seats.indices where seats[index].kind == "local" { seats[index].name = localCallsign }
+            }
+            send(.preset(rules: preset.rules, roster: seats))
         } else { localRules = preset.rules; localBots = preset.bots; localTeam = preset.team; publicInfinitySelected = false }
     }
 
@@ -434,19 +736,34 @@ final class GameSession: ObservableObject {
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
             error = "Enter an HTTP or HTTPS server address."; return
         }
+        let restoreLocal = publicArena && restoringPublicSession && publicSessions.activeLocal
+        let local: (key: String, fresh: Bool)?
+        do { local = restoreLocal ? try prepareLocalAccount(for: url) : nil }
+        catch { self.error = error.localizedDescription; return }
         leave(clearPublicIntent: !publicArena)
         baseURL = url
         screen = .connecting
         if publicArena {
             arenaActive = true
             publicIdentityActive = true; publicRecoveryPending = true
-            publicSessions.activate(url)
-            arenaClient.connectPublic(baseURL: url, name: cleanName, colorIndex: GamePalette.index(colorIndex),
-                                      publicToken: publicSessions.session(for: url)?.publicToken, updateNames: !restoringPublicSession)
+            publicSessions.activate(url, local: restoreLocal)
+            arenaClient.connectPublic(baseURL: url, name: cleanName, colorIndex: GamePalette.index(colorIndex), localName: restoreLocal ? localCallsign : nil,
+                                      publicToken: accountSession(for: url)?.publicToken, updateNames: !restoringPublicSession,
+                                      localPublicToken: local?.key, localNewAccount: local?.fresh ?? false)
         } else {
             roomClient.connectRoom(baseURL: url, name: cleanName, code: code,
-                                   publicToken: publicSessions.session(for: url)?.publicToken)
+                                   publicToken: accountSession(for: url)?.publicToken)
         }
+    }
+
+    private func connectRoomArena(server: URL, code: String, token: String, resume: Bool = false) {
+        let needsLocal = accountLocalPlayer?.spectating == false
+        do {
+            let local = needsLocal ? try prepareLocalAccount(for: server) : nil
+            arenaActive = true
+            arenaClient.connectRoomInfinity(baseURL: server, code: code, token: token, resume: resume, generation: arenaGeneration,
+                                            localPublicToken: local?.key, localNewAccount: local?.fresh ?? false)
+        } catch { self.error = error.localizedDescription }
     }
 
     @discardableResult private func restorePublicSessionIfNeeded() -> Bool {
@@ -548,7 +865,7 @@ final class GameSession: ObservableObject {
         localTank = nil; showChat = false; showQueues = false; showJoin = false; showPresets = false
         publicIdentityActive = false; publicRecoveryPending = false; publicResumePaused = false
         publicSuspended = false; publicScoreResetPending = false
-        showRules = false; showControls = false; showSidebar = false; showSettings = false
+        showRules = false; showControls = false; showSidebar = false; showSettings = false; showAccount = false
         chatMessages = []; opponentMessages = []; queueState = nil; queueListings = []
         chatDraft = ""; chatPending = false; chatError = nil; pendingChatText = nil
         UIApplication.shared.isIdleTimerDisabled = false
@@ -595,9 +912,17 @@ final class GameSession: ObservableObject {
                 }
                 if arena, value.isPublic {
                     publicIdentityActive = true
-                    if !publicSessions.activate(server) { error = "The public session could not be saved on this device." }
+                    if !publicSessions.activate(server, local: value.localId != nil) { error = "The public session could not be saved on this device." }
                 }
                 scheduleCallsignAvailability()
+            }
+            if let token = value.localPublicToken, let server = baseURL,
+               let credential = try? PublicInfinitySession(baseURL: server, publicToken: token) {
+                let expected = (arena ? arenaClient : roomClient).localAccountRequestKey
+                let current = accountSession(for: server, seat: 1)
+                if current == nil || current?.publicToken == expected || current == credential {
+                    if !publicSessions.confirm(credential, requested: expected, seat: 1) { error = "P2's account key could not be saved in Keychain." }
+                }
             }
             if value.resumed { timeline = nil; scene.resetControls() }
             if !arena {
@@ -645,10 +970,10 @@ final class GameSession: ObservableObject {
                 callsign = own.name
                 if let index = GamePalette.colors.firstIndex(of: own.color.lowercased()) { colorIndex = index }
             }
+            if let local = value.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id }) { localCallsign = local.name }
         case .infinityStarted:
             guard let url = baseURL, let welcome, let code = welcome.room, let token = welcome.token else { return }
-            arenaActive = true
-            arenaClient.connectRoomInfinity(baseURL: url, code: code, token: token)
+            connectRoomArena(server: url, code: code, token: token)
         case .state(let snapshot):
             guard arena == arenaActive else { return }
             if snapshot.phase == "lobby", !arena { return }
@@ -731,10 +1056,28 @@ final class GameSession: ObservableObject {
                 if notice.type == "leaderboard_reset" { publicScoreResetPending = true; status = "Public leaderboard updated." }
                 if notice.code == "callsign_taken" { rejectCallsigns(notice.conflicts, message: notice.message) }
                 if notice.code == "session_replaced" {
-                    publicSessions.activate(nil)
-                    publicIdentityActive = false; publicRecoveryPending = false; publicSuspended = false
-                    paused = false; screen = .menu
-                    scene.resetControls(); audio.pause(); UIApplication.shared.isIdleTimerDisabled = false
+                    let slot = notice.seat == 1 ? 1 : 0
+                    let client = arena ? arenaClient : roomClient
+                    let key = slot == 1 ? (client.localAccountKey ?? client.localAccountRequestKey) : client.accountKey
+                    let matching = baseURL.flatMap { server in key.map { publicSessions.session(for: server, seat: slot)?.publicToken == $0 } } ?? false
+                    if let server = baseURL, let key, matching,
+                       let credential = try? PublicInfinitySession(baseURL: server, publicToken: key) { clearAccountIntent(for: credential, seat: slot) }
+                    else if slot == 0, key == nil { publicSessions.activate(nil) }
+                    leave(clearPublicIntent: false)
+                    error = notice.message ?? (slot == 1 ? "P2's tank was taken over on another device. P1's account key is unchanged." : "Your tank was taken over on another device. PLAY to take it back.")
+                }
+                if notice.code == "account_key_revoked" {
+                    let slot = notice.seat == 1 ? 1 : 0
+                    let client = arena ? arenaClient : roomClient
+                    let oldKey = slot == 1 ? (client.localAccountKey ?? client.localAccountRequestKey) : client.accountKey
+                    let matching = baseURL.flatMap { server in oldKey.map { publicSessions.session(for: server, seat: slot)?.publicToken == $0 } } ?? false
+                    if matching, let server = baseURL, let oldKey,
+                       let credential = try? PublicInfinitySession(baseURL: server, publicToken: oldKey) {
+                        publicSessions.forget(server, ifMatching: oldKey, seat: slot)
+                        clearAccountIntent(for: credential, seat: slot)
+                    }
+                    leave(clearPublicIntent: false)
+                    error = notice.message ?? (slot == 1 ? "P2's account key was reset on another device. Import P2's new key; P1's key is unchanged." : GameNetworkError.accountKeyRevoked.localizedDescription)
                 }
                 if notice.action == "chat" { chatPending = false; pendingChatText = nil; chatError = notice.message }
             case .reconnecting(let attempt):
@@ -744,7 +1087,7 @@ final class GameSession: ObservableObject {
                     dropPublicRoomRoute()
                     disconnected = true; paused = false; screen = .connecting
                     scene.resetControls(); timeline?.neutralize(); audio.pause()
-                    showSettings = false; showControls = false; showScores = false
+                    showSettings = false; showAccount = false; showControls = false; showScores = false
                     showChat = false; showRules = false; showSidebar = false
                     UIApplication.shared.isIdleTimerDisabled = false
                 } else { disconnected = true; setPaused(true) }

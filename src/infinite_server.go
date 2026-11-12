@@ -65,22 +65,25 @@ type infiniteServer struct {
 }
 
 type infiniteMessage struct {
-	Type            string `json:"type"`
-	Version         string `json:"version"`
-	Name            string `json:"name"`
-	LocalName       string `json:"localName"`
-	ColorIndex      *int   `json:"colorIndex"`
-	LocalColorIndex *int   `json:"localColorIndex"`
-	Code            string `json:"code"`
-	Token           string `json:"token"`
-	PublicToken     string `json:"publicToken"`
-	UpdateNames     bool   `json:"updateNames"`
-	Resume          bool   `json:"resume"`
-	Generation      uint64 `json:"generation"`
-	Local           bool   `json:"local"`
-	Paused          bool   `json:"paused"`
-	Seat            int    `json:"seat"`
-	RequestID       uint64 `json:"requestId"`
+	Type                string `json:"type"`
+	Version             string `json:"version"`
+	Name                string `json:"name"`
+	LocalName           string `json:"localName"`
+	ColorIndex          *int   `json:"colorIndex"`
+	LocalColorIndex     *int   `json:"localColorIndex"`
+	Code                string `json:"code"`
+	Token               string `json:"token"`
+	PublicToken         string `json:"publicToken"`
+	LocalPublicToken    string `json:"localPublicToken"`
+	LocalNewAccount     bool   `json:"localNewAccount"`
+	IndependentAccounts bool   `json:"independentAccounts"`
+	UpdateNames         bool   `json:"updateNames"`
+	Resume              bool   `json:"resume"`
+	Generation          uint64 `json:"generation"`
+	Local               bool   `json:"local"`
+	Paused              bool   `json:"paused"`
+	Seat                int    `json:"seat"`
+	RequestID           uint64 `json:"requestId"`
 	Input
 
 	T *float64 `json:"t"`
@@ -232,17 +235,24 @@ func closeInfiniteError(c *Client, err error) {
 
 func rejectInfinite(c *Client, message string) {
 	packet := map[string]any{"type": "error", "message": message}
+	if c.accountFailureSeat != nil {
+		packet["seat"] = *c.accountFailureSeat
+	}
 	if len(c.callsignConflicts) > 0 {
 		packet["code"] = "callsign_taken"
 		packet["conflicts"] = c.callsignConflicts
 	}
 	switch message {
+	case errSameSeatAccount.Error(), errNewAccountKeyInvalid.Error():
+		packet["code"] = "account_seat_conflict"
 	case infiniteSessionActive:
 		packet["code"] = "session_active"
 	case infiniteResumeExpired:
 		packet["code"] = "resume_expired"
 	case infinitePublicResumeInvalid:
 		packet["code"] = "public_resume_invalid"
+	case infiniteAccountKeyRevoked:
+		packet["code"] = "account_key_revoked"
 	case infinitePublicStoreBusy:
 		packet["code"] = "server_busy"
 	case "The leqra server is shutting down.":
@@ -264,8 +274,28 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 	if existing, admitted := s.connections[c]; !admitted || existing.pilot != nil {
 		return infiniteConnection{}, "Could not join Infinity."
 	}
+	if err := s.applySeatMigrations(); err != nil {
+		return infiniteConnection{}, infinitePublicStoreBusy
+	}
 	connection := infiniteConnection{arena: s.public}
+	if msg.Code == "" && (msg.IndependentAccounts || msg.LocalPublicToken != "") {
+		return s.joinIndependentPublic(c, msg, now, connection)
+	}
 	if msg.PublicToken != "" && msg.Code == "" {
+		hash, _ := publicTokenHash(msg.PublicToken)
+		independentPair := func(other infiniteConnection) bool {
+			return other.arena == s.public && other.pilot != nil && other.local != nil && other.pilot.publicKey != other.local.publicKey && (other.pilot.publicKey == hash || other.local.publicKey == hash)
+		}
+		attached := false
+		for _, other := range s.connections {
+			attached = attached || independentPair(other)
+		}
+		for _, reservation := range s.reservations {
+			attached = attached || independentPair(reservation.connection)
+		}
+		if attached {
+			return s.joinIndependentPublic(c, msg, now, connection)
+		}
 		return s.resumePublic(c, msg, now)
 	}
 	first := infiniteSeat{name: msg.Name, colorIndex: -1}
@@ -358,6 +388,14 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 	}
 
 	if connection.arena == s.public {
+		if msg.IndependentAccounts || local != nil && local.publicToken != "" && local.publicToken != first.publicToken {
+			msg.Name, msg.PublicToken = first.name, first.publicToken
+			msg.UpdateNames = true
+			if local != nil {
+				msg.LocalName, msg.LocalPublicToken = local.name, local.publicToken
+			}
+			return s.joinIndependentPublic(c, msg, now, connection)
+		}
 		var err error
 		first, local, err = s.createPublicIdentity(first, local, now)
 		if err != nil {
@@ -470,6 +508,10 @@ func (s *infiniteServer) step(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
+		return
+	}
+	if err := s.applySeatMigrations(); err != nil {
+		s.publicStoreError(err)
 		return
 	}
 	s.processPublicInfinity(now)

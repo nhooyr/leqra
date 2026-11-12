@@ -276,6 +276,10 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 			local.ColorIndex = second.saved.ColorIndex
 		}
 		local.publicKey = p.publicKey
+		if second.publicToken != "" {
+			local.publicToken = second.publicToken
+			local.publicKey, _ = publicTokenHash(second.publicToken)
+		}
 	}
 	if !a.welcome(c, p, local, generation, first.resumed) {
 		clear(a.pilots[before:])
@@ -299,17 +303,21 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 
 func (a *infiniteArena) welcome(c *Client, primary, local *infinitePilot, generation uint64, resumed bool) bool {
 	packet := struct {
-		Type        string `json:"type"`
-		ID          int    `json:"id"`
-		Seed        uint32 `json:"seed"`
-		LocalID     int    `json:"localId,omitempty"`
-		Generation  uint64 `json:"generation,omitempty"`
-		Resumed     bool   `json:"resumed,omitempty"`
-		PublicToken string `json:"publicToken,omitempty"`
-		Public      bool   `json:"public,omitempty"`
+		Type             string `json:"type"`
+		ID               int    `json:"id"`
+		Seed             uint32 `json:"seed"`
+		LocalID          int    `json:"localId,omitempty"`
+		Generation       uint64 `json:"generation,omitempty"`
+		Resumed          bool   `json:"resumed,omitempty"`
+		PublicToken      string `json:"publicToken,omitempty"`
+		LocalPublicToken string `json:"localPublicToken,omitempty"`
+		Public           bool   `json:"public,omitempty"`
 	}{Type: "welcome", ID: primary.ID, Seed: a.seed, Generation: generation, Resumed: resumed, PublicToken: primary.publicToken, Public: a.publicEntries != nil}
 	if local != nil {
 		packet.LocalID = local.ID
+		if local.publicToken != primary.publicToken {
+			packet.LocalPublicToken = local.publicToken
+		}
 	}
 	return c.enqueue(packet)
 }

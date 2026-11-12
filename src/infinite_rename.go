@@ -13,6 +13,10 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 	fail := func(message string) {
 		c.enqueue(map[string]any{"type": "rename_error", "requestId": msg.RequestID, "seat": msg.Seat, "message": message})
 	}
+	if err := s.applySeatMigrations(); err != nil {
+		fail(infinitePublicStoreBusy)
+		return
+	}
 	connection, ok := s.connections[c]
 	if s.closed || !ok || connection.arena == nil || connection.pilot == nil {
 		fail("Reconnect before changing the callsign.")
@@ -55,12 +59,20 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 		}
 		names = append(names, localName)
 	}
-	if _, err := s.hub.callsigns.claim(connection.pilot.publicToken, names); err != nil {
+	var claimErr error
+	if connection.local != nil && connection.local.publicKey != connection.pilot.publicKey {
+		_, claimErr = s.hub.callsigns.claimSeatAccounts([]accountSeatClaim{{token: connection.pilot.publicToken, name: names[0]}, {token: connection.local.publicToken, name: names[1]}}, nil)
+	} else {
+		_, claimErr = s.hub.callsigns.claim(connection.pilot.publicToken, names)
+	}
+	if err := claimErr; err != nil {
 		packet := map[string]any{"type": "rename_error", "requestId": msg.RequestID, "seat": msg.Seat, "message": err.Error()}
 		var conflict *callsignConflictError
 		if errors.As(err, &conflict) {
 			packet["code"] = "callsign_taken"
 			packet["conflicts"] = conflict.Conflicts
+		} else if errors.Is(err, errOnlineOwnerRevoked) {
+			packet["code"] = "account_key_revoked"
 		} else {
 			packet["code"] = "server_busy"
 		}

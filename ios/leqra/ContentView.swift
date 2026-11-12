@@ -16,7 +16,7 @@ struct ContentView: View {
                     else { game(landscape: landscape) }
                 }.padding(.horizontal, session.screen == .playing && session.isInfinity ? 0 : 9)
                     .padding(.top, landscape ? 5 : 9).padding(.bottom, session.screen == .playing && session.isInfinity ? 0 : 8)
-                    .allowsHitTesting(!session.paused && !session.showRules && !session.showControls && !session.showSettings && !session.showJoin && !session.showPresets && !session.showQueues && !session.showSidebar)
+                    .allowsHitTesting(!session.paused && !session.showRules && !session.showControls && !session.showSettings && !session.showAccount && !session.showJoin && !session.showPresets && !session.showQueues && !session.showSidebar)
                 if session.paused && session.screen == .playing { PauseCard(session: session, landscape: landscape) }
                 if session.showSidebar { SidebarPanel(session: session) }
                 if session.showPresets { PresetsPanel(session: session) }
@@ -25,6 +25,7 @@ struct ContentView: View {
                 if session.showRules { RulesEditor(session: session) }
                 if session.showControls { ControlsPanel(session: session) }
                 if session.showSettings { NativeSettings(session: session) }
+                if session.showAccount { AccountPanel(session: session) }
                 if session.showChat { VStack { Spacer(); HStack { Spacer(); ChatPanel(session: session) } } }
             }.foregroundStyle(WebStyle.text).tint(WebStyle.accent)
         }

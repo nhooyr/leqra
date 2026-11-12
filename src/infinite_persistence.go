@@ -231,6 +231,9 @@ func (s *infiniteServer) openPublicStore(path string) error {
 	}
 	s.public.nextID = nextID
 	s.publicDB = db
+	if err = s.applySeatMigrations(); err != nil {
+		return fail(err)
+	}
 	if err = s.persistPublicLocked(nil, nil); err != nil {
 		s.publicDB = nil
 		return fail(err)
@@ -239,11 +242,11 @@ func (s *infiniteServer) openPublicStore(path string) error {
 }
 
 func publicTokenHash(token string) (string, bool) {
-	if !strings.HasPrefix(token, "p_") {
+	if len(token) != 45 || !strings.HasPrefix(token, "p_") {
 		return "", false
 	}
 	data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, "p_"))
-	if err != nil || len(data) != 32 {
+	if err != nil || len(data) != 32 || base64.RawURLEncoding.EncodeToString(data) != token[2:] {
 		return "", false
 	}
 	hash := sha256.Sum256([]byte(token))
@@ -261,6 +264,16 @@ func newPublicToken() (string, string, error) {
 }
 
 func publicJoinClaimError(c *Client, err error) string {
+	var seat *seatAccountError
+	if errors.As(err, &seat) {
+		c.accountFailureSeat = &seat.seat
+	}
+	if errors.Is(err, errSameSeatAccount) || errors.Is(err, errNewAccountKeyInvalid) {
+		return err.Error()
+	}
+	if errors.Is(err, errOnlineOwnerRevoked) {
+		return infiniteAccountKeyRevoked
+	}
 	var conflict *callsignConflictError
 	if errors.As(err, &conflict) {
 		c.callsignConflicts = conflict.Conflicts
@@ -420,7 +433,10 @@ func (s *infiniteServer) updatePublicNames(msg infiniteMessage, profile infinite
 }
 
 func stopSupersededPublic(c *Client) {
-	packet := map[string]any{"type": "error", "code": "session_replaced", "message": "This pilot was opened on another connection."}
+	stopAccountTransport(c, map[string]any{"type": "error", "code": "session_replaced", "message": "This pilot was opened on another device. This connection has signed out."})
+}
+
+func stopAccountTransport(c *Client, packet map[string]any) {
 	if !c.enqueue(packet) {
 		c.stop()
 		return
@@ -445,6 +461,9 @@ func (s *infiniteServer) resumePublic(c *Client, msg infiniteMessage, now time.T
 	profile, exists := s.publicProfiles[hash]
 	if !valid {
 		return infiniteConnection{}, infinitePublicResumeInvalid
+	}
+	if s.hub.callsigns.revokedOwner(msg.PublicToken) {
+		return infiniteConnection{}, infiniteAccountKeyRevoked
 	}
 	if !exists {
 		if _, known := s.hub.callsigns.owner(msg.PublicToken); !known {
@@ -846,11 +865,17 @@ func (s *infiniteServer) prunePublicProfiles(now time.Time) error {
 	for _, c := range s.connections {
 		if c.pilot != nil {
 			active[c.pilot.publicKey] = true
+			if c.local != nil {
+				active[c.local.publicKey] = true
+			}
 		}
 	}
 	for _, r := range s.reservations {
 		if r.connection.arena == s.public && r.connection.pilot != nil {
 			active[r.connection.pilot.publicKey] = true
+			if r.connection.local != nil {
+				active[r.connection.local.publicKey] = true
+			}
 		}
 	}
 	var zero []infinitePublicProfile

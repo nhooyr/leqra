@@ -32,7 +32,7 @@ func infiniteRoomSeat(p *Player, rules MatchRules) infiniteSeat {
 		team = 0
 	}
 	ownerToken := ""
-	if playerKind(p) == "human" {
+	if playerKind(p) == "human" || playerKind(p) == "local" {
 		ownerToken = p.PublicToken
 	}
 	return infiniteSeat{name: p.Name, team: team, publicToken: ownerToken, colorIndex: tankColorIndex[selectedColor(p.ID, team, p.ColorIndex, rules)]}

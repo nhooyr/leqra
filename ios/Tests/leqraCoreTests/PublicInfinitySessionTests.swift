@@ -310,10 +310,14 @@ final class PublicInfinitySessionTests: XCTestCase {
         XCTAssertTrue(errors.isEmpty, errors.joined(separator: ", "))
         XCTAssertEqual(recoveredWelcome?.id, original.id)
         XCTAssertEqual(recoveredName, editedName, "Automatic recovery must never apply an old locally cached name over the authoritative name.")
-        let owned = try await recovery.fetchCallsignAvailability(baseURL: base, names: [initialName, editedName], publicToken: token)
-        let unowned = try await recovery.fetchCallsignAvailability(baseURL: base, names: [initialName, editedName])
-        XCTAssertEqual(owned.map(\.available), [true, true])
-        XCTAssertEqual(unowned.map(\.available), [false, false], "Renaming must not release either claimed name to another owner.")
+        // These are aliases for one account, not the independently authenticated
+        // P1/P2 rows represented by a multi-name availability request.
+        let ownedInitial = try await recovery.fetchCallsignAvailability(baseURL: base, names: [initialName], publicToken: token)
+        let ownedEdited = try await recovery.fetchCallsignAvailability(baseURL: base, names: [editedName], publicToken: token)
+        let unownedInitial = try await recovery.fetchCallsignAvailability(baseURL: base, names: [initialName])
+        let unownedEdited = try await recovery.fetchCallsignAvailability(baseURL: base, names: [editedName])
+        XCTAssertEqual((ownedInitial + ownedEdited).map(\.available), [true, true])
+        XCTAssertEqual((unownedInitial + unownedEdited).map(\.available), [false, false], "Renaming must not release either claimed name to another owner.")
     }
 
     private func packet(_ object: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: object) }

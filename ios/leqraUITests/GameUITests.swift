@@ -58,6 +58,53 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testAccountKeyIsMaskedInvalidImportsFailAndActiveGamesCannotSwitch() {
+        let app = launch()
+        let open = app.buttons["openAccount"]
+        let primaryName = app.textFields["callsignField"].value as? String
+        reveal(open, in: app); open.tap()
+        XCTAssertTrue(app.staticTexts["maskedAccountKey"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["maskedAccountKey"].label.contains("p_"))
+        let draft = app.secureTextFields["importAccountKey"]
+        XCTAssertTrue(draft.exists)
+        draft.tap(); draft.typeText("invalid-key")
+        let check = app.buttons["checkAccountKey"]
+        app.scrollViews["modalScroll"].swipeUp()
+        XCTAssertTrue(check.isEnabled); check.tap()
+        let error = app.staticTexts["accountImportStatus"]
+        let rejected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label.length > 0 AND label != 'Checking key…'"), object: error)
+        XCTAssertEqual(XCTWaiter.wait(for: [rejected], timeout: 10), .completed)
+        XCTAssertFalse(app.buttons["useAccountKey"].exists, "An invalid key must never reach the replacement step.")
+        let help = app.links["Open a GitHub issue"]
+        for _ in 0..<5 where !help.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+        XCTAssertTrue(help.exists)
+        app.buttons["Close Account key"].tap()
+        if app.buttons["Not Now"].exists { app.buttons["Not Now"].tap() }
+
+        XCTAssertEqual(app.textFields["callsignField"].frame.midY, open.frame.midY, accuracy: 1, "Account access belongs beside its player's callsign.")
+        app.buttons.matching(NSPredicate(format: "label == 'Settings'")).firstMatch.tap()
+        let localAccount = app.buttons["settingsLocalAccount"]
+        for _ in 0..<5 where !localAccount.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+        localAccount.tap()
+        XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].label.contains("(P2)"))
+        XCTAssertFalse(app.buttons["copyAccountKey"].isEnabled, "Opening P2's panel must not generate or copy P1's credential.")
+        app.buttons["Close Account key"].tap()
+        XCTAssertEqual(app.textFields["callsignField"].value as? String, primaryName, "Managing P2 must not rename P1.")
+
+        selectPublic(false, in: app); selectMode("infinity", in: app); play(in: app); pause(in: app)
+        app.buttons["Settings"].tap()
+        let account = app.buttons["settingsAccount"]
+        for _ in 0..<5 where !account.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+        account.tap()
+        XCTAssertTrue(app.secureTextFields["importAccountKey"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.secureTextFields["importAccountKey"].isEnabled)
+        XCTAssertTrue(app.staticTexts["Return to the offline ready room to import or reset a key."].exists)
+        app.buttons["Close Account key"].tap()
+        leaveGame(in: app)
+    }
+
+    @MainActor
     func testOfflineTouchPauseAndFrameRateSettings() {
         let app = launch()
         selectPublic(false, in: app)
@@ -234,7 +281,7 @@ final class GameUITests: XCTestCase {
         XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10))
         let fieldFrame = app.textFields["callsignField"].frame
         let feedback = app.staticTexts["callsignAvailability"]
-        let taken = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Taken online'"), object: feedback)
+        let taken = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'is taken'"), object: feedback)
         await fulfillment(of: [taken], timeout: 10)
         XCTAssertEqual(app.textFields["callsignField"].frame, fieldFrame, "Inline validation must reserve its space.")
         selectPublic(false, in: app)

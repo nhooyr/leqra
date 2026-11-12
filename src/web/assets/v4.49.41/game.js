@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.40';
+const GAME_VERSION='4.49.41';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -1931,7 +1931,7 @@ function submitRoomRename(e){
  const code=cleanRoomCode($('onlineRoomCode').value);if(!validRoomCode(code)){$('roomStatus').textContent='Use a room name of 1–128 characters on one line.';$('onlineRoomCode').focus();return;}if(code===online.code){$('onlineRoomCode').value=online.code;return;}
  online.roomRenamePending=true;$('onlineRoomCode').disabled=true;$('roomStatus').textContent='Renaming room…';if(!sendOnline({type:'rename_room',code})){online.roomRenamePending=false;$('onlineRoomCode').disabled=false;$('roomStatus').textContent='Connection unavailable. Room was not renamed.';}
 }
-function sendOnline(value){const ws=online.socket;if(!ws||ws.readyState!==WebSocket.OPEN)return false;const busy=ws.bufferedAmount>4096;if(busy&&value.type!=='lobby'&&value.type!=='leave')return false;try{const data=JSON.stringify(value);if(busy&&data.length>128)return false;ws.send(data);return true;}catch(_){return false;}}
+function sendOnline(value){if(value.type==='add'&&value.kind==='local'||value.type==='preset'&&value.roster?.some(player=>player.kind==='local')){try{value={...value,independentAccounts:true,...window.leqraIdentity?.prepareLocal?.()};online.pendingLocalProof=value.localPublicToken;}catch(error){$('roomStatus').textContent=error.message;return false;}}const ws=online.socket;if(!ws||ws.readyState!==WebSocket.OPEN)return false;const busy=ws.bufferedAmount>4096;if(busy&&value.type!=='lobby'&&value.type!=='leave')return false;try{const data=JSON.stringify(value);if(busy&&data.length>128)return false;ws.send(data);return true;}catch(_){return false;}}
 // Host moderation is only UI here: the Go server independently checks identity,
 // host authority, room scope, and the seat incarnation again on every request.
 function roomKickDisabled(r=roomData()){
@@ -2097,8 +2097,180 @@ function rememberCallsign(name){
 function rememberLocalCallsign(name){try{localStorage.setItem('leqra.local2Name',name);}catch(_){}}
 function savedLocalCallsign(){try{return cleanPilotName(localStorage.getItem('leqra.local2Name')||'')||'CO-PILOT';}catch(_){return 'CO-PILOT';}}
 // Durable bearer ownership is separate from callsigns and room reconnect tokens.
-function publicIdentityToken(){if(typeof publicIdentityToken.memory==='string')return publicIdentityToken.memory;try{return localStorage.getItem('leqra.publicToken')||'';}catch(_){return '';}}
-function rememberPublicIdentity(token){if(typeof token!=='string'||token.length>256)return;delete publicIdentityToken.memory;try{if(token)localStorage.setItem('leqra.publicToken',token);else localStorage.removeItem('leqra.publicToken');}catch(_){publicIdentityToken.memory=token;} }
+function publicIdentityToken(seat=0){const memory=seat===1?'localMemory':'memory',key=seat===1?'leqra.localPublicToken':'leqra.publicToken';if(typeof publicIdentityToken[memory]==='string')return publicIdentityToken[memory];try{return localStorage.getItem(key)||(seat===1?JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token:'')||'';}catch(_){return '';}}
+function rememberPublicIdentity(token,expected,seat=0){if(typeof token!=='string'||token.length>256)return;if(expected!==undefined&&publicIdentityToken(seat)!==expected&&publicIdentityToken(seat)!==token)return;const memory=seat===1?'localMemory':'memory',key=seat===1?'leqra.localPublicToken':'leqra.publicToken';delete publicIdentityToken[memory];try{if(token)localStorage.setItem(key,token);else localStorage.removeItem(key);if(seat===1&&(token&&localStorage.getItem(key)===token&&JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===token||!token&&(!expected||JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===expected)))localStorage.removeItem('leqra.localAccountRegistration');}catch(_){publicIdentityToken[memory]=token;} }
+function prepareLocalAccount(){
+ let registration;try{registration=JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null');}catch(_){throw Error('The saved P2 account registration could not be read. Keep a backup of its key before trying again.');}if(registration&&!accountKeyValid(registration.token))throw Error('The saved P2 account registration is invalid. Keep a backup of its key before trying again.');
+ let token=publicIdentityToken(1);if(token&&token===publicIdentityToken())throw Error('P1 and P2 need separate account keys. Import the correct P2 key.');
+ if(!token){
+  const bytes=crypto.getRandomValues(new Uint8Array(32));token='p_'+btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const record=JSON.stringify({token});localStorage.setItem('leqra.localAccountRegistration',record);if(localStorage.getItem('leqra.localAccountRegistration')!==record)throw Error('The P2 account key could not be saved. Enable browser storage before going online.');delete publicIdentityToken.localMemory;
+ }
+ return{localPublicToken:token,localNewAccount:!localStorage.getItem('leqra.localPublicToken')&&localAccountRegistrationPending(token)?true:undefined};
+}
+function localAccountRegistrationPending(token){try{return !!token&&JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===token;}catch(_){return false;}}
+function accountSeat(){return $('accountDialog')?.dataset?.accountSeat==='1'?1:0;}
+function accountStorageKey(seat){return seat===1?'leqra.localPublicToken':'leqra.publicToken';}
+function accountImportAllowed(){const offline=mode==='room'||mode==='online'&&!online.code,noSocket=!online.socket||online.socket.readyState>=2;return offline&&['menu','matchOver'].includes(phase)&&!online.connected&&!online.connecting&&noSocket&&!$('infiniteArena')?.open&&!online.renamePending;}
+function accountNotice(id,text,error=false){const node=$(id);node.textContent=text;node.classList.toggle('error',error);}
+function accountKeyValid(token){return typeof token==='string'&&/^p_[A-Za-z0-9_-]{43}$/.test(token);}
+async function fetchAccountInfo(token,signal,newPublicToken){
+ const response=await fetch(new URL(newPublicToken?'/api/account/rotate':'/api/account',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:token,...(newPublicToken?{newPublicToken}:{})}),cache:'no-store',redirect:'error',signal});
+ let data;try{data=await response.json();}catch(_){throw Error('Account details unavailable. Try again.');}
+ if(!response.ok){const error=Error(response.status===401?(data?.code==='account_key_revoked'?'This account key was reset. Import the latest key to continue.':'That account key is invalid or unavailable.'):'Account details unavailable. Try again.');error.status=response.status;error.code=data?.code;throw error;}
+ if(!data||!Array.isArray(data.names)||data.names.length>128||data.names.some(name=>typeof name!=='string'||cleanPilotName(name)!==name||!name))throw Error('Invalid account response.');
+ const profile=data.publicProfile;
+ if(profile&&(typeof profile.name!=='string'||cleanPilotName(profile.name)!==profile.name||!profile.name||!Number.isSafeInteger(profile.score)||profile.localName!==undefined&&(typeof profile.localName!=='string'||cleanPilotName(profile.localName)!==profile.localName||!profile.localName||!Number.isSafeInteger(profile.localScore))))throw Error('Invalid account response.');
+ return data;
+}
+function renderAccountInfo(target,data,seat=accountSeat()){
+ target.replaceChildren();
+ const names=document.createElement('p');names.className='mode-help';names.textContent=data.names.length?'Reserved callsigns: '+data.names.join(', '):'This account has no reserved callsigns yet.';target.append(names);
+ if(Number.isSafeInteger(data.totalNames)&&data.totalNames>data.names.length){const more=document.createElement('p');more.className='mode-help';more.textContent='Showing '+data.names.length+' of '+data.totalNames+' reserved callsigns.';target.append(more);}
+ if(data.publicProfile){const profile=data.publicProfile,p=document.createElement('p');p.className='mode-help';p.textContent='Public Infinity: '+profile.name+' (P'+(seat+1)+'), score '+profile.score+'.';target.append(p);}
+}
+function clearAccountImport(){
+ const dialog=$('accountDialog');dialog.accountImportRevision=(dialog.accountImportRevision||0)+1;dialog.accountImportRequest?.abort();delete dialog.accountImportRequest;delete dialog.accountPending;
+ $('accountImportReview').hidden=true;$('accountImportInfo').replaceChildren();$('accountImportName').replaceChildren();$('accountUseBtn').disabled=true;
+}
+function syncAccountImport(){
+ const dialog=$('accountDialog'),seat=accountSeat(),allowed=accountImportAllowed(),busy=!!dialog.accountRotateRequest||!!dialog.accountRecoveryRequest,unregistered=seat===1&&localAccountRegistrationPending(publicIdentityToken(1))&&dialog.accountRegisteredKey!==publicIdentityToken(1);
+ $('accountImportKey').disabled=!allowed||busy;$('accountCheckBtn').disabled=!allowed||busy||!$('accountImportKey').value.trim()||!!dialog.accountImportRequest;
+ $('accountRotateBtn').disabled=!allowed||busy||unregistered||!publicIdentityToken(seat);$('accountCopyBtn').disabled=!publicIdentityToken(seat)||unregistered||!!dialog.accountRotateRequest;
+ $('accountImportHelp').textContent=allowed?'Importing replaces only P'+(seat+1)+'’s account key on this device. Copy its current key first if you want to keep both accounts.':'Return to the ready room and leave online play before importing another account.';
+}
+function openAccount(seat=0){
+ seat=seat===1?1:0;
+ const dialog=$('accountDialog'),token=publicIdentityToken(seat);dialog.dataset.accountSeat=String(seat);delete dialog.accountRegisteredKey;$('accountTitle').textContent=(seat?'P2':'P1')+' account key.';clearAccountImport();$('accountImportKey').value='';$('accountKey').type='password';$('accountKey').value=token;$('accountCopyBtn').disabled=!token;$('accountCurrentInfo').replaceChildren();
+ accountNotice('accountCurrentNotice',token?'Loading account details…':'Go online once to create an account key, or import an existing one.');accountNotice('accountImportNotice','');syncAccountImport();openFeature('account');
+ dialog.accountCurrentRequest?.abort();const controller=new AbortController();dialog.accountCurrentRequest=controller;
+ resolvePendingAccountKeys();
+ if(!token)return;
+ const timeout=setTimeout(()=>controller.abort(),6000);
+ fetchAccountInfo(token,controller.signal).then(data=>{
+  if(!dialog.open||dialog.accountCurrentRequest!==controller||publicIdentityToken(seat)!==token||accountSeat()!==seat)return;
+  dialog.accountRegisteredKey=token;if(seat===1&&localAccountRegistrationPending(token))rememberPublicIdentity(token,token,1);renderAccountInfo($('accountCurrentInfo'),data);accountNotice('accountCurrentNotice','');syncAccountImport();
+ },error=>{if(dialog.open&&dialog.accountCurrentRequest===controller&&error.name!=='AbortError')accountNotice('accountCurrentNotice',seat===1&&error.status===401&&error.code!=='account_key_revoked'&&localAccountRegistrationPending(token)?'P2’s key is saved on this device. Go online with P2 to activate it, then copy the key.':error.message,true);}).finally(()=>{clearTimeout(timeout);if(dialog.accountCurrentRequest===controller)delete dialog.accountCurrentRequest;});
+}
+async function copyAccountKey(){
+ const dialog=$('accountDialog'),seat=accountSeat(),token=publicIdentityToken(seat);if(!dialog.open||!token)return;
+ try{await navigator.clipboard.writeText(token);if(dialog.open&&accountSeat()===seat&&publicIdentityToken(seat)===token)accountNotice('accountCurrentNotice','Account key copied. Keep it private.');}
+ catch(_){if(!dialog.open||accountSeat()!==seat||publicIdentityToken(seat)!==token)return;const field=$('accountKey');field.type='text';field.value=token;field.focus({preventScroll:true});field.select();accountNotice('accountCurrentNotice','Select and copy the account key above. Keep it private.');}
+}
+async function checkImportedAccount(){
+ const dialog=$('accountDialog'),field=$('accountImportKey'),token=field.value.trim();clearAccountImport();
+ if(!accountImportAllowed()){syncAccountImport();accountNotice('accountImportNotice','Leave online play and return to the ready room first.',true);return;}
+ if(token&&token===publicIdentityToken(accountSeat()===1?0:1)){accountNotice('accountImportNotice','P1 and P2 need separate account keys. Paste this player’s own key.',true);return;}
+ if(!accountKeyValid(token)){accountNotice('accountImportNotice','Paste the complete account key.',true);return;}
+ const seat=accountSeat(),oldToken=publicIdentityToken(seat),revision=dialog.accountImportRevision,controller=new AbortController();dialog.accountImportRequest=controller;syncAccountImport();accountNotice('accountImportNotice','Checking account key…');
+ const timeout=setTimeout(()=>controller.abort(),6000);
+ try{
+  const data=await fetchAccountInfo(token,controller.signal);
+  if(!dialog.open||dialog.accountImportRevision!==revision||field.value.trim()!==token)return;
+  if(!accountImportAllowed()||accountSeat()!==seat||publicIdentityToken(seat)!==oldToken){accountNotice('accountImportNotice','This device changed accounts or joined online play. Check the key again.',true);return;}
+  showAccountImportReview(token,data,oldToken,undefined,seat);
+ }catch(error){if(dialog.open&&dialog.accountImportRevision===revision)accountNotice('accountImportNotice',error.name==='AbortError'?'Account check timed out. Try again.':error.message,true);}
+ finally{clearTimeout(timeout);if(dialog.accountImportRequest===controller)delete dialog.accountImportRequest;syncAccountImport();}
+}
+function showAccountImportReview(token,data,oldToken,recoveryPrevious,seat=accountSeat()){
+ const dialog=$('accountDialog');dialog.accountPending={token,data,oldToken,roster:localRoom.players,recoveryPrevious,seat};$('accountImportNameLabel').textContent='P'+(seat+1)+' CALLSIGN ON THIS DEVICE';renderAccountInfo($('accountImportInfo'),data);
+ const names=[...new Set([data.publicProfile?.name,...data.names].filter(Boolean))],select=$('accountImportName');select.replaceChildren();
+ if(!names.length){const option=document.createElement('option');option.value='';option.textContent='Keep current callsign';select.append(option);}
+ for(const name of names){const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option);}
+ $('accountImportReview').hidden=false;$('accountUseBtn').disabled=false;accountNotice('accountImportNotice','Review the account, then choose Use this account.');
+}
+function pendingAccountKeys(){
+ const records=[];
+ for(let index=0;index<localStorage.length;index++){
+  const storageKey=localStorage.key(index);if(!storageKey?.startsWith('leqra.pendingAccountKey.'))continue;
+  let record;try{record=JSON.parse(localStorage.getItem(storageKey));}catch(_){throw Error('A saved account reset could not be read. Keep a backup of your account key.');}
+  if(!accountKeyValid(record?.previous)||!accountKeyValid(record?.replacement))throw Error('A saved account reset could not be read. Keep a backup of your account key.');
+  const seat=record.seat??0;if(seat!==0&&seat!==1)throw Error('The saved account reset has an invalid player.');records.push({...record,seat,storageKey});if(records.length>16)throw Error('Finish the saved account key reset before starting another.');
+ }
+ return records;
+}
+function savePendingAccountKey(previous,seat=accountSeat()){
+ const bytes=crypto.getRandomValues(new Uint8Array(48)),replacement='p_'+btoa(String.fromCharCode(...bytes.subarray(0,32))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),id=[...bytes.subarray(32)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+ const storageKey='leqra.pendingAccountKey.'+id,record={previous,replacement,seat},encoded=JSON.stringify(record);localStorage.setItem(storageKey,encoded);
+ if(localStorage.getItem(storageKey)!==encoded)throw Error('The replacement account key could not be saved.');
+ return {...record,storageKey};
+}
+function clearPendingAccountKeys(previous,seat=0){
+ for(const record of pendingAccountKeys())if(record.previous===previous&&record.seat===seat)localStorage.removeItem(record.storageKey);
+}
+function completeAccountReset(record,data){
+ const dialog=$('accountDialog'),seat=record.seat??0,current=publicIdentityToken(seat);
+ if(current&&current!==record.previous&&current!==record.replacement){
+  if(dialog.open&&accountSeat()===seat&&accountImportAllowed()){$('accountImportKey').value=record.replacement;showAccountImportReview(record.replacement,data,current,record.previous,seat);accountNotice('accountCurrentNotice','A previous key reset completed. Review the recovered account below to use it.');}
+  return;
+ }
+ rememberPublicIdentity(record.replacement,undefined,seat);
+ let saved=false;try{saved=localStorage.getItem(accountStorageKey(seat))===record.replacement;if(saved)clearPendingAccountKeys(record.previous,seat);}catch(_){}
+ if(!dialog.open||accountSeat()!==seat)return;
+ dialog.accountCurrentRequest?.abort();delete dialog.accountCurrentRequest;clearAccountImport();$('accountImportKey').value='';$('accountKey').type='password';$('accountKey').value=record.replacement;renderAccountInfo($('accountCurrentInfo'),data);syncAccountImport();
+ accountNotice('accountCurrentNotice',saved?(record.registration?'P2 account activated. Copy its key to your other devices.':'Account key reset. Copy the new key to your other devices.'):'Account key reset. Copy the new key now; this tab could not save it permanently.',!saved);
+}
+async function resolvePendingAccountKeys(){
+ const dialog=$('accountDialog');if(dialog.accountRecoveryRequest||dialog.accountRotateRequest)return;
+ const seat=accountSeat();let records;try{records=pendingAccountKeys().filter(record=>record.seat===seat);const registration=seat===1?JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null'):null;if(registration?.token&&registration.token!==publicIdentityToken(1))records.push({previous:'',replacement:registration.token,seat:1,storageKey:'leqra.localAccountRegistration',registration:true});}catch(error){accountNotice('accountCurrentNotice',error.message,true);return;}
+ if(!records.length)return;
+ const controller=new AbortController();dialog.accountRecoveryRequest=controller;syncAccountImport();accountNotice('accountCurrentNotice','Checking a saved account key reset…');const timeout=setTimeout(()=>controller.abort(),6000);
+ try{
+  const results=await Promise.all(records.map(async record=>{try{return{record,data:await fetchAccountInfo(record.replacement,controller.signal)};}catch(error){return{record,error};}}));
+  const recovered=results.find(result=>result.data&&(result.record.previous===publicIdentityToken(seat)||result.record.replacement===publicIdentityToken(seat)))||results.find(result=>result.data);
+  if(recovered){completeAccountReset(recovered.record,recovered.data);return;}
+  if(results.some(result=>result.error?.status!==401))throw Error('The saved key reset could not be checked. Try again when the server is available.');
+  let awaiting=false;
+  for(const previous of new Set(records.filter(record=>!record.registration).map(record=>record.previous))){
+   try{await fetchAccountInfo(previous,controller.signal);awaiting=true;}
+   catch(error){
+    if(error.status!==401)throw error;
+    // A queued reset may commit between the first candidate check and this
+    // revocation check. Only observations after revocation can rule it out.
+    for(const record of records.filter(record=>record.previous===previous)){
+     try{const data=await fetchAccountInfo(record.replacement,controller.signal);completeAccountReset(record,data);return;}
+     catch(candidateError){if(candidateError.status!==401)throw candidateError;localStorage.removeItem(record.storageKey);}
+    }
+    if(publicIdentityToken(seat)===previous)rememberPublicIdentity('',undefined,seat);
+   }
+  }
+  if(records.some(record=>record.registration))return;
+  if(dialog.open)accountNotice('accountCurrentNotice',awaiting?'Key reset not confirmed. Your existing key still works. Choose Reset account key to retry.':'This account key was reset on another device. Import its latest key.');
+ }catch(error){if(dialog.open)accountNotice('accountCurrentNotice',error.name==='AbortError'?'The saved key reset could not be checked. Try again.':error.message,true);}
+ finally{clearTimeout(timeout);if(dialog.accountRecoveryRequest===controller)delete dialog.accountRecoveryRequest;syncAccountImport();}
+}
+async function rotateAccountKey(){
+ const dialog=$('accountDialog'),seat=accountSeat(),previous=publicIdentityToken(seat);if(!dialog.open||!previous||!accountImportAllowed()||dialog.accountRotateRequest||dialog.accountRecoveryRequest)return;
+ const isCurrent=()=>dialog.open&&accountImportAllowed()&&accountSeat()===seat&&publicIdentityToken(seat)===previous&&!dialog.accountRotateRequest&&!dialog.accountRecoveryRequest;
+ if(!await confirmGameAction({title:'Reset this account key?',message:'Other devices will be signed out. Callsigns and Public Infinity scores are kept. Copy the new key to use those devices again.',accept:'RESET KEY',isCurrent})||!isCurrent())return;
+ let record;try{const pending=pendingAccountKeys().filter(record=>record.seat===seat);record=pending.find(item=>item.previous===previous);if(!record&&pending.length){await resolvePendingAccountKeys();return;}record??=savePendingAccountKey(previous,seat);}catch(_){accountNotice('accountCurrentNotice','This browser cannot save a replacement key. Enable storage before resetting the key.',true);return;}
+ clearAccountImport();$('accountImportKey').value='';const controller=new AbortController();dialog.accountRotateRequest=controller;syncAccountImport();accountNotice('accountCurrentNotice','Resetting account key…');const timeout=setTimeout(()=>controller.abort(),6000);
+ try{const data=await fetchAccountInfo(previous,controller.signal,record.replacement);if(data.publicToken!==record.replacement)throw Error('The key reset was not confirmed.');completeAccountReset(record,data);}
+ catch(_){delete dialog.accountRotateRequest;await resolvePendingAccountKeys();}
+ finally{clearTimeout(timeout);if(dialog.accountRotateRequest===controller)delete dialog.accountRotateRequest;syncAccountImport();}
+}
+function forgetRevokedAccount(token,seat=0){if(token&&publicIdentityToken(seat)===token)rememberPublicIdentity('',token,seat);}
+function useImportedAccount(){
+ const dialog=$('accountDialog'),pending=dialog.accountPending;
+ if(!dialog.open||!pending)return;
+ if(!accountImportAllowed()||accountSeat()!==pending.seat||publicIdentityToken(pending.seat)!==pending.oldToken||localRoom.players!==pending.roster||$('accountImportKey').value.trim()!==pending.token){clearAccountImport();syncAccountImport();accountNotice('accountImportNotice','This device changed accounts or joined online play. Check the key again.',true);return;}
+ if(pending.token===publicIdentityToken(pending.seat===1?0:1)){accountNotice('accountImportNotice','P1 and P2 need separate account keys.',true);return;}
+ const name=$('accountImportName').value,allowedNames=[pending.data.publicProfile?.name,...pending.data.names];if(name&&!allowedNames.includes(name)){accountNotice('accountImportNotice','Choose one of this account’s callsigns.',true);return;}
+ rememberPublicIdentity(pending.token,undefined,pending.seat);
+ if(pending.recoveryPrevious){try{if(localStorage.getItem(accountStorageKey(pending.seat))===pending.token)clearPendingAccountKeys(pending.recoveryPrevious,pending.seat);}catch(_){}}
+ if(name){if(pending.seat===1){const secondary=secondaryMember(),player=secondary&&localRoom.players.find(player=>player.id===secondary.id);if(player)player.name=name;rememberLocalCallsign(name);}else{const primary=localRoom.players.find(player=>player.id===localRoom.self);if(primary)primary.name=name;rememberCallsign(name);}}
+ persistLocalRoomRules();syncCallsignEditors(true);renderOnlineRoom();updateHUD(true);
+ for(const form of callsignForms())if(!form.hidden)scheduleCallsignAvailability(form.elements.callsign,form,0);
+ openAccount(Number(dialog.dataset.accountSeat));accountNotice('accountImportNotice','Account imported. Play Public Infinity to continue with its saved score.');
+}
+function exposeAccountError(){for(const id of ['accountDialog','infinitePauseMenu']){const dialog=$(id);if(dialog?.open)dialog.close();}}
+function initAccountTransfer(){
+ for(const button of document.querySelectorAll('.callsign-account-button'))button.onclick=()=>openAccount(Number(button.dataset.accountSeat));
+ $('pauseAccountBtn').onclick=()=>openAccount(0);
+ $('accountCopyBtn').onclick=copyAccountKey;$('accountRotateBtn').onclick=rotateAccountKey;$('accountImportForm').addEventListener('submit',event=>{event.preventDefault();checkImportedAccount();});$('accountUseBtn').onclick=useImportedAccount;
+ $('accountImportKey').addEventListener('input',()=>{clearAccountImport();accountNotice('accountImportNotice','');syncAccountImport();});
+ $('accountDialog').addEventListener('close',()=>{const dialog=$('accountDialog');dialog.accountCurrentRequest?.abort();delete dialog.accountCurrentRequest;clearAccountImport();$('accountKey').value='';$('accountKey').type='password';$('accountImportKey').value='';});
+}
 function callsignAvailabilityNames(field,form){
  if(!form)return [cleanPilotName(field.value)];
  const secondary=form.dataset.pilot==='secondary',other=form.dataset.arena==='infinity'?window.leqraInfinity?.localPilots?.()[secondary?0:1]:secondary?roomMember(localPlayerID()):secondaryMember();
@@ -2112,21 +2284,21 @@ function scheduleCallsignAvailability(field,form,delay=250){
 async function checkCallsignAvailability(field,form,revision,draft){
  if(!['http:','https:'].includes(location.protocol)||field.disabled)return;
  const status=form?.querySelector('.callsign-status')||$('pilotNameStatus'),name=cleanPilotName(draft);
- const setStatus=(text,error=false)=>{status.textContent=text;status.hidden=!text;status.classList.toggle('error',error);field.setAttribute('aria-invalid',String(error));};
+ const setStatus=(text,error=false)=>{status.textContent=text;if(error&&status.append){const action=document.createElement('button');action.type='button';action.className='callsign-account-action';action.textContent='Import account key';action.onclick=()=>openAccount(form?.dataset.pilot==='secondary'?1:0);status.append(action);}status.hidden=!text;status.classList.toggle('error',error);field.setAttribute('aria-invalid',String(error));};
  if(!name){setStatus(draft?'Enter letters or numbers.':'');return;}
- const controller=new AbortController(),ownerToken=publicIdentityToken();field.callsignCheckController=controller;
+ const controller=new AbortController(),ownerToken=publicIdentityToken(),localToken=publicIdentityToken(1);field.callsignCheckController=controller;
  const timeout=setTimeout(()=>controller.abort(),4000);
  try{
-  const names=callsignAvailabilityNames(field,form),response=await fetch(new URL('/api/callsigns',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:ownerToken||undefined,names}),cache:'no-store',signal:controller.signal});
+  const names=callsignAvailabilityNames(field,form),response=await fetch(new URL('/api/callsigns',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:ownerToken||undefined,localPublicToken:localToken||undefined,localNewAccount:localAccountRegistrationPending(localToken)||undefined,independentAccounts:true,names}),cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('Availability unavailable');const data=await response.json();
   if(field.callsignCheckRevision!==revision||field.value!==draft||form?.infinityRenamePending||online.renamePending?.form===form)return;
-  if(publicIdentityToken()!==ownerToken||JSON.stringify(callsignAvailabilityNames(field,form))!==JSON.stringify(names)){scheduleCallsignAvailability(field,form,0);return;}
+  if(publicIdentityToken()!==ownerToken||publicIdentityToken(1)!==localToken||JSON.stringify(callsignAvailabilityNames(field,form))!==JSON.stringify(names)){scheduleCallsignAvailability(field,form,0);return;}
   const seat=form?.dataset.pilot==='secondary'?1:0,entry=data.names?.find(entry=>entry.seat===seat);
   if(typeof entry?.available!=='boolean')throw Error('Invalid availability response');
   const available=entry.available&&!data.names.some(candidate=>!candidate.available&&cleanPilotName(candidate.name).toLowerCase()===name.toLowerCase());
   field.callsignUnavailable=!available;
   const offline=form&&(form.dataset.arena==='infinity'?$('infiniteArena').dataset.mode==='offline':mode==='room');
-  setStatus(available?'':offline?'Used online. Offline play is available.':'Already used online. Choose another callsign.',!available);
+  setStatus(available?'':offline?'Used online; offline is OK. Yours?':'Taken online. Yours?',!available);
  }catch(error){if(field.callsignCheckRevision===revision&&field.value===draft&&!form?.infinityRenamePending&&online.renamePending?.form!==form&&error.name!=='AbortError'){if(publicIdentityToken()!==ownerToken)scheduleCallsignAvailability(field,form,0);else setStatus('Online availability unavailable.');}}
  finally{clearTimeout(timeout);if(field.callsignCheckController===controller)delete field.callsignCheckController;}
 }
@@ -2134,16 +2306,16 @@ function showCallsignConflicts(message){
  const conflicts=Array.isArray(message.conflicts)?message.conflicts:[];
  for(const form of callsignForms()){
   const seat=form.dataset.pilot==='secondary'?1:0;
-  if(conflicts.some(conflict=>conflict.seat===seat))callsignStatus(form,'Already used online. Choose another callsign.',true);
+  if(conflicts.some(conflict=>conflict.seat===seat))callsignStatus(form,'Taken online. Yours?',true);
  }
  if(conflicts.some(conflict=>conflict.seat===0)){
-  const status=$('pilotNameStatus');status.textContent='Already used online. Choose another callsign.';status.hidden=false;status.classList.add('error');
+  const status=$('pilotNameStatus');status.textContent='Taken online. Yours?';if(status.append){const action=document.createElement('button');action.type='button';action.className='callsign-account-action';action.textContent='Import account key';action.onclick=openAccount;status.append(action);}status.hidden=false;status.classList.add('error');
  }
 }
 function callsignForms(){return [$('roomCallsignForm'),$('menuCallsignForm'),$('roomP2CallsignForm'),$('menuP2CallsignForm'),$('infiniteCallsignForm'),$('infiniteP2CallsignForm')].filter(Boolean);}
 function editorPilot(form){return form.dataset.arena==='infinity'?$('infiniteArena')?.open?window.leqraInfinity?.localPilots?.()[form.dataset.pilot==='secondary'?1:0]:null:form.dataset.pilot==='secondary'?secondaryMember():roomMember(localPlayerID());}
 function callsignStatus(form,text,error=false){
- const status=form.querySelector('.callsign-status');status.textContent=text;status.hidden=!text;status.classList.toggle('error',error);form.elements.callsign.setAttribute('aria-invalid',String(error));
+ const status=form.querySelector('.callsign-status');status.textContent=text;if(error&&/callsign|taken|used online/i.test(text)&&status.append){const action=document.createElement('button');action.type='button';action.className='callsign-account-action';action.textContent='Import account key';action.onclick=()=>openAccount(form.dataset.pilot==='secondary'?1:0);status.append(action);}status.hidden=!text;status.classList.toggle('error',error);form.elements.callsign.setAttribute('aria-invalid',String(error));
 }
 function syncCallsignEditors(force=false){
  for(const form of callsignForms()){
@@ -2153,13 +2325,14 @@ function syncCallsignEditors(force=false){
   if(infinity&&form.dataset.member!==member){delete form.infinityRenamePending;callsignStatus(form,'');}
   const field=form.elements.callsign,old=form.dataset.currentName,oldValue=field.value;
   field.style.color=paintColor(localPilotIdentity(secondary?1:0,identity,paired).color);
+  const keyButton=form.querySelector('.callsign-account-button');if(keyButton)keyButton.setAttribute('aria-label','Account key for '+localPilotIdentity(secondary?1:0,identity,paired).label);
   if(force||form.dataset.member!==member||old===undefined||field.value===old)field.value=name;
   form.dataset.member=member;form.dataset.currentName=name;
   const label=form.querySelector('label');if(label)label.innerHTML=localPilotIdentityHTML(secondary?1:0,identity,paired)+' callsign';
   form.setAttribute('aria-label','Change '+localPilotIdentity(secondary?1:0,identity,paired).label+' callsign');
   field.disabled=infinity?typeof window.leqraInfinity?.renamePilot!=='function':mode==='online'&&!online.connected;
   if(oldValue!==field.value||field.callsignCheckRevision===undefined)window.leqraIdentity?.schedule?.(field,form);
-  const saveButton=form.querySelector('button');if(saveButton)saveButton.disabled=field.disabled||!!online.renamePending||!!form.infinityRenamePending||!field.value.trim()||field.value.trim()===name;
+  const saveButton=form.querySelector('button:not(.callsign-account-button)');if(saveButton)saveButton.disabled=field.disabled||!!online.renamePending||!!form.infinityRenamePending||!field.value.trim()||field.value.trim()===name;
  }
 }
 function cancelCallsignSave(message=''){
@@ -2285,7 +2458,7 @@ function showVersionMismatch(message){
 function connectOnline(request,reconnecting=false){
  if(typeof settingsResetActive!=='undefined'&&settingsResetActive)return;
  if(!['http:','https:'].includes(location.protocol)){setNetStatus('Online play needs the Go server. Run go run ./src and open the address it prints.',true);return;}
- if(online.connecting||online.connected)return;request={...request,publicToken:window.leqraIdentity?.token?.()||undefined};mode='online';phase='menu';document.body.classList.add('online-mode');
+ if(online.connecting||online.connected)return;let localProof={localPublicToken:window.leqraIdentity?.token?.(1)||undefined};if(request.token||request.roster?.some(player=>player.kind==='local')){try{localProof=window.leqraIdentity?.prepareLocal?.()||localProof;}catch(error){online.publishing=false;$('roomStatus').textContent=error.message;return;}}request={...request,publicToken:window.leqraIdentity?.token?.()||undefined,independentAccounts:true,...localProof};mode='online';phase='menu';document.body.classList.add('online-mode');
  if(!reconnecting&&!online.inviteCode){try{sessionStorage.removeItem('leqra.kicked');}catch(_){}}
  online.manual=false;online.connecting=true;netBusy(true);
  if(!reconnecting)setNetStatus(request.type==='create'?'Creating the room…':'Joining or creating the room…');
@@ -2312,7 +2485,9 @@ function connectOnline(request,reconnecting=false){
   case 'queue_catalog':case 'queue_status':case 'queue_cancelled':matchmakingPacket(msg);break;
   case 'chat':case 'chat_history':chatPacket(msg);break;
   case 'welcome':
-   window.leqraIdentity?.remember?.(msg.publicToken);
+   if(msg.localPublicToken&&msg.localPublicToken!==request.localPublicToken&&window.leqraIdentity?.prepareLocal&&!(request.token&&msg.resumed===true&&request.localNewAccount===true)){clearTimeout(timeout);leaveOnline();$('roomStatus').textContent='This room uses a different P2 account. Your P2 key was kept. Leave and rejoin with the intended P2 account.';break;}
+   if(request.roster?.some(player=>player.kind==='local')&&window.leqraIdentity?.prepareLocal&&msg.localPublicToken!==request.localPublicToken){clearTimeout(timeout);leaveOnline();$('roomStatus').textContent='The server did not confirm the separate P2 account key. Update the server before using P2 online.';break;}
+   window.leqraIdentity?.remember?.(msg.publicToken,request.publicToken||'');online.ownerKey=msg.publicToken||request.publicToken||'';window.leqraIdentity?.remember?.(msg.localPublicToken,request.localPublicToken||'',1);online.localOwnerKey=msg.localPublicToken||request.localPublicToken||'';
    matchmakingWelcome(msg);matchmaking.rematchPending=false;online.lastMatch=-1;online.roomData=null;clearInput();closeVictory();
    const inviteName=online.inviteName;watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
    if($('joinDialog').open)$('joinDialog').close();
@@ -2323,6 +2498,8 @@ function connectOnline(request,reconnecting=false){
    if(msg.resumed&&inviteName)sendOnline({type:'rename',name:inviteName});
    sendOnline({type:'ping',t:performance.now()});online.lastPing=performance.now();initAudio();addLog(msg.resumed?'Reconnected. Same pilot, same room.':msg.created?'Room '+online.code+' created. Host seat ready.':msg.full?'Arena full — joined as a spectator.':msg.spectating?'Spectating room '+online.code+'.':'Online room '+online.code+' connected.');break;
   case 'identity': {
+   if(Number.isSafeInteger(msg.localId)&&msg.localId>=0&&window.leqraIdentity?.prepareLocal&&msg.localPublicToken!==(online.pendingLocalProof||online.localOwnerKey||request.localPublicToken)){clearTimeout(timeout);leaveOnline();$('roomStatus').textContent='The server did not confirm the separate P2 account key. Update the server before using P2 online.';break;}
+   if(msg.localPublicToken){window.leqraIdentity?.remember?.(msg.localPublicToken,online.pendingLocalProof||online.localOwnerKey||request.localPublicToken||'',1);online.localOwnerKey=msg.localPublicToken;online.pendingLocalProof=null;}
    const local=secondaryMember(),changed=online.id!==msg.id||online.spectating!==!!msg.spectating||(local?.id??-1)!==msg.localId||(local?.member??0)!==msg.localMember;
    online.id=msg.id;online.member=msg.member;online.spectating=!!msg.spectating;
    // Never reset sequence numbers on a live socket. Unaffected controllers keep
@@ -2332,7 +2509,7 @@ function connectOnline(request,reconnecting=false){
   case 'swapped':cancelSwap();toast(msg.message,3);break;
   case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}if(online.roomData?.infinityActive&&!msg.infinityActive)clearEndMatchPending();online.roomData=msg;if(!!msg.infinityPublic===online.publicInfinityPending?.enabled)online.publicInfinityPending.cancel();online.publishing=false;syncPendingSpectatorRole(msg);const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);syncOnlineRoomInfinity();break;}
   case 'infinity_start':startRoomInfinity(undefined,msg.public);break;
-  case 'renamed':window.leqraIdentity?.remember?.(msg.publicToken);acceptCallsign(msg);break;
+  case 'renamed':window.leqraIdentity?.remember?.(msg.publicToken,online.ownerKey||request.publicToken||'');acceptCallsign(msg);break;
   case 'kicked':clearTimeout(timeout);receiveKick(msg);break;
   case 'unshared':clearTimeout(timeout);completeUnshare();break;
   case 'room_offline':clearTimeout(timeout);toast(msg.message||'The host took this room offline.',3);leaveOnline();break;
@@ -2342,6 +2519,7 @@ function connectOnline(request,reconnecting=false){
   case 'state':receiveOnlineState(msg);break;
   case 'pong':{const sample=clamp(performance.now()-msg.t,0,5000);online.latency=Math.round(online.pingMeasured?online.latency*.7+sample*.3:sample);online.pingMeasured=true;break;}
   case 'error':
+   if(msg.code==='account_key_revoked'){window.leqraIdentity?.exposeError?.();const seat=msg.seat===1?1:0;window.leqraIdentity?.revoke?.(seat?(online.localOwnerKey||request.localPublicToken):(online.ownerKey||request.publicToken),seat);clearTimeout(timeout);leaveOnline();$('roomStatus').textContent=(seat?'P2’s':'P1’s')+' account key was reset. Import the latest key in Account to continue.';toast('ACCOUNT KEY RESET, IMPORT THE LATEST KEY',7);break;}
    if(msg.code==='callsign_taken'){showCallsignConflicts(msg);if(!online.connected)msg.message='Change the marked callsigns to go online.';if(online.renamePending){cancelCallsignSave(msg.message);break;}}
    if(msg.action==='select_public_infinity'){online.publicInfinityPending?.cancel?.();syncFeatureSummary();$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='lobby'){clearEndMatchPending(msg.message);break;}
@@ -2806,7 +2984,7 @@ function startInfinity(kind,credentials={}){
  const primaryId=localPlayerID(),primary=roomMember(primaryId),secondary=secondLocal(),room=roomData();
  const roomRules=!credentials.public&&(kind==='offline'||credentials.code)?currentRules():null;
  closeVictory();clearInput();cancelPendingAudio();
- window.leqraInfinity.start(kind,{name:primary?.name,onConflict:message=>{window.leqraInfinity.close();renderOnlineRoom();showCallsignConflicts(message);$('roomStatus').textContent='Change the marked callsigns to go online.';},bindings:()=>bindings,roomRules,onJoined,
+ window.leqraInfinity.start(kind,{name:primary?.name,onError:error=>{$('roomStatus').textContent=error.message;},onConflict:message=>{window.leqraInfinity.close();renderOnlineRoom();showCallsignConflicts(message);$('roomStatus').textContent='Change the marked callsigns to go online.';},bindings:()=>bindings,roomRules,onJoined,
   colorIndex:colorIndex(primaryId,primary?.team,primary?.colorIndex),
   localColorIndex:secondary?colorIndex(secondary.id,secondary.team,secondary.colorIndex):undefined,
   roster:roomRules?room?.players||[]:[],primaryId,localId:secondary?.id,localName:secondary?.name,
@@ -3704,12 +3882,12 @@ function setMouseControlEnabled(kind,enabled){
  storePerformancePrefs();syncFeatureSummary();syncSidebarContext();
 }
 function clearAppSettingsStorage(storage){
- const keys=[];for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key?.startsWith(STORAGE_PREFIX)||key?.startsWith(LEGACY_STORAGE_PREFIX))keys.push(key);}
+ const keys=[];for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key==='leqra.publicToken'||key==='leqra.localPublicToken'||key==='leqra.localAccountRegistration'||key?.startsWith('leqra.pendingAccountKey.'))continue;if(key?.startsWith(STORAGE_PREFIX)||key?.startsWith(LEGACY_STORAGE_PREFIX))keys.push(key);}
  for(const key of keys)storage.removeItem(key);
  verifyAppSettingsStorage(storage);
 }
 function verifyAppSettingsStorage(storage){
- for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key?.startsWith(STORAGE_PREFIX)||key?.startsWith(LEGACY_STORAGE_PREFIX))throw Error('Some leqra settings remain in browser storage.');}
+ for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key==='leqra.publicToken'||key==='leqra.localPublicToken'||key==='leqra.localAccountRegistration'||key?.startsWith('leqra.pendingAccountKey.'))continue;if(key?.startsWith(STORAGE_PREFIX)||key?.startsWith(LEGACY_STORAGE_PREFIX))throw Error('Some leqra settings remain in browser storage.');}
 }
 function resetPWASettings(){
  const pwa=window.leqraPWA;
@@ -4288,7 +4466,7 @@ function initFeatures(){
  $('loadPresetBtn').onclick=applySelectedPreset;$('savePresetBtn').onclick=saveCurrentPreset;$('deletePresetBtn').onclick=deleteSelectedPreset;$('presetSelect').onchange=()=>$('deletePresetBtn').disabled=!$('presetSelect').value.startsWith('saved:');
  $('presetName').addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();saveCurrentPreset();}});
  $('resetBindingsBtn').onclick=()=>{bindings=defaultBindings();bindingCapture=null;clearInput();try{localStorage.setItem('leqra.bindings.v1',JSON.stringify({version:4,bindings}));}catch(_){}renderBindings();syncFeatureSummary();updateHUD(true);};
- initSettingsReset();
+ initSettingsReset();initAccountTransfer();
  $('masterVolume').oninput=e=>setAudioVolume(e.target.value,false,false);$('masterVolume').onchange=e=>setAudioVolume(e.target.value,true,true);syncVolumeControl();
  $('masterVolume').onkeydown=e=>{
   if(e.altKey||e.ctrlKey||e.metaKey||audioVolume!==50)return;
@@ -5303,10 +5481,10 @@ function initMatchmaking(){
 function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<760)return;try{if(sessionStorage.getItem('leqra.safariNoticeDismissed')==='1')return;}catch(_){}const n=document.createElement('aside');n.id='browserNotice';n.className='safari-recommendation';n.setAttribute('role','status');n.innerHTML='<span><strong>Safari detected.</strong> leqra works here, but Chrome or Firefox is recommended for optimal performance.</span><button type="button" aria-label="Dismiss browser recommendation">×</button>';n.querySelector('button').onclick=()=>{try{sessionStorage.setItem('leqra.safariNoticeDismissed','1');}catch(_){}n.remove();};document.body.append(n);}
 // Read-only public state is handy for embedding and smoke testing.
 // Infinity keeps its own camera and streamed world, while sharing the finite arena's art and audio.
-window.leqraIdentity=Object.freeze({token:publicIdentityToken,remember:rememberPublicIdentity,schedule:scheduleCallsignAvailability});
+window.leqraIdentity=Object.freeze({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,revoke:forgetRevokedAccount,exposeError:exposeAccountError,schedule:scheduleCallsignAvailability});
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work,latency=null)=>sampleFrame(now,work,'infiniteFPSIndicator',latency),
- publicIdentityToken,rememberPublicIdentity,
+ publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,
  theme,colors:Theme.colors,canonicalColor:index=>COLORS[index]||'',colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
  openControls:()=>openFeature('controls'),mouseAimEnabled:()=>combatPrefs.mouseAim!==false,mouseFireEnabled:()=>combatPrefs.mouseFire!==false,setMouseControlEnabled,cleanPilotName,persistPilotName:persistInfinityPilotName,syncCallsignEditors,syncSidebarContext,mountSidebar,restoreSidebar,mountHeader,restoreHeader,chatOpen:()=>roomChat.open,arenaKeyBlocked,keyLabel,controlHintHTML,pilotIdentity,pilotIdentityHTML,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,

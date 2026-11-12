@@ -214,13 +214,26 @@ final class NativeRoomTests: XCTestCase {
         let player = try XCTUnwrap(room?.players.first { $0.name == guestName })
         host.send(.kick(target: player.id, member: player.member))
         try await waitFor { kicked && room?.players.count == 1 || !hostErrors.isEmpty }
-        host.send(.add(kind: "local", name: "CO " + suffix))
+        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max) }
+        let localKey = "p_" + Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let proof = FileManager.default.temporaryDirectory.appendingPathComponent("leqra-p2-" + UUID().uuidString + ".key")
+        try Data(localKey.utf8).write(to: proof, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: proof.path)
+        defer { try? FileManager.default.removeItem(at: proof) }
+        var add = NativeRoomCommand.add(kind: "local", name: "CO " + suffix).payload
+        add["independentAccounts"] = true; add["localPublicToken"] = localKey; add["localNewAccount"] = true
+        host.sendCommand(add)
         try await waitFor { room?.players.contains { $0.kind == "local" } == true || !hostErrors.isEmpty }
         let local = try XCTUnwrap(room?.players.first { $0.kind == "local" })
         // Host action budget is eight per second; the queue and roster actions
         // above intentionally stay within that existing server limit.
-        host.send(.renameLocal(target: local.id, member: local.member, name: localName))
+        var rename = NativeRoomCommand.renameLocal(target: local.id, member: local.member, name: localName).payload
+        rename["independentAccounts"] = true; rename["localPublicToken"] = localKey
+        host.sendCommand(rename)
         try await waitFor { room?.players.contains { $0.name == localName } == true || !hostErrors.isEmpty }
         XCTAssertTrue(hostErrors.isEmpty, hostErrors.joined(separator: ", "))
+        XCTAssertEqual(host.localAccountKey, localKey)
+        XCTAssertNotEqual(host.accountKey, localKey)
     }
 }

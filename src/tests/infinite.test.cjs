@@ -1964,7 +1964,27 @@ test('public ownership handover preserves score and stops superseded browsers fr
  socket.receive({type:'error',code:'session_replaced',message:'This online identity continued in another window.'});
  h.elapse(60000);
  assert.equal(world.failed,true);assert.equal(world.joined,false);assert.equal(h.sockets.length,1);assert.equal(socket.readyState,3);assert.equal(world.publicToken,'p_replacement','a superseded transport cannot discard ownership');
- assert.match(h.byID('infiniteStatus').textContent,/another window/);h.infinity.close();
+ assert.match(h.byID('infiniteStatus').textContent,/taken over by another device/);h.infinity.close();
+});
+
+test('a revoked account key is terminal and clears only the credential used by that arena',()=>{
+ const h=harness(undefined,true),revoked=[];
+ h.window.leqraInfinityArt.publicIdentityToken=()=> 'p_old_owner';
+ h.window.leqraInfinityArt.forgetRevokedAccount=token=>revoked.push(token);
+ h.infinity.start('online',{name:'Chosen'});const [socket]=h.sockets;socket.emit('open');
+ socket.receive({type:'welcome',id:14,seed:0,publicToken:'p_old_owner',resumed:true});
+ socket.receive({type:'state',tick:1,tanks:[{id:14,name:'Chosen',x:100,y:100,angle:0,hp:1,score:27}],bullets:[],players:1,leaderboard:[]});
+ socket.receive({type:'error',code:'account_key_revoked'});h.elapse(60000);
+ assert.deepEqual(revoked,['p_old_owner']);assert.equal(h.state().failed,true);assert.equal(h.sockets.length,1);assert.match(h.byID('infiniteStatus').textContent,/key was reset.*Import the latest key/);h.infinity.close();
+});
+
+test('a stored or revoked unselected P2 key never joins or returns during a solo reconnect',()=>{
+ const h=harness(undefined,true),keys=['p_primary','p_old_p2'];
+ h.window.leqraInfinityArt.publicIdentityToken=seat=>keys[seat||0];
+ h.window.leqraInfinityArt.prepareLocalAccount=()=>({localPublicToken:keys[1]});
+ h.infinity.start('online',{name:'Solo'});let socket=h.sockets[0];socket.emit('open');assert.equal(socket.sent[0].localPublicToken,undefined,'unused stored P2 proof is omitted');
+ socket.receive({type:'welcome',id:14,seed:0,publicToken:keys[0],resumed:true});socket.receive({type:'state',tick:1,tanks:[{id:14,name:'Solo',x:100,y:100,angle:0,hp:1,score:27}],bullets:[],players:1,leaderboard:[]});
+ assert.equal(h.state().localPublicToken,'');keys[1]='';socket.close();h.elapse(500);socket=h.sockets.at(-1);socket.emit('open');assert.equal(socket.sent[0].localPublicToken,undefined);assert.equal(socket.sent[0].localName,undefined);assert.equal(socket.sent[0].publicToken,keys[0]);h.infinity.close();
 });
 
 test('manual public entry updates chosen names but reconnects omit stale drafts and recover after 20 seconds',()=>{
