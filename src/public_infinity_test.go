@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -84,7 +85,7 @@ func TestPublicInfinityRoomPartyAdmissionIsAtomicAndReservesPlaces(t *testing.T)
 	now := time.Now()
 	var public []*Client
 	for i := 0; i < infiniteCapacity-2; i++ {
-		_, c, reject := tryInfinityReconnect(t, s, infiniteMessage{Name: "OUTSIDER"}, now)
+		_, c, reject := tryInfinityReconnect(t, s, infiniteMessage{Name: fmt.Sprintf("OUTSIDER %d", i)}, now)
 		if reject != "" {
 			t.Fatal(reject)
 		}

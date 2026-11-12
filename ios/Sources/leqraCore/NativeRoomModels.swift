@@ -136,6 +136,19 @@ public struct PilotRename: Decodable, Sendable {
     public let requestId: UInt64?
     public let message: String?
     public let member: UInt64?
+    public let code: String?
+    public let conflicts: [CallsignConflict]?
+}
+
+public struct CallsignConflict: Decodable, Equatable, Sendable {
+    public let seat: Int
+    public let name: String
+}
+
+public struct CallsignAvailability: Decodable, Equatable, Sendable {
+    public let seat: Int
+    public let name: String
+    public let available: Bool
 }
 
 public struct ServerNotice: Decodable, Sendable {
@@ -146,6 +159,7 @@ public struct ServerNotice: Decodable, Sendable {
     public let message: String?
     public let room: String?
     public let id: Int?
+    public let conflicts: [CallsignConflict]?
 }
 
 public struct NativeMatchPlayer: Codable, Identifiable, Equatable, Sendable {

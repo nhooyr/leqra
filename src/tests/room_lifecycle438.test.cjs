@@ -59,3 +59,13 @@ test('unsharing advances the offline viewer allocator past the preserved seconda
  assert.deepEqual(s.localRoom.players,players);
  assert.equal(s.localRoom.nextViewer,9);
 });
+
+
+test('leaderboard reset notices do not interrupt the room control connection',()=>{
+ for(const selected of [false,true]){
+  const {s,receive}=boot(),socket=s.online.socket,notices=[];s.toast=(text,duration)=>notices.push([text,duration]);
+  receive({type:'leaderboard_reset',selected});
+  assert.equal(s.online.socket,socket);assert.equal(s.online.connected,true);assert.equal(s.mode,'online');
+  assert.deepEqual(notices,[[selected?'Selected Public Infinity scores were reset.':'The Public Infinity leaderboard was reset.',5]]);
+ }
+});

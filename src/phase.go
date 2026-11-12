@@ -86,24 +86,83 @@ func (g *Game) clearTankAt(x, y, r float64) bool {
 	return true
 }
 
-func (g *Game) muzzleBlocked(t *Tank, r float64) bool {
-	if t.GhostTime <= 0 || t.Power == "cannon" {
-		return false
+type projectileLaunch struct {
+	x, y, ux, uy, distance, muzzle float64
+	bounced, valid                 bool
+}
+
+// The usual sweep intentionally ignores initial overlaps. A phased pilot can
+// start inside one, so resolve only that launch onto a nearby incoming face.
+// General movement, visibility and projectile sweeps retain their old rules.
+func wallLaunch(x, y, ux, uy, radius, muzzle float64, walls []Wall, clearBounds func(float64, float64) bool) projectileLaunch {
+	launch := projectileLaunch{x: x, y: y, ux: ux, uy: uy, muzzle: muzzle, valid: true}
+	inside := func(px, py float64, w Wall) bool {
+		return px >= w.X-radius && px <= w.X+w.W+radius && py >= w.Y-radius && py <= w.Y+w.H+radius
 	}
-	x, y := t.X, t.Y
-	margin := wallSize/2 + r
-	if x < margin || x > g.World.Width-margin || y < margin || y > g.World.Height-margin {
-		return true
-	}
-	// The sweep ignores initial overlaps, so start outside the same expanded
-	// rectangles it uses to trace walls, including their corners.
-	for _, wi := range g.wallCandidates(x, y, 0, 0, r) {
-		w := g.World.Walls[wi]
-		if x >= w.X-r && x <= w.X+w.W+r && y >= w.Y-r && y <= w.Y+w.H+r {
-			return true
+	var xs, ys []float64
+	for _, w := range walls {
+		if inside(x, y, w) {
+			if xs == nil {
+				xs, ys = []float64{x}, []float64{y}
+			}
+			xs = append(xs, w.X-radius-.12, w.X+w.W+radius+.12)
+			ys = append(ys, w.Y-radius-.12, w.Y+w.H+radius+.12)
 		}
 	}
-	return false
+	if xs == nil {
+		return launch
+	}
+	launch.bounced, launch.valid = true, false
+	best := math.Inf(1)
+	for _, px := range xs {
+		for _, py := range ys {
+			dx, dy := px-x, py-y
+			distance := dx*dx + dy*dy
+			if distance > 32*32 || dx*ux+dy*uy > 1e-7 || clearBounds != nil && !clearBounds(px, py) {
+				continue
+			}
+			clear := true
+			for _, w := range walls {
+				if inside(px, py, w) {
+					clear = false
+					break
+				}
+			}
+			if !clear || distance > best+1e-7 || math.Abs(distance-best) <= 1e-7 &&
+				(px > launch.x+1e-7 || math.Abs(px-launch.x) <= 1e-7 && py >= launch.y) {
+				continue
+			}
+			best, launch.x, launch.y, launch.valid = distance, px, py, true
+		}
+	}
+	if !launch.valid {
+		return launch // Invalid/fully solid geometry absorbs the legal shot.
+	}
+	launch.distance = math.Sqrt(best)
+	launch.muzzle = max(0, muzzle-launch.distance)
+	if (launch.x-x)*ux < -1e-9 {
+		launch.ux = -ux
+	}
+	if (launch.y-y)*uy < -1e-9 {
+		launch.uy = -uy
+	}
+	return launch
+}
+
+func (g *Game) projectileLaunch(t *Tank, angle, radius, muzzle float64) projectileLaunch {
+	ux, uy := math.Cos(angle), math.Sin(angle)
+	if t.GhostTime <= 0 || t.Power == "cannon" {
+		return projectileLaunch{x: t.X, y: t.Y, ux: ux, uy: uy, muzzle: muzzle, valid: true}
+	}
+	var storage [32]Wall
+	walls := storage[:0]
+	for _, index := range g.wallCandidates(t.X, t.Y, 0, 0, radius+32) {
+		walls = append(walls, g.World.Walls[index])
+	}
+	margin := wallSize/2 + radius
+	return wallLaunch(t.X, t.Y, ux, uy, radius, muzzle, walls, func(x, y float64) bool {
+		return x >= margin && x <= g.World.Width-margin && y >= margin && y <= g.World.Height-margin
+	})
 }
 
 // Expiry is not a new life and does not grant invulnerability. If the tank is

@@ -16,6 +16,7 @@ func TestInfinityStatusShowsPublicPopulationWithoutJoining(t *testing.T) {
 	private := newSeededInfiniteArena(42)
 	private.join(fakeClient(), "PRIVATE", now).Score = 100
 	app.infinite.private[infiniteRoom{&Room{}, 1}] = private
+	commitPublicFixture(t, app.infinite)
 	response := httptest.NewRecorder()
 	app.handler().ServeHTTP(response, httptest.NewRequest("GET", "/api/infinity", nil))
 	if response.Code != 200 || response.Header().Get("Cache-Control") != "no-store" {
@@ -42,6 +43,7 @@ func TestInfinityStatusCapsRankedStandingsAndRejectsMutation(t *testing.T) {
 		pilot := app.infinite.public.addPilot("BOT", true, 0, 0, 1, 3)
 		pilot.Score = i
 	}
+	commitPublicFixture(t, app.infinite)
 	response := httptest.NewRecorder()
 	app.infinityStatus(response, httptest.NewRequest("GET", "/api/infinity", nil))
 	var status struct{ Leaders []infiniteStatusLeader }

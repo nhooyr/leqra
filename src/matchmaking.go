@@ -695,7 +695,7 @@ func (h *Hub) travelWelcome(c *Client, r *Room, p *Player, reason string) {
 		default:
 		}
 	}
-	c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": r.Code, "id": p.ID, "member": p.Member, "token": p.Token, "resumed": false, "created": false, "spectating": p.Spectating, "transfer": reason, "matchmaking": matchView(r)})
+	c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": r.Code, "id": p.ID, "member": p.Member, "token": p.Token, "publicToken": p.PublicToken, "resumed": false, "created": false, "spectating": p.Spectating, "transfer": reason, "matchmaking": matchView(r)})
 	h.sendChatHistory(c, r)
 }
 

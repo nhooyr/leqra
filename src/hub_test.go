@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -31,7 +32,14 @@ func makeRoom(t *testing.T, n int) (*Hub, []*Client, *Room) {
 			c.room.Game.Rules.TeamMode = "teams" // Explicit historical fixture, not a production default.
 			c.player.Team = 1
 		} else {
-			action(t, h, c, map[string]any{"type": "join", "code": cs[0].room.Code, "name": "GUEST"})
+			name := "GUEST"
+			if i > 1 {
+				name = fmt.Sprint("GUEST", i)
+			}
+			action(t, h, c, map[string]any{"type": "join", "code": cs[0].room.Code, "name": name})
+		}
+		if c.player == nil {
+			t.Fatal("room fixture join failed", drain(c))
 		}
 	}
 	return h, cs, cs[0].room

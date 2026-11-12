@@ -5,29 +5,47 @@ function boot(power=null,offset=[27.2,20.49],wallList=[]){
  const s=base({cols:7,rows:7,wallList}),noop=()=>{};
  Object.assign(s,{time:0,bulletId:0,reduceMotion:true,mode:'room',shake:0,burst:noop,addRing:noop,tone:noop,shieldSound:noop,ricochetSound:noop,toast:noop,boom:noop,updateHUD:noop,shotSound:noop,addLog:noop,blastEffect:noop,impactEffect:noop,objectiveMode:()=>false,survivalBreak:()=>false,laserEffect:noop,recordLocalDeath(t,owner){s.deaths.push([t.id,owner]);},deaths:[]});
  s.tanks=[tank(0,100,100,{human:true,power,charges:3,powerTime:10,machineRounds:180}),tank(1,100+offset[0],100+offset[1])];
- vm.createContext(s);for(const name of ['tankHit','powerCapacity','activeAmmo','fire','fireLaser','aimingGuide','hurt','detonate','updateBullets','compactNotDead'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);for(const name of ['tankHit','powerCapacity','activeAmmo','fire','fireLaser','aimingGuide','shotPrediction','hurt','detonate','updateBullets','compactNotDead'])vm.runInContext(declaration(name),s);
  if(declaration('fire').includes('projectileTankImpact('))vm.runInContext(declaration('projectileTankImpact'),s);
  return s;
 }
 
-test('phasing blocks ordinary weapons at swept wall faces and corners without spending shots',()=>{
+test('phased wall-facing weapons always fire and ricochet without tunneling forward',()=>{
  const wall={x:101,y:80,w:8,h:50,axis:'v'};
- for(const power of [null,'laser','grenade','rapid','scatter','homing']){
-  const s=boot(power,[34,0],[wall]),[a,b]=s.tanks;
+ for(const phase of ['ghost','starman'])for(const power of [null,'laser','grenade','rapid','scatter','homing'])for(const origin of ['face','embedded','corner']){
+  const label=[phase,power||'regular',origin].join('/'),s=boot(power,[40,0],[wall]),[a,b]=s.tanks;
   const radius=power==='laser'?3:s.projectileSpec(power).r;
-  a.ghostTime=6;
-  assert.equal(s.fire(a),false,power);
-  assert.equal(s.aimingGuide(a).points.length,0,power);
-  Object.assign(a,{x:wall.x-.9*radius,y:wall.y-.9*radius,angle:Math.PI/4});
-  assert.equal(s.fire(a),false,power);
-  assert.equal(a.charges,3);assert.equal(a.machineRounds,180);assert.equal(a.cooldown,0);
-  assert.equal(s.bullets.length,0);assert.equal(b.alive,true);
-  a.x=50;
-  assert.equal(s.fire(a),true,power+' can fire immediately from clear space');
+  a.ghostTime=6;if(phase==='starman')a.starmanTime=6;
+  if(origin==='embedded')a.x=105;
+  if(origin==='corner')Object.assign(a,{x:wall.x-.9*radius,y:wall.y-.9*radius,angle:Math.PI/4});
+  const launch=s.projectileLaunch(a,a.angle,radius,28),charges=a.charges,rounds=a.machineRounds;
+  assert.equal(launch.valid,true,label);assert.equal(launch.bounced,true,label);
+  assert.equal(s.fire(a),true,label);
+  const guide=s.aimingGuide(a);assert.ok(guide.points.length>=2,label+' aiming guide is visible');assert.ok(guide.points[1].x<guide.points[0].x||guide.points[1].y<guide.points[0].y,label+' guide reflects');
+  if(phase==='starman'){assert.equal(a.charges,charges,label);assert.equal(a.machineRounds,rounds,label);}
+  else if(power==='rapid')assert.equal(a.machineRounds,rounds-1,label);
+  else if(power)assert.equal(a.charges,charges-1,label);
+  if(origin!=='corner')assert.equal(b.alive,true,label+' may not tunnel forward');
+  if(power==='laser'){
+   const beam=s.laserTrace(a);assert.equal(beam.points[0].x,launch.x,label);assert.equal(beam.points[0].y,launch.y,label);
+   assert.ok(beam.points[1].x<launch.x||beam.points[1].y<launch.y,label+' laser reflects from its visible anchor');
+  }else{
+   assert.equal(s.bullets.length,power==='scatter'?3:1,label);
+   for(const bullet of s.bullets){assert.ok(bullet.bounces>=1,label);assert.ok(bullet.vx<0||bullet.vy<0,label);if(power==='homing'||power==='grenade')assert.equal(bullet.seekDelay,.04,label);}
+  }
  }
- const s=boot('cannon',[34,0],[wall]);
- s.tanks[0].ghostTime=6;
- assert.equal(s.fire(s.tanks[0]),true);assert.equal(s.tanks[1].alive,false);
+ const s=boot('cannon',[40,0],[wall]);s.tanks[0].ghostTime=6;
+ assert.equal(s.fire(s.tanks[0]),true);assert.equal(s.tanks[1].alive,false,'Cannon penetrates the wall');
+});
+
+test('fully solid geometry absorbs a legal phased shot without tunneling or reusing its charge',()=>{
+ for(const power of [null,'laser','grenade','rapid','scatter','homing']){
+  const s=boot(power,[100,0],[{x:0,y:0,w:500,h:500}]),[a,b]=s.tanks;a.ghostTime=6;
+  assert.equal(s.fire(a),true,String(power));assert.equal(s.bullets.length,0,String(power));assert.equal(b.alive,true,String(power));
+  if(power==='rapid')assert.equal(a.machineRounds,179);else if(power)assert.equal(a.charges,2);
+  if(power==='grenade'){const forecast=s.grenadeForecast(s.muzzleProjectile(a,a.angle),3);assert.equal(forecast.life,0);assert.equal(forecast.x,a.x);assert.equal(forecast.y,a.y);}
+  assert.equal(s.fire(a),false,'normal reload or same-tick rapid limiter still applies');
+ }
 });
 
 test('grenades keep their full fuse through more than 22 ricochets',()=>{

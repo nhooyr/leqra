@@ -372,6 +372,17 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 		fail("survival_full", "Survival presets support up to four allied tanks.")
 		return
 	}
+	names := []string{cleanName(m.Roster[0].Name)}
+	for _, seat := range m.Roster[1:] {
+		if seat.Kind == "local" {
+			names = append(names, cleanName(seat.Name))
+		}
+	}
+	ownerToken, ok := h.claimRoomCallsigns(c, "preset", c.player.PublicToken, names)
+	if !ok {
+		return
+	}
+	c.player.PublicToken, c.onlineOwnerToken = ownerToken, ownerToken
 	for _, p := range r.members() {
 		if p.ID != r.Host {
 			h.expirePlayer(r, p.ID)

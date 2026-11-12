@@ -203,9 +203,10 @@ func Test41GhostNotInvulnerableOrWeaponPiercing(t *testing.T) {
 	g.grantPower(p, "ghost")
 	p.X = 252
 	p.Y = 210
-	if g.fire(p) {
-		t.Fatal("normal round can fire from within wall")
+	if !g.fire(p) || len(g.Bullets) != 1 || g.Bullets[0].VX >= 0 {
+		t.Fatal("normal round must ricochet out of the wall")
 	}
+	p.Cooldown = 0
 	g.grantPower(p, "cannon")
 	if !g.fire(p) {
 		t.Fatal("cannon blocked")

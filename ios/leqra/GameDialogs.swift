@@ -78,6 +78,8 @@ struct PauseCard: View {
         VStack(alignment: .leading, spacing: 9) {
             Text("CALLSIGN").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
             TextField("Callsign", text: $session.callsign).modifier(WebField()).autocorrectionDisabled().onSubmit { session.saveCallsign() }
+                .task { session.scheduleCallsignAvailability() }
+            CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
             Button(session.offline ? "← BACK TO THE BATTLE" : "← BACK TO THE ARENA") { session.saveCallsign(); session.setPaused(false) }
                 .buttonStyle(WebButtonStyle(kind: .primary)).disabled(!session.canResume).accessibilityIdentifier("Resume")
             Button("Controls") { session.showControls = true }.buttonStyle(WebButtonStyle())
@@ -273,6 +275,8 @@ struct JoinRoomPanel: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("CALLSIGN").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("Callsign", text: $session.callsign).modifier(WebField())
+                    .task { session.scheduleCallsignAvailability() }
+                CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
                 Text("ROOM NAME OR CODE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("Friday tanks 💥", text: $code).modifier(WebField()).autocorrectionDisabled()
                 Button("JOIN →") { session.showJoin = false; session.connect(code: code) }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
