@@ -16,7 +16,11 @@ func (h *Hub) roomMessage(r *Room) map[string]any {
 			owner := r.member(p.Owner)
 			connected = owner != nil && owner.Client != nil
 		}
-		entry := map[string]any{"id": p.ID, "member": p.Member, "name": p.Name, "color": selectedColor(p.ID, p.Team, p.ColorIndex, r.Game.settings()), "connected": connected, "ready": !p.Spectating && (p.Ready || p.Kind == "bot" || p.Kind == "local"), "score": score, "kind": playerKind(p), "owner": p.Owner, "team": p.Team, "difficulty": p.Difficulty, "spectating": p.Spectating, "away": p.Away != nil, "hasParty": p.Return != nil}
+		color := selectedColor(p.ID, p.Team, p.ColorIndex, r.Game.settings())
+		if p.Spectating && p.Team == 0 && (p.ColorIndex == nil || *p.ColorIndex < 0) && p.spectatorColor != "" {
+			color = p.spectatorColor
+		}
+		entry := map[string]any{"id": p.ID, "member": p.Member, "name": p.Name, "color": color, "connected": connected, "ready": !p.Spectating && (p.Ready || p.Kind == "bot" || p.Kind == "local"), "score": score, "kind": playerKind(p), "owner": p.Owner, "team": p.Team, "difficulty": p.Difficulty, "spectating": p.Spectating, "away": p.Away != nil, "hasParty": p.Return != nil}
 		if r.Match != nil && r.Game.Phase == "matchOver" && r.Match.Rematch != nil {
 			entry["rematch"] = r.Match.Rematch[p.Member]
 		}

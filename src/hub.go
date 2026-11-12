@@ -33,10 +33,11 @@ type Player struct {
 	Away   *MatchTravel // Reserved in a private lobby while playing a queue match.
 	Return *MatchTravel // Only present on the travelling match identity.
 
-	ChatTokens float64
-	ChatAt     time.Time
-	Spectating bool    // A room member without a combat seat.
-	Controller *Player // Local P2 controller may itself be spectating.
+	ChatTokens     float64
+	ChatAt         time.Time
+	Spectating     bool    // A room member without a combat seat.
+	Controller     *Player // Local P2 controller may itself be spectating.
+	spectatorColor string  // Preserve automatic FFA paint while the combat seat is absent.
 
 	Kind                    string // Empty/human = remote pilot; local = second keyboard pilot; bot = server AI.
 	Owner                   int    // Primary pilot whose socket controls a local pilot.

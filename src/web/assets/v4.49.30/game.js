@@ -97,7 +97,7 @@ function choosePickup(types){const weight=k=>k==='shield'||k==='speed'?6:k==='st
 // Power-up colors use one dark palette shared by all icons.
 for(const [kind,def] of Object.entries(POWER)){const raw=def.color;Object.defineProperty(def,'color',{get:()=>Theme.powerColor(kind,raw)});}
 // Keep local assignments available while an online publish is still importing.
-const roomData=()=>mode==='online'&&(!online.publishing||online.roomData)?online.roomData:{host:localRoom.self,code:localRoom.code,players:localRoom.players.filter(p=>!p.spectating).map(p=>({...p,color:teamColor(p.id,p.team,p.colorIndex),connected:true,ready:true})),spectators:localRoom.players.filter(p=>p.spectating).map(p=>({...p,color:'#aebbc4',connected:true,ready:false})),maxPlayers:roomCapacity(localRoom.rules),maxSpectators:16,rules:localRoom.rules,phase:phase==='menu'?'lobby':phase};
+const roomData=()=>mode==='online'&&(!online.publishing||online.roomData)?online.roomData:{host:localRoom.self,code:localRoom.code,players:localRoom.players.filter(p=>!p.spectating).map(p=>({...p,color:teamColor(p.id,p.team,p.colorIndex),connected:true,ready:true})),spectators:localRoom.players.filter(p=>p.spectating).map(p=>({...p,color:localRoom.rules.teamMode==='ffa'&&!(p.team>0)&&!(Number.isInteger(p.colorIndex)&&p.colorIndex>=0&&p.colorIndex<8)&&p.spectatorColor||teamColor(p.id,p.team,p.colorIndex),connected:true,ready:false})),maxPlayers:roomCapacity(localRoom.rules),maxSpectators:16,rules:localRoom.rules,phase:phase==='menu'?'lobby':phase};
 const roomMembers=(r)=>r?[...(r.players||[]),...(r.spectators||[])]:mode==='online'&&(!online.publishing||online.roomData)?[...(online.roomData?.players||[]),...(online.roomData?.spectators||[])]:localRoom.players;
 // Hot control and HUD lookups scan the existing rosters without copying them.
 function findRoomMember(match,r){
@@ -145,7 +145,7 @@ function localPilotIdentity(index=0,tank=null,paired){
  if(tank&&paired!==undefined)return pilotIdentity(index,tank,paired);
  const pilots=typeof window==='undefined'?null:window.leqraInfinity?.localPilots?.(),member=index?secondaryMember():roomMember(localPlayerID());
  const source=tank||pilots?.[index]||member||tanks.find(t=>t.id===(index?secondaryID():localPlayerID()));
- const name=source?.name||(index?savedLocalCallsign():$('pilotName')?.value||'Player 1'),color=source?.color||(member?teamColor(member.id,member.team,member.colorIndex):COLORS[index]);
+ const name=source?.name||(index?savedLocalCallsign():$('pilotName')?.value||'Player 1'),color=source?.color||(member?roomPlayerIdentity(member).color:COLORS[index]);
  return pilotIdentity(index,{name,color},paired??(pilots?.length?pilots.length>1:mode==='duel'||!!secondaryMember()));
 }
 function localPilotIdentityHTML(index=0,tank=null,paired){const identity=localPilotIdentity(index,tank,paired);return '<span class="pilot-identity local-pilot" style="color:'+paintColor(identity.color)+'">'+escapeHTML(identity.label)+'</span>';}
@@ -1689,7 +1689,7 @@ function drawLocalSpawnGuide(t){
  const zoom=Math.max(.05,scale),width=Math.max(2.5,1.6/zoom);
  ctx.save();ctx.globalAlpha=alpha;ctx.beginPath();ctx.arc(0,0,34,0,TAU);
  ctx.strokeStyle='#081015';ctx.lineWidth=width+1.5/zoom;ctx.stroke();
- ctx.strokeStyle=t.id===secondaryID()?'#ff4fd8':'#bf5cff';ctx.lineWidth=width;ctx.stroke();ctx.restore();
+ ctx.strokeStyle=paintColor(t.color);ctx.lineWidth=width;ctx.stroke();ctx.restore();
 }
 function paintTankTurret(c,t){
  const recoil=t.recoil*4;c.fillStyle=paintColor('#0a121a');roundRect(c,4-recoil,-4.5,26,9,2);c.fill();c.fillStyle=paintColor(t.color);c.fillRect(5-recoil,-3,23,6);c.fillStyle=paintColor('#e4f0d98a');c.fillRect(26-recoil,-3.5,3,7);
@@ -1940,7 +1940,7 @@ function canEditTankPaint(player,r){
 }
 function roomPlayerIdentity(player,r=roomData()){
  if(!player)return pilotIdentity(0,null);
- const color=player.color||teamColor(player.id,player.team,player.colorIndex,r.rules);
+ const color=player.color||(player.spectating&&r?.rules?.teamMode==='ffa'&&!(player.team>0)&&!(Number.isInteger(player.colorIndex)&&player.colorIndex>=0&&player.colorIndex<8)&&player.spectatorColor)||teamColor(player.id,player.team,player.colorIndex,r.rules);
  if(player.kind==='bot'||player.bot||player.survivalEnemy||player.human===false)return{name:player.name,label:player.name,color};
  const paired=player.kind==='local'||roomMembers(r).some(p=>p.kind==='local'&&p.owner===player.id);
  return pilotIdentity(player.kind==='local'?1:0,{...player,color},paired);
@@ -2010,7 +2010,7 @@ function makeRoomPlayerRow(player,r,moderationOnly=false){
    d.addEventListener('change',()=>changeSeat(player,{difficulty:d.value}));controls.append(d);}
  }else if(player.team>0||player.kind==='bot'){const badge=document.createElement('span');badge.className='team-badge';badge.textContent=[player.team>0?teamName(player.team,r.rules):'',player.kind==='bot'?botLevelName(player.difficulty):''].filter(Boolean).join(', ');controls.append(badge);}
  if(!moderationOnly&&canEditTankPaint(player,r))controls.append(makeColorSelect(player.colorIndex??-1,value=>changeTankColor(player,value),'Tank color for '+player.name,true,player.id));
- if(player.kind==='local'&&player.owner===localPlayerID()){const watch=document.createElement('button');watch.type='button';watch.className='secondary';watch.textContent='SPECTATE';watch.dataset.spectatePlayer=player.id;watch.onclick=()=>setPlayerSpectating(player,true);controls.append(watch);}
+ if(self&&player.kind==='human'||player.kind==='local'&&player.owner===localPlayerID()){const watch=document.createElement('button');watch.type='button';watch.className='secondary';watch.textContent='SPECTATE';watch.dataset.spectatePlayer=player.id;watch.onclick=()=>setPlayerSpectating(player,true);controls.append(watch);}
  if(host&&!self&&(mode==='online'||editable))controls.append(makeKickButton(player));
  if(moderationOnly){
   // Keep the identity and readable match details together, with actions beside
@@ -2040,14 +2040,14 @@ function syncCallsignEditors(force=false){
  for(const form of callsignForms()){
   const player=editorPilot(form),secondary=form.dataset.pilot==='secondary',infinity=form.dataset.arena==='infinity';form.hidden=(secondary||infinity)&&!player;
   if((secondary||infinity)&&!player){delete form.dataset.member;delete form.dataset.currentName;delete form.infinityRenamePending;callsignStatus(form,'');continue;}
-  const name=player?.name||(secondary?savedLocalCallsign():$('pilotName').value||'Player 1'),member=String(player?.member||0),paired=infinity?window.leqraInfinity.localPilots().length>1:!!secondaryMember();
+  const name=player?.name||(secondary?savedLocalCallsign():$('pilotName').value||'Player 1'),member=String(player?.member||0),paired=infinity?window.leqraInfinity.localPilots().length>1:!!secondaryMember(),identity=player&&!infinity?{...player,color:roomPlayerIdentity(player).color}:player||{name};
   if(infinity&&form.dataset.member!==member){delete form.infinityRenamePending;callsignStatus(form,'');}
   const field=form.elements.callsign,old=form.dataset.currentName;
-  field.style.color=paintColor(localPilotIdentity(secondary?1:0,player||{name},paired).color);
+  field.style.color=paintColor(localPilotIdentity(secondary?1:0,identity,paired).color);
   if(force||form.dataset.member!==member||old===undefined||field.value===old)field.value=name;
   form.dataset.member=member;form.dataset.currentName=name;
-  const label=form.querySelector('label');if(label)label.innerHTML=localPilotIdentityHTML(secondary?1:0,player||{name},paired)+' callsign';
-  form.setAttribute('aria-label','Change '+localPilotIdentity(secondary?1:0,player||{name},paired).label+' callsign');
+  const label=form.querySelector('label');if(label)label.innerHTML=localPilotIdentityHTML(secondary?1:0,identity,paired)+' callsign';
+  form.setAttribute('aria-label','Change '+localPilotIdentity(secondary?1:0,identity,paired).label+' callsign');
   field.disabled=infinity?typeof window.leqraInfinity?.renamePilot!=='function':mode==='online'&&!online.connected;
   const saveButton=form.querySelector('button');if(saveButton)saveButton.disabled=field.disabled||!!online.renamePending||!!form.infinityRenamePending||!field.value.trim()||field.value.trim()===name;
  }
@@ -2860,7 +2860,10 @@ function shareLocalRoom(){
  connectOnline({type:'publish',code,roster,rules:infinityOffline?{...localRoom.rules,infinity:true}:localRoom.rules});
 }
 function localSnapshotFromOnline(){
- const r=roomData(),self=localPlayerID();if(!r)return null;const keep=orderedRoster(roomMembers(r)).filter(p=>p.id===self||p.kind==='bot'||p.kind==='local'&&p.owner===self).map(p=>({id:p.id,member:p.member||0,name:p.name,kind:p.id===self?'human':p.kind,owner:p.id===self?self:p.owner,team:p.team||0,difficulty:p.difficulty,colorIndex:p.colorIndex,spectating:!!p.spectating}));
+ const r=roomData(),self=localPlayerID();if(!r)return null;const keep=orderedRoster(roomMembers(r)).filter(p=>p.id===self||p.kind==='bot'||p.kind==='local'&&p.owner===self).map(p=>{
+  const spectatorColor=p.spectating&&r.rules?.teamMode==='ffa'&&!(p.team>0)&&!(Number.isInteger(p.colorIndex)&&p.colorIndex>=0&&p.colorIndex<MAX_TANKS)?p.color:null;
+  return{id:p.id,member:p.member||0,name:p.name,kind:p.id===self?'human':p.kind,owner:p.id===self?self:p.owner,team:p.team||0,difficulty:p.difficulty,colorIndex:p.colorIndex,spectating:!!p.spectating,...(spectatorColor?{spectatorColor}:{})};
+ });
  if(!keep.some(p=>p.id===self))return null;const preview=walls.length&&cols>0&&rows>0?{cols,rows,width:W,height:H,walls:walls.map(w=>({...w})),pickups:pickups.map(p=>({...p}))}:null;return{code:r.code||online.code,self,players:keep,nextMember:Math.max(0,...keep.map(p=>p.member||0)),rules:validateRoomRules({...defaultRoomRules(),...(r.rules||{})}),preview};
 }
 function restoreUnsharedPreview(preview){
@@ -2937,7 +2940,8 @@ function validateSavedRoster(value,rules){
   if(p.spectating!==undefined&&typeof p.spectating!=='boolean'||p.kind==='bot'&&(p.spectating||!['easy','normal','hard','godlike'].includes(p.difficulty)))return null;
   if(p.kind==='local'&&++locals>1)return null;if(!p.spectating)active++;
   if(p.colorIndex!==undefined&&(!Number.isInteger(p.colorIndex)||p.colorIndex< -1||p.colorIndex>7))return null;
-  roster.push({kind:p.kind,name:cleanPilotName(p.name),team:p.team,spectating:!!p.spectating,...(p.kind==='bot'?{difficulty:p.difficulty}:{}),...(p.colorIndex!==undefined?{colorIndex:p.colorIndex}:{})});
+  const spectatorColor=p.spectating&&rules.teamMode==='ffa'&&!(p.team>0)&&(p.colorIndex===undefined||p.colorIndex===-1)&&typeof p.spectatorColor==='string'&&COLORS.includes(p.spectatorColor)?p.spectatorColor:null;
+  roster.push({kind:p.kind,name:cleanPilotName(p.name),team:p.team,spectating:!!p.spectating,...(p.kind==='bot'?{difficulty:p.difficulty}:{}),...(p.colorIndex!==undefined?{colorIndex:p.colorIndex}:{}),...(spectatorColor?{spectatorColor}:{})});
  }
  if(active>roomCapacity(rules))return null;
  normalizeRoomTeams(roster,rules);return roster;
@@ -2976,7 +2980,11 @@ function persistLocalRoomRules(r=localRoom.rules,roster=null){
  try{
   const rules=validateRoomRules(r),setup=loadRememberedRoomSetup(),key=rules.infinity?'infinity':rules.mode;
   const members=roster||[localRoom.players.find(p=>p.id===localRoom.self),...orderedRoster(localRoom.players).filter(p=>p.id!==localRoom.self)];
-  const saved=validateSavedRoster(members.filter(Boolean).map(p=>({...p,colorIndex:rules.teamMode==='ffa'?(p.colorIndex??((p.id%MAX_TANKS+MAX_TANKS)%MAX_TANKS)):undefined})),rules);
+  const saved=validateSavedRoster(members.filter(Boolean).map(p=>{
+   const watchingAuto=p.spectating&&rules.teamMode==='ffa'&&!(p.team>0)&&(p.colorIndex===undefined||p.colorIndex===-1);
+   const spectatorColor=watchingAuto?(typeof p.spectatorColor==='string'&&COLORS.includes(p.spectatorColor)?p.spectatorColor:typeof p.color==='string'&&COLORS.includes(p.color)?p.color:undefined):undefined;
+   return{...p,spectatorColor,colorIndex:rules.teamMode==='ffa'?(p.colorIndex??(spectatorColor?-1:((p.id%MAX_TANKS+MAX_TANKS)%MAX_TANKS))):undefined};
+  }),rules);
   if(mode==='room'||!rules.infinity||infinityOffline)setup.selectedMode=key;
   setup.modes[key]=rules;if(saved)setup.roster=saved;
   const serialized=JSON.stringify(setup);if(serialized!==lastPersistedRoomSetup){localStorage.setItem(ROOM_SETUP_KEY,serialized);lastPersistedRoomSetup=serialized;}
@@ -3057,7 +3065,8 @@ function seedPickups(){for(let i=0;i<startingPickups();i++)spawnPower();}
 function pickupLimitText(size=currentRules().mapSize){const [c,r]=mapDimensions(size);return startingPickups(c,r)+' starting pickups, '+pickupCap(c,r)+' maximum on this maze.';}
 function syncControlsPickupInfo(){
  const el=$('controlsPickupInfo');if(!el)return;
- if($('infiniteArena')?.open){el.textContent=window.leqraInfinity.pickupHelp;return;}
+ const infinity=window.leqraInfinity,selected=$('infiniteArena')?.open||infinityPlayMode()==='online'||!!currentRules().infinity;
+ if(selected&&infinity?.pickupHelp){el.textContent=infinity.pickupHelp;return;}
  const [c,r]=mapDimensions();
  el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Most power-ups last '+powerEffectDuration(c,r)+' seconds after pickup. Starman: '+starmanDuration(c,r)+' seconds. Machine gun: 3 seconds of firing. Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));
 }
@@ -3135,15 +3144,15 @@ function countdownTipPool(rules=currentRules()){
  }
  if(teams)add(generalTips,'friendly-fire',rules.friendlyFire?'Friendly fire is ON. Leave clear firing lanes for allies.':'Friendly fire is OFF. Teammate shots pass through your tank.');
  add(generalTips,'ricochet','Bank shots off walls to hit tanks around corners.');
- add(generalTips,'owner-immunity','Tanks are immune to their own shots and grenade blasts.');
+ add(generalTips,'owner-immunity','Every tank is immune to its own weapons.');
  add(generalTips,'countdown','Movement and firing begin when the countdown reaches GO.');
  if(rules.pickupRate!=='off'&&rules.weapons.length){
   const [c,r]=mapDimensions(rules.mapSize,!!rules.portraitMaze),duration=powerEffectDuration(c,r);
   const powerText={
-   rapid:'Machine gun: '+MACHINE_FIRING_ROUNDS/60+' seconds of firing; watch FIRE LEFT.',
+   rapid:'Machine gun: '+MACHINE_FIRING_ROUNDS/60+' seconds of firing; quarter-perimeter range. Watch FIRE LEFT.',
    scatter:'The shotgun fires a spread of bouncing pellets.',
    shield:'Shield pickups stack charges and refresh the shield timer.',
-   homing:'Homing missiles can bounce; use turns and walls to shake them.',
+   homing:'Homing missiles bounce and travel half the maze perimeter. Use walls to break locks.',
    grenade:'Grenades home in. Press Fire again to detonate before the '+GRENADE_FUSE+'-second fuse expires.',
    speed:'Speed pickups stack for faster movement and turning.',
    laser:'Laser adds a long dotted guide for reflected shots.',
@@ -3421,14 +3430,14 @@ function resetRuleDefaults(){
  featureNotice('rulesNotice','Default '+modeLabel().toLowerCase()+' rules loaded. Select APPLY RULES to save.');
 }
 function updateRuleHelp(){
- const rules=currentRules(),infinite=!!rules.infinity,m=rules.mode;$('rulesModeName').textContent=modeLabel();
+ const rules=currentRules(),infinite=!!rules.infinity,m=rules.mode,draftTarget=Number($('rule-scoreTarget').value),waveTarget=Number.isInteger(draftTarget)&&draftTarget>=1&&draftTarget<=20?draftTarget:rules.scoreTarget;$('rulesModeName').textContent=modeLabel();
  const count=activeTeamCount(rules),editable=isRoomEditable();
  $('teamNamesEditor').hidden=count===0;
  for(let i=1;i<=4;i++){
   const input=$('rule-teamName'+i),color=$('rule-teamColor'+i),visible=i<=count;
   input.parentElement.hidden=!visible;input.disabled=!visible||!editable;if(color)color.disabled=!visible||!editable;
  }
- $('rule-team-help').textContent=!infinite&&m==='survival'?'All one to four squad tanks use Team 1. Enemy waves use Team 2 and do not occupy room seats.':infinite?'Each team’s score combines the points its tanks earn and lose. Change team assignments in the roster.':count===2?'Tanks are balanced across Team 1 and Team 2. Change assignments in the roster.':'Tanks are balanced across all four teams. Change assignments in the roster.';
+ $('rule-team-help').textContent=!infinite&&m==='survival'?'All one to four squad tanks use Team 1. Enemy waves use Team 2 and do not occupy room seats.':infinite?'Each team’s score combines the points its tanks earn and lose. Change team assignments in the roster.':count===2?'Tanks are balanced across Team 1 and Team 2. Change assignments in the roster.':'Tanks start evenly split between Team 1 and Team 2. Change assignments in the roster.';
  $('rule-friendlyFire').parentElement.hidden=count===0;$('rule-friendlyFire').disabled=count===0||!editable;
  const infinityTarget=$('rule-infinityTarget');infinityTarget.parentElement.hidden=!infinite;infinityTarget.disabled=!infinite||!editable;
  const randomBots=$('rule-infinityRandomBots'),showBotOptions=infinite&&randomBots.checked;
@@ -3447,7 +3456,7 @@ function updateRuleHelp(){
  $('ruleTimeLabel').textContent=m==='survival'?'WAVE TIME LIMIT (SECONDS)':'TIME LIMIT (SECONDS)';
  $('ruleScoreLabel').textContent=m==='survival'?'WAVES TO SURVIVE':m==='koth'?'HILL POINTS TO WIN':m==='ctf'?'CAPTURES TO WIN':'ROUNDS TO WIN';
  const [mc,mr]=mapDimensions(rules.mapSize);$('rule-pickup-density').textContent=$('rule-pickupRate').value==='off'?'Pickups disabled.':pickupLimitText(rules.mapSize)+' Uncollected power-ups expire after '+pickupLifetime(mc,mr)+' seconds.';
- $('rule-help').textContent=m==='survival'?'One to four squad tanks; all-bot squads are welcome. Clear each wave before its timer expires. A squad wipe ends the run. Each cleared wave holds for two seconds, then the squad revives on a new maze with a three-second countdown. Normal debuts as the wave 5 boss, Fierce at wave 10, and Godlike at wave 15. Each joins regular waves afterward. Restarting a failed wave keeps that wave’s maze.':m==='ctf'?'Two numbered teams. Carry the enemy flag home; your own flag must be at base. Dropped flags return after 12s. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':m==='koth'?'Teams or Free-for-all. Hold the marked hill for 1 point per second. Contested hills give no points. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':'Last side standing wins a round. No respawns until the next round.';
+ $('rule-help').textContent=m==='survival'?'One to four squad tanks; all-bot squads are welcome. Clear each wave before its timer expires. A squad wipe ends the run. Between waves, a two-second break leads to a new maze and a three-second countdown.'+(waveTarget>=5?' Normal debuts as the wave 5 boss'+(waveTarget>=10?', Fierce at wave 10':'')+(waveTarget>=15?', and Godlike at wave 15':'')+'. Each joins regular waves afterward.':'')+' Restarting a failed wave keeps that wave’s maze.':m==='ctf'?'Two numbered teams. Carry the enemy flag home; your own flag must be at base. Dropped flags return after 12s. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':m==='koth'?'Teams or Free-for-all. Hold the marked hill for 1 point per second. Contested hills give no points. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':'Last side standing wins a round. No respawns until the next round.';
 }
 function readRuleTeamSettings(rules){
  const count=activeTeamCount(rules),saved=$('rulesDialog').dataset.defaults==='true'?defaultModeRules(rules.mode):currentRules();
@@ -3640,7 +3649,7 @@ function initInfinityPreview(){
   if(document.hidden||navigator.onLine===false){snapshot=null;failed=navigator.onLine===false;}
   const pilots=[localPilotIdentity(0),...(secondLocal()?[localPilotIdentity(1)]:[])],key=JSON.stringify(pilots);
   if(key!==personalKey){personalKey=key;counter.replaceChildren(...pilots.map(p=>{const row=document.createElement('span');row.className='infinite-personal-score';row.style.color=paintColor(p.color);row.setAttribute('aria-label',p.label+': (0, #0)');const name=document.createElement('span');name.className='infinite-score-name';name.textContent=p.label;const value=document.createElement('span');value.className='infinite-score-value';value.textContent=': (0, #0)';row.append(name,value);return row;}));}
-  count.hidden=!publicArena;if(publicArena){const text=snapshot?snapshot.players+' online':'— online';if(count.textContent!==text)count.textContent=text;count.title=failed?'Last public count unavailable; retrying.':'Human tanks in the public arena';}
+  count.hidden=!publicArena;if(publicArena){const text=snapshot?snapshot.players+' online':'? online';if(count.textContent!==text)count.textContent=text;count.title=failed?'Last public count unavailable; retrying.':'Human tanks in the public arena';}
   renderStandings();if(canPoll()){if(!request&&!timer)poll();}else cancel();
  }
  async function poll(){
@@ -4156,6 +4165,7 @@ function initFeatures(){
  for(const b of document.querySelectorAll('[data-close-dialog]'))b.onclick=()=>closeFeature($(b.dataset.closeDialog));for(const d of document.querySelectorAll('.feature-dialog'))d.addEventListener('close',()=>{bindingCapture=null;clearInput();});
  $('rulesForm').onsubmit=submitRules;$('defaultRulesBtn').onclick=resetRuleDefaults;
  $('rule-pickupRate').onchange=$('rule-infinityRandomBots').onchange=updateRuleHelp;
+ $('rule-scoreTarget').oninput=updateRuleHelp;
  $('loadPresetBtn').onclick=applySelectedPreset;$('savePresetBtn').onclick=saveCurrentPreset;$('deletePresetBtn').onclick=deleteSelectedPreset;$('presetSelect').onchange=()=>$('deletePresetBtn').disabled=!$('presetSelect').value.startsWith('saved:');
  $('presetName').addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();saveCurrentPreset();}});
  $('resetBindingsBtn').onclick=()=>{bindings=defaultBindings();bindingCapture=null;clearInput();try{localStorage.setItem('leqra.bindings.v1',JSON.stringify({version:4,bindings}));}catch(_){}renderBindings();syncFeatureSummary();updateHUD(true);};
@@ -4276,6 +4286,9 @@ function clearLocalSeat(id){
  for(const b of bullets)if(b.target===id)b.target=-1;
 }
 function moveLocalMember(p,id,watch,team=p.team,score=null){
+ const autoColor=!(Number.isInteger(p.colorIndex)&&p.colorIndex>=0&&p.colorIndex<MAX_TANKS);
+ if(watch&&!p.spectating&&localRoom.rules.teamMode==='ffa'&&!(p.team>0)&&autoColor)p.spectatorColor=teamColor(p.id,p.team,p.colorIndex);
+ if(!watch||!autoColor)delete p.spectatorColor;
  const old=p.id;if(!p.spectating)clearLocalSeat(old);
  p.id=id;p.spectating=watch;p.team=team;
  if(localRoom.self===old)localRoom.self=id;
@@ -4337,20 +4350,32 @@ function syncSpectatingHUD(){
  $('spectatorBanner').hidden=!spectating||!live;
  $('watchingCaption').innerHTML=localPilotIdentityHTML(0)+' is spectating'+(secondaryMember()&&!secondaryMember().spectating?'. '+localPilotIdentityHTML(1)+' is playing.':'.');
  $('spectatorPlayBtn').disabled=survivalSeatLocked(r)||!!r?.matchmaking||!!r?.awayMatch||(r?.players.length||0)>=roomCapacity(r?.rules||currentRules())||rolePending||mode==='online'&&!online.connected;
- $('spectatorPlayBtn').textContent=survivalSeatLocked(r)?'NEXT RUN':r?.matchmaking?'SPECTATING ONLY':r?.awayMatch?'PARTY AWAY':(r?.players.length||0)>=roomCapacity(r?.rules||currentRules())?'ARENA FULL':'JOIN PLAY';
+ $('spectatorPlayBtn').textContent=survivalSeatLocked(r)?'NEXT RUN':r?.matchmaking?'SPECTATING ONLY':r?.awayMatch?'PARTY AWAY':(r?.players.length||0)>=roomCapacity(r?.rules||currentRules())?'ARENA FULL':'PLAY';
  if(changed)resize();
+}
+function roomRoleHelpText(player,r){
+ const spectating=!!player?.spectating,infinity=!!r.rules.infinity;
+ return survivalSeatLocked(r)&&spectating?'The squad is locked for this run. Joining opens after it ends.':r.awayMatch?'This lineup is reserved until the party returns.':r.matchmaking&&spectating?'Queue matches do not admit replacement tanks. Keep spectating, or return to the party.':infinity?(spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Wait in the room or ask the host for a swap.':'Select Play to enter the arena.'):'Switch to a lobby-only role and keep the room membership.'):spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Keep spectating, or ask the host for a swap.':'The spectator role stays active until Play is selected.'):'Switch to spectating without leaving the room.';
+}
+function syncRoomRole(player,r,label,help,button){
+ const spectating=!!player?.spectating;
+ $(label).innerHTML=roomPlayerIdentityHTML(player,r)+(spectating?' is spectating':' has a tank seat');
+ $(help).textContent=roomRoleHelpText(player,r);
+ $(button).textContent=rolePending?'UPDATING…':spectating&&r.matchmaking?'SPECTATING ONLY':spectating?'PLAY':'SPECTATE';
+ $(button).disabled=!player||survivalSeatLocked(r)&&spectating||!!r.awayMatch||!!r.matchmaking&&spectating||rolePending||spectating&&r.players.length>=roomCapacity(r.rules)||mode==='online'&&!online.connected;
+ $(button).setAttribute('aria-pressed',String(spectating));
 }
 function syncSpectators(){
  if(!$('roomSpectators'))return;
  $('spectatorsBtn').hidden=mode!=='online'||!online.roomData;
  const r=roomData();if(!r)return;
- const me=roomMember(localPlayerID(),r),spectating=!!me?.spectating,spectators=r.spectators||[];
- for(const id of ['toggleSpectateBtn','menuSpectateBtn']){
-  $(id).textContent=rolePending?'UPDATING…':spectating&&r.matchmaking?'SPECTATING ONLY':spectating?'JOIN AS PLAYER':'SPECTATE';$(id).disabled=survivalSeatLocked(r)&&spectating||!!r.awayMatch||!!r.matchmaking&&spectating||rolePending||spectating&&r.players.length>=roomCapacity(r.rules)||mode==='online'&&!online.connected;$(id).setAttribute('aria-pressed',String(spectating));
- }
- $('roomRoleLabel').innerHTML=roomPlayerIdentityHTML(me,r)+(spectating?' is spectating':' has a tank seat');
+ const me=roomMember(localPlayerID(),r),local=secondaryMember(),spectators=r.spectators||[];
+ $('roomRoleStrip').hidden=!me?.spectating;
+ syncRoomRole(me,r,'roomRoleLabel','roomRoleHelp','toggleSpectateBtn');
+ $('menuSpectateBtn').textContent=$('toggleSpectateBtn').textContent;$('menuSpectateBtn').disabled=$('toggleSpectateBtn').disabled;$('menuSpectateBtn').setAttribute('aria-pressed',String(!!me?.spectating));
+ $('roomP2RoleStrip').hidden=!local?.spectating;
+ if(local?.spectating)syncRoomRole(local,r,'roomP2RoleLabel','roomP2RoleHelp','toggleP2SpectateBtn');
  const infinity=!!r.rules.infinity;
- $('roomRoleHelp').textContent=survivalSeatLocked(r)&&spectating?'The squad is locked for this run. Joining opens after it ends.':r.awayMatch?'This lineup is reserved until the party returns.':r.matchmaking&&spectating?'Queue matches do not admit replacement tanks. Keep spectating, or return to the party.':infinity?(spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Wait in the room or ask the host for a swap.':'Join as a player to enter the arena.'):'Switch to a lobby-only role and keep the room membership.'):spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Keep spectating, or ask the host for a swap.':'The spectator role stays active until Play is selected.'):'Switch to spectating without leaving the room.';
  $('copySpectateBtn').hidden=$('copyWatchInGameBtn').hidden=mode!=='online'||infinity;
  $('noSpectators').textContent=infinity?'Nobody is waiting as a spectator. Infinity arenas are visible to players with a tank seat.':'Nobody is spectating yet. Share the spectator link to invite spectators.';
  $('roomSpectators').hidden=!spectators.length;$('spectatorSummary').textContent='SPECTATORS, '+spectators.length;
@@ -4371,17 +4396,19 @@ function syncSpectators(){
  syncSpectatingHUD();
 }
 function initSpectators(){
- const actions=document.createElement('div');actions.className='room-role-strip';actions.innerHTML='<div><strong id="roomRoleLabel">TANK SEAT ACTIVE</strong><p id="roomRoleHelp">Switch to spectating without leaving the room.</p></div><button id="toggleSpectateBtn" type="button" class="secondary">SPECTATE</button>';
+ const actions=document.createElement('div');actions.id='roomRoleStrip';actions.className='room-role-strip';actions.hidden=true;actions.innerHTML='<div><strong id="roomRoleLabel"></strong><p id="roomRoleHelp"></p></div><button id="toggleSpectateBtn" type="button" class="secondary">PLAY</button>';
  $('roomRoster').before(actions);
+ const localActions=document.createElement('div');localActions.id='roomP2RoleStrip';localActions.className='room-role-strip';localActions.hidden=true;localActions.innerHTML='<div><strong id="roomP2RoleLabel"></strong><p id="roomP2RoleHelp"></p></div><button id="toggleP2SpectateBtn" type="button" class="secondary">PLAY</button>';actions.after(localActions);
  const copy=document.createElement('button');copy.type='button';copy.id='copySpectateBtn';copy.className='secondary share-room watch-link';copy.textContent='COPY SPECTATOR LINK ↗';copy.hidden=true;$('copyInviteBtn').after(copy);
  const list=document.createElement('details');list.id='roomSpectators';list.className='room-spectators';list.hidden=true;list.innerHTML='<summary id="spectatorSummary">SPECTATORS, 0</summary><div id="roomSpectatorList" class="spectator-list"></div>';$('rosterTools').after(list);
  const head=document.createElement('button');head.id='spectatorsBtn';head.type='button';head.className='spectators-button';head.textContent='SPECTATORS 0';head.hidden=mode!=='online'||!online.roomData;$('soundBtn').before(head);
  const menu=document.createElement('button');menu.id='menuSpectateBtn';menu.type='button';menu.className='secondary';menu.textContent='Spectate';$('onlineReturnBtn').after(menu);
  const inGame=document.createElement('button');inGame.id='copyWatchInGameBtn';inGame.type='button';inGame.className='secondary';inGame.textContent='Copy spectator link';$('copyInGameBtn').after(inGame);
- const banner=document.createElement('div');banner.id='spectatorBanner';banner.className='spectator-banner';banner.hidden=true;banner.innerHTML='<span id="watchingCaption">SPECTATING</span><button id="spectatorPlayBtn" class="secondary" type="button">JOIN PLAY</button>';$('localLoadouts').prepend(banner);
+ const banner=document.createElement('div');banner.id='spectatorBanner';banner.className='spectator-banner';banner.hidden=true;banner.innerHTML='<span id="watchingCaption">SPECTATING</span><button id="spectatorPlayBtn" class="secondary" type="button">PLAY</button>';$('localLoadouts').prepend(banner);
  const dialogs=document.createElement('div');dialogs.innerHTML=`<dialog id="spectatorsDialog" class="spectator-dialog" aria-labelledby="spectatorsTitle"><div class="dialog-heading"><div><div class="eyebrow">ROOM MEMBERS</div><h2 id="spectatorsTitle">Spectators.</h2></div><button class="secondary" type="button" id="closeSpectatorsBtn">CLOSE</button></div><p id="spectatorLimit"></p><p id="noSpectators">Nobody is spectating yet. Share the spectator link to invite spectators.</p><div id="spectatorList" class="spectator-list"></div></dialog><dialog id="swapDialog" class="spectator-dialog swap-dialog" aria-labelledby="swapTitle"><div class="eyebrow">HOST CONTROLS</div><h2 id="swapTitle">Swap a player.</h2><p id="swapViewerName"></p><label class="field-label" for="swapTarget">ACTIVE PLAYER TO MOVE TO SPECTATORS</label><select id="swapTarget" class="net-input"></select><p id="swapNotice"></p><div class="kick-actions"><button id="cancelSwapBtn" type="button" class="secondary">CANCEL</button><button id="confirmSwapBtn" type="button" class="primary">SWAP PLAYERS</button></div></dialog>`;
  document.body.append(dialogs);
  $('toggleSpectateBtn').onclick=$('menuSpectateBtn').onclick=$('spectatorPlayBtn').onclick=toggleMyRole;
+ $('toggleP2SpectateBtn').onclick=()=>setPlayerSpectating(secondaryMember(),false);
  $('copySpectateBtn').onclick=$('copyWatchInGameBtn').onclick=()=>copyOnlineInvite(true);
  $('spectatorsBtn').onclick=()=>{clearInput();if($('infiniteArena')?.open)window.leqraInfinity?.resetControls();sendOnlineInput(true);syncSpectators();$('spectatorsDialog').showModal();};
  $('closeSpectatorsBtn').onclick=()=>$('spectatorsDialog').close();
@@ -4788,7 +4815,7 @@ function syncSidebarContext(){
   let text=original;
   if(help){
    if(element.classList.contains('power-note'))text=help.pickupHelp+' '+original.slice(original.indexOf('Speed activates'));
-   else text=original.replace('4–8 seconds',help.starDuration+' seconds').replace('Edge bounces.','5.3s flight.').replace(/(?:Half|quarter)-perimeter range/i,help.weaponRange+'-cell range');
+   else text=original.replace('4–8 seconds',help.starDuration+' seconds');
   }
   if(element.textContent!==text)element.textContent=text;
  }

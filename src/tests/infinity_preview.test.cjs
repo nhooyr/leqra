@@ -32,7 +32,7 @@ function boot(){
 }
 
 test('Infinity preview uses real public counts, a measured FPS node and the shared local score layout',async()=>{
- const h=boot(),{s,$,requests}=h;assert.equal(h.bar.hidden,false);assert.equal(s.document.body.classList.contains('infinity-preview'),true);assert.equal(h.fps.parentElement,h.bar);assert.equal($('infinityPreviewOnlineCount').textContent,'— online');assert.equal(requests.length,1);assert.equal(requests[0].url,'https://leqra.test/api/infinity');assert.equal(requests[0].options.cache,'no-store');
+ const h=boot(),{s,$,requests}=h;assert.equal(h.bar.hidden,false);assert.equal(s.document.body.classList.contains('infinity-preview'),true);assert.equal(h.fps.parentElement,h.bar);assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.equal(requests.length,1);assert.equal(requests[0].url,'https://leqra.test/api/infinity');assert.equal(requests[0].options.cache,'no-store');
  const pilots=$('infinityPreviewScores').children;assert.deepEqual(pilots.map(p=>p.children[0].textContent),['SNOW <FOX> (P1)','WING (P2)']);assert.equal(pilots[0].style.color,'#123456');assert.equal(pilots[1].children[1].textContent,': (0, #0)');
  requests[0].resolve({players:7,tankCount:18,leaders:Array.from({length:12},(_,i)=>({id:i+1,name:'Tank <'+i+'>',score:30-i,colorIndex:i%2,rank:i+1}))});await h.flush();
  assert.equal($('infinityPreviewOnlineCount').textContent,'7 online');assert.equal($('infinityPreviewLeaders').children.length,10);assert.equal($('infinityPreviewLeaders').children[0].children[0].textContent,'Tank <0>');assert.equal($('infinityPreviewLeaders').children[0].children[0].style.fontWeight,'400','public pilots are not local merely because the room is on this device');
@@ -42,7 +42,7 @@ test('Infinity preview uses real public counts, a measured FPS node and the shar
 
 test('leaving or hiding public preview aborts requests and restores the existing fixed FPS position',async()=>{
  const h=boot(),{s,$}=h;s.playMode='';s.window.leqraInfinityPreview.sync();assert.equal(h.bar.hidden,true);assert.equal(h.requests[0].options.signal.aborted,true);assert.equal(h.fps.parentElement,h.wrap);assert.equal(h.fps.nextSibling,h.next);assert.equal(s.document.body.classList.contains('infinity-preview'),false);
- await h.flush();s.playMode='online';s.window.leqraInfinityPreview.sync();assert.equal(h.requests.length,2);assert.equal($('infinityPreviewOnlineCount').textContent,'— online');
+ await h.flush();s.playMode='online';s.window.leqraInfinityPreview.sync();assert.equal(h.requests.length,2);assert.equal($('infinityPreviewOnlineCount').textContent,'? online');
  s.document.hidden=true;s.document.emit('visibilitychange');assert.equal(h.requests[1].options.signal.aborted,true);await h.flush();assert.equal(h.timers.size,0);
  s.document.hidden=false;s.document.emit('visibilitychange');assert.equal(h.requests.length,3);
  $('controlsDialog').open=true;h.observers[0].fn([{type:'attributes',target:$('controlsDialog')}]);assert.equal(h.requests[2].options.signal.aborted,true,'covered menus do not poll a hidden header');await h.flush();
@@ -58,7 +58,7 @@ test('private and offline Infinity previews use room pilots without querying pub
 });
 
 test('public polling retries failures every ten seconds and stops permanently during settings reset',async()=>{
- const h=boot(),{s,$}=h;h.requests[0].reject(Error('offline'));await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'— online');assert.match($('infinityPreviewScoreboardNote').textContent,/unavailable/);assert.deepEqual([...h.timers.values()].map(t=>t.ms),[10000]);
+ const h=boot(),{s,$}=h;h.requests[0].reject(Error('offline'));await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.match($('infinityPreviewScoreboardNote').textContent,/unavailable/);assert.deepEqual([...h.timers.values()].map(t=>t.ms),[10000]);
  h.run(10000);assert.equal(h.requests.length,2);h.requests[1].resolve({players:2,tankCount:2,leaders:[]});await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'2 online');
  h.run(10000);assert.equal(h.requests.length,3);s.settingsResetActive=true;s.window.leqraInfinityPreview.stop();assert.equal(h.requests[2].options.signal.aborted,true);assert.equal(h.observers[0].disconnected,true);assert.equal(h.timers.size,0);assert.equal($('infinityPreviewScoreboard').hidden,true);
  s.settingsResetActive=false;s.window.leqraInfinityPreview.sync();assert.equal(h.requests.length,3,'late callbacks cannot restart the reset page');await h.flush();assert.equal(h.timers.size,0);

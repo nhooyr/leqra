@@ -32,7 +32,6 @@ const CELL = geometry.cellSize;
 const RADIUS = 17;
 const BULLET_RADIUS = 3.5;
 const COLORS = art.colors, powers = art.powers, powerTypes = Object.keys(powers), noTrail = [];
-const LOCAL_HIGHLIGHTS = ['#bf5cff', '#ff4fd8'];
 const POWER_DURATION = 15, STAR_DURATION = 8, PICKUP_LIFETIME = 30, SHOT_RANGE = 18 * CELL, BLAST_RADIUS = 220;
 const RESPAWN_DELAY = 1;
 const RESULT_NOTICE_MS = 1500;
@@ -79,7 +78,7 @@ function pilotName() {
 function setStatus(text) {
  status.hidden = !text;
  if (status.textContent !== text) status.textContent = text;
- if(text)byID('infiniteOnlineCount').hidden=true;
+ renderOnlineCount(session);
 }
 
 function localPilots(world=session) {
@@ -167,10 +166,11 @@ function resultIdentity(world) {
 
 function renderOnlineCount(world) {
  const count=byID('infiniteOnlineCount');
- count.hidden=!world.online||!world.joined;
+ count.hidden=!world?.online;
  if(count.hidden)return;
- const text=(Number.isSafeInteger(world.players)&&world.players>=0?world.players:world.controllers.length)+' online';
+ const known=world.joined&&!world.failed&&Number.isSafeInteger(world.players)&&world.players>=0,text=(known?world.players:'?')+' online';
  if(count.textContent!==text)count.textContent=text;
+ count.title=known?'Human tanks in this arena':'Online player count is unavailable.';
 }
 
 function makeTank(id, x, y, bot = false) {
@@ -804,7 +804,7 @@ function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank') {
  ctx.translate(tank.x, tank.y);
  const shields = tank.shield > 0 ? tank.shieldCharges || 1 : 0;
  if (shields || tank.invulnerable > 0 || highlight) {
-  ctx.strokeStyle = shields ? powers.shield.color : highlight || art.theme.protection;
+  ctx.strokeStyle = shields ? powers.shield.color : highlight ? color : art.theme.protection;
   ctx.lineWidth = 1.6;
   ctx.globalAlpha = shields ? .78 : tank.invulnerable > 0 ? .55 : .2;
   if (!shields && !(tank.invulnerable > 0)) ctx.setLineDash([3, 6]);
@@ -1029,7 +1029,7 @@ function renderScores(world, pilot, second) {
   row.style.setProperty('--tank-color',color);
   if (local) {
    row.dataset.local = 'p' + local;
-   row.style.setProperty('--local-highlight',LOCAL_HIGHLIGHTS[local-1]);
+   row.style.setProperty('--local-highlight',color);
   }
   const callsign = document.createElement('span');
   const total = document.createElement('strong');
@@ -1149,7 +1149,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
    art.ageTank({...interpolate(world.previousTanks.get(tank.id),tank,alpha)},tank,age) : tank);
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
-  drawTank(displayed, owner===seat ? LOCAL_HIGHLIGHTS[seat===world?0:1] : null, zoom, ratio,
+  drawTank(displayed, !!owner, zoom, ratio,
    owner?pilotIdentity(world,owner===world?0:1,tank).label:tank.name||'Tank');
  }
  const bullets = world.visibleBullets;
