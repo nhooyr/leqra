@@ -1,0 +1,263 @@
+[
+  {
+    "x": 100,
+    "y": 100,
+    "ux": 1,
+    "uy": 0,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "clear origin",
+    "walls": [
+      {
+        "x": 120,
+        "y": 80,
+        "w": 8,
+        "h": 50
+      }
+    ],
+    "expected": {
+      "x": 100,
+      "y": 100,
+      "ux": 1,
+      "uy": 0,
+      "distance": 0,
+      "muzzle": 28,
+      "bounced": false,
+      "valid": true
+    }
+  },
+  {
+    "x": 100,
+    "y": 100,
+    "ux": 1,
+    "uy": 0,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "overlapping incoming face",
+    "walls": [
+      {
+        "x": 96,
+        "y": -5000,
+        "w": 8,
+        "h": 10000
+      }
+    ],
+    "expected": {
+      "x": 92.88,
+      "y": 100,
+      "ux": -1,
+      "uy": 0,
+      "distance": 7.12,
+      "muzzle": 20.88,
+      "bounced": true,
+      "valid": true
+    }
+  },
+  {
+    "x": 93,
+    "y": 100,
+    "ux": 1,
+    "uy": 0,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "exact expanded face",
+    "walls": [
+      {
+        "x": 96,
+        "y": -5000,
+        "w": 8,
+        "h": 10000
+      }
+    ],
+    "expected": {
+      "x": 92.88,
+      "y": 100,
+      "ux": -1,
+      "uy": 0,
+      "distance": 0.12,
+      "muzzle": 27.88,
+      "bounced": true,
+      "valid": true
+    }
+  },
+  {
+    "x": 100,
+    "y": 100,
+    "ux": 0,
+    "uy": 1,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "parallel to long wall uses nearest side",
+    "walls": [
+      {
+        "x": 96,
+        "y": -5000,
+        "w": 8,
+        "h": 10000
+      }
+    ],
+    "expected": {
+      "x": 92.88,
+      "y": 100,
+      "ux": 0,
+      "uy": 1,
+      "distance": 7.12,
+      "muzzle": 20.88,
+      "bounced": true,
+      "valid": true
+    }
+  },
+  {
+    "x": 98,
+    "y": 77,
+    "ux": 0.7071067811865476,
+    "uy": 0.7071067811865476,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "corner tie chooses smaller x",
+    "walls": [
+      {
+        "x": 101,
+        "y": 80,
+        "w": 8,
+        "h": 50
+      }
+    ],
+    "expected": {
+      "x": 97.88,
+      "y": 77,
+      "ux": -0.7071067811865476,
+      "uy": 0.7071067811865476,
+      "distance": 0.12,
+      "muzzle": 27.88,
+      "bounced": true,
+      "valid": true
+    }
+  },
+  {
+    "x": 100,
+    "y": 100,
+    "ux": 0.7071067811865476,
+    "uy": 0.7071067811865476,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "crossing walls clear both axes",
+    "walls": [
+      {
+        "x": 96,
+        "y": 0,
+        "w": 8,
+        "h": 200
+      },
+      {
+        "x": 0,
+        "y": 96,
+        "w": 200,
+        "h": 8
+      }
+    ],
+    "expected": {
+      "x": 92.88,
+      "y": 92.88,
+      "ux": -0.7071067811865476,
+      "uy": -0.7071067811865476,
+      "distance": 10.069200564096437,
+      "muzzle": 17.930799435903563,
+      "bounced": true,
+      "valid": true
+    }
+  },
+  {
+    "x": 100,
+    "y": 100,
+    "ux": 1,
+    "uy": 0,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "nearby solid wall prevents backward tunneling",
+    "walls": [
+      {
+        "x": 96,
+        "y": 0,
+        "w": 8,
+        "h": 200
+      },
+      {
+        "x": 80,
+        "y": 0,
+        "w": 10,
+        "h": 200
+      }
+    ],
+    "expected": {
+      "x": 100,
+      "y": 100,
+      "ux": 1,
+      "uy": 0,
+      "distance": 0,
+      "muzzle": 28,
+      "bounced": true,
+      "valid": false
+    }
+  },
+  {
+    "x": 100,
+    "y": 100,
+    "ux": 1,
+    "uy": 0,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "fully solid origin cannot jump more than 32",
+    "walls": [
+      {
+        "x": 0,
+        "y": 0,
+        "w": 200,
+        "h": 200
+      }
+    ],
+    "expected": {
+      "x": 100,
+      "y": 100,
+      "ux": 1,
+      "uy": 0,
+      "distance": 0,
+      "muzzle": 28,
+      "bounced": true,
+      "valid": false
+    }
+  },
+  {
+    "x": 6,
+    "y": 100,
+    "ux": 1,
+    "uy": 0,
+    "radius": 3,
+    "muzzle": 28,
+    "name": "fixed rim cannot eject outside arena",
+    "walls": [
+      {
+        "x": -4,
+        "y": -4,
+        "w": 8,
+        "h": 428
+      }
+    ],
+    "bounds": [
+      7,
+      7,
+      497,
+      413
+    ],
+    "expected": {
+      "x": 6,
+      "y": 100,
+      "ux": 1,
+      "uy": 0,
+      "distance": 0,
+      "muzzle": 28,
+      "bounced": true,
+      "valid": false
+    }
+  }
+]

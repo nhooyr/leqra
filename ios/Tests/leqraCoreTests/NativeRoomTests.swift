@@ -94,6 +94,7 @@ final class NativeRoomTests: XCTestCase {
         }
         let client = NetworkClient(), arena = NetworkClient()
         defer { client.disconnect(); arena.disconnect() }
+        let suffix = UUID().uuidString.prefix(8).uppercased(), roomName = "ROOM " + suffix, botName = "FOX " + suffix
         let preview = try await client.fetchPublicStatus(baseURL: base)
         XCTAssertEqual(preview.capacity, 32)
         XCTAssertGreaterThanOrEqual(preview.latencyMilliseconds, 0)
@@ -109,14 +110,14 @@ final class NativeRoomTests: XCTestCase {
             default: break
             }
         }
-        client.connectRoom(baseURL: base, name: "SWIFT ROOM")
+        client.connectRoom(baseURL: base, name: roomName)
         try await waitFor { room != nil && welcome != nil || !errors.isEmpty }
         let identity = try XCTUnwrap(welcome)
-        client.send(.add(kind: "bot", name: "SWIFT BOT", difficulty: "easy"))
+        client.send(.add(kind: "bot", name: "BOT " + suffix, difficulty: "easy"))
         try await waitFor { room?.players.contains { $0.kind == "bot" } == true || !errors.isEmpty }
         let bot = try XCTUnwrap(room?.players.first { $0.kind == "bot" })
-        client.send(.configure(target: bot.id, member: bot.member, name: "SWIFT FOX", difficulty: "hard"))
-        try await waitFor { room?.players.contains { $0.name == "SWIFT FOX" && $0.difficulty == "hard" } == true || !errors.isEmpty }
+        client.send(.configure(target: bot.id, member: bot.member, name: botName, difficulty: "hard"))
+        try await waitFor { room?.players.contains { $0.name == botName && $0.difficulty == "hard" } == true || !errors.isEmpty }
         client.send(.paint(target: bot.id, member: bot.member, colorIndex: 5))
         try await waitFor { room?.players.contains { $0.id == bot.id && $0.colorIndex == 5 } == true || !errors.isEmpty }
         client.send(.chat("NATIVE CHAT"))
@@ -174,6 +175,8 @@ final class NativeRoomTests: XCTestCase {
         }
         let host = NetworkClient(), guest = NetworkClient()
         defer { host.disconnect(); guest.disconnect() }
+        let suffix = UUID().uuidString.prefix(8).uppercased()
+        let hostName = "HOST " + suffix, guestName = "GUEST " + suffix, localName = "WING " + suffix
         var room: RoomInfo?, guestWelcome: NetworkWelcome?, catalog: QueuePacket?
         var hostErrors: [String] = [], cancelled = false, kicked = false
         host.onEvent = { event in
@@ -193,9 +196,9 @@ final class NativeRoomTests: XCTestCase {
             default: break
             }
         }
-        host.connectRoom(baseURL: base, name: "SWIFT HOST")
+        host.connectRoom(baseURL: base, name: hostName)
         try await waitFor { room != nil || !hostErrors.isEmpty }
-        guest.connectRoom(baseURL: base, name: "SWIFT GUEST", code: try XCTUnwrap(room?.code), spectating: true)
+        guest.connectRoom(baseURL: base, name: guestName, code: try XCTUnwrap(room?.code), spectating: true)
         try await waitFor { room?.spectators.count == 1 && guestWelcome != nil || !hostErrors.isEmpty }
         XCTAssertEqual(guestWelcome?.spectating, true)
         guest.send(.spectate(false))
@@ -208,16 +211,16 @@ final class NativeRoomTests: XCTestCase {
         try await waitFor { room?.queue?.stage == "searching" || !hostErrors.isEmpty }
         host.send(.queueCancel(try XCTUnwrap(room?.queue?.id)))
         try await waitFor { cancelled && room?.queue == nil || !hostErrors.isEmpty }
-        let player = try XCTUnwrap(room?.players.first { $0.name == "SWIFT GUEST" })
+        let player = try XCTUnwrap(room?.players.first { $0.name == guestName })
         host.send(.kick(target: player.id, member: player.member))
         try await waitFor { kicked && room?.players.count == 1 || !hostErrors.isEmpty }
-        host.send(.add(kind: "local", name: "CO-PILOT"))
+        host.send(.add(kind: "local", name: "CO " + suffix))
         try await waitFor { room?.players.contains { $0.kind == "local" } == true || !hostErrors.isEmpty }
         let local = try XCTUnwrap(room?.players.first { $0.kind == "local" })
         // Host action budget is eight per second; the queue and roster actions
         // above intentionally stay within that existing server limit.
-        host.send(.renameLocal(target: local.id, member: local.member, name: "SWIFT CO-PILOT"))
-        try await waitFor { room?.players.contains { $0.name == "SWIFT CO-PILOT" } == true || !hostErrors.isEmpty }
+        host.send(.renameLocal(target: local.id, member: local.member, name: localName))
+        try await waitFor { room?.players.contains { $0.name == localName } == true || !hostErrors.isEmpty }
         XCTAssertTrue(hostErrors.isEmpty, hostErrors.joined(separator: ", "))
     }
 }

@@ -27,6 +27,7 @@ struct ReadyRoomView: View {
               .accessibilityIdentifier("readyRoomScroll")
               .scrollDismissesKeyboard(.interactively)
         }.onChange(of: callsignFocused) { focused in if !focused { session.saveCallsign() } }
+            .task(id: session.serverAddress) { session.scheduleCallsignAvailability() }
     }
 
     private var publicSelected: Bool { session.room?.infinityPublic ?? session.publicInfinitySelected }
@@ -80,6 +81,7 @@ struct ReadyRoomView: View {
                 .textInputAutocapitalization(.words).autocorrectionDisabled().onSubmit { session.saveCallsign() }
                 .onChange(of: session.callsign) { value in if value.count > 16 { session.callsign = String(value.prefix(16)) } }
                 .accessibilityIdentifier("callsignField")
+            CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
             WebDisclosure(isExpanded: $settingsOpen, title: "Room settings") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("ROOM NAME OR CODE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
@@ -251,10 +253,28 @@ struct RoomPilotRow: View {
                         else { session.send(.configure(target: member.id, member: member.member, name: value)) }
                     }
                     .onAppear { name = member.name }.onChange(of: member.name) { name = $0 }
+                    .onChange(of: name) { value in if ownedLocal { session.scheduleCallsignAvailability(localName: value) } }
+                if ownedLocal {
+                    CallsignFeedback(message: session.localCallsignFeedback, identifier: "localCallsignAvailability")
+                }
             }
             if canPaint {
                 PaintChoices(selected: member.colorIndex ?? GamePalette.colors.firstIndex(of: member.color) ?? 0) { session.send(.paint(target: member.id, member: member.member, colorIndex: $0)) }
             }
         }.padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+/// A fixed two-line slot keeps checking and conflict feedback from moving the
+/// callsign editor or the controls below it.
+struct CallsignFeedback: View {
+    var message: String
+    var checking = false
+    var identifier = "callsignAvailability"
+    var body: some View {
+        Text(message.isEmpty && checking ? "Checking online callsign…" : message)
+            .font(.system(size: 10)).foregroundStyle(checking ? WebStyle.muted : WebStyle.danger)
+            .frame(maxWidth: .infinity, alignment: .leading).frame(height: 30, alignment: .topLeading)
+            .accessibilityIdentifier(identifier)
     }
 }

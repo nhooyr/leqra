@@ -1,6 +1,9 @@
 package main
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // Only the authenticated connection's two seats can be renamed. The server
 // mutex also excludes reconnect replacement and room-seat retirement.
@@ -41,6 +44,29 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 		fail("Reconnect before changing the callsign.")
 		return
 	}
+	names := []string{connection.pilot.Name}
+	if msg.Seat == 0 {
+		names[0] = name
+	}
+	if connection.local != nil {
+		localName := connection.local.Name
+		if msg.Seat == 1 {
+			localName = name
+		}
+		names = append(names, localName)
+	}
+	if _, err := s.hub.callsigns.claim(connection.pilot.publicToken, names); err != nil {
+		packet := map[string]any{"type": "rename_error", "requestId": msg.RequestID, "seat": msg.Seat, "message": err.Error()}
+		var conflict *callsignConflictError
+		if errors.As(err, &conflict) {
+			packet["code"] = "callsign_taken"
+			packet["conflicts"] = conflict.Conflicts
+		} else {
+			packet["code"] = "server_busy"
+		}
+		c.enqueue(packet)
+		return
+	}
 	if connection.seat != nil && !s.hub.renameInfiniteMember(connection.room, connection.seat, member, name, now) {
 		fail("That room seat is no longer available.")
 		return
@@ -48,6 +74,13 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 	a.mu.Lock()
 	pilot.Name = name
 	a.mu.Unlock()
+	if a == s.public {
+		if err := s.persistPublicLocked(nil, nil); err != nil {
+			s.publicStoreError(err)
+			fail(infinitePublicStoreBusy)
+			return
+		}
+	}
 	c.enqueue(map[string]any{"type": "renamed", "requestId": msg.RequestID, "seat": msg.Seat, "name": name})
 }
 

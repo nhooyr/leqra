@@ -57,7 +57,7 @@ final class MazeTests: XCTestCase {
         XCTAssertEqual(maze.cachedChunkCount, 0)
     }
 
-    func testLaserGuideRicochetsAndHidesInsideWallWhileCannonIgnoresInterior() {
+    func testLaserGuideRicochetsFromEmbeddedOriginWhileCannonIgnoresInterior() {
         let world = ArenaWorld(width: 168, height: 168, cols: 2, rows: 2, walls: [
             MazeWall(x: 80, y: -4, w: 8, h: 176, axis: "v", line: 84),
             MazeWall(x: -4, y: -4, w: 8, h: 176, axis: "v", line: 0),
@@ -67,7 +67,10 @@ final class MazeTests: XCTestCase {
         let laser = maze.laserGuide(x: 42, y: 42, angle: 0, range: 150)
         XCTAssertGreaterThan(laser.count, 2)
         XCTAssertLessThanOrEqual(laser[1].x, 77)
-        XCTAssertTrue(maze.laserGuide(x: 84, y: 42, angle: 0, range: 150).isEmpty)
+        let embedded = maze.laserGuide(x: 84, y: 42, angle: 0, range: 150)
+        XCTAssertGreaterThan(embedded.count, 1)
+        XCTAssertLessThan(embedded[0].x, 80, "An embedded muzzle must begin on the firing side of the wall.")
+        XCTAssertLessThan(embedded[1].x, embedded[0].x, "The guide must initially point back from the wall, just like the fired laser.")
         let cannon = maze.projectileGuide(x: 84, y: 42, angle: 0, kind: "cannon", range: 150, radius: 14)
         XCTAssertGreaterThan(cannon.count, 1)
         XCTAssertEqual(cannon[1].x, 150, accuracy: 1e-10)

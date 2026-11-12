@@ -2,7 +2,7 @@
 
 [leqra.com](https://leqra.com)
 
-An online multiplayer tank arena battle game.
+An online multiplayer tank arena battle game. Inspired by [TankTrouble](https://tanktrouble.com).
 
 ![showcase screenshot of the game](docs/showcase.png)
 

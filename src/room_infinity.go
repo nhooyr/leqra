@@ -31,7 +31,11 @@ func infiniteRoomSeat(p *Player, rules MatchRules) infiniteSeat {
 	if rules.TeamMode != "teams" {
 		team = 0
 	}
-	return infiniteSeat{p.Name, team, tankColorIndex[selectedColor(p.ID, team, p.ColorIndex, rules)]}
+	ownerToken := ""
+	if playerKind(p) == "human" {
+		ownerToken = p.PublicToken
+	}
+	return infiniteSeat{name: p.Name, team: team, publicToken: ownerToken, colorIndex: tankColorIndex[selectedColor(p.ID, team, p.ColorIndex, rules)]}
 }
 
 func (r *Room) lineupError() string {

@@ -14,7 +14,7 @@ function tank(id,x,y,extra={}){
 }
 function bullet(owner,x,y,kind='grenade',extra={}){return{owner,x,y,vx:0,vy:0,r:kind==='grenade'?6:5,kind,age:.5,life:kind==='grenade'?5:3,bounces:0,target:-1,seekDelay:0,rangeLeft:1000,dead:false,...extra};}
 function boot({cols=12,rows=8,wallList=[],lexical=false}={}){
- const s={console,Math,localTick:0,localTankActors:Array(8),MACHINE_CAPACITY:require(assetPath('netcode.js')).MACHINE_CAPACITY,mode:'room',phase:'playing',difficulty:'normal',wallIndex:null,CELL:84,WALL:8,RADIUS:17,TAU:Math.PI*2,cols,rows,W:cols*84,H:rows*84,tanks:[],bullets:[],pickups:[],walls:wallList,localObjectives:null,
+ const s={console,Math,Net:require(assetPath('netcode.js')),localTick:0,localTankActors:Array(8),MACHINE_CAPACITY:require(assetPath('netcode.js')).MACHINE_CAPACITY,mode:'room',phase:'playing',difficulty:'normal',wallIndex:null,CELL:84,WALL:8,RADIUS:17,TAU:Math.PI*2,cols,rows,W:cols*84,H:rows*84,tanks:[],bullets:[],pickups:[],walls:wallList,localObjectives:null,
   currentRules:()=>({friendlyFire:s.friendlyFire||false}),clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),rnd:(a,b)=>(a+b)/2,
   angleDelta:(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a)),distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),
   cellAt:(x,y)=>s.clamp(Math.floor(y/84),0,s.rows-1)*s.cols+s.clamp(Math.floor(x/84),0,s.cols-1),
@@ -25,7 +25,7 @@ function boot({cols=12,rows=8,wallList=[],lexical=false}={}){
  s.grid=Array.from({length:cols*rows},(_,i)=>({neighbors:[i-cols,i+cols,...(i%cols?[i-1]:[]),...(i%cols<cols-1?[i+1]:[])].filter(n=>n>=0&&n<cols*rows)}));
  const constants=source.slice(source.indexOf('const DIFFICULTY='),source.indexOf("let phase='menu'"));
  const names=['shieldCount','speedCount','canDamage','recycleStarmanProjectiles','nearbyWalls','rayWalls','circleHit','tankHit','rayBounds','projectileWall','movementWall','resolveWalls','moveTank',
-  'pathScratch','tracePath','bfs','targetMotion','leadPoint','projectileSpec','muzzleBlocked','muzzleProjectile','grenadeDragIntegral','grenadeDragFactor','grenadeForecast',
+  'pathScratch','tracePath','bfs','targetMotion','leadPoint','projectileSpec','muzzleBlocked','projectileLaunch','muzzleProjectile','grenadeDragIntegral','grenadeDragFactor','grenadeForecast',
   'ownedGrenades','steerMissile','guideGrenade','spendMissileRange','missileWallNudge','laserTrace','evaluateBotShot','findBankAim','chooseBotAim',
   'planBotPath','routeControl','botHoldingHill','ctfCoverGoal','objectiveGoal','objectiveRoute','chooseDodge','chooseGrenadeAvoid','forecastThreats','movementRisk','forecastGrenadeBodies','godlikeDistances','godlikeObjectiveGoal',
   'godlikeWeaponValue','godlikePickupValue','godlikePointDanger','godlikeDestination','godlikeRouteDanger','godlikeBlastSafe','godlikeDetonate','godlikeGrenadeShot',

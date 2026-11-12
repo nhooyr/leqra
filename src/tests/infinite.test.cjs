@@ -1051,6 +1051,31 @@ test('offline Infinity Cannon passes through walls and expires after 5.3 seconds
  }
 });
 
+test('offline Infinity reflects every phased wall-facing weapon and preserves shot accounting',()=>{
+ for(const phase of ['ghost','starman'])for(const power of ['', 'rapid','scatter','homing','grenade','laser','cannon'])for(const embedded of [false,true]){
+  const label=[phase,power||'regular',embedded?'embedded':'face'].join('/'),h=harness(undefined,true);
+  h.infinity.start('offline',{localName:'Target'});
+  const world=h.state(),[pilot,target]=world.tanks,arena=h.byID('infiniteArena');world.nextPickup=world.nextBot=Infinity;
+  for(const t of world.tanks)Object.assign(t,{invulnerable:0,spawnProtected:false});
+  Object.assign(pilot,{x:embedded?105:100,y:100,angle:0});Object.assign(target,{x:141,y:100});
+  world.maze.wallsNear=()=>[{x:101,y:80,w:8,h:50}];
+  h.window.leqraInfinityArt.grantPower(pilot,phase,15,8);if(power)h.window.leqraInfinityArt.grantPower(pilot,power,15,8);
+  const charges=pilot.charges,rounds=pilot.machineRounds;
+  arena.emit('keydown',{code:'KeyQ'});h.advance();arena.emit('keyup',{code:'KeyQ'});
+  if(phase==='starman'){assert.equal(pilot.charges,charges,label);assert.equal(pilot.machineRounds,rounds,label);}
+  else if(power==='rapid')assert.equal(pilot.machineRounds,rounds-1,label);else if(power)assert.equal(pilot.charges,charges-1,label);
+  if(power==='cannon'){assert.equal(target.hp,0,label+' penetrates');h.infinity.close();continue;}
+  assert.equal(target.hp,1,label+' does not tunnel forward');
+  if(power==='laser'){
+   const beam=world.visualEffects.find(e=>e.kind==='laser');assert.ok(beam,label+' fires');assert.ok(beam.points[1].x<beam.points[0].x,label+' reflects');
+  }else{
+   assert.equal(world.lastBullet,power==='scatter'?3:1,label+' fires');assert.equal(world.bullets.length,power==='scatter'?3:1,label);
+   for(const bullet of world.bullets){assert.equal(bullet.bounces,1,label);assert.ok(bullet.vx<0,label);}
+  }
+  h.infinity.close();
+ }
+});
+
 test('online Infinity previews Cannon shots from inside a wall', () => {
  const {infinity, byID, state, sockets, sounds} = harness(undefined,true);
  infinity.start('online');
@@ -1418,7 +1443,7 @@ test('private Infinity sends room credentials, honors keyboard remaps, and uses 
  const arena = byID('infiniteArena');
  assert.equal(socket.url, 'wss://example.test/ws/infinite');
  socket.emit('open');
- assert.deepEqual(socket.sent[0], {type: 'join', version: '9.1.0', name: 'Explorer', code: 'forest', token: 'test-token'});
+ assert.deepEqual(socket.sent[0], {type: 'join', version: '9.1.0', name: 'Explorer', code: 'forest', token: 'test-token', updateNames:true});
  socket.receive({type: 'welcome', id: 7, seed: 0});
  advance();
  assert.equal(socket.sent.length, 1);
@@ -1908,4 +1933,72 @@ test('mouse-fire-only Infinity clicks use the keyboard heading and cannot contro
  canvas.emit('pointerdown',{pointerType:'mouse',button:0,pointerId:2,clientX:300,clientY:70});
  assert.equal(socket.sent.at(-1).fire,true);assert.equal(socket.sent.at(-1).aimOnly,false);assert.equal(socket.sent.at(-1).stickX,0);assert.equal(socket.sent.at(-1).stickY,0);assert.equal(socket.sent.at(-1).local,undefined);
  h.infinity.close();
+});
+
+
+test('leaderboard reset notices keep public Infinity connected and survive the next score snapshot',()=>{
+ for(const selected of [false,true]){
+  const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];
+  socket.receive({type:'welcome',id:4,seed:0});
+  const packet={type:'state',tick:1,tanks:[{id:4,x:100,y:100,angle:0,hp:1,score:7}],bullets:[],players:1,leaderboard:[]};
+  socket.receive(packet);const world=h.state();
+  socket.receive({type:'leaderboard_reset',selected});
+  const notice=selected?'Selected Public Infinity scores were reset.':'The Public Infinity leaderboard was reset.';
+  assert.equal(h.byID('infiniteStatus').textContent,notice);assert.equal(world.failed,false);assert.equal(world.joined,true);assert.equal(h.sockets.length,1);assert.equal(world.tanks[0].score,7,'the authoritative snapshot chooses affected scores');
+  packet.tick++;packet.tanks[0].score=0;socket.receive(packet);
+  assert.equal(world.tanks[0].score,0);assert.equal(h.byID('infiniteStatus').textContent,notice);assert.equal(h.byID('infiniteStatus').hidden,false);
+  h.elapse(5100);packet.tick++;socket.receive(packet);assert.equal(h.byID('infiniteStatus').hidden,true);assert.equal(world.joined,true);assert.equal(h.sockets.length,1);h.infinity.close();
+ }
+});
+
+test('public ownership handover preserves score and stops superseded browsers from retrying',()=>{
+ const h=harness(undefined,true),remembered=[];
+ h.window.leqraInfinityArt.publicIdentityToken=()=> 'p_original';
+ h.window.leqraInfinityArt.rememberPublicIdentity=token=>remembered.push(token);
+ h.infinity.start('online',{name:'Chosen'});
+ const [socket]=h.sockets;socket.emit('open');
+ assert.equal(socket.sent[0].publicToken,'p_original');assert.equal(socket.sent[0].updateNames,true);
+ socket.receive({type:'welcome',id:14,seed:0,publicToken:'p_replacement',resumed:true});
+ socket.receive({type:'state',tick:1,tanks:[{id:14,name:'Chosen',x:100,y:100,angle:0,hp:1,score:27}],bullets:[],players:1,leaderboard:[]});
+ const world=h.state();assert.equal(world.publicToken,'p_replacement');assert.deepEqual(remembered,['p_replacement']);assert.equal(world.tanks[0].score,27);
+ socket.receive({type:'error',code:'session_replaced',message:'This online identity continued in another window.'});
+ h.elapse(60000);
+ assert.equal(world.failed,true);assert.equal(world.joined,false);assert.equal(h.sockets.length,1);assert.equal(socket.readyState,3);assert.equal(world.publicToken,'p_replacement','a superseded transport cannot discard ownership');
+ assert.match(h.byID('infiniteStatus').textContent,/another window/);h.infinity.close();
+});
+
+test('manual public entry updates chosen names but reconnects omit stale drafts and recover after 20 seconds',()=>{
+ const h=harness(undefined,true);h.window.leqraInfinityArt.publicIdentityToken=()=> 'p_owner';
+ h.infinity.start('online',{name:'Chosen',localName:'Wing'});
+ const [first]=h.sockets;first.emit('open');
+ assert.equal(first.sent[0].name,'Chosen');assert.equal(first.sent[0].localName,'Wing');assert.equal(first.sent[0].updateNames,true);assert.equal(first.sent[0].resume,true);
+ const packet={type:'state',tick:1,tanks:[{id:4,name:'Saved Lead',x:100,y:100,angle:0,hp:1,score:13},{id:9,name:'Saved Wing',x:220,y:100,angle:0,hp:1,score:-3}],bullets:[],players:2,leaderboard:[]};
+ first.receive({type:'welcome',id:4,localId:9,seed:0,publicToken:'p_owner',resumed:true});first.receive(packet);first.close();
+ h.elapse(26000);const resumed=h.sockets.at(-1);
+ assert.equal(resumed.readyState,1,'public attempts retain a full handshake window after a long outage');resumed.emit('open');
+ assert.equal(resumed.sent[0].publicToken,'p_owner');assert.equal(resumed.sent[0].resume,true);assert.equal(resumed.sent[0].updateNames,undefined,'transport retries must not rename persisted pilots from stale drafts');
+ resumed.receive({type:'welcome',id:4,localId:9,seed:0,publicToken:'p_owner',resumed:true});resumed.receive({...packet,tick:2});
+ assert.equal(h.state().failed,false);assert.equal(h.state().joined,true);assert.deepEqual(Array.from(h.state().tanks,t=>t.score),[13,-3]);h.infinity.close();
+});
+
+test('public room reconnect drops stale membership while private rooms retain their 20-second window',()=>{
+ for(const isPublic of [false,true]){
+  const h=harness(undefined,true),storage=h.window.leqraInfinityArt;storage.publicIdentityToken=()=> 'p_owner';
+  h.infinity.start('online',{code:'old room',token:'room-secret',public:isPublic,resumeGeneration:3});
+  const [first]=h.sockets;first.emit('open');first.receive({type:'welcome',id:4,seed:0,generation:3,publicToken:isPublic?'p_owner':undefined});
+  first.receive({type:'state',tick:1,tanks:[],bullets:[],players:1,leaderboard:[]});first.close();h.elapse(450);
+  const next=h.sockets.at(-1);next.emit('open');const join=next.sent[0];
+  assert.equal(join.publicToken,'p_owner');assert.equal(join.updateNames,undefined);
+  if(isPublic){assert.equal(join.code,undefined);assert.equal(join.token,undefined);assert.equal(h.state().room,null);h.elapse(26000);assert.equal(h.state().failed,false);}
+  else{assert.equal(join.code,'old room');assert.equal(join.token,'room-secret');assert.equal(join.generation,3);h.elapse(21000);assert.equal(h.state().failed,true);const attempts=h.sockets.length;h.elapse(20000);assert.equal(h.sockets.length,attempts);}
+  h.infinity.close();
+ }
+});
+
+test('a manual public name conflict returns to its editor without clearing or replacing ownership',()=>{
+ const h=harness(undefined,true),remembered=[],conflicts=[];h.window.leqraInfinityArt.publicIdentityToken=()=> 'p_owner';h.window.leqraInfinityArt.rememberPublicIdentity=token=>remembered.push(token);
+ h.infinity.start('online',{name:'Taken',onConflict:packet=>{conflicts.push(packet);h.infinity.close();}});
+ const [socket]=h.sockets;socket.emit('open');assert.equal(socket.sent[0].updateNames,true);
+ const rejection={type:'error',code:'callsign_taken',conflicts:[{seat:0,name:'Taken'}],message:'Choose an unused online callsign.'};socket.receive(rejection);h.elapse(30000);
+ assert.deepEqual(JSON.parse(JSON.stringify(conflicts)),[rejection]);assert.deepEqual(remembered,[]);assert.equal(h.sockets.length,1);assert.equal(h.byID('infiniteArena').open,false);
 });
