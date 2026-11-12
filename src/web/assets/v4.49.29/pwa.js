@@ -1,6 +1,6 @@
 (() => {
 'use strict';
-const VERSION = 'v4.49.28';
+const VERSION = 'v4.49.29';
 if (!['http:', 'https:'].includes(location.protocol)) return;
 const serviceWorker = window.isSecureContext === false ? null : navigator.serviceWorker;
 
