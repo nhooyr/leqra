@@ -56,3 +56,10 @@ func selectedColor(id, team int, selection *int, rules MatchRules) string {
 	}
 	return tankColors[n]
 }
+
+func (p *Player) roomColor(rules MatchRules) string {
+	if p.Spectating && p.Team == 0 && (p.ColorIndex == nil || *p.ColorIndex < 0) && p.spectatorColor != "" {
+		return p.spectatorColor
+	}
+	return selectedColor(p.ID, p.Team, p.ColorIndex, rules)
+}

@@ -13,7 +13,7 @@ function boot(storage=new Map(),touchUI=false){
  Object.assign(s,{infinityOffline:false,infinityOnline:true,location:{protocol:'https:'},navigator:{onLine:true},renderOnlineRoom(){},resetPreviewIfLobby(){s.previewReset=true;},readyRoom(){s.persistLocalRoomRules();},callsignForms:()=>[],save(key,value){storage.set('leqra.'+key,String(value));}});
  Object.assign(s.document,{body:{classList:{remove(){}}},documentElement:{style:{removeProperty(){}}}});
  try{s.infinityOffline=storage.get('leqra.infinityOffline')==='1';s.infinityOnline=storage.get('leqra.infinityOnline')!=='0';}catch(_){}
- vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const colorIndex=.*$/m)[0],s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
+ vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const COLORS=.*$/m)[0]+'\n'+source.match(/^const colorIndex=.*$/m)[0],s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
  for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','canPlayOnlineInfinity','infinityPlayMode','selectLocalInfinity','ensureDefaultLocalBots','selectPublicInfinity','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','startInfinity','createLocalRoom'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.loadLocalRoomRules();return {s,$,storage,toggles};
 }
@@ -343,6 +343,39 @@ test('saved roster and unshared/preset exports retain insertion order despite re
  assert.deepEqual(Array.from(s.snapshotPreset().roster,p=>p.name),['HOST','OLDER','NEWER']);
  const local=s.localSnapshotFromOnline();assert.deepEqual(Array.from(local.players,p=>p.name),['HOST','OLDER','NEWER']);assert.equal(local.nextMember,30);
  s.rememberRenderedRoomSetup(room);assert.deepEqual(JSON.parse(storage.get('leqra.roomSetup.v2')).roster.map(p=>p.name),['HOST','OLDER','NEWER']);
+});
+
+test('unsharing preserves both automatic spectator paints without overriding selected or team colors',()=>{
+ const {s}=boot(),primary=pilot({id:8,member:1,name:'LEAD',color:'#c5a2ff',colorIndex:-1,spectating:true}),local={id:9,member:2,name:'WING',kind:'local',owner:8,team:0,color:'#ff83bd',spectating:true};
+ const rules=s.validateRoomRules({...s.localRoom.rules,teamMode:'ffa'}),room={host:8,code:'ROOM',rules,players:[],spectators:[primary,local]};
+ Object.assign(s,{mode:'online',phase:'onlineLobby',walls:[],cols:0,rows:0,roomData:()=>room});s.online.id=8;s.online.roomData=room;
+ vm.runInContext(declaration('localSnapshotFromOnline'),s);
+ const snapshot=s.localSnapshotFromOnline();
+ assert.deepEqual(Array.from(snapshot.players,p=>[p.id,p.name,p.spectatorColor]),[[8,'LEAD','#c5a2ff'],[9,'WING','#ff83bd']]);
+ Object.assign(s.localRoom,snapshot);s.localRoom.rules=snapshot.rules;s.mode='room';
+ vm.runInContext(source.match(/^const teamColor=.*$/m)[0]+'\n'+source.match(/^const roomData=.*$/m)[0]+'\nthis.roomData=roomData;',s);
+ assert.deepEqual(Array.from(s.roomData().spectators,p=>p.color),['#c5a2ff','#ff83bd'],'offline identities keep the authoritative colors even though viewer IDs map to other defaults');
+ s.roomData=()=>room;s.mode='online';local.colorIndex=4;
+ assert.equal(s.localSnapshotFromOnline().players[1].spectatorColor,undefined,'explicit selection remains the color authority');
+ delete local.colorIndex;primary.team=1;room.rules={...rules,teamMode:'teams'};
+ assert.equal(s.localSnapshotFromOnline().players[0].spectatorColor,undefined);assert.equal(s.localSnapshotFromOnline().players[1].spectatorColor,undefined,'team colors remain live instead of preserving old FFA paint');
+});
+
+test('saved automatic spectator paint survives reload and ignores invalid, explicit and team caches',()=>{
+ const {s,storage}=boot();s.localRoom.rules={...s.localRoom.rules,teamMode:'ffa'};s.localRoom.self=9;
+ s.localRoom.players=[pilot({id:9,member:1,name:'LEAD',spectating:true,spectatorColor:'#c5a2ff'}),{id:8,member:2,name:'WING',kind:'local',owner:9,team:0,spectating:true,colorIndex:-1,spectatorColor:'#ffc46b'}];
+ assert.equal(s.persistLocalRoomRules(),true);
+ const saved=JSON.parse(storage.get('leqra.roomSetup.v2')).roster;
+ assert.deepEqual(saved.map(p=>[p.colorIndex,p.spectatorColor]),[[-1,'#c5a2ff'],[-1,'#ffc46b']]);
+ const restored=boot(storage).s;assert.equal(restored.restoreSavedLocalRoster(),true);
+ assert.deepEqual(Array.from(restored.localRoom.players,p=>p.spectatorColor),['#c5a2ff','#ffc46b']);
+ vm.runInContext(source.match(/^const teamColor=.*$/m)[0]+'\n'+source.match(/^const roomData=.*$/m)[0]+'\nthis.roomData=roomData;',restored);
+ assert.deepEqual(Array.from(restored.roomData().spectators,p=>p.color),['#c5a2ff','#ffc46b'],'viewer ID reassignment during reload does not change either paint');
+ const rules=s.localRoom.rules;
+ for(const patch of [{spectatorColor:'#not-a-color'},{spectatorColor:'var(--accent)'},{spectating:false},{colorIndex:4},{team:1}]){
+  const roster=s.validateSavedRoster([{...s.localRoom.players[0],...patch}],rules);assert.equal(roster[0].spectatorColor,undefined,JSON.stringify(patch));
+ }
+ assert.equal(s.validateSavedRoster(saved,{...rules,teamMode:'teams'})[0].spectatorColor,undefined,'team mode ignores a stored FFA cache');
 });
 
 test('online public Infinity selection waits for shared metadata rather than a host-local preference',()=>{

@@ -32,12 +32,14 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   querySelectorAll() { return []; }
   setAttribute(name,value) {this.attributes[name]=String(value);}
   getContext() {
-   let angle = 0;
+   let angle = 0, radius = null;
    return new Proxy({
+    beginPath() {radius=null;},
+    arc(x,y,r) {radius=r;},
     rotate: value => {angle = value;},
     moveTo(x,y) {if (x===41 && y===-6) markers.push({angle,color:this.strokeStyle});},
     fillText(text,x,y) {labels.push({text,x,y,color:this.fillStyle});},
-    stroke() {strokes.push(this.strokeStyle);},
+    stroke() {strokes.push(this.strokeStyle);if(radius!==null)rings.push({r:radius,color:this.strokeStyle});},
    }, {get: (target,key) => target[key] ?? (()=>{})});
   }
   getBoundingClientRect() { return {left:0,top:0,width:96,height:96}; }
@@ -87,7 +89,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  const window = new Element();
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
- const sounds = [], loadouts = [], markers = [], labels = [], strokes = [], combatPrefs = {visual:true,audio:true,fps:false};
+ const sounds = [], loadouts = [], markers = [], labels = [], strokes = [], rings = [], combatPrefs = {visual:true,audio:true,fps:false};
  let chatOpen = false;
  const sidebarHome = {}, sidebarMoves = [], headerHome = {}, headerMoves = [];
  let sidebarParent = sidebarHome;
@@ -96,7 +98,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   .map(name => [name, {name, color: '#fff'}]));
  window.leqraInfinityArt = {
   colors: ['#32c5ff','#ff758f','#73cee4','#c5a2ff','#ffc46b','#ff83bd','#75f0cb','#b7c6ee'], theme: {}, powers, renderPixelRatio: () => 1,
-  tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect() {}, drawBadges() {}, bullets() {},
+  tile() {}, wall() {}, pickup() {}, hull() {}, turret() {}, rect: ctx=>ctx.beginPath(), drawBadges() {}, bullets() {},
   ageTank: tank => tank,
   sampleFrame: (now,work) => context.sampleFrame(now,work,'infiniteFPSIndicator',null),
   renderLoadout: (tank, num, projectiles, blocked, phase, twoPilots) => {
@@ -203,7 +205,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   }
   now = until;
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, labels, strokes, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, labels, strokes, rings, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
 }
 
 test('Infinity primary defaults use Player 1 without replacing saved or explicit callsigns',()=>{
@@ -287,7 +289,7 @@ test('Infinity runs offline directly from a file and adds nearby bots to the sta
 test('Infinity shows human count by the title and reserves footer status for connections and errors',()=>{
  const h=harness();h.infinity.start('online',{name:'Lead',localName:'Wing'});
  const status=h.byID('infiniteStatus'),count=h.byID('infiniteOnlineCount'),socket=h.sockets[0];
- assert.equal(status.hidden,false);assert.match(status.textContent,/Connecting/);assert.equal(count.hidden,true);
+ assert.equal(status.hidden,false);assert.match(status.textContent,/Connecting/);assert.equal(count.hidden,false);assert.equal(count.textContent,'? online');
  socket.receive({type:'welcome',id:1,localId:2,seed:0});
  const packet={type:'state',players:7,tankCount:12,tanks:[{id:1,name:'Lead',x:42,y:42,hp:1},{id:2,name:'Wing',x:126,y:42,hp:0}],bullets:[],leaderboard:[]};
  socket.receive(packet);h.advance(4);
@@ -297,8 +299,10 @@ test('Infinity shows human count by the title and reserves footer status for con
  assert.equal(status.hidden,true,'respawn holds are not repeated beside the controls');
  socket.receive({...packet,players:3});
  assert.equal(count.textContent,'3 online');
+ for(const players of [undefined,-1,'3']){socket.receive({...packet,players});assert.equal(count.hidden,false);assert.equal(count.textContent,'? online','missing or invalid counts must not fall back to local controller count');}
+ socket.receive({...packet,players:0});assert.equal(count.textContent,'0 online','a retrieved zero remains a valid count');
  socket.receive({type:'error',message:'Arena unavailable.'});
- assert.equal(status.hidden,false);assert.match(status.textContent,/Arena unavailable/);assert.equal(count.hidden,true);
+ assert.equal(status.hidden,false);assert.match(status.textContent,/Arena unavailable/);assert.equal(count.hidden,false);assert.equal(count.textContent,'? online');
  h.infinity.close();h.infinity.start('offline');
  assert.equal(status.hidden,true);assert.equal(status.textContent,'');assert.equal(count.hidden,true);
  h.infinity.close();
@@ -388,25 +392,29 @@ test('offline Infinity uses room paint for both local pilots and roster bots', (
  assert.equal(byID('infiniteLeaderboardTitle').textContent,'Scoreboard');
  assert.deepEqual(rows.map(row=>row.style.getPropertyValue('--tank-color')),[colors[4],colors[7],colors[2]]);
  assert.equal(rows[0].dataset.local,'p1');
- assert.equal(rows[0].style.getPropertyValue('--local-highlight'),'#bf5cff');
+ assert.equal(rows[0].style.getPropertyValue('--local-highlight'),colors[4]);
  assert.equal(rows[1].dataset.local,'p2');
- assert.equal(rows[1].style.getPropertyValue('--local-highlight'),'#ff4fd8');
+ assert.equal(rows[1].style.getPropertyValue('--local-highlight'),colors[7]);
  assert.equal(rows[2].dataset.local,undefined);
  assert.deepEqual(byID('infiniteKills').children.map(node=>node.style.color),[colors[4],colors[7]]);
  infinity.close();
 });
 
 test('Infinity local tank labels use both callsigns and retain their own halos and selected paint',()=>{
- const {infinity,state,advance,labels,strokes}=harness(undefined,true);
+ const {infinity,state,advance,labels,rings,window}=harness(undefined,true);
  infinity.start('offline',{name:'Lead',localName:'Wing',colorIndex:4,localColorIndex:7});
  assert.deepEqual(Array.from(state().tanks,t=>[t.name,t.colorIndex]),[['Lead',4],['Wing',7]]);
- advance(2);
+ Object.assign(state().tanks[0],{x:42,y:42});Object.assign(state().tanks[1],{x:126,y:42});
+ rings.length=0;advance(1);
  const names=labels.filter(label=>label.x===0&&label.text.includes('(P')).map(label=>label.text);
  assert.ok(names.includes('Lead (P1)'));
  assert.ok(names.includes('Wing (P2)'));
  assert.ok(!names.includes('YOU'));
- assert.ok(strokes.includes('#bf5cff'));
- assert.ok(strokes.includes('#ff4fd8'));
+ const colors=window.leqraInfinityArt.colors;
+ assert.deepEqual(rings.filter(ring=>ring.r===34).map(ring=>ring.color),[colors[4],colors[7],colors[4],colors[7]],'both local tanks use their own paint in both viewports');
+ state().tanks.forEach(tank=>tank.invulnerable=0);rings.length=0;advance(1);
+ assert.deepEqual(rings.filter(ring=>ring.r===25).map(ring=>ring.color),[colors[4],colors[7],colors[4],colors[7]],'persistent local halos retain the selected colors after spawn protection');
+ infinity.close();
 });
 
 test('Infinity header toggles the actual scoreboard and restores its disclosure state after pause',()=>{
@@ -466,6 +474,7 @@ test('Infinity refreshes names and paint while paused without rebuilding unchang
  Object.assign(tanks[0],{name:'New lead',colorIndex:2});Object.assign(tanks[1],{name:'New wing',colorIndex:5});snapshot();
  assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>[row.children[0].textContent,row.style['--tank-color']]),
   [['New lead (P1)',colors[2]],['New wing (P2)',colors[5]]]);
+ assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>row.style['--local-highlight']),[colors[2],colors[5]],'paused local highlights refresh with tank paint even without a score change');
  assert.match(byID('infiniteControlsHint').innerHTML,/New lead \(P1\)/);assert.ok(byID('infiniteControlsHint').innerHTML.includes('color:'+colors[5]));
  assert.deepEqual(Array.from(infinity.localPilots(),pilot=>pilot.name),['New lead','New wing']);
  socket.receive({type:'welcome',id:1,seed:0});tanks.pop();snapshot();

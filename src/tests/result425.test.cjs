@@ -29,7 +29,7 @@ function boot({teams=false,target=1}={}){
   {id:1,member:102,name:teams?'ALLY':'RIVAL',kind:teams?'local':'bot',owner:0,team:teams?1:0}];
  if(teams)players.push({id:2,member:103,name:'RIVAL',kind:'bot',team:2});
  const rules={mode:'elimination',teamMode:teams?'teams':'ffa',scoreTarget:target};
- const s={ROUND_END_SECONDS:2,mode:'room',phase:'playing',MAX_TANKS:8,localRoom:{players,self:0,nextMember:103,nextViewer:8},
+ const s={ROUND_END_SECONDS:2,mode:'room',phase:'playing',MAX_TANKS:8,localRoom:{players,rules,self:0,nextMember:103,nextViewer:8},
   tanks:players.map(p=>({...p,alive:p.name!=='RIVAL',human:p.kind!=='bot',color:'#fff'})),scores:Array(8).fill(0),
   round:1,roundWinner:-1,phaseTime:0,roundClock:75,bullets:[],particles:[],rings:[],fxTime:0,time:0,toastTime:0,shake:0,uiClock:1,
   localTick:0,localTankActors:Array(8),localObjectives:null,pendingMatchPresentation:null,now:0,performance:{now:()=>s.now},online:{},localMatchStats:null,localMatchReport:null,localMatchResult:null,goUntil:0,bestWins:0,

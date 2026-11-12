@@ -612,7 +612,7 @@ def check_rank_outside_leaders(browser, url, errors, screenshot_dir=None):
                     (row.dataset.local||'')===(local?'p'+local:'') &&
                     row.classList.contains('off-board-local')===!!local &&
                     getComputedStyle(row).color===canonical(leqraInfinityArt.colors[tank.colorIndex]) &&
-                    (!local || row.style.getPropertyValue('--local-highlight')===['#bf5cff','#ff4fd8'][local-1]);
+                    (!local || row.style.getPropertyValue('--local-highlight')===leqraInfinityArt.colors[tank.colorIndex]);
             }) && rows.filter(row=>row.dataset.local==='p1').length===1 && rows.filter(row=>row.dataset.local==='p2').length===1;
         }"""
         page.wait_for_function(matches_authority)
@@ -681,11 +681,33 @@ def check_mobile_ranks(browser, url, errors):
     print("PASS solo and private P2 ranks fit 320px and 390px online headers", flush=True)
 
 
-def check_control_alignment(browser, errors):
+def check_control_alignment(browser, errors, url=None):
     index = Path(__file__).resolve().parents[1] / "web/index.html"
+    source_url = url or index.as_uri()
+    with browser.new_context(viewport={"width": 1280, "height": 900}, service_workers="block") as context:
+        page = load(context, source_url, "SOLO PILOT", errors)
+        page.evaluate("leqraInfinity.start('offline',{name:'SOLO PILOT',roomRules:{infinityRandomBots:false}})")
+        for width in (1280, 1560, 1720, 900, 640):
+            page.set_viewport_size({"width": width, "height": 900})
+            layout = page.locator("#infiniteControlsHint").evaluate("""hint => {
+                const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,height:r.height};};
+                const readout=hint.parentElement, loadout=document.querySelector('#infiniteLoadouts');
+                return {hint:box(hint),readout:box(readout),loadout:box(loadout),
+                    groups:[...hint.querySelectorAll('.control-key-group')].map(box),
+                    overflow:document.querySelector('#infiniteArena').scrollWidth>innerWidth};
+            }""")
+            assert not layout["overflow"], layout
+            assert layout["loadout"]["right"] + 11 <= layout["readout"]["left"], layout
+            assert layout["loadout"]["right"] - layout["loadout"]["left"] >= 239, layout
+            assert len(layout["groups"]) == 7, layout
+            if width >= 1280:
+                assert max(group["top"] for group in layout["groups"]) - min(group["top"] for group in layout["groups"]) <= 1, layout
+                assert layout["hint"]["height"] <= max(group["height"] for group in layout["groups"]) + 1, layout
+        expect(page.locator('#infiniteControlsHint .control-key-group').nth(4).locator('kbd')).to_have_text(['Q','C','SPACE','ENTER'])
+    print("PASS solo keyboard aliases and both mouse hints fit one row on wide screens and wrap safely on narrow screens", flush=True)
     for remapped in (False, True):
         with browser.new_context(viewport={"width": 1280, "height": 900}, service_workers="block") as context:
-            page = load(context, index.as_uri(), "SHORT", errors)
+            page = load(context, source_url, "SHORT", errors)
             page.evaluate("""remapped => leqraInfinity.start('offline', {
                 name:'SHORT', localName:'LONGER CO-PILOT', roomRules:{infinityRandomBots:false},
                 ...(remapped ? {bindings:[
@@ -774,7 +796,7 @@ if __name__ == "__main__":
             check_rank_outside_leaders(browser, url, errors)
             check_mobile_ranks(browser, url, errors)
             check_shared_header(browser, url, errors)
-            check_control_alignment(browser, errors)
+            check_control_alignment(browser, errors, url)
         finally:
             browser.close()
     assert not errors, errors

@@ -227,7 +227,7 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 			return infiniteConnection{}, infiniteResumeExpired
 		}
 		if generation == 0 {
-			return infiniteConnection{}, "Join the room as a pilot to play private Infinity."
+			return infiniteConnection{}, "Join the room as a pilot before entering Infinity."
 		}
 		if setup.local != nil {
 			seats++
