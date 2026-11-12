@@ -931,7 +931,7 @@ body.touch-ui .infinite-leaderboard[open]{max-height:max(38px,calc(100% - 112px)
 .infinite-leaderboard li span{margin-right:6px}
 .infinite-leaderboard li strong{float:right;color:inherit}
 .infinite-leaderboard ol:empty::before{content:"No tanks yet";color:var(--text-soft)}
-.infinite-leaderboard p{margin:0;padding:7px 12px;border-top:1px solid var(--border);color:var(--text-soft);font-size:11px}
+.infinite-leaderboard p{margin:0;padding:7px 12px;border-top:1px solid var(--border);color:var(--text-soft);font-size:11px;text-align:right}
 .infinite-touch-controls{display:none;position:absolute;inset:auto 0 0;align-items:center;justify-content:space-between;padding:0 max(18px,env(safe-area-inset-right)) 8px max(18px,env(safe-area-inset-left));pointer-events:none}
 body.touch-ui .infinite-touch-controls{display:flex}
 .infinite-arena[data-split=side] .infinite-touch-controls{right:50%}

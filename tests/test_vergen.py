@@ -42,14 +42,14 @@ class VersionGenerationTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
         (self.root / "scripts").mkdir()
-        for name in ("vergen.sh", "vergen.py"):
+        for name in ("gen-version.sh", "vergen.py"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         self.icon = b"\x89PNG\r\n\x1a\n\x00unchanged icon bytes\xff"
         (self.root / "src/web/assets/v1.2.3/icon.png").write_bytes(self.icon)
         os.chmod(self.root / "src/web/assets/v1.2.3/game.js", 0o640)
 
     def run_script(self):
-        return subprocess.run([str(self.root / "scripts/vergen.sh")], cwd=self.caller,
+        return subprocess.run([str(self.root / "scripts/gen-version.sh")], cwd=self.caller,
                               capture_output=True, text=True)
 
     def snapshot(self):

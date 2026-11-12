@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render app icons from the versioned favicon.svg using Inkscape 1.2 or newer.
 
-From the repository root: ./scripts/icons.sh
+From the repository root: ./scripts/gen-icons.sh
 Requires the Inkscape command-line renderer; no source PNG is resized. Outputs
 default to the server's current versioned asset directory. The maskable version
 keeps the established 70% artwork scale on an opaque, full-bleed background.

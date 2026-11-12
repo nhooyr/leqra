@@ -4,11 +4,11 @@
 //   npm install --no-save --package-lock=false playwright
 //   npx playwright install chromium
 // Then generate bin/showcase.html and bin/chrome-overrides with
-//   ./scripts/showcase.sh
+//   ./scripts/gen-showcase.sh
 // On macOS, fit the front Chrome window to the showcase at 100% zoom with
 // DevTools undocked and the showcase window in front. Enable
 // View > Developer > Allow JavaScript from Apple Events, then
-//   osascript bin/fit-showcase.applescript
+//   ./scripts/fit-showcase.sh
 const fs = require('node:fs');
 const path = require('node:path');
 const {chromium} = require('playwright');
@@ -19,7 +19,7 @@ const web = path.join(root, 'src/web');
 const out = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, 'bin/showcase.html');
 const overrides = path.join(path.dirname(out), 'chrome-overrides');
 const overrideFile = path.join(overrides, 'leqra.com', 'index.html');
-const fitWindowFile = path.join(path.dirname(out), 'fit-showcase.applescript');
+const fitWindowFile = path.join(__dirname, 'fit-showcase.sh');
 const origin = 'http://leqra-showcase.test';
 const viewport = {width:1560, height:930};
 const deviceScaleFactor = 2;
@@ -148,19 +148,6 @@ function showcasePage(screenshot) {
 `;
 }
 
-function showcaseWindowBounds() {
- const image = document.querySelector('img[data-leqra-showcase]');
- if (!image?.naturalWidth) throw Error('Open the generated showcase in the front Chrome window first.');
- const ratio = image.naturalWidth / image.naturalHeight;
- const frameWidth = outerWidth - innerWidth, frameHeight = outerHeight - innerHeight;
- const width = Math.floor(Math.min(screen.availWidth - frameWidth, (screen.availHeight - frameHeight) * ratio));
- const height = Math.ceil(width / ratio);
- const windowWidth = width + frameWidth, windowHeight = height + frameHeight;
- const left = screen.availLeft + Math.floor((screen.availWidth - windowWidth) / 2);
- const top = screen.availTop + Math.floor((screen.availHeight - windowHeight) / 2);
- return [left, top, left + windowWidth, top + windowHeight];
-}
-
 async function main() {
  if (!/\.html?$/i.test(out)) throw Error('Showcase output must end in .html or .htm');
  const browser = await chromium.launch({chromiumSandbox:true,args:['--mute-audio']});
@@ -189,15 +176,6 @@ async function main() {
   fs.mkdirSync(path.dirname(overrideFile),{recursive:true});
   fs.writeFileSync(out,html);
   fs.writeFileSync(overrideFile,html);
-  fs.writeFileSync(fitWindowFile,`-- Use 100% Chrome zoom, undock DevTools, and bring the showcase window to the front.
-tell application "Google Chrome"
- if (count of windows) is 0 then error "Open the generated showcase in Chrome first."
- set showcaseWindow to front window
- set fittedBounds to execute active tab of showcaseWindow javascript ${JSON.stringify('(' + showcaseWindowBounds.toString() + ')()')}
- if fittedBounds is missing value then error "Reload the generated showcase and bring its Chrome window to the front, then try again."
- set bounds of showcaseWindow to fittedBounds
-end tell
-`);
   console.log(JSON.stringify({output:process.argv[2]?out:path.relative(root,out),chromeOverrides:overrides,fitWindow:fitWindowFile,width:viewport.width*deviceScaleFactor,
    height:viewport.height*deviceScaleFactor,mode:'Infinity',...scene,renderer:'production Infinity page and Canvas renderer'},null,2));
  } finally {
