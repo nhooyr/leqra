@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.25';
+const GAME_VERSION='4.49.26';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -187,18 +187,21 @@ function roundRect(c,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();
 let audioLevel=null,audioMix=null,audioEpoch=0,audioResumeStarted=-Infinity,audioResumeActivated=false,pendingAudioEffects=0;
 let arenaAudioActive=false;
 const nativeAudioTimers=new Set(),audioSources=new Set();
-const SOUND_EFFECT_GAIN=256;
-const SOUND_LEVELS=Object.freeze({ricochet:.035,impact:.032,shield:.037,explosionNoise:.025,explosionBass:.018,explosionNativeBass:.028,explosionNativeTail:.012});
-// Keep the weapon timbres and timing, with a narrower gap between nearby and
-// remote fire. Each layer stores frequency, end, duration, local/remote level, type.
+const SOUND_EFFECT_GAIN=32;
+const SOUND_LEVELS=Object.freeze({ricochet:.016,impact:.025,shield:.020,explosionNoise:.10,explosionBass:.055,explosionNativeBass:.055,explosionNativeTail:.028});
+// Rounded voices leave room for explosions and keep repeated fire comfortable.
+// Each layer stores frequency, end, duration, local/remote level, type.
 const SHOT_SOUNDS=Object.freeze({
- regular:[[145,60,.085,.04,.033,'triangle']],rapid:[[160,65,.055,.03,.026,'triangle']],
- laser:[[1100,160,.23,.035,.03,'sawtooth'],[1700,500,.14,.026,.022,'sine']],
- homing:[[110,370,.24,.037,.031,'sawtooth']],grenade:[[95,42,.15,.038,.032,'triangle']],
- cannon:[[75,28,.24,.043,.035,'triangle'],[180,45,.11,.026,.022,'sawtooth']]
+ regular:[[200,90,.09,.048,.029,'triangle']],rapid:[[210,120,.06,.023,.014,'triangle']],
+ scatter:[[165,85,.10,.045,.027,'triangle'],[330,150,.055,.012,.007,'sine']],
+ laser:[[720,270,.18,.021,.013,'sine'],[1080,540,.10,.006,.004,'sine']],
+ homing:[[150,300,.21,.027,.016,'sine'],[260,390,.13,.009,.005,'triangle']],
+ grenade:[[180,85,.14,.032,.019,'triangle']],
+ cannon:[[105,55,.24,.055,.033,'sine'],[240,110,.13,.022,.013,'triangle']]
 });
-let lastExplosionSound=-Infinity,lastRicochetSound=-Infinity,onlineBounceGeneration=null;
+let lastExplosionSound=-Infinity,lastGrenadeSound=-Infinity,lastRicochetSound=-Infinity,onlineBounceGeneration=null;
 const onlineBounceCounts=new Map();
+const nativeVoices=new Map();
 function audioScale(){return clamp(audioVolume/100,0,1);}
 function canPlayAudio(){return !muted&&audioVolume>0&&!document.hidden&&document.hasFocus();}
 function setArenaAudio(active){
@@ -223,17 +226,19 @@ function wavToneURL(freq,end,duration,type='sine',gain=1){
  gain=clamp(Math.round(gain*100000)/100000,0,1);const key=[Math.round(freq),Math.round(end),Math.round(duration*1000),type,gain].join(':');if(nativeToneCache.has(key))return nativeToneCache.get(key);
  const rate=22050,n=Math.max(96,Math.floor(rate*Math.min(.35,Math.max(.025,duration)))),buffer=new ArrayBuffer(44+n*2),v=new DataView(buffer),u=new Uint8Array(buffer);const wr=(o,t)=>{for(let i=0;i<t.length;i++)u[o+i]=t.charCodeAt(i);};
  wr(0,'RIFF');v.setUint32(4,36+n*2,true);wr(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);wr(36,'data');v.setUint32(40,n*2,true);
- let phase=0;for(let i=0;i<n;i++){const q=i/(n-1),f=freq+(end-freq)*q;phase+=TAU*f/rate;let sample=type==='triangle'?2*Math.asin(Math.sin(phase))/Math.PI:type==='sawtooth'?2*(phase/TAU-Math.floor(phase/TAU+.5)):Math.sin(phase);const env=Math.min(1,i/(rate*.004))*Math.pow(1-q,1.6);v.setInt16(44+i*2,Math.round(sample*env*gain*32760),true);}
+ let phase=0;for(let i=0;i<n;i++){const q=i/(n-1),f=freq*Math.pow(Math.max(20,end)/freq,q);phase+=TAU*f/rate;let sample=type==='triangle'?2*Math.asin(Math.sin(phase))/Math.PI:type==='sawtooth'?2*(phase/TAU-Math.floor(phase/TAU+.5)):Math.sin(phase);const env=Math.min(1,i/(rate*.008))*Math.pow(1-q,1.6);v.setInt16(44+i*2,Math.round(sample*env*gain*32760),true);}
  const url=URL.createObjectURL(new Blob([buffer],{type:'audio/wav'}));nativeToneCache.set(key,url);if(nativeToneCache.size>48){const first=nativeToneCache.keys().next().value;URL.revokeObjectURL(nativeToneCache.get(first));nativeToneCache.delete(first);}return url;
 }
 function ensureNativeAudioPool(){
  if(nativeAudioPool.length)return nativeAudioPool;for(let i=0;i<8;i++){const a=new Audio();a.preload='auto';a.playsInline=true;a.setAttribute('playsinline','');nativeAudioPool.push(a);}return nativeAudioPool;
 }
+function silenceNativeVoices(){for(const voice of nativeVoices.keys()){try{voice.pause();}catch(_){}}nativeVoices.clear();}
 function cancelPendingAudio(){
- audioEpoch++;lastExplosionSound=lastRicochetSound=-Infinity;
+ audioEpoch++;lastExplosionSound=lastGrenadeSound=lastRicochetSound=-Infinity;
  for(const source of audioSources){try{source.stop();}catch(_){}}
  audioSources.clear();
  for(const timer of nativeAudioTimers)clearTimeout(timer);nativeAudioTimers.clear();for(const a of nativeAudioPool){try{a.muted=true;a.pause();}catch(_){}}
+ nativeVoices.clear();
 }
 function trackAudioSource(source,cleanup){
  audioSources.add(source);
@@ -243,8 +248,8 @@ function createAudioGraph(){
  if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;if(audio)cancelPendingAudio();audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;audioMaster=audio.createGain();audioMix=audio.createGain();audioMix.gain.value=SOUND_EFFECT_GAIN;
  // Protect the combined mix when deaths and shots overlap. Allocate this graph
  // once per context; individual effect shapes and their relative gains stay intact.
- const peak=audio.createDynamicsCompressor(),trim=audio.createGain(),limit=audio.createWaveShaper(),threshold=-3,ratio=20;
- peak.threshold.value=threshold;peak.knee.value=0;peak.ratio.value=ratio;peak.attack.value=0;peak.release.value=.08;
+ const peak=audio.createDynamicsCompressor(),trim=audio.createGain(),limit=audio.createWaveShaper(),threshold=-3,ratio=4;
+ peak.threshold.value=threshold;peak.knee.value=0;peak.ratio.value=ratio;peak.attack.value=.003;peak.release.value=.08;
  // Cancel Web Audio's specified automatic makeup gain so quiet effects retain
  // their requested level: full-range attenuation is threshold*(1-1/ratio) dB.
  trim.gain.value=Math.pow(10,threshold*(1-1/ratio)*.6/20);
@@ -274,13 +279,17 @@ function audioWhenReady(play){
  const requested=performance.now(),epoch=audioEpoch;pendingAudioEffects++;initAudio().then(ok=>{pendingAudioEffects--;if(ok&&epoch===audioEpoch&&performance.now()-requested<=250&&canPlayAudio())play();});
 }
 function webTone(freq,end,duration,volume=.035,type='sine',delay=0){
- audioWhenReady(()=>{try{const t=audio.currentTime+delay,o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,end),t+duration);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(volume,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+duration);g.gain.linearRampToValueAtTime(0,t+duration+.004);o.connect(g);audioConnect(g);trackAudioSource(o,()=>{o.disconnect();g.disconnect();});o.start(t);o.stop(t+duration+.01);}catch(_){}});
+ audioWhenReady(()=>{silenceNativeVoices();try{const t=audio.currentTime+delay,o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,end),t+duration);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(volume,t+Math.min(.012,duration*.16));g.gain.exponentialRampToValueAtTime(.0001,t+duration);g.gain.linearRampToValueAtTime(0,t+duration+.008);o.connect(g);audioConnect(g);trackAudioSource(o,()=>{o.disconnect();g.disconnect();});o.start(t);o.stop(t+duration+.012);}catch(_){}});
 }
 function nativeTone(freq,end,duration,volume=.035,type='sine',delay=0,groupVolume=volume){
  if(!canPlayAudio())return;const epoch=audioEpoch,requested=performance.now();const play=()=>{if(epoch!==audioEpoch||!canPlayAudio()||performance.now()-requested>delay*1000+250)return;if(audio?.state==='running'){webTone(freq,end,duration,volume,type,0);return;}const pool=ensureNativeAudioPool(),a=pool[nativeAudioIndex++%pool.length];const fallback=()=>{if(epoch===audioEpoch&&performance.now()-requested<=delay*1000+250)webTone(freq,end,duration,volume,type,0);};try{a.pause();a.muted=false;
   // iOS may ignore HTMLMediaElement.volume. Bake the requested level into the
   // WAV itself; never play full-scale "almost silent" tones to unlock audio.
-  a.src=wavToneURL(freq,end,duration,type,nativeToneGain(groupVolume)*(groupVolume>0?volume/groupVolume:0));a.currentTime=0;a.dataset.baseVolume=String(volume);a.volume=1;const p=a.play();if(p?.then)p.then(()=>{if(epoch!==audioEpoch||!canPlayAudio()){a.muted=true;a.pause();}},fallback);}catch(_){fallback();}};if(delay>0){const timer=setTimeout(()=>{nativeAudioTimers.delete(timer);play();},delay*1000);nativeAudioTimers.add(timer);}else play();
+  // Reserve headroom across the playing elements; iOS cannot duck them with volume.
+  nativeVoices.delete(a);let used=0;const now=performance.now();
+  for(const [voice,state]of nativeVoices){if(voice.paused||voice.ended||typeof voice.ended!=='boolean'&&now>=state.until)nativeVoices.delete(voice);else used+=state.gain;}
+  const gain=Math.max(0,Math.min(nativeToneGain(groupVolume)*(groupVolume>0?volume/groupVolume:0),.98*audioScale()-used));if(gain<=.00001)return;
+  a.src=wavToneURL(freq,end,duration,type,gain);a.currentTime=0;a.dataset.baseVolume=String(volume);a.volume=1;const voice={gain,until:now+Math.min(.35,Math.max(.025,duration))*1000};nativeVoices.set(a,voice);a.onended=()=>{if(nativeVoices.get(a)===voice&&a.ended!==false)nativeVoices.delete(a);};const p=a.play();if(p?.then)p.then(()=>{if(nativeVoices.get(a)!==voice)return;if(epoch!==audioEpoch||!canPlayAudio()){a.muted=true;a.pause();nativeVoices.delete(a);}},()=>{if(nativeVoices.get(a)!==voice)return;nativeVoices.delete(a);fallback();});}catch(_){nativeVoices.delete(a);fallback();}};if(delay>0){const timer=setTimeout(()=>{nativeAudioTimers.delete(timer);play();},delay*1000);nativeAudioTimers.add(timer);}else play();
 }
 function nativeToneGain(volume){
  // Normalize the full-volume waveform first. Applying the slider afterward
@@ -298,20 +307,22 @@ function playTone(freq,end,duration,volume=.035,type='sine',delay=0,groupVolume=
  if(SAFARI_BROWSER&&audio?.state!=='running'){nativeTone(freq,end,duration,volume,type,delay,groupVolume);return;}webTone(freq,end,duration,volume,type,delay);
 }
 function tone(...args){if(arenaAudioActive)playTone(...args);}
-function boom(){
- if(!arenaAudioActive||!canPlayAudio())return;const now=performance.now();if(now-lastExplosionSound<70)return;lastExplosionSound=now;
- // A grenade blast and its victims are one audible impact; stacking the same
- // cue for every death made crowded fights disproportionately loud.
+function boom(grenade=false){
+ if(!arenaAudioActive||!canPlayAudio())return;const now=performance.now();if(now-(grenade?lastGrenadeSound:lastExplosionSound)<70)return;lastExplosionSound=now;if(grenade)lastGrenadeSound=now;
+ // The stronger blast replaces clustered death thumps without replaying for victims.
  if(SAFARI_BROWSER&&audio?.state!=='running'){
+  // A real blast takes priority over older fallback sounds, including its victims.
+  if(grenade){silenceNativeVoices();for(const timer of nativeAudioTimers)clearTimeout(timer);nativeAudioTimers.clear();}
   // Both native elements play together. Share one gain budget so their summed
   // samples retain headroom, rather than independently approaching full scale.
-  const group=SOUND_LEVELS.explosionNativeBass+SOUND_LEVELS.explosionNativeTail;
-  nativeTone(90,45,.26,SOUND_LEVELS.explosionNativeBass,'sine',0,group);nativeTone(150,70,.16,SOUND_LEVELS.explosionNativeTail,'sine',.02,group);return;
+  const core=grenade?.10:SOUND_LEVELS.explosionNativeBass,tail=grenade?.012:SOUND_LEVELS.explosionNativeTail,body=grenade?.008:0,group=core+tail+body;
+  nativeTone(grenade?240:90,grenade?100:45,.28,core,'sine',0,group);nativeTone(grenade?480:150,grenade?220:70,.18,tail,grenade?'triangle':'sine',.02,group);if(body)nativeTone(110,55,.15,body,'sine',.03,group);return;
  }
- audioWhenReady(()=>{if(!ensureNoiseBuffer())return;try{const t=audio.currentTime,s=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();s.buffer=noiseBuffer;f.type='lowpass';f.frequency.value=320;f.Q.value=.5;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(SOUND_LEVELS.explosionNoise,t+.02);g.gain.linearRampToValueAtTime(0,t+.3);s.connect(f);f.connect(g);audioConnect(g);trackAudioSource(s,()=>{s.disconnect();f.disconnect();g.disconnect();});s.start(t);tone(90,45,.24,SOUND_LEVELS.explosionBass,'sine');}catch(_){}});
+ audioWhenReady(()=>{silenceNativeVoices();if(!ensureNoiseBuffer())return;try{const t=audio.currentTime,s=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();s.buffer=noiseBuffer;f.type='lowpass';f.frequency.value=grenade?750:320;f.Q.value=.5;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(grenade?.12:SOUND_LEVELS.explosionNoise,t+.02);g.gain.linearRampToValueAtTime(0,t+.3);s.connect(f);f.connect(g);audioConnect(g);trackAudioSource(s,()=>{s.disconnect();f.disconnect();g.disconnect();});s.start(t);tone(grenade?160:90,grenade?75:45,.26,grenade?.065:SOUND_LEVELS.explosionBass,'sine');if(grenade)tone(360,140,.17,.040,'triangle',.02);}catch(_){}});
 }
+function grenadeBoom(){boom(true);}
 function ricochetSound(){if(!canPlayAudio())return;const now=performance.now();if(now-lastRicochetSound<70)return;lastRicochetSound=now;tone(650,420,.045,SOUND_LEVELS.ricochet);}
-function shieldSound(){tone(680,160,.2,SOUND_LEVELS.shield,'sine');}
+function shieldSound(){tone(500,260,.16,SOUND_LEVELS.shield,'sine');}
 function updateOnlineBounceSounds(items,generation){
  if(onlineBounceGeneration!==generation){onlineBounceCounts.clear();onlineBounceGeneration=generation;}
  for(const state of onlineBounceCounts.values())state.present=false;
@@ -323,13 +334,13 @@ function updateOnlineBounceSounds(items,generation){
  for(const [id,state]of onlineBounceCounts)if(!state.present)onlineBounceCounts.delete(id);
  if(bounced)ricochetSound();
 }
-function pickupSound(){tone(480,500,.09,.04,'sine');tone(700,800,.11,.035,'sine',.08);tone(1000,1200,.14,.032,'sine',.15);}
-function chatNotificationSound(){if(!arenaAudioActive||!canPlayAudio())return;const now=performance.now();if(now-lastChatNotify<180)return;lastChatNotify=now;tone(920,740,.075,.035,'sine');tone(1180,900,.09,.028,'sine',.065);}
+function pickupSound(){tone(480,520,.095,.013,'sine',0,.034);tone(640,700,.10,.011,'sine',.07,.034);tone(880,980,.12,.010,'sine',.14,.034);}
+function chatNotificationSound(){if(!arenaAudioActive||!canPlayAudio())return;const now=performance.now();if(now-lastChatNotify<180)return;lastChatNotify=now;tone(660,720,.07,.014,'sine',0,.024);tone(880,760,.09,.010,'sine',.065,.024);}
 function normalizeVolume(value){const n=clamp(Math.round(Number(value)||0),0,100);return Math.abs(n-50)<=4?50:n;}
 function syncVolumeControl(){const slider=$('masterVolume'),label=$('masterVolumeValue');if(slider)slider.value=String(audioVolume);if(label)label.textContent=audioVolume+'%';}
-function setAudioVolume(value,persist=false,preview=false){const next=normalizeVolume(value);if(next!==audioVolume)cancelPendingAudio();audioVolume=next;applyAudioLevel();syncVolumeControl();if(persist)save('volume',audioVolume);if(preview&&!muted&&audioVolume>0)playTone(620,760,.10,.035,'sine');}
+function setAudioVolume(value,persist=false,preview=false){const next=normalizeVolume(value);if(next!==audioVolume)cancelPendingAudio();audioVolume=next;applyAudioLevel();syncVolumeControl();if(persist)save('volume',audioVolume);if(preview&&!muted&&audioVolume>0)playTone(620,760,.10,.008,'sine');}
 function syncSound(){ for(const id of ['soundBtn','infiniteSoundBtn']){const button=$(id);if(button){button.classList.toggle('muted',muted);button.setAttribute('aria-pressed',String(!muted));button.setAttribute('aria-label',muted?'Unmute sound':'Mute sound');}}applyAudioLevel();syncVolumeControl(); }
-function toggleSound(){muted=!muted;save('muted',muted?1:0);syncSound();if(!muted){primeWebAudio(true);playTone(500,700,.1);}}
+function toggleSound(){muted=!muted;save('muted',muted?1:0);syncSound();if(!muted){primeWebAudio(true);playTone(500,700,.1,.008);}}
 function primeAudioUnlock(event){if(event?.isTrusted===false||event?.repeat||event?.type==='pointerdown'&&event.pointerType!=='mouse'||!canPlayAudio()||audio?.state==='running')return;primeWebAudio(true);}
 function syncAudioFocus(){applyAudioLevel();if(audio&&audio.state!=='running'&&canPlayAudio())initAudio(true);}
 window.addEventListener('focus',syncAudioFocus);window.addEventListener('blur',syncAudioFocus);
@@ -734,14 +745,14 @@ function weaponControl(t,held,pressed){
  if(!t.fireBlocked&&t.power!=='grenade'&&(held||pressed))fire(t);
 }
 
-function impactEffect(x,y,color,radius=25){burst(x,y,color,10,95);addRing(x,y,color,radius);tone(160,65,.10,SOUND_LEVELS.impact,'triangle');}
+function impactEffect(x,y,color,radius=25){burst(x,y,color,10,95);addRing(x,y,color,radius);tone(170,95,.095,SOUND_LEVELS.impact,'sine');}
 function eventShake(x,y,amount){if(reduceMotion)return;const own=[controlledTank(),tanks.find(t=>t.id===secondaryID())].filter(Boolean);if(own.some(t=>distance(t,{x,y})<180))shake=Math.max(shake,amount);}
 function blastEffect(x,y,color,radius=BLAST_RADIUS){
  burst(x,y,POWER.grenade.color,48,240);burst(x,y,color,18,165);
  // Cache a wall-clipped flash polygon once, rather than recasting every frame.
  const outline=[],segments=combatPrefs.performance?28:48;for(let i=0;i<segments;i++){const a=TAU*i/segments,dx=Math.cos(a)*radius,dy=Math.sin(a)*radius,w=rayWalls(x,y,dx,dy,0),f=w?w.t:1;outline.push({x:dx*f,y:dy*f});}
  rings.push({x,y,color:POWER.grenade.color,life:.45,maxLife:.45,max:radius,outline});if(rings.length>30)rings.shift();
- boom();eventShake(x,y,.08);
+ grenadeBoom();eventShake(x,y,.08);
 }
 function detonate(b){
  if(b.dead)return;b.dead=true;blastEffect(b.x,b.y,b.color);
@@ -1388,8 +1399,8 @@ function finishRound(winner){
  if(mode==='solo'&&winner>0)winner=1;
  roundWinner=winner;phase='roundOver';phaseTime=ROUND_END_SECONDS;clearInput();
  if(winner>=0){scores[winner]++;if(mode==='room'){const winning=tanks.find(t=>t.id===winner);if(winning?.team>0)for(const t of tanks)if(t.team===winning.team)scores[t.id]=scores[winner];}if(mode==='solo'&&winner===1)scores[2]=scores[1];
-  addLog(winnerName(winner)+' wins round '+round+'.');tone(430,550,.12,.04,'triangle');tone(650,800,.19,.04,'triangle',.13);
- }else{addLog('Round '+round+' is a draw. No points.');tone(230,160,.25,.04,'triangle');}
+  addLog(winnerName(winner)+' wins round '+round+'.');tone(430,550,.12,.012,'sine',0,.023);tone(650,800,.19,.011,'sine',.13,.023);
+ }else{addLog('Round '+round+' is a draw. No points.');tone(260,180,.20,.012,'sine');}
  // The winning point belongs to these participants even if a seat changes
  // during the result delay. Freeze before spectators or swaps can mutate it.
  if(winner>=0&&scores[winner]>=currentRules().scoreTarget){
@@ -1425,7 +1436,7 @@ function update(dt){
  // The match is already final: only its impact effects continue during the reveal.
  if(phase==='matchOver')return;
  time+=dt;localTick++;phaseTime-=dt;
- if(phase==='countdown'){if(phaseTime<=1e-9){phase='playing';phaseTime=.55;goUntil=performance.now()+550;tone(800,950,.15,.04);if(round===1)showStartingControls();}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
+ if(phase==='countdown'){if(phaseTime<=1e-9){phase='playing';phaseTime=.55;goUntil=performance.now()+550;tone(740,880,.15,.012);if(round===1)showStartingControls();}uiClock-=dt;if(uiClock<=0){updateHUD();uiClock=.08;}return;}
  if(phase==='roundOver'){
   if(phaseTime<=1e-9){
    phaseTime=0;
@@ -1547,7 +1558,7 @@ function updateHUD(force=false){
   setText('touchStatus',phase==='menu'?'GOOD LUCK':!player.alive?'TANK DOWN':player.starmanTime>0?'STARMAN ACTIVE':player.ghostTime>0?'GHOST ACTIVE':player.speedTime>0?'SUPER SPEED':power?(power.short||power.name):player.shield>0?'SHIELDED':'STAY SHARP');
  }
  const announce=$('announcer'),intermission=phase==='playing'&&survivalBreak(),bossPreview=phase==='countdown'&&survivalMode()?survivalBossPreview({...survivalState(),status:'break',wave:round-1}):null,resultPreview=phase==='matchOver'&&pendingMatchPresentation?matchResultPreview():null;announce.classList.toggle('round-result',phase==='roundOver'||intermission||!!resultPreview);announce.classList.toggle('boss-preview',!!bossPreview);
- if(phase==='countdown'){const preview=bossPreview;announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0')+(preview?' · '+preview.name:''));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(330,300,.07,.03,'triangle');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',preview?'Equipment: '+preview.equipment:getCountdownTip());}
+ if(phase==='countdown'){const preview=bossPreview;announce.hidden=false;setText('announceTop',(survivalMode()?'WAVE ':'ROUND ')+String(round).padStart(2,'0')+(preview?' · '+preview.name:''));const number=Math.ceil(phaseTime);if($('announceMain').textContent!==String(number)){tone(390,360,.07,.012,'sine');}setText('announceMain',number);$('announceMain').style.color=paintColor(COLORS[0]);setText('announceSub',preview?'Equipment: '+preview.equipment:getCountdownTip());}
  else if(intermission){const state=survivalState();announce.hidden=false;setText('announceTop','SQUAD SURVIVES');setText('announceMain','WAVE '+state.wave+' CLEARED');setText('announceSub','New maze in '+Math.ceil(state.breakTime)+'…');$('announceMain').style.color=paintColor(COLORS[0]);}
  else if(resultPreview){announce.hidden=false;setText('announceTop',resultPreview.top);setText('announceMain',resultPreview.main);setText('announceSub',resultPreview.sub);$('announceMain').style.color=paintColor(resultPreview.color);}
  else if(phase==='playing'&&performance.now()<goUntil&&!suddenDeath()){announce.hidden=false;setText('announceTop','WEAPONS LIVE');setText('announceMain','GO');setText('announceSub','');}
@@ -2447,7 +2458,7 @@ function onlineEffect(e,s){
  if(e.type==='hit'){burst(e.x,e.y,color,34,190);burst(e.x,e.y,'#f7ecbb',12,130);addRing(e.x,e.y,color,70);boom();if(e.player===online.id||e.player===secondaryID())eventShake(e.x,e.y,.12);if(e.text)addLog(e.text);if(e.player===online.id)toast(survivalMode()?'TANK DOWN · BACK NEXT WAVE':objectiveMode()&&!suddenDeath()?'TANK DOWN · RESPAWNING':'TANK DOWN',2.3);}
  if(e.type==='shield'){burst(e.x,e.y,POWER.shield.color,18,120);addRing(e.x,e.y,POWER.shield.color,58);shieldSound();if(e.player===online.id)toast('SHIELD SAVED YOU',1.8);}
  if(e.type==='pickup'){const def=POWER[e.text];if(def){burst(e.x,e.y,def.color,12,90);addRing(e.x,e.y,def.color,44);const localIndex=localPilotIndex(e.player);if(localIndex>=0){pickupSound();setPilotFeedback(localIndex,pickupMessage(e.text),2.5);}}}
- if(e.type==='roundEnd'){addLog(e.owner<0?'Round draw. No points.':winnerName(e.owner)+' takes the round.');tone(e.owner===online.id?600:300,450,.16,.035,'triangle');}
+ if(e.type==='roundEnd'){addLog(e.owner<0?'Round draw. No points.':winnerName(e.owner)+' takes the round.');tone(e.owner===online.id?600:300,450,.16,.012,'sine');}
 }
 function predictOnlineTank(dt){
  if(!online.predictor||phase!=='playing'||survivalBreak()||!online.connected)return;
@@ -3855,7 +3866,7 @@ function renderPilotReadiness(t,num,projectiles,inWallBlocked,unavailable,id=key
 }
 function updateHomingAlert(alert,locked,clock){
  if(locked&&!alert.locked&&combatPrefs.audio&&clock-(alert.toneAt??-Infinity)>1.5){
-  tone(850,1050,.07,.025,'sine');tone(850,1150,.08,.025,'sine',.11);alert.toneAt=clock;
+  tone(620,740,.08,.015,'sine',0,.028);tone(740,860,.09,.013,'sine',.105,.028);alert.toneAt=clock;
  }
  alert.locked=locked;
 }
@@ -4875,8 +4886,8 @@ window.leqraInfinityArt=Object.freeze({
  missileTurn:MISSILE_TURN,
  rect:roundRect,tile:paintArenaTile,wall:paintArenaWall,hull:drawCachedTankHull,turret:paintTankTurret,pickup:drawPickup,bullets:drawBullets,
  drawBadges:drawTankPowerBadges,ageTank:applyOnlineTankEffects,
- shot:shotSound,ricochet:ricochetSound,collect:pickupSound,shield:shieldSound,blast:boom,
- impact:()=>tone(160,65,.10,SOUND_LEVELS.impact,'triangle')
+ shot:shotSound,ricochet:ricochetSound,collect:pickupSound,shield:shieldSound,blast:boom,grenade:grenadeBoom,
+ impact:()=>tone(170,95,.095,SOUND_LEVELS.impact,'sine')
 });
 
 window.leqra=Object.freeze({version:GAME_VERSION,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,survivalEnemy:!!t.survivalEnemy,survivalBoss:!!t.survivalBoss,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,machineRounds:t.machineRounds||0,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),ghostTime:t.ghostTime||0,starmanTime:t.starmanTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
