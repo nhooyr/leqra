@@ -699,6 +699,7 @@ function offlineStep(world, dt) {
   if (!tank.hp) continue;
   const controls = tank.bot ? botInput(world,tank,locals) : inputState(tank.id === world.local?.id ? world.local : world);
   if (tank.bot && tank.fireBlocked) controls.fire = false;
+  (world.movementInputs ||= new Map()).set(tank.id,controls);
   net.move(tank, controls, dt, world.moveTank);
   for (const pickup of world.pickups) {
    if (pickup.life <= 0 || Math.hypot(pickup.x - tank.x, pickup.y - tank.y) >= RADIUS + 13) continue;
@@ -802,6 +803,38 @@ function interpolate(previous, current, alpha) {
   y: previous.y + (current.y - previous.y) * alpha,
   angle: previous.angle + angleOf(current.angle - previous.angle) * alpha,
  };
+}
+
+function offlineTankPose(world,tank,remaining) {
+ const seat=world.controllers.find(seat=>seat.id===tank.id);
+ const input=seat?inputState(seat):world.movementInputs?.get(tank.id)||net.neutral();
+ if(seat){
+  seat.motion ||= new net.MotionPresenter();
+  return seat.motion.render(tank,input,remaining,Math.round(world.time/STEP),world.moveTank);
+ }
+ return net.visualMove(tank,input,remaining,world.moveTank);
+}
+
+function offlineBulletPose(world,bullet,remaining) {
+ if(!(remaining>0))return bullet;
+ const value={...bullet},span=Math.min(remaining,bullet.life);
+ value.life-=span;value.age+=span;
+ if(value.kind==='homing'||value.kind==='grenade')guide(world,value,span);
+ if(value.kind==='grenade'){
+  const drag=art.grenadeDragFactor(bullet.life,value.life);value.vx*=drag;value.vy*=drag;
+ }
+ let rest=span;
+ for(let i=0;i<4&&rest>1e-8;i++){
+  const dx=value.vx*rest,dy=value.vy*rest;
+  const wall=value.kind==='cannon'?null:wallHit(world.maze,value.x,value.y,dx,dy,value.r);
+  const hit=tankHit(world,value,dx,dy,wall?.fraction??1.00000001);
+  if(hit.tank){value.x+=dx*hit.fraction;value.y+=dy*hit.fraction;break;}
+  if(!wall){value.x+=dx;value.y+=dy;break;}
+  value.x+=dx*wall.fraction+wall.nx*.12;value.y+=dy*wall.fraction+wall.ny*.12;value.bounces++;
+  if(wall.nx)value.vx=-value.vx;if(wall.ny)value.vy=-value.vy;
+  rest*=1-wall.fraction;
+ }
+ return value;
 }
 
 function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank') {
@@ -975,7 +1008,7 @@ function renderScores(world, pilot, second) {
  const score = tank => String(tank?.score ?? 0);
  if (personalScore) {
   const rows = [pilot,...(world.local?[second]:[])].map((tank,index)=>{
-   const identity=pilotIdentity(world,index,tank),rank=world.online?tank?.rank:standings.indexOf(tank)+1;
+   const identity=pilotIdentity(world,index,tank),rank=world.online?tank?.rank:standings.findIndex(entry=>entry.id===tank?.id)+1;
    return [identity.label,score(tank),rank,identity.color];
   });
   const signature = JSON.stringify(rows);
@@ -1101,9 +1134,13 @@ function draw(world, now, dt) {
  if (!world.maze) return;
  const alpha = clamp((now - world.arrived) / world.interval, 0, 1);
  const age = world.online&&!world.result ? Math.max(0,(now-world.arrived)/1000) : 0;
+ world.remoteFrame=world.online&&!world.result?world.motionBuffer?.advance(dt):null;
+ const remaining=!world.online&&!world.result&&!pauseMenu.open?accumulator:0;
+ world.displayTanks ||= new Map();world.displayTanks.clear();
+ if(!world.online)for(const tank of world.tanks)world.displayTanks.set(tank.id,!world.result&&!pauseMenu.open?offlineTankPose(world,tank,remaining):tank);
  for (const seat of world.controllers) {
   const authority = world.tanks.find(tank=>tank.id===seat.id);
-  const pilot = world.online&&!world.result ? seat.predictor.visual(dt)||authority : authority;
+  const pilot = world.online&&!world.result ? seat.predictor.visual(dt)||authority : world.displayTanks.get(seat.id)||authority;
   seat.display = pilot && (world.online ? art.ageTank({...pilot},authority,age) : pilot);
   if (pilot) Object.assign(seat.camera,{x:pilot.x,y:pilot.y});
  }
@@ -1151,8 +1188,9 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   if (!tank.hp) continue;
   const owner = world.controllers.find(controller=>controller.id===tank.id);
   if (!owner&&!visible(tank)) continue;
+  const remote=!owner&&world.online&&world.remoteFrame?world.motionBuffer.tank(tank.id,world.remoteFrame,world.moveTank):null;
   const displayed = owner?.display || (world.online ?
-   art.ageTank({...interpolate(world.previousTanks.get(tank.id),tank,alpha)},tank,age) : tank);
+   art.ageTank({... (remote||interpolate(world.previousTanks.get(tank.id),tank,alpha))},tank,age) : world.displayTanks.get(tank.id)||tank);
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
   drawTank(displayed, !!owner, zoom, ratio,
@@ -1168,7 +1206,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
    bullets.push({kind, color, r, life, vx, vy,
     x: previous.x + (bullet.x - previous.x) * alpha, y: previous.y + (bullet.y - previous.y) * alpha,
     trail: kind === 'rapid' ? noTrail : bullet.trail || [previous, bullet]});
-  } else bullets.push(bullet);
+  } else bullets.push(!world.online&&!world.result&&!pauseMenu.open?offlineBulletPose(world,bullet,accumulator):bullet);
  }
  art.bullets(bullets, ctx, now / 1000);
  if (!world.result && !world.failed && !pauseMenu.open) {
@@ -1381,6 +1419,7 @@ function receive(ws, event) {
    session.maze = geometry.create(message.seed);
    session.seed = message.seed;
    session.mapCache.clear();
+   session.motionBuffer?.reset();
   }
   if (session.room && Number.isSafeInteger(message.generation) && message.generation > 0) {
    session.resumeGeneration = message.generation;
@@ -1402,6 +1441,11 @@ function receive(ws, event) {
  session.tanks = message.tanks.map(tank => ({...tank, alive: tank.hp > 0}));
  session.bullets = message.bullets.map(bullet => ({...bullet, trail: bullet.trail || null,
   color: COLORS[bullet.colorIndex] || COLORS[0], r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
+ if(Number.isSafeInteger(message.tick)){
+  session.motionBuffer ||= new net.SnapshotBuffer({delay:1000/30,minimumDelay:1000/30,maximumDelay:90,intervals:1});
+  if(!joined)session.motionBuffer.reset();
+  session.motionBuffer.push({tick:message.tick,tanks:session.tanks,tankMap:new Map(session.tanks.map(tank=>[tank.id,tank]))},now);
+ }
  session.pickups = Array.isArray(message.pickups) ? message.pickups : [];
  session.players = message.players;
  session.tankCount = message.tankCount ?? message.leaderboard.length;

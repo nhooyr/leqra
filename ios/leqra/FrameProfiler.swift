@@ -13,6 +13,15 @@ final class FrameProfiler {
     let pans: Bool
     let buffs: Set<String>
     private let reflects: Bool
+    private let motionMode: String?
+    private var motionTank: ArenaTank?
+    private let motionPresenter = TankMotionPresenter()
+    private var motionTick: UInt64 = 0
+    private var motionAccumulator = 0.0
+    private var motionPose: ArenaTank?
+    private var previousMotionPose: ArenaTank?
+    private var previousVelocity: (x: Double, y: Double)?
+    private var previousAcceleration: (x: Double, y: Double)?
     let maze = InfiniteMaze(seed: 42)
     private var elapsed = 0.0
     private var reported = false
@@ -33,13 +42,43 @@ final class FrameProfiler {
         pans = arguments.contains("--probe-pan")
         buffs = Set((argument("--probe-buffs") ?? "").split(separator: ",").map(String.init))
         reflects = arguments.contains("--probe-bounces")
+        motionMode = argument("--probe-motion")
+        if motionMode != nil {
+            var tank = ArenaTank(id: 1, name: "PROBE PILOT", x: 420, y: 420)
+            tank.speedTime = 120; tank.speedStacks = 5
+            tank.ghostTime = 120; tank.starmanTime = 120
+            motionTank = tank
+        }
         samples.reserveCapacity(Int(duration * 150))
+    }
+
+    private func motionInput(at time: Double) -> GameInput {
+        if motionMode == "touch" {
+            return GameInput(stickX: cos(time * 6), stickY: sin(time * 6), touchAim: true)
+        }
+        return GameInput(forward: true, right: true, touchAim: false)
+    }
+
+    private func motionPresentation(_ tank: ArenaTank, input: GameInput, fraction: Double) -> ArenaTank {
+        motionPresenter.present(tank: tank, input: input, tick: motionTick, fraction: fraction, move: {
+            TankMovement.step(tank: &$0, input: $1, dt: $2, maze: self.maze)
+        })
     }
 
     func snapshot(dt: Double) -> ArenaSnapshot {
         elapsed += dt
         let time = elapsed, serial = Int(time * 60) + 200
-        let centerX = 420 + (pans ? time * 90 : 0), centerY = 420.0
+        if var tank = motionTank {
+            motionAccumulator += min(dt, 0.1)
+            while motionAccumulator + 1e-9 >= 1 / 60 {
+                TankMovement.step(tank: &tank, input: motionInput(at: time), dt: 1 / 60, maze: maze)
+                motionTick += 1
+                motionAccumulator = max(0, motionAccumulator - 1 / 60)
+            }
+            motionTank = tank
+            motionPose = motionPresentation(tank, input: motionInput(at: time), fraction: motionAccumulator * 60)
+        }
+        let centerX = motionPose?.x ?? (420 + (pans ? time * 90 : 0)), centerY = motionPose?.y ?? 420.0
         var value = ArenaSnapshot()
         value.generation = 1; value.tick = UInt64(serial); value.phase = "playing"
         value.players = 1; value.tankCount = 8
@@ -52,6 +91,9 @@ final class FrameProfiler {
             if buffs.contains("shield") || weapon == "shield" { tank.shield = 15; tank.shieldCharges = 5 }
             if buffs.contains("speed") || weapon == "speed" { tank.speedTime = 15; tank.speedStacks = 5 }
             tank.track = time * 30; tank.charges = 3; tank.machineRounds = 180
+            if index == 0, let pose = motionPose {
+                tank.x = pose.x; tank.y = pose.y; tank.angle = pose.angle; tank.track = pose.track
+            }
             return tank
         }
         value.bullets.reserveCapacity(count)
@@ -97,12 +139,27 @@ final class FrameProfiler {
 
     func record(dt: Double, cpu: Double, simulation: Double, audio: Double, hud: Double,
                 rendering: GameScene.RenderMetrics) {
+        var motion = [0.0, 0.0, 0.0]
+        if let pose = motionPose, let previous = previousMotionPose, dt > 0 {
+            let velocity = (x: (pose.x - previous.x) / dt, y: (pose.y - previous.y) / dt)
+            motion[0] = hypot(velocity.x, velocity.y)
+            if let old = previousVelocity {
+                let acceleration = (x: (velocity.x - old.x) / dt, y: (velocity.y - old.y) / dt)
+                motion[1] = hypot(acceleration.x, acceleration.y)
+                if let old = previousAcceleration {
+                    motion[2] = hypot(acceleration.x - old.x, acceleration.y - old.y) / dt
+                }
+                previousAcceleration = acceleration
+            }
+            previousVelocity = velocity
+        }
+        previousMotionPose = motionPose
         guard !reported, elapsed > 3 else { return }
         if elapsed <= duration + 3 {
             samples.append([dt, cpu, simulation, audio, hud, rendering.totalSeconds,
                             rendering.mapSeconds, rendering.tankSeconds, rendering.guideSeconds,
                             rendering.bulletSeconds, rendering.effectSeconds,
-                            rendering.mapRasterSeconds, rendering.mapInstallSeconds])
+                            rendering.mapRasterSeconds, rendering.mapInstallSeconds] + motion)
             projectileCreations += rendering.projectileCreations
             effectCreations += rendering.effectCreations
             mapRebuilds += rendering.mapRebuilds
@@ -110,13 +167,13 @@ final class FrameProfiler {
         }
         reported = true
         guard !samples.isEmpty else { return }
-        func distribution(_ column: Int) -> [String: Double] {
-            let values = samples.map { $0[column] * 1000 }.sorted()
+        func distribution(_ column: Int, multiplier: Double = 1000) -> [String: Double] {
+            let values = samples.map { $0[column] * multiplier }.sorted()
             func quantile(_ fraction: Double) -> Double { values[min(values.count - 1, Int(Double(values.count - 1) * fraction))] }
             return ["mean": values.reduce(0, +) / Double(values.count), "p50": quantile(0.5),
                     "p95": quantile(0.95), "p99": quantile(0.99), "max": values.last!]
         }
-        let report: [String: Any] = ["weapon": weapon, "bullets": count, "pan": pans, "buffs": buffs.sorted(),
+        var report: [String: Any] = ["weapon": weapon, "bullets": count, "pan": pans, "buffs": buffs.sorted(),
             "frames": samples.count, "fps": Double(samples.count) / samples.reduce(0) { $0 + $1[0] },
             "frameMS": distribution(0), "cpuMS": distribution(1), "simulationMS": distribution(2),
             "audioMS": distribution(3), "hudMS": distribution(4), "renderMS": distribution(5),
@@ -124,6 +181,12 @@ final class FrameProfiler {
             "bulletsMS": distribution(9), "effectsMS": distribution(10),
             "mapRasterMS": distribution(11), "mapInstallMS": distribution(12),
             "projectileCreations": projectileCreations, "effectCreations": effectCreations, "mapRebuilds": mapRebuilds]
+        if let motionMode {
+            report["motion"] = motionMode
+            report["speedWorldPerSecond"] = distribution(13, multiplier: 1)
+            report["accelerationWorldPerSecondSquared"] = distribution(14, multiplier: 1)
+            report["jerkWorldPerSecondCubed"] = distribution(15, multiplier: 1)
+        }
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             FileHandle.standardOutput.write(Data(("leqra performance: " + json + "\n").utf8))

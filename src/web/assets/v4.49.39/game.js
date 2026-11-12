@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.38';
+const GAME_VERSION='4.49.39';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -890,19 +890,22 @@ function shotPrediction(t,angle,maxBounces=1,maxLength=CELL*7){
  return{tank:null,points};
 }
 
-function humanControl(t,dt){
+function humanControl(t,dt,moveOnly=false,controls){
  const p1=mode==='room'?t.localIndex!==1:t.id===0,n=speedCount(t),speedScale=1+BOOST_SPEED_PER_STACK*n,turnScale=1+BOOST_TURN_PER_STACK*n;
- const forward=heldAction(p1?0:1,'forward');
- const reverse=heldAction(p1?0:1,'reverse');
- const left=heldAction(p1?0:1,'left');
- const right=heldAction(p1?0:1,'right');
+ const forward=controls?controls.forward:heldAction(p1?0:1,'forward');
+ const reverse=controls?controls.reverse:heldAction(p1?0:1,'reverse');
+ const left=controls?controls.left:heldAction(p1?0:1,'left');
+ const right=controls?controls.right:heldAction(p1?0:1,'right');
  let throttle=(forward?1:0)-(reverse?.72:0);
- const joystick=p1&&stick.mag>.10,desired=joystick?Math.atan2(stick.y,stick.x):p1&&!left&&!right?mouseAimHeading(t):null;
+ const magnitude=controls?Math.hypot(controls.stickX,controls.stickY):stick.mag;
+ const joystick=controls?magnitude>.10&&!controls.aimOnly:p1&&stick.mag>.10;
+ const desired=controls?magnitude>.10?Math.atan2(controls.stickY,controls.stickX):null:joystick?Math.atan2(stick.y,stick.x):p1&&!left&&!right?mouseAimHeading(t):null;
  if(desired!==null){
-  const diff=angleDelta(t.angle,desired);t.angle+=Net.steeringTurn(diff,stick.mag,joystick&&stick.assisted,turnScale*dt);
-  if(joystick)throttle=stick.mag*Math.max(0,Math.cos(diff));
+  const diff=angleDelta(t.angle,desired);t.angle+=Net.steeringTurn(diff,magnitude,joystick&&(controls?controls.touchAim:stick.assisted),turnScale*dt);
+  if(joystick)throttle=magnitude*Math.max(0,Math.cos(diff));
  }else t.angle+=((right?1:0)-(left?1:0))*3.65*turnScale*dt;
  const speed=128*speedScale;moveTank(t,Math.cos(t.angle)*speed*throttle*dt,Math.sin(t.angle)*speed*throttle*dt);
+ if(moveOnly)return;
  const held=p1?primaryFireHeld():heldAction(1,'fire');
  const pressed=firePresses.delete(t.id)||(p1&&mouseAim.firePressed);if(p1)mouseAim.firePressed=false;
  weaponControl(t,held,!!pressed);
@@ -1479,7 +1482,7 @@ function update(dt){
  for(const t of tanks)if(t.alive){localTankActors[t.id]=t;t.invulnerable=Math.max(0,t.invulnerable-dt);if(t.invulnerable===0)t.spawnProtected=false;t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;}
  let actorCount=0;for(const t of localTankActors)if(t)localTankActors[actorCount++]=t;
  for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power&&!(t.starmanTime>0)){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;t.machineRounds=0;}}
-  const x=t.x,y=t.y;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.track+=Math.hypot(t.x-x,t.y-y);
+  const x=t.x,y=t.y,angle=t.angle;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.renderTurn=Math.atan2(Math.sin(t.angle-angle),Math.cos(t.angle-angle))/dt;t.track+=Math.hypot(t.x-x,t.y-y);
  }
  for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){
   const a=tanks[i],b=tanks[j];if(!a.alive||!b.alive)continue;
@@ -1826,7 +1829,37 @@ function drawBullets(items,c=ctx,clock){
  }
  for(const b of items)if(b.kind!=='rapid')drawBullet(b,c,clock,true);
 }
+function localMovementInput(t){
+ const primary=mode==='room'?t.localIndex!==1:t.id===0,index=primary?0:1;
+ const left=heldAction(index,'left'),right=heldAction(index,'right');
+ const aim=primary&&stick.mag<=.10&&!left&&!right?mouseAimHeading(t):null;
+ return {forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:false,
+  stickX:aim!==null?Math.cos(aim):primary?stick.x:0,stickY:aim!==null?Math.sin(aim):primary?stick.y:0,
+  aimOnly:aim!==null,touchAim:primary&&stick.mag>.10&&stick.assisted};
+}
+function advanceLocalRenderTank(pose,span,input){
+ pose.speedTime=Math.max(0,(pose.speedTime||0)-span);if(!pose.speedTime)pose.speedStacks=0;
+ advanceGhost(pose,span);const x=pose.x,y=pose.y;humanControl(pose,span,true,input);pose.track=(pose.track||0)+Math.hypot(pose.x-x,pose.y-y);
+}
+function localTankPose(t,remaining){
+ if(!t.alive)return t;
+ if(t.human){
+  const presenters=localTankPose.presenters ||= new Map();let presenter=presenters.get(t.id);
+  if(!presenter){presenter=new Net.MotionPresenter();presenters.set(t.id,presenter);}
+  return presenter.render(t,localMovementInput(t),remaining,localTick,moveTank,1/120,advanceLocalRenderTank);
+ }
+ const pose={...t};moveTank(pose,(t.vx||0)*remaining,(t.vy||0)*remaining);
+ pose.angle+=(t.renderTurn||0)*remaining;pose.track=(t.track||0)+Math.hypot(pose.x-t.x,pose.y-t.y);return pose;
+}
 function render(){
+ const simulationTanks=tanks,simulationBullets=bullets;
+ if(mode!=='online'&&phase==='playing'&&!survivalBreak()){
+  tanks=tanks.map(t=>localTankPose(t,accumulator));
+  bullets=bullets.map(b=>projectOnlineBullet(b,accumulator,1/120));
+ }
+ try{renderArena();}finally{tanks=simulationTanks;bullets=simulationBullets;}
+}
+function renderArena(){
  // Resizing clears the bitmap; keep that clear and the redraw in one frame.
  syncCanvasSize();
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=paintColor(theme.arena);ctx.fillRect(0,0,cssW,cssH);
