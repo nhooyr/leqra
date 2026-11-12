@@ -31,7 +31,7 @@ with sync_playwright() as pw:
   p.locator('#roomRulesBtn').click();check(p.locator('#roomMapSize option').count()==6,'All six map choices visible');check(p.locator('[data-weapon-toggle="scope"]').is_checked(),'Host can enable/disable Scope in rules')
   for name,w,h,start,cap in sizes:
    p.locator('[data-close-dialog="rulesDialog"]').click();p.locator('#roomMapSize').select_option(name);p.locator('#roomRulesBtn').click()
-   check(p.locator('#rule-pickup-density').inner_text().startswith(f'{start} starting pickups · {cap} maximum'),f'{name} live density explanation')
+   check(p.locator('#rule-pickup-density').inner_text().startswith(f'{start} starting pickups, {cap} maximum'),f'{name} live density explanation')
    p.locator('#applyRulesBtn').click();s=p.evaluate('leqra.getState()')
    check((s['world']['cols'],s['world']['rows'],s['pickupCount'])==(w,h,start),f'{name} local preview dimensions and starts')
    p.locator('#roomRulesBtn').click()

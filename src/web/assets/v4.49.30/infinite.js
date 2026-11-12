@@ -17,6 +17,7 @@ const personalScore = byID('infiniteKills');
 const leaderboard = byID('infiniteLeaderboard');
 const leaderboardPanel = byID('infiniteLeaderboardPanel');
 const leaderboardTitle = byID('infiniteLeaderboardTitle');
+const scoreboardButton = byID('infiniteScoreboardBtn');
 const teamLeaderboard = byID('infiniteTeamScores');
 const resultDialog = byID('infiniteResult');
 const retry = byID('infiniteRetry');
@@ -57,8 +58,8 @@ const PRIMARY_KEYS = {KeyW:'forward', KeyS:'reverse', KeyA:'left', KeyD:'right',
 const LOCAL_KEYS = {ArrowUp:'forward', ArrowDown:'reverse', ArrowLeft:'left', ArrowRight:'right', Space:'fire', Enter:'fire'};
 const pressed = new Set();
 const touchAim = {x: 0, y: 0, cx: 0, cy: 0, reach: 0, assisted: false};
-let session = null, frame = 0, socket = null, mouseAim = null;
-let stickPointer = null, firePointer = null, mousePointer = null;
+let session = null, frame = 0, socket = null, mouseAim = null, sessionSerial = 0, renameSerial = 0;
+let stickPointer = null, firePointer = null, mousePointer = null, mouseTap = false;
 let lastTime = 0, accumulator = 0, connectTimer = 0;
 let pausedLeaderboard = null;
 
@@ -69,14 +70,107 @@ const cellCenter = n => (Math.floor(n / CELL) + .5) * CELL;
 
 function pilotName() {
  try {
-  return localStorage.getItem('leqra.name')?.trim() || 'Pilot';
+  return localStorage.getItem('leqra.name')?.trim() || 'Player 1';
  } catch {
-  return 'Pilot';
+  return 'Player 1';
  }
 }
 
 function setStatus(text) {
+ status.hidden = !text;
  if (status.textContent !== text) status.textContent = text;
+ if(text)byID('infiniteOnlineCount').hidden=true;
+}
+
+function localPilots(world=session) {
+ if (!world) return [];
+ return world.controllers.map((seat,index)=>{
+  const tank=world.tanks.find(tank=>tank.id===seat.id);
+  return {id:seat.id,member:'infinity-'+world.serial+'-'+index,name:tank?.name||(index?world.localName:world.name)||(index?'CO-PILOT':'Player 1'),
+   color:COLORS[tank?.colorIndex??(index?world.localColorIndex:world.colorIndex)]||COLORS[index]};
+ });
+}
+
+function pilotIdentity(world,index,tank) {
+ return art.pilotIdentity(index,tank?{id:tank.id,name:tank.name||(index?world.localName:world.name),
+  color:COLORS[tank.colorIndex]||COLORS[index]}:localPilots(world)[index],!!world.local);
+}
+
+function finishRename(world,index,error,name) {
+ const pending=world.renames.get(index);if(!pending)return;
+ world.renames.delete(index);clearTimeout(pending.timer);
+ if(error)pending.reject(Error(error));
+ else{applyPilotName(world,index,name);pending.resolve(name);}
+}
+
+function cancelRenames(world,message) {
+ for(const index of [...world.renames.keys()])finishRename(world,index,message);
+}
+
+function applyPilotName(world,index,name) {
+ const id=index?world.local?.id:world.id;
+ if(index)world.localName=name;else world.name=name;
+ for(const collection of [world.tanks,world.leaderboard,world.party])for(const tank of collection)if(tank.id===id)tank.name=name;
+ const previous=world.previousTanks.get(id);if(previous)previous.name=name;
+ if(world.result?.id===id&&!world.result.team)world.result.name=name;
+ try{art.persistPilotName?.(index,name);}catch(_){}
+ world.nextHUD=0;
+ refreshBindings(world);
+ renderScores(world,world.tanks.find(tank=>tank.id===world.id),world.tanks.find(tank=>tank.id===world.local?.id));
+ if(pauseMenu.open)art.syncSidebarContext?.();
+ if(resultDialog.open&&world.result){const winner=resultIdentity(world);byID('infiniteResultTitle').textContent=winner.label+' wins';byID('infiniteResultTitle').style.color=winner.color;}
+}
+
+function renamePilot(index,value) {
+ const world=session;
+ if(!world||![0,1].includes(index)||index===1&&!world.local)return Promise.reject(Error('That local tank is no longer available.'));
+ const name=art.cleanPilotName(value);
+ if(!name)return Promise.reject(Error('Enter letters or numbers for the callsign.'));
+ if(world.renames.has(index))return Promise.reject(Error('A callsign change is already waiting for confirmation.'));
+ if(!world.online){applyPilotName(world,index,name);return Promise.resolve(name);}
+ if(!world.joined||world.failed||socket?.readyState!==WebSocket.OPEN||socket.bufferedAmount>4096)return Promise.reject(Error('Reconnect before changing the callsign.'));
+ const requestId=++renameSerial;
+ return new Promise((resolve,reject)=>{
+  const pending={requestId,resolve,reject,timer:setTimeout(()=>finishRename(world,index,'Not confirmed yet. Check the connection and try again.'),6000)};
+  world.renames.set(index,pending);
+  try{socket.send(JSON.stringify({type:'rename',seat:index,name,requestId}));}
+  catch(_){finishRename(world,index,'Could not send. Please try again.');}
+ });
+}
+
+function acceptRename(message) {
+ const world=session,index=message.seat,pending=world.renames.get(index);
+ if(!pending||pending.requestId!==message.requestId)return;
+ if(message.type==='rename_error'){finishRename(world,index,typeof message.message==='string'?message.message:'Could not change the callsign.');return;}
+ const name=typeof message.name==='string'?art.cleanPilotName(message.name):'';
+ if(!name){finishRename(world,index,'Unexpected callsign confirmation. Please try again.');return;}
+ world.confirmedNames.set(index,name);
+ finishRename(world,index,null,name);
+}
+
+function preserveConfirmedNames(world,message) {
+ for(const [index,name] of world.confirmedNames){
+  const id=index?world.local?.id:world.id;
+  const echoed=message.tanks.some(tank=>tank.id===id&&tank.name===name);
+  for(const collection of [message.tanks,message.leaderboard,Array.isArray(message.party)?message.party:[]])for(const tank of collection)if(tank.id===id)tank.name=name;
+  if(message.result?.id===id&&!message.result.team)message.result.name=name;
+  if(echoed)world.confirmedNames.delete(index);
+ }
+}
+
+function resultIdentity(world) {
+ const result=world.result,tank=world.tanks.find(tank=>tank.id===result.id);
+ if (!result.team&&result.id===world.id) return pilotIdentity(world,0,tank);
+ if (!result.team&&result.id===world.local?.id) return pilotIdentity(world,1,tank);
+ return {label:result.name,color:result.team?COLORS[world.rules?.teamColors?.[result.team-1]]||COLORS[result.team-1]:COLORS[tank?.colorIndex]||COLORS[0]};
+}
+
+function renderOnlineCount(world) {
+ const count=byID('infiniteOnlineCount');
+ count.hidden=!world.online||!world.joined;
+ if(count.hidden)return;
+ const text=(Number.isSafeInteger(world.players)&&world.players>=0?world.players:world.controllers.length)+' online';
+ if(count.textContent!==text)count.textContent=text;
 }
 
 function makeTank(id, x, y, bot = false) {
@@ -113,6 +207,10 @@ function roamingDifficulty(rules) {
  return BOT_LEVELS[Math.floor(Math.random()*levels)];
 }
 
+function mouseAimEnabled(){return art.mouseAimEnabled?.()!==false;}
+function mouseFireEnabled(){return art.mouseFireEnabled?.()!==false;}
+function mouseEnabled(){return mouseAimEnabled()||mouseFireEnabled();}
+
 function inputState(seat) {
  const input = {
   type: 'input', paused: pauseMenu.open, forward: false, reverse: false, left: false, right: false,
@@ -125,8 +223,8 @@ function inputState(seat) {
   input.stickX = touchAim.x;
   input.stickY = touchAim.y;
   if (touchAim.assisted) input.touchAim = true;
-  input.fire ||= mousePointer !== null || firePointer !== null;
-  if (stickPointer === null && mouseAim && !input.left && !input.right) {
+  input.fire ||= mouseFireEnabled()&&(mousePointer !== null||mouseTap)||firePointer !== null;
+  if (mouseAimEnabled()&&stickPointer === null && mouseAim && !input.left && !input.right) {
    input.stickX = mouseAim.x;
    input.stickY = mouseAim.y;
    input.aimOnly = true;
@@ -215,7 +313,7 @@ function effect(world, kind, x, y, owner, points) {
  presentEffect(world, {kind, x, y, owner, points}, performance.now());
 }
 
-function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false) {
+function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false,ownerColor='') {
  if (world.result || !target.hp || target.invulnerable > 0 || !canDamage(world, ownerID, ownerTeam, target)) return;
  if (target.shield > 0 && !starmanContact) {
   target.shieldCharges = Math.max(0, (target.shieldCharges || 1) - 1);
@@ -230,6 +328,7 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
  target.score--;
  const owner = world.tanks.find(tank => tank.id === ownerID) || world.botPool?.find(tank => tank.id === ownerID);
  target.killedBy = owner?.name || ownerName || 'an unknown tank';
+ target.killedByColor=owner?(art.canonicalColor?.(owner.colorIndex)||COLORS[owner.colorIndex]||''):ownerColor;
  if (owner) owner.score++;
  if (target.team) world.teamScores[target.team - 1]--;
  if (ownerTeam) world.teamScores[ownerTeam - 1]++;
@@ -247,7 +346,7 @@ function detonate(world, bullet) {
  for (const tank of world.tanks) {
   const dx = tank.x - bullet.x, dy = tank.y - bullet.y;
   if (tank.hp && tank.id !== bullet.owner && Math.hypot(dx, dy) <= BLAST_RADIUS + RADIUS &&
-      !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team, bullet.ownerName);
+      !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'');
  }
 }
 
@@ -360,7 +459,7 @@ function advanceBullet(world, bullet, remaining) {
    if (bullet.kind === 'grenade') detonate(world, bullet);
    else {
     if (bullet.kind === 'cannon' || bullet.kind === 'homing') effect(world, 'impact', bullet.x, bullet.y, bullet.owner);
-    hurt(world, hit.tank, bullet.owner, bullet.team, bullet.ownerName);
+    hurt(world, hit.tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'');
    }
    return false;
   }
@@ -510,7 +609,7 @@ function respawnOfflineTank(world, tank, point) {
  const fresh = makeTank(tank.id, point.x, point.y, tank.bot);
  const fireHeld = !tank.bot && inputState(tank.id === world.local?.id ? world.local : world).fire;
  Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
-  spawnSerial: tank.spawnSerial + 1, killedBy: '', power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
+  spawnSerial: tank.spawnSerial + 1, killedBy: '', killedByColor:'',power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
   ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});
 }
 
@@ -652,6 +751,16 @@ function setupBindings(bindings, fallback) {
  return Object.keys(keys).length ? keys : fallback;
 }
 
+function alignControlHints(hint) {
+ const rows = [...hint.querySelectorAll('.control-groups')].map(row=>[...row.children].slice(0,5));
+ if (rows.length!==2 || rows.some(row=>row.length!==5)) return;
+ const saved = rows.flat().map(group=>({group,width:group.style.width,maxWidth:group.style.maxWidth}));
+ for (const {group} of saved) {group.style.width='max-content';group.style.maxWidth='none';}
+ const widths = rows[0].map((_,index)=>Math.ceil(Math.max(...rows.map(row=>row[index].getBoundingClientRect().width))));
+ for (const {group,width,maxWidth} of saved) {group.style.width=width;group.style.maxWidth=maxWidth;}
+ for (const row of rows) row.forEach((group,index)=>{group.style.width=widths[index]+'px';});
+}
+
 function refreshBindings(world) {
  const bindings = world.readBindings();
  const layout = Array.isArray(bindings) ? bindings : [bindings];
@@ -659,18 +768,21 @@ function refreshBindings(world) {
  if (world.local) world.local.keys = setupBindings(layout[1],LOCAL_KEYS);
  const hint = byID('infiniteControlsHint');
  if (!hint) return;
- const codes = (keys,action) => Object.keys(keys).filter(code => keys[code] === action).map(art.keyLabel).join('/');
- const summary = keys => `Move ${codes(keys,'forward')}/${codes(keys,'reverse')} · Turn ${codes(keys,'left')}/${codes(keys,'right')} · Fire ${codes(keys,'fire')}`;
- const primary = art.isTouchUI() ?
-  'Drag the stick to move and aim. Tap or hold Fire.' : summary(world.keys) + ' · Mouse aim and fire';
- const firstLine = document.createElement('span');
- firstLine.textContent = world.local ? `P1 ${primary}` : primary;
- hint.replaceChildren(firstLine);
- if (world.local) {
-  const secondLine = document.createElement('span');
-  secondLine.textContent = `P2 ${summary(world.local.keys)}`;
-  hint.append(document.createElement('br'),secondLine);
+ const pilot=pilotIdentity(world,0),second=world.local&&pilotIdentity(world,1);
+ const content=art.controlHintHTML(world.keys,pilot.label,art.isTouchUI()?'touch':mouseEnabled()?'mouse':'',pilot.color)+
+  (second?art.controlHintHTML(world.local.keys,second.label,'',second.color):'');
+ if(hint.innerHTML!==content){
+  hint.innerHTML=content;
+  const revision=world.controlHintRevision=(world.controlHintRevision||0)+1;
+  const align=()=>{if(session===world&&arena.open&&world.controlHintRevision===revision&&!art.isTouchUI())alignControlHints(hint);};
+  Promise.resolve().then(align);
+  document.fonts?.ready.then(align);
  }
+ canvas.setAttribute('aria-label','Infinity maze. '+pilot.label+(second?' and '+second.label:'')+'. Controls are listed below the arena.');
+ fire.setAttribute('aria-label','Fire for '+pilot.label);
+ stick.setAttribute('aria-label','Move and aim '+pilot.label);
+ world.controlPilots=JSON.stringify(localPilots(world));
+ art.syncCallsignEditors?.();
 }
 
 function interpolate(previous, current, alpha) {
@@ -686,7 +798,7 @@ function interpolate(previous, current, alpha) {
  };
 }
 
-function drawTank(tank, highlight, zoom, ratio) {
+function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank') {
  const color = COLORS[tank.colorIndex] || COLORS[0];
  ctx.save();
  ctx.translate(tank.x, tank.y);
@@ -731,15 +843,15 @@ function drawTank(tank, highlight, zoom, ratio) {
  art.hull(skin, ctx, zoom, ratio);
  art.turret(ctx, skin);
  ctx.restore();
- ctx.font = 'bold 11px ui-monospace,SFMono-Regular,Consolas,monospace';
+ const labelFont=Math.max(11,10/zoom);
+ ctx.font = 'bold '+labelFont+'px ui-monospace,SFMono-Regular,Consolas,monospace';
  ctx.textAlign = 'center';
- const label = tank.name || 'Tank';
- const width = Math.min(ctx.measureText(label)?.width || 30, 120) + 10;
+ const width = (ctx.measureText(label)?.width || 30) + 10,height=Math.max(16,labelFont*1.25+3);
  ctx.fillStyle = '#0e171ddb';
- art.rect(ctx, -width / 2, -48, width, 16, 3);
+ art.rect(ctx, -width / 2, -32-height, width, height, 3);
  ctx.fill();
  ctx.fillStyle = color;
- ctx.fillText(label, 0, -36, 120);
+ ctx.fillText(label, 0, -32-height+(height-3)/1.25);
  ctx.restore();
  art.drawBadges(tank, ctx, zoom);
 }
@@ -854,28 +966,25 @@ function drawEffects(world, now) {
 function renderScores(world, pilot, second) {
  const standings = world.online ? world.leaderboard :
   [...world.tanks].sort((a, b) => b.score - a.score || Number(a.bot) - Number(b.bot));
- const score = tank => {
-  const rank = world.online ? tank?.rank : standings.indexOf(tank) + 1;
-  return `${tank?.score ?? 0}${rank > 0 ? ` (#${rank})` : ''}`;
- };
+ const score = tank => String(tank?.score ?? 0);
  if (personalScore) {
-  const scores = world.local ? [[`P1 ${score(pilot)}`,pilot,0],[`P2 ${score(second)}`,second,1]] : [['Score '+score(pilot),pilot,0]];
-  const rows = scores.map(([label,tank,seat]) => [label,COLORS[tank?.colorIndex] || COLORS[seat]]);
+  const rows = [pilot,...(world.local?[second]:[])].map((tank,index)=>{
+   const identity=pilotIdentity(world,index,tank),rank=world.online?tank?.rank:standings.indexOf(tank)+1;
+   return [identity.label,score(tank),rank,identity.color];
+  });
   const signature = JSON.stringify(rows);
   if (signature !== world.personalScoreRows) {
    world.personalScoreRows = signature;
    const children = [];
-   for (const [label,color] of rows) {
-    if (children.length) {
-     const separator = document.createElement('span');
-     separator.textContent = ' · ';
-     separator.className = 'infinite-score-separator';
-     children.push(separator);
-    }
+   for (const [label,score,rank,color] of rows) {
     const counter = document.createElement('span');
     counter.className = 'infinite-personal-score';
     counter.style.color = color;
-    counter.textContent = label;
+    const total=': ('+score+(rank>0?', #'+rank:'')+')';
+    counter.setAttribute('aria-label',label+total);
+    const name=document.createElement('span');name.className='infinite-score-name';name.textContent=label;
+    const value=document.createElement('span');value.className='infinite-score-value';value.textContent=total;
+    counter.append(name,value);
     children.push(counter);
    }
    personalScore.replaceChildren(...children);
@@ -890,7 +999,7 @@ function renderScores(world, pilot, second) {
  const title = publicArena ? 'Top 10 Tanks' : tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
  const standingRow = (tank,rank,extra=false) => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
-  const name = tank.name || (local===1 ? world.name : local===2 ? world.localName : 'Tank');
+  const name = local ? pilotIdentity(world,local-1,tank).label : tank.name || 'Tank';
   return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra,partyIDs.has(tank.id)];
  };
  const rows = entries.map((tank,i) => standingRow(tank,i+1));
@@ -911,6 +1020,7 @@ function renderScores(world, pilot, second) {
  if (signature === world.scoreRows) return;
  world.scoreRows = signature;
  leaderboardTitle.textContent = title;
+ scoreboardButton.textContent = title;
  const makeRow = ([name, score, local, color,rank,extra,partyMember]) => {
   const row = document.createElement('li');
   if (rank) row.value = rank;
@@ -923,7 +1033,7 @@ function renderScores(world, pilot, second) {
   }
   const callsign = document.createElement('span');
   const total = document.createElement('strong');
-  callsign.textContent = name + (local===1?' (you)':local===2?' (P2)':partyMember?' (room)':'');
+  callsign.textContent = name + (!local&&partyMember?' (room)':'');
   total.textContent = score;
   row.append(callsign, total);
   return row;
@@ -952,11 +1062,10 @@ function updatePilotLoadout(world, pilot, seat, num, now) {
 function updateHUD(world, pilot, second, now) {
  if (!pilot || world.failed || world.online && !world.joined || now < world.nextHUD) return;
  world.nextHUD = now + 1000 / 30;
+ if(world.controlPilots!==JSON.stringify(localPilots(world)))refreshBindings(world);
  renderScores(world,pilot,second);
- const counts = world.online ? ` · ${world.players} online` : ` · ${world.tanks.filter(tank=>tank.bot).length} bots`;
- const target = world.rules?.infinityTarget ? ` · First to ${world.rules.infinityTarget}` : '';
- const state = tank => tank?.hp ? 'Weapons live' : pauseMenu.open ? 'Respawn held' : 'Respawning…';
- setStatus((world.result ? world.result.name + ' wins' : second ? `P1 ${state(pilot)} · P2 ${state(second)}` : state(pilot)) + counts + target);
+ setStatus('');
+ renderOnlineCount(world);
  updatePilotLoadout(world,pilot,world,1,now);
  updatePilotLoadout(world,second,world.local,2,now);
 }
@@ -1040,7 +1149,8 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
    art.ageTank({...interpolate(world.previousTanks.get(tank.id),tank,alpha)},tank,age) : tank);
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
-  drawTank(displayed, owner===seat ? LOCAL_HIGHLIGHTS[seat===world?0:1] : null, zoom, ratio);
+  drawTank(displayed, owner===seat ? LOCAL_HIGHLIGHTS[seat===world?0:1] : null, zoom, ratio,
+   owner?pilotIdentity(world,owner===world?0:1,tank).label:tank.name||'Tank');
  }
  const bullets = world.visibleBullets;
  bullets.length = 0;
@@ -1062,17 +1172,19 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
  ctx.restore();
  if (world.local) {
   ctx.save();
+  const identity=pilotIdentity(world,seat===world?0:1,pilot);
+  ctx.font = 'bold 12px ui-monospace,monospace';
+  const badgeWidth=Math.max(36,Math.min(width-18,(ctx.measureText(identity.label)?.width||identity.label.length*7)+18));
   ctx.fillStyle = art.theme.arena;
-  art.rect(ctx,left+9,top+9,36,24,5);
+  art.rect(ctx,left+9,top+9,badgeWidth,24,5);
   ctx.fill();
-  ctx.strokeStyle = COLORS[pilot?.colorIndex] || COLORS[seat===world?0:1];
+  ctx.strokeStyle = identity.color;
   ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.fillStyle = '#f3f8ff';
-  ctx.textAlign = 'center';
+  ctx.fillStyle = identity.color;
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.font = 'bold 12px ui-monospace,monospace';
-  ctx.fillText(seat===world?'P1':'P2',left+27,top+21);
+  ctx.fillText(identity.label,left+18,top+21,badgeWidth-18);
   ctx.restore();
  }
 }
@@ -1093,6 +1205,7 @@ function sendInput(seat = session, now = performance.now(), immediate = false, i
  seat.nextSend = now + 1000 / 30;
  seat.keepAlive = now + 140;
  seat.fireTap = false;
+ if(seat===world)mouseTap=false;
 }
 
 function showResult(world, now) {
@@ -1105,7 +1218,9 @@ function showResult(world, now) {
   world.nextHUD = 0;
  }
  if (now < world.resultAt) return;
- byID('infiniteResultTitle').textContent = world.result.name + ' wins';
+ const winner=resultIdentity(world);
+ byID('infiniteResultTitle').textContent = winner.label + ' wins';
+ byID('infiniteResultTitle').style.color=winner.color;
  byID('infiniteResultScore').textContent = 'Final score ' + world.result.score;
  resultDialog.showModal();
 }
@@ -1125,6 +1240,7 @@ function loop(now) {
   while (!session.result && accumulator + 1e-9 >= STEP) {
    offlineStep(session,STEP);
    for (const seat of session.controllers) seat.fireTap=false;
+   mouseTap=false;
    accumulator = Math.max(0, accumulator - STEP);
   }
  }
@@ -1137,6 +1253,7 @@ function loop(now) {
 
 function connectionFailed(message) {
  if (!session?.online) return;
+ cancelRenames(session,'The connection was interrupted. Try again after reconnecting.');
  clearTimeout(connectTimer);
  if (session.room) clearRoomResume();
  session.failed = true;
@@ -1153,6 +1270,7 @@ function connectionFailed(message) {
 function retryConnection(message) {
  if (!session.room) {connectionFailed(message);return;}
  const world = session, now = performance.now();
+ cancelRenames(world,'The connection was interrupted. Try again after reconnecting.');
  world.retryAt ??= now;
  const remaining = world.retryAt + RECONNECT_WINDOW - now;
  if (remaining <= 0) {connectionFailed(message);return;}
@@ -1162,7 +1280,7 @@ function retryConnection(message) {
  world.joined = false;
  resetControls();
  old?.close();
- setStatus('Connection interrupted · Reconnecting to room Infinity…');
+ setStatus('Connection interrupted, Reconnecting to room Infinity…');
  const delay = Math.min(remaining, 3000, 450 * 2 ** Math.min(world.retries++,3));
  connectTimer = setTimeout(() => {
   if (session === world) {
@@ -1207,6 +1325,7 @@ function receive(ws, event) {
   connectionFailed('Unexpected response from the Infinity server.');
   return;
  }
+ if(message.type==='renamed'||message.type==='rename_error'){acceptRename(message);return;}
  if (message.type === 'error') {
   const error = message.message || 'Unable to join Infinity.';
   if (message.code === 'session_active' && session.resumeGeneration) retryConnection(error);
@@ -1224,6 +1343,7 @@ function receive(ws, event) {
    }
    session.local.id = message.localId;
   } else if (session.local) {
+   finishRename(session,1,'That local tank is no longer available.');session.confirmedNames.delete(1);
    session.controllers.pop();
    session.local = null;
    refreshBindings(session);
@@ -1245,6 +1365,7 @@ function receive(ws, event) {
   connectionFailed('Unexpected state from the Infinity server.');
   return;
  }
+ preserveConfirmedNames(session,message);
  const now = performance.now(), joined = session.joined, resumed = !joined && session.resumed;
  session.previousTanks = new Map(session.tanks.map(tank => [tank.id, tank]));
  session.previousBullets = new Map(session.bullets.map(bullet => [bullet.id, bullet]));
@@ -1281,6 +1402,8 @@ function receive(ws, event) {
  }
  if (resumed) resetControls();
  session.joined = true;
+ setStatus('');
+ renderOnlineCount(session);
  if (message.result) session.result = message.result;
  if (!joined) {
   const onJoined = session.onJoined;session.onJoined = null;
@@ -1297,6 +1420,7 @@ function receive(ws, event) {
 function connect() {
  if (!session?.online) return;
  const world = session;
+ cancelRenames(world,'The connection was interrupted. Try again after reconnecting.');
  clearTimeout(connectTimer);
  const oldSocket = socket;
  socket = null;
@@ -1365,6 +1489,7 @@ function connect() {
 function resetControls() {
  pressed.clear();
  mouseAim = null;
+ mouseTap=false;canvas.style.cursor=mouseEnabled()?'':'auto';
  stickPointer = firePointer = mousePointer = null;
  fire.classList.remove('held');
  touchAim.x = touchAim.y = 0;
@@ -1377,6 +1502,17 @@ function resetControls() {
  }
 }
 
+function resetMouseControls(kind) {
+ if(kind!=='fire')mouseAim=null;
+ if(kind!=='aim'){mousePointer=null;mouseTap=false;}
+ canvas.style.cursor=mouseEnabled()?'':'auto';
+ if(session){refreshBindings(session);sendInput(session,performance.now(),true);}
+}
+
+function syncScoreboardButton() {
+ scoreboardButton.setAttribute('aria-expanded',String(leaderboardPanel.open));
+}
+
 function restorePauseSidebar() {
  if (pausedLeaderboard && leaderboardPanel.parentElement === byID('gameSidebar')) {
   const {parent,next,open} = pausedLeaderboard;
@@ -1384,6 +1520,7 @@ function restorePauseSidebar() {
   leaderboardPanel.open = open;
  }
  pausedLeaderboard = null;
+ syncScoreboardButton();
  art.restoreSidebar(pauseSidebar);
 }
 
@@ -1401,6 +1538,7 @@ function dismissPause() {
 
 function stop() {
  if (!session) return;
+ cancelRenames(session,'Infinity was closed before the callsign change was confirmed.');
  resetControls();
  cancelAnimationFrame(frame);
  clearTimeout(connectTimer);
@@ -1453,7 +1591,7 @@ function start(mode, options = {}) {
  const readBindings = typeof options.bindings === 'function' ? options.bindings : () => options.bindings;
  const selectedColor = value => Number.isInteger(value)&&value>=0&&value<COLORS.length?value:undefined;
  session = {
-  online, name, localName:options.localName, readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
+  online, name, localName:options.localName, serial:++sessionSerial,renames:new Map(),confirmedNames:new Map(),readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
   public:!!options.public,party:[],
   colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
@@ -1463,6 +1601,9 @@ function start(mode, options = {}) {
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
  const world = session;
+ canvas.style.cursor=mouseEnabled()?'':'auto';
+ setStatus('');
+ renderOnlineCount(world);
  world.moveTank = (tank, dx, dy, phaseEnded) => mazeMove(world.maze, tank, dx, dy, phaseEnded);
  addController(world,world);
  if (world.localName) world.local = addController(world,{id:online?null:'local'});
@@ -1503,7 +1644,7 @@ function start(mode, options = {}) {
    applyTankAppearance(world,bot,member);
    world.tanks.push(bot);
   }
-  setStatus('Weapons live · ' + world.lastBot + ' bots');
+  refreshBindings(world);
   renderScores(session,player,world.local?world.tanks[1]:null);
  }
  lastTime = performance.now();
@@ -1511,25 +1652,29 @@ function start(mode, options = {}) {
  frame = requestAnimationFrame(loop);
 }
 
-function updateMouse(event) {
- if (art.chatOpen()) {mouseAim=null;return false;}
+function mousePosition(event) {
+ if(!session||art.chatOpen())return null;
  const rect = canvas.getBoundingClientRect();
  const [width,height] = primaryView(rect.width,rect.height,!!session?.local);
  const px=event.clientX-rect.left,py=event.clientY-rect.top;
- if(session?.local&&(px<0||py<0||px>=width||py>=height)){
-  mouseAim=null;
-  return false;
- }
- const x = px-width/2, y = py-height/2;
+ if(px<0||py<0||px>=width||py>=height)return null;
+ return{x:px-width/2,y:py-height/2};
+}
+
+function updateMouse(event,position) {
+ if(!mouseAimEnabled()){mouseAim=null;return false;}
+ position ||= mousePosition(event);
+ if(!position){mouseAim=null;return false;}
+ const {x,y}=position;
  const distance = Math.hypot(x, y);
  if (distance > 3) mouseAim = {x: x / distance, y: y / distance};
  return true;
 }
 
-function pressFire(event,seat=session) {
- if (!session || session.result || pauseMenu.open || art.chatOpen() || session.online && !session.joined) return;
+function pressFire(event,seat=session,mouse=false) {
+ if (!session || session.result || pauseMenu.open || art.chatOpen() || session.online && !session.joined || mouse&&!mouseFireEnabled()) return;
  art.primeAudioUnlock(event);
- seat.fireTap = true;
+ if(mouse)mouseTap=true;else seat.fireTap = true;
  const now = performance.now(), world = session;
  const pilot = seat.predictor.state;
  const age = now - world.arrived, boosted = pilot?.starmanTime > age / 1000;
@@ -1588,6 +1733,11 @@ arena.addEventListener('keydown', event => {
   if (!event.repeat) art.toggleFullscreen();
   return;
  }
+ if (event.code === 'KeyM') {
+  event.preventDefault();
+  if (!event.repeat) art.toggleSound();
+  return;
+ }
  if (session.result) return;
  if (event.target.tagName === 'INPUT') return;
  if (event.code === 'Escape' || event.code === 'KeyP') {
@@ -1596,11 +1746,6 @@ arena.addEventListener('keydown', event => {
    if (pauseMenu.open) resume();
    else openPause();
   }
-  return;
- }
- if (event.code === 'KeyM') {
-  event.preventDefault();
-  if (!event.repeat) art.toggleSound();
   return;
  }
  if (pauseMenu.open || art.chatOpen() || session.online && !session.joined) return;
@@ -1629,11 +1774,14 @@ canvas.addEventListener('pointerleave', event => {
  if (event.pointerType === 'mouse' && mousePointer === null) mouseAim = null;
 });
 canvas.addEventListener('pointerdown', event => {
- if (event.pointerType !== 'mouse' || event.button !== 0 || mousePointer !== null || !updateMouse(event)) return;
+ if (event.pointerType !== 'mouse' || event.button !== 0 || mousePointer !== null || !mouseEnabled()) return;
+ const position=mousePosition(event);if(!position)return;
+ updateMouse(event,position);
  canvas.focus({preventScroll: true});
+ if(!mouseFireEnabled())return;
  capturePointer(canvas, event);
  mousePointer = event.pointerId;
- pressFire(event);
+ pressFire(event,session,true);
 });
 stick.addEventListener('pointerdown', event => {
  if (event.button !== 0 || stickPointer !== null || art.chatOpen()) return;
@@ -1679,7 +1827,9 @@ function openPause() {
  const sidebar = byID('gameSidebar');
  sidebar.insertBefore(leaderboardPanel,sidebar.firstChild);
  leaderboardPanel.open = true;
+ syncScoreboardButton();
  pauseMenu.scrollTop = 0;
+ art.syncCallsignEditors?.();
  resetControls();
 }
 function resume() {
@@ -1694,6 +1844,11 @@ function togglePause() {
  if (pauseMenu.open) resume();
  else openPause();
 }
+scoreboardButton.addEventListener('click', () => {
+ leaderboardPanel.open = !leaderboardPanel.open;
+ syncScoreboardButton();
+});
+leaderboardPanel.addEventListener('toggle',syncScoreboardButton);
 byID('infiniteResumeBtn').addEventListener('click', resume);
 byID('infiniteControlsBtn').addEventListener('click', () => {
  byID('infiniteControlsBtn').focus({preventScroll:true});
@@ -1734,11 +1889,11 @@ const pickupHelp = `Power-ups spawn near active pilots. Most last ${POWER_DURATI
 function sidebarHelp() {
  if (!session || !pauseMenu.open) return null;
  const target = session.rules?.infinityTarget;
- return {twoPilots:!!session.local,pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,
-  instructions:'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after '+RESPAWN_DELAY+' second. '+
-   (target?'Reach '+target+' points to win.':'Keep playing and growing your score without a time limit.')+
+ return {twoPilots:!!session.local,pilots:localPilots(),pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,
+  instructions:'Gain a point per kill and lose a point per death. Respawn after '+RESPAWN_DELAY+' second. '+
+   (target?'Reach '+target+' points to win.':'Keep growing the score without a time limit.')+
    (session.public&&session.room?' Everyone competes individually, including pilots from your room.':'')};
 }
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, togglePause});
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, resetMouseControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, localPilots, renamePilot, togglePause});
 art.roomSessionReady?.();
 })();

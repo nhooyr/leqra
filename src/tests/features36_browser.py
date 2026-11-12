@@ -70,7 +70,7 @@ with sync_playwright() as pw:
    rules(p,teamMode='teams',**{'teamName'+str(i+1):n for i,n in enumerate(names)})
    check(state(p)['rules']['teamNames']==names,'Four custom names accepted '+str(size))
    check(p.locator('[data-team]').first.evaluate('(e)=>[...e.options].map(o=>o.value)')==['1','2','3','4'],'Teams dropdown has exactly four choices '+str(size))
-   check(p.locator('[data-team]').first.evaluate('(e)=>e.options[1].textContent')=='<b>Fire</b> · T2' and not p.locator('[data-team] b').count(),'Team names are literal text, not HTML '+str(size))
+   check(p.locator('[data-team]').first.evaluate('(e)=>e.options[1].textContent')=='<b>Fire</b>, T2' and not p.locator('[data-team] b').count(),'Team names are literal text, not HTML '+str(size))
    check(p.evaluate('document.documentElement.scrollWidth<=innerWidth'),'No horizontal overflow with team names '+str(size))
    p.locator('#roomRulesBtn').click();p.screenshot(path=str(out/f'team-settings-{size[0]}.png'));p.locator('[data-close-dialog="rulesDialog"]').click()
    rules(p,mode='ctf',timeLimit=600,scoreTarget=20);start(p);freeze(p)

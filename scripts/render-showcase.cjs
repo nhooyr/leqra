@@ -156,10 +156,13 @@ async function main() {
   await page.addInitScript(() => {
    localStorage.setItem('leqra.introTour.v1','1');
    localStorage.setItem('leqra.muted','0');
+   // A frozen showcase has no meaningful frame rate to display.
+   localStorage.setItem('leqra.feedback.v1',JSON.stringify({fps:false}));
   });
   await page.route('**/*', route => {
    const url = new URL(route.request().url());
    if (url.origin!==origin) return route.abort();
+   if (url.pathname==='/api/infinity') return route.fulfill({json:{players:0,tankCount:0,capacity:32,leaders:[]}});
    const file = path.join(web,url.pathname==='/'?'index.html':url.pathname);
    // This isolated image capture has no server or installed app to update.
    if (file===assetPath('pwa.js')) return route.fulfill({contentType:'application/javascript',body:''});

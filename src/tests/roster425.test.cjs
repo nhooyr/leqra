@@ -2,6 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),vm=require('node:vm');
 const {assetPath}=require('./web_assets.cjs');
+const identityFixture=require('./identity_fixture.cjs');
 const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||assetPath('game.js'),'utf8');
 
 function declaration(name){
@@ -47,7 +48,7 @@ function boot(){
    creations.push({id:player.id,member:player.member,row,moderationOnly});return row;
   }
  };
- vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext('const roomRosterCache=new WeakMap();\n'+declaration('survivalMode')+'\n'+declaration('roomCapacity')+'\n'+declaration('roomPlayerStatus')+'\n'+declaration('renderRoomPlayerRows'),s);
+ vm.createContext(s);identityFixture(s,source);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext('const roomRosterCache=new WeakMap();\n'+declaration('survivalMode')+'\n'+declaration('roomCapacity')+'\n'+declaration('roomPlayerStatus')+'\n'+declaration('renderRoomPlayerRows'),s);
  const render=(r=room,options={})=>s.renderRoomPlayerRows(options.container||container,r.players,r,options.moderationOnly||false,options.showOpenSeats!==false);
  return {s,room,container,creations,render};
 }
@@ -79,14 +80,14 @@ test('unrelated ready, connection and score packets patch status without rebuild
 test('room status handles host, self, ready, reconnecting, bot, local P2 and away pilots',()=>{
  const b=boot();
  for(const [player,host,want] of [
-  [{id:0,kind:'human',connected:true},0,'YOU · HOST'],
-  [{id:0,kind:'human',connected:true},1,'YOU · PILOT'],
+  [{id:0,kind:'human',connected:true},0,'HOST'],
+  [{id:0,kind:'human',connected:true},1,'PILOT'],
   [{id:1,kind:'human',connected:true},1,'HOST'],
   [{id:1,kind:'human',connected:true,ready:true},0,'READY ✓'],
   [{id:1,kind:'human',connected:false,ready:true},0,'RECONNECTING'],
   [{id:1,kind:'human',connected:true},0,'PILOT'],
   [{id:1,kind:'bot'},0,'BOT'],
-  [{id:1,kind:'local'},0,'LOCAL P2'],
+  [{id:1,kind:'local'},0,'LOCAL PILOT'],
   [{id:0,kind:'human',away:true},0,'IN MATCH']
  ])assert.equal(b.s.roomPlayerStatus(player,{host}),want);
 });
@@ -159,10 +160,10 @@ test('moderation roster caches are independent and switching moderation mode reb
 test('the open-seat notice stays unique, follows capacity, and disappears when full or disabled',()=>{
  const b=boot();b.render();const free=freeRows(b.container)[0];
  for(let i=0;i<100;i++){b.render(snapshot(b.room));assert.deepEqual(freeRows(b.container),[free]);}
- assert.equal(free.textContent,'5 OPEN SEATS · ADD A PILOT, BOT, OR FRIEND');
+ assert.equal(free.textContent,'5 OPEN SEATS, ADD A PILOT, BOT, OR FRIEND');
  const r=snapshot(b.room);for(let id=3;id<8;id++)r.players.push({id,member:id+10,name:'BOT '+id,kind:'bot',team:1});
  b.render(r);assert.equal(freeRows(b.container).length,0);assert.equal(free.parentElement,null);
- r.players.pop();b.render(r);assert.deepEqual(freeRows(b.container),[free]);assert.equal(free.textContent,'1 OPEN SEAT · ADD A PILOT, BOT, OR FRIEND');
+ r.players.pop();b.render(r);assert.deepEqual(freeRows(b.container),[free]);assert.equal(free.textContent,'1 OPEN SEAT, ADD A PILOT, BOT, OR FRIEND');
  b.render(r,{showOpenSeats:false});assert.equal(freeRows(b.container).length,0);
  b.render(r);assert.deepEqual(freeRows(b.container),[free]);
 });

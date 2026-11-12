@@ -113,7 +113,7 @@ Spectators remain spectators and are not placed in tanks.
 
 Flag captures and hill scoring stop. Scores remain tied on the scoreboard;
 **survival is now the tiebreaker**. Flags/hill visuals are removed, the clock shows
-**SD**, and the status bar says **LAST SIDE STANDING · NO RESPAWNS**. Bots switch
+**SD**, and the status bar says **LAST SIDE STANDING, NO RESPAWNS**. Bots switch
 from pursuing objectives to fighting the remaining opposing side.
 
 After a tank dies, it stays out. When only one numbered team—or one independent

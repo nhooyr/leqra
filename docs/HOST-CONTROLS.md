@@ -37,7 +37,7 @@ the last opponent resolves the round; with fewer than two connected players the
 game returns to the lobby after the round result.
 
 Desktop, portrait phones and landscape phones have the same controls. Compact
-host lobbies omit the redundant own-player row because **YOUR CALLSIGN · HOST**
+host lobbies omit the redundant own-player row because **YOUR CALLSIGN, HOST**
 and the Ready button already identify the host; all other pilots remain listed.
 
 The v2.1 movement smoothing, v2.2 callsign editing, direct invite joins, matching

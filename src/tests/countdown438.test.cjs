@@ -46,6 +46,31 @@ test('team and boss advice reflects the current format, friendly fire and config
  s.rules=s.defaultModeRules('survival');for(const target of [4,5,9,10,14,15]){s.rules.scoreTarget=target;const tips=s.countdownTipPool(),tiers=tips.find(t=>t.id==='survival-boss-tiers');assert.equal(!!tiers,target>=5);assert.equal(!!tiers?.text.includes('Fierce'),target>=10);assert.equal(!!tiers?.text.includes('Godlike'),target>=15);}
 });
 
+test('Survival guidance uses the configured wave goal and timer without promising unreachable bosses',()=>{
+ const {s}=boot('survival');
+ for(const target of [1,4,5,10,15,20]){
+  s.rules.scoreTarget=target;s.rules.timeLimit=120;const tips=s.countdownTipPool(),instructions=s.modeInstructions();
+  assert.match(tips.find(t=>t.id==='survival-target').text,new RegExp('Clear '+target+' wave'+(target===1?'(?!s)':'s')));
+  assert.match(tips.find(t=>t.id==='survival-timer').text,/120 seconds/);
+  assert.match(instructions,new RegExp('Clear '+target+' wave'+(target===1?'(?!s)':'s')));
+  assert.equal(instructions.includes('boss'),target>=5);
+  assert.equal(tips.every(t=>t.text.length<=90),true,'Survival advice stays readable during the countdown');
+ }
+});
+
+test('Survival boss counterplay follows reachable equipment, disabled pickups and weapon fallback',()=>{
+ const {s}=boot('survival'),advice=()=>Array.from(s.countdownTipPool().filter(t=>/^survival-boss-(homing|cannon|laser|armor|speed)$/.test(t.id)),t=>t.id.replace('survival-boss-','')).sort();
+ s.rules.scoreTarget=4;assert.deepEqual(advice(),[]);
+ s.rules.scoreTarget=5;assert.deepEqual(advice(),['armor','homing']);
+ s.rules.scoreTarget=10;assert.deepEqual(advice(),['armor','cannon','homing','speed']);
+ s.rules.scoreTarget=15;assert.deepEqual(advice(),['armor','cannon','homing','laser','speed']);
+ s.rules.scoreTarget=5;s.rules.weapons=['laser'];assert.deepEqual(advice(),['laser'],'the first boss uses the available fallback weapon');
+ for(const weapons of [[],['homing','cannon','laser','shield','speed']]){
+  s.rules.weapons=weapons;s.rules.pickupRate='off';assert.deepEqual(advice(),[]);
+  assert.ok(s.countdownTipPool().some(t=>t.id==='survival-boss-shield'),'the squad still receives its boss-wave shield bonus');
+ }
+});
+
 test('actual local round starts and full rematches rotate tips while redraws and pause/resume keep one stable tip',()=>{
  for(const mode of ['elimination','ctf','koth']){
   const {s,$}=boot(mode);s.startMatch();const seen=new Set();
@@ -72,7 +97,7 @@ test('online snapshots keep a countdown tip stable and new authoritative generat
 
 test('boss countdown prioritizes its existing gear preview and never leaks it into a cleared-wave hold',()=>{
  const {s,$}=boot('survival');s.rules.scoreTarget=15;s.rules.weapons=['shield','homing'];s.round=5;Object.assign(s.localObjectives.survival,{wave:5,waveTarget:15,boss:true});
- s.updateHUD();const gear=$('announceSub').textContent;assert.equal(gear,'Equipment: 1 shield charge · Homing missiles');assert.equal($('announcer').classes.has('boss-preview'),true);
+ s.updateHUD();const gear=$('announceSub').textContent;assert.equal(gear,'Equipment: 1 shield charge, Homing missiles');assert.equal($('announcer').classes.has('boss-preview'),true);
  assert.equal(vm.runInContext('countdownTipHistory.current',s),null,'boss equipment does not consume or overwrite a general tip');
  s.phase='paused';s.updateHUD();assert.equal($('announcer').hidden,true);s.phase='countdown';s.phaseTime=1;s.updateHUD();assert.equal($('announceSub').textContent,gear);
  s.phase='playing';Object.assign(s.localObjectives.survival,{status:'break',breakTime:2});s.updateHUD();assert.equal($('announceSub').textContent,'New maze in 2…');assert.equal($('announcer').classes.has('boss-preview'),false);

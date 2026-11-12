@@ -55,6 +55,7 @@ type infiniteTank struct {
 	CooldownTotal float64 `json:"cooldownTotal,omitempty"`
 	RespawnTime   float64 `json:"respawnTime,omitempty"`
 	KilledBy      string  `json:"killedBy,omitempty"`
+	KilledByColor string  `json:"killedByColor,omitempty"`
 	AmmoUsed      int     `json:"ammoUsed,omitempty"`
 	Grenades      int     `json:"grenades,omitempty"`
 	GrenadeLife   float64 `json:"grenadeLife,omitempty"`
@@ -240,7 +241,11 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 	a.setSeat(p, first, now)
 	var local *infinitePilot
 	if second != nil {
-		local = a.addPilot(cleanName(second.name), false, p.X, p.Y, 1, 3)
+		name := cleanCallsign(second.name)
+		if name == "" {
+			name = "CO-PILOT"
+		}
+		local = a.addPilot(name, false, p.X, p.Y, 1, 3)
 		a.setSeat(local, *second, now)
 	}
 	if !a.welcome(c, p, local, generation, false) {
@@ -494,6 +499,7 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 	p.X, p.Y, p.Angle = bestX, bestY, a.random.Float64()*2*math.Pi-math.Pi
 	p.HP, p.Protected, p.hasWaypoint = infiniteMaxHP, true, false
 	p.KilledBy = ""
+	p.KilledByColor = ""
 	p.input, p.firePending = Input{Seq: p.input.Seq}, false
 	p.kit = Tank{Invulnerable: 1}
 	p.Spawn++
@@ -714,6 +720,8 @@ func (a *infiniteArena) populate() {
 			if a.rules.randomDifficulty {
 				bot.botLevel = a.random.IntN(bot.botLevel + 1)
 			}
+		} else {
+			bot.botLevel = infiniteBotLevel("easy")
 		}
 		if a.teams() {
 			var counts [5]int
@@ -938,8 +946,9 @@ func (a *infiniteArena) broadcast() {
 	// The mask represents exact membership, including at the edge of sight.
 	type encodedView struct{ plain, deflated snapshotFrame }
 	type viewKey struct {
-		mask  string
-		party infiniteRoom
+		mask        string
+		party       infiniteRoom
+		deathViewer int
 	}
 	views := make(map[viewKey]encodedView, a.connected)
 	pickupOffset := len(a.pilots)
@@ -957,7 +966,11 @@ func (a *infiniteArena) broadcast() {
 		for i, p := range a.pilots {
 			if viewer.sees(p.X, p.Y) {
 				mark(i)
-				packet.Tanks = append(packet.Tanks, tanks[i])
+				body := tanks[i]
+				if p != viewer && p != viewer.local {
+					body.KilledByColor = ""
+				}
+				packet.Tanks = append(packet.Tanks, body)
 			}
 		}
 		for i, pickup := range a.pickups {
@@ -980,7 +993,11 @@ func (a *infiniteArena) broadcast() {
 				packet.Bullets = append(packet.Bullets, b)
 			}
 		}
-		key := viewKey{string(mask), viewer.party}
+		deathViewer := 0
+		if viewer.KilledByColor != "" || viewer.local != nil && viewer.local.KilledByColor != "" {
+			deathViewer = viewer.ID
+		}
+		key := viewKey{string(mask), viewer.party, deathViewer}
 		view := views[key]
 		if view.plain.data == nil {
 			data, ok := encodePacket(packet)

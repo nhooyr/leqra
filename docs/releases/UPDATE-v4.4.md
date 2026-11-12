@@ -52,7 +52,7 @@ active for **eight seconds**. Its bullets have a **1.5-second lifetime**, with
 **96 active-projectile slots per owner** while equipped. This bounds the continuous
 stream while allowing it to sustain fire without a periodic reload when slots
 are free. Old projectiles can occupy slots; damage/charge authority remains on Go.
-The HUD shows **READY · CONTINUOUS**, not a fake cooldown between rounds.
+The HUD shows **READY, CONTINUOUS**, not a fake cooldown between rounds.
 
 Existing Fire bindings, remapping, both local players, and mobile Fire work as
 before. An already-armed grenade still takes priority on the next new Fire press.

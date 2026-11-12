@@ -19,7 +19,7 @@ function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||assetPath('game.js'),mod
   controlledTank:()=>tanks[0],secondaryID:()=>7,roomData:()=>({players:tanks}),currentRules:()=>rules,isEnemy:(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team),
   survivalState:()=>env.survival,survivalBreak:()=>env.survival?.status==='break',survivalMode:()=>!!env.survival,objectiveMode:()=>false,combatPrefs:{visual:true,audio:false},homingAlerts:[{},{}],clearTankAt:()=>true,muzzleBlocked:()=>false,
   clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),paintColor:c=>c,pilotFeedback:[],shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,COLORS:['#fff'],MACHINE_CAPACITY:96,MACHINE_FIRING_ROUNDS:180,CANNON_COOLDOWN:.85};
- const names=['canDamage','activeAmmo','ownedGrenades','missileLocks','setText','setStyle','setAttr','powerCapacity','cooldownDuration','pilotLoadoutTank','liveFeedbackTank','updateMachineBudget','renderPilotLoadout','updateHomingAlert','updateCombatFeedback'];
+ const names=['pilotIdentity','canDamage','activeAmmo','ownedGrenades','missileLocks','setText','setStyle','setAttr','powerCapacity','cooldownDuration','pilotLoadoutTank','liveFeedbackTank','updateMachineBudget','renderPilotLoadout','updateHomingAlert','updateCombatFeedback'];
  if(source.includes('function applyOnlineTankEffects('))names.push('applyOnlineTankEffects');
  if(source.includes('function pilotProjectileState('))names.push('pilotProjectileState');
  if(source.includes('function renderPilotReadiness('))names.push('renderPilotReadiness','infinityHUDId','renderInfinityLoadout');

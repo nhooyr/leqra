@@ -68,11 +68,11 @@ test('two-pilot loadout and combat feedback retain detonation, ammo, pause and d
  for(const mode of ['room','online']){
   const s=boot({mode,projectileCount:0}),a=s.tanks[0],b=s.tanks[7];a.power=null;a.cooldown=0;b.power='laser';b.charges=1;b.cooldown=0;
   const grenade={owner:0,kind:'grenade',life:4.2};s.bullets.push(grenade,{owner:1,kind:'homing',target:7});s.run();
-  assert.equal(s.$('weaponLabel').textContent,'DETONATE · 4.2s');assert.equal(s.$('cooldownText1').textContent,'DETONATE READY');
-  assert.equal(s.$('ammoDots2').getAttribute('aria-label'),'PILOT 7: 1 of 3 laser charges available');assert.equal(s.$('missileWarning2').hidden,false);
-  grenade.life=3.4;s.run();assert.equal(s.$('weaponLabel').textContent,'DETONATE · 3.4s');
+  assert.equal(s.$('weaponLabel').textContent,'GRENADE, 4.2s');assert.equal(s.$('cooldownText1').textContent,'DETONATE READY');
+  assert.equal(s.$('ammoDots2').getAttribute('aria-label'),'PILOT 7 (P2): 1 of 3 laser charges available');assert.equal(s.$('missileWarning2').hidden,false);
+  grenade.life=3.4;s.run();assert.equal(s.$('weaponLabel').textContent,'GRENADE, 3.4s');
   s.setPhase('paused');s.run();assert.equal(s.$('cooldownText1').textContent,'PAUSED');assert.equal(s.$('missileWarning2').hidden,true);
-  s.setPhase('playing');a.alive=false;s.run();assert.equal(s.$('weaponLabel').textContent,'TANK DOWN');assert.equal(s.$('cooldownText1').textContent,'TANK DOWN');
+  s.setPhase('playing');a.alive=false;s.run();assert.equal(s.$('weaponLabel').textContent,'');assert.equal(s.$('cooldownText1').textContent,'OUT');
   a.alive=true;s.bullets.length=0;s.run();assert.equal(s.$('weaponLabel').textContent,'STANDARD');assert.equal(s.$('cooldownText1').textContent,'READY');assert.equal(s.$('missileWarning2').hidden,true);
  }
 });
@@ -92,8 +92,8 @@ test('Infinity and fixed mazes share detailed cockpit readouts for both pilots',
  assert.equal(s.$('infiniteAmmoDots').hidden,true);
  a.starmanTime=3;
  s.renderInfinityLoadout(a,1,s.pilotProjectileState(a),false,'playing');
- assert.equal(s.$('infiniteWeapon').textContent,'MACHINE GUN · ∞ AMMO');
- assert.equal(s.$('infiniteBuffLabel').textContent,'SHD×2 4s · STAR 3s');
+ assert.equal(s.$('infiniteWeapon').textContent,'MACHINE GUN, ∞ AMMO');
+ assert.equal(s.$('infiniteBuffLabel').textContent,'SHD×2 4s, STAR 3s');
  assert.equal(s.$('infiniteMachineBudget1').hidden,true);
  b.alive=false;b.respawnTime=1.25;
  s.renderInfinityLoadout(b,2,s.pilotProjectileState(b),false,'playing');

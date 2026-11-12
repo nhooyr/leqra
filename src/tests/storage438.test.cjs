@@ -17,9 +17,16 @@ test('startup reaches default initialization when either browser storage getter 
   for(const name of ['defaultBindings','loadBindings','readCombatPrefs','loadPresets','save','savedLocalCallsign','cleanPilotName'])vm.runInContext(declaration(name),s);
   if(blocked.includes('localStorage')){
    assert.deepEqual(JSON.parse(JSON.stringify(s.loadBindings())),JSON.parse(JSON.stringify(s.defaultBindings())));
-   assert.deepEqual(JSON.parse(JSON.stringify(s.readCombatPrefs())),{visual:true,audio:true,fps:false,performance:false});assert.equal(s.loadPresets().length,0);assert.equal(s.savedLocalCallsign(),'PLAYER 2');assert.doesNotThrow(()=>s.save('name','PILOT'));
+   assert.deepEqual(JSON.parse(JSON.stringify(s.readCombatPrefs())),{visual:true,audio:true,fps:true,performance:false,mouseAim:true,mouseFire:true});assert.equal(s.loadPresets().length,0);assert.equal(s.savedLocalCallsign(),'CO-PILOT');assert.doesNotThrow(()=>s.save('name','PILOT'));
   }
  }
+});
+
+test('FPS defaults on for new and legacy settings while an explicit saved opt-out is preserved',()=>{
+ const {s,local}=boot();vm.runInContext(declaration('readCombatPrefs'),s);assert.equal(s.readCombatPrefs().fps,true);
+ local.values.set('leqra.feedback.v1',JSON.stringify({visual:false,audio:false}));assert.equal(s.readCombatPrefs().fps,true);
+ local.values.set('leqra.feedback.v1',JSON.stringify({fps:false,mouseAim:false,mouseFire:true}));assert.equal(s.readCombatPrefs().fps,false);assert.equal(s.readCombatPrefs().mouseAim,false);assert.equal(s.readCombatPrefs().mouseFire,true);
+ local.values.set('leqra.feedback.v1','broken');assert.equal(s.readCombatPrefs().fps,true);
 });
 
 test('a denied local storage getter does not prevent accessible session migration, or vice versa',()=>{
