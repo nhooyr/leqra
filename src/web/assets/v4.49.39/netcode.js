@@ -67,11 +67,107 @@
    if(t.x===x&&t.y===y)break;
   }
  }
+ function smoothCoordinate(a,b,start,end,f){
+  const distance=b-a;
+  if(Math.abs(distance)<1e-10)return a;
+  let x=Math.max(0,start/distance),y=Math.max(0,end/distance);
+  const length=Math.hypot(x,y);
+  if(length>3){x*=3/length;y*=3/length;}
+  const f2=f*f,f3=f2*f;
+  return a+distance*((f3-2*f2+f)*x+(-2*f3+3*f2)+(f3-f2)*y);
+ }
+ function cubicCoordinate(a,b,start,end,f){
+  const f2=f*f,f3=f2*f;
+  return (2*f3-3*f2+1)*a+(f3-2*f2+f)*start+(-2*f3+3*f2)*b+(f3-f2)*end;
+ }
+ function presentation(t,dt,step,advance,moveTank,previous){
+  const copy=source=>source.ai?{...source,ai:{...source.ai}}:{...source};
+  const result=copy(t),f=clamp(dt/step,0,1);
+  if(!t.alive||!(f>0))return result;
+  const next=copy(t);advance(next,step);
+  // A phase exit can eject a tank from a wall. Never blend that discontinuity.
+  if((t.ghostTime>0)!==(next.ghostTime>0)){advance(result,f*step);return result;}
+  if((t.speedTime>0)!==(next.speedTime>0)||t.speedStacks!==next.speedStacks){
+   moveRenderPose(result,(next.x-t.x)*f,(next.y-t.y)*f,moveTank);
+   result.angle=t.angle+delta(t.angle,next.angle)*f;
+   result.track=(t.track||0)+((next.track||0)-(t.track||0))*f;
+   return result;
+  }
+  const future=copy(next);advance(future,step);
+  if((future.ghostTime>0)!==(next.ghostTime>0)||Math.hypot(future.x-next.x,future.y-next.y)>84){
+   future.x=2*next.x-t.x;future.y=2*next.y-t.y;future.angle=next.angle+delta(t.angle,next.angle);
+  }
+  const before=previous&&previous.alive&&previous.spawnSerial===t.spawnSerial&&
+   (previous.ghostTime>0)===(t.ghostTime>0)&&Math.hypot(previous.x-t.x,previous.y-t.y)<=84?previous:null;
+  const firstX=before?(next.x-before.x)/2:(-3*t.x+4*next.x-future.x)/2;
+  const firstY=before?(next.y-before.y)/2:(-3*t.y+4*next.y-future.y)/2;
+  // A throttle perpendicular to its goal can turn without translating. Do
+  // not invent a backwards excursion for a zero-displacement physics tick.
+  const moving=Math.hypot(next.x-t.x,next.y-t.y)>1e-10;
+  const x=moving?cubicCoordinate(t.x,next.x,firstX,(future.x-t.x)/2,f):t.x;
+  const y=moving?cubicCoordinate(t.y,next.y,firstY,(future.y-t.y)/2,f):t.y;
+  // Curves are cosmetic and remain constrained by the real wall resolver.
+  moveRenderPose(result,x-t.x,y-t.y,moveTank);
+  if(Math.hypot(result.x-x,result.y-y)>1e-7){
+   result.x=t.x;result.y=t.y;
+   moveRenderPose(result,(next.x-t.x)*f,(next.y-t.y)*f,moveTank);
+  }
+  const turn=delta(t.angle,next.angle),following=delta(next.angle,future.angle);
+  result.angle=smoothCoordinate(t.angle,t.angle+turn,before?delta(before.angle,next.angle)/2:(3*turn-following)/2,(turn+following)/2,f);
+  result.track=(t.track||0)+((next.track||0)-(t.track||0))*f;
+  return result;
+ }
+ function visualMove(t,input,dt,moveTank,step=STEP,previous){
+  return presentation(t,dt,step,(pose,span)=>move(pose,input,span,moveTank),moveTank,previous);
+ }
+ class MotionPresenter{
+  constructor(){this.reset();}
+  reset(){this.previous=null;this.before=null;this.offset={x:0,y:0,angle:0};}
+  render(state,input,remaining,tick,moveTank,step=STEP,advance=(pose,span,controls)=>move(pose,controls,span,moveTank),tickCorrections=true){
+   const old=this.previous;
+   const copy=source=>source.ai?{...source,ai:{...source.ai}}:{...source};
+   const dt=old?(tick-old.tick)*step+remaining-old.remaining:0;
+   if(!old||dt< -1e-8||dt>.1||state.spawnSerial!==old.state.spawnSerial||(state.ghostTime>0)!==(old.state.ghostTime>0)||Math.hypot(state.x-old.state.x,state.y-old.state.y)>=64)this.before=null;
+   else if(tick>old.tick){
+    this.before=copy(old.state);
+    for(let i=1;i<tick-old.tick;i++)advance(this.before,step,old.input);
+   }
+   let before=this.before;
+   if(!tickCorrections&&before&&Number.isFinite(state.vx)&&Number.isFinite(state.vy))before={...state,x:state.x-state.vx*step,y:state.y-state.vy*step,angle:before.angle};
+   const raw=presentation(state,remaining,step,(pose,span)=>advance(pose,span,input),moveTank,before);
+   const changed=old&&!controlsEqual({...old.input,fire:false},{...input,fire:false});
+   const valid=old&&state.alive&&old.state.alive&&state.spawnSerial===old.state.spawnSerial&&
+    (state.ghostTime>0)===(old.state.ghostTime>0)&&(raw.ghostTime>0)===(state.ghostTime>0)&&
+    dt>=-1e-8&&dt<=.1&&Math.hypot(state.x-old.state.x,state.y-old.state.y)<64;
+   if(!valid)this.offset={x:0,y:0,angle:0};
+   else{
+    const fade=Math.exp(-Math.max(0,dt)/.04);
+    this.offset.x*=fade;this.offset.y*=fade;this.offset.angle*=fade;
+    if(changed||tickCorrections&&tick!==old.tick){
+     // Compare curves at the same display time. This preserves elapsed motion
+     // when a new touch direction replaces a partially previewed physics tick.
+     const expected=copy(old.state);let ahead=old.remaining+Math.max(0,dt),count=0,prior=before;
+     while(ahead+1e-9>=step&&count++<6){prior=copy(expected);advance(expected,step,old.input);ahead=Math.max(0,ahead-step);}
+     const previous=presentation(expected,ahead,step,(pose,span)=>advance(pose,span,old.input),moveTank,prior);
+     this.offset.x+=previous.x-raw.x;this.offset.y+=previous.y-raw.y;
+     this.offset.angle=delta(0,this.offset.angle+delta(raw.angle,previous.angle));
+    }
+    const limit=128*(1+.65*5)*step,length=Math.hypot(this.offset.x,this.offset.y);
+    if(length>limit){this.offset.x*=limit/length;this.offset.y*=limit/length;}
+    this.offset.angle=clamp(this.offset.angle,-20.25*step,20.25*step);
+   }
+   const value={...raw};moveRenderPose(value,this.offset.x,this.offset.y,moveTank);value.angle+=this.offset.angle;
+   this.offset.x=value.x-raw.x;this.offset.y=value.y-raw.y;
+   this.previous={state:copy(state),input:{...input},remaining,tick};
+   return value;
+  }
+ }
  class Predictor{
   constructor(moveTank){this.moveTank=moveTank;this.reset(null);}
   reset(t){
    this.state=t?{...t}:null;this.frames=[];this.sent=new Map();this.stepID=0;
    this.accumulator=0;this.input=neutral();this.offset={x:0,y:0,angle:0};
+   this.presenter=new MotionPresenter();
    this.metrics={corrections:0,hardResets:0,lastError:0,maxError:0,replayed:0};
   }
   // A sequence identifies the *start* of a held input, not a single movement.
@@ -136,10 +232,10 @@
   }
   visual(dt,active=true){
    if(!this.state)return null;
-   const t={...this.state};
+   let t={...this.state};
    // Sub-tick render prediction keeps 90/120/144 Hz displays smooth without
    // changing the 60 Hz authoritative-compatible history.
-   if(active&&t.alive&&this.accumulator>0)move(t,this.input,this.accumulator,this.moveTank);
+   if(active&&t.alive)t=this.presenter.render(t,this.input,this.accumulator,this.stepID,this.moveTank,STEP,undefined,false);
    if(active&&t.alive&&(t.ghostTime>0)===(this.state.ghostTime>0)){
     moveRenderPose(t,this.offset.x,this.offset.y,this.moveTank);t.angle+=this.offset.angle;
    }
@@ -150,11 +246,12 @@
  }
  const newestTime=items=>items[items.length-1].netTime;
  class SnapshotBuffer{
-  constructor(){this.reset();}
+  constructor(options={}){this.options={delay:75,minimumDelay:70,maximumDelay:180,intervals:2,...options};this.reset();}
   reset(){
-   this.items=[];this.time=null;this.interval=1000/30;this.delay=75;
+   this.items=[];this.time=null;this.interval=1000/30;this.delay=this.options.delay;
    this.jitter=0;this.jitterPeak=0;this.lastArrival=null;this.lastStamp=null;
    this.underruns=0;this.starved=false;this.rate=1;
+   this.curves=new Map();
   }
   push(snapshot,now){
    const stamp=snapshot.tick*STEP_MS,last=this.items[this.items.length-1];
@@ -165,7 +262,7 @@
     const variation=Math.abs((now-this.lastArrival)-sample);
     this.jitter+=(Math.min(variation,200)-this.jitter)*.1;
     this.jitterPeak=Math.max(this.jitterPeak*.92,Math.min(variation,140));
-    const wanted=clamp(this.interval*2+Math.max(this.jitter*2,this.jitterPeak*.85),70,180);
+    const wanted=clamp(this.interval*this.options.intervals+Math.max(this.jitter*2,this.jitterPeak*.85),this.options.minimumDelay,this.options.maximumDelay);
     this.delay+=(wanted-this.delay)*(wanted>this.delay?.25:.018);
    }
    snapshot.netTime=stamp;this.items.push(snapshot);
@@ -212,6 +309,37 @@
    if(!latest.alive||!a||!b||(a.ghostTime>0)!==(b.ghostTime>0)||(b.ghostTime>0)!==(latest.ghostTime>0)||a.alive!==b.alive||a.spawnSerial!==b.spawnSerial||a.spawnSerial!==latest.spawnSerial||b.spawnSerial!==latest.spawnSerial||Math.hypot(a.x-b.x,a.y-b.y)>100)return{...latest};
    const f=frame.alpha,t={...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,
     angle:a.angle+delta(a.angle,b.angle)*f,track:a.track+(b.track-a.track)*f};
+   if(frame.extrapolate<=0&&frame.a!==frame.b){
+    const span=(frame.b.netTime-frame.a.netTime)/1000,key=frame.a.tick+':'+frame.b.tick+':'+id;
+    let curve=this.curves.get(key);
+    if(!curve){
+     const first=this.items.indexOf(frame.a),second=this.items.indexOf(frame.b);
+     const before=this.items[first-1],after=this.items[second+1],p=before?.tankMap.get(id),n=after?.tankMap.get(id);
+     const same=tank=>tank?.alive&&tank.spawnSerial===a.spawnSerial&&(tank.ghostTime>0)===(a.ghostTime>0);
+     const previous=same(p)?p:null,next=same(n)?n:null;
+     const previousSpan=previous?(frame.b.netTime-before.netTime)/1000:span,nextSpan=next?(after.netTime-frame.a.netTime)/1000:span;
+     const dx=b.x-a.x,dy=b.y-a.y;
+     curve={x0:previous?(b.x-previous.x)*span/previousSpan:Number.isFinite(a.vx)?a.vx*span:dx,
+      y0:previous?(b.y-previous.y)*span/previousSpan:Number.isFinite(a.vy)?a.vy*span:dy,
+      x1:next?(next.x-a.x)*span/nextSpan:Number.isFinite(b.vx)?b.vx*span:dx,
+      y1:next?(next.y-a.y)*span/nextSpan:Number.isFinite(b.vy)?b.vy*span:dy,
+      angle0:previous?delta(previous.angle,b.angle)*span/previousSpan:delta(a.angle,b.angle),
+      angle1:next?delta(a.angle,next.angle)*span/nextSpan:delta(a.angle,b.angle),safe:true};
+     // Validate the curved route once per immutable snapshot pair. Collision
+     // corners retain the original straight, wall-resolved interpolation.
+     for(let i=1;i<8&&curve.safe;i++){
+      const fraction=i/8,x=cubicCoordinate(a.x,b.x,curve.x0,curve.x1,fraction),y=cubicCoordinate(a.y,b.y,curve.y0,curve.y1,fraction),pose={...a};
+      moveRenderPose(pose,x-a.x,y-a.y,moveTank);curve.safe=Math.hypot(pose.x-x,pose.y-y)<1e-6;
+     }
+     if(this.curves.size>=256)this.curves.delete(this.curves.keys().next().value);this.curves.set(key,curve);
+    }
+    if(curve.safe){
+     const x=cubicCoordinate(a.x,b.x,curve.x0,curve.x1,f),y=cubicCoordinate(a.y,b.y,curve.y0,curve.y1,f),pose={...a};
+     moveRenderPose(pose,x-a.x,y-a.y,moveTank);
+     if(Math.hypot(pose.x-x,pose.y-y)<1e-6){t.x=x;t.y=y;}
+     t.angle=smoothCoordinate(a.angle,a.angle+delta(a.angle,b.angle),curve.angle0,curve.angle1,f);
+    }
+   }
    if(frame.extrapolate>0&&t.alive){
     // Extrapolation is short and wall constrained. It never awards a hit.
     const dt=Math.min(.075,frame.extrapolate);
@@ -301,5 +429,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,presentation,visualMove,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
 });

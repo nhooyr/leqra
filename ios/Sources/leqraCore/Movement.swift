@@ -3,6 +3,109 @@ import Foundation
 /// Movement shared by offline play and online prediction. Values and operation
 /// order follow game.go's steerTank and the browser prediction implementation.
 public enum TankMovement {
+    /// Present a fractional tick along the same path endpoints as the fixed
+    /// simulation. Fractional Euler steps trace a different curve from a full
+    /// tick, resetting the displayed velocity at every tick boundary.
+    public static func presentation(tank: ArenaTank, input: GameInput, fraction: Double,
+                                    previous: ArenaTank? = nil,
+                                    move: (inout ArenaTank, GameInput, Double) -> Void,
+                                    canInterpolate: (ArenaTank, ArenaTank) -> Bool = { _, _ in true }) -> ArenaTank {
+        guard fraction.isFinite, fraction > 0, tank.hp > 0 else { return tank }
+        let alpha = min(1, fraction), tick = 1.0 / 60
+        var next = tank
+        move(&next, input, tick)
+        // Solidification can eject a phased tank to another safe position.
+        // Keep that discrete transition on the existing collision-safe path.
+        guard tank.spawnSerial == next.spawnSerial, tank.hp == next.hp,
+              (tank.ghostTime > 0) == (next.ghostTime > 0),
+              hypot(next.x - tank.x, next.y - tank.y) <= 84,
+              canInterpolate(tank, next) else {
+            var partial = tank
+            move(&partial, input, alpha * tick)
+            return partial
+        }
+        if tank.speedStacks != next.speedStacks || (tank.speedTime > 0) != (next.speedTime > 0) {
+            // Equipment expiry chooses the next tick's lower speed before
+            // movement. A still-boosted start tangent would overshoot that
+            // endpoint and then pull the display backwards.
+            var result = tank
+            result.x += (next.x - tank.x) * alpha
+            result.y += (next.y - tank.y) * alpha
+            result.angle += atan2(sin(next.angle - tank.angle), cos(next.angle - tank.angle)) * alpha
+            result.track += (next.track - tank.track) * alpha
+            return result
+        }
+        // Tangents must follow the fixed-step position polygon. Instantaneous
+        // steering velocity points half a turn-step behind that polygon and
+        // forces a visible acceleration ripple inside each rendered tick.
+        var future = next
+        move(&future, input, tick)
+        if future.spawnSerial != next.spawnSerial || future.hp != next.hp
+            || (future.ghostTime > 0) != (next.ghostTime > 0)
+            || hypot(future.x - next.x, future.y - next.y) > 84 {
+            future = next
+            future.x += next.x - tank.x; future.y += next.y - tank.y
+            future.angle += atan2(sin(next.angle - tank.angle), cos(next.angle - tank.angle))
+        }
+        let prior = previous.flatMap { value -> ArenaTank? in
+            guard value.spawnSerial == tank.spawnSerial, value.hp == tank.hp,
+                  (value.ghostTime > 0) == (tank.ghostTime > 0),
+                  value.speedStacks == tank.speedStacks,
+                  hypot(value.x - tank.x, value.y - tank.y) <= 84,
+                  canInterpolate(value, tank) else { return nil }
+            return value
+        }
+        func curve(_ first: Double, _ last: Double, _ startSlope: Double, _ endSlope: Double,
+                   monotone: Bool = false) -> Double {
+            let delta = last - first
+            var a = startSlope, b = endSlope
+            if monotone {
+                guard abs(delta) > 1e-12 else { return first }
+                a = max(0, a / delta); b = max(0, b / delta)
+                let magnitude = hypot(a, b)
+                if magnitude > 3 { let scale = 3 / magnitude; a *= scale; b *= scale }
+                a *= delta; b *= delta
+            }
+            let t2 = alpha * alpha, t3 = t2 * alpha
+            return first + delta * (-2 * t3 + 3 * t2) + (t3 - 2 * t2 + alpha) * a + (t3 - t2) * b
+        }
+        var result = tank
+        if hypot(next.x - tank.x, next.y - tank.y) > 1e-10 {
+            let ax = prior.map { (next.x - $0.x) / 2 } ?? (4 * next.x - 3 * tank.x - future.x) / 2
+            let ay = prior.map { (next.y - $0.y) / 2 } ?? (4 * next.y - 3 * tank.y - future.y) / 2
+            // A stopped axis can still have a moving perpendicular axis.
+            // Do not let its historical tangent bulge beyond a map boundary.
+            if abs(next.x - tank.x) > 1e-10 || abs(future.x - next.x) > 1e-10 {
+                result.x = curve(tank.x, next.x, ax, (future.x - tank.x) / 2)
+            }
+            if abs(next.y - tank.y) > 1e-10 || abs(future.y - next.y) > 1e-10 {
+                result.y = curve(tank.y, next.y, ay, (future.y - tank.y) / 2)
+            }
+        }
+        let angle = atan2(sin(next.angle - tank.angle), cos(next.angle - tank.angle))
+        let futureAngle = atan2(sin(future.angle - next.angle), cos(future.angle - next.angle))
+        let angleStart = prior.map { (atan2(sin(tank.angle - $0.angle), cos(tank.angle - $0.angle)) + angle) / 2 }
+            ?? (3 * angle - futureAngle) / 2
+        let angleEnd = (angle + futureAngle) / 2
+        result.angle = tank.angle + curve(0, angle, angleStart, angleEnd, monotone: true)
+        result.track = tank.track + (next.track - tank.track) * alpha
+        if !canInterpolate(tank, result) {
+            result.x = tank.x + (next.x - tank.x) * alpha
+            result.y = tank.y + (next.y - tank.y) * alpha
+        }
+        return result
+    }
+
+    /// Phasing ignores internal walls, but fixed arenas still clamp every tank
+    /// to the same outer bounds. Presentation and its correction offsets must
+    /// retain that rule even when a tank is a Ghost.
+    public static func presentationFitsBounds(tank: ArenaTank, world: ArenaWorld?) -> Bool {
+        guard tank.x.isFinite, tank.y.isFinite else { return false }
+        guard let world else { return true }
+        return tank.x >= 21 && tank.x <= world.width - 21
+            && tank.y >= 21 && tank.y <= world.height - 21
+    }
+
     public static func steer(angle: Double, input: GameInput, turnScale: Double = 1,
                              dt: Double) -> (angle: Double, throttle: Double) {
         var angle = angle

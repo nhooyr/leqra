@@ -288,8 +288,8 @@ test('online shield history applies to the matching life and generation before d
 
 test('the render pass paints edge labels above tanks after restoring the maze clip',()=>{
  const {s,ctx}=boot(),noop=()=>{};
- Object.assign(s,{dpr:1,cssW:2400,cssH:1500,offsetX:0,offsetY:0,shake:0,mapCanvas:null,tanks:[tank({x:1200,y:21,powerTime:0,shield:0,speedTime:0,ghostTime:0})],pickups:[],bullets:[],rings:[],particles:[],drawObjectives:noop,drawAimingGuides:noop,drawFlags:noop,drawMissileWarnings:noop,drawLasers:noop,syncCanvasSize:noop});
- vm.runInContext(declaration('drawBullets'),s);vm.runInContext(declaration('render'),s);s.render();
+ Object.assign(s,{accumulator:0,localTankPose:t=>t,dpr:1,cssW:2400,cssH:1500,offsetX:0,offsetY:0,shake:0,mapCanvas:null,tanks:[tank({x:1200,y:21,powerTime:0,shield:0,speedTime:0,ghostTime:0})],pickups:[],bullets:[],rings:[],particles:[],drawObjectives:noop,drawAimingGuides:noop,drawFlags:noop,drawMissileWarnings:noop,drawLasers:noop,syncCanvasSize:noop});
+ vm.runInContext(declaration('drawBullets'),s);vm.runInContext(declaration('renderArena'),s);vm.runInContext(declaration('render'),s);s.render();
  const labels=ctx.events.filter(e=>e.type==='text');assert.equal(labels.length,1);assert.equal(labels[0].clipped,false,'the maze boundary must not cut off the name');
  const rect=labelRect(ctx);assert.equal(rect.y+rect.h,s.tanks[0].y-32);assert.ok(rect.y<0,'fixed above-tank position can extend into the canvas margin');
 });
