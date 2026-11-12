@@ -215,7 +215,7 @@ struct NetworkLatencySampler {
 /// Public Infinity connections deliberately require an explicit rejoin after loss;
 /// an unauthenticated public pilot has no score-preserving resume credential.
 @MainActor public final class NetworkClient {
-    public static let supportedVersion = "4.49.36"
+    public static let supportedVersion = GeneratedVersion.value
     public var onEvent: ((NetworkEvent) -> Void)?
     public private(set) var connected = false
     public private(set) var welcome: NetworkWelcome?

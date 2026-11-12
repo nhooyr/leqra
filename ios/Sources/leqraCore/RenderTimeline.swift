@@ -21,6 +21,13 @@ public final class RenderTimeline {
     private var lastArrival = 0.0
     private struct PathCheck { var first: UInt64; var second: UInt64; var clear: Bool }
     private var pathChecks: [Int: PathCheck] = [:]
+    private var indexedPair: (UInt64, UInt64)?
+    private var oldTanks: [Int: ArenaTank] = [:]
+    private var newTanks: [Int: ArenaTank] = [:]
+    private var oldBullets: [Int: ArenaBullet] = [:]
+    private var newBullets: [Int: ArenaBullet] = [:]
+    private var indexedLatest: UInt64?
+    private var liveBullets: [Int: ArenaBullet] = [:]
     public private(set) var stale = false
     var bufferedAcknowledgementCount: Int { sent.count }
 
@@ -43,6 +50,10 @@ public final class RenderTimeline {
             if previous.generation != snapshot.generation {
                 samples.removeAll(); resetPrediction(nil); clock = nil
                 pathChecks.removeAll()
+                indexedPair = nil; indexedLatest = nil
+                oldTanks.removeAll(keepingCapacity: true); newTanks.removeAll(keepingCapacity: true)
+                oldBullets.removeAll(keepingCapacity: true); newBullets.removeAll(keepingCapacity: true)
+                liveBullets.removeAll(keepingCapacity: true)
             } else if snapshot.tick <= previous.tick { return }
         }
         latest = snapshot
@@ -140,8 +151,20 @@ public final class RenderTimeline {
         let span = b.time - a.time
         let alpha = span > 0 ? max(0, min(1, (playhead - a.time) / span)) : 1
         var result = newest.state
-        let oldTanks = Dictionary(a.state.tanks.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-        let newTanks = Dictionary(b.state.tanks.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        // Several display frames share each 30 Hz snapshot pair. Index those
+        // immutable samples once instead of rebuilding large projectile maps
+        // at 120 Hz during Starman fire.
+        if indexedPair?.0 != a.state.tick || indexedPair?.1 != b.state.tick {
+            oldTanks = Dictionary(a.state.tanks.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            newTanks = Dictionary(b.state.tanks.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            oldBullets = Dictionary(a.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            newBullets = Dictionary(b.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            indexedPair = (a.state.tick, b.state.tick)
+        }
+        if indexedLatest != newest.state.tick {
+            liveBullets = Dictionary(newest.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            indexedLatest = newest.state.tick
+        }
         result.tanks = result.tanks.map { current in
             guard let first = oldTanks[current.id], let second = newTanks[current.id],
                   first.hp > 0, second.hp > 0, current.hp > 0,
@@ -172,9 +195,6 @@ public final class RenderTimeline {
             tank.angle = first.angle + delta * alpha
             return tank
         }
-        let oldBullets = Dictionary(a.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-        let newBullets = Dictionary(b.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-        let liveBullets = Dictionary(newest.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
         // New bullets enter at the same delayed timestamp as existing ones.
         // Showing them at newest-time and later moving them onto this timeline
         // makes every fresh shot jump backwards after the buffer fills.

@@ -31,6 +31,7 @@ public final class PracticeArena {
     private var fireBlocked: Set<Int> = []
     private var botCourses: [Int: (x: Double, y: Double)] = [:]
     private var botDecisions: [Int: Double] = [:]
+    private var nextBoostEffects: [Int: Double] = [:]
     private struct Projectile {
         var wire: ArenaBullet
         var age = 0.0
@@ -168,8 +169,11 @@ public final class PracticeArena {
                 }
             }
         }
-        var survivors: [Projectile] = []
-        for var projectile in projectiles {
+        var survivorCount = 0
+        // This array is private to the simulation. Compact it in order rather
+        // than allocating and growing a second projectile array every tick.
+        for index in projectiles.indices {
+            var projectile = projectiles[index]
             let span = min(dt, projectile.wire.life, projectile.rangeLeft.map { $0 / max(1, hypot(projectile.wire.vx, projectile.wire.vy)) } ?? .infinity)
             projectile.wire.life -= span
             projectile.age += span
@@ -179,13 +183,16 @@ public final class PracticeArena {
                 projectile.wire.vx *= drag; projectile.wire.vy *= drag
             }
             guard advance(&projectile, dt: span) else { continue }
-            if projectile.wire.life > 1e-9 && (projectile.rangeLeft ?? 1) > 1e-7 { survivors.append(projectile) }
+            if projectile.wire.life > 1e-9 && (projectile.rangeLeft ?? 1) > 1e-7 {
+                projectiles[survivorCount] = projectile
+                survivorCount += 1
+            }
             else if projectile.wire.kind == "grenade" { detonate(projectile.wire) }
             else if projectile.wire.kind == "homing" && maze.world != nil {
                 effect("impact", x: projectile.wire.x, y: projectile.wire.y, owner: projectile.wire.owner)
             }
         }
-        projectiles = survivors
+        projectiles.removeLast(projectiles.count - survivorCount)
         snapshot.bullets = projectiles.map(\.wire)
         snapshot.pickups.removeAll { $0.life <= 0 }
         updateStandings()
@@ -278,6 +285,7 @@ public final class PracticeArena {
                                          survivalEnemy: old.survivalEnemy, survivalBoss: old.survivalBoss, difficulty: old.difficulty)
         fireBlocked.remove(old.id)
         botCourses.removeValue(forKey: old.id)
+        nextBoostEffects.removeValue(forKey: old.id)
     }
 
     private func advanceEquipment(_ index: Int, dt: Double) {
@@ -494,7 +502,8 @@ public final class PracticeArena {
             tank.x >= $0.x - spec.radius && tank.x <= $0.x + $0.w + spec.radius && tank.y >= $0.y - spec.radius && tank.y <= $0.y + $0.h + spec.radius
         }) { return }
         let offsets: [Double] = tank.power == "scatter" ? [-0.21, 0, 0.21] : [0]
-        let ordinary = projectiles.filter { $0.wire.owner == tank.id && !$0.boosted }.count
+        var ordinary = 0
+        for index in projectiles.indices where projectiles[index].wire.owner == tank.id && !projectiles[index].boosted { ordinary += 1 }
         guard boosted || tank.power == "laser" || ordinary + offsets.count <= spec.capacity else { return }
         let cooldown = boosted ? 0 : spec.cooldown
         snapshot.tanks[index].cooldown = cooldown; snapshot.tanks[index].cooldownTotal = cooldown; snapshot.tanks[index].recoil = 1
@@ -509,7 +518,10 @@ public final class PracticeArena {
                 if let world = maze.world, tank.power == "homing" { projectile.rangeLeft = world.width + world.height }
                 if advance(&projectile, dt: (tank.power == "cannon" ? 32 : 28) / spec.speed) { projectiles.append(projectile) }
             }
-            effect("shot:" + tank.power, x: tank.x, y: tank.y, owner: tank.id)
+            if !boosted || tank.power == "grenade" || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) {
+                nextBoostEffects[tank.id] = time + 4 / 60
+                effect("shot:" + tank.power, x: tank.x, y: tank.y, owner: tank.id)
+            }
             var remaining = max(0, 115 - (boosted ? 0 : ordinary + offsets.count))
             for i in projectiles.indices.reversed() where projectiles[i].wire.owner == tank.id && (boosted || projectiles[i].boosted) {
                 if remaining > 0 { remaining -= 1 } else { projectiles[i].wire.life = 0 }
@@ -527,10 +539,12 @@ public final class PracticeArena {
     private func targetHit(owner: Int, x: Double, y: Double, dx: Double, dy: Double,
                            radius: Double, limit: Double, contact: Bool = false) -> (index: Int, fraction: Double)? {
         var best = limit, target: Int?
+        let ownerTeam = team(of: owner)
         for i in snapshot.tanks.indices {
-            let tank = snapshot.tanks[i]
-            guard tank.hp > 0, tank.id != owner, contact || canDamage(owner: owner, target: tank) && tank.invulnerable <= 0 else { continue }
-            if let fraction = Self.circleHit(x: x, y: y, dx: dx, dy: dy, tx: tank.x, ty: tank.y, radius: 17 + radius), fraction < best {
+            guard snapshot.tanks[i].hp > 0, snapshot.tanks[i].id != owner,
+                  contact || (friendlyFire || ownerTeam == 0 || ownerTeam != snapshot.tanks[i].team) && snapshot.tanks[i].invulnerable <= 0 else { continue }
+            if let fraction = Self.circleHit(x: x, y: y, dx: dx, dy: dy,
+                                             tx: snapshot.tanks[i].x, ty: snapshot.tanks[i].y, radius: 17 + radius), fraction < best {
                 best = fraction; target = i
             }
         }
@@ -593,22 +607,25 @@ public final class PracticeArena {
         projectile.seekDelay = max(0, projectile.seekDelay - dt)
         guard projectile.age >= 0.1, projectile.seekDelay == 0 else { return }
         let bullet = projectile.wire, speed = hypot(bullet.vx, bullet.vy)
-        var closest = 10.0 * 84, target: ArenaTank?
-        for tank in snapshot.tanks {
-            guard opposes(owner: bullet.owner, target: tank), tank.hp > 0, tank.invulnerable == 0,
-                  bullet.target == 0 || bullet.target == tank.id else { continue }
-            let dx = tank.x - bullet.x, dy = tank.y - bullet.y, distance = hypot(dx, dy)
+        var closest = 10.0 * 84, target: Int?
+        let ownerTeam = team(of: bullet.owner)
+        for index in snapshot.tanks.indices {
+            guard snapshot.tanks[index].id != bullet.owner,
+                  ownerTeam == 0 || ownerTeam != snapshot.tanks[index].team,
+                  snapshot.tanks[index].hp > 0, snapshot.tanks[index].invulnerable == 0,
+                  bullet.target == 0 || bullet.target == snapshot.tanks[index].id else { continue }
+            let dx = snapshot.tanks[index].x - bullet.x, dy = snapshot.tanks[index].y - bullet.y, distance = hypot(dx, dy)
             guard distance < closest, dx * bullet.vx + dy * bullet.vy >= -0.75 * distance * speed,
                   maze.rayHit(x: bullet.x, y: bullet.y, dx: dx, dy: dy, radius: projectile.radius) == nil else { continue }
-            target = tank; closest = distance
+            target = index; closest = distance
         }
         guard let target else {
             if projectile.wire.target != 0 { projectile.seekDelay = 0.06 }
             projectile.wire.target = 0
             return
         }
-        projectile.wire.target = target.id
-        let angle = atan2(bullet.vy, bullet.vx), desired = atan2(target.y - bullet.y, target.x - bullet.x)
+        projectile.wire.target = snapshot.tanks[target].id
+        let angle = atan2(bullet.vy, bullet.vx), desired = atan2(snapshot.tanks[target].y - bullet.y, snapshot.tanks[target].x - bullet.x)
         let turn = min(max(atan2(sin(desired - angle), cos(desired - angle)), -4.8 * dt), 4.8 * dt)
         projectile.wire.vx = cos(angle + turn) * speed; projectile.wire.vy = sin(angle + turn) * speed
     }
@@ -617,6 +634,7 @@ public final class PracticeArena {
         var x = tank.x, y = tank.y, ux = cos(tank.angle), uy = sin(tank.angle)
         var remaining = maze.world.map { 2 * ($0.width + $0.height) } ?? 18 * 84
         var points: [BeamPoint] = []
+        var hitTarget: Int?
         for index in 0..<128 {
             let dx = ux * remaining, dy = uy * remaining
             let wall = maze.rayHit(x: x, y: y, dx: dx, dy: dy, radius: 3)
@@ -625,13 +643,20 @@ public final class PracticeArena {
             if index == 0 { points.append(BeamPoint(x: x + ux * min(28, length), y: y + uy * min(28, length))) }
             x += ux * length; y += uy * length; remaining -= length
             points.append(BeamPoint(x: x, y: y))
-            if let target { hurt(target.index, owner: tank.id); break }
+            if let target { hitTarget = target.index; break }
             guard let wall, remaining > 1e-7 else { break }
             if wall.nx != 0 { ux = -ux }; if wall.ny != 0 { uy = -uy }
             let nudge = min(0.001, remaining)
             x += ux * nudge; y += uy * nudge; remaining -= nudge
         }
-        effect("laser", x: tank.x, y: tank.y, owner: tank.id, points: points)
+        // Damage remains at the physics rate. Sustained misses share the web
+        // and server's cosmetic cadence; finite hits still show their beam
+        // immediately, before the resulting shield or death effect.
+        if tank.starmanTime <= 0 || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) || maze.world != nil && hitTarget != nil {
+            nextBoostEffects[tank.id] = time + 4 / 60
+            effect("laser", x: tank.x, y: tank.y, owner: tank.id, points: points)
+        }
+        if let hitTarget { hurt(hitTarget, owner: tank.id) }
     }
 
     private func detonate(_ bullet: ArenaBullet) {
@@ -667,8 +692,13 @@ public final class PracticeArena {
 
     private func opposes(owner: Int, target: ArenaTank) -> Bool {
         guard owner != target.id else { return false }
-        let team = snapshot.tanks.first(where: { $0.id == owner })?.team ?? 0
+        let team = team(of: owner)
         return team == 0 || team != target.team
+    }
+
+    private func team(of id: Int) -> Int {
+        for index in snapshot.tanks.indices where snapshot.tanks[index].id == id { return snapshot.tanks[index].team }
+        return 0
     }
 
     private func canDamage(owner: Int, target: ArenaTank) -> Bool { owner != target.id && (friendlyFire || opposes(owner: owner, target: target)) }
@@ -687,18 +717,40 @@ public final class PracticeArena {
     }
 
     private func updateStandings() {
-        snapshot.boostedBulletIds = projectiles.filter(\.boosted).map { $0.wire.id }
+        struct OwnedProjectiles { var ammo = 0; var grenades = 0; var grenadeLife = 0.0; var locked = false }
+        var owned = [OwnedProjectiles](repeating: OwnedProjectiles(), count: snapshot.tanks.count)
+        var tankIndices: [Int: Int] = [:]
+        for index in snapshot.tanks.indices { tankIndices[snapshot.tanks[index].id] = index }
+        var boosted: [Int] = []
+        boosted.reserveCapacity(projectiles.count)
+        // Ammo, fuses, and locks all describe this same projectile population.
+        // Preserve projectile order while calculating them in one pass.
+        for index in projectiles.indices {
+            let owner = projectiles[index].wire.owner
+            if projectiles[index].boosted { boosted.append(projectiles[index].wire.id) }
+            if let ownerIndex = tankIndices[owner] {
+                if !projectiles[index].boosted { owned[ownerIndex].ammo += 1 }
+                if projectiles[index].wire.kind == "grenade" {
+                    owned[ownerIndex].grenades += 1
+                    owned[ownerIndex].grenadeLife = max(owned[ownerIndex].grenadeLife, projectiles[index].wire.life)
+                }
+            }
+            if let target = tankIndices[projectiles[index].wire.target], owner != snapshot.tanks[target].id {
+                let ownerTeam = tankIndices[owner].map { snapshot.tanks[$0].team } ?? 0
+                if friendlyFire || ownerTeam == 0 || ownerTeam != snapshot.tanks[target].team { owned[target].locked = true }
+            }
+        }
+        snapshot.boostedBulletIds = boosted
         let sorted = snapshot.tanks.sorted { $0.score == $1.score ? $0.id < $1.id : $0.score > $1.score }
         snapshot.leaderboard = sorted.prefix(10).map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team) }
         snapshot.tankCount = snapshot.tanks.count
         snapshot.teamScores = (1...4).map { team in snapshot.tanks.filter { $0.team == team }.map(\.score).reduce(0, +) }
         for index in snapshot.tanks.indices {
             snapshot.tanks[index].rank = (sorted.firstIndex(where: { $0.id == snapshot.tanks[index].id }) ?? 0) + 1
-            let owned = projectiles.filter { $0.wire.owner == snapshot.tanks[index].id }
-            snapshot.tanks[index].ammoUsed = owned.filter { !$0.boosted }.count
-            snapshot.tanks[index].grenades = owned.filter { $0.wire.kind == "grenade" }.count
-            snapshot.tanks[index].grenadeLife = owned.filter { $0.wire.kind == "grenade" }.map { $0.wire.life }.max() ?? 0
-            snapshot.tanks[index].locked = projectiles.contains { $0.wire.owner != snapshot.tanks[index].id && $0.wire.target == snapshot.tanks[index].id && canDamage(owner: $0.wire.owner, target: snapshot.tanks[index]) }
+            snapshot.tanks[index].ammoUsed = owned[index].ammo
+            snapshot.tanks[index].grenades = owned[index].grenades
+            snapshot.tanks[index].grenadeLife = owned[index].grenadeLife
+            snapshot.tanks[index].locked = owned[index].locked
         }
         if maze.world == nil, let rules = activeRules, rules.infinityTarget > 0, snapshot.result == nil {
             if rules.teamMode == "teams", let winner = snapshot.teamScores.firstIndex(where: { $0 >= rules.infinityTarget }) {

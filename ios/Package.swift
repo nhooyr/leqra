@@ -6,7 +6,8 @@ let package = Package(
     platforms: [.iOS(.v16), .macOS(.v13)],
     products: [.library(name: "leqraCore", targets: ["leqraCore"])],
     targets: [
-        .target(name: "leqraCore"),
-        .testTarget(name: "leqraCoreTests", dependencies: ["leqraCore"])
+        .target(name: "leqraCore", plugins: [.plugin(name: "VersionPlugin")]),
+        .testTarget(name: "leqraCoreTests", dependencies: ["leqraCore"]),
+        .plugin(name: "VersionPlugin", capability: .buildTool())
     ]
 )

@@ -5,7 +5,11 @@ final class AudioSynthesisTests: XCTestCase {
     func testWeaponRecipesMatchCurrentBrowserSource() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: root.appendingPathComponent("src/web/assets/v4.49.36/game.js"))
+        let index = try String(contentsOf: root.appendingPathComponent("src/web/index.html"))
+        let versionPattern = try NSRegularExpression(pattern: "<meta name=\"leqra-version\" content=\"([^\"]+)\">")
+        let versionMatch = try XCTUnwrap(versionPattern.firstMatch(in: index, range: NSRange(index.startIndex..., in: index)))
+        let version = String(index[try XCTUnwrap(Range(versionMatch.range(at: 1), in: index))])
+        let source = try String(contentsOf: root.appendingPathComponent("src/web/assets/\(version)/game.js"))
         let expression = try NSRegularExpression(pattern: "(regular|rapid|scatter|laser|homing|grenade|cannon):(\\[\\[[^\\n]*?\\]\\])")
         let matches = expression.matches(in: source, range: NSRange(source.startIndex..., in: source))
         XCTAssertEqual(matches.count, 7)
