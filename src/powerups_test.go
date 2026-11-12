@@ -389,6 +389,7 @@ func TestPowerupSnapshotMetadata(t *testing.T) {
 	h, cs, r := makeRoom(t, 2)
 	r.Game.startMatch(r.Players)
 	p := r.Game.Tanks[0]
+	p.SpawnProtected = false
 	r.Game.grantPower(p, "grenade")
 	r.Game.grantPower(p, "speed")
 	r.Game.fire(p)

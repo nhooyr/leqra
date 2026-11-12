@@ -48,7 +48,7 @@ def expect_score_rank(page, split=False):
     for index in range(2 if split else 1):
         counter = counters.nth(index)
         expect(counter.locator(".infinite-score-name")).to_contain_text(re.compile(rf"\(P{index + 1}\)$"))
-        expect(counter.locator(".infinite-score-value")).to_have_text(re.compile(r"^: \(-?\d+, #[1-9]\d*\)$"))
+        expect(counter.locator(".infinite-score-value")).to_have_text(re.compile(r"^score: -?\d+, rank: #[1-9]\d*$"))
 
 
 def standings(page):
@@ -210,12 +210,12 @@ def check_public(browser, url, errors):
         with host.expect_websocket(predicate=lambda ws: ws.url.endswith("/ws/infinite")) as connection:
             host.locator("#startRoomBtn").click()
         expect_pilots(host, 1)
-        expect(host.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
+        expect(host.locator("#infiniteLeaderboardTitle")).to_have_text("LEADERBOARD")
         guest.locator("#startRoomBtn").click()
         for page in (host, guest):
             expect_pilots(page, 2)
             expect_score_rank(page)
-            expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
+            expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("LEADERBOARD")
             leaders = standings(page)
             expect(leaders).to_contain_text("PUBLIC HOST")
             expect(leaders).to_contain_text("PUBLIC GUEST")
@@ -226,7 +226,7 @@ def check_public(browser, url, errors):
         expect(host.locator("#infiniteArena")).to_be_hidden()
         expect(host.locator("#startRoomBtn")).to_be_focused()
         expect_pilots(guest, 1)
-        expect(guest.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
+        expect(guest.locator("#infiniteLeaderboardTitle")).to_have_text("LEADERBOARD")
         host.locator("#infinityToggleLabel").click()
         expect(host.locator("#infinityToggle")).not_to_be_checked()
         host.locator("#startRoomBtn").click()
@@ -591,7 +591,7 @@ def check_rank_outside_leaders(browser, url, errors, screenshot_dir=None):
         expect_pilots(page, 14)
         expect_score_rank(page, split=True)
         leaders = standings(page)
-        expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
+        expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("LEADERBOARD")
         expect(leaders.locator("li")).to_have_count(12)
         page.evaluate("window.rankBoard = document.querySelector('#infiniteLeaderboard')")
         matches_authority = """() => {
@@ -645,7 +645,7 @@ def check_mobile_ranks(browser, url, errors):
             page.locator("#startRoomBtn").tap()
             expect_pilots(page, 1)
             expect_score_rank(page)
-            expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
+            expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("LEADERBOARD")
             for split in (False, True):
                 if split:
                     page.locator("#pauseBtn").tap()
@@ -658,7 +658,7 @@ def check_mobile_ranks(browser, url, errors):
                     page.locator("#startRoomBtn").tap()
                     expect_pilots(page, 2)
                     expect_score_rank(page, split=True)
-                    expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Scoreboard")
+                    expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("LEADERBOARD")
                     colors = page.evaluate("""() => {
                         const canonical=color=>{const node=document.createElement('span');node.style.color=color;return node.style.color;};
                         return {actual:[...document.querySelectorAll('#infiniteKills .infinite-personal-score')].map(node=>getComputedStyle(node).color),expected:leqraInfinityArt.colors.slice(0,2).map(canonical)};
@@ -713,7 +713,7 @@ def check_scoreboard_titles(browser, url, errors, screenshot_dir=None):
                     }""")
                     assert bounds['top'] >= bounds['headerBottom'], bounds
                     if populated:
-                        expect(preview.locator('summary')).to_have_text('Top 10 Tanks')
+                        expect(preview.locator('summary')).to_have_text('LEADERBOARD')
                         preview.locator('summary').click()
                         expect(preview).to_be_hidden()
                         expect(preview_button).to_have_attribute('aria-expanded', 'false')
@@ -739,7 +739,7 @@ def check_scoreboard_titles(browser, url, errors, screenshot_dir=None):
                 button.click()
                 panel = page.locator('#infiniteLeaderboardPanel')
                 expect(panel.locator('summary')).to_be_visible()
-                expect(panel.locator('summary')).to_have_text('Top 10 Tanks')
+                expect(panel.locator('summary')).to_have_text('LEADERBOARD')
                 bounds = panel.evaluate("""panel => {
                     const box=node=>node.getBoundingClientRect();
                     return {top:box(panel).top,headerBottom:box(document.querySelector('#infiniteStatusbar')).bottom,
@@ -759,7 +759,7 @@ def check_scoreboard_titles(browser, url, errors, screenshot_dir=None):
                 expect(button).to_be_focused()
                 button.click()
                 page.locator('#pauseBtn').click()
-                expect(page.locator('#infinitePauseSidebar #infiniteLeaderboardPanel summary')).to_have_text('Top 10 Tanks')
+                expect(page.locator('#infinitePauseSidebar #infiniteLeaderboardPanel summary')).to_have_text('LEADERBOARD')
                 expect(panel.locator('summary')).to_be_visible()
                 page.locator('#infiniteResumeBtn').click()
                 expect(panel.locator('summary')).to_be_visible()

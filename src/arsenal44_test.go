@@ -260,6 +260,7 @@ func Test44MachineGunEightTanksStressAndCompactWire(t *testing.T) {
 	g.startMatch(testPlayers(maxTanks))
 	for _, tank := range g.Tanks {
 		tank.Invulnerable = 100
+		tank.SpawnProtected = false
 		g.grantPower(tank, "rapid")
 	}
 	high := 0

@@ -167,6 +167,7 @@ func TestInfinitePooledBotKeepsInFlightKillCreditAndClearsWithLastHuman(t *testi
 	bot := roamingBots(a)[0]
 	target.X, target.Y, target.Protected = 142, 42, false
 	bot.X, bot.Y, bot.Angle = 42, 42, 0
+	bot.kit.Invulnerable = 0
 	applyPower(&bot.kit, "cannon", infinitePowerDuration, infiniteStarDuration)
 	a.fire(bot)
 	if len(a.bullets) != 1 {

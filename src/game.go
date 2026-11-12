@@ -149,6 +149,8 @@ type Tank struct {
 	Track         float64 `json:"track"`
 	Ack           uint64  `json:"ack"`
 	AckSteps      uint32  `json:"ackSteps"`
+
+	SpawnProtected bool `json:"spawnProtected"`
 }
 
 // Kind is empty for an ordinary round; special projectiles share the same
@@ -417,7 +419,7 @@ func (g *Game) startRound(players [maxTanks]*Player) {
 			continue
 		}
 		s := spots[id]
-		g.Tanks[id] = &Tank{ID: id, Name: p.Name, Team: p.Team, Bot: p.Kind == "bot", Difficulty: p.Difficulty, Color: selectedColor(id, p.Team, p.ColorIndex, g.settings()), X: (float64(s[0]) + .5) * cellSize, Y: (float64(s[1]) + .5) * cellSize, Angle: -math.Pi / 2, R: tankRadius, Alive: participantAvailable(players, id), Invulnerable: .75}
+		g.Tanks[id] = &Tank{ID: id, Name: p.Name, Team: p.Team, Bot: p.Kind == "bot", Difficulty: p.Difficulty, Color: selectedColor(id, p.Team, p.ColorIndex, g.settings()), X: (float64(s[0]) + .5) * cellSize, Y: (float64(s[1]) + .5) * cellSize, Angle: -math.Pi / 2, R: tankRadius, Alive: participantAvailable(players, id), Invulnerable: .75, SpawnProtected: true}
 		g.bindTankStats(g.Tanks[id], p)
 		p.Input = Input{} // Held inputs never leak across rounds.
 		p.FirePending = false
@@ -740,6 +742,9 @@ func (g *Game) weaponControl(t *Tank, held, pressed bool) {
 	if !held {
 		t.fireBlocked = false
 	}
+	if t.SpawnProtected && t.Invulnerable > 0 {
+		return
+	}
 	if pressed {
 		if g.detonateOwned(t) {
 			t.fireBlocked = held
@@ -756,7 +761,7 @@ func (g *Game) weaponControl(t *Tank, held, pressed bool) {
 	}
 }
 func (g *Game) detonateOwned(t *Tank) bool {
-	if !t.Alive {
+	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 {
 		return false
 	}
 	// One press detonates all of the shooter's live grenades.
@@ -790,7 +795,7 @@ func (g *Game) fire(t *Tank) bool {
 		return false
 	}
 	starman := t.StarmanTime > 0
-	if !t.Alive || !starman && t.Cooldown > 0 {
+	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || !starman && t.Cooldown > 0 {
 		return false
 	}
 	if t.Power == "rapid" && (!starman && t.MachineRounds <= 0 || t.rapidFired && t.rapidTick == g.Tick) {
@@ -1009,7 +1014,7 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 }
 func (g *Game) fireLaser(t *Tank) bool {
 	starman := t.StarmanTime > 0
-	if !t.Alive || t.Power != "laser" || !starman && (t.Cooldown > 0 || t.Charges <= 0) || g.muzzleBlocked(t, laserRadius) {
+	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || t.Power != "laser" || !starman && (t.Cooldown > 0 || t.Charges <= 0) || g.muzzleBlocked(t, laserRadius) {
 		return false
 	}
 	points, target := g.traceLaser(t)
@@ -1055,6 +1060,7 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 			t.Shield = 0
 		}
 		t.Invulnerable = .35
+		t.SpawnProtected = false
 		g.emit("shield", t, b.Owner, "")
 		return
 	}
@@ -1062,7 +1068,7 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 }
 
 func (g *Game) starmanRam(attacker, target *Tank) bool {
-	if attacker.StarmanTime <= 0 || target.StarmanTime > 0 || target.Invulnerable > 0 || !g.canDamage(attacker.ID, target) {
+	if attacker.StarmanTime <= 0 || target.StarmanTime > 0 || target.Invulnerable > 0 && !target.SpawnProtected || !g.canDamage(attacker.ID, target) {
 		return false
 	}
 	g.eliminateTank(target, attacker.ID)
@@ -1332,6 +1338,7 @@ func applyPower(t *Tank, kind string, duration, starDuration float64) bool {
 	case "starman":
 		// Reuse the existing damage and wall-phasing timers without shortening either.
 		t.StarmanTime = starDuration
+		t.SpawnProtected = false
 		t.Invulnerable = math.Max(t.Invulnerable, starDuration)
 		t.GhostTime = math.Max(t.GhostTime, starDuration)
 		t.Cooldown, t.CooldownTotal = 0, 0
@@ -1495,6 +1502,9 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 			actors[count] = id
 			count++
 			t.Invulnerable = math.Max(0, t.Invulnerable-dt)
+			if t.Invulnerable == 0 {
+				t.SpawnProtected = false
+			}
 			t.StarmanTime = math.Max(0, t.StarmanTime-dt)
 			t.Shield = math.Max(0, t.Shield-dt)
 			if t.Shield <= 0 {

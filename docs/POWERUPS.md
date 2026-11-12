@@ -19,7 +19,7 @@ In fixed mazes, weapons and most buffs last **10 seconds** on Compact, Standard,
 
 ## Combat rules
 
-Your own shots and grenade blasts leave your tank and shields unharmed. Friendly fire is a room rule. The next Fire press detonates an armed grenade even if you changed weapons.
+Your own shots and grenade blasts leave your tank and shields unharmed. Friendly fire is a room rule. The next Fire press detonates an armed grenade even if you changed weapons. Spawn protection blocks firing and remote grenade detonation until it expires. Starman contact kills through spawn protection and Shield charges; another active Starman and Shield hit invulnerability still protect against contact.
 
 Ghost and Starman let you cross internal walls. If phasing ends inside a wall, the game moves you to a safe position. Ordinary weapons need a clear muzzle. Cannon can shoot through internal walls.
 

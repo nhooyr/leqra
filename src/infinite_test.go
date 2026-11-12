@@ -89,6 +89,7 @@ func TestInfiniteCannonLifetimeAndAmmo(t *testing.T) {
 			now := time.Unix(0, 0)
 			c := fakeClient()
 			shooter := a.join(c, "Shooter", now)
+			shooter.kit.Invulnerable = 0 // This weapon/input fixture starts after spawn protection.
 			shooter.X, shooter.Y, shooter.Angle = 46, 42, 0
 			var target *infinitePilot
 			if tc.target {
@@ -142,6 +143,7 @@ func TestInfiniteCannonHitsFirstTankThroughWall(t *testing.T) {
 	a := newSeededInfiniteArena(16)
 	now := time.Unix(0, 0)
 	shooter := a.join(fakeClient(), "Shooter", now)
+	shooter.kit.Invulnerable = 0 // This weapon/input fixture starts after spawn protection.
 	first := a.join(fakeClient(), "First", now)
 	second := a.join(fakeClient(), "Second", now)
 	var wall Wall
@@ -214,6 +216,7 @@ func TestInfiniteFireEdgeAndProximitySnapshot(t *testing.T) {
 	now := time.Now()
 	c := fakeClient()
 	p := a.join(c, "Pilot", now)
+	p.kit.Invulnerable = 0 // This weapon/input fixture starts after spawn protection.
 	other := a.join(fakeClient(), "Distant", now)
 	other.X = p.X - infiniteSight*2
 	a.nextBot = 1000
@@ -249,6 +252,7 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 	now := time.Now()
 	c := fakeClient()
 	p := a.join(c, "Pilot", now)
+	p.kit.Invulnerable = 0 // This weapon/input fixture starts after spawn protection.
 	other := a.join(fakeClient(), "Other", now)
 	other.X, other.Y = p.X, p.Y+100
 	drain(c)
@@ -329,6 +333,7 @@ func TestInfiniteProjectileReportsRelocatedBotCallsign(t *testing.T) {
 	target := a.join(c, "Pilot", time.Now())
 	drain(c)
 	shooter := a.addPilot("RUST", true, 0, 0, 0, 0)
+	shooter.kit.Invulnerable = 0 // This weapon/input fixture starts after spawn protection.
 	target.X, target.Y, target.Protected = 142, 42, false
 	shooter.X, shooter.Y, shooter.Angle = 42, 42, 0
 	applyPower(&shooter.kit, "cannon", infinitePowerDuration, infiniteStarDuration)
@@ -359,6 +364,7 @@ func TestInfiniteFireTimeoutPreservesPressIdentity(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Now()
 	p := a.join(fakeClient(), "Pilot", now)
+	p.kit.Invulnerable = 0 // This weapon/input fixture starts after spawn protection.
 	a.nextBot = 1000
 	applyPower(&p.kit, "grenade", infinitePowerDuration, infiniteStarDuration)
 	a.setInput(p, Input{Fire: true}, false, now)
@@ -417,6 +423,9 @@ func TestInfiniteRespawnDoesNotTurnHeldFireIntoGrenadeDetonation(t *testing.T) {
 	}
 	if !hasGrenade() {
 		t.Fatal("the next held-fire heartbeat detonated the grenade without a fresh press")
+	}
+	for range 60 {
+		a.step(now)
 	}
 	a.setInput(p, Input{Seq: 63}, false, now)
 	a.setInput(p, Input{Seq: 64, Fire: true}, false, now)
@@ -502,11 +511,11 @@ func TestInfiniteStarmanContactAwardsOneKillAndRespectsProtection(t *testing.T) 
 	if target.HP == 0 {
 		t.Fatal("contact ignored temporary invulnerability")
 	}
-	target.kit.Invulnerable = 0
+	target.kit.Invulnerable, target.kit.SpawnProtected = 1, true
 	applyPower(&target.kit, "shield", infinitePowerDuration, infiniteStarDuration)
 	a.step(now)
 	if target.HP != 0 || target.respawn != a.tick+infiniteRespawnTicks || target.Score != -1 || attacker.Score != 1 || target.KilledBy != attacker.Name {
-		t.Fatalf("contact should bypass the shield and award a normal kill: attacker=%+v target=%+v", attacker, target)
+		t.Fatalf("contact should bypass spawn protection and the shield and award a normal kill: attacker=%+v target=%+v", attacker, target)
 	}
 	a.step(now)
 	if attacker.Score != 1 || target.Score != -1 {
@@ -610,6 +619,7 @@ func TestInfiniteStarmanRetiresOldestProjectileAtSafetyLimit(t *testing.T) {
 func TestInfiniteStarmanShotsDoNotOccupyWeaponSlotsAfterExpiry(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	p := a.join(fakeClient(), "Pilot", time.Now())
+	p.kit.Invulnerable = 0 // This weapon/input fixture starts after spawn protection.
 	a.fire(p)
 	applyPower(&p.kit, "starman", infinitePowerDuration, infiniteStarDuration)
 	for range machineCapacity - 1 {

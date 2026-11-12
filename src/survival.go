@@ -186,7 +186,7 @@ func (g *Game) spawnSurvivalEnemies(players [maxTanks]*Player) {
 		if boss {
 			name, difficulty = survivalBossName(s.Wave), survivalBossDifficulty(s.Wave)
 		}
-		t := &Tank{ID: id, Name: name, Team: 2, Color: selectedColor(id, 2, nil, g.settings()), Bot: true, Difficulty: difficulty, SurvivalEnemy: true, SurvivalBoss: boss, R: tankRadius, Alive: true, Angle: -math.Pi / 2, Invulnerable: 1.2, SpawnSerial: s.Wave}
+		t := &Tank{ID: id, Name: name, Team: 2, Color: selectedColor(id, 2, nil, g.settings()), Bot: true, Difficulty: difficulty, SurvivalEnemy: true, SurvivalBoss: boss, R: tankRadius, Alive: true, Angle: -math.Pi / 2, Invulnerable: 1.2, SpawnProtected: true, SpawnSerial: s.Wave}
 		g.Tanks[id] = t
 		g.Scores[id] = 0
 		g.survivalEnemySpawn(t)

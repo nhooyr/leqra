@@ -37,6 +37,7 @@ func battle(n int) *Game {
 			t.Y = 210
 			t.Angle = 0
 			t.Invulnerable = 0
+			t.SpawnProtected = false
 		}
 	}
 	return g

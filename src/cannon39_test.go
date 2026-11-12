@@ -24,6 +24,7 @@ func launchCannon39(g *Game, owner int) *Bullet {
 	p := g.Tanks[owner]
 	g.grantPower(p, "cannon")
 	p.Cooldown = 0
+	p.SpawnProtected = false
 	if !g.fire(p) {
 		panic("test Cannon failed to fire")
 	}

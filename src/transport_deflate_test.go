@@ -125,6 +125,7 @@ func machineGunWireLoad(t testing.TB) [][]byte {
 	g.Phase = "playing"
 	for _, tank := range g.Tanks {
 		tank.Invulnerable = 100
+		tank.SpawnProtected = false
 		g.grantPower(tank, "rapid")
 	}
 	h := newHub(1)

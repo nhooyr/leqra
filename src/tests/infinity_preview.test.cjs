@@ -21,7 +21,7 @@ function boot(){
  for(const id of ['rulesSummary','roster','infiniteArena','pilotName','controlsDialog'])new Element(id,id==='infiniteArena'||id==='controlsDialog'?'dialog':'div');
  function target(extra={}){return Object.assign(extra,{listeners:new Map(),addEventListener(type,fn){this.listeners.set(type,fn);},removeEventListener(type,fn){if(this.listeners.get(type)===fn)this.listeners.delete(type);},emit(type,event={}){this.listeners.get(type)?.(event);}});}
  const r={rules:{teamMode:'ffa',infinity:false},players:[{id:0,member:1,name:'SNOW <FOX>',kind:'human',color:'#123456'},{id:2,member:2,name:'WING',kind:'local',owner:0,color:'#abcdef'}]};
- s={settingsResetActive:false,phase:'menu',mode:'room',playMode:'online',roomData:()=>r,currentRules:()=>r.rules,infinityPlayMode:()=>s.playMode,localPlayerID:()=>0,secondLocal:()=>r.players.find(p=>p.kind==='local'&&p.owner===0&&!p.spectating),localRoom:{self:0,players:r.players},tanks:[],COLORS:['#123456','#abcdef'],paintColor:c=>c,
+ s={settingsResetActive:false,now:0,menuSamples:[],beginMenuPing(){},setMenuPing(value){s.menuSamples.push(value);},performance:{now:()=>s.now},phase:'menu',mode:'room',playMode:'online',roomData:()=>r,currentRules:()=>r.rules,infinityPlayMode:()=>s.playMode,localPlayerID:()=>0,secondLocal:()=>r.players.find(p=>p.kind==='local'&&p.owner===0&&!p.spectating),localRoom:{self:0,players:r.players},tanks:[],COLORS:['#123456','#abcdef'],paintColor:c=>c,
   document:target({body,hidden:false,createElement:tag=>new Element('',tag),querySelectorAll:selector=>selector==='dialog'?[...elements.values()].filter(node=>node.tagName==='dialog'):[],querySelector:selector=>selector==='dialog[open]'?[...elements.values()].find(node=>node.tagName==='dialog'&&node.open):null}),window:target(),navigator:{onLine:true},location:{protocol:'https:',href:'https://leqra.test/?room=PRIVATE'},URL,AbortController,
   resize(){s.resizes=(s.resizes||0)+1;},$:id=>elements.get(id),MutationObserver:class{constructor(fn){this.fn=fn;this.entries=[];observers.push(this);}observe(node,options){this.entries.push([node,options]);}disconnect(){this.disconnected=true;}},
   setTimeout(fn,ms){timers.set(++serial,{fn,ms});return serial;},clearTimeout(id){timers.delete(id);},fetch(url,options){return new Promise((resolve,reject)=>{const request={url:String(url),options,resolve:data=>resolve({ok:true,json:async()=>data}),reject};requests.push(request);options.signal.addEventListener('abort',()=>reject(Error('Aborted')));});},
@@ -34,11 +34,11 @@ function boot(){
 test('Infinity preview uses real public counts, a measured FPS node and the shared local score layout',async()=>{
  const h=boot(),{s,$,requests}=h;assert.equal(h.bar.hidden,false);assert.equal(s.document.body.classList.contains('infinity-preview'),true);assert.equal(h.fps.parentElement,h.bar);assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.equal(requests.length,1);assert.equal(requests[0].url,'https://leqra.test/api/infinity');assert.equal(requests[0].options.cache,'no-store');
  assert.equal($('infinityPreviewTitle').textContent,'Public Infinity');
- const pilots=$('infinityPreviewScores').children;assert.deepEqual(pilots.map(p=>p.children[0].textContent),['SNOW <FOX> (P1)','WING (P2)']);assert.equal(pilots[0].style.color,'#123456');assert.equal(pilots[1].children[1].textContent,': (0, #0)');
+ const pilots=$('infinityPreviewScores').children;assert.deepEqual(pilots.map(p=>p.children[0].textContent),['SNOW <FOX> (P1)','WING (P2)']);assert.equal(pilots[0].style.color,'#123456');assert.equal(pilots[1].children[1].textContent,': ');assert.equal(pilots[1].children[2].textContent,'score: 0, rank: #0');assert.equal(pilots[0].attributes['aria-label'],'SNOW <FOX> (P1): score: 0, rank: #0');
  requests[0].resolve({players:7,tankCount:18,leaders:Array.from({length:12},(_,i)=>({id:i+1,name:'Tank <'+i+'>',score:30-i,colorIndex:i%2,rank:i+1}))});await h.flush();
  assert.equal($('infinityPreviewOnlineCount').textContent,'7 online');assert.equal($('infinityPreviewLeaders').children.length,10);assert.equal($('infinityPreviewLeaders').children[0].children[0].textContent,'Tank <0>');assert.equal($('infinityPreviewLeaders').children[0].children[0].style.fontWeight,'400','public pilots are not local merely because the room is on this device');
- assert.equal($('infinityPreviewScoreboardBtn').textContent,'Top 10 Tanks');$('infinityPreviewScoreboardBtn').onclick();assert.equal($('infinityPreviewScoreboard').hidden,false);assert.equal($('infinityPreviewScoreboardBtn').attributes['aria-expanded'],'true');
- assert.equal($('infinityPreviewScoreboardTitle').hidden,false);
+ assert.equal($('infinityPreviewScoreboardBtn').textContent,'LEADERBOARD');$('infinityPreviewScoreboardBtn').onclick();assert.equal($('infinityPreviewScoreboard').hidden,false);assert.equal($('infinityPreviewScoreboardBtn').attributes['aria-expanded'],'true');
+ assert.equal($('infinityPreviewScoreboardTitle').hidden,false);assert.equal($('infinityPreviewScoreboardTitle').textContent,'LEADERBOARD');
  const escape={key:'Escape',preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};s.document.emit('keydown',escape);assert.equal(escape.prevented,true);assert.equal($('infinityPreviewScoreboard').hidden,true);
 });
 
@@ -65,7 +65,7 @@ test('leaving or hiding public preview aborts requests and restores the existing
 test('private and offline Infinity previews use room pilots without querying public state',async()=>{
  const h=boot(),{s,$,r}=h;s.playMode='';r.rules.infinity=true;r.players[1].spectating=true;r.players.push({id:3,member:3,name:'REMOTE',kind:'human',color:'#fedcba'},{id:4,member:4,name:'RUST',kind:'bot',color:'#ffeeaa'});s.window.leqraInfinityPreview.sync();await h.flush();
  assert.equal(h.bar.hidden,false);assert.equal($('infinityPreviewOnlineCount').hidden,true);assert.equal($('infinityPreviewScores').children.length,1);assert.equal($('infinityPreviewLeaders').children.length,3);assert.equal(h.timers.size,0);
- assert.equal($('infinityPreviewTitle').textContent,'Infinity','room and offline mode keep their distinct name');
+ assert.equal($('infinityPreviewTitle').textContent,'Infinity','room and offline mode keep their distinct name');assert.equal($('infinityPreviewScoreboardBtn').textContent,'LEADERBOARD');assert.equal($('infinityPreviewScoreboardTitle').textContent,'LEADERBOARD');
  const rows=$('infinityPreviewLeaders').children;assert.equal(rows[0].children[0].style.fontWeight,'700');assert.equal(rows[1].children[0].style.fontWeight,'400');
  s.phase='playing';s.window.leqraInfinityPreview.sync();assert.equal(h.bar.hidden,true);
 });
@@ -78,11 +78,20 @@ test('startup and tour name the public switch separately from room Infinity',()=
  assert.match(battle,/Choose Infinity in Room settings/);assert.match(battle,/turn off Public Infinity/);
 });
 
-test('public polling retries failures every ten seconds and stops permanently during settings reset',async()=>{
- const h=boot(),{s,$}=h;h.requests[0].reject(Error('offline'));await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.match($('infinityPreviewScoreboardNote').textContent,/unavailable/);assert.deepEqual([...h.timers.values()].map(t=>t.ms),[10000]);
- h.run(10000);assert.equal(h.requests.length,2);h.requests[1].resolve({players:2,tankCount:2,leaders:[]});await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'2 online');
- h.run(10000);assert.equal(h.requests.length,3);s.settingsResetActive=true;s.window.leqraInfinityPreview.stop();assert.equal(h.requests[2].options.signal.aborted,true);assert.equal(h.observers[0].disconnected,true);assert.equal(h.timers.size,0);assert.equal($('infinityPreviewScoreboard').hidden,true);
+test('public polling retries failures every four seconds and stops permanently during settings reset',async()=>{
+ const h=boot(),{s,$}=h;h.requests[0].reject(Error('offline'));await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.match($('infinityPreviewScoreboardNote').textContent,/unavailable/);assert.deepEqual([...h.timers.values()].map(t=>t.ms),[4000]);
+ h.run(4000);assert.equal(h.requests.length,2);h.requests[1].resolve({players:2,tankCount:2,leaders:[]});await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'2 online');
+ h.run(4000);assert.equal(h.requests.length,3);s.settingsResetActive=true;s.window.leqraInfinityPreview.stop();assert.equal(h.requests[2].options.signal.aborted,true);assert.equal(h.observers[0].disconnected,true);assert.equal(h.timers.size,0);assert.equal($('infinityPreviewScoreboard').hidden,true);
  s.settingsResetActive=false;s.window.leqraInfinityPreview.sync();assert.equal(h.requests.length,3,'late callbacks cannot restart the reset page');await h.flush();assert.equal(h.timers.size,0);
+});
+
+test('the first menu request supplies ping and online count together on a four-second cadence',async()=>{
+ const h=boot(),{s,$}=h;assert.equal(h.requests.length,1,'polling starts immediately');
+ s.now=240;h.requests[0].resolve({players:3,tankCount:3,leaders:[]});await h.flush();
+ assert.equal($('infinityPreviewOnlineCount').textContent,'3 online');assert.deepEqual(s.menuSamples,[240]);
+ assert.deepEqual([...h.timers.values()].map(timer=>timer.ms),[3760],'response time counts toward the four-second interval');
+ h.run(3760);assert.equal(h.requests.length,2);
+ h.requests[1].reject(Error('unavailable'));await h.flush();assert.equal(s.menuSamples.at(-1),null);
 });
 
 test('an empty public or private preview shows one centered message without a title or dividing line',async()=>{

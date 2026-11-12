@@ -6,6 +6,13 @@ const source=readFileSync(assetPath('pwa.js'),'utf8');
 const android='Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/143.0.0.0 Mobile Safari/537.36';
 const safari='Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/26.0 Mobile/15E148 Safari/604.1';
 
+test('Home Screen uses the page theme without the deprecated translucent status bar',()=>{
+ const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
+ assert.doesNotMatch(html,/<meta\b[^>]*name=["']apple-mobile-web-app-status-bar-style["']/i);
+ assert.match(html,/<meta name="theme-color" content="#[a-f0-9]{6}">/i);
+ assert.match(html,/<meta name="viewport" content="[^"]*viewport-fit=cover/);
+});
+
 function target(properties={}){
  const listeners=new Map();return Object.assign(properties,{
   addEventListener(type,listener){const entries=listeners.get(type)||[];entries.push(listener);listeners.set(type,entries);},
