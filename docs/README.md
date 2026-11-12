@@ -41,7 +41,7 @@ Bank shots around corners and collect glowing pickups. Your own shots and grenad
 
 Run `./dev.sh` or `go run ./src` from the repository root. The server uses port 8080 by default. Open [`src/web/index.html`](../src/web/index.html) directly in a browser for offline play.
 
-After editing `version` in `src/main.go`, run `./scripts/vergen.sh` to move the browser assets and synchronize release references, then rebuild. Asset generators use `./scripts/icons.sh` and `./scripts/showcase.sh`.
+After editing `version` in `src/main.go`, run `./scripts/gen-version.sh` to move the browser assets and synchronize release references, then rebuild. Asset generators use `./scripts/gen-icons.sh` and `./scripts/gen-showcase.sh`.
 
 The server allows up to 32,768 rooms by default. Use `MAX_ROOMS` or `-max-rooms` to set a lower limit.
 
