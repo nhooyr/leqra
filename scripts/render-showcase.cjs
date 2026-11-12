@@ -4,7 +4,7 @@
 //   npm install --no-save --package-lock=false playwright
 //   npx playwright install chromium
 // Then generate bin/showcase.html and bin/chrome-overrides with
-//   node scripts/render-showcase.cjs
+//   ./scripts/showcase.sh
 // On macOS, fit the front Chrome window to the showcase at 100% zoom with
 // DevTools undocked and the showcase window in front. Enable
 // View > Developer > Allow JavaScript from Apple Events, then
