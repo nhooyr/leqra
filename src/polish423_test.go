@@ -39,7 +39,11 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatalf("%s: %d", name, w.Code)
 		}
-		if got := w.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		wantCache := "public, max-age=31536000, immutable"
+		if name == "sw.js" {
+			wantCache = "no-store"
+		}
+		if got := w.Header().Get("Cache-Control"); got != wantCache {
 			t.Fatalf("%s cache=%q", name, got)
 		}
 		if name == "sw.js" && w.Header().Get("Service-Worker-Allowed") != "/" {

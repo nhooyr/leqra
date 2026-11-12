@@ -43,7 +43,7 @@ func Test45ThemeBootstrapPrecedesStyles(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.handler().ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 	html := w.Body.String()
-	boot := strings.Index(html, `<script src="assets/v`+version+`/theme.js"></script>`)
+	boot := strings.Index(html, `<script src="assets/v`+version+`/theme.js?build=`)
 	css := strings.Index(html, `rel="stylesheet"`)
 	if boot < 0 || css < 0 || boot > css {
 		t.Fatal("dark palette must initialize before styles")

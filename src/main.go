@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"encoding/xml"
@@ -27,7 +28,7 @@ import (
 )
 
 const (
-	version         = "4.49.27"
+	version         = "4.49.28"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -51,11 +52,40 @@ var appShellFiles = [...]string{
 
 var shellVersionMarkers = map[string]string{
 	"game.js": "const GAME_VERSION='" + version + "';",
-	"pwa.js":  "register('" + assetPath + "sw.js'",
+	"pwa.js":  "const VERSION = 'v" + version + "';",
 	"sw.js":   "const VERSION = 'v" + version + "';",
 }
 
 var shellAssetReference = regexp.MustCompile(`[[:space:]](?:src|href)="(assets/[^"]+)"`)
+var workerURL = regexp.MustCompile(`^/assets/v[0-9]+\.[0-9]+\.[0-9]+/sw\.js$`)
+
+func appBuildID(web fs.FS) (string, error) {
+	h := sha256.New()
+	paths := []string{"web/index.html"}
+	for _, names := range [][]string{appShellFiles[:], appIconPNGs[:]} {
+		for _, name := range names {
+			paths = append(paths, "web/"+assetPath+name)
+		}
+	}
+	for _, path := range paths {
+		data, err := fs.ReadFile(web, path)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(h, "%s\x00%d\x00", path, len(data))
+		_, _ = h.Write(data)
+	}
+	return fmt.Sprintf("v%s-%x", version, h.Sum(nil)[:8]), nil
+}
+
+func appIndex(data []byte, build string) []byte {
+	data = shellAssetReference.ReplaceAllFunc(data, func(reference []byte) []byte {
+		path := shellAssetReference.FindSubmatch(reference)[1]
+		return bytes.Replace(reference, path, []byte(string(path)+"?build="+build), 1)
+	})
+	meta := []byte(`<meta name="leqra-build" content="` + build + `">` + "\n</head>")
+	return bytes.Replace(data, []byte("</head>"), meta, 1)
+}
 
 func allowedAsset(name string) bool {
 	return slices.Contains(appShellFiles[:], name) || slices.Contains(appIconPNGs[:], name)
@@ -286,12 +316,35 @@ func (a *App) openSocket(w http.ResponseWriter, key, ip string, admit func(*Clie
 	return c
 }
 func (a *App) handler() http.Handler {
+	build, err := appBuildID(embeddedWeb)
+	if err != nil {
+		panic(err)
+	}
+	index, err := embeddedWeb.ReadFile("web/index.html")
+	if err != nil {
+		panic(err)
+	}
+	index = appIndex(index, build)
+	worker, err := embeddedWeb.ReadFile("web/" + assetPath + "sw.js")
+	if err != nil {
+		panic(err)
+	}
+	worker = append([]byte("'use strict';\nself.LEQRA_BUILD = '"+build+"';\n"), worker...)
 	sub, err := fs.Sub(embeddedWeb, "web")
 	if err != nil {
 		panic(err)
 	}
 	static := http.FileServer(http.FS(sub))
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/build", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]string{"version": version, "build": build})
+	})
 	mux.HandleFunc("/ws", a.socket)
 	mux.HandleFunc("/ws/infinite", a.infiniteSocket)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -316,17 +369,19 @@ func (a *App) handler() http.Handler {
 			w.WriteHeader(405)
 			return
 		}
+		w.Header().Set("X-Leqra-Build", build)
+		if r.URL.Path == "/sw.js" || workerURL.MatchString(r.URL.Path) {
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Service-Worker-Allowed", "/")
+			http.ServeContent(w, r, "sw.js", time.Time{}, bytes.NewReader(worker))
+			return
+		}
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
-			if r.URL.Path == "/index.html" {
-				// http.FileServer redirects an explicit /index.html to ./; serve the
-				// same embedded shell through / instead so PWA precaching has a 200.
-				r = r.Clone(r.Context())
-				u := *r.URL
-				u.Path = "/"
-				r.URL = &u
-			}
-			static.ServeHTTP(w, r)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("ETag", `"`+build+`"`)
+			http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(index))
 			return
 		}
 		if !strings.HasPrefix(r.URL.Path, assetPrefix) {
