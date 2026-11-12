@@ -52,7 +52,6 @@ body.infinity-preview .arena-shell>.arena-bar:not(.infinity-preview-header){disp
 body.infinity-preview #objectiveBar{display:none!important}
 .infinity-preview-header{position:relative;z-index:6}
 .infinity-preview-header>.infinity-preview-scoreboard{top:calc(100% + 8px);right:10px;width:min(280px,calc(100% - 20px));max-height:50dvh;z-index:7}
-.infinity-preview-scoreboard>summary{display:none}
 .infinity-preview-scoreboard.is-empty>ol{display:none}
 .infinity-preview-scoreboard.is-empty>p{display:flex;align-items:center;justify-content:center;min-height:110px;padding:16px;border-top:0;text-align:center}
 body.touch-ui .infinity-preview-header>.infinity-preview-scoreboard[open]{max-height:50dvh}
@@ -898,7 +897,6 @@ body.touch-landscape .infinite-header{padding-top:max(5px,env(safe-area-inset-to
 .infinite-scoreboard-toggle{flex:none;min-height:30px;padding:5px 8px;border:1px solid var(--border-strong);border-radius:5px;background:var(--surface-raised);color:var(--accent-ink);font:var(--min-font-size) var(--mono);text-transform:uppercase;cursor:pointer}
 .infinite-scoreboard-toggle[aria-expanded=true]{background:var(--surface-sunken)}
 .infinite-stage>.infinite-leaderboard:not([open]){display:none}
-.infinite-stage>.infinite-leaderboard>summary{display:none}
 @media(max-width:600px){
  .infinite-statusbar .bar-right{display:contents}
  .infinite-statusbar .infinite-personal-scores{grid-column:1/-1;grid-row:2;justify-self:end;max-width:100%}
