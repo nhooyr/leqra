@@ -7,9 +7,9 @@ function declaration(name){const start=source.indexOf('function '+name+'('),end=
 function boot(){
  const nodes=new Map(),rules={mode:'elimination',teamMode:'teams',mapSize:'compact',scoreTarget:15,pickupRate:'superfast',weapons:[]};
  const $=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',value:'',checked:false,parentElement:{},replaceChildren(...children){this.textContent=children.map(child=>child.textContent).join('');}});return nodes.get(id);};
- const s={$,rules,CELL:84,window:{},selection:'',currentRules:()=>rules,infinityPlayMode:()=>s.selection,isRoomEditable:()=>true,mapDimensions:()=>[7,7],pickupLimitText:()=> 'Fixed maze pickup limit.',powerEffectDuration:()=>10,starmanDuration:()=>4,pickupLifetime:()=>30,document:{createTextNode:text=>({textContent:text}),createElement:()=>({textContent:''})}};
+ const s={$,rules,CELL:84,window:{},selection:'',currentRules:()=>rules,infinityPlayMode:()=>s.selection,isRoomEditable:()=>true,mapDimensions:()=>[7,7],powerEffectDuration:()=>10,starmanDuration:()=>4,pickupLifetime:()=>30,document:{createTextNode:text=>({textContent:text}),createElement:()=>({textContent:''})}};
  vm.createContext(s);vm.runInContext(infinite.match(/^const POWER_DURATION = .*$/m)[0]+'\n'+infinite.match(/^const pickupHelp = .*$/m)[0]+'\nglobalThis.infinityPickupHelp=pickupHelp;',s);
- s.window.leqraInfinity={pickupHelp:s.infinityPickupHelp};for(const name of ['activeTeamCount','modeLabel','syncControlsPickupInfo','updateRuleHelp'])vm.runInContext(declaration(name),s);
+ s.window.leqraInfinity={pickupHelp:s.infinityPickupHelp};for(const name of ['activeTeamCount','modeLabel','pickupCap','startingPickups','pickupLimitText','syncControlsPickupInfo','updateRuleHelp'])vm.runInContext(declaration(name),s);
  return{s,$,rules};
 }
 
@@ -20,6 +20,16 @@ test('shared power cards avoid weapon-specific immunity and finite-map claims in
  const note=sidebar.match(/<p class="power-note">([^<]*)<\/p>/)[1];assert.doesNotMatch(note,/Most timed|Huge maps|within that time/);assert.match(note,/Walls stop blasts/);
  assert.match(html,/Every tank is immune to its own weapons\./);assert.match(source,/add\(generalTips,'owner-immunity','Every tank is immune to its own weapons\.'\)/);
  assert.match(html,/Grenade<\/strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds\./);
+});
+
+test('tour, sidebar, Controls and Rules consistently call collectible items power-ups',()=>{
+ const visibleHTML=html.replace(/<[^>]*>/g,' ');assert.doesNotMatch(visibleHTML,/\bpick[ -]?ups?\b/i);
+ assert.match(visibleHTML,/10 POWER-UPS/);assert.match(visibleHTML,/Speed activates when collected/);assert.match(visibleHTML,/glowing power-up/);
+ const {s,$}=boot();s.syncControlsPickupInfo();const fixed=$('controlsPickupInfo').textContent;
+ assert.match(fixed,/2 starting power-ups, 5 maximum/);assert.match(fixed,/10 seconds once collected/);assert.doesNotMatch(fixed,/\bpick[ -]?ups?\b/i);
+ s.selection='online';s.syncControlsPickupInfo();assert.match($('controlsPickupInfo').textContent,/15 seconds once collected/);assert.doesNotMatch($('controlsPickupInfo').textContent,/\bpick[ -]?ups?\b/i);
+ $('rule-pickupRate').value='off';s.updateRuleHelp();assert.equal($('rule-pickup-density').textContent,'Power-ups disabled.');
+ assert.match(source,/<option value="off">Off, no power-ups<\/option>/);
 });
 
 test('Controls shows Infinity timing before entry and restores fixed-map timing when selection changes',()=>{

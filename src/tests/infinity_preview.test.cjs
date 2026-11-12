@@ -17,7 +17,7 @@ function boot(){
   focus(){s.document.activeElement=this;}
  }
  const body=new Element('body'),shell=new Element('shell'),bar=new Element('infinityPreviewBar'),wrap=new Element('arenaWrap'),fps=new Element('fpsIndicator'),next=new Element('fpsNext');body.append(shell);shell.append(bar,wrap);wrap.append(fps,next);
- const right=new Element('infinityPreviewRight'),panel=new Element('infinityPreviewScoreboard');bar.append(new Element('infinityPreviewOnlineCount'),right,panel);right.append(new Element('infinityPreviewScores'),new Element('infinityPreviewScoreboardBtn'));panel.append(new Element('infinityPreviewScoreboardTitle'),new Element('infinityPreviewLeaders'),new Element('infinityPreviewScoreboardNote'));panel.hidden=true;
+ const right=new Element('infinityPreviewRight'),panel=new Element('infinityPreviewScoreboard');bar.append(new Element('infinityPreviewTitle'),new Element('infinityPreviewOnlineCount'),right,panel);right.append(new Element('infinityPreviewScores'),new Element('infinityPreviewScoreboardBtn'));panel.append(new Element('infinityPreviewScoreboardTitle'),new Element('infinityPreviewLeaders'),new Element('infinityPreviewScoreboardNote'));panel.hidden=true;
  for(const id of ['rulesSummary','roster','infiniteArena','pilotName','controlsDialog'])new Element(id,id==='infiniteArena'||id==='controlsDialog'?'dialog':'div');
  function target(extra={}){return Object.assign(extra,{listeners:new Map(),addEventListener(type,fn){this.listeners.set(type,fn);},removeEventListener(type,fn){if(this.listeners.get(type)===fn)this.listeners.delete(type);},emit(type,event={}){this.listeners.get(type)?.(event);}});}
  const r={rules:{teamMode:'ffa',infinity:false},players:[{id:0,member:1,name:'SNOW <FOX>',kind:'human',color:'#123456'},{id:2,member:2,name:'WING',kind:'local',owner:0,color:'#abcdef'}]};
@@ -33,6 +33,7 @@ function boot(){
 
 test('Infinity preview uses real public counts, a measured FPS node and the shared local score layout',async()=>{
  const h=boot(),{s,$,requests}=h;assert.equal(h.bar.hidden,false);assert.equal(s.document.body.classList.contains('infinity-preview'),true);assert.equal(h.fps.parentElement,h.bar);assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.equal(requests.length,1);assert.equal(requests[0].url,'https://leqra.test/api/infinity');assert.equal(requests[0].options.cache,'no-store');
+ assert.equal($('infinityPreviewTitle').textContent,'Public Infinity');
  const pilots=$('infinityPreviewScores').children;assert.deepEqual(pilots.map(p=>p.children[0].textContent),['SNOW <FOX> (P1)','WING (P2)']);assert.equal(pilots[0].style.color,'#123456');assert.equal(pilots[1].children[1].textContent,': (0, #0)');
  requests[0].resolve({players:7,tankCount:18,leaders:Array.from({length:12},(_,i)=>({id:i+1,name:'Tank <'+i+'>',score:30-i,colorIndex:i%2,rank:i+1}))});await h.flush();
  assert.equal($('infinityPreviewOnlineCount').textContent,'7 online');assert.equal($('infinityPreviewLeaders').children.length,10);assert.equal($('infinityPreviewLeaders').children[0].children[0].textContent,'Tank <0>');assert.equal($('infinityPreviewLeaders').children[0].children[0].style.fontWeight,'400','public pilots are not local merely because the room is on this device');
@@ -64,8 +65,17 @@ test('leaving or hiding public preview aborts requests and restores the existing
 test('private and offline Infinity previews use room pilots without querying public state',async()=>{
  const h=boot(),{s,$,r}=h;s.playMode='';r.rules.infinity=true;r.players[1].spectating=true;r.players.push({id:3,member:3,name:'REMOTE',kind:'human',color:'#fedcba'},{id:4,member:4,name:'RUST',kind:'bot',color:'#ffeeaa'});s.window.leqraInfinityPreview.sync();await h.flush();
  assert.equal(h.bar.hidden,false);assert.equal($('infinityPreviewOnlineCount').hidden,true);assert.equal($('infinityPreviewScores').children.length,1);assert.equal($('infinityPreviewLeaders').children.length,3);assert.equal(h.timers.size,0);
+ assert.equal($('infinityPreviewTitle').textContent,'Infinity','room and offline mode keep their distinct name');
  const rows=$('infinityPreviewLeaders').children;assert.equal(rows[0].children[0].style.fontWeight,'700');assert.equal(rows[1].children[0].style.fontWeight,'400');
  s.phase='playing';s.window.leqraInfinityPreview.sync();assert.equal(h.bar.hidden,true);
+});
+
+test('startup and tour name the public switch separately from room Infinity',()=>{
+ const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
+ assert.match(html,/<label[^>]+id="infinityToggleLabel"[^>]*>[\s\S]*?<strong>Public Infinity<\/strong>[\s\S]*?<\/label>/);
+ const battle=html.split('<div data-intro-page="2"')[1].split('</div>')[0];
+ assert.match(battle,/<li><strong>Public Infinity<\/strong>/);assert.match(battle,/Public Infinity switch above Play/);
+ assert.match(battle,/Choose Infinity in Room settings/);assert.match(battle,/turn off Public Infinity/);
 });
 
 test('public polling retries failures every ten seconds and stops permanently during settings reset',async()=>{

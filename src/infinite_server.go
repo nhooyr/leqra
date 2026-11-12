@@ -112,7 +112,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 	}
 	var join infiniteMessage
 	if json.Unmarshal(data, &join) != nil || join.Type != "join" || join.Version != version {
-		rejectInfinite(c, "Reload leqra to join Infinity Online.")
+		rejectInfinite(c, "Reload leqra to play Infinity.")
 		return
 	}
 	connection, rejection := s.join(c, join, time.Now())
@@ -275,7 +275,7 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		if setup.public {
 			reserved := s.publicPending[reservationKey].seats
 			if s.public.players+s.publicPendingCount-reserved+seats > infiniteCapacity {
-				return infiniteConnection{}, "Infinity Online is full. Try again when enough pilots leave."
+				return infiniteConnection{}, "Public Infinity is full. Try again when enough pilots leave."
 			}
 			connection.arena = s.public
 			setup.pilot.team = 0
@@ -303,7 +303,7 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 			seats++
 		}
 		if s.public.players+s.publicPendingCount+seats > infiniteCapacity {
-			return infiniteConnection{}, "Infinity Online is full. Try again when enough pilots leave."
+			return infiniteConnection{}, "Public Infinity is full. Try again when enough pilots leave."
 		}
 	}
 

@@ -27,6 +27,14 @@ test('each mode has concise relevant tips, with extra Survival rules and configu
  const {s}=boot('survival');assert.ok(s.countdownTipPool().filter(t=>t.id.startsWith('survival-')).length>=8);
 });
 
+test('all countdown modes describe collected items as power-ups without changing technical tip keys',()=>{
+ for(const mode of ['elimination','ctf','koth','survival']){
+  const {s}=boot(mode),tips=s.countdownTipPool();
+  assert.equal(tips.some(t=>/\bpick[ -]?ups?\b/i.test(t.text)),false,mode+' visible tips');
+  assert.match(tips.find(t=>t.id==='pickup-expiry').text,/Uncollected power-ups expire/);
+ }
+});
+
 test('power-up advice follows enabled pickups and derives durations from the actual map and constants',()=>{
  const {s}=boot('survival');const kinds=vm.runInContext('Object.keys(POWER)',s);
  assert.match(s.countdownTipPool().find(t=>t.id==='power-rapid').text,/quarter-perimeter range/);assert.match(s.countdownTipPool().find(t=>t.id==='power-homing').text,/half the maze perimeter/);assert.match(s.countdownTipPool().find(t=>t.id==='power-cannon').text,/outer rim/);
