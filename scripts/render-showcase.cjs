@@ -138,7 +138,7 @@ function showcasePage(screenshot) {
 <head>
  <meta charset="utf-8">
  <meta name="viewport" content="width=device-width, initial-scale=1">
- <title>leqra</title>
+ <title>leqra.com</title>
  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,${favicon}">
  <style>
   html, body { margin:0; background:#10171d; }

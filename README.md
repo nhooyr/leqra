@@ -43,6 +43,7 @@ An online multiplayer tank arena battle game.
 - Quick tour on first startup.
 - A second local player.
 - Mobile & PWA support.
+- [wip iOS port.](./ios)
 - Managed deployments to minimize downtime.
 
 ## Getting Started

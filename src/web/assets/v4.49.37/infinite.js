@@ -47,7 +47,7 @@ const PROJECTILES = Object.freeze({
 const TAU = Math.PI * 2;
 const MAX_BOTS = 24, BOTS_PER_PLAYER = 8;
 const RECONNECT_WINDOW = 18000, SNAPSHOT_TIMEOUT = 2500;
-const PING_INTERVAL = 4000, PING_TIMEOUT = 6000;
+const PING_INTERVAL = 1000, PING_TIMEOUT = 6000;
 const ROOM_RESUME_KEY = 'leqra.infinityResume.v1';
 const BOT_LEVELS = ['easy','normal','hard','godlike'];
 const BOT_TUNING = {

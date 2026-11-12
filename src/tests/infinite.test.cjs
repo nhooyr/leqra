@@ -378,15 +378,15 @@ test('Infinity measures matching WebSocket pongs and clears stale, disconnected,
  assert.equal(h.frameSamples.at(-1).latency,null,'offline play has no network ping');h.infinity.close();
 });
 
-test('Infinity samples ping immediately and then every four seconds',()=>{
+test('Infinity samples ping immediately and then every second',()=>{
  const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];
  socket.receive({type:'welcome',id:1,seed:0});
  socket.receive({type:'state',tick:1,tanks:[{id:1,hp:1,x:42,y:42,angle:0}],bullets:[],players:1,leaderboard:[]});
  const pings=()=>socket.sent.filter(message=>message.type==='ping');
  assert.equal(pings().length,1);assert.equal(pings()[0].t,0);
- h.elapse(20);socket.receive({type:'pong',t:0});h.advance(238);
- assert.equal(pings().length,1,'no polling before the four-second cadence');
- h.advance();assert.equal(pings().length,2);assert.ok(pings()[1].t>=4000&&pings()[1].t<4020);
+ h.elapse(20);socket.receive({type:'pong',t:0});h.advance(58);
+ assert.equal(pings().length,1,'no polling before the one-second cadence');
+ h.advance();assert.equal(pings().length,2);assert.ok(pings()[1].t>=1000&&pings()[1].t<1020);
  h.infinity.close();
 });
 
