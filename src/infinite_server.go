@@ -42,15 +42,17 @@ type infiniteRoomPilot struct {
 }
 
 type infiniteServer struct {
-	mu           sync.Mutex
-	closed       bool
-	hub          *Hub
-	public       *infiniteArena
-	private      map[infiniteRoom]*infiniteArena
-	connections  map[*Client]infiniteConnection // A nil arena is still joining.
-	reservations map[infiniteRoomPilot]infiniteReservation
-	privateCount int
-	nextSweep    time.Time
+	mu                 sync.Mutex
+	closed             bool
+	hub                *Hub
+	public             *infiniteArena
+	private            map[infiniteRoom]*infiniteArena
+	connections        map[*Client]infiniteConnection // A nil arena is still joining.
+	reservations       map[infiniteRoomPilot]infiniteReservation
+	privateCount       int
+	publicPending      map[infiniteRoomPilot]infinitePendingSeat
+	publicPendingCount int
+	nextSweep          time.Time
 }
 
 type infiniteMessage struct {
@@ -72,9 +74,10 @@ type infiniteMessage struct {
 func newInfiniteServer(h *Hub) *infiniteServer {
 	return &infiniteServer{
 		hub: h, public: newInfiniteArena(),
-		private:      make(map[infiniteRoom]*infiniteArena),
-		connections:  make(map[*Client]infiniteConnection),
-		reservations: make(map[infiniteRoomPilot]infiniteReservation),
+		private:       make(map[infiniteRoom]*infiniteArena),
+		connections:   make(map[*Client]infiniteConnection),
+		reservations:  make(map[infiniteRoomPilot]infiniteReservation),
+		publicPending: make(map[infiniteRoomPilot]infinitePendingSeat),
 	}
 }
 
@@ -251,12 +254,22 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		if msg.Resume {
 			return infiniteConnection{}, infiniteResumeExpired
 		}
-		if s.privateCount+seats > infinitePrivateCapacity {
+		if !setup.public && s.privateCount+seats > infinitePrivateCapacity {
 			return infiniteConnection{}, "Private Infinity is full. Try again when a pilot leaves."
 		}
 		connection.room, connection.seat, connection.localSeat = key, seat, setup.seat
 		connection.arena = s.private[key]
-		if connection.arena == nil {
+		if setup.public {
+			reserved := s.publicPending[reservationKey].seats
+			if s.public.players+s.publicPendingCount-reserved+seats > infiniteCapacity {
+				return infiniteConnection{}, "Infinity Online is full. Try again when enough pilots leave."
+			}
+			connection.arena = s.public
+			setup.pilot.team = 0
+			if setup.local != nil {
+				setup.local.team = 0
+			}
+		} else if connection.arena == nil {
 			connection.arena = newRoomInfiniteArena(setup.rules, setup.bots)
 		} else if connection.arena.players == 0 {
 			connection.arena.roomBots = setup.bots
@@ -276,7 +289,7 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 			}
 			seats++
 		}
-		if s.public.players+seats > infiniteCapacity {
+		if s.public.players+s.publicPendingCount+seats > infiniteCapacity {
 			return infiniteConnection{}, "Infinity Online is full. Try again when enough pilots leave."
 		}
 	}
@@ -287,8 +300,17 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 	}
 	s.connections[c] = connection
 	if connection.seat != nil {
-		s.private[connection.room] = connection.arena
-		s.privateCount += seats
+		if connection.arena == s.public {
+			s.dropPublicPending(infiniteRoomPilot{connection.room, connection.seat})
+			localMember := uint64(0)
+			if connection.localSeat != nil {
+				localMember = connection.localSeat.Member
+			}
+			connection.arena.bindParty(connection.pilot, connection.local, connection.room, connection.seat.Member, localMember)
+		} else {
+			s.private[connection.room] = connection.arena
+			s.privateCount += seats
+		}
 	}
 	return connection, ""
 }
@@ -330,7 +352,9 @@ func (s *infiniteServer) expireReservation(key infiniteRoomPilot, reservation in
 func (s *infiniteServer) retireLocal(connection *infiniteConnection) {
 	connection.arena.removeLocal(connection.pilot)
 	connection.local, connection.localSeat = nil, nil
-	s.privateCount--
+	if connection.arena != s.public {
+		s.privateCount--
+	}
 }
 
 func (s *infiniteServer) retire(connection infiniteConnection) {
@@ -338,7 +362,7 @@ func (s *infiniteServer) retire(connection infiniteConnection) {
 		return
 	}
 	connection.arena.remove(connection.pilot)
-	if connection.seat != nil {
+	if connection.seat != nil && connection.arena != s.public {
 		s.privateCount--
 		if connection.local != nil {
 			s.privateCount--
@@ -378,12 +402,14 @@ func (s *infiniteServer) step(now time.Time) {
 	if s.closed {
 		return
 	}
+	s.processPublicInfinity(now)
 	for c, connection := range s.connections {
+		if connection.arena == s.public && s.public.idle(connection.pilot, now) {
+			c.stop()
+			s.removeLocked(c)
+			continue
+		}
 		if connection.seat == nil {
-			if connection.arena == s.public && s.public.idle(connection.pilot, now) {
-				c.stop()
-				s.removeLocked(c)
-			}
 			continue
 		}
 		valid, localRevoked, removed := s.hub.infiniteConnectionStatus(connection.room.room, connection.seat, connection.localSeat, connection.room.generation, connection.arena.roomBots, now)

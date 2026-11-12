@@ -29,5 +29,11 @@ func (h *Hub) roomMessage(r *Room) map[string]any {
 			players = append(players, entry)
 		}
 	}
-	return map[string]any{"type": "room", "code": r.Code, "host": r.Host, "infinityActive": r.infinityActive, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "canRestartWave": r.canRestartSurvivalWave(), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.lineupError(), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
+	var publicError string
+	if host := r.member(r.Host); host != nil && host.Client != nil {
+		_, publicError = publicInfinitySeats(host.Client)
+	} else {
+		publicError = "Wait for the host to reconnect."
+	}
+	return map[string]any{"infinityPublic": r.infinityPublic, "canStartPublicInfinity": publicError == "", "startPublicInfinityError": publicError, "type": "room", "code": r.Code, "host": r.Host, "infinityActive": r.infinityActive, "phase": r.Game.Phase, "players": players, "spectators": viewers, "canStart": canStart(r), "canRestartWave": r.canRestartSurvivalWave(), "maxPlayers": r.combatCapacity(), "maxSpectators": maxSpectators, "rules": r.Game.settings(), "startError": r.lineupError(), "sides": availableSides(r.Players), "queue": h.queueView(r.Queue), "matchmaking": matchView(r), "awayMatch": r.awayMatchCode()}
 }

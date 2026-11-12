@@ -10,7 +10,7 @@ function declaration(name){
 }
 function boot(p2=false,stored=null){
  const storage=new Map(stored?[['leqra.bindings.v1',JSON.stringify(stored)]]:[]);
- const sandbox={keys:new Set(),hasLocalP2:()=>p2,escapeHTML:s=>String(s),modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
+ const sandbox={phase:'playing',infinityPlayMode:()=>'',keys:new Set(),hasLocalP2:()=>p2,escapeHTML:s=>String(s),modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
  for(const name of ['defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlSummary','manualKeyRow','fieldManualHTML'])vm.runInContext(declaration(name),sandbox);
  sandbox.bindings=sandbox.loadBindings();sandbox.storage=storage;return sandbox;
 }
@@ -109,4 +109,11 @@ test('a spectating secondary seat does not suppress the solo fallback',()=>{
  const s={mode:'room',secondLocal:()=>undefined,secondaryMember:()=>({spectating:true})};vm.createContext(s);vm.runInContext(line+';globalThis.active=hasLocalP2;',s);
  assert.equal(s.active(),false);s.secondLocal=()=>({spectating:false});assert.equal(s.active(),true);
  s.secondLocal=()=>undefined;s.mode='duel';assert.equal(s.active(),true);
+});
+
+
+test('public Infinity preview explains FFA scoring instead of fixed round rules',()=>{
+ const s=boot();s.phase='menu';s.infinityPlayMode=()=> 'online';
+ const html=s.fieldManualHTML();assert.ok(html.includes('PUBLIC INFINITY'));
+ assert.ok(html.includes('All pilots compete individually.'));assert.equal(html.includes('ELIMINATION'),false);
 });

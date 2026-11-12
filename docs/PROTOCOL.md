@@ -47,6 +47,18 @@ Desktop Player 1 sends the cursor direction using the existing bounded `stickX` 
 
 The touch joystick sends `touchAim:true` with its direction. Its turn cap eases from 5.8 to 9 radians per second before speed boosts as stick deflection rises from 35% to full and the angle to the desired heading rises from 15° to 90°. Small adjustments retain the standard turn rate. The same curve runs in fixed mazes and Infinity. Keyboard steering, mouse aiming, and bot steering use their existing rates.
 
+## Entering public Infinity with a room
+
+While a private room is in setup, its host selects the shared public arena with `{"type":"select_public_infinity","enabled":true}`. The server broadcasts `room.infinityPublic` and clears readiness when this destination changes; connected guests must consent again. `canStartPublicInfinity` and `startPublicInfinityError` describe this launch independently from the saved fixed-maze or private-Infinity rules. Setting `enabled:false` returns to those saved room rules; a lone fixed-maze pilot receives the usual three Normal bots when needed.
+
+The host sends `{"type":"start_public_infinity"}` (ordinary `start` also respects the accepted public selection). Admission reserves enough of the public arena's 32 human places for every current combat pilot and active local Player 2 before changing the room or clearing configured bots. An overfull launch fails atomically. No tank is spawned for an unclaimed place. Successful admission clears the room's configured bots, increments its Infinity generation, broadcasts `infinityActive:true,infinityPublic:true`, then sends reliable `{"type":"infinity_start","public":true}` to each participating controller. Existing spectators retain their roles. A spectating primary with an active local P2 must return to combat or make P2 spectate before launching; P2-only Infinity controllers are not supported.
+
+Clients open `/ws/infinite` with their existing authenticated room `code` and `token`. Both local tanks retain the colors visible in the source room, including resolved team paint, while all public tanks have team zero and independent scores. Saved room rules and team assignments remain intact. Unclaimed admission places expire after 20 seconds. They count against capacity but do not create killable tanks or increase the roaming-bot population.
+
+Public party snapshots add optional `party` rows containing `id`, room `member`, `name`, `score`, `colorIndex`, and one-based global `rank`. These summaries cover every actual arena tank from the same room generation, including distant, dead, and briefly disconnected pilots. They do not expose distant positions, private tokens, configured bots, or another room's membership. The public `leaderboard` remains the true global top ten.
+
+A brief disconnect uses the existing authenticated 20-second pair reservation and `resume`/`generation` handshake, preserving both tanks and scores. Explicit arena leave removes that controller's tanks while preserving the source room. Room leave, kick, role changes, host return-to-lobby, and a new generation revoke only the affected party pilots, leaving unrelated public players untouched. Public party pilots follow the ordinary five-minute public inactivity limit.
+
 ## Projectile ownership
 
 Every projectile passes through the tank that fired it, and grenade blasts skip their owner. Grenades still detonate on contact with other living tanks, including allies and tanks with spawn protection. Friendly fire controls whether a weapon can damage a different tank on the same team.

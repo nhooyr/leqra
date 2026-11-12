@@ -74,8 +74,10 @@ function boot({pageBuild = buildA, controllerBuild = buildA, latestBuild = build
     location: {protocol, reload() { calls.reload++; }}, performance: {now: () => now},
     setTimeout: (callback, delay) => schedule(callback, delay, 0), clearTimeout: clear,
     setInterval: (callback, delay) => schedule(callback, delay, delay), clearInterval: clear,
+    AbortController,
     fetch: async (url, options) => {
       calls.fetch.push({url, options});
+      await state.onFetch?.(options);
       if (state.fetchError) throw state.fetchError;
       return {ok: state.responseOK, json: async () => ({version: assetVersion.slice(1), build: state.latestBuild})};
     }
@@ -111,7 +113,10 @@ test('PWA discovers its build without HTTP caching and registers the stable work
   const h = boot();
   assert.equal(h.calls.register.length, 0);
   await h.load();
-  assert.deepEqual(JSON.parse(JSON.stringify(h.calls.fetch)), [{url: '/api/build', options: {cache: 'no-store'}}]);
+  assert.equal(h.calls.fetch.length, 1);
+  assert.equal(h.calls.fetch[0].url, '/api/build');
+  assert.equal(h.calls.fetch[0].options.cache, 'no-store');
+  assert.ok(h.calls.fetch[0].options.signal instanceof AbortSignal);
   assert.deepEqual(JSON.parse(JSON.stringify(h.calls.register)), [{path: '/sw.js', options: {scope: '/', updateViaCache: 'none'}}]);
   assert.equal(h.calls.update, 1);
   assert.equal(h.calls.reload, 0);
@@ -317,4 +322,22 @@ test('overlapping foreground events coalesce discovery rather than flooding regi
   assert.equal(h.calls.fetch.length, 1);
   assert.equal(h.calls.register.length, 1);
   assert.equal(h.calls.update, 1);
+});
+
+
+test('a stalled build lookup times out so network recovery can discover an update', async () => {
+  const h = boot({supported: false});
+  let signal;
+  h.state.onFetch = options => new Promise((resolve, reject) => {
+    signal = options.signal;
+    signal?.addEventListener('abort', () => reject(Error('aborted')), {once: true});
+  });
+  await h.load();
+  await h.advance(10000);
+  h.state.onFetch = null;
+  h.state.latestBuild = buildB;
+  await h.fire(h.window, 'online');
+  assert.equal(h.calls.fetch.length, 2);
+  assert.equal(h.calls.reload, 1);
+  assert.equal(signal?.aborted, true, 'a stalled request must release the discovery lock');
 });
