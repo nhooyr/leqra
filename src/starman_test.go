@@ -169,6 +169,39 @@ func TestStarmanWeaponsFireWithoutSpendingAmmoOrReloading(t *testing.T) {
 	}
 }
 
+func TestStarmanLaserKeepsVolleyRateAndSamplesOnlyMissCosmetics(t *testing.T) {
+	g := battle(2)
+	pilot, target := g.Tanks[0], g.Tanks[1]
+	target.Invulnerable = 100
+	g.grantPower(pilot, "laser")
+	g.grantPower(pilot, "starman")
+	pilot.Charges = 1
+	g.events, g.nextEvent = nil, 0
+	for range 60 {
+		g.Tick++
+		if !g.fireLaser(pilot) {
+			t.Fatal("a cosmetic sample blocked a Starman volley")
+		}
+	}
+	if pilot.ShotSerial != 60 || pilot.Charges != 1 || pilot.Cooldown != 0 || pilot.Power != "laser" {
+		t.Fatalf("cosmetics changed firing or saved ammunition: %+v", pilot)
+	}
+	if g.nextEvent != 30 {
+		t.Fatalf("want 15 beam and 15 shot cosmetics, got %d events", g.nextEvent)
+	}
+	// The second shot lies between cosmetic samples and must still publish its
+	// precise path and resolve a shield hit immediately.
+	pilot.ShotSerial = 1
+	target.Invulnerable, target.Shield, target.ShieldCharges = 0, 10, 1
+	g.events = nil
+	if !g.fireLaser(pilot) || target.ShieldCharges != 0 || !target.Alive {
+		t.Fatal("an unsampled volley failed to resolve its shield hit")
+	}
+	if len(g.events) < 2 || g.events[0].Type != "laser" || g.events[0].ShotSerial != 2 || g.events[1].Type != "shield" {
+		t.Fatalf("a hit must publish its exact beam before damage: %+v", g.events)
+	}
+}
+
 func TestStarmanRetiresOldestProjectileAtSafetyLimit(t *testing.T) {
 	g := battle(2)
 	pilot, other := g.Tanks[0], g.Tanks[1]

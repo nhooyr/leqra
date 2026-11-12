@@ -83,6 +83,70 @@ final class PracticeTests: XCTestCase {
         XCTAssertEqual(arena.snapshot.tanks[0].ammoUsed, 0)
     }
 
+    func testStarmanCosmeticsUseFifteenHzWhileEveryWeaponKeepsSixtyHzFire() {
+        for power in ["", "rapid", "scatter", "homing", "laser", "cannon"] {
+            let arena = solitary(power)
+            PracticeArena.applyPower(tank: &arena.snapshot.tanks[0], kind: "starman", starDuration: 20)
+            let charges = arena.snapshot.tanks[0].charges, rounds = arena.snapshot.tanks[0].machineRounds
+            var latestEffect = 0, cosmetics = 0
+            for _ in 0..<60 {
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                cosmetics += arena.snapshot.effects.filter { $0.id > latestEffect && ($0.kind.hasPrefix("shot:") || $0.kind == "laser") }.count
+                latestEffect = max(latestEffect, arena.snapshot.effects.map(\.id).max() ?? 0)
+                XCTAssertEqual(arena.snapshot.tanks[0].ammoUsed, 0, power)
+                XCTAssertEqual(arena.snapshot.tanks[0].charges, charges, power)
+                XCTAssertEqual(arena.snapshot.tanks[0].machineRounds, rounds, power)
+                XCTAssertLessThanOrEqual(arena.snapshot.bullets.count, 115, power)
+            }
+            XCTAssertEqual(cosmetics, 15, power)
+            if ["", "cannon"].contains(power) { XCTAssertEqual(arena.snapshot.bullets.count, 60, power) }
+            if power == "scatter" { XCTAssertEqual(arena.snapshot.bullets.count, 115) }
+        }
+    }
+
+    func testFiniteBoostedLaserHitBetweenCosmeticFramesStillShowsAndDamagesImmediately() {
+        let world = ArenaWorld(width: 588, height: 588, cols: 7, rows: 7)
+        let arena = PracticeArena(seed: 42, name: "SNOW FOX", colorIndex: 0, botCount: 0, world: world)
+        var shooter = ArenaTank(id: 1, x: 42, y: 42)
+        PracticeArena.applyPower(tank: &shooter, kind: "laser")
+        PracticeArena.applyPower(tank: &shooter, kind: "starman")
+        arena.snapshot.tanks = [shooter]
+        arena.step(input: GameInput(fire: true), dt: 1 / 60)
+        let firstID = arena.snapshot.effects.map(\.id).max() ?? 0
+        arena.snapshot.tanks.append(ArenaTank(id: 2, x: 100, y: 42, shield: 15, shieldCharges: 1))
+        arena.step(input: GameInput(fire: true), dt: 1 / 60)
+        XCTAssertEqual(arena.snapshot.effects.filter { $0.id > firstID && ["laser", "shield"].contains($0.kind) }.map(\.kind), ["laser", "shield"])
+        XCTAssertEqual(arena.snapshot.tanks[1].shieldCharges, 0)
+        XCTAssertEqual(arena.snapshot.tanks[1].hp, 1)
+        XCTAssertEqual(arena.snapshot.tanks[0].charges, 3)
+    }
+
+    func testSaturatedProjectileCompactionRetainsOrderAndAuthoritativeAmmoMetadata() {
+        let arena = PracticeArena(seed: 42, name: "SNOW FOX", colorIndex: 0, botCount: 8)
+        for index in arena.snapshot.tanks.indices {
+            arena.snapshot.tanks[index].bot = false
+            arena.snapshot.tanks[index].team = 1
+            PracticeArena.applyPower(tank: &arena.snapshot.tanks[index], kind: "cannon")
+            PracticeArena.applyPower(tank: &arena.snapshot.tanks[index], kind: "starman", starDuration: 20)
+        }
+        for _ in 0..<360 {
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            let ids = arena.snapshot.bullets.map(\.id)
+            XCTAssertEqual(ids, ids.sorted())
+            XCTAssertEqual(Set(ids).count, ids.count)
+            for tank in arena.snapshot.tanks {
+                let owned = arena.snapshot.bullets.filter { $0.owner == tank.id }
+                XCTAssertLessThanOrEqual(owned.count, 115)
+                XCTAssertEqual(tank.ammoUsed, 0)
+                XCTAssertEqual(tank.charges, 3)
+                XCTAssertEqual(tank.grenades, 0)
+                XCTAssertEqual(tank.grenadeLife, 0)
+            }
+            XCTAssertEqual(arena.snapshot.boostedBulletIds, ids)
+        }
+        XCTAssertEqual(arena.snapshot.bullets.count, 9 * 115)
+    }
+
     func testGrenadeHoldDoesNotDetonateUntilNextPress() {
         let arena = solitary("grenade")
         for _ in 0..<6 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }

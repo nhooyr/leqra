@@ -1,5 +1,6 @@
 import SwiftUI
 import SpriteKit
+import QuartzCore
 import leqraCore
 
 @MainActor
@@ -94,6 +95,7 @@ final class GameSession: ObservableObject {
     private var previousPresentedPhase = ""
     private var weaponsLiveRemaining = 0.0
     private var modeProfiles: [String: RoomRules] = [:]
+    private var frameProfiler: FrameProfiler?
 
     init() {
         localRules.infinity = false
@@ -102,7 +104,21 @@ final class GameSession: ObservableObject {
         scene.onFrame = { [weak self] dt in self?.frame(dt) }
         roomClient.onEvent = { [weak self] event in self?.receive(event, arena: false) }
         arenaClient.onEvent = { [weak self] event in self?.receive(event, arena: true) }
-        if ProcessInfo.processInfo.arguments.contains("--native-render-probe") {
+        if ProcessInfo.processInfo.arguments.contains("--native-performance-probe") {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.leave()
+                let profiler = FrameProfiler(arguments: ProcessInfo.processInfo.arguments)
+                self.frameProfiler = profiler
+                self.practice = PracticeArena(seed: 42, name: "PROBE PILOT", colorIndex: 0, botCount: 0)
+                self.maze = profiler.maze; self.localID = 1
+                self.localRules.infinity = true; self.publicInfinitySelected = false
+                self.scene.profilesRendering = true
+                self.screen = .playing
+                UIApplication.shared.isIdleTimerDisabled = true
+                self.applyAudioSetting()
+            }
+        } else if ProcessInfo.processInfo.arguments.contains("--native-render-probe") {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.publicInfinitySelected = false
@@ -406,6 +422,7 @@ final class GameSession: ObservableObject {
     }
 
     func leave() {
+        frameProfiler = nil; scene.profilesRendering = false
         audio.reset()
         scene.resetControls(); scene.resetWorld()
         roomClient.disconnect(); arenaClient.disconnect()
@@ -579,6 +596,13 @@ final class GameSession: ObservableObject {
 
     private func frame(_ dt: TimeInterval) {
         guard screen == .playing, !paused else { return }
+        let profiling = frameProfiler != nil
+        let cpuStart = profiling ? CACurrentMediaTime() : 0
+        var simulationSeconds = 0.0, audioSeconds = 0.0, hudSeconds = 0.0
+        defer {
+            frameProfiler?.record(dt: dt, cpu: CACurrentMediaTime() - cpuStart, simulation: simulationSeconds,
+                                  audio: audioSeconds, hud: hudSeconds, rendering: scene.renderMetrics)
+        }
         frameElapsed += dt; frameCount += 1
         if frameElapsed >= 1 {
             measuredFPS = Int((Double(frameCount) / frameElapsed).rounded())
@@ -593,8 +617,10 @@ final class GameSession: ObservableObject {
             frameElapsed = 0; frameCount = 0
         }
         let input = scene.input
+        let simulationStart = profiling ? CACurrentMediaTime() : 0
         var snapshot: ArenaSnapshot?
-        if let practice {
+        if let frameProfiler { snapshot = frameProfiler.snapshot(dt: dt) }
+        else if let practice {
             practiceElapsed += min(dt, 0.1)
             while practiceElapsed + 1e-9 >= 1 / 60 {
                 practice.step(input: input, dt: 1 / 60)
@@ -617,6 +643,7 @@ final class GameSession: ObservableObject {
             if timeline.stale { status = "Waiting for server…" }
         }
         guard let snapshot else { return }
+        if profiling { simulationSeconds = CACurrentMediaTime() - simulationStart }
         if !isInfinity, previousPresentedPhase == "countdown", snapshot.phase == "playing" {
             weaponsLive = true; weaponsLiveRemaining = 0.8
         }
@@ -627,10 +654,16 @@ final class GameSession: ObservableObject {
             if weaponsLiveRemaining == 0 { weaponsLive = false }
         }
         lastSnapshot = snapshot
+        let audioStart = profiling ? CACurrentMediaTime() : 0
         audio.consume(snapshot: snapshot, localID: localID, infinity: isInfinity, online: !offline)
+        if profiling { audioSeconds = CACurrentMediaTime() - audioStart }
         scene.display(snapshot: snapshot, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
         hudElapsed += dt
-        if hudElapsed >= 0.1 { hudElapsed = 0; syncHUD(snapshot) }
+        if hudElapsed >= 0.1 {
+            let hudStart = profiling ? CACurrentMediaTime() : 0
+            hudElapsed = 0; syncHUD(snapshot)
+            if profiling { hudSeconds = CACurrentMediaTime() - hudStart }
+        }
     }
 
     private func syncHUD(_ snapshot: ArenaSnapshot) {
