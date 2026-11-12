@@ -1,13 +1,17 @@
-# leqra v4.49.27 — current game protocol (protocol 1)
+# leqra v4.49.28 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.27**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.28**.
 
 ```json
-{"type":"server_hello","version":"4.49.27","protocol":1}
-{"type":"client_hello","version":"4.49.27","protocol":1}
+{"type":"server_hello","version":"4.49.28","protocol":1}
+{"type":"client_hello","version":"4.49.28","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
+
+## App updates
+
+`GET /api/build` returns uncached `version` and `build` identifiers. The server fingerprints the complete embedded bundle, adds that build to shell asset URLs, and serves its worker at `/sw.js`; legacy versioned worker URLs remain updateable aliases. Workers cache a complete matching build before activation. Open clients defer refresh during games, online sessions, and edits, and save offline room configuration before refreshing.
 
 ## Snapshot compression
 
@@ -19,7 +23,7 @@ The server negotiates no context takeover in either direction. Compressed client
 
 `/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
-Public joins may send `localName` for a second tank. Private joins derive Player 2 from the authenticated pilot's active local seat in the room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
+Public joins may send `localName` for a second tank, with optional `colorIndex` and `localColorIndex` palette selections from 0 to 7. Private joins derive Player 2 and both tanks' paint from the authenticated room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
 
 Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for one second after the tank's destruction, even if the hold ends sooner.
 

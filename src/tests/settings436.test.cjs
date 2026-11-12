@@ -13,7 +13,7 @@ function boot(storage=new Map(),touchUI=false){
  Object.assign(s,{infinityOffline:false,infinityOnline:true,location:{protocol:'https:'},navigator:{onLine:true},renderOnlineRoom(){},resetPreviewIfLobby(){s.previewReset=true;},readyRoom(){s.persistLocalRoomRules();},callsignForms:()=>[],save(key,value){storage.set('leqra.'+key,String(value));}});
  Object.assign(s.document,{body:{classList:{remove(){}}},documentElement:{style:{removeProperty(){}}}});
  try{s.infinityOffline=storage.get('leqra.infinityOffline')==='1';s.infinityOnline=storage.get('leqra.infinityOnline')!=='0';}catch(_){}
- vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
+ vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const colorIndex=.*$/m)[0],s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
  for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','canPlayOnlineInfinity','infinityPlayMode','selectLocalInfinity','ensureDefaultLocalBots','selectPublicInfinity','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','startInfinity','createLocalRoom'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.loadLocalRoomRules();return {s,$,storage,toggles};
 }
@@ -185,8 +185,8 @@ test('random Infinity bot settings validate and each affects authoritative room 
 });
 
 test('Infinity start passes both local pilots and reserves room rules for room runs',()=>{
- const {s}=boot(),local={id:7,kind:'local',name:'Wing'};
- s.localRoom.self=4;s.localRoom.rules={...s.localRoom.rules,infinity:true,infinityTarget:12};s.localRoom.players=[local,pilot({id:4,name:'Lead'})];
+ const {s}=boot(),local={id:7,kind:'local',name:'Wing',colorIndex:0};
+ s.localRoom.self=4;s.localRoom.rules={...s.localRoom.rules,infinity:true,infinityTarget:12};s.localRoom.players=[local,pilot({id:4,name:'Lead',colorIndex:6})];
  Object.assign(s,{window:{leqraInfinity:{start:(kind,options)=>s.launch={kind,options}}},roomMember:id=>s.localRoom.players.find(p=>p.id===id),secondLocal:()=>local,
   bindings:[],closeVictory(){},clearInput(){},cancelPendingAudio(){}});
  s.startInfinity('offline');
@@ -195,13 +195,22 @@ test('Infinity start passes both local pilots and reserves room rules for room r
  assert.equal(s.launch.options.primaryId,4);
  assert.equal(s.launch.options.localId,7);
  assert.equal(s.launch.options.localName,'Wing');
+ assert.equal(s.launch.options.colorIndex,6);
+ assert.equal(s.launch.options.localColorIndex,0);
  s.startInfinity('online');
  assert.equal(s.launch.options.roomRules,null);
  assert.equal(s.launch.options.roster.length,0);
  assert.equal(s.launch.options.localName,'Wing');
+ assert.equal(s.launch.options.colorIndex,6);
+ assert.equal(s.launch.options.localColorIndex,0);
  s.startInfinity('online',{code:'ROOM',token:'test'});
  assert.equal(s.launch.options.roomRules.infinityTarget,12);
  assert.equal(s.launch.options.token,'test');
+ s.localRoom.rules={...s.localRoom.rules,teamMode:'teams',teamColors:[3,5,2,4]};
+ s.localRoom.players.find(p=>p.id===4).team=1;local.team=2;
+ s.startInfinity('online');
+ assert.deepEqual([s.launch.options.colorIndex,s.launch.options.localColorIndex],[3,5],
+  'public Infinity inherits the paints displayed by the current room, including team colors');
 });
 
 test('each mode remembers its rules through mode changes and a fresh page load, keeping the selected map',()=>{

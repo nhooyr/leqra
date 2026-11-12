@@ -54,16 +54,18 @@ type infiniteServer struct {
 }
 
 type infiniteMessage struct {
-	Type       string `json:"type"`
-	Version    string `json:"version"`
-	Name       string `json:"name"`
-	LocalName  string `json:"localName"`
-	Code       string `json:"code"`
-	Token      string `json:"token"`
-	Resume     bool   `json:"resume"`
-	Generation uint64 `json:"generation"`
-	Local      bool   `json:"local"`
-	Paused     bool   `json:"paused"`
+	Type            string `json:"type"`
+	Version         string `json:"version"`
+	Name            string `json:"name"`
+	LocalName       string `json:"localName"`
+	ColorIndex      *int   `json:"colorIndex"`
+	LocalColorIndex *int   `json:"localColorIndex"`
+	Code            string `json:"code"`
+	Token           string `json:"token"`
+	Resume          bool   `json:"resume"`
+	Generation      uint64 `json:"generation"`
+	Local           bool   `json:"local"`
+	Paused          bool   `json:"paused"`
 	Input
 }
 
@@ -264,8 +266,14 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		if msg.Resume {
 			return infiniteConnection{}, infiniteResumeExpired
 		}
+		if msg.ColorIndex != nil && validColorIndex(msg.ColorIndex) {
+			first.colorIndex = *msg.ColorIndex
+		}
 		if cleanCallsign(msg.LocalName) != "" {
 			local = &infiniteSeat{name: msg.LocalName, colorIndex: -1}
+			if msg.LocalColorIndex != nil && validColorIndex(msg.LocalColorIndex) {
+				local.colorIndex = *msg.LocalColorIndex
+			}
 			seats++
 		}
 		if s.public.players+seats > infiniteCapacity {

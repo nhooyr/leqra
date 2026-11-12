@@ -6,6 +6,7 @@ python3 src/tests/mobile_layout_browser.py http://localhost:8080
 
 import argparse
 from pathlib import Path
+import re
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -339,6 +340,89 @@ def check_pause_scorecard(browser, devices, url, errors, screenshots):
     print("PASS Infinity pause scorecard corners, complete border, and arena restoration", flush=True)
 
 
+def check_standalone_header(browser, devices, url, errors, screenshots):
+    # Model the installed app's UA and JS display-mode signals. This is a layout
+    # regression, not a claim that desktop Playwright runs the iOS Home Screen shell.
+    ua = re.sub(r" (?:Version|Safari)/[\d.]+", "", devices["iPhone 13"]["user_agent"])
+    with browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True,
+                             is_mobile=True, user_agent=ua, service_workers="block") as context:
+        context.add_init_script("""(() => {
+            Object.defineProperty(navigator, 'standalone', {get: () => true});
+            const match = window.matchMedia.bind(window);
+            window.matchMedia = query => {
+                const result = match(query);
+                if (query !== '(display-mode: standalone)') return result;
+                return new Proxy(result, {get(target, key) {
+                    if (key === 'matches') return true;
+                    const value = Reflect.get(target, key, target);
+                    return typeof value === 'function' ? value.bind(target) : value;
+                }});
+            };
+        })();""")
+        chromium = browser.browser_type.name == "chromium"
+        if not chromium:
+            # Desktop WebKit cannot set native iOS safe areas. Retain every
+            # production rule and simulate just the environment values instead.
+            def safe_area_css(route):
+                response = route.fetch()
+                css = response.text()
+                for side in ("top", "right", "bottom", "left"):
+                    css = css.replace(f"env(safe-area-inset-{side})", f"var(--test-safe-{side}, 0px)")
+                route.fulfill(response=response, body=css)
+            context.route("**/style.css*", safe_area_css)
+        page = open_page(context, url, errors)
+        cdp = context.new_cdp_session(page) if chromium else None
+        page.locator("#infinityToggleLabel").tap()
+        page.locator("#copyInviteBtn").tap()
+        page.wait_for_function("() => leqra.getState().online?.connected")
+        page.locator("#startRoomBtn").tap()
+        page.wait_for_function("() => leqra.getState().phase === 'playing'")
+        for name, width, height, insets in (
+            ("portrait", 390, 844, {"top": 47, "right": 0, "bottom": 34, "left": 0}),
+            ("landscape", 844, 390, {"top": 0, "right": 47, "bottom": 21, "left": 47}),
+            ("restored", 390, 844, {"top": 47, "right": 0, "bottom": 34, "left": 0}),
+        ):
+            page.set_viewport_size({"width": width, "height": height})
+            if cdp:
+                cdp.send("Emulation.setSafeAreaInsetsOverride", {"insets": insets})
+            else:
+                page.evaluate("""insets => {
+                    for (const [side, value] of Object.entries(insets))
+                        document.documentElement.style.setProperty('--test-safe-' + side, value + 'px');
+                }""", insets)
+            page.evaluate("""() => {
+                window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}));
+                window.dispatchEvent(new Event('focus'));
+                document.dispatchEvent(new Event('visibilitychange'));
+                visualViewport.dispatchEvent(new Event('resize'));
+            }""")
+            page.wait_for_function("landscape => document.body.classList.contains('touch-landscape') === landscape",
+                                   arg=width > height)
+            page.wait_for_timeout(180)  # The WebKit viewport restoration debounce is 110ms.
+            geometry = page.evaluate("""() => {
+                const box = element => {
+                    const {left, top, right, bottom, height} = element.getBoundingClientRect();
+                    return {left, top, right, bottom, height};
+                };
+                const header = document.querySelector('#gameHeader');
+                return {
+                    standalone: navigator.standalone && matchMedia('(display-mode: standalone)').matches,
+                    app: box(document.querySelector('.app')), header: box(header), scrollX, scrollY,
+                    actions: [...header.querySelectorAll('.header-right > button')]
+                        .filter(button => button.getClientRects().length).map(box)
+                };
+            }""")
+            assert geometry["standalone"] and geometry["scrollX"] == geometry["scrollY"] == 0, geometry
+            assert abs(geometry["app"]["bottom"] - height) <= 1, geometry
+            assert geometry["header"]["top"] >= insets["top"], geometry
+            for action in geometry["actions"]:
+                assert insets["top"] <= action["top"] < action["bottom"] <= geometry["header"]["bottom"], geometry
+                assert insets["left"] <= action["left"] < action["right"] <= width - insets["right"], geometry
+            if screenshots:
+                page.screenshot(path=str(screenshots / f"standalone-header-{name}.png"))
+    print("PASS simulated standalone status bar, safe areas, rotation, and foreground restoration", flush=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", nargs="?", default="http://localhost:8080")
@@ -359,6 +443,7 @@ if __name__ == "__main__":
             check_narrow_online(browser, playwright.devices, args.url, errors)
             check_mobile_header(browser, playwright.devices, args.url, errors, args.engine == "chromium", args.screenshots)
             check_pause_scorecard(browser, playwright.devices, args.url, errors, args.screenshots)
+            check_standalone_header(browser, playwright.devices, args.url, errors, args.screenshots)
             assert not errors, errors
         finally:
             browser.close()

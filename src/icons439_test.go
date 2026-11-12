@@ -217,13 +217,14 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 
 	index := httptest.NewRecorder()
 	h.ServeHTTP(index, httptest.NewRequest("GET", "/", nil))
+	markup := strings.ReplaceAll(index.Body.String(), "?build="+index.Header().Get("X-Leqra-Build"), "")
 	for _, link := range []string{
 		`favicon-256.png" type="image/png" sizes="256x256"`,
 		`favicon.svg" type="image/svg+xml" sizes="any"`,
 		`apple-touch-icon.png" sizes="180x180"`,
 		`apple-touch-icon-512.png" sizes="512x512"`,
 	} {
-		if !strings.Contains(index.Body.String(), link) {
+		if !strings.Contains(markup, link) {
 			t.Fatalf("index does not advertise %s", link)
 		}
 	}

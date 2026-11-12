@@ -32,6 +32,8 @@ function harness(url = 'https://example.test/', openField = false, storage = new
    return new Proxy({
     rotate: value => {angle = value;},
     moveTo(x,y) {if (x===41 && y===-6) markers.push({angle,color:this.strokeStyle});},
+    fillText(text,x,y) {labels.push({text,x,y,color:this.fillStyle});},
+    stroke() {strokes.push(this.strokeStyle);},
    }, {get: (target,key) => target[key] ?? (()=>{})});
   }
   getBoundingClientRect() { return {left:0,top:0,width:96,height:96}; }
@@ -81,7 +83,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  const window = new Element();
  window.leqra = {version: '9.1.0'};
  window.matchMedia = () => ({matches: false});
- const sounds = [], loadouts = [], markers = [], combatPrefs = {visual:true,audio:true,fps:false};
+ const sounds = [], loadouts = [], markers = [], labels = [], strokes = [], combatPrefs = {visual:true,audio:true,fps:false};
  let chatOpen = false;
  const sidebarHome = {}, sidebarMoves = [], headerHome = {}, headerMoves = [];
  let sidebarParent = sidebarHome;
@@ -193,7 +195,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   }
   now = until;
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, labels, strokes, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
 }
 
 test('explicit Infinity exits restore launcher focus while forced closure keeps the current focus', () => {
@@ -333,6 +335,37 @@ test('offline Infinity uses room paint for both local pilots and roster bots', (
  assert.equal(rows[2].dataset.local,undefined);
  assert.deepEqual(byID('infiniteKills').children.map(node=>node.style.color),[colors[4],undefined,colors[7]]);
  infinity.close();
+});
+
+test('Infinity local tank labels use both callsigns and retain their own halos and selected paint',()=>{
+ const {infinity,state,advance,labels,strokes}=harness(undefined,true);
+ infinity.start('offline',{name:'Lead',localName:'Wing',colorIndex:4,localColorIndex:7});
+ assert.deepEqual(Array.from(state().tanks,t=>[t.name,t.colorIndex]),[['Lead',4],['Wing',7]]);
+ advance(2);
+ const names=labels.filter(label=>label.x===0&&label.y===-36).map(label=>label.text);
+ assert.ok(names.includes('Lead'));
+ assert.ok(names.includes('Wing'));
+ assert.ok(!names.includes('YOU'));
+ assert.ok(strokes.includes('#bf5cff'));
+ assert.ok(strokes.includes('#ff4fd8'));
+});
+
+test('public Infinity sends selected paint for both pilots and preserves valid palette zero',()=>{
+ const {infinity,sockets}=harness();
+ infinity.start('online',{name:'Lead',localName:'Wing',colorIndex:0,localColorIndex:7});
+ sockets[0].emit('open');
+ assert.deepEqual([sockets[0].sent[0].name,sockets[0].sent[0].localName,
+  sockets[0].sent[0].colorIndex,sockets[0].sent[0].localColorIndex],['Lead','Wing',0,7]);
+ infinity.close();
+ infinity.start('online',{colorIndex:-1,localColorIndex:99});
+ sockets[1].emit('open');
+ assert.equal(sockets[1].sent[0].colorIndex,undefined);
+ assert.equal(sockets[1].sent[0].localColorIndex,undefined);
+ infinity.close();
+ infinity.start('online',{code:'PRIVATE',token:'secret',localName:'Wing',colorIndex:4,localColorIndex:7});
+ sockets[2].emit('open');
+ assert.equal(sockets[2].sent[0].colorIndex,undefined,'authenticated private roster owns P1 paint');
+ assert.equal(sockets[2].sent[0].localColorIndex,undefined,'authenticated private roster owns P2 paint');
 });
 
 test('online Infinity score and rank colors track both tanks even when scores stay the same',()=>{

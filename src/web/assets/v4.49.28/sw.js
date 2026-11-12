@@ -1,6 +1,7 @@
 'use strict';
-const VERSION = 'v4.49.27';
-const CACHE = 'leqra-app-' + VERSION;
+const VERSION = 'v4.49.28';
+const BUILD = self.LEQRA_BUILD || VERSION;
+const CACHE = 'leqra-app-' + BUILD;
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
   BASE + 'theme.js',
@@ -24,16 +25,36 @@ const SHELL = [
 ];
 
 async function installShell() {
-  const response = await fetch('/', {cache: 'reload'});
+  const response = await fetch('/', {cache: 'no-store'});
   if (!response.ok) throw new Error('The leqra shell is unavailable.');
   const html = await response.clone().text();
   const shellVersion = '<meta name="leqra-version" content="' + VERSION + '">';
-  if (!html.includes(shellVersion) || !html.includes('src="' + BASE.slice(1) + 'game.js"')) {
+  const links = [...html.matchAll(/\b(?:src|href)="(assets\/[^\"]+)"/g)].map(match => match[1].split('?')[0]);
+  if (!html.includes(shellVersion) || !links.includes(BASE.slice(1) + 'game.js') || links.some(path => !path.startsWith(BASE.slice(1)))) {
     throw new Error('The leqra shell changed while installing.');
   }
-  const cache = await caches.open(CACHE);
-  await cache.addAll(SHELL);
-  await cache.put('/', response);
+  if (BUILD !== VERSION && !html.includes('<meta name="leqra-build" content="' + BUILD + '">')) {
+    throw new Error('The leqra build changed while installing.');
+  }
+  // Fetch a complete, fresh bundle before writing it. A build query also avoids
+  // an older immutable HTTP entry when CSS changed without a version change.
+  const files = await Promise.all(SHELL.map(async path => {
+    const url = new URL(path, self.location.origin);
+    url.searchParams.set('build', BUILD);
+    const asset = await fetch(url.href, {cache: 'reload'});
+    const build = asset.headers.get('X-Leqra-Build');
+    if (!asset.ok || build && build !== BUILD) throw new Error('A leqra asset changed while installing.');
+    return [path, asset];
+  }));
+  const existed = (await caches.keys()).includes(CACHE);
+  try {
+    const cache = await caches.open(CACHE);
+    await Promise.all(files.map(([path, asset]) => cache.put(path, asset)));
+    await cache.put('/', response);
+  } catch (error) {
+    if (!existed) await caches.delete(CACHE).catch(() => {});
+    throw error;
+  }
   await self.skipWaiting();
 }
 
@@ -41,14 +62,19 @@ self.addEventListener('install', event => event.waitUntil(installShell()));
 
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
-    keys.filter(key => key.startsWith('leqra-app-') && key !== CACHE).map(key => caches.delete(key))
+    // Keep two prior bundles available to pages that defer an update mid-match.
+    keys.filter(key => key.startsWith('leqra-app-') && key !== CACHE).slice(0, -2).map(key => caches.delete(key))
   )).then(() => self.clients.claim()));
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type === 'LEQRA_BUILD_INFO') event.ports?.[0]?.postMessage({build: BUILD, version: VERSION});
 });
 
 async function appNavigation(request) {
   const cachedShell = () => caches.match('/', {cacheName: CACHE}).catch(() => undefined);
   const controller = new AbortController();
-  const network = fetch(request, {signal: controller.signal}).then(async result => {
+  const network = fetch(request, {signal: controller.signal, cache: 'no-store'}).then(async result => {
     if (![502, 503, 504].includes(result.status)) return result;
     return (await cachedShell()) || result;
   }, cachedShell);
@@ -95,11 +121,18 @@ self.addEventListener('fetch', event => {
   // before its own worker finishes installing the complete replacement.
   if (request.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
     response = appNavigation(request);
-  } else if (url.pathname.startsWith(BASE)) {
-    response = caches.match(request).catch(() => undefined).then(cached =>
-      cached || fetch(request).then(result => storeResponse(request, result))
+  } else {
+    const asset = url.pathname.match(/^\/assets\/(v\d+\.\d+\.\d+)\/([^/]+)$/);
+    if (!asset || !SHELL.includes(BASE + asset[2])) return;
+    const requested = url.searchParams.get('build');
+    const cacheBuild = requested && new RegExp('^' + asset[1].replaceAll('.', '\\.') + '(?:-[0-9a-f]{16})?$').test(requested)
+      ? requested : asset[1] === VERSION ? BUILD : asset[1];
+    response = caches.match(url.pathname, {cacheName: 'leqra-app-' + cacheBuild}).catch(() => undefined).then(cached =>
+      cached || fetch(request).then(result => cacheBuild === BUILD && url.pathname.startsWith(BASE) &&
+        (!result.headers.get('X-Leqra-Build') || result.headers.get('X-Leqra-Build') === BUILD)
+        ? storeResponse(url.pathname, result) : result)
     );
-  } else return;
+  }
 
   event.respondWith(response);
   // Register synchronously, and keep the worker alive through the eventual
