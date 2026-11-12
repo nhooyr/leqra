@@ -160,6 +160,7 @@ public struct ServerNotice: Decodable, Sendable {
     public let room: String?
     public let id: Int?
     public let conflicts: [CallsignConflict]?
+    public let seat: Int?
 }
 
 public struct NativeMatchPlayer: Codable, Identifiable, Equatable, Sendable {

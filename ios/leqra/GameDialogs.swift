@@ -18,6 +18,7 @@ struct WebModal<Content: View>: View {
                         }
                         WebStyle.border.frame(height: 1)
                         ScrollView { content().frame(maxWidth: .infinity, alignment: .leading) }.scrollDismissesKeyboard(.interactively)
+                            .accessibilityIdentifier("modalScroll")
                     }
                 }.frame(maxWidth: 650, maxHeight: min(760, max(200, geometry.size.height - 24))).padding(12)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -77,8 +78,11 @@ struct PauseCard: View {
     private var actions: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("CALLSIGN").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-            TextField("Callsign", text: $session.callsign).modifier(WebField()).autocorrectionDisabled().onSubmit { session.saveCallsign() }
-                .task { session.scheduleCallsignAvailability() }
+            HStack(spacing: 8) {
+                TextField("Callsign", text: $session.callsign).modifier(WebField()).autocorrectionDisabled().onSubmit { session.saveCallsign() }
+                    .task { session.scheduleCallsignAvailability() }
+                AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "pauseAccount")
+            }
             CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
             Button(session.offline ? "← BACK TO THE BATTLE" : "← BACK TO THE ARENA") { session.saveCallsign(); session.setPaused(false) }
                 .buttonStyle(WebButtonStyle(kind: .primary)).disabled(!session.canResume).accessibilityIdentifier("Resume")
@@ -177,8 +181,139 @@ struct NativeSettings: View {
                 Text("ONLINE SERVER").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("https://leqra.com", text: $session.serverAddress).modifier(WebField()).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Text("Native protocol \(NetworkClient.supportedVersion)").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                Button("ACCOUNT KEY") { session.openAccount() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsAccount")
+                Button("P2 ACCOUNT KEY") { session.openAccount(seat: 1) }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsLocalAccount")
                 Button("DONE") { session.showSettings = false }.buttonStyle(WebButtonStyle(kind: .primary)).accessibilityIdentifier("Done")
             }.font(.system(size: 13)).tint(WebStyle.accent)
+        }
+    }
+}
+
+struct AccountPanel: View {
+    @ObservedObject var session: GameSession
+    @State private var draft = ""
+    @State private var checked: GameSession.CheckedAccount?
+    @State private var checking = false
+    @State private var message = ""
+    @State private var confirmReset = false
+    @State private var checkTask: Task<Void, Never>?
+
+    var body: some View {
+        WebModal(title: "Account key", close: session.closeAccount) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(session.accountContextIdentity).font(WebStyle.mono(12, weight: .bold))
+                    .foregroundStyle(session.accountSeatContext == 1 ? WebStyle.mapped(session.accountLocalPlayer?.color ?? GamePalette.colors[1]) : WebStyle.paint(session.colorIndex))
+                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("accountPlayerIdentity")
+                Text("Each local player has a separate account key. Copying, importing, or resetting this key affects only this player's account.")
+                    .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+                Text(session.accountOrigin).font(WebStyle.mono()).foregroundStyle(WebStyle.muted).fixedSize(horizontal: false, vertical: true)
+                Text("Your key controls your reserved callsigns and public Infinity score. Copy it to another trusted device to use the same account. Keep it private.")
+                    .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+                Text(session.accountHasKey ? "••••••••••••••••" : "No account key saved on this device.")
+                    .font(WebStyle.mono()).accessibilityIdentifier("maskedAccountKey")
+                Button(session.accountPendingKeyVerified ? "COPY NEW ACCOUNT KEY" : "COPY ACCOUNT KEY") { session.copyAccountKey() }.buttonStyle(WebButtonStyle())
+                    .disabled(!session.accountCanCopyKey || session.accountBusy).accessibilityIdentifier("copyAccountKey")
+                if let info = session.accountInfo { accountPreview(info) }
+                Text(session.accountStatus).font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                    .frame(minHeight: 30, alignment: .topLeading).accessibilityIdentifier("accountStatus")
+                if session.accountSavedActivationCount > 0 {
+                    Text("A previous activation may have completed after its connection closed. Its key is saved separately and will not replace your selected account without review.")
+                        .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                    ForEach(0..<session.accountSavedActivationCount, id: \.self) { index in
+                        Button("REVIEW SAVED ACTIVATION \(index + 1)") {
+                            checkTask?.cancel(); checking = true; checked = nil; message = ""
+                            checkTask = Task { @MainActor in
+                                do {
+                                    let result = try await session.checkSavedActivation(index)
+                                    guard !Task.isCancelled else { return }
+                                    checked = result; checking = false
+                                } catch {
+                                    guard !Task.isCancelled else { return }
+                                    checking = false; message = "That activation is not confirmed yet. Its key remains saved; try again later."
+                                }
+                            }
+                        }.buttonStyle(WebButtonStyle()).disabled(!session.canImportAccount || checking || session.accountBusy)
+                    }
+                }
+                WebStyle.border.frame(height: 1)
+                Text("IMPORT ACCOUNT KEY").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                SecureField("Paste account key", text: $draft).modifier(WebField())
+                    .textContentType(.oneTimeCode).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                    .disabled(!session.canImportAccount || session.accountBusy || session.accountRecoveryKeyPending)
+                    .accessibilityIdentifier("importAccountKey")
+                    .onChange(of: draft) { _ in checked = nil; message = ""; checkTask?.cancel(); checking = false }
+                if !session.canImportAccount {
+                    Text("Return to the offline ready room to import or reset a key.").font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                } else {
+                    Button("CHECK KEY") { checkKey() }.buttonStyle(WebButtonStyle())
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || checking || session.accountBusy || session.accountRecoveryKeyPending)
+                        .accessibilityIdentifier("checkAccountKey")
+                    if let checked {
+                        accountPreview(checked.info)
+                        Text("This replaces the account key saved on this device for this server. Copy your current key first if you want to keep it.")
+                            .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                        Button("USE THIS ACCOUNT") {
+                            checking = true
+                            checkTask = Task { @MainActor in
+                                let accepted = await session.useAccount(checked)
+                                guard !Task.isCancelled else { return }
+                                checking = false
+                                if accepted { self.checked = nil; draft = "" }
+                            }
+                        }.buttonStyle(WebButtonStyle(kind: .primary)).accessibilityIdentifier("useAccountKey")
+                            .disabled(checking || session.accountBusy)
+                    }
+                }
+                Text(checking ? "Checking key…" : message).font(.system(size: 11)).foregroundStyle(WebStyle.danger)
+                    .frame(minHeight: 30, alignment: .topLeading).accessibilityIdentifier("accountImportStatus")
+                WebStyle.border.frame(height: 1)
+                Button(session.accountRecoveryKeyPending ? "RETRY KEY RESET" : "RESET ACCOUNT KEY") {
+                    checkTask?.cancel(); checked = nil; draft = ""; message = ""
+                    confirmReset = true
+                }
+                    .buttonStyle(WebButtonStyle(kind: .danger))
+                    .disabled(!session.canImportAccount || !session.accountCanResetKey || session.accountBusy || checking)
+                    .accessibilityIdentifier("resetAccountKey")
+                Text("Reset signs out every other device and invalidates the old key. Your names and scores stay with the new key.")
+                    .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                Text("Lost your key? Copy it from a signed-in device. If none remain, there is no automatic recovery and your callsigns stay reserved. You can ask for manual help on GitHub.")
+                    .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+                Link("Open a GitHub issue", destination: URL(string: "https://github.com/nhooyr/leqra/issues/new")!)
+                    .font(.system(size: 12)).foregroundStyle(WebStyle.accent)
+                Button("DONE") { session.closeAccount() }.buttonStyle(WebButtonStyle(kind: .primary))
+            }.font(.system(size: 13))
+        }
+        .confirmationDialog("Reset account key?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset key and sign out other devices", role: .destructive) { Task { await session.resetAccountKey() } }
+        } message: { Text("Every other device will need the new key to sign in again. Callsigns and scores are preserved.") }
+        .onDisappear { checkTask?.cancel(); draft = ""; checked = nil }
+    }
+
+    @ViewBuilder private func accountPreview(_ info: AccountInfo) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if let profile = info.publicProfile {
+                Text("\(profile.name), score: \(profile.score)").fontWeight(.semibold)
+                if let local = profile.localName { Text("\(local), score: \(profile.localScore ?? 0)") }
+            }
+            if !info.names.isEmpty {
+                Text("Reserved callsigns: " + info.names.joined(separator: ", "))
+                if info.totalNames > info.names.count { Text("Showing \(info.names.count) of \(info.totalNames) reserved callsigns.") }
+            }
+        }.font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func checkKey() {
+        checkTask?.cancel(); checked = nil; checking = true; message = ""
+        let input = draft
+        checkTask = Task { @MainActor in
+            do {
+                let result = try await session.checkAccountKey(input)
+                guard !Task.isCancelled, draft == input else { return }
+                checked = result; checking = false
+            } catch {
+                guard !Task.isCancelled, draft == input else { return }
+                message = error.localizedDescription; checking = false
+            }
         }
     }
 }
@@ -274,8 +409,11 @@ struct JoinRoomPanel: View {
         WebModal(title: "Find a room.", close: { session.showJoin = false }) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("CALLSIGN").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                TextField("Callsign", text: $session.callsign).modifier(WebField())
-                    .task { session.scheduleCallsignAvailability() }
+                HStack(spacing: 8) {
+                    TextField("Callsign", text: $session.callsign).modifier(WebField())
+                        .task { session.scheduleCallsignAvailability() }
+                    AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "joinAccount")
+                }
                 CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
                 Text("ROOM NAME OR CODE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("Friday tanks 💥", text: $code).modifier(WebField()).autocorrectionDisabled()

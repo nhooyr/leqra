@@ -378,7 +378,7 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 			names = append(names, cleanName(seat.Name))
 		}
 	}
-	ownerToken, ok := h.claimRoomCallsigns(c, "preset", c.player.PublicToken, names)
+	ownerToken, ok := h.claimNewRoomAccounts(c, "preset", c.player.PublicToken, m.LocalPublicToken, m.LocalNewAccount, m.IndependentAccounts || c.independentAccounts, names)
 	if !ok {
 		return
 	}
@@ -399,6 +399,12 @@ func (h *Hub) applyPreset(c *Client, m clientMessage, now time.Time) {
 		}
 		r.NextMember++
 		r.Players[id] = &Player{ID: id, Member: r.NextMember, Kind: s.Kind, Name: cleanName(s.Name), Team: s.Team, ColorIndex: copyColorIndex(s.ColorIndex), Owner: r.Host, Controller: c.player, Difficulty: s.Difficulty, InputAt: now}
+		if s.Kind == "local" && c.independentAccounts {
+			r.Players[id].PublicToken = c.localOwnerToken
+		}
+	}
+	if c.independentAccounts {
+		h.sendControllerAccounts(c)
 	}
 	r.Game.Rules = normalizedRules(*m.Rules)
 	r.Game.Clock = float64(m.Rules.TimeLimit)

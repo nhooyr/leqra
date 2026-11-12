@@ -8,15 +8,15 @@ function boot(){
  const storage=new Map(),pending=[],timers=new Map();let next=0;
  const context={AbortController,URL,location:{protocol:'https:',href:'https://example.test/'},localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},online:{},mode:'room',window:{},$:()=>status,cleanPilotName:value=>String(value).trim(),secondaryMember:()=>null,roomMember:()=>null,localPlayerID:()=>0,
   setTimeout(fn){timers.set(++next,fn);return next;},clearTimeout(id){timers.delete(id);},fetch(url,request){return new Promise(resolve=>pending.push({url,request,resolve}));}};
- vm.createContext(context);for(const name of ['publicIdentityToken','rememberPublicIdentity','callsignAvailabilityNames','scheduleCallsignAvailability','checkCallsignAvailability'])vm.runInContext((name==='checkCallsignAvailability'?'async ':'')+declaration(name),context);
+ vm.createContext(context);for(const name of ['publicIdentityToken','rememberPublicIdentity','localAccountRegistrationPending','callsignAvailabilityNames','scheduleCallsignAvailability','checkCallsignAvailability'])vm.runInContext((name==='checkCallsignAvailability'?'async ':'')+declaration(name),context);
  return{context,status,field,form,storage,pending,timers};
 }
 test('availability is advisory offline, authenticates ownership, and never sends a score',async()=>{
  const {context:s,status,field,form,pending,storage}=boot();s.rememberPublicIdentity('p_owner');field.callsignCheckRevision=1;
  const check=s.checkCallsignAvailability(field,form,1,field.value);
- const request=JSON.parse(pending[0].request.body);assert.deepEqual(request,{publicToken:'p_owner',names:['Taken']});assert.equal(new URL(pending[0].url).pathname,'/api/callsigns');
+ const request=JSON.parse(pending[0].request.body);assert.deepEqual(request,{publicToken:'p_owner',independentAccounts:true,names:['Taken']});assert.equal(new URL(pending[0].url).pathname,'/api/callsigns');
  pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Taken',available:false}]})});await check;
- assert.equal(status.textContent,'Used online. Offline play is available.');assert.equal(field['aria-invalid'],'true');assert.equal(field.disabled,false,'offline editing and play remain unrestricted');
+ assert.equal(status.textContent,'Used online; offline is OK. Yours?');assert.equal(field['aria-invalid'],'true');assert.equal(field.disabled,false,'offline editing and play remain unrestricted');
  s.rememberPublicIdentity('');assert.equal(storage.has('leqra.publicToken'),false);
 });
 test('stale availability replies cannot replace feedback for a newer draft',async()=>{
@@ -27,11 +27,19 @@ test('stale availability replies cannot replace feedback for a newer draft',asyn
  pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Taken',available:false}]})});await old;
  assert.equal(status.textContent,'');assert.equal(status.hidden,true);assert.equal(field['aria-invalid'],'false');
 });
+test('a saved fresh P2 key checks its legacy callsign as an eligible migration without allocating another key',async()=>{
+ const {context:s,status,field,form,pending,storage}=boot(),candidate='p_'+Buffer.alloc(32,9).toString('base64url');
+ storage.set('leqra.publicToken','p_owner');storage.set('leqra.localAccountRegistration',JSON.stringify({token:candidate}));s.roomMember=()=>({name:'Primary'});form.dataset.pilot='secondary';field.callsignCheckRevision=1;
+ const before=[...storage],check=s.checkCallsignAvailability(field,form,1,field.value),request=JSON.parse(pending[0].request.body);
+ assert.deepEqual(request,{publicToken:'p_owner',localPublicToken:candidate,localNewAccount:true,independentAccounts:true,names:['Primary','Taken']});
+ pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Primary',available:true},{seat:1,name:'Taken',available:true}]})});await check;
+ assert.equal(status.hidden,true);assert.equal(field['aria-invalid'],'false');assert.deepEqual([...storage],before,'advisory editing preserves the pre-saved registration without minting a key');
+});
 test('a duplicate local callsign warns the edited primary as well as the co-pilot',async()=>{
  const {context:s,status,field,form,pending}=boot();s.secondaryMember=()=>({name:'TAKEN'});s.mode='online';field.callsignCheckRevision=1;
  const check=s.checkCallsignAvailability(field,form,1,'Taken');
  pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Taken',available:true},{seat:1,name:'TAKEN',available:false}]})});await check;
- assert.equal(status.textContent,'Already used online. Choose another callsign.');assert.equal(field['aria-invalid'],'true');assert.equal(status.classList.error,true);
+ assert.equal(status.textContent,'Taken online. Yours?');assert.equal(field['aria-invalid'],'true');assert.equal(status.classList.error,true);
 });
 test('typing cancels pending availability and debounces the next request',()=>{
  const {context:s,field,form,timers}=boot();const first=new AbortController();field.callsignCheckController=first;
@@ -53,7 +61,7 @@ test('availability responses using a previous bearer cannot mark the new owner u
  const {context:s,status,field,form,pending}=boot();field.callsignCheckRevision=1;
  const check=s.checkCallsignAvailability(field,form,1,'Taken');s.rememberPublicIdentity('p_new_owner');
  pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Taken',available:false}]})});await check;
- assert.ok(!status.textContent.includes('Used online')&&!status.textContent.includes('Already used online'));assert.notEqual(field['aria-invalid'],'true');
+ assert.ok(!status.textContent.includes('Used online')&&!status.textContent.includes('Taken online'));assert.notEqual(field['aria-invalid'],'true');
 });
 
 test('identity handover and clearing override readable stale storage when writes are denied',()=>{

@@ -7,18 +7,18 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="leqra.com">
-<meta name="leqra-version" content="v4.49.40">
+<meta name="leqra-version" content="v4.49.41">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra.com</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.40/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.40/theme.css">
-<link rel="stylesheet" href="assets/v4.49.40/style.css">
-<link rel="manifest" href="assets/v4.49.40/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.40/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.40/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.40/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.40/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.41/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.41/theme.css">
+<link rel="stylesheet" href="assets/v4.49.41/style.css">
+<link rel="manifest" href="assets/v4.49.41/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.41/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.41/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.41/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.41/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -86,7 +86,7 @@
       <p class="net-status" id="roomStatus" role="status">Local play is ready. Share to invite online friends.</p>
      </div>
      <div class="net-content">
-      <form class="callsign-editor" id="roomCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="roomCallsign">CALLSIGN</label><div class="callsign-row"><input class="net-input" id="roomCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="roomCallsignStatus"></div><p class="callsign-status" id="roomCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="roomP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="roomP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row"><input class="net-input" id="roomP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="roomP2CallsignStatus"></div><p class="callsign-status" id="roomP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
+      <form class="callsign-editor" id="roomCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="roomCallsign">CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="roomCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="roomCallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="0">Account key</button></div><p class="callsign-status" id="roomCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="roomP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="roomP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="roomP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="roomP2CallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="1">Account key</button></div><p class="callsign-status" id="roomP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
       <details class="room-disclosure" id="roomSettings">
        <summary>Room settings</summary>
        <div class="room-disclosure-content">
@@ -106,10 +106,11 @@
        </div>
       </details>
       <button class="secondary room-controls-button" id="roomControlsBtn" type="button">CONTROLS</button>
+
      </div>
     </section>
-    <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden><div class="online-menu-intro"><div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div><h2 class="compact-title">STAY<br><em>CONNECTED.</em></h2><p id="onlineMenuMessage">The match keeps running. Tanks remain vulnerable while this menu is open.</p><section id="hostControls" class="host-controls" aria-label="Host player controls" hidden><div class="callsign-label">HOST CONTROLS</div><div id="menuKickRoster" class="net-roster"></div></section></div><div class="online-menu-actions"><form class="callsign-editor" id="menuCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="menuCallsign">CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="menuCallsignStatus"></div><p class="callsign-status" id="menuCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="menuP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="menuP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="menuP2CallsignStatus"></div><p class="callsign-status" id="menuP2CallsignStatus" role="status" aria-live="polite" hidden></p></form><button class="primary back-action" id="onlineReturnBtn" type="button"><span>BACK TO THE ARENA</span><span aria-hidden="true">←</span></button><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button><button class="secondary" id="restartWaveBtn" type="button" hidden>Restart wave</button><button class="secondary" id="returnRoomBtn" type="button">End match</button><button class="secondary" id="leaveMatchBtn" type="button" hidden>Leave match</button></div></section>
-    <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden><div class="eyebrow">TAKE A BREATHER</div><h2 class="compact-title">TAKE A<br><em>BREATHER.</em></h2><p>The battle is paused. All tanks are safe.</p><button class="primary back-action" id="resumeBtn" type="button"><span>BACK TO THE BATTLE</span><span aria-hidden="true">←</span></button><button class="secondary" id="quitBtn" type="button">Return to ready room</button><p class="control-note" id="pauseInstructions"></p></section>
+    <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden><div class="online-menu-intro"><div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div><h2 class="compact-title">STAY<br><em>CONNECTED.</em></h2><p id="onlineMenuMessage">The match keeps running. Tanks remain vulnerable while this menu is open.</p><section id="hostControls" class="host-controls" aria-label="Host player controls" hidden><div class="callsign-label">HOST CONTROLS</div><div id="menuKickRoster" class="net-roster"></div></section></div><div class="online-menu-actions"><form class="callsign-editor" id="menuCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="menuCallsign">CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="menuCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="menuCallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="0">Account key</button></div><p class="callsign-status" id="menuCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="menuP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="menuP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="menuP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="menuP2CallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="1">Account key</button></div><p class="callsign-status" id="menuP2CallsignStatus" role="status" aria-live="polite" hidden></p></form><button class="primary back-action" id="onlineReturnBtn" type="button"><span>BACK TO THE ARENA</span><span aria-hidden="true">←</span></button><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button><button class="secondary" id="restartWaveBtn" type="button" hidden>Restart wave</button><button class="secondary" id="returnRoomBtn" type="button">End match</button><button class="secondary" id="leaveMatchBtn" type="button" hidden>Leave match</button></div></section>
+    <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden><div class="eyebrow">TAKE A BREATHER</div><h2 class="compact-title">TAKE A<br><em>BREATHER.</em></h2><p>The battle is paused. All tanks are safe.</p><button class="primary back-action" id="resumeBtn" type="button"><span>BACK TO THE BATTLE</span><span aria-hidden="true">←</span></button><button class="secondary" id="pauseAccountBtn" type="button">Account</button><button class="secondary" id="quitBtn" type="button">Return to ready room</button><p class="control-note" id="pauseInstructions"></p></section>
     <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode or difficulty</button></section>
    </div>
   </div>
@@ -135,6 +136,22 @@
 </main>
 <footer class="footer"><span>A LITTLE AIM. A LOT OF CHAOS. BUILT FOR QUICK ROUNDS.</span><span id="recordLabel">0 MATCH WINS ON THIS DEVICE</span></footer>
 </div>
+<dialog id="accountDialog" class="feature-dialog account-dialog" aria-labelledby="accountTitle">
+ <header class="feature-header"><div><div class="eyebrow">TAKE YOUR CALLSIGN WITH YOU</div><h2 id="accountTitle">Your account.</h2></div><button type="button" class="dialog-close" data-close-dialog="accountDialog" aria-label="Close account">×</button></header>
+ <div class="feature-body">
+  <p class="mode-help" id="accountSeatHelp">Each local player has a separate account key. Copy or import this player’s key without changing the other player’s account.</p><p class="mode-help">Use the same account key on web and iOS to keep your callsigns and Public Infinity scores. Opening Public Infinity on another device transfers the existing tank to that device.</p>
+  <p class="mode-help">Keep a private backup. Reset All Settings keeps this account key. Anyone with this key can use the account. A lost key cannot be recovered automatically, and its callsigns stay reserved. <a href="https://github.com/nhooyr/leqra/issues/new" target="_blank" rel="noopener noreferrer">Open a GitHub issue</a> for manual help.</p>
+  <h3>THIS DEVICE'S ACCOUNT</h3>
+  <label class="feature-label" for="accountKey">ACCOUNT KEY<input class="net-input account-key" id="accountKey" type="password" readonly autocomplete="off" spellcheck="false" autocapitalize="none"></label>
+  <button class="secondary" id="accountCopyBtn" type="button">COPY ACCOUNT KEY</button><button class="secondary" id="accountRotateBtn" type="button">RESET ACCOUNT KEY</button>
+  <div id="accountCurrentInfo" class="account-info"></div><p class="feature-notice account-notice" id="accountCurrentNotice" role="status" aria-live="polite"></p>
+  <hr><h3>USE AN EXISTING ACCOUNT</h3>
+  <form id="accountImportForm"><label class="feature-label" for="accountImportKey">PASTE ACCOUNT KEY<input class="net-input account-key" id="accountImportKey" type="password" maxlength="128" autocomplete="off" spellcheck="false" autocapitalize="none"></label><button class="secondary" id="accountCheckBtn" type="submit">CHECK KEY</button></form>
+  <p class="mode-help" id="accountImportHelp">Importing replaces this device's account key. Copy its current key first if you want to keep both accounts.</p>
+  <div id="accountImportReview" hidden><div id="accountImportInfo" class="account-info"></div><label class="feature-label" for="accountImportName"><span id="accountImportNameLabel">P1 CALLSIGN ON THIS DEVICE</span><select id="accountImportName"></select></label><button class="primary" id="accountUseBtn" type="button">USE THIS ACCOUNT <span aria-hidden="true">→</span></button></div>
+  <p class="feature-notice account-notice" id="accountImportNotice" role="status" aria-live="polite"></p>
+ </div>
+</dialog>
 <dialog id="joinDialog" class="join-dialog" aria-labelledby="joinTitle"><div class="eyebrow">JOIN</div><h2 id="joinTitle">Find a room.</h2><label class="field-label" for="pilotName">CALLSIGN</label><input class="net-input" id="pilotName" aria-describedby="pilotNameStatus" maxlength="32" placeholder="Player 1" autocomplete="nickname"><p class="callsign-status" id="pilotNameStatus" role="status" aria-live="polite" hidden></p><label class="field-label" for="joinCode">ROOM NAME OR CODE</label><input class="net-input" id="joinCode" placeholder="Friday tanks 💥" spellcheck="false" autocomplete="off"><div class="join-dialog-actions"><button class="primary" id="joinRoomBtn" type="button"><span>JOIN</span><span aria-hidden="true">→</span></button></div><p class="net-status" id="netStatus" role="status">Missing rooms are created with the joining pilot as host.</p><button class="secondary back-action" id="onlineBackBtn" type="button">Back to the room <span aria-hidden="true">←</span></button></dialog>
 <dialog id="kickDialog" class="kick-dialog" aria-labelledby="kickTitle" aria-describedby="kickDescription kickNotice">
  <div class="eyebrow">HOST CONTROLS</div><h2 id="kickTitle">Kick this player?</h2>
@@ -244,10 +261,11 @@
     <p id="infinitePauseHelp"><span class="infinite-pause-offline">The battle is paused. Tanks are safe.</span><span class="infinite-pause-online">The match keeps running. Tanks remain vulnerable. Respawning waits until the menu closes.</span></p>
    </div>
    <div class="online-menu-actions">
-    <form class="callsign-editor" id="infiniteCallsignForm" data-arena="infinity" aria-label="Change callsign"><label class="callsign-label" for="infiniteCallsign">CALLSIGN</label><div class="callsign-row"><input class="net-input" id="infiniteCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="infiniteCallsignStatus"></div><p class="callsign-status" id="infiniteCallsignStatus" role="status" aria-live="polite" hidden></p></form>
-    <form class="callsign-editor secondary-callsign" id="infiniteP2CallsignForm" data-arena="infinity" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="infiniteP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row"><input class="net-input" id="infiniteP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="infiniteP2CallsignStatus"></div><p class="callsign-status" id="infiniteP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
+    <form class="callsign-editor" id="infiniteCallsignForm" data-arena="infinity" aria-label="Change callsign"><label class="callsign-label" for="infiniteCallsign">CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="infiniteCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="infiniteCallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="0">Account key</button></div><p class="callsign-status" id="infiniteCallsignStatus" role="status" aria-live="polite" hidden></p></form>
+    <form class="callsign-editor secondary-callsign" id="infiniteP2CallsignForm" data-arena="infinity" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="infiniteP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="infiniteP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="infiniteP2CallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="1">Account key</button></div><p class="callsign-status" id="infiniteP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
     <button class="primary back-action" id="infiniteResumeBtn" type="button" autofocus><span class="infinite-pause-offline">BACK TO THE BATTLE</span><span class="infinite-pause-online">BACK TO THE ARENA</span><span aria-hidden="true">←</span></button>
     <button class="secondary" id="infiniteControlsBtn" type="button">Controls</button>
+
     <button class="secondary" id="infiniteExit" type="button">Exit Infinity</button>
    </div>
   </div>
@@ -264,10 +282,10 @@
  <div class="feature-body"><div class="eyebrow">THIS DEVICE</div><h2 id="settingsResetTitle" tabindex="-1">Resetting settings.</h2><p id="settingsResetStatus" role="status" aria-live="polite">Clearing leqra settings and cached app files.</p></div>
  <footer class="feature-footer"><button class="secondary" id="settingsResetRetryBtn" type="button" hidden>RETRY RESET</button><button class="primary" id="settingsResetReloadBtn" type="button" disabled>RELOAD</button></footer>
 </dialog>
-<script src="assets/v4.49.40/netcode.js" defer></script>
-<script src="assets/v4.49.40/game.js" defer></script>
-<script src="assets/v4.49.40/infinite-maze.js" defer></script>
-<script src="assets/v4.49.40/infinite.js" defer></script>
-<script src="assets/v4.49.40/pwa.js" defer></script>
+<script src="assets/v4.49.41/netcode.js" defer></script>
+<script src="assets/v4.49.41/game.js" defer></script>
+<script src="assets/v4.49.41/infinite-maze.js" defer></script>
+<script src="assets/v4.49.41/infinite.js" defer></script>
+<script src="assets/v4.49.41/pwa.js" defer></script>
 </body>
 </html>

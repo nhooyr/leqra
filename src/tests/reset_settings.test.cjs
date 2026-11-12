@@ -73,3 +73,9 @@ test('Controls exposes reset after default keys and the reload prompt has no dis
  const html=readFileSync(path.join(__dirname,'../web/index.html'),'utf8'),dialog=html.match(/<dialog id="settingsResetDialog"[\s\S]*?<\/dialog>/)?.[0];assert.ok(dialog);assert.match(dialog,/aria-labelledby="settingsResetTitle"/);assert.doesNotMatch(dialog,/CANCEL|CLOSE|data-close-dialog|method="dialog"/);
  const css=readFileSync(assetPath('style.css'),'utf8');assert.match(css,/\.settings-reset-dialog \.feature-footer\{[^}]*gap:10px/);assert.match(css,/\.settings-reset-dialog \.feature-footer button\{margin:0\}/);
 });
+
+
+test('Reset All Settings preserves the account and any unacknowledged replacement key',async()=>{
+ const {s,$,local}=boot({pwa:false,capabilities:false});local.setItem('leqra.publicToken','private-owner');local.setItem('leqra.localPublicToken','private-p2');local.setItem('leqra.localAccountRegistration','saved-p2-registration');local.setItem('leqra.pendingAccountKey.test','saved-replacement');
+ await $('resetAllSettingsBtn').onclick();assert.equal(local.getItem('leqra.publicToken'),'private-owner');assert.equal(local.getItem('leqra.localPublicToken'),'private-p2');assert.equal(local.getItem('leqra.localAccountRegistration'),'saved-p2-registration');assert.equal(local.getItem('leqra.pendingAccountKey.test'),'saved-replacement');assert.equal(local.getItem('leqra.name'),null);assert.equal($('settingsResetTitle').textContent,'Reload to finish.');
+});

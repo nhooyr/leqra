@@ -210,7 +210,11 @@ func (h *Hub) roleChanged(r *Room, now time.Time) {
 					break
 				}
 			}
-			p.Client.enqueue(map[string]any{"type": "identity", "id": p.ID, "member": p.Member, "spectating": p.Spectating, "localId": localID, "localMember": localMember})
+			packet := map[string]any{"type": "identity", "id": p.ID, "member": p.Member, "spectating": p.Spectating, "localId": localID, "localMember": localMember}
+			if local := roomLocalController(r, p); local != nil && local.PublicToken != "" {
+				packet["localPublicToken"] = local.PublicToken
+			}
+			p.Client.enqueue(packet)
 			p.Client.mapGeneration = -1
 		}
 	}
