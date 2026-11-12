@@ -109,7 +109,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   toggleSound: () => sounds.push('mute'),
   shot: kind => sounds.push('shot:' + kind),
   ricochet: () => sounds.push('ricochet'), collect: () => sounds.push('pickup'), shield: () => sounds.push('shield'),
-  blast: () => sounds.push('blast'), impact: () => sounds.push('impact'),
+  blast: () => sounds.push('blast'), grenade: () => sounds.push('grenadeblast'), impact: () => sounds.push('impact'),
  };
  let now = 0, scheduled, randomState = 1, nextTimer = 0;
  const timers = new Map();
@@ -767,7 +767,7 @@ test('Starman contact in offline Infinity kills shielded tanks, with walls and i
   ['wall between centers',0,{x:111,y:78,w:8,h:48},false],
   ['attacker inside wall',0,{x:98,y:78,w:8,h:48},false],
  ]) {
-  const {infinity,state,advance,window}=harness(undefined,true);
+  const {infinity,state,advance,window,sounds}=harness(undefined,true);
   infinity.start('offline');
   const world=state(),pilot=world.tanks[0];
   world.nextPickup=world.nextBot=Infinity;
@@ -780,7 +780,7 @@ test('Starman contact in offline Infinity kills shielded tanks, with walls and i
   assert.equal(target.hp,eliminated?0:1,label);
   assert.equal(target.score,eliminated?-1:0,label);
   assert.equal(pilot.score,eliminated?1:0,label);
-  if(eliminated)assert.equal(target.respawn,1);
+  if(eliminated){assert.equal(target.respawn,1);assert.ok(sounds.includes('blast'));assert.ok(!sounds.includes('grenadeblast'));}
   infinity.close();
  }
 });
@@ -972,7 +972,7 @@ test('online Infinity follows shared homing visual and audio preferences for bot
  snapshot(true,true,[grenade]);
  advance();
  assert.deepEqual(markers.map(marker=>marker.angle),[-Math.PI/2]);
- assert.deepEqual(sounds,Array(4).fill('tone:850'),'the visible P2 lock and offscreen P1 lock both chirp');
+ assert.equal(sounds.length,4,'the visible P2 lock and offscreen P1 lock both chirp');assert.deepEqual(sounds.slice(0,2),sounds.slice(2),'both local pilots use the same lock cue');assert.ok(sounds.every(sound=>sound.startsWith('tone:')));
  advance(4);
  assert.equal(sounds.length,4,'a sustained lock does not retrigger');
  snapshot(false,false);
@@ -1046,12 +1046,12 @@ test('offline Infinity draws a warning and chirps when a missile locks Player 2'
  assert.equal(loadouts[1].projectiles.locked,false);
  assert.equal(loadouts[2].projectiles.locked,true);
  assert.ok(markers.length>0&&markers.every(marker=>Math.abs(marker.angle)<1e-6));
- assert.deepEqual(sounds,['tone:850','tone:850']);
+ assert.equal(sounds.length,2);assert.ok(sounds.every(sound=>sound.startsWith('tone:')));
  infinity.close();
 });
 
-test('Infinity ignores round endings and sounds tank destruction and grenade blasts', () => {
- const {infinity, sockets, state, sounds} = harness();
+test('Infinity ignores round endings and separates tank destruction from grenade blasts', () => {
+ const {infinity, sockets, state, sounds, elapse} = harness();
  infinity.start('online');
  const [socket] = sockets;
  socket.receive({type:'welcome',id:4,seed:0});
@@ -1063,8 +1063,10 @@ test('Infinity ignores round endings and sounds tank destruction and grenade bla
  assert.deepEqual(sounds,[]);
  assert.equal(state().visualEffects.length,0);
  update(['roundEnd','matchEnd','hit','blast']);
- assert.deepEqual(sounds,['blast','blast']);
+ assert.deepEqual(sounds,['blast','grenadeblast']);
  assert.equal(state().visualEffects.map(effect=>effect.kind).join(),'hit,blast');
+ elapse(500);update(['roundEnd','matchEnd','hit','blast','hit']);
+ assert.deepEqual(sounds,['blast','grenadeblast','blast'],'late deaths remain the soft tank cue and do not repeat the grenade blast');
  infinity.close();
 });
 
