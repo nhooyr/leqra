@@ -32,6 +32,7 @@ public final class PracticeArena {
     private var botCourses: [Int: (x: Double, y: Double)] = [:]
     private var botDecisions: [Int: Double] = [:]
     private var nextBoostEffects: [Int: Double] = [:]
+    private let motionPresenter = TankMotionPresenter()
     private struct Projectile {
         var wire: ArenaBullet
         var age = 0.0
@@ -202,14 +203,19 @@ public final class PracticeArena {
     /// `fraction` is the remaining fraction of one tick, clamped to 0...1.
     /// Prediction changes only this returned copy, never damage or score.
     public func presentationSnapshot(fraction: Double, localInput: GameInput? = nil) -> ArenaSnapshot {
-        guard fraction.isFinite, fraction > 0, snapshot.result == nil else { return snapshot }
-        let dt = min(fraction, 1) / 60
+        guard fraction.isFinite, fraction >= 0, snapshot.result == nil else {
+            motionPresenter.reset()
+            return snapshot
+        }
+        let fraction = min(fraction, 1), dt = fraction / 60
         var result = snapshot
         for index in result.tanks.indices where result.tanks[index].hp > 0 {
             let id = result.tanks[index].id
             let input = id == localID ? localInput ?? movementInputs[id] ?? GameInput() : movementInputs[id] ?? GameInput()
-            move(tank: &result.tanks[index], input: input, dt: dt)
+            result.tanks[index] = present(result.tanks[index], input: input, fraction: fraction, local: id == localID)
         }
+        if !result.tanks.contains(where: { $0.id == localID && $0.hp > 0 }) { motionPresenter.reset() }
+        guard dt > 0 else { return result }
         result.bullets = projectiles.map { original in
             var projectile = original
             let span = min(dt, projectile.wire.life)
@@ -241,6 +247,22 @@ public final class PracticeArena {
             return projectile.wire
         }
         return result
+    }
+
+    private func present(_ tank: ArenaTank, input: GameInput, fraction: Double, local: Bool = false) -> ArenaTank {
+        let movement: (inout ArenaTank, GameInput, Double) -> Void = { self.move(tank: &$0, input: $1, dt: $2) }
+        let clear: (ArenaTank, ArenaTank) -> Bool = { first, second in
+            TankMovement.presentationFitsBounds(tank: second, world: self.maze.world)
+                && (first.ghostTime > 0 || (!self.maze.blocked(x: second.x, y: second.y, radius: 17)
+                && self.maze.rayHit(x: first.x, y: first.y,
+                    dx: second.x - first.x, dy: second.y - first.y, radius: 17) == nil))
+        }
+        if local {
+            return motionPresenter.present(tank: tank, input: input, tick: snapshot.tick,
+                generation: snapshot.generation, fraction: fraction, move: movement, canInterpolate: clear)
+        }
+        return TankMovement.presentation(tank: tank, input: input, fraction: fraction,
+                                         move: movement, canInterpolate: clear)
     }
 
     private func move(tank: inout ArenaTank, input: GameInput, dt: Double) {

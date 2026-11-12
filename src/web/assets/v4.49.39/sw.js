@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v4.49.38';
+const VERSION = 'v4.49.39';
 const BUILD = self.LEQRA_BUILD || VERSION;
 const CACHE = 'leqra-app-' + BUILD;
 let resetting=false;

@@ -16,6 +16,9 @@ public final class RenderTimeline {
     private var step = 0
     private var accumulator = 0.0
     private var clock: Double?
+    private var playbackRate = 1.0
+    private var correction = (x: 0.0, y: 0.0, angle: 0.0)
+    private let motionPresenter = TankMotionPresenter()
     private var latest: ArenaSnapshot?
     private var sequence: UInt64 = 0
     private var lastArrival = 0.0
@@ -28,6 +31,17 @@ public final class RenderTimeline {
     private var newBullets: [Int: ArenaBullet] = [:]
     private var indexedLatest: UInt64?
     private var liveBullets: [Int: ArenaBullet] = [:]
+    private struct CurveContext: Equatable {
+        var first: UInt64; var second: UInt64; var previous: UInt64?; var following: UInt64?
+    }
+    private struct TankCurve {
+        var ax: Double; var ay: Double; var bx: Double; var by: Double
+        var angleA: Double; var angleB: Double; var clear = true
+    }
+    private var curveContext: CurveContext?
+    private var previousTanks: [Int: ArenaTank] = [:]
+    private var followingTanks: [Int: ArenaTank] = [:]
+    private var tankCurves: [Int: TankCurve] = [:]
     public private(set) var stale = false
     var bufferedAcknowledgementCount: Int { sent.count }
 
@@ -45,18 +59,24 @@ public final class RenderTimeline {
     }
 
     public func accept(_ snapshot: ArenaSnapshot, at now: Double) {
+        let recovering = latest != nil && (stale || now - lastArrival > 2.5)
         if let previous = latest {
             if snapshot.generation < previous.generation { return }
             if previous.generation != snapshot.generation {
-                samples.removeAll(); resetPrediction(nil); clock = nil
+                samples.removeAll(); resetPrediction(nil); clock = nil; playbackRate = 1
                 pathChecks.removeAll()
                 indexedPair = nil; indexedLatest = nil
                 oldTanks.removeAll(keepingCapacity: true); newTanks.removeAll(keepingCapacity: true)
                 oldBullets.removeAll(keepingCapacity: true); newBullets.removeAll(keepingCapacity: true)
                 liveBullets.removeAll(keepingCapacity: true)
+                curveContext = nil; tankCurves.removeAll(keepingCapacity: true)
+                previousTanks.removeAll(keepingCapacity: true); followingTanks.removeAll(keepingCapacity: true)
             } else if snapshot.tick <= previous.tick { return }
         }
         latest = snapshot
+        if recovering {
+            samples.removeAll(); clock = nil; playbackRate = 1
+        }
         let liveTankIDs = Set(snapshot.tanks.map(\.id))
         pathChecks = pathChecks.filter { liveTankIDs.contains($0.key) }
         lastArrival = now
@@ -68,11 +88,34 @@ public final class RenderTimeline {
         guard var tank = snapshot.tanks.first(where: { $0.id == localID }) else {
             resetPrediction(nil); return
         }
+        guard !recovering else { resetPrediction(tank); return }
         guard let old = predicted, old.hp == tank.hp, old.spawnSerial == tank.spawnSerial,
               snapshot.phase == "playing" else { resetPrediction(tank); return }
         let processed = sent[tank.ack].map { $0 + max(1, Int(tank.ackSteps)) - 1 } ?? (tank.ack == 0 ? 0 : step)
-        if processed >= (frames.first?.step ?? step + 1) - 1, tank.hp > 0 {
+        let historyComplete = processed >= (frames.first?.step ?? step + 1) - 1
+        if historyComplete, tank.hp > 0 {
             for frame in frames where frame.step > processed { move(&tank, frame.input, 1 / 60) }
+        }
+        // Physics adopts authority immediately. Only small presentation errors
+        // ease out, so 30 Hz acknowledgements cannot jerk the tank and camera
+        // by several pixels when Speed is stacked.
+        let error = hypot(old.x - tank.x, old.y - tank.y)
+        if !historyComplete || tank.hp <= 0 || error > 64 || (old.ghostTime > 0) != (tank.ghostTime > 0) {
+            correction = (0, 0, 0)
+            motionPresenter.reset()
+        } else {
+            // The short control-transition bias and the slower authority
+            // correction describe different errors. Rebase its input history
+            // so the presenter does not smooth this same network delta twice.
+            motionPresenter.rebase(dx: tank.x - old.x, dy: tank.y - old.y,
+                                   angle: atan2(sin(tank.angle - old.angle), cos(tank.angle - old.angle)))
+            correction.x += old.x - tank.x
+            correction.y += old.y - tank.y
+            correction.angle = atan2(sin(correction.angle + old.angle - tank.angle), cos(correction.angle + old.angle - tank.angle))
+            let distance = hypot(correction.x, correction.y)
+            let limit = tank.ghostTime > 0 ? 12.0 : 48.0
+            if distance > limit { correction.x *= limit / distance; correction.y *= limit / distance }
+            correction.angle = min(max(correction.angle, -0.7), 0.7)
         }
         predicted = tank
         frames.removeAll { $0.step <= processed }
@@ -86,6 +129,7 @@ public final class RenderTimeline {
         guard let latest else { return nil }
         let elapsed = max(0, min(0.1, dt))
         stale = now - lastArrival > 2.5
+        if stale { correction = (0, 0, 0); motionPresenter.reset() }
         accumulator += elapsed
         var controls = stale ? GameInput() : input
         while accumulator + 1e-9 >= 1 / 60 {
@@ -96,7 +140,9 @@ public final class RenderTimeline {
             rememberSent(at: step)
             send(controls)
             if var tank = predicted, tank.hp > 0, latest.phase == "playing", !stale {
+                let wasPhasing = tank.ghostTime > 0
                 move(&tank, controls, 1 / 60)
+                if wasPhasing != (tank.ghostTime > 0) { correction = (0, 0, 0); motionPresenter.reset() }
                 predicted = tank
                 frames.append(Frame(step: step, input: controls))
                 if frames.count > 240 { frames.removeFirst() }
@@ -104,16 +150,44 @@ public final class RenderTimeline {
         }
         var result = interpolated(dt: elapsed)
         if var tank = predicted {
-            if tank.hp > 0, latest.phase == "playing", !stale { move(&tank, controls, accumulator) }
+            if tank.hp > 0, latest.phase == "playing", !stale {
+                tank = motionPresenter.present(tank: tank, input: controls, tick: UInt64(step),
+                    generation: latest.generation, fraction: accumulator * 60,
+                    move: move, canInterpolate: { first, second in
+                        TankMovement.presentationFitsBounds(tank: second, world: latest.world ?? self.maze?.world)
+                            && (first.ghostTime > 0 || self.movementPathClear(from: first, to: second, world: latest.world))
+                    })
+            }
+            if tank.hp > 0, latest.phase == "playing", !stale {
+                if correction.x != 0 || correction.y != 0 {
+                    var corrected = tank
+                    corrected.x += correction.x; corrected.y += correction.y
+                    if TankMovement.presentationFitsBounds(tank: corrected, world: latest.world ?? maze?.world)
+                        && (tank.ghostTime > 0 || movementPathClear(from: tank, to: corrected, world: latest.world)) {
+                        tank.x = corrected.x; tank.y = corrected.y
+                    } else { correction.x = 0; correction.y = 0 }
+                }
+                tank.angle = atan2(sin(tank.angle + correction.angle), cos(tank.angle + correction.angle))
+            }
             if let index = result.tanks.firstIndex(where: { $0.id == localID }) { result.tanks[index] = tank }
         }
+        let decay = exp(-elapsed / 0.11)
+        correction.x *= decay; correction.y *= decay; correction.angle *= decay
+        if hypot(correction.x, correction.y) < 1e-5 { correction.x = 0; correction.y = 0 }
+        if abs(correction.angle) < 1e-5 { correction.angle = 0 }
         return result
     }
 
-    public func neutralize() { accumulator = 0 }
+    public func neutralize() {
+        accumulator = 0; correction = (0, 0, 0)
+        motionPresenter.reset()
+        // No display time advances while the pause menu is open. Resume from
+        // the current snapshot buffer rather than retaining its old playhead.
+        clock = nil; playbackRate = 1
+    }
 
     public func neutralPacket() -> GameInput {
-        accumulator = 0
+        neutralize()
         sequence += 1
         rememberSent(at: step + 1)
         return GameInput(seq: sequence)
@@ -130,6 +204,8 @@ public final class RenderTimeline {
     private func resetPrediction(_ tank: ArenaTank?) {
         predicted = tank
         frames.removeAll(); sent.removeAll(); step = 0; accumulator = 0
+        correction = (0, 0, 0)
+        motionPresenter.reset()
         // Sequence numbers must remain increasing for the life of a socket.
     }
 
@@ -139,15 +215,19 @@ public final class RenderTimeline {
         var playhead = clock ?? target
         if target - playhead > 0.6 { playhead = target }
         let fill = target - playhead
-        playhead += dt * (fill > 0.02 ? 1.05 : fill < -0.02 ? 0.95 : 1)
+        let wantedRate = fill > 0.02 ? 1.05 : fill < -0.02 ? 0.95 : 1
+        playbackRate += (wantedRate - playbackRate) * min(1, dt * 6)
+        playhead += dt * playbackRate
         playhead = min(playhead, newest.time) // Freeze instead of inventing damage or wall crossings.
         clock = playhead
-        var a = samples[0], b = samples[0]
-        for sample in samples.dropFirst() {
-            b = sample
+        var a = samples[0], b = samples[0], aIndex = 0, bIndex = 0
+        for index in samples.indices.dropFirst() {
+            b = samples[index]; bIndex = index
             if b.time >= playhead { break }
-            a = b
+            a = b; aIndex = index
         }
+        let preceding = aIndex > 0 ? samples[aIndex - 1] : nil
+        let following = bIndex + 1 < samples.count ? samples[bIndex + 1] : nil
         let span = b.time - a.time
         let alpha = span > 0 ? max(0, min(1, (playhead - a.time) / span)) : 1
         var result = newest.state
@@ -164,6 +244,14 @@ public final class RenderTimeline {
         if indexedLatest != newest.state.tick {
             liveBullets = Dictionary(newest.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
             indexedLatest = newest.state.tick
+        }
+        let context = CurveContext(first: a.state.tick, second: b.state.tick,
+                                   previous: preceding?.state.tick, following: following?.state.tick)
+        if curveContext != context {
+            curveContext = context
+            tankCurves.removeAll(keepingCapacity: true)
+            previousTanks = Dictionary((preceding?.state.tanks ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            followingTanks = Dictionary((following?.state.tanks ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
         }
         result.tanks = result.tanks.map { current in
             guard let first = oldTanks[current.id], let second = newTanks[current.id],
@@ -191,8 +279,32 @@ public final class RenderTimeline {
             }
             tank.x = first.x + (second.x - first.x) * alpha
             tank.y = first.y + (second.y - first.y) * alpha
+            tank.track = first.track + (second.track - first.track) * alpha
             let delta = atan2(sin(second.angle - first.angle), cos(second.angle - first.angle))
             tank.angle = first.angle + delta * alpha
+            if span > 0, span <= 0.1 {
+                let curve: TankCurve
+                if let cached = tankCurves[current.id] { curve = cached }
+                else {
+                    curve = makeCurve(from: first, to: second, start: a.time, end: b.time,
+                        previous: preceding.flatMap { sample in previousTanks[current.id].map { ($0, sample.time) } },
+                        following: following.flatMap { sample in followingTanks[current.id].map { ($0, sample.time) } }, world: newest.state.world)
+                    tankCurves[current.id] = curve
+                }
+                if curve.clear {
+                    let x = hermite(first.x, second.x, curve.ax, curve.bx, alpha)
+                    let y = hermite(first.y, second.y, curve.ay, curve.by, alpha)
+                    var candidate = tank
+                    candidate.x = x; candidate.y = y
+                    if TankMovement.presentationFitsBounds(tank: candidate, world: newest.state.world ?? maze?.world)
+                        && (first.ghostTime > 0 || movementPointClear(x: x, y: y, world: newest.state.world)) {
+                        tank = candidate
+                        tank.angle = first.angle + hermite(0, delta, curve.angleA, curve.angleB, alpha)
+                    } else {
+                        var blocked = curve; blocked.clear = false; tankCurves[current.id] = blocked
+                    }
+                }
+            }
             return tank
         }
         // New bullets enter at the same delayed timestamp as existing ones.
@@ -213,6 +325,60 @@ public final class RenderTimeline {
         return result
     }
 
+    private func hermite(_ first: Double, _ last: Double, _ start: Double, _ end: Double, _ fraction: Double) -> Double {
+        let t2 = fraction * fraction, t3 = t2 * fraction
+        return (2 * t3 - 3 * t2 + 1) * first + (t3 - 2 * t2 + fraction) * start
+            + (-2 * t3 + 3 * t2) * last + (t3 - t2) * end
+    }
+
+    private func makeCurve(from first: ArenaTank, to second: ArenaTank, start: Double, end: Double,
+                           previous: (ArenaTank, Double)?, following: (ArenaTank, Double)?, world: ArenaWorld?) -> TankCurve {
+        let span = end - start, dx = second.x - first.x, dy = second.y - first.y
+        let angle = atan2(sin(second.angle - first.angle), cos(second.angle - first.angle))
+        var curve = TankCurve(ax: dx, ay: dy, bx: dx, by: dy, angleA: angle, angleB: angle)
+        func compatible(_ tank: ArenaTank, with reference: ArenaTank) -> Bool {
+            tank.hp > 0 && tank.spawnSerial == reference.spawnSerial &&
+                (tank.ghostTime > 0) == (reference.ghostTime > 0) && hypot(tank.x - reference.x, tank.y - reference.y) < 160
+        }
+        if let (tank, time) = previous, start - time > 0, end - time <= 0.2, compatible(tank, with: first) {
+            let scale = span / (end - time)
+            curve.ax = (second.x - tank.x) * scale; curve.ay = (second.y - tank.y) * scale
+            curve.angleA = atan2(sin(second.angle - tank.angle), cos(second.angle - tank.angle)) * scale
+        }
+        if let (tank, time) = following, time - end > 0, time - start <= 0.2, compatible(tank, with: second) {
+            let scale = span / (time - start)
+            curve.bx = (tank.x - first.x) * scale; curve.by = (tank.y - first.y) * scale
+            curve.angleB = atan2(sin(tank.angle - first.angle), cos(tank.angle - first.angle)) * scale
+        }
+        let distance = hypot(dx, dy)
+        if distance < 1e-7 { curve.ax = 0; curve.ay = 0; curve.bx = 0; curve.by = 0 }
+        else {
+            let limit = distance * 3
+            let aLength = hypot(curve.ax, curve.ay), bLength = hypot(curve.bx, curve.by)
+            if aLength > limit { curve.ax *= limit / aLength; curve.ay *= limit / aLength }
+            if bLength > limit { curve.bx *= limit / bLength; curve.by *= limit / bLength }
+        }
+        // Neighboring buffered samples give both segments the same tangent.
+        // Validate the entire curve once, so a later frame cannot enter a wall
+        // or alternate between curved and straight paths in a narrow corridor.
+        if maze != nil || world != nil {
+            let count = max(8, Int(ceil(distance / 2)))
+            var previous = first
+            for index in 1...count {
+                let fraction = Double(index) / Double(count)
+                var point = first
+                point.x = hermite(first.x, second.x, curve.ax, curve.bx, fraction)
+                point.y = hermite(first.y, second.y, curve.ay, curve.by, fraction)
+                if !TankMovement.presentationFitsBounds(tank: point, world: world ?? maze?.world)
+                    || first.ghostTime <= 0 && !movementPathClear(from: previous, to: point, world: world) {
+                    curve.clear = false; break
+                }
+                previous = point
+            }
+        }
+        return curve
+    }
+
     private func movementPathClear(from first: ArenaTank, to second: ArenaTank, world: ArenaWorld?) -> Bool {
         guard maze != nil || world != nil else { return true }
         let dx = second.x - first.x, dy = second.y - first.y
@@ -220,17 +386,19 @@ public final class RenderTimeline {
         for step in 0...steps {
             let fraction = Double(step) / Double(steps)
             let x = first.x + dx * fraction, y = first.y + dy * fraction
-            if let maze {
-                if maze.blocked(x: x, y: y, radius: 17) { return false }
-            } else if let world {
-                guard x >= 21, x <= world.width - 21, y >= 21, y <= world.height - 21 else { return false }
-                if world.walls.contains(where: { wall in
-                    let dx = x - min(max(x, wall.x), wall.x + wall.w)
-                    let dy = y - min(max(y, wall.y), wall.y + wall.h)
-                    return dx * dx + dy * dy < 17 * 17
-                }) { return false }
-            }
+            if !movementPointClear(x: x, y: y, world: world) { return false }
         }
         return true
+    }
+
+    private func movementPointClear(x: Double, y: Double, world: ArenaWorld?) -> Bool {
+        if let maze { return !maze.blocked(x: x, y: y, radius: 17) }
+        guard let world else { return true }
+        guard x >= 21, x <= world.width - 21, y >= 21, y <= world.height - 21 else { return false }
+        return !world.walls.contains { wall in
+            let dx = x - min(max(x, wall.x), wall.x + wall.w)
+            let dy = y - min(max(y, wall.y), wall.y + wall.h)
+            return dx * dx + dy * dy < 17 * 17
+        }
     }
 }

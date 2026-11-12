@@ -61,13 +61,23 @@ final class RenderTimelineTests: XCTestCase {
         // One packet remained held for two server ticks. Both consumed local
         // steps must be removed before replaying the newer reverse controls.
         timeline.accept(snapshot(tick: 62, x: 2, ack: 1, ackSteps: 2), at: 4 / 60)
+        // Isolate acknowledgement replay from the independent visual easing
+        // caused by changing forward to reverse between display frames.
+        timeline.neutralize()
         let replayed = timeline.render(dt: 0, input: GameInput(), now: 4 / 60) { _ in }
         XCTAssertEqual(try XCTUnwrap(replayed?.tanks.first?.x), 0, accuracy: 1e-9)
         // A later acknowledgement of the same held packet accounts for more
         // elapsed server steps instead of replaying an already consumed input.
         timeline.accept(snapshot(tick: 64, x: 4, ack: 1, ackSteps: 4), at: 5 / 60)
         let consumed = timeline.render(dt: 0, input: GameInput(), now: 5 / 60) { _ in }
-        XCTAssertEqual(try XCTUnwrap(consumed?.tanks.first?.x), 4, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(consumed?.tanks.first?.x), 0, accuracy: 1e-9)
+        // Authority is adopted now, while the old visible pose eases onto it.
+        // Settling must not replay the reverse controls already consumed above.
+        var settled = consumed
+        for frame in 1...120 {
+            settled = timeline.render(dt: 1 / 120, input: GameInput(), now: 5 / 60 + Double(frame) / 120) { _ in }
+        }
+        XCTAssertEqual(try XCTUnwrap(settled?.tanks.first?.x), 4, accuracy: 0.001)
     }
 
     func testDeathAndRespawnDiscardThePreviousLifePrediction() throws {
