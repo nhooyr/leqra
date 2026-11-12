@@ -47,6 +47,7 @@ const PROJECTILES = Object.freeze({
 const TAU = Math.PI * 2;
 const MAX_BOTS = 24, BOTS_PER_PLAYER = 8;
 const RECONNECT_WINDOW = 18000, SNAPSHOT_TIMEOUT = 2500;
+const PING_INTERVAL = 4000, PING_TIMEOUT = 6000;
 const ROOM_RESUME_KEY = 'leqra.infinityResume.v1';
 const BOT_LEVELS = ['easy','normal','hard','godlike'];
 const BOT_TUNING = {
@@ -178,7 +179,7 @@ function makeTank(id, x, y, bot = false) {
  return {
   id, x, y, bot, angle: between(-Math.PI, Math.PI), hp: 1, alive: true, score: 0,
   colorIndex: bot ? 1 + Math.floor(Math.random() * (COLORS.length - 1)) : 0,
-  name: bot ? 'Bot ' + id.slice(4) : pilotName(), cooldown: 0, invulnerable: 1, respawn: 0,
+  name: bot ? 'Bot ' + id.slice(4) : pilotName(), cooldown: 0, invulnerable: 1, spawnProtected: true, respawn: 0,
   track: 0, recoil: 0, speedStacks: 0, spawnSerial: 1,
   course: null, nextDecision: 0,
  };
@@ -315,11 +316,12 @@ function effect(world, kind, x, y, owner, points) {
 }
 
 function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false,ownerColor='') {
- if (world.result || !target.hp || target.invulnerable > 0 || !canDamage(world, ownerID, ownerTeam, target)) return;
+ if (world.result || !target.hp || target.invulnerable > 0 && !(starmanContact && target.spawnProtected) || !canDamage(world, ownerID, ownerTeam, target)) return;
  if (target.shield > 0 && !starmanContact) {
   target.shieldCharges = Math.max(0, (target.shieldCharges || 1) - 1);
   if (!target.shieldCharges) target.shield = 0;
   target.invulnerable = .35;
+  target.spawnProtected = false;
   effect(world, 'shield', target.x, target.y, ownerID);
   return;
  }
@@ -354,6 +356,7 @@ function detonate(world, bullet) {
 function weaponControl(world, tank, held, pressed) {
  tank.fireHeld = held;
  if (!held) tank.fireBlocked = false;
+ if (tank.spawnProtected && tank.invulnerable > 1e-9) return;
  if (pressed) {
   let detonated = false;
   for (const bullet of world.bullets) {
@@ -410,6 +413,7 @@ function muzzleBlocked(maze, tank, radius) {
 
 function fireShot(world, tank) {
  const boosted = tank.starmanTime > 0;
+ if (!tank.hp || tank.spawnProtected && tank.invulnerable > 1e-9) return;
  if (!boosted && (tank.cooldown > 1e-9 || tank.power === 'rapid' && !tank.machineRounds)) return;
  const kind = tank.power || '', spec = PROJECTILES[kind || 'regular'];
  if (muzzleBlocked(world.maze, tank, spec.r)) return;
@@ -680,6 +684,7 @@ function offlineStep(world, dt) {
    const value = (tank[key] || 0) - dt;
    tank[key] = value > 1e-9 ? value : 0;
   }
+  if (!tank.invulnerable) tank.spawnProtected = false;
   if (tank.shield === 0) tank.shieldCharges = 0;
   if (!(tank.starmanTime > 0)) {
    tank.powerTime = Math.max(0, (tank.powerTime || 0) - dt);
@@ -709,7 +714,7 @@ function offlineStep(world, dt) {
   const attacker = actors[(tick + i) % actors.length];
   if (!attacker.hp || !(attacker.starmanTime > 0)) continue;
   for (const target of actors) {
-   if (!target.hp || target.invulnerable > 0 || target.starmanTime > 0 ||
+   if (!target.hp || target.invulnerable > 0 && !target.spawnProtected || target.starmanTime > 0 ||
        !canDamage(world,attacker.id,attacker.team,target)) continue;
    const dx = target.x - attacker.x, dy = target.y - attacker.y;
    if (dx * dx + dy * dy <= 4 * RADIUS * RADIUS && !wallHit(world.maze, attacker.x, attacker.y, dx, dy, 0, true)) {
@@ -981,11 +986,12 @@ function renderScores(world, pilot, second) {
     const counter = document.createElement('span');
     counter.className = 'infinite-personal-score';
     counter.style.color = color;
-    const total=': ('+score+(rank>0?', #'+rank:'')+')';
-    counter.setAttribute('aria-label',label+total);
+    const total='score: '+score+', rank: #'+(rank>0?rank:0);
+    counter.setAttribute('aria-label',label+': '+total);
     const name=document.createElement('span');name.className='infinite-score-name';name.textContent=label;
+    const separator=document.createElement('span');separator.className='infinite-score-separator';separator.textContent=': ';
     const value=document.createElement('span');value.className='infinite-score-value';value.textContent=total;
-    counter.append(name,value);
+    counter.append(name,separator,value);
     children.push(counter);
    }
    personalScore.replaceChildren(...children);
@@ -993,11 +999,10 @@ function renderScores(world, pilot, second) {
  }
  if (!leaderboard) return;
  const entries = standings.slice(0, 10);
- const tankCount = world.online ? world.tankCount ?? entries.length : world.tanks.length;
  const publicArena = world.online && (!world.room || world.public);
  const party = world.public ? world.party || [] : [];
  const partyIDs = new Set(party.map(tank=>tank.id));
- const title = publicArena ? 'Top 10 Tanks' : tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
+ const title = 'LEADERBOARD';
  const standingRow = (tank,rank,extra=false) => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
   const name = local ? pilotIdentity(world,local-1,tank).label : tank.name || 'Tank';
@@ -1209,6 +1214,16 @@ function sendInput(seat = session, now = performance.now(), immediate = false, i
  if(seat===world)mouseTap=false;
 }
 
+function measureLatency(world, now) {
+ if (!world.online || !world.joined || world.result || world.failed || socket?.readyState !== WebSocket.OPEN) return;
+ if (world.latency !== null && now-world.latencyAt > PING_TIMEOUT) world.latency = null;
+ if (world.pendingPing !== null && now-world.pendingPing > PING_TIMEOUT) world.pendingPing = null;
+ if (now < world.nextPing || world.pendingPing !== null || socket.bufferedAmount > 4096) return;
+ world.pendingPing = now;
+ world.nextPing = now+PING_INTERVAL;
+ socket.send(JSON.stringify({type:'ping',t:now}));
+}
+
 function showResult(world, now) {
  if (!world.result || resultDialog.open) return;
  if (world.resultAt === undefined) {
@@ -1230,6 +1245,7 @@ function loop(now) {
  if (!arena.open || !session) return;
  const workStart = performance.now();
  const dt = clamp((now - lastTime) / 1000, 0, .1);
+ measureLatency(session,now);
  if (session.online && session.joined && !session.result) {
   for (const seat of session.controllers) {
    const input = inputState(seat);
@@ -1248,7 +1264,7 @@ function loop(now) {
  lastTime = now;
  showResult(session, now);
  if (session.online ? session.joined || session.retryAt === undefined : !pauseMenu.open) draw(session, now, dt);
- art.sampleFrame(now,performance.now()-workStart);
+ art.sampleFrame(now,performance.now()-workStart,session.online?(session.latency??NaN):null);
  frame = requestAnimationFrame(loop);
 }
 
@@ -1259,6 +1275,7 @@ function connectionFailed(message) {
  if (session.room) clearRoomResume();
  session.failed = true;
  session.joined = false;
+ session.latency = session.pendingPing = null;
  resetControls();
  art.renderLoadout(null,1);
  art.renderLoadout(null,2);
@@ -1279,6 +1296,7 @@ function retryConnection(message) {
  const old = socket;
  socket = null;
  world.joined = false;
+ world.latency = world.pendingPing = null;
  resetControls();
  old?.close();
  setStatus('Connection interrupted, Reconnecting to '+(world.room&&!world.public?'room Infinity':arenaName(world))+'…');
@@ -1327,6 +1345,15 @@ function receive(ws, event) {
   return;
  }
  if(message.type==='renamed'||message.type==='rename_error'){acceptRename(message);return;}
+ if (message.type === 'pong') {
+  const now=performance.now(), elapsed=now-message.t;
+  if (session.joined && session.pendingPing !== null && Number.isFinite(message.t) && message.t===session.pendingPing && elapsed>=0 && elapsed<=PING_TIMEOUT) {
+   session.pendingPing = null;
+   session.latency = Math.round(elapsed);
+   session.latencyAt = now;
+  }
+  return;
+ }
  if (message.type === 'error') {
   const error = message.message || 'Unable to join '+arenaName(session)+'.';
   if (message.code === 'session_active' && session.resumeGeneration) retryConnection(error);
@@ -1415,6 +1442,7 @@ function receive(ws, event) {
   if (resumed || pauseMenu.open) for (const seat of session.controllers) sendInput(seat,now,true);
   clearTimeout(connectTimer);
   if (session.room && !session.result) watchSnapshots(ws);
+  measureLatency(session,now);
  }
 }
 
@@ -1428,6 +1456,8 @@ function connect() {
  oldSocket?.close();
  world.failed = false;
  world.joined = false;
+ world.latency = world.pendingPing = null;
+ world.nextPing = performance.now();
  world.visualEffects = [];
  if (!world.resumeGeneration) {
   world.maze = null;
@@ -1597,7 +1627,7 @@ function start(mode, options = {}) {
   public:!!options.public,party:[],
   colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
-  resumeGeneration:options.resumeGeneration,retries:0,
+  resumeGeneration:options.resumeGeneration,retries:0,latency:null,pendingPing:null,nextPing:0,latencyAt:0,
   rules:options.public?null:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
   time:0,nextBot:between(.4,1.2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,botPool:[],botBudget:0,
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
@@ -1683,7 +1713,7 @@ function pressFire(event,seat=session,mouse=false) {
  const pilot = seat.predictor.state;
  const age = now - world.arrived, boosted = pilot?.starmanTime > age / 1000;
  const canDetonate = pilot?.grenades > 0;
- if (world.online && pilot?.alive && now - seat.previewShotAt >= (boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
+ if (world.online && pilot?.alive && !(pilot.spawnProtected && pilot.invulnerable > age / 1000) && now - seat.previewShotAt >= (boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
      (boosted || age >= (pilot.cooldown || 0) * 1000) &&
      pilot.power !== 'grenade' && !canDetonate && !muzzleBlocked(world.maze, pilot, PROJECTILES[pilot.power || 'regular'].r)) {
   seat.previewShotAt = seat.pendingShotAt = now;

@@ -60,6 +60,8 @@ type infiniteTank struct {
 	Grenades      int     `json:"grenades,omitempty"`
 	GrenadeLife   float64 `json:"grenadeLife,omitempty"`
 	Locked        bool    `json:"locked,omitempty"`
+
+	SpawnProtected bool `json:"spawnProtected"`
 }
 
 type infinitePilot struct {
@@ -501,7 +503,7 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 	p.KilledBy = ""
 	p.KilledByColor = ""
 	p.input, p.firePending = Input{Seq: p.input.Seq}, false
-	p.kit = Tank{Invulnerable: 1}
+	p.kit = Tank{Invulnerable: 1, SpawnProtected: true}
 	p.Spawn++
 	p.Track = 0
 }

@@ -1,10 +1,10 @@
-# leqra v4.49.32 — current game protocol (protocol 1)
+# leqra v4.49.36 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.32**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.36**.
 
 ```json
-{"type":"server_hello","version":"4.49.32","protocol":1}
-{"type":"client_hello","version":"4.49.32","protocol":1}
+{"type":"server_hello","version":"4.49.36","protocol":1}
+{"type":"client_hello","version":"4.49.36","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -21,7 +21,7 @@ The server negotiates no context takeover in either direction. Compressed client
 
 ## Infinity
 
-`GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The ready-room preview can read these standings without allocating a tank or joining a room. Private arenas are not included. Public roaming bots use Chill difficulty; private rooms retain their configured bot settings.
+`GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The ready-room preview reads these standings immediately, then every four seconds, without allocating a tank or joining a room. The same request supplies the menu's server round-trip measurement, refreshing ping and the online count together. Private arenas are not included. Public roaming bots use Chill difficulty; private rooms retain their configured bot settings.
 
 `/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
@@ -29,13 +29,15 @@ Public joins may send `localName` for a second tank, with optional `colorIndex` 
 
 Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for one second after the tank's destruction, even if the hold ends sooner.
 
+After joining Infinity, `{"type":"ping","t":1234.5}` echoes as `{"type":"pong","t":1234.5}`. The timestamp must be a finite number. The client probes immediately after joining and every four seconds, measuring round-trip time against its own matching outstanding timestamp; replies from older connections and stale measurements are discarded. More than eight ping messages in one second closes the connection.
+
 An authenticated Infinity socket can change either of its own callsigns with `{"type":"rename","seat":0,"name":"SNOW FOX","requestId":1}`. Seat 0 is the primary tank and seat 1 is its local co-pilot. Request IDs must be positive JavaScript safe integers. The server replies with `{"type":"renamed","seat":0,"name":"SNOW FOX","requestId":1}` or `{"type":"rename_error","seat":0,"requestId":1,"message":"..."}`. Names follow the room's 16-character Unicode callsign rules. Public, private, and room-party arenas use the same command; room-backed changes also update and broadcast the room metadata. Renaming preserves tank IDs, scores, equipment and respawn state. Replaced connections and revoked seats cannot rename tanks. More than eight rename requests in one second closes the connection.
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's connected human `players` count, total `tankCount`, and up to ten `leaderboard` entries with `id`, `name`, `score`, `bot`, `colorIndex`, and optional `team`. The total `tankCount` covers the complete leaderboard pool, including bots and distant, respawning, or disconnected reserved pilots. Each leaderboard color matches that tank. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
 Human tanks also carry a one-based `rank` in the full arena standings, including tanks outside the top ten. Rankings use score descending, then tank ID ascending, across the same distant, respawning, and reserved pilots included in `tankCount`. Bots omit `rank`.
 
-Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts live projectiles even outside the pilot's view, and boosted Starman shots do not occupy ordinary ammo slots. Visible homing missiles and grenades include `target` when locked onto a pilot ID.
+Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts live projectiles even outside the pilot's view, and boosted Starman shots do not occupy ordinary ammo slots. Visible homing missiles and grenades include `target` when locked onto a pilot ID. Fixed-maze and Infinity tanks also report `spawnProtected` to distinguish spawn invulnerability from Starman and Shield hit protection. While `spawnProtected` and `invulnerable` are both active, the tank cannot fire or remotely detonate grenades.
 
 For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots. Room packets include `infinityActive` so pilots can rejoin a running arena. The Infinity socket join includes the room `code` and the pilot's existing room `token`. The host's `lobby` command ends the private run.
 
@@ -73,7 +75,7 @@ Grenades use the same server-owned line-of-sight seeker, turn rate, and reacquis
 
 While `starmanTime` is positive, firing has no cooldown and preserves the equipped weapon's ammo and remaining lifetime. Starman shots stay live after the boost ends and leave ordinary projectile slots free. At the safety limit, boosted fire replaces the oldest active shots, and ordinary fire replaces the oldest boosted shots. Fixed-maze snapshots include optional `boostedBulletIds` for active shots fired during Starman, covering both `bullets` and `machineBullets`.
 
-An active Starman also destroys tanks on body contact, including tanks with Shield charges. Contact respects wall separation, temporary invulnerability, and team friendly-fire rules. The kill uses the same scoring, flag drop, and respawn rules as projectile damage.
+An active Starman also destroys tanks on body contact, including tanks with Shield charges or spawn protection. Contact respects wall separation, another active Starman, Shield hit invulnerability, and team friendly-fire rules. The kill uses the same scoring, flag drop, and respawn rules as projectile damage.
 
 Frozen match reports use the public `controllerMember` field on local Player 2 rows to attribute wins to that device after a roster change. The field carries a member ID and cannot authenticate a session.
 

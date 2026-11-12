@@ -71,6 +71,8 @@ type infiniteMessage struct {
 	Seat            int    `json:"seat"`
 	RequestID       uint64 `json:"requestId"`
 	Input
+
+	T *float64 `json:"t"`
 }
 
 func newInfiniteServer(h *Hub) *infiniteServer {
@@ -125,7 +127,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 	window := time.Now()
 	var lastTouch time.Time
 	var count [2]int
-	var renames int
+	var renames, pings int
 	for {
 		data, err = c.ws.readMessage()
 		if err != nil {
@@ -135,7 +137,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 		now := time.Now()
 		if now.Sub(window) >= time.Second {
 			window, count = now, [2]int{}
-			renames = 0
+			renames, pings = 0, 0
 		}
 		var msg infiniteMessage
 		if json.Unmarshal(data, &msg) != nil {
@@ -145,6 +147,21 @@ func (s *infiniteServer) readLoop(c *Client) {
 		if msg.Type == "leave" {
 			s.remove(c)
 			return
+		}
+		if msg.Type == "ping" {
+			pings++
+			if pings > 8 {
+				c.ws.writeClose(1008, "Ping rate exceeded")
+				return
+			}
+			if msg.T == nil || math.IsNaN(*msg.T) || math.IsInf(*msg.T, 0) {
+				c.ws.writeClose(1008, "Invalid ping timestamp")
+				return
+			}
+			if !c.enqueue(map[string]any{"type": "pong", "t": *msg.T}) {
+				return
+			}
+			continue
 		}
 		if msg.Type == "rename" {
 			renames++

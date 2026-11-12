@@ -241,9 +241,9 @@ test('online spawn tags follow authoritative life changes and never turn a shiel
  t=s.netTank({...t,invulnerable:.1},t);assert.ok(s.localSpawnGuideAlpha(t)>0&&s.localSpawnGuideAlpha(t)<1);
  t=s.netTank({...t,invulnerable:0},t);assert.equal(s.localSpawnGuideAlpha(t),0);
  t=s.netTank({...t,invulnerable:.35},t,true);assert.equal(s.localSpawnGuideAlpha(t),0);
- t=s.netTank({...t,spawnSerial:1,invulnerable:1.2},t);assert.equal(s.localSpawnGuideAlpha(t),1,'objective respawns rearm protection on a new life');
+ t=s.netTank({...t,spawnSerial:1,spawnProtected:true,invulnerable:1.2},t);assert.equal(s.localSpawnGuideAlpha(t),1,'objective respawns rearm protection on a new life');
  t=s.netTank({...t,invulnerable:.1},t,true);assert.equal(s.localSpawnGuideAlpha(t),0,'a shield event invalidates spawn protection even when an expired snapshot was skipped');
- t=s.netTank({...t,invulnerable:.75},null);assert.equal(s.localSpawnGuideAlpha(t),1,'a new round generation starts with a fresh body');
+ t=s.netTank({...t,spawnProtected:true,invulnerable:.75},null);assert.equal(s.localSpawnGuideAlpha(t),1,'a new round generation starts with a fresh body');
 });
 
 test('a real shield save clears the local spawn tag instead of lighting the spawn ring again',()=>{

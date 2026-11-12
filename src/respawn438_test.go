@@ -19,6 +19,11 @@ func TestRespawn438ReleasedDeadLifePressDoesNotFireOnRevival(t *testing.T) {
 				}
 				g.startMatch(r.Players)
 				g.Phase = "playing"
+				for _, body := range g.Tanks {
+					if body != nil {
+						body.Invulnerable, body.SpawnProtected = 0, false
+					}
+				}
 				tank := g.Tanks[player.ID]
 				tank.Alive, tank.RespawnTime = false, tickDT/2
 				serial := tank.SpawnSerial
@@ -47,7 +52,8 @@ func TestRespawn438ReleasedDeadLifePressDoesNotFireOnRevival(t *testing.T) {
 				if g.Tanks[1].ShotSerial != 1 {
 					t.Fatal("revival discarded another living player's valid quick tap")
 				}
-				// A fresh new-life tap still works immediately afterward.
+				// A fresh new-life tap works after the new spawn protection ends.
+				tank.Invulnerable, tank.SpawnProtected = 0, false
 				action(t, h, clients[0], map[string]any{"type": "input", "player": player.ID, "seq": 12, "fire": true})
 				action(t, h, clients[0], map[string]any{"type": "input", "player": player.ID, "seq": 13, "fire": false})
 				h.tick(time.Now())
@@ -70,10 +76,15 @@ func TestRespawn438HeldControlsRemainUsableOnRevival(t *testing.T) {
 	tank.Alive, tank.RespawnTime = false, tickDT/2
 	action(t, h, clients[0], map[string]any{"type": "input", "seq": 10, "fire": true, "right": true})
 	h.tick(time.Now())
-	if !tank.Alive || tank.ShotSerial != 1 || tank.Ack != 10 {
-		t.Fatal("revival discarded currently held fire or its acknowledgement")
+	if !tank.Alive || tank.ShotSerial != 0 || tank.Ack != 10 {
+		t.Fatal("revival fired during spawn protection or discarded its input acknowledgement")
 	}
 	if tank.Angle <= spawnAngle {
 		t.Fatal("revival discarded currently held turning controls")
+	}
+	tank.Invulnerable = tickDT
+	h.tick(time.Now())
+	if tank.ShotSerial != 1 || tank.SpawnProtected {
+		t.Fatal("held fire did not resume when spawn protection expired")
 	}
 }
