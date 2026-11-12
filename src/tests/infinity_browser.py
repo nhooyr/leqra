@@ -544,14 +544,32 @@ def check_private(browser, url, errors):
     print("PASS private teams, P2 input and removal, automatic reconnect and reload, public isolation, exit and end", flush=True)
 
 
-def check_rank_outside_leaders(browser, url, errors):
+def check_rank_outside_leaders(browser, url, errors, screenshot_dir=None):
     with browser.new_context() as context:
+        context.add_init_script("""
+            localStorage.setItem('leqra.local2Name', 'RANKED P2');
+            window.WebSocket = class extends WebSocket {
+                constructor(...args) {
+                    super(...args);
+                    if (!window.captureRankGame || new URL(args[0],location.href).pathname !== '/ws/infinite') return;
+                    window.rankGameSocket = this;
+                    this.addEventListener('message', event => {
+                        const packet = JSON.parse(event.data);
+                        if (packet.type === 'welcome') this.rankWelcome = packet;
+                        if (packet.type === 'state') this.rankState = packet;
+                    });
+                }
+            };
+        """)
         page = load(context, url, "RANKED PILOT", errors)
+        page.locator("#roomPlayers > summary").click()
+        page.locator("#addLocalBtn").click()
+        expect(page.locator("#roomRoster")).to_contain_text("RANKED P2")
         page.evaluate("""async () => {
             const url = new URL('/ws/infinite', location.href);
             url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
             window.rankPeers = [];
-            await Promise.all(Array.from({length:11}, (_, index) => new Promise((resolve, reject) => {
+            await Promise.all(Array.from({length:12}, (_, index) => new Promise((resolve, reject) => {
                 const socket = new WebSocket(url);
                 rankPeers.push(socket);
                 const timer = setTimeout(() => reject(Error('Rank fixture pilot did not join')), 5000);
@@ -563,21 +581,57 @@ def check_rank_outside_leaders(browser, url, errors):
                     else if (packet.type === 'error') {clearTimeout(timer);reject(Error(packet.message));}
                 };
             })));
+            window.captureRankGame = true;
         }""")
         page.locator("#startRoomBtn").click()
-        expect_pilots(page, 12)
-        expect_score_rank(page)
-        score = page.locator("#infiniteKills").inner_text()
-        rank = int(re.search(r"#(\d+)", score).group(1))
-        assert rank > 10, score
+        expect_pilots(page, 14)
+        expect_score_rank(page, split=True)
         leaders = standings(page)
         expect(page.locator("#infiniteLeaderboardTitle")).to_have_text("Top 10 Tanks")
-        expect(leaders.locator("li")).to_have_count(10)
-        expect(leaders).not_to_contain_text("RANKED PILOT")
+        expect(leaders.locator("li")).to_have_count(12)
+        page.evaluate("window.rankBoard = document.querySelector('#infiniteLeaderboard')")
+        matches_authority = """() => {
+            const socket=window.rankGameSocket, state=socket?.rankState, welcome=socket?.rankWelcome;
+            if (!state || !welcome || welcome.localId == null) return false;
+            const ids=[welcome.id,welcome.localId], locals=ids.map(id=>state.tanks.find(tank=>tank.id===id));
+            if (locals.some(tank=>!tank || !Number.isSafeInteger(tank.rank) || tank.rank<=10)) return false;
+            const top=state.leaderboard.slice(0,10);
+            if (top.length!==10 || new Set(top.map(tank=>tank.id)).size!==10 || top.some(tank=>ids.includes(tank.id))) return false;
+            const canonical=color=>{const node=document.createElement('span');node.style.color=color;return node.style.color;};
+            const expected=[...top.map((tank,i)=>({tank,rank:i+1,local:0})),
+                ...locals.map((tank,i)=>({tank,rank:tank.rank,local:i+1})).sort((a,b)=>a.rank-b.rank)];
+            const rows=[...document.querySelectorAll('#infiniteLeaderboard > li')];
+            return rows.length===12 && expected.every(({tank,rank,local},i)=>{
+                const row=rows[i], label=tank.name+(local===1?' (you)':local===2?' (P2)':'');
+                return row.value===rank && row.querySelector('span')?.textContent===label &&
+                    row.querySelector('strong')?.textContent===String(tank.score) &&
+                    (row.dataset.local||'')===(local?'p'+local:'') &&
+                    row.classList.contains('off-board-local')===!!local &&
+                    getComputedStyle(row).color===canonical(leqraInfinityArt.colors[tank.colorIndex]) &&
+                    (!local || row.style.getPropertyValue('--local-highlight')===['#bf5cff','#ff4fd8'][local-1]);
+            }) && rows.filter(row=>row.dataset.local==='p1').length===1 && rows.filter(row=>row.dataset.local==='p2').length===1;
+        }"""
+        page.wait_for_function(matches_authority)
+        if screenshot_dir is not None:
+            page.screenshot(path=str(screenshot_dir / f"{browser.browser_type.name}-rank-active.png"))
+        page.locator("#pauseBtn").click()
+        pause = page.locator("#infinitePauseMenu")
+        expect(pause).to_be_visible()
+        expect(pause.locator("#infinitePauseSidebar #infiniteLeaderboard > li")).to_have_count(12)
+        assert page.evaluate("document.querySelector('#infiniteLeaderboard') === rankBoard")
+        expect(page.locator("#infiniteLeaderboardPanel")).to_have_count(1)
+        page.wait_for_function(matches_authority)
+        if screenshot_dir is not None:
+            page.screenshot(path=str(screenshot_dir / f"{browser.browser_type.name}-rank-paused.png"))
+        pause.locator("#infiniteResumeBtn").click()
+        expect(pause).to_be_hidden()
+        expect(page.locator(".infinite-stage #infiniteLeaderboard > li")).to_have_count(12)
+        assert page.evaluate("document.querySelector('#infiniteLeaderboard') === rankBoard")
+        page.wait_for_function(matches_authority)
         page.locator("#pauseBtn").click()
         page.locator("#infiniteExit").click()
         page.evaluate("rankPeers.forEach(socket => socket.close())")
-    print("PASS personal rank stays visible below the global top ten", flush=True)
+    print("PASS top ten plus both local ranks, scores, and colors stay correct in active and paused Infinity", flush=True)
 
 
 def check_mobile_ranks(browser, url, errors):
