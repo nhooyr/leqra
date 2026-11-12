@@ -38,7 +38,7 @@ with sync_playwright() as pw:
 
  # Controls menu describes the currently selected maze pickup budget and expiry.
  info=p.evaluate("""()=>{__test.syncControlsPickupInfo();return document.querySelector('#controlsPickupInfo').textContent;}""")
- check('7 starting pickups' in info and '34 maximum' in info and '90 seconds' in info,'Controls menu shows starting/max pickups and maze-dependent expiry')
+ check('7 starting power-ups' in info and '34 maximum' in info and '90 seconds' in info,'Controls menu shows starting/max power-ups and maze-dependent expiry')
  p.locator('#startRoomBtn').click();p.wait_for_timeout(30)
 
  # Per-player feedback occupies the existing reserved loadout line, keeping height invariant.

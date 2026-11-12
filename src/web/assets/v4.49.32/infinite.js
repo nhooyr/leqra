@@ -80,6 +80,7 @@ function setStatus(text) {
  if (status.textContent !== text) status.textContent = text;
  renderOnlineCount(session);
 }
+function arenaName(world=session) {return world?.online&&(!world.room||world.public)?'Public Infinity':'Infinity';}
 
 function localPilots(world=session) {
  if (!world) return [];
@@ -769,7 +770,7 @@ function refreshBindings(world) {
  const hint = byID('infiniteControlsHint');
  if (!hint) return;
  const pilot=pilotIdentity(world,0),second=world.local&&pilotIdentity(world,1);
- const content=art.controlHintHTML(world.keys,pilot.label,art.isTouchUI()?'touch':mouseEnabled()?'mouse':'',pilot.color)+
+ const content=art.controlHintHTML(world.keys,second?pilot.label:'',art.isTouchUI()?'touch':mouseEnabled()?'mouse':'',pilot.color)+
   (second?art.controlHintHTML(world.local.keys,second.label,'',second.color):'');
  if(hint.innerHTML!==content){
   hint.innerHTML=content;
@@ -778,7 +779,7 @@ function refreshBindings(world) {
   Promise.resolve().then(align);
   document.fonts?.ready.then(align);
  }
- canvas.setAttribute('aria-label','Infinity maze. '+pilot.label+(second?' and '+second.label:'')+'. Controls are listed below the arena.');
+ canvas.setAttribute('aria-label',arenaName(world)+' maze. '+pilot.label+(second?' and '+second.label:'')+'. Controls are listed below the arena.');
  fire.setAttribute('aria-label','Fire for '+pilot.label);
  stick.setAttribute('aria-label','Move and aim '+pilot.label);
  world.controlPilots=JSON.stringify(localPilots(world));
@@ -1261,7 +1262,7 @@ function connectionFailed(message) {
  resetControls();
  art.renderLoadout(null,1);
  art.renderLoadout(null,2);
- setStatus(message + (session.room ? ' Use Exit Infinity in the pause menu to return to your room.' :
+ setStatus(message + (session.room ? ' Use Exit '+arenaName(session)+' in the pause menu to return to your room.' :
   ' Choose Infinity in Room settings to play offline.'));
  if (retry) retry.hidden = false;
  socket?.close();
@@ -1280,7 +1281,7 @@ function retryConnection(message) {
  world.joined = false;
  resetControls();
  old?.close();
- setStatus('Connection interrupted, Reconnecting to room Infinity…');
+ setStatus('Connection interrupted, Reconnecting to '+(world.room&&!world.public?'room Infinity':arenaName(world))+'…');
  const delay = Math.min(remaining, 3000, 450 * 2 ** Math.min(world.retries++,3));
  connectTimer = setTimeout(() => {
   if (session === world) {
@@ -1294,7 +1295,7 @@ function watchSnapshots(ws) {
  const delay = document.hidden ? SNAPSHOT_TIMEOUT : Math.max(1,SNAPSHOT_TIMEOUT + session.arrived - performance.now());
  connectTimer = setTimeout(() => {
   if (ws !== socket || !session?.joined || session.result) return;
-  if (!document.hidden && performance.now() - session.arrived >= SNAPSHOT_TIMEOUT) retryConnection('Disconnected from Infinity.');
+  if (!document.hidden && performance.now() - session.arrived >= SNAPSHOT_TIMEOUT) retryConnection('Disconnected from '+arenaName(session)+'.');
   else watchSnapshots(ws);
  },delay);
 }
@@ -1322,12 +1323,12 @@ function receive(ws, event) {
   message = JSON.parse(event.data);
   if (!message || typeof message.type !== 'string') throw new Error('Invalid Infinity packet');
  } catch {
-  connectionFailed('Unexpected response from the Infinity server.');
+  connectionFailed('Unexpected response from the '+arenaName(session)+' server.');
   return;
  }
  if(message.type==='renamed'||message.type==='rename_error'){acceptRename(message);return;}
  if (message.type === 'error') {
-  const error = message.message || 'Unable to join Infinity.';
+  const error = message.message || 'Unable to join '+arenaName(session)+'.';
   if (message.code === 'session_active' && session.resumeGeneration) retryConnection(error);
   else connectionFailed(error);
   return;
@@ -1362,7 +1363,7 @@ function receive(ws, event) {
  }
  if (message.type !== 'state' || !session.maze) return;
  if (!Array.isArray(message.tanks) || !Array.isArray(message.bullets) || !Array.isArray(message.leaderboard)) {
-  connectionFailed('Unexpected state from the Infinity server.');
+  connectionFailed('Unexpected state from the '+arenaName(session)+' server.');
   return;
  }
  preserveConfirmedNames(session,message);
@@ -1451,19 +1452,19 @@ function connect() {
  }
  if (retry) retry.hidden = true;
  if (location.protocol !== 'http:' && location.protocol !== 'https:') {
-  connectionFailed('Online Infinity requires the leqra server.');
+  connectionFailed(arenaName(world)+' requires the leqra server.');
   if (retry) retry.hidden = true;
   return;
  }
- setStatus(world.resumeGeneration || world.retryAt !== undefined ? 'Reconnecting to room Infinity…' :
-  world.room ? 'Connecting to room Infinity…' : 'Connecting to Infinity…');
+ const destination=world.room&&!world.public?'room Infinity':arenaName(world);
+ setStatus((world.resumeGeneration || world.retryAt !== undefined ? 'Reconnecting to ' : 'Connecting to ')+destination+'…');
  const url = new URL('/ws/infinite', location.href);
  url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
  let ws;
  try {
   ws = socket = new WebSocket(url);
  } catch {
-  retryConnection('Could not connect to Infinity.');
+  retryConnection('Could not connect to '+arenaName(world)+'.');
   return;
  }
  ws.addEventListener('open', () => {
@@ -1478,11 +1479,11 @@ function connect() {
  ws.addEventListener('message', event => receive(ws, event));
  ws.addEventListener('close', () => {
   if (ws === socket && session === world && !world.failed && !world.result) {
-   retryConnection(world.joined ? 'Disconnected from Infinity.' : 'Could not join Infinity.');
+   retryConnection((world.joined ? 'Disconnected from ' : 'Could not join ')+arenaName(world)+'.');
   }
  });
  connectTimer = setTimeout(() => {
-  if (ws === socket && session === world && !world.joined) retryConnection('Could not connect to Infinity.');
+  if (ws === socket && session === world && !world.joined) retryConnection('Could not connect to '+arenaName(world)+'.');
  }, Math.min(6500,(world.retryAt ?? performance.now()) + RECONNECT_WINDOW - performance.now()));
 }
 
@@ -1602,6 +1603,8 @@ function start(mode, options = {}) {
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
  const world = session;
+ byID('infiniteArenaTitle').textContent=arenaName(world);
+ byID('infiniteExit').textContent='Exit '+arenaName(world);
  canvas.style.cursor=mouseEnabled()?'':'auto';
  setStatus('');
  renderOnlineCount(world);
@@ -1886,11 +1889,11 @@ document.addEventListener('visibilitychange', () => {
  if (document.hidden) resetControls();
 });
 
-const pickupHelp = `Power-ups spawn near active pilots. Most last ${POWER_DURATION} seconds after pickup. Starman lasts ${STAR_DURATION} seconds. Machine gun allows 3 seconds of firing. Uncollected power-ups expire after ${PICKUP_LIFETIME} seconds.`;
+const pickupHelp = `Power-ups spawn near active pilots. Most last ${POWER_DURATION} seconds once collected. Starman lasts ${STAR_DURATION} seconds. Machine gun allows 3 seconds of firing. Uncollected power-ups expire after ${PICKUP_LIFETIME} seconds.`;
 function sidebarHelp() {
  if (!session || !pauseMenu.open) return null;
  const target = session.rules?.infinityTarget;
- return {twoPilots:!!session.local,pilots:localPilots(),pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,
+ return {title:arenaName(session),twoPilots:!!session.local,pilots:localPilots(),pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,
   instructions:'Gain a point per kill and lose a point per death. Respawn after '+RESPAWN_DELAY+' second. '+
    (target?'Reach '+target+' points to win.':'Keep growing the score without a time limit.')+
    (session.public&&session.room?' Everyone competes individually, including pilots from your room.':'')};

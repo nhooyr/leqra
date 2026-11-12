@@ -81,7 +81,7 @@ func validateRules(r MatchRules) error {
 		return errors.New("Respawn delay must be 1–10 seconds.")
 	}
 	if r.PickupRate != "superfast" && r.PickupRate != "fast" && r.PickupRate != "normal" && r.PickupRate != "slow" && r.PickupRate != "off" {
-		return errors.New("Choose a valid pickup frequency.")
+		return errors.New("Choose a valid power-up frequency.")
 	}
 	if len(r.Weapons) > len(pickupTypes) {
 		return errors.New("Too many weapon types.")

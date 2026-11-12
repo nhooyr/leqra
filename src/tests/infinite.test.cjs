@@ -152,8 +152,10 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  const keyLabel = game.slice(game.indexOf('function keyLabel('), game.indexOf('function aliasesActive('));
  const composition = game.match(/^function composingKey\(e\).*$/m)[0];
  vm.runInContext('let bindingCapture=null;\n'+composition+'\n'+keyLabel+keyPolicy, context);
- const hintStart=game.indexOf('function controlHintHTML(');
- vm.runInContext(game.match(/^const escapeHTML=.*$/m)[0]+'\n'+game.slice(hintStart,game.indexOf('\n}',hintStart)+2),context);
+ const hintFunctions=['controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML'].map(name=>{
+  const start=game.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=game.indexOf('\n',start),line=game.slice(start,end);return line.endsWith('}')?line:game.slice(start,game.indexOf('\n}',end)+2);
+ });
+ vm.runInContext(game.match(/^const escapeHTML=.*$/m)[0]+'\n'+hintFunctions.join('\n'),context);
  vm.runInContext(game.match(/^function pilotIdentity\(.*$/m)[0]+'\n'+game.match(/^function cleanPilotName\(.*$/m)[0],context);
  Object.assign(window.leqraInfinityArt, {arenaKeyBlocked: context.arenaKeyBlocked, keyLabel: context.keyLabel,controlHintHTML:context.controlHintHTML,pilotIdentity:context.pilotIdentity,cleanPilotName:context.cleanPilotName});
  const projectileState = game.slice(game.indexOf('function pilotProjectileState('), game.indexOf('function liveFeedbackTank('));
@@ -214,6 +216,34 @@ test('Infinity primary defaults use Player 1 without replacing saved or explicit
   h.infinity.start('offline');assert.equal(h.state().name,want);assert.equal(h.state().tanks.find(t=>t.id===h.state().id).name,want);assert.equal(h.infinity.localPilots()[0].name,want);h.infinity.close();
   h.infinity.start('online');h.sockets[0].emit('open');assert.equal(h.sockets[0].sent[0].name,want);h.infinity.close();
   h.infinity.start('offline',{name:'CUSTOM',localName:'CO-PILOT'});assert.deepEqual(Array.from(h.infinity.localPilots(),p=>p.name),['CUSTOM','CO-PILOT']);h.infinity.close();
+ }
+});
+
+test('public standalone and room-party Infinity use Public Infinity while offline and private keep Infinity',()=>{
+ for(const [mode,options,label,destination]of [
+  ['offline',{},'Infinity',null],
+  ['online',{},'Public Infinity','Public Infinity'],
+  ['online',{code:'ROOM',token:'own'},'Infinity','room Infinity'],
+  ['online',{code:'ROOM',token:'own',public:true},'Public Infinity','Public Infinity'],
+ ]){
+  const {infinity,byID}=harness(undefined,true);infinity.start(mode,{name:'Lead',...options});
+  assert.equal(byID('infiniteArenaTitle').textContent,label);
+  assert.equal(byID('infiniteExit').textContent,'Exit '+label);
+  assert.ok(byID('infiniteCanvas').attributes['aria-label'].startsWith(label+' maze.'));
+  if(destination)assert.equal(byID('infiniteStatus').textContent,'Connecting to '+destination+'…');
+  infinity.togglePause();assert.equal(infinity.sidebarHelp().title,label);infinity.close();
+ }
+});
+
+test('Public Infinity disconnect and retry messages retain the public name for standalone and party entry',()=>{
+ for(const options of [{},{code:'ROOM',token:'own',public:true}]){
+  const {infinity,byID,sockets,elapse}=harness();infinity.start('online',options);
+  sockets[0].receive({type:'welcome',id:1,seed:0});sockets[0].close();
+  assert.ok(byID('infiniteStatus').textContent.includes('Public Infinity'));
+  assert.ok(!byID('infiniteStatus').textContent.includes('room Infinity'));
+  if(options.code){elapse(450);assert.equal(byID('infiniteStatus').textContent,'Reconnecting to Public Infinity…');}
+  else{byID('infiniteRetry').emit('click');assert.equal(byID('infiniteStatus').textContent,'Connecting to Public Infinity…');}
+  infinity.close();
  }
 });
 
@@ -339,6 +369,22 @@ test('offline Infinity routes two independent keyboard layouts to separate tanks
  assert.match(hint.textContent,/Saved pilot \(P1\) Forward W Reverse S Left A Right D Fire Q \/ C Mouse Aim Mouse Fire/);
  assert.match(hint.textContent,/Local wingmate \(P2\) Forward ↑ Reverse ↓ Left ← Right → Fire SPACE \/ ENTER/);
  infinity.close();
+});
+
+test('solo Infinity omits the repeated controls identity while retaining the loadout, score and accessible callsign',()=>{
+ const h=harness(undefined,true);
+ h.infinity.start('offline',{name:'Solo pilot',roomRules:{infinityRandomBots:false}});h.advance(4);
+ const hint=h.byID('infiniteControlsHint');
+ assert.ok(!hint.innerHTML.includes('control-pilot'));
+ assert.ok(!hint.textContent.includes('Solo pilot'));
+ assert.match(hint.textContent,/Forward W \/ ↑/);
+ assert.equal(h.loadouts[1].tank.name,'Solo pilot');
+ assert.match(h.byID('infiniteKills').textContent,/Solo pilot \(P1\)/);
+ assert.match(h.byID('infiniteCanvas').attributes['aria-label'],/Solo pilot \(P1\)/);
+ h.infinity.close();h.infinity.start('offline',{name:'Solo pilot',localName:'Wingmate',roomRules:{infinityRandomBots:false}});
+ assert.equal((hint.innerHTML.match(/class="control-pilot"/g)||[]).length,2);
+ assert.match(hint.textContent,/Solo pilot \(P1\)/);assert.match(hint.textContent,/Wingmate \(P2\)/);
+ h.infinity.close();
 });
 
 test('Infinity control groups preserve aliases through remapping and touch layouts',()=>{

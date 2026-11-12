@@ -773,6 +773,8 @@ def check_control_alignment(browser, errors, url=None):
     with browser.new_context(viewport={"width": 1280, "height": 900}, service_workers="block") as context:
         page = load(context, source_url, "SOLO PILOT", errors)
         page.evaluate("leqraInfinity.start('offline',{name:'SOLO PILOT',roomRules:{infinityRandomBots:false}})")
+        expect(page.locator('#infiniteControlsHint .control-pilot')).to_have_count(0)
+        expect(page.locator('#infiniteLoadouts .loadout-name').first).to_have_text('SOLO PILOT (P1)')
         for width in (1280, 1560, 1720, 900, 640):
             page.set_viewport_size({"width": width, "height": 900})
             layout = page.locator("#infiniteControlsHint").evaluate("""hint => {
@@ -783,6 +785,8 @@ def check_control_alignment(browser, errors, url=None):
                     overflow:document.querySelector('#infiniteArena').scrollWidth>innerWidth};
             }""")
             assert not layout["overflow"], layout
+            assert abs(layout["hint"]["right"]-layout["readout"]["right"])<=1, layout
+            assert abs(layout["groups"][0]["left"]-layout["hint"]["left"])<=1, layout
             assert layout["loadout"]["right"] + 11 <= layout["readout"]["left"], layout
             assert layout["loadout"]["right"] - layout["loadout"]["left"] >= 239, layout
             assert len(layout["groups"]) == 7, layout
@@ -790,6 +794,18 @@ def check_control_alignment(browser, errors, url=None):
                 assert max(group["top"] for group in layout["groups"]) - min(group["top"] for group in layout["groups"]) <= 1, layout
                 assert layout["hint"]["height"] <= max(group["height"] for group in layout["groups"]) + 1, layout
         expect(page.locator('#infiniteControlsHint .control-key-group').nth(4).locator('kbd')).to_have_text(['Q','C','SPACE','ENTER'])
+        page.evaluate("""() => {
+            leqraInfinity.close(); leqraInfinity.start('offline',{name:'REMAP PILOT',roomRules:{infinityRandomBots:false},bindings:[
+                {forward:'KeyI',reverse:'KeyS',left:'KeyA',right:'KeyD',fire:'KeyZ',fireAlt:'KeyC'},
+                {forward:'KeyU',reverse:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'Space',fireAlt:'Enter'}
+            ]});
+        }""")
+        page.set_viewport_size({'width':1720,'height':900})
+        expect(page.locator('#infiniteControlsHint .control-pilot')).to_have_count(0)
+        expect(page.locator('#infiniteLoadouts .loadout-name').first).to_have_text('REMAP PILOT (P1)')
+        expect(page.locator('#infiniteControlsHint .control-key-group').first.locator('kbd')).to_have_text(['I','U'])
+        expect(page.locator('#infiniteControlsHint .control-key-group').nth(4).locator('kbd')).to_have_text(['Z','C','SPACE','ENTER'])
+        assert page.locator('#infiniteControlsHint').evaluate("node=>new Set([...node.querySelectorAll('.control-key-group')].map(group=>group.getBoundingClientRect().top)).size===1")
     print("PASS solo keyboard aliases and both mouse hints fit one row on wide screens and wrap safely on narrow screens", flush=True)
     for remapped in (False, True):
         with browser.new_context(viewport={"width": 1280, "height": 900}, service_workers="block") as context:
@@ -801,6 +817,7 @@ def check_control_alignment(browser, errors, url=None):
                     {forward:'ArrowUp',reverse:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'Space',fireAlt:'Enter'}
                 ]} : {})
             })""", remapped)
+            expect(page.locator('#infiniteControlsHint .control-pilot')).to_have_text(['SHORT (P1)','LONGER CO-PILOT (P2)'])
             for width in (900, 1000, 1100, 1280, 1560):
                 page.set_viewport_size({"width": width, "height": 900})
                 page.wait_for_function("""() => {
@@ -820,6 +837,19 @@ def check_control_alignment(browser, errors, url=None):
                 assert not layout["overflow"], layout
                 assert all(abs(a-b)<=1 for a,b in zip(*layout["actions"])), layout
     print("PASS paired hints stay right anchored with aligned labels and actions through wrapping and long remaps", flush=True)
+    for width,height in ((320,568),(390,844),(844,390)):
+        for paired in (False,True):
+            with browser.new_context(viewport={'width':width,'height':height},is_mobile=True,has_touch=True,service_workers='block') as context:
+                page=load(context,source_url,'TOUCH PILOT',errors)
+                page.evaluate("paired=>leqraInfinity.start('offline',{name:'TOUCH PILOT',...(paired?{localName:'TOUCH WING'}:{}),roomRules:{infinityRandomBots:false}})",paired)
+                expect(page.locator('#infiniteControlsHint .control-pilot')).to_have_count(2 if paired else 0)
+                expect(page.locator('#infiniteLoadouts .loadout-name').first).to_have_text('TOUCH PILOT (P1)')
+                if paired:
+                    expect(page.locator('#infiniteControlsHint .control-pilot')).to_have_text(['TOUCH PILOT (P1)','TOUCH WING (P2)'])
+                    expect(page.locator('#infiniteLoadouts .loadout-name').last).to_have_text('TOUCH WING (P2)')
+                expect(page.locator('#infiniteControlsHint')).to_be_hidden()
+                assert page.locator('#infiniteArena').evaluate('node=>node.scrollWidth<=node.clientWidth')
+    print('PASS solo hints omit duplicate names while left HUD identities and paired touch labels remain intact',flush=True)
 
 
 def check_shared_header(browser, url, errors):
