@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "leqra",
-  "short_name": "leqra",
+  "name": "leqra.com",
+  "short_name": "leqra.com",
   "description": "A fast tank-maze arena for local, offline and online play.",
   "start_url": "/",
   "scope": "/",

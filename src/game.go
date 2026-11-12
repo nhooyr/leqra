@@ -1023,10 +1023,14 @@ func (g *Game) fireLaser(t *Tank) bool {
 	}
 	start, end := points[0], points[len(points)-1]
 	t.ShotSerial++
-	g.nextEvent++
-	g.events = append(g.events, Event{Tick: g.Tick, ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Angle: t.Angle, Generation: g.Generation, ID: g.nextEvent, Type: "laser", X: start.X, Y: start.Y, EndX: end.X, EndY: end.Y, Points: points, Color: "#f57cff", Player: t.ID, Owner: t.ID})
-	if len(g.events) > 24 {
-		g.events = g.events[len(g.events)-24:]
+	// Trace and resolve every volley. Sustained misses share Infinity's cosmetic
+	// cadence; a hit always publishes its exact beam before the damage event.
+	if !starman || t.ShotSerial%4 == 1 || target != nil {
+		g.nextEvent++
+		g.events = append(g.events, Event{Tick: g.Tick, ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Angle: t.Angle, Generation: g.Generation, ID: g.nextEvent, Type: "laser", X: start.X, Y: start.Y, EndX: end.X, EndY: end.Y, Points: points, Color: "#f57cff", Player: t.ID, Owner: t.ID})
+		if len(g.events) > 24 {
+			g.events = g.events[len(g.events)-24:]
+		}
 	}
 	cooldown := laserCooldown
 	if starman {
@@ -1197,14 +1201,21 @@ func (g *Game) detonate(b *Bullet) {
 func (g *Game) projectileTankHit(b *Bullet, x, y, dx, dy float64) (*Tank, float64) {
 	var target *Tank
 	first := 2.0
+	minX, maxX := min(x, x+dx), max(x, x+dx)
+	minY, maxY := min(y, y+dy), max(y, y+dy)
 	for _, t := range g.Tanks {
 		if t == nil || !t.Alive || t.ID == b.Owner {
 			continue
 		}
-		if b.Kind != "grenade" && (!g.canDamage(b.Owner, t) || t.Invulnerable > 0) {
+		radius := t.R + b.R
+		padding := radius + 1e-7 // Keep floating-point grazing contacts in the narrow phase.
+		if t.X < minX-padding || t.X > maxX+padding || t.Y < minY-padding || t.Y > maxY+padding {
 			continue
 		}
-		if at, ok := circleHit(x, y, dx, dy, t.X, t.Y, t.R+b.R); ok && at < first {
+		if b.Kind != "grenade" && (t.Invulnerable > 0 || !g.canDamage(b.Owner, t)) {
+			continue
+		}
+		if at, ok := circleHit(x, y, dx, dy, t.X, t.Y, radius); ok && at < first {
 			first, target = at, t
 		}
 	}

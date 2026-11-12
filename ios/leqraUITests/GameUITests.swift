@@ -6,6 +6,38 @@ import XCTest
 final class GameUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// Opt in with TEST_RUNNER_LEQRA_RENDER_STRESS_UI=1 when running xcodebuild.
+    /// The deterministic workload stays offline and never changes room rules.
+    @MainActor
+    func testAllPowerUpsWithStackedBuffsKeepNativeControlsResponsive() throws {
+        guard ProcessInfo.processInfo.environment["LEQRA_RENDER_STRESS_UI"] == "1" else {
+            throw XCTSkip("Opt in to the ten-power-up native renderer stress matrix.")
+        }
+        XCUIDevice.shared.orientation = .portrait
+        for power in ["rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman", "regular"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--native-performance-probe", "--probe-weapon", power,
+                                   "--probe-bullets", "115", "--probe-buffs", "shield,speed,ghost", "--probe-pan"]
+            if power == "regular" { app.launchArguments.append("--probe-bounces") }
+            app.launch()
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15), power)
+            XCTAssertTrue(app.staticTexts["pilotIdentity"].waitForExistence(timeout: 5), power)
+            XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains("(P1)"), power)
+            let stage = arena(in: app)
+            XCTAssertTrue(app.frame.contains(stage.frame), power)
+            let prefetched = expectation(description: power + " map prefetch")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { prefetched.fulfill() }
+            wait(for: [prefetched], timeout: 2)
+            capture(app, name: "Native stacked-buff stress " + power + (power == "regular" ? " ricochets" : ""))
+            pause(in: app)
+            XCTAssertTrue(app.buttons["Resume"].isHittable, power)
+            app.buttons["Resume"].tap()
+            XCTAssertFalse(app.staticTexts["Paused"].exists, power)
+            XCTAssertTrue(app.buttons["pauseGame"].isHittable, power)
+            app.terminate()
+        }
+    }
+
     @MainActor
     private func launch() -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait

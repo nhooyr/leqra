@@ -30,7 +30,7 @@ Native sound uses the browser's sine/triangle voices, exponential pitch and volu
 
 The client supports public Infinity, private fixed/Infinity rooms, names and paint, bot/role/team editing, rules and local presets, readiness, invitations, room and opponent chat, matchmaking consent/search/cancellation, reports, and private session reconnect. Private reconnect retains credentials in memory for a bounded retry window; nothing persists room tokens to disk. Standalone public Infinity requires an explicit fresh join after connection loss.
 
-`NetworkClient.supportedVersion` must match the server release in `src/main.go`. The client validates `/api/build` and the room handshake, and reports an update requirement for incompatible releases. Change that compatibility constant only after checking protocol and gameplay changes. The iOS marketing version is independent of the web asset version.
+The displayed version, `NetworkClient.supportedVersion`, and the app bundle's release version are generated from `src/main.go` through `scripts/version.sh` on each relevant build. Xcode and `swift test` regenerate the core constant when that source changes; Xcode also generates the bundle's `Info.plist` in its build directory. No manual native version update is needed. The client validates `/api/build` and the room handshake, so release changes still require compatible protocol and gameplay behavior. `CURRENT_PROJECT_VERSION` remains the separate iOS build counter.
 
 ## Validate
 
@@ -52,8 +52,10 @@ xcodebuild -project ios/leqra.xcodeproj -scheme leqra \
   -derivedDataPath /tmp/leqra-ios-build CODE_SIGNING_ALLOWED=NO test
 ```
 
-UI tests expect a local Go server on port 18081. They cover Ready Room configuration, all local modes, native touch controls, portrait/landscape layout, pause/settings, in-arena standings, and private Infinity → lobby → fixed-match transitions. Screenshots stay in the XCTest result bundle. Live transport tests create disposable pilots and rooms on the selected server.
+UI tests expect a local Go server on port 18081. They cover Ready Room configuration, all local modes, native touch controls, portrait/landscape layout, pause/settings, in-arena standings, and private Infinity → lobby → fixed-match transitions. Prefix the test command with `TEST_RUNNER_LEQRA_RENDER_STRESS_UI=1` to include all ten power-ups with stacked buffs and a ricochet renderer fixture. Screenshots stay in the XCTest result bundle. Live transport tests create disposable pilots and rooms on the selected server.
 
 Core regressions compare maze hashes and steering with the existing Go/browser fixtures, and cover weapons, geometry, objectives, survival, rendering history, HUD presentation, room editing, and reconnects. Generated build/test artifacts belong in `/tmp` or ignored build directories.
+
+For renderer profiling, add `--native-performance-probe --probe-weapon cannon --probe-bullets 115 --probe-pan` under **Product → Scheme → Edit Scheme → Run → Arguments**. The opt-in synthetic scene prints frame-time percentiles, CPU stages, map raster/install timings, and allocation counters after a three-second warmup. Use `--probe-weapon laser`, `--probe-buffs shield,speed,ghost`, or `--probe-bounces` to exercise other rendering paths. These scenes do not join online games or change ordinary gameplay. Remove the arguments to return to normal play; keep captured output outside the repository.
 
 The native bot tiers use compact pathfinding and difficulty tuning rather than the complete browser/Go Godlike forecasting strategy. Keyboard-only local co-pilot/split-screen controls are not exposed by this mobile client. The native UI uses iOS text entry, menus, sharing, and accessibility rather than browser-specific dialogs or mouse/fullscreen APIs.

@@ -1,6 +1,6 @@
 (() => {
 'use strict';
-const VERSION = 'v4.49.37';
+const VERSION = 'v4.49.38';
 const webOrigin=['http:', 'https:'].includes(location.protocol);
 let serviceWorker=null;
 try{if(webOrigin&&window.isSecureContext!==false)serviceWorker=navigator.serviceWorker;}catch(_){}
@@ -103,7 +103,7 @@ function initInstallHint() {
    notice=document.createElement('section');notice.className='pwa-install-hint'+(manual?' pwa-install-manual':'');notice.setAttribute('aria-label','Install leqra');
    const copy=document.createElement('div'),title=document.createElement('strong'),message=document.createElement('p');
    title.textContent='Play leqra as an app';
-   message.textContent=manual?'Add to the Home Screen for a full screen experience. Tap Share, then Add to Home Screen.':'Add to the Home Screen for a full screen experience.';
+   message.textContent=(manual?'Add to the Home Screen for a full screen experience. Tap Share, then Add to Home Screen.':'Add to the Home Screen for a full screen experience.')+' Native iOS app coming soon.';
    copy.append(title,message);notice.append(copy);
    if (!manual) {
     const install=document.createElement('button');install.type='button';install.className='secondary pwa-install-action';install.textContent='INSTALL';

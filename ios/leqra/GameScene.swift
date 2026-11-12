@@ -1,11 +1,46 @@
 import SpriteKit
 import UIKit
+import QuartzCore
 import leqraCore
+
+private struct ProjectileStyle: Hashable {
+    let kind: String
+    let colorIndex: Int
+    init(_ bullet: ArenaBullet) {
+        kind = bullet.kind
+        colorIndex = max(0, bullet.colorIndex) % 8
+    }
+}
 
 /// The playing field and controls are native SpriteKit nodes. The app supplies
 /// snapshots on each display tick, independently of the server's 30 Hz stream.
 @MainActor
 final class GameScene: SKScene {
+    struct RenderMetrics {
+        var totalSeconds = 0.0
+        var mapSeconds = 0.0
+        var tankSeconds = 0.0
+        var guideSeconds = 0.0
+        var objectiveSeconds = 0.0
+        var bulletSeconds = 0.0
+        var warningSeconds = 0.0
+        var pickupSeconds = 0.0
+        var effectSeconds = 0.0
+        var bullets = 0
+        var effects = 0
+        var projectileCreations = 0
+        var effectCreations = 0
+        var mapRebuilds = 0
+        var mapRasterSeconds = 0.0
+        var mapInstallSeconds = 0.0
+    }
+    var profilesRendering = false
+    private(set) var renderMetrics = RenderMetrics()
+    private var frameProjectileCreations = 0
+    private var frameEffectCreations = 0
+    private var frameMapRebuilds = 0
+    private var frameMapRasterSeconds = 0.0
+    private var frameMapInstallSeconds = 0.0
     enum LayoutMode { case infinity, fixed }
     var onFrame: ((TimeInterval) -> Void)?
     var input = GameInput()
@@ -41,11 +76,18 @@ final class GameScene: SKScene {
 
     private var tanks: [Int: TankNode] = [:]
     private var bullets: [Int: ProjectileNode] = [:]
+    private var projectilePool: [ProjectileStyle: [ProjectileNode]] = [:]
+    private var pooledProjectileCount = 0
+    private var projectileFrame = 0
+    private var projectileRemovalIDs: [Int] = []
+    private var projectileTrails: [ProjectileStyle: SKShapeNode] = [:]
     private var pickups: [Int: PickupNode] = [:]
     private var objectiveState: ArenaObjectives?
     private var objectivePaint: [Int: Int] = [:]
     private var objectiveCarriers = ""
     private var seenEffects = Set<Int>()
+    private var liveEffects: [TransientEffectNode] = []
+    private var effectPool: [TransientEffectNode] = []
     private var effectOrder: [Int] = []
     private var stickTouch: UITouch?
     private var fireTouch: UITouch?
@@ -57,6 +99,11 @@ final class GameScene: SKScene {
     private var hasCamera = false
     private var zoom: CGFloat = 1
     private var cachedRegion: CGRect?
+    private var mapRequest = 0
+    private var mapRasterTask: Task<Void, Never>?
+    private var rasterizedMap: RasterizedMap?
+    private var preloadingMap: (texture: SKTexture, raster: RasterizedMap)?
+    private var preparedMap: (texture: SKTexture, raster: RasterizedMap)?
     private var fixedWallCount = -1
     private var fixedWorld: ArenaWorld?
     private var fixedGeometry: InfiniteMaze?
@@ -300,6 +347,7 @@ final class GameScene: SKScene {
 
     func resetWorld() {
         resetControls()
+        cancelMapPrefetch()
         hasCamera = false
         cachedRegion = nil
         fixedWallCount = -1
@@ -314,7 +362,8 @@ final class GameScene: SKScene {
         currentLocalID = -1
         previousTime = 0
         tanks.values.forEach { $0.removeFromParent(); $0.identity.removeFromParent() }
-        bullets.values.forEach { $0.removeFromParent() }
+        for node in bullets.values { recycleProjectile(node) }
+        for trail in projectileTrails.values { trail.path = nil; trail.isHidden = true }
         pickups.values.forEach { $0.removeFromParent() }
         tanks.removeAll()
         bullets.removeAll()
@@ -322,7 +371,7 @@ final class GameScene: SKScene {
         objectiveLayer.removeAllChildren()
         objectiveState = nil
         objectivePaint.removeAll()
-        effectLayer.removeAllChildren()
+        clearEffects()
         seenEffects.removeAll()
         effectOrder.removeAll()
     }
@@ -337,6 +386,33 @@ final class GameScene: SKScene {
     }
 
     func display(snapshot: ArenaSnapshot, localID: Int, maze: InfiniteMaze?, fixedWalls: [MazeWall] = []) {
+        let profiled = profilesRendering
+        let started = profiled ? CACurrentMediaTime() : 0
+        var checkpoint = started
+        var metrics = RenderMetrics()
+        if profiled {
+            frameProjectileCreations = 0; frameEffectCreations = 0; frameMapRebuilds = 0
+            frameMapRasterSeconds = 0; frameMapInstallSeconds = 0
+        }
+        func elapsed() -> Double {
+            guard profiled else { return 0 }
+            let now = CACurrentMediaTime(), duration = now - checkpoint
+            checkpoint = now
+            return duration
+        }
+        defer {
+            if profiled {
+                metrics.totalSeconds = CACurrentMediaTime() - started
+                metrics.bullets = bullets.count
+                metrics.effects = effectLayer.children.count
+                metrics.projectileCreations = frameProjectileCreations
+                metrics.effectCreations = frameEffectCreations
+                metrics.mapRebuilds = frameMapRebuilds
+                metrics.mapRasterSeconds = frameMapRasterSeconds
+                metrics.mapInstallSeconds = frameMapInstallSeconds
+                renderMetrics = metrics
+            }
+        }
         currentLocalID = localID
         if layoutMode == .fixed, let previous = renderGeneration, previous != snapshot.generation {
             cachedRegion = nil
@@ -345,7 +421,7 @@ final class GameScene: SKScene {
             objectiveCarriers = ""
             seenEffects.removeAll()
             effectOrder.removeAll()
-            effectLayer.removeAllChildren()
+            clearEffects()
         }
         renderGeneration = snapshot.generation
         if let world = snapshot.world, world != fixedWorld {
@@ -377,28 +453,36 @@ final class GameScene: SKScene {
                                  y: worldViewport.midY + cameraPoint.y * zoom)
         renderGeometry = maze ?? fixedGeometry
         let visible = visibleWorldBounds
-        if cachedRegion == nil || layoutMode == .infinity && !cachedRegion!.contains(visible) || fixedWalls.count != fixedWallCount {
-            let region = layoutMode == .fixed && fixedWorld != nil ? CGRect(x: 0, y: 0, width: fixedWorld!.width, height: fixedWorld!.height) : visible.insetBy(dx: -250, dy: -250)
-            redrawWalls(maze?.walls(x0: region.minX, y0: region.minY, x1: region.maxX, y1: region.maxY) ?? fixedWalls,
-                        in: region)
-            cachedRegion = region
-            fixedWallCount = fixedWalls.count
-        }
+        updateMap(maze: maze, fixedWalls: fixedWalls, visible: visible)
+        metrics.mapSeconds = elapsed()
         synchronizeTanks(snapshot.tanks, localID: localID, visible: visible)
+        metrics.tankSeconds = elapsed()
         updateGuide(tank: snapshot.tanks.first { $0.id == localID }, geometry: maze ?? fixedGeometry, snapshot: snapshot)
+        metrics.guideSeconds = elapsed()
         synchronizeObjectives(snapshot.objectives, tanks: snapshot.tanks)
-        synchronizeBullets(snapshot.bullets)
+        metrics.objectiveSeconds = elapsed()
+        synchronizeBullets(snapshot.bullets, visible: visible, time: CACurrentMediaTime())
+        metrics.bulletSeconds = elapsed()
         updateMissileWarnings(snapshot: snapshot, localID: localID)
+        metrics.warningSeconds = elapsed()
         synchronizePickups(snapshot.pickups)
+        metrics.pickupSeconds = elapsed()
+        let effectTime = CACurrentMediaTime()
+        for index in liveEffects.indices.reversed() where !liveEffects[index].animate(at: effectTime) {
+            let node = liveEffects.remove(at: index)
+            node.removeFromParent()
+            if effectPool.count < 32 { effectPool.append(node) }
+        }
         for effect in snapshot.effects where !seenEffects.contains(effect.id) {
             seenEffects.insert(effect.id)
             effectOrder.append(effect.id)
-            showEffect(effect)
+            showEffect(effect, time: effectTime, visible: visible)
         }
         if effectOrder.count > 512 {
             for id in effectOrder.prefix(effectOrder.count - 512) { seenEffects.remove(id) }
             effectOrder.removeFirst(effectOrder.count - 512)
         }
+        metrics.effectSeconds = elapsed()
     }
 
     private func updateGuide(tank: ArenaTank?, geometry: InfiniteMaze?, snapshot: ArenaSnapshot) {
@@ -459,9 +543,78 @@ final class GameScene: SKScene {
     }
 
     private func redrawWalls(_ items: [MazeWall], in region: CGRect) {
+        if profilesRendering { frameMapRebuilds += 1 }
         mapImage.texture = NativeArt.map(walls: items, region: region, fixed: layoutMode == .fixed)
         mapImage.size = region.size
         mapImage.position = CGPoint(x: region.midX, y: -region.midY)
+    }
+
+    private func updateMap(maze: InfiniteMaze?, fixedWalls: [MazeWall], visible: CGRect) {
+        if cachedRegion == nil || fixedWalls.count != fixedWallCount || layoutMode == .infinity && !cachedRegion!.contains(visible) {
+            // A fresh world, rotation, or teleport needs immediate coverage.
+            // Bootstrap only the visible area plus a short safety margin;
+            // scrolling replacements are larger and never rasterize on main.
+            cancelMapPrefetch()
+            let region = layoutMode == .fixed && fixedWorld != nil
+                ? CGRect(x: 0, y: 0, width: fixedWorld!.width, height: fixedWorld!.height)
+                : visible.insetBy(dx: -96, dy: -96)
+            let items = maze?.walls(x0: region.minX, y0: region.minY, x1: region.maxX, y1: region.maxY) ?? fixedWalls
+            redrawWalls(items, in: region)
+            cachedRegion = region; fixedWallCount = fixedWalls.count
+        }
+        if let ready = preparedMap, ready.raster.request == mapRequest {
+            let began = CACurrentMediaTime()
+            mapImage.texture = ready.texture
+            mapImage.size = ready.raster.region.size
+            mapImage.position = CGPoint(x: ready.raster.region.midX, y: -ready.raster.region.midY)
+            cachedRegion = ready.raster.region
+            preparedMap = nil; mapRasterTask = nil
+            if profilesRendering { frameMapInstallSeconds += CACurrentMediaTime() - began }
+        }
+        if let raster = rasterizedMap, raster.request == mapRequest {
+            rasterizedMap = nil
+            let began = CACurrentMediaTime()
+            let texture = SKTexture(image: raster.image)
+            texture.filteringMode = .linear
+            preloadingMap = (texture, raster)
+            if profilesRendering {
+                frameMapRasterSeconds = raster.seconds
+                frameMapInstallSeconds += CACurrentMediaTime() - began
+            }
+            // Upload/decode before replacing the displayed texture. The old
+            // map still covers the camera throughout both asynchronous stages.
+            let request = raster.request
+            texture.preload { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.mapRequest == request, let ready = self.preloadingMap,
+                          ready.raster.request == request else { return }
+                    self.preparedMap = ready
+                    self.preloadingMap = nil
+                }
+            }
+        }
+        guard layoutMode == .infinity, mapRasterTask == nil, let region = cachedRegion,
+              !region.insetBy(dx: 192, dy: 192).contains(visible), let maze else { return }
+        let next = visible.insetBy(dx: -384, dy: -384)
+        let items = maze.walls(x0: next.minX, y0: next.minY, x1: next.maxX, y1: next.maxY)
+        let request = mapRequest
+        if profilesRendering { frameMapRebuilds += 1 }
+        let work = Task.detached(priority: .userInitiated) {
+            let began = CACurrentMediaTime()
+            let image = MapRasterizer.image(walls: items, region: next, fixed: false)
+            return RasterizedMap(image: image, region: next, request: request, seconds: CACurrentMediaTime() - began)
+        }
+        mapRasterTask = Task { @MainActor [weak self] in
+            let result = await work.value
+            guard !Task.isCancelled, let self, self.mapRequest == result.request else { return }
+            self.rasterizedMap = result
+        }
+    }
+
+    private func cancelMapPrefetch() {
+        mapRequest &+= 1
+        mapRasterTask?.cancel(); mapRasterTask = nil
+        rasterizedMap = nil; preloadingMap = nil; preparedMap = nil
     }
 
     private func synchronizeTanks(_ items: [ArenaTank], localID: Int, visible: CGRect) {
@@ -490,19 +643,67 @@ final class GameScene: SKScene {
         }
     }
 
-    private func synchronizeBullets(_ items: [ArenaBullet]) {
-        let liveIDs = Set(items.map(\.id))
-        for id in Array(bullets.keys) where !liveIDs.contains(id) { bullets.removeValue(forKey: id)?.removeFromParent() }
+    private func synchronizeBullets(_ items: [ArenaBullet], visible: CGRect, time: Double) {
+        projectileFrame &+= 1
+        // Keep enough history outside the viewport for the longest seven-step
+        // trail to enter smoothly. Simulation retains every offscreen bullet.
+        let padded = visible.insetBy(dx: -160, dy: -160)
+        var paths: [ProjectileStyle: CGMutablePath] = [:]
         for bullet in items {
+            guard padded.contains(CGPoint(x: bullet.x, y: bullet.y)) else { continue }
+            let style = ProjectileStyle(bullet)
             let node: ProjectileNode
-            if let existing = bullets[bullet.id] { node = existing }
+            if let existing = bullets[bullet.id], existing.style == style { node = existing }
             else {
-                node = ProjectileNode(kind: bullet.kind, color: Palette.tank(bullet.colorIndex))
+                if let previous = bullets.removeValue(forKey: bullet.id) { recycleProjectile(previous) }
+                if let pooled = projectilePool[style]?.popLast() {
+                    pooledProjectileCount -= 1
+                    node = pooled
+                    node.resetForReuse()
+                } else {
+                    node = ProjectileNode(style: style)
+                    if profilesRendering { frameProjectileCreations += 1 }
+                }
                 bullets[bullet.id] = node
                 bulletLayer.addChild(node)
             }
-            node.update(bullet, time: ProcessInfo.processInfo.systemUptime)
+            node.lastSeenFrame = projectileFrame
+            node.update(bullet, time: time)
+            if style.kind != "rapid" {
+                let path: CGMutablePath
+                if let existing = paths[style] { path = existing }
+                else { path = CGMutablePath(); paths[style] = path }
+                node.appendTrail(to: path)
+            }
         }
+        projectileRemovalIDs.removeAll(keepingCapacity: true)
+        for (id, node) in bullets where node.lastSeenFrame != projectileFrame { projectileRemovalIDs.append(id) }
+        for id in projectileRemovalIDs {
+            if let node = bullets.removeValue(forKey: id) { recycleProjectile(node) }
+        }
+        for (style, trail) in projectileTrails where paths[style] == nil { trail.isHidden = true }
+        for (style, path) in paths {
+            let trail: SKShapeNode
+            if let existing = projectileTrails[style] { trail = existing }
+            else {
+                trail = SKShapeNode()
+                trail.strokeColor = Palette.tank(style.colorIndex).withAlphaComponent(0.16)
+                trail.lineWidth = style.kind == "cannon" ? 12 : style.kind == "homing" ? 4 : 3
+                trail.lineCap = .round
+                trail.zPosition = -1
+                projectileTrails[style] = trail
+                bulletLayer.addChild(trail)
+            }
+            trail.path = path
+            trail.isHidden = false
+        }
+    }
+
+    private func recycleProjectile(_ node: ProjectileNode) {
+        node.removeFromParent()
+        guard pooledProjectileCount < 512 else { return }
+        projectilePool[node.style, default: []].append(node)
+        pooledProjectileCount += 1
     }
 
     private func synchronizePickups(_ items: [ArenaPickup]) {
@@ -608,62 +809,37 @@ final class GameScene: SKScene {
         }
     }
 
-    private func showEffect(_ effect: ArenaEffect) {
-        guard effectLayer.children.count < 80, !effect.kind.hasPrefix("shot"),
-              ["laser", "pickup", "shield", "hit", "blast", "impact"].contains(effect.kind) else { return }
-        if effect.kind == "laser", effect.points.count > 1 {
-            let path = CGMutablePath()
-            path.move(to: CGPoint(x: effect.points[0].x, y: -effect.points[0].y))
-            for point in effect.points.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
-            let beam = SKNode()
-            let glow = SKShapeNode(path: path)
-            glow.strokeColor = Palette.power("laser").withAlphaComponent(layoutMode == .infinity ? 0.45 : 0.2)
-            glow.lineWidth = layoutMode == .infinity ? 7 : 14
-            glow.lineCap = .round
-            beam.addChild(glow)
-            if layoutMode == .fixed {
-                let color = SKShapeNode(path: path)
-                color.strokeColor = Palette.power("laser")
-                color.lineWidth = 6
-                color.lineCap = .round
-                beam.addChild(color)
-            }
-            let core = SKShapeNode(path: path)
-            core.strokeColor = UIColor(hex: 0xfff2ff)
-            core.lineWidth = 2
-            core.lineCap = .round
-            core.zPosition = 1
-            beam.addChild(core)
-            effectLayer.addChild(beam)
-            beam.run(.sequence([.fadeOut(withDuration: layoutMode == .infinity ? 0.18 : 0.23), .removeFromParent()]))
-        } else {
-            let blast = effect.kind == "blast"
-            let color = effect.kind == "hit" ? UIColor(hex: 0xf7ecbb) : Palette.power(blast ? "grenade" : effect.kind)
-            let ring = SKShapeNode()
-            ring.position = CGPoint(x: effect.x, y: -effect.y)
-            ring.strokeColor = color
-            ring.lineWidth = blast ? 3 : 2
-            ring.alpha = 0.8
-            if blast, let geometry = renderGeometry {
-                let path = CGMutablePath()
-                for index in 0..<24 {
-                    let angle = Double(index) * .pi * 2 / 24
-                    let end = geometry.projectileGuide(x: effect.x, y: effect.y, angle: angle, kind: "", range: 220, radius: 0, maxSegments: 1).last ?? BeamPoint(x: effect.x, y: effect.y)
-                    let point = CGPoint(x: end.x - effect.x, y: effect.y - end.y)
-                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
-                }
-                path.closeSubpath()
-                ring.path = path
-                ring.fillColor = color.withAlphaComponent(0.11)
-                ring.setScale(0.65)
-                ring.run(.scale(to: 1, duration: 0.43))
-            } else {
-                ring.path = CGPath(ellipseIn: CGRect(x: -14, y: -14, width: 28, height: 28), transform: nil)
-                ring.run(.scale(to: (14 + (effect.kind == "hit" ? 56 : 35)) / 14, duration: 0.43))
-            }
-            effectLayer.addChild(ring)
-            ring.run(.sequence([.fadeOut(withDuration: 0.43), .removeFromParent()]))
+    private func clearEffects() {
+        for node in liveEffects {
+            node.removeFromParent()
+            if effectPool.count < 32 { effectPool.append(node) }
         }
+        liveEffects.removeAll(keepingCapacity: true)
+    }
+
+    private func showEffect(_ effect: ArenaEffect, time: Double, visible: CGRect) {
+        guard !effect.kind.hasPrefix("shot"),
+              ["laser", "pickup", "shield", "hit", "blast", "impact"].contains(effect.kind) else { return }
+        let padded = visible.insetBy(dx: -260, dy: -260)
+        if effect.kind == "laser" {
+            guard effect.points.count > 1 else { return }
+            var x0 = effect.points[0].x, x1 = x0, y0 = effect.points[0].y, y1 = y0
+            for point in effect.points.dropFirst() { x0 = min(x0, point.x); x1 = max(x1, point.x); y0 = min(y0, point.y); y1 = max(y1, point.y) }
+            let bounds = CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+            guard padded.intersects(bounds.insetBy(dx: -14, dy: -14)) else { return }
+        } else if !padded.contains(CGPoint(x: effect.x, y: effect.y)) { return }
+        let node: TransientEffectNode
+        // The browser keeps the newest 32 effects. Reusing its oldest visual
+        // preserves that budget while never touching authoritative events.
+        if liveEffects.count >= 32 { node = liveEffects.removeFirst() }
+        else if let pooled = effectPool.popLast() { node = pooled }
+        else {
+            node = TransientEffectNode()
+            if profilesRendering { frameEffectCreations += 1 }
+        }
+        node.configure(effect, geometry: renderGeometry, infinity: layoutMode == .infinity, time: time)
+        if node.parent == nil { effectLayer.addChild(node) }
+        liveEffects.append(node)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -738,6 +914,7 @@ private final class TankNode: SKNode {
     private var currentText = ""
     private var textureKey = ""
     private var previousSpeed = -1
+    private var protectionRadius: CGFloat = -1
     private var fontSize: CGFloat = 0
     private(set) var paint = Palette.accent
     private(set) var identityWidth: CGFloat = 120
@@ -817,8 +994,11 @@ private final class TankNode: SKNode {
         let shields = tank.hp > 0 && tank.shield > 0 ? max(1, min(5, tank.shieldCharges)) : 0
         for (index, ring) in shieldRings.enumerated() { ring.isHidden = index >= shields }
         protectionRing.isHidden = tank.hp <= 0 || shields > 0 || tank.invulnerable <= 0
-        let protectionRadius: CGFloat = local && tank.invulnerable > 0 ? 34 : 25
-        protectionRing.path = CGPath(ellipseIn: CGRect(x: -protectionRadius, y: -protectionRadius, width: protectionRadius * 2, height: protectionRadius * 2), transform: nil)
+        let nextProtectionRadius: CGFloat = local && tank.invulnerable > 0 ? 34 : 25
+        if protectionRadius != nextProtectionRadius {
+            protectionRadius = nextProtectionRadius
+            protectionRing.path = CGPath(ellipseIn: CGRect(x: -protectionRadius, y: -protectionRadius, width: protectionRadius * 2, height: protectionRadius * 2), transform: nil)
+        }
         protectionRing.strokeColor = local ? paint : UIColor(hex: 0xd8e9c5)
         protectionRing.alpha = 0.55
         localRing.isHidden = !local || tank.hp <= 0 || tank.invulnerable > 0 || shields > 0
@@ -883,6 +1063,9 @@ private final class PowerBadgeNode: SKNode {
     private let art = SKSpriteNode()
     private let countBackground = SKShapeNode()
     private let countLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+    private var previousSize: CGFloat = -1
+    private var previousFontSize: CGFloat = -1
+    private var previousCount: Int?
     init(kind: String) {
         super.init()
         art.texture = NativeArt.badge(kind: kind)
@@ -897,113 +1080,172 @@ private final class PowerBadgeNode: SKNode {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func update(size: CGFloat, zoom: CGFloat, count: Int?, remaining: Double, warning: Double) {
-        art.size = CGSize(width: size, height: size)
+        let nextFontSize = max(10 * size / 24, 10 / max(0.05, zoom))
+        let changed = previousSize != size || previousFontSize != nextFontSize || previousCount != count
+        if previousSize != size { art.size = CGSize(width: size, height: size) }
         let fade = min(1, max(0, remaining / warning))
         alpha = CGFloat(fade * fade * (3 - 2 * fade))
         countLabel.isHidden = count == nil
         countBackground.isHidden = count == nil
-        if let count {
-            countLabel.fontSize = max(10 * size / 24, 10 / max(0.05, zoom))
+        if let count, changed {
+            countLabel.fontSize = nextFontSize
             countLabel.text = String(count)
             countLabel.position = CGPoint(x: size / 2 - 2, y: -size / 2 + 1)
             let width = countLabel.frame.width + 4, height = countLabel.frame.height + 2
             countBackground.path = CGPath(roundedRect: CGRect(x: size / 2 - width, y: -size / 2, width: width, height: height), cornerWidth: 2, cornerHeight: 2, transform: nil)
         }
+        previousSize = size; previousFontSize = nextFontSize; previousCount = count
     }
 }
 
 @MainActor
 private final class ProjectileNode: SKNode {
+    let style: ProjectileStyle
+    var lastSeenFrame = 0
     private let glyph = SKNode()
-    private let trail = SKShapeNode()
     private let fuse = SKShapeNode()
-    private let flame = SKShapeNode()
-    private let kind: String
+    private let flame = SKSpriteNode()
     private var history: [CGPoint] = []
     private var previousBounce = -1
-    private var lastTrailTime = 0.0
-    init(kind: String, color: UIColor) {
-        self.kind = kind
+    private var lastTrailTime = -Double.infinity
+    private var fuseStep = -1
+    private var previousVX = Double.nan
+    private var previousVY = Double.nan
+
+    init(style: ProjectileStyle) {
+        self.style = style
         super.init()
-        addChild(trail)
         addChild(glyph)
-        trail.strokeColor = color.withAlphaComponent(0.16)
-        trail.lineWidth = kind == "cannon" ? 12 : kind == "homing" ? 4 : 3
-        trail.lineCap = .round
-        let path = CGMutablePath()
-        let radius: CGFloat = kind == "cannon" ? 18 : kind == "grenade" ? 6 : kind == "rapid" ? 3.5 / 3 : 4.5
-        if kind == "homing" {
-            path.move(to: CGPoint(x: 10, y: 0))
-            for point in [CGPoint(x: -4, y: 5), CGPoint(x: -8, y: 8), CGPoint(x: -6, y: 0), CGPoint(x: -8, y: -8), CGPoint(x: -4, y: -5)] { path.addLine(to: point) }
-            path.closeSubpath()
-        } else { path.addEllipse(in: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)) }
-        let shape = SKShapeNode(path: path)
-        shape.fillColor = kind == "grenade" ? UIColor(hex: 0x253039) : color
-        shape.strokeColor = kind == "grenade" ? color : .clear
-        shape.lineWidth = kind == "grenade" ? 2 : 0
-        glyph.addChild(shape)
-        if kind == "rapid" {
-            let streak = SKShapeNode(rectOf: CGSize(width: 8, height: 3.5 * 2 / 3))
-            streak.fillColor = color.withAlphaComponent(0.55)
-            streak.strokeColor = .clear
-            streak.position.x = -4
-            glyph.addChild(streak)
-        } else if kind == "homing" {
-            let core = SKShapeNode(rectOf: CGSize(width: 6, height: 3))
-            core.position.x = 2
-            core.fillColor = UIColor(hex: 0xfff6e5)
-            core.strokeColor = .clear
-            glyph.addChild(core)
-            flame.fillColor = Palette.power("homing").withAlphaComponent(0.8)
-            flame.strokeColor = .clear
-            glyph.addChild(flame)
-        } else if kind == "grenade" {
+        let art = SKSpriteNode(texture: NativeArt.projectile(kind: style.kind, color: style.colorIndex))
+        art.size = CGSize(width: style.kind == "cannon" ? 40 : 24, height: style.kind == "cannon" ? 40 : 24)
+        glyph.addChild(art)
+        if style.kind == "grenade" {
             fuse.strokeColor = Palette.power("grenade")
             fuse.lineWidth = 2
             glyph.addChild(fuse)
-            let core = SKShapeNode(circleOfRadius: 2)
-            core.fillColor = Palette.power("grenade")
-            core.strokeColor = .clear
-            core.position.y = 2
-            glyph.addChild(core)
-        } else {
-            let core = SKShapeNode(circleOfRadius: kind == "cannon" ? 8.4 : 2.1)
-            core.fillColor = UIColor(hex: 0xfbffe8)
-            core.strokeColor = .clear
-            glyph.addChild(core)
+        } else if style.kind == "homing" {
+            flame.texture = NativeArt.missileFlame()
+            flame.anchorPoint = CGPoint(x: 1, y: 0.5)
+            flame.position.x = -7
+            flame.size.height = 6
+            glyph.addChild(flame)
         }
+        history.reserveCapacity(7)
     }
+
     required init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func resetForReuse() {
+        history.removeAll(keepingCapacity: true)
+        previousBounce = -1
+        lastTrailTime = -.infinity
+        fuseStep = -1
+        previousVX = .nan; previousVY = .nan
+    }
+
     func update(_ bullet: ArenaBullet, time: Double) {
         position = CGPoint(x: bullet.x, y: -bullet.y)
-        glyph.zRotation = -atan2(bullet.vy, bullet.vx)
-        if kind == "grenade" {
-            let path = CGMutablePath()
-            path.addArc(center: .zero, radius: 10, startAngle: .pi / 2,
-                        endAngle: .pi / 2 - .pi * 2 * min(1, max(0, bullet.life / 10)), clockwise: true)
-            fuse.path = path
-        } else if kind == "homing" {
-            let path = CGMutablePath()
-            path.move(to: CGPoint(x: -7, y: 3))
-            path.addLine(to: CGPoint(x: -16 - sin(time * 30) * 4, y: 0))
-            path.addLine(to: CGPoint(x: -7, y: -3)); path.closeSubpath()
-            flame.path = path
+        if previousVX != bullet.vx || previousVY != bullet.vy {
+            previousVX = bullet.vx; previousVY = bullet.vy
+            glyph.zRotation = -atan2(bullet.vy, bullet.vx)
         }
-        if kind != "rapid" {
-            if bullet.bounces != previousBounce { history.removeAll(); previousBounce = bullet.bounces }
-            if time - lastTrailTime >= 1 / 60 {
+        if style.kind == "grenade" {
+            // One angular step is less than a physical pixel at the fuse's
+            // radius. Reuse static paths instead of retessellating every tick.
+            let step = Int((min(1, max(0, bullet.life / 10)) * 256).rounded())
+            if step != fuseStep { fuseStep = step; fuse.path = NativeArt.grenadeFuse(step: step) }
+        } else if style.kind == "homing" {
+            flame.size.width = CGFloat(9 + sin(time * 30) * 4)
+        }
+        if style.kind != "rapid" {
+            if bullet.bounces != previousBounce { history.removeAll(keepingCapacity: true); previousBounce = bullet.bounces }
+            if time - lastTrailTime >= 1 / 60 - 0.000001 {
                 history.append(position)
                 if history.count > 7 { history.removeFirst(history.count - 7) }
                 lastTrailTime = time
             }
-            let path = CGMutablePath()
-            if let first = history.first {
-                path.move(to: CGPoint(x: first.x - position.x, y: first.y - position.y))
-                for point in history.dropFirst() { path.addLine(to: CGPoint(x: point.x - position.x, y: point.y - position.y)) }
-                path.addLine(to: .zero)
-            }
-            trail.path = path
         }
+    }
+
+    func appendTrail(to path: CGMutablePath) {
+        guard let first = history.first else { return }
+        path.move(to: first)
+        for point in history.dropFirst() { path.addLine(to: point) }
+        path.addLine(to: position)
+    }
+}
+
+@MainActor
+private final class TransientEffectNode: SKNode {
+    private let glow = SKShapeNode()
+    private let color = SKShapeNode()
+    private let core = SKShapeNode()
+    private let ring = SKShapeNode()
+    private static let ringPath = CGPath(ellipseIn: CGRect(x: -14, y: -14, width: 28, height: 28), transform: nil)
+    private var began = 0.0
+    private var duration = 0.43
+    private var laser = false
+    private var blast = false
+    private var endScale = 1.0
+
+    override init() {
+        super.init()
+        for node in [glow, color, core] { node.lineCap = .round; addChild(node) }
+        core.strokeColor = UIColor(hex: 0xfff2ff)
+        core.lineWidth = 2
+        core.zPosition = 1
+        addChild(ring)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func configure(_ effect: ArenaEffect, geometry: InfiniteMaze?, infinity: Bool, time: Double) {
+        began = time
+        laser = effect.kind == "laser"
+        blast = effect.kind == "blast"
+        duration = laser ? (infinity ? 0.18 : 0.23) : 0.43
+        alpha = laser ? 1 : 0.8
+        setScale(1)
+        position = laser ? .zero : CGPoint(x: effect.x, y: -effect.y)
+        glow.isHidden = !laser; color.isHidden = !laser || infinity
+        core.isHidden = !laser; ring.isHidden = laser
+        if laser {
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: effect.points[0].x, y: -effect.points[0].y))
+            for point in effect.points.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
+            glow.path = path; color.path = path; core.path = path
+            glow.strokeColor = Palette.power("laser").withAlphaComponent(infinity ? 0.45 : 0.2)
+            glow.lineWidth = infinity ? 7 : 14
+            color.strokeColor = Palette.power("laser"); color.lineWidth = 6
+        } else {
+            let paint = effect.kind == "hit" ? UIColor(hex: 0xf7ecbb) : Palette.power(blast ? "grenade" : effect.kind)
+            ring.strokeColor = paint
+            ring.lineWidth = blast ? 3 : 2
+            ring.fillColor = .clear
+            if blast, let geometry {
+                let path = CGMutablePath()
+                for index in 0..<24 {
+                    let angle = Double(index) * .pi * 2 / 24
+                    let end = geometry.projectileGuide(x: effect.x, y: effect.y, angle: angle, kind: "", range: 220, radius: 0, maxSegments: 1).last ?? BeamPoint(x: effect.x, y: effect.y)
+                    let point = CGPoint(x: end.x - effect.x, y: effect.y - end.y)
+                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                }
+                path.closeSubpath(); ring.path = path
+                ring.fillColor = paint.withAlphaComponent(0.11)
+                endScale = 1
+                setScale(0.65)
+            } else {
+                ring.path = Self.ringPath
+                endScale = (14 + (effect.kind == "hit" ? 56 : 35)) / 14
+            }
+        }
+    }
+
+    func animate(at time: Double) -> Bool {
+        let age = max(0, (time - began) / duration)
+        guard age < 1 else { return false }
+        alpha = CGFloat((laser ? 1.0 : 0.8) * (1 - age))
+        if !laser { setScale(CGFloat(blast && endScale == 1 ? 0.65 + 0.35 * age : 1 + (endScale - 1) * age)) }
+        return true
     }
 }
 
@@ -1038,6 +1280,56 @@ private final class PickupNode: SKNode {
 @MainActor
 private enum NativeArt {
     private static var cache: [String: SKTexture] = [:]
+    private static var fusePaths: [Int: CGPath] = [:]
+
+    static func projectile(kind: String, color: Int) -> SKTexture {
+        let width: CGFloat = kind == "cannon" ? 40 : 24
+        return cached("projectile:\(kind):\(color)", size: CGSize(width: width, height: width)) { context in
+            context.translateBy(x: width / 2, y: width / 2)
+            context.scaleBy(x: 1, y: -1)
+            let paint = Palette.tank(color)
+            context.setFillColor((kind == "grenade" ? UIColor(hex: 0x253039) : paint).cgColor)
+            let radius: CGFloat = kind == "cannon" ? 18 : kind == "grenade" ? 6 : kind == "rapid" ? 3.5 / 3 : 4.5
+            if kind == "homing" {
+                context.move(to: CGPoint(x: 10, y: 0))
+                for point in [CGPoint(x: -4, y: 5), CGPoint(x: -8, y: 8), CGPoint(x: -6, y: 0), CGPoint(x: -8, y: -8), CGPoint(x: -4, y: -5)] { context.addLine(to: point) }
+                context.closePath(); context.fillPath()
+                context.setFillColor(UIColor(hex: 0xfff6e5).cgColor)
+                context.fill(CGRect(x: -1, y: -1.5, width: 6, height: 3))
+            } else {
+                context.fillEllipse(in: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2))
+                if kind == "rapid" {
+                    context.setFillColor(paint.withAlphaComponent(0.55).cgColor)
+                    context.fill(CGRect(x: -8, y: -3.5 / 3, width: 8, height: 3.5 * 2 / 3))
+                } else if kind == "grenade" {
+                    context.setStrokeColor(paint.cgColor); context.setLineWidth(2)
+                    context.strokeEllipse(in: CGRect(x: -6, y: -6, width: 12, height: 12))
+                    context.setFillColor(Palette.power("grenade").cgColor)
+                    context.fillEllipse(in: CGRect(x: -2, y: 0, width: 4, height: 4))
+                } else {
+                    let core: CGFloat = kind == "cannon" ? 8.4 : 2.1
+                    context.setFillColor(UIColor(hex: 0xfbffe8).cgColor)
+                    context.fillEllipse(in: CGRect(x: -core, y: -core, width: core * 2, height: core * 2))
+                }
+            }
+        }
+    }
+
+    static func missileFlame() -> SKTexture {
+        cached("missileFlame", size: CGSize(width: 13, height: 6)) { context in
+            context.setFillColor(Palette.power("homing").withAlphaComponent(0.8).cgColor)
+            context.move(to: CGPoint(x: 13, y: 0)); context.addLine(to: CGPoint(x: 0, y: 3)); context.addLine(to: CGPoint(x: 13, y: 6))
+            context.closePath(); context.fillPath()
+        }
+    }
+
+    static func grenadeFuse(step: Int) -> CGPath {
+        if let path = fusePaths[step] { return path }
+        let path = CGMutablePath()
+        path.addArc(center: .zero, radius: 10, startAngle: .pi / 2, endAngle: .pi / 2 - .pi * 2 * CGFloat(step) / 256, clockwise: true)
+        fusePaths[step] = path
+        return path
+    }
 
     private static func image(size: CGSize, scale: CGFloat = 3, draw: (CGContext) -> Void) -> SKTexture {
         let format = UIGraphicsImageRendererFormat()
@@ -1298,8 +1590,28 @@ private enum NativeArt {
     }
 
     static func map(walls: [MazeWall], region: CGRect, fixed: Bool) -> SKTexture {
+        let texture = SKTexture(image: MapRasterizer.image(walls: walls, region: region, fixed: fixed))
+        texture.filteringMode = .linear
+        return texture
+    }
+}
+
+/// The immutable UIImage is drawn entirely on the worker, then handed once to
+/// the main actor. SpriteKit textures and scene graph mutations stay on main.
+private struct RasterizedMap: @unchecked Sendable {
+    let image: UIImage
+    let region: CGRect
+    let request: Int
+    let seconds: Double
+}
+
+private enum MapRasterizer {
+    static func image(walls: [MazeWall], region: CGRect, fixed: Bool) -> UIImage {
         let ratio: CGFloat = fixed ? min(1.5, sqrt(5_000_000 / max(1, region.width * region.height))) : 1
-        return image(size: region.size, scale: ratio) { context in
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = ratio; format.opaque = false
+        return UIGraphicsImageRenderer(size: region.size, format: format).image { result in
+            let context = result.cgContext
             context.translateBy(x: -region.minX, y: -region.minY)
             context.setFillColor(UIColor(hex: 0x151f25).cgColor)
             context.fill(region)
@@ -1323,7 +1635,8 @@ private enum NativeArt {
             for wall in walls {
                 context.setFillColor(UIColor(hex: 0x080e13).cgColor)
                 context.fill(CGRect(x: wall.x + 1, y: wall.y + 4, width: wall.w, height: wall.h + 2))
-                rounded(context, CGRect(x: wall.x, y: wall.y, width: wall.w, height: wall.h), 2, UIColor(hex: 0x35434b))
+                context.addPath(CGPath(roundedRect: CGRect(x: wall.x, y: wall.y, width: wall.w, height: wall.h), cornerWidth: 2, cornerHeight: 2, transform: nil))
+                context.setFillColor(UIColor(hex: 0x35434b).cgColor); context.fillPath()
                 context.setFillColor(UIColor(hex: 0x667773).cgColor)
                 context.fill(wall.axis == "h" ? CGRect(x: wall.x + 1, y: wall.y + 0.8, width: wall.w - 2, height: 1.2) : CGRect(x: wall.x + 0.8, y: wall.y + 1, width: 1.2, height: wall.h - 2))
             }
@@ -1352,11 +1665,12 @@ private enum Palette {
     static let accent = UIColor(hex: 0x32c5ff)
     static let colors: [UInt32] = [0x32c5ff, 0xff758f, 0x3ee6c5, 0xba91ff, 0xffcb66, 0xff7bd5, 0x79d878, 0x91a9ff]
     static let names = ["Electric blue", "Coral", "Jade", "Amethyst", "Amber", "Orchid", "Leaf", "Iris"]
-    static func tank(_ index: Int) -> UIColor { UIColor(hex: colors[max(0, index) % colors.count]) }
+    private static let paints = colors.map { UIColor(hex: $0) }
+    private static let powers: [String: UIColor] = ["rapid": 0x79d878, "scatter": 0xba91ff, "shield": 0x32c5ff, "homing": 0xff7bd5, "grenade": 0xffcb66, "speed": 0x3ee6c5, "laser": 0xe879ff, "cannon": 0xff9e66, "ghost": 0xcedaff, "starman": 0xf9ed75].mapValues { UIColor(hex: $0) }
+    static func tank(_ index: Int) -> UIColor { paints[max(0, index) % paints.count] }
     static func colorName(_ index: Int) -> String { names[max(0, index) % names.count] }
     static func power(_ kind: String) -> UIColor {
-        let colors: [String: UInt32] = ["rapid": 0x79d878, "scatter": 0xba91ff, "shield": 0x32c5ff, "homing": 0xff7bd5, "grenade": 0xffcb66, "speed": 0x3ee6c5, "laser": 0xe879ff, "cannon": 0xff9e66, "ghost": 0xcedaff, "starman": 0xf9ed75]
-        return UIColor(hex: colors[kind] ?? 0x32c5ff)
+        powers[kind] ?? accent
     }
 }
 

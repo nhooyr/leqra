@@ -161,6 +161,32 @@ final class RenderTimelineTests: XCTestCase {
         XCTAssertFalse(packets[2].fire)
     }
 
+    func testProjectileDespawnRefreshesWithoutAdvancingTheDelayedPair() throws {
+        let timeline = timeline(localID: 99)
+        var first = snapshot(tick: 60)
+        first.bullets = [ArenaBullet(id: 8, x: 10, owner: 1)]
+        timeline.accept(first, at: 0)
+        XCTAssertEqual(timeline.render(dt: 0, input: GameInput(), now: 0) { _ in }?.bullets.first?.x, 10)
+        var second = snapshot(tick: 62)
+        second.bullets = [ArenaBullet(id: 8, x: 20, owner: 1)]
+        timeline.accept(second, at: 1 / 30)
+        XCTAssertEqual(timeline.render(dt: 0, input: GameInput(), now: 1 / 30) { _ in }?.bullets.first?.x, 10)
+        timeline.accept(snapshot(tick: 64), at: 2 / 30)
+        XCTAssertTrue(try XCTUnwrap(timeline.render(dt: 0, input: GameInput(), now: 2 / 30) { _ in }).bullets.isEmpty)
+    }
+
+    func testGenerationReusingSnapshotAndProjectileIDsStartsWithFreshIndices() {
+        let timeline = timeline(localID: 99)
+        for generation in 1...2 {
+            var value = snapshot(tick: 60, generation: generation, x: Double(generation) * 100)
+            value.bullets = [ArenaBullet(id: 8, x: Double(generation) * 300, owner: 1)]
+            timeline.accept(value, at: Double(generation))
+            let rendered = timeline.render(dt: 0, input: GameInput(), now: Double(generation)) { _ in }
+            XCTAssertEqual(rendered?.tanks.first?.x, Double(generation) * 100)
+            XCTAssertEqual(rendered?.bullets.first?.x, Double(generation) * 300)
+        }
+    }
+
     @MainActor func testNativeWireVersionMatchesTheGoServerRelease() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -168,6 +194,6 @@ final class RenderTimelineTests: XCTestCase {
         let regex = try NSRegularExpression(pattern: #"\bversion\s*=\s*"([^"]+)""#)
         let match = try XCTUnwrap(regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)))
         let range = try XCTUnwrap(Range(match.range(at: 1), in: source))
-        XCTAssertEqual(NetworkClient.supportedVersion, String(source[range]), "Update the native wire version with each compatible server release.")
+        XCTAssertEqual(NetworkClient.supportedVersion, String(source[range]), "The generated native version must follow the Go server release.")
     }
 }

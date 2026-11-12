@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.37';
+const GAME_VERSION='4.49.38';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -523,9 +523,11 @@ function wallBetweenCenters(x,y,dx,dy){
 }
 function circleHit(x,y,dx,dy,tx,ty,r){const a=dx*dx+dy*dy,ox=x-tx,oy=y-ty,c=ox*ox+oy*oy-r*r;if(c<=0)return 0;if(a<1e-12)return null;const b=2*(ox*dx+oy*dy),disc=b*b-4*a*c;if(disc<0)return null;const n=(-b-Math.sqrt(disc))/(2*a);return n>=0&&n<=1?n:null;}
 function tankHit(x,y,dx,dy,r,owner,impactOnly=false){
- let first=null;for(const t of tanks){
-  if(!t.alive||t.id===owner||!impactOnly&&(!canDamage(owner,t)||t.invulnerable>0))continue;
-  const hit=circleHit(x,y,dx,dy,t.x,t.y,t.r+r);
+ let first=null;const minX=Math.min(x,x+dx),maxX=Math.max(x,x+dx),minY=Math.min(y,y+dy),maxY=Math.max(y,y+dy);for(const t of tanks){
+  if(!t.alive||t.id===owner)continue;
+  const radius=t.r+r,padding=radius+1e-7;if(t.x<minX-padding||t.x>maxX+padding||t.y<minY-padding||t.y>maxY+padding)continue;
+  if(!impactOnly&&(t.invulnerable>0||!canDamage(owner,t)))continue;
+  const hit=circleHit(x,y,dx,dy,t.x,t.y,radius);
   if(hit!==null&&(!first||hit<first.at))first={at:hit,tank:t};
  }return first;
 }
@@ -699,7 +701,9 @@ function fireLaser(t){
  if(!t.alive||t.spawnProtected&&t.invulnerable>0||t.power!=='laser'||(boosted?t.rapidTick===tick:t.cooldown>0||t.charges<=0)||muzzleBlocked(t))return false;
  if(boosted)t.rapidTick=tick;
  const beam=laserTrace(t);t.cooldown=boosted?0:LASER_COOLDOWN;t.cooldownTotal=t.cooldown;t.recoil=1;
- laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);shotSound('laser',t.human,undefined,boosted);
+ // Keep every hit check; sustained misses share Infinity's cosmetic cadence.
+ if(!boosted||beam.target||time+1e-9>=(t.nextBoostEffect||0)){if(boosted)t.nextBoostEffect=time+4/60;laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);}
+ shotSound('laser',t.human,undefined,boosted);
  if(beam.target)hurt(beam.target,{owner:t.id,kind:'laser'});
  if(!boosted&&--t.charges<=0){t.power=null;t.powerTime=0;}return true;
 }
@@ -1765,13 +1769,32 @@ function drawPickup(p,c=ctx,clock=fxTime){
  const def=POWER[p.type];if(!def)return;const pulse=reduceMotion?.5:Math.sin(clock*3+p.x)*.5+.5;
  c.save();c.translate(p.x,p.y);c.globalAlpha=powerExpiryAlpha(p.life,3,clock);c.shadowColor=paintColor(def.color);c.shadowBlur=combatPrefs.performance||WEBKIT_ENGINE?0:(7+pulse*4);c.fillStyle=paintColor('#152126');c.strokeStyle=paintColor(def.color);c.lineWidth=1.5;roundRect(c,-13,-13,26,26,6);c.fill();c.stroke();c.shadowBlur=combatPrefs.performance?0:(0);c.globalAlpha*=.20;roundRect(c,-18-pulse,-18-pulse,36+pulse*2,36+pulse*2,9);c.stroke();c.globalAlpha=p.life<3?.7:1;c.fillStyle=paintColor(def.color);powerIcon(p.type,c);c.restore();
 }
-function drawBullet(b,c=ctx,clock=fxTime){
+const cannonTrailCache=new Map();let useCannonTrailCache=true;
+function drawCannonTrail(b,c){
+ const trail=b.trail,count=trail?.length||0;if(!useCannonTrailCache||count<6||count>11||typeof c.getTransform!=='function'||c.shadowBlur)return false;
+ const first=trail[0],last=trail[count-1],dx=last.x-first.x,dy=last.y-first.y,length=Math.hypot(dx,dy),step=length/(count-1);if(!(step>.01&&step<64))return false;
+ const ux=dx/length,uy=dy/length;
+ for(let i=1;i<count;i++){const x=trail[i].x-first.x,y=trail[i].y-first.y;if(Math.abs(x*uy-y*ux)>.001||Math.abs(x*ux+y*uy-step*i)>.001)return false;}
+ const transform=c.getTransform(),ratio=transform&&Math.hypot(transform.a,transform.b);
+ if(!(ratio>=.05&&ratio<=4&&Math.abs(ratio-Math.hypot(transform.c,transform.d))<=1e-6&&Math.abs(transform.a*transform.c+transform.b*transform.d)<=1e-6*ratio*ratio))return false;
+ const spacing=Math.round(step*10000)/10000,pixels=Math.round(ratio*20000)/10000,color=paintColor(b.color),key=color+':'+count+':'+spacing+':'+pixels;let image=cannonTrailCache.get(key);
+ if(!image){
+  const width=Math.ceil(((count-1)*spacing+12)*pixels)+4,height=Math.ceil(12*pixels)+4;if(width*height>65536)return false;
+  image=document.createElement('canvas');image.width=width;image.height=height;const g=image.getContext('2d');if(!g)return false;
+  g.setTransform(pixels,0,0,pixels,6*pixels+2,6*pixels+2);g.strokeStyle=color;g.lineWidth=12;g.lineCap='round';
+  for(let i=1;i<count;i++){g.globalAlpha=i/count*.23;g.beginPath();g.moveTo((i-1)*spacing,0);g.lineTo(i*spacing,0);g.stroke();}
+  if(cannonTrailCache.size>=48)cannonTrailCache.delete(cannonTrailCache.keys().next().value);cannonTrailCache.set(key,image);
+ }
+ // Preserve per-bullet layering and the original alpha of overlapping steps.
+ c.save();c.globalAlpha=1;c.translate(first.x,first.y);c.rotate(Math.atan2(dy,dx));c.drawImage(image,-6-2/pixels,-6-2/pixels,image.width/pixels,image.height/pixels);c.restore();return true;
+}
+function drawBullet(b,c=ctx,clock=fxTime,cacheTrail=false){
  if(b.kind==='rapid'){
   c.save();c.strokeStyle=paintColor(b.color);c.lineWidth=b.r*2;c.lineCap='round';
   const v=Math.hypot(b.vx,b.vy)||1;c.globalAlpha=.55;c.beginPath();c.moveTo(b.x-b.vx/v*8,b.y-b.vy/v*8);c.lineTo(b.x,b.y);c.stroke();c.globalAlpha=1;c.fillStyle=paintColor(b.color);c.beginPath();c.arc(b.x,b.y,b.r,0,TAU);c.fill();c.restore();return;
  }
  c.save();c.lineWidth=b.kind==='cannon'?12:b.kind==='homing'?4:3;c.lineCap='round';c.strokeStyle=paintColor(b.color);
- const trail=b.trail;for(let i=1;i<(trail?.length||0);i++){c.globalAlpha=i/trail.length*.23;c.beginPath();c.moveTo(trail[i-1].x,trail[i-1].y);c.lineTo(trail[i].x,trail[i].y);c.stroke();}
+ const trail=b.trail;if(!(cacheTrail&&b.kind==='cannon'&&drawCannonTrail(b,c)))for(let i=1;i<(trail?.length||0);i++){c.globalAlpha=i/trail.length*.23;c.beginPath();c.moveTo(trail[i-1].x,trail[i-1].y);c.lineTo(trail[i].x,trail[i].y);c.stroke();}
  c.globalAlpha=1;c.translate(b.x,b.y);c.shadowColor=paintColor(b.color);c.shadowBlur=combatPrefs.performance||WEBKIT_ENGINE?0:12;c.fillStyle=paintColor(b.color);
  if(b.kind==='homing'){
   c.rotate(Math.atan2(b.vy,b.vx));c.beginPath();c.moveTo(10,0);c.lineTo(-4,-5);c.lineTo(-8,-8);c.lineTo(-6,0);c.lineTo(-8,8);c.lineTo(-4,5);c.closePath();c.fill();c.shadowBlur=combatPrefs.performance?0:(0);c.fillStyle=paintColor('#fff6e5');c.fillRect(-1,-1.5,6,3);
@@ -1801,7 +1824,7 @@ function drawBullets(items,c=ctx,clock){
   for(const b of stream){c.moveTo(b.x+b.r,b.y);c.arc(b.x,b.y,b.r,0,TAU);}
   c.fill();c.restore();
  }
- for(const b of items)if(b.kind!=='rapid')drawBullet(b,c,clock);
+ for(const b of items)if(b.kind!=='rapid')drawBullet(b,c,clock,true);
 }
 function render(){
  // Resizing clears the bitmap; keep that clear and the redraw in one frame.
@@ -5250,6 +5273,6 @@ function prepareUpdate(){
  }catch(_){return false;}
 }
 // Deterministic hooks are only present in explicit development/test mode.
-if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,restartLocalSurvivalWave,requestRestartSurvivalWave,canRestartSurvivalWave,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initLocalSurvival,stepLocalSurvival,startLocalSurvivalWave,endLocalSurvival,survivalWavePlan,initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,restoreUnsharedPreview,unshareOnlineRoom,chatHasFocus,onlineControls,balanceLocalTeams,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
+if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,setCannonTrailCache:on=>useCannonTrailCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,restartLocalSurvivalWave,requestRestartSurvivalWave,canRestartSurvivalWave,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initLocalSurvival,stepLocalSurvival,startLocalSurvivalWave,endLocalSurvival,survivalWavePlan,initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,restoreUnsharedPreview,unshareOnlineRoom,chatHasFocus,onlineControls,balanceLocalTeams,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
 initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initInfinityPreview();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();loadOnlineWins();renderDeviceWins();createLocalRoom();initOnlineUI();initIntroTour();requestAnimationFrame(frame);
 })();

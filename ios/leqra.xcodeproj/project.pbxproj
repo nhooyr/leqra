@@ -5,14 +5,6 @@
 	};
 	objectVersion = 60;
 	objects = {
-500000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebStyle.swift; sourceTree = "<group>"; };
-500000000000000000000011 = {isa = PBXBuildFile; fileRef = 500000000000000000000001; };
-500000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadyRoomView.swift; sourceTree = "<group>"; };
-500000000000000000000012 = {isa = PBXBuildFile; fileRef = 500000000000000000000002; };
-500000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameChrome.swift; sourceTree = "<group>"; };
-500000000000000000000013 = {isa = PBXBuildFile; fileRef = 500000000000000000000003; };
-500000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDialogs.swift; sourceTree = "<group>"; };
-500000000000000000000014 = {isa = PBXBuildFile; fileRef = 500000000000000000000004; };
 
 /* Begin PBXBuildFile section */
 		00000000000000000000006E /* GameApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000000A /* GameApp.swift */; };
@@ -25,6 +17,11 @@
 		00000000000000000000007F /* GameAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000001F /* GameAudio.swift */; };
 		300000000000000000000002 /* leqraCore in Frameworks */ = {isa = PBXBuildFile; productRef = 10000000000000000000000B /* leqraCore */; };
 		400000000000000000000009 /* GameUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 400000000000000000000008 /* GameUITests.swift */; };
+		500000000000000000000011 /* WebStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500000000000000000000001 /* WebStyle.swift */; };
+		500000000000000000000012 /* ReadyRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500000000000000000000002 /* ReadyRoomView.swift */; };
+		500000000000000000000013 /* GameChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500000000000000000000003 /* GameChrome.swift */; };
+		500000000000000000000014 /* GameDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500000000000000000000004 /* GameDialogs.swift */; };
+		600000000000000000000002 /* FrameProfiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* FrameProfiler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +46,11 @@
 		100000000000000000000009 /* leqra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = leqra.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000003 /* leqraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = leqraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000008 /* GameUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameUITests.swift; sourceTree = "<group>"; };
+		500000000000000000000001 /* WebStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebStyle.swift; sourceTree = "<group>"; };
+		500000000000000000000002 /* ReadyRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadyRoomView.swift; sourceTree = "<group>"; };
+		500000000000000000000003 /* GameChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameChrome.swift; sourceTree = "<group>"; };
+		500000000000000000000004 /* GameDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDialogs.swift; sourceTree = "<group>"; };
+		600000000000000000000001 /* FrameProfiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameProfiler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,11 +93,12 @@
 		300000000000000000000001 /* leqra */ = {
 			isa = PBXGroup;
 			children = (
-				500000000000000000000004,
-				500000000000000000000003,
-				500000000000000000000002,
-				500000000000000000000001,
+				500000000000000000000004 /* GameDialogs.swift */,
+				500000000000000000000003 /* GameChrome.swift */,
+				500000000000000000000002 /* ReadyRoomView.swift */,
+				500000000000000000000001 /* WebStyle.swift */,
 				00000000000000000000001F /* GameAudio.swift */,
+				600000000000000000000001 /* FrameProfiler.swift */,
 				00000000000000000000000A /* GameApp.swift */,
 				00000000000000000000000B /* GameSession.swift */,
 				00000000000000000000000C /* ContentView.swift */,
@@ -122,6 +125,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 100000000000000000000005 /* Build configuration list for PBXNativeTarget "leqra" */;
 			buildPhases = (
+				700000000000000000000001 /* Generate Version */,
 				100000000000000000000006 /* Sources */,
 				100000000000000000000007 /* Frameworks */,
 				100000000000000000000008 /* Resources */,
@@ -168,7 +172,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 100000000000000000000002 /* Build configuration list for PBXProject "leqra" */;
+			buildConfigurationList = 100000000000000000000002 /* Build configuration list for PBXProject "Leqra" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -202,16 +206,38 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		700000000000000000000001 /* Generate Version */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/../src/main.go",
+				"$(SRCROOT)/../scripts/version.sh",
+				"$(SRCROOT)/../scripts/ios-version.sh",
+				"$(SRCROOT)/leqra/Info.plist",
+			);
+			name = "Generate Version";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/leqra-Info.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/../scripts/ios-version.sh\" --plist \"${SRCROOT}/leqra/Info.plist\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		100000000000000000000006 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				500000000000000000000014,
-				500000000000000000000013,
-				500000000000000000000012,
-				500000000000000000000011,
+				500000000000000000000014 /* GameDialogs.swift in Sources */,
+				500000000000000000000013 /* GameChrome.swift in Sources */,
+				500000000000000000000012 /* ReadyRoomView.swift in Sources */,
+				500000000000000000000011 /* WebStyle.swift in Sources */,
 				00000000000000000000007F /* GameAudio.swift in Sources */,
+				600000000000000000000002 /* FrameProfiler.swift in Sources */,
 				00000000000000000000006E /* GameApp.swift in Sources */,
 				00000000000000000000006F /* GameSession.swift in Sources */,
 				000000000000000000000070 /* ContentView.swift in Sources */,
@@ -271,14 +297,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7WUF7WB9JD;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = leqra/Info.plist;
+				INFOPLIST_FILE = "$(DERIVED_FILE_DIR)/leqra-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios;
 				PRODUCT_NAME = leqra;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -293,14 +319,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7WUF7WB9JD;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = leqra/Info.plist;
+				INFOPLIST_FILE = "$(DERIVED_FILE_DIR)/leqra-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios;
 				PRODUCT_NAME = leqra;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -336,7 +362,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		100000000000000000000002 /* Build configuration list for PBXProject "leqra" */ = {
+		100000000000000000000002 /* Build configuration list for PBXProject "Leqra" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				200000000000000000000001 /* Debug */,

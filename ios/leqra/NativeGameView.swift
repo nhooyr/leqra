@@ -65,7 +65,8 @@ private final class KeyboardGameContainer: UIView {
 
     private func applyFrameRate() {
         let maximum = window?.screen.maximumFramesPerSecond ?? UIScreen.main.maximumFramesPerSecond
-        gameView.preferredFramesPerSecond = paused ? 30 : min(highFrameRate ? 120 : 60, maximum)
+        let requested = paused ? 30 : min(highFrameRate ? 120 : 60, maximum)
+        if gameView.preferredFramesPerSecond != requested { gameView.preferredFramesPerSecond = requested }
     }
 
     override var canBecomeFirstResponder: Bool { true }
