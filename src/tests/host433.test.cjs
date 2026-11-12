@@ -60,6 +60,20 @@ test('local Player 2 spectate and remove actions retain owner handling in the co
  const remote=boot().row({...player,owner:1});assert.equal(remote.querySelector('.seat-controls').children.length,1,'another controller’s P2 exposes no spectate action');
 });
 
+test('active P1 and P2 own roster boxes each offer Spectate, including an online guest P1',()=>{
+ for(const host of [0,5])for(const mode of ['room','online']){
+  const b=boot({host,phase:'lobby',teamMode:'ffa'});b.s.mode=mode;b.s.canEditTankPaint=()=>false;
+  const primary={id:0,member:1,name:'LEAD',kind:'human',color:'#32c5ff'},local={id:2,member:2,name:'WING',kind:'local',owner:0,color:'#ffcb66'};
+  b.room.players=[primary,local];
+  for(const player of [primary,local]){
+   const buttons=b.row(player,false).querySelector('.seat-controls').children.filter(child=>'spectatePlayer'in child.dataset);
+   assert.equal(buttons.length,1,mode+' host='+host+' id='+player.id);assert.equal(buttons[0].textContent,'SPECTATE');buttons[0].onclick();
+   assert.equal(b.spectating.at(-1).player,player);assert.equal(b.spectating.at(-1).value,true);
+  }
+  assert.equal(b.row({...primary,id:7},false).querySelector('.seat-controls').children.some(child=>'spectatePlayer'in child.dataset),false,'remote P1 has no local role action');
+ }
+});
+
 test('read-only lobby metadata uses visible difficulty names and hides nonexistent FFA teams',()=>{
  for(const [difficulty,want]of [['easy','Chill'],['normal','Normal'],['hard','Fierce'],['godlike','Godlike']]){
   const b=boot({host:1,phase:'lobby',teamMode:'ffa'}),row=b.row({...bot,team:0,difficulty},false);

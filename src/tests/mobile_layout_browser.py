@@ -281,13 +281,13 @@ def check_pause_scorecard(browser, devices, url, errors, screenshots):
                     const row = document.createElement('li'), name = document.createElement('span');
                     const score = document.createElement('strong');
                     row.value = i < 10 ? i + 1 : i === 10 ? 40 : 75;
-                    name.textContent = i >= 10 ? 'LLLLLLLLLLLLLLLL (you)' : `Pilot ${i + 1}`;
+                    name.textContent = i >= 10 ? `LLLLLLLLLLLLLLLL (P${i - 9})` : `Pilot ${i + 1}`;
                     score.textContent = i >= 10 ? '-12345678' : String(1200 - i);
                     row.style.setProperty('--tank-color', '#32c5ff');
                     if (i >= 10) {
                         row.className = 'off-board-local';
                         row.dataset.local = i === 10 ? 'p1' : 'p2';
-                        row.style.setProperty('--local-highlight', i === 10 ? '#bf5cff' : '#ff78c8');
+                        row.style.setProperty('--local-highlight', '#32c5ff');
                     }
                     row.append(name, score);
                     return row;

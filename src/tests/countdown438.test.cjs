@@ -29,6 +29,7 @@ test('each mode has concise relevant tips, with extra Survival rules and configu
 
 test('power-up advice follows enabled pickups and derives durations from the actual map and constants',()=>{
  const {s}=boot('survival');const kinds=vm.runInContext('Object.keys(POWER)',s);
+ assert.match(s.countdownTipPool().find(t=>t.id==='power-rapid').text,/quarter-perimeter range/);assert.match(s.countdownTipPool().find(t=>t.id==='power-homing').text,/half the maze perimeter/);assert.match(s.countdownTipPool().find(t=>t.id==='power-cannon').text,/outer rim/);
  for(const kind of kinds){s.rules.weapons=[kind];const power=s.countdownTipPool().filter(t=>t.id.startsWith('power-')&&t.id!=='power-duration');assert.deepEqual(Array.from(power,t=>t.id),['power-'+kind]);}
  for(const mapSize of ['compact','standard','large','huge','giant','ultrawide']){
   s.rules.mapSize=mapSize;s.rules.weapons=['rapid','grenade'];const tips=s.countdownTipPool(),[c,r]=s.mapDimensions(mapSize);

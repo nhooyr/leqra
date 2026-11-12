@@ -102,7 +102,7 @@
        <summary>Players and bots <span id="seatCount">4 / 8</span></summary>
        <div class="room-disclosure-content">
         <div class="net-roster" id="roomRoster"></div>
-        <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ ADD LOCAL TANK</button><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div>
+        <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ ADD LOCAL P2</button><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div>
         <p class="local-controls-note" id="localControlsNote" hidden></p>
        </div>
       </details>
@@ -119,17 +119,17 @@
   <section class="panel fixed-maze-panel"><div class="panel-title"><span>THE LINEUP</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
   <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"></div></section>
   <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 PICKUPS</span></div><div class="power-list">
-<div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Through walls. Edge bounces. 4× size and speed.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Pierces walls. 4× size and speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#cce4ff"><canvas data-power-icon="ghost" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Ghost<span>Through walls. Stacks with speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#f9ed75"><canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Starman<span>Rare. For 4–8 seconds, tanks become invincible, destroy enemies on contact, drive through walls, and fire with unlimited ammo and no cooldown.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#f57cff"><canvas data-power-icon="laser" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Laser<span>Instant ricochets. Long dotted aim.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#ff83bd"><canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Homing missile<span>Aggressive tracking. Half-perimeter range.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Homes in on opponents. Explodes on impact, a second press, or its 10s fuse.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#ff83bd"><canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Homing missile<span>Guided missiles that ricochet.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Homes in on opponents. Explodes on tank impact, another fire press, or its 10s fuse.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5, +65% speed each.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing, tiny rounds, quarter-perimeter range.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread, shooter-safe.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing with tiny, fast rounds.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast, ricocheting spread.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#73cee4"><canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shield<span>Stack up to five protective rings.</span></div></div>
-<p class="power-note">Weapons use FIRE. Most timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 3 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or on another fire press. Walls stop blasts. Grenades cannot hurt their thrower.</p>
+<p class="power-note">Weapons use FIRE. Machine gun allows 3 seconds of active firing. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or on another fire press. Walls stop blasts.</p>
 </div></section>
   <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Choose a battle.</div></div></section>
  </aside>
@@ -181,11 +181,11 @@
    </section>
   </div>
   <div data-intro-page="1" hidden>
-   <p>Bank shots around corners and use walls for cover. Every tank is immune to its own shots and grenade blasts.</p>
+   <p>Bank shots around corners and use walls for cover. Every tank is immune to its own weapons.</p>
    <p>Drive over a glowing pickup to collect it.</p>
    <ul>
     <li><strong>Laser</strong>, Fires an instant ricocheting beam with a dotted aim guide.</li>
-    <li><strong>Grenade</strong>, Homes in and explodes on impact, another fire press, or after 10 seconds.</li>
+    <li><strong>Grenade</strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds.</li>
     <li><strong>Starman</strong>, For 4–8 seconds, tanks become invincible, drive through walls, destroy enemies on contact, and fire with unlimited ammo and no cooldown.</li>
    </ul>
    <p>There are more power-ups. Check the sidebar for the full list and details.</p>

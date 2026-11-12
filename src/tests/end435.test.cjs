@@ -47,6 +47,19 @@ function boot(){
  return{s,$,timers,wire,events,socket,players,begin,accept,load:name=>vm.runInContext(declaration(name),s)};
 }
 
+test('callsign labels and inputs use actual room paint for an automatic P2 beyond the second seat',()=>{
+ for(const mode of ['room','online']){
+  const b=boot(),s=b.s,local=b.players[1];s.mode=mode;s.MAX_TANKS=8;s.online.roomData.rules={teamMode:'ffa'};s.currentRules=()=>s.online.roomData.rules;local.id=4;
+  vm.runInContext(['COLORS','colorIndex','teamColor'].map(name=>source.match(new RegExp('^const '+name+'=.*$','m'))[0]).join('\n')+'\nthis.teamColor=teamColor;',s);
+  for(const [patch,color]of [[{colorIndex:undefined},'#ffc46b'],[{colorIndex:6},'#75f0cb'],[{id:8,colorIndex:-1,spectating:true,spectatorColor:'#ffc46b'},'#ffc46b']]){
+   Object.assign(local,patch);s.syncCallsignEditors();
+   for(const id of ['roomP2CallsignForm','menuP2CallsignForm']){
+    const form=b.$(id);assert.ok(form.label.innerHTML.includes('color:'+color),mode+' '+id+' '+JSON.stringify(patch)+' '+form.label.innerHTML);assert.equal(form.elements.callsign.style.color,color,mode+' '+id);
+   }
+  }
+ }
+});
+
 test('callsign editors show colored names and local suffixes without modifying fields or saved identities',()=>{
  const b=boot();b.players[0].name='YOU';b.players[0].color='#0abcde';b.players[1].name='WING';b.players[1].color='#fba000';b.s.syncCallsignEditors();
  for(const [id,name,color]of [['roomCallsignForm','YOU (P1)','#0abcde'],['menuCallsignForm','YOU (P1)','#0abcde'],['roomP2CallsignForm','WING (P2)','#fba000'],['menuP2CallsignForm','WING (P2)','#fba000']]){
@@ -106,10 +119,13 @@ test('blur autosave feedback keeps space reserved above match menu actions',()=>
  assert.match(css,/#infinitePauseMenu \.callsign-status\{min-height:1\.4em\}/);
  assert.match(css,/--callsign-form-gap:11px;--callsign-label-gap:6px;--callsign-input-height:38px;--callsign-input-pad-y:8px;--callsign-input-pad-x:10px;--callsign-feedback-gap:3px/);
  assert.match(css,/body\.touch-ui\{--callsign-form-gap:9px;--callsign-input-pad-y:7px;--callsign-input-pad-x:9px\}/);
+ assert.match(css,/body\.touch-landscape\{--callsign-input-height:35px;--callsign-input-pad-x:10px\}/,'pause inputs adopt the existing compact startup dimensions in landscape');
  assert.match(css,/body :is\(#onlineMenuScreen,#infinitePauseMenu\) \.callsign-editor\{margin:0 0 max\(0px,calc\(var\(--callsign-form-gap\) - 9px\)\)\}/);
  assert.match(css,/body :is\(#onlineMenuScreen,#infinitePauseMenu\) \.secondary-callsign\{padding-top:0\}/);
  assert.match(css,/\.callsign-row \.net-input\{min-height:var\(--callsign-input-height\);padding:var\(--callsign-input-pad-y\) var\(--callsign-input-pad-x\)\}/);
+ assert.match(css,/body :is\(#roomScreen,#onlineMenuScreen,#infinitePauseMenu\) \.callsign-row \.net-input\{min-height:var\(--callsign-input-height\);padding:var\(--callsign-input-pad-y\) var\(--callsign-input-pad-x\)\}/,'shared callsign input geometry outranks separate landscape network-screen and screen-card input rules');
  assert.match(css,/body\.touch-ui \.callsign-row \.net-input\{font-size:16px\}/);
+ assert.match(css,/body :is\(#roomScreen,#onlineMenuScreen,#infinitePauseMenu\) \.callsign-status\{font:var\(--min-font-size\)\/1\.4 var\(--mono\);margin:var\(--callsign-feedback-gap\) 0 0\}/,'specific editor feedback styling overrides mobile screen-card paragraph margins and font size');
 });
 
 test('confirmed End sends once and stays pending through metadata renders until lobby acknowledgement',async()=>{

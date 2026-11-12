@@ -32,13 +32,13 @@ if (!source.includes(publicAPI)) throw Error('Could not find Infinity staging po
 const stagedSource = source.replace(publicAPI, `
 window.captureShowcase = () => {
  cancelAnimationFrame(frame);
- return {world:session, geometry, art, makeTank, traceLaser, fireShot, advanceBullet, presentEffect, draw};
+ return {world:session, geometry, art, makeTank, traceLaser, fireShot, advanceBullet, presentEffect, draw, renderOnlineCount};
 };
 ` + publicAPI);
 
 function stageBattle() {
  window.leqraInfinity.start('offline',{name:'aqsnow',roomRules:{teamMode:'ffa'}});
- const {world,geometry,art,makeTank,traceLaser,fireShot,advanceBullet,presentEffect,draw} = window.captureShowcase();
+ const {world,geometry,art,makeTank,traceLaser,fireShot,advanceBullet,presentEffect,draw,renderOnlineCount} = window.captureShowcase();
  const seed = 14383, now = 8420, cell = geometry.cellSize;
  world.maze = geometry.create(seed);
  const center = n => (n+.5)*cell;
@@ -123,8 +123,12 @@ function stageBattle() {
  document.querySelector('#infiniteLeaderboardPanel').open = true;
  world.nextHUD = 0;
  draw(world,now,0);
+ // Keep the frozen scene's HUD deterministic, using the production formatters.
+ const onlinePlayers = world.tanks.filter(tank=>!tank.bot).length;
+ renderOnlineCount({...world,online:true,joined:true,players:onlinePlayers});
+ for (let i=0;i<=60;i++) art.sampleFrame(now+i*1000/60,0);
  return {seed,tanks:world.tanks.length,activePowers,pickups:world.pickups.length,
-  projectiles:world.bullets.length,laserSegments:best.beam.points.length-1};
+  projectiles:world.bullets.length,laserSegments:best.beam.points.length-1,onlinePlayers,fps:60};
 }
 
 function showcasePage(screenshot) {
@@ -156,8 +160,7 @@ async function main() {
   await page.addInitScript(() => {
    localStorage.setItem('leqra.introTour.v1','1');
    localStorage.setItem('leqra.muted','0');
-   // A frozen showcase has no meaningful frame rate to display.
-   localStorage.setItem('leqra.feedback.v1',JSON.stringify({fps:false}));
+   localStorage.setItem('leqra.feedback.v1',JSON.stringify({fps:true}));
   });
   await page.route('**/*', route => {
    const url = new URL(route.request().url());
@@ -174,6 +177,8 @@ async function main() {
   const scene = await page.evaluate(stageBattle);
   if (scene.tanks!==8 || scene.activePowers.length!==10 || scene.projectiles<40) throw Error('Incomplete Infinity showcase');
   if (await page.locator('#soundBtn').getAttribute('aria-pressed')!=='true') throw Error('Showcase sound must be enabled');
+  if (!await page.locator('#infiniteFPSIndicator').isVisible() || await page.locator('#infiniteFPSIndicator').textContent()!=='60 FPS, 16.7 ms') throw Error('Showcase FPS indicator is missing');
+  if (!await page.locator('#infiniteOnlineCount').isVisible() || await page.locator('#infiniteOnlineCount').textContent()!==scene.onlinePlayers+' online') throw Error('Showcase online count is missing');
   const screenshot = await page.screenshot({animations:'disabled'});
   const html = showcasePage(screenshot);
   fs.mkdirSync(path.dirname(overrideFile),{recursive:true});

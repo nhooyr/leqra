@@ -26,13 +26,13 @@ function boot(){
  const room={code:'ROOM',host:0,phase:'lobby',rules:{mode:'elimination',teamMode:'teams',teamNames:['A','B','C','D'],teamColors:[0,1,2,3]},players:[host,local]};
  const roster=$('roomRoster'),menu=$('menuKickRoster'),q={id:1,key:'teams',stage:'searching',required:4,members:[],name:'Teams',since:Date.now()};
  const s={console,Date,URL,mode:'online',MAX_TANKS:8,online:{connected:true,kickPending:null,roomData:room},matchmaking:{pending:false,pendingKey:'',catalog:[],selected:'teams',seenInvite:0},MATCH_QUEUES:[{key:'teams',mode:'elimination',teamSize:2,target:5,seconds:75,cols:7,rows:7}],
-  roomData:()=>room,currentRules:()=>room.rules,roomMembers:r=>[...r.players,...(r.spectators||[])],roomMember:id=>[...room.players,...(room.spectators||[])].find(p=>p.id===id),localPlayerID:()=>0,isRoomHost:()=>room.host===0,
+  roomData:()=>room,currentRules:()=>room.rules,roomMembers:(r=room)=>[...r.players,...(r.spectators||[])],roomMember:id=>[...room.players,...(room.spectators||[])].find(p=>p.id===id),localPlayerID:()=>0,isRoomHost:()=>room.host===0,
   $,document:{createElement:tag=>new Element(tag),querySelector:()=>$('queueCard'),querySelectorAll(selector){if(selector.includes('#roomRoster'))return [...roster.querySelectorAll('select'),...menu.querySelectorAll('select'),...roster.querySelectorAll('[data-kick-target]')];return [...roster.querySelectorAll(selector),...menu.querySelectorAll(selector)];}},
   rolePending:false,swapPending:null,lastSpectatorUI:'',survivalSeatLocked:()=>false,syncSpectatingHUD(){},cancelSwap(){},paintColor:c=>c,teamName:(n,r)=>r.teamNames[n-1],activeTeamCount:()=>4,changeSeat(){},setPlayerSpectating(){},queueEligibility:()=>'',syncResultActions(){},closeChat(){},clearInput(){},sendOnlineInput(){},clearTimeout(){},toast(){},matchmakingNotice(){}
  };
  $('queueCard').append(Object.assign(new Element(),{className:'queue-count'}));
  vm.createContext(s);identityFixture(s,source);vm.runInContext(declaration('orderedRoster'),s);
- const names=['survivalMode','roomCapacity','roomPlayerStatus','canEditTankPaint','makeKickButton','makeRoomPlayerRow','renderRoomPlayerRows','realParty','renderMatchmaking','matchmakingPacket','cancelKick','requestKick','spectatorRow','syncSpectators'];
+ const names=['survivalMode','roomCapacity','roomPlayerStatus','canEditTankPaint','makeKickButton','makeRoomPlayerRow','renderRoomPlayerRows','realParty','renderMatchmaking','matchmakingPacket','cancelKick','requestKick','spectatorRow','roomRoleHelpText','syncRoomRole','syncSpectators'];
  if(source.includes('function roomKickDisabled('))names.unshift('roomKickDisabled');
  vm.runInContext('const roomRosterCache=new WeakMap();\n'+names.map(declaration).join('\n'),s);
  s.renderOnlineRoom=()=>{s.renderRoomPlayerRows(roster,room.players,room);s.renderRoomPlayerRows(menu,room.players.slice(1),room,true);s.syncSpectators();s.renderMatchmaking();};

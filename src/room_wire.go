@@ -62,7 +62,7 @@ func (h *Hub) roomWire(r *Room) roomMetadataWire {
 			owner := r.member(p.Owner)
 			connected = owner != nil && owner.Client != nil
 		}
-		entry := roomMemberWire{ID: p.ID, Member: p.Member, Name: p.Name, Color: selectedColor(p.ID, p.Team, p.ColorIndex, rules), Connected: connected, Ready: !p.Spectating && (p.Ready || p.Kind == "bot" || p.Kind == "local"), Score: score, Kind: playerKind(p), Owner: p.Owner, Team: p.Team, Difficulty: p.Difficulty, Spectating: p.Spectating, Away: p.Away != nil, HasParty: p.Return != nil}
+		entry := roomMemberWire{ID: p.ID, Member: p.Member, Name: p.Name, Color: p.roomColor(rules), Connected: connected, Ready: !p.Spectating && (p.Ready || p.Kind == "bot" || p.Kind == "local"), Score: score, Kind: playerKind(p), Owner: p.Owner, Team: p.Team, Difficulty: p.Difficulty, Spectating: p.Spectating, Away: p.Away != nil, HasParty: p.Return != nil}
 		if r.Match != nil && r.Game.Phase == "matchOver" && r.Match.Rematch != nil {
 			vote := r.Match.Rematch[p.Member]
 			entry.Rematch = &vote

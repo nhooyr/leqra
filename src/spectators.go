@@ -153,6 +153,9 @@ func (r *Room) moveMember(p *Player, id int, spectating bool) {
 	if p.Spectating {
 		delete(r.Spectators, old)
 	} else {
+		if spectating {
+			p.spectatorColor = selectedColor(old, p.Team, p.ColorIndex, r.Game.settings())
+		}
 		r.clearCombatSeat(old)
 		r.Players[old] = nil
 	}
@@ -164,6 +167,7 @@ func (r *Room) moveMember(p *Player, id int, spectating bool) {
 	if spectating {
 		r.putViewer(p)
 	} else {
+		p.spectatorColor = ""
 		r.Players[id] = p
 	}
 	if r.Host == old {
