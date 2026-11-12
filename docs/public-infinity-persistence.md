@@ -16,8 +16,13 @@ Private-room reconnect behavior is unchanged.
 
 Every first online join receives a private `publicToken` in its welcome. It
 contains 256 random bits generated with `crypto/rand`; SQLite stores only its
-SHA-256 hash. The same credential owns the controller's primary and local
-co-pilot callsign claims, if present.
+SHA-256 hash. P1 and P2 use independent credentials. New clients send
+`independentAccounts:true`, with P1 proof in `publicToken` and P2 proof in
+`localPublicToken`. A fresh P2 key contains 32 CSPRNG bytes and is durably saved
+by the client before joining with `localNewAccount:true`. An unknown imported
+key never creates an account, and the two seats cannot use the same key.
+Only the requesting controller receives these keys in welcome/identity packets;
+rosters, world states, and leaderboards never include them.
 
 Public Infinity also saves that owner's score profile. Public-arena welcomes
 include `public:true`; resume joins send the credential as `publicToken` and
@@ -29,8 +34,11 @@ Recovery never looks up a player by callsign. Unknown or malformed owner
 credentials produce `public_resume_invalid`; the client may then deliberately
 create a fresh identity with an available callsign. An owner whose old score
 profile was reset or pruned retains its callsign claims and may create a new
-zero-score public profile using the same credential. Do not print tokens, put
-them in URLs, or share them. Use HTTPS/WSS in production.
+zero-score public profile using the same credential. The Account controls can
+copy/import that key between the owner's trusted devices. Anyone with a key
+controls its account; do not print it, put it in URLs, or share it with others.
+Use HTTPS/WSS in production. See [account keys](accounts.md) for transfer,
+reset, and recovery behavior.
 
 A standalone public pilot whose transport closes releases its arena seats.
 Room parties retain their existing short room reconnect reservation. Standings
@@ -40,8 +48,13 @@ equipment. A retired tank returns at a fresh spawn with its saved score.
 Recovery ignores draft names and colors.
 An explicit manual Play sends `updateNames:true`, atomically validates the requested
 P1/P2 names, and preserves the authorized score IDs. Omitting a co-pilot during
-manual Play disables P2 for future recovery while retaining its saved score;
-selecting P2 again restores that owned slot. A superseded transport receives
+manual Play removes P2 from this connection while retaining its independent
+account and score; selecting that account again restores it. Each credential's
+primary profile follows its pilot across P1/P2 roles. Legacy shared P2 profiles
+are split using the primary owner's proof and a pre-saved fresh P2 key. A durable
+hash-only migration marker preserves the old P2 ID, score, and current alias even
+if the client renamed P2 offline or the server restarts before its next tick.
+A superseded transport receives
 `session_replaced` and stops automatic retries, retaining its owner proof for
 a later manual Play. Explicit Exit stops automatic rejoining on the client
 while retaining the credential for a
@@ -63,13 +76,40 @@ Names are cleaned and Unicode case folded before comparison. Renaming keeps the
 old alias reserved to its owner. Leaderboard resets, removals, and zero-score
 profile pruning do not release names.
 
-`POST /api/callsigns` accepts `application/json` with `{publicToken?, names:[]}`
+`POST /api/callsigns` accepts `application/json` with
+`{publicToken?, localPublicToken?, independentAccounts?, localNewAccount?, names:[]}`
 and returns `{names:[{seat,name,available}]}`. The endpoint is read-only and never
 allocates an owner or claims a name. It checks the browser Origin, limits the
 body, and rejects unknown fields or trailing JSON. Availability is advisory:
 joining or renaming claims the entire local-seat batch atomically. Conflicts
 return `callsign_taken` with `conflicts:[{seat,name}]`, identifying which local
 seat needs a new name. No public response includes bearer hashes.
+
+`POST /api/account` authenticates `{publicToken}` and returns a read-only
+preview `{names, totalNames, publicProfile?}`. The names list contains up to 128
+sorted reserved aliases; `totalNames` includes all historical aliases. A saved
+public profile supplies `{name, score}` for that key's pilot. Legacy profiles may
+also supply `{localName, localScore}` before independent migration. This lookup never joins or replaces a
+device, allocates a name, or accepts a score. It uses the normal same-origin
+check and bounded source budget, and responses are not cached.
+
+`POST /api/account/rotate` accepts `{publicToken, newPublicToken}`. Clients
+generate a fresh 32-byte CSPRNG candidate and durably save it before sending the
+request. The server validates that it is unused and atomically transfers all
+alias claims and the saved public score profile to that new key. A successful
+response includes the new key and the same account preview. An ambiguous/lost
+response can be recovered by checking the saved candidate with `/api/account`.
+
+Rotation persists the old key's revocation, immediately removes its public and
+private body authority and private room credentials, and sends
+`account_key_revoked` to its connected devices. Offline attempts using the old
+key receive the same explicit code. Other devices must import the replacement
+key. If the SQLite transaction fails, the original key and live sessions remain
+valid. Normal public handover uses the separate terminal `session_replaced`
+notice and keeps the account key valid. Paired transports receive `seat:0` or
+`seat:1` to identify which account was replaced or reset. P2-only reset preserves
+P1's proof/profile and removes the old P2 private seat before a P1 room token may
+resume; an old room token cannot obtain the replacement key.
 
 ## Durability and failure behavior
 

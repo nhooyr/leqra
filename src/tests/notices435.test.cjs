@@ -36,5 +36,5 @@ test('both mismatch responses refuse online play and expose reload while preserv
 test('compatible handshake proceeds without an update dialog',()=>{
  const b=boot();b.receive({type:'server_hello',version:'test-client',protocol:1});
  assert.equal(b.$('versionMismatchDialog'),undefined);assert.equal(b.s.mode,'online');assert.equal(b.s.socket.closed,undefined);
- assert.deepEqual(JSON.parse(JSON.stringify(b.s.sent)),[{type:'client_hello',version:'test-client',protocol:1},{type:'join',code:'ROOM'}]);
+ assert.deepEqual(JSON.parse(JSON.stringify(b.s.sent)),[{type:'client_hello',version:'test-client',protocol:1},{type:'join',code:'ROOM',independentAccounts:true}]);
 });

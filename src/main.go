@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version         = "4.49.40"
+	version         = "4.49.41"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -348,6 +348,8 @@ func (a *App) handler() http.Handler {
 	mux.HandleFunc("/ws", a.socket)
 	mux.HandleFunc("/api/infinity", a.infinityStatus)
 	mux.HandleFunc("/api/callsigns", a.callsignAvailability)
+	mux.HandleFunc("/api/account", a.onlineAccount)
+	mux.HandleFunc("/api/account/rotate", a.onlineAccount)
 	mux.HandleFunc("/ws/infinite", a.infiniteSocket)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {

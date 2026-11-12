@@ -77,10 +77,13 @@ struct ReadyRoomView: View {
     private var configuration: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) { Text(session.identity).font(WebStyle.mono(11, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex)); Text("callsign").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
-            TextField("Callsign", text: $session.callsign).modifier(WebField(font: WebStyle.mono(16), color: WebStyle.paint(session.colorIndex))).focused($callsignFocused)
-                .textInputAutocapitalization(.words).autocorrectionDisabled().onSubmit { session.saveCallsign() }
-                .onChange(of: session.callsign) { value in if value.count > 16 { session.callsign = String(value.prefix(16)) } }
-                .accessibilityIdentifier("callsignField")
+            HStack(spacing: 8) {
+                TextField("Callsign", text: $session.callsign).modifier(WebField(font: WebStyle.mono(16), color: WebStyle.paint(session.colorIndex))).focused($callsignFocused)
+                    .textInputAutocapitalization(.words).autocorrectionDisabled().onSubmit { session.saveCallsign() }
+                    .onChange(of: session.callsign) { value in if value.count > 16 { session.callsign = String(value.prefix(16)) } }
+                    .accessibilityIdentifier("callsignField")
+                AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "openAccount")
+            }
             CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
             WebDisclosure(isExpanded: $settingsOpen, title: "Room settings") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -245,15 +248,19 @@ struct RoomPilotRow: View {
                 }
             }
             if canRename {
-                TextField("Callsign", text: $name).modifier(WebField()).autocorrectionDisabled()
-                    .onSubmit {
-                        let value = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(16))
-                        guard !value.isEmpty else { return }
-                        if ownedLocal { session.send(.renameLocal(target: member.id, member: member.member, name: value)) }
-                        else { session.send(.configure(target: member.id, member: member.member, name: value)) }
-                    }
-                    .onAppear { name = member.name }.onChange(of: member.name) { name = $0 }
-                    .onChange(of: name) { value in if ownedLocal { session.scheduleCallsignAvailability(localName: value) } }
+                HStack(spacing: 8) {
+                    TextField("Callsign", text: $name).modifier(WebField()).autocorrectionDisabled()
+                        .onSubmit {
+                            let value = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(16))
+                            guard !value.isEmpty else { return }
+                            if ownedLocal { session.send(.renameLocal(target: member.id, member: member.member, name: value)) }
+                            else { session.send(.configure(target: member.id, member: member.member, name: value)) }
+                        }
+                        .onAppear { name = member.name }.onChange(of: member.name) { name = $0 }
+                        .onChange(of: name) { value in if ownedLocal { session.scheduleCallsignAvailability(localName: value) } }
+                        .accessibilityIdentifier(ownedLocal ? "localCallsignField" : "botCallsign_\(member.id)")
+                    if ownedLocal { AccountKeyButton(session: session, seat: 1, identity: label, identifier: "openLocalAccount") }
+                }
                 if ownedLocal {
                     CallsignFeedback(message: session.localCallsignFeedback, identifier: "localCallsignAvailability")
                 }
@@ -262,6 +269,19 @@ struct RoomPilotRow: View {
                 PaintChoices(selected: member.colorIndex ?? GamePalette.colors.firstIndex(of: member.color) ?? 0) { session.send(.paint(target: member.id, member: member.member, colorIndex: $0)) }
             }
         }.padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+struct AccountKeyButton: View {
+    @ObservedObject var session: GameSession
+    let seat: Int
+    let identity: String
+    let identifier: String
+
+    var body: some View {
+        Button("Account") { session.openAccount(seat: seat) }
+            .buttonStyle(WebButtonStyle(compact: true)).frame(width: 76)
+            .accessibilityLabel("Account key for " + identity).accessibilityIdentifier(identifier)
     }
 }
 

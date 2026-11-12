@@ -10,7 +10,14 @@ final class GameAudio {
         didSet { if oldValue != enabled && !enabled { pause() } }
     }
     var volume: Float = 0.5 {
-        didSet { if oldValue != volume { renderState.setVolume(volume) } }
+        didSet {
+            guard oldValue != volume else { return }
+            renderState.setVolume(volume)
+            if volume <= 0 {
+                let ongoing = requestedActive
+                pause(); requestedActive = ongoing
+            } else if requestedActive && enabled { resume() }
+        }
     }
 
     private struct BufferKey: Hashable {
@@ -19,12 +26,13 @@ final class GameAudio {
     }
 
     private static let sampleRate = 48_000.0
-    private let engine = AVAudioEngine()
+    private var engine: AVAudioEngine?
     private let renderState = NativeAudioRenderState(sampleRate: 48_000)
-    private var source: AVAudioSourceNode!
+    private var source: AVAudioSourceNode?
     private var buffers: [BufferKey: [Float]] = [:]
     private var router = AudioEventRouter()
     private var active = false
+    private var sessionActive = false
     private var requestedActive = false
     private var generation: Int?
     private var previousHP: Int?
@@ -37,21 +45,6 @@ final class GameAudio {
     private let hitHaptic = UIImpactFeedbackGenerator(style: .medium)
 
     init() {
-        let format = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 1)!
-        let state = renderState
-        source = AVAudioSourceNode(format: format) { isSilent, _, frameCount, audioBufferList in
-            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            guard let first = buffers.first?.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
-            state.render(into: first, count: Int(frameCount))
-            for buffer in buffers.dropFirst() {
-                buffer.mData?.assumingMemoryBound(to: Float.self).update(from: first, count: Int(frameCount))
-            }
-            isSilent.pointee = false
-            return noErr
-        }
-        engine.attach(source)
-        engine.connect(source, to: engine.mainMixerNode, format: format)
-        engine.mainMixerNode.outputVolume = 1
         for cue in AudioCue.allCases {
             let local = AudioSynthesis.samples(for: cue, sampleRate: Self.sampleRate)
             buffers[BufferKey(cue: cue, local: true)] = local
@@ -68,8 +61,9 @@ final class GameAudio {
                 if rawType == AVAudioSession.InterruptionType.began.rawValue {
                     self.renderState.clear()
                     self.router.reset(); self.generation = nil
-                    self.engine.pause()
+                    self.engine?.pause()
                     self.active = false
+                    self.sessionActive = false
                 } else if self.requestedActive,
                           AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume),
                           UIApplication.shared.applicationState == .active {
@@ -77,40 +71,70 @@ final class GameAudio {
                 }
             }
         }
+    }
+
+    /// Creating the output graph can implicitly activate iOS audio. Configure
+    /// its mixing category first, and never create it for a muted launch.
+    private func playbackEngine() -> AVAudioEngine {
+        if let engine { return engine }
+        let engine = AVAudioEngine()
+        let format = AVAudioFormat(standardFormatWithSampleRate: Self.sampleRate, channels: 1)!
+        let state = renderState
+        let source = AVAudioSourceNode(format: format) { isSilent, _, frameCount, audioBufferList in
+            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            guard let first = buffers.first?.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
+            state.render(into: first, count: Int(frameCount))
+            for buffer in buffers.dropFirst() {
+                buffer.mData?.assumingMemoryBound(to: Float.self).update(from: first, count: Int(frameCount))
+            }
+            isSilent.pointee = false
+            return noErr
+        }
+        engine.attach(source)
+        engine.connect(source, to: engine.mainMixerNode, format: format)
+        engine.mainMixerNode.outputVolume = 1
+        self.engine = engine
+        self.source = source
         configurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, !self.engine.isRunning else { return }
+                guard let self, self.engine?.isRunning != true else { return }
                 self.renderState.clear()
                 self.router.reset(); self.generation = nil; self.active = false
                 if self.requestedActive && self.enabled && UIApplication.shared.applicationState == .active { self.resume() }
             }
         }
+        return engine
     }
 
     deinit {
         previewTask?.cancel()
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
-        engine.stop()
+        engine?.stop()
+        if sessionActive { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
 
     func resume() {
         guard enabled else { return }
         requestedActive = true
-        guard !active || !engine.isRunning else { return }
+        guard volume > 0, !active || engine?.isRunning != true else { return }
         do {
             let session = AVAudioSession.sharedInstance()
             // Ambient mixes with music and honors the Ring/Silent switch.
-            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try session.setCategory(.ambient, mode: .default)
             try session.setActive(true)
+            sessionActive = true
+            let engine = playbackEngine()
             renderState.setVolume(volume, immediate: true)
             engine.prepare()
             try engine.start()
             active = true
         } catch {
             active = false
+            engine?.pause()
+            deactivateSession()
             // Losing an audio route must never stop a match.
         }
     }
@@ -120,7 +144,13 @@ final class GameAudio {
         requestedActive = false; active = false
         renderState.clear()
         router.reset(); generation = nil
-        engine.pause()
+        engine?.pause()
+        deactivateSession()
+    }
+
+    private func deactivateSession() {
+        guard sessionActive else { return }
+        sessionActive = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -141,7 +171,7 @@ final class GameAudio {
         previousHP = local?.hp
         let now = ProcessInfo.processInfo.systemUptime
         let requests = router.consume(snapshot: snapshot, localID: localID, infinity: infinity, online: online, now: now)
-        guard enabled, volume > 0, active, engine.isRunning else { return }
+        guard enabled, volume > 0, active, engine?.isRunning == true else { return }
         if justDied, now - lastHaptic >= 0.1 {
             hitHaptic.impactOccurred(intensity: 0.55)
             lastHaptic = now
@@ -157,7 +187,7 @@ final class GameAudio {
 
     func notifyChat() {
         let now = ProcessInfo.processInfo.systemUptime
-        guard enabled, volume > 0, active, engine.isRunning, now - lastChat >= AudioSynthesis.chatInterval else { return }
+        guard enabled, volume > 0, active, engine?.isRunning == true, now - lastChat >= AudioSynthesis.chatInterval else { return }
         lastChat = now
         play(.chat)
     }

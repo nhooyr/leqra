@@ -6,6 +6,7 @@ public struct NetworkWelcome: Decodable, Sendable {
     public var room: String?
     public let token: String?
     public let publicToken: String?
+    public let localPublicToken: String?
     public let isPublic: Bool
     public let spectating: Bool
     public let localId: Int?
@@ -18,7 +19,7 @@ public struct NetworkWelcome: Decodable, Sendable {
     public let busy: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, seed, room, token, publicToken, spectating, localId, generation, member, localMember, resumed, created, full, busy
+        case id, seed, room, token, publicToken, localPublicToken, spectating, localId, generation, member, localMember, resumed, created, full, busy
         case isPublic = "public"
     }
     public init(from decoder: Decoder) throws {
@@ -28,6 +29,7 @@ public struct NetworkWelcome: Decodable, Sendable {
         room = try c.decodeIfPresent(String.self, forKey: .room)
         token = try c.decodeIfPresent(String.self, forKey: .token)
         publicToken = try c.decodeIfPresent(String.self, forKey: .publicToken)
+        localPublicToken = try c.decodeIfPresent(String.self, forKey: .localPublicToken)
         isPublic = try c.decodeIfPresent(Bool.self, forKey: .isPublic) ?? false
         spectating = try c.decodeIfPresent(Bool.self, forKey: .spectating) ?? false
         localId = try c.decodeIfPresent(Int.self, forKey: .localId)
@@ -155,6 +157,10 @@ public enum GameNetworkError: LocalizedError {
     case unsupportedVersion(String)
     case timeout
     case temporarilyUnavailable
+    case invalidAccountKey
+    case accountKeyRevoked
+    case localAccountUnconfirmed
+    case localAccountMismatch
 
     public var errorDescription: String? {
         switch self {
@@ -164,6 +170,10 @@ public enum GameNetworkError: LocalizedError {
         case .unsupportedVersion(let version): return "This server is running leqra \(version). Update the native app before joining."
         case .timeout: return "The server stopped responding. Rejoin to play again."
         case .temporarilyUnavailable: return "The server is temporarily unavailable. Reconnecting…"
+        case .invalidAccountKey: return "That account key is invalid or unavailable."
+        case .accountKeyRevoked: return "The account key was reset on another device. Import its new key to sign in again."
+        case .localAccountUnconfirmed: return "The server did not confirm P2's independent account. Update the server before adding P2; the saved key is unchanged."
+        case .localAccountMismatch: return "This private room still uses a different P2 account. Leave and rejoin P2 to use the imported key; the saved key is unchanged."
         }
     }
 }
@@ -270,6 +280,11 @@ struct NetworkLatencySampler {
     private var reconnectAttempt = 0
     private var renameRequestID: UInt64 = 0
     private var suspended = false
+    /// The owner used by this transport, retained separately from room tokens.
+    public private(set) var accountKey: String?
+    public private(set) var localAccountKey: String?
+    public private(set) var localAccountRequestKey: String?
+    private var pendingLocalAccountKey: String?
 
     public init(session: URLSession = .shared) { self.session = session }
 
@@ -282,11 +297,14 @@ struct NetworkLatencySampler {
     }
 
     public func connectPublic(baseURL: URL, name: String, colorIndex: Int, localName: String? = nil, localColorIndex: Int = 1,
-                              publicToken: String? = nil, updateNames: Bool = false) {
+                              publicToken: String? = nil, updateNames: Bool = false,
+                              localPublicToken: String? = nil, localNewAccount: Bool = false) {
         var join: [String: Any] = ["type": "join", "name": name, "colorIndex": min(7, max(0, colorIndex))]
         if let localName { join["localName"] = localName; join["localColorIndex"] = min(7, max(0, localColorIndex)) }
         if let publicToken, !publicToken.isEmpty { join["publicToken"] = publicToken; join["resume"] = true }
         if updateNames { join["updateNames"] = true }
+        join["localPublicToken"] = localPublicToken
+        if localNewAccount { join["localNewAccount"] = true }
         begin(baseURL: baseURL, infinity: true, join: join, resuming: publicToken?.isEmpty == false)
     }
 
@@ -298,9 +316,12 @@ struct NetworkLatencySampler {
         begin(baseURL: baseURL, infinity: false, join: join)
     }
 
-    public func connectRoomInfinity(baseURL: URL, code: String, token: String, resume: Bool = false, generation: UInt64? = nil) {
+    public func connectRoomInfinity(baseURL: URL, code: String, token: String, resume: Bool = false, generation: UInt64? = nil,
+                                    localPublicToken: String? = nil, localNewAccount: Bool = false) {
         var join: [String: Any] = ["type": "join", "code": code, "token": token]
         if resume { join["resume"] = true; join["generation"] = generation }
+        join["localPublicToken"] = localPublicToken
+        if localNewAccount { join["localNewAccount"] = true }
         begin(baseURL: baseURL, infinity: true, join: join, resuming: resume)
     }
 
@@ -322,7 +343,7 @@ struct NetworkLatencySampler {
 
     /// Availability never allocates or claims an identity. Only an authenticated
     /// atomic online join or rename may claim the requested names.
-    public func fetchCallsignAvailability(baseURL: URL, names: [String], publicToken: String? = nil) async throws -> [CallsignAvailability] {
+    public func fetchCallsignAvailability(baseURL: URL, names: [String], publicToken: String? = nil, localPublicToken: String? = nil, localNewAccount: Bool = false) async throws -> [CallsignAvailability] {
         var request = URLRequest(url: try ServerAddress.endpoint(baseURL, path: "/api/callsigns"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -331,6 +352,11 @@ struct NetworkLatencySampler {
         request.timeoutInterval = 6
         var body: [String: Any] = ["names": names]
         body["publicToken"] = publicToken
+        if names.count > 1 {
+            body["localPublicToken"] = localPublicToken
+            body["independentAccounts"] = true
+            if localNewAccount { body["localNewAccount"] = true }
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
@@ -345,10 +371,51 @@ struct NetworkLatencySampler {
         return result
     }
 
-    public func connectPublishedRoom(baseURL: URL, code: String? = nil, rules: RoomRules, roster: [NativeSeatSpec], publicToken: String? = nil) {
+    /// Account keys travel only in the request body, never URLs or logs.
+    /// This read-only check must succeed before an imported key replaces one.
+    public func fetchAccountInfo(baseURL: URL, publicToken: String) async throws -> AccountInfo {
+        try JSONDecoder().decode(AccountInfo.self, from: await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account"))
+    }
+
+    public func rotateAccountKey(baseURL: URL, publicToken: String, newPublicToken: String) async throws -> AccountKeyRotation {
+        _ = try PublicInfinitySession(baseURL: baseURL, publicToken: newPublicToken)
+        let data = try await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account/rotate", replacement: newPublicToken)
+        let result = try JSONDecoder().decode(AccountKeyRotation.self, from: data)
+        _ = try PublicInfinitySession(baseURL: baseURL, publicToken: result.publicToken)
+        guard result.publicToken == newPublicToken, result.publicToken != publicToken else { throw GameNetworkError.invalidResponse }
+        return result
+    }
+
+    private func accountRequest(baseURL: URL, publicToken: String, path: String, replacement: String? = nil) async throws -> Data {
+        let credential = try PublicInfinitySession(baseURL: baseURL, publicToken: publicToken)
+        var request = URLRequest(url: try ServerAddress.endpoint(credential.baseURL, path: path))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(credential.origin, forHTTPHeaderField: "Origin")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 6
+        var body = ["publicToken": credential.publicToken]
+        body["newPublicToken"] = replacement
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: request, delegate: AccountRequestRedirectGuard())
+        try Task.checkCancellation()
+        guard let response = response as? HTTPURLResponse else { throw GameNetworkError.invalidResponse }
+        if response.statusCode == 401 {
+            let error = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if error?["code"] as? String == "account_key_revoked" { throw GameNetworkError.accountKeyRevoked }
+            throw GameNetworkError.invalidAccountKey
+        }
+        guard response.statusCode == 200, data.count <= 16 * 1024 else { throw GameNetworkError.invalidResponse }
+        return data
+    }
+
+    public func connectPublishedRoom(baseURL: URL, code: String? = nil, rules: RoomRules, roster: [NativeSeatSpec], publicToken: String? = nil,
+                                     localPublicToken: String? = nil, localNewAccount: Bool = false) {
         var join = NativeRoomCommand.preset(rules: rules, roster: roster).payload
         join["type"] = "publish"; join["code"] = code
         join["publicToken"] = publicToken
+        join["localPublicToken"] = localPublicToken
+        if localNewAccount { join["localNewAccount"] = true }
         begin(baseURL: baseURL, infinity: false, join: join)
     }
 
@@ -389,7 +456,14 @@ struct NetworkLatencySampler {
     }
 
     private func begin(baseURL: URL, infinity: Bool, join: [String: Any], resuming: Bool = false) {
+        var join = join
+        join["independentAccounts"] = true
         let publicArena = infinity && join["code"] == nil
+        if publicArena, join["localName"] == nil, join["localPublicToken"] == nil {
+            localAccountKey = nil; localAccountRequestKey = nil
+        }
+        if resuming, let code = join["code"] as? String, code == resumeContext?.code,
+           join["localPublicToken"] == nil, let localAccountKey { join["localPublicToken"] = localAccountKey }
         if resuming {
             let old = socket
             invalidate()
@@ -408,6 +482,9 @@ struct NetworkLatencySampler {
         }
         isInfinity = infinity
         pendingJoin = join
+        accountKey = join["publicToken"] as? String ?? accountKey
+        pendingLocalAccountKey = join["localPublicToken"] as? String
+        localAccountRequestKey = pendingLocalAccountKey
         lastWorld = nil
         sentSequence = 0
         localSentSequence = 0
@@ -492,6 +569,7 @@ struct NetworkLatencySampler {
     }
 
     public func sendCommand(_ command: [String: Any]) {
+        if let key = command["localPublicToken"] as? String, key != "" { pendingLocalAccountKey = key; localAccountRequestKey = key }
         guard let socket, JSONSerialization.isValidJSONObject(command),
               let data = try? JSONSerialization.data(withJSONObject: command), data.count <= 8192,
               let text = String(data: data, encoding: .utf8) else { return }
@@ -518,6 +596,8 @@ struct NetworkLatencySampler {
         reconnectTask?.cancel(); reconnectTask = nil
         resumeContext = nil; reconnectDeadline = nil; reconnectAttempt = 0
         currentBaseURL = nil
+        accountKey = nil
+        localAccountKey = nil; pendingLocalAccountKey = nil; localAccountRequestKey = nil
         suspended = false
         invalidate()
         if let oldSocket {
@@ -606,7 +686,16 @@ struct NetworkLatencySampler {
             sendCommand(pendingJoin)
         case "welcome":
             let info = try JSONDecoder().decode(NetworkWelcome.self, from: data)
+            if let expected = pendingLocalAccountKey, info.localPublicToken != expected {
+                guard info.localPublicToken != nil else { throw GameNetworkError.localAccountUnconfirmed }
+                let roomRecoveredFreshCandidate = pendingJoin["code"] != nil && pendingJoin["localNewAccount"] as? Bool == true && info.resumed
+                guard roomRecoveredFreshCandidate else { throw GameNetworkError.localAccountMismatch }
+            }
+            if let local = info.localPublicToken, local == info.publicToken { throw GameNetworkError.localAccountUnconfirmed }
             welcome = info
+            if let key = info.publicToken { accountKey = key }
+            if let key = info.localPublicToken { localAccountKey = key; pendingLocalAccountKey = nil }
+            else if info.localId == nil { localAccountKey = nil; localAccountRequestKey = nil; pendingLocalAccountKey = nil }
             connected = true
             startHeartbeat(epoch: epoch)
             if let baseURL = currentBaseURL {
@@ -615,6 +704,9 @@ struct NetworkLatencySampler {
                     join["code"] = nil; join["token"] = nil; join["generation"] = nil
                     join["updateNames"] = nil
                     join["publicToken"] = publicToken; join["resume"] = true
+                    join["independentAccounts"] = true
+                    join["localPublicToken"] = info.localPublicToken
+                    join["localNewAccount"] = nil
                     resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: "", token: "",
                         name: join["name"] as? String ?? "", generation: nil, publicJoin: join)
                 } else if let code = info.room, let token = info.token {
@@ -631,6 +723,10 @@ struct NetworkLatencySampler {
             identity["room"] = welcome?.room
             identity["token"] = welcome?.token
             let info = try JSONDecoder().decode(NetworkWelcome.self, from: JSONSerialization.data(withJSONObject: identity))
+            if info.localId != nil, let expected = pendingLocalAccountKey, info.localPublicToken != expected { throw GameNetworkError.localAccountUnconfirmed }
+            if let key = info.publicToken { accountKey = key }
+            if let key = info.localPublicToken { localAccountKey = key; pendingLocalAccountKey = nil }
+            else if info.localId == nil { localAccountKey = nil; localAccountRequestKey = nil; pendingLocalAccountKey = nil }
             welcome = info
             onEvent?(.welcome(info))
         case "state":
@@ -670,7 +766,7 @@ struct NetworkLatencySampler {
             let message = object["message"] as? String ?? "The server rejected this action."
             let code = object["code"] as? String
             if resumeContext?.isPublic == true {
-                if code == "public_resume_invalid", pendingJoin["publicToken"] != nil,
+                if code == "public_resume_invalid", (object["seat"] as? Int ?? 0) == 0, pendingJoin["publicToken"] != nil,
                    let context = resumeContext, var join = context.publicJoin {
                     join["publicToken"] = nil; join["resume"] = nil
                     begin(baseURL: context.baseURL, infinity: true, join: join, resuming: true)
@@ -682,7 +778,7 @@ struct NetworkLatencySampler {
             }
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             if (object["code"] as? String) == "session_active", reconnectDeadline != nil { fail(message); return }
-            if !connected || code == "kicked" || code == "session_replaced" || (object["action"] as? String) == "version" {
+            if !connected || code == "kicked" || code == "session_replaced" || code == "account_key_revoked" || (object["action"] as? String) == "version" {
                 fail(message, terminal: true)
             } else { onEvent?(.error(message)) }
         case "server_shutdown", "kicked", "room_offline":
@@ -691,6 +787,15 @@ struct NetworkLatencySampler {
             fail(object["message"] as? String ?? "The server closed this session.", terminal: true)
         default: break
         }
+    }
+}
+
+/// A key is scoped to the exact configured origin. Never forward its POST body
+/// through an HTTP redirect, even if a server was misconfigured.
+private final class AccountRequestRedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }
 

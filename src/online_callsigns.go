@@ -17,6 +17,9 @@ import (
 )
 
 var errOnlineOwnerInvalid = errors.New(infinitePublicResumeInvalid)
+var errOnlineOwnerRevoked = errors.New(infiniteAccountKeyRevoked)
+
+const infiniteAccountKeyRevoked = "This account key was reset. Import the new key to sign in again."
 
 type callsignConflict struct {
 	Seat int    `json:"seat"`
@@ -34,18 +37,21 @@ func (e *callsignConflictError) Error() string {
 	for _, c := range e.Conflicts {
 		names = append(names, fmt.Sprintf("%s (P%d)", c.Name, c.Seat+1))
 	}
-	return "Choose an unused online callsign for " + strings.Join(names, ", ") + "."
+	return "Choose an unused online callsign for " + strings.Join(names, ", ") + ". If this is your callsign, import its account key from the other device."
 }
 
 type onlineCallsignRegistry struct {
-	mu     sync.Mutex
-	db     *sql.DB
-	owners map[string]bool
-	claims map[string]string
+	mu             sync.Mutex
+	db             *sql.DB
+	owners         map[string]bool
+	claims         map[string]string
+	names          map[string]map[string]string // Owner hash -> canonical name -> first display spelling.
+	revoked        map[string]bool
+	seatMigrations map[string]seatAccountMigration
 }
 
 func newOnlineCallsignRegistry() *onlineCallsignRegistry {
-	return &onlineCallsignRegistry{owners: make(map[string]bool), claims: make(map[string]string)}
+	return &onlineCallsignRegistry{owners: make(map[string]bool), claims: make(map[string]string), names: make(map[string]map[string]string), revoked: make(map[string]bool), seatMigrations: make(map[string]seatAccountMigration)}
 }
 func canonicalCallsign(name string) string {
 	var key strings.Builder
@@ -67,6 +73,10 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 	for _, query := range []string{
 		`CREATE TABLE IF NOT EXISTS online_owners (token_hash TEXT PRIMARY KEY) WITHOUT ROWID`,
 		`CREATE TABLE IF NOT EXISTS online_callsigns (canonical_name TEXT PRIMARY KEY, display_name TEXT NOT NULL, owner_hash TEXT NOT NULL REFERENCES online_owners(token_hash)) WITHOUT ROWID`,
+		`CREATE INDEX IF NOT EXISTS online_callsigns_owner ON online_callsigns(owner_hash)`,
+		`CREATE TABLE IF NOT EXISTS online_revoked (token_hash TEXT PRIMARY KEY) WITHOUT ROWID`,
+		`CREATE TABLE IF NOT EXISTS online_seat_migrations (new_hash TEXT PRIMARY KEY, previous_hash TEXT NOT NULL, name TEXT NOT NULL) WITHOUT ROWID`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS online_seat_migrations_previous ON online_seat_migrations(previous_hash)`,
 	} {
 		if _, err := db.Exec(query); err != nil {
 			return err
@@ -97,6 +107,7 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 		return err
 	}
 	claims := make(map[string]string)
+	names := make(map[string]map[string]string)
 	rows, err = db.Query("SELECT canonical_name,display_name,owner_hash FROM online_callsigns")
 	if err != nil {
 		return err
@@ -111,6 +122,34 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 			break
 		}
 		claims[name] = hash
+		if names[hash] == nil {
+			names[hash] = make(map[string]string)
+		}
+		names[hash][name] = display
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	revoked := make(map[string]bool)
+	rows, err = db.Query("SELECT token_hash FROM online_revoked")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var hash string
+		if err = rows.Scan(&hash); err != nil {
+			break
+		}
+		digest, decodeErr := hex.DecodeString(hash)
+		if decodeErr != nil || len(digest) != sha256.Size || owners[hash] {
+			err = errors.New("invalid revoked online owner")
+			break
+		}
+		revoked[hash] = true
 	}
 	if err == nil {
 		err = rows.Err()
@@ -122,6 +161,31 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 	r.db = db
 	r.owners = owners
 	r.claims = claims
+	r.names = names
+	r.revoked = revoked
+	r.seatMigrations = make(map[string]seatAccountMigration)
+	rows, err = db.Query("SELECT new_hash,previous_hash,name FROM online_seat_migrations")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var m seatAccountMigration
+		if err = rows.Scan(&m.next, &m.previous, &m.name); err != nil {
+			break
+		}
+		if !owners[m.next] || !owners[m.previous] || m.next == m.previous || canonicalCallsign(m.name) != m.name {
+			err = errors.New("invalid independent seat migration")
+			break
+		}
+		r.seatMigrations[m.next] = m
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 func (r *onlineCallsignRegistry) owner(token string) (string, bool) {
@@ -132,6 +196,15 @@ func (r *onlineCallsignRegistry) owner(token string) (string, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return hash, r.owners[hash]
+}
+func (r *onlineCallsignRegistry) revokedOwner(token string) bool {
+	hash, valid := publicTokenHash(token)
+	if !valid {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.revoked[hash]
 }
 func (r *onlineCallsignRegistry) availability(token string, names []string) []callsignAvailability {
 	hash, valid := publicTokenHash(token)
@@ -170,6 +243,9 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 	} else {
 		var valid bool
 		hash, valid = publicTokenHash(token)
+		if valid && r.revoked[hash] {
+			return "", errOnlineOwnerRevoked
+		}
 		if !valid || !r.owners[hash] {
 			return "", errOnlineOwnerInvalid
 		}
@@ -215,8 +291,15 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 		}
 	}
 	r.owners[hash] = true
+	if r.names[hash] == nil {
+		r.names[hash] = make(map[string]string)
+	}
 	for _, name := range names {
-		r.claims[canonicalCallsign(name)] = hash
+		key := canonicalCallsign(name)
+		if _, claimed := r.claims[key]; !claimed {
+			r.names[hash][key] = cleanCallsign(name)
+		}
+		r.claims[key] = hash
 	}
 	return token, nil
 }
@@ -239,12 +322,15 @@ func (a *App) callsignAvailability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		PublicToken string   `json:"publicToken"`
-		Names       []string `json:"names"`
+		PublicToken         string   `json:"publicToken"`
+		Names               []string `json:"names"`
+		LocalPublicToken    string   `json:"localPublicToken"`
+		IndependentAccounts bool     `json:"independentAccounts"`
+		LocalNewAccount     bool     `json:"localNewAccount"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF || len(request.Names) < 1 || len(request.Names) > 8 || len(request.PublicToken) > 128 {
+	if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF || len(request.Names) < 1 || len(request.Names) > 8 || len(request.PublicToken) > 128 || len(request.LocalPublicToken) > 128 {
 		http.Error(w, "Invalid callsigns", http.StatusBadRequest)
 		return
 	}
@@ -256,5 +342,25 @@ func (a *App) callsignAvailability(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"names": a.hub.callsigns.availability(request.PublicToken, request.Names)})
+	rows := a.hub.callsigns.availability(request.PublicToken, request.Names)
+	if request.IndependentAccounts && len(rows) > 1 {
+		second := a.hub.callsigns.availability(request.LocalPublicToken, request.Names[1:])
+		for i := range second {
+			rows[i+1].Available = second[i].Available
+		}
+		if request.LocalNewAccount && request.LocalPublicToken != "" {
+			r := a.hub.callsigns
+			hash, valid := r.owner(request.PublicToken)
+			localHash, localValid := publicTokenHash(request.LocalPublicToken)
+			r.mu.Lock()
+			if valid && localValid && !r.owners[localHash] && !r.revoked[localHash] && r.claims[canonicalCallsign(rows[1].Name)] == hash {
+				rows[1].Available = true
+			}
+			r.mu.Unlock()
+		}
+		if canonicalCallsign(rows[0].Name) == canonicalCallsign(rows[1].Name) || request.PublicToken != "" && request.PublicToken == request.LocalPublicToken {
+			rows[1].Available = false
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"names": rows})
 }
