@@ -192,11 +192,161 @@ def check_narrow_online(browser, devices, url, errors):
     print("PASS narrow online header and chat with a short keyboard viewport", flush=True)
 
 
+def check_mobile_header(browser, devices, url, errors, has_safe_area_override, screenshots):
+    with mobile_context(browser, devices, 390, 844) as context:
+        page = open_page(context, url, errors)
+        page.locator("#infinityToggleLabel").tap()
+        page.locator("#copyInviteBtn").tap()
+        page.wait_for_function("() => leqra.getState().online?.connected")
+        cdp = context.new_cdp_session(page) if has_safe_area_override else None
+        def check_header(name):
+            for width, height in ((320, 568), (390, 844), (568, 320), (844, 390)):
+                page.set_viewport_size({"width": width, "height": height})
+                page.wait_for_function("landscape => document.body.classList.contains('touch-landscape') === landscape",
+                                       arg=width > height)
+                insets = {"top": 47, "right": 0, "bottom": 34, "left": 0} if height > width else {
+                    "top": 8, "right": 48, "bottom": 21, "left": 48
+                }
+                if cdp:
+                    cdp.send("Emulation.setSafeAreaInsetsOverride", {"insets": insets})
+                else:
+                    insets = dict.fromkeys(insets, 0)
+                page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                geometry = page.evaluate("""name => {
+                    const box = element => {
+                        const {left, top, right, bottom, width, height} = element.getBoundingClientRect();
+                        return {left, top, right, bottom, width, height};
+                    };
+                    const header = document.querySelector('#gameHeader');
+                    const link = header.querySelector('.github-link');
+                    return {
+                        header: box(header), brand: box(header.querySelector('.brand')),
+                        link: box(link), icon: box(link.querySelector('svg')), version: box(link.querySelector('span')),
+                        buttons: [...header.querySelectorAll('.header-right > button')]
+                            .filter(button => button.getClientRects().length).map(button => ({id: button.id, ...box(button)})),
+                        arena: box(document.querySelector(name === 'infinity' ? '.infinite-statusbar' : '.arena-shell')),
+                        scrollX, scrollWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth
+                    };
+                }""", name)
+                assert geometry["scrollX"] == 0 and geometry["scrollWidth"] <= width, geometry
+                header = geometry["header"]
+                assert header["top"] >= insets["top"] and geometry["arena"]["top"] >= header["bottom"] - 1, geometry
+                assert geometry["icon"]["width"] >= 14, geometry
+                link = geometry["link"]
+                for part in (geometry["icon"], geometry["version"]):
+                    assert link["left"] <= part["left"] < part["right"] <= link["right"], geometry
+                    assert link["top"] <= part["top"] < part["bottom"] <= link["bottom"], geometry
+                for button in geometry["buttons"]:
+                    assert header["top"] <= button["top"] < button["bottom"] <= header["bottom"], geometry
+                    assert button["left"] >= insets["left"] and button["right"] <= width - insets["right"], geometry
+                    assert button["height"] >= 30, geometry
+                assert max(button["height"] for button in geometry["buttons"]) - min(
+                    button["height"] for button in geometry["buttons"]
+                ) <= 1, geometry
+                if screenshots:
+                    page.screenshot(path=str(screenshots / f"{name}-header-{width}x{height}.png"))
+        check_header("menu")
+        page.locator("#startRoomBtn").tap()
+        page.wait_for_function("() => leqra.getState().phase === 'playing'")
+        check_header("fixed")
+        page.locator("#pauseBtn").tap()
+        page.locator("#returnRoomBtn").tap()
+        page.get_by_role("dialog", name="End this match?", exact=True).get_by_role(
+            "button", name="END MATCH", exact=True
+        ).tap()
+        expect(page.locator("#roomScreen")).to_be_visible()
+        if not page.locator("#roomSettings").evaluate("element => element.open"):
+            page.locator("#roomSettings > summary").tap()
+        page.locator('[data-room-mode="infinity"]').tap()
+        page.locator("#startRoomBtn").tap()
+        expect(page.locator("#infiniteArena")).to_be_visible()
+        check_header("infinity")
+    print("PASS mobile menu, fixed, and Infinity headers, source icon/version, aligned actions, and safe areas", flush=True)
+
+
+def check_pause_scorecard(browser, devices, url, errors, screenshots):
+    for width, height in ((1280, 900), (390, 844)):
+        options = {"viewport": {"width": width, "height": height}}
+        if width < 760:
+            options.update(has_touch=True, is_mobile=True, user_agent=devices["iPhone SE"]["user_agent"])
+        with browser.new_context(**options) as context:
+            page = open_page(context, url, errors)
+            page.evaluate("() => leqraInfinity.start('offline')")
+            page.locator("#pauseBtn").click()
+            panel = page.locator("#infinitePauseSidebar #infiniteLeaderboardPanel")
+            expect(panel).to_be_visible()
+            panel.locator("#infiniteLeaderboard").evaluate("""list => {
+                list.replaceChildren(...Array.from({length: 12}, (_, i) => {
+                    const row = document.createElement('li'), name = document.createElement('span');
+                    const score = document.createElement('strong');
+                    row.value = i < 10 ? i + 1 : i === 10 ? 40 : 75;
+                    name.textContent = i >= 10 ? 'LLLLLLLLLLLLLLLL (you)' : `Pilot ${i + 1}`;
+                    score.textContent = i >= 10 ? '-12345678' : String(1200 - i);
+                    row.style.setProperty('--tank-color', '#32c5ff');
+                    if (i >= 10) {
+                        row.className = 'off-board-local';
+                        row.dataset.local = i === 10 ? 'p1' : 'p2';
+                        row.style.setProperty('--local-highlight', i === 10 ? '#bf5cff' : '#ff78c8');
+                    }
+                    row.append(name, score);
+                    return row;
+                }));
+            }""")
+            panel.scroll_into_view_if_needed()
+            geometry = panel.evaluate("""panel => {
+                const summary = panel.querySelector('summary'), rect = panel.getBoundingClientRect();
+                const style = getComputedStyle(panel), titleStyle = getComputedStyle(summary);
+                return {
+                    overflow: style.overflow, summaryPosition: titleStyle.position,
+                    border: style.borderTopWidth, radius: style.borderTopLeftRadius,
+                    summaryRadius: titleStyle.borderTopLeftRadius,
+                    markerPosition: getComputedStyle(panel.querySelector('li')).listStylePosition,
+                    cornersPaintedBySummary: [rect.left + 2, rect.right - 2].map(x =>
+                        summary.contains(document.elementFromPoint(x, rect.top + 2))),
+                    width: rect.width, scrollWidth: panel.scrollWidth
+                };
+            }""")
+            assert geometry["overflow"] == "visible" and geometry["summaryPosition"] == "static", geometry
+            assert geometry["border"] == "1px" and geometry["radius"] == "8px", geometry
+            assert geometry["summaryRadius"] == "7px" and geometry["markerPosition"] == "inside", geometry
+            # WebKit hit-testing can include rectangular child bounds at rounded
+            # edges; inspect its screenshots as well as the geometric checks.
+            if browser.browser_type.name == "chromium":
+                assert not any(geometry["cornersPaintedBySummary"]), geometry
+            assert geometry["scrollWidth"] <= geometry["width"], geometry
+            final_row = panel.locator("li").last
+            final_row.scroll_into_view_if_needed()
+            expect(final_row).to_be_in_viewport(ratio=1)
+            containment = panel.evaluate("""panel => {
+                const rect = panel.getBoundingClientRect();
+                const contained = [...panel.querySelectorAll('li, p')].every(child => {
+                    const r = child.getBoundingClientRect();
+                    return r.left >= rect.left && r.right <= rect.right && r.bottom <= rect.bottom;
+                });
+                const separate = [...panel.querySelectorAll('li')].every(row => {
+                    const score = row.querySelector('strong').getBoundingClientRect();
+                    return [...row.querySelector('span').getClientRects()].every(name =>
+                        name.right <= score.left + .5 || score.right <= name.left + .5 ||
+                        name.bottom <= score.top + .5 || score.bottom <= name.top + .5);
+                });
+                return contained && separate;
+            }""")
+            assert containment
+            if screenshots:
+                panel.screenshot(path=str(screenshots / f"pause-scorecard-{width}x{height}.png"))
+            page.locator("#infiniteResumeBtn").click()
+            expect(page.locator(".infinite-stage > #infiniteLeaderboardPanel")).to_be_visible()
+    print("PASS Infinity pause scorecard corners, complete border, and arena restoration", flush=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", nargs="?", default="http://localhost:8080")
     parser.add_argument("--engine", choices=("chromium", "webkit"), default="chromium")
+    parser.add_argument("--screenshots", type=Path, help="Optional output directory outside the repository")
     args = parser.parse_args()
+    if args.screenshots:
+        args.screenshots.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as playwright:
         if args.engine == "chromium":
             browser = playwright.chromium.launch(chromium_sandbox=True)
@@ -207,6 +357,8 @@ if __name__ == "__main__":
             check_landscape(browser, playwright.devices, errors, args.engine == "chromium")
             check_split_infinity(browser, playwright.devices, errors)
             check_narrow_online(browser, playwright.devices, args.url, errors)
+            check_mobile_header(browser, playwright.devices, args.url, errors, args.engine == "chromium", args.screenshots)
+            check_pause_scorecard(browser, playwright.devices, args.url, errors, args.screenshots)
             assert not errors, errors
         finally:
             browser.close()

@@ -74,6 +74,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  };
  const document = new Element();
  byID('infiniteStage').append(byID('infiniteLeaderboardPanel'),byID('infiniteTouchControls'));
+ byID('infiniteLeaderboardPanel').append(byID('infiniteLeaderboardTitle'),byID('infiniteTeamScores'),byID('infiniteLeaderboard'));
  document.getElementById = byID;
  document.createElement = tag => Object.assign(new Element(),{tagName:tag.toUpperCase()});
  document.querySelector = selector => selector === 'dialog[open]' && [...elements.values()].find(element => element.open);
@@ -391,26 +392,31 @@ test('the private Infinity scoreboard title follows the arena count when the top
  infinity.close();
 });
 
-test('public Infinity always shows Top 10 Tanks and only includes local tanks that rank there', () => {
+test('public Infinity keeps the top ten and appends local standings with their real ranks', () => {
  const {infinity,byID,sockets,advance}=harness();
  infinity.start('online',{localName:'Wingmate'});
  const [socket]=sockets;
  socket.receive({type:'welcome',id:1,localId:2,seed:0});
- const local=[1,2].map(id=>({id,name:'Local '+id,score:-1,hp:1,x:42*id,y:42,angle:0}));
+ const local=[1,2].map(id=>({id,name:'Local '+id,score:-1,rank:13-id,hp:1,x:42*id,y:42,angle:0}));
  const leaders=Array.from({length:10},(_,i)=>({id:i+100,name:'Leader '+i,score:100-i,colorIndex:i%8}));
- for(const count of [2,10,12]){
+ for(const count of [12,20,30]){
   socket.receive({type:'state',tanks:local,bullets:[],players:2,tankCount:count,leaderboard:[...leaders,...local]});
   advance(4);
   assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 10 Tanks');
   const rows=byID('infiniteLeaderboard').children;
-  assert.equal(rows.length,10);
-  assert.ok(rows.every(row=>row.dataset.local===undefined));
-  assert.deepEqual(rows.map(row=>row.children[0].textContent),leaders.map(tank=>tank.name));
+  assert.equal(rows.length,12);
+  assert.ok(rows.slice(0,10).every(row=>row.dataset.local===undefined));
+  assert.deepEqual(rows.slice(0,10).map(row=>row.children[0].textContent),leaders.map(tank=>tank.name));
+  assert.deepEqual(rows.slice(10).map(row=>[row.value,row.dataset.local,row.children[0].textContent,row.children[1].textContent]),
+   [[11,'p2','Local 2 (P2)',-1],[12,'p1','Local 1 (you)',-1]]);
+  assert.ok(rows.slice(10).every(row=>row.className==='off-board-local'));
  }
+ local.forEach((tank,i)=>tank.rank=i+1);
  socket.receive({type:'state',tanks:local,bullets:[],players:2,tankCount:2,leaderboard:local});
  advance(4);
  assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 10 Tanks');
  assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>row.dataset.local),['p1','p2']);
+ assert.ok(byID('infiniteLeaderboard').children.every(row=>row.className!=='off-board-local'));
  infinity.close();
 });
 
@@ -425,12 +431,26 @@ test('online Infinity shows each local score and global rank outside the top ten
   socket.receive({type:'state',tanks,bullets:[],players:2,tankCount:12,leaderboard:leaders});
   advance(4);
   assert.equal(byID('infiniteKills').textContent,'P1 -2 (#12) · P2 -1 (#11)');
-  assert.ok(byID('infiniteLeaderboard').children.every(row=>row.dataset.local===undefined));
+  const board=byID('infiniteLeaderboard');
+  assert.deepEqual(board.children.slice(10).map(row=>[row.dataset.local,row.value]),[['p2',11],['p1',12]]);
+  infinity.togglePause();
+  assert.equal(board.parentElement,byID('infiniteLeaderboardPanel'));
+  assert.equal(byID('infiniteLeaderboardPanel').parentElement,byID('gameSidebar'));
   tanks[0].score=200;tanks[0].rank=1;tanks[1].rank=12;
   socket.receive({type:'state',tanks,bullets:[],players:2,tankCount:12,leaderboard:[tanks[0],...leaders.slice(0,9)]});
   advance(4);
   assert.equal(byID('infiniteKills').textContent,'P1 200 (#1) · P2 -1 (#12)');
   assert.equal(byID('infiniteLeaderboard').children[0].dataset.local,'p1');
+  assert.equal(board.children.length,11);
+  assert.deepEqual(board.children.slice(10).map(row=>[row.dataset.local,row.value]),[['p2',12]]);
+  tanks[1].rank=17;
+  socket.receive({type:'state',tanks,bullets:[],players:2,tankCount:20,leaderboard:[tanks[0],...leaders.slice(0,9)]});
+  advance(4);
+  assert.equal(board.children[10].value,17,'rank-only changes refresh the appended marker while paused');
+  socket.receive({type:'welcome',id:1,seed:0});
+  socket.receive({type:'state',tanks:[tanks[0]],bullets:[],players:1,tankCount:19,leaderboard:[tanks[0],...leaders.slice(0,9)]});
+  advance(4);
+  assert.equal(board.children.length,10,'a removed second controller leaves no stale personal row');
   infinity.close();
  }
  const {infinity,byID,sockets,advance}=harness();
@@ -440,6 +460,7 @@ test('online Infinity shows each local score and global rank outside the top ten
  socket.receive({type:'state',tanks:[{id:1,score:7,rank:23,hp:1,x:42,y:42,angle:0}],bullets:[],players:1,leaderboard:[]});
  advance(4);
  assert.equal(byID('infiniteKills').textContent,'Score 7 (#23)');
+ assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>[row.value,row.dataset.local]),[[23,'p1']]);
  infinity.close();
 });
 
@@ -454,12 +475,30 @@ test('offline Infinity local ranks follow the full scoreboard including ties and
  bots.forEach(bot=>{bot.score=10;bot.hp=0;bot.respawn=1000;});
  advance(4);
  assert.equal(byID('infiniteKills').textContent,'P1 -2 (#13) · P2 -1 (#12)');
+ assert.deepEqual(byID('infiniteLeaderboard').children.slice(10).map(row=>[row.value,row.dataset.local]),[[12,'p2'],[13,'p1']]);
  first.score=second.score=10;
  advance(4);
  assert.equal(byID('infiniteKills').textContent,'P1 10 (#1) · P2 10 (#2)');
+ assert.equal(byID('infiniteLeaderboard').children.length,10,'local leaders are not duplicated below the top ten');
  first.score=-1;first.hp=0;first.respawn=1000;
  advance(4);
  assert.equal(byID('infiniteKills').textContent,'P1 -1 (#13) · P2 10 (#1)');
+ assert.deepEqual(byID('infiniteLeaderboard').children.slice(10).map(row=>[row.value,row.dataset.local]),[[13,'p1']]);
+ infinity.close();
+});
+
+test('opening offline Infinity pause refreshes local rows before the next HUD frame',()=>{
+ const {infinity,state,byID}=harness(undefined,true);
+ infinity.start('offline',{localName:'Twin',name:'Twin',roomRules:{teamMode:'ffa'},roster:
+  Array.from({length:11},(_,id)=>({id,kind:'bot',name:'Bot '+id}))});
+ const [first,second,...bots]=state().tanks;
+ first.score=-2;second.score=-1;
+ bots.forEach(bot=>bot.score=1);
+ infinity.togglePause();
+ const rows=byID('infiniteLeaderboard').children;
+ assert.equal(byID('infiniteLeaderboardPanel').parentElement,byID('gameSidebar'));
+ assert.equal(rows.length,12);
+ assert.deepEqual(rows.slice(10).map(row=>[row.value,row.children[0].textContent]),[[12,'Twin (P2)'],[13,'Twin (you)']]);
  infinity.close();
 });
 

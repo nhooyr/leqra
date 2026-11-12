@@ -885,18 +885,33 @@ function renderScores(world, pilot, second) {
  const entries = standings.slice(0, 10);
  const tankCount = world.online ? world.tankCount ?? entries.length : world.tanks.length;
  const title = world.online && !world.room ? 'Top 10 Tanks' : tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
- const rows = entries.map(tank => {
+ const standingRow = (tank,rank,extra=false) => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
-  return [tank.name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0]];
- });
+  const name = tank.name || (local===1 ? world.name : local===2 ? world.localName : 'Tank');
+  return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra];
+ };
+ const rows = entries.map((tank,i) => standingRow(tank,i+1));
+ const seen = new Set(entries.map(tank=>tank.id)), extraRows = [];
+ for (const id of [world.id,world.local?.id]) {
+  if (id==null || seen.has(id)) continue;
+  const tank = world.tanks.find(tank=>tank.id===id);
+  const rank = world.online ? tank?.rank : standings.indexOf(tank)+1;
+  if (!tank || !Number.isSafeInteger(rank) || rank<=10) continue;
+  extraRows.push(standingRow(tank,rank,true));
+  seen.add(id);
+ }
+ extraRows.sort((a,b)=>a[4]-b[4]);
+ rows.push(...extraRows);
  const teams = world.rules?.teamMode==='teams' ? world.teamScores.flatMap((score,i)=>
   i<2||score||entries.some(tank=>tank.team===i+1)?[[teamName(world,i+1),score,0,COLORS[world.rules.teamColors?.[i]] || COLORS[i]]]:[]) : [];
  const signature = JSON.stringify([title,rows,teams]);
  if (signature === world.scoreRows) return;
  world.scoreRows = signature;
  leaderboardTitle.textContent = title;
- const makeRow = ([name, score, local, color]) => {
+ const makeRow = ([name, score, local, color,rank,extra]) => {
   const row = document.createElement('li');
+  if (rank) row.value = rank;
+  if (extra) row.className = 'off-board-local';
   row.style.setProperty('--tank-color',color);
   if (local) {
    row.dataset.local = 'p' + local;
@@ -1643,6 +1658,7 @@ for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
 arena.addEventListener('contextmenu', event => event.preventDefault());
 function openPause() {
  if (!session || session.result || pauseMenu.open) return;
+ renderScores(session,session.tanks.find(tank=>tank.id===session.id),session.tanks.find(tank=>tank.id===session.local?.id));
  pauseMenu.showModal();
  art.mountSidebar(pauseSidebar);
  pausedLeaderboard = {parent:leaderboardPanel.parentElement,next:leaderboardPanel.nextSibling,open:leaderboardPanel.open};
