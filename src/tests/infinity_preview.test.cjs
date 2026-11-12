@@ -78,19 +78,19 @@ test('startup and tour name the public switch separately from room Infinity',()=
  assert.match(battle,/Choose Infinity in Room settings/);assert.match(battle,/turn off Public Infinity/);
 });
 
-test('public polling retries failures every four seconds and stops permanently during settings reset',async()=>{
- const h=boot(),{s,$}=h;h.requests[0].reject(Error('offline'));await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.match($('infinityPreviewScoreboardNote').textContent,/unavailable/);assert.deepEqual([...h.timers.values()].map(t=>t.ms),[4000]);
- h.run(4000);assert.equal(h.requests.length,2);h.requests[1].resolve({players:2,tankCount:2,leaders:[]});await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'2 online');
- h.run(4000);assert.equal(h.requests.length,3);s.settingsResetActive=true;s.window.leqraInfinityPreview.stop();assert.equal(h.requests[2].options.signal.aborted,true);assert.equal(h.observers[0].disconnected,true);assert.equal(h.timers.size,0);assert.equal($('infinityPreviewScoreboard').hidden,true);
+test('public polling retries failures every second and stops permanently during settings reset',async()=>{
+ const h=boot(),{s,$}=h;h.requests[0].reject(Error('offline'));await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'? online');assert.match($('infinityPreviewScoreboardNote').textContent,/unavailable/);assert.deepEqual([...h.timers.values()].map(t=>t.ms),[1000]);
+ h.run(1000);assert.equal(h.requests.length,2);h.requests[1].resolve({players:2,tankCount:2,leaders:[]});await h.flush();assert.equal($('infinityPreviewOnlineCount').textContent,'2 online');
+ h.run(1000);assert.equal(h.requests.length,3);s.settingsResetActive=true;s.window.leqraInfinityPreview.stop();assert.equal(h.requests[2].options.signal.aborted,true);assert.equal(h.observers[0].disconnected,true);assert.equal(h.timers.size,0);assert.equal($('infinityPreviewScoreboard').hidden,true);
  s.settingsResetActive=false;s.window.leqraInfinityPreview.sync();assert.equal(h.requests.length,3,'late callbacks cannot restart the reset page');await h.flush();assert.equal(h.timers.size,0);
 });
 
-test('the first menu request supplies ping and online count together on a four-second cadence',async()=>{
+test('the first menu request supplies ping and online count together on a one-second cadence',async()=>{
  const h=boot(),{s,$}=h;assert.equal(h.requests.length,1,'polling starts immediately');
  s.now=240;h.requests[0].resolve({players:3,tankCount:3,leaders:[]});await h.flush();
  assert.equal($('infinityPreviewOnlineCount').textContent,'3 online');assert.deepEqual(s.menuSamples,[240]);
- assert.deepEqual([...h.timers.values()].map(timer=>timer.ms),[3760],'response time counts toward the four-second interval');
- h.run(3760);assert.equal(h.requests.length,2);
+ assert.deepEqual([...h.timers.values()].map(timer=>timer.ms),[760],'response time counts toward the one-second interval');
+ h.run(760);assert.equal(h.requests.length,2);
  h.requests[1].reject(Error('unavailable'));await h.flush();assert.equal(s.menuSamples.at(-1),null);
 });
 
