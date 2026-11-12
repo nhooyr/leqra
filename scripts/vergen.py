@@ -1,6 +1,6 @@
 """Synchronize release files after editing version in src/main.go.
 
-Run ./scripts/vergen.sh from the repository root, then rebuild normally.
+Run ./scripts/gen-version.sh from the repository root, then rebuild normally.
 Existing icons are moved unchanged; the root README and historical docs stay put.
 """
 
