@@ -163,17 +163,19 @@ function showcaseWindowBounds() {
 
 async function main() {
  if (!/\.html?$/i.test(out)) throw Error('Showcase output must end in .html or .htm');
- const browser = await chromium.launch({chromiumSandbox:true});
+ const browser = await chromium.launch({chromiumSandbox:true,args:['--mute-audio']});
  try {
   const page = await browser.newPage({viewport,deviceScaleFactor,serviceWorkers:'block'});
   await page.addInitScript(() => {
    localStorage.setItem('leqra.introTour.v1','1');
-   localStorage.setItem('leqra.muted','1');
+   localStorage.setItem('leqra.muted','0');
   });
   await page.route('**/*', route => {
    const url = new URL(route.request().url());
    if (url.origin!==origin) return route.abort();
    const file = path.join(web,url.pathname==='/'?'index.html':url.pathname);
+   // This isolated image capture has no server or installed app to update.
+   if (file===assetPath('pwa.js')) return route.fulfill({contentType:'application/javascript',body:''});
    if (file===infiniteAsset) return route.fulfill({contentType:'application/javascript',body:stagedSource});
    return route.fulfill({path:file});
   });
@@ -181,6 +183,7 @@ async function main() {
   await page.evaluate(() => document.fonts.ready);
   const scene = await page.evaluate(stageBattle);
   if (scene.tanks!==8 || scene.activePowers.length!==10 || scene.projectiles<40) throw Error('Incomplete Infinity showcase');
+  if (await page.locator('#soundBtn').getAttribute('aria-pressed')!=='true') throw Error('Showcase sound must be enabled');
   const screenshot = await page.screenshot({animations:'disabled'});
   const html = showcasePage(screenshot);
   fs.mkdirSync(path.dirname(overrideFile),{recursive:true});

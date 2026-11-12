@@ -15,8 +15,8 @@ function boot({fetchResponse = () => new Response('fresh content'),
   schedule = setTimeout, cancel = clearTimeout} = {}) {
   const handlers = new Map(), calls = {fetch: 0, open: 0, match: []};
   vm.runInNewContext(source, {
-    URL, AbortController, setTimeout: schedule, clearTimeout: cancel,
-    self: {location: {origin}, addEventListener: (type, handler) => handlers.set(type, handler)},
+    URL, Request, Response, AbortController, setTimeout: schedule, clearTimeout: cancel,
+    self: {location: {origin, href: origin + '/sw.js'}, addEventListener: (type, handler) => handlers.set(type, handler)},
     fetch: (request, options) => { calls.fetch++; return Promise.resolve().then(() => fetchResponse(request, options)); },
     caches: {
       match: (request, options) => { calls.match.push(request); return Promise.resolve().then(() => match(request, options)); },
@@ -58,7 +58,7 @@ test('asset misses clone before body consumption and keep cache writes alive', a
   await putStarted.promise;
   assert.equal(stored.length, 1);
   assert.equal(stored[0].text, 'fresh content');
-  assert.equal(stored[0].key, event.request);
+  assert.equal(stored[0].key, asset);
   assert.equal(finished, false, 'pending cache put keeps the event alive');
   putDone.resolve();
   await lifetime;
@@ -96,12 +96,33 @@ test('asset cache hits avoid a network request and a redundant cache write', asy
   assert.equal(h.calls.open, 0);
 });
 
+test('versioned assets never use a same-URL response from another cache', async () => {
+  for (const installed of [false, true]) {
+    const h = boot({match: async (_request, options) => {
+      if (options?.cacheName !== 'leqra-app-' + assetVersion) return new Response('wrong release header');
+      return installed ? new Response('installed release asset') : undefined;
+    }}), event = h.dispatch(asset, 'same-origin');
+    assert.equal(await (await event.response).text(), installed ? 'installed release asset' : 'fresh content');
+    await Promise.all(event.waits);
+    assert.equal(h.calls.fetch, installed ? 0 : 1);
+  }
+});
+
 test('a failed asset cache lookup still serves a healthy network response', async () => {
   const h = boot({match: async () => { throw Error('cache read unavailable'); }});
   const event = h.dispatch(asset, 'same-origin');
   assert.equal(await (await event.response).text(), 'fresh content');
   await Promise.all(event.waits);
   assert.equal(h.calls.fetch, 1);
+});
+
+test('runtime asset misses do not contaminate this cache with another build’s response', async () => {
+  const h = boot({fetchResponse: () => new Response('newer build asset', {
+    headers: {'X-Leqra-Build': assetVersion + '-2222222222222222'}
+  })}), event = h.dispatch(asset, 'same-origin');
+  assert.equal(await (await event.response).text(), 'newer build asset');
+  await Promise.all(event.waits);
+  assert.equal(h.calls.open, 0, 'a cache miss must not merge two builds into one offline bundle');
 });
 
 test('offline navigation falls back to the cached shell', async () => {
@@ -175,7 +196,7 @@ test('failed cache reads and non-temporary HTTP responses preserve navigation re
 test('APIs, sockets, foreign origins, non-GETs and unrelated files remain network-only', () => {
   const h = boot();
   for (const [pathname, mode, method] of [
-    ['/ws', 'navigate', 'GET'], ['/healthz', 'navigate', 'GET'], ['/api/config', 'navigate', 'GET'],
+    ['/ws', 'navigate', 'GET'], ['/healthz', 'navigate', 'GET'], ['/api/config', 'navigate', 'GET'], ['/sw.js', 'same-origin', 'GET'],
     ['https://other.test' + asset, 'same-origin', 'GET'], [asset, 'same-origin', 'POST'],
     ['/unrelated.js', 'same-origin', 'GET']
   ]) {
@@ -197,7 +218,7 @@ test('direct asset navigation caches the asset without replacing the offline she
   assert.equal(await (await event.response).text(), 'fresh content');
   await Promise.all(event.waits);
   assert.equal(stored.length, 1);
-  assert.equal(stored[0].key, event.request);
+  assert.equal(stored[0].key, asset);
   assert.equal(stored[0].text, 'fresh content');
 });
 
@@ -227,21 +248,25 @@ test('online app navigation returns fresh HTML without replacing the installed f
 
 function releaseHarness() {
   const current = assetVersion, next = current.replace(/\d+$/, patch => String(Number(patch) + 1)), storage = new Map();
-  let serverVersion = current, offline = false, failedAsset = '';
-  const shell = version => '<meta name="leqra-version" content="' + version + '"><script src="assets/' + version + '/game.js"></script>';
+  const currentBuild = current + '-1111111111111111', nextBuild = current + '-2222222222222222', requests = [];
+  let serverVersion = current, serverBuild, offline = false, failedAsset = '', failedStatus = 0, mixedShell = false, assetTag = '', wrongBuildAsset = '';
+  const shell = (version, build) => '<meta name="leqra-version" content="' + version + '">' + (build ? '<meta name="leqra-build" content="' + build + '">' : '') + '<script src="assets/' + version + '/game.js' + (build ? '?build=' + build : '') + '"></script>';
   const cacheName = version => 'leqra-app-' + version;
   const keyFor = request => new URL(typeof request === 'string' ? request : request.url, origin).href;
-  const network = async request => {
+  const network = async (request, options) => {
     const url = new URL(keyFor(request));
-    if (offline || url.pathname === failedAsset) throw Error('connection interrupted');
-    return new Response(url.pathname === '/' ? shell(serverVersion) : 'asset ' + url.pathname);
+    requests.push({url: url.href, options});
+    if (offline || url.pathname === failedAsset && !failedStatus) throw Error('connection interrupted');
+    if (url.pathname === failedAsset) return new Response('asset unavailable', {status: failedStatus});
+    const headers = serverBuild ? {'X-Leqra-Build': url.pathname === wrongBuildAsset ? currentBuild : serverBuild} : {};
+    return new Response(url.pathname === '/' ? shell(serverVersion, serverBuild) + (mixedShell ? '<link rel="stylesheet" href="assets/' + current + '/style.css">' : '') : 'asset ' + url.pathname + assetTag, {headers});
   };
-  function worker(version) {
+  function worker(version, build) {
     const handlers = new Map(), lifecycle = {skipWaiting: 0, claim: 0};
     vm.runInNewContext(source.replace("const VERSION = '" + current + "';", "const VERSION = '" + version + "';"), {
-      URL, AbortController, setTimeout, clearTimeout,
+      URL, Request, Response, AbortController, setTimeout, clearTimeout,
       self: {
-        location: {origin}, addEventListener: (type, handler) => handlers.set(type, handler),
+        LEQRA_BUILD: build, location: {origin, href: origin + '/sw.js'}, addEventListener: (type, handler) => handlers.set(type, handler),
         skipWaiting: async () => { lifecycle.skipWaiting++; },
         clients: {claim: async () => { lifecycle.claim++; }}
       },
@@ -256,9 +281,10 @@ function releaseHarness() {
             // Cache.addAll commits its batch only after every fetch succeeds.
             async addAll(paths) {
               const responses = await Promise.all(paths.map(network));
+              if (responses.some(response => !response.ok)) throw Error('precache HTTP failure');
               paths.forEach((path, i) => entries.set(keyFor(path), responses[i]));
             },
-            put: async (key, response) => entries.set(keyFor(key), response)
+            put: async (key, response) => entries.set(keyFor(key), response.clone())
           };
         },
         match: async (key, options) => {
@@ -287,12 +313,23 @@ function releaseHarness() {
       await Promise.all(waits);
       return result;
     }
-    return {event, request, lifecycle};
+    async function message(data) {
+      const replies = [], waits = [];
+      handlers.get('message')({data, ports: [{postMessage: reply => replies.push(reply)}], waitUntil: promise => waits.push(promise)});
+      await Promise.all(waits);
+      return replies;
+    }
+    return {event, request, message, lifecycle};
   }
   return {
-    current, next, storage, shell, cacheName, keyFor, worker,
+    current, next, currentBuild, nextBuild, storage, shell, cacheName, keyFor, worker, requests,
     deploy() { serverVersion = next; },
+    serveBuild(build) { serverBuild = build; },
+    tagAssets(tag) { assetTag = tag; },
+    mismatchAssetBuild(path) { wrongBuildAsset = path; },
     interruptInstall() { failedAsset = '/assets/' + next + '/icon-512.png'; },
+    failInstallHTTP(status, version = next) { failedAsset = '/assets/' + version + '/style.css'; failedStatus = status; },
+    serveMixedShell() { mixedShell = true; },
     offline() { offline = true; }
   };
 }
@@ -314,6 +351,32 @@ test('an interrupted release install preserves the old complete offline game', a
   assert.equal(h.storage.get(h.cacheName(h.current)).size > 1, true);
 });
 
+test('HTTP precache failures preserve the old complete release and never activate the new worker', async () => {
+  for (const status of [404, 503]) {
+    const h = releaseHarness(), oldWorker = h.worker(h.current);
+    await oldWorker.event('install');
+    const previous = h.storage.get(h.cacheName(h.current)).size;
+    h.deploy();h.failInstallHTTP(status);
+    const nextWorker = h.worker(h.next);
+    await assert.rejects(nextWorker.event('install'), /asset|precache|unavailable|HTTP/i);
+    assert.equal(nextWorker.lifecycle.skipWaiting, 0);
+    assert.equal(h.storage.get(h.cacheName(h.current)).size, previous);
+    h.offline();
+    assert.equal(await (await oldWorker.request()).text(), h.shell(h.current));
+    assert.match(await (await oldWorker.request('/assets/' + h.current + '/style.css', 'same-origin')).text(), /asset .*style\.css/);
+  }
+});
+
+test('a current version marker cannot install a shell with assets from an older release', async () => {
+  const h = releaseHarness(), oldWorker = h.worker(h.current);
+  await oldWorker.event('install');h.deploy();h.serveMixedShell();
+  const nextWorker = h.worker(h.next);
+  await assert.rejects(nextWorker.event('install'), /shell|release|asset/i);
+  assert.equal(nextWorker.lifecycle.skipWaiting, 0);
+  h.offline();
+  assert.equal(await (await oldWorker.request()).text(), h.shell(h.current));
+});
+
 test('a successful release install switches offline shell and assets together', async () => {
   const h = releaseHarness();
   // Another same-origin application may also have cached '/' first.
@@ -326,7 +389,7 @@ test('a successful release install switches offline shell and assets together', 
   await nextWorker.event('activate');
   assert.equal(nextWorker.lifecycle.skipWaiting, 1);
   assert.equal(nextWorker.lifecycle.claim, 1);
-  assert.equal(h.storage.has(h.cacheName(h.current)), false);
+  assert.equal(h.storage.has(h.cacheName(h.current)), true, 'a prior complete release remains available to retained clients');
   assert.equal(h.storage.has('other-app'), true);
   h.offline();
   assert.equal(await (await nextWorker.request()).text(), h.shell(h.next));
@@ -343,4 +406,65 @@ test('a worker refuses a root shell served by a different release', async () => 
   assert.equal(stale.lifecycle.skipWaiting, 0);
   h.offline();
   assert.equal(await (await installed.request()).text(), h.shell(h.current));
+});
+
+test('a same-version build switches the offline shell and canonical assets together', async () => {
+  const h = releaseHarness();h.serveBuild(h.currentBuild);h.tagAssets(' committed');
+  const installed = h.worker(h.current, h.currentBuild);await installed.event('install');
+  h.serveBuild(h.nextBuild);h.tagAssets(' replacement');const before = h.requests.length;
+  const replacement = h.worker(h.current, h.nextBuild);await replacement.event('install');await replacement.event('activate');
+  const requests = h.requests.slice(before), root = requests.find(request => new URL(request.url).pathname === '/');
+  assert.equal(root.options.cache, 'no-store');
+  for (const request of requests.filter(request => new URL(request.url).pathname.startsWith('/assets/'))) {
+    assert.equal(new URL(request.url).searchParams.get('build'), h.nextBuild);
+    assert.equal(request.options.cache, 'reload');
+  }
+  const asset = '/assets/' + h.current + '/game.js', cache = h.storage.get(h.cacheName(h.nextBuild));
+  assert.ok(cache.has(h.keyFor(asset)), 'the cache stores canonical paths');
+  assert.equal(cache.has(h.keyFor(asset + '?build=' + h.nextBuild)), false);
+  h.offline();
+  assert.equal(await (await replacement.request()).text(), h.shell(h.current, h.nextBuild));
+  assert.equal(await (await replacement.request(asset + '?build=' + h.nextBuild, 'same-origin')).text(), 'asset ' + asset + ' replacement');
+  assert.equal(await (await replacement.request(asset + '?build=' + h.currentBuild, 'same-origin')).text(), 'asset ' + asset + ' committed');
+  assert.equal(await (await installed.request()).text(), h.shell(h.current, h.currentBuild));
+});
+
+test('a failed reinstall cannot partially overwrite an already complete build cache', async () => {
+  const h = releaseHarness();h.serveBuild(h.currentBuild);h.tagAssets(' committed');
+  const installed = h.worker(h.current, h.currentBuild);await installed.event('install');
+  h.tagAssets(' uncommitted');h.failInstallHTTP(503, h.current);
+  await assert.rejects(h.worker(h.current, h.currentBuild).event('install'));
+  h.offline();
+  const asset = '/assets/' + h.current + '/theme.js';
+  assert.equal(await (await installed.request(asset, 'same-origin')).text(), 'asset ' + asset + ' committed');
+  assert.equal(await (await installed.request()).text(), h.shell(h.current, h.currentBuild));
+});
+
+test('worker build mismatches reject both a stale root shell and a stale asset response', async () => {
+  for (const mismatch of ['shell', 'asset']) {
+    const h = releaseHarness();h.serveBuild(h.currentBuild);
+    const installed = h.worker(h.current, h.currentBuild);await installed.event('install');
+    if (mismatch === 'asset') {h.serveBuild(h.nextBuild);h.mismatchAssetBuild('/assets/' + h.current + '/style.css');}
+    const replacement = h.worker(h.current, h.nextBuild);
+    await assert.rejects(replacement.event('install'), /build|shell|asset/i);
+    assert.equal(replacement.lifecycle.skipWaiting, 0);
+    h.offline();assert.equal(await (await installed.request()).text(), h.shell(h.current, h.currentBuild));
+  }
+});
+
+test('activation keeps only two previous app caches and leaves other applications alone', async () => {
+  const h = releaseHarness();
+  h.storage.set('other-app', new Map());
+  const previous = Array.from({length:5}, (_, i) => 'leqra-app-previous-' + i);
+  for (const name of previous) h.storage.set(name, new Map());
+  const worker = h.worker(h.current);await worker.event('install');await worker.event('activate');
+  assert.deepEqual([...h.storage.keys()].filter(name => name.startsWith('leqra-app-')).sort(), [...previous.slice(-2), h.cacheName(h.current)].sort());
+  assert.equal(h.storage.has('other-app'), true);
+});
+
+test('worker build probes reply with the actual injected build and release', async () => {
+  const h = releaseHarness(), injected = h.worker(h.current, h.currentBuild), raw = h.worker(h.current);
+  assert.deepEqual(JSON.parse(JSON.stringify(await injected.message({type:'LEQRA_BUILD_INFO'}))), [{build:h.currentBuild,version:h.current}]);
+  assert.deepEqual(JSON.parse(JSON.stringify(await raw.message({type:'LEQRA_BUILD_INFO'}))), [{build:h.current,version:h.current}]);
+  assert.deepEqual(await injected.message({type:'UNRELATED'}), []);
 });

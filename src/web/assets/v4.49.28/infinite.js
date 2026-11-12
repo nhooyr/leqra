@@ -733,7 +733,7 @@ function drawTank(tank, highlight, zoom, ratio) {
  ctx.restore();
  ctx.font = 'bold 11px ui-monospace,SFMono-Regular,Consolas,monospace';
  ctx.textAlign = 'center';
- const label = highlight ? 'YOU' : tank.name;
+ const label = tank.name || 'Tank';
  const width = Math.min(ctx.measureText(label)?.width || 30, 120) + 10;
  ctx.fillStyle = '#0e171ddb';
  art.rect(ctx, -width / 2, -48, width, 16, 3);
@@ -1337,7 +1337,9 @@ function connect() {
  ws.addEventListener('open', () => {
   if (ws === socket && session === world) {
    ws.send(JSON.stringify({type:'join',version:window.leqra.version,name:world.name,
-    localName:world.room?undefined:world.localName,...world.room,
+    localName:world.room?undefined:world.localName,
+    colorIndex:world.room?undefined:world.colorIndex,
+    localColorIndex:world.room||!world.localName?undefined:world.localColorIndex,...world.room,
     resume:world.resumeGeneration?true:undefined,generation:world.resumeGeneration}));
   }
  });
@@ -1441,8 +1443,10 @@ function start(mode, options = {}) {
  stop();
  const online = mode === 'online', name = options.name?.trim() || pilotName();
  const readBindings = typeof options.bindings === 'function' ? options.bindings : () => options.bindings;
+ const selectedColor = value => Number.isInteger(value)&&value>=0&&value<COLORS.length?value:undefined;
  session = {
   online, name, localName:options.localName, readBindings, launcher:options.launcher, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
+  colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,
   rules:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
@@ -1468,6 +1472,7 @@ function start(mode, options = {}) {
   session.maze = geometry.create(Math.floor(Math.random() * 0x100000000));
   const player = makeTank(session.id, session.camera.x, session.camera.y);
   player.name = name;
+  player.colorIndex = world.colorIndex ?? player.colorIndex;
   const roster = options.roster || [];
   applyTankAppearance(world,player,roster.find(member=>member.id===options.primaryId));
   session.tanks.push(player);
@@ -1475,7 +1480,7 @@ function start(mode, options = {}) {
    const point = clearCell(world,player,2*CELL,4*CELL,2*CELL) || {x:player.x+2*CELL,y:player.y};
    const second = makeTank(world.local.id,point.x,point.y);
    second.name = world.localName;
-   second.colorIndex = 1;
+   second.colorIndex = world.localColorIndex ?? 1;
    applyTankAppearance(world,second,roster.find(member=>member.id===options.localId));
    world.tanks.push(second);
   }
