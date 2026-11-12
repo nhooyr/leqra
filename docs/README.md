@@ -15,6 +15,8 @@ The **Infinity** switch is on by default. Press **Play** to roam a public endles
 
 Select **Infinity** under **Room settings → Game mode** to use your own roster. Up to eight tanks can occupy roster seats, including local Player 2 and configured bots. In **Rules**, you can enable additional roaming bots and choose their difficulty. Set a positive score target to play to a win, or leave it at zero for endless exploration. Use **Share Infinity room** to invite friends to the arena. Guests ready up and the host presses **Play**.
 
+To enter public Infinity with an online room, the host enables **Infinity**, guests ready up, and the host presses **Play**. Everyone competes individually, with consistent tank colors. The sidebar keeps room members visible below the top ten when needed. The whole party must fit the public arena. Successful entry clears configured room bots; public roaming bots spawn independently.
+
 New rooms start with Player 1 only. Turn off **Infinity** to play the selected room mode; if there are no bots, Player 2, or other online players in combat seats, three Normal bots join automatically. Open **Players and bots** to edit the roster or add Player 2. **Room settings** holds the mode, format, map, rules, and presets. **Portrait maze** makes rectangular maps taller than they are wide. The square Compact map keeps its dimensions.
 
 Selecting **Teams** puts the top half of the active roster on Team 1 and the bottom half on Team 2. Team 1 gets the extra pilot when the count is odd. The player list keeps teammates together as assignments change.

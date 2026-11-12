@@ -51,9 +51,13 @@ function checkUpdate(force=false) {
  if (checking || !force && performance.now()-lastCheck<30000) return;
  lastCheck = performance.now();
  checking = (async () => {
-  const response = await fetch('/api/build',{cache:'no-store'});
-  if (!response.ok) return;
-  const info = await response.json();
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(),8000);
+  let info;
+  try {
+   const response = await fetch('/api/build',{cache:'no-store',signal:controller.signal});
+   if (!response.ok) return;
+   info = await response.json();
+  } finally {clearTimeout(timeout);}
   if (typeof info.build !== 'string' || !/^v\d+\.\d+\.\d+-[0-9a-f]{16}$/.test(info.build)) return;
   latestBuild = info.build;
   // LAN HTTP web clips cannot install a worker, but can still refresh safely

@@ -1387,3 +1387,64 @@ test('Infinity shares fullscreen and protects native keyboard activation and tex
  advance();
  assert.equal(state().bullets.length,1);
 });
+
+
+test('split-screen offline Infinity budgets pickups per local pilot', () => {
+ const h = harness();
+ h.infinity.start('offline', {name:'P1',localName:'P2',roomRules:{teamMode:'ffa',infinityRandomBots:false}});
+ const world = h.state(), [first,second] = world.tanks;
+ Object.assign(first,{x:42,y:42});
+ Object.assign(second,{x:1722,y:42});
+ // Old pickups remain within the retention radius but are not near either pilot.
+ world.pickups = Array.from({length:6},(_,i)=>({x:546+i%3*168,y:-126+Math.floor(i/3)*336,life:30,type:'shield'}));
+ world.pickupPilot = 1;
+ world.nextPickup = 0;
+ h.advance(2);
+ assert.equal(world.pickups.filter(p=>Math.hypot(p.x-second.x,p.y-second.y)<5*84).length,3);
+ assert.equal(world.pickups.length,9);
+});
+
+
+test('public Infinity parties track all room pilots beyond the top ten without duplicate or team rows',()=>{
+ const {infinity,sockets,state,byID,advance}=harness();
+ infinity.start('online',{code:'ROOM',token:'secret',public:true,localName:'Wing',roomRules:{teamMode:'teams',infinityTarget:9}});
+ assert.equal(state().rules,null,'source-room team and target rules never carry into public Infinity');
+ const socket=sockets[0];socket.emit('open');
+ assert.equal(socket.sent[0].code,'ROOM');assert.equal(socket.sent[0].token,'secret');
+ assert.equal(socket.sent[0].localName,undefined,'the authenticated room roster controls local seats');
+ const party=[{id:1,name:'Lead',score:30,rank:12,colorIndex:4},{id:2,name:'Wing',score:20,rank:20,colorIndex:7},
+  {id:3,name:'Distant',score:10,rank:30,colorIndex:6},{id:4,name:'Already top',score:96,rank:5,colorIndex:2},
+  {id:5,name:'Farther',score:2,rank:40,colorIndex:3}];
+ socket.receive({type:'welcome',id:1,localId:2,seed:0,party});
+ const leaders=Array.from({length:10},(_,i)=>({id:i===4?4:100+i,name:i===4?'Already top':'Leader '+i,score:100-i,colorIndex:i===4?2:i%8}));
+ const packet={type:'state',tanks:party.slice(0,2).map(t=>({...t,hp:1,x:t.id*84,y:42,angle:0})),bullets:[],leaderboard:leaders,party,tankCount:40,
+  rules:{teamMode:'teams',infinityTarget:9},teamScores:[5,4]};
+ socket.receive(packet);advance(2);
+ const rows=byID('infiniteLeaderboard').children;
+ assert.equal(byID('infiniteLeaderboardTitle').textContent,'Top 10 Tanks');
+ assert.equal(byID('infiniteTeamScores').hidden,true);
+ assert.deepEqual(rows.map(row=>row.value),[1,2,3,4,5,6,7,8,9,10,12,20,30,40]);
+ assert.equal(rows.filter(row=>row.textContent.includes('Already top')).length,1);
+ assert.equal(rows[4].dataset.party,'true');
+ assert.equal(rows[10].dataset.local,'p1');assert.equal(rows[11].dataset.local,'p2');
+ assert.equal(rows[12].textContent,'Distant (room)10');
+ assert.equal(rows[12].style.getPropertyValue('--tank-color'),'#75f0cb');
+ assert.equal(state().rules,null);
+ const changed=party.map(t=>t.id===3?{...t,score:22,rank:18,colorIndex:5}:t);
+ socket.receive({...packet,party:changed});advance(3);
+ const distant=byID('infiniteLeaderboard').children.find(row=>row.textContent.includes('Distant'));
+ assert.equal(distant.value,18);assert.equal(distant.style.getPropertyValue('--tank-color'),'#ff83bd');
+ assert.ok(distant.textContent.endsWith('22'));
+ socket.receive({...packet,party:[]});advance(3);
+ assert.equal(byID('infiniteLeaderboard').children.length,12,'departed remote party rows disappear while both local counters stay');
+});
+
+
+test('public entry runs source-room cleanup once only after a valid first state',()=>{
+ const h=harness();let joined=0;
+ h.infinity.start('online',{name:'P1',onJoined(){joined++;}});
+ const socket=h.sockets[0];socket.emit('open');
+ assert.equal(joined,0);socket.receive({type:'welcome',id:1,seed:0});assert.equal(joined,0);
+ const packet={type:'state',tanks:[{id:1,hp:1,x:42,y:42,angle:0}],bullets:[],leaderboard:[]};
+ socket.receive(packet);assert.equal(joined,1);socket.receive(packet);assert.equal(joined,1);
+});

@@ -34,7 +34,10 @@ python3 src/tests/mobile_browser.py http://localhost:8080
 python3 src/tests/mobile_browser.py http://localhost:8080 --engine webkit
 python3 src/tests/mobile_layout_browser.py http://localhost:8080
 python3 src/tests/mobile_layout_browser.py http://localhost:8080 --engine webkit
+python3 src/tests/pwa_update_browser.py --browser chromium --browser webkit
 ```
+
+The PWA harness starts disposable local servers and checks same-version upgrades, legacy worker migration, match deferral, saved room setup, and offline reloads in both engines. Browser emulation does not verify an installed iOS Home Screen app on a physical device.
 
 For live checks, run `go run ./src` and open the served page in separate browser contexts. Check a shared match and verify that the service worker can reload the app offline after installation.
 

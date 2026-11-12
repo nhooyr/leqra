@@ -72,6 +72,7 @@ type Room struct {
 	Kicked           map[[32]byte]time.Time
 
 	infinityActive     bool
+	infinityPublic     bool
 	infinityGeneration uint64
 
 	state      stateScratch // reusable snapshot buffers; encoded before reuse
@@ -210,7 +211,8 @@ func (c *Client) writeLoop() {
 }
 
 type Hub struct {
-	resumeRoutes map[resumeRouteKey]resumeRoute
+	resumeRoutes           map[resumeRouteKey]resumeRoute
+	publicInfinityRequests map[*Room]*Client
 
 	queues                         map[uint64]*QueueTicket
 	nextQueueID                    uint64
@@ -735,6 +737,7 @@ type clientMessage struct {
 	QueueID  uint64 `json:"queueId"`
 	RoomCode string `json:"room"`
 
+	Enabled         *bool  `json:"enabled"`
 	Spectating      *bool  `json:"spectating"`
 	Spectator       *int   `json:"spectator"`
 	SpectatorMember uint64 `json:"spectatorMember"`
@@ -970,6 +973,10 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		c.player.Ready = m.Ready
 		r.LastAction = now
 		h.broadcastRoom(r)
+	case "select_public_infinity":
+		h.selectPublicInfinity(c, m.Enabled, now)
+	case "start_public_infinity":
+		h.requestPublicInfinity(c, now)
 	case "start":
 		if c.room == nil || c.player == nil || c.player.Client != c || !c.room.contains(c.player) {
 			return nil
@@ -977,6 +984,10 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		r := c.room
 		if c.player.ID != r.Host {
 			c.enqueue(roomError("not_host", "Only the host can start the match."))
+			return nil
+		}
+		if r.infinityPublic && !r.infinityActive {
+			h.requestPublicInfinity(c, now)
 			return nil
 		}
 		if r.infinityActive {

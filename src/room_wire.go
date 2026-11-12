@@ -23,23 +23,26 @@ type roomMemberWire struct {
 }
 
 type roomMetadataWire struct {
-	AwayMatch      string           `json:"awayMatch"`
-	CanRestartWave bool             `json:"canRestartWave"`
-	CanStart       bool             `json:"canStart"`
-	Code           string           `json:"code"`
-	Host           int              `json:"host"`
-	InfinityActive bool             `json:"infinityActive"`
-	Matchmaking    any              `json:"matchmaking"`
-	MaxPlayers     int              `json:"maxPlayers"`
-	MaxSpectators  int              `json:"maxSpectators"`
-	Phase          string           `json:"phase"`
-	Players        []roomMemberWire `json:"players"`
-	Queue          any              `json:"queue"`
-	Rules          MatchRules       `json:"rules"`
-	Sides          int              `json:"sides"`
-	Spectators     []roomMemberWire `json:"spectators"`
-	StartError     string           `json:"startError"`
-	Type           string           `json:"type"`
+	AwayMatch                string           `json:"awayMatch"`
+	CanRestartWave           bool             `json:"canRestartWave"`
+	CanStart                 bool             `json:"canStart"`
+	CanStartPublicInfinity   bool             `json:"canStartPublicInfinity"`
+	Code                     string           `json:"code"`
+	Host                     int              `json:"host"`
+	InfinityActive           bool             `json:"infinityActive"`
+	InfinityPublic           bool             `json:"infinityPublic"`
+	Matchmaking              any              `json:"matchmaking"`
+	MaxPlayers               int              `json:"maxPlayers"`
+	MaxSpectators            int              `json:"maxSpectators"`
+	Phase                    string           `json:"phase"`
+	Players                  []roomMemberWire `json:"players"`
+	Queue                    any              `json:"queue"`
+	Rules                    MatchRules       `json:"rules"`
+	Sides                    int              `json:"sides"`
+	Spectators               []roomMemberWire `json:"spectators"`
+	StartError               string           `json:"startError"`
+	StartPublicInfinityError string           `json:"startPublicInfinityError"`
+	Type                     string           `json:"type"`
 }
 
 func (h *Hub) roomWire(r *Room) roomMetadataWire {
@@ -75,5 +78,11 @@ func (h *Hub) roomWire(r *Room) roomMetadataWire {
 			players = append(players, entry)
 		}
 	}
-	return roomMetadataWire{Type: "room", Code: r.Code, Host: r.Host, InfinityActive: r.infinityActive, Phase: r.Game.Phase, Players: players, Spectators: viewers, CanStart: canStart(r), CanRestartWave: r.canRestartSurvivalWave(), MaxPlayers: r.combatCapacity(), MaxSpectators: maxSpectators, Rules: rules, StartError: r.lineupError(), Sides: availableSides(r.Players), Queue: h.queueView(r.Queue), Matchmaking: matchView(r), AwayMatch: r.awayMatchCode()}
+	var publicError string
+	if host := r.member(r.Host); host != nil && host.Client != nil {
+		_, publicError = publicInfinitySeats(host.Client)
+	} else {
+		publicError = "Wait for the host to reconnect."
+	}
+	return roomMetadataWire{CanStartPublicInfinity: publicError == "", StartPublicInfinityError: publicError, Type: "room", Code: r.Code, Host: r.Host, InfinityActive: r.infinityActive, InfinityPublic: r.infinityPublic, Phase: r.Game.Phase, Players: players, Spectators: viewers, CanStart: canStart(r), CanRestartWave: r.canRestartSurvivalWave(), MaxPlayers: r.combatCapacity(), MaxSpectators: maxSpectators, Rules: rules, StartError: r.lineupError(), Sides: availableSides(r.Players), Queue: h.queueView(r.Queue), Matchmaking: matchView(r), AwayMatch: r.awayMatchCode()}
 }

@@ -129,6 +129,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 	fail := func(code, msg string) { e := roomError(code, msg); e["action"] = m.Type; c.enqueue(e) }
 	if m.Type == "lobby" {
 		r.infinityActive = false
+		delete(h.publicInfinityRequests, r)
 		r.Game.resetLobby()
 		resetReady(r)
 		r.LastAction = now

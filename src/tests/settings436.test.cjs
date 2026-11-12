@@ -9,7 +9,7 @@ function boot(storage=new Map(),touchUI=false){
  const $=id=>{if(!elements.has(id))elements.set(id,{value:'',checked:false,disabled:false,dataset:{},style:{},classList:{toggle(){}},previousElementSibling:{style:{}},parentElement:{querySelector(){return true;}}});return elements.get(id);};
  const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'].map(kind=>[kind,{}])),DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival','infinity'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
  localStorage:{getItem:key=>storage.get(key)||null,setItem(key,value){if(s.storageFails)throw Error('Storage unavailable');storage.set(key,value);s.writes++;}},writes:0,
- $,document:{querySelectorAll:selector=>selector.endsWith(':checked')?toggles.filter(c=>c.checked):toggles},Theme:{colors:['a','b','c','d','e','f','g','h']},teamName:(n,r)=>r.teamNames[n-1],featureNotice(id,message){$(id).textContent=message;},updateRuleHelp(){},renderPowerLegend(){},isRoomEditable:()=>s.editable!==false,roomData:()=>({rules:s.localRoom.rules,players:s.localRoom.players.filter(p=>!p.spectating)}),roomModeEditable:()=>s.editable!==false,rejectRoomMode(message){s.rejected=message;},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>[...r.players,...(r.spectators||[])],setLocalRules(r){s.localRoom.rules=s.validateRoomRules(r);s.persistLocalRoomRules(r);},setTimeout(){return 1;},clearTimeout(){},syncFeatureSummary(){},syncRoomModePicker(){},sendOnline(message){s.sent=message;return !s.sendFails;},closeFeature(){s.closed=true;}};
+ $,document:{querySelectorAll:selector=>selector.endsWith(':checked')?toggles.filter(c=>c.checked):toggles},Theme:{colors:['a','b','c','d','e','f','g','h']},teamName:(n,r)=>r.teamNames[n-1],featureNotice(id,message){$(id).textContent=message;},updateRuleHelp(){},renderPowerLegend(){},isRoomEditable:()=>s.editable!==false,roomData:()=>({rules:s.localRoom.rules,players:s.localRoom.players.filter(p=>!p.spectating)}),roomModeEditable:()=>s.editable!==false,rejectRoomMode(message){s.rejected=message;},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>[...r.players,...(r.spectators||[])],setLocalRules(r){s.localRoom.rules=s.validateRoomRules(r);s.persistLocalRoomRules(r);},setTimeout(){return 1;},clearTimeout(){},syncFeatureSummary(){},updateHUD(){},syncRoomModePicker(){},sendOnline(message){s.sent=message;return !s.sendFails;},closeFeature(){s.closed=true;}};
  Object.assign(s,{infinityOffline:false,infinityOnline:true,location:{protocol:'https:'},navigator:{onLine:true},renderOnlineRoom(){},resetPreviewIfLobby(){s.previewReset=true;},readyRoom(){s.persistLocalRoomRules();},callsignForms:()=>[],save(key,value){storage.set('leqra.'+key,String(value));}});
  Object.assign(s.document,{body:{classList:{remove(){}}},documentElement:{style:{removeProperty(){}}}});
  try{s.infinityOffline=storage.get('leqra.infinityOffline')==='1';s.infinityOnline=storage.get('leqra.infinityOnline')!=='0';}catch(_){}
@@ -335,4 +335,59 @@ test('saved roster and unshared/preset exports retain insertion order despite re
  assert.deepEqual(Array.from(s.snapshotPreset().roster,p=>p.name),['HOST','OLDER','NEWER']);
  const local=s.localSnapshotFromOnline();assert.deepEqual(Array.from(local.players,p=>p.name),['HOST','OLDER','NEWER']);assert.equal(local.nextMember,30);
  s.rememberRenderedRoomSetup(room);assert.deepEqual(JSON.parse(storage.get('leqra.roomSetup.v2')).roster.map(p=>p.name),['HOST','OLDER','NEWER']);
+});
+
+test('online public Infinity selection waits for shared metadata rather than a host-local preference',()=>{
+ const {s}=boot();s.mode='online';s.online.roomData={infinityPublic:false};s.infinityOnline=true;
+ assert.equal(s.infinityPlayMode(),'');
+ s.selectPublicInfinity(true);
+ assert.deepEqual(clone(s.sent),{type:'select_public_infinity',enabled:true});
+ assert.equal(s.online.publicInfinityPending.enabled,true);
+ assert.equal(s.infinityPlayMode(),'','unconfirmed selection does not launch public Infinity');
+ s.online.roomData.infinityPublic=true;delete s.online.publicInfinityPending;s.infinityOnline=false;
+ assert.equal(s.infinityPlayMode(),'online','all room clients use accepted shared selection');
+ s.sent=null;s.editable=false;s.selectPublicInfinity(false);assert.equal(s.sent,null,'guest/read-only UI cannot change selection');
+});
+
+test('public Infinity selection expires safely and an old timeout cannot cancel a newer request',()=>{
+ const {s}=boot();s.mode='online';s.online.roomData={infinityPublic:false};
+ const timers=[],cancelled=[];s.setTimeout=(callback,delay)=>{timers.push({callback,delay});return timers.length;};s.clearTimeout=id=>cancelled.push(id);
+ s.selectPublicInfinity(true);const first=s.online.publicInfinityPending;
+ assert.equal(timers[0].delay,8000);timers[0].callback();
+ assert.equal(s.online.publicInfinityPending,undefined);assert.ok(cancelled.includes(first.timer));
+ s.selectPublicInfinity(true);const second=s.online.publicInfinityPending;
+ assert.notEqual(first,second);timers[0].callback();assert.equal(s.online.publicInfinityPending,second);
+ second.cancel();assert.equal(s.online.publicInfinityPending,undefined);assert.ok(cancelled.includes(second.timer));
+ timers[1].callback();assert.equal(s.online.publicInfinityPending,undefined);
+});
+
+
+test('entering public Infinity clears saved bots while retaining local pilots and spectators',()=>{
+ for(const spectating of [false,true]){
+  const {s,storage}=boot();s.createLocalRoom();s.selectPublicInfinity(false);
+  s.localRoom.players.push({id:spectating?8:6,member:20,kind:'local',name:'LOCAL TWO',owner:0,team:0,spectating});
+  Object.assign(s,{closeVictory(){},clearInput(){},cancelPendingAudio(){},roomMember:id=>s.localRoom.players.find(p=>p.id===id),secondLocal:()=>s.localRoom.players.find(p=>p.kind==='local'&&!p.spectating),colorIndex:()=>0,window:{leqraInfinity:{start(kind,options){s.started={kind,options};}}}});
+  s.selectPublicInfinity(true);
+  assert.equal(s.localRoom.players.filter(p=>p.kind==='bot').length,3,'selection alone preserves the existing setup');
+  s.startInfinity('online');
+  assert.equal(s.localRoom.players.filter(p=>p.kind==='bot').length,3,'failed admission preserves the setup');
+  s.started.options.onJoined();
+  assert.deepEqual(Array.from(s.localRoom.players,p=>p.name),['PILOT','LOCAL TWO']);
+  assert.equal(s.started.options.localName,spectating?undefined:'LOCAL TWO');
+  assert.equal(JSON.parse(storage.get('leqra.roomSetup.v2')).roster.some(p=>p.kind==='bot'),false);
+  const restored=boot(storage).s;restored.createLocalRoom();
+  assert.equal(restored.localRoom.players.some(p=>p.kind==='bot'),false);
+  assert.equal(restored.localRoom.players[1].spectating,spectating);
+ }
+});
+
+
+
+test('entering offline or private Infinity retains the configured room bots',()=>{
+ for(const kind of ['offline','online']){
+  const {s}=boot();s.createLocalRoom();s.selectPublicInfinity(false);
+  Object.assign(s,{closeVictory(){},clearInput(){},cancelPendingAudio(){},roomMember:id=>s.localRoom.players.find(p=>p.id===id),secondLocal:()=>null,colorIndex:()=>0,window:{leqraInfinity:{start(){}}}});
+  s.startInfinity(kind,kind==='online'?{code:'PRIVATE'}:{});
+  assert.equal(s.localRoom.players.filter(p=>p.kind==='bot').length,3);
+ }
 });

@@ -76,6 +76,8 @@ type infinitePilot struct {
 	roomBot                *Player
 	botLevel               int
 	ambientNumber          int
+	party                  infiniteRoom
+	partyMember            uint64
 
 	waypoint, previous [2]int
 	hasWaypoint        bool
@@ -102,18 +104,19 @@ type infiniteBullet struct {
 }
 
 type infiniteSnapshot struct {
-	Type      string           `json:"type"`
-	Tick      uint64           `json:"tick"`
-	Tanks     []infiniteTank   `json:"tanks"`
-	Bullets   []infiniteBullet `json:"bullets"`
-	Pickups   []Pickup         `json:"pickups"`
-	Effects   []infiniteEffect `json:"effects,omitempty"`
-	Players   int              `json:"players"`
-	TankCount int              `json:"tankCount"`
-	Leaders   []infiniteLeader `json:"leaderboard"`
-	Rules     *infiniteRules   `json:"rules,omitempty"`
-	Scores    *[4]int          `json:"teamScores,omitempty"`
-	Result    *infiniteResult  `json:"result,omitempty"`
+	Type      string                `json:"type"`
+	Tick      uint64                `json:"tick"`
+	Tanks     []infiniteTank        `json:"tanks"`
+	Bullets   []infiniteBullet      `json:"bullets"`
+	Pickups   []Pickup              `json:"pickups"`
+	Effects   []infiniteEffect      `json:"effects,omitempty"`
+	Players   int                   `json:"players"`
+	TankCount int                   `json:"tankCount"`
+	Party     []infinitePartyLeader `json:"party,omitempty"`
+	Leaders   []infiniteLeader      `json:"leaderboard"`
+	Rules     *infiniteRules        `json:"rules,omitempty"`
+	Scores    *[4]int               `json:"teamScores,omitempty"`
+	Result    *infiniteResult       `json:"result,omitempty"`
 }
 
 type infiniteLeader struct {
@@ -123,6 +126,15 @@ type infiniteLeader struct {
 	Bot        bool   `json:"bot"`
 	Team       int    `json:"team,omitempty"`
 	ColorIndex int    `json:"colorIndex"`
+}
+
+type infinitePartyLeader struct {
+	ID         int    `json:"id"`
+	Member     uint64 `json:"member"`
+	Name       string `json:"name"`
+	Score      int    `json:"score"`
+	ColorIndex int    `json:"colorIndex"`
+	Rank       int    `json:"rank"`
 }
 
 type infiniteRules struct {
@@ -264,6 +276,17 @@ func (a *infiniteArena) welcome(c *Client, primary, local *infinitePilot, genera
 		packet.LocalID = local.ID
 	}
 	return c.enqueue(packet)
+}
+
+// Party identity is authenticated by the room socket, never supplied by a
+// public pilot. The next state includes the complete party's score summary.
+func (a *infiniteArena) bindParty(primary, local *infinitePilot, party infiniteRoom, member, localMember uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	primary.party, primary.partyMember = party, member
+	if local != nil {
+		local.party, local.partyMember = party, localMember
+	}
 }
 
 func (a *infiniteArena) suspend(p *infinitePilot) {
@@ -873,10 +896,21 @@ func (a *infiniteArena) broadcast() {
 		tanks[i] = p.wireTank(a.tick)
 		tankIndex[p.ID] = i
 	}
+	var parties map[infiniteRoom][]infinitePartyLeader
 	for rank, leader := range leaders {
 		i := tankIndex[leader.ID]
 		if !tanks[i].Bot {
 			tanks[i].Rank = rank + 1
+			pilot := a.pilots[i]
+			if pilot.party.room != nil && pilot.party.generation != 0 && pilot.partyMember != 0 {
+				if parties == nil {
+					parties = make(map[infiniteRoom][]infinitePartyLeader)
+				}
+				parties[pilot.party] = append(parties[pilot.party], infinitePartyLeader{
+					ID: pilot.ID, Member: pilot.partyMember, Name: pilot.Name, Score: pilot.Score,
+					ColorIndex: pilot.ColorIndex, Rank: rank + 1,
+				})
+			}
 		}
 	}
 	// A projectile can leave a pilot's view and still occupy an ammo slot.
@@ -903,7 +937,11 @@ func (a *infiniteArena) broadcast() {
 	// Pilots with the same visible entities can share the encoded snapshot.
 	// The mask represents exact membership, including at the edge of sight.
 	type encodedView struct{ plain, deflated snapshotFrame }
-	views := make(map[string]encodedView, a.connected)
+	type viewKey struct {
+		mask  string
+		party infiniteRoom
+	}
+	views := make(map[viewKey]encodedView, a.connected)
 	pickupOffset := len(a.pilots)
 	effectOffset := pickupOffset + len(a.pickups)
 	bulletOffset := effectOffset + len(a.effects)
@@ -914,6 +952,7 @@ func (a *infiniteArena) broadcast() {
 			continue
 		}
 		clear(mask)
+		packet.Party = parties[viewer.party]
 		packet.Tanks, packet.Bullets, packet.Pickups, packet.Effects = packet.Tanks[:0], packet.Bullets[:0], packet.Pickups[:0], packet.Effects[:0]
 		for i, p := range a.pilots {
 			if viewer.sees(p.X, p.Y) {
@@ -941,7 +980,7 @@ func (a *infiniteArena) broadcast() {
 				packet.Bullets = append(packet.Bullets, b)
 			}
 		}
-		key := string(mask)
+		key := viewKey{string(mask), viewer.party}
 		view := views[key]
 		if view.plain.data == nil {
 			data, ok := encodePacket(packet)
