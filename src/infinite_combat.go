@@ -36,6 +36,7 @@ func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
 	t, k := p.infiniteTank, &p.kit
 	t.X, t.Y, t.Angle = infinitePrecision(t.X), infinitePrecision(t.Y), infinitePrecision(t.Angle)
 	t.Track, t.Recoil, t.Invuln = infinitePrecision(t.Track), infinitePrecision(k.Recoil), infinitePrecision(k.Invulnerable)
+	t.SpawnProtected = k.SpawnProtected && k.Invulnerable > 1e-9
 	t.Cooldown = infinitePrecision(k.Cooldown)
 	if t.Cooldown > 0 {
 		t.CooldownTotal = infinitePrecision(k.CooldownTotal)
@@ -55,6 +56,9 @@ func infinitePrecision(value float64) float64 { return math.Round(value*1000) / 
 func (a *infiniteArena) advanceEquipment(p *infinitePilot) {
 	k := &p.kit
 	k.Invulnerable = max(0, k.Invulnerable-tickDT)
+	if k.Invulnerable <= 1e-9 {
+		k.SpawnProtected = false
+	}
 	p.Protected = k.Invulnerable > 1e-9
 	k.Shield = max(0, k.Shield-tickDT)
 	if k.Shield < 1e-9 {
@@ -216,6 +220,9 @@ func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 	if !held {
 		k.fireBlocked = false
 	}
+	if k.SpawnProtected && k.Invulnerable > 1e-9 {
+		return
+	}
 	if pressed {
 		detonated := false
 		for i := range a.bullets {
@@ -249,7 +256,7 @@ func (a *infiniteArena) muzzleBlocked(p *infinitePilot, radius float64) bool {
 func (a *infiniteArena) fire(p *infinitePilot) {
 	k := &p.kit
 	starman := k.StarmanTime > 0
-	if p.HP == 0 || !starman && (k.Cooldown > 1e-9 || k.Power == "rapid" && k.MachineRounds == 0) {
+	if p.HP == 0 || k.SpawnProtected && k.Invulnerable > 1e-9 || !starman && (k.Cooldown > 1e-9 || k.Power == "rapid" && k.MachineRounds == 0) {
 		return
 	}
 	kind := k.Power
@@ -350,6 +357,9 @@ func (a *infiniteArena) spendWeapon(k *Tank) {
 
 func (a *infiniteArena) fireLaser(p *infinitePilot) {
 	k := &p.kit
+	if p.HP == 0 || k.SpawnProtected && k.Invulnerable > 1e-9 {
+		return
+	}
 	k.ShotSerial++
 	starman := k.StarmanTime > 0
 	cooldown := laserCooldown
@@ -439,6 +449,7 @@ func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int, ownerN
 			k.Shield = 0
 		}
 		k.Invulnerable = .35
+		k.SpawnProtected = false
 		target.Protected = true
 		a.effect("shield", target.X, target.Y, owner, nil)
 		return
@@ -453,7 +464,7 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 			continue
 		}
 		for _, target := range actors {
-			if target.HP == 0 || target.Protected || target.kit.StarmanTime > 0 || !a.canDamage(attacker.ID, attacker.Team, target) {
+			if target.HP == 0 || target.Protected && !target.kit.SpawnProtected || target.kit.StarmanTime > 0 || !a.canDamage(attacker.ID, attacker.Team, target) {
 				continue
 			}
 			dx, dy := target.X-attacker.X, target.Y-attacker.Y

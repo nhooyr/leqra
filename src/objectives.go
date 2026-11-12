@@ -205,6 +205,7 @@ func (g *Game) respawnTank(t *Tank) {
 	t.Cooldown = 0
 	t.CooldownTotal = 0
 	t.Invulnerable = 1.2
+	t.SpawnProtected = true
 	t.AI = nil
 	t.fireHeld = false
 	t.fireBlocked = false

@@ -50,6 +50,7 @@ body.settings-reset{overflow:hidden}
 .settings-reset-dialog .feature-footer button{margin:0}
 body.infinity-preview .arena-shell>.arena-bar:not(.infinity-preview-header){display:none}
 body.infinity-preview #objectiveBar{display:none!important}
+body.infinity-preview .log-panel,body.infinity-header-active .log-panel{display:none}
 .infinity-preview-header{position:relative;z-index:6}
 .infinity-preview-header>.infinity-preview-scoreboard{top:calc(100% + 8px);right:10px;width:min(280px,calc(100% - 20px));max-height:50dvh;z-index:7}
 .infinity-preview-scoreboard.is-empty>ol{display:none}
@@ -444,9 +445,10 @@ body.touch-landscape .header{height:auto;min-height:37px}
 body.touch-landscape .header-right{gap:4px}
 body.touch-landscape .header-right>button{height:30px;min-height:30px}
 /* Keep all room/chat actions inside a 320px viewport (no focus-induced panning). */
-@media(max-width:430px){
+@media(max-width:480px){
  body.touch-ui .header{gap:4px;padding-left:0;padding-right:0;flex-wrap:wrap}
  body.touch-ui .brand{min-width:0;gap:0;flex-shrink:0}
+ body.touch-ui .brand-mark{margin-inline-end:8px;flex-shrink:0}
  body.touch-ui .brand-name{font-size:14px}
  body.touch-ui .brand-sub{font-size:var(--min-font-size);white-space:nowrap}
  body.touch-ui .icon-btn.github-link{width:auto;height:30px;margin-inline-start:4px;padding:0 4px;gap:3px}
@@ -903,6 +905,7 @@ body.touch-landscape .infinite-header{padding-top:max(5px,env(safe-area-inset-to
 .infinite-statusbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;column-gap:8px;row-gap:6px;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
 .infinite-statusbar h2{font:inherit;text-transform:uppercase;margin:0}
 .infinite-statusbar .arena-title{grid-column:1;grid-row:1;min-width:0;flex-wrap:wrap}
+body.touch-ui .infinite-statusbar .arena-title{white-space:normal}
 .infinite-online-count{font:var(--min-font-size) var(--mono);color:var(--text-soft);white-space:nowrap}
 .infinite-statusbar>.fps-indicator{grid-column:2;grid-row:1;justify-self:center;position:static;white-space:nowrap;padding:0;border:0;background:none}
 .infinite-statusbar .bar-right{grid-column:3;grid-row:1;display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:0}
@@ -910,13 +913,26 @@ body.touch-landscape .infinite-header{padding-top:max(5px,env(safe-area-inset-to
 .infinite-personal-score{display:inline;min-width:0;max-width:100%;white-space:normal;text-align:right}
 .infinite-score-name{font-weight:700;overflow-wrap:anywhere}
 .infinite-score-value{font-weight:400;white-space:nowrap}
+body.touch-ui .infinite-statusbar :is(.infinite-score-name,.infinite-score-separator){display:none}
+body.touch-ui .infinite-statusbar .infinite-score-value{white-space:normal;text-wrap:balance}
 .infinite-scoreboard-toggle{flex:none;min-height:30px;padding:5px 8px;border:1px solid var(--border-strong);border-radius:5px;background:var(--surface-raised);color:var(--accent-ink);font:var(--min-font-size) var(--mono);text-transform:uppercase;cursor:pointer}
 .infinite-scoreboard-toggle[aria-expanded=true]{background:var(--surface-sunken)}
 .infinite-stage>.infinite-leaderboard:not([open]){display:none}
 @media(max-width:600px){
+ .infinite-statusbar{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto;row-gap:3px}
+ .infinite-statusbar .arena-title{grid-row:1/3;display:grid;grid-template-columns:6px minmax(0,1fr)}
+ .infinite-statusbar .infinite-online-count{grid-column:1/-1}
+ .infinite-statusbar>.fps-indicator{align-self:end;white-space:normal;text-align:center;max-width:100%;text-wrap:balance}
  .infinite-statusbar .bar-right{display:contents}
- .infinite-statusbar .infinite-personal-scores{grid-column:1/-1;grid-row:2;justify-self:end;max-width:100%}
- .infinite-statusbar .infinite-scoreboard-toggle{grid-column:3;grid-row:1;justify-self:end}
+ .infinite-statusbar .infinite-personal-scores{grid-column:2;grid-row:2;justify-self:center;align-self:start;align-items:center;max-width:100%}
+ .infinite-statusbar .infinite-personal-score{text-align:center}
+ .infinite-statusbar .infinite-scoreboard-toggle{grid-column:3;grid-row:1/3;justify-self:end}
+}
+@media(max-width:360px){
+ .infinite-statusbar:has(.infinite-personal-score+.infinite-personal-score){grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+ .infinite-statusbar:has(.infinite-personal-score+.infinite-personal-score) .arena-title{grid-row:1}
+ .infinite-statusbar:has(.infinite-personal-score+.infinite-personal-score) .infinite-personal-scores{grid-column:1/-1}
+ .infinite-statusbar:has(.infinite-personal-score+.infinite-personal-score) .infinite-scoreboard-toggle{grid-row:1}
 }
 .infinite-pause-menu:not([open]){display:none}
 body .infinite-pause-menu[open]{position:fixed;inset:0;width:100%;height:100%;height:100dvh;max-width:none;max-height:none;margin:0;border:0;color:var(--text);padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}

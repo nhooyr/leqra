@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.32';
+const GAME_VERSION='4.49.36';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -63,7 +63,7 @@ const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36,assisted:false};
 const mouseAim={active:false,x:0,y:0};
 const Net=window.leqraNet;
 const {MACHINE_CAPACITY}=Net;
-const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,serverVersion:'',seq:0,latency:0,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,restoreInfinity:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
+const online={socket:null,code:'',id:-1,token:'',roomData:null,connected:false,connecting:false,menu:false,serverVersion:'',seq:0,latency:0,pingMeasured:false,lastMessage:0,lastPing:0,retryTimer:0,retryAt:0,retries:0,manual:false,restoreInfinity:false,generation:-1,snapshots:[],predicted:null,predictor:null,buffer:null,lastControl:null,lastControlStep:-10,lastEvent:0,eventsInitialized:false,lastMatch:-1,renamePending:null,roomRenamePending:false,unsharePending:false,unshareSnapshot:null,kickPending:null,inviteCode:'',inviteResumeRetries:0,ownedIDs:new Set(),activeIDs:new Set(),trailIDs:new Set()};
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const localRoom={code:'',players:[],self:0,nextViewer:MAX_TANKS,nextMember:0,rules:defaultRoomRules()};
 let infinityOnline=true,infinityOffline=false;
@@ -643,7 +643,7 @@ function shotSound(kind,local=true,clock=time,boosted=false){
 }
 function fire(t){
  const boosted=t.starmanTime>0;
- if(survivalBreak()||!t.alive||!boosted&&t.cooldown>0)return false;
+ if(survivalBreak()||!t.alive||t.spawnProtected&&t.invulnerable>0||!boosted&&t.cooldown>0)return false;
  if(t.power==='laser')return fireLaser(t);
  if(muzzleBlocked(t))return false;
  if(!boosted&&(t.power==='cannon'&&t.charges<=0||t.power==='rapid'&&!(t.machineRounds>0)))return false;
@@ -696,7 +696,7 @@ function laserEffect(x,y,endX,endY,color=POWER.laser.color,path=null){
 }
 function fireLaser(t){
  const boosted=t.starmanTime>0,tick=boosted?Math.floor((time+1e-7)*60):0;
- if(!t.alive||t.power!=='laser'||(boosted?t.rapidTick===tick:t.cooldown>0||t.charges<=0)||muzzleBlocked(t))return false;
+ if(!t.alive||t.spawnProtected&&t.invulnerable>0||t.power!=='laser'||(boosted?t.rapidTick===tick:t.cooldown>0||t.charges<=0)||muzzleBlocked(t))return false;
  if(boosted)t.rapidTick=tick;
  const beam=laserTrace(t);t.cooldown=boosted?0:LASER_COOLDOWN;t.cooldownTotal=t.cooldown;t.recoil=1;
  laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);shotSound('laser',t.human,undefined,boosted);
@@ -744,12 +744,13 @@ function drawLasers(){
 }
 function ownedGrenades(t){const list=mode==='online'?(online.snapshots.at(-1)?.bullets||[]):bullets;return list.filter(b=>!b.dead&&b.kind==='grenade'&&b.owner===t.id);}
 function detonateOwned(t){
- if(!t.alive)return false;
+ if(!t.alive||t.spawnProtected&&t.invulnerable>0)return false;
  const owned=ownedGrenades(t);for(const b of owned)detonate(b);return owned.length>0;
 }
 function weaponControl(t,held,pressed){
  if(!t.alive)return;
  if(!held)t.fireBlocked=false;
+ if(t.spawnProtected&&t.invulnerable>0)return;
  if(pressed){
   if(detonateOwned(t)){t.fireBlocked=held;return;}
   if(t.power==='grenade'){t.fireBlocked=held;fire(t);return;}
@@ -827,7 +828,7 @@ function showStartingControls(){
  updateHUD(true);
 }
 function hurt(t,b){
- if(!t.alive||t.invulnerable>0||!canDamage(b.owner,t))return false;
+ if(!t.alive||t.invulnerable>0&&!(b.kind==='starman'&&t.spawnProtected)||!canDamage(b.owner,t))return false;
  if(t.shield>0&&b.kind!=='starman'){t.shieldCharges=shieldCount(t)-1;if(!t.shieldCharges)t.shield=0;t.invulnerable=.35;t.spawnProtected=false;burst(t.x,t.y,POWER.shield.color,20,125);addRing(t.x,t.y,POWER.shield.color,58);shieldSound();if(t.id===0)toast('SHIELD HELD',1.7);return false;}
  recordLocalDeath(t,b.owner);
  const owner=tanks.find(p=>p.id===b.owner);t.killedBy=owner?.name||'an unknown tank';t.killedByColor=owner?.color||b.color||'';
@@ -1471,7 +1472,7 @@ function update(dt){
  // Compact live actors in seat order, then rotate first action like the server.
  localTankActors.fill(null);
  // Every tank's defenses advance before any attacks, regardless of seat order.
- for(const t of tanks)if(t.alive){localTankActors[t.id]=t;t.invulnerable=Math.max(0,t.invulnerable-dt);t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;}
+ for(const t of tanks)if(t.alive){localTankActors[t.id]=t;t.invulnerable=Math.max(0,t.invulnerable-dt);if(t.invulnerable===0)t.spawnProtected=false;t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;}
  let actorCount=0;for(const t of localTankActors)if(t)localTankActors[actorCount++]=t;
  for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power&&!(t.starmanTime>0)){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;t.machineRounds=0;}}
   const x=t.x,y=t.y;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.track+=Math.hypot(t.x-x,t.y-y);
@@ -2204,7 +2205,7 @@ function connectOnline(request,reconnecting=false){
    matchmakingWelcome(msg);matchmaking.rematchPending=false;online.lastMatch=-1;online.roomData=null;clearInput();closeVictory();
    const inviteName=online.inviteName;watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
    if($('joinDialog').open)$('joinDialog').close();
-   clearTimeout(timeout);online.connecting=false;online.connected=true;online.code=msg.room;online.id=msg.id;online.member=msg.member;online.spectating=!!msg.spectating;online.token=msg.token;online.publicInfinityPending?.cancel?.();rolePending=false;online.seq=0;online.menu=false;online.retries=0;online.retryAt=0;resetOnlineMotion();online.generation=-1;online.eventsInitialized=false;online.lastEvent=0;online.lastSend=0;online.trails=new Map();
+   clearTimeout(timeout);online.connecting=false;online.connected=true;online.pingMeasured=false;online.code=msg.room;online.id=msg.id;online.member=msg.member;online.spectating=!!msg.spectating;online.token=msg.token;online.publicInfinityPending?.cancel?.();rolePending=false;online.seq=0;online.menu=false;online.retries=0;online.retryAt=0;resetOnlineMotion();online.generation=-1;online.eventsInitialized=false;online.lastEvent=0;online.lastSend=0;online.trails=new Map();
    if(msg.created&&request.type==='publish')online.localSetupToken=msg.token;
    if(roomChat.code!==online.code)clearRoomChat(online.code);syncChatStatus();
    online.inviteCode='';online.inviteResumeRetries=0;clearTimeout(online.retryTimer);netBusy(false);syncOnlineURL();document.documentElement.style.setProperty('--pilot',paintColor(COLORS[online.id%MAX_TANKS]));storeOnlineSession();$('roomBtn').hidden=false;$('roomCodeDisplay').textContent=online.code;$('joinCode').value=online.code;setScreen('room');
@@ -2228,7 +2229,7 @@ function connectOnline(request,reconnecting=false){
    if(online.kickPending?.id===msg.id&&online.kickPending?.member===msg.member)cancelKick();
    toast('Room participant removed.',3);break;
   case 'state':receiveOnlineState(msg);break;
-  case 'pong':{const sample=clamp(performance.now()-msg.t,0,5000);online.latency=Math.round(online.latency?online.latency*.7+sample*.3:sample);break;}
+  case 'pong':{const sample=clamp(performance.now()-msg.t,0,5000);online.latency=Math.round(online.pingMeasured?online.latency*.7+sample*.3:sample);online.pingMeasured=true;break;}
   case 'error':
    if(msg.action==='select_public_infinity'){online.publicInfinityPending?.cancel?.();syncFeatureSummary();$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='lobby'){clearEndMatchPending(msg.message);break;}
@@ -2429,7 +2430,7 @@ async function copyOnlineInvite(watch=false){
 }
 function netTank(t,previous=null,shieldHit=false){
  const fresh=!previous||previous.spawnSerial!==t.spawnSerial||!previous.alive;
- const spawnProtected=t.alive&&t.invulnerable>0&&!(t.starmanTime>0)&&!shieldHit&&(fresh||previous.spawnProtected&&t.invulnerable<=previous.invulnerable+1e-8);
+ const spawnProtected=t.alive&&t.invulnerable>0&&!(t.starmanTime>0)&&!shieldHit&&(t.spawnProtected??(fresh||previous.spawnProtected&&t.invulnerable<=previous.invulnerable+1e-8));
  return{...t,human:!t.bot,team:t.team??0,spawnProtected,ai:{target:-1}};
 }
 function receiveOnlineState(s){
@@ -2554,7 +2555,7 @@ function previewOnlineFire(second,controls,now){
  const auth=online.snapshots.at(-1)?.tankMap.get(id),pose=channel?.predictor?.state;
  if(!online.shots||!auth||!pose)return;
  const active=phase==='playing'&&online.connected&&controls.fire&&!online.menu&&now-(online.snapshots.at(-1)?.received||0)<450;
- if(!active||!auth.alive){online.shots.tryFire(auth,!!controls.fire,now,{active:false});return;}
+ if(!active||!auth.alive||auth.spawnProtected&&auth.invulnerable>(now-online.snapshots.at(-1).received)/1000){online.shots.tryFire(auth,!!controls.fire,now,{active:false});return;}
  const age=(now-online.snapshots.at(-1).received)/1000;
  let t={...auth,x:pose.x,y:pose.y,angle:pose.angle,ghostTime:pose.ghostTime,starmanTime:Math.max(0,(auth.starmanTime||0)-age)};
  const grenade=ownedGrenades(t).length>0||online.shots.pendingGrenade(id),power=t.power||'';
@@ -2742,7 +2743,7 @@ function initOnlineUI(){
  window.addEventListener('offline',()=>{syncFeatureSummary();updateHUD(true);});
  window.addEventListener('online',()=>{syncFeatureSummary();updateHUD(true);});
  $('copyInviteBtn').addEventListener('click',copyOnlineInvite);$('copyInGameBtn').addEventListener('click',copyOnlineInvite);$('roomBtn').addEventListener('click',toggleRoomMenu);$('onlineReturnBtn').addEventListener('click',toggleRoomMenu);
- setInterval(()=>{if(mode!=='online')return;if(phase!=='playing'){sendOnlineInput();if(secondLocal())sendOnlineInput(false,onlineControls(true),true);}const now=performance.now();if(online.connected&&now-online.lastPing>2000){online.lastPing=now;sendOnline({type:'ping',t:now});storeOnlineSession();}},250);
+ setInterval(()=>{if(mode!=='online')return;if(phase!=='playing'){sendOnlineInput();if(secondLocal())sendOnlineInput(false,onlineControls(true),true);}const now=performance.now();if(online.connected&&now-online.lastPing>=4000){online.lastPing=now;sendOnline({type:'ping',t:now});storeOnlineSession();}},250);
  window.addEventListener('pagehide',()=>{if(mode==='online'){clearInput();sendOnlineInput(true);storeOnlineSession();}});
  window.addEventListener('online',()=>{if(mode==='online'&&online.code&&!online.connected&&!online.connecting&&!online.manual){clearTimeout(online.retryTimer);connectOnline({type:'join',code:online.code,token:online.token,name:$('pilotName').value},true);}});
  const params=new URLSearchParams(location.search),invite=cleanRoomCode(params.get('room')||'');
@@ -3638,9 +3639,9 @@ function initInfinityPreview(){
  function renderStandings(){
   const publicArena=isPublic(),r=roomData(),rows=publicArena?(snapshot?.leaders||[]):orderedRoster((r?.players||[]).filter(p=>!p.spectating)).map(p=>{const identity=roomPlayerIdentity(p,r);return{name:identity.label,score:0,color:identity.color,local:isDeviceLocalPilot(p,r)};});
   const key=JSON.stringify([publicArena,rows,failed,!!snapshot]);if(key===leaderKey)return;leaderKey=key;
-  const title=publicArena?'Top 10 Tanks':'Scoreboard',empty=rows.length===0;$('infinityPreviewScoreboardTitle').textContent=title;$('infinityPreviewScoreboardTitle').hidden=empty;button.textContent=title;panel.classList.toggle('is-empty',empty);list.hidden=empty;
+  const title='LEADERBOARD',empty=rows.length===0;$('infinityPreviewScoreboardTitle').textContent=title;$('infinityPreviewScoreboardTitle').hidden=empty;button.textContent=title;panel.classList.toggle('is-empty',empty);list.hidden=empty;
   list.replaceChildren(...rows.slice(0,publicArena?10:rows.length).map((p,index)=>{const row=document.createElement('li');row.value=Number.isSafeInteger(p.rank)&&p.rank>0?p.rank:index+1;row.style.setProperty('--tank-color',paintColor(p.color||COLORS[p.colorIndex]||COLORS[0]));const name=document.createElement('span');name.className='leaderboard-name';name.textContent=p.name;name.style.fontWeight=p.local?'700':'400';const score=document.createElement('strong');score.className='leaderboard-score';score.textContent=String(p.score);row.append(name,score);return row;}));
-  note.textContent=publicArena&&!snapshot?(failed?'Public scoreboard unavailable. Retrying…':'Loading public scoreboard…'):empty?'No tanks are playing yet.':'+1 per kill, -1 per death';
+  note.textContent=publicArena&&!snapshot?(failed?'Public leaderboard unavailable. Retrying…':'Loading public leaderboard…'):empty?'No tanks are playing yet.':'+1 per kill, -1 per death';
  }
  function sync(){
   if(stopped)return;
@@ -3651,19 +3652,19 @@ function initInfinityPreview(){
   $('infinityPreviewTitle').textContent=publicArena?'Public Infinity':'Infinity';
   if(document.hidden||navigator.onLine===false){snapshot=null;failed=navigator.onLine===false;}
   const pilots=[localPilotIdentity(0),...(secondLocal()?[localPilotIdentity(1)]:[])],key=JSON.stringify(pilots);
-  if(key!==personalKey){personalKey=key;counter.replaceChildren(...pilots.map(p=>{const row=document.createElement('span');row.className='infinite-personal-score';row.style.color=paintColor(p.color);row.setAttribute('aria-label',p.label+': (0, #0)');const name=document.createElement('span');name.className='infinite-score-name';name.textContent=p.label;const value=document.createElement('span');value.className='infinite-score-value';value.textContent=': (0, #0)';row.append(name,value);return row;}));}
+  if(key!==personalKey){personalKey=key;counter.replaceChildren(...pilots.map(p=>{const total='score: 0, rank: #0',row=document.createElement('span');row.className='infinite-personal-score';row.style.color=paintColor(p.color);row.setAttribute('aria-label',p.label+': '+total);const name=document.createElement('span');name.className='infinite-score-name';name.textContent=p.label;const separator=document.createElement('span');separator.className='infinite-score-separator';separator.textContent=': ';const value=document.createElement('span');value.className='infinite-score-value';value.textContent=total;row.append(name,separator,value);return row;}));}
   count.hidden=!publicArena;if(publicArena){const text=snapshot?snapshot.players+' online':'? online';if(count.textContent!==text)count.textContent=text;count.title=failed?'Last public count unavailable; retrying.':'Human tanks in the public arena';}
   renderStandings();if(canPoll()){if(!request&&!timer)poll();}else cancel();
  }
  async function poll(){
-  timer=0;if(!canPoll()||request)return;const controller=new AbortController();request=controller;const timeout=setTimeout(()=>controller.abort(),4000);controller.previewTimeout=timeout;
+  timer=0;if(!canPoll()||request)return;const started=performance.now(),controller=new AbortController();request=controller;beginMenuPing();const timeout=setTimeout(()=>controller.abort(),4000);controller.previewTimeout=timeout;
   try{
    const response=await fetch(new URL('/api/infinity',location.href),{cache:'no-store',signal:controller.signal});if(!response.ok)throw Error('Unavailable');const data=await response.json();
    if(!Number.isSafeInteger(data.players)||data.players<0||!Array.isArray(data.leaders))throw Error('Invalid public counts');
    if(request!==controller||!canPoll())return;
-   snapshot={players:data.players,leaders:data.leaders.slice(0,10).filter(p=>p&&typeof p.name==='string'&&Number.isFinite(p.score))};failed=false;
-  }catch(_){if(request===controller&&canPoll()){snapshot=null;failed=true;}}
-  finally{clearTimeout(timeout);if(request===controller){request=null;if(canPoll())timer=setTimeout(poll,10000);sync();}}
+   snapshot={players:data.players,leaders:data.leaders.slice(0,10).filter(p=>p&&typeof p.name==='string'&&Number.isFinite(p.score))};failed=false;setMenuPing(performance.now()-started);
+  }catch(_){if(request===controller&&canPoll()){snapshot=null;failed=true;setMenuPing(null);}}
+  finally{clearTimeout(timeout);if(request===controller){request=null;if(canPoll())timer=setTimeout(poll,Math.max(0,4000-(performance.now()-started)));sync();}}
  }
  const observeDialogs=()=>{for(const dialog of document.querySelectorAll('dialog'))observer.observe(dialog,{attributes:true,attributeFilter:['open']});};
  const observer=new MutationObserver(records=>{if(records.some(record=>record.type==='childList'&&record.target===document.body))observeDialogs();sync();});observer.observe(document.body,{attributes:true,attributeFilter:['class'],childList:true});for(const id of ['rulesSummary','roster'])observer.observe($(id),{childList:true,subtree:true});observeDialogs();
@@ -4056,6 +4057,7 @@ function updateMachineBudget(t,num,id=key=>key){
  setAttr(budget,'title',remaining+' of '+total+' seconds of firing remaining. Only firing uses this budget.');
 }
 function renderPilotReadiness(t,num,projectiles,inWallBlocked,unavailable,id=key=>key){
+ if(!unavailable&&t.spawnProtected&&t.invulnerable>0)unavailable={text:'SPAWN PROTECTION',ready:0,label:'WAIT',hint:'WAIT TO FIRE'};
  const locked=!unavailable&&projectiles.locked,warning=$(id('missileWarning'+num)),panel=$(id('pilotLoadout'+num));
  warning.hidden=!combatPrefs.visual||!locked;setText(id('missileWarning'+num),'⚠ HOMING LOCK');
  panel.classList.toggle('missile-locked',combatPrefs.visual&&locked);
@@ -4820,7 +4822,7 @@ function restoreHeader(container){
 function syncSidebarContext(){
  const sidebar=$('gameSidebar'),help=window.leqraInfinity?.sidebarHelp?.();
  const manual=fieldManualHTML();if($('manualContent').dataset.content!==manual){$('manualContent').innerHTML=manual;$('manualContent').dataset.content=manual;}
- sidebar.setAttribute('aria-label',help?(help.title||'Infinity')+' scoreboard and instructions':'Scoreboard and instructions');
+ sidebar.setAttribute('aria-label',help?(help.title||'Infinity')+' leaderboard and instructions':'Leaderboard and instructions');
  for(const [element,original]of sidebarPowerText){
   let text=original;
   if(help){
@@ -4955,26 +4957,74 @@ function positionChatPanel(){
 function initRoomChat(){const button=document.createElement('button');button.id='chatBtn';button.type='button';button.className='icon-btn chat-toggle';button.hidden=true;button.title='Room chat (Enter when unbound)';button.setAttribute('aria-label','Room chat');button.setAttribute('aria-controls','chatPanel');button.setAttribute('aria-expanded','false');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg><span id="chatBadge"></span>';$('soundBtn').before(button);document.body.insertAdjacentHTML('beforeend','<section id="chatPanel" class="chat-panel" aria-labelledby="chatTitle" hidden><header><div><h2 id="chatTitle">Room chat</h2><span id="chatConnection">EVERYONE IN THIS ROOM</span></div><button class="icon-btn" type="button" id="chatCloseBtn" aria-label="Close chat">×</button></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat messages"></div><div class="chat-compose"><p id="chatError" role="status"></p><label class="chat-target-switch" id="chatTargetSwitch" hidden><input id="chatOpponentToggle" type="checkbox"><span class="chat-target-track" aria-hidden="true"><i></i></span><span>Send to opponent</span></label><form id="chatForm"><input id="chatInput" type="text" autocomplete="off" placeholder="Say something…" aria-label="Message"><button class="primary" id="chatSendBtn" type="submit">SEND</button></form><small>Opponent messages are marked in red. Toggle “Send to opponent” only when the next message should reach the enemy side.<br>Enter sends, Esc closes, Typing stops your controls, not the online match.</small></div></section>');if(window.visualViewport){visualViewport.addEventListener('resize',positionChatPanel);visualViewport.addEventListener('scroll',positionChatPanel);}window.addEventListener('resize',positionChatPanel);button.onclick=openChat;$('chatCloseBtn').onclick=()=>closeChat(true);$('chatForm').onsubmit=submitChat;$('chatOpponentToggle').onchange=e=>setChatSendTarget(e.currentTarget.checked?'opponent':'room');$('chatInput').addEventListener('input',()=>{roomChat.draft=$('chatInput').value;chatState(roomChat.sendTarget).error='';$('chatError').textContent='';});$('chatInput').addEventListener('keydown',e=>{e.stopPropagation();if(e.code==='Escape'&&!composingKey(e)){e.preventDefault();closeChat(true);}});window.addEventListener('keydown',e=>{if(bindingCapture||composingKey(e)||e.ctrlKey||e.metaKey||e.altKey||e.repeat||mode!=='online')return;if(roomChat.open&&e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeChat(true);return;}if(e.code==='Enter'&&!isControlKey(e.code)&&!['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY','A'].includes(e.target.tagName)&&!document.querySelector('dialog[open]:not(#infiniteArena)')){e.preventDefault();e.stopImmediatePropagation();openChat();}},true);}
 
 // Sampling measures RAF cadence (not server tick rate); no HTML/layout work per frame.
-const frameStats={fps:0,frameMs:0,workMs:0,worstMs:0,count:0,elapsed:0,work:0,worst:0,last:0,at:0,surface:''};
+const frameStats={fps:0,frameMs:0,workMs:0,worstMs:0,count:0,elapsed:0,work:0,worst:0,last:0,at:0,surface:'',latency:undefined,menuLatency:null,menuPending:false};
 function resetFrameSample(){frameStats.count=0;frameStats.elapsed=0;frameStats.work=0;frameStats.worst=0;frameStats.last=0;frameStats.at=0;}
-function sampleFrame(now,work,surface='fpsIndicator',latency=mode==='online'?online.latency:null){
+function frameLatency(){
+ if(mode==='online'&&online.connected&&online.pingMeasured)return online.latency;
+ if((phase==='menu'||phase==='onlineLobby')&&(frameStats.menuLatency!==null||frameStats.menuPending))return frameStats.menuLatency??NaN;
+ return mode==='online'?NaN:null;
+}
+function beginMenuPing(){frameStats.menuPending=true;}
+function setMenuPing(latency){
+ frameStats.menuLatency=Number.isFinite(latency)&&latency>=0?Math.round(latency):null;frameStats.menuPending=false;
+ if(combatPrefs.fps&&(phase==='menu'||phase==='onlineLobby')&&!$('infiniteArena')?.open)renderFrameReadout('fpsIndicator',frameLatency());
+}
+function renderFrameReadout(surface,latency){
+ const ping=Number.isFinite(latency)&&latency>=0?Math.round(latency)+' ms':'—';
+ const el=$(surface);el.textContent='fps: '+(frameStats.fps?Math.round(frameStats.fps):'—')+(latency===null?'':', ping: '+ping);el.classList.toggle('fps-low',frameStats.fps>0&&frameStats.fps<45);
+ el.title=(frameStats.fps?'Browser frame interval: '+frameStats.frameMs.toFixed(1)+' ms. Worst recent frame: '+frameStats.worstMs.toFixed(1)+' ms. JS update/render work: '+frameStats.workMs.toFixed(1)+' ms per frame (excludes GPU).':'Measuring rendering frames per second.')+(latency===null?'':' Network round trip: '+ping+'.');
+ frameStats.latency=latency;
+}
+function sampleFrame(now,work,surface='fpsIndicator',latency=frameLatency()){
  if(!combatPrefs.fps)return;
- if(frameStats.surface!==surface){resetFrameSample();frameStats.surface=surface;}
+ if(frameStats.surface!==surface){resetFrameSample();frameStats.surface=surface;frameStats.latency=undefined;}
+ if(!Object.is(frameStats.latency,latency))renderFrameReadout(surface,latency);
  if(frameStats.last){const delta=now-frameStats.last;if(delta>0&&delta<1000){frameStats.count++;frameStats.elapsed+=delta;frameStats.work+=work;frameStats.worst=Math.max(frameStats.worst,delta);}}
  frameStats.last=now;if(now-frameStats.at<750||frameStats.count<2)return;
  frameStats.fps=frameStats.count*1000/frameStats.elapsed;frameStats.frameMs=frameStats.elapsed/frameStats.count;frameStats.workMs=frameStats.work/frameStats.count;frameStats.worstMs=frameStats.worst;
- const el=$(surface);el.textContent=Math.round(frameStats.fps)+' FPS, '+frameStats.frameMs.toFixed(1)+' ms';el.classList.toggle('fps-low',frameStats.fps<45);
- el.title='Browser frame interval: '+frameStats.frameMs.toFixed(1)+' ms. Worst recent frame: '+frameStats.worstMs.toFixed(1)+' ms. JS update/render work: '+frameStats.workMs.toFixed(1)+' ms per frame (excludes GPU).'+(latency===null?'':' Network round trip: '+latency+' ms.');
+ renderFrameReadout(surface,latency);
  frameStats.count=0;frameStats.elapsed=0;frameStats.work=0;frameStats.worst=0;frameStats.at=now;
 }
 function initFrameSettings(){
  const indicators=[['fpsIndicator',wrap],['infiniteFPSIndicator',$('infiniteStatusbar')]];
- for(const [id,parent] of indicators)parent.insertAdjacentHTML('beforeend','<div id="'+id+'" class="fps-indicator" aria-label="Rendering frames per second" hidden>Measuring FPS…</div>');
- const host=$('controlsDialog').querySelector('.feature-body');host.insertAdjacentHTML('beforeend','<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> Show FPS and frame time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering, not network latency. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra v'+GAME_VERSION+'</p>');
+ for(const [id,parent] of indicators)parent.insertAdjacentHTML('beforeend','<div id="'+id+'" class="fps-indicator" aria-label="Rendering performance" hidden>fps: —</div>');
+ const host=$('controlsDialog').querySelector('.feature-body');host.insertAdjacentHTML('beforeend','<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every 4 seconds. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra v'+GAME_VERSION+'</p>');
  const refresh=()=>{for(const [id] of indicators)$(id).hidden=!combatPrefs.fps;resetFrameSample();resize();};
  $('showFPS').onchange=()=>{combatPrefs.fps=$('showFPS').checked;storePerformancePrefs();refresh();};
  $('performanceMode').onchange=()=>{combatPrefs.performance=$('performanceMode').checked;storePerformancePrefs();refresh();};
- refresh();document.addEventListener('visibilitychange',resetFrameSample);
+ refresh();document.addEventListener('visibilitychange',resetFrameSample);initMenuPing();
+}
+function initMenuPing(){
+ let stopped=false,timer=0,request=null,lastStarted=-Infinity,owned=false;
+ const publicPreview=()=>document.body.classList.contains('infinity-preview')&&infinityPlayMode()==='online';
+ const context=()=>phase+'|'+mode+'|'+infinityPlayMode();
+ const canPoll=()=>!stopped&&!settingsResetActive&&combatPrefs.fps&&!document.hidden&&navigator.onLine!==false&&['http:','https:'].includes(location.protocol)&&['menu','onlineLobby'].includes(phase)&&!$('infiniteArena')?.open&&!publicPreview()&&!(mode==='online'&&online.connected);
+ function cancel(clear=true){
+  clearTimeout(timer);timer=0;const old=request;request=null;clearTimeout(old?.pingTimeout);old?.abort();
+  if(clear&&owned){setMenuPing(null);owned=false;}
+ }
+ function sync(){
+  if(!canPoll()){cancel(!publicPreview());return;}
+  if(request&&request.menuContext!==context())cancel();
+  if(request)return;
+  clearTimeout(timer);timer=setTimeout(poll,Math.max(0,lastStarted+4000-performance.now()));
+ }
+ async function poll(){
+  timer=0;if(!canPoll()||request)return;
+  const controller=new AbortController(),started=performance.now();controller.menuContext=context();request=controller;lastStarted=started;owned=true;beginMenuPing();
+  controller.pingTimeout=setTimeout(()=>controller.abort(),4000);
+  try{
+   const response=await fetch(new URL('/healthz',location.href),{cache:'no-store',signal:controller.signal});if(!response.ok)throw Error('Unavailable');await response.text();
+   if(request===controller&&canPoll()&&controller.menuContext===context())setMenuPing(Math.max(0,performance.now()-started));
+  }catch(_){if(request===controller&&canPoll()&&controller.menuContext===context())setMenuPing(null);}
+  finally{clearTimeout(controller.pingTimeout);if(request===controller){request=null;sync();}}
+ }
+ const networkOnline=()=>{lastStarted=-Infinity;sync();};
+ const leaving=()=>cancel();
+ const observer=new MutationObserver(sync);
+ observer.observe(document.body,{attributes:true,attributeFilter:['class']});observer.observe(document.documentElement,{attributes:true,attributeFilter:['class']});observer.observe($('infiniteArena'),{attributes:true,attributeFilter:['open']});
+ document.addEventListener('visibilitychange',sync);document.addEventListener('change',sync);window.addEventListener('online',networkOnline);window.addEventListener('offline',sync);window.addEventListener('pagehide',leaving);window.addEventListener('pageshow',sync);
+ window.leqraMenuPing=Object.freeze({sync,stop(){stopped=true;cancel();observer.disconnect();document.removeEventListener('visibilitychange',sync);document.removeEventListener('change',sync);window.removeEventListener('online',networkOnline);window.removeEventListener('offline',sync);window.removeEventListener('pagehide',leaving);window.removeEventListener('pageshow',sync);}});sync();
 }
 function storePerformancePrefs(){try{localStorage.setItem('leqra.feedback.v1',JSON.stringify(combatPrefs));featureNotice('controlsNotice','Settings saved on this device.');}catch(_){featureNotice('controlsNotice','Changed for this session; browser storage is unavailable.',true);}}
 
@@ -5141,7 +5191,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 // Read-only public state is handy for embedding and smoke testing.
 // Infinity keeps its own camera and streamed world, while sharing the finite arena's art and audio.
 window.leqraInfinityArt=Object.freeze({
- toggleFullscreen,sampleFrame:(now,work)=>sampleFrame(now,work,'infiniteFPSIndicator',null),
+ toggleFullscreen,sampleFrame:(now,work,latency=null)=>sampleFrame(now,work,'infiniteFPSIndicator',latency),
  theme,colors:Theme.colors,canonicalColor:index=>COLORS[index]||'',colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
  openControls:()=>openFeature('controls'),mouseAimEnabled:()=>combatPrefs.mouseAim!==false,mouseFireEnabled:()=>combatPrefs.mouseFire!==false,setMouseControlEnabled,cleanPilotName,persistPilotName:persistInfinityPilotName,syncCallsignEditors,syncSidebarContext,mountSidebar,restoreSidebar,mountHeader,restoreHeader,chatOpen:()=>roomChat.open,arenaKeyBlocked,keyLabel,controlHintHTML,pilotIdentity,pilotIdentityHTML,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,

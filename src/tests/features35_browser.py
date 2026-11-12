@@ -59,7 +59,7 @@ with sync_playwright() as pw:
    while active(p)<7:p.locator('#addBotBtn').click()
    p.locator('#addLocalBtn').click();check(active(p)==8,'Eight mixed local seats '+str(size));check(p.locator('#addBotBtn').is_disabled(),'Ninth tank disabled '+str(size));check(p.locator('#seatCount').inner_text().endswith('/ 8'),'Room capacity label '+str(size))
    rules(p,mapSize='huge',mode='koth',teamMode='ffa',timeLimit=300,scoreTarget=300)
-   settings(p);p.locator('#showFPS').check();p.locator('#performanceMode').check();closeControls(p);p.wait_for_timeout(900);check('FPS' in p.locator('#fpsIndicator').inner_text(),'FPS reading '+str(size));saved=p.evaluate('__store');check(json.loads(saved['leqra.feedback.v1'])['fps'],'FPS saved '+str(size));snap(p,'room-'+str(size[0]))
+   settings(p);p.locator('#showFPS').check();p.locator('#performanceMode').check();closeControls(p);p.wait_for_timeout(900);check('fps:' in p.locator('#fpsIndicator').inner_text(),'FPS reading '+str(size));saved=p.evaluate('__store');check(json.loads(saved['leqra.feedback.v1'])['fps'],'FPS saved '+str(size));snap(p,'room-'+str(size[0]))
    start(p);check(len(state(p)['tanks'])==8 and state(p)['world']['cols']==14 and state(p)['world']['rows']==12,'Eight tanks on 14x12 '+str(size))
    p.evaluate('''()=>{__test.setPhase('paused');__test.clearBullets();for(const t of __test.tanks){t.alive=true;t.invulnerable=999;}__test.updateHUD(true);}''')
    dims=arena(p);p.evaluate('''()=>{for(const t of __test.tanks)if(t.human){__test.grantPower(t,'speed');t.shield=10;}__test.updateHUD(true);}''');p.wait_for_timeout(100);check(arena(p)==dims,'Buffs keep stable arena '+str(size));check(p.locator('#pilotLoadout2').is_visible(),'High-seat local player ammo '+str(size))

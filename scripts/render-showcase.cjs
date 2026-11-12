@@ -39,7 +39,7 @@ window.captureShowcase = () => {
 function stageBattle() {
  window.leqraInfinity.start('offline',{name:'aqsnow',roomRules:{teamMode:'ffa'}});
  const {world,geometry,art,makeTank,traceLaser,fireShot,advanceBullet,presentEffect,draw,renderOnlineCount} = window.captureShowcase();
- const seed = 14383, now = 8420, cell = geometry.cellSize;
+ const seed = 14383, now = 8420, cell = geometry.cellSize, fps = 120, ping = 8;
  world.maze = geometry.create(seed);
  const center = n => (n+.5)*cell;
 
@@ -126,9 +126,9 @@ function stageBattle() {
  // Keep the frozen scene's HUD deterministic, using the production formatters.
  const onlinePlayers = world.tanks.filter(tank=>!tank.bot).length;
  renderOnlineCount({...world,online:true,joined:true,players:onlinePlayers});
- for (let i=0;i<=60;i++) art.sampleFrame(now+i*1000/60,0);
+ for (let i=0;i<=fps;i++) art.sampleFrame(now+i*1000/fps,0,ping);
  return {seed,tanks:world.tanks.length,activePowers,pickups:world.pickups.length,
-  projectiles:world.bullets.length,laserSegments:best.beam.points.length-1,onlinePlayers,fps:60};
+  projectiles:world.bullets.length,laserSegments:best.beam.points.length-1,onlinePlayers,fps,ping};
 }
 
 function showcasePage(screenshot) {
@@ -177,7 +177,7 @@ async function main() {
   const scene = await page.evaluate(stageBattle);
   if (scene.tanks!==8 || scene.activePowers.length!==10 || scene.projectiles<40) throw Error('Incomplete Infinity showcase');
   if (await page.locator('#soundBtn').getAttribute('aria-pressed')!=='true') throw Error('Showcase sound must be enabled');
-  if (!await page.locator('#infiniteFPSIndicator').isVisible() || await page.locator('#infiniteFPSIndicator').textContent()!=='60 FPS, 16.7 ms') throw Error('Showcase FPS indicator is missing');
+  if (!await page.locator('#infiniteFPSIndicator').isVisible() || await page.locator('#infiniteFPSIndicator').textContent()!==`fps: ${scene.fps}, ping: ${scene.ping} ms`) throw Error('Showcase FPS indicator is missing');
   if (!await page.locator('#infiniteOnlineCount').isVisible() || await page.locator('#infiniteOnlineCount').textContent()!==scene.onlinePlayers+' online') throw Error('Showcase online count is missing');
   const screenshot = await page.screenshot({animations:'disabled'});
   const html = showcasePage(screenshot);
