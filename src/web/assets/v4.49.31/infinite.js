@@ -1511,6 +1511,7 @@ function resetMouseControls(kind) {
 
 function syncScoreboardButton() {
  scoreboardButton.setAttribute('aria-expanded',String(leaderboardPanel.open));
+ if(!leaderboardPanel.open&&document.activeElement===leaderboardTitle)scoreboardButton.focus({preventScroll:true});
 }
 
 function restorePauseSidebar() {

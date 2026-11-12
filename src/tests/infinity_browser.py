@@ -681,6 +681,92 @@ def check_mobile_ranks(browser, url, errors):
     print("PASS solo and private P2 ranks fit 320px and 390px online headers", flush=True)
 
 
+def check_scoreboard_titles(browser, url, errors, screenshot_dir=None):
+    for width, height, touch in ((1280, 900, False), (390, 844, True)):
+        for paired in (False, True):
+            with browser.new_context(viewport={"width": width, "height": height}, is_mobile=touch,
+                                     has_touch=touch, service_workers="block") as context:
+                snapshot = {"players": 0, "tankCount": 0, "leaders": []}
+                context.route("**/api/infinity", lambda route: route.fulfill(json=snapshot))
+                page = load(context, url, "TITLE PILOT", errors)
+                for populated in (False, True):
+                    if populated:
+                        snapshot = {"players": 2, "tankCount": 10, "leaders": [
+                            {"id": index+1, "name": f"Pilot {index+1}", "colorIndex": index % 8,
+                             "score": 20-index, "rank": index+1} for index in range(10)]}
+                        page.reload()
+                        page.wait_for_function("() => !!window.leqraInfinity")
+                    if paired:
+                        page.locator('#roomPlayers').evaluate('node => node.open = true')
+                        if page.locator('#addLocalBtn').is_enabled():
+                            page.locator('#addLocalBtn').click()
+                        expect(page.locator('#infinityPreviewScores .infinite-personal-score')).to_have_count(2)
+                    preview_button = page.locator('#infinityPreviewScoreboardBtn')
+                    preview_button.click()
+                    preview = page.locator('#infinityPreviewScoreboard')
+                    expect(preview).to_be_visible()
+                    expect(preview_button).to_have_attribute('aria-expanded', 'true')
+                    expect(preview.locator('summary')).to_be_visible() if populated else expect(preview.locator('summary')).to_be_hidden()
+                    bounds = preview.evaluate("""panel => {
+                        const box = node => node.getBoundingClientRect();
+                        return {top:box(panel).top,headerBottom:box(document.querySelector('#infinityPreviewBar')).bottom};
+                    }""")
+                    assert bounds['top'] >= bounds['headerBottom'], bounds
+                    if populated:
+                        expect(preview.locator('summary')).to_have_text('Top 10 Tanks')
+                        preview.locator('summary').click()
+                        expect(preview).to_be_hidden()
+                        expect(preview_button).to_have_attribute('aria-expanded', 'false')
+                        preview_button.click()
+                        preview.locator('summary').press('Space')
+                        expect(preview).to_be_hidden()
+                        expect(preview_button).to_have_attribute('aria-expanded', 'false')
+                        expect(preview_button).to_be_focused()
+                    else:
+                        expect(preview.locator('ol')).to_be_hidden()
+                        expect(preview.locator('p')).to_have_text('No tanks are playing yet.')
+                        empty = preview.locator('p').evaluate("""note => {
+                            const r=note.getBoundingClientRect(),p=note.parentElement.getBoundingClientRect(),s=getComputedStyle(note);
+                            return {center:Math.abs((r.top+r.bottom-p.top-p.bottom)/2),align:s.textAlign,border:s.borderTopWidth};
+                        }""")
+                        assert empty['center'] <= 1 and empty['align'] == 'center' and empty['border'] == '0px', empty
+                        preview_button.click()
+                page.evaluate("""paired => leqraInfinity.start('online', {
+                    name:'TITLE PILOT', ...(paired ? {localName:'WINGMATE'} : {})
+                })""", paired)
+                expect(page.locator('#infiniteOnlineCount')).to_have_text(re.compile(r'^[1-9]\d* online$'))
+                button = page.locator('#infiniteScoreboardBtn')
+                button.click()
+                panel = page.locator('#infiniteLeaderboardPanel')
+                expect(panel.locator('summary')).to_be_visible()
+                expect(panel.locator('summary')).to_have_text('Top 10 Tanks')
+                bounds = panel.evaluate("""panel => {
+                    const box=node=>node.getBoundingClientRect();
+                    return {top:box(panel).top,headerBottom:box(document.querySelector('#infiniteStatusbar')).bottom,
+                        scoresBottom:box(document.querySelector('#infiniteKills')).bottom};
+                }""")
+                assert bounds['top'] >= max(bounds['headerBottom'], bounds['scoresBottom']), bounds
+                if screenshot_dir is not None and paired:
+                    page.screenshot(path=str(screenshot_dir / f'{browser.browser_type.name}-{width}-active-title.png'))
+                panel.locator('summary').click()
+                expect(panel).to_be_hidden()
+                expect(button).to_have_attribute('aria-expanded', 'false')
+                button.click()
+                expect(button).to_have_attribute('aria-expanded', 'true')
+                panel.locator('summary').press('Space')
+                expect(panel).to_be_hidden()
+                expect(button).to_have_attribute('aria-expanded', 'false')
+                expect(button).to_be_focused()
+                button.click()
+                page.locator('#pauseBtn').click()
+                expect(page.locator('#infinitePauseSidebar #infiniteLeaderboardPanel summary')).to_have_text('Top 10 Tanks')
+                expect(panel.locator('summary')).to_be_visible()
+                page.locator('#infiniteResumeBtn').click()
+                expect(panel.locator('summary')).to_be_visible()
+                expect(button).to_have_attribute('aria-expanded', 'true')
+    print('PASS titled active/populated preview scoreboards stay below scores and toggle with synchronized buttons; empty previews remain a centered message', flush=True)
+
+
 def check_control_alignment(browser, errors, url=None):
     index = Path(__file__).resolve().parents[1] / "web/index.html"
     source_url = url or index.as_uri()
@@ -797,6 +883,7 @@ if __name__ == "__main__":
             check_mobile_ranks(browser, url, errors)
             check_shared_header(browser, url, errors)
             check_control_alignment(browser, errors, url)
+            check_scoreboard_titles(browser, url, errors)
         finally:
             browser.close()
     assert not errors, errors

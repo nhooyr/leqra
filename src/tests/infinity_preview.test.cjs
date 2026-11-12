@@ -37,7 +37,18 @@ test('Infinity preview uses real public counts, a measured FPS node and the shar
  requests[0].resolve({players:7,tankCount:18,leaders:Array.from({length:12},(_,i)=>({id:i+1,name:'Tank <'+i+'>',score:30-i,colorIndex:i%2,rank:i+1}))});await h.flush();
  assert.equal($('infinityPreviewOnlineCount').textContent,'7 online');assert.equal($('infinityPreviewLeaders').children.length,10);assert.equal($('infinityPreviewLeaders').children[0].children[0].textContent,'Tank <0>');assert.equal($('infinityPreviewLeaders').children[0].children[0].style.fontWeight,'400','public pilots are not local merely because the room is on this device');
  assert.equal($('infinityPreviewScoreboardBtn').textContent,'Top 10 Tanks');$('infinityPreviewScoreboardBtn').onclick();assert.equal($('infinityPreviewScoreboard').hidden,false);assert.equal($('infinityPreviewScoreboardBtn').attributes['aria-expanded'],'true');
+ assert.equal($('infinityPreviewScoreboardTitle').hidden,false);
  const escape={key:'Escape',preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};s.document.emit('keydown',escape);assert.equal(escape.prevented,true);assert.equal($('infinityPreviewScoreboard').hidden,true);
+});
+
+test('the populated preview title can close its panel without leaving a collapsed card or stale header state',async()=>{
+ const h=boot(),{s,$}=h;h.requests[0].resolve({players:1,tankCount:1,leaders:[{id:1,name:'PILOT',score:7,colorIndex:0,rank:1}]});await h.flush();
+ const button=$('infinityPreviewScoreboardBtn'),panel=$('infinityPreviewScoreboard'),title=$('infinityPreviewScoreboardTitle');
+ button.onclick();title.focus();panel.open=false;panel.ontoggle();
+ assert.equal(panel.hidden,true);assert.equal(button.attributes['aria-expanded'],'false');assert.equal(s.document.activeElement,button);
+ button.onclick();panel.ontoggle();assert.equal(panel.hidden,false);assert.equal(button.attributes['aria-expanded'],'true');
+ // A queued close event must follow the current open state after a fast reopen.
+ panel.open=false;button.onclick();panel.ontoggle();assert.equal(panel.hidden,false);assert.equal(button.attributes['aria-expanded'],'true');
 });
 
 test('leaving or hiding public preview aborts requests and restores the existing fixed FPS position',async()=>{

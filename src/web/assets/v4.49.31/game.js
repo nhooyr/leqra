@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.30';
+const GAME_VERSION='4.49.31';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -3666,7 +3666,8 @@ function initInfinityPreview(){
  const observer=new MutationObserver(records=>{if(records.some(record=>record.type==='childList'&&record.target===document.body))observeDialogs();sync();});observer.observe(document.body,{attributes:true,attributeFilter:['class'],childList:true});for(const id of ['rulesSummary','roster'])observer.observe($(id),{childList:true,subtree:true});observeDialogs();
  const escape=event=>{if(event.key==='Escape'&&!panel.hidden){event.preventDefault();event.stopPropagation();close();button.focus({preventScroll:true});}};
  const outside=event=>{if(!bar.contains(event.target))close();};
- button.onclick=()=>{panel.hidden=!panel.hidden;panel.open=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));};
+ button.onclick=()=>{panel.open=!panel.open;panel.hidden=!panel.open;button.setAttribute('aria-expanded',String(panel.open));};
+ panel.ontoggle=()=>{panel.hidden=!panel.open;button.setAttribute('aria-expanded',String(panel.open));if(!panel.open&&document.activeElement===$('infinityPreviewScoreboardTitle'))button.focus({preventScroll:true});};
  document.addEventListener('visibilitychange',sync);document.addEventListener('change',sync);document.addEventListener('keydown',escape,true);document.addEventListener('pointerdown',outside,true);window.addEventListener('online',sync);window.addEventListener('offline',sync);
  window.leqraInfinityPreview=Object.freeze({sync,stop(){stopped=true;cancel();close();observer.disconnect();document.removeEventListener('visibilitychange',sync);document.removeEventListener('change',sync);document.removeEventListener('keydown',escape,true);document.removeEventListener('pointerdown',outside,true);window.removeEventListener('online',sync);window.removeEventListener('offline',sync);}});sync();
 }
