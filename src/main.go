@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version         = "4.49.39"
+	version         = "4.49.40"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -347,6 +347,7 @@ func (a *App) handler() http.Handler {
 	})
 	mux.HandleFunc("/ws", a.socket)
 	mux.HandleFunc("/api/infinity", a.infinityStatus)
+	mux.HandleFunc("/api/callsigns", a.callsignAvailability)
 	mux.HandleFunc("/ws/infinite", a.infiniteSocket)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
@@ -485,6 +486,15 @@ func main() {
 		}
 	}
 	app := newApp(*maxRooms, origins)
+	if err := app.infinite.openPublicStore(env("LEQRA_DATA", "data.sqlite")); err != nil {
+		log.Fatal(err)
+	}
+	defer app.infinite.close()
+	admin, err := startLeaderboardAdmin(app.infinite, env("LEQRA_ADMIN_ADDR", "127.0.0.1:8081"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer admin.Close()
 	srv := &http.Server{Addr: *address, Handler: app.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {

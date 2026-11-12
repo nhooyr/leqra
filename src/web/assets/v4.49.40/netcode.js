@@ -10,6 +10,29 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
  'use strict';
  const STEP=1/60, STEP_MS=1000/60, MACHINE_CAPACITY=115, DIRECTION_TURN=5.8, TOUCH_TURN_ASSIST=3.2;
+ // Resolve only a phased projectile's initial overlap. Ordinary ray sweeps
+ // still ignore origins inside geometry; cover never becomes penetrable.
+ function wallLaunch(x,y,ux,uy,radius,muzzle,walls,clearBounds){
+  const launch={x,y,ux,uy,distance:0,muzzle,bounced:false,valid:true};
+  const inside=(px,py,w)=>px>=w.x-radius&&px<=w.x+w.w+radius&&py>=w.y-radius&&py<=w.y+w.h+radius;
+  let xs=null,ys=null;
+  for(const w of walls)if(inside(x,y,w)){
+   if(!xs){xs=[x];ys=[y];}
+   xs.push(w.x-radius-.12,w.x+w.w+radius+.12);ys.push(w.y-radius-.12,w.y+w.h+radius+.12);
+  }
+  if(!xs)return launch;
+  launch.bounced=true;launch.valid=false;let best=Infinity;
+  for(const px of xs)for(const py of ys){
+   const dx=px-x,dy=py-y,distance=dx*dx+dy*dy;
+   if(distance>32*32||dx*ux+dy*uy>1e-7||clearBounds&&!clearBounds(px,py)||walls.some(w=>inside(px,py,w)))continue;
+   if(distance>best+1e-7||Math.abs(distance-best)<=1e-7&&(px>launch.x+1e-7||Math.abs(px-launch.x)<=1e-7&&py>=launch.y))continue;
+   best=distance;Object.assign(launch,{x:px,y:py,valid:true});
+  }
+  if(!launch.valid)return launch;
+  launch.distance=Math.sqrt(best);launch.muzzle=Math.max(0,muzzle-launch.distance);
+  if((launch.x-x)*ux<-1e-9)launch.ux=-ux;if((launch.y-y)*uy<-1e-9)launch.uy=-uy;
+  return launch;
+ }
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
  const delta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
  const neutral=()=>({forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0,aimOnly:false});
@@ -429,5 +452,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,presentation,visualMove,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({wallLaunch,expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,presentation,visualMove,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
 });

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"math"
@@ -42,17 +43,25 @@ type infiniteRoomPilot struct {
 }
 
 type infiniteServer struct {
-	mu                 sync.Mutex
-	closed             bool
-	hub                *Hub
-	public             *infiniteArena
-	private            map[infiniteRoom]*infiniteArena
-	connections        map[*Client]infiniteConnection // A nil arena is still joining.
-	reservations       map[infiniteRoomPilot]infiniteReservation
-	privateCount       int
-	publicPending      map[infiniteRoomPilot]infinitePendingSeat
-	publicPendingCount int
-	nextSweep          time.Time
+	mu                     sync.Mutex
+	closed                 bool
+	hub                    *Hub
+	public                 *infiniteArena
+	private                map[infiniteRoom]*infiniteArena
+	connections            map[*Client]infiniteConnection // A nil arena is still joining.
+	reservations           map[infiniteRoomPilot]infiniteReservation
+	privateCount           int
+	publicPending          map[infiniteRoomPilot]infinitePendingSeat
+	publicPendingCount     int
+	nextSweep              time.Time
+	publicDB               *sql.DB
+	publicProfiles         map[string]infinitePublicProfile
+	publicScoreOwners      map[int]string
+	publicZeroProfiles     map[string]bool
+	publicSavedNextID      int
+	publicSavedSeed        uint32
+	publicStoreInitialized bool
+	nextProfilePrune       time.Time
 }
 
 type infiniteMessage struct {
@@ -64,6 +73,8 @@ type infiniteMessage struct {
 	LocalColorIndex *int   `json:"localColorIndex"`
 	Code            string `json:"code"`
 	Token           string `json:"token"`
+	PublicToken     string `json:"publicToken"`
+	UpdateNames     bool   `json:"updateNames"`
 	Resume          bool   `json:"resume"`
 	Generation      uint64 `json:"generation"`
 	Local           bool   `json:"local"`
@@ -76,13 +87,20 @@ type infiniteMessage struct {
 }
 
 func newInfiniteServer(h *Hub) *infiniteServer {
-	return &infiniteServer{
+	s := &infiniteServer{
 		hub: h, public: newInfiniteArena(),
 		private:       make(map[infiniteRoom]*infiniteArena),
 		connections:   make(map[*Client]infiniteConnection),
 		reservations:  make(map[infiniteRoomPilot]infiniteReservation),
 		publicPending: make(map[infiniteRoomPilot]infinitePendingSeat),
 	}
+	s.public.publicEntries = make(map[int]infinitePublicEntry)
+	s.public.publicArchiveDirty = true
+	s.public.commitBeforeBroadcast = true
+	s.publicProfiles = make(map[string]infinitePublicProfile)
+	s.publicScoreOwners = make(map[int]string)
+	s.publicZeroProfiles = make(map[string]bool)
+	return s
 }
 
 func (a *App) infiniteSocket(w http.ResponseWriter, r *http.Request) {
@@ -213,12 +231,24 @@ func closeInfiniteError(c *Client, err error) {
 }
 
 func rejectInfinite(c *Client, message string) {
-	packet := map[string]string{"type": "error", "message": message}
+	packet := map[string]any{"type": "error", "message": message}
+	if len(c.callsignConflicts) > 0 {
+		packet["code"] = "callsign_taken"
+		packet["conflicts"] = c.callsignConflicts
+	}
 	switch message {
 	case infiniteSessionActive:
 		packet["code"] = "session_active"
 	case infiniteResumeExpired:
 		packet["code"] = "resume_expired"
+	case infinitePublicResumeInvalid:
+		packet["code"] = "public_resume_invalid"
+	case infinitePublicStoreBusy:
+		packet["code"] = "server_busy"
+	case "The leqra server is shutting down.":
+		packet["code"] = "server_shutdown"
+	case "Public Infinity is full. Try again when enough pilots leave.":
+		packet["code"] = "arena_full"
 	}
 	data, _ := encodePacket(packet)
 	_ = c.ws.writeFrame(1, data)
@@ -235,6 +265,9 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		return infiniteConnection{}, "Could not join Infinity."
 	}
 	connection := infiniteConnection{arena: s.public}
+	if msg.PublicToken != "" && msg.Code == "" {
+		return s.resumePublic(c, msg, now)
+	}
 	first := infiniteSeat{name: msg.Name, colorIndex: -1}
 	var local *infiniteSeat
 	seats := 1
@@ -324,6 +357,13 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		}
 	}
 
+	if connection.arena == s.public {
+		var err error
+		first, local, err = s.createPublicIdentity(first, local, now)
+		if err != nil {
+			return infiniteConnection{}, publicJoinClaimError(c, err)
+		}
+	}
 	connection.pilot, connection.local = connection.arena.joinSeats(c, first, local, connection.room.generation, now)
 	if connection.pilot == nil {
 		return infiniteConnection{}, "Could not join Infinity."
@@ -459,9 +499,23 @@ func (s *infiniteServer) step(now time.Time) {
 		}
 	}
 	s.public.step(now)
+	if err := s.persistPublicLocked(nil, nil); err != nil {
+		s.publicStoreError(err)
+	} else {
+		s.public.mu.Lock()
+		if s.public.broadcastPending {
+			s.public.broadcastPending = false
+			s.public.broadcast()
+		}
+		s.public.mu.Unlock()
+	}
 	sweep := !now.Before(s.nextSweep)
 	if sweep {
 		s.nextSweep = now.Add(time.Second)
+		if !now.Before(s.nextProfilePrune) {
+			s.nextProfilePrune = now.Add(time.Minute)
+			s.publicStoreError(s.prunePublicProfiles(now))
+		}
 		for key, reservation := range s.reservations {
 			connection := reservation.connection
 			valid, localRevoked, removed := s.hub.infiniteConnectionStatus(key.room.room, key.seat, connection.localSeat, key.room.generation, connection.arena.roomBots, now)
@@ -492,7 +546,7 @@ func (s *infiniteServer) step(now time.Time) {
 func (s *infiniteServer) notifyShutdown() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	data, _ := encodePacket(map[string]string{"type": "error", "message": "The leqra server is shutting down."})
+	data, _ := encodePacket(map[string]string{"type": "error", "code": "server_shutdown", "message": "The leqra server is shutting down."})
 	count := 0
 	for c, connection := range s.connections {
 		if connection.pilot != nil && c.enqueueBytes(data) {
@@ -505,11 +559,18 @@ func (s *infiniteServer) notifyShutdown() int {
 func (s *infiniteServer) close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
 	s.closed = true
 	for key, reservation := range s.reservations {
 		s.expireReservation(key, reservation)
 	}
 	for c := range s.connections {
 		c.stop()
+	}
+	s.publicStoreError(s.persistPublicLocked(nil, nil))
+	if s.publicDB != nil {
+		s.publicStoreError(s.publicDB.Close())
 	}
 }

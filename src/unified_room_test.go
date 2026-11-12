@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 func addSeat(t *testing.T, h *Hub, c *Client, kind, diff string, team int) *Player {
 	t.Helper()
 	before := c.room.NextMember
-	action(t, h, c, map[string]any{"type": "add", "kind": kind, "difficulty": diff, "team": team, "name": "EXTRA"})
+	action(t, h, c, map[string]any{"type": "add", "kind": kind, "difficulty": diff, "team": team, "name": fmt.Sprint("EXTRA", before)})
 	for _, p := range c.room.Players {
 		if p != nil && p.Member > before {
 			if p.Team != team {

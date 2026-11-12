@@ -205,7 +205,6 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			fail("room_full", "All eight seats are occupied. Remove a pilot or bot first.")
 			return
 		}
-		r.NextMember++
 		name := cleanCallsign(m.Name)
 		if name == "" {
 			if m.Kind == "bot" {
@@ -214,6 +213,15 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 				name = "CO-PILOT"
 			}
 		}
+		if m.Kind == "local" {
+			names := append(roomControllerNames(r, c.player, nil, ""), name)
+			ownerToken, ok := h.claimRoomCallsigns(c, m.Type, c.player.PublicToken, names)
+			if !ok {
+				return
+			}
+			c.player.PublicToken, c.onlineOwnerToken = ownerToken, ownerToken
+		}
+		r.NextMember++
 		p := &Player{ID: slot, Member: r.NextMember, Name: cleanName(name), Kind: m.Kind, Owner: c.player.ID, Controller: c.player, Difficulty: difficulty, Ready: true, InputAt: now}
 		if m.Team != nil {
 			p.Team = *m.Team
@@ -243,6 +251,24 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 		if m.Name != "" && (p.Kind != "bot" && p.Kind != "local" || cleanCallsign(m.Name) == "") {
 			fail("bad_name", "Pilots change their own callsigns.")
 			return
+		}
+		if m.Name != "" && p.Kind == "local" {
+			owner := p.Controller
+			if owner == nil {
+				owner = r.member(p.Owner)
+			}
+			if owner == nil {
+				fail("not_owner", "That local player's controller is no longer in the room.")
+				return
+			}
+			ownerToken, ok := h.claimRoomCallsigns(c, m.Type, owner.PublicToken, roomControllerNames(r, owner, p, cleanCallsign(m.Name)))
+			if !ok {
+				return
+			}
+			owner.PublicToken = ownerToken
+			if owner.Client != nil {
+				owner.Client.onlineOwnerToken = ownerToken
+			}
 		}
 		if m.Team != nil {
 			p.Team = *m.Team
@@ -375,7 +401,13 @@ func (h *Hub) publishRoom(c *Client, m clientMessage, now time.Time) {
 		fail("room_exists", "That name is already in use. Choose another name or join that room.")
 		return
 	}
-	h.joinRoom(c, code == "", code, cleanName(m.Roster[0].Name), "", now, m.Roster[0].Spectating, true)
+	names := []string{cleanName(m.Roster[0].Name)}
+	for _, seat := range m.Roster[1:] {
+		if seat.Kind == "local" {
+			names = append(names, cleanName(seat.Name))
+		}
+	}
+	h.joinRoom(c, code == "", code, cleanName(m.Roster[0].Name), "", now, m.Roster[0].Spectating, true, onlineRoomIdentity{token: m.PublicToken, names: names, action: "publish"})
 	if c.room == nil {
 		return
 	}
@@ -432,11 +464,16 @@ func (h *Hub) renameLocal(c *Client, m clientMessage, now time.Time) {
 		fail("bad_name", "Use letters, numbers, spaces, hyphens or underscores (up to 16 characters).")
 		return
 	}
+	ownerToken, ok := h.claimRoomCallsigns(c, "rename_local", c.player.PublicToken, roomControllerNames(r, c.player, p, name))
+	if !ok {
+		return
+	}
+	c.player.PublicToken, c.onlineOwnerToken = ownerToken, ownerToken
 	p.Name = name
 	if t := r.tankFor(p); t != nil {
 		t.Name = name
 	}
 	r.LastAction = now
-	c.enqueue(map[string]any{"type": "renamed", "id": p.ID, "member": p.Member, "name": name})
+	c.enqueue(map[string]any{"type": "renamed", "id": p.ID, "member": p.Member, "name": name, "publicToken": ownerToken})
 	h.broadcastRoom(r)
 }

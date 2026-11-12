@@ -5,7 +5,7 @@ function declaration(source,name){const start=source.indexOf('function '+name+'(
 
 function boot({kind='regular',pilots=8,sourcePath=assetPath('game.js')}={}){
  const source=readFileSync(sourcePath,'utf8'),math=Object.create(Math);math.random=random(44937);
- const noop=()=>{},rules={teamMode:'ffa',friendlyFire:false},env={Math:math,cols:24,rows:14,CELL:84,WALL:8,MAX_TANKS:8,RADIUS:17,TAU:Math.PI*2,W:2016,H:1176,grid:[],walls:[],wallIndex:null,
+ const noop=()=>{},rules={teamMode:'ffa',friendlyFire:false},env={Math:math,Net:require(assetPath('netcode.js')),cols:24,rows:14,CELL:84,WALL:8,MAX_TANKS:8,RADIUS:17,TAU:Math.PI*2,W:2016,H:1176,grid:[],walls:[],wallIndex:null,
   tanks:[],bullets:[],particles:[],rings:[],traces:[],time:0,bulletId:0,mode:'room',WEBKIT_ENGINE:false,combatPrefs:{performance:false},MACHINE_CAPACITY:115,
   mapDimensions:()=>[24,14],cacheMap:noop,resize:noop,currentRules:()=>rules,survivalBreak:()=>false,
   shotSound:noop,ricochetSound:noop,tone:noop,hurt:noop,impactEffect:noop,projectileTankImpact:noop,detonate:noop,
@@ -14,6 +14,7 @@ function boot({kind='regular',pilots=8,sourcePath=assetPath('game.js')}={}){
  const constants=source.slice(source.indexOf('const POWER_EFFECT_DURATION='),source.indexOf("let phase='menu'"));
  const names=['canDamage','makeMaze','nearbyWalls','rayWalls','circleHit','tankHit','rayBounds','projectileWall','projectileSpec','muzzleBlocked','muzzleProjectile','activeAmmo','powerCapacity','recycleStarmanProjectiles',
   'fire','fireLaser','laserTrace','laserEffect','steerMissile','guideGrenade','grenadeDragIntegral','grenadeDragFactor','spendMissileRange','missileWallNudge','updateBullets','compactLife','compactNotDead','updateTraces','burst','addRing'];
+ if(source.includes('function projectileLaunch('))names.push('projectileLaunch');
  const factory=new Function('env','let {'+Object.keys(env).join(',')+'}=env;\n'+constants+'\n'+names.map(name=>declaration(source,name)).join('\n')+`
  makeMaze();
  for(let id=0;id<8;id++)tanks.push({id,team:0,x:(1+id%4*5+.5)*CELL,y:(1+Math.floor(id/4)*8+.5)*CELL,r:17,angle:id*Math.PI/4,alive:true,human:true,color:'#d2f65a',invulnerable:1e9,ghostTime:1e9,spawnProtected:false,starmanTime:1e9,power:null,cooldown:0,charges:3,machineRounds:180});

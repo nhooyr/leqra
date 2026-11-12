@@ -47,6 +47,7 @@ type Player struct {
 	ID                      int
 	Member                  uint64 // Public seat-incarnation ID; never a credential.
 	Name, Token             string
+	PublicToken             string `json:"-"` // Durable online callsign owner, sent only to this controller.
 	Client                  *Client
 	Ready                   bool
 	Input                   Input
@@ -80,6 +81,8 @@ type Room struct {
 	stateDirty bool         // Idle snapshots are sent on room changes.
 }
 type Client struct {
+	callsignConflicts     []callsignConflict // Admission-only metadata before the joined read loop.
+	onlineOwnerToken      string             // Durable owner retained across room transitions; guarded by Hub.mu.
 	ws                    *wsConn
 	sourceIP              string // IPv4 address or IPv6 prefix fixed at admission.
 	requireVersion        bool   // Real WebSocket clients must complete the version handshake.
@@ -212,6 +215,7 @@ func (c *Client) writeLoop() {
 }
 
 type Hub struct {
+	callsigns              *onlineCallsignRegistry
 	resumeRoutes           map[resumeRouteKey]resumeRoute
 	publicInfinityRequests map[*Room]*Client
 
@@ -227,7 +231,7 @@ type Hub struct {
 }
 
 func newHub(maxRooms int) *Hub {
-	return &Hub{rooms: map[string]*Room{}, clients: map[*Client]bool{}, maxRooms: maxRooms, queues: map[uint64]*QueueTicket{}}
+	return &Hub{callsigns: newOnlineCallsignRegistry(), rooms: map[string]*Room{}, clients: map[*Client]bool{}, maxRooms: maxRooms, queues: map[uint64]*QueueTicket{}}
 }
 func randomString(n int) (string, error) {
 	b := make([]byte, n)
@@ -539,7 +543,7 @@ func (h *Hub) join(c *Client, create bool, code, name, token string, now time.Ti
 }
 
 // Publishing imports rules and all seats before the first room/state packets.
-func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now time.Time, spectating, deferInitialState bool) {
+func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now time.Time, spectating, deferInitialState bool, identity ...onlineRoomIdentity) {
 	if c.room != nil {
 		c.enqueue(roomError("already_joined", "Leave your current room first."))
 		return
@@ -639,6 +643,15 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 				c.enqueue(roomError("room_capacity", "This room's spectator gallery is full."))
 				return
 			}
+			resumeName := p.Name
+			if spectating {
+				resumeName = cleanName(name)
+			}
+			ownerToken, ok := h.claimRoomCallsigns(c, "join", p.PublicToken, roomControllerNames(r, p, p, resumeName))
+			if !ok {
+				return
+			}
+			p.PublicToken, c.onlineOwnerToken = ownerToken, ownerToken
 			if becameSpectator {
 				h.cancelQueue(r, "A player changed roles. Join the queue again when the party is ready.")
 			}
@@ -680,7 +693,7 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 			c.mapGeneration = -1
 			r.LastAction = now
 			h.electHost(r)
-			c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": p.ID, "token": p.Token, "resumed": true, "created": false, "spectating": p.Spectating, "member": p.Member})
+			c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": p.ID, "token": p.Token, "publicToken": p.PublicToken, "resumed": true, "created": false, "spectating": p.Spectating, "member": p.Member})
 			h.broadcastRoom(r)
 			h.sendState(c, r)
 			h.sendChatHistory(c, r)
@@ -708,8 +721,25 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 		c.enqueue(roomError("server_error", "Could not allocate a pilot."))
 		return
 	}
+	ownerToken, names, claimAction := c.onlineOwnerToken, []string{cleanName(name)}, "join"
+	if len(identity) > 0 {
+		if identity[0].token != "" {
+			ownerToken = identity[0].token
+		}
+		if len(identity[0].names) > 0 {
+			names = identity[0].names
+		}
+		if identity[0].action != "" {
+			claimAction = identity[0].action
+		}
+	}
+	ownerToken, ok := h.claimRoomCallsigns(c, claimAction, ownerToken, names)
+	if !ok {
+		return
+	}
+	c.onlineOwnerToken = ownerToken
 	r.NextMember++
-	p := &Player{ID: id, Member: r.NextMember, Name: cleanName(name), Token: secret, Client: c, InputAt: now, Spectating: spectating}
+	p := &Player{ID: id, Member: r.NextMember, Name: cleanName(name), Token: secret, PublicToken: ownerToken, Client: c, InputAt: now, Spectating: spectating}
 	p.Team = joinTeam(r)
 	if spectating {
 		r.putViewer(p)
@@ -725,7 +755,7 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 	c.mapGeneration = -1
 	r.LastAction = now
 	h.electHost(r)
-	c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": id, "token": secret, "resumed": false, "created": created, "spectating": p.Spectating, "member": p.Member, "full": fallback, "busy": busy})
+	c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": id, "token": secret, "publicToken": ownerToken, "resumed": false, "created": created, "spectating": p.Spectating, "member": p.Member, "full": fallback, "busy": busy})
 	if !deferInitialState {
 		h.broadcastRoom(r)
 		h.sendState(c, r)
@@ -743,27 +773,28 @@ type clientMessage struct {
 	Spectator       *int   `json:"spectator"`
 	SpectatorMember uint64 `json:"spectatorMember"`
 
-	Rules      *MatchRules `json:"rules"`
-	PlayerID   *int        `json:"player"`
-	Kind       string      `json:"kind"`
-	Difficulty string      `json:"difficulty"`
-	Team       *int        `json:"team"`
-	ColorIndex *int        `json:"colorIndex"`
-	Roster     []SeatSpec  `json:"roster"`
-	Target     *int        `json:"target"`
-	Member     uint64      `json:"member"`
-	Text       string      `json:"text"`
-	Channel    string      `json:"channel"`
-	Type       string      `json:"type"`
-	Code       string      `json:"code"`
-	Name       string      `json:"name"`
-	Token      string      `json:"token"`
-	Ready      bool        `json:"ready"`
-	T          float64     `json:"t"`
-	Version    string      `json:"version"`
-	Protocol   int         `json:"protocol"`
-	Generation int         `json:"generation"`
-	Wave       int         `json:"wave"`
+	Rules       *MatchRules `json:"rules"`
+	PlayerID    *int        `json:"player"`
+	Kind        string      `json:"kind"`
+	Difficulty  string      `json:"difficulty"`
+	Team        *int        `json:"team"`
+	ColorIndex  *int        `json:"colorIndex"`
+	Roster      []SeatSpec  `json:"roster"`
+	Target      *int        `json:"target"`
+	Member      uint64      `json:"member"`
+	Text        string      `json:"text"`
+	Channel     string      `json:"channel"`
+	Type        string      `json:"type"`
+	Code        string      `json:"code"`
+	Name        string      `json:"name"`
+	Token       string      `json:"token"`
+	PublicToken string      `json:"publicToken"`
+	Ready       bool        `json:"ready"`
+	T           float64     `json:"t"`
+	Version     string      `json:"version"`
+	Protocol    int         `json:"protocol"`
+	Generation  int         `json:"generation"`
+	Wave        int         `json:"wave"`
 	Input
 }
 
@@ -874,9 +905,9 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 	case "kick":
 		h.kick(c, m.Target, m.Member, now)
 	case "create":
-		h.join(c, cleanCode(m.Code) == "", m.Code, m.Name, "", now, m.Spectating != nil && *m.Spectating)
+		h.joinRoom(c, cleanCode(m.Code) == "", m.Code, m.Name, "", now, m.Spectating != nil && *m.Spectating, false, onlineRoomIdentity{token: m.PublicToken, action: m.Type})
 	case "join":
-		h.join(c, false, m.Code, m.Name, m.Token, now, m.Spectating != nil && *m.Spectating)
+		h.joinRoom(c, false, m.Code, m.Name, m.Token, now, m.Spectating != nil && *m.Spectating, false, onlineRoomIdentity{token: m.PublicToken, action: m.Type})
 	case "rename_local":
 		h.renameLocal(c, m, now)
 	case "rename":
@@ -891,12 +922,17 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			return nil
 		}
 		p, r := c.player, c.room
+		ownerToken, ok := h.claimRoomCallsigns(c, "rename", p.PublicToken, roomControllerNames(r, p, p, name))
+		if !ok {
+			return nil
+		}
+		p.PublicToken, c.onlineOwnerToken = ownerToken, ownerToken
 		p.Name = name
 		if tank := r.tankFor(p); tank != nil {
 			tank.Name = name
 		}
 		r.LastAction = now
-		c.enqueue(map[string]any{"type": "renamed", "id": p.ID, "name": name})
+		c.enqueue(map[string]any{"type": "renamed", "id": p.ID, "name": name, "publicToken": p.PublicToken})
 		h.broadcastRoom(r)
 	case "ping":
 		if !math.IsNaN(m.T) && !math.IsInf(m.T, 0) {

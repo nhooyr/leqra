@@ -28,7 +28,7 @@ Native sound uses the browser's sine/triangle voices, exponential pitch and volu
 
 ## Online rooms
 
-The client supports public Infinity, private fixed/Infinity rooms, names and paint, bot/role/team editing, rules and local presets, readiness, invitations, room and opponent chat, matchmaking consent/search/cancellation, reports, and private session reconnect. Private reconnect retains credentials in memory for a bounded retry window; nothing persists room tokens to disk. Standalone public Infinity requires an explicit fresh join after connection loss.
+The client supports public Infinity, private fixed/Infinity rooms, names and paint, bot/role/team editing, rules and local presets, readiness, invitations, room and opponent chat, matchmaking consent/search/cancellation, reports, and session recovery. Public Infinity automatically rejoins after backgrounding, connection loss, or reopening an active run. Its server-issued bearer stays in a non-synchronizing, device-only Keychain entry scoped to the server origin; scores always come from the server. Explicit Exit stops automatic rejoining while retaining that identity for a later Play. Private room tokens remain in memory for their bounded retry window and are never persisted to disk. The durable bearer also proves online callsign ownership across public and private modes. Inline availability feedback reserves its space while editing; offline callsigns remain unrestricted.
 
 The displayed version, `NetworkClient.supportedVersion`, and the app bundle's release version are generated from `src/main.go` through `scripts/version.sh` on each relevant build. Xcode and `swift test` regenerate the core constant when that source changes; Xcode also generates the bundle's `Info.plist` in its build directory. No manual native version update is needed. The client validates `/api/build` and the room handshake, so release changes still require compatible protocol and gameplay behavior. `CURRENT_PROJECT_VERSION` remains the separate iOS build counter.
 
@@ -55,6 +55,14 @@ xcodebuild -project ios/leqra.xcodeproj -scheme leqra \
 UI tests expect a local Go server on port 18081. They cover Ready Room configuration, all local modes, native touch controls, portrait/landscape layout, pause/settings, in-arena standings, and private Infinity → lobby → fixed-match transitions. Prefix the test command with `TEST_RUNNER_LEQRA_RENDER_STRESS_UI=1` to include all ten power-ups with stacked buffs and a ricochet renderer fixture. Screenshots stay in the XCTest result bundle. Live transport tests create disposable pilots and rooms on the selected server.
 
 Core regressions compare maze hashes and steering with the existing Go/browser fixtures, and cover weapons, geometry, objectives, survival, rendering history, HUD presentation, room editing, and reconnects. Generated build/test artifacts belong in `/tmp` or ignored build directories.
+
+Set `LEQRA_TEST_SERVER` to a disposable server when running the core live recovery regression. The UI recovery test additionally requires `TEST_RUNNER_LEQRA_PUBLIC_RECOVERY_UI=1` with a normally signed `xcodebuild` simulator build; disabling code signing prevents Keychain storage. It validates actual Keychain recovery after termination, explicit Exit, online name ownership, stable inline feedback, and unrestricted offline play. UI fixtures use a separate Keychain namespace and unique callsigns so they never clear a normal app identity.
+
+Give the recovery UI test a fresh database for each run, separate from other live tests. It verifies the recovered ID through the public top ten, so archived pilots from previous tests must not occupy those rows:
+
+```sh
+LEQRA_DATA="$(mktemp -d)/data.sqlite" LEQRA_ADMIN_ADDR=off PORT=18081 go run ./src
+```
 
 For renderer profiling, add `--native-performance-probe --probe-weapon cannon --probe-bullets 115 --probe-pan` under **Product → Scheme → Edit Scheme → Run → Arguments**. The opt-in synthetic scene prints frame-time percentiles, CPU stages, map raster/install timings, and allocation counters after a three-second warmup. Use `--probe-weapon laser`, `--probe-buffs shield,speed,ghost`, or `--probe-bounces` to exercise other rendering paths. Add `--probe-motion keyboard` or `--probe-motion touch` for Speed ×5 turns through the shared 60 Hz movement and presentation code, with velocity, acceleration, and jerk measurements. This motion fixture uses Ghost to isolate free movement from wall collisions. These scenes do not join online games or change ordinary gameplay. Remove the arguments to return to normal play; keep captured output outside the repository.
 

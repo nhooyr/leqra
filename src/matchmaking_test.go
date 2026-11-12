@@ -25,7 +25,7 @@ func mmRoom(t *testing.T, h *Hub, n int) ([]*Client, *Room) {
 		if i == 0 {
 			mmAction(t, h, c, map[string]any{"type": "create", "name": fmt.Sprint("HOST", len(h.rooms))})
 		} else {
-			mmAction(t, h, c, map[string]any{"type": "join", "code": cs[0].room.Code, "name": fmt.Sprint("Friend", i)})
+			mmAction(t, h, c, map[string]any{"type": "join", "code": cs[0].room.Code, "name": fmt.Sprintf("Friend%d_%d", len(h.rooms), i)})
 		}
 	}
 	return cs, cs[0].room

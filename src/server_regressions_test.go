@@ -18,13 +18,15 @@ import (
 func TestQueueAdmissionIsolatedAndConfirmedSearchesExpire(t *testing.T) {
 	h := newHub(256)
 	now := time.Now()
+	serial := 0
 	join := func(source, queue string, at time.Time) *Client {
 		t.Helper()
 		c := fakeClient()
 		c.sourceIP = source
-		action(t, h, c, map[string]any{"type": "create"})
+		serial++
+		action(t, h, c, map[string]any{"type": "create", "name": fmt.Sprint("Pilot", serial)})
 		if queue == "ctf-3" {
-			action(t, h, c, map[string]any{"type": "add", "kind": "local"})
+			action(t, h, c, map[string]any{"type": "add", "kind": "local", "name": fmt.Sprint("Wing", serial)})
 		}
 		h.joinQueue(c, clientMessage{QueueKey: queue}, at)
 		return c
@@ -260,7 +262,7 @@ func TestDefaultRoomLimit(t *testing.T) {
 	if !hasError(denied, "server_full") {
 		t.Fatal("new rooms can exceed the configured ceiling")
 	}
-	action(t, h, denied, map[string]any{"type": "join", "code": last.room.Code})
+	action(t, h, denied, map[string]any{"type": "join", "code": last.room.Code, "name": "GUEST"})
 	if denied.room != last.room {
 		t.Fatal("an existing room became unjoinable at capacity")
 	}

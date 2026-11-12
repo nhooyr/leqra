@@ -519,10 +519,6 @@ public final class PracticeArena {
         }
         guard tank.hp > 0, !(tank.spawnProtected && tank.invulnerable > 1e-9),
               boosted || tank.cooldown <= 1e-9 && (tank.power != "rapid" || tank.machineRounds > 0) else { return }
-        if tank.power != "cannon" && tank.ghostTime > 0 && maze.walls(x0: tank.x - spec.radius, y0: tank.y - spec.radius,
-                                                                    x1: tank.x + spec.radius, y1: tank.y + spec.radius).contains(where: {
-            tank.x >= $0.x - spec.radius && tank.x <= $0.x + $0.w + spec.radius && tank.y >= $0.y - spec.radius && tank.y <= $0.y + $0.h + spec.radius
-        }) { return }
         let offsets: [Double] = tank.power == "scatter" ? [-0.21, 0, 0.21] : [0]
         var ordinary = 0
         for index in projectiles.indices where projectiles[index].wire.owner == tank.id && !projectiles[index].boosted { ordinary += 1 }
@@ -533,12 +529,22 @@ public final class PracticeArena {
         else {
             for offset in offsets {
                 let angle = tank.angle + offset
+                guard let launch = maze.launchRay(x: tank.x, y: tank.y, angle: angle, kind: tank.power, radius: spec.radius) else {
+                    effect("impact", x: tank.x, y: tank.y, owner: tank.id)
+                    continue
+                }
                 nextID += 1
-                var projectile = Projectile(wire: ArenaBullet(id: nextID, x: tank.x, y: tank.y,
-                                                             vx: cos(angle) * spec.speed, vy: sin(angle) * spec.speed,
+                var projectile = Projectile(wire: ArenaBullet(id: nextID, x: launch.x, y: launch.y,
+                                                             vx: launch.ux * spec.speed, vy: launch.uy * spec.speed,
                                                              owner: tank.id, kind: tank.power, colorIndex: tank.colorIndex, life: spec.life), boosted: boosted)
                 if let world = maze.world, tank.power == "homing" { projectile.rangeLeft = world.width + world.height }
-                if advance(&projectile, dt: (tank.power == "cannon" ? 32 : 28) / spec.speed) { projectiles.append(projectile) }
+                if launch.bounced {
+                    projectile.wire.bounces = 1
+                    projectile.seekDelay = 0.04
+                    if projectile.rangeLeft != nil { projectile.rangeLeft! -= launch.distance }
+                }
+                let muzzle = max(0, (tank.power == "cannon" ? 32 : 28) - launch.distance)
+                if advance(&projectile, dt: muzzle / spec.speed) { projectiles.append(projectile) }
             }
             if !boosted || tank.power == "grenade" || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) {
                 nextBoostEffects[tank.id] = time + 4 / 60
@@ -653,8 +659,12 @@ public final class PracticeArena {
     }
 
     private func fireLaser(_ tank: ArenaTank) {
-        var x = tank.x, y = tank.y, ux = cos(tank.angle), uy = sin(tank.angle)
-        var remaining = maze.world.map { 2 * ($0.width + $0.height) } ?? 18 * 84
+        guard let launch = maze.launchRay(x: tank.x, y: tank.y, angle: tank.angle, kind: "laser", radius: 3) else {
+            effect("impact", x: tank.x, y: tank.y, owner: tank.id)
+            return
+        }
+        var x = launch.x, y = launch.y, ux = launch.ux, uy = launch.uy
+        var remaining = max(0, (maze.world.map { 2 * ($0.width + $0.height) } ?? 18 * 84) - launch.distance)
         var points: [BeamPoint] = []
         var hitTarget: Int?
         for index in 0..<128 {
@@ -662,7 +672,10 @@ public final class PracticeArena {
             let wall = maze.rayHit(x: x, y: y, dx: dx, dy: dy, radius: 3)
             let target = targetHit(owner: tank.id, x: x, y: y, dx: dx, dy: dy, radius: 3, limit: wall?.fraction ?? 1.00000001)
             let length = remaining * (target?.fraction ?? wall?.fraction ?? 1)
-            if index == 0 { points.append(BeamPoint(x: x + ux * min(28, length), y: y + uy * min(28, length))) }
+            if index == 0 {
+                let crop = launch.bounced ? 0 : 28.0
+                points.append(BeamPoint(x: x + ux * min(crop, length), y: y + uy * min(crop, length)))
+            }
             x += ux * length; y += uy * length; remaining -= length
             points.append(BeamPoint(x: x, y: y))
             if let target { hitTarget = target.index; break }

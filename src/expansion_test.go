@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -39,15 +40,15 @@ func TestArbitraryRoomNamesRoundTrip(t *testing.T) {
 func TestArbitraryRoomCreationAndCase(t *testing.T) {
 	h := newHub(5)
 	host, guest, other := fakeClient(), fakeClient(), fakeClient()
-	action(t, h, host, map[string]any{"type": "create", "code": "  Friday tanks 💥  "})
+	action(t, h, host, map[string]any{"type": "create", "code": "  Friday tanks 💥  ", "name": "HOST"})
 	if host.room == nil || host.room.Code != "Friday tanks 💥" {
 		t.Fatal("create did not use supplied name")
 	}
-	action(t, h, guest, map[string]any{"type": "create", "code": "Friday tanks 💥"})
+	action(t, h, guest, map[string]any{"type": "create", "code": "Friday tanks 💥", "name": "GUEST"})
 	if host.room != guest.room || host.room.Host != host.player.ID {
 		t.Fatal("named Create overwrote host")
 	}
-	action(t, h, other, map[string]any{"type": "join", "code": "friday tanks 💥"})
+	action(t, h, other, map[string]any{"type": "join", "code": "friday tanks 💥", "name": "OTHER"})
 	if other.room == host.room || len(h.rooms) != 2 {
 		t.Fatal("custom names must preserve case")
 	}
@@ -78,8 +79,8 @@ func TestArbitraryRoomReconnectAndKickProtection(t *testing.T) {
 	h := newHub(3)
 	host, guest := fakeClient(), fakeClient()
 	code := "A + B & 🛡️"
-	action(t, h, host, map[string]any{"type": "join", "code": code})
-	action(t, h, guest, map[string]any{"type": "join", "code": code})
+	action(t, h, host, map[string]any{"type": "join", "code": code, "name": "HOST"})
+	action(t, h, guest, map[string]any{"type": "join", "code": code, "name": "GUEST"})
 	p := guest.player
 	h.removeClient(guest)
 	resumed := fakeClient()
@@ -103,13 +104,13 @@ func TestArbitraryRoomReconnectAndKickProtection(t *testing.T) {
 func TestConcurrentArbitraryNameCreatesOneHost(t *testing.T) {
 	h := newHub(2)
 	code := "racing room + 🎮"
-	data, _ := json.Marshal(map[string]any{"type": "join", "code": code})
 	cs := make([]*Client, 12)
 	var wg sync.WaitGroup
 	for i := range cs {
 		cs[i] = fakeClient()
+		data, _ := json.Marshal(map[string]any{"type": "join", "code": code, "name": fmt.Sprint("Racer", i)})
 		wg.Add(1)
-		go func(c *Client) { defer wg.Done(); _ = h.handle(c, data, time.Now()) }(cs[i])
+		go func(c *Client, payload []byte) { defer wg.Done(); _ = h.handle(c, payload, time.Now()) }(cs[i], data)
 	}
 	wg.Wait()
 	r := h.rooms[code]

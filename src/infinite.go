@@ -81,6 +81,7 @@ type infinitePilot struct {
 	ambientNumber          int
 	party                  infiniteRoom
 	partyMember            uint64
+	publicKey, publicToken string // Private bearer metadata, never part of a tank snapshot.
 
 	waypoint, previous [2]int
 	hasWaypoint        bool
@@ -159,33 +160,42 @@ type infiniteResult struct {
 }
 
 type infiniteSeat struct {
-	name       string
-	team       int
-	colorIndex int
+	name        string
+	team        int
+	colorIndex  int
+	publicToken string
+	saved       *infinitePublicEntry
+	resumed     bool
 }
 
 type infiniteArena struct {
-	mu                 sync.Mutex
-	players            int // Human seats in the arena, including reservations.
-	connected          int // Human seats with a live controller socket.
-	pilots             []*infinitePilot
-	inactiveBots       []*infinitePilot // Preserve roaming identities while the connected-player budget is lower.
-	bullets            []infiniteBullet
-	pickups            []Pickup
-	effects            []infiniteEffect
-	seed               uint32
-	maze               *infiniteMaze
-	random             *rand.Rand
-	tick, nextBot      uint64
-	nextPickup         uint64
-	nextID, nextBullet int
-	pickupID, effectID int
-	snapshot           infiniteSnapshot // Reused after immediate encoding under mu.
-	snapshotTankIndex  map[int]int
-	rules              *infiniteRules
-	roomBots           []infiniteRoomBot
-	teamScores         [4]int
-	result             *infiniteResult
+	mu                                      sync.Mutex
+	players                                 int // Human seats in the arena, including reservations.
+	connected                               int // Human seats with a live controller socket.
+	pilots                                  []*infinitePilot
+	inactiveBots                            []*infinitePilot // Preserve roaming identities while the connected-player budget is lower.
+	bullets                                 []infiniteBullet
+	pickups                                 []Pickup
+	effects                                 []infiniteEffect
+	seed                                    uint32
+	maze                                    *infiniteMaze
+	random                                  *rand.Rand
+	tick, nextBot                           uint64
+	nextPickup                              uint64
+	nextID, nextBullet                      int
+	pickupID, effectID                      int
+	snapshot                                infiniteSnapshot // Reused after immediate encoding under mu.
+	snapshotTankIndex                       map[int]int
+	rules                                   *infiniteRules
+	roomBots                                []infiniteRoomBot
+	teamScores                              [4]int
+	result                                  *infiniteResult
+	publicEntries                           map[int]infinitePublicEntry
+	publicPending                           map[int]infinitePublicEntry
+	publicArchive                           []infiniteLeader
+	publicActive                            map[int]bool
+	publicArchiveDirty                      bool
+	commitBeforeBroadcast, broadcastPending bool
 }
 
 func newInfiniteArena() *infiniteArena {
@@ -241,6 +251,16 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 	before := len(a.pilots)
 	p := a.addPilot(cleanName(first.name), false, x, y, minCells, maxCells)
 	a.setSeat(p, first, now)
+	if first.saved != nil {
+		p.ID = first.saved.ID
+		p.Name = first.saved.Name
+		p.Score = first.saved.Score
+		p.ColorIndex = first.saved.ColorIndex
+	}
+	p.publicToken = first.publicToken
+	if first.publicToken != "" {
+		p.publicKey, _ = publicTokenHash(first.publicToken)
+	}
 	var local *infinitePilot
 	if second != nil {
 		name := cleanCallsign(second.name)
@@ -249,8 +269,15 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 		}
 		local = a.addPilot(name, false, p.X, p.Y, 1, 3)
 		a.setSeat(local, *second, now)
+		if second.saved != nil {
+			local.ID = second.saved.ID
+			local.Name = second.saved.Name
+			local.Score = second.saved.Score
+			local.ColorIndex = second.saved.ColorIndex
+		}
+		local.publicKey = p.publicKey
 	}
-	if !a.welcome(c, p, local, generation, false) {
+	if !a.welcome(c, p, local, generation, first.resumed) {
 		clear(a.pilots[before:])
 		a.pilots = a.pilots[:before]
 		return nil, nil
@@ -272,13 +299,15 @@ func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infinit
 
 func (a *infiniteArena) welcome(c *Client, primary, local *infinitePilot, generation uint64, resumed bool) bool {
 	packet := struct {
-		Type       string `json:"type"`
-		ID         int    `json:"id"`
-		Seed       uint32 `json:"seed"`
-		LocalID    int    `json:"localId,omitempty"`
-		Generation uint64 `json:"generation,omitempty"`
-		Resumed    bool   `json:"resumed,omitempty"`
-	}{Type: "welcome", ID: primary.ID, Seed: a.seed, Generation: generation, Resumed: resumed}
+		Type        string `json:"type"`
+		ID          int    `json:"id"`
+		Seed        uint32 `json:"seed"`
+		LocalID     int    `json:"localId,omitempty"`
+		Generation  uint64 `json:"generation,omitempty"`
+		Resumed     bool   `json:"resumed,omitempty"`
+		PublicToken string `json:"publicToken,omitempty"`
+		Public      bool   `json:"public,omitempty"`
+	}{Type: "welcome", ID: primary.ID, Seed: a.seed, Generation: generation, Resumed: resumed, PublicToken: primary.publicToken, Public: a.publicEntries != nil}
 	if local != nil {
 		packet.LocalID = local.ID
 	}
@@ -383,6 +412,7 @@ func (a *infiniteArena) removeRoomBots(removed uint64) {
 func (a *infiniteArena) removeLocal(primary *infinitePilot) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.rememberPublicLocked()
 	local := primary.local
 	primary.local = nil
 	a.players--
@@ -397,6 +427,7 @@ func (a *infiniteArena) removeLocal(primary *infinitePilot) {
 func (a *infiniteArena) remove(p *infinitePilot) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.rememberPublicLocked()
 	p.client = nil
 	a.players--
 	if !p.disconnected {
@@ -417,7 +448,10 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 		// A scored private room may retain its totals/result after all
 		// controllers leave. Release the world and snapshot buffers until it
 		// has viewers again; the maze is reproducible from the seed.
-		a.pilots, a.inactiveBots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil, nil
+		a.pilots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil
+		if a.publicEntries == nil {
+			a.inactiveBots = nil
+		}
 		a.maze = nil
 		a.snapshot = emptyInfiniteSnapshot()
 		a.snapshotTankIndex = nil
@@ -591,7 +625,11 @@ func (a *infiniteArena) step(now time.Time) {
 	}
 	a.effects = slices.DeleteFunc(a.effects, func(e infiniteEffect) bool { return a.tick-e.tick >= 9 })
 	if a.tick%2 == 0 || a.result != nil {
-		a.broadcast()
+		if a.commitBeforeBroadcast {
+			a.broadcastPending = true
+		} else {
+			a.broadcast()
+		}
 	}
 }
 
@@ -866,6 +904,9 @@ func (a *infiniteArena) rayWallsQuery(x, y, dx, dy, radius float64, firstOnly bo
 }
 
 func (a *infiniteArena) rankedLeaders(entries []infiniteLeader) []infiniteLeader {
+	if a.publicEntries != nil {
+		return a.publicRankedLeaders(entries)
+	}
 	entries = entries[:0]
 	for _, p := range a.pilots {
 		entries = append(entries, infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team, ColorIndex: p.ColorIndex})
@@ -907,18 +948,27 @@ func (a *infiniteArena) broadcast() {
 		tankIndex[p.ID] = i
 	}
 	var parties map[infiniteRoom][]infinitePartyLeader
-	for rank, leader := range leaders {
-		i := tankIndex[leader.ID]
+	for i, pilot := range a.pilots {
 		if !tanks[i].Bot {
-			tanks[i].Rank = rank + 1
-			pilot := a.pilots[i]
+			rank := 0
+			if a.publicEntries != nil {
+				rank = a.publicRank(pilot)
+			} else {
+				for j, leader := range leaders {
+					if leader.ID == pilot.ID {
+						rank = j + 1
+						break
+					}
+				}
+			}
+			tanks[i].Rank = rank
 			if pilot.party.room != nil && pilot.party.generation != 0 && pilot.partyMember != 0 {
 				if parties == nil {
 					parties = make(map[infiniteRoom][]infinitePartyLeader)
 				}
 				parties[pilot.party] = append(parties[pilot.party], infinitePartyLeader{
 					ID: pilot.ID, Member: pilot.partyMember, Name: pilot.Name, Score: pilot.Score,
-					ColorIndex: pilot.ColorIndex, Rank: rank + 1,
+					ColorIndex: pilot.ColorIndex, Rank: rank,
 				})
 			}
 		}

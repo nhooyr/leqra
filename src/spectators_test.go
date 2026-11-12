@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -252,7 +253,7 @@ func TestSpectator33CapacityAndAtomicSwap(t *testing.T) {
 	h, cs, r := makeRoom(t, maxTanks)
 	var first *Player
 	for i := 0; i < maxSpectators; i++ {
-		v := viewer33(t, h, r, "V")
+		v := viewer33(t, h, r, fmt.Sprint("V", i))
 		if first == nil {
 			first = v.player
 		}

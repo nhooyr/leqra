@@ -31,7 +31,7 @@ struct ContentView: View {
         .alert("leqra", isPresented: Binding(get: { session.error != nil }, set: { if !$0 { session.error = nil } })) {
             Button("OK") { session.error = nil }
         } message: { Text(session.error ?? "") }
-        .onChange(of: scenePhase) { phase in if phase != .active && session.screen == .playing { session.setPaused(true) } }
+        .onChange(of: scenePhase) { phase in session.scenePhaseChanged(phase) }
         .statusBarHidden(session.fullscreen)
         .persistentSystemOverlays(session.fullscreen ? .hidden : .automatic)
         .task {

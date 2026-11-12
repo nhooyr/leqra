@@ -77,6 +77,7 @@ function pilotName() {
 }
 
 function setStatus(text) {
+ if(!text&&session?.leaderboardNoticeUntil>performance.now())text=session.leaderboardNotice;
  status.hidden = !text;
  if (status.textContent !== text) status.textContent = text;
  renderOnlineCount(session);
@@ -381,8 +382,9 @@ function spendWeapon(tank) {
 }
 
 function traceLaser(world, tank, preview = false) {
- let {x, y} = tank;
- let ux = Math.cos(tank.angle), uy = Math.sin(tank.angle), length = SHOT_RANGE;
+ const launch=projectileLaunch(world,tank,tank.angle,3,28);
+ if(!launch.valid)return{points:[{x:tank.x,y:tank.y},{x:tank.x,y:tank.y}],target:null};
+ let {x,y,ux,uy}=launch,length=SHOT_RANGE-launch.distance;
  const points = [];
  for (let i = 0; i < 128 && length > 1e-7; i++) {
   const dx = ux * length, dy = uy * length;
@@ -390,7 +392,7 @@ function traceLaser(world, tank, preview = false) {
   const limit = wall?.fraction ?? 1;
   const hit = preview ? {fraction:limit} : tankHit(world, {x, y, owner:tank.id, team:tank.team, r:3}, dx, dy, limit);
   const distance = length * hit.fraction;
-  if (!i) points.push({x: x + ux * Math.min(distance, 28), y: y + uy * Math.min(distance, 28)});
+  if (!i) {const crop=launch.bounced?0:Math.min(distance,28);points.push({x:x+ux*crop,y:y+uy*crop});}
   x += ux * distance;
   y += uy * distance;
   points.push({x, y});
@@ -407,8 +409,13 @@ function traceLaser(world, tank, preview = false) {
 }
 
 function muzzleBlocked(maze, tank, radius) {
- const {x, y} = tank;
- return tank.power !== 'cannon' && tank.ghostTime > 0 && maze.visitWalls(x-radius, y-radius, x+radius, y+radius, () => true);
+ return false; // Wall contacts ricochet at launch instead of blocking readiness.
+}
+
+function projectileLaunch(world,tank,angle,radius,muzzle){
+ const ux=Math.cos(angle),uy=Math.sin(angle),{x,y}=tank;
+ if(tank.power==='cannon'||!(tank.ghostTime>0))return{x,y,ux,uy,distance:0,muzzle,bounced:false,valid:true};
+ return net.wallLaunch(x,y,ux,uy,radius,muzzle,world.maze.wallsNear(x-radius-32,y-radius-32,x+radius+32,y+radius+32));
 }
 
 function fireShot(world, tank) {
@@ -438,12 +445,13 @@ function fireShot(world, tank) {
  }
  Object.assign(tank, {cooldown, cooldownTotal:cooldown, recoil:1});
  for (const offset of offsets) {
-  const angle = tank.angle + offset, ux = Math.cos(angle), uy = Math.sin(angle);
+  const angle = tank.angle + offset,launch=projectileLaunch(world,tank,angle,spec.r,kind==='cannon'?RADIUS+spec.r+1:28),ux=launch.ux,uy=launch.uy;
+  if(!launch.valid){effect(world,'impact',tank.x,tank.y,tank.id);continue;}
   const bullet = {
-   ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, x: tank.x, y: tank.y, color: COLORS[tank.colorIndex] || COLORS[0],
-   vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: 0, seekDelay: 0, target: null, trail: [],
+   ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, x: launch.x, y: launch.y, color: COLORS[tank.colorIndex] || COLORS[0],
+   vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: launch.bounced?1:0, seekDelay: launch.bounced?.04:0, target: null, trail: [],
   };
-  if (advanceBullet(world, bullet, (kind === 'cannon' ? RADIUS + spec.r + 1 : 28) / spec.speed)) world.bullets.push(bullet);
+  if (advanceBullet(world, bullet, launch.muzzle / spec.speed)) world.bullets.push(bullet);
  }
  art.recycleStarmanProjectiles(world.bullets, tank.id, boosted);
  if (showShot && (boosted || kind !== 'rapid' || tank.machineRounds % 4 === 0)) {
@@ -1324,11 +1332,12 @@ function connectionFailed(message) {
 }
 
 function retryConnection(message) {
- if (!session.room) {connectionFailed(message);return;}
- const world = session, now = performance.now();
+ if (!session.room&&!session.publicToken&&!session.publicFallback) {connectionFailed(message);return;}
+ const world = session, now = performance.now(), durable=(!session.room||session.public)&&(!!session.publicToken||!!session.publicFallback);
+ if(durable&&world.public){world.room=null;world.party=[];clearRoomResume();}
  cancelRenames(world,'The connection was interrupted. Try again after reconnecting.');
  world.retryAt ??= now;
- const remaining = world.retryAt + RECONNECT_WINDOW - now;
+ const remaining = durable?Infinity:world.retryAt + RECONNECT_WINDOW - now;
  if (remaining <= 0) {connectionFailed(message);return;}
  clearTimeout(connectTimer);
  const old = socket;
@@ -1341,7 +1350,7 @@ function retryConnection(message) {
  const delay = Math.min(remaining, 3000, 450 * 2 ** Math.min(world.retries++,3));
  connectTimer = setTimeout(() => {
   if (session === world) {
-   if (performance.now() >= world.retryAt + RECONNECT_WINDOW) connectionFailed(message);
+   if (!durable&&performance.now() >= world.retryAt + RECONNECT_WINDOW) connectionFailed(message);
    else connect();
   }
  },delay);
@@ -1383,6 +1392,10 @@ function receive(ws, event) {
   return;
  }
  if(message.type==='renamed'||message.type==='rename_error'){acceptRename(message);return;}
+ if(message.type==='leaderboard_reset'){
+  session.leaderboardNotice=message.selected===true?'Selected Public Infinity scores were reset.':'The Public Infinity leaderboard was reset.';
+  session.leaderboardNoticeUntil=performance.now()+5000;setStatus(session.leaderboardNotice);return;
+ }
  if (message.type === 'pong') {
   const now=performance.now(), elapsed=now-message.t;
   if (session.joined && session.pendingPing !== null && Number.isFinite(message.t) && message.t===session.pendingPing && elapsed>=0 && elapsed<=PING_TIMEOUT) {
@@ -1393,12 +1406,17 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'error') {
+  if(message.code==='callsign_taken'&&session.onConflict){session.onConflict(message);return;}
+  if(message.code==='public_resume_invalid'&&!session.publicFallback){session.publicFallback=true;session.publicToken='';art.rememberPublicIdentity?.('');retryConnection('Rejoining Public Infinity…');return;}
+  if(message.code==='server_shutdown'||message.code==='public_store_busy'){retryConnection(message.message||'Reconnecting…');return;}
   const error = message.message || 'Unable to join '+arenaName(session)+'.';
   if (message.code === 'session_active' && session.resumeGeneration) retryConnection(error);
   else connectionFailed(error);
   return;
  }
  if (message.type === 'welcome') {
+  session.welcomed=true;
+  if(message.publicToken){session.publicToken=message.publicToken;art.rememberPublicIdentity?.(message.publicToken);}
   session.resumed = !!message.resumed;
   if (Array.isArray(message.party)) session.party = message.party;
   session.id = message.id;
@@ -1547,7 +1565,7 @@ function connect() {
     localName:world.room?undefined:world.localName,
     colorIndex:world.room?undefined:world.colorIndex,
     localColorIndex:world.room||!world.localName?undefined:world.localColorIndex,...world.room,
-    resume:world.resumeGeneration?true:undefined,generation:world.resumeGeneration}));
+    updateNames:!world.welcomed?true:undefined,publicToken:world.publicToken||undefined,resume:world.resumeGeneration||world.publicToken?true:undefined,generation:world.resumeGeneration}));
   }
  });
  ws.addEventListener('message', event => receive(ws, event));
@@ -1558,7 +1576,7 @@ function connect() {
  });
  connectTimer = setTimeout(() => {
   if (ws === socket && session === world && !world.joined) retryConnection('Could not connect to '+arenaName(world)+'.');
- }, Math.min(6500,(world.retryAt ?? performance.now()) + RECONNECT_WINDOW - performance.now()));
+ }, (!world.room||world.public)&&(world.publicToken||world.publicFallback)?6500:Math.min(6500,(world.retryAt ?? performance.now()) + RECONNECT_WINDOW - performance.now()));
 }
 
 function resetControls() {
@@ -1668,7 +1686,7 @@ function start(mode, options = {}) {
  const selectedColor = value => Number.isInteger(value)&&value>=0&&value<COLORS.length?value:undefined;
  session = {
   online, name, localName:options.localName, serial:++sessionSerial,renames:new Map(),confirmedNames:new Map(),readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
-  public:!!options.public,party:[],
+  public:!!options.public,party:[],publicToken:art.publicIdentityToken?.()||'',onConflict:options.onConflict,
   colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,latency:null,pendingPing:null,nextPing:0,latencyAt:0,

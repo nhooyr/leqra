@@ -247,10 +247,18 @@ func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 	}
 }
 
-func (a *infiniteArena) muzzleBlocked(p *infinitePilot, radius float64) bool {
-	return p.kit.Power != "cannon" && p.kit.GhostTime > 0 && a.maze.visitWalls(p.X-radius, p.Y-radius, p.X+radius, p.Y+radius, func(w Wall) bool {
-		return p.X >= w.X-radius && p.X <= w.X+w.W+radius && p.Y >= w.Y-radius && p.Y <= w.Y+w.H+radius
+func (a *infiniteArena) projectileLaunch(p *infinitePilot, angle, radius, muzzle float64) projectileLaunch {
+	ux, uy := math.Cos(angle), math.Sin(angle)
+	if p.kit.Power == "cannon" || p.kit.GhostTime <= 0 {
+		return projectileLaunch{x: p.X, y: p.Y, ux: ux, uy: uy, muzzle: muzzle, valid: true}
+	}
+	var storage [32]Wall
+	walls := storage[:0]
+	a.maze.visitWalls(p.X-radius-32, p.Y-radius-32, p.X+radius+32, p.Y+radius+32, func(w Wall) bool {
+		walls = append(walls, w)
+		return false
 	})
+	return wallLaunch(p.X, p.Y, ux, uy, radius, muzzle, walls, nil)
 }
 
 func (a *infiniteArena) fire(p *infinitePilot) {
@@ -263,9 +271,6 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 	spec := infiniteSpec(kind)
 	if kind == "laser" {
 		spec.radius = laserRadius
-	}
-	if a.muzzleBlocked(p, spec.radius) {
-		return
 	}
 	if kind == "laser" {
 		a.fireLaser(p)
@@ -297,15 +302,23 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 	before := len(a.bullets)
 	for _, offset := range offsets {
 		angle := p.Angle + offset
-		cs, sn := math.Cos(angle), math.Sin(angle)
-		a.nextBullet++
-		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, ownerName: p.Name, X: p.X, Y: p.Y, Kind: kind, Color: p.ColorIndex,
-			VX: cs * spec.speed, VY: sn * spec.speed, Life: spec.life, radius: spec.radius, boosted: starman}
 		muzzle := 28.0
 		if kind == "cannon" {
 			muzzle = tankRadius + spec.radius + 1
 		}
-		if a.advanceBullet(&b, cs*muzzle, sn*muzzle) {
+		launch := a.projectileLaunch(p, angle, spec.radius, muzzle)
+		if !launch.valid {
+			a.effect("impact", p.X, p.Y, p.ID, nil)
+			continue
+		}
+		a.nextBullet++
+		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, ownerName: p.Name, X: launch.x, Y: launch.y, Kind: kind, Color: p.ColorIndex,
+			VX: launch.ux * spec.speed, VY: launch.uy * spec.speed, Life: spec.life, radius: spec.radius, boosted: starman}
+		if launch.bounced {
+			b.Bounces = 1
+			b.seekDelay = missileWallDelay
+		}
+		if a.advanceBullet(&b, launch.ux*launch.muzzle, launch.uy*launch.muzzle) {
 			a.bullets = append(a.bullets, b)
 		}
 	}
@@ -378,9 +391,13 @@ func (a *infiniteArena) fireLaser(p *infinitePilot) {
 }
 
 func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilot) {
-	x, y, ux, uy := p.X, p.Y, math.Cos(p.Angle), math.Sin(p.Angle)
+	launch := a.projectileLaunch(p, p.Angle, laserRadius, 28)
+	if !launch.valid {
+		return []BeamPoint{{p.X, p.Y}, {p.X, p.Y}}, nil
+	}
+	x, y, ux, uy := launch.x, launch.y, launch.ux, launch.uy
 	points := make([]BeamPoint, 0, 12)
-	remaining := infiniteShotRange
+	remaining := infiniteShotRange - launch.distance
 	for i := 0; i < laserMaxSegments && remaining > 1e-7; i++ {
 		dx, dy := ux*remaining, uy*remaining
 		wall, hasWall := a.rayWalls(x, y, dx, dy, laserRadius)
@@ -392,6 +409,9 @@ func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilo
 		length := remaining * stop
 		if i == 0 {
 			muzzle := min(28, length)
+			if launch.bounced {
+				muzzle = 0
+			}
 			points = append(points, BeamPoint{x + ux*muzzle, y + uy*muzzle})
 		}
 		x, y = x+ux*length, y+uy*length

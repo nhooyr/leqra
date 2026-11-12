@@ -23,7 +23,9 @@ func TestPublicInfinitySelectedPaintSurvivesReentry(t *testing.T) {
 				if rejection != "" || pair.local == nil || pair.pilot.ColorIndex != color || pair.local.ColorIndex != localColor {
 					t.Fatalf("public join lost selected paint %d/%d: %+v, %q", color, localColor, pair, rejection)
 				}
-				drain(c)
+				welcome := drain(c)
+				join.PublicToken, _ = welcome[0]["publicToken"].(string)
+				join.Resume = true
 				pair.arena.broadcast()
 				var snapshot infiniteSnapshot
 				if err := json.Unmarshal(<-c.send, &snapshot); err != nil {

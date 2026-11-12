@@ -111,6 +111,8 @@ final class NetworkTests: XCTestCase {
         }
         let publicClient = NetworkClient(), roomClient = NetworkClient(), arenaClient = NetworkClient()
         defer { publicClient.disconnect(); roomClient.disconnect(); arenaClient.disconnect() }
+        let suffix = UUID().uuidString.prefix(8).uppercased()
+        let publicName = "CHECK " + suffix, roomName = "ROOM " + suffix
         var errors: [String] = []
         var publicWelcome: NetworkWelcome?, publicState: ArenaSnapshot?
         publicClient.onEvent = { event in
@@ -121,11 +123,11 @@ final class NetworkTests: XCTestCase {
             default: break
             }
         }
-        publicClient.connectPublic(baseURL: base, name: "SWIFT CHECK", colorIndex: 2)
+        publicClient.connectPublic(baseURL: base, name: publicName, colorIndex: 2)
         try await waitFor { publicWelcome != nil && publicState != nil || !errors.isEmpty }
         XCTAssertTrue(errors.isEmpty, errors.joined(separator: ", "))
         let publicID = try XCTUnwrap(publicWelcome?.id)
-        XCTAssertTrue(publicState?.tanks.contains { $0.id == publicID && $0.name == "SWIFT CHECK" && $0.colorIndex == 2 } == true)
+        XCTAssertTrue(publicState?.tanks.contains { $0.id == publicID && $0.name == publicName && $0.colorIndex == 2 } == true)
         publicClient.sendInput(GameInput(seq: 1, fire: true, stickX: 1))
         try await waitFor { publicState?.tanks.contains { $0.id == publicID && $0.ack == 1 } == true || !errors.isEmpty }
         publicClient.sendInput(GameInput(seq: 2, fire: true, stickX: 1), paused: true)
@@ -143,11 +145,11 @@ final class NetworkTests: XCTestCase {
             default: break
             }
         }
-        roomClient.connectRoom(baseURL: base, name: "SWIFT ROOM")
+        roomClient.connectRoom(baseURL: base, name: roomName)
         try await waitFor { roomWelcome != nil && room != nil || !errors.isEmpty }
         let roomID = try XCTUnwrap(roomWelcome?.id)
         let code = try XCTUnwrap(roomWelcome?.room), token = try XCTUnwrap(roomWelcome?.token)
-        roomClient.sendCommand(["type": "add", "kind": "bot", "name": "SWIFT BOT", "difficulty": "normal"])
+        roomClient.sendCommand(["type": "add", "kind": "bot", "name": "BOT " + suffix, "difficulty": "normal"])
         try await waitFor { (room?.players.count ?? 0) >= 2 || !errors.isEmpty }
         roomClient.sendCommand(["type": "start"])
         try await waitFor { fixedState?.phase == "playing" && fixedState?.world != nil || !errors.isEmpty }
@@ -173,7 +175,7 @@ final class NetworkTests: XCTestCase {
         }
         arenaClient.connectRoomInfinity(baseURL: base, code: code, token: token)
         try await waitFor { arenaWelcome?.seed != nil && arenaState != nil || !errors.isEmpty }
-        XCTAssertTrue(arenaState?.tanks.contains { $0.id == arenaWelcome?.id && $0.name == "SWIFT ROOM" } == true)
+        XCTAssertTrue(arenaState?.tanks.contains { $0.id == arenaWelcome?.id && $0.name == roomName } == true)
         XCTAssertTrue(errors.isEmpty, errors.joined(separator: ", "))
         arenaClient.disconnect()
         roomClient.sendCommand(["type": "lobby"])

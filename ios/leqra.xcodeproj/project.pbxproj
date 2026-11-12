@@ -22,6 +22,7 @@
 		500000000000000000000013 /* GameChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500000000000000000000003 /* GameChrome.swift */; };
 		500000000000000000000014 /* GameDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500000000000000000000004 /* GameDialogs.swift */; };
 		600000000000000000000002 /* FrameProfiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* FrameProfiler.swift */; };
+		900000000000000000000002 /* PublicInfinitySessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900000000000000000000001 /* PublicInfinitySessionStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +52,7 @@
 		500000000000000000000003 /* GameChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameChrome.swift; sourceTree = "<group>"; };
 		500000000000000000000004 /* GameDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDialogs.swift; sourceTree = "<group>"; };
 		600000000000000000000001 /* FrameProfiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameProfiler.swift; sourceTree = "<group>"; };
+		900000000000000000000001 /* PublicInfinitySessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicInfinitySessionStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +101,7 @@
 				500000000000000000000001 /* WebStyle.swift */,
 				00000000000000000000001F /* GameAudio.swift */,
 				600000000000000000000001 /* FrameProfiler.swift */,
+				900000000000000000000001 /* PublicInfinitySessionStore.swift */,
 				00000000000000000000000A /* GameApp.swift */,
 				00000000000000000000000B /* GameSession.swift */,
 				00000000000000000000000C /* ContentView.swift */,
@@ -238,6 +241,7 @@
 				500000000000000000000011 /* WebStyle.swift in Sources */,
 				00000000000000000000007F /* GameAudio.swift in Sources */,
 				600000000000000000000002 /* FrameProfiler.swift in Sources */,
+				900000000000000000000002 /* PublicInfinitySessionStore.swift in Sources */,
 				00000000000000000000006E /* GameApp.swift in Sources */,
 				00000000000000000000006F /* GameSession.swift in Sources */,
 				000000000000000000000070 /* ContentView.swift in Sources */,

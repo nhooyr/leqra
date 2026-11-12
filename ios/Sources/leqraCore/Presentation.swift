@@ -27,7 +27,7 @@ public struct PilotReadout: Equatable, Sendable {
     public var unlimited = false
 
     public init(tank: ArenaTank, snapshot: ArenaSnapshot, infinity: Bool, paused: Bool = false,
-                muzzleBlocked: Bool = false, online: Bool = true) {
+                online: Bool = true) {
         let alive = tank.hp > 0
         unlimited = alive && tank.starmanTime > 0
         capacity = tank.power == "rapid" ? 115 : tank.power == "scatter" ? 12 : ["homing", "grenade", "laser", "cannon"].contains(tank.power) ? 3 : 5
@@ -97,8 +97,7 @@ public struct PilotReadout: Equatable, Sendable {
             let fallback = cooldowns[tank.power] ?? 0.34
             let total = tank.cooldownTotal > 0 ? tank.cooldownTotal : fallback
             progress = cooldown > 0 ? max(0, min(1, 1 - cooldown / max(0.001, total))) : free < need ? 0 : 1
-            if muzzleBlocked { readiness = "IN WALL, MOVE TO FIRE"; fireLabel = "MOVE" }
-            else if cooldown > 0 { let time = String(format: "%.1f", max(0.1, (cooldown * 10).rounded(.toNearestOrAwayFromZero) / 10)); readiness = "COOLDOWN \(time)s"; fireLabel = time + "s" }
+            if cooldown > 0 { let time = String(format: "%.1f", max(0.1, (cooldown * 10).rounded(.toNearestOrAwayFromZero) / 10)); readiness = "COOLDOWN \(time)s"; fireLabel = time + "s" }
             else if free < need { readiness = "WAITING FOR AMMO"; fireLabel = "WAIT" }
             if tank.power == "grenade" { fireHint = "TAP TO THROW" }
         }

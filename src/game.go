@@ -854,9 +854,6 @@ func (g *Game) fire(t *Tank) bool {
 	if t.Power == "cannon" {
 		kind, radius, speed, life, cooldown = "cannon", cannonRadius, cannonSpeed, cannonLifetime, cannonCooldown
 	}
-	if g.muzzleBlocked(t, radius) {
-		return false
-	}
 	if starman {
 		cooldown = 0
 	}
@@ -874,31 +871,42 @@ func (g *Game) fire(t *Tank) bool {
 	before := len(g.Bullets)
 	for pellet, offset := range spread {
 		a := t.Angle + offset
-		cs, sn := math.Cos(a), math.Sin(a)
+		launch := g.projectileLaunch(t, a, radius, muzzle)
+		if !launch.valid {
+			g.emit("impact", t, t.ID, kind)
+			continue
+		}
+		cs, sn, travel := launch.ux, launch.uy, launch.muzzle
 		g.nextBullet++
-		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: t.X + cs*muzzle, Y: t.Y + sn*muzzle, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1, boosted: starman}
+		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: launch.x + cs*travel, Y: launch.y + sn*travel, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1, boosted: starman}
+		if launch.bounced {
+			b.Bounces = 1
+			if kind == "homing" || kind == "grenade" {
+				b.SeekDelay = missileWallDelay
+			}
+		}
 		// Cannon ignores internal walls, but even its muzzle respects the arena rim.
-		hit, hitOK := g.projectileWallHit(kind, t.X, t.Y, cs*muzzle, sn*muzzle, b.R)
-		target, targetAt := g.projectileTankHit(b, t.X, t.Y, cs*muzzle, sn*muzzle)
+		hit, hitOK := g.projectileWallHit(kind, launch.x, launch.y, cs*travel, sn*travel, b.R)
+		target, targetAt := g.projectileTankHit(b, launch.x, launch.y, cs*travel, sn*travel)
 		if target != nil && hitOK && targetAt > hit.T {
 			target = nil
 		}
 		if target != nil {
 			// The hidden muzzle section still travels through the arena. A
 			// close grazing tank can be entirely behind the initial shell point.
-			b.X, b.Y = t.X+cs*muzzle*targetAt, t.Y+sn*muzzle*targetAt
+			b.X, b.Y = launch.x+cs*travel*targetAt, launch.y+sn*travel*targetAt
 		} else if hitOK {
-			b.X = t.X + cs*muzzle*hit.T + hit.NX*.12
-			b.Y = t.Y + sn*muzzle*hit.T + hit.NY*.12
+			b.X = launch.x + cs*travel*hit.T + hit.NX*.12
+			b.Y = launch.y + sn*travel*hit.T + hit.NY*.12
 			b.reflect(hit)
 		}
 		if kind == "homing" || kind == "rapid" {
 			// Count the hidden muzzle section toward total path budgets, matching Laser.
-			launchDistance := muzzle
+			launchDistance := launch.distance + travel
 			if target != nil {
-				launchDistance = muzzle * targetAt
+				launchDistance = launch.distance + travel*targetAt
 			} else if hitOK {
-				launchDistance = muzzle*hit.T + math.Hypot(hit.NX, hit.NY)*.12
+				launchDistance = launch.distance + travel*hit.T + math.Hypot(hit.NX, hit.NY)*.12
 			}
 			if kind == "homing" {
 				b.RangeLeft = math.Max(0, g.missileTravelRange()-launchDistance)
@@ -963,8 +971,12 @@ func (g *Game) laserRange() float64         { return 2 * (g.World.Width + g.Worl
 // Only the first hidden barrel segment is cropped for rendering. The shooter
 // stays immune as before; the first vulnerable opponent/shield ends the shot.
 func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
-	x, y, ux, uy := t.X, t.Y, math.Cos(t.Angle), math.Sin(t.Angle)
-	remaining := g.laserRange()
+	launch := g.projectileLaunch(t, t.Angle, laserRadius, 28)
+	if !launch.valid {
+		return []BeamPoint{{t.X, t.Y}, {t.X, t.Y}}, nil
+	}
+	x, y, ux, uy := launch.x, launch.y, launch.ux, launch.uy
+	remaining := g.laserRange() - launch.distance
 	points := make([]BeamPoint, 0, 16)
 	for segment := 0; segment < laserMaxSegments && remaining > 1e-7; segment++ {
 		dx, dy := ux*remaining, uy*remaining
@@ -985,6 +997,9 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 		length := remaining * stop
 		if segment == 0 {
 			start := math.Min(28, length)
+			if launch.bounced {
+				start = 0
+			}
 			points = append(points, BeamPoint{x + ux*start, y + uy*start})
 		}
 		x += ux * length
@@ -1014,7 +1029,7 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 }
 func (g *Game) fireLaser(t *Tank) bool {
 	starman := t.StarmanTime > 0
-	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || t.Power != "laser" || !starman && (t.Cooldown > 0 || t.Charges <= 0) || g.muzzleBlocked(t, laserRadius) {
+	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || t.Power != "laser" || !starman && (t.Cooldown > 0 || t.Charges <= 0) {
 		return false
 	}
 	points, target := g.traceLaser(t)

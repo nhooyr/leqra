@@ -68,6 +68,7 @@ func TestResumeAsSpectatorClearsReadinessOnlyOnRoleChange(t *testing.T) {
 	h.removeClient(resumed)
 	stable.Input = Input{Forward: true}
 	join["spectating"] = true
+	join["name"] = "WATCH PILOT"
 	watcher := fakeClient()
 	action(t, h, watcher, join)
 	if watcher.player == nil || !watcher.player.Spectating || room.Players[id] != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -79,7 +80,7 @@ func TestJoinCreateHonorsRoomLimit(t *testing.T) {
 	if !hasError(denied, "server_full") {
 		t.Fatal("random creation bypassed capacity")
 	}
-	action(t, h, guest, map[string]any{"type": "join", "code": "ABC234"})
+	action(t, h, guest, map[string]any{"type": "join", "code": "ABC234", "name": "GUEST"})
 	if guest.room != host.room || len(h.rooms) != 1 {
 		t.Fatal("room limit wrongly blocked joining an existing room")
 	}
@@ -114,13 +115,17 @@ func TestConcurrentJoinMissingCreatesOneHost(t *testing.T) {
 	const count = 24
 	cs := make([]*Client, count)
 	errors := make([]error, count)
-	data := []byte(`{"type":"join","code":"ABC234","name":"RACER"}`)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range cs {
 		cs[i] = fakeClient()
 		wg.Add(1)
-		go func(i int) { defer wg.Done(); <-start; errors[i] = h.handle(cs[i], data, time.Now()) }(i)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			data, _ := json.Marshal(map[string]any{"type": "join", "code": "ABC234", "name": fmt.Sprint("RACER", i)})
+			errors[i] = h.handle(cs[i], data, time.Now())
+		}(i)
 	}
 	close(start)
 	wg.Wait()
@@ -174,7 +179,7 @@ func TestConcurrentNamedCreatesRespectServerCapacity(t *testing.T) {
 	start := make(chan struct{})
 	for i, code := range codes {
 		cs[i] = fakeClient()
-		data, _ := json.Marshal(map[string]any{"type": "join", "code": code})
+		data, _ := json.Marshal(map[string]any{"type": "join", "code": code, "name": fmt.Sprint("HOST", i)})
 		wg.Add(1)
 		go func(i int, b []byte) { defer wg.Done(); <-start; errs[i] = h.handle(cs[i], b, time.Now()) }(i, data)
 	}
@@ -268,7 +273,7 @@ func TestNamedHostHasNormalRoomControls(t *testing.T) {
 	if !hasError(host, "not_ready") {
 		t.Fatal("single host could start match")
 	}
-	action(t, h, guest, map[string]any{"type": "join", "code": "ABC234"})
+	action(t, h, guest, map[string]any{"type": "join", "code": "ABC234", "name": "GUEST"})
 	action(t, h, guest, map[string]any{"type": "ready", "ready": true})
 	action(t, h, guest, map[string]any{"type": "start"})
 	if !hasError(guest, "not_host") {

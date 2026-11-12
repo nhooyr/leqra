@@ -493,9 +493,6 @@ final class GameScene: SKScene {
         guideKey = key
         var points: [BeamPoint]
         let radius = tank.power == "laser" ? 3.0 : tank.power == "cannon" ? 14 : tank.power == "grenade" ? 6 : tank.power == "homing" ? 5 : tank.power == "rapid" ? 3.5 / 3 : 3.5
-        if tank.ghostTime > 0, geometry.isMuzzleBlocked(x: tank.x, y: tank.y, kind: tank.power, radius: radius) {
-            aimingGuide.path = nil; return
-        }
         if tank.power == "laser" {
             points = geometry.laserGuide(x: tank.x, y: tank.y, angle: tank.angle,
                                         range: layoutMode == .fixed ? 2 * ((fixedWorld?.width ?? 756) + (fixedWorld?.height ?? 588)) : 18 * 84)

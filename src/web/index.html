@@ -7,18 +7,18 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="leqra.com">
-<meta name="leqra-version" content="v4.49.39">
+<meta name="leqra-version" content="v4.49.40">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra.com</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.39/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.39/theme.css">
-<link rel="stylesheet" href="assets/v4.49.39/style.css">
-<link rel="manifest" href="assets/v4.49.39/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.39/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.39/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.39/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.39/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.40/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.40/theme.css">
+<link rel="stylesheet" href="assets/v4.49.40/style.css">
+<link rel="manifest" href="assets/v4.49.40/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.40/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.40/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.40/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.40/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -135,7 +135,7 @@
 </main>
 <footer class="footer"><span>A LITTLE AIM. A LOT OF CHAOS. BUILT FOR QUICK ROUNDS.</span><span id="recordLabel">0 MATCH WINS ON THIS DEVICE</span></footer>
 </div>
-<dialog id="joinDialog" class="join-dialog" aria-labelledby="joinTitle"><div class="eyebrow">JOIN</div><h2 id="joinTitle">Find a room.</h2><label class="field-label" for="pilotName">CALLSIGN</label><input class="net-input" id="pilotName" maxlength="32" placeholder="Player 1" autocomplete="nickname"><label class="field-label" for="joinCode">ROOM NAME OR CODE</label><input class="net-input" id="joinCode" placeholder="Friday tanks 💥" spellcheck="false" autocomplete="off"><div class="join-dialog-actions"><button class="primary" id="joinRoomBtn" type="button"><span>JOIN</span><span aria-hidden="true">→</span></button></div><p class="net-status" id="netStatus" role="status">Missing rooms are created with the joining pilot as host.</p><button class="secondary back-action" id="onlineBackBtn" type="button">Back to the room <span aria-hidden="true">←</span></button></dialog>
+<dialog id="joinDialog" class="join-dialog" aria-labelledby="joinTitle"><div class="eyebrow">JOIN</div><h2 id="joinTitle">Find a room.</h2><label class="field-label" for="pilotName">CALLSIGN</label><input class="net-input" id="pilotName" aria-describedby="pilotNameStatus" maxlength="32" placeholder="Player 1" autocomplete="nickname"><p class="callsign-status" id="pilotNameStatus" role="status" aria-live="polite" hidden></p><label class="field-label" for="joinCode">ROOM NAME OR CODE</label><input class="net-input" id="joinCode" placeholder="Friday tanks 💥" spellcheck="false" autocomplete="off"><div class="join-dialog-actions"><button class="primary" id="joinRoomBtn" type="button"><span>JOIN</span><span aria-hidden="true">→</span></button></div><p class="net-status" id="netStatus" role="status">Missing rooms are created with the joining pilot as host.</p><button class="secondary back-action" id="onlineBackBtn" type="button">Back to the room <span aria-hidden="true">←</span></button></dialog>
 <dialog id="kickDialog" class="kick-dialog" aria-labelledby="kickTitle" aria-describedby="kickDescription kickNotice">
  <div class="eyebrow">HOST CONTROLS</div><h2 id="kickTitle">Kick this player?</h2>
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
@@ -264,10 +264,10 @@
  <div class="feature-body"><div class="eyebrow">THIS DEVICE</div><h2 id="settingsResetTitle" tabindex="-1">Resetting settings.</h2><p id="settingsResetStatus" role="status" aria-live="polite">Clearing leqra settings and cached app files.</p></div>
  <footer class="feature-footer"><button class="secondary" id="settingsResetRetryBtn" type="button" hidden>RETRY RESET</button><button class="primary" id="settingsResetReloadBtn" type="button" disabled>RELOAD</button></footer>
 </dialog>
-<script src="assets/v4.49.39/netcode.js" defer></script>
-<script src="assets/v4.49.39/game.js" defer></script>
-<script src="assets/v4.49.39/infinite-maze.js" defer></script>
-<script src="assets/v4.49.39/infinite.js" defer></script>
-<script src="assets/v4.49.39/pwa.js" defer></script>
+<script src="assets/v4.49.40/netcode.js" defer></script>
+<script src="assets/v4.49.40/game.js" defer></script>
+<script src="assets/v4.49.40/infinite-maze.js" defer></script>
+<script src="assets/v4.49.40/infinite.js" defer></script>
+<script src="assets/v4.49.40/pwa.js" defer></script>
 </body>
 </html>

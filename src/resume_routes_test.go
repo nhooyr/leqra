@@ -12,7 +12,7 @@ func TestRoomRenameBoundsResumeRoutesAndKeepsRecentReconnect(t *testing.T) {
 	for i := 0; i < maxSpectators; i++ {
 		c := fakeClient()
 		h.addClient(c)
-		action(t, h, c, map[string]any{"type": "join", "code": r.Code, "name": "VIEWER", "spectating": true})
+		action(t, h, c, map[string]any{"type": "join", "code": r.Code, "name": fmt.Sprint("VIEWER", i), "spectating": true})
 		clients = append(clients, c)
 	}
 	guest := clients[len(clients)-1]

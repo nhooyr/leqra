@@ -5,6 +5,8 @@ public struct NetworkWelcome: Decodable, Sendable {
     public let seed: UInt32?
     public var room: String?
     public let token: String?
+    public let publicToken: String?
+    public let isPublic: Bool
     public let spectating: Bool
     public let localId: Int?
     public let generation: UInt64?
@@ -15,13 +17,18 @@ public struct NetworkWelcome: Decodable, Sendable {
     public let full: Bool
     public let busy: Bool
 
-    enum CodingKeys: String, CodingKey { case id, seed, room, token, spectating, localId, generation, member, localMember, resumed, created, full, busy }
+    enum CodingKeys: String, CodingKey {
+        case id, seed, room, token, publicToken, spectating, localId, generation, member, localMember, resumed, created, full, busy
+        case isPublic = "public"
+    }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
         seed = try c.decodeIfPresent(UInt32.self, forKey: .seed)
         room = try c.decodeIfPresent(String.self, forKey: .room)
         token = try c.decodeIfPresent(String.self, forKey: .token)
+        publicToken = try c.decodeIfPresent(String.self, forKey: .publicToken)
+        isPublic = try c.decodeIfPresent(Bool.self, forKey: .isPublic) ?? false
         spectating = try c.decodeIfPresent(Bool.self, forKey: .spectating) ?? false
         localId = try c.decodeIfPresent(Int.self, forKey: .localId)
         generation = try c.decodeIfPresent(UInt64.self, forKey: .generation)
@@ -147,6 +154,7 @@ public enum GameNetworkError: LocalizedError {
     case unsupportedProtocol
     case unsupportedVersion(String)
     case timeout
+    case temporarilyUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -155,6 +163,7 @@ public enum GameNetworkError: LocalizedError {
         case .unsupportedProtocol: return "This server uses an unsupported game protocol."
         case .unsupportedVersion(let version): return "This server is running leqra \(version). Update the native app before joining."
         case .timeout: return "The server stopped responding. Rejoin to play again."
+        case .temporarilyUnavailable: return "The server is temporarily unavailable. Reconnecting…"
         }
     }
 }
@@ -212,8 +221,8 @@ struct NetworkLatencySampler {
 }
 
 /// Native transport. All callbacks and mutations are serialized on the main actor.
-/// Public Infinity connections deliberately require an explicit rejoin after loss;
-/// an unauthenticated public pilot has no score-preserving resume credential.
+/// Public identities use their own server-issued bearer credential; private
+/// room reconnects retain their existing bounded reservation window.
 @MainActor public final class NetworkClient {
     public static let supportedVersion = GeneratedVersion.value
     public var onEvent: ((NetworkEvent) -> Void)?
@@ -230,7 +239,10 @@ struct NetworkLatencySampler {
         var token: String
         var name: String
         var generation: UInt64?
+        var publicJoin: [String: Any]? = nil
+        var isPublic: Bool { publicJoin != nil }
         var command: [String: Any] {
+            if let publicJoin { return publicJoin }
             var result: [String: Any] = ["type": "join", "code": code, "token": token, "name": name]
             if infinity { result["resume"] = true; result["generation"] = generation }
             return result
@@ -257,6 +269,7 @@ struct NetworkLatencySampler {
     private var reconnectDeadline: Date?
     private var reconnectAttempt = 0
     private var renameRequestID: UInt64 = 0
+    private var suspended = false
 
     public init(session: URLSession = .shared) { self.session = session }
 
@@ -268,16 +281,20 @@ struct NetworkLatencySampler {
         socket?.cancel(with: .goingAway, reason: nil)
     }
 
-    public func connectPublic(baseURL: URL, name: String, colorIndex: Int, localName: String? = nil, localColorIndex: Int = 1) {
+    public func connectPublic(baseURL: URL, name: String, colorIndex: Int, localName: String? = nil, localColorIndex: Int = 1,
+                              publicToken: String? = nil, updateNames: Bool = false) {
         var join: [String: Any] = ["type": "join", "name": name, "colorIndex": min(7, max(0, colorIndex))]
         if let localName { join["localName"] = localName; join["localColorIndex"] = min(7, max(0, localColorIndex)) }
-        begin(baseURL: baseURL, infinity: true, join: join)
+        if let publicToken, !publicToken.isEmpty { join["publicToken"] = publicToken; join["resume"] = true }
+        if updateNames { join["updateNames"] = true }
+        begin(baseURL: baseURL, infinity: true, join: join, resuming: publicToken?.isEmpty == false)
     }
 
-    public func connectRoom(baseURL: URL, name: String, code: String? = nil, spectating: Bool = false) {
+    public func connectRoom(baseURL: URL, name: String, code: String? = nil, spectating: Bool = false, publicToken: String? = nil) {
         var join: [String: Any] = ["type": code?.isEmpty == false ? "join" : "create", "name": name]
         if let code, !code.isEmpty { join["code"] = code }
         join["spectating"] = spectating
+        join["publicToken"] = publicToken
         begin(baseURL: baseURL, infinity: false, join: join)
     }
 
@@ -303,22 +320,63 @@ struct NetworkLatencySampler {
         return status
     }
 
-    public func connectPublishedRoom(baseURL: URL, code: String? = nil, rules: RoomRules, roster: [NativeSeatSpec]) {
+    /// Availability never allocates or claims an identity. Only an authenticated
+    /// atomic online join or rename may claim the requested names.
+    public func fetchCallsignAvailability(baseURL: URL, names: [String], publicToken: String? = nil) async throws -> [CallsignAvailability] {
+        var request = URLRequest(url: try ServerAddress.endpoint(baseURL, path: "/api/callsigns"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(try PublicInfinitySession.normalizedOrigin(baseURL), forHTTPHeaderField: "Origin")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 6
+        var body: [String: Any] = ["names": names]
+        body["publicToken"] = publicToken
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 16 * 1024 else {
+            throw GameNetworkError.invalidResponse
+        }
+        struct Result: Decodable { let names: [CallsignAvailability] }
+        let result = try JSONDecoder().decode(Result.self, from: data).names
+        guard result.count == names.count, result.enumerated().allSatisfy({ $0.offset == $0.element.seat }) else {
+            throw GameNetworkError.invalidResponse
+        }
+        return result
+    }
+
+    public func connectPublishedRoom(baseURL: URL, code: String? = nil, rules: RoomRules, roster: [NativeSeatSpec], publicToken: String? = nil) {
         var join = NativeRoomCommand.preset(rules: rules, roster: roster).payload
         join["type"] = "publish"; join["code"] = code
+        join["publicToken"] = publicToken
         begin(baseURL: baseURL, infinity: false, join: join)
     }
 
-    /// Retry an authenticated private session without issuing a destructive
-    /// leave. Public standalone Infinity pilots have no resume credentials.
-    public func reconnect() {
-        guard resumeContext != nil else { return }
-        if !scheduleReconnect(force: true) { fail("The reconnect window expired.", terminal: true) }
+    /// Retry the current identity without issuing a destructive leave.
+    @discardableResult public func reconnect() -> Bool {
+        guard resumeContext != nil else { return false }
+        suspended = false
+        guard scheduleReconnect(force: true) else {
+            fail("The reconnect window expired.", terminal: true)
+            return false
+        }
+        return true
+    }
+
+    /// Backgrounding must not send `leave` or allow transport callbacks to
+    /// start new attempts while iOS has suspended the app.
+    public func suspend() {
+        suspended = true
+        reconnectTask?.cancel(); reconnectTask = nil
+        let old = socket
+        invalidate()
+        old?.cancel(with: .goingAway, reason: nil)
     }
 
     /// A separate room socket can rename the room while its arena socket is
     /// running. Keep the latter's in-memory resume route current as well.
     public func updateResumeRoomCode(_ code: String) {
+        guard resumeContext?.isPublic != true else { return }
         resumeContext?.code = code
         if welcome?.room != nil { welcome?.room = code }
     }
@@ -331,15 +389,20 @@ struct NetworkLatencySampler {
     }
 
     private func begin(baseURL: URL, infinity: Bool, join: [String: Any], resuming: Bool = false) {
+        let publicArena = infinity && join["code"] == nil
         if resuming {
             let old = socket
             invalidate()
             old?.cancel(with: .goingAway, reason: nil)
             reconnectTask = nil
-            reconnectDeadline = reconnectDeadline ?? Date().addingTimeInterval(18)
+            reconnectDeadline = publicArena ? nil : reconnectDeadline ?? Date().addingTimeInterval(18)
         } else { disconnect() }
+        suspended = false
         currentBaseURL = baseURL
-        if infinity, let code = join["code"] as? String, let token = join["token"] as? String {
+        if publicArena {
+            resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: "", token: "",
+                name: join["name"] as? String ?? "", generation: nil, publicJoin: join)
+        } else if infinity, let code = join["code"] as? String, let token = join["token"] as? String {
             resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: code, token: token,
                                           name: join["name"] as? String ?? "", generation: join["generation"] as? UInt64)
         }
@@ -359,7 +422,9 @@ struct NetworkLatencySampler {
                 request.timeoutInterval = resuming ? min(6, max(0.5, self.reconnectDeadline?.timeIntervalSinceNow ?? 6)) : 10
                 let (data, response) = try await self.session.data(for: request)
                 guard self.epoch == current, !Task.isCancelled else { return }
-                guard let response = response as? HTTPURLResponse, response.statusCode == 200,
+                guard let response = response as? HTTPURLResponse else { throw GameNetworkError.invalidResponse }
+                if response.statusCode == 429 || response.statusCode >= 500 { throw GameNetworkError.temporarilyUnavailable }
+                guard response.statusCode == 200,
                       data.count <= 8192,
                       let build = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let version = build["version"] as? String, !version.isEmpty, version.count <= 64 else { throw GameNetworkError.invalidResponse }
@@ -397,7 +462,12 @@ struct NetworkLatencySampler {
                 }
             } catch {
                 guard self.epoch == current, !Task.isCancelled else { return }
-                self.fail(error.localizedDescription, terminal: error is GameNetworkError)
+                let terminal: Bool
+                switch error as? GameNetworkError {
+                case .timeout, .temporarilyUnavailable, .none: terminal = false
+                default: terminal = true
+                }
+                self.fail(error.localizedDescription, terminal: terminal)
             }
         }
     }
@@ -440,13 +510,15 @@ struct NetworkLatencySampler {
         }
     }
 
-    /// Retires the pilot explicitly before closing; no credentials are persisted.
+    /// Retires the live pilot explicitly. Device credential storage belongs to
+    /// the app layer and is independent of this transport's in-memory context.
     public func disconnect() {
         let oldSocket = socket
         let wasConnected = connected
         reconnectTask?.cancel(); reconnectTask = nil
         resumeContext = nil; reconnectDeadline = nil; reconnectAttempt = 0
         currentBaseURL = nil
+        suspended = false
         invalidate()
         if let oldSocket {
             Task {
@@ -480,9 +552,9 @@ struct NetworkLatencySampler {
     }
 
     private func scheduleReconnect(force: Bool = false) -> Bool {
-        guard automaticallyReconnects || force, let context = resumeContext else { return false }
-        let now = Date(), deadline = reconnectDeadline ?? Date().addingTimeInterval(18)
-        guard now < deadline else { return false }
+        guard !suspended, automaticallyReconnects || force, let context = resumeContext else { return false }
+        let now = Date(), deadline = context.isPublic ? nil : reconnectDeadline ?? Date().addingTimeInterval(18)
+        if let deadline, now >= deadline { return false }
         reconnectDeadline = deadline
         reconnectAttempt += 1
         let attempt = reconnectAttempt
@@ -494,9 +566,10 @@ struct NetworkLatencySampler {
         onEvent?(.roomEvent(.reconnecting(attempt: attempt)))
         onEvent?(.status("Reconnecting…"))
         reconnectTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(min(2, 0.3 * Double(attempt)) * 1_000_000_000))
+            let backoff = context.isPublic ? min(10, 0.3 * pow(1.6, Double(min(attempt - 1, 8)))) : min(2, 0.3 * Double(attempt))
+            try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
             guard let self, !Task.isCancelled, self.epoch == current else { return }
-            guard Date() < deadline else { self.fail("The reconnect window expired. Join the room again.", terminal: true); return }
+            if let deadline, Date() >= deadline { self.fail("The reconnect window expired. Join the room again.", terminal: true); return }
             self.begin(baseURL: context.baseURL, infinity: context.infinity, join: context.command, resuming: true)
         }
         return true
@@ -521,7 +594,7 @@ struct NetworkLatencySampler {
         }
     }
 
-    private func receive(_ data: Data) throws {
+    func receive(_ data: Data) throws {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = object["type"] as? String else { throw GameNetworkError.invalidResponse }
         switch type {
@@ -537,8 +610,15 @@ struct NetworkLatencySampler {
             connected = true
             startHeartbeat(epoch: epoch)
             if let baseURL = currentBaseURL {
-                if let code = info.room, let token = info.token {
-                    resumeContext = ResumeContext(baseURL: baseURL, infinity: false, code: code, token: token,
+                if isInfinity, info.isPublic, let publicToken = info.publicToken {
+                    var join = resumeContext?.publicJoin ?? pendingJoin
+                    join["code"] = nil; join["token"] = nil; join["generation"] = nil
+                    join["updateNames"] = nil
+                    join["publicToken"] = publicToken; join["resume"] = true
+                    resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: "", token: "",
+                        name: join["name"] as? String ?? "", generation: nil, publicJoin: join)
+                } else if let code = info.room, let token = info.token {
+                    resumeContext = ResumeContext(baseURL: baseURL, infinity: isInfinity, code: code, token: token,
                                                   name: pendingJoin["name"] as? String ?? "", generation: nil)
                 } else if isInfinity, info.generation != nil { resumeContext?.generation = info.generation }
             }
@@ -573,9 +653,11 @@ struct NetworkLatencySampler {
             onEvent?(.roomEvent(.roomRenamed(rename)))
         case "renamed", "rename_error":
             let rename = try JSONDecoder().decode(PilotRename.self, from: data)
-            if rename.type == "renamed", rename.seat == nil || rename.seat == 0, let name = rename.name { resumeContext?.name = name }
+            if rename.type == "renamed", rename.seat == nil || rename.seat == 0, let name = rename.name {
+                resumeContext?.name = name; resumeContext?.publicJoin?["name"] = name
+            }
             onEvent?(.roomEvent(.pilotRenamed(rename)))
-        case "swapped", "player_kicked", "unshared":
+        case "swapped", "player_kicked", "unshared", "leaderboard_reset":
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             if type == "unshared" { disconnect() }
         case "infinity_start": onEvent?(.infinityStarted(object["public"] as? Bool ?? false))
@@ -586,12 +668,25 @@ struct NetworkLatencySampler {
             }
         case "error":
             let message = object["message"] as? String ?? "The server rejected this action."
+            let code = object["code"] as? String
+            if resumeContext?.isPublic == true {
+                if code == "public_resume_invalid", pendingJoin["publicToken"] != nil,
+                   let context = resumeContext, var join = context.publicJoin {
+                    join["publicToken"] = nil; join["resume"] = nil
+                    begin(baseURL: context.baseURL, infinity: true, join: join, resuming: true)
+                    return
+                }
+                if ["server_shutdown", "server_busy", "full", "arena_full", "busy", "session_active"].contains(code ?? "") {
+                    fail(message); return
+                }
+            }
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             if (object["code"] as? String) == "session_active", reconnectDeadline != nil { fail(message); return }
-            if !connected || (object["code"] as? String) == "kicked" || (object["action"] as? String) == "version" {
+            if !connected || code == "kicked" || code == "session_replaced" || (object["action"] as? String) == "version" {
                 fail(message, terminal: true)
             } else { onEvent?(.error(message)) }
         case "server_shutdown", "kicked", "room_offline":
+            if type == "server_shutdown", resumeContext?.isPublic == true { fail("Reconnecting after server restart…"); return }
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             fail(object["message"] as? String ?? "The server closed this session.", terminal: true)
         default: break

@@ -1030,3 +1030,11 @@ body.touch-ui .infinite-touch-controls{display:flex}
 .pwa-install-manual{grid-template-columns:minmax(0,1fr) auto}
 .pwa-install-hint>div{min-width:0}.pwa-install-hint strong{font:700 13px/1.4 var(--sans)}.pwa-install-hint p{margin:3px 0 0;font:12px/1.5 var(--sans);color:var(--text-soft);overflow-wrap:anywhere}
 .pwa-install-hint .pwa-install-action{width:auto;min-width:60px;min-height:44px;margin:0;padding:8px;font-size:10px}.pwa-install-dismiss{display:grid;place-items:center;width:44px;min-height:44px;padding:0;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text-soft);font:24px var(--sans);cursor:pointer}.pwa-install-hint button:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+
+/* Reserve feedback space so validation never moves the fields or actions. */
+body .callsign-status{min-height:2.8em;font:var(--min-font-size)/1.4 var(--mono);overflow-wrap:anywhere;margin:var(--callsign-feedback-gap) 0 0;color:var(--accent-ink)}
+body .callsign-status[hidden]{display:block!important;visibility:hidden}
+body .callsign-status.error{color:var(--orange)}
+body :is(#roomScreen,#onlineMenuScreen,#infinitePauseMenu) .callsign-status,body #infinitePauseMenu .callsign-status,body #onlineMenuScreen .callsign-status{min-height:2.8em}
+
+body #roomScreen.unified-room #roomStatus,body #joinDialog #netStatus{min-height:2.8em}

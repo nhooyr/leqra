@@ -183,13 +183,17 @@ public final class InfiniteMaze {
     public func projectileGuide(x: Double, y: Double, angle: Double, kind: String,
                                 range: Double, radius: Double, maxSegments: Int = 128) -> [BeamPoint] {
         guard [x, y, angle, range, radius].allSatisfy(\.isFinite), range > 0, radius >= 0,
-              !isMuzzleBlocked(x: x, y: y, kind: kind, radius: radius) else { return [] }
-        var x = x, y = y, ux = cos(angle), uy = sin(angle), remaining = min(range, 20000)
+              let launch = launchRay(x: x, y: y, angle: angle, kind: kind, radius: radius) else { return [] }
+        var x = launch.x, y = launch.y, ux = launch.ux, uy = launch.uy
+        var remaining = max(0, min(range, 20000) - launch.distance)
         var points: [BeamPoint] = []
         for index in 0..<max(0, min(maxSegments, 128)) {
             let wall = projectileHit(kind: kind, x: x, y: y, dx: ux * remaining, dy: uy * remaining, radius: radius)
             let length = remaining * (wall?.fraction ?? 1)
-            if index == 0 { points.append(BeamPoint(x: x + ux * min(28, length), y: y + uy * min(28, length))) }
+            if index == 0 {
+                let crop = launch.bounced ? 0 : 28.0
+                points.append(BeamPoint(x: x + ux * min(crop, length), y: y + uy * min(crop, length)))
+            }
             x += ux * length; y += uy * length; remaining -= length
             points.append(BeamPoint(x: x, y: y))
             guard let wall, remaining > 1e-7 else { break }
@@ -198,6 +202,53 @@ public final class InfiniteMaze {
             x += ux * nudge; y += uy * nudge; remaining -= nudge
         }
         return points
+    }
+
+    public struct LaunchRay: Equatable, Sendable {
+        public var x: Double
+        public var y: Double
+        public var ux: Double
+        public var uy: Double
+        public var distance: Double
+        public var bounced: Bool
+    }
+
+    /// Initial overlaps belong to launch handling, not ordinary wall sweeps.
+    /// A phased pilot fires from a nearby clear face on the incoming side;
+    /// the projectile reflects there instead of tunneling through the wall.
+    public func launchRay(x: Double, y: Double, angle: Double, kind: String, radius: Double) -> LaunchRay? {
+        guard [x, y, angle, radius].allSatisfy(\.isFinite), radius >= 0 else { return nil }
+        let ux = cos(angle), uy = sin(angle)
+        let original = LaunchRay(x: x, y: y, ux: ux, uy: uy, distance: 0, bounced: false)
+        guard kind != "cannon" else { return original }
+        let overlapping = walls(x0: x - radius, y0: y - radius, x1: x + radius, y1: y + radius).filter {
+            x >= $0.x - radius && x <= $0.x + $0.w + radius && y >= $0.y - radius && y <= $0.y + $0.h + radius
+        }
+        guard !overlapping.isEmpty || isMuzzleBlocked(x: x, y: y, kind: kind, radius: radius) else { return original }
+        var xs = [x], ys = [y]
+        for wall in overlapping {
+            xs.append(contentsOf: [wall.x - radius - 0.12, wall.x + wall.w + radius + 0.12])
+            ys.append(contentsOf: [wall.y - radius - 0.12, wall.y + wall.h + radius + 0.12])
+        }
+        xs.sort(); ys.sort()
+        var best: (x: Double, y: Double, squared: Double)?
+        for ax in xs { for ay in ys {
+            let dx = ax - x, dy = ay - y, squared = dx * dx + dy * dy
+            guard squared <= 32 * 32 + 1e-7, dx * ux + dy * uy <= 1e-7,
+                  !isMuzzleBlocked(x: ax, y: ay, kind: kind, radius: radius) else { continue }
+            if let old = best {
+                if squared > old.squared + 1e-7 { continue }
+                if abs(squared - old.squared) <= 1e-7 && (ax > old.x || ax == old.x && ay >= old.y) { continue }
+            }
+            best = (ax, ay, squared)
+        } }
+        guard let best else { return nil }
+        let nx = best.x == x ? 0.0 : best.x > x ? 1.0 : -1.0
+        let ny = best.y == y ? 0.0 : best.y > y ? 1.0 : -1.0
+        return LaunchRay(x: best.x, y: best.y,
+                         ux: ux * nx < -1e-9 ? -ux : ux,
+                         uy: uy * ny < -1e-9 ? -uy : uy,
+                         distance: sqrt(best.squared), bounced: true)
     }
 
     public func isMuzzleBlocked(x: Double, y: Double, kind: String, radius: Double) -> Bool {

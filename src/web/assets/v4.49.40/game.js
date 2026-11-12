@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.39';
+const GAME_VERSION='4.49.40';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -616,25 +616,29 @@ function projectileSpec(power){
  return base;
 }
 function muzzleBlocked(t){
- if(!(t.ghostTime>0)||t.power==='cannon')return false;
- const {x,y}=t,r=t.power==='laser'?LASER_RADIUS:projectileSpec(t.power).r,margin=WALL/2+r;
- if(x<margin||x>W-margin||y<margin||y>H-margin)return true;
- // Match the swept wall rectangles, including their expanded corners.
- for(const w of nearbyWalls(x,y,0,0,r))if(x>=w.x-r&&x<=w.x+w.w+r&&y>=w.y-r&&y<=w.y+w.h+r)return true;
+ // Launch geometry resolves wall contact; pointing into cover never blocks fire.
  return false;
 }
+function projectileLaunch(t,angle,r,muzzle){
+ const ux=Math.cos(angle),uy=Math.sin(angle),{x,y}=t;
+ if(!(t.ghostTime>0)||t.power==='cannon')return{x,y,ux,uy,distance:0,muzzle,bounced:false,valid:true};
+ const margin=WALL/2+r;
+ return Net.wallLaunch(x,y,ux,uy,r,muzzle,nearbyWalls(x,y,0,0,r+32),(x,y)=>x>=margin&&x<=W-margin&&y>=margin&&y<=H-margin);
+}
 function muzzleProjectile(t,angle){
- const spec=projectileSpec(t.power),cs=Math.cos(angle),sn=Math.sin(angle);
+ const spec=projectileSpec(t.power);
  const muzzle=spec.kind==='cannon'?Math.max(28,t.r+spec.r+1):28;
- const b={...spec,owner:t.id,x:t.x+cs*muzzle,y:t.y+sn*muzzle,vx:cs*spec.speed,vy:sn*spec.speed,age:0,color:t.color,bounces:0,target:-1,trail:[],dead:false};
- const hit=projectileWall(b.kind,t.x,t.y,cs*muzzle,sn*muzzle,b.r),tank=tankHit(t.x,t.y,cs*muzzle,sn*muzzle,b.r,t.id,b.kind==='grenade');
+ const launch=projectileLaunch(t,angle,spec.r,muzzle),cs=launch.ux,sn=launch.uy,travel=launch.muzzle;
+ const b={...spec,owner:t.id,x:launch.x+cs*travel,y:launch.y+sn*travel,vx:cs*spec.speed,vy:sn*spec.speed,age:0,color:t.color,bounces:launch.bounced?1:0,target:-1,trail:[],dead:!launch.valid};
+ if(!launch.valid){b.x=t.x;b.y=t.y;return b;}
+ const hit=projectileWall(b.kind,launch.x,launch.y,cs*travel,sn*travel,b.r),tank=tankHit(launch.x,launch.y,cs*travel,sn*travel,b.r,t.id,b.kind==='grenade');
  const contact=tank&&(!hit||tank.at<=hit.t);
- if(contact){b.x=t.x+cs*muzzle*tank.at;b.y=t.y+sn*muzzle*tank.at;b.launchHit=tank.tank.id;}
- else if(hit){b.x=t.x+cs*muzzle*hit.t+hit.nx*.12;b.y=t.y+sn*muzzle*hit.t+hit.ny*.12;if(hit.nx)b.vx=-b.vx;if(hit.ny)b.vy=-b.vy;b.bounces++;}
- const launchDistance=contact?muzzle*tank.at:hit?muzzle*hit.t+Math.hypot(hit.nx,hit.ny)*.12:muzzle;
+ if(contact){b.x=launch.x+cs*travel*tank.at;b.y=launch.y+sn*travel*tank.at;b.launchHit=tank.tank.id;}
+ else if(hit){b.x=launch.x+cs*travel*hit.t+hit.nx*.12;b.y=launch.y+sn*travel*hit.t+hit.ny*.12;if(hit.nx)b.vx=-b.vx;if(hit.ny)b.vy=-b.vy;b.bounces++;}
+ const launchDistance=launch.distance+(contact?travel*tank.at:hit?travel*hit.t+Math.hypot(hit.nx,hit.ny)*.12:travel);
  if(b.kind==='homing')b.rangeLeft=Math.max(0,W+H-launchDistance);
  else if(b.kind==='rapid')b.life=Math.max(0,((W+H)/2-launchDistance)/MACHINE_SPEED);
- if(b.kind==='homing'||b.kind==='grenade')b.seekDelay=!contact&&hit?MISSILE_WALL_DELAY:0;
+ if(b.kind==='homing'||b.kind==='grenade')b.seekDelay=launch.bounced||!contact&&hit?MISSILE_WALL_DELAY:0;
  return b;
 }
 let lastMachineTone=-Infinity;
@@ -656,6 +660,7 @@ function fire(t){
  const spec=projectileSpec(t.power);if(fast)t.rapidTick=tick;t.cooldown=boosted?0:spec.cooldown;t.cooldownTotal=t.cooldown;t.recoil=1;
  for(const offset of spread){const angle=t.angle+offset,b=muzzleProjectile(t,angle);b.id=++bulletId;b.boosted=boosted;
   if(b.launchHit!==undefined)projectileTankImpact(b,tanks.find(other=>other.id===b.launchHit));
+  else if(b.dead)impactEffect(b.x,b.y,b.color);
   if(!b.dead)bullets.push(b);
   if(!fast||spec.kind==='grenade'||tick%4===0)burst(t.x+Math.cos(angle)*27,t.y+Math.sin(angle)*27,t.color,3,40);
  }
@@ -669,8 +674,10 @@ function fire(t){
 // The same bounded multi-segment trace as Go. Bot beams pass through bots;
 // the shooter remains immune, including after a wall reflection.
 function laserTrace(t,angle=t.angle){
- let x=t.x,y=t.y,ux=Math.cos(angle),uy=Math.sin(angle),remaining=2*(W+H),target=null;
- const points=[];let bounces=0;
+ const launch=projectileLaunch(t,angle,LASER_RADIUS,28);
+ if(!launch.valid)return{x:t.x,y:t.y,endX:t.x,endY:t.y,points:[{x:t.x,y:t.y},{x:t.x,y:t.y}],target:null,bounces:1};
+ let {x,y,ux,uy}=launch,remaining=2*(W+H)-launch.distance,target=null;
+ const points=[];let bounces=launch.bounced?1:0;
  for(let segment=0;segment<LASER_MAX_SEGMENTS&&remaining>1e-7;segment++){
   const dx=ux*remaining,dy=uy*remaining,wall=rayWalls(x,y,dx,dy,LASER_RADIUS);
   let stop=wall?wall.t:1;
@@ -679,7 +686,7 @@ function laserTrace(t,angle=t.angle){
    if(at!==null&&at<stop){stop=at;target=other;}
   }
   const length=remaining*stop;
-  if(segment===0){const start=Math.min(28,length);points.push({x:x+ux*start,y:y+uy*start});}
+  if(segment===0){const start=launch.bounced?0:Math.min(28,length);points.push({x:x+ux*start,y:y+uy*start});}
   x+=ux*length;y+=uy*length;points.push({x,y});remaining-=length;
   if(target||!wall||remaining<=1e-7)break;
   if(wall.nx)ux=-ux;if(wall.ny)uy=-uy;bounces++;
@@ -808,7 +815,7 @@ function missileWallNudge(b,wall){
 }
 // Approximate grenade flight against the current arena for AI planning.
 function grenadeForecast(source,seconds=source.life){
- const b={...source};if(b.launchHit!==undefined){b.life=0;return b;}let left=Math.max(0,Math.min(seconds,b.life));
+ const b={...source};if(b.dead||b.launchHit!==undefined){b.life=0;return b;}let left=Math.max(0,Math.min(seconds,b.life));
  while(left>1e-6){const dt=Math.min(1/60,left),lifeBefore=b.life;b.life=Math.max(0,b.life-dt);b.age=(b.age||0)+dt;guideGrenade(b,dt,lifeBefore);let rest=dt;
   for(let i=0;i<4&&rest>1e-5;i++){const dx=b.vx*rest,dy=b.vy*rest,w=rayWalls(b.x,b.y,dx,dy,b.r);if(!w){b.x+=dx;b.y+=dy;break;}
    b.x+=dx*w.t;b.y+=dy*w.t;missileWallNudge(b,w);rest*=1-w.t;
@@ -870,10 +877,11 @@ function updateBullets(dt){
 }
 // The short aiming guide uses the equipped projectile's radius and contact rules.
 function shotPrediction(t,angle,maxBounces=1,maxLength=CELL*7){
- const {kind,r}=projectileSpec(t.power);
- let x=t.x,y=t.y,ux=Math.cos(angle),uy=Math.sin(angle),remaining=maxLength;
+ const {kind,r}=projectileSpec(t.power),launch=projectileLaunch(t,angle,r,0);
+ if(!launch.valid)return{tank:null,points:[]};
+ let {x,y,ux,uy}=launch,remaining=maxLength-launch.distance;
  const points=[{x,y}];
- for(let bounce=0;bounce<=maxBounces;bounce++){
+ for(let bounce=launch.bounced?1:0;bounce<=maxBounces;bounce++){
   const dx=ux*remaining,dy=uy*remaining,wall=projectileWall(kind,x,y,dx,dy,r);
   const hit=tankHit(x,y,dx,dy,r,t.id,kind==='grenade');
   if(hit&&(!wall||hit.at<=wall.t)){
@@ -2088,10 +2096,54 @@ function rememberCallsign(name){
 }
 function rememberLocalCallsign(name){try{localStorage.setItem('leqra.local2Name',name);}catch(_){}}
 function savedLocalCallsign(){try{return cleanPilotName(localStorage.getItem('leqra.local2Name')||'')||'CO-PILOT';}catch(_){return 'CO-PILOT';}}
+// Durable bearer ownership is separate from callsigns and room reconnect tokens.
+function publicIdentityToken(){if(typeof publicIdentityToken.memory==='string')return publicIdentityToken.memory;try{return localStorage.getItem('leqra.publicToken')||'';}catch(_){return '';}}
+function rememberPublicIdentity(token){if(typeof token!=='string'||token.length>256)return;delete publicIdentityToken.memory;try{if(token)localStorage.setItem('leqra.publicToken',token);else localStorage.removeItem('leqra.publicToken');}catch(_){publicIdentityToken.memory=token;} }
+function callsignAvailabilityNames(field,form){
+ if(!form)return [cleanPilotName(field.value)];
+ const secondary=form.dataset.pilot==='secondary',other=form.dataset.arena==='infinity'?window.leqraInfinity?.localPilots?.()[secondary?0:1]:secondary?roomMember(localPlayerID()):secondaryMember();
+ return secondary?[other?.name||$('pilotName').value,cleanPilotName(field.value)]:[cleanPilotName(field.value),...(other?[other.name]:[])];
+}
+function scheduleCallsignAvailability(field,form,delay=250){
+ clearTimeout(field.callsignCheckTimer);field.callsignCheckController?.abort();field.callsignCheckRevision=(field.callsignCheckRevision||0)+1;
+ const revision=field.callsignCheckRevision,draft=field.value;
+ field.callsignCheckTimer=setTimeout(()=>checkCallsignAvailability(field,form,revision,draft),delay);
+}
+async function checkCallsignAvailability(field,form,revision,draft){
+ if(!['http:','https:'].includes(location.protocol)||field.disabled)return;
+ const status=form?.querySelector('.callsign-status')||$('pilotNameStatus'),name=cleanPilotName(draft);
+ const setStatus=(text,error=false)=>{status.textContent=text;status.hidden=!text;status.classList.toggle('error',error);field.setAttribute('aria-invalid',String(error));};
+ if(!name){setStatus(draft?'Enter letters or numbers.':'');return;}
+ const controller=new AbortController(),ownerToken=publicIdentityToken();field.callsignCheckController=controller;
+ const timeout=setTimeout(()=>controller.abort(),4000);
+ try{
+  const names=callsignAvailabilityNames(field,form),response=await fetch(new URL('/api/callsigns',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:ownerToken||undefined,names}),cache:'no-store',signal:controller.signal});
+  if(!response.ok)throw Error('Availability unavailable');const data=await response.json();
+  if(field.callsignCheckRevision!==revision||field.value!==draft||form?.infinityRenamePending||online.renamePending?.form===form)return;
+  if(publicIdentityToken()!==ownerToken||JSON.stringify(callsignAvailabilityNames(field,form))!==JSON.stringify(names)){scheduleCallsignAvailability(field,form,0);return;}
+  const seat=form?.dataset.pilot==='secondary'?1:0,entry=data.names?.find(entry=>entry.seat===seat);
+  if(typeof entry?.available!=='boolean')throw Error('Invalid availability response');
+  const available=entry.available&&!data.names.some(candidate=>!candidate.available&&cleanPilotName(candidate.name).toLowerCase()===name.toLowerCase());
+  field.callsignUnavailable=!available;
+  const offline=form&&(form.dataset.arena==='infinity'?$('infiniteArena').dataset.mode==='offline':mode==='room');
+  setStatus(available?'':offline?'Used online. Offline play is available.':'Already used online. Choose another callsign.',!available);
+ }catch(error){if(field.callsignCheckRevision===revision&&field.value===draft&&!form?.infinityRenamePending&&online.renamePending?.form!==form&&error.name!=='AbortError'){if(publicIdentityToken()!==ownerToken)scheduleCallsignAvailability(field,form,0);else setStatus('Online availability unavailable.');}}
+ finally{clearTimeout(timeout);if(field.callsignCheckController===controller)delete field.callsignCheckController;}
+}
+function showCallsignConflicts(message){
+ const conflicts=Array.isArray(message.conflicts)?message.conflicts:[];
+ for(const form of callsignForms()){
+  const seat=form.dataset.pilot==='secondary'?1:0;
+  if(conflicts.some(conflict=>conflict.seat===seat))callsignStatus(form,'Already used online. Choose another callsign.',true);
+ }
+ if(conflicts.some(conflict=>conflict.seat===0)){
+  const status=$('pilotNameStatus');status.textContent='Already used online. Choose another callsign.';status.hidden=false;status.classList.add('error');
+ }
+}
 function callsignForms(){return [$('roomCallsignForm'),$('menuCallsignForm'),$('roomP2CallsignForm'),$('menuP2CallsignForm'),$('infiniteCallsignForm'),$('infiniteP2CallsignForm')].filter(Boolean);}
 function editorPilot(form){return form.dataset.arena==='infinity'?$('infiniteArena')?.open?window.leqraInfinity?.localPilots?.()[form.dataset.pilot==='secondary'?1:0]:null:form.dataset.pilot==='secondary'?secondaryMember():roomMember(localPlayerID());}
 function callsignStatus(form,text,error=false){
- const status=form.querySelector('.callsign-status');status.textContent=text;status.hidden=!text;status.classList.toggle('error',error);
+ const status=form.querySelector('.callsign-status');status.textContent=text;status.hidden=!text;status.classList.toggle('error',error);form.elements.callsign.setAttribute('aria-invalid',String(error));
 }
 function syncCallsignEditors(force=false){
  for(const form of callsignForms()){
@@ -2099,13 +2151,14 @@ function syncCallsignEditors(force=false){
   if((secondary||infinity)&&!player){delete form.dataset.member;delete form.dataset.currentName;delete form.infinityRenamePending;callsignStatus(form,'');continue;}
   const name=player?.name||(secondary?savedLocalCallsign():$('pilotName').value||'Player 1'),member=String(player?.member||0),paired=infinity?window.leqraInfinity.localPilots().length>1:!!secondaryMember(),identity=player&&!infinity?{...player,color:roomPlayerIdentity(player).color}:player||{name};
   if(infinity&&form.dataset.member!==member){delete form.infinityRenamePending;callsignStatus(form,'');}
-  const field=form.elements.callsign,old=form.dataset.currentName;
+  const field=form.elements.callsign,old=form.dataset.currentName,oldValue=field.value;
   field.style.color=paintColor(localPilotIdentity(secondary?1:0,identity,paired).color);
   if(force||form.dataset.member!==member||old===undefined||field.value===old)field.value=name;
   form.dataset.member=member;form.dataset.currentName=name;
   const label=form.querySelector('label');if(label)label.innerHTML=localPilotIdentityHTML(secondary?1:0,identity,paired)+' callsign';
   form.setAttribute('aria-label','Change '+localPilotIdentity(secondary?1:0,identity,paired).label+' callsign');
   field.disabled=infinity?typeof window.leqraInfinity?.renamePilot!=='function':mode==='online'&&!online.connected;
+  if(oldValue!==field.value||field.callsignCheckRevision===undefined)window.leqraIdentity?.schedule?.(field,form);
   const saveButton=form.querySelector('button');if(saveButton)saveButton.disabled=field.disabled||!!online.renamePending||!!form.infinityRenamePending||!field.value.trim()||field.value.trim()===name;
  }
 }
@@ -2232,7 +2285,7 @@ function showVersionMismatch(message){
 function connectOnline(request,reconnecting=false){
  if(typeof settingsResetActive!=='undefined'&&settingsResetActive)return;
  if(!['http:','https:'].includes(location.protocol)){setNetStatus('Online play needs the Go server. Run go run ./src and open the address it prints.',true);return;}
- if(online.connecting||online.connected)return;mode='online';phase='menu';document.body.classList.add('online-mode');
+ if(online.connecting||online.connected)return;request={...request,publicToken:window.leqraIdentity?.token?.()||undefined};mode='online';phase='menu';document.body.classList.add('online-mode');
  if(!reconnecting&&!online.inviteCode){try{sessionStorage.removeItem('leqra.kicked');}catch(_){}}
  online.manual=false;online.connecting=true;netBusy(true);
  if(!reconnecting)setNetStatus(request.type==='create'?'Creating the room…':'Joining or creating the room…');
@@ -2253,11 +2306,13 @@ function connectOnline(request,reconnecting=false){
    }
    online.serverVersion=msg.version;sendOnline({type:'client_hello',version:GAME_VERSION,protocol:1});sendOnline(request);break;
   case 'client_ready':break;
+  case 'leaderboard_reset':toast(msg.selected===true?'Selected Public Infinity scores were reset.':'The Public Infinity leaderboard was reset.',5);break;
   case 'server_shutdown':
    clearTimeout(timeout);{const shutdownMessage=msg.message||'The leqra server is shutting down.';leaveOnline();$('roomStatus').textContent=shutdownMessage+' Returned to the Home Screen.';toast('SERVER SHUTTING DOWN, RETURNED HOME',7);showServerShutdown(shutdownMessage);}break;
   case 'queue_catalog':case 'queue_status':case 'queue_cancelled':matchmakingPacket(msg);break;
   case 'chat':case 'chat_history':chatPacket(msg);break;
   case 'welcome':
+   window.leqraIdentity?.remember?.(msg.publicToken);
    matchmakingWelcome(msg);matchmaking.rematchPending=false;online.lastMatch=-1;online.roomData=null;clearInput();closeVictory();
    const inviteName=online.inviteName;watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
    if($('joinDialog').open)$('joinDialog').close();
@@ -2277,7 +2332,7 @@ function connectOnline(request,reconnecting=false){
   case 'swapped':cancelSwap();toast(msg.message,3);break;
   case 'room':{if(msg.code&&msg.code!==online.code)acceptOnlineRoomCode(msg.code,false,false);if(matchmaking.pending&&!matchmaking.pendingKey){clearTimeout(matchmaking.pendingTimer);matchmaking.pending=false;}if(online.roomData?.infinityActive&&!msg.infinityActive)clearEndMatchPending();online.roomData=msg;if(!!msg.infinityPublic===online.publicInfinityPending?.enabled)online.publicInfinityPending.cancel();online.publishing=false;syncPendingSpectatorRole(msg);const own=roomMember(online.id,msg);if(own){online.spectating=!!own.spectating;matchmaking.rematchPending=!!own.rematch;rememberCallsign(own.name);storeOnlineSession();}const local=secondaryMember();if(local)rememberLocalCallsign(local.name);syncCallsignEditors();renderOnlineRoom();updateHUD(true);syncOnlineRoomInfinity();break;}
   case 'infinity_start':startRoomInfinity(undefined,msg.public);break;
-  case 'renamed':acceptCallsign(msg);break;
+  case 'renamed':window.leqraIdentity?.remember?.(msg.publicToken);acceptCallsign(msg);break;
   case 'kicked':clearTimeout(timeout);receiveKick(msg);break;
   case 'unshared':clearTimeout(timeout);completeUnshare();break;
   case 'room_offline':clearTimeout(timeout);toast(msg.message||'The host took this room offline.',3);leaveOnline();break;
@@ -2287,6 +2342,7 @@ function connectOnline(request,reconnecting=false){
   case 'state':receiveOnlineState(msg);break;
   case 'pong':{const sample=clamp(performance.now()-msg.t,0,5000);online.latency=Math.round(online.pingMeasured?online.latency*.7+sample*.3:sample);online.pingMeasured=true;break;}
   case 'error':
+   if(msg.code==='callsign_taken'){showCallsignConflicts(msg);if(!online.connected)msg.message='Change the marked callsigns to go online.';if(online.renamePending){cancelCallsignSave(msg.message);break;}}
    if(msg.action==='select_public_infinity'){online.publicInfinityPending?.cancel?.();syncFeatureSummary();$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='lobby'){clearEndMatchPending(msg.message);break;}
    if(msg.action==='restart_wave'){clearRestartWavePending(msg.message);break;}
@@ -2707,7 +2763,7 @@ function renderOnlineMotion(dt,now){
  for(const id of online.localBullets.keys())if(!s.bulletMap.has(id))online.localBullets.delete(id);
  for(const v of online.shots.previews.values()){
   if(v.accepted)continue; // A shot destroyed before the first snapshot must not linger.
-  for(const shell of v.shells){if(shell.launchHit!==undefined||v.confirmed.has(shell.pellet))continue;
+  for(const shell of v.shells){if(shell.dead||shell.launchHit!==undefined||v.confirmed.has(shell.pellet))continue;
    const age=Math.max(0,(now-v.at)/1000),item=projectOnlineBullet(shell,Math.min(age,.35),.35);
    // In a prolonged outage, don't let an unconfirmed projectile drift forever.
    if(age>.35)continue;
@@ -2750,7 +2806,7 @@ function startInfinity(kind,credentials={}){
  const primaryId=localPlayerID(),primary=roomMember(primaryId),secondary=secondLocal(),room=roomData();
  const roomRules=!credentials.public&&(kind==='offline'||credentials.code)?currentRules():null;
  closeVictory();clearInput();cancelPendingAudio();
- window.leqraInfinity.start(kind,{name:primary?.name,bindings:()=>bindings,roomRules,onJoined,
+ window.leqraInfinity.start(kind,{name:primary?.name,onConflict:message=>{window.leqraInfinity.close();renderOnlineRoom();showCallsignConflicts(message);$('roomStatus').textContent='Change the marked callsigns to go online.';},bindings:()=>bindings,roomRules,onJoined,
   colorIndex:colorIndex(primaryId,primary?.team,primary?.colorIndex),
   localColorIndex:secondary?colorIndex(secondary.id,secondary.team,secondary.colorIndex):undefined,
   roster:roomRules?room?.players||[]:[],primaryId,localId:secondary?.id,localName:secondary?.name,
@@ -2778,7 +2834,8 @@ function initOnlineUI(){
  $('cancelKickBtn').addEventListener('click',cancelKick);
  $('kickDialog').addEventListener('cancel',e=>{e.preventDefault();cancelKick();});
  try{$('pilotName').value=localStorage.getItem('leqra.name')?.trim()||'Player 1';}catch(_){}
- for(const form of callsignForms()){const field=form.elements.callsign;form.addEventListener('submit',e=>{e.preventDefault();initAudio();submitCallsign(form);});field.addEventListener('input',()=>{callsignStatus(form,'');syncCallsignEditors();});field.addEventListener('blur',()=>{if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);});field.addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);field.blur();}});}
+ for(const form of callsignForms()){const field=form.elements.callsign;form.addEventListener('submit',e=>{e.preventDefault();initAudio();submitCallsign(form);});field.addEventListener('input',()=>{callsignStatus(form,'');syncCallsignEditors();scheduleCallsignAvailability(field,form);});field.addEventListener('focus',()=>scheduleCallsignAvailability(field,form,0));field.addEventListener('blur',()=>{if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);});field.addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);field.blur();}});}
+ $('pilotName').addEventListener('input',()=>scheduleCallsignAvailability($('pilotName'),null));$('pilotName').addEventListener('focus',()=>scheduleCallsignAvailability($('pilotName'),null,0));
  $('joinRoomBtn').addEventListener('click',joinOnlineRoom);for(const id of ['joinCode','pilotName'])$(id).addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();joinOnlineRoom();}});
  $('onlineBackBtn').addEventListener('click',()=>{if(online.connecting)return;watchInvite=false;watchResume=null;online.inviteCode='';online.inviteWatch=false;resetWatchDialog();if($('joinDialog').open)$('joinDialog').close();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
  $('joinDialog').addEventListener('cancel',e=>{if(online.connecting){e.preventDefault();return;}watchInvite=false;watchResume=null;online.inviteWatch=false;online.inviteCode='';resetWatchDialog();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
@@ -5246,8 +5303,10 @@ function initMatchmaking(){
 function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<760)return;try{if(sessionStorage.getItem('leqra.safariNoticeDismissed')==='1')return;}catch(_){}const n=document.createElement('aside');n.id='browserNotice';n.className='safari-recommendation';n.setAttribute('role','status');n.innerHTML='<span><strong>Safari detected.</strong> leqra works here, but Chrome or Firefox is recommended for optimal performance.</span><button type="button" aria-label="Dismiss browser recommendation">×</button>';n.querySelector('button').onclick=()=>{try{sessionStorage.setItem('leqra.safariNoticeDismissed','1');}catch(_){}n.remove();};document.body.append(n);}
 // Read-only public state is handy for embedding and smoke testing.
 // Infinity keeps its own camera and streamed world, while sharing the finite arena's art and audio.
+window.leqraIdentity=Object.freeze({token:publicIdentityToken,remember:rememberPublicIdentity,schedule:scheduleCallsignAvailability});
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work,latency=null)=>sampleFrame(now,work,'infiniteFPSIndicator',latency),
+ publicIdentityToken,rememberPublicIdentity,
  theme,colors:Theme.colors,canonicalColor:index=>COLORS[index]||'',colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
  openControls:()=>openFeature('controls'),mouseAimEnabled:()=>combatPrefs.mouseAim!==false,mouseFireEnabled:()=>combatPrefs.mouseFire!==false,setMouseControlEnabled,cleanPilotName,persistPilotName:persistInfinityPilotName,syncCallsignEditors,syncSidebarContext,mountSidebar,restoreSidebar,mountHeader,restoreHeader,chatOpen:()=>roomChat.open,arenaKeyBlocked,keyLabel,controlHintHTML,pilotIdentity,pilotIdentityHTML,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,

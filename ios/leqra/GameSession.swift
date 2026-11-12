@@ -47,8 +47,11 @@ final class GameSession: ObservableObject {
     @Published var queueListings: [NativeQueueListing] = []
     @Published var queueState: NativeQueueState?
     @Published var savedPresets: [LocalPreset] = []
+    @Published var callsignFeedback = ""
+    @Published var localCallsignFeedback = ""
+    @Published var callsignChecking = false
     @Published var callsign = UserDefaults.standard.string(forKey: "callsign") ?? "SNOW FOX" {
-        didSet { UserDefaults.standard.set(callsign, forKey: "callsign") }
+        didSet { UserDefaults.standard.set(callsign, forKey: "callsign"); scheduleCallsignAvailability() }
     }
     @Published var colorIndex = GamePalette.index(UserDefaults.standard.integer(forKey: "tankColor")) {
         didSet { UserDefaults.standard.set(colorIndex, forKey: "tankColor") }
@@ -72,6 +75,7 @@ final class GameSession: ObservableObject {
     private let audio = GameAudio()
     private let roomClient = NetworkClient()
     private let arenaClient = NetworkClient()
+    private let publicSessions: PublicInfinitySessionStoring
     private var practice: PracticeArena?
     private var fixedArena: FixedArena?
     private var maze: InfiniteMaze?
@@ -90,14 +94,23 @@ final class GameSession: ObservableObject {
     private var requestID: UInt64 = 0
     private var pendingChatText: String?
     private var arenaGeneration: UInt64?
-    private var readoutGeometry: InfiniteMaze?
-    private var readoutGeneration: Int?
     private var previousPresentedPhase = ""
     private var weaponsLiveRemaining = 0.0
     private var modeProfiles: [String: RoomRules] = [:]
     private var frameProfiler: FrameProfiler?
+    private var publicIdentityActive = false
+    private var publicRecoveryPending = false
+    private var publicResumePaused = false
+    private var publicSuspended = false
+    private var lifecycleInactive = false
+    private var resumeAfterActivation = false
+    private var publicScoreResetPending = false
+    private var callsignCheckTask: Task<Void, Never>?
+    private var callsignTaken = false
+    private var rejectedCallsignMessage: String?
 
-    init() {
+    init(publicSessions: PublicInfinitySessionStoring? = nil) {
+        self.publicSessions = publicSessions ?? KeychainPublicInfinitySessions.applicationStore()
         localRules.infinity = false
         if let data = UserDefaults.standard.data(forKey: "nativePresets"), let presets = try? JSONDecoder().decode([LocalPreset].self, from: data) { savedPresets = presets }
         scene.scaleMode = .resizeFill
@@ -126,6 +139,8 @@ final class GameSession: ObservableObject {
                 self.localRules.infinityRandomBots = true
                 self.startLocal()
             }
+        } else if !ProcessInfo.processInfo.arguments.contains("--skip-public-session-restore") {
+            Task { @MainActor [weak self] in self?.restorePublicSessionIfNeeded() }
         }
     }
 
@@ -154,13 +169,7 @@ final class GameSession: ObservableObject {
     var hasModal: Bool { showSettings || showRules || showControls || showSidebar || showJoin || showChat || showPresets || showQueues }
     var currentReadout: PilotReadout {
         let tank = localTank ?? ArenaTank(hp: 0)
-        if !isInfinity, (readoutGeometry == nil || readoutGeneration != snapshot.generation), let world {
-            readoutGeometry = InfiniteMaze(world: world); readoutGeneration = snapshot.generation
-        }
-        let geometry = isInfinity ? maze : readoutGeometry
-        let radius = tank.power == "laser" ? 3.0 : tank.power == "cannon" ? 14 : tank.power == "grenade" ? 6 : tank.power == "homing" ? 5 : tank.power == "rapid" ? 3.5 / 3 : 3.5
-        let blocked = tank.ghostTime > 0 && geometry?.isMuzzleBlocked(x: tank.x, y: tank.y, kind: tank.power, radius: radius) == true
-        return PilotReadout(tank: tank, snapshot: snapshot, infinity: isInfinity, paused: paused, muzzleBlocked: blocked, online: !offline)
+        return PilotReadout(tank: tank, snapshot: snapshot, infinity: isInfinity, paused: paused, online: !offline)
     }
     var inviteURL: URL {
         let base = URL(string: serverAddress) ?? URL(string: "https://leqra.com")!
@@ -313,10 +322,12 @@ final class GameSession: ObservableObject {
         let code = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
         leave()
         baseURL = url; screen = .connecting; pendingShare = true; showQueues = queueOpen
-        roomClient.connectPublishedRoom(baseURL: url, code: code.isEmpty ? nil : code, rules: localRules, roster: seats)
+        roomClient.connectPublishedRoom(baseURL: url, code: code.isEmpty ? nil : code, rules: localRules, roster: seats,
+                                        publicToken: publicSessions.session(for: url)?.publicToken)
     }
 
     func saveCallsign() {
+        if !offline, (arenaActive || room != nil), callsignTaken { return }
         callsign = cleanName
         if let practice { practice.configurePilot(id: localID, name: callsign, colorIndex: colorIndex, team: localTeam, difficulty: "normal") }
         else if let fixedArena { fixedArena.configurePilot(id: localID, name: callsign, colorIndex: colorIndex, team: localTeam, difficulty: "normal") }
@@ -324,6 +335,53 @@ final class GameSession: ObservableObject {
             requestID += 1
             arenaClient.sendCommand(["type": "rename", "seat": 0, "name": callsign, "requestId": requestID])
         } else if room != nil { roomClient.send(.rename(callsign)) }
+    }
+
+    /// Offline names remain unrestricted. The advisory is useful before a
+    /// local room is shared, while the server remains the final atomic check.
+    func scheduleCallsignAvailability(localName: String? = nil) {
+        callsignCheckTask?.cancel()
+        callsignTaken = false; callsignFeedback = ""; localCallsignFeedback = ""
+        guard let server = URL(string: serverAddress), (try? PublicInfinitySession.normalizedOrigin(server)) != nil else { return }
+        let name = cleanName
+        let local = localName ?? room?.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id })?.name
+        let names = [name] + (local.map { [String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(16))] } ?? [])
+        let token = publicSessions.session(for: server)?.publicToken
+        let address = serverAddress
+        callsignChecking = true
+        callsignCheckTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 300_000_000)
+                guard let self else { return }
+                let checks = try await self.arenaClient.fetchCallsignAvailability(baseURL: server, names: names, publicToken: token)
+                guard !Task.isCancelled, self.cleanName == name, self.serverAddress == address else { return }
+                self.callsignChecking = false
+                self.callsignTaken = checks.first?.available == false
+                self.callsignFeedback = self.callsignTaken ? "Taken online: \(name) (P1). Choose another callsign." : ""
+                if let local = checks.dropFirst().first, !local.available {
+                    self.localCallsignFeedback = "Taken online: \(local.name) (P2). Choose another callsign."
+                } else { self.localCallsignFeedback = "" }
+            } catch {
+                guard !Task.isCancelled, let self, self.cleanName == name, self.serverAddress == address else { return }
+                self.callsignChecking = false
+                self.callsignFeedback = "Online availability could not be checked."
+            }
+        }
+    }
+
+    private func rejectCallsigns(_ conflicts: [CallsignConflict]?, message: String?) {
+        callsignCheckTask?.cancel(); callsignChecking = false
+        rejectedCallsignMessage = message
+        let primary = conflicts?.first(where: { $0.seat == 0 })
+        if primary != nil || conflicts?.isEmpty != false {
+            callsignTaken = true
+            callsignFeedback = primary.map { "\($0.name) (P1) is taken online. Choose another callsign." }
+                ?? message ?? "This callsign is taken online. Choose another callsign."
+        }
+        if let local = conflicts?.first(where: { $0.seat == 1 }) {
+            localCallsignFeedback = "\(local.name) (P2) is taken online. Choose another callsign."
+        }
+        status = message ?? "Rename the indicated local players before going online."
     }
 
     func setPaint(_ index: Int) {
@@ -371,18 +429,71 @@ final class GameSession: ObservableObject {
         } else { localRules = preset.rules; localBots = preset.bots; localTeam = preset.team; publicInfinitySelected = false }
     }
 
-    func connect(code: String? = nil, publicArena: Bool = false) {
-        leave()
+    func connect(code: String? = nil, publicArena: Bool = false, restoringPublicSession: Bool = false) {
         guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
             error = "Enter an HTTP or HTTPS server address."; return
         }
+        leave(clearPublicIntent: !publicArena)
         baseURL = url
         screen = .connecting
         if publicArena {
             arenaActive = true
-            arenaClient.connectPublic(baseURL: url, name: cleanName, colorIndex: GamePalette.index(colorIndex))
-        } else { roomClient.connectRoom(baseURL: url, name: cleanName, code: code) }
+            publicIdentityActive = true; publicRecoveryPending = true
+            publicSessions.activate(url)
+            arenaClient.connectPublic(baseURL: url, name: cleanName, colorIndex: GamePalette.index(colorIndex),
+                                      publicToken: publicSessions.session(for: url)?.publicToken, updateNames: !restoringPublicSession)
+        } else {
+            roomClient.connectRoom(baseURL: url, name: cleanName, code: code,
+                                   publicToken: publicSessions.session(for: url)?.publicToken)
+        }
+    }
+
+    @discardableResult private func restorePublicSessionIfNeeded() -> Bool {
+        guard let server = publicSessions.activeServer,
+              let configured = URL(string: serverAddress),
+              (try? PublicInfinitySession.normalizedOrigin(configured)) == (try? PublicInfinitySession.normalizedOrigin(server)) else { return false }
+        let remainPaused = publicResumePaused
+        connect(publicArena: true, restoringPublicSession: true)
+        publicResumePaused = remainPaused
+        return true
+    }
+
+    /// Suspension and force-quit preserve only the authenticated public route.
+    /// A room's short-lived reservation is never used to restore public score.
+    func scenePhaseChanged(_ phase: ScenePhase) {
+        switch phase {
+        case .inactive, .background:
+            if !lifecycleInactive {
+                lifecycleInactive = true
+                resumeAfterActivation = screen == .playing && !paused && !hasModal
+                    || screen == .connecting && publicIdentityActive && !publicResumePaused
+                if screen == .playing { setPaused(true) }
+            }
+            if phase == .background, publicIdentityActive {
+                publicResumePaused = !resumeAfterActivation
+                publicSuspended = true; disconnected = true
+                arenaClient.suspend(); roomClient.suspend()
+            }
+        case .active:
+            lifecycleInactive = false
+            if publicSuspended, publicIdentityActive {
+                publicSuspended = false
+                let configured = URL(string: serverAddress)
+                let sameServer = baseURL.flatMap { try? PublicInfinitySession.normalizedOrigin($0) }
+                    == configured.flatMap { try? PublicInfinitySession.normalizedOrigin($0) }
+                if sameServer {
+                    publicRecoveryPending = true
+                    dropPublicRoomRoute()
+                    paused = false; screen = .connecting
+                    if !arenaClient.reconnect(), !restorePublicSessionIfNeeded() { leave() }
+                } else { leave() }
+            } else if resumeAfterActivation, screen == .playing, !disconnected {
+                setPaused(false)
+            }
+            resumeAfterActivation = false
+        @unknown default: break
+        }
     }
 
     func command(_ command: [String: Any]) { roomClient.sendCommand(command) }
@@ -421,7 +532,8 @@ final class GameSession: ObservableObject {
         if let preview { audio.preview(preview) }
     }
 
-    func leave() {
+    func leave(clearPublicIntent: Bool = true) {
+        if clearPublicIntent { publicSessions.activate(nil) }
         frameProfiler = nil; scene.profilesRendering = false
         audio.reset()
         scene.resetControls(); scene.resetWorld()
@@ -429,11 +541,13 @@ final class GameSession: ObservableObject {
         practice = nil; fixedArena = nil; maze = nil; timeline = nil; world = nil; welcome = nil; room = nil
         arenaActive = false; disconnected = false; paused = false; showScores = false
         lastSnapshot = ArenaSnapshot(); localID = -1; latency = nil; score = 0
-        snapshot = ArenaSnapshot(); standings = []; arenaGeneration = nil; readoutGeometry = nil; readoutGeneration = nil
+        snapshot = ArenaSnapshot(); standings = []; arenaGeneration = nil
         weaponsLive = false; weaponsLiveRemaining = 0; previousPresentedPhase = ""
         measuredFPS = 0; frameElapsed = 0; frameCount = 0; hudElapsed = 0; practiceElapsed = 0
         status = ""; error = nil; screen = .menu; pendingShare = false
         localTank = nil; showChat = false; showQueues = false; showJoin = false; showPresets = false
+        publicIdentityActive = false; publicRecoveryPending = false; publicResumePaused = false
+        publicSuspended = false; publicScoreResetPending = false
         showRules = false; showControls = false; showSidebar = false; showSettings = false
         chatMessages = []; opponentMessages = []; queueState = nil; queueListings = []
         chatDraft = ""; chatPending = false; chatError = nil; pendingChatText = nil
@@ -444,6 +558,7 @@ final class GameSession: ObservableObject {
         guard room != nil else { leave(); return }
         guard isHost else { return }
         command(["type": "lobby"])
+        if publicIdentityActive { publicSessions.activate(nil); publicIdentityActive = false; publicRecoveryPending = false }
         audio.pause()
         if arenaActive { arenaClient.disconnect(); arenaActive = false }
         timeline = nil; maze = nil; world = nil; paused = false; scene.resetControls(); scene.resetWorld()
@@ -457,9 +572,10 @@ final class GameSession: ObservableObject {
     func exitArenaToRoom() {
         guard room != nil else { leave(); return }
         audio.pause()
+        if publicIdentityActive { publicSessions.activate(nil); publicIdentityActive = false; publicRecoveryPending = false }
         arenaClient.disconnect()
         arenaActive = false; arenaGeneration = nil
-        timeline = nil; maze = nil; world = nil; readoutGeometry = nil; readoutGeneration = nil
+        timeline = nil; maze = nil; world = nil
         localTank = nil; snapshot = ArenaSnapshot(); lastSnapshot = snapshot; standings = []
         paused = false; disconnected = !roomClient.connected; score = 0; showScores = false
         scene.resetControls(); scene.resetWorld(); restoreRoomIdentity()
@@ -472,6 +588,17 @@ final class GameSession: ObservableObject {
         case .status(let value): status = value
         case .welcome(let value):
             disconnected = false
+            if let token = value.publicToken, let server = baseURL,
+               let session = try? PublicInfinitySession(baseURL: server, publicToken: token) {
+                if !publicSessions.remember(session) {
+                    error = "The online identity recovery key could not be saved on this device."
+                }
+                if arena, value.isPublic {
+                    publicIdentityActive = true
+                    if !publicSessions.activate(server) { error = "The public session could not be saved on this device." }
+                }
+                scheduleCallsignAvailability()
+            }
             if value.resumed { timeline = nil; scene.resetControls() }
             if !arena {
                 if let oldCode = welcome?.room, oldCode != value.room {
@@ -489,6 +616,7 @@ final class GameSession: ObservableObject {
                 timeline = makeTimeline()
                 scene.resetWorld(); screen = .playing
                 status = room == nil ? "Public Infinity" : "Room Infinity"
+                if publicIdentityActive, publicRecoveryPending { paused = publicResumePaused }
             }
         case .room(let value):
             let endedArena = room?.infinityActive == true && !value.infinityActive
@@ -501,6 +629,7 @@ final class GameSession: ObservableObject {
                 if showQueues { roomClient.send(.queueInfo) }
             }
             if endedArena {
+                if publicIdentityActive { publicSessions.activate(nil); publicIdentityActive = false; publicRecoveryPending = false }
                 audio.pause()
                 arenaClient.disconnect(); arenaActive = false; arenaGeneration = nil; timeline = nil; maze = nil
                 scene.resetControls(); scene.resetWorld(); screen = .lobby; paused = false
@@ -530,6 +659,17 @@ final class GameSession: ObservableObject {
             if timeline == nil { timeline = makeTimeline() }
             timeline?.accept(snapshot, at: ProcessInfo.processInfo.systemUptime)
             lastSnapshot = snapshot
+            if publicIdentityActive, publicRecoveryPending, let tank = snapshot.tanks.first(where: { $0.id == localID }) {
+                if callsign != tank.name { callsign = tank.name }
+                if colorIndex != tank.colorIndex { colorIndex = GamePalette.index(tank.colorIndex) }
+            }
+            if publicIdentityActive, publicRecoveryPending || publicScoreResetPending {
+                let recoveredPaused = publicRecoveryPending && paused
+                publicRecoveryPending = false; publicScoreResetPending = false
+                scene.display(snapshot: snapshot, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
+                syncHUD(snapshot)
+                if recoveredPaused { setPaused(true) }
+            }
             if status == "Waiting for server…" { status = onlineTitle }
             screen = .playing
             applyAudioSetting()
@@ -537,12 +677,24 @@ final class GameSession: ObservableObject {
         case .latency(let milliseconds):
             if arena == arenaActive { latency = Int(milliseconds.rounded()) }
         case .error(let message):
+            if publicIdentityActive, !arena { dropPublicRoomRoute(); return }
+            if rejectedCallsignMessage == message {
+                rejectedCallsignMessage = nil
+                if screen == .connecting { screen = room == nil ? .menu : .lobby }
+                return
+            }
             error = message
             if screen == .connecting { screen = room == nil ? .menu : .lobby }
         case .disconnected(let reason):
             if arena == arenaActive {
                 disconnected = true
-                setPaused(true)
+                if publicIdentityActive {
+                    publicRecoveryPending = false
+                    paused = false; screen = .menu
+                    scene.resetControls(); audio.pause()
+                    UIApplication.shared.isIdleTimerDisabled = false
+                } else if screen == .playing { setPaused(true) }
+                else { paused = false }
                 status = reason ?? "Disconnected. Leave and rejoin to play again."
                 if screen == .connecting { screen = room == nil ? .menu : .lobby }
             }
@@ -569,14 +721,43 @@ final class GameSession: ObservableObject {
                 }
             case .queue(let packet): queueListings = packet.queues.isEmpty ? queueListings : packet.queues; queueState = packet.queue
             case .pilotRenamed(let rename):
-                if let name = rename.name, (arena && rename.seat == 0) || (!arena && rename.id == welcome?.id) { callsign = name }
+                if rename.type == "rename_error", rename.code == "callsign_taken" {
+                    rejectCallsigns(rename.conflicts, message: rename.message)
+                } else if rename.type == "renamed", let name = rename.name,
+                          (arena && rename.seat == 0) || (!arena && rename.id == welcome?.id) { callsign = name }
             case .roomRenamed(let rename): roomName = rename.room; welcome?.room = rename.room
             case .notice(let notice):
                 if let message = notice.message { status = message }
+                if notice.type == "leaderboard_reset" { publicScoreResetPending = true; status = "Public leaderboard updated." }
+                if notice.code == "callsign_taken" { rejectCallsigns(notice.conflicts, message: notice.message) }
+                if notice.code == "session_replaced" {
+                    publicSessions.activate(nil)
+                    publicIdentityActive = false; publicRecoveryPending = false; publicSuspended = false
+                    paused = false; screen = .menu
+                    scene.resetControls(); audio.pause(); UIApplication.shared.isIdleTimerDisabled = false
+                }
                 if notice.action == "chat" { chatPending = false; pendingChatText = nil; chatError = notice.message }
-            case .reconnecting(let attempt): disconnected = true; setPaused(true); status = "Reconnecting, attempt \(attempt)…"
+            case .reconnecting(let attempt):
+                if publicIdentityActive, arena {
+                    if !publicRecoveryPending { publicResumePaused = lifecycleInactive ? !resumeAfterActivation : paused || hasModal }
+                    publicRecoveryPending = true
+                    dropPublicRoomRoute()
+                    disconnected = true; paused = false; screen = .connecting
+                    scene.resetControls(); timeline?.neutralize(); audio.pause()
+                    showSettings = false; showControls = false; showScores = false
+                    showChat = false; showRules = false; showSidebar = false
+                    UIApplication.shared.isIdleTimerDisabled = false
+                } else { disconnected = true; setPaused(true) }
+                status = "Reconnecting, attempt \(attempt)…"
             }
         }
+    }
+
+    private func dropPublicRoomRoute() {
+        roomClient.suspend()
+        room = nil; welcome = nil
+        chatMessages = []; opponentMessages = []; queueState = nil
+        chatPending = false; pendingChatText = nil; showQueues = false
     }
 
     private func restoreRoomIdentity() {

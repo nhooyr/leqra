@@ -65,7 +65,7 @@ final class ReadoutTests: XCTestCase {
         let tank = ArenaTank(id: 1, powerTime: 15, power: "grenade", charges: 3)
         var snapshot = ArenaSnapshot(tanks: [tank], bullets: [ArenaBullet(id: 9, owner: 1, kind: "grenade", life: 7.24)])
         snapshot.boostedBulletIds = [9]
-        let readout = PilotReadout(tank: tank, snapshot: snapshot, infinity: false, muzzleBlocked: true)
+        let readout = PilotReadout(tank: tank, snapshot: snapshot, infinity: false)
         XCTAssertEqual(readout.available, 3)
         XCTAssertEqual(readout.weapon, "GRENADE, 7.2s")
         XCTAssertEqual(readout.readiness, "DETONATE READY")
@@ -91,10 +91,11 @@ final class ReadoutTests: XCTestCase {
         XCTAssertEqual(half.readiness, "COOLDOWN 0.2s")
         tank.cooldown = 0.25
         XCTAssertEqual(PilotReadout(tank: tank, snapshot: ArenaSnapshot(), infinity: false).readiness, "COOLDOWN 0.3s")
-        let wall = PilotReadout(tank: tank, snapshot: ArenaSnapshot(), infinity: false, muzzleBlocked: true)
-        XCTAssertEqual(wall.readiness, "IN WALL, MOVE TO FIRE")
-        XCTAssertEqual(wall.fireLabel, "MOVE")
-        XCTAssertGreaterThan(wall.progress, 0)
+        tank.cooldown = 0; tank.ghostTime = 5
+        let phased = PilotReadout(tank: tank, snapshot: ArenaSnapshot(), infinity: false)
+        XCTAssertEqual(phased.readiness, "READY")
+        XCTAssertEqual(phased.fireLabel, "FIRE")
+        XCTAssertEqual(phased.progress, 1)
     }
 
     func testSpawnProtectionBlocksFiringAndSuppressesLockWarning() {

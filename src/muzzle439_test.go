@@ -5,39 +5,89 @@ import (
 	"testing"
 )
 
-func TestPhasedTankNeedsProjectileClearance(t *testing.T) {
+func TestPhasedWallLaunchAlwaysFiresAndRicochets(t *testing.T) {
 	for _, power := range []string{"ghost", "starman"} {
-		for _, weapon := range []struct {
-			kind   string
-			radius float64
-		}{{"", regularRadius}, {"laser", laserRadius}, {"grenade", 6}, {"rapid", machineRadius}, {"scatter", regularRadius}, {"homing", 5}} {
-			t.Run(power+"/"+weapon.kind, func(t *testing.T) {
-				g := battle(2)
-				wall := Wall{X: 230, Y: 180, W: 8, H: 80}
-				g.World.Walls = append(g.World.Walls, wall)
-				shooter, target := g.Tanks[0], g.Tanks[1]
-				shooter.X, target.X = wall.X-1, wall.X+33
-				g.grantPower(shooter, power)
-				if weapon.kind != "" {
-					g.grantPower(shooter, weapon.kind)
-				}
-				charges, rounds := shooter.Charges, shooter.MachineRounds
-				if g.fire(shooter) || !target.Alive || len(g.Bullets) != 0 {
-					t.Fatal("fired across a wall when the projectile's swept origin overlapped it")
-				}
-				shooter.X, shooter.Y = wall.X-.9*weapon.radius, wall.Y-.9*weapon.radius
-				shooter.Angle = math.Pi / 4
-				if !g.clearTankAt(shooter.X, shooter.Y, weapon.radius) {
-					t.Fatal("fixture must clear the circular radius while overlapping the swept rectangle")
-				}
-				if g.fire(shooter) || shooter.Charges != charges || shooter.MachineRounds != rounds || shooter.ShotSerial != 0 || shooter.Cooldown != 0 {
-					t.Fatal("overlap at a wall corner spent a shot")
-				}
-				shooter.X, shooter.Y = 120, 120
-				if !g.fire(shooter) {
-					t.Fatal("moving into the open must allow an immediate shot")
-				}
-			})
+		for _, kind := range []string{"", "laser", "grenade", "rapid", "scatter", "homing", "cannon"} {
+			for _, origin := range []string{"face", "embedded", "corner"} {
+				t.Run(power+"/"+kind+"/"+origin, func(t *testing.T) {
+					g := battle(2)
+					wall := Wall{X: 230, Y: 180, W: 8, H: 80}
+					g.World.Walls = append(g.World.Walls, wall)
+					shooter, target := g.Tanks[0], g.Tanks[1]
+					shooter.X, target.X = wall.X-1, wall.X+40
+					g.grantPower(shooter, power)
+					if kind != "" {
+						g.grantPower(shooter, kind)
+					}
+					radius := regularRadius
+					switch kind {
+					case "laser":
+						radius = laserRadius
+					case "grenade":
+						radius = 6
+					case "homing":
+						radius = 5
+					case "rapid":
+						radius = machineRadius
+					case "cannon":
+						radius = cannonRadius
+					}
+					if origin == "embedded" {
+						shooter.X = wall.X + wall.W/2
+					}
+					if origin == "corner" {
+						shooter.X, shooter.Y, shooter.Angle = wall.X-.9*radius, wall.Y-.9*radius, math.Pi/4
+					}
+					charges, rounds := shooter.Charges, shooter.MachineRounds
+					launch := g.projectileLaunch(shooter, shooter.Angle, radius, 28)
+					if !g.fire(shooter) || shooter.ShotSerial != 1 || shooter.Recoil != 1 {
+						t.Fatal("wall-facing shot did not fire")
+					}
+					if power == "starman" {
+						if shooter.Charges != charges || shooter.MachineRounds != rounds {
+							t.Fatal("Starman spent saved ammunition")
+						}
+					} else if kind == "rapid" && shooter.MachineRounds != rounds-1 || kind != "rapid" && charges > 0 && shooter.Charges != charges-1 {
+						t.Fatal("reflected shot did not spend exactly one charge")
+					}
+					if kind == "cannon" {
+						if launch.bounced {
+							t.Fatal("Cannon must penetrate instead of projecting")
+						}
+						return
+					}
+					if !launch.valid || !launch.bounced || launch.ux >= 0 && launch.uy >= 0 {
+						t.Fatal("overlapping launch did not reflect toward a clear face", launch)
+					}
+					if origin != "corner" && !target.Alive {
+						t.Fatal("reflected shot tunneled forward through the wall")
+					}
+					if kind == "laser" {
+						points, _ := g.traceLaser(shooter)
+						if len(points) < 2 || points[0].X != launch.x || points[0].Y != launch.y || points[1].X >= points[0].X && points[1].Y >= points[0].Y {
+							t.Fatal("laser did not begin at its reflected anchor", points)
+						}
+						return
+					}
+					want := 1
+					if kind == "scatter" {
+						want = 3
+					}
+					if len(g.Bullets) != want {
+						t.Fatalf("got %d bullets, want %d", len(g.Bullets), want)
+					}
+					for _, b := range g.Bullets {
+						if b.Bounces < 1 || b.VX >= 0 && b.VY >= 0 {
+							t.Fatal("wall launch did not ricochet", b)
+						}
+						if kind == "homing" || kind == "grenade" {
+							if b.SeekDelay != missileWallDelay {
+								t.Fatal("reflected guidance skipped its wall delay")
+							}
+						}
+					}
+				})
+			}
 		}
 	}
 }

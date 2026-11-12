@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestRejectedSpectatingChangePreservesQueue(t *testing.T) {
 	for _, spectating := range []bool{false, true} {
@@ -25,7 +28,7 @@ func TestRejectedSpectatingChangePreservesQueue(t *testing.T) {
 			for i := 0; i < viewers; i++ {
 				viewer := fakeClient()
 				h.addClient(viewer)
-				mmAction(t, h, viewer, map[string]any{"type": "join", "code": r.Code, "name": "VIEWER", "spectating": true})
+				mmAction(t, h, viewer, map[string]any{"type": "join", "code": r.Code, "name": fmt.Sprint("VIEWER", i), "spectating": true})
 				if !spectating {
 					actor = viewer
 				}

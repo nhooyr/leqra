@@ -119,18 +119,22 @@ func Test427MachineGunSpendsOnlySuccessfulRounds(t *testing.T) {
 	}
 }
 
-func Test427MachineGunBlockedInsideWallPreservesBudget(t *testing.T) {
+func Test427MachineGunReflectedInsideWallSpendsOneRound(t *testing.T) {
 	g := battle(2)
 	p := g.Tanks[0]
 	g.grantPower(p, "rapid")
-	p.GhostTime = 10
-	p.X = 0
-	if g.fire(p) || p.MachineRounds != 180 {
-		t.Fatal("wall-blocked fire consumed budget")
+	p.GhostTime, p.X = 10, 104
+	g.World.Walls = append(g.World.Walls, Wall{X: 100, Y: 180, W: 8, H: 80})
+	if !g.fire(p) || p.MachineRounds != 179 || len(g.Bullets) != 1 || g.Bullets[0].VX >= 0 {
+		t.Fatal("wall-reflected fire did not consume exactly one round")
 	}
-	p.X = 90
-	if !g.fire(p) || p.MachineRounds != 179 {
-		t.Fatal("clear muzzle failed after blocked attempt")
+	if g.fire(p) || p.MachineRounds != 179 {
+		t.Fatal("same-tick attempt consumed a second round")
+	}
+	g.Tick++
+	p.X = 70
+	if !g.fire(p) || p.MachineRounds != 178 {
+		t.Fatal("clear muzzle failed after reflected shot")
 	}
 }
 

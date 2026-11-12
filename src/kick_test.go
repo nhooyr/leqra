@@ -179,7 +179,7 @@ func TestKickNewManualJoinAllowed(t *testing.T) {
 	old := cs[1].player
 	action(t, h, cs[0], kickRequest(old))
 	c := fakeClient()
-	action(t, h, c, map[string]any{"type": "join", "code": r.Code, "name": old.Name})
+	action(t, h, c, map[string]any{"type": "join", "code": r.Code, "name": old.Name, "publicToken": old.PublicToken})
 	if c.player == nil || c.player.Token == old.Token || c.player.Member == old.Member {
 		t.Fatal("kick became ban or reused revoked identity")
 	}

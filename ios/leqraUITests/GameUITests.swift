@@ -4,6 +4,8 @@ import XCTest
 /// Physical-device online tests can supply LEQRA_TEST_SERVER with a LAN URL.
 /// Screenshots are XCTest attachments, never repository artifacts.
 final class GameUITests: XCTestCase {
+    private let publicSessionTestNamespace = "ui-" + UUID().uuidString
+
     override func setUpWithError() throws { continueAfterFailure = false }
 
     /// Opt in with TEST_RUNNER_LEQRA_RENDER_STRESS_UI=1 when running xcodebuild.
@@ -39,13 +41,16 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch() -> XCUIApplication {
+    private func launch(callsign: String? = nil) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         let server = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18081"
         // Argument-domain defaults override writes, so mutable settings are
         // deliberately read and restored inside the test instead.
-        app.launchArguments = ["-serverURL", server, "-callsign", "SWIFT FOX"]
+        let name = callsign ?? "SWIFT FOX " + publicSessionTestNamespace.suffix(4).uppercased()
+        app.launchArguments = ["-serverURL", server, "-callsign", name,
+                               "--public-session-test-namespace", publicSessionTestNamespace,
+                               "--skip-public-session-restore"]
         app.launch()
         XCTAssertTrue(app.switches["publicInfinityToggle"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["playRoom"].exists)
@@ -174,6 +179,99 @@ final class GameUITests: XCTestCase {
         leaderboard.tap()
         XCTAssertFalse(app.staticTexts["+1 per kill, -1 per death"].exists)
         leaveGame(in: app)
+    }
+
+    /// Run alone against a fresh disposable database so this unique pilot
+    /// appears in the public top ten. The separate Keychain service never touches a user's
+    /// normal recovery credential, even on a connected physical device.
+    @MainActor
+    func testPublicInfinityColdRelaunchRestoresIdentityAndExitStopsAutomaticRejoin() async throws {
+        guard ProcessInfo.processInfo.environment["LEQRA_PUBLIC_RECOVERY_UI"] == "1" else {
+            throw XCTSkip("Opt in to authenticated public Infinity cold-launch recovery.")
+        }
+        let name = "REC " + UUID().uuidString.prefix(8).uppercased()
+        let app = launch(callsign: name)
+        let namespaceIndex = try XCTUnwrap(app.launchArguments.firstIndex(of: "--public-session-test-namespace")) + 1
+        let otherNamespace = publicSessionTestNamespace + "-other"
+        defer {
+            app.terminate()
+            app.launchArguments += ["--skip-public-session-restore", "--reset-public-session-test-store"]
+            for namespace in [publicSessionTestNamespace, otherNamespace] {
+                app.launchArguments[namespaceIndex] = namespace
+                app.launch()
+                _ = app.buttons["playRoom"].waitForExistence(timeout: 10)
+                app.terminate()
+            }
+        }
+        selectPublic(true, in: app)
+        play(in: app)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Authenticated recovery requires successful Keychain storage; use a signed simulator build.")
+        let original = try await publicLeader(named: name)
+        app.terminate()
+
+        app.launchArguments.removeAll { $0 == "--skip-public-session-restore" }
+        app.launch()
+        XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 20), "An active public session must reopen without tapping PLAY.")
+        XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains(name))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        let recovered = try await publicLeader(named: name)
+        XCTAssertEqual(recovered.id, original.id, "The Keychain bearer must recover the original identity; matching callsigns do not authenticate.")
+
+        leaveGame(in: app)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10), "Explicit Exit must clear automatic-rejoin intent.")
+        XCTAssertFalse(app.buttons["pauseGame"].exists)
+        selectPublic(true, in: app)
+        play(in: app)
+        let deliberateRejoin = try await publicLeader(named: name)
+        XCTAssertEqual(deliberateRejoin.id, original.id, "Explicit Exit retains the authenticated identity for a later deliberate PLAY.")
+        leaveGame(in: app)
+
+        app.terminate()
+        app.launchArguments[namespaceIndex] = otherNamespace
+        app.launch()
+        XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10))
+        let fieldFrame = app.textFields["callsignField"].frame
+        let feedback = app.staticTexts["callsignAvailability"]
+        let taken = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Taken online'"), object: feedback)
+        await fulfillment(of: [taken], timeout: 10)
+        XCTAssertEqual(app.textFields["callsignField"].frame, fieldFrame, "Inline validation must reserve its space.")
+        selectPublic(false, in: app)
+        selectMode("infinity", in: app)
+        play(in: app)
+        XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains(name), "Offline play permits a callsign claimed by another online owner.")
+        leaveGame(in: app)
+        selectPublic(true, in: app)
+        app.buttons["playRoom"].tap()
+        let rejected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS '(P1)'"), object: feedback)
+        await fulfillment(of: [rejected], timeout: 15)
+        XCTAssertTrue(app.buttons["playRoom"].exists)
+        XCTAssertFalse(app.buttons["pauseGame"].exists)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "An online name conflict belongs beside the callsign editor.")
+    }
+
+    private struct PublicLeader {
+        let id: Int
+    }
+
+    @MainActor
+    private func publicLeader(named name: String) async throws -> PublicLeader {
+        let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18081"
+        let base = try XCTUnwrap(URL(string: address))
+        let endpoint = base.appendingPathComponent("api/infinity")
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            let (data, _) = try await URLSession.shared.data(from: endpoint)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            if let leaders = object["leaders"] as? [[String: Any]],
+               let leader = leaders.first(where: { $0["name"] as? String == name }), let id = leader["id"] as? Int {
+                return PublicLeader(id: id)
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        } while Date() < deadline
+        XCTFail("The unique recovery pilot must appear in the disposable server's public standings.")
+        throw NSError(domain: "leqraUITests", code: 1)
     }
 
     @MainActor
