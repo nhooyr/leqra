@@ -493,9 +493,9 @@ function populatePickups(world, locals, dt) {
  if (!pilot.hp) return;
  world.pickups = world.pickups.filter(pickup => locals.some(tank=>Math.hypot(pickup.x-tank.x,pickup.y-tank.y)<CELL*11));
  let nearby = world.pickups.filter(pickup => Math.hypot(pickup.x - pilot.x, pickup.y - pilot.y) < CELL * 5).length;
- if (nearby >= 3 || world.pickups.length >= 6) return;
+ if (nearby >= 3 || world.pickups.length >= locals.length * 6) return;
  const cx = cellCenter(pilot.x), cy = cellCenter(pilot.y);
- for (let i = 0; i < 90 && nearby < 3 && world.pickups.length < 6; i++) {
+ for (let i = 0; i < 90 && nearby < 3 && world.pickups.length < locals.length * 6; i++) {
   const dx = Math.floor(between(-3, 4)), dy = Math.floor(between(-3, 4));
   if (dx * dx + dy * dy > 12) continue;
   const x = cx + dx * CELL, y = cy + dy * CELL;
@@ -884,17 +884,20 @@ function renderScores(world, pilot, second) {
  if (!leaderboard) return;
  const entries = standings.slice(0, 10);
  const tankCount = world.online ? world.tankCount ?? entries.length : world.tanks.length;
- const title = world.online && !world.room ? 'Top 10 Tanks' : tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
+ const publicArena = world.online && (!world.room || world.public);
+ const party = world.public ? world.party || [] : [];
+ const partyIDs = new Set(party.map(tank=>tank.id));
+ const title = publicArena ? 'Top 10 Tanks' : tankCount > 10 ? `Top ${entries.length} tanks` : 'Scoreboard';
  const standingRow = (tank,rank,extra=false) => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
   const name = tank.name || (local===1 ? world.name : local===2 ? world.localName : 'Tank');
-  return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra];
+  return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra,partyIDs.has(tank.id)];
  };
  const rows = entries.map((tank,i) => standingRow(tank,i+1));
  const seen = new Set(entries.map(tank=>tank.id)), extraRows = [];
- for (const id of [world.id,world.local?.id]) {
+ for (const id of new Set([world.id,world.local?.id,...partyIDs])) {
   if (id==null || seen.has(id)) continue;
-  const tank = world.tanks.find(tank=>tank.id===id);
+  const tank = party.find(tank=>tank.id===id) || world.tanks.find(tank=>tank.id===id);
   const rank = world.online ? tank?.rank : standings.indexOf(tank)+1;
   if (!tank || !Number.isSafeInteger(rank) || rank<=10) continue;
   extraRows.push(standingRow(tank,rank,true));
@@ -902,16 +905,17 @@ function renderScores(world, pilot, second) {
  }
  extraRows.sort((a,b)=>a[4]-b[4]);
  rows.push(...extraRows);
- const teams = world.rules?.teamMode==='teams' ? world.teamScores.flatMap((score,i)=>
+ const teams = !publicArena && world.rules?.teamMode==='teams' ? world.teamScores.flatMap((score,i)=>
   i<2||score||entries.some(tank=>tank.team===i+1)?[[teamName(world,i+1),score,0,COLORS[world.rules.teamColors?.[i]] || COLORS[i]]]:[]) : [];
  const signature = JSON.stringify([title,rows,teams]);
  if (signature === world.scoreRows) return;
  world.scoreRows = signature;
  leaderboardTitle.textContent = title;
- const makeRow = ([name, score, local, color,rank,extra]) => {
+ const makeRow = ([name, score, local, color,rank,extra,partyMember]) => {
   const row = document.createElement('li');
   if (rank) row.value = rank;
   if (extra) row.className = 'off-board-local';
+  if (partyMember) row.dataset.party = 'true';
   row.style.setProperty('--tank-color',color);
   if (local) {
    row.dataset.local = 'p' + local;
@@ -919,7 +923,7 @@ function renderScores(world, pilot, second) {
   }
   const callsign = document.createElement('span');
   const total = document.createElement('strong');
-  callsign.textContent = name + (local===1?' (you)':local===2?' (P2)':'');
+  callsign.textContent = name + (local===1?' (you)':local===2?' (P2)':partyMember?' (room)':'');
   total.textContent = score;
   row.append(callsign, total);
   return row;
@@ -1211,6 +1215,7 @@ function receive(ws, event) {
  }
  if (message.type === 'welcome') {
   session.resumed = !!message.resumed;
+  if (Array.isArray(message.party)) session.party = message.party;
   session.id = message.id;
   if (message.localId != null) {
    if (!session.local) {
@@ -1252,7 +1257,8 @@ function receive(ws, event) {
  session.players = message.players;
  session.tankCount = message.tankCount ?? message.leaderboard.length;
  session.leaderboard = message.leaderboard;
- if (message.rules) session.rules = message.rules;
+ if (Array.isArray(message.party)) session.party = message.party;
+ if (message.rules && !session.public) session.rules = message.rules;
  if (message.teamScores) session.teamScores = message.teamScores;
  for (const seat of session.controllers) {
   const pilot = session.tanks.find(tank=>tank.id===seat.id);
@@ -1277,6 +1283,8 @@ function receive(ws, event) {
  session.joined = true;
  if (message.result) session.result = message.result;
  if (!joined) {
+  const onJoined = session.onJoined;session.onJoined = null;
+  onJoined?.();
   session.retryAt = undefined;
   session.retries = 0;
   session.nextHUD = 0;
@@ -1445,11 +1453,12 @@ function start(mode, options = {}) {
  const readBindings = typeof options.bindings === 'function' ? options.bindings : () => options.bindings;
  const selectedColor = value => Number.isInteger(value)&&value>=0&&value<COLORS.length?value:undefined;
  session = {
-  online, name, localName:options.localName, readBindings, launcher:options.launcher, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
+  online, name, localName:options.localName, readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
+  public:!!options.public,party:[],
   colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,
-  rules:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
+  rules:options.public?null:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
   time:0,nextBot:between(.4,1.2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,botPool:[],botBudget:0,
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
@@ -1727,7 +1736,8 @@ function sidebarHelp() {
  const target = session.rules?.infinityTarget;
  return {twoPilots:!!session.local,pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,
   instructions:'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after '+RESPAWN_DELAY+' second. '+
-   (target?'Reach '+target+' points to win.':'Keep playing and growing your score without a time limit.')};
+   (target?'Reach '+target+' points to win.':'Keep playing and growing your score without a time limit.')+
+   (session.public&&session.room?' Everyone competes individually, including pilots from your room.':'')};
 }
 window.leqraInfinity = Object.freeze({start, close: stop, resetControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, togglePause});
 art.roomSessionReady?.();

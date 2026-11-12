@@ -8,9 +8,9 @@ function boot({online=false,survival=false,ffa=false}={}){
  const rules={mode:survival?'survival':'elimination',teamMode:ffa?'ffa':'teams',scoreTarget:5,teamNames:['SQUAD','RAIDERS','THREE','FOUR']};
  const players=[{id:0,name:'PILOT',kind:'human',team:ffa?0:1,color:'#00ff00'},{id:1,name:'RUST',kind:'bot',difficulty:'hard',team:ffa?0:1,color:'#ff0000'}];
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,{writes:0,html:'',set innerHTML(v){this.html=v;this.writes++;},get innerHTML(){return this.html;}});return elements.get(id);};
- const s={mode:online?'online':'room',phase:'playing',difficulty:'normal',COLORS:['#00ff00','#ff0000'],online:{snapshots:[]},tanks:players.map(p=>({...p,human:p.kind!=='bot',alive:true})),scores:[2,2,0,0,0,0,0,0],lastRoster:'',currentRules:()=>rules,roomData:()=>({rules,players}),teamName:t=>rules.teamNames[t-1],teamColor:(id,t)=>t===1?'#00ff00':'#ff0000',teamKey:p=>p.team?'team'+p.team:'pilot'+p.id,localPlayerID:()=>0,paintColor:c=>c,tankSvg:()=>'<svg></svg>',$,document:{body:{classList:{toggle(k,v){s[k]=v;}}}}};
+ const s={mode:online?'online':'room',phase:'playing',difficulty:'normal',COLORS:['#00ff00','#ff0000'],online:{snapshots:[]},tanks:players.map(p=>({...p,human:p.kind!=='bot',alive:true})),scores:[2,2,0,0,0,0,0,0],lastRoster:'',currentRules:()=>rules,infinityPlayMode:()=>s.publicInfinity?'online':'',roomData:()=>({rules,players}),teamName:t=>rules.teamNames[t-1],teamColor:(id,t)=>t===1?'#00ff00':'#ff0000',teamKey:p=>p.team?'team'+p.team:'pilot'+p.id,localPlayerID:()=>0,paintColor:c=>c,tankSvg:()=>'<svg></svg>',$,document:{body:{classList:{toggle(k,v){s[k]=v;}}}}};
  vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],s);
- for(const name of ['botLevelName','lineupMember','scoreboardEntries','renderLineup'])vm.runInContext(declaration(name),s);
+ for(const name of ['botLevelName','lineupMember','scoreboardEntries','sidebarRules','renderLineup'])vm.runInContext(declaration(name),s);
  return {s,$,rules,players};
 }
 function enemy(id,difficulty,{alive=true,boss=false,name='RAIDER '+id}={}){return{id,name,difficulty,alive,team:2,color:'#ff0000',bot:true,survivalEnemy:true,survivalBoss:boss,spawnSerial:1};}
@@ -76,4 +76,32 @@ test('solo practice keeps its bot squad score and gives each bot a separate stre
  s.renderLineup();const lines=memberLines($('roster').innerHTML);
  assert.equal(lines.length,2);assert.match(lines[0],/RUST \(Fierce bot\)/);assert.match(lines[1],/RAIDER 2 \(Chill bot\).*Eliminated/);
  assert.match($('miniScores').innerHTML,/YOU 2/);assert.match($('miniScores').innerHTML,/BOTS 2/);
+});
+
+
+test('Infinity lineup has no fixed-round score pips and switching back restores them',()=>{
+ const {s,$,rules}=boot({ffa:true});s.phase='menu';s.publicInfinity=true;
+ s.renderLineup();assert.doesNotMatch($('roster').innerHTML,/score-pips/);
+ s.publicInfinity=false;s.renderLineup();assert.match($('roster').innerHTML,/score-pips/);
+ rules.infinity=true;rules.infinityTarget=25;s.renderLineup();
+ assert.doesNotMatch($('roster').innerHTML,/score-pips/);
+});
+
+
+test('online public Infinity selection uses the endless lineup without changing private rules',()=>{
+ const {s,$,rules}=boot({online:true,ffa:true});s.phase='onlineLobby';s.online.roomData={infinityPublic:true};
+ s.renderLineup();assert.doesNotMatch($('roster').innerHTML,/score-pips/);
+ assert.equal(s.sidebarRules().infinityTarget,0);assert.equal(rules.infinity,undefined);
+ s.online.roomData.infinityPublic=false;s.renderLineup();assert.match($('roster').innerHTML,/score-pips/);
+});
+
+
+test('public Infinity lineup excludes configured bots and presents room friends as independent tanks',()=>{
+ const {s,$,players,rules}=boot();s.phase='menu';s.publicInfinity=true;
+ players.push({id:2,name:'FRIEND',kind:'human',team:1,color:'#00ff00'});
+ s.renderLineup();const html=$('roster').innerHTML;
+ assert.doesNotMatch(html,/RUST|SQUAD|score-pips/);
+ assert.match(html,/>PILOT<\/div>/);assert.match(html,/>FRIEND<\/div>/);
+ assert.equal((html.match(/class="roster-row /g)||[]).length,2);
+ assert.equal(rules.teamMode,'teams');assert.equal(players[0].team,1);
 });

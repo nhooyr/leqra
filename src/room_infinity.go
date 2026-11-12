@@ -12,11 +12,12 @@ func infinityOwnsLocal(owner, local *Player) bool {
 }
 
 type infiniteRoomSetup struct {
-	rules MatchRules
-	pilot infiniteSeat
-	local *infiniteSeat
-	seat  *Player
-	bots  []infiniteRoomBot
+	public bool
+	rules  MatchRules
+	pilot  infiniteSeat
+	local  *infiniteSeat
+	seat   *Player
+	bots   []infiniteRoomBot
 }
 
 type infiniteRoomBot struct {
@@ -80,6 +81,8 @@ func (r *Room) lineupError() string {
 func (h *Hub) startRoomInfinity(r *Room) {
 	r.Game.resetLobby()
 	r.infinityActive = true
+	r.infinityPublic = false
+	delete(h.publicInfinityRequests, r)
 	r.infinityGeneration++
 	resetReady(r)
 	h.broadcastRoom(r)
@@ -111,7 +114,7 @@ func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, infini
 	for _, p := range r.Players {
 		if p != nil && p.Token == token && h.infiniteMemberValid(r, p, r.infinityGeneration, now) {
 			rules := r.Game.settings()
-			setup := infiniteRoomSetup{rules: rules, pilot: infiniteRoomSeat(p, rules)}
+			setup := infiniteRoomSetup{public: r.infinityPublic, rules: rules, pilot: infiniteRoomSeat(p, rules)}
 			for _, member := range r.Players {
 				if member == nil || member.Spectating || member.Away != nil {
 					continue

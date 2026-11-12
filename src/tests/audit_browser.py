@@ -70,6 +70,7 @@ def check_roster_focus(browser, url, errors):
     for online in (False, True):
         with browser.new_context() as context:
             page = load_room(context, url, errors)
+            page.locator("#infinityToggle").uncheck()
             if online:
                 share_room(page)
             for details in ("roomSettings", "roomPlayers"):
