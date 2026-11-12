@@ -233,7 +233,7 @@ func (g *Game) nextSurvivalWave(players [maxTanks]*Player) {
 	g.seedPickups()
 	g.checkpointSurvivalWave()
 	g.emit("roundStart", nil, -1, "")
-	g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d · %d enemies", s.Wave, s.EnemiesRemaining))
+	g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d, %d enemies", s.Wave, s.EnemiesRemaining))
 }
 
 func (g *Game) endSurvival(players [maxTanks]*Player, won bool) {
@@ -330,7 +330,7 @@ func (g *Game) stepSurvival(players [maxTanks]*Player) {
 		// prepareSurvival freezes pickups until nextSurvivalWave resets the field.
 		g.Bullets = []*Bullet{}
 		g.clearSurvivalInput(players)
-		g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d CLEAR · squad revives in %gs", s.Wave, float64(survivalBreakSeconds)))
+		g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d CLEAR, squad revives in %gs", s.Wave, float64(survivalBreakSeconds)))
 	} else if g.Clock <= 0 {
 		g.endSurvival(players, false)
 	}

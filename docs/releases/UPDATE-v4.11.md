@@ -28,8 +28,8 @@ Two built-in presets are added under **PRESETS**:
 
 | Preset | Roster | Map | Format |
 | --- | --- | --- | --- |
-| **4-tank Free-for-all** | 1 human + 3 Normal bots | Large · 12×10 | FFA |
-| **8-tank Free-for-all** | 1 human + 7 Normal bots | Huge · 14×12 | FFA |
+| **4-tank Free-for-all** | 1 human + 3 Normal bots | Large, 12×10 | FFA |
+| **8-tank Free-for-all** | 1 human + 7 Normal bots | Huge, 14×12 | FFA |
 
 These are built-in quick setups, not new saved-device slots. Loading one uses the existing preset validation and then becomes the current local-room configuration like the other built-ins.
 

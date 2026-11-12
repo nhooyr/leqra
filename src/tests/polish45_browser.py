@@ -32,7 +32,7 @@ with sync_playwright() as pw:
   p2=p.evaluate('__test.localRoom.players.find(p=>p.kind==="local").id')
   labels=p.evaluate('''ids=>{const c=document.getElementById('arena').getContext('2d'),old=c.fillText,seen=[];c.fillText=function(s,...a){seen.push(String(s));return old.call(this,s,...a)};try{for(const id of ids)__test.drawTank(__test.tanks.find(t=>t.id===id));}finally{c.fillText=old}return seen;}''',[0,p2])
   check('ALPHA' in labels and 'BRAVO' in labels,'both local tank labels use callsigns')
-  check(not any(x in ('P1','P2') or '· T' in x for x in labels),'tank labels contain no P1/P2 or team suffix')
+  check(not any(x in ('P1','P2') or ', T' in x for x in labels),'tank labels contain no P1/P2 or team suffix')
   # Five speed pickups stack and the sixth caps.
   speed=p.evaluate('''()=>{const t=__test.tanks[0];t.speedTime=0;t.speedStacks=0;for(let i=0;i<6;i++)__test.grantPower(t,'speed');__test.updateHUD(true);return{stacks:t.speedStacks,time:t.speedTime,buff:document.querySelector('#buffLabel').textContent}}''')
   check(speed['stacks']==5 and speed['time']==6 and 'SPD×5' in speed['buff'],'Super Speed stacks to five and refreshes one timer')

@@ -31,17 +31,22 @@
  <div class="header-right"><button class="room-badge" id="roomBtn" type="button" hidden title="Online room and connection status">ROOM</button>
  <button class="icon-btn" id="soundBtn" type="button" aria-label="Mute sound" title="Sound (M)" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-wave" d="M15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14"/><path class="sound-off-line" d="m16 9 5 6m0-6-5 6"/></svg></button>
  <button class="icon-btn" id="fullscreenBtn" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)"><svg viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
- <button class="icon-btn" id="pauseBtn" type="button" hidden aria-label="Pause game" title="Pause (P / Esc)"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke-width="3"/></svg></button></div>
+ <button class="icon-btn" id="pauseBtn" type="button" hidden aria-label="Pause game" title="Pause (P/Esc)"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke-width="3"/></svg></button></div>
 </header>
-<section class="hero"><div><div class="eyebrow">QUICK ROUNDS / INFINITE ANGLES</div><h1>Every wall is a weapon.</h1></div><div class="hero-tag">BOUNCE. DODGE. OUTLAST.</div></section>
+<section class="hero"><div><div class="eyebrow">QUICK ROUNDS, INFINITE ANGLES</div><h1>Every wall is a weapon.</h1></div><div class="hero-tag">BOUNCE. DODGE. OUTLAST.</div></section>
 <main class="main-grid">
  <section class="arena-shell" aria-label="Tank battle arena">
+  <div class="arena-bar infinite-statusbar infinity-preview-header" id="infinityPreviewBar" hidden>
+   <div class="arena-title"><span class="status-dot"></span><h2>Infinity</h2><span class="infinite-online-count" id="infinityPreviewOnlineCount" title="Human tanks in the public arena" hidden></span></div>
+   <div class="bar-right" id="infinityPreviewRight"><div class="infinite-personal-scores" id="infinityPreviewScores"></div><button class="infinite-scoreboard-toggle" id="infinityPreviewScoreboardBtn" type="button" aria-controls="infinityPreviewScoreboard" aria-expanded="false">Scoreboard</button></div>
+   <details class="infinite-leaderboard infinity-preview-scoreboard" id="infinityPreviewScoreboard" hidden><summary id="infinityPreviewScoreboardTitle">Top 10 Tanks</summary><ol id="infinityPreviewLeaders"></ol><p id="infinityPreviewScoreboardNote">+1 per kill, -1 per death</p></details>
+  </div>
   <div class="arena-bar"><div class="arena-title"><span class="status-dot"></span><span id="arenaStatus">READY ROOM</span></div><div class="mobile-scores" id="miniScores" aria-label="Scores"></div><div class="bar-right"><span class="round-chip" id="roundLabel">ROUND 01</span><span class="clock" id="clock">01:15</span></div>
    <button class="icon-btn sidebar-details-toggle" id="sidebarDetailsBtn" type="button" aria-label="Open sidebar" title="Open sidebar" aria-controls="sidebarDialog" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16m3-11h.1M18 12h.1M18 15h.1"/></svg></button>
   </div>
   <div class="arena-stage">
   <div class="arena-wrap" id="arenaWrap">
-   <canvas id="arena" tabindex="0" aria-label="Tank maze game. Move the mouse to aim Player 1 and left-click to fire. Keyboard bindings are in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
+   <canvas id="arena" tabindex="0" aria-label="Tank maze game. Current controls are in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
    <div class="toast" id="toast" role="status" hidden></div>
    <div class="death-notices" role="status">
     <span class="toast death-notice" id="deathNotice1" hidden></span>
@@ -49,7 +54,7 @@
    </div>
    <div class="announcer" id="announcer" hidden><span class="announce-top" id="announceTop"></span><strong id="announceMain"></strong><span class="announce-sub" id="announceSub"></span></div>
   </div>
-  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Player 1 ammunition"><div class="loadout-identity"><span class="pilot-slot">P1</span><span class="loadout-name" id="loadoutName1">PLAYER 1</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime1">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Player 2 ammunition" hidden><div class="loadout-identity"><span class="pilot-slot">P2</span><span class="loadout-name" id="loadoutName2">PLAYER 2</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime2">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Bank shots around corners.</span><span class="micro-label" id="bestInline"></span></div>
+  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Tank ammunition"><div class="loadout-identity"><span class="loadout-name" id="loadoutName1">Player 1 (P1)</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime1">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Second tank ammunition" hidden><div class="loadout-identity"><span class="loadout-name" id="loadoutName2">CO-PILOT (P2)</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime2">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Bank shots around corners.</span><span class="micro-label" id="bestInline"></span></div>
   <div class="touch-controls" id="touchControls" aria-label="Touch controls">
    <div class="stick-zone" id="stickZone" role="group" aria-label="Drag joystick to steer"><div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div><span class="touch-label">STEER</span></div>
    <div class="touch-center"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m-3-3 3 3-3 3M20 17h-9m3-3-3 3 3 3M5 14v4h3m11-8V6h-3"/></svg><span class="alive-status" id="touchStatus">GOOD LUCK</span><br><span id="fireHint">HOLD TO FIRE</span></div>
@@ -57,80 +62,81 @@
   </div>
    <div class="overlay" id="overlay">
     <section class="screen-card" id="lobbyScreen" aria-label="Legacy settings" hidden>
-     <div class="intro"><div class="eyebrow">QUICK MATCH / LOCAL + ONLINE</div><h2>ENTER<br><em>leqra.</em></h2><p>Small tanks. Tight corners. Big trouble.<br>Outlast the enemy. Rule the maze.</p></div>
-     <div class="lobby-options"><label class="field-label">CHOOSE YOUR BATTLE</label><div class="segmented" id="modeOptions" role="group" aria-label="Game mode"><button class="selected" data-mode="solo" type="button" aria-pressed="true">Solo vs. bots</button><button data-mode="duel" type="button" aria-pressed="false">2P · Local</button><button data-mode="online" type="button" aria-pressed="false">Online</button></div>
+     <div class="intro"><div class="eyebrow">QUICK MATCH, LOCAL AND ONLINE</div><h2>ENTER<br><em>leqra.</em></h2><p>Small tanks. Tight corners. Big trouble.<br>Outlast the enemy. Rule the maze.</p></div>
+     <div class="lobby-options"><label class="field-label">CHOOSE YOUR BATTLE</label><div class="segmented" id="modeOptions" role="group" aria-label="Game mode"><button class="selected" data-mode="solo" type="button" aria-pressed="true">Solo vs. bots</button><button data-mode="duel" type="button" aria-pressed="false">2P, Local</button><button data-mode="online" type="button" aria-pressed="false">Online</button></div>
      <label class="field-label" id="difficultyLabel">BOT DIFFICULTY</label><div class="segmented" id="difficultyOptions" role="group" aria-label="Bot difficulty"><button data-difficulty="easy" type="button" aria-pressed="false">Chill</button><button data-difficulty="normal" class="selected" type="button" aria-pressed="true">Normal</button><button data-difficulty="hard" type="button" aria-pressed="false">Fierce</button><button data-difficulty="godlike" type="button" aria-pressed="false">Godlike</button></div></div>
      <button class="primary" id="playBtn" type="button"><span>DEPLOY TANK</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
-     <div class="small-note" id="lobbyNote">FIRST TO 5 · YOU VS. BOT SQUAD · FRESH MAZES</div>
+     <div class="small-note" id="lobbyNote">FIRST TO 5, BOT SQUAD, FRESH MAZES</div>
     </section>
 
     <section id="onlineScreen" hidden></section>
     <section class="screen-card network-screen unified-room" id="roomScreen" aria-label="Game room">
      <div class="net-intro">
-      <div class="eyebrow" id="roomEyebrow">LOCAL ROOM · YOU ARE THE HOST</div>
-      <h2 class="net-title" id="roomTitle">YOUR<br><em>ARENA.</em></h2>
+      <div class="eyebrow" id="roomEyebrow">LOCAL ROOM</div>
+      <h2 class="net-title" id="roomTitle">READY<br><em>ROOM.</em></h2>
       <label class="infinity-toggle" id="infinityToggleLabel" hidden>
        <input type="checkbox" role="switch" id="infinityToggle" aria-describedby="readyHint" checked>
        <span class="infinity-toggle-track" aria-hidden="true"></span><strong>Infinity</strong>
       </label>
       <button class="primary" id="startRoomBtn" type="button" aria-describedby="readyHint"><span>PLAY</span><span aria-hidden="true">→</span></button>
-      <button class="primary ready-button" id="readyBtn" type="button" aria-pressed="false" aria-describedby="readyHint" hidden><span>I’M READY</span><span class="ready-mark" aria-hidden="true">✓</span></button>
-      <div class="small-note" id="readyHint">YOU VS. THE BOT SQUAD · START WHEN YOU’RE READY</div>
+      <button class="primary ready-button" id="readyBtn" type="button" aria-pressed="false" aria-describedby="readyHint" hidden><span>READY</span><span class="ready-mark" aria-hidden="true">✓</span></button>
+      <div class="small-note" id="readyHint">BOT SKIRMISH, START WHEN READY</div>
       <button class="secondary share-room" id="copyInviteBtn" type="button">SHARE ROOM ONLINE ↗</button>
       <div class="room-utility"><button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button></div>
       <div class="room-connection-actions"><button class="room-action room-action-unshare" id="endInfinityBtn" type="button" hidden>End Infinity</button><button class="room-action room-action-unshare" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="room-action room-action-leave" id="leaveRoomBtn" type="button" hidden>Leave room</button></div>
       <p class="net-status" id="roomStatus" role="status">Local play is ready. Share to invite online friends.</p>
      </div>
      <div class="net-content">
+      <form class="callsign-editor" id="roomCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="roomCallsign">CALLSIGN</label><div class="callsign-row"><input class="net-input" id="roomCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="roomCallsignStatus"></div><p class="callsign-status" id="roomCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="roomP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="roomP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row"><input class="net-input" id="roomP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="roomP2CallsignStatus"></div><p class="callsign-status" id="roomP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
       <details class="room-disclosure" id="roomSettings">
        <summary>Room settings</summary>
        <div class="room-disclosure-content">
-        <label class="field-label" id="roomNameLabel" for="localRoomName">ROOM NAME / CODE</label>
-        <input class="net-input" id="localRoomName" placeholder="Give your room a name" autocomplete="off" spellcheck="false" aria-label="Room name">
+        <label class="field-label" id="roomNameLabel" for="localRoomName">ROOM NAME OR CODE</label>
+        <input class="net-input" id="localRoomName" placeholder="Room name" autocomplete="off" spellcheck="false" aria-label="Room name">
         <div class="room-code" id="roomCodeDisplay" hidden></div>
         <form class="room-code-editor" id="roomCodeEditor" hidden><input class="net-input" id="onlineRoomCode" autocomplete="off" spellcheck="false" aria-label="Online room name or code"></form>
-        <div class="room-rules">FIRST TO 5 WINS · UP TO 8 TANKS<br><span>Teammates share wins. Friendly fire is off.</span></div>
+        <div class="room-rules">FIRST TO 5 WINS, UP TO 8 TANKS<br><span>Teammates share wins. Friendly fire is off.</span></div>
        </div>
       </details>
       <details class="room-disclosure" id="roomPlayers">
        <summary>Players and bots <span id="seatCount">4 / 8</span></summary>
        <div class="room-disclosure-content">
-        <form class="callsign-editor" id="roomCallsignForm" aria-label="Change your callsign"><label class="callsign-label" for="roomCallsign">YOUR CALLSIGN · HOST</label><div class="callsign-row"><input class="net-input" id="roomCallsign" name="callsign" maxlength="32" placeholder="PILOT" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="roomCallsignStatus"></div><p class="callsign-status" id="roomCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="roomP2CallsignForm" data-pilot="secondary" aria-label="Change Player 2 callsign" hidden><label class="callsign-label" for="roomP2Callsign">PLAYER 2 CALLSIGN</label><div class="callsign-row"><input class="net-input" id="roomP2Callsign" name="callsign" maxlength="32" placeholder="PLAYER 2" autocomplete="off" spellcheck="false" aria-describedby="roomP2CallsignStatus"></div><p class="callsign-status" id="roomP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
         <div class="net-roster" id="roomRoster"></div>
-        <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ LOCAL PLAYER 2</button><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div>
-        <p class="local-controls-note" id="localControlsNote" hidden>P1: WASD + Q / C · P2: arrows + Space / Enter.<br>Player 2 needs a keyboard on this device.</p>
+        <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ ADD LOCAL TANK</button><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div>
+        <p class="local-controls-note" id="localControlsNote" hidden></p>
        </div>
       </details>
+      <button class="secondary room-controls-button" id="roomControlsBtn" type="button">CONTROLS</button>
      </div>
     </section>
-    <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden><div class="online-menu-intro"><div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div><h2 class="compact-title">STAY<br><em>CONNECTED.</em></h2><p id="onlineMenuMessage">The match keeps running. Your tank is still vulnerable while this menu is open.</p><section id="hostControls" class="host-controls" aria-label="Host player controls" hidden><div class="callsign-label">HOST CONTROLS</div><div id="menuKickRoster" class="net-roster"></div></section></div><div class="online-menu-actions"><form class="callsign-editor" id="menuCallsignForm" aria-label="Change your callsign"><label class="callsign-label" for="menuCallsign">YOUR CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuCallsign" name="callsign" maxlength="32" placeholder="PILOT" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="menuCallsignStatus"></div><p class="callsign-status" id="menuCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="menuP2CallsignForm" data-pilot="secondary" aria-label="Change Player 2 callsign" hidden><label class="callsign-label" for="menuP2Callsign">PLAYER 2 CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuP2Callsign" name="callsign" maxlength="32" placeholder="PLAYER 2" autocomplete="off" spellcheck="false" aria-describedby="menuP2CallsignStatus"></div><p class="callsign-status" id="menuP2CallsignStatus" role="status" aria-live="polite" hidden></p></form><button class="primary back-action" id="onlineReturnBtn" type="button"><span>BACK TO THE ARENA</span><span aria-hidden="true">←</span></button><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button><button class="secondary" id="restartWaveBtn" type="button" hidden>Restart wave</button><button class="secondary" id="returnRoomBtn" type="button">End match</button><button class="secondary" id="leaveMatchBtn" type="button" hidden>Leave match</button></div></section>
-    <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden><div class="eyebrow">TAKE A BREATHER</div><h2 class="compact-title">HOLD YOUR<br><em>FIRE.</em></h2><p>The battle is paused. Your tank is safe.</p><button class="primary back-action" id="resumeBtn" type="button"><span>BACK TO THE BATTLE</span><span aria-hidden="true">←</span></button><button class="secondary" id="quitBtn" type="button">Return to ready room</button><p class="control-note" id="pauseInstructions"></p></section>
-    <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode / difficulty</button></section>
+    <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden><div class="online-menu-intro"><div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div><h2 class="compact-title">STAY<br><em>CONNECTED.</em></h2><p id="onlineMenuMessage">The match keeps running. Tanks remain vulnerable while this menu is open.</p><section id="hostControls" class="host-controls" aria-label="Host player controls" hidden><div class="callsign-label">HOST CONTROLS</div><div id="menuKickRoster" class="net-roster"></div></section></div><div class="online-menu-actions"><form class="callsign-editor" id="menuCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="menuCallsign">CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="menuCallsignStatus"></div><p class="callsign-status" id="menuCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="menuP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="menuP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row"><input class="net-input" id="menuP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="menuP2CallsignStatus"></div><p class="callsign-status" id="menuP2CallsignStatus" role="status" aria-live="polite" hidden></p></form><button class="primary back-action" id="onlineReturnBtn" type="button"><span>BACK TO THE ARENA</span><span aria-hidden="true">←</span></button><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button><button class="secondary" id="restartWaveBtn" type="button" hidden>Restart wave</button><button class="secondary" id="returnRoomBtn" type="button">End match</button><button class="secondary" id="leaveMatchBtn" type="button" hidden>Leave match</button></div></section>
+    <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden><div class="eyebrow">TAKE A BREATHER</div><h2 class="compact-title">TAKE A<br><em>BREATHER.</em></h2><p>The battle is paused. All tanks are safe.</p><button class="primary back-action" id="resumeBtn" type="button"><span>BACK TO THE BATTLE</span><span aria-hidden="true">←</span></button><button class="secondary" id="quitBtn" type="button">Return to ready room</button><p class="control-note" id="pauseInstructions"></p></section>
+    <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode or difficulty</button></section>
    </div>
   </div>
  </section>
  <aside class="sidebar" id="gameSidebar" aria-label="Scoreboard and instructions">
   <section class="panel fixed-maze-panel"><div class="panel-title"><span>THE LINEUP</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
-  <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"><div class="manual-line manual-move-line"><span>Move &amp; steer</span><div class="manual-key-options"><div class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></div><span class="manual-or">OR</span><div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div></div></div><div class="manual-line manual-fire-line"><span>Fire</span><div class="keys"><kbd>Q</kbd><span class="manual-or">OR</span><kbd>C</kbd><span class="manual-or">OR</span><kbd>SPACE</kbd><span class="manual-or">OR</span><kbd>ENTER</kbd></div></div><div class="manual-line"><span>Mouse (P1)</span><span>Move to aim · Left-click to fire</span></div><div class="manual-line"><span>Pause</span><div class="keys"><kbd>P</kbd><kbd>ESC</kbd></div></div><div class="manual-line"><span>Fullscreen</span><kbd>F</kbd></div><div class="warning"><b>Two bots. One enemy: you.</b><br>Bot shots pass through their allies. Bank shots off walls to reach tanks around corners.</div></div></section>
+  <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"></div></section>
   <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 PICKUPS</span></div><div class="power-list">
-<div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Through walls. Edge bounces. 4× size/speed.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Through walls. Edge bounces. 4× size and speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#cce4ff"><canvas data-power-icon="ghost" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Ghost<span>Through walls. Stacks with speed.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#f9ed75"><canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Starman<span>Rare. For 4–8 seconds, you’re invincible, can destroy tanks on contact, drive through walls, and fire with unlimited ammo and no cooldown.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#f9ed75"><canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Starman<span>Rare. For 4–8 seconds, tanks become invincible, destroy enemies on contact, drive through walls, and fire with unlimited ammo and no cooldown.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#f57cff"><canvas data-power-icon="laser" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Laser<span>Instant ricochets. Long dotted aim.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#ff83bd"><canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Homing missile<span>Aggressive tracking. Half-perimeter range.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Homes in on opponents. Explodes on impact, a second press, or its 10s fuse.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5 · +65% speed each.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing · tiny rounds · quarter-perimeter range.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread · shooter-safe.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5, +65% speed each.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing, tiny rounds, quarter-perimeter range.</span></div></div>
+<div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast horizontal spread, shooter-safe.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#73cee4"><canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shield<span>Stack up to five protective rings.</span></div></div>
-<p class="power-note">Weapons use FIRE. Most timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 3 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or when you press Fire again. Walls stop blasts. Grenades cannot hurt their thrower.</p>
+<p class="power-note">Weapons use FIRE. Most timed power-ups last 10 seconds, or 15 seconds on Huge maps and larger. Machine gun allows 3 seconds of active firing within that time. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or on another fire press. Walls stop blasts. Grenades cannot hurt their thrower.</p>
 </div></section>
-  <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Pick your battle.</div></div></section>
+  <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Choose a battle.</div></div></section>
  </aside>
 </main>
-<footer class="footer"><span>A LITTLE AIM. A LOT OF CHAOS. <strong> / </strong> BUILT FOR QUICK ROUNDS.</span><span id="recordLabel">0 MATCH WINS ON THIS DEVICE</span></footer>
+<footer class="footer"><span>A LITTLE AIM. A LOT OF CHAOS. BUILT FOR QUICK ROUNDS.</span><span id="recordLabel">0 MATCH WINS ON THIS DEVICE</span></footer>
 </div>
-<dialog id="joinDialog" class="join-dialog" aria-labelledby="joinTitle"><div class="eyebrow">JOIN</div><h2 id="joinTitle">Find your room.</h2><label class="field-label" for="pilotName">YOUR CALLSIGN</label><input class="net-input" id="pilotName" maxlength="32" placeholder="PILOT" autocomplete="nickname"><label class="field-label" for="joinCode">ROOM NAME / CODE</label><input class="net-input" id="joinCode" placeholder="Friday tanks 💥" spellcheck="false" autocomplete="off"><div class="join-dialog-actions"><button class="primary" id="joinRoomBtn" type="button"><span>JOIN</span><span aria-hidden="true">→</span></button></div><p class="net-status" id="netStatus" role="status">Missing rooms are created with you as host.</p><button class="secondary back-action" id="onlineBackBtn" type="button">Back to my room <span aria-hidden="true">←</span></button></dialog>
+<dialog id="joinDialog" class="join-dialog" aria-labelledby="joinTitle"><div class="eyebrow">JOIN</div><h2 id="joinTitle">Find a room.</h2><label class="field-label" for="pilotName">CALLSIGN</label><input class="net-input" id="pilotName" maxlength="32" placeholder="Player 1" autocomplete="nickname"><label class="field-label" for="joinCode">ROOM NAME OR CODE</label><input class="net-input" id="joinCode" placeholder="Friday tanks 💥" spellcheck="false" autocomplete="off"><div class="join-dialog-actions"><button class="primary" id="joinRoomBtn" type="button"><span>JOIN</span><span aria-hidden="true">→</span></button></div><p class="net-status" id="netStatus" role="status">Missing rooms are created with the joining pilot as host.</p><button class="secondary back-action" id="onlineBackBtn" type="button">Back to the room <span aria-hidden="true">←</span></button></dialog>
 <dialog id="kickDialog" class="kick-dialog" aria-labelledby="kickTitle" aria-describedby="kickDescription kickNotice">
  <div class="eyebrow">HOST CONTROLS</div><h2 id="kickTitle">Kick this player?</h2>
  <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
@@ -145,22 +151,15 @@
  <div class="feature-body"><p id="inviteInstructions"></p><textarea class="net-input invite-fallback" id="inviteFallback" aria-label="Invite to copy" rows="4" readonly autofocus></textarea></div>
 </dialog>
 <dialog id="introTourDialog" class="feature-dialog intro-tour" aria-labelledby="introTourTitle">
- <header class="feature-header"><div><div id="introTourStep" class="eyebrow">QUICK TOUR · 1 OF 3</div><h2 id="introTourTitle" tabindex="-1" aria-describedby="introTourStep">Drive and aim</h2></div></header>
+ <header class="feature-header"><div><div id="introTourStep" class="eyebrow">QUICK TOUR, 1 OF 3</div><h2 id="introTourTitle" tabindex="-1" aria-describedby="introTourStep">Drive and aim</h2></div></header>
  <div class="feature-body">
   <div class="intro-control-groups" data-intro-page="0">
-   <section id="introTourDesktop">
-    <h3>Mouse (Player 1)</h3>
-    <dl>
-     <dt>Movement</dt><dd>Drive with the keyboard.</dd>
-     <dt>Aim</dt><dd>Point over the maze. Press a turn key to switch back to keyboard aiming.</dd>
-     <dt>Fire</dt><dd>Left-click to fire or hold to keep firing.</dd>
-    </dl>
-   </section>
+   <p id="introTourPilot" class="intro-pilot"></p>
    <section id="introTourTouch">
     <h3>Touch</h3>
     <dl>
      <dt>Movement</dt><dd>Drag the joystick to drive.</dd>
-     <dt>Aim</dt><dd>Point the same joystick where you want to aim.</dd>
+     <dt>Aim</dt><dd>Point the same joystick in the desired firing direction.</dd>
      <dt>Fire</dt><dd>Tap or hold the Fire button.</dd>
     </dl>
    </section>
@@ -172,24 +171,32 @@
     </dl>
     <p>Rebind keys in Controls.</p>
    </section>
+   <section id="introTourDesktop">
+    <h3>Mouse</h3>
+    <dl>
+     <dt>Movement</dt><dd>Drive with the keyboard.</dd>
+     <dt>Aim</dt><dd id="introTourMouseAim">Point over the maze. Press a turn key to switch back to keyboard aiming.</dd>
+     <dt>Fire</dt><dd id="introTourMouseFire">Left-click to fire or hold to keep firing.</dd>
+    </dl>
+   </section>
   </div>
   <div data-intro-page="1" hidden>
-   <p>Bank shots around corners and use walls for cover. Your own shots and grenade blasts leave your tank unharmed.</p>
+   <p>Bank shots around corners and use walls for cover. Every tank is immune to its own shots and grenade blasts.</p>
    <p>Drive over a glowing pickup to collect it.</p>
    <ul>
-    <li><strong>Laser</strong> · Fires an instant ricocheting beam with a dotted aim guide.</li>
-    <li><strong>Grenade</strong> · Homes in and explodes on impact, another fire press, or after 10 seconds.</li>
-    <li><strong>Starman</strong> · For 4–8 seconds, you’re invincible, can drive through walls, destroy tanks you ram, and fire with unlimited ammo and no cooldown.</li>
+    <li><strong>Laser</strong>, Fires an instant ricocheting beam with a dotted aim guide.</li>
+    <li><strong>Grenade</strong>, Homes in and explodes on impact, another fire press, or after 10 seconds.</li>
+    <li><strong>Starman</strong>, For 4–8 seconds, tanks become invincible, drive through walls, destroy enemies on contact, and fire with unlimited ammo and no cooldown.</li>
    </ul>
    <p>There are more power-ups. Check the sidebar for the full list and details.</p>
   </div>
   <div data-intro-page="2" hidden>
    <ul>
-    <li><strong>Infinity</strong> · Roam an unbounded maze where tanks respawn. The Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play with your room roster and set whether roaming bots can spawn.</li>
-    <li><strong>Elimination</strong> · Be the last tank or team standing.</li>
-    <li><strong>Capture the Flag</strong> · Bring the enemy flag home while yours is at base.</li>
-    <li><strong>King of the Hill</strong> · Control the hill to earn points.</li>
-    <li><strong>Survival</strong> · Fight off waves of enemy tanks with your squad.</li>
+    <li><strong>Infinity</strong>, Roam an unbounded maze where tanks respawn. The Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play with your room roster and set whether roaming bots can spawn.</li>
+    <li><strong>Elimination</strong>, Be the last tank or team standing.</li>
+    <li><strong>Capture the Flag</strong>, Bring the enemy flag home while yours is at base.</li>
+    <li><strong>King of the Hill</strong>, Control the hill to earn points.</li>
+    <li><strong>Survival</strong>, Fight off waves of enemy tanks with your squad.</li>
    </ul>
    <p>To play a room match, turn off Infinity, choose a mode in <strong>Room settings</strong>, and press <strong>Play</strong>.</p>
   </div>
@@ -202,9 +209,9 @@
 </dialog>
 <dialog id="infiniteArena" class="feature-dialog infinite-arena" aria-labelledby="infiniteArenaTitle" aria-describedby="infiniteControlsHint">
  <div id="infiniteHeader" class="infinite-header"></div>
- <div class="arena-bar infinite-statusbar">
-  <div class="arena-title"><span class="status-dot"></span><h2 id="infiniteArenaTitle">Infinity</h2></div>
-  <div class="bar-right"><strong id="infiniteKills" title="+1 per kill, -1 per death. # shows your overall scoreboard position."></strong></div>
+ <div id="infiniteStatusbar" class="arena-bar infinite-statusbar">
+  <div class="arena-title"><span class="status-dot"></span><h2 id="infiniteArenaTitle">Infinity</h2><span id="infiniteOnlineCount" class="infinite-online-count" title="Human tanks in this arena" hidden></span></div>
+  <div class="bar-right"><div id="infiniteKills" class="infinite-personal-scores" title="+1 per kill, -1 per death."></div><button id="infiniteScoreboardBtn" class="infinite-scoreboard-toggle" type="button" aria-controls="infiniteLeaderboardPanel" aria-expanded="false">Scoreboard</button></div>
  </div>
  <div class="infinite-stage">
   <canvas id="infiniteCanvas" tabindex="0" aria-label="Infinity tank maze">Your browser needs HTML canvas to play.</canvas>
@@ -226,7 +233,7 @@
  </div>
  <footer class="infinite-underbar">
   <div class="local-loadouts infinite-loadouts" id="infiniteLoadouts"></div>
-  <div class="infinite-readout"><p id="infiniteStatus" role="status"></p><p id="infiniteControlsHint" class="bar-hint"></p></div>
+  <div class="infinite-readout"><p id="infiniteStatus" role="status" hidden></p><p id="infiniteControlsHint" class="bar-hint"></p></div>
  </footer>
  <dialog id="infinitePauseMenu" class="overlay infinite-pause-menu" aria-labelledby="infinitePauseTitle" aria-describedby="infinitePauseHelp">
   <div class="infinite-pause-layout">
@@ -234,9 +241,11 @@
    <div class="online-menu-intro">
     <div class="eyebrow"><span class="infinite-pause-offline">TAKE A BREATHER</span><span class="infinite-pause-online">ONLINE MATCH</span></div>
     <h2 id="infinitePauseTitle" class="compact-title"><span class="infinite-pause-offline">HOLD YOUR<br><em>FIRE.</em></span><span class="infinite-pause-online">STAY<br><em>CONNECTED.</em></span></h2>
-    <p id="infinitePauseHelp"><span class="infinite-pause-offline">The battle is paused. Your tank is safe.</span><span class="infinite-pause-online">The match keeps running. Your tank is still vulnerable. If it’s destroyed, respawning waits until you return.</span></p>
+    <p id="infinitePauseHelp"><span class="infinite-pause-offline">The battle is paused. Tanks are safe.</span><span class="infinite-pause-online">The match keeps running. Tanks remain vulnerable. Respawning waits until the menu closes.</span></p>
    </div>
    <div class="online-menu-actions">
+    <form class="callsign-editor" id="infiniteCallsignForm" data-arena="infinity" aria-label="Change callsign"><label class="callsign-label" for="infiniteCallsign">CALLSIGN</label><div class="callsign-row"><input class="net-input" id="infiniteCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="infiniteCallsignStatus"></div><p class="callsign-status" id="infiniteCallsignStatus" role="status" aria-live="polite" hidden></p></form>
+    <form class="callsign-editor secondary-callsign" id="infiniteP2CallsignForm" data-arena="infinity" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="infiniteP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row"><input class="net-input" id="infiniteP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="infiniteP2CallsignStatus"></div><p class="callsign-status" id="infiniteP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
     <button class="primary back-action" id="infiniteResumeBtn" type="button" autofocus><span class="infinite-pause-offline">BACK TO THE BATTLE</span><span class="infinite-pause-online">BACK TO THE ARENA</span><span aria-hidden="true">←</span></button>
     <button class="secondary" id="infiniteControlsBtn" type="button">Controls</button>
     <button class="secondary" id="infiniteExit" type="button">Exit Infinity</button>
@@ -246,10 +255,14 @@
   </div>
  </dialog>
  <dialog id="infiniteResult" class="feature-dialog" aria-labelledby="infiniteResultTitle">
-  <header class="feature-header"><div><div class="eyebrow">INFINITY · MATCH COMPLETE</div><h2 id="infiniteResultTitle"></h2></div></header>
+  <header class="feature-header"><div><div class="eyebrow">INFINITY, MATCH COMPLETE</div><h2 id="infiniteResultTitle"></h2></div></header>
   <div class="feature-body"><p id="infiniteResultScore"></p></div>
   <footer class="feature-footer"><button class="primary" id="infiniteResultExit" type="button" autofocus>Back to room</button></footer>
  </dialog>
+</dialog>
+<dialog id="settingsResetDialog" class="feature-dialog settings-reset-dialog" aria-labelledby="settingsResetTitle" aria-describedby="settingsResetStatus">
+ <div class="feature-body"><div class="eyebrow">THIS DEVICE</div><h2 id="settingsResetTitle" tabindex="-1">Resetting settings.</h2><p id="settingsResetStatus" role="status" aria-live="polite">Clearing leqra settings and cached app files.</p></div>
+ <footer class="feature-footer"><button class="secondary" id="settingsResetRetryBtn" type="button" hidden>RETRY RESET</button><button class="primary" id="settingsResetReloadBtn" type="button" disabled>RELOAD</button></footer>
 </dialog>
 <script src="assets/v4.49.30/netcode.js" defer></script>
 <script src="assets/v4.49.30/game.js" defer></script>

@@ -121,6 +121,7 @@ type Tank struct {
 	ID            int               `json:"id"`
 	Name          string            `json:"name"`
 	KilledBy      string            `json:"killedBy,omitempty"`
+	KilledByColor string            `json:"killedByColor,omitempty"`
 	Color         string            `json:"color"`
 	X             float64           `json:"x"`
 	Y             float64           `json:"y"`
@@ -1072,6 +1073,7 @@ func (g *Game) eliminateTank(t *Tank, attacker int) {
 	g.recordDeath(t, attacker)
 	t.Alive = false
 	t.KilledBy = ""
+	t.KilledByColor = ""
 	if g.objectiveMode() && !g.suddenDeath() {
 		t.RespawnTime = float64(g.settings().RespawnSeconds)
 		g.dropFlags(t.ID)
@@ -1081,6 +1083,7 @@ func (g *Game) eliminateTank(t *Tank, attacker int) {
 	text := t.Name + " was eliminated."
 	if owner := g.Tanks[attacker]; owner != nil {
 		t.KilledBy = owner.Name
+		t.KilledByColor = owner.Color
 		text = t.KilledBy + " eliminated " + t.Name + "."
 	}
 	g.emit("hit", t, attacker, text)

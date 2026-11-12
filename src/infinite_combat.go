@@ -428,7 +428,7 @@ func (a *infiniteArena) hitTarget(owner, ownerTeam int, x, y, dx, dy, radius, li
 	return target, limit
 }
 
-func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int, ownerName string) {
+func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int, ownerName string, ownerColor ...int) {
 	if a.result != nil || target.HP == 0 || target.Protected || !a.canDamage(owner, ownerTeam, target) {
 		return
 	}
@@ -443,7 +443,7 @@ func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int, ownerN
 		a.effect("shield", target.X, target.Y, owner, nil)
 		return
 	}
-	a.eliminatePilot(target, owner, ownerTeam, ownerName)
+	a.eliminatePilot(target, owner, ownerTeam, ownerName, ownerColor...)
 }
 
 func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
@@ -473,16 +473,23 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 	}
 }
 
-func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam int, ownerName string) {
+func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam int, ownerName string, ownerColor ...int) {
 	target.HP = 0
 	target.Score--
 	target.respawn = a.tick + infiniteRespawnTicks
 	target.KilledBy = ownerName
+	target.KilledByColor = ""
+	if len(ownerColor) > 0 && ownerColor[0] >= 0 && ownerColor[0] < len(tankColors) {
+		target.KilledByColor = tankColors[ownerColor[0]]
+	}
 	a.effect("hit", target.X, target.Y, owner, nil)
 	shooter := a.pilotByID(owner)
 	if shooter != nil {
 		shooter.Score++
 		target.KilledBy = shooter.Name
+		if shooter.ColorIndex >= 0 && shooter.ColorIndex < len(tankColors) {
+			target.KilledByColor = tankColors[shooter.ColorIndex]
+		}
 	}
 	if a.teams() {
 		if target.Team > 0 {
@@ -508,7 +515,7 @@ func (a *infiniteArena) detonate(b *infiniteBullet) {
 			continue
 		}
 		if !a.rayBlocked(b.X, b.Y, p.X-b.X, p.Y-b.Y, 0) {
-			a.hurt(p, b.Owner, b.ownerTeam, b.ownerName)
+			a.hurt(p, b.Owner, b.ownerTeam, b.ownerName, b.Color)
 		}
 	}
 }
@@ -537,7 +544,7 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 				if b.Kind == "cannon" || b.Kind == "homing" {
 					a.effect("impact", b.X, b.Y, b.Owner, nil)
 				}
-				a.hurt(target, b.Owner, b.ownerTeam, b.ownerName)
+				a.hurt(target, b.Owner, b.ownerTeam, b.ownerName, b.Color)
 			}
 			return false
 		}

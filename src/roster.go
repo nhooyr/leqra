@@ -206,12 +206,12 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			return
 		}
 		r.NextMember++
-		name := m.Name
+		name := cleanCallsign(m.Name)
 		if name == "" {
 			if m.Kind == "bot" {
 				name = "BOT"
 			} else {
-				name = "PLAYER 2"
+				name = "CO-PILOT"
 			}
 		}
 		p := &Player{ID: slot, Member: r.NextMember, Name: cleanName(name), Kind: m.Kind, Owner: c.player.ID, Controller: c.player, Difficulty: difficulty, Ready: true, InputAt: now}

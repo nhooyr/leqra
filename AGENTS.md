@@ -25,6 +25,14 @@ Get the user's approval before editing the root `README.md`.
 
 Leave letter spacing at its default in CSS.
 
+Use commas, spaces, or line breaks to separate inline text. Use unspaced slashes between equivalent control keys. Show keyboard controls before mouse controls.
+
+Label local tanks with their callsigns and tank colors, followed by `(P1)` or `(P2)`. Keep `(P1)` visible even without a second local tank. Bold local identity labels; keep remote identity labels at normal weight. Avoid generic player numbers or “you” as player identities.
+
+Keep UI text at least 10px, including canvas labels after zoom. Wrap callsigns instead of clipping or shrinking them.
+
+Show each gameplay status once. Keep weapon details separate from readiness and respawn information.
+
 ## Testing Guidelines
 
 Add deterministic regressions for bugs. Name Go tests `TestBehavior` in `*_test.go`; place Node tests in `src/tests/*.test.cjs`. Keep shared gameplay behavior consistent between Go and JavaScript, using parity fixtures where applicable. Benchmark performance claims. Run focused tests first, then relevant full suites. No numeric coverage threshold is configured. Historical browser results are not current verification; record skipped browser/device checks.

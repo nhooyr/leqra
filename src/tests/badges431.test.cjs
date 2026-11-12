@@ -12,9 +12,9 @@ function recorder(){
 function boot(){
  const ctx=recorder(),made=[];
  const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,MACHINE_FIRING_ROUNDS:180,reduceMotion:true,fxTime:0,shake:0,combatPrefs:{performance:true},WEBKIT_ENGINE:false,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c=ctx)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
- vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
+ vm.createContext(s);require('./identity_fixture.cjs')(s,source);s.localRoom={players:[]};vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
  vm.runInContext(source.slice(source.indexOf('const tankPowerBadgeCache='),source.indexOf('function activeTankPowerBadges(')),s);
- for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankStatusLayout','tankPowerBadgePositions','powerExpiryAlpha','expiryFadeAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
+ for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankLabel','tankStatusLayout','tankPowerBadgePositions','powerExpiryAlpha','expiryFadeAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
 function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,charges:3,machineRounds:180,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,ghostTime:10,...patch};}
@@ -29,7 +29,8 @@ test('bot and remote power icons proceed clockwise below stable names without co
   const {s,ctx}=boot();s.mode=mode;s.scale=scale;
   const t=tank({shield:charges?10:0,shieldCharges:charges,angle:1.35,human:mode==='online'});s.drawTank(t);
   const text=ctx.events.findLast(e=>e.type==='text'),label=labelRect(ctx),icons=pictures(ctx);
-  assert.equal(text.text,'GODLIKE BOSS');assert.equal(icons.length,charges?4:3);
+  assert.equal(text.text,s.tankLabel(t));assert.equal(icons.length,charges?4:3);
+  for(const glyph of ctx.events.filter(event=>event.type==='text'))assert.ok(parseFloat(glyph.font.replace('bold ',''))*scale>=10-1e-8,'names and badge counts retain the 10px screen-space minimum');
   const textDescent=parseFloat(text.font.replace('bold ',''))*.25;
   for(const icon of icons){
    assert.ok(icon.y+icon.w*(.5-28.5/64)>=label.y+label.h,'name background stays above the lower icon arc');
@@ -100,7 +101,7 @@ test('gaining or losing a power-up may repack badges but moving cannot create an
 test('badges ease from full visibility to transparent according to their own timers',()=>{
  for(const mode of ['room','online'])for(const clock of [0,7.21]){
   const {s,ctx}=boot();Object.assign(s,{mode,fxTime:clock});const t=tank({id:0,human:true,powerTime:2.25,shield:3,speedTime:.75,ghostTime:1.5});
-  s.drawTank(t);const icons=pictures(ctx),labels=ctx.events.filter(e=>e.type==='text');assert.equal(icons.length,4);assert.equal(labels.at(-1).text,t.name);assert.equal(labels.at(-1).alpha,1,'badge fade cannot dim the tank name');assert.equal(labels.at(-1).textBaseline,'alphabetic');
+  s.drawTank(t);const icons=pictures(ctx),labels=ctx.events.filter(e=>e.type==='text');assert.equal(icons.length,4);assert.equal(labels.at(-1).text,s.tankLabel(t));assert.equal(labels.at(-1).alpha,1,'badge fade cannot dim the tank name');assert.equal(labels.at(-1).textBaseline,'alphabetic');
   assert.deepEqual(icons.map(icon=>icon.alpha),[.84375,1,.15625,.5]);
   assert.ok(s.expiryFadeAlpha(.001,3)<.000001);
   assert.equal(s.expiryFadeAlpha(0,3),0);
@@ -110,7 +111,7 @@ test('badges ease from full visibility to transparent according to their own tim
 test('Infinity and fixed tanks use the same badge positions, sprite counts and expiry fades',()=>{
  const {s,ctx}=boot(),infinite=readFileSync(assetPath('infinite.js'),'utf8');
  Object.assign(s,{COLORS:['#73cee4'],powers:vm.runInContext('POWER',s),
-  art:{theme:s.theme,rect:s.roundRect,hull(){},turret(){},drawBadges:s.drawTankPowerBadges}});
+  art:{pilotIdentity:s.pilotIdentity,theme:s.theme,rect:s.roundRect,hull(){},turret(){},drawBadges:s.drawTankPowerBadges}});
  vm.runInContext(declaration('drawTank',infinite).replace('function drawTank','function drawInfinityTank'),s);
  for(const zoom of [.5,1,1.2])for(const mine of [false,true]){
   const t=tank({id:mine?1:3,human:mine,colorIndex:0,power:'rapid',powerTime:1,machineRounds:76,shield:3,speedTime:2,starmanTime:.5});
@@ -120,6 +121,7 @@ test('Infinity and fixed tanks use the same badge positions, sprite counts and e
   assert.equal(fixed[0].alpha,.5,'the weapon timer is held until Starman ends');
   assert.equal(fixed[3].alpha,.5,'Starman fades during its final second');
   ctx.events.length=0;s.drawInfinityTank(t,mine,zoom,1);
+  assert.ok(parseFloat(ctx.events.find(event=>event.type==='text').font.replace('bold ',''))*zoom>=10-1e-8,'Infinity names retain the same screen-space font minimum');
   assert.deepEqual(pictures(ctx),fixed);
   assert.deepEqual(ctx.events.filter(e=>e.type==='text').slice(1),fixedCounts);
  }

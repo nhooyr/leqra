@@ -53,10 +53,10 @@ def check_landscape(browser, devices, errors, has_safe_area_override):
         page.locator("#startRoomBtn").tap()
         expect(page.locator("#infiniteArena")).to_be_visible()
         expect(page.locator("#infiniteHeader > #gameHeader")).to_be_visible()
-        page.locator("#infiniteLeaderboardPanel > summary").tap()
+        page.locator("#infiniteScoreboardBtn").tap()
         layout = page.evaluate("""() => {
             const panel = document.querySelector('#infiniteLeaderboardPanel');
-            const summary = panel.querySelector('summary');
+            const summary = document.querySelector('#infiniteScoreboardBtn');
             const list = panel.querySelector('#infiniteLeaderboard');
             list.replaceChildren(...Array.from({length: 10}, () => {
                 const row = document.createElement('li');
@@ -83,7 +83,7 @@ def check_landscape(browser, devices, errors, has_safe_area_override):
         assert layout["fireReachable"] and layout["summaryReachable"] and layout["scrollTop"] > 0, layout
         if has_safe_area_override:
             assert layout["top"] >= 8 and layout["left"] >= 48 and layout["right"] <= 520, layout
-        page.locator("#infiniteLeaderboardPanel > summary").tap()
+        page.locator("#infiniteScoreboardBtn").tap()
         expect(page.locator("#infiniteLeaderboardPanel")).not_to_have_attribute("open", "")
         pause_button = page.locator("#pauseBtn")
         trigger = pause_button.bounding_box()

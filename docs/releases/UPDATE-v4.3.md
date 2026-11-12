@@ -25,8 +25,8 @@ the room menu, then **Settings & controls → APPEARANCE**.
 | Setting | Behavior |
 | --- | --- |
 | **Auto — default** | Follows the light/dark preference reported by the browser, including changes while the game is open. |
-| **Dark · neon green** | Keeps the dark skin regardless of the browser preference. |
-| **Light · neon purple** | Keeps the light skin regardless of the browser preference. |
+| **Dark, neon green** | Keeps the dark skin regardless of the browser preference. |
+| **Light, neon purple** | Keeps the light skin regardless of the browser preference. |
 
 A manual choice takes effect immediately and is remembered in that browser.
 Selecting Auto resumes following the browser preference. This is a device-local

@@ -24,7 +24,7 @@ test('next-boss gear matches fixtures also checked against authoritative Go gran
   const plan=s.survivalWavePlan(f.wave),preview=s.survivalBossPreview();
   assert.equal(plan.bossDifficulty,f.difficulty,f.name);assert.equal(plan.bossName,f.bossName,f.name);assert.equal(preview.difficulty,f.difficulty,f.name);assert.equal(preview.name,f.bossName,f.name);assert.equal(plan.shieldCharges,f.shieldCharges,f.name);assert.equal(plan.speedStacks,f.speedStacks,f.name);assert.equal(plan.weapon||'',f.weapon,f.name);
   const gear=[];if(f.shieldCharges)gear.push(f.shieldCharges+' shield charge'+(f.shieldCharges===1?'':'s'));if(f.speedStacks)gear.push('Speed boost');gear.push({homing:'Homing missiles',cannon:'Cannon',laser:'Laser'}[f.weapon]||'Standard shells');
-  assert.equal(preview.wave,f.wave,f.name);assert.equal(preview.equipment,gear.join(' · '),f.name);
+  assert.equal(preview.wave,f.wave,f.name);assert.equal(preview.equipment,gear.join(', '),f.name);
  }
 });
 test('pre-boss compact results show only the completed wave throughout the two-second hold',()=>{
@@ -55,7 +55,7 @@ test('online boss details wait for the countdown and use authoritative equipment
  assert.equal(s.$('announceTop').textContent,'SQUAD SURVIVES');assert.equal(s.$('announceMain').textContent,'WAVE 9 CLEARED');assert.equal(s.$('announceSub').textContent,'New maze in 2…');
  s.online.roomData.rules.pickupRate='normal';s.online.roomData.rules.weapons=['shield','laser'];s.updateAnnouncer();assert.equal(s.$('announceSub').textContent,'New maze in 2…');
  s.phase='countdown';s.round=10;s.phaseTime=3;Object.assign(s.survivalState(),{wave:10,status:'wave',breakTime:0});s.updateAnnouncer();
- assert.equal(s.$('announceTop').textContent,'WAVE 10 · FIERCE BOSS');assert.equal(s.$('announceSub').textContent,'Equipment: 2 shield charges · Laser');assert.equal(s.$('announcer').classes.has('boss-preview'),true);
+ assert.equal(s.$('announceTop').textContent,'WAVE 10, FIERCE BOSS');assert.equal(s.$('announceSub').textContent,'Equipment: 2 shield charges, Laser');assert.equal(s.$('announcer').classes.has('boss-preview'),true);
  s.online.roomData.rules.pickupRate='off';s.updateAnnouncer();assert.equal(s.$('announceSub').textContent,'Equipment: Standard shells');
  s.phase='paused';s.updateAnnouncer();assert.equal(s.$('announcer').hidden,true);s.phase='countdown';s.updateAnnouncer();assert.equal(s.$('announcer').hidden,false);
  s.phase='playing';s.updateAnnouncer();assert.equal(s.$('announcer').classes.has('boss-preview'),false);assert.equal(s.$('announcer').hidden,true);
@@ -63,6 +63,6 @@ test('online boss details wait for the countdown and use authoritative equipment
 
 test('boss equipment appears only after the new maze arrives for the three-second countdown',()=>{
  const s=boot();s.phase='countdown';s.round=5;s.phaseTime=3;Object.assign(s.survivalState(),{wave:5,status:'wave',breakTime:0,boss:true});
- s.updateAnnouncer();assert.equal(s.$('announceTop').textContent,'WAVE 05 · NORMAL BOSS');assert.equal(s.$('announceMain').textContent,'3');assert.equal(s.$('announceSub').textContent,'Equipment: 1 shield charge · Homing missiles');
+ s.updateAnnouncer();assert.equal(s.$('announceTop').textContent,'WAVE 05, NORMAL BOSS');assert.equal(s.$('announceMain').textContent,'3');assert.equal(s.$('announceSub').textContent,'Equipment: 1 shield charge, Homing missiles');
  s.phaseTime=1.1;s.updateAnnouncer();assert.equal(s.$('announceMain').textContent,'2');assert.match(s.$('announceSub').textContent,/Homing missiles/);
 });

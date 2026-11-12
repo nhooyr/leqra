@@ -27,7 +27,7 @@ test('Survival wave, break, boss and result transitions keep the final labels wi
   assert.equal(s.writes.filter(([id])=>id==='clock').length,1);assert.equal(s.writes.filter(([id])=>id==='arenaStatus').length,1);
   s.writes.length=0;for(let n=0;n<10;n++){s.objective.survival.breakTime-=.08;s.updateHUD();}assert.deepEqual(s.writes,[]);
   s.round=5;Object.assign(s.objective.survival,{wave:5,status:'wave',breakTime:0,enemiesRemaining:4,boss:true});s.updateHUD();
-  assert.equal(s.$('arenaStatus').textContent,'SURVIVAL');assert.equal(s.$('roundLabel').textContent,'WAVE 05');assert.equal(s.$('clock').textContent,'01:15');assert.equal(s.$('objectiveStatus').textContent,'4 ENEMIES LEFT · NORMAL BOSS');
+  assert.equal(s.$('arenaStatus').textContent,'SURVIVAL');assert.equal(s.$('roundLabel').textContent,'WAVE 05');assert.equal(s.$('clock').textContent,'01:15');assert.equal(s.$('objectiveStatus').textContent,'4 ENEMIES LEFT, NORMAL BOSS');
   s.phase='matchOver';s.updateHUD();assert.equal(s.$('arenaStatus').textContent,'MATCH COMPLETE');assert.equal(s.$('objectiveBar').hidden,true);
   s.phase=mode==='online'?'onlineLobby':'menu';s.updateHUD();assert.equal(s.$('arenaStatus').textContent,mode==='online'?'ROOM LOBBY':'READY ROOM');
  }

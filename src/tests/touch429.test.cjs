@@ -28,7 +28,7 @@ function boot(){
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id);};
  const selection={isCollapsed:true,cleared:0,removeAllRanges(){this.isCollapsed=true;this.cleared++;}},document={...eventTarget(),documentElement:element(),body:element(),getSelection:()=>selection},window=eventTarget();
  const s={document,window,$,mode:'room',phase:'menu',matchTouchLocked:false,matchTextComposing:false,touchUI:true,pendingMatchPresentation:null,online:{connected:true,menu:false},
-  stick:{id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36},firePointers:new Set(),firePresses:new Set(),initAudio(){},primeAudioUnlock(){},localPlayerID:()=>0,sendOnlineInput(){},primaryFireHeld:()=>s.firePointers.size>0};
+  stick:{id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36},mouseAim:{active:false,pointer:null,firePressed:false},firePointers:new Set(),firePresses:new Set(),initAudio(){},primeAudioUnlock(){},localPlayerID:()=>0,sendOnlineInput(){},primaryFireHeld:()=>s.firePointers.size>0};
  vm.createContext(s);
  for(const name of ['syncPauseButton','preventMatchPinch','matchTextField','clearMatchSelection','preventMatchSelection','syncMatchTouchPolicy'])vm.runInContext(declaration(name),s);
  // The actual joystick/Fire handlers are exercised alongside document guards.

@@ -19,6 +19,11 @@ function boot({query='?room=Friday+tanks',session=null,name='SAVED PILOT',kicked
 }
 function recent(extra={}){return{code:'Friday tanks',token:'resume-token',name:'OLD PILOT',at:Date.now(),...extra};}
 
+test('an unnamed fresh invite uses Player 1 and explicit callsigns remain unchanged',()=>{
+ const {s,$,join,saved}=boot({name:''});assert.equal($('pilotName').value,'Player 1');$('pilotName').value='';join();assert.equal(s.connections[0].request.name,'Player 1');assert.equal(saved.get('leqra.name'),'Player 1');
+ for(const name of ['PILOT','Pilot','YOU']){const h=boot({name});h.join();assert.equal(h.s.connections[0].request.name,name);}
+});
+
 test('fresh invite shows the callsign menu without connecting until JOIN is clicked',()=>{
  const {s,$,join,saved}=boot();assert.equal(s.connections.length,0);assert.equal($('joinDialog').open,true);assert.equal($('joinCode').value,'Friday tanks');assert.equal($('pilotName').value,'SAVED PILOT');assert.equal($('pilotName').focused,true);assert.equal($('pilotName').selected,true);assert.equal(s.mode,'room');
  $('pilotName').value='NEW PILOT';join();assert.equal(s.connections.length,1);assert.equal(s.connections[0].request.name,'NEW PILOT');assert.equal(s.connections[0].request.code,'Friday tanks');assert.equal(s.connections[0].request.token,undefined);assert.equal(saved.get('leqra.name'),'NEW PILOT');
@@ -61,7 +66,7 @@ test('manual invite dialog works in the match menu and stays current through ren
  assert.match($('inviteFallback').value,/^Room Current name/);
 });
 test('a removed player must explicitly JOIN and is not given the removed session token',()=>{
- const {s,$,join,stored}=boot({session:recent(),kicked:'Friday tanks'});assert.equal(s.connections.length,0);assert.match($('netStatus').textContent,/removed/);join();assert.equal(s.connections.length,1);assert.equal(s.connections[0].request.token,undefined);assert.equal(stored.has('leqra.kicked'),false);
+ const {s,$,join,stored}=boot({session:recent(),kicked:'Friday tanks'});assert.equal(s.connections.length,0);assert.match($('netStatus').textContent,/removed/i);join();assert.equal(s.connections.length,1);assert.equal(s.connections[0].request.token,undefined);assert.equal(stored.has('leqra.kicked'),false);
 });
 test('fresh spectator invites wait for callsign confirmation and retain spectator intent',()=>{
  const {s,$,join}=boot({query:'?room=Friday+tanks&spectate=1'});assert.equal(s.connections.length,0);assert.equal($('joinRoomBtn').firstElementChild.textContent,'START SPECTATING');assert.equal($('joinCode').readOnly,true);$('pilotName').value='VIEWER';join();assert.equal(s.connections[0].request.spectating,true);assert.equal(s.connections[0].request.name,'VIEWER');assert.equal(s.connections[0].request.token,undefined);

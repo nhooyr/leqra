@@ -121,5 +121,5 @@ test('predicted firing budget is independent for P2 and resets with a new life',
 });
 test('pickup feedback explains map duration, Starman, machine-gun firing time and grenade fuse',()=>{
  const s=boot();s.cols=14;s.rows=12;assert.match(s.pickupMessage('speed'),/15 SECONDS/);assert.match(s.pickupMessage('laser'),/LONG AIM GUIDE/);
- assert.match(s.pickupMessage('rapid'),/3s FIRING · 15s TO USE/);assert.match(s.pickupMessage('grenade'),/10s FUSE/);assert.match(s.pickupMessage('starman'),/6s$/);
+ assert.match(s.pickupMessage('rapid'),/3s FIRING, 15s TO USE/);assert.match(s.pickupMessage('grenade'),/10s FUSE/);assert.match(s.pickupMessage('starman'),/6s$/);
 });

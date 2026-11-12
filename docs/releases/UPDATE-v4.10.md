@@ -3,7 +3,7 @@
 ## Ghost in-wall HUD no longer flashes gray
 
 While Ghost is active, entering an internal wall still blocks ordinary firing and the
-loadout text still reads **IN WALL · MOVE TO FIRE**. The colored cooldown/ammunition
+loadout text still reads **IN WALL, MOVE TO FIRE**. The colored cooldown/ammunition
 bar no longer empties merely because the tank crossed into a wall. It continues to
 show the real underlying cooldown or ammunition readiness, so moving rapidly in and
 out of walls does not create a distracting gray/color flash.

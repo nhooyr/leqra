@@ -2,6 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),vm=require('node:vm');
 const {assetPath}=require('./web_assets.cjs');
+const identityFixture=require('./identity_fixture.cjs');
 const source=readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){
  const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);
@@ -9,7 +10,11 @@ function declaration(name){
  return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);
 }
 class Element{
- constructor(){this.children=[];this.style={setProperty(){}};this.classList={toggle(){}};this.textContent='';this.open=false;}
+ constructor(tag='div'){this.tagName=tag.toUpperCase();this.children=[];this.dataset={};this.style={setProperty(){}};this.classList={toggle(){}};this.textContent='';this.open=false;}
+ get textContent(){return(this._textContent||'')+this.children.map(child=>child.textContent).join('');}
+ set textContent(value){this._textContent=String(value);this.children=[];this._html=undefined;}
+ set innerHTML(value){this._html=value;this.children=[];this._textContent=String(value).replace(/<[^>]*>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'");}
+ get innerHTML(){return this._html??this.textContent;}
  append(...children){this.children.push(...children);}
  replaceChildren(...children){this.children=[...children];}
  querySelectorAll(){return this.children.map(child=>child.children[0]).filter(Boolean);}
@@ -28,7 +33,7 @@ function boot({teams=false,target=1}={}){
   tanks:players.map(p=>({...p,alive:p.name!=='RIVAL',human:p.kind!=='bot',color:'#fff'})),scores:Array(8).fill(0),
   round:1,roundWinner:-1,phaseTime:0,roundClock:75,bullets:[],particles:[],rings:[],fxTime:0,time:0,toastTime:0,shake:0,uiClock:1,
   localTick:0,localTankActors:Array(8),localObjectives:null,pendingMatchPresentation:null,now:0,performance:{now:()=>s.now},online:{},localMatchStats:null,localMatchReport:null,localMatchResult:null,goUntil:0,bestWins:0,
-  COLORS:['#fff'],$,document:{createElement:()=>new Element(),querySelectorAll:()=>[]},
+  COLORS:['#fff'],$,document:{createElement:tag=>new Element(tag),querySelectorAll:()=>[]},
   teamKey:p=>p.team>0?'team'+p.team:'pilot'+p.id,teamName:id=>'TEAM '+id,teamColor:()=>'#fff',paintColor:c=>c,
   currentRules:()=>rules,objectiveMode:()=>false,suddenDeath:()=>false,
   clearInput(){},dropLocalFlags(){},addLog(){},tone(){},updateHUD(){},syncPauseButton(){},updateTraces(){},compactLife(){},save(){s.saves=(s.saves||0)+1;},renderDeviceWins(){},setScreen(screen){s.screen=screen;},renderOnlineRoom(){},syncResultActions(){},
@@ -37,7 +42,7 @@ function boot({teams=false,target=1}={}){
   roomData:()=>({players:s.localRoom.players.filter(p=>!p.spectating),spectators:s.localRoom.players.filter(p=>p.spectating)}),readyRoom(){s.phase='menu';s.screen='room';},
   roomMember:id=>s.localRoom.players.find(p=>p.id===id),secondaryMember:()=>s.localRoom.players.find(p=>p.kind==='local'&&p.owner===s.localRoom.self),
   winnerName:id=>s.tanks.find(t=>t.id===id)?.name||'MISSING',newTank:id=>({...s.localRoom.players.find(p=>p.id===id),alive:true,color:'#fff'})};
- vm.createContext(s);
+ vm.createContext(s);identityFixture(s,source);
  const names=['survivalMode','roomStartError','beginLocalMatchStats','bindLocalTankStats','finishLocalMatchStats','finishRound','clearLocalSeat','moveLocalMember','update','finishMatch','queueMatchPresentation','flushMatchPresentation','closeVictory','showVictory','restartLocalMatch','endLocalObjective','stepLocalObjectives','endLocalSurvival','survivalResultText'];
  for(const helper of ['matchResultEntries','resultMemberMatches'])if(source.includes('function '+helper+'('))names.push(helper);
  for(const name of names)vm.runInContext(declaration(name),s);
@@ -47,6 +52,36 @@ function boot({teams=false,target=1}={}){
 function complete(s){s.phaseTime=0;s.update(1/120);}
 function winnerRow(s){return s.localMatchReport?.players.find(row=>row.member===101);}
 function scoreLabels($){return $('victoryScores').children.map(row=>row.children.map(c=>c.textContent).join(':'));}
+
+test('FFA results keep frozen colored callsigns and local suffixes after live identities change',()=>{
+ const {s,$,players}=boot();players[0].name='YOU';players[1].name='WING';players[1].kind='local';
+ Object.assign(s.tanks[0],{name:'YOU',color:'#1abcde'});Object.assign(s.tanks[1],{name:'WING',kind:'local',human:true,alive:true,color:'#fed123'});
+ s.beginLocalMatchStats();for(const tank of s.tanks)s.bindLocalTankStats(tank);
+ s.finishRound(1);const report=s.localMatchReport,frozen=JSON.stringify(report);
+ players[0].name='REPLACEMENT';players[1].name='NEXT CO-PILOT';s.tanks[0].name='NEW';s.tanks[1].color='#000000';
+ complete(s);
+ assert.equal($('victoryTitle').textContent,'WING (P2) WINS!');assert.equal($('victoryTitle').style.color,'#fed123');
+ assert.ok($('victoryMembers').innerHTML.includes('WING (P2)'));assert.ok($('victoryMembers').innerHTML.includes('color:#fed123'));
+ assert.ok(scoreLabels($).includes('YOU (P1):0'));assert.ok(scoreLabels($).includes('WING (P2):1'));
+ assert.equal(JSON.stringify(report),frozen);assert.equal(report.players[0].name,'YOU');assert.equal(report.players[1].name,'WING');
+ vm.runInContext(declaration('winnerName'),s);assert.equal(s.winnerName(1),'WING (P2)');
+});
+
+test('match statistics use frozen colored callsigns without rewriting report names or counters',()=>{
+ const {s,$}=boot(),report=Object.freeze({mode:'elimination',duration:10,rounds:2,players:Object.freeze([
+  Object.freeze({id:100,seat:0,member:11,name:'YOU',kind:'human',color:'#abcdef',team:0,eliminations:2,deaths:1,active:true,winner:true}),
+  Object.freeze({id:101,seat:3,member:12,name:'WING',kind:'local',color:'#fedcba',team:0,eliminations:1,deaths:2,active:false}),
+  Object.freeze({id:102,seat:2,member:13,name:'RUST',kind:'bot',color:'#123456',team:0,eliminations:0,deaths:1,active:true}),
+ ])});
+ const before=JSON.stringify(report);for(const name of ['matchDuration','renderMatchStats'])vm.runInContext(declaration(name),s);s.renderMatchStats(report);
+ const table=$('victoryStats').children.find(node=>node.tagName==='TABLE'),rows=table.children[1].children;
+ for(const [index,label,color]of [[0,'YOU (P1)','#abcdef'],[1,'WING (P2)','#fedcba'],[2,'RUST','#123456']]){
+  const name=rows[index].children[0].children[0].children[1];assert.equal(name.textContent,label);assert.equal(name.style.color,color);
+ }
+ assert.ok(rows[1].children[0].children[1].textContent.includes('LOCAL PILOT'));assert.equal($('victoryStats').textContent.includes('LOCAL P2'),false);
+ assert.equal(JSON.stringify(report),before);assert.equal(rows[0].children[1].textContent,'2');
+ let seat;s.teamColor=id=>{seat=id;return '#beef00';};const identity=s.resultPilotIdentity({id:999,seat:3,name:'PILOT',kind:'human',team:0});assert.equal(seat,3);assert.equal(identity.color,'#beef00');
+});
 
 test('departed local pilots retain their last earned score after their seat is reused in every mode',()=>{
  for(const gameMode of ['elimination','ctf','koth','survival']){
@@ -86,8 +121,8 @@ test('a spectator swapping into the winning seat cannot receive the original pil
  assert.equal(s.phase,'matchOver');assert.equal(winnerRow(s)?.winner,true);
  assert.equal(s.localMatchReport.players.some(row=>row.member===104&&row.winner),false);
  assert.match($('victoryTitle').textContent,/ORIGINAL/);
- assert.equal($('victoryMembers').textContent,'ORIGINAL');
- assert.ok(scoreLabels($).includes('ORIGINAL:1'));
+ assert.equal($('victoryMembers').textContent,'ORIGINAL (P1)');
+ assert.ok(scoreLabels($).includes('ORIGINAL (P1):1'));
  assert.equal(scoreLabels($).some(label=>label.startsWith('REPLACEMENT:')),false);
 });
 test('reusing a winning seat with a reset score cannot cancel a clinched match',()=>{
@@ -96,7 +131,7 @@ test('reusing a winning seat with a reset score cannot cancel a clinched match',
  assert.equal(s.scores[0],0,'normal seat initialization resets the live score');complete(s);
  assert.equal(s.phase,'matchOver');assert.equal(s.starts,undefined);
  assert.equal(winnerRow(s)?.winner,true);assert.equal(winnerRow(s)?.score,1);
- assert.ok(scoreLabels($).includes('ORIGINAL:1'));
+ assert.ok(scoreLabels($).includes('ORIGINAL (P1):1'));
 });
 test('a nonfinal round remains open and starts the next round after its result delay',()=>{
  const {s,players}=boot({teams:true,target:2});s.finishRound(0);

@@ -37,7 +37,8 @@ function boot({fetchResponse = () => new Response('fresh content'),
     active = false;
     return {request, waits, get response() { return response; }};
   }
-  return {calls, dispatch};
+  function message(data){const replies=[],waits=[];handlers.get('message')({data,ports:[{postMessage:reply=>replies.push(reply)}],waitUntil:promise=>waits.push(promise)});return{replies,waits};}
+  return {calls, dispatch, message};
 }
 
 test('asset misses clone before body consumption and keep cache writes alive', async () => {
@@ -64,6 +65,28 @@ test('asset misses clone before body consumption and keep cache writes alive', a
   await lifetime;
   assert.equal(finished, true);
   assert.equal(h.calls.fetch, 1);
+});
+
+test('reset stops a pending cache open before it can write and acknowledges only after it settles',async()=>{
+ const opened=deferred(),stored=[],h=boot({open:()=>opened.promise}),event=h.dispatch(asset,'same-origin');
+ await event.response;assert.equal(h.calls.open,1);
+ const reset=h.message({type:'LEQRA_RESET'});assert.equal(reset.replies.length,0);
+ opened.resolve({put:async key=>stored.push(key)});await Promise.all([...reset.waits,...event.waits]);
+ assert.deepEqual(stored,[]);assert.equal(reset.replies[0].type,'LEQRA_RESET_DONE');
+ assert.equal(h.dispatch(asset,'same-origin').response,undefined,'reset workers leave future requests to the browser network');
+});
+
+test('reset waits for a cache put already in progress instead of allowing it to repopulate a deleted cache',async()=>{
+ const started=deferred(),done=deferred(),h=boot({open:async()=>({put:async()=>{started.resolve();await done.promise;}})});
+ const event=h.dispatch(asset,'same-origin');await event.response;await started.promise;
+ const reset=h.message({type:'LEQRA_RESET'});await Promise.resolve();assert.equal(reset.replies.length,0);
+ done.resolve();await Promise.all([...reset.waits,...event.waits]);assert.equal(reset.replies[0].type,'LEQRA_RESET_DONE');
+});
+
+test('a network response arriving after reset is served without opening any app cache',async()=>{
+ const network=deferred(),h=boot({fetchResponse:()=>network.promise}),event=h.dispatch(asset,'same-origin');
+ for(let n=0;n<5;n++)await Promise.resolve();const reset=h.message({type:'LEQRA_RESET'});await Promise.all(reset.waits);
+ network.resolve(new Response('late fresh asset'));assert.equal(await(await event.response).text(),'late fresh asset');await Promise.all(event.waits);assert.equal(h.calls.open,0);
 });
 
 for (const failure of ['open', 'put']) {
@@ -467,4 +490,11 @@ test('worker build probes reply with the actual injected build and release', asy
   assert.deepEqual(JSON.parse(JSON.stringify(await injected.message({type:'LEQRA_BUILD_INFO'}))), [{build:h.currentBuild,version:h.current}]);
   assert.deepEqual(JSON.parse(JSON.stringify(await raw.message({type:'LEQRA_BUILD_INFO'}))), [{build:h.current,version:h.current}]);
   assert.deepEqual(await injected.message({type:'UNRELATED'}), []);
+});
+
+test('a reset worker cannot install another shell or claim clients after its caches are cleared',async()=>{
+ const h=releaseHarness(),worker=h.worker(h.current);
+ assert.equal((await worker.message({type:'LEQRA_RESET'}))[0].type,'LEQRA_RESET_DONE');
+ await worker.event('install');await worker.event('activate');
+ assert.equal(h.storage.size,0);assert.equal(worker.lifecycle.skipWaiting,0);assert.equal(worker.lifecycle.claim,0);
 });

@@ -81,7 +81,7 @@ func publicInfinitySeats(c *Client) (map[*Player]int, string) {
 				owner = r.member(member.Owner)
 			}
 			if !infinityCanPlay(owner) {
-				return nil, "Return Player 1 to combat or make Player 2 spectate before entering Infinity Online together."
+				return nil, "Both local pilots must be in combat or spectating together before entering Infinity Online."
 			}
 		} else if !socketLive(member) {
 			return nil, "Wait for every room pilot to reconnect before entering Infinity Online together."

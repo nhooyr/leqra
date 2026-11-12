@@ -35,9 +35,12 @@ python3 src/tests/mobile_browser.py http://localhost:8080 --engine webkit
 python3 src/tests/mobile_layout_browser.py http://localhost:8080
 python3 src/tests/mobile_layout_browser.py http://localhost:8080 --engine webkit
 python3 src/tests/pwa_update_browser.py --browser chromium --browser webkit
+python3 src/tests/typography_browser.py http://localhost:8080 --browser chromium --browser webkit
 ```
 
 The PWA harness starts disposable local servers and checks same-version upgrades, legacy worker migration, match deferral, saved room setup, and offline reloads in both engines. Browser emulation does not verify an installed iOS Home Screen app on a physical device.
+
+The typography harness checks the 10px minimum, full callsigns, and overflow in ready rooms, settings, fixed games, Infinity and pause menus, with one and two local pilots at desktop, phone and landscape sizes.
 
 For live checks, run `go run ./src` and open the served page in separate browser contexts. Check a shared match and verify that the service worker can reload the app offline after installation.
 

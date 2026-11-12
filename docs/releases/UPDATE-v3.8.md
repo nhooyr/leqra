@@ -2,10 +2,10 @@
 
 ## 1. New 16×14 maze
 
-Open **RULES & MODE → MAP SIZE → Giant · 16×14**. It works in Elimination,
+Open **RULES & MODE → MAP SIZE → Giant, 16×14**. It works in Elimination,
 Capture the Flag and King of the Hill, in local and shared online rooms.
 
-**Large · 12×10 remains the default.** Rooms still allow eight tank seats and
+**Large, 12×10 remains the default.** Rooms still allow eight tank seats and
 16 spectators. The new option travels with shared rooms and saved presets.
 Older presets keep their explicitly selected map and power-up list.
 
@@ -19,11 +19,11 @@ This is cell area, not pixel area. Rounding is to the nearest whole number.
 
 | Map | Area in cells | Starting pickups | Uncollected cap |
 | --- | ---: | ---: | ---: |
-| Compact · 7×7 | 49 | 2 | 5 |
-| Standard · 9×8 | 72 | 3 | 7 |
-| Large · 12×10 — default | 120 | 4 | 12 |
-| Huge · 14×12 | 168 | 5 | 17 |
-| Giant · 16×14 | 224 | 6 | 23 |
+| Compact, 7×7 | 49 | 2 | 5 |
+| Standard, 9×8 | 72 | 3 | 7 |
+| Large, 12×10 — default | 120 | 4 | 12 |
+| Huge, 14×12 | 168 | 5 | 17 |
+| Giant, 16×14 | 224 | 6 | 23 |
 
 The rules panel shows the selected map's starting stock and maximum.
 

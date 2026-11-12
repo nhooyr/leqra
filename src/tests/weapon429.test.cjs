@@ -14,7 +14,7 @@ function boot(){
  const nodes=new Map(),a=tank(0),b=tank(7);
  const $=id=>{if(!nodes.has(id)){const attrs=new Map(),styles=new Map(),classes=new Set();nodes.set(id,{hidden:false,textContent:'',dataset:{},classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,v)},getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v)});}return nodes.get(id);};
  const s={$,now:1000,MACHINE_FIRING_ROUNDS:vm.runInNewContext(source.match(/MACHINE_FIRING_ROUNDS=([^,;]+)/)[1]),performance:{now:()=>s.now},feedbackAt:-Infinity,time:1,bullets:[],canDamage:()=>false,mode:'solo',phase:'playing',tanks:[a,b],controlledTank:()=>a,secondaryID:()=>7,survivalBreak:()=>false,survivalMode:()=>false,objectiveMode:()=>false,missileLocks:()=>[],combatPrefs:{visual:true,audio:false},homingAlerts:[{},{}],ownedGrenades:()=>[],powerCapacity:()=>96,activeAmmo:()=>0,muzzleBlocked:()=>false,cooldownDuration:()=>0,clamp:(v,a,b)=>Math.max(a,Math.min(b,v))};
- vm.createContext(s);for(const name of ['setText','setStyle','setAttr','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','updateMachineBudget','renderPilotReadiness','updateHomingAlert','updateCombatFeedback'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);require('./identity_fixture.cjs')(s,source);for(const name of ['setText','setStyle','setAttr','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','updateMachineBudget','renderPilotReadiness','updateHomingAlert','updateCombatFeedback'])vm.runInContext(declaration(name),s);
  return s;
 }
 test('both ammo readouts show their own remaining productive firing time, rounded up to tenths',()=>{
@@ -67,10 +67,10 @@ test('loadout skips hidden machine-gun slot work and restores correct slots on w
  let writes=0,markup='';s.powerCapacity=t=>t.power==='laser'?3:5;
  const dots=s.$('ammoDots');Object.defineProperty(dots,'innerHTML',{get:()=>markup,set:v=>{writes++;markup=v;}});
  t.power='laser';t.charges=2;s.renderPilotLoadout(t,1);assert.equal(writes,1);assert.equal((markup.match(/<i /g)||[]).length,3);
- assert.equal(dots.getAttribute('aria-label'),'PILOT: 2 of 3 laser charges available');
+ assert.equal(dots.getAttribute('aria-label'),'PILOT (P1): 2 of 3 laser charges available');
  t.power='rapid';for(let i=0;i<5;i++){s.bullets.push({owner:0,kind:'rapid'});s.renderPilotLoadout(t,1,true);}assert.equal(writes,1);
- assert.equal(s.$('weaponLabel').textContent,'MACHINE GUN · EXPIRES 10s');
+ assert.equal(s.$('weaponLabel').textContent,'MACHINE GUN, EXPIRES 10s');
  t.power=null;s.bullets.length=2;s.renderPilotLoadout(t,1);assert.equal(writes,2);assert.equal((markup.match(/<i /g)||[]).length,5);
- assert.equal((markup.match(/empty/g)||[]).length,2);assert.equal(dots.getAttribute('aria-label'),'PILOT: 3 of 5 active projectile slots available');
- t.power='rapid';s.renderPilotLoadout(t,1);t.power=null;t.name='RENAMED';s.renderPilotLoadout(t,1);assert.equal(writes,2);assert.equal(dots.getAttribute('aria-label'),'RENAMED: 3 of 5 active projectile slots available');
+ assert.equal((markup.match(/empty/g)||[]).length,2);assert.equal(dots.getAttribute('aria-label'),'PILOT (P1): 3 of 5 active projectile slots available');
+ t.power='rapid';s.renderPilotLoadout(t,1);t.power=null;t.name='RENAMED';s.renderPilotLoadout(t,1);assert.equal(writes,2);assert.equal(dots.getAttribute('aria-label'),'RENAMED (P1): 3 of 5 active projectile slots available');
 });

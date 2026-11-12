@@ -176,7 +176,7 @@ func TestPublicInfinityRoomPartySpectatorHostAndLocalLimitation(t *testing.T) {
 				}
 				found := false
 				for _, p := range drain(cs[0]) {
-					if p["type"] == "error" && strings.Contains(p["message"].(string), "Player 1") {
+					if p["type"] == "error" && strings.Contains(p["message"].(string), "Both local pilots") {
 						found = true
 					}
 				}

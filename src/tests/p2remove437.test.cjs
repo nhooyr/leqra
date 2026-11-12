@@ -1,6 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 const {assetPath}=require('./web_assets.cjs');
+const identityFixture=require('./identity_fixture.cjs');
 const source=fs.readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),first=source.slice(start,end);return first.endsWith('}')?first:source.slice(start,source.indexOf('\n}',end)+2);}
 class Element{
@@ -30,13 +31,26 @@ function boot(){
   rolePending:false,swapPending:null,lastSpectatorUI:'',survivalSeatLocked:()=>false,syncSpectatingHUD(){},cancelSwap(){},paintColor:c=>c,teamName:(n,r)=>r.teamNames[n-1],activeTeamCount:()=>4,changeSeat(){},setPlayerSpectating(){},queueEligibility:()=>'',syncResultActions(){},closeChat(){},clearInput(){},sendOnlineInput(){},clearTimeout(){},toast(){},matchmakingNotice(){}
  };
  $('queueCard').append(Object.assign(new Element(),{className:'queue-count'}));
- vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);
+ vm.createContext(s);identityFixture(s,source);vm.runInContext(declaration('orderedRoster'),s);
  const names=['survivalMode','roomCapacity','roomPlayerStatus','canEditTankPaint','makeKickButton','makeRoomPlayerRow','renderRoomPlayerRows','realParty','renderMatchmaking','matchmakingPacket','cancelKick','requestKick','spectatorRow','syncSpectators'];
  if(source.includes('function roomKickDisabled('))names.unshift('roomKickDisabled');
  vm.runInContext('const roomRosterCache=new WeakMap();\n'+names.map(declaration).join('\n'),s);
  s.renderOnlineRoom=()=>{s.renderRoomPlayerRows(roster,room.players,room);s.renderRoomPlayerRows(menu,room.players.slice(1),room,true);s.syncSpectators();s.renderMatchmaking();};
  s.renderOnlineRoom();return {s,room,q,$,local,roster,button:()=>roster.querySelector('.kick-button')};
 }
+
+test('matchmaking summaries use current colored room callsigns and preserve raw queue identities',()=>{
+ const b=boot(),{s,room,q,$,local}=b,primary=room.players[0];primary.name='NOVA';local.name='NOVA';
+ q.stage='confirming';q.members=[{member:primary.member,controller:primary.member,name:'OLD NAME',kind:'human',accepted:true},{member:local.member,controller:primary.member,name:'OLD CO-PILOT',kind:'local',accepted:true}];room.queue=q;
+ const wire=JSON.stringify(q.members);s.renderMatchmaking();
+ assert.ok($('queuePartyText').innerHTML.includes('NOVA (P1)'));assert.ok($('queuePartyText').innerHTML.includes('NOVA (P2)'));
+ assert.ok($('queuePartyText').innerHTML.includes('color:'+primary.color));assert.ok($('queuePartyText').innerHTML.includes('color:'+local.color));
+ const members=$('queuePeople').children;
+ assert.equal(members[0].children[0].textContent,'NOVA (P1)');assert.equal(members[0].children[0].style.color,primary.color);
+ assert.equal(members[1].children[0].textContent,'NOVA (P2)');assert.equal(members[1].children[0].style.color,local.color);
+ assert.equal(JSON.stringify(q.members),wire,'UI labels must not mutate matchmaking or stored callsigns');
+ assert.equal($('queuePartyHint').textContent.includes('Player 2'),false);
+});
 
 test('LOCAL P2 Remove recovers after queue status/cancel packets without a bot mutation',()=>{
  const b=boot(),{s,room,q,button}=b;assert.equal(button().disabled,false);

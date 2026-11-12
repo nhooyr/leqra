@@ -42,7 +42,7 @@ func TestJoinCreateNormalizesCodeAndName(t *testing.T) {
 			h := newHub(4)
 			c := fakeClient()
 			action(t, h, c, map[string]any{"type": "join", "code": code})
-			if len(h.rooms) != 1 || c.room != h.rooms["ABC234"] || c.player.Name != "PILOT" {
+			if len(h.rooms) != 1 || c.room != h.rooms["ABC234"] || c.player.Name != "Player 1" {
 				t.Fatal("normalization/default callsign failed")
 			}
 		})

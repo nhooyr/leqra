@@ -22,7 +22,7 @@ test('fresh authoritative loadouts replace stale rendered equipment and then age
  const s=boot({mode:'online',projectileCount:0});equipped(s,0);equipped(s,7);s.now+=120;refresh(s);
  const current=s.online.snapshots[0],a={...s.tanks[0],power:'laser',powerTime:2.05,charges:1,shield:2.05,speedTime:2.05,ghostTime:2.05},b={...a,id:7,name:'SECOND',charges:3};
  s.online.snapshots.push({...current,received:s.now,tankMap:new Map([[0,a],[7,b]])});s.now+=120;refresh(s);
- assert.equal(s.$('weaponLabel').textContent,'LASER ×1 · 2s');assert.equal(s.$('weaponLabel2').textContent,'LASER ×3 · 2s');assert.equal(s.$('ammoDots').getAttribute('aria-label'),'PILOT 0: 1 of 3 laser charges available');
+ assert.equal(s.$('weaponLabel').textContent,'LASER ×1, 2s');assert.equal(s.$('weaponLabel2').textContent,'LASER ×3, 2s');assert.equal(s.$('ammoDots').getAttribute('aria-label'),'PILOT 0 (P1): 1 of 3 laser charges available');
  for(const id of [0,7])for(const field of timers)close(s.pilotLoadoutTank(id)[field],1.93);
  assert.equal(s.tanks[0].power,'rapid','the old rendered body remains untouched');assert.equal(a.powerTime,2.05);
 });

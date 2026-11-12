@@ -20,12 +20,20 @@ function boot(storage=new Map(),touchUI=false){
 const pilot=(options={})=>({id:0,kind:'human',name:'PILOT',team:0,...options});
 const bot=(options={})=>({id:1,kind:'bot',name:'RUST',team:0,difficulty:'normal',...options});
 
+test('new primary callsigns default to Player 1 while saved and restored choices retain their case',()=>{
+ for(const saved of [undefined,'','   ','PILOT','Pilot','YOU','Snow Fox']){
+  const storage=new Map(saved===undefined?[]:[['leqra.name',saved]]),{s,$}=boot(storage);s.createLocalRoom();
+  const want=saved?.trim()||'Player 1';assert.equal(s.localRoom.players[0].name,want);assert.equal($('pilotName').value,want);
+  const restored=boot(storage).s;restored.createLocalRoom();assert.equal(restored.localRoom.players[0].name,want);
+ }
+});
+
 test('a new public Infinity setup starts with only P1 and switching it off adds three Normal bots once',()=>{
  const {s,storage}=boot();s.createLocalRoom();
  assert.deepEqual(Array.from(s.localRoom.players,p=>p.kind),['human']);
  assert.equal(s.infinityPlayMode(),'online');
  s.selectPublicInfinity(false);
- assert.deepEqual(Array.from(s.localRoom.players,p=>[p.id,p.kind,p.name,p.difficulty]),[[0,'human','PILOT',undefined],[1,'bot','RUST','normal'],[2,'bot','VAPOR','normal'],[3,'bot','EMBER','normal']]);
+ assert.deepEqual(Array.from(s.localRoom.players,p=>[p.id,p.kind,p.name,p.difficulty]),[[0,'human','Player 1',undefined],[1,'bot','RUST','normal'],[2,'bot','VAPOR','normal'],[3,'bot','EMBER','normal']]);
  assert.equal(new Set(s.localRoom.players.map(p=>p.member)).size,4);
  assert.equal(s.localRoom.players.every(p=>p.owner===0&&p.team===0),true);
  assert.equal(s.previewReset,true);
@@ -372,7 +380,7 @@ test('entering public Infinity clears saved bots while retaining local pilots an
   s.startInfinity('online');
   assert.equal(s.localRoom.players.filter(p=>p.kind==='bot').length,3,'failed admission preserves the setup');
   s.started.options.onJoined();
-  assert.deepEqual(Array.from(s.localRoom.players,p=>p.name),['PILOT','LOCAL TWO']);
+  assert.deepEqual(Array.from(s.localRoom.players,p=>p.name),['Player 1','LOCAL TWO']);
   assert.equal(s.started.options.localName,spectating?undefined:'LOCAL TWO');
   assert.equal(JSON.parse(storage.get('leqra.roomSetup.v2')).roster.some(p=>p.kind==='bot'),false);
   const restored=boot(storage).s;restored.createLocalRoom();

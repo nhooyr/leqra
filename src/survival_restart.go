@@ -101,7 +101,7 @@ func (g *Game) restartSurvivalWave(players [maxTanks]*Player) {
 	g.clearSurvivalInput(players)
 	g.seedPickups()
 	g.emit("roundStart", nil, -1, "")
-	g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d RESTARTED · %d enemies", s.Wave, s.EnemiesRemaining))
+	g.emit("objective", nil, -1, fmt.Sprintf("WAVE %d RESTARTED, %d enemies", s.Wave, s.EnemiesRemaining))
 }
 
 func (h *Hub) restartSurvivalWave(c *Client, m clientMessage, now time.Time) {

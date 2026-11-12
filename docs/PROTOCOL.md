@@ -21,11 +21,15 @@ The server negotiates no context takeover in either direction. Compressed client
 
 ## Infinity
 
+`GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The ready-room preview can read these standings without allocating a tank or joining a room. Private arenas are not included. Public roaming bots use Chill difficulty; private rooms retain their configured bot settings.
+
 `/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
 Public joins may send `localName` for a second tank, with optional `colorIndex` and `localColorIndex` palette selections from 0 to 7. Private joins derive Player 2 and both tanks' paint from the authenticated room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
 
 Infinity inputs can set `paused: true` to neutralize the pilot's controls and hold their respawn. The arena continues running and the pilot can still be hit. Send `paused: false` to release the hold. Respawn waits for one second after the tank's destruction, even if the hold ends sooner.
+
+An authenticated Infinity socket can change either of its own callsigns with `{"type":"rename","seat":0,"name":"SNOW FOX","requestId":1}`. Seat 0 is the primary tank and seat 1 is its local co-pilot. Request IDs must be positive JavaScript safe integers. The server replies with `{"type":"renamed","seat":0,"name":"SNOW FOX","requestId":1}` or `{"type":"rename_error","seat":0,"requestId":1,"message":"..."}`. Names follow the room's 16-character Unicode callsign rules. Public, private, and room-party arenas use the same command; room-backed changes also update and broadcast the room metadata. Renaming preserves tank IDs, scores, equipment and respawn state. Replaced connections and revoked seats cannot rename tanks. More than eight rename requests in one second closes the connection.
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's connected human `players` count, total `tankCount`, and up to ten `leaderboard` entries with `id`, `name`, `score`, `bot`, `colorIndex`, and optional `team`. The total `tankCount` covers the complete leaderboard pool, including bots and distant, respawning, or disconnected reserved pilots. Each leaderboard color matches that tank. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
@@ -63,7 +67,7 @@ A brief disconnect uses the existing authenticated 20-second pair reservation an
 
 Every projectile passes through the tank that fired it, and grenade blasts skip their owner. Grenades still detonate on contact with other living tanks, including allies and tanks with spawn protection. Friendly fire controls whether a weapon can damage a different tank on the same team.
 
-Fixed-maze and Infinity tank snapshots report the attacker's callsign in `killedBy` when known. A new life clears the field.
+Fixed-maze and Infinity tank snapshots report the attacker's callsign in `killedBy` when known, with optional `killedByColor` holding the captured canonical tank-palette color. Infinity sends this color only for the recipient's local victims. A new life clears both fields.
 
 Grenades use the same server-owned line-of-sight seeker, turn rate, and reacquisition delays as homing missiles. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
 
@@ -345,7 +349,7 @@ then 1–2 seconds between attempts. Fast (2–3.5), Normal (4–6), Slow (7–1
 are retained. This is an additive protocol-1 update, but frontend and backend
 must both be updated: older rules validators do not understand `giant` or `scope`.
 
-# leqra WebSocket protocol · version 1
+# leqra WebSocket protocol, version 1
 
 The game page and the backend are served by the same Go process. Connect to `/ws` using WS on HTTP or WSS on HTTPS. The production upgrade requires an HTTP(S) Origin whose host matches the request Host, or an explicitly configured additional exact origin. Missing, opaque (`null`), and unrelated origins are rejected. Messages are JSON text with optional [snapshot compression](#snapshot-compression).
 

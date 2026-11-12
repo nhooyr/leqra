@@ -2,6 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {assetPath}=require('./web_assets.cjs');
+const identityFixture=require('./identity_fixture.cjs');
 const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||assetPath('game.js'),'utf8');
 // Execute the shipped functions with small UI/network fixtures; no copied
 // assignment algorithm or browser dependency is used by these regressions.
@@ -22,10 +23,10 @@ class Element {
 function boot(extra={}){
  const elements=new Map();const $=id=>{if(!elements.has(id)){const el=new Element();el.parentElement=new Element();elements.set(id,el);}return elements.get(id);};
  const rules={mode:'elimination',teamMode:'teams',teamNames:['A','B','C','D'],teamColors:[0,1,2,3],mapSize:'large',weapons:[],scoreTarget:5,timeLimit:75};
- const sandbox={console,escapeHTML:v=>String(v),mode:'room',phase:'menu',MAX_TANKS:8,localRoom:{rules,players:[],self:0,nextMember:10,nextViewer:8},online:{connected:true},rolePending:false,pendingRoomMode:null,rulesPending:false,presetsPending:false,syncRoomModePicker(){},modeLabel:()=>sandbox.localRoom.rules.mode.toUpperCase(),$,document:{createElement:tag=>new Element(tag)},DIFFICULTY:{easy:{},normal:{},hard:{}},toast(message){sandbox.notice=message;},sendOnline(message){sandbox.sent=message;return true;},paintColor:c=>c,teamName:(n,r=rules)=>r.teamNames[n-1],isRoomHost:()=>true,isRoomEditable:()=>sandbox.phase==='menu',currentRules:()=>sandbox.localRoom.rules,localPlayerID:()=>0,roomMembers:r=>r?r.players:sandbox.localRoom.players,roomData:()=>({host:0,players:sandbox.localRoom.players.filter(p=>!p.spectating)}),validateRoomRules:r=>({...r}),defaultRoomRules:()=>({...rules}),persistLocalRoomRules(){},resetPreviewIfLobby(options){sandbox.preview=options||{};},renderOnlineRoom(){},savedLocalCallsign:()=> 'P2',canEditTankPaint:()=>false,makeKickButton:()=>new Element('button'),moveLocalMember(p,id,spectating,team){p.id=id;p.spectating=spectating;p.team=team;},refreshLocalRoles(){},...extra};
+ const sandbox={console,pilotControlHint:()=>'',controlKeyMap:()=>({}),controlHintHTML:()=>'',escapeHTML:v=>String(v),mode:'room',phase:'menu',MAX_TANKS:8,localRoom:{rules,players:[],self:0,nextMember:10,nextViewer:8},online:{connected:true},rolePending:false,pendingRoomMode:null,rulesPending:false,presetsPending:false,syncRoomModePicker(){},modeLabel:()=>sandbox.localRoom.rules.mode.toUpperCase(),$,document:{createElement:tag=>new Element(tag)},DIFFICULTY:{easy:{},normal:{},hard:{}},toast(message){sandbox.notice=message;},sendOnline(message){sandbox.sent=message;return true;},paintColor:c=>c,teamName:(n,r=rules)=>r.teamNames[n-1],isRoomHost:()=>true,isRoomEditable:()=>sandbox.phase==='menu',currentRules:()=>sandbox.localRoom.rules,localPlayerID:()=>0,roomMembers:r=>r?(r.players||[]):sandbox.localRoom.players,roomData:()=>({host:0,players:sandbox.localRoom.players.filter(p=>!p.spectating)}),validateRoomRules:r=>({...r}),defaultRoomRules:()=>({...rules}),persistLocalRoomRules(){},resetPreviewIfLobby(options){sandbox.preview=options||{};},renderOnlineRoom(){},savedLocalCallsign:()=> 'P2',canEditTankPaint:()=>false,makeKickButton:()=>new Element('button'),moveLocalMember(p,id,spectating,team){p.id=id;p.spectating=spectating;p.team=team;},refreshLocalRoles(){},...extra};
  sandbox.syncMatchTouchPolicy=()=>{};
  Object.assign(sandbox,{infinityOnline:false,infinityOffline:false,location:{protocol:'https:'},navigator:{onLine:true}});
- vm.createContext(sandbox);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),sandbox);
+ vm.createContext(sandbox);identityFixture(sandbox,source);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),sandbox);
  vm.runInContext(source.match(/^const teamKey=.*$/m)[0],sandbox);
  for(const name of ['canPlayOnlineInfinity','infinityPlayMode'])vm.runInContext(declaration(name),sandbox);
  for(const name of ['survivalMode','roomCapacity','survivalSeatLocked','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','mapSetupChanged','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','syncPendingSpectatorRole','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
@@ -108,7 +109,7 @@ test('score-target Infinity requires an opponent or roaming bots',()=>{
  assert.match(check([pilot,bot]),/opposing tank/);
  assert.equal(check([pilot],{infinityTarget:0}),'');
  assert.equal(check([pilot],{infinityRandomBots:true}),'');
- assert.match(check([bot],{infinityRandomBots:true}),/Player 1/);
+ assert.match(check([bot],{infinityRandomBots:true}),/\(P1\) needs a combat seat/);
  bot.team=2;bot.connected=false;assert.match(check([pilot,bot]),/opposing tank/);
  bot.connected=true;assert.equal(check([pilot,bot]),'');
 });
@@ -149,7 +150,7 @@ test('lobby score summary names elimination wins and follows each mode’s curre
  vm.runInContext(declaration('displayScoreTarget'),b.s);
  for(const [mode,scoreTarget,want]of [['elimination',5,'FIRST TO 5 WINS'],['elimination',12,'FIRST TO 12 WINS'],['ctf',3,'3 CAPTURES'],['koth',30,'30 HILL POINTS'],['survival',15,'15 WAVES']]){
   Object.assign(b.s.localRoom.rules,{mode,scoreTarget});b.s.syncFeatureSummary();
-  assert.ok(b.$('rulesSummary').innerHTML.includes('<span class="room-rule-item">'+want+'</span>'),mode);
+  assert.ok(b.$('rulesSummary').innerHTML.includes('<span class="room-rule-item">'+want),mode);
   if(mode!=='elimination')assert.doesNotMatch(b.$('rulesSummary').innerHTML,/WINS/);
   const writes=b.$('rulesSummary').htmlWrites;b.s.syncFeatureSummary();assert.equal(b.$('rulesSummary').htmlWrites,writes,'unchanged summary keeps existing DOM');
  }
