@@ -800,7 +800,8 @@ function presentEffect(world, effect, now) {
   if (kind !== 'laser') return;
  } else if (kind === 'pickup') art.collect();
  else if (kind === 'shield') art.shield();
- else if (kind === 'hit' || kind === 'blast') art.blast();
+ else if (kind === 'hit') art.blast();
+ else if (kind === 'blast') art.grenade();
  else if (kind === 'impact') art.impact();
  else return;
  if (world.visualEffects.length >= 32) world.visualEffects.shift();
