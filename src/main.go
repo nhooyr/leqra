@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version         = "4.49.31"
+	version         = "4.49.32"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"

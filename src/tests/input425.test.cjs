@@ -13,7 +13,7 @@ function boot(p2=false,stored=null){
  const pilots=[{name:'Lead',color:'#32c5ff'},{name:'Wing',color:'#ff83bd'}];
  const sandbox={phase:'playing',mode:'room',combatPrefs:{mouseAim:true,mouseFire:true},window:{},pilots,COLORS:pilots.map(p=>p.color),tanks:[],paintColor:c=>c,roomMember:id=>pilots[id],secondaryMember:()=>p2?pilots[1]:null,localPlayerID:()=>0,secondaryID:()=>1,savedLocalCallsign:()=>pilots[1].name,teamColor:id=>pilots[id].color,infinityPlayMode:()=>'',keys:new Set(),hasLocalP2:()=>p2,modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
  vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],sandbox);
- for(const name of ['pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlHintHTML','fieldManualHTML','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
  sandbox.bindings=sandbox.loadBindings();sandbox.storage=storage;return sandbox;
 }
 function assign(s,player,action,code){s.bindings[player][action]=code;assert.ok(s.validateBindings(s.bindings),'the controls editor accepts this remap');}
@@ -24,6 +24,105 @@ function owner(s,action,code,expected){
   assert.equal(s.heldAction(player,action),player===expected,code+' held owner');
  }
 }
+function tour(s){
+ const nodes=new Map();s.$=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,previousElementSibling:{hidden:false},setAttribute(k,v){this[k]=v;}});return nodes.get(id);};
+ s.$('bindingGrid').querySelectorAll=()=>[];s.window.matchMedia=()=>({matches:true});s.syncControlIdentities();s.syncIntroTourControls();return s.$;
+}
+const keycaps=html=>[...html.matchAll(/<kbd(?:\s[^>]*)?>(.*?)<\/kbd>/g)].map(match=>match[1]);
+
+test('tour keyboard hints use themed keycaps and current aliases without advertising the active co-pilot keys',()=>{
+ for(const paired of [false,true]){
+  const s=boot(paired),$=tour(s),movement=$('introTourMoveKeys').innerHTML,fire=$('introTourFireKeys').innerHTML;
+  assert.deepEqual(keycaps(movement),paired?['W','A','S','D']:['W','↑','A','←','S','↓','D','→']);
+  assert.deepEqual(keycaps(fire),paired?['Q','C']:['Q','C','SPACE','ENTER']);
+  assert.equal((movement.match(/class="control-keycaps"/g)||[]).length,4,'movement aliases stay grouped by direction');
+  assert.equal((movement.match(/class="control-alias"/g)||[]).length,paired?0:4);
+  assert.equal((fire.match(/class="control-alias"/g)||[]).length,paired?1:3);
+ }
+ const s=boot();for(const [action,code]of Object.entries({forward:'KeyI',left:'KeyJ',reverse:'KeyK',right:'KeyL',fire:'KeyZ',fireAlt:'KeyX'}))assign(s,0,action,code);
+ for(const [action,code]of Object.entries({forward:'KeyU',left:'KeyH',reverse:'KeyN',right:'KeyO'}))assign(s,1,action,code);
+ const $=tour(s);assert.deepEqual(keycaps($('introTourMoveKeys').innerHTML),['I','U','J','H','K','N','L','O']);assert.deepEqual(keycaps($('introTourFireKeys').innerHTML),['Z','X','SPACE','ENTER']);
+ for(const key of ['W','A','S','D','Q','C','↑','←','↓','→'])assert.equal([...keycaps($('introTourMoveKeys').innerHTML),...keycaps($('introTourFireKeys').innerHTML)].includes(key),false,'retired binding '+key+' is absent');
+});
+
+test('tour names and key labels escape HTML while sharing the control keycap renderer',()=>{
+ const s=boot();s.pilots[0].name='<Lead & co>';const $=tour(s);
+ assert.ok($('introTourPilot').innerHTML.includes('&lt;Lead &amp; co&gt; (P1)'));assert.equal($('introTourPilot').innerHTML.includes('<Lead'),false);
+ const key=s.controlKeyHTML(['Key<script>','Key&']);assert.deepEqual(keycaps(key),['&lt;SCRIPT&gt;','&amp;']);assert.equal(key.includes('<SCRIPT>'),false);assert.ok(key.includes('class="control-alias">/</span>'));
+ assert.equal(s.controlKeyHTML(['KeyQ','KeyC']),s.controlKeycapsHTML(['<kbd>Q</kbd>','<kbd>C</kbd>']));
+});
+
+test('tour mouse hints share distinct aim and fire SVG keycaps and honor independent preferences',()=>{
+ const s=boot(),$=tour(s),aim=$('introTourMouseAimKey').innerHTML,fire=$('introTourMouseFireKey').innerHTML;
+ assert.ok(aim.includes(s.controlMouseKeyHTML(false)));assert.ok(fire.includes(s.controlMouseKeyHTML(true)));
+ assert.equal(aim.includes('mouse-button-fill'),false);assert.ok(fire.includes('mouse-button-fill'));
+ const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');assert.match(html,/<dd id="introTourMouseAim">[\s\S]*?Point over the maze\.[\s\S]*?<\/dd>/);assert.match(html,/<dd id="introTourMouseFire">[\s\S]*?Left-click to fire[\s\S]*?<\/dd>/);
+ for(const [mouseAim,mouseFire]of [[true,false],[false,true],[false,false],[true,true]]){
+  Object.assign(s.combatPrefs,{mouseAim,mouseFire});s.syncControlIdentities();s.syncIntroTourControls();assert.equal($('introTourMouseAim').hidden,!mouseAim);assert.equal($('introTourMouseFire').hidden,!mouseFire);assert.equal($('introTourDesktop').hidden,!mouseAim&&!mouseFire);
+  assert.equal(($('introTourMouseAimKey').innerHTML.match(/class="control-mouse-key"/g)||[]).length,1);assert.equal(($('introTourMouseFireKey').innerHTML.match(/class="control-mouse-key"/g)||[]).length,1,'reopening or refreshing the tour never duplicates a mouse icon');
+ }
+});
+
+test('mouse binding controls keep native checkbox behavior inside the same sized column as key buttons',()=>{
+ const s=boot(),nodes=new Map(),changes=[];
+ const element=tag=>({tag,children:[],dataset:{},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},setAttribute(key,value){this[key]=value;}});
+ s.document={createElement:element};s.$=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
+ s.syncControlIdentities=s.syncControlsPickupInfo=s.featureNotice=()=>{};
+ s.setMouseControlEnabled=(kind,enabled)=>changes.push([kind,enabled]);
+ vm.runInContext(declaration('renderBindings'),s);s.renderBindings();
+ const sections=s.$('bindingGrid').children;assert.equal(sections.length,2);
+ assert.equal(sections[0].children.length,8);assert.equal(sections[1].children.length,6,'mouse controls belong only to the primary tank');
+ for(const [index,kind]of ['aim','fire'].entries()){
+  const row=sections[0].children[index+6],[label,control]=row.children,[checkbox,state]=control.children;
+  assert.equal(row.className,'binding-row binding-mouse-row');assert.equal(control.className,'binding-mouse-control');
+  assert.equal(checkbox.type,'checkbox');assert.equal(checkbox.className,'binding-mouse-toggle');assert.equal(label.htmlFor,checkbox.id);
+  assert.equal(checkbox.id,kind==='aim'?'p1MouseAimEnabled':'p1MouseFireEnabled');assert.equal(checkbox.checked,true);
+  assert.equal(state['aria-hidden'],'true','decorative ON/OFF text does not rename the checkbox');
+  checkbox.checked=false;checkbox.onchange();assert.deepEqual(changes.at(-1),[kind,false]);
+  checkbox.checked=true;checkbox.onchange();assert.deepEqual(changes.at(-1),[kind,true]);
+ }
+ const css=readFileSync(assetPath('style.css'),'utf8');
+ assert.match(css,/\.binding-key\.secondary,\.binding-mouse-control\{[^}]*width:var\(--binding-control-width\);[^}]*max-width:var\(--binding-control-width\)/);
+ assert.match(css,/\.binding-key\.secondary\{[^}]*min-height:var\(--binding-control-height\)/);
+ assert.match(css,/\.binding-mouse-toggle\{[^}]*appearance:none;[^}]*width:100%;[^}]*min-height:var\(--binding-control-height\)/);
+ assert.match(css,/\.binding-mouse-toggle:focus-visible\{[^}]*outline:/);
+ assert.match(css,/\.binding-mouse-state\{[^}]*pointer-events:none/);
+ assert.match(css,/\.binding-mouse-state:after\{content:'OFF'\}/);assert.match(css,/\.binding-mouse-toggle:checked\+\.binding-mouse-state:after\{content:'ON'\}/);
+});
+
+test('hold-fire help follows the solo pilot or both pilots according to the active arena',()=>{
+ const tip='Hold any fire key to rapid fire.';
+ const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
+ assert.ok(html.includes('<p class="intro-fire-tip">'+tip+'</p>'));
+ assert.ok(html.indexOf('class="intro-fire-tip"')>html.indexOf('id="introTourFireKeys"'));
+ assert.ok(html.indexOf('class="intro-fire-tip"')<html.indexOf('Rebind keys in Controls.'));
+ assert.equal(source.includes('Both fire keys can also detonate your grenade.'),false);
+ for(const [roomP2,infinityP2,paired]of [[false,null,false],[true,null,true],[true,false,false],[false,true,true]]){
+  const s=boot(roomP2);if(infinityP2!==null)s.window.leqraInfinity={sidebarHelp:()=>({twoPilots:infinityP2,instructions:'Keep playing.'})};
+  const manual=s.fieldManualHTML(),shared=manual.indexOf('<div class="manual-shared-controls">'),tipAt=manual.indexOf(tip);
+  assert.equal(manual.split(tip).length-1,1);assert.equal(tipAt>shared,paired,'only a rendered pair shares the tip below the divider');
+  assert.ok(manual.indexOf('Lead (P1)')<tipAt);if(paired)assert.ok(manual.indexOf('Wing (P2)')<tipAt);else assert.equal(manual.includes('Wing (P2)'),false);
+  if(!paired)assert.ok(manual.includes('<p class="manual-fire-tip">'+tip+'</p></div><div class="manual-shared-controls">'),'solo tip ends the primary control section');
+  assert.ok(tipAt<manual.indexOf('<span class="control-action">Menu</span>'));
+  assert.ok(tipAt<manual.indexOf('<div class="warning">'),'the mode description remains after shared help');
+ }
+ const s=boot();let fired=0,detonated=0,activeGrenade=false;s.fire=()=>{fired++;};s.detonateOwned=()=>{if(!activeGrenade)return false;activeGrenade=false;detonated++;return true;};
+ vm.runInContext(declaration('weaponControl'),s);
+ const ordinary={alive:true,power:'homing'};s.weaponControl(ordinary,true,true);s.weaponControl(ordinary,true,false);s.weaponControl(ordinary,true,false);assert.equal(fired,3,'held fire keeps requesting shots at the weapon cadence');
+ const grenade={alive:true,power:'grenade'};s.weaponControl(grenade,true,true);s.weaponControl(grenade,true,false);assert.equal(fired,4,'holding the launch press cannot repeatedly throw or detonate');
+ activeGrenade=true;s.weaponControl(grenade,false,false);s.weaponControl(grenade,true,true);assert.equal(detonated,1);assert.equal(fired,4,'a separate press detonates the active grenade');
+});
+
+test('Controls shortcuts share themed keycaps and separate firing help from the shortcut line',()=>{
+ const s=boot(),template=source.match(/<div id="controlsKeyboardHelp">[\s\S]*?<\/div>/)?.[0];assert.ok(template);
+ const html=vm.runInContext('`'+template+'`',s),shortcuts=html.match(/<p class="mode-help controls-shortcuts">([\s\S]*?)<\/p>/)?.[1];assert.ok(shortcuts);
+ assert.deepEqual(keycaps(shortcuts),['P','ESC','M','F']);
+ assert.ok(shortcuts.includes(s.controlKeyHTML(['KeyP','ESC'])));assert.ok(shortcuts.includes(s.controlKeyHTML(['KeyM'])));assert.ok(shortcuts.includes(s.controlKeyHTML(['KeyF'])));
+ const help='Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.';
+ assert.ok(html.includes('</p><p class="mode-help controls-firing-help">'+help+'</p>'),'firing guidance has its own block after all shortcut keys');
+ assert.equal(shortcuts.includes('rapid fire'),false);assert.equal(html.split(help).length-1,1);
+});
+
 test('both default fire keys and solo fallback belong to exactly one pilot',()=>{
  for(const p2 of [false,true]){
   const s=boot(p2);

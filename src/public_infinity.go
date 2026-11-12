@@ -34,11 +34,11 @@ func (h *Hub) selectPublicInfinity(c *Client, enabled *bool, now time.Time) {
 		c.enqueue(e)
 	}
 	if !r.setupOpen() || r.Queue != nil || r.Match != nil || r.hasAway() {
-		fail("Return to the room before changing its Infinity destination.")
+		fail("Return to the room before changing the Public Infinity selection.")
 		return
 	}
 	if enabled == nil {
-		fail("Choose public Infinity or room play.")
+		fail("Choose Public Infinity or room play.")
 		return
 	}
 	if r.infinityPublic != *enabled {
@@ -63,13 +63,13 @@ func publicInfinityError(c *Client, message string) {
 func publicInfinitySeats(c *Client) (map[*Player]int, string) {
 	r, p := c.room, c.player
 	if r == nil || p == nil || p.Client != c || !r.contains(p) || !socketLive(p) {
-		return nil, "Join a room before entering Infinity Online together."
+		return nil, "Join a room before entering Public Infinity together."
 	}
 	if r.Host != p.ID {
-		return nil, "Only the host can enter Infinity Online with the room."
+		return nil, "Only the host can enter Public Infinity with the room."
 	}
 	if !r.setupOpen() || r.Queue != nil || r.Match != nil || r.hasAway() {
-		return nil, "Return to the room before entering Infinity Online together."
+		return nil, "Return to the room before entering Public Infinity together."
 	}
 	for _, member := range r.Players {
 		if member == nil || playerKind(member) == "bot" {
@@ -81,14 +81,14 @@ func publicInfinitySeats(c *Client) (map[*Player]int, string) {
 				owner = r.member(member.Owner)
 			}
 			if !infinityCanPlay(owner) {
-				return nil, "Both local pilots must be in combat or spectating together before entering Infinity Online."
+				return nil, "Both local pilots must be in combat or spectating together before entering Public Infinity."
 			}
 		} else if !socketLive(member) {
-			return nil, "Wait for every room pilot to reconnect before entering Infinity Online together."
+			return nil, "Wait for every room pilot to reconnect before entering Public Infinity together."
 		}
 	}
 	if !r.infinityPublic {
-		return nil, "Select Infinity Online for the room before launching."
+		return nil, "Select Public Infinity for the room before launching."
 	}
 	seats := make(map[*Player]int)
 	for _, p := range r.Players {
@@ -96,7 +96,7 @@ func publicInfinitySeats(c *Client) (map[*Player]int, string) {
 			continue
 		}
 		if p.ID != r.Host && !p.Ready {
-			return nil, "Ask connected guests to ready up before entering Infinity Online."
+			return nil, "Ask connected guests to ready up before entering Public Infinity."
 		}
 		seats[p] = 1
 		for _, local := range r.Players {
@@ -107,7 +107,7 @@ func publicInfinitySeats(c *Client) (map[*Player]int, string) {
 		}
 	}
 	if len(seats) == 0 {
-		return nil, "Infinity needs at least one connected player in a combat seat."
+		return nil, "Public Infinity needs at least one connected player in a combat seat."
 	}
 	return seats, ""
 }
@@ -131,7 +131,7 @@ func (s *infiniteServer) processPublicInfinity(now time.Time) {
 	for r, c := range s.hub.publicInfinityRequests {
 		delete(s.hub.publicInfinityRequests, r)
 		if c.room != r || s.hub.rooms[r.Code] != r {
-			publicInfinityError(c, "The room changed before Infinity Online could start.")
+			publicInfinityError(c, "The room changed before Public Infinity could start.")
 			continue
 		}
 		seats, message := publicInfinitySeats(c)
@@ -144,7 +144,7 @@ func (s *infiniteServer) processPublicInfinity(now time.Time) {
 			count += n
 		}
 		if s.public.players+s.publicPendingCount+count > infiniteCapacity {
-			publicInfinityError(c, "Infinity Online does not have enough free places for this room. Try again when pilots leave.")
+			publicInfinityError(c, "Public Infinity does not have enough free places for this room. Try again when pilots leave.")
 			continue
 		}
 		// Entry removes configured bots only after the complete party is admitted.

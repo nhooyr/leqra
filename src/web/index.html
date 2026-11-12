@@ -8,18 +8,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="leqra">
-<meta name="leqra-version" content="v4.49.31">
+<meta name="leqra-version" content="v4.49.32">
 <meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
 <title>leqra</title>
 <meta name="color-scheme" content="dark">
-<script src="assets/v4.49.31/theme.js"></script>
-<link rel="stylesheet" href="assets/v4.49.31/theme.css">
-<link rel="stylesheet" href="assets/v4.49.31/style.css">
-<link rel="manifest" href="assets/v4.49.31/manifest.webmanifest">
-<link rel="icon" href="assets/v4.49.31/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v4.49.31/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v4.49.31/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v4.49.31/apple-touch-icon-512.png" sizes="512x512">
+<script src="assets/v4.49.32/theme.js"></script>
+<link rel="stylesheet" href="assets/v4.49.32/theme.css">
+<link rel="stylesheet" href="assets/v4.49.32/style.css">
+<link rel="manifest" href="assets/v4.49.32/manifest.webmanifest">
+<link rel="icon" href="assets/v4.49.32/favicon-256.png" type="image/png" sizes="256x256">
+<link rel="icon" href="assets/v4.49.32/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="assets/v4.49.32/apple-touch-icon.png" sizes="180x180">
+<link rel="apple-touch-icon" href="assets/v4.49.32/apple-touch-icon-512.png" sizes="512x512">
 </head>
 <body>
 <div class="app">
@@ -37,7 +37,7 @@
 <main class="main-grid">
  <section class="arena-shell" aria-label="Tank battle arena">
   <div class="arena-bar infinite-statusbar infinity-preview-header" id="infinityPreviewBar" hidden>
-   <div class="arena-title"><span class="status-dot"></span><h2>Infinity</h2><span class="infinite-online-count" id="infinityPreviewOnlineCount" title="Human tanks in the public arena" hidden></span></div>
+   <div class="arena-title"><span class="status-dot"></span><h2 id="infinityPreviewTitle">Public Infinity</h2><span class="infinite-online-count" id="infinityPreviewOnlineCount" title="Human tanks in the public arena" hidden></span></div>
    <div class="bar-right" id="infinityPreviewRight"><div class="infinite-personal-scores" id="infinityPreviewScores"></div><button class="infinite-scoreboard-toggle" id="infinityPreviewScoreboardBtn" type="button" aria-controls="infinityPreviewScoreboard" aria-expanded="false">Scoreboard</button></div>
    <details class="infinite-leaderboard infinity-preview-scoreboard" id="infinityPreviewScoreboard" hidden><summary id="infinityPreviewScoreboardTitle">Top 10 Tanks</summary><ol id="infinityPreviewLeaders"></ol><p id="infinityPreviewScoreboardNote">+1 per kill, -1 per death</p></details>
   </div>
@@ -76,7 +76,7 @@
       <h2 class="net-title" id="roomTitle">READY<br><em>ROOM.</em></h2>
       <label class="infinity-toggle" id="infinityToggleLabel" hidden>
        <input type="checkbox" role="switch" id="infinityToggle" aria-describedby="readyHint" checked>
-       <span class="infinity-toggle-track" aria-hidden="true"></span><strong>Infinity</strong>
+       <span class="infinity-toggle-track" aria-hidden="true"></span><strong>Public Infinity</strong>
       </label>
       <button class="primary" id="startRoomBtn" type="button" aria-describedby="readyHint"><span>PLAY</span><span aria-hidden="true">→</span></button>
       <button class="primary ready-button" id="readyBtn" type="button" aria-pressed="false" aria-describedby="readyHint" hidden><span>READY</span><span class="ready-mark" aria-hidden="true">✓</span></button>
@@ -101,8 +101,8 @@
       <details class="room-disclosure" id="roomPlayers">
        <summary>Players and bots <span id="seatCount">4 / 8</span></summary>
        <div class="room-disclosure-content">
-        <div class="net-roster" id="roomRoster"></div>
         <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ ADD LOCAL P2</button><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div>
+        <div class="net-roster" id="roomRoster"></div>
         <p class="local-controls-note" id="localControlsNote" hidden></p>
        </div>
       </details>
@@ -118,7 +118,7 @@
  <aside class="sidebar" id="gameSidebar" aria-label="Scoreboard and instructions">
   <section class="panel fixed-maze-panel"><div class="panel-title"><span>THE LINEUP</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
   <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"></div></section>
-  <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 PICKUPS</span></div><div class="power-list">
+  <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 POWER-UPS</span></div><div class="power-list">
 <div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Pierces walls. 4× size and speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#cce4ff"><canvas data-power-icon="ghost" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Ghost<span>Through walls. Stacks with speed.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#f9ed75"><canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Starman<span>Rare. For 4–8 seconds, tanks become invincible, destroy enemies on contact, drive through walls, and fire with unlimited ammo and no cooldown.</span></div></div>
@@ -129,7 +129,7 @@
 <div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing with tiny, fast rounds.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast, ricocheting spread.</span></div></div>
 <div class="power-row"><div class="power-symbol" style="color:#73cee4"><canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shield<span>Stack up to five protective rings.</span></div></div>
-<p class="power-note">Weapons use FIRE. Machine gun allows 3 seconds of active firing. Speed activates on pickup, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or on another fire press. Walls stop blasts.</p>
+<p class="power-note">Weapons use FIRE. Machine gun allows 3 seconds of active firing. Speed activates when collected, stacks up to five times, and coexists with your weapon. Grenades explode on tank impact, after 10 seconds, or on another fire press. Walls stop blasts.</p>
 </div></section>
   <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Choose a battle.</div></div></section>
  </aside>
@@ -166,23 +166,24 @@
    <section id="introTourKeyboard">
     <h3>Keyboard</h3>
     <dl>
-     <dt>Movement</dt><dd id="introTourMoveKeys"></dd>
+     <dt>Movement</dt><dd id="introTourMoveKeys" class="intro-movement-keys"></dd>
      <dt>Fire</dt><dd id="introTourFireKeys"></dd>
     </dl>
+    <p class="intro-fire-tip">Hold any fire key to rapid fire.</p>
     <p>Rebind keys in Controls.</p>
    </section>
    <section id="introTourDesktop">
     <h3>Mouse</h3>
     <dl>
      <dt>Movement</dt><dd>Drive with the keyboard.</dd>
-     <dt>Aim</dt><dd id="introTourMouseAim">Point over the maze. Press a turn key to switch back to keyboard aiming.</dd>
-     <dt>Fire</dt><dd id="introTourMouseFire">Left-click to fire or hold to keep firing.</dd>
+     <dt>Aim</dt><dd id="introTourMouseAim"><span id="introTourMouseAimKey" class="control-keycaps"></span> Point over the maze. Press a turn key to switch back to keyboard aiming.</dd>
+     <dt>Fire</dt><dd id="introTourMouseFire"><span id="introTourMouseFireKey" class="control-keycaps"></span> Left-click to fire or hold to keep firing.</dd>
     </dl>
    </section>
   </div>
   <div data-intro-page="1" hidden>
    <p>Bank shots around corners and use walls for cover. Every tank is immune to its own weapons.</p>
-   <p>Drive over a glowing pickup to collect it.</p>
+   <p>Drive over a glowing power-up to collect it.</p>
    <ul>
     <li><strong>Laser</strong>, Fires an instant ricocheting beam with a dotted aim guide.</li>
     <li><strong>Grenade</strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds.</li>
@@ -192,13 +193,13 @@
   </div>
   <div data-intro-page="2" hidden>
    <ul>
-    <li><strong>Infinity</strong>, Roam an unbounded maze where tanks respawn. The Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play with your room roster and set whether roaming bots can spawn.</li>
+    <li><strong>Public Infinity</strong>, Roam an unbounded maze where tanks respawn. The Public Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play with your room roster and set whether roaming bots can spawn.</li>
     <li><strong>Elimination</strong>, Be the last tank or team standing.</li>
     <li><strong>Capture the Flag</strong>, Bring the enemy flag home while yours is at base.</li>
     <li><strong>King of the Hill</strong>, Control the hill to earn points.</li>
     <li><strong>Survival</strong>, Fight off waves of enemy tanks with your squad.</li>
    </ul>
-   <p>To play a room match, turn off Infinity, choose a mode in <strong>Room settings</strong>, and press <strong>Play</strong>.</p>
+   <p>To play a room match, turn off Public Infinity, choose a mode in <strong>Room settings</strong>, and press <strong>Play</strong>.</p>
   </div>
  </div>
  <footer class="feature-footer intro-tour-actions">
@@ -264,10 +265,10 @@
  <div class="feature-body"><div class="eyebrow">THIS DEVICE</div><h2 id="settingsResetTitle" tabindex="-1">Resetting settings.</h2><p id="settingsResetStatus" role="status" aria-live="polite">Clearing leqra settings and cached app files.</p></div>
  <footer class="feature-footer"><button class="secondary" id="settingsResetRetryBtn" type="button" hidden>RETRY RESET</button><button class="primary" id="settingsResetReloadBtn" type="button" disabled>RELOAD</button></footer>
 </dialog>
-<script src="assets/v4.49.31/netcode.js" defer></script>
-<script src="assets/v4.49.31/game.js" defer></script>
-<script src="assets/v4.49.31/infinite-maze.js" defer></script>
-<script src="assets/v4.49.31/infinite.js" defer></script>
-<script src="assets/v4.49.31/pwa.js" defer></script>
+<script src="assets/v4.49.32/netcode.js" defer></script>
+<script src="assets/v4.49.32/game.js" defer></script>
+<script src="assets/v4.49.32/infinite-maze.js" defer></script>
+<script src="assets/v4.49.32/infinite.js" defer></script>
+<script src="assets/v4.49.32/pwa.js" defer></script>
 </body>
 </html>

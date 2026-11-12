@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.31';
+const GAME_VERSION='4.49.32';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -1487,7 +1487,7 @@ function update(dt){
   if(over>0){if(dist<.001){dx=1;dy=0;dist=1;}moveTank(a,-dx/dist*over*.5,-dy/dist*over*.5);moveTank(b,dx/dist*over*.5,dy/dist*over*.5);}
  }
  updateBullets(dt);
- for(const p of pickups){p.age+=dt;p.life-=dt;if(p.life<=0)continue;for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(t.alive&&distance(t,p)<t.r+13){p.life=0;const def=POWER[p.type];grantPower(t,p.type);addRing(p.x,p.y,def.color,44);burst(p.x,p.y,def.color,13,90);pickupSound();const localIndex=localPilotIndex(t.id);if(localIndex>=0)setPilotFeedback(localIndex,pickupMessage(p.type),2.5);addLog(t.name+' picked up '+def.name.toLowerCase()+'.');break;}}}compactLife(pickups);
+ for(const p of pickups){p.age+=dt;p.life-=dt;if(p.life<=0)continue;for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(t.alive&&distance(t,p)<t.r+13){p.life=0;const def=POWER[p.type];grantPower(t,p.type);addRing(p.x,p.y,def.color,44);burst(p.x,p.y,def.color,13,90);pickupSound();const localIndex=localPilotIndex(t.id);if(localIndex>=0)setPilotFeedback(localIndex,pickupMessage(p.type),2.5);addLog(t.name+' collected '+def.name.toLowerCase()+'.');break;}}}compactLife(pickups);
  if(mode==='room'&&survivalMode()){stepLocalSurvival(dt);}
  else if(mode==='room'&&objectiveMode()){stepLocalObjectives(dt);}
   else if(mode==='room'){
@@ -2383,7 +2383,7 @@ function renderOnlineRoom(){
  $('returnRoomBtn').hidden=!host||isOnline&&!!(r.matchmaking||r.queue||r.awayMatch);syncEndMatchAction();$('copyInGameBtn').hidden=!isOnline;$('copyInGameBtn').disabled=false;if(isOnline)$('copyInGameBtn').textContent='Copy invite link';
 
  $('readyBtn').hidden=!isOnline||host||!!own?.spectating;$('readyBtn').disabled=!online.connected;
- $('readyBtn').firstElementChild.textContent=r.infinityActive?'JOIN INFINITY':'READY';
+ $('readyBtn').firstElementChild.textContent=r.infinityActive?(r.infinityPublic?'JOIN PUBLIC INFINITY':'JOIN INFINITY'):'READY';
  if(r.infinityActive)$('readyBtn').removeAttribute('aria-pressed');else $('readyBtn').setAttribute('aria-pressed',String(!!own?.ready));
  $('endInfinityBtn').hidden=!r.infinityActive||!host;
  const canStart=isOnline?r.canStart:!roomStartError(r);
@@ -3016,7 +3016,7 @@ function survivalState(){return objectiveState()?.survival;}
 function survivalBreak(){return survivalState()?.status==='break';}
 function suddenDeath(){return !!objectiveState()?.suddenDeath;}
 function validateRoomRules(r){
- if(!r||!['elimination','ctf','koth','survival'].includes(r.mode)||!['teams','ffa'].includes(r.teamMode)||!['compact','standard','large','huge','giant','ultrawide'].includes(r.mapSize)||!['superfast','fast','normal','slow','off'].includes(r.pickupRate))throw Error('Choose valid mode, format, map and pickup settings.');
+ if(!r||!['elimination','ctf','koth','survival'].includes(r.mode)||!['teams','ffa'].includes(r.teamMode)||!['compact','standard','large','huge','giant','ultrawide'].includes(r.mapSize)||!['superfast','fast','normal','slow','off'].includes(r.pickupRate))throw Error('Choose valid mode, format, map and power-up settings.');
  if(!r.infinity&&(r.mode==='ctf'||r.mode==='survival')&&r.teamMode!=='teams')throw Error(r.mode==='survival'?'Survival needs teams.':'Capture the Flag needs two numbered teams.');
  if(!Number.isInteger(r.scoreTarget)||r.scoreTarget<1||r.scoreTarget>(r.mode==='koth'?300:20))throw Error('Score target: 1–20, or 1–300 in Hill.');
  const infinityTarget=r.infinityTarget===undefined?0:r.infinityTarget;
@@ -3062,13 +3062,13 @@ function starmanDuration(c=cols,r=rows){
 // Ground expiry has a 30s floor through Large; Giant cap 23 still yields 61s.
 function pickupLifetime(c=cols,r=rows){const cap=pickupCap(c,r);return cap>0?Math.max(c*r<=12*10?30:0,Math.floor(cap*8/3)):0;}
 function seedPickups(){for(let i=0;i<startingPickups();i++)spawnPower();}
-function pickupLimitText(size=currentRules().mapSize){const [c,r]=mapDimensions(size);return startingPickups(c,r)+' starting pickups, '+pickupCap(c,r)+' maximum on this maze.';}
+function pickupLimitText(size=currentRules().mapSize){const [c,r]=mapDimensions(size);return startingPickups(c,r)+' starting power-ups, '+pickupCap(c,r)+' maximum on this maze.';}
 function syncControlsPickupInfo(){
  const el=$('controlsPickupInfo');if(!el)return;
  const infinity=window.leqraInfinity,selected=$('infiniteArena')?.open||infinityPlayMode()==='online'||!!currentRules().infinity;
  if(selected&&infinity?.pickupHelp){el.textContent=infinity.pickupHelp;return;}
  const [c,r]=mapDimensions();
- el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Most power-ups last '+powerEffectDuration(c,r)+' seconds after pickup. Starman: '+starmanDuration(c,r)+' seconds. Machine gun: 3 seconds of firing. Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));
+ el.replaceChildren(document.createTextNode(pickupLimitText()),document.createElement('br'),document.createTextNode('Most power-ups last '+powerEffectDuration(c,r)+' seconds once collected. Starman: '+starmanDuration(c,r)+' seconds. Machine gun: 3 seconds of firing. Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds.'));
 }
 function pickupInterval(){return currentRules().pickupRate==='off'?[Infinity,Infinity]:currentRules().pickupRate==='superfast'?[1,2]:currentRules().pickupRate==='normal'?[4,6]:currentRules().pickupRate==='slow'?[7,10]:[2,3.5];}
 function roomStartError(data=roomData()){
@@ -3110,7 +3110,7 @@ function countdownTipPool(rules=currentRules()){
   add(modeTips,'survival-regroup','The maze changes every wave. Regroup before taking the next corner.');
   add(modeTips,'survival-bots','Squad bots fight alongside allied pilots. Spectators can watch an all-bot run.');
   if(rules.scoreTarget>=5){
-   add(modeTips,'survival-boss-shield','Boss waves give every ally a starting shield, even with pickups off.');
+   add(modeTips,'survival-boss-shield','Boss waves give every ally a starting shield, even with power-ups off.');
    add(modeTips,'survival-boss-cycle','Every fifth wave brings a boss. Clear the escorts to make space.');
    add(modeTips,'survival-boss-tiers','New boss tiers: Normal at 5'+(rules.scoreTarget>=10?', Fierce at 10':'')+(rules.scoreTarget>=15?', Godlike at 15':'')+'.');
    const bosses=[];for(let wave=5;wave<=rules.scoreTarget;wave+=5)bosses.push(survivalWavePlan(wave,4,rules));
@@ -3151,10 +3151,10 @@ function countdownTipPool(rules=currentRules()){
   const powerText={
    rapid:'Machine gun: '+MACHINE_FIRING_ROUNDS/60+' seconds of firing; quarter-perimeter range. Watch FIRE LEFT.',
    scatter:'The shotgun fires a spread of bouncing pellets.',
-   shield:'Shield pickups stack charges and refresh the shield timer.',
+   shield:'Shield power-ups stack charges and refresh the shield timer.',
    homing:'Homing missiles bounce and travel half the maze perimeter. Use walls to break locks.',
    grenade:'Grenades home in. Press Fire again to detonate before the '+GRENADE_FUSE+'-second fuse expires.',
-   speed:'Speed pickups stack for faster movement and turning.',
+   speed:'Speed power-ups stack for faster movement and turning.',
    laser:'Laser adds a long dotted guide for reflected shots.',
    cannon:'Cannon shells ignore interior walls and bounce off the outer rim.',
    ghost:'Ghost allows tanks to drive through interior walls temporarily.',
@@ -3162,7 +3162,7 @@ function countdownTipPool(rules=currentRules()){
   };
   for(const kind of rules.weapons)if(Object.prototype.hasOwnProperty.call(powerText,kind))add(powerTips,'power-'+kind,powerText[kind]);
   add(generalTips,'power-duration','Equipped power-ups last up to '+duration+' seconds on this map.');
-  add(generalTips,'pickup-expiry','Uncollected pickups expire after '+pickupLifetime(c,r)+' seconds on this map.');
+  add(generalTips,'pickup-expiry','Uncollected power-ups expire after '+pickupLifetime(c,r)+' seconds on this map.');
  }
  const tips=[];for(let i=0;i<Math.max(modeTips.length,powerTips.length,generalTips.length);i++)for(const list of [modeTips,powerTips,generalTips])if(list[i])tips.push(list[i]);
  return tips;
@@ -3210,10 +3210,10 @@ function selectPublicInfinity(enabled){
   const pending={enabled,timer:0};
   pending.cancel=()=>{if(online.publicInfinityPending!==pending)return;clearTimeout(pending.timer);delete online.publicInfinityPending;};
   online.publicInfinityPending=pending;
-  if(!sendOnline({type:'select_public_infinity',enabled})){pending.cancel();$('roomStatus').textContent='Connection unavailable. Infinity selection was not changed.';}
+  if(!sendOnline({type:'select_public_infinity',enabled})){pending.cancel();$('roomStatus').textContent='Connection unavailable. Public Infinity selection was not changed.';}
   else pending.timer=setTimeout(()=>{
    if(online.publicInfinityPending!==pending)return;
-   pending.cancel();syncFeatureSummary();$('roomStatus').textContent='No confirmation received. Check Infinity selection before retrying.';
+   pending.cancel();syncFeatureSummary();$('roomStatus').textContent='No confirmation received. Check Public Infinity selection before retrying.';
   },8000);
   syncFeatureSummary();return;
  }
@@ -3395,7 +3395,7 @@ function syncFeatureSummary(){
  $('rulesSummary').title=infinity==='online'?'Endless public maze. All pilots compete individually.':modeInstructions();$('roomRulesBtn').textContent=host?'RULES':'VIEW RULES';$('roomRulesBtn').disabled=!!pendingRoomMode;
  $('roomPresetsBtn').disabled=!host||!!pendingRoomMode;
  const startError=infinity==='online'?(mode==='online'&&!active?online.roomData?.startPublicInfinityError||'':''):mode==='online'?(online.roomData?.startError||''):roomStartError(),guest=mode==='online'&&!host?roomMember(localPlayerID()):null;
- if(mode==='online'&&online.publicInfinityPending!==undefined)$('readyHint').textContent='UPDATING INFINITY SELECTION…';
+ if(mode==='online'&&online.publicInfinityPending!==undefined)$('readyHint').textContent='UPDATING PUBLIC INFINITY SELECTION…';
  else if(infinity)$('readyHint').textContent=guest&&!active?(guest.spectating?'PUBLIC INFINITY, JOIN AS A PLAYER TO ENTER':guest.ready?'READY, PUBLIC INFINITY, FREE-FOR-ALL':'PUBLIC INFINITY, READY UP TO JOIN THE ROOM'):startError||(infinity==='online'?(mode==='online'?'PUBLIC INFINITY, ROOM PARTY, FREE-FOR-ALL':'PUBLIC INFINITY, ENDLESS'):'INFINITY OFFLINE, '+displayScoreTarget());
  else if(guest?.spectating)$('readyHint').textContent='SPECTATING, OPEN PLAYERS AND BOTS TO CHANGE ROLES';
  else if(active)$('readyHint').textContent='ROOM INFINITY, IN PROGRESS';
@@ -3455,7 +3455,7 @@ function updateRuleHelp(){
  $('rule-scoreTarget').max=m==='koth'?300:20;$('rule-respawnSeconds').disabled=m==='elimination'||m==='survival'||!isRoomEditable();
  $('ruleTimeLabel').textContent=m==='survival'?'WAVE TIME LIMIT (SECONDS)':'TIME LIMIT (SECONDS)';
  $('ruleScoreLabel').textContent=m==='survival'?'WAVES TO SURVIVE':m==='koth'?'HILL POINTS TO WIN':m==='ctf'?'CAPTURES TO WIN':'ROUNDS TO WIN';
- const [mc,mr]=mapDimensions(rules.mapSize);$('rule-pickup-density').textContent=$('rule-pickupRate').value==='off'?'Pickups disabled.':pickupLimitText(rules.mapSize)+' Uncollected power-ups expire after '+pickupLifetime(mc,mr)+' seconds.';
+ const [mc,mr]=mapDimensions(rules.mapSize);$('rule-pickup-density').textContent=$('rule-pickupRate').value==='off'?'Power-ups disabled.':pickupLimitText(rules.mapSize)+' Uncollected power-ups expire after '+pickupLifetime(mc,mr)+' seconds.';
  $('rule-help').textContent=m==='survival'?'One to four squad tanks; all-bot squads are welcome. Clear each wave before its timer expires. A squad wipe ends the run. Between waves, a two-second break leads to a new maze and a three-second countdown.'+(waveTarget>=5?' Normal debuts as the wave 5 boss'+(waveTarget>=10?', Fierce at wave 10':'')+(waveTarget>=15?', and Godlike at wave 15':'')+'. Each joins regular waves afterward.':'')+' Restarting a failed wave keeps that wave’s maze.':m==='ctf'?'Two numbered teams. Carry the enemy flag home; your own flag must be at base. Dropped flags return after 12s. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':m==='koth'?'Teams or Free-for-all. Hold the marked hill for 1 point per second. Contested hills give no points. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':'Last side standing wins a round. No respawns until the next round.';
 }
 function readRuleTeamSettings(rules){
@@ -3517,13 +3517,14 @@ function controlKeyMap(index,aliases=index===0&&aliasesActive()){const keys={};f
 function controlPairActive(){const pilots=typeof window==='undefined'?null:window.leqraInfinity?.localPilots?.();return pilots?.length?pilots.length>1:hasLocalP2();}
 function controlSummary(index,prefix=true,aliases=index===0&&aliasesActive()){const keys=controlKeyMap(index,aliases);return(prefix?localPilotIdentity(index,null,controlPairActive()).label+': ':'')+[['Forward','forward'],['Reverse','reverse'],['Left','left'],['Right','right'],['Fire','fire']].map(([label,action])=>label+' '+Object.keys(keys).filter(code=>keys[code]===action).map(keyLabel).join('/')).join(', ');}
 function pilotControlHint(index,device='',aliases=index===0&&!controlPairActive(),paired=controlPairActive()){const identity=localPilotIdentity(index,null,paired);return controlHintHTML(controlKeyMap(index,aliases),identity.label,device,identity.color);}
+function controlKeycapsHTML(options){return options.length?'<span class="control-keycaps">'+options.map((option,index)=>'<span class="control-key-option">'+(index?'<span class="control-alias">/</span>':'')+option+'</span>').join('')+'</span>':'';}
+function controlKeyHTML(codes){return controlKeycapsHTML(codes.map(code=>'<kbd>'+escapeHTML(keyLabel(code))+'</kbd>'));}
+function controlMouseKeyHTML(left){return '<kbd class="control-mouse-key" aria-label="'+(left?'Left mouse button':'Move mouse to aim')+'" title="'+(left?'Left-click to fire':'Move mouse to aim')+'"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="7"/>'+(left?'<path class="mouse-button-fill" d="M12 3a6 6 0 0 0-6 6v1h6Z"/>':'')+'<path d="M12 2v9M5 11h14"/></svg></kbd>';}
 function controlHintHTML(keys,label='',device='',color=''){
- const mouse=left=>'<kbd class="control-mouse-key" aria-label="'+(left?'Left mouse button':'Move mouse to aim')+'" title="'+(left?'Left-click to fire':'Move mouse to aim')+'"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="7"/>'+(left?'<path class="mouse-button-fill" d="M12 3a6 6 0 0 0-6 6v1h6Z"/>':'')+'<path d="M12 2v9M5 11h14"/></svg></kbd>';
  const aim=device==='mouse'&&combatPrefs.mouseAim!==false,fire=device==='mouse'&&combatPrefs.mouseFire!==false;
  const groups=device==='touch'?'':[['Forward','forward'],['Reverse','reverse'],['Left','left'],['Right','right'],['Fire','fire'],...(aim?[['Mouse Aim','mouse']]:[]),...(fire?[['Mouse Fire','mouseFire']]:[])].map(([title,action])=>{
-  const options=action==='mouse'||action==='mouseFire'?[mouse(action==='mouseFire')]:Object.keys(keys).filter(code=>keys[code]===action).map(code=>'<kbd>'+escapeHTML(keyLabel(code))+'</kbd>');
-  if(!options.length)return '';
-  return '<span class="control-key-group"><span class="control-action">'+title+'</span> <span class="control-keycaps">'+options.map((option,index)=>'<span class="control-key-option">'+(index?'<span class="control-alias">/</span>':'')+option+'</span>').join('')+'</span></span>';
+  const caps=action==='mouse'||action==='mouseFire'?controlKeycapsHTML([controlMouseKeyHTML(action==='mouseFire')]):controlKeyHTML(Object.keys(keys).filter(code=>keys[code]===action));
+  return caps?'<span class="control-key-group"><span class="control-action">'+title+'</span> '+caps+'</span>':'';
  }).join(' ');
  const help=device==='touch'?'Drag the stick to move and aim. Tap or hold Fire.':'';
  return '<span class="control-player">'+(label?'<strong class="control-pilot"'+(color?' style="color:'+escapeHTML(paintColor(color))+'"':'')+'>'+escapeHTML(label)+'</strong> ':'')+(groups?'<span class="control-groups">'+groups+'</span>':'')+(help?'<span class="control-device">'+help+'</span>':'')+'</span>';
@@ -3531,12 +3532,13 @@ function controlHintHTML(keys,label='',device='',color=''){
 function fieldManualHTML(){
  const infinity=typeof window==='undefined'?null:window.leqraInfinity?.sidebarHelp?.();
  const publicPreview=!infinity&&['menu','onlineLobby','matchOver'].includes(phase)&&infinityPlayMode()==='online';
- const aliases=infinity?!infinity.twoPilots:aliasesActive();
+ const aliases=infinity?!infinity.twoPilots:aliasesActive(),paired=!aliases&&!!(infinity?.twoPilots||hasLocalP2());
+ const fireTip='<p class="manual-fire-tip">Hold any fire key to rapid fire.</p>';
  let html='<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Tap or hold Fire to shoot.</span></div>';
  html+='<div class="manual-controls">'+pilotControlHint(0,'mouse',aliases,!aliases);
- if(!aliases&&(infinity?.twoPilots||hasLocalP2()))html+=pilotControlHint(1,'',false,true);
- html+='</div><div class="manual-shared-controls">'+[['Menu',['P','ESC']],['Mute',['M']],['Fullscreen',['F']]].map(([label,keys])=>'<span class="control-key-group"><span class="control-action">'+label+'</span><span class="control-keycaps">'+keys.map((key,index)=>'<span class="control-key-option">'+(index?'<span class="control-alias">/</span>':'')+'<kbd>'+key+'</kbd></span>').join('')+'</span></span>').join(' ')+'</div>';
- html+='<div class="warning"><b>'+escapeHTML(infinity?'INFINITY':publicPreview?'PUBLIC INFINITY':modeLabel())+'</b><br>'+escapeHTML(infinity?infinity.instructions:publicPreview?'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after 1 second. Keep playing and growing your score without a time limit. All pilots compete individually.':modeInstructions())+'<br>Use Controls menu to change keys.</div>';
+ if(paired)html+=pilotControlHint(1,'',false,true);else html+=fireTip;
+ html+='</div><div class="manual-shared-controls">'+(paired?fireTip:'')+[['Menu',['P','ESC']],['Mute',['M']],['Fullscreen',['F']]].map(([label,keys])=>'<span class="control-key-group"><span class="control-action">'+label+'</span><span class="control-keycaps">'+keys.map((key,index)=>'<span class="control-key-option">'+(index?'<span class="control-alias">/</span>':'')+'<kbd>'+key+'</kbd></span>').join('')+'</span></span>').join(' ')+'</div>';
+ html+='<div class="warning"><b>'+escapeHTML(infinity?(infinity.title||'Infinity').toUpperCase():publicPreview?'PUBLIC INFINITY':modeLabel())+'</b><br>'+escapeHTML(infinity?infinity.instructions:publicPreview?'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after 1 second. Keep playing and growing your score without a time limit. All pilots compete individually.':modeInstructions())+'<br>Use Controls menu to change keys.</div>';
  return html;
 }
 function syncControlIdentities(){
@@ -3562,7 +3564,7 @@ function renderBindings(){
    const row=document.createElement('div');row.className='binding-row binding-mouse-row';
    const label=document.createElement('label');label.className='binding-mouse-label';label.htmlFor=id;label.innerHTML=title+' <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="7"/>'+(left?'<path class="mouse-button-fill" d="M12 3a6 6 0 0 0-6 6v1h6Z"/>':'')+'<path d="M12 2v9M5 11h14"/></svg>';
    const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.id=id;checkbox.className='binding-mouse-toggle';checkbox.checked=combatPrefs[kind==='aim'?'mouseAim':'mouseFire']!==false;checkbox.onchange=()=>setMouseControlEnabled(kind,checkbox.checked);
-   row.append(label,checkbox);section.append(row);
+   const control=document.createElement('span');control.className='binding-mouse-control';const state=document.createElement('span');state.className='binding-mouse-state';state.setAttribute('aria-hidden','true');control.append(checkbox,state);row.append(label,control);section.append(row);
   }
  }
  syncControlIdentities();
@@ -3646,6 +3648,7 @@ function initInfinityPreview(){
   if(document.body.classList.contains('infinity-preview')!==shown){document.body.classList.toggle('infinity-preview',shown);resize();}
   if(fpsHome){if(shown&&fps.parentElement!==bar)bar.insertBefore(fps,$('infinityPreviewRight'));else if(!shown&&fps.parentElement===bar)fpsHome.parent.insertBefore(fps,fpsHome.next?.parentElement===fpsHome.parent?fpsHome.next:null);}
   if(!shown){close();cancel();snapshot=null;failed=false;leaderKey='';return;}
+  $('infinityPreviewTitle').textContent=publicArena?'Public Infinity':'Infinity';
   if(document.hidden||navigator.onLine===false){snapshot=null;failed=navigator.onLine===false;}
   const pilots=[localPilotIdentity(0),...(secondLocal()?[localPilotIdentity(1)]:[])],key=JSON.stringify(pilots);
   if(key!==personalKey){personalKey=key;counter.replaceChildren(...pilots.map(p=>{const row=document.createElement('span');row.className='infinite-personal-score';row.style.color=paintColor(p.color);row.setAttribute('aria-label',p.label+': (0, #0)');const name=document.createElement('span');name.className='infinite-score-name';name.textContent=p.label;const value=document.createElement('span');value.className='infinite-score-value';value.textContent=': (0, #0)';row.append(name,value);return row;}));}
@@ -4153,7 +4156,7 @@ function initFeatures(){
  <label><span id="ruleTimeLabel">TIME LIMIT (SECONDS)</span><input id="rule-timeLimit" type="number" min="30" max="600" step="1" required></label>
  <div class="team-names-editor" id="teamNamesEditor"><div class="field-label">TEAM NAMES & COLORS, 24 CHARACTERS EACH</div><div class="team-names-grid">${[1,2,3,4].map(i=>'<label>TEAM '+i+'<input id="rule-teamName'+i+'" type="text" autocomplete="off" required aria-label="Team '+i+' name"></label>').join('')}</div><p class="mode-help" id="rule-team-help"></p></div>
  <label>RESPAWN DELAY (SECONDS)<input id="rule-respawnSeconds" type="number" min="1" max="10" step="1" required></label>
- <label class="pickup-frequency">POWER-UP FREQUENCY<select id="rule-pickupRate"><option value="superfast">Super fast, every 1–2s (default)</option><option value="fast">Fast, every 2–3.5s</option><option value="normal">Normal, every 4–6s</option><option value="slow">Slow, every 7–10s</option><option value="off">Off, no pickups</option></select></label></div>
+ <label class="pickup-frequency">POWER-UP FREQUENCY<select id="rule-pickupRate"><option value="superfast">Super fast, every 1–2s (default)</option><option value="fast">Fast, every 2–3.5s</option><option value="normal">Normal, every 4–6s</option><option value="slow">Slow, every 7–10s</option><option value="off">Off, no power-ups</option></select></label></div>
  <section id="rule-infinity-bots" hidden><h3>RANDOM BOTS</h3><label class="check-label"><input id="rule-infinityRandomBots" type="checkbox">Spawn random bots</label><p class="mode-help">Random bots appear as tanks explore. Bots on the room roster always play.</p>
  <div id="rule-infinity-bot-options" hidden><div class="rules-grid">
  <label>DIFFICULTY<select id="rule-infinityBotDifficulty">${Object.keys(DIFFICULTY).map(level=>'<option value="'+level+'">'+botLevelName(level)+'</option>').join('')}</select></label>
@@ -4161,7 +4164,7 @@ function initFeatures(){
  </div><p class="mode-help">Fixed gives every random bot the selected difficulty. Random picks a difficulty from Chill up to your selection.</p></div></section>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Every tank is immune to its own weapons.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><div id="rule-weapon-options"><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="secondary" type="button" id="defaultRulesBtn">DEFAULT RULES</button><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span aria-hidden="true">→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP <span aria-hidden="true">→</span></button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
- <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><p class="mode-help">P/Esc opens the menu; M toggles sound; F toggles fullscreen. Both fire keys can also detonate your grenade. With one local tank, both keyboard layouts control it. Touch controls are unchanged.</p><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
+ <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><div id="controlsKeyboardHelp"><p class="mode-help controls-shortcuts"><span>${controlKeyHTML(['KeyP','ESC'])} opens the menu.</span><span>${controlKeyHTML(['KeyM'])} toggles sound.</span><span>${controlKeyHTML(['KeyF'])} toggles fullscreen.</span></p><p class="mode-help controls-firing-help">Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.</p></div><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
  document.body.append(dialogs);$('roomRulesBtn').onclick=()=>openFeature('rules');$('roomPresetsBtn').onclick=()=>openFeature('presets');$('roomControlsBtn').onclick=$('menuControlsBtn').onclick=()=>openFeature('controls');
  for(const b of document.querySelectorAll('[data-close-dialog]'))b.onclick=()=>closeFeature($(b.dataset.closeDialog));for(const d of document.querySelectorAll('.feature-dialog'))d.addEventListener('close',()=>{bindingCapture=null;clearInput();});
  $('rulesForm').onsubmit=submitRules;$('defaultRulesBtn').onclick=resetRuleDefaults;
@@ -4183,6 +4186,13 @@ function initFeatures(){
  window.addEventListener('keydown',captureBinding,true);
 }
 
+function syncIntroTourControls(){
+ const keys=controlKeyMap(0,!controlPairActive()),codes=action=>Object.keys(keys).filter(code=>keys[code]===action);
+ $('introTourMoveKeys').innerHTML=['forward','left','reverse','right'].map(action=>controlKeyHTML(codes(action))).join(' ');
+ $('introTourFireKeys').innerHTML=controlKeyHTML(codes('fire'));
+ $('introTourMouseAimKey').innerHTML=controlMouseKeyHTML(false);
+ $('introTourMouseFireKey').innerHTML=controlMouseKeyHTML(true);
+}
 function initIntroTour(){
  const dialog=$('introTourDialog'),pages=dialog.querySelectorAll('[data-intro-page]');
  const titles=['Drive and aim','Use the maze','Choose a battle'];
@@ -4199,8 +4209,7 @@ function initIntroTour(){
  function open(){
   $('introTourDesktop').hidden=combatPrefs.mouseAim===false&&combatPrefs.mouseFire===false||!window.matchMedia('(any-pointer: fine)').matches;
   $('introTourTouch').hidden=!touchUI;
-  $('introTourMoveKeys').textContent=movementKeySummary(0);
-  $('introTourFireKeys').textContent=[keyLabel(bindings[0].fire),...fireAliasLabels(0)].join('/');
+  syncIntroTourControls();
   syncControlIdentities();
   openFeature('introTour');showStep(0);
  }
@@ -4401,7 +4410,7 @@ function initSpectators(){
  $('roomRoster').before(actions);
  const localActions=document.createElement('div');localActions.id='roomP2RoleStrip';localActions.className='room-role-strip';localActions.hidden=true;localActions.innerHTML='<div><strong id="roomP2RoleLabel"></strong><p id="roomP2RoleHelp"></p></div><button id="toggleP2SpectateBtn" type="button" class="secondary">PLAY</button>';actions.after(localActions);
  const copy=document.createElement('button');copy.type='button';copy.id='copySpectateBtn';copy.className='secondary share-room watch-link';copy.textContent='COPY SPECTATOR LINK ↗';copy.hidden=true;$('copyInviteBtn').after(copy);
- const list=document.createElement('details');list.id='roomSpectators';list.className='room-spectators';list.hidden=true;list.innerHTML='<summary id="spectatorSummary">SPECTATORS, 0</summary><div id="roomSpectatorList" class="spectator-list"></div>';$('rosterTools').after(list);
+ const list=document.createElement('details');list.id='roomSpectators';list.className='room-spectators';list.hidden=true;list.innerHTML='<summary id="spectatorSummary">SPECTATORS, 0</summary><div id="roomSpectatorList" class="spectator-list"></div>';$('roomRoster').after(list);
  const head=document.createElement('button');head.id='spectatorsBtn';head.type='button';head.className='spectators-button';head.textContent='SPECTATORS 0';head.hidden=mode!=='online'||!online.roomData;$('soundBtn').before(head);
  const menu=document.createElement('button');menu.id='menuSpectateBtn';menu.type='button';menu.className='secondary';menu.textContent='Spectate';$('onlineReturnBtn').after(menu);
  const inGame=document.createElement('button');inGame.id='copyWatchInGameBtn';inGame.type='button';inGame.className='secondary';inGame.textContent='Copy spectator link';$('copyInGameBtn').after(inGame);
@@ -4811,7 +4820,7 @@ function restoreHeader(container){
 function syncSidebarContext(){
  const sidebar=$('gameSidebar'),help=window.leqraInfinity?.sidebarHelp?.();
  const manual=fieldManualHTML();if($('manualContent').dataset.content!==manual){$('manualContent').innerHTML=manual;$('manualContent').dataset.content=manual;}
- sidebar.setAttribute('aria-label',help?'Infinity scoreboard and instructions':'Scoreboard and instructions');
+ sidebar.setAttribute('aria-label',help?(help.title||'Infinity')+' scoreboard and instructions':'Scoreboard and instructions');
  for(const [element,original]of sidebarPowerText){
   let text=original;
   if(help){
