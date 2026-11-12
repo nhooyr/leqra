@@ -24,6 +24,46 @@ func roamingBots(a *infiniteArena) []*infinitePilot {
 	return bots
 }
 
+func TestPublicInfinityRoamingBotsUseChillAndPrivateSettingsStillApply(t *testing.T) {
+	now := time.Unix(0, 0)
+	public := newSeededInfiniteArena(37)
+	pilot := public.join(fakeClient(), "PILOT", now)
+	fillRoamingBots(public)
+	if len(roamingBots(public)) == 0 {
+		t.Fatal("public population did not spawn")
+	}
+	for _, bot := range roamingBots(public) {
+		if infiniteBotTunings[bot.botLevel].name != "easy" {
+			t.Fatal("public roaming bot was not Chill")
+		}
+	}
+	public.suspend(pilot)
+	if reason := public.resume(fakeClient(), pilot, 0, now.Add(time.Second)); reason != "" {
+		t.Fatal(reason)
+	}
+	fillRoamingBots(public)
+	for _, bot := range roamingBots(public) {
+		if infiniteBotTunings[bot.botLevel].name != "easy" {
+			t.Fatal("pooled public bot lost its Chill difficulty")
+		}
+	}
+	for _, difficulty := range []string{"normal", "hard", "godlike"} {
+		rules := defaultRules()
+		rules.InfinityRandomBots, rules.InfinityBotDifficulty = true, difficulty
+		private := newRoomInfiniteArena(rules, nil)
+		private.join(fakeClient(), "PILOT", now)
+		fillRoamingBots(private)
+		if len(roamingBots(private)) == 0 {
+			t.Fatal("private roaming population did not spawn")
+		}
+		for _, bot := range roamingBots(private) {
+			if infiniteBotTunings[bot.botLevel].name != difficulty {
+				t.Fatalf("private %s bot setting was overridden", difficulty)
+			}
+		}
+	}
+}
+
 func TestInfiniteRoamingBudgetCountsConnectedSeatsAndKeepsStableNumbers(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Unix(0, 0)

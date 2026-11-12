@@ -7,10 +7,10 @@ function declaration(name){const start=source.indexOf('function '+name+'(');asse
 class Element{constructor(){this.value='';this.dataset={};this.attributes={};this.hidden=false;this.disabled=false;this.textContent='';this.style={setProperty:(k,v)=>this[k]=v};this.classList={toggle(){}};}setAttribute(k,v){this.attributes[k]=v;}getAttribute(k){return this.attributes[k];}focus(){this.focused=true;}scrollIntoView(){this.revealed=true;}}
 function boot({online=false,count=4}={}){
  const elements=new Map(),$=id=>{if(!elements.has(id)){const el=new Element();el.parentElement=new Element();elements.set(id,el);}return elements.get(id);};
- $('roomMapSize').options=[{value:'compact',textContent:'Compact · 7 × 7'},{value:'large',textContent:'Large · 12 × 10'}];
+ $('roomMapSize').options=[{value:'compact',textContent:'Compact, 7 × 7'},{value:'large',textContent:'Large, 12 × 10'}];
  const choices=['elimination','ctf','koth','survival','infinity'].map(id=>{const el=new Element();el.dataset.roomMode=id;return el;});
  const timers=new Map();let timer=0;
- const s={console,mode:online?'online':'room',phase:online?'onlineLobby':'menu',MAX_TANKS:8,pendingRoomMode:null,roomModeObserved:'',roomModeError:'',roomModeContext:'',rulesPending:false,presetsPending:false,escapeHTML:v=>String(v),POWER:{rapid:{},shield:{}},localRoom:{code:'LOCAL',self:0,players:Array.from({length:count},(_,id)=>({id,kind:id?'bot':'human',team:0,connected:true})),rules:null},online:{id:0,member:1,code:'ONLINE',connected:true,socket:{},roomData:null},$,document:{querySelectorAll:selector=>selector==='[data-room-mode]'?choices:[],createElement:()=>new Element()},sent:[],sendOnline(message){s.sent.push(message);return !s.sendFails;},setTimeout(fn){timers.set(++timer,fn);return timer;},clearTimeout(id){timers.delete(id);},rememberedRulesForMode(){return null;},persistLocalRoomRules(r){s.persisted=r;},resetPreviewIfLobby(options){s.preview=options;},renderOnlineRoom(){s.syncRoomModePicker();},syncFeatureSummary(){s.syncRoomModePicker();},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>r?.players||s.localRoom.players};
+ const s={console,pilotControlHint:()=>'',controlKeyMap:()=>({}),controlHintHTML:()=>'',mode:online?'online':'room',phase:online?'onlineLobby':'menu',MAX_TANKS:8,pendingRoomMode:null,roomModeObserved:'',roomModeError:'',roomModeContext:'',rulesPending:false,presetsPending:false,escapeHTML:v=>String(v),POWER:{rapid:{},shield:{}},localRoom:{code:'LOCAL',self:0,players:Array.from({length:count},(_,id)=>({id,kind:id?'bot':'human',team:0,connected:true})),rules:null},online:{id:0,member:1,code:'ONLINE',connected:true,socket:{},roomData:null},$,document:{querySelectorAll:selector=>selector==='[data-room-mode]'?choices:[],createElement:()=>new Element()},sent:[],sendOnline(message){s.sent.push(message);return !s.sendFails;},setTimeout(fn){timers.set(++timer,fn);return timer;},clearTimeout(id){timers.delete(id);},rememberedRulesForMode(){return null;},persistLocalRoomRules(r){s.persisted=r;},resetPreviewIfLobby(options){s.preview=options;},renderOnlineRoom(){s.syncRoomModePicker();},syncFeatureSummary(){s.syncRoomModePicker();},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>r?.players||s.localRoom.players};
  Object.assign(s,{infinityOffline:false,infinityOnline:true,location:{protocol:'https:'},navigator:{onLine:true},save(){},rememberRenderedRoomSetup(){}});
  s.roomData=()=>s.mode==='online'?s.online.roomData:{host:0,players:s.localRoom.players.filter(p=>!p.spectating),rules:s.localRoom.rules};
  vm.createContext(s);vm.runInContext(source.slice(source.indexOf('const ROOM_MODES='),source.indexOf('function roomModeEditable(')),s);
@@ -143,7 +143,7 @@ test('portrait changes rectangular geometry, keeps square previews, and survives
  assert.equal(s.selectRoomSetting('portraitMaze',true),true);
  assert.deepEqual(Array.from(s.mapDimensions()),[10,12]);
  assert.equal(s.preview.regenerateMaze,true);
- assert.equal($('roomMapSize').options[1].label,'Large · 10 × 12');
+ assert.equal($('roomMapSize').options[1].label,'Large, 10 × 12');
  s.selectRoomMode('survival');assert.equal(s.currentRules().portraitMaze,true);
  s.selectRoomSetting('mapSize','compact');
  s.selectRoomSetting('portraitMaze',false);assert.equal(s.preview.regenerateMaze,false);

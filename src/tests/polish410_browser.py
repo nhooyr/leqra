@@ -17,7 +17,7 @@ with sync_playwright() as pw:
 
  # Ghost wall block changes only the text, not the underlying colored readiness fill.
  ghost=p.evaluate("""()=>{const t=__test.tanks[0];__test.setPhase('playing');Object.assign(t,{x:100,y:100,alive:true,ghostTime:10,power:null,cooldown:.2,cooldownTotal:.34,shield:0});__test.setWorld({width:504,height:420,cols:6,rows:5,walls:[]});__test.updateCombatFeedback(true);const before=document.querySelector('#cooldownFill1').style.transform;__test.setWorld({width:504,height:420,cols:6,rows:5,walls:[{x:90,y:80,w:20,h:50,axis:'v',line:100}]});__test.updateCombatFeedback(true);return{before,inside:document.querySelector('#cooldownFill1').style.transform,text:document.querySelector('#cooldownText1').textContent};}""")
- check(ghost['text']=='IN WALL · MOVE TO FIRE','Ghost wall block keeps IN WALL text')
+ check(ghost['text']=='IN WALL, MOVE TO FIRE','Ghost wall block keeps IN WALL text')
  check(ghost['before']==ghost['inside'] and ghost['inside']!='scaleX(0)','Ghost wall crossing does not gray/empty cooldown indicator')
 
  durations=p.evaluate("""()=>{const kinds=['shield','speed','scope','ghost','rapid','scatter','homing','grenade','laser','cannon'],t=__test.tanks[0],out={};for(const k of kinds){Object.assign(t,{shield:0,shieldCharges:0,speedTime:0,speedStacks:0,scopeTime:0,ghostTime:0,power:null,powerTime:0,charges:0,cooldown:0,cooldownTotal:0});__test.grantPower(t,k);out[k]=k==='shield'?t.shield:k==='speed'?t.speedTime:k==='scope'?t.scopeTime:k==='ghost'?t.ghostTime:t.powerTime;}return out;}""")

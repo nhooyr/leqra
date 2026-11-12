@@ -2,6 +2,9 @@
 const VERSION = 'v4.49.30';
 const BUILD = self.LEQRA_BUILD || VERSION;
 const CACHE = 'leqra-app-' + BUILD;
+let resetting=false;
+const writes=new Set();
+function trackWrite(promise){writes.add(promise);promise.then(()=>writes.delete(promise),()=>writes.delete(promise));return promise;}
 const BASE = '/assets/' + VERSION + '/';
 const SHELL = [
   BASE + 'theme.js',
@@ -25,6 +28,7 @@ const SHELL = [
 ];
 
 async function installShell() {
+  if(resetting)return;
   const response = await fetch('/', {cache: 'no-store'});
   if (!response.ok) throw new Error('The leqra shell is unavailable.');
   const html = await response.clone().text();
@@ -47,28 +51,38 @@ async function installShell() {
     return [path, asset];
   }));
   const existed = (await caches.keys()).includes(CACHE);
-  try {
-    const cache = await caches.open(CACHE);
-    await Promise.all(files.map(([path, asset]) => cache.put(path, asset)));
-    await cache.put('/', response);
-  } catch (error) {
-    if (!existed) await caches.delete(CACHE).catch(() => {});
-    throw error;
-  }
-  await self.skipWaiting();
+  if(resetting)return;
+  await trackWrite((async()=>{
+    try {
+      const cache = await caches.open(CACHE);
+      if(resetting)return;
+      await Promise.all(files.map(([path, asset]) => cache.put(path, asset)));
+      if(!resetting)await cache.put('/', response);
+    } catch (error) {
+      if (!existed) await caches.delete(CACHE).catch(() => {});
+      throw error;
+    }
+  })());
+  if(!resetting)await self.skipWaiting();
 }
 
 self.addEventListener('install', event => event.waitUntil(installShell()));
 
 self.addEventListener('activate', event => {
+  if(resetting)return;
   event.waitUntil(caches.keys().then(keys => Promise.all(
     // Keep two prior bundles available to pages that defer an update mid-match.
     keys.filter(key => key.startsWith('leqra-app-') && key !== CACHE).slice(0, -2).map(key => caches.delete(key))
-  )).then(() => self.clients.claim()));
+  )).then(() => {if(!resetting)return self.clients.claim();}));
 });
 
 self.addEventListener('message', event => {
   if (event.data?.type === 'LEQRA_BUILD_INFO') event.ports?.[0]?.postMessage({build: BUILD, version: VERSION});
+  if(event.data?.type==='LEQRA_RESET'){
+    resetting=true;
+    const stopped=Promise.allSettled([...writes]).then(()=>event.ports?.[0]?.postMessage({type:'LEQRA_RESET_DONE'}));
+    event.waitUntil?.(stopped);
+  }
 });
 
 async function appNavigation(request) {
@@ -95,6 +109,7 @@ async function appNavigation(request) {
 }
 
 self.addEventListener('fetch', event => {
+  if(resetting)return;
   const request = event.request;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
@@ -105,12 +120,12 @@ self.addEventListener('fetch', event => {
 
   let cacheWrite = Promise.resolve();
   const storeResponse = (key, response) => {
-    if (response.ok) {
+    if (response.ok&&!resetting) {
       // Clone before returning the response: the browser may consume its body
       // while opening Cache Storage is still pending.
       const copy = response.clone();
-      cacheWrite = Promise.resolve().then(() => caches.open(CACHE))
-        .then(cache => cache.put(key, copy)).catch(() => {});
+      cacheWrite = trackWrite(Promise.resolve().then(() => resetting?null:caches.open(CACHE))
+        .then(cache => {if(cache&&!resetting)return cache.put(key, copy);}).catch(() => {}));
     }
     return response;
   };

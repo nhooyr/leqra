@@ -32,12 +32,12 @@ type QueueDefinition struct {
 }
 
 var queueDefinitions = []QueueDefinition{
-	{"elimination-1", "Elimination · 1v1", "elimination", 1, 2, "compact", 7, 7, 5, 75},
-	{"elimination-2", "Elimination · 2v2", "elimination", 2, 4, "large", 12, 10, 5, 75},
-	{"elimination-3", "Elimination · 3v3", "elimination", 3, 6, "huge", 14, 12, 5, 75},
-	{"ctf-3", "Capture the Flag · 3v3", "ctf", 3, 6, "huge", 14, 12, 3, 180},
-	{"koth-3", "King of the Hill · 3v3", "koth", 3, 6, "huge", 14, 12, 30, 180},
-	{"ffa-8", "Free-for-all · 8 players", "elimination", 0, 8, "giant", 16, 14, 5, 120},
+	{"elimination-1", "Elimination, 1v1", "elimination", 1, 2, "compact", 7, 7, 5, 75},
+	{"elimination-2", "Elimination, 2v2", "elimination", 2, 4, "large", 12, 10, 5, 75},
+	{"elimination-3", "Elimination, 3v3", "elimination", 3, 6, "huge", 14, 12, 5, 75},
+	{"ctf-3", "Capture the Flag, 3v3", "ctf", 3, 6, "huge", 14, 12, 3, 180},
+	{"koth-3", "King of the Hill, 3v3", "koth", 3, 6, "huge", 14, 12, 30, 180},
+	{"ffa-8", "Free-for-all, 8 players", "elimination", 0, 8, "giant", 16, 14, 5, 120},
 }
 
 func queueDefinition(key string) (QueueDefinition, bool) {
@@ -220,7 +220,7 @@ func (h *Hub) joinQueue(c *Client, m clientMessage, now time.Time) {
 		return
 	}
 	if len(pilots) > 3 {
-		fail("party_too_large", "Queue parties can contain at most three real players, including local Player 2. Spectate or remove extra players first.")
+		fail("party_too_large", "Queue parties can contain at most three real players, including local co-pilots. Spectate or remove extra players first.")
 		return
 	}
 	if def.TeamSize == 0 && len(pilots) != 1 {

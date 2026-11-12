@@ -9,24 +9,48 @@ function boot({online=false,survival=false,ffa=false}={}){
  const players=[{id:0,name:'PILOT',kind:'human',team:ffa?0:1,color:'#00ff00'},{id:1,name:'RUST',kind:'bot',difficulty:'hard',team:ffa?0:1,color:'#ff0000'}];
  const elements=new Map(),$=id=>{if(!elements.has(id))elements.set(id,{writes:0,html:'',set innerHTML(v){this.html=v;this.writes++;},get innerHTML(){return this.html;}});return elements.get(id);};
  const s={mode:online?'online':'room',phase:'playing',difficulty:'normal',COLORS:['#00ff00','#ff0000'],online:{snapshots:[]},tanks:players.map(p=>({...p,human:p.kind!=='bot',alive:true})),scores:[2,2,0,0,0,0,0,0],lastRoster:'',currentRules:()=>rules,infinityPlayMode:()=>s.publicInfinity?'online':'',roomData:()=>({rules,players}),teamName:t=>rules.teamNames[t-1],teamColor:(id,t)=>t===1?'#00ff00':'#ff0000',teamKey:p=>p.team?'team'+p.team:'pilot'+p.id,localPlayerID:()=>0,paintColor:c=>c,tankSvg:()=>'<svg></svg>',$,document:{body:{classList:{toggle(k,v){s[k]=v;}}}}};
- vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],s);
+ vm.createContext(s);require('./identity_fixture.cjs')(s,source);vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],s);
  for(const name of ['botLevelName','lineupMember','scoreboardEntries','sidebarRules','renderLineup'])vm.runInContext(declaration(name),s);
  return {s,$,rules,players};
 }
 function enemy(id,difficulty,{alive=true,boss=false,name='RAIDER '+id}={}){return{id,name,difficulty,alive,team:2,color:'#ff0000',bot:true,survivalEnemy:true,survivalBoss:boss,spawnSerial:1};}
 function memberLines(html){return Array.from(html.matchAll(/<div class="lineup-member [^"]*">(.*?)<\/div>/g),m=>m[1]);}
+test('only the device primary and owned co-pilot are bold in FFA and team lineups',()=>{
+ for(const ffa of [false,true]){
+  const {s,$,players}=boot({online:true,ffa});
+  players.push({id:2,name:'OWN <WING>',kind:'local',owner:0,team:ffa?0:1,color:'#123456'},
+   {id:3,name:'FRIEND',kind:'human',team:ffa?0:1,color:'#654321'},
+   {id:4,name:'REMOTE WING',kind:'local',owner:3,team:ffa?0:1,color:'#abcdef'});
+  players[1].owner=0;const original=JSON.stringify(players);s.renderLineup();
+  const html=$('roster').innerHTML,entries=s.scoreboardEntries(),rows=ffa?entries:entries[0].members;
+  assert.deepEqual(Array.from(rows,p=>[p.id,p.local]),[[0,true],[1,false],[2,true],[3,false],[4,false]]);
+  const names=Array.from(html.matchAll(ffa?/<div class="player-name([^"]*)">([^<]*)<\/div>/g:/<div class="lineup-member([^"]*)">([^<]*)<\/div>/g),match=>({local:match[1].includes('local-pilot'),name:match[2]}));
+  assert.deepEqual(names.map(p=>p.local),[true,false,true,false,false]);
+  assert.equal(names[2].name,'OWN &lt;WING&gt; (P2)');assert.equal(names[4].name,'REMOTE WING (P2)');
+  assert.equal(JSON.stringify(players),original,'ownership styling never annotates raw room members');
+  const writes=$('roster').writes;s.localPlayerID=()=>3;s.renderLineup();
+  assert.equal($('roster').writes,writes+1,'identity ownership participates in the presentation cache');
+  const updated=Array.from($('roster').innerHTML.matchAll(ffa?/<div class="player-name([^"]*)">/g:/<div class="lineup-member([^"]*)">/g),match=>match[1].includes('local-pilot'));
+  assert.deepEqual(updated,[false,false,false,true,true]);
+ }
+ const css=readFileSync(assetPath('style.css'),'utf8');
+ assert.match(css,/\.roster \.player-name:not\(\.lineup-group-name\)\{font-weight:400\}/);
+ assert.match(css,/\.roster \.lineup-member\{[^}]*font-weight:400\}/);
+ assert.match(css,/\.roster \.player-name\.local-pilot,\.roster \.lineup-member\.local-pilot\{font-weight:700\}/);
+ assert.match(css,/\.callsign-label \.pilot-identity\{font-weight:700\}/,'callsign editor identity labels are bold without changing all identity spans');
+});
 test('team lineup renders every tank on its own escaped line with bot strength',()=>{
  const {s,$,players}=boot();players[0].name='<PILOT & CO>';players[1].name='RUST + "VAPOR"';
  s.renderLineup();const html=$('roster').innerHTML,lines=memberLines(html);
- assert.deepEqual(lines,['&lt;PILOT &amp; CO&gt;','RUST + &quot;VAPOR&quot; (Fierce bot)']);
- assert.equal((html.match(/class="player-name"/g)||[]).length,1);assert.match(html,/>SQUAD<\/div>/);
+ assert.deepEqual(lines,['&lt;PILOT &amp; CO&gt; (P1)','RUST + &quot;VAPOR&quot; (Fierce bot)']);
+ assert.equal((html.match(/class="player-name lineup-group-name"/g)||[]).length,1);assert.match(html,/>SQUAD<\/div>/);
  assert.match(html,/<div class="score">2<\/div>/);assert.equal((html.match(/<i class="on">/g)||[]).length,2);
  assert.doesNotMatch(html,/<PILOT|<script|&gt; \+ RUST/);
 });
 test('free-for-all preserves one individual heading, strength label, and score per tank',()=>{
  const {s,$}=boot({ffa:true});s.renderLineup();const html=$('roster').innerHTML;
- assert.equal(memberLines(html).length,0);assert.match(html,/>PILOT<\/div>/);assert.match(html,/>RUST<\/div>/);
- assert.match(html,/>YOU<\/div>/);assert.match(html,/>FIERCE BOT<\/div>/);
+ assert.equal(memberLines(html).length,0);assert.match(html,/>PILOT \(P1\)<\/div>/);assert.match(html,/>RUST<\/div>/);
+ assert.match(html,/>PILOT<\/div>/);assert.match(html,/>FIERCE BOT<\/div>/);
  assert.equal((html.match(/class="score"/g)||[]).length,2);assert.equal(($('miniScores').innerHTML.match(/class="mini-score"/g)||[]).length,2);
 });
 test('local Survival lists current enemies with all strength levels and marks a fallen boss',()=>{
@@ -75,7 +99,7 @@ test('solo practice keeps its bot squad score and gives each bot a separate stre
  const {s,$}=boot();s.mode='solo';s.tanks.push({...enemy(2,'easy',{alive:false}),human:false,survivalEnemy:false});
  s.renderLineup();const lines=memberLines($('roster').innerHTML);
  assert.equal(lines.length,2);assert.match(lines[0],/RUST \(Fierce bot\)/);assert.match(lines[1],/RAIDER 2 \(Chill bot\).*Eliminated/);
- assert.match($('miniScores').innerHTML,/YOU 2/);assert.match($('miniScores').innerHTML,/BOTS 2/);
+ assert.match($('miniScores').innerHTML,/PILOT \(P1\) 2/);assert.match($('miniScores').innerHTML,/BOT SQUAD 2/);
 });
 
 
@@ -101,7 +125,7 @@ test('public Infinity lineup excludes configured bots and presents room friends 
  players.push({id:2,name:'FRIEND',kind:'human',team:1,color:'#00ff00'});
  s.renderLineup();const html=$('roster').innerHTML;
  assert.doesNotMatch(html,/RUST|SQUAD|score-pips/);
- assert.match(html,/>PILOT<\/div>/);assert.match(html,/>FRIEND<\/div>/);
+ assert.match(html,/>PILOT \(P1\)<\/div>/);assert.match(html,/>FRIEND \(P1\)<\/div>/);
  assert.equal((html.match(/class="roster-row /g)||[]).length,2);
  assert.equal(rules.teamMode,'teams');assert.equal(players[0].team,1);
 });

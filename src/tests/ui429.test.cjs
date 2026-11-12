@@ -26,7 +26,7 @@ test('fullscreen keeps text entry, native select typeahead, remap capture and sy
 test('F works while a non-text menu control is focused and does not repeat when held',()=>{
  for(const type of ['checkbox','radio','range','button','submit','reset']){const s=boot({dialog:'controlsDialog'});s.press({target:{tagName:'INPUT',type}});assert.equal(s.fullscreen,1,type);s.press({repeat:true});assert.equal(s.fullscreen,1,type);}
 });
-test('allowing menu fullscreen does not leak firing, pause or sound shortcuts into dialogs',()=>{
- for(const dialog of ['rulesDialog','presetsDialog','controlsDialog','queueDialog']){const s=boot({dialog,phase:'playing'});for(const code of ['KeyQ','KeyP','Escape','KeyM'])s.press({code});assert.equal(s.keys.size,0);assert.equal(s.firePresses.size,0);assert.equal(s.pause,0);assert.equal(s.sound,0);}
+test('menu fullscreen and mute shortcuts leave firing and pause blocked in dialogs',()=>{
+ for(const dialog of ['rulesDialog','presetsDialog','controlsDialog','queueDialog']){const s=boot({dialog,phase:'playing'});for(const code of ['KeyQ','KeyP','Escape'])s.press({code});assert.equal(s.keys.size,0);assert.equal(s.firePresses.size,0);assert.equal(s.pause,0);assert.equal(s.sound,0);const mute=s.press({code:'KeyM'});assert.equal(mute.prevented,true);assert.equal(s.sound,1);s.press({code:'KeyM',repeat:true});assert.equal(s.sound,1);}
  const s=boot({phase:'playing'});s.press({code:'KeyQ',target:{tagName:'INPUT',type:'checkbox'}});assert.equal(s.keys.size,0);s.press({code:'KeyQ'});assert.equal(s.keys.has('KeyQ'),true);assert.equal(s.firePresses.has(0),true);s.press();assert.equal(s.fullscreen,1);
 });

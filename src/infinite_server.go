@@ -68,6 +68,8 @@ type infiniteMessage struct {
 	Generation      uint64 `json:"generation"`
 	Local           bool   `json:"local"`
 	Paused          bool   `json:"paused"`
+	Seat            int    `json:"seat"`
+	RequestID       uint64 `json:"requestId"`
 	Input
 }
 
@@ -123,6 +125,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 	window := time.Now()
 	var lastTouch time.Time
 	var count [2]int
+	var renames int
 	for {
 		data, err = c.ws.readMessage()
 		if err != nil {
@@ -132,6 +135,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 		now := time.Now()
 		if now.Sub(window) >= time.Second {
 			window, count = now, [2]int{}
+			renames = 0
 		}
 		var msg infiniteMessage
 		if json.Unmarshal(data, &msg) != nil {
@@ -142,6 +146,15 @@ func (s *infiniteServer) readLoop(c *Client) {
 			s.remove(c)
 			return
 		}
+		if msg.Type == "rename" {
+			renames++
+			if renames > 8 {
+				c.ws.writeClose(1008, "Callsign change rate exceeded")
+				return
+			}
+			s.renamePilot(c, msg, now)
+			continue
+		}
 		if msg.Type != "input" {
 			c.ws.writeClose(1008, "Unsupported Infinity message")
 			return
@@ -149,7 +162,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 		pilot, seat := connection.pilot, 0
 		if msg.Local {
 			if connection.local == nil {
-				c.ws.writeClose(1008, "This connection has no local Player 2")
+				c.ws.writeClose(1008, "This connection has no local co-pilot")
 				return
 			}
 			pilot, seat = connection.local, 1

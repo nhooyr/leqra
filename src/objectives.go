@@ -95,7 +95,7 @@ func (g *Game) dropFlags(id int) {
 		f.Carrier = -1
 		f.Home = false
 		f.ReturnIn = 12
-		g.emit("objective", nil, id, "Flag dropped · touch to return")
+		g.emit("objective", nil, id, "Flag dropped, touch to return")
 	}
 }
 
@@ -188,6 +188,7 @@ func (g *Game) respawnTank(t *Tank) {
 	t.VY = 0
 	t.Alive = true
 	t.KilledBy = ""
+	t.KilledByColor = ""
 	t.RespawnTime = 0
 	t.SpawnSerial++
 	t.Angle = -math.Pi / 2
@@ -369,7 +370,7 @@ func (g *Game) stepObjectives(dt float64, players [maxTanks]*Player) {
 				g.recordCapture(t)
 				resetFlag(carried)
 				g.addObjectivePoint(t.ID)
-				g.emit("objective", t, t.ID, "FLAG CAPTURED · +1")
+				g.emit("objective", t, t.ID, "FLAG CAPTURED, +1")
 				if g.Phase != "playing" {
 					return
 				}
@@ -518,9 +519,9 @@ func (g *Game) beginSuddenDeath(players [maxTanks]*Player, replay bool) {
 		players[id].Input = Input{}
 		players[id].FirePending = false
 	}
-	text := "SUDDEN DEATH · final lives · no respawns"
+	text := "SUDDEN DEATH, final lives, no respawns"
 	if replay {
-		text = "MUTUAL DESTRUCTION · sudden-death rematch"
+		text = "MUTUAL DESTRUCTION, sudden-death rematch"
 	}
 	g.emit("suddenDeath", nil, -1, text)
 	g.stepSuddenDeath(players)

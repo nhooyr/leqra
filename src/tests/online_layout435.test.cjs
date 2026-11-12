@@ -4,15 +4,15 @@ const {readFileSync}=require('node:fs'),vm=require('node:vm');
 const {assetPath}=require('./web_assets.cjs');
 const source=readFileSync(process.env.LEQRA_LAYOUT_SOURCE||assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
-function element(){const classes=new Set(),styles=new Map();return{hidden:false,textContent:'',innerHTML:'',dataset:{},attributes:{},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,v)},setAttribute(k,v){this.attributes[k]=v;},classList:{toggle(k,v){if(v)classes.add(k);else classes.delete(k);},contains:k=>classes.has(k)}};}
+function element(){const classes=new Set(),styles=new Map();let text='';return{hidden:false,children:[],get textContent(){return text+this.children.map(child=>child.textContent).join('');},set textContent(value){text=String(value);this.children=[];},replaceChildren(...children){text='';this.children=children;},innerHTML:'',dataset:{},attributes:{},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,v)},setAttribute(k,v){this.attributes[k]=v;},classList:{toggle(k,v){if(v)classes.add(k);else classes.delete(k);},contains:k=>classes.has(k)}};}
 function boot({p2=false,spectating=false}={}){
  const nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);},body=element(),noop=()=>{};
  const primary={id:0,name:'PILOT',kind:'human',color:'#f80',team:0},secondary={id:3,name:'LOCAL P2',kind:'local',owner:0,color:'#08f',team:0};
  const room={players:[...(!spectating?[primary]:[]),...(p2?[secondary]:[])],spectators:spectating?[primary]:[],rules:{mode:'elimination'},phase:'lobby'};
- const s={mode:'online',phase:'onlineLobby',round:1,phaseTime:2.6,goUntil:0,bullets:[],tanks:[],COLORS:['#f80','#08f'],online:{roomData:room,snapshots:[{generation:0,tanks:[],tankMap:new Map()}]},$: $,document:{body},performance:{now:()=>1000},POWER:{shield:{color:'#0ff'}},pilotFeedback:[{},{}],
+ const s={mode:'online',phase:'onlineLobby',round:1,phaseTime:2.6,goUntil:0,bullets:[],tanks:[],COLORS:['#f80','#08f'],online:{roomData:room,snapshots:[{generation:0,tanks:[],tankMap:new Map()}]},$: $,document:{body,createElement:()=>element()},performance:{now:()=>1000},POWER:{shield:{color:'#0ff'}},pilotFeedback:[{},{}],
   roomData:()=>room,localPlayerID:()=>0,secondaryID:()=>room.players.find(p=>p.kind==='local')?.id,secondaryMember:()=>[...room.players,...room.spectators].find(p=>p.kind==='local'),paintColor:c=>c,powerCapacity:()=>5,activeAmmo:()=>0,ownedGrenades:()=>[],shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,
   syncPauseButton:noop,renderLineup:noop,survivalBreak:()=>false,survivalMode:()=>false,survivalBossPreview:()=>null,suddenDeath:()=>false,modeInstructions:()=>'',getCountdownTip:()=> 'Get ready.',tone:noop,onlineHUD:noop,updateObjectiveHUD:noop,updateCombatFeedback:noop,syncSpectatingHUD:noop};
- vm.createContext(s);for(const name of ['setText','setStyle','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','pilotLoadoutTank','renderPilotLoadout','renderDeathNotice','updateHUD'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);require('./identity_fixture.cjs')(s,source);for(const name of ['setText','setStyle','pilotProjectileState','applyOnlineTankEffects','liveFeedbackTank','pilotLoadoutTank','renderPilotLoadout','renderDeathNotice','updateHUD'])vm.runInContext(declaration(name),s);
  function snapshot(phase,bodies){s.phase=phase;room.phase=phase==='onlineLobby'?'lobby':phase;s.online.snapshots=[{generation:1,received:1000,tanks:bodies,tankMap:new Map(bodies.map(t=>[t.id,t]))}];s.updateHUD(true);}
  return{s,$,room,primary,secondary,body,snapshot};
 }
@@ -24,23 +24,41 @@ test('assigned online ammo panels retain their layout through empty lobby, GO, l
   b.snapshot('countdown',bodies);assert.deepEqual(signature(),lobby,'GO does not reveal a new-sized ammo area');
   b.snapshot('playing',bodies.map(t=>({...t,power:'laser',powerTime:9,charges:2})));assert.deepEqual(signature(),lobby);
   s.tanks=bodies;b.snapshot('onlineLobby',[]);assert.deepEqual(signature(),lobby,'ending the match does not collapse assigned panels');
-  assert.equal($('weaponLabel').textContent,'TANK DOWN','old rendered equipment cannot leak into the empty lobby snapshot');
+  assert.equal($('weaponLabel').textContent,'','old rendered equipment cannot leak into the empty lobby snapshot');
  }
 });
 test('online HUD uses the arriving authoritative tank before rendered bodies catch up',()=>{
  const b=boot({p2:true}),{s,$,primary,secondary}=b;s.tanks=[{...primary,alive:false,power:null},{...secondary,alive:false,power:null}];
  s.POWER.laser={short:'LASER',color:'#f0f'};b.snapshot('countdown',[{...primary,alive:true,power:'laser',powerTime:10,charges:3},{...secondary,alive:true,power:null}]);
- assert.equal($('weaponLabel').textContent,'LASER ×3 · 10s');assert.equal($('weaponLabel2').textContent,'STANDARD');assert.equal($('pilotLoadout2').hidden,false);
+ assert.equal($('weaponLabel').textContent,'LASER ×3, 10s');assert.equal($('weaponLabel2').textContent,'STANDARD');assert.equal($('pilotLoadout2').hidden,false);
 });
 test('online fixed-maze notices show each killed pilot their killer until respawn',()=>{
  const b=boot({p2:true}),{$,primary,secondary}=b,p1=$('deathNotice1'),p2=$('deathNotice2');
  const first={...primary,alive:true,power:null},second={...secondary,alive:true,power:null};
- b.snapshot('playing',[first,{...second,alive:false,killedBy:'RUST <2>'}]);
- assert.equal(p1.hidden,true);assert.equal(p2.hidden,false);assert.equal(p2.textContent,'P2 · Killed by RUST <2>');
- b.snapshot('playing',[{...first,alive:false,killedBy:'VAPOR'},second]);
- assert.equal(p1.textContent,'P1 · Killed by VAPOR');assert.equal(p2.hidden,true);
+ b.snapshot('playing',[first,{...second,alive:false,killedBy:'RUST <2>',killedByColor:'#ff83bd'}]);
+ assert.equal(p1.hidden,true);assert.equal(p2.hidden,false);assert.equal(p2.textContent,'Killed by RUST <2>');
+ assert.equal(p2.children[1].style.color,'#ff83bd');
+ b.snapshot('playing',[{...first,alive:false,killedBy:'VAPOR',killedByColor:'#75f0cb'},second]);
+ assert.equal(p1.textContent,'Killed by VAPOR');assert.equal(p2.hidden,true);
+ assert.equal(p1.children[1].style.color,'#75f0cb');
  b.snapshot('onlineLobby',[]);
  assert.equal(p1.hidden,true);assert.equal(p2.hidden,true);
+});
+test('local cockpit names keep tank colors and fresh readiness never gains a duplicate death label',()=>{
+ const b=boot({p2:true}),{s,$,primary,secondary}=b;
+ primary.name='<AQ & Snow>';secondary.name='VAPOR';
+ const alive={...primary,alive:true,power:null},second={...secondary,alive:true,power:null};
+ s.controlledTank=()=>({...primary,alive:false,power:'rapid',shield:5});s.online.connected=true;
+ vm.runInContext(declaration('onlineHUD'),s);
+ b.snapshot('playing',[alive,second]);
+ assert.equal($('loadoutName1').textContent,'<AQ & Snow> (P1)');assert.equal($('loadoutName1').style.color,primary.color);
+ assert.equal($('loadoutName2').textContent,'VAPOR (P2)');assert.equal($('loadoutName2').style.color,secondary.color);
+ assert.equal($('weaponLabel').textContent,'STANDARD');assert.equal($('weaponLabel').hidden,false);
+ b.snapshot('playing',[{...alive,alive:false,killedBy:'RUST'},{...second,alive:false,killedBy:'RUST'}]);
+ for(const suffix of ['', '2']){assert.equal($('weaponLabel'+suffix).textContent,'');assert.equal($('weaponLabel'+suffix).hidden,true);}
+ primary.name='Renamed';b.snapshot('playing',[alive,second]);
+ assert.equal($('loadoutName1').textContent,'Renamed (P1)');assert.equal($('weaponLabel').hidden,false);
+ assert.equal(alive.name,'<AQ & Snow>','presentation labels never alter authoritative names');
 });
 test('spectator and local P2 assignments define HUD presence without inventing controlled tanks',()=>{
  const b=boot({p2:true,spectating:true}),{s,$}=b;s.updateHUD(true);assert.equal($('pilotLoadout1').hidden,true);assert.equal($('pilotLoadout2').hidden,false);assert.equal(b.body.classList.contains('two-local-pilots'),true);

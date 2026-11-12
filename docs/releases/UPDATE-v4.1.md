@@ -58,7 +58,7 @@ the maze, including the small-phone layout.
 Ghost does not grant invulnerability, enlarge the arena or remove tank-to-tank
 collisions. The **outer boundary remains solid**, and ordinary weapons still obey
 their own wall rules. If your tank's centre is inside a wall, ordinary firing is
-briefly blocked with **IN WALL · MOVE TO FIRE**, without consuming ammunition or
+briefly blocked with **IN WALL, MOVE TO FIRE**, without consuming ammunition or
 charges. Move into clear space to fire normally. Cannon can still fire through
 walls, and an already-launched grenade can still be remotely detonated.
 

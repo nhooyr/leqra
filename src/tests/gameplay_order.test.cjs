@@ -6,7 +6,7 @@ function localCombat(tick,fire,wallList=[]){
  const s=boot({cols:7,rows:7,wallList}),noop=()=>{};
  Object.assign(s,{localTick:tick,time:0,round:1,bulletId:0,reduceMotion:true,mode:'room',shake:0,burst:noop,addRing:noop,shieldSound:noop,ricochetSound:noop,toast:noop,boom:noop,updateHUD:noop,shotSound:noop,addLog:noop,impactEffect:noop,recordLocalDeath:noop,
   objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,roundClock:75,phaseTime:0,fxTime:0,particles:[],rings:[],toastTime:0,uiClock:1,spawnClock:5,updateTraces:noop,liveLocalStats:()=>false,advanceGhost:noop,
-  heldAction:(_,action)=>fire&&action==='fire',primaryFireHeld:()=>fire,firePresses:new Set(),mouseAimHeading:()=>null,stick:{mag:0},detonateOwned:()=>false,finishRound:winner=>s.winner=winner,
+  heldAction:(_,action)=>fire&&action==='fire',primaryFireHeld:()=>fire,firePresses:new Set(),mouseAim:{firePressed:false},mouseAimHeading:()=>null,stick:{mag:0},detonateOwned:()=>false,finishRound:winner=>s.winner=winner,
   grantPower:t=>s.claimant=t.id,pickupSound:noop,localPilotIndex:()=>-1});
  s.tanks=[tank(0,100,100,{human:true,localIndex:0,track:0}),tank(6,140,100,{human:true,angle:Math.PI,localIndex:1,track:0})];
  for(const name of ['powerCapacity','activeAmmo','fire','hurt','updateBullets','compactNotDead','compactLife','projectileTankImpact','weaponControl','humanControl','wallBetweenCenters','update'])vm.runInContext(declaration(name),s);

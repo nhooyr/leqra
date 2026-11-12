@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -31,11 +32,15 @@ func TestFixedMazeKillerInDeathSnapshot(t *testing.T) {
 			g := battle(2)
 			attacker, target := g.Tanks[0], g.Tanks[1]
 			attacker.Name = "Rüst ★"
+			attacker.Color = tankColors[5]
+			attacker.Bot = tc.name == "grenade"
 			tc.kill(g, attacker, target)
 			if target.Alive {
 				t.Fatal("attack did not destroy the target")
 			}
 			// A snapshot still has the callsign when the attacker has left.
+			killerName, killerColor := attacker.Name, attacker.Color
+			attacker.Name, attacker.Color = "LATER NAME", tankColors[2]
 			room, hub := &Room{Game: g}, &Hub{}
 			room.clearCombatSeat(attacker.ID)
 			wire := func() map[string]any {
@@ -43,6 +48,10 @@ func TestFixedMazeKillerInDeathSnapshot(t *testing.T) {
 				packet, ok := encodePacket(hub.stateWire(room))
 				if !ok {
 					t.Fatal("could not encode state")
+				}
+				reference, _ := encodePacket(hub.stateMessage(room))
+				if !bytes.Equal(packet, reference) {
+					t.Fatal("typed and reference snapshots differ for death metadata")
 				}
 				var state struct {
 					Tanks []map[string]any `json:"tanks"`
@@ -55,8 +64,11 @@ func TestFixedMazeKillerInDeathSnapshot(t *testing.T) {
 				}
 				return state.Tanks[0]
 			}
-			if got := wire()["killedBy"]; got != attacker.Name {
-				t.Fatalf("killedBy = %v, want %q", got, attacker.Name)
+			if got := wire()["killedBy"]; got != killerName {
+				t.Fatalf("killedBy = %v, want %q", got, killerName)
+			}
+			if got := wire()["killedByColor"]; got != killerColor {
+				t.Fatalf("killedByColor = %v, want %q", got, killerColor)
 			}
 			g.respawnTank(target)
 			if !target.Alive {
@@ -64,6 +76,9 @@ func TestFixedMazeKillerInDeathSnapshot(t *testing.T) {
 			}
 			if got, found := wire()["killedBy"]; found {
 				t.Fatalf("respawn retained killedBy = %v", got)
+			}
+			if got, found := wire()["killedByColor"]; found {
+				t.Fatalf("respawn retained killedByColor = %v", got)
 			}
 		})
 	}

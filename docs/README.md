@@ -2,12 +2,13 @@
 
 ## Controls
 
-- **Player 1 on desktop** uses the mouse to aim and left-clicks or holds to fire. W/S drive forward and back. A/D steer and switch back to keyboard aiming until the pointer moves again. Q/C also fire.
-- **Player 2** uses the arrow keys and Space/Enter. These keys also control Player 1 when Player 2 is inactive.
+- **Primary tank (P1)** uses W/S to drive forward and back, A/D to steer, and Q/C to fire.
+- **Second local tank (P2)** uses the arrow keys and Space/Enter. These keys also control the primary tank when the second tank is inactive.
 - **Touch** uses the joystick to drive and steer, and Fire to shoot. Push the stick further for a faster wide turn. Press Fire again to detonate an active grenade.
 - **P or Esc** opens the in-game menu. **M** toggles sound and **F** toggles fullscreen.
+- **Mouse** aims the primary tank; left-click or hold to fire. A/D switch back to keyboard aiming until the pointer moves again. Mouse Aim and Mouse Fire have separate checkboxes in Controls.
 
-Open **Room settings → Controls** to remap keys, adjust audio, or replay the quick tour.
+Open **Controls**, below **Players and bots**, to remap keys, toggle mouse controls, adjust audio, or replay the quick tour. Callsign fields are above the settings sections and are also available in pause menus, including Infinity.
 
 ## Rooms
 
@@ -43,8 +44,10 @@ Run `./dev.sh` or `go run ./src` from the repository root. The server uses port 
 
 After editing `version` in `src/main.go`, run `./scripts/gen-version.sh` to move the browser assets and synchronize release references, then rebuild. Asset generators use `./scripts/gen-icons.sh` and `./scripts/gen-showcase.sh`.
 
+All shell scripts in `scripts/` can be called by absolute path or through `PATH` from any directory. Relative output arguments use your current directory.
+
 The server allows up to 32,768 rooms by default. Use `MAX_ROOMS` or `-max-rooms` to set a lower limit.
 
 The authoritative simulation and transport live in `src/`. The browser entry point is `src/web/index.html`, with assets under `src/web/assets/v<version>/`. The Go binary embeds the entry point and assets and serves the same versioned asset URLs.
 
-[Test commands](TESTING.md) · [WebSocket protocol](PROTOCOL.md) · [Release notes](releases/) · [Changelog](../CHANGELOG.md)
+[Test commands](TESTING.md), [WebSocket protocol](PROTOCOL.md), [Release notes](releases/), [Changelog](../CHANGELOG.md)

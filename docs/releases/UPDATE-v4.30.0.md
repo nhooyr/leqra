@@ -4,7 +4,7 @@
 
 The mode is now named **Survival** throughout the home selector, Rules, Field Manual, built-in preset, result screens and validation messages. The internal `survival` mode identifier is unchanged, so existing room settings and saved presets still work. User-named saved presets retain their names.
 
-Before a boss wave, the existing four-second intermission shows **NEXT: WAVE 5 · GODLIKE BOSS** (or the upcoming boss wave number) and the boss's starting equipment. The preview reflects enabled Shield and Speed boosts and the selected Homing/Cannon/Laser weapon. Disabled pickups do not appear as boss equipment. The countdown continues normally, and the preview disappears when the wave begins.
+Before a boss wave, the existing four-second intermission shows **NEXT: WAVE 5, GODLIKE BOSS** (or the upcoming boss wave number) and the boss's starting equipment. The preview reflects enabled Shield and Speed boosts and the selected Homing/Cannon/Laser weapon. Disabled pickups do not appear as boss equipment. The countdown continues normally, and the preview disappears when the wave begins.
 
 ## THE LINEUP
 

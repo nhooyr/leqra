@@ -261,7 +261,7 @@ func cleanCallsign(name string) string {
 func cleanName(name string) string {
 	s := cleanCallsign(name)
 	if s == "" {
-		s = "PILOT"
+		s = "Player 1"
 	}
 	return s
 }

@@ -346,6 +346,7 @@ func (a *App) handler() http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]string{"version": version, "build": build})
 	})
 	mux.HandleFunc("/ws", a.socket)
+	mux.HandleFunc("/api/infinity", a.infinityStatus)
 	mux.HandleFunc("/ws/infinite", a.infiniteSocket)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {

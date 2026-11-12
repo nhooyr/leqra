@@ -24,7 +24,7 @@ participants and related HUD state. Responsive layout changes also resize the ex
 preview instead of generating a different maze.
 
 Changing **Map Size** remains the deliberate lobby regeneration boundary. A new
-**Ultra Wide · 24 × 14** option is accepted by both the browser and authoritative Go
+**Ultra Wide, 24 × 14** option is accepted by both the browser and authoritative Go
 rules engine.
 
 Normal round starts still create a fresh maze as before.
