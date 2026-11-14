@@ -4,6 +4,36 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProjectileFlightPresentationTest {
+    @Test fun publishedShellsNeverRewindToTheMuzzleAndAlwaysDrawTheExactEndpoint() {
+        for (kind in listOf("regular", "rapid", "scatter", "homing", "grenade", "cannon")) {
+            val cache = ProjectileFlightPresentation()
+            val hit = effect(kind)
+            cache.render(listOf(ArenaBullet(id = 1, kind = kind, x = 80.0, y = 42.0)), emptyList(), .075)
+            cache.accept(listOf(hit), .075)
+            assertEquals(80.0, cache.render(emptyList(), listOf(hit), .075).bullets.single().x, 1e-9)
+            assertTrue(cache.render(emptyList(), listOf(hit), .085).bullets.single().x > 80)
+            assertEquals(100.0, cache.render(emptyList(), listOf(hit), .11).bullets.single().x, 1e-9)
+            assertEquals(listOf(hit), cache.render(emptyList(), listOf(hit), .12).effects)
+            cache.reset()
+            cache.accept(listOf(effect(kind, start = 6.0, end = 12.0)), 0.0)
+            val raw = ArenaBullet(id = 1, kind = kind, x = -10.0)
+            assertEquals(listOf(raw), cache.render(listOf(raw), emptyList(), .05).bullets)
+        }
+    }
+
+    @Test fun simultaneousMuzzleReflectionsStillLatchTheFinalContactPoint() {
+        for (observed in listOf(false,true)) for (zeroDuration in listOf(false,true)) {
+            val cache=ProjectileFlightPresentation()
+            val terminal=effect().let { e -> e.copy(flight=e.flight!!.copy(startTick=if(zeroDuration)6.0 else 0.0,
+                points=listOf(ProjectileFlightPoint(0.0,42.0,if(zeroDuration)6.0 else 0.0),ProjectileFlightPoint(80.0,42.0,6.0),ProjectileFlightPoint(100.0,42.0,6.0)))) }
+            if(observed) cache.render(listOf(ArenaBullet(id=1,kind="cannon",x=90.0,y=42.0)),emptyList(),.2)
+            cache.accept(listOf(terminal),.2)
+            val end=cache.render(emptyList(),listOf(terminal),.26)
+            assertEquals(100.0,end.bullets.single().x,0.0)
+            assertTrue(end.effects.isEmpty())
+            assertEquals(listOf(terminal),cache.render(emptyList(),emptyList(),.27).effects)
+        }
+    }
     private fun effect(
         kind: String = "cannon",
         start: Double = 0.0,
@@ -44,9 +74,10 @@ class ProjectileFlightPresentationTest {
             val second = cache.render(emptyList(), listOf(hit), .075)
             assertEquals(75.0, second.bullets.single().x, 1e-9)
             val end = cache.render(emptyList(), emptyList(), .11)
-            assertTrue(end.bullets.isEmpty())
-            assertEquals(listOf(hit), end.effects)
-            assertTrue(cache.render(emptyList(), emptyList(), .12).effects.isEmpty())
+            assertEquals(100.0, end.bullets.single().x, 1e-9)
+            assertTrue(end.effects.isEmpty())
+            assertEquals(listOf(hit), cache.render(emptyList(), emptyList(), .12).effects)
+            assertTrue(cache.render(emptyList(), emptyList(), .13).effects.isEmpty())
         }
     }
 
@@ -72,8 +103,9 @@ class ProjectileFlightPresentationTest {
                     emptyList(),
                     arrival + .06,
                 )
-            assertTrue(finished.bullets.isEmpty())
-            assertEquals(listOf(hit), finished.effects)
+            assertEquals(100.0, finished.bullets.single().x, 1e-9)
+            assertTrue(finished.effects.isEmpty())
+            assertEquals(listOf(hit), cache.render(emptyList(), emptyList(), arrival + .07).effects)
             assertTrue(
                 cache
                     .render(
@@ -99,8 +131,8 @@ class ProjectileFlightPresentationTest {
         cache.reset()
         cache.render(listOf(ArenaBullet(id = 1, kind = "cannon")), emptyList(), 0.0)
         cache.accept(listOf(hit), .4)
-        assertTrue(cache.render(emptyList(), listOf(hit), .4).bullets.isEmpty())
-        assertEquals(listOf(hit), cache.render(emptyList(), listOf(hit), .4).effects)
+        assertEquals(100.0, cache.render(emptyList(), listOf(hit), .4).bullets.single().x, 0.0)
+        assertEquals(listOf(hit), cache.render(emptyList(), listOf(hit), .41).effects)
         cache.reset()
         val invalid =
             hit.copy(

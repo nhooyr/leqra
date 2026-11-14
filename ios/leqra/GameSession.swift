@@ -1334,7 +1334,8 @@ final class GameSession: ObservableObject {
             if publicIdentityActive, publicRecoveryPending || publicScoreResetPending {
                 let recoveredPaused = publicRecoveryPending && paused
                 publicRecoveryPending = false; publicScoreResetPending = false
-                scene.display(snapshot: snapshot, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
+                let visual = timeline?.render(dt: 0, input: GameInput(), now: ProcessInfo.processInfo.systemUptime) { _ in } ?? snapshot
+                scene.display(snapshot: visual, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
                 syncHUD(snapshot)
                 if recoveredPaused { setPaused(true) }
             }
@@ -1534,7 +1535,7 @@ final class GameSession: ObservableObject {
             if timeline.stale { status = "Waiting for server…" }
         }
         guard let snapshot else { return }
-        let finalShot = (snapshot.result != nil || snapshot.phase == "matchOver")
+        let finalShot = (snapshot.result != nil || snapshot.phase == "matchOver" || snapshot.phase == "roundOver")
             && (timeline?.hasPendingProjectileFlights == true || practice?.hasPendingProjectileFlights == true || fixedArena?.hasPendingProjectileFlights == true)
         if presentingFinalShot != finalShot { presentingFinalShot = finalShot }
         if profiling { simulationSeconds = CACurrentMediaTime() - simulationStart }
@@ -1549,14 +1550,17 @@ final class GameSession: ObservableObject {
         }
         lastSnapshot = snapshot
         let audioStart = profiling ? CACurrentMediaTime() : 0
-        audio.consume(snapshot: snapshot, localID: localID, infinity: isInfinity, online: !offline,
+        var audioSnapshot = snapshot
+        if finalShot, snapshot.phase == "roundOver" { audioSnapshot.phase = "playing" }
+        audio.consume(snapshot: audioSnapshot, localID: localID, infinity: isInfinity, online: !offline,
                       secondaryLocalID: secondaryAudioPilotID, gameplayActive: gameplayAudioActive)
         if profiling { audioSeconds = CACurrentMediaTime() - audioStart }
         scene.display(snapshot: snapshot, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
         hudElapsed += dt
         if hudElapsed >= 0.1 {
             let hudStart = profiling ? CACurrentMediaTime() : 0
-            hudElapsed = 0; syncHUD(snapshot)
+            let authority = practice?.snapshot ?? fixedArena?.snapshot ?? timeline?.authoritativeSnapshot ?? snapshot
+            hudElapsed = 0; syncHUD(authority)
             if profiling { hudSeconds = CACurrentMediaTime() - hudStart }
         }
     }

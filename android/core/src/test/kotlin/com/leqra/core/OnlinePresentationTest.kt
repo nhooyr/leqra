@@ -7,6 +7,33 @@ import org.junit.Test
 class OnlinePresentationTest {
     private val tick = 1.0 / 60
 
+    @Test fun pausingRejoiningAndChangingSpectatorViewConsumePendingCombatHistory() {
+        for (boundary in listOf("pause", "follow", "role", "generation", "rejoin")) {
+            val timeline = timeline()
+            val victim = ArenaTank(id = 8, x = 140.0, y = 210.0, spawnSerial = 2)
+            val base = state().copy(tanks = state().tanks + victim, spectating = boundary == "follow", following = 8)
+            timeline.accept(base, 0.0)
+            render(timeline)
+            val effects = listOf(
+                ArenaEffect(id = 1, kind = "impact", tick = 2, flight = ProjectileFlight(7, 1, 0, 0.0, 2.0, listOf(ProjectileFlightPoint(100.0,210.0,0.0), ProjectileFlightPoint(109.0,210.0,2.0)))),
+                ArenaEffect(id = 2, kind = "hit", tick = 2, contact = CombatContact(7,"cannon",2.0,8,2,ContactTankState(140.0,210.0,0.0))))
+            val dead = base.copy(tick = 2, tanks = base.tanks.map { if(it.id == 8) it.copy(hp=0) else it }, effects = effects)
+            timeline.accept(dead, .03)
+            assertTrue(timeline.hasPendingProjectileFlights)
+            when (boundary) {
+                "pause" -> timeline.neutralize()
+                "follow" -> timeline.accept(dead.copy(following=1), .04)
+                "role" -> timeline.accept(dead.copy(spectating=true), .04)
+                "generation" -> timeline.accept(dead.copy(tick=0,generation=2), .04)
+                "rejoin" -> timeline.accept(dead.copy(tick=180), 3.0)
+            }
+            assertFalse("$boundary clears old contact playback", timeline.hasPendingProjectileFlights)
+            val image = render(timeline, now=3.0)
+            assertEquals(0, image.tanks.first { it.id == 8 }.hp)
+            assertTrue("$boundary cannot replay damage FX", image.effects.isEmpty())
+        }
+    }
+
     @Test
     fun projectileIndicesHandleAllIntKeysGrowthAndRemovalWithoutOldEntities() {
         val t = timeline()

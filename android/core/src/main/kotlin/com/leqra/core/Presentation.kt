@@ -208,7 +208,7 @@ class PilotReadout(
             val fallback =
                 when (tank.power) {
                     "cannon",
-                    "laser" -> .85
+                    "laser" -> .85 * 2 / 3
                     "rapid" -> 0.0
                     "scatter" -> .54
                     "homing" -> .72

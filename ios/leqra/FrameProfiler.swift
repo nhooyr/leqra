@@ -15,6 +15,18 @@ final class FrameProfiler {
     private let reflects: Bool
     private let motionMode: String?
     private let firstShotProbe: Bool
+    private let badgeCountProbe: Bool
+    private let hitMatrixProbe: Bool
+    private var hitArena: PracticeArena?
+    private var hitEpisode = -1
+    private var hitAccumulator = 0.0
+    private var hitFired = false
+    private var hitFrame = 0
+    private var endpointFrame: Int?
+    private var hitResolved = false
+    private var hitChecks = 0
+    private var hitFailures: [String] = []
+    private var hitLabel = ""
     private var previousBulletCount = 0
     private var firstShots: [[String: Any]] = []
     private var motionTank: ArenaTank?
@@ -47,6 +59,8 @@ final class FrameProfiler {
         reflects = arguments.contains("--probe-bounces")
         motionMode = argument("--probe-motion")
         firstShotProbe = arguments.contains("--probe-first-shot")
+        badgeCountProbe = arguments.contains("--probe-badge-counts")
+        hitMatrixProbe = arguments.contains("--probe-hit-matrix")
         if motionMode != nil {
             var tank = ArenaTank(id: 1, name: "PROBE PILOT", x: 420, y: 420)
             tank.speedTime = 120; tank.speedStacks = 5
@@ -71,6 +85,7 @@ final class FrameProfiler {
 
     func snapshot(dt: Double) -> ArenaSnapshot {
         elapsed += dt
+        if hitMatrixProbe { return hitSnapshot(dt: dt) }
         let time = elapsed, serial = Int(time * 60) + 200
         if var tank = motionTank {
             motionAccumulator += min(dt, 0.1)
@@ -91,10 +106,18 @@ final class FrameProfiler {
                                  x: centerX + Double(index % 3) * 84, y: centerY + Double(index / 3) * 84,
                                  angle: time * 0.1, colorIndex: index, bot: index != 0)
             tank.power = weapon == "laser" ? "laser" : projectileKind
+            tank.powerTime = 15
             tank.starmanTime = 8; tank.ghostTime = 8; tank.invulnerable = 8
             if buffs.contains("shield") || weapon == "shield" { tank.shield = 15; tank.shieldCharges = 5 }
             if buffs.contains("speed") || weapon == "speed" { tank.speedTime = 15; tank.speedStacks = 5 }
             tank.track = time * 30; tank.charges = 3; tank.machineRounds = 180
+            if badgeCountProbe {
+                let counts = [180, 179, 100, 99, 10, 9]
+                tank.machineRounds = counts[Int(time * 2) % counts.count]
+                tank.starmanTime = 0
+                if index > 0 { tank.power = ["scatter", "homing", "grenade", "laser", "cannon", "speed", "shield"][index - 1] }
+                tank.charges = 1 + Int(time * 2) % 3
+            }
             if index == 0, let pose = motionPose {
                 tank.x = pose.x; tank.y = pose.y; tank.angle = pose.angle; tank.track = pose.track
             }
@@ -155,6 +178,55 @@ final class FrameProfiler {
             }
         }
         return value
+    }
+
+    /// The real offline simulation and presenter drive this opt-in device
+    /// matrix. The report checks contact geometry on the exact snapshot passed
+    /// to SpriteKit, including shields and every stacked movement/fire buff.
+    private func hitSnapshot(dt: Double) -> ArenaSnapshot {
+        let weapons = ["regular", "rapid", "scatter", "homing", "grenade", "cannon", "laser", "starman"]
+        let profiles = ["plain", "starman", "speed", "ghost", "shield"]
+        let episode = Int(elapsed / 0.3)
+        if episode != hitEpisode {
+            if hitEpisode >= 0, !hitResolved { hitFailures.append(hitLabel + ": no completed contact") }
+            hitEpisode = episode; hitAccumulator = 0; hitFired = false; hitFrame = 0; endpointFrame = nil; hitResolved = false
+            let kind = weapons[episode % weapons.count], profile = profiles[(episode / weapons.count) % profiles.count]
+            hitLabel = kind + "/" + profile
+            var shooter = ArenaTank(id: 1, name: "CONTACT", x: 42, y: 42, spawnSerial: 1, powerTime: 30,
+                power: ["regular", "starman"].contains(kind) ? "" : kind, charges: 3, machineRounds: 180)
+            if kind == "starman" || profile == "starman" { shooter.starmanTime = 30 }
+            if profile == "speed" { shooter.speedTime = 30; shooter.speedStacks = 5 }
+            if profile == "ghost" { shooter.ghostTime = 30 }
+            var victim = ArenaTank(id: 2, name: "TARGET", x: kind == "starman" ? 75 : 78, y: 42, bot: true,
+                spawnSerial: 1, cooldown: 999)
+            if profile == "shield" { victim.shield = 30; victim.shieldCharges = 1 }
+            hitArena = PracticeArena(seed: 42, name: "CONTACT", colorIndex: 0, botCount: 0, initialTanks: [shooter, victim])
+        }
+        let arena = hitArena!
+        hitAccumulator += min(dt, 0.1)
+        while hitAccumulator + 1e-9 >= 1 / 60 {
+            arena.step(input: GameInput(fire: !hitFired && weapons[episode % weapons.count] != "starman"), dt: 1 / 60)
+            hitFired = true; hitAccumulator = max(0, hitAccumulator - 1 / 60)
+        }
+        hitFrame += 1
+        let visible = arena.presentationSnapshot(fraction: hitAccumulator * 60, now: elapsed)
+        if !hitResolved, let effect = arena.snapshot.effects.first(where: { $0.contact != nil }), let contact = effect.contact,
+           let body = visible.tanks.first(where: { $0.id == contact.target }) {
+            if contact.projectileId > 0, let flight = arena.snapshot.effects.first(where: { $0.flight?.id == contact.projectileId })?.flight,
+               let end = flight.points.last, let bullet = visible.bullets.first(where: { $0.id == flight.id }),
+               hypot(bullet.x - end.x, bullet.y - end.y) < 1e-7, body.hp > 0,
+               hypot(bullet.x - body.x, bullet.y - body.y) <= 17 + (flight.radius ?? 0) + 1e-7 { endpointFrame = endpointFrame ?? hitFrame }
+            if contact.projectileId == 0, body.hp > 0 {
+                let beam = visible.effects.contains { $0.kind == "laser" }
+                let touching = contact.kind == "starman" && visible.tanks.contains { $0.id == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 34.0000001 }
+                if beam || touching { endpointFrame = endpointFrame ?? hitFrame }
+            }
+            if visible.effects.contains(where: { $0.id == effect.id }) || body.hp <= 0 {
+                if endpointFrame == nil || endpointFrame! >= hitFrame { hitFailures.append(hitLabel + ": damage before displayed contact") }
+                hitChecks += 1; hitResolved = true
+            }
+        }
+        return visible
     }
 
     func record(dt: Double, cpu: Double, simulation: Double, audio: Double, hud: Double,
@@ -221,6 +293,7 @@ final class FrameProfiler {
             report["jerkWorldPerSecondCubed"] = distribution(15, multiplier: 1)
         }
         if firstShotProbe { report["firstShots"] = firstShots }
+        if hitMatrixProbe { report["contactChecks"] = hitChecks; report["contactFailures"] = hitFailures }
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             FileHandle.standardOutput.write(Data(("leqra performance: " + json + "\n").utf8))

@@ -26,6 +26,7 @@ public final class RenderTimeline {
     private var sequence: UInt64 = 0
     private var lastArrival = 0.0
     private var renderNow = 0.0
+    private var contactPreviousTick: Double?
     private struct PathCheck { var first: UInt64; var second: UInt64; var clear: Bool }
     private var pathChecks: [Int: PathCheck] = [:]
     private var indexedPair: (UInt64, UInt64)?
@@ -50,6 +51,7 @@ public final class RenderTimeline {
     private var tankCurves: [Int: TankCurve] = [:]
     public private(set) var stale = false
     public var hasPendingProjectileFlights: Bool { cannonFlights.hasPending }
+    public var authoritativeSnapshot: ArenaSnapshot? { latest }
     var bufferedAcknowledgementCount: Int { sent.count }
 
     public init(localID: Int, initialSequence: UInt64 = 0, maze: InfiniteMaze? = nil, move: @escaping Move) {
@@ -63,6 +65,8 @@ public final class RenderTimeline {
         guard localID != id else { return }
         localID = id
         resetPrediction(latest?.tanks.first(where: { $0.id == id }))
+        cannonFlights.reset()
+        if let latest { cannonFlights.accept(latest.effects, baseline: true, throughTick: Double(latest.tick), tanks: latest.tanks) }
     }
 
     public func accept(_ snapshot: ArenaSnapshot, at now: Double) {
@@ -71,7 +75,7 @@ public final class RenderTimeline {
         if let previous = latest {
             if snapshot.generation < previous.generation { return }
             if snapshot.generation == previous.generation, snapshot.tick < previous.tick { return }
-            let changedView = snapshot.spectating && previous.spectating && snapshot.following != previous.following
+            let changedView = snapshot.spectating != previous.spectating || snapshot.spectating && snapshot.following != previous.following
             if previous.generation != snapshot.generation || changedView {
                 baselineFlights = true; cannonFlights.reset()
                 samples.removeAll(); resetPrediction(nil); clock = nil; playbackRate = 1
@@ -90,7 +94,7 @@ public final class RenderTimeline {
             baselineFlights = true; cannonFlights.reset()
             samples.removeAll(); clock = nil; playbackRate = 1
         }
-        cannonFlights.accept(snapshot.effects, baseline: baselineFlights, throughTick: Double(snapshot.tick))
+        cannonFlights.accept(snapshot.effects, baseline: baselineFlights, throughTick: Double(snapshot.tick), tanks: snapshot.tanks)
         let liveTankIDs = Set(snapshot.tanks.map(\.id))
         pathChecks = pathChecks.filter { liveTankIDs.contains($0.key) }
         lastArrival = now
@@ -200,6 +204,9 @@ public final class RenderTimeline {
             }
             if let index = result.tanks.firstIndex(where: { $0.id == localID }) { result.tanks[index] = tank }
         }
+        cannonFlights.applyContacts(to: &result.tanks, from: oldTanks, previousTick: contactPreviousTick) { [self] first, second in
+            first.ghostTime > 0 || movementPathClear(from: first, to: second, world: latest.world)
+        }
         return result
     }
 
@@ -240,6 +247,8 @@ public final class RenderTimeline {
         // No display time advances while the pause menu is open. Resume from
         // the current snapshot buffer rather than retaining its old playhead.
         clock = nil; playbackRate = 1
+        cannonFlights.reset()
+        if let latest { cannonFlights.accept(latest.effects, baseline: true, throughTick: Double(latest.tick), tanks: latest.tanks) }
     }
 
     public func neutralPacket() -> GameInput {
@@ -291,6 +300,7 @@ public final class RenderTimeline {
         let following = bIndex + 1 < samples.count ? samples[bIndex + 1] : nil
         let span = b.time - a.time
         let alpha = span > 0 ? max(0, min(1, (playhead - a.time) / span)) : 1
+        contactPreviousTick = Double(a.state.tick)
         var result = newest.state
         // Several display frames share each 30 Hz snapshot pair. Index those
         // immutable samples once instead of rebuilding large projectile maps
@@ -388,7 +398,7 @@ public final class RenderTimeline {
             bullet.vy = first.vy + (second.vy - first.vy) * alpha
             return bullet
         }
-        cannonFlights.append(to: &result.bullets, tick: playhead * 60, now: renderNow)
+        cannonFlights.append(to: &result.bullets, tick: playhead * 60, now: renderNow, authorityTick: Double(newest.state.tick), localID: localID)
         result.effects = cannonFlights.effects(result.effects)
         return result
     }

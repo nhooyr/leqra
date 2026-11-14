@@ -1,10 +1,10 @@
-# leqra v4.49.45 — current game protocol (protocol 1)
+# leqra v4.49.46 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.45**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.46**.
 
 ```json
-{"type":"server_hello","version":"4.49.45","protocol":1}
-{"type":"client_hello","version":"4.49.45","protocol":1}
+{"type":"server_hello","version":"4.49.46","protocol":1}
+{"type":"client_hello","version":"4.49.46","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -149,11 +149,21 @@ An authoritative projectile can be born and hit before any snapshot contains it.
 {"id":12,"owner":0,"colorIndex":2,"kind":"cannon","radius":14,"startTick":40,"endTick":41.35,"points":[{"x":74,"y":42,"tick":40},{"x":99.38,"y":42,"tick":41.35}]}
 ```
 
-The descriptor's `id` is the real projectile ID. `kind` is `regular`, `rapid`, `scatter`, `homing`, `grenade`, or `cannon`. Two to 32 finite, time-ordered points contain actual start/contact positions, including rim ricochets, and stop at the authoritative endpoint. Tick values may be fractional or equal for a muzzle-overlap hit. Cannon impacts retain this path even after a live snapshot published the projectile; other ballistic weapons attach it only when no snapshot published them. Existing `impact`/`blast` effects carry the descriptor when applicable. Otherwise a silent `projectileFlight` event/effect carries it without adding impact sounds or another explosion. Fixed terminal events also retain the projectile's original `shotSerial` and `spawnSerial`, allowing clients to reconcile a local preview without borrowing the shooter's newer life or firing state. Clients deduplicate by projectile ID and render the path on their delayed visual timeline, with bounded minimum visibility for an already-passed or effectively instantaneous path. They discard old flights on joins, generations, and room changes. Flight data is server output only: it never grants client collision, damage, ammunition, or score authority. Laser continues to use its existing authoritative beam-point event.
+The descriptor's `id` is the real projectile ID. `kind` is `regular`, `rapid`, `scatter`, `homing`, `grenade`, or `cannon`. Two to 32 finite, time-ordered points contain actual start/contact positions, including rim ricochets, and stop at the authoritative endpoint. Tick values may be fractional or equal for a muzzle-overlap hit. Every ballistic tank contact has a terminal path, including projectiles already published in live snapshots. For published non-Cannon shots, that path begins at the most recent broadcast position; Cannon retains its bounded full path. Existing `impact`/`blast` effects carry the descriptor when applicable. Otherwise a silent `projectileFlight` event/effect carries it without adding impact sounds or another explosion. Fixed terminal events also retain the projectile's original `shotSerial` and `spawnSerial`, allowing clients to reconcile a local preview without borrowing the shooter's newer life or firing state. Clients deduplicate by projectile ID and render the path on their visual timeline, with bounded minimum visibility for an already-passed or effectively instantaneous path. A published raw projectile remains eligible before its recent terminal segment begins. Clients show the exact terminal endpoint for a frame before releasing dependent hit/shield/blast visuals, sounds, or visible tank destruction. They discard old flights on joins, generations, and room changes. Flight data is server output only: it never grants client collision, damage, ammunition, or score authority. Laser continues to use its existing authoritative beam-point event.
 
 Fixed terminal events also preserve `pellet` for individual Shotgun rounds; omitted means pellet zero. A rendered local preview only deduplicates its own pellet.
 
-Terminal flights and existing Laser paths have a separate 600ms history, bounded by the actual actor population and merged into snapshots in event-ID order without duplicates. This keeps a nearby short shot visible when many distant shooters fill the ordinary cosmetic queue or a replaceable snapshot waits through 50–400ms of jitter. Infinity still filters these records to the recipient's view. This bounded history does not attempt to replay arbitrarily long connection outages.
+Victim `hit` and `shield` events/effects carry optional `contact` metadata:
+
+```json
+{"projectileId":12,"kind":"cannon","tick":41.35,"target":3,"spawnSerial":4,"before":{"x":130,"y":42,"angle":0,"vx":128,"vy":0,"hp":1,"shield":0,"shieldCharges":0,"invulnerable":0,"spawnProtected":false}}
+```
+
+`target` and `spawnSerial` identify the victim's exact life. `before` captures its pose, living state, and protection immediately before damage, including shields that the hit consumes. Name, color, and other equipment can come from a same-life tank snapshot. `projectileId` references the shared terminal path; all eligible victims of one grenade blast reference that grenade without duplicating its flight. Laser and Starman contact use zero projectile ID with `kind:"laser"` or `kind:"starman"`, on the instantaneous beam/body-contact tick. Infinity effects now expose integer `tick` as well; contact ticks can be fractional. Clients can keep a separate pre-contact visual tank and defer its explosion while HP, scores, input eligibility, and respawn remain immediately authoritative. Contact metadata is ignored for a different target life, room/generation, or resumed baseline. Hit/shield contact records share the bounded 600ms path history so unrelated cosmetics cannot discard the causal link.
+
+Current Laser range is `4 * (world.width + world.height)` in fixed mazes and 36 cells in Infinity, twice the previous budgets. Its defensive trace limit is 256 segments. Laser and Cannon reload in `0.85 * 2 / 3` seconds (about 0.567s), a one-third reduction. Charges, damage, Starman's unlimited fire, other weapons, and Cannon's 5.3s lifetime remain unchanged.
+
+Terminal flights, victim contacts and existing Laser paths have a separate 600ms history, bounded at 128 records per actual actor and merged into snapshots in event-ID order without duplicates. This covers Starman Shotgun's 108 possible terminal pellets per actor in that window, with room for victim transitions. It keeps a nearby short shot visible when many distant shooters fill the ordinary cosmetic queue or a replaceable snapshot waits through 50–400ms of jitter. Infinity still filters these records to the recipient's view. This bounded history does not attempt to replay arbitrarily long connection outages.
 
 An active Starman also destroys tanks on body contact, including tanks with Shield charges or spawn protection. Contact respects wall separation, another active Starman, Shield hit invulnerability, and team friendly-fire rules. The kill uses the same scoring, flag drop, and respawn rules as projectile damage.
 
@@ -1050,11 +1060,11 @@ position; capped extrapolation respects missile ricochets, remaining range and g
 
 `laser` remains hitscan, **not a projectile-list entry**. The server traces at
 radius 3 from the tank centre, reflecting on wall normals (both axes on corner
-hits), with one total path budget of `2 * (world.width + world.height)`. Each
+hits), with one total path budget of `4 * (world.width + world.height)`. Each
 segment consumes the remaining range. A tiny post-bounce step is deducted from
-the same budget; the trace has a defensive 128-segment cap. The first vulnerable
+the same budget; the trace has a defensive 256-segment cap. The first vulnerable
 opponent/shield stops it; the shooter is skipped throughout. Damage occurs once.
-Cooldown remains 0.85 seconds and charges remain three, independent of active
+Cooldown is `0.85 * 2 / 3` seconds and charges remain three, independent of active
 projectile slots. The first up-to-28 units of barrel travel are hidden visually
 but count toward range, preventing barrel-overlap wall bypasses.
 

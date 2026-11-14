@@ -132,7 +132,7 @@ struct ContentView: View {
                 Text("WEAPONS LIVE").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
                 Text("GO").font(.system(size: 96, weight: .black)).foregroundStyle(WebStyle.accent)
             }.frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false)
-        } else if session.snapshot.phase == "roundOver" {
+        } else if session.snapshot.phase == "roundOver", !session.presentingFinalShot {
             VStack(spacing: 8) {
                 Text(session.snapshot.winner < 0 ? "ROUND DRAW" : (session.snapshot.tanks.first { $0.id == session.snapshot.winner }.map { CallsignPolicy.displayName($0.name, bot: $0.bot) } ?? "TANK") + " WINS")
                     .font(.system(size: 28, weight: .black)).foregroundStyle(WebStyle.accent)

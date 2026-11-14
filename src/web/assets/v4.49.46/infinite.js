@@ -41,8 +41,8 @@ const PROJECTILES = Object.freeze({
  scatter: {speed: 846, r: BULLET_RADIUS, life: 3.9, cooldown: .54, ammo: 12},
  homing: {speed: 235, r: 5, life: SHOT_RANGE / 235, cooldown: .72, ammo: 3},
  grenade: {speed: 205, r: 6, life: 10, cooldown: .8, ammo: 3},
- cannon: {speed: 1128, r: 14, life: 5.3, cooldown: .85, ammo: 3},
- laser: {r: 3, cooldown: .85},
+ cannon: {speed: 1128, r: 14, life: 5.3, cooldown: .85*2/3, ammo: 3},
+ laser: {r: 3, cooldown: .85*2/3},
 });
 const TAU = Math.PI * 2;
 const MAX_BOTS = 128, BOTS_PER_PLAYER = 16;
@@ -331,17 +331,19 @@ function tankHit(world, bullet, dx, dy, limit) {
 
 function effect(world, kind, x, y, owner, points) {
  const present=()=>presentEffect(world,{kind,x,y,owner,points},performance.now());
- if(world.impactFlight!==undefined&&world.flights?.pending(world.impactFlight))world.flights.defer(world.impactFlight,present);else present();
+ if(world.impactContact!==undefined)world.flights.deferContact(world.impactContact,present);
+ else if(world.impactFlight!==undefined&&world.flights?.pending(world.impactFlight))world.flights.defer(world.impactFlight,present);else present();
 }
 
-function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false,ownerColor='') {
+function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false,ownerColor='',projectile=null) {
  if (world.result || !target.hp || target.invulnerable > 0 && !(starmanContact && target.spawnProtected) || !canDamage(world, ownerID, ownerTeam, target)) return;
+ const contact=(world.flights||=new net.ProjectileFlights()).recordContact(projectile||{id:world.impactFlight,owner:ownerID,kind:starmanContact?'starman':'laser'},target,world.time/STEP,performance.now());
  if (target.shield > 0 && !starmanContact) {
   target.shieldCharges = Math.max(0, (target.shieldCharges || 1) - 1);
   if (!target.shieldCharges) target.shield = 0;
   target.invulnerable = .35;
   target.spawnProtected = false;
-  effect(world, 'shield', target.x, target.y, ownerID);
+  world.impactContact=contact;effect(world, 'shield', target.x, target.y, ownerID);delete world.impactContact;
   return;
  }
  target.hp = 0;
@@ -354,7 +356,7 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
  if (owner) owner.score++;
  if (target.team) world.teamScores[target.team - 1]--;
  if (ownerTeam) world.teamScores[ownerTeam - 1]++;
- effect(world, 'hit', target.x, target.y, ownerID);
+ world.impactContact=contact;effect(world, 'hit', target.x, target.y, ownerID);delete world.impactContact;
  const targetScore = world.rules?.infinityTarget;
  if (targetScore > 0) {
   const score = ownerTeam ? world.teamScores[ownerTeam - 1] : owner?.score;
@@ -370,7 +372,7 @@ function detonate(world, bullet) {
  for (const tank of world.tanks) {
   const dx = tank.x - bullet.x, dy = tank.y - bullet.y;
   if (tank.hp && tank.id !== bullet.owner && Math.hypot(dx, dy) <= BLAST_RADIUS + RADIUS &&
-      !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'');
+      !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'',bullet);
  }
  world.impactFlight=previousFlight;
 }
@@ -405,9 +407,9 @@ function spendWeapon(tank) {
 function traceLaser(world, tank, preview = false) {
  const launch=projectileLaunch(world,tank,tank.angle,3,28);
  if(!launch.valid)return{points:[{x:tank.x,y:tank.y},{x:tank.x,y:tank.y}],target:null};
- let {x,y,ux,uy}=launch,length=SHOT_RANGE-launch.distance;
+ let {x,y,ux,uy}=launch,length=2*SHOT_RANGE-launch.distance;
  const points = [];
- for (let i = 0; i < 128 && length > 1e-7; i++) {
+ for (let i = 0; i < 256 && length > 1e-7; i++) {
   const dx = ux * length, dy = uy * length;
   const wall = wallHit(world.maze, x, y, dx, dy, 3);
   const limit = wall?.fraction ?? 1;
@@ -450,7 +452,7 @@ function fireShot(world, tank) {
  if (kind === 'laser') {
   const {points, target} = traceLaser(world, tank);
   Object.assign(tank, {cooldown, cooldownTotal:cooldown, recoil:1});
-  if (showShot) {
+  if (showShot || target) {
    tank.nextBoostEffect = world.time + 4 * STEP;
    effect(world, 'laser', tank.x, tank.y, tank.id, points);
   }
@@ -496,7 +498,7 @@ function advanceBullet(world, bullet, remaining) {
    if (bullet.kind === 'grenade') detonate(world, bullet);
    else {
     if (bullet.kind === 'cannon' || bullet.kind === 'homing') effect(world, 'impact', bullet.x, bullet.y, bullet.owner);
-    hurt(world, hit.tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'');
+    hurt(world, hit.tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'',bullet);
    }
    world.impactFlight=previousFlight;
    return false;
@@ -918,7 +920,7 @@ function onlineBulletPose(world,bullet,frame){
  return {...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,vx:a.vx+(b.vx-a.vx)*f,vy:a.vy+(b.vy-a.vy)*f,life:a.life+(b.life-a.life)*f,trail:b.kind==='rapid'?null:b.trail||[a,b]};
 }
 
-function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity) {
+function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity, deferCounts=false) {
  const color = COLORS[tank.colorIndex] || COLORS[0];
  ctx.save();
  ctx.translate(tank.x, tank.y);
@@ -982,7 +984,7 @@ function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLef
   ctx.fillStyle = '#ffc46b';ctx.fillText('GODLIKE',warningX,warningY+(height-3)/1.25);
  }
  ctx.restore();
- art.drawBadges(tank, ctx, zoom);
+ art.drawBadges(tank, ctx, zoom,deferCounts?'icons':'all');
 }
 
 function drawMaze(world, x0, y0, x1, y1) {
@@ -1256,19 +1258,33 @@ function draw(world, now, dt) {
  const age = world.online&&!world.result ? Math.max(0,(now-world.arrived)/1000) : 0;
  world.remoteFrame=world.online&&!world.result?world.motionBuffer?.advance(dt):null;
  const remaining=!world.online&&!world.result&&!pauseMenu.open?accumulator:0;
+ world.flightTick=world.remoteFrame?world.remoteFrame.time/net.STEP_MS:world.online?(world.motionBuffer?.items.at(-1)?.tick??0):world.time/STEP;
+ if(!world.online)world.flights?.rememberTanks(world.tanks,now);
+ const own=world.presentationOwners||=new Set();own.clear();if(!world.spectating)for(const seat of world.controllers)own.add(seat.id);
+ world.flightBullets=world.flights?.sample(world.flightTick,now,{own,localTick:world.online?(world.motionBuffer?.items.at(-1)?.tick??0)+age/net.STEP:world.flightTick})||[];
+ world.flights?.flush();
+ for(let i=0;i<(world.pendingImpacts?.length||0);){
+  const event=world.pendingImpacts[i],status=world.flights?.status(event,world.authorityTanks)||'ready';
+  if(status==='drop'){world.pendingImpacts.splice(i,1);continue;}
+  if(status==='wait'||event.flight&&world.flights?.pending(event.flight.id)||Number.isFinite(event.tick)&&event.tick>world.flightTick){i++;continue;}
+  world.pendingImpacts.splice(i,1);presentEffect(world,event,now);
+ }
  world.displayTanks ||= new Map();world.displayTanks.clear();
- if(!world.online)for(const tank of world.tanks)world.displayTanks.set(tank.id,!world.result&&!pauseMenu.open?offlineTankPose(world,tank,remaining):tank);
+ world.sceneTanks=world.online&&world.flights?.contactCount?world.tanks.concat(world.flights.missingTanks(world.authorityTanks||new Map(world.tanks.map(t=>[t.id,t])))):world.tanks;
+ if(!world.online)for(const tank of world.tanks){const pose=!world.result&&!pauseMenu.open?offlineTankPose(world,tank,remaining):tank;world.displayTanks.set(tank.id,world.flights?.visualTank(tank,pose,null,now,world.moveTank)||pose);}
  if(world.spectating){
-  const target=world.tanks.find(tank=>tank.id===world.following);
+  const target=world.sceneTanks.find(tank=>tank.id===world.following);
   const remote=target&&world.remoteFrame&&world.motionBuffer.tank(target.id,world.remoteFrame,world.moveTank);
   const pose=target&&(remote||interpolate(world.previousTanks.get(target.id),target,alpha));
-  world.display=pose&&art.ageTank({...pose},target,age);
-  if(pose)Object.assign(world.camera,{x:pose.x,y:pose.y});
+  const aged=pose&&art.ageTank({...pose},target,age);
+  world.display=aged&&(world.flights?.visualTank(target,aged,world.remoteFrame,now,world.moveTank)||aged);
+  if(world.display)Object.assign(world.camera,{x:world.display.x,y:world.display.y});
   else if(!world.following)Object.assign(world.camera,{x:CELL/2,y:CELL/2});
  }else for (const seat of world.controllers) {
   const authority = world.tanks.find(tank=>tank.id===seat.id);
   const pilot = world.online&&!world.result ? seat.predictor.visual(dt)||authority : world.displayTanks.get(seat.id)||authority;
   seat.display = pilot && (world.online ? art.ageTank({...pilot},authority,age) : pilot);
+  if(world.online&&seat.display)seat.display=world.flights?.visualTank(authority,seat.display,world.remoteFrame,now,world.moveTank)||seat.display;
   if (pilot) Object.assign(seat.camera,{x:pilot.x,y:pilot.y});
  }
  world.visualEffects = world.visualEffects.filter(effect=>effect.end>now);
@@ -1286,8 +1302,7 @@ function draw(world, now, dt) {
   if (left) ctx.fillRect(left-1,0,2,height);
   else ctx.fillRect(0,top-1,width,2);
  }
- updateHUD(world,world.display,world.local?.display,now);
- for(let i=0;i<(world.pendingImpacts?.length||0);){const event=world.pendingImpacts[i];if(world.flights?.pending(event.flight.id)){i++;continue;}world.pendingImpacts.splice(i,1);presentEffect(world,event,now);}
+ updateHUD(world,world.spectating?world.display:world.tanks.find(tank=>tank.id===world.id),world.local&&world.tanks.find(tank=>tank.id===world.local.id),now);
 }
 
 function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
@@ -1312,24 +1327,27 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   }
   drawTrace(seat.aim.points, powers.laser.color, 2, .5, true);
  }
- for (const tank of world.tanks) {
-  if (!tank.hp) continue;
+ const badgeTanks=world.badgeTanks||=[];badgeTanks.length=0;
+ for (const tank of world.sceneTanks) {
   const owner = world.controllers.find(controller=>controller.id===tank.id);
-  if (!owner&&!visible(tank)) continue;
+  if (!owner&&!visible(tank)&&!world.flights?.holdsTank(tank)) continue;
   const remote=!owner&&world.online&&world.remoteFrame?world.motionBuffer.tank(tank.id,world.remoteFrame,world.moveTank):null;
-  const displayed = owner?.display || (world.online ?
+  let displayed = owner?.display || (world.online ?
    art.ageTank({... (remote||interpolate(world.previousTanks.get(tank.id),tank,alpha))},tank,age) : world.displayTanks.get(tank.id)||tank);
+  if(world.online&&!owner)displayed=world.flights?.visualTank(tank,displayed,world.remoteFrame,now,world.moveTank)||displayed;
+  if(!displayed.hp)continue;
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
   drawTank(displayed, !!owner, zoom, ratio,
-   owner?pilotIdentity(world,owner===world?0:1,tank).label:art.botName?.(tank.name||'Tank',tank.bot)||tank.name||'Tank',x0,y0,x1);
+   owner?pilotIdentity(world,owner===world?0:1,tank).label:art.botName?.(tank.name||'Tank',tank.bot)||tank.name||'Tank',x0,y0,x1,true);
+  badgeTanks.push(displayed);
  }
  const bullets = world.visibleBullets;
  bullets.length = 0;
  const frame=world.online&&world.remoteFrame;
  const presentedBullets=frame?(frame.alpha===1?frame.b:frame.a).bullets:world.bullets;
  for (const bullet of presentedBullets) {
-  if(world.online&&world.flights?.controls(bullet.id))continue;
+  if(world.online&&world.flights?.controls(bullet.id,world.flightTick))continue;
   if (!visible(bullet)) continue;
   if(world.online){const displayed=onlineBulletPose(world,bullet,world.remoteFrame);if(displayed!==undefined){if(displayed)bullets.push({...displayed,trail:displayed.kind==='rapid'?noTrail:displayed.trail||null});continue;}}
   const previous = world.online && world.previousBullets.get(bullet.id);
@@ -1340,15 +1358,14 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
     trail: kind === 'rapid' ? noTrail : bullet.trail || [previous, bullet]});
   } else bullets.push(!world.online&&!world.result&&!pauseMenu.open?offlineBulletPose(world,bullet,accumulator):bullet);
  }
- world.flights?.observe(bullets);
- const flightTick=frame?frame.time/net.STEP_MS:world.online?(world.motionBuffer?.items.at(-1)?.tick??0):world.time/STEP;
- for(const item of world.flights?.sample(flightTick,now)||[])if(visible(item))bullets.push({...item,color:COLORS[item.colorIndex]});
- world.flights?.flush();
+ world.flights?.observe(bullets,world.flightTick);
+ for(const item of world.flightBullets)if(visible(item))bullets.push({...item,color:COLORS[item.colorIndex]});
  art.bullets(bullets, ctx, now / 1000);
  if (!world.spectating && !world.result && !world.failed && !pauseMenu.open) {
   art.drawHomingWarnings(ctx,pilot,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
  }
  drawEffects(world, now);
+ for(const tank of badgeTanks)art.drawBadges(tank,ctx,zoom,'counts');
  ctx.restore();
  if (world.local) {
   ctx.save();
@@ -1407,7 +1424,7 @@ function showResult(world, now) {
   world.resultAt = now + (localDeath ? RESULT_NOTICE_MS : 0);
   world.nextHUD = 0;
  }
- if (now < world.resultAt || world.flights?.items.size) return;
+ if (now < world.resultAt || world.flights?.pendingPresentation) return;
  const winner=resultIdentity(world);
  byID('infiniteResultTitle').textContent = winner.label + ' wins';
  byID('infiniteResultTitle').style.color=winner.color;
@@ -1438,8 +1455,8 @@ function loop(now) {
  lastTime = now;
  const audioAge=session.online?Math.max(0,(now-session.arrived)/1000):0;
  art.starmanAudio?.(!session.spectating&&!pauseMenu.open&&!session.result&&(!session.online||session.joined&&audioAge<2)&&session.controllers.some(seat=>{const tank=session.tanks.find(tank=>tank.id===seat.id);return tank?.hp>0&&tank.starmanTime>audioAge;}));
- showResult(session, now);
  if (session.online ? session.joined || session.retryAt === undefined : !pauseMenu.open) draw(session, now, dt);
+ showResult(session, now);
  art.sampleFrame(now,performance.now()-workStart,session.online?(session.latency??NaN):null);
  frame = requestAnimationFrame(loop);
 }
@@ -1601,15 +1618,17 @@ function receive(ws, event) {
  session.interval = session.arrived ? clamp(now - session.arrived, 20, 90) : 1000 / 30;
  session.arrived = now;
  session.tanks = message.tanks.map(tank => ({...tank, alive: tank.hp > 0}));
+ session.authorityTanks=new Map(session.tanks.map(tank=>[tank.id,tank]));
  acceptGodlikeSpawns(session,message,now);
  session.bullets = message.bullets.map(bullet => ({...bullet, trail: bullet.trail || null,
   color: COLORS[bullet.colorIndex] || COLORS[0], r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
  if(followChanged){session.viewFollowing=message.following;session.previousTanks.clear();session.previousBullets.clear();session.motionBuffer?.reset();session.visualEffects=[];session.pendingImpacts=[];session.bulletPaths?.clear();session.flights?.reset();}
- (session.flights||=new net.ProjectileFlights()).accept(message.effects,now,!joined||resumed||followChanged,message.tick);
+ (session.flights||=new net.ProjectileFlights()).rememberTanks(session.tanks,now);
+ session.flights.accept(message.effects,now,!joined||resumed||followChanged,message.tick);
  if(Number.isSafeInteger(message.tick)){
   session.motionBuffer ||= new net.SnapshotBuffer({delay:1000/30,minimumDelay:1000/30,maximumDelay:90,intervals:1});
   if(!joined)session.motionBuffer.reset();
-  session.motionBuffer.push({tick:message.tick,tanks:session.tanks,tankMap:new Map(session.tanks.map(tank=>[tank.id,tank])),bullets:session.bullets,bulletMap:new Map(session.bullets.map(bullet=>[bullet.id,bullet]))},now);
+  session.motionBuffer.push({tick:message.tick,tanks:session.tanks,tankMap:session.authorityTanks,bullets:session.bullets,bulletMap:new Map(session.bullets.map(bullet=>[bullet.id,bullet]))},now);
  }
  session.pickups = Array.isArray(message.pickups) ? message.pickups : [];
  session.players = message.players;
@@ -1636,7 +1655,7 @@ function receive(ws, event) {
  for (const event of Array.isArray(message.effects) ? message.effects : []) {
   if (!event || typeof event.kind !== 'string' || !Number.isInteger(event.id) || event.id <= session.lastEffect) continue;
   session.lastEffect = event.id;
-  if(joined&&!resumed){if(event.flight&&session.flights?.pending(event.flight.id)){(session.pendingImpacts||=[]).push(event);if(session.pendingImpacts.length>128)session.pendingImpacts.shift();}else presentEffect(session,event,now);}
+  if(joined&&!resumed&&!followChanged){if(event.contact||event.flight&&session.flights?.pending(event.flight.id)){(session.pendingImpacts||=[]).push(event);if(session.pendingImpacts.length>session.flights.capacity*2)session.pendingImpacts.shift();}else presentEffect(session,event,now);}
  }
  if (resumed) resetControls();
  session.joined = true;

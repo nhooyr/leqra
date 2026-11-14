@@ -453,7 +453,7 @@ class MainActivity : Activity() {
             connecting = null
             if (entering && dialog == null) arena.requestFocus()
             loadout.update(
-                session.snapshot,
+                session.authoritativeSnapshot.copy(phase = session.snapshot.phase, result = session.snapshot.result),
                 session.localID,
                 session.localID2,
                 session.infinity,

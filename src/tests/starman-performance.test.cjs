@@ -5,7 +5,7 @@ const source=readFileSync(assetPath('game.js'),'utf8');
 function laserFixture(){
  const start=source.indexOf('function fireLaser('),end=source.indexOf('\n}',start)+2;
  const counts={traces:0,effects:0,hits:0},tank={alive:true,power:'laser',starmanTime:8,charges:1,cooldown:0};
- const context={time:0,LASER_COOLDOWN:.85,POWER:{laser:{color:'#fff'}},muzzleBlocked:()=>false,
+ const context={time:0,Net:require(assetPath('netcode.js')),fire(){},LASER_COOLDOWN:.85*2/3,POWER:{laser:{color:'#fff'}},muzzleBlocked:()=>false,
   laserTrace(){counts.traces++;return{x:0,y:0,endX:100,endY:0,points:[{x:0,y:0},{x:100,y:0}],target:context.target};},
   laserEffect(){counts.effects++;},shotSound(){},hurt(){counts.hits++;}};
  vm.createContext(context);vm.runInContext(source.slice(start,end),context);

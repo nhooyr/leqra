@@ -140,6 +140,20 @@ data class ArenaEffect(
     var spawnSerial: Int? = null,
     var shotSerial: Long? = null,
     var flight: ProjectileFlight? = null,
+    var contact: CombatContact? = null,
+)
+
+data class ContactTankState(
+    val x: Double, val y: Double, val angle: Double,
+    val vx: Double = 0.0, val vy: Double = 0.0,
+    val hp: Int = 1, val shield: Double = 0.0, val shieldCharges: Int = 0,
+    val invulnerable: Double = 0.0, val spawnProtected: Boolean = false,
+)
+
+/** Authoritative pre-damage state, used only for contact presentation. */
+data class CombatContact(
+    val projectileId: Int, val kind: String, val tick: Double,
+    val target: Int, val spawnSerial: Int, val before: ContactTankState,
 )
 
 data class ProjectileFlightPoint(val x: Double, val y: Double, val tick: Double)

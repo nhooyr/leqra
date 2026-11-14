@@ -249,7 +249,7 @@ class AccountServiceTest {
             for (seat in 0..1) {
                 assertEquals(seat, body.getJSONArray("accounts").getJSONObject(seat).getInt("seat"))
                 assertEquals(store.selected[seat]!!.key, body.getJSONArray("accounts").getJSONObject(seat).getString("publicToken"))
-                assertTrue(store.selected[seat]!!.registrationPending)
+                assertEquals(seat == 1, store.selected[seat]!!.registrationPending)
             }
             assertEquals(2, store.backups.size)
             awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(0, 1), id, it) }.getOrThrow()
@@ -292,7 +292,8 @@ class AccountServiceTest {
             assertEquals(first[0].key, fresh.key)
             val info = awaitOperation<CheckedAccount> { service.inspect(origin, fresh.key, it) }.getOrThrow().info
             assertTrue(info.names.containsAll(listOf(first[0].name, fresh.name)))
-            assertTrue(store.selected.values.all { it.registrationPending })
+            assertFalse(store.selected[0]!!.registrationPending)
+            assertTrue(store.selected[1]!!.registrationPending)
             val reserved = awaitOperation<List<CallsignAvailability>> { service.availability(origin, listOf("Bot RUST"), it) }.getOrThrow().single()
             assertFalse(reserved.available)
             assertEquals("reserved", reserved.reason)

@@ -15,8 +15,12 @@ class OfflineProjectileVisibilityTest {
         assertNotNull(arena.snapshot.result)
         val tick = arena.snapshot.tick
         val score = arena.snapshot.tanks.first().score
-        assertTrue(arena.presentationSnapshot(0.0, nowSeconds = 10.0).bullets.any { it.kind == "cannon" })
-        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 10.1).bullets.any { it.kind == "cannon" })
+        val traveling = arena.presentationSnapshot(0.0, nowSeconds = 10.0)
+        assertTrue(traveling.bullets.any { it.kind == "cannon" })
+        assertNull(traveling.result)
+        assertTrue(arena.presentationSnapshot(0.0, nowSeconds = 10.1).bullets.any { it.kind == "cannon" })
+        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 10.11).bullets.any { it.kind == "cannon" })
+        assertNotNull(arena.presentationSnapshot(0.0, nowSeconds = 10.12).result)
         assertEquals(tick, arena.snapshot.tick)
         assertEquals(score, arena.snapshot.tanks.first().score)
     }
@@ -44,14 +48,22 @@ class OfflineProjectileVisibilityTest {
             val authoritative = arena.snapshot.tanks.map { it.copy() }
             val terminalIDs = arena.snapshot.effects.mapNotNull { it.flight?.id }.toSet()
             val initial = arena.presentationSnapshot(0.0, nowSeconds = 10.0)
+            assertEquals("Victim must remain alive until visible contact: $kind", 1, initial.tanks[1].hp)
+            assertFalse(initial.effects.any { it.kind in listOf("hit", "blast", "impact") })
             assertTrue(
                 "The terminal projectile must be visible for $kind",
                 initial.bullets.any { it.kind == kind || kind.isEmpty() && it.kind == "regular" },
             )
             val later = arena.presentationSnapshot(0.0, nowSeconds = 10.025)
             assertTrue(later.bullets.isNotEmpty())
-            val ended = arena.presentationSnapshot(0.0, nowSeconds = 10.1)
+            val contact = arena.presentationSnapshot(0.0, nowSeconds = 10.1)
+            assertTrue(contact.bullets.any { it.id in terminalIDs })
+            assertEquals(1, contact.tanks[1].hp)
+            assertFalse(contact.effects.any { it.kind in listOf("hit", "blast", "impact") })
+            val ended = arena.presentationSnapshot(0.0, nowSeconds = 10.11)
             assertFalse(ended.bullets.any { it.id in terminalIDs })
+            assertEquals(0, ended.tanks[1].hp)
+            assertTrue(ended.effects.any { it.kind == "hit" })
             assertEquals(authoritative, arena.snapshot.tanks)
         }
     }
@@ -86,11 +98,13 @@ class OfflineProjectileVisibilityTest {
         PracticeArena.applyPower(first, "cannon")
         arena.step(GameInput(fire = true), 1.0 / 60)
         assertNotEquals("playing", arena.snapshot.phase)
+        val traveling = arena.presentationSnapshot(0.0, nowSeconds = 20.0)
+        assertTrue(traveling.bullets.any { it.kind == "cannon" })
+        assertEquals("playing", traveling.phase)
         assertTrue(
-            arena.presentationSnapshot(0.0, nowSeconds = 20.0).bullets.any { it.kind == "cannon" }
-        )
-        assertFalse(
             arena.presentationSnapshot(0.0, nowSeconds = 20.1).bullets.any { it.kind == "cannon" }
         )
+        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 20.11).bullets.any { it.kind == "cannon" })
+        assertNotEquals("playing", arena.presentationSnapshot(0.0, nowSeconds = 20.12).phase)
     }
 }

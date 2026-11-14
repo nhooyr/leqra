@@ -377,19 +377,20 @@ test('v441 clustered grenade deaths share one explosion cue, with fresh cues aft
 });
 test('grenade blast and local or delayed authoritative tank deaths use distinct audio routes',()=>{
  const {boot:gameBoot,tank,bullet,declaration}=require('./godlike426-harness.cjs'),s=gameBoot(),sounds=[],noop=()=>{};
- Object.assign(s,{POWER:{grenade:{color:'#fff'}},COLORS:['#fff'],combatPrefs:{performance:true},rings:[],reduceMotion:true,
+ Object.assign(s,{time:0,POWER:{grenade:{color:'#fff'}},COLORS:['#fff'],combatPrefs:{performance:true},rings:[],reduceMotion:true,
   burst:noop,addRing:noop,eventShake:noop,recordLocalDeath:noop,objectiveMode:()=>false,addLog:noop,updateHUD:noop,
   secondaryID:()=>undefined,boom:()=>sounds.push('tank'),grenadeBoom:()=>sounds.push('grenade'),online:{id:0}});
  for(const name of ['blastEffect','detonate','hurt','onlineEffect'])vm.runInContext(declaration(name),s);
  s.tanks=[tank(0,42,42),tank(1,100,42),tank(2,150,42)];
  s.detonate(bullet(0,142,42));
+ assert.deepEqual(sounds,['grenade'],'tank death audio waits for contact presentation');s.fire.flights.sample(0,0);s.fire.flights.flush();s.fire.flights.sample(0,9);s.fire.flights.flush();
  assert.deepEqual(sounds,['grenade','tank','tank'],'one grenade uses its blast route while each victim remains a soft tank death');
  assert.equal(s.tanks[1].alive,false);assert.equal(s.tanks[2].alive,false);
  sounds.length=0;
  s.onlineEffect({type:'blast',x:142,y:42,generation:1},{generation:1,tankMap:new Map()});
  s.onlineEffect({type:'hit',player:1,x:100,y:42,generation:1},{generation:1,tankMap:new Map()});
  assert.deepEqual(sounds,['grenade','tank'],'a separately delivered hit cannot replay the louder grenade sound');
- const rammed=tank(3,100,42,{shield:10,shieldCharges:3});s.tanks.push(rammed);s.hurt(rammed,{owner:0,kind:'starman'});
+ const rammed=tank(3,100,42,{shield:10,shieldCharges:3});s.tanks.push(rammed);s.hurt(rammed,{owner:0,kind:'starman'});s.fire.flights.sample(0,10);s.fire.flights.flush();s.fire.flights.sample(0,19);s.fire.flights.flush();
  assert.equal(rammed.alive,false);assert.deepEqual(sounds,['grenade','tank','tank'],'Starman contact still produces a soft destruction cue');
 });
 test('grenade audio takes priority over a recent tank death without making later deaths loud',()=>{
