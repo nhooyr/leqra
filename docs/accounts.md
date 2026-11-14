@@ -1,23 +1,39 @@
 # Account keys
 
-Going online creates a lightweight account automatically. Its account key owns
+On first launch, P1 and P2 receive different random callsigns such as
+`pilot#BDF3XZ`, using the same six-character format and alphabet as random room
+codes. When the server is
+reachable, each name is claimed atomically using its independently saved account
+key, without joining a game. Offline starts use local random names and confirm
+them before entering online play. Existing saved names and imported accounts are
+kept. Each account key owns
 its pilot's reserved callsigns and public Infinity score. P1 and P2 each have
 their own account key, aliases, and score. Either key can be used as either local
 seat, or as the primary pilot on another device. Scores are calculated
-by the server; importing a key cannot upload or alter them. Offline play still
-permits any callsign.
+by the server; importing a key cannot upload or alter them. The case-insensitive
+`Bot ` prefix, and the bare name `Bot`, are reserved for bots in both online and
+offline play. Ordinary names such as `RUST`, `Godlike Bot 7`, and `godlike-7`
+remain available to players if no other account owns them. Custom bot identities
+are shown in title case with a `Bot ` prefix, such as `Bot Rust`; public bots use
+`Bot N` and `Bot N - Godlike` names.
+
+When a name is used online, the editor reserves a stable three-line feedback
+area with **Import account key** and **Generate random?** actions. Generating a
+name keeps the same account key and score. A request ID is saved before sending,
+so retrying the request does not reserve extra aliases. Offline repair remains
+playable and waits for server confirmation before going online.
 
 Open **Account** beside the pilot's callsign in the ready room to copy that
 pilot's key, then open Account on another
-device and import it. Check the account preview before using it. Web and iOS use
+device and import it. Check the account preview before using it. All platforms use
 the same key format, scoped to the selected server. A local development key will
 not authenticate against a different server or database.
 
 An account key is the account's entire credential. Keep a private backup. Anyone
 who obtains it can use its callsigns and public score. Keys belong in the Account
 controls, never in an invite URL, public chat, issue, screenshot, or log. Native
-iOS stores its key in the device-only Keychain; the web client stores it in that
-site's browser storage.
+iOS stores its key in the device-only Keychain; Android uses device-only Keystore
+encryption outside backups; the web client stores it in that site's browser storage.
 
 Opening the same public account on a new device takes over its existing tank.
 The old device receives an explicit signed-out notice and stops reconnecting.

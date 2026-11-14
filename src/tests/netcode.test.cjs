@@ -90,7 +90,7 @@ test('server corrections are visual offsets, not forces applied to simulation',(
  const p=new Net.Predictor(free);p.reset(tank());
  p.advance(Net.STEP,input({forward:true}),()=>p.sentInput(1));
  const before=p.state.x;p.reconcile(tank({x:before-5,ack:1,ackSteps:1}));
- close(p.state.x,before-5);close(p.visual(1/60).x,before);
+ close(p.state.x,before-5);close(p.visual(0).x,before);
  for(let k=0;k<120;k++)p.visual(1/60);
  close(p.state.x,before-5);close(p.visual(1/60).x,before-5,.001);
 });
@@ -99,6 +99,15 @@ test('sub-tick rendering supports refresh rates above 60 Hz',()=>{
  p.advance(1/120,input({forward:true}));
  close(p.state.x,200);close(p.visual(1/120).x,200+128/120);
  p.advance(1/120,input({forward:true}));close(p.visual(1/120).x,200+128/60);
+});
+test('retained correction velocity cannot exceed Ghost or ordinary display bounds',()=>{
+ for(const ghostTime of [0,8]){
+  const p=new Net.Predictor(free);p.reset(tank({ghostTime,vx:128,vy:0}));
+  p.offset={x:ghostTime?12:48,y:0,angle:.7};p.correctionVelocity={x:1000,y:500,angle:30};
+  const value=p.visual(1/120);assert.ok(Math.hypot(p.offset.x,p.offset.y)<=(ghostTime?12:48)+1e-8);
+  assert.ok(Math.abs(p.offset.angle)<=.7);assert.ok(Number.isFinite(value.x));
+  p.input=input({forward:true});p.neutralize();assert.equal(p.input.forward,false);
+ }
 });
 test('death and generation reset discard prediction history and render offsets',()=>{
  const p=new Net.Predictor(free);p.reset(tank());

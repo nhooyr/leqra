@@ -350,7 +350,9 @@ class OnlinePresentationTest {
         t.accept(state(tick = 1, x = 103.0), 1.0 / 120)
         assertEquals(first.x, render(t, now = 1.0 / 120).tanks[0].x, 1e-9)
         val boundary = render(t, 1.0 / 120, now = tick).tanks[0]
-        assertEquals(100 + (first.x - 100) * exp(-(1.0 / 120) / .04), boundary.x, 1e-9)
+        val dt = 1.0 / 120
+        val authoritySettle = 3 * (1 - (1 + 20 * dt) * exp(-20 * dt))
+        assertEquals(100 + (first.x - 100) * exp(-dt / .04) + authoritySettle, boundary.x, 1e-9)
     }
 
     @Test

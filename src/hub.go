@@ -83,8 +83,9 @@ type Room struct {
 type Client struct {
 	accountFailureSeat    *int
 	callsignConflicts     []callsignConflict // Admission-only metadata before the joined read loop.
-	onlineOwnerToken      string             // Durable owner retained across room transitions; guarded by Hub.mu.
-	accountRevoked        bool               // Terminal even before the delayed transport close flushes its notice.
+	callsignReserved      bool
+	onlineOwnerToken      string // Durable owner retained across room transitions; guarded by Hub.mu.
+	accountRevoked        bool   // Terminal even before the delayed transport close flushes its notice.
 	independentAccounts   bool
 	localOwnerToken       string
 	ws                    *wsConn
@@ -259,7 +260,7 @@ func roomCode() (string, error) {
 func cleanCallsign(name string) string {
 	var out []rune
 	for _, r := range strings.TrimSpace(name) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' || r == '_' || r == '-' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' || r == '_' || r == '-' || r == '#' {
 			out = append(out, r)
 		}
 		if len(out) >= 16 {
@@ -956,7 +957,7 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		}
 		name := cleanCallsign(m.Name)
 		if name == "" {
-			c.enqueue(roomError("bad_name", "Use letters, numbers, spaces, hyphens or underscores (up to 16 characters)."))
+			c.enqueue(roomError("bad_name", "Use letters, numbers, #, spaces, hyphens or underscores (up to 16 characters)."))
 			return nil
 		}
 		p, r := c.player, c.room

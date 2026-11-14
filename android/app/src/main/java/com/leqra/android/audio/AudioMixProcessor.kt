@@ -129,8 +129,35 @@ class AudioVoiceMixer(sampleRate: Double = 48_000.0, val capacity: Int = 32) {
     private val buffers = arrayOfNulls<FloatArray>(capacity)
     private val positions = IntArray(capacity)
     private val processor = AudioMixProcessor(sampleRate)
+    private val loopFadeFrames = max(1, (processor.sampleRate * StarmanSynthesis.fadeSeconds).roundToInt())
+    private var loopSamples: FloatArray? = null
+    private var loopPosition = 0
+    private var loopGain = 0f
+    private var loopTarget = 0f
+    private var loopIncrement = 0f
+    private var loopRampRemaining = 0
     val activeVoices: Int
         get() = buffers.count { it != null }
+
+    val activeLoops: Int
+        @Synchronized get() = if (loopSamples != null && (loopGain > 0 || loopTarget > 0)) 1 else 0
+
+    /** One independent bounded slot; repeated snapshots never restart or duplicate it. */
+    @Synchronized
+    fun setLoop(samples: FloatArray?, active: Boolean) {
+        if (samples != null && samples.isNotEmpty() && loopSamples !== samples) {
+            loopSamples = samples
+            loopPosition = 0
+            loopGain = 0f
+            loopTarget = 0f
+        }
+        val target = if (active && loopSamples != null) 1f else 0f
+        if (target == loopTarget) return
+        if (target > 0 && loopGain == 0f) loopPosition = 0
+        loopTarget = target
+        loopRampRemaining = loopFadeFrames
+        loopIncrement = (target - loopGain) / loopFadeFrames
+    }
 
     @Synchronized
     fun enqueue(samples: FloatArray): Boolean {
@@ -150,6 +177,12 @@ class AudioVoiceMixer(sampleRate: Double = 48_000.0, val capacity: Int = 32) {
     fun clear() {
         buffers.fill(null)
         positions.fill(0)
+        loopSamples = null
+        loopPosition = 0
+        loopGain = 0f
+        loopTarget = 0f
+        loopIncrement = 0f
+        loopRampRemaining = 0
         processor.reset()
     }
 
@@ -157,6 +190,17 @@ class AudioVoiceMixer(sampleRate: Double = 48_000.0, val capacity: Int = 32) {
     fun render(destination: FloatArray) {
         for (frame in destination.indices) {
             var mixed = 0f
+            val loop = loopSamples
+            if (loop != null && (loopGain > 0 || loopTarget > 0)) {
+                mixed += loop[loopPosition] * loopGain
+                loopPosition++
+                if (loopPosition == loop.size) loopPosition = 0
+            }
+            if (loopRampRemaining > 0) {
+                loopGain += loopIncrement
+                loopRampRemaining--
+                if (loopRampRemaining == 0) loopGain = loopTarget
+            }
             for (slot in buffers.indices) {
                 val samples = buffers[slot] ?: continue
                 mixed += samples[positions[slot]++]

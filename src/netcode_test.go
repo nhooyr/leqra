@@ -178,8 +178,8 @@ func TestProductionServesEveryGameScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	scripts := regexp.MustCompile(`<script src="([^"]+)"`).FindAllSubmatch(html, -1)
-	if len(scripts) != 6 {
-		t.Fatalf("expected theme, netcode, game, Infinity maze, Infinity arena and PWA scripts, got %d", len(scripts))
+	if len(scripts) != 7 {
+		t.Fatalf("expected theme, netcode, game, callsigns, Infinity maze, Infinity arena and PWA scripts, got %d", len(scripts))
 	}
 	for _, m := range scripts {
 		name := string(m[1])

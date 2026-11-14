@@ -143,9 +143,45 @@
  function visualMove(t,input,dt,moveTank,step=STEP,previous){
   return presentation(t,dt,step,(pose,span)=>move(pose,input,span,moveTank),moveTank,previous);
  }
+ // A render-only ricochet path must reproduce BOTH authoritative endpoints.
+ // Callers cache this result (including null) per immutable snapshot pair/ID.
+ class RicochetPath{
+  constructor(first,second,span,segments){this.first=first;this.second=second;this.span=span;this.segments=segments;}
+  static between(first,second,span,projectileWall,{nudge=.12}={}){
+   const kind=first?.kind||'',nextKind=second?.kind||'',before=first?.bounces||0,after=second?.bounces||0;
+   if(!first||!second||typeof projectileWall!=='function'||!(span>0&&span<=.1)||!['','rapid','scatter','cannon'].includes(kind)||kind!==nextKind||
+    first.id!==second.id||first.owner!==second.owner||!Number.isInteger(before)||!Number.isInteger(after)||after-before<1||after-before>4||
+    ![first.x,first.y,first.vx,first.vy,first.life,second.x,second.y,second.vx,second.vy,second.life,nudge].every(Number.isFinite)||
+    first.life+1e-9<span||Math.abs(first.life-second.life-span)>.025||nudge<0||nudge>.2)return null;
+   const radius=kind==='rapid'?3.5/3:kind==='cannon'?14:3.5,segments=[];
+   let x=first.x,y=first.y,vx=first.vx,vy=first.vy,time=0,bounces=before,reflections=0;
+   for(let leg=0;leg<=4&&span-time>1e-9;leg++){
+    const remaining=span-time,wall=projectileWall(kind,x,y,vx*remaining,vy*remaining,radius),fraction=wall?(wall.fraction??wall.t):1;
+    if(!Number.isFinite(fraction)||fraction<0||fraction>1)return null;
+    if(wall&&(![-1,0,1].includes(wall.nx)||![-1,0,1].includes(wall.ny)||!wall.nx&&!wall.ny))return null;
+    const duration=remaining*fraction;
+    segments.push({time,duration,x,y,vx,vy,bounces});x+=vx*duration;y+=vy*duration;time+=duration;
+    if(!wall)break;
+    if(reflections++>=4)return null;
+    x+=wall.nx*nudge;y+=wall.ny*nudge;if(wall.nx)vx=-vx;if(wall.ny)vy=-vy;bounces++;
+   }
+   if(time<span-1e-8||bounces!==after||Math.hypot(x-second.x,y-second.y)>.5||Math.hypot(vx-second.vx,vy-second.vy)>.5)return null;
+   return new RicochetPath({...first},{...second},span,segments);
+  }
+  sample(fraction){
+   if(fraction<=0)return{...this.first};if(fraction>=1)return{...this.second};
+   const time=this.span*clamp(fraction,0,1);let segment=this.segments[0];
+   for(const next of this.segments){if(next.time>time)break;segment=next;}
+   const elapsed=clamp(time-segment.time,0,segment.duration),value={...this.second,x:segment.x+segment.vx*elapsed,y:segment.y+segment.vy*elapsed,
+    vx:segment.vx,vy:segment.vy,bounces:segment.bounces,life:this.first.life-time};
+   if(Number.isFinite(this.first.age))value.age=this.first.age+time;
+   return value;
+  }
+ }
  class MotionPresenter{
   constructor(){this.reset();}
   reset(){this.previous=null;this.before=null;this.offset={x:0,y:0,angle:0};}
+  rebase(x,y,angle){for(const state of [this.previous?.state,this.before])if(state){state.x+=x;state.y+=y;state.angle+=angle;}}
   render(state,input,remaining,tick,moveTank,step=STEP,advance=(pose,span,controls)=>move(pose,controls,span,moveTank),tickCorrections=true){
    const old=this.previous;
    const copy=source=>source.ai?{...source,ai:{...source.ai}}:{...source};
@@ -189,7 +225,7 @@
   constructor(moveTank){this.moveTank=moveTank;this.reset(null);}
   reset(t){
    this.state=t?{...t}:null;this.frames=[];this.sent=new Map();this.stepID=0;
-   this.accumulator=0;this.input=neutral();this.offset={x:0,y:0,angle:0};
+   this.accumulator=0;this.input=neutral();this.offset={x:0,y:0,angle:0};this.correctionVelocity={x:0,y:0,angle:0};
    this.presenter=new MotionPresenter();
    this.metrics={corrections:0,hardResets:0,lastError:0,maxError:0,replayed:0};
   }
@@ -200,6 +236,7 @@
    this.sent.set(seq,this.stepID+1);
    while(this.sent.size>256)this.sent.delete(this.sent.keys().next().value);
   }
+  neutralize(){this.input=neutral();}
   advance(dt,input,beforeStep){
    if(!this.state||!this.state.alive)return;
    this.input={...input};this.accumulator+=clamp(dt,0,.1);
@@ -209,7 +246,7 @@
     this.stepID++;
     const phasing=this.state.ghostTime>0;
     move(this.state,this.input,STEP,this.moveTank);
-    if(phasing&&!(this.state.ghostTime>0))this.offset={x:0,y:0,angle:0};
+    if(phasing&&!(this.state.ghostTime>0)){this.offset={x:0,y:0,angle:0};this.correctionVelocity={x:0,y:0,angle:0};}
     this.frames.push({step:this.stepID,input:{...this.input}});
     if(this.frames.length>240)this.frames.shift();
     this.accumulator=Math.max(0,this.accumulator-STEP);
@@ -236,8 +273,13 @@
    const phasing=next.ghostTime>0,phaseChanged=(before.ghostTime>0)!==phasing;
    if(!historyOK||!authority.alive||error>64||phaseChanged){
     // Corrections cannot cross a change in wall collision policy.
-    this.offset={x:0,y:0,angle:0};this.metrics.hardResets++;
+    this.offset={x:0,y:0,angle:0};this.correctionVelocity={x:0,y:0,angle:0};this.presenter.reset();this.metrics.hardResets++;
    }else{
+    this.presenter.rebase(next.x-before.x,next.y-before.y,delta(before.angle,next.angle));
+    const oldNext={...before},newNext={...next};move(oldNext,this.input,STEP,this.moveTank);move(newNext,this.input,STEP,this.moveTank);
+    this.correctionVelocity.x+=((oldNext.x-before.x)-(newNext.x-next.x))/STEP;
+    this.correctionVelocity.y+=((oldNext.y-before.y)-(newNext.y-next.y))/STEP;
+    this.correctionVelocity.angle+=(delta(before.angle,oldNext.angle)-delta(next.angle,newNext.angle))/STEP;
     this.offset.x+=before.x-next.x;this.offset.y+=before.y-next.y;
     if(phasing){
      // During Ghost or Starman, smooth timing errors along the tank's path
@@ -255,6 +297,20 @@
   }
   visual(dt,active=true){
    if(!this.state)return null;
+   const span=clamp(dt,0,.1),omega=20,decay=Math.exp(-omega*span);
+   for(const axis of ['x','y','angle']){
+    const impulse=(this.correctionVelocity[axis]+omega*this.offset[axis])*span;
+    this.offset[axis]=(this.offset[axis]+impulse)*decay;
+    this.correctionVelocity[axis]=(this.correctionVelocity[axis]-omega*impulse)*decay;
+    if(Math.abs(this.offset[axis])<1e-5&&Math.abs(this.correctionVelocity[axis])<1e-4)this.offset[axis]=this.correctionVelocity[axis]=0;
+   }
+   const limit=this.state.ghostTime>0?12:48,length=Math.hypot(this.offset.x,this.offset.y);
+   if(length>limit){
+    this.offset.x*=limit/length;this.offset.y*=limit/length;
+    const outward=(this.correctionVelocity.x*this.offset.x+this.correctionVelocity.y*this.offset.y)/(limit*limit);
+    if(outward>0){this.correctionVelocity.x-=this.offset.x*outward;this.correctionVelocity.y-=this.offset.y*outward;}
+   }
+   if(Math.abs(this.offset.angle)>.7){this.offset.angle=clamp(this.offset.angle,-.7,.7);if(this.offset.angle*this.correctionVelocity.angle>0)this.correctionVelocity.angle=0;}
    let t={...this.state};
    // Sub-tick render prediction keeps 90/120/144 Hz displays smooth without
    // changing the 60 Hz authoritative-compatible history.
@@ -262,8 +318,6 @@
    if(active&&t.alive&&(t.ghostTime>0)===(this.state.ghostTime>0)){
     moveRenderPose(t,this.offset.x,this.offset.y,this.moveTank);t.angle+=this.offset.angle;
    }
-   const f=Math.exp(-clamp(dt,0,.1)/.11);
-   this.offset.x*=f;this.offset.y*=f;this.offset.angle*=f;
    return t;
   }
  }
@@ -452,5 +506,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({wallLaunch,expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,presentation,visualMove,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({wallLaunch,expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,presentation,visualMove,RicochetPath,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
 });

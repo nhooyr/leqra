@@ -372,6 +372,29 @@ struct NetworkLatencySampler {
     }
 
     /// Account keys travel only in the request body, never URLs or logs.
+    public func generateCallsigns(baseURL: URL, requestId: UUID, accounts: [(seat: Int, publicToken: String)]) async throws -> [GeneratedCallsign] {
+        guard !accounts.isEmpty, accounts.count <= 2, Set(accounts.map(\.seat)).count == accounts.count,
+              Set(accounts.map(\.publicToken)).count == accounts.count,
+              accounts.allSatisfy({ $0.seat == 0 || $0.seat == 1 }) else { throw GameNetworkError.invalidResponse }
+        var request = URLRequest(url: try ServerAddress.endpoint(baseURL, path: "/api/callsigns/generate"))
+        request.httpMethod = "POST"; request.timeoutInterval = 6; request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(try PublicInfinitySession.normalizedOrigin(baseURL), forHTTPHeaderField: "Origin")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["requestId": requestId.uuidString.lowercased(),
+            "accounts": accounts.map { ["seat": $0.seat, "publicToken": $0.publicToken] as [String: Any] }])
+        let (data, response) = try await session.data(for: request, delegate: AccountRequestRedirectGuard())
+        try Task.checkCancellation()
+        guard let response = response as? HTTPURLResponse, data.count <= 16 * 1024 else { throw GameNetworkError.invalidResponse }
+        if response.statusCode == 401 { throw GameNetworkError.accountKeyRevoked }
+        guard response.statusCode == 200 else { throw GameNetworkError.temporarilyUnavailable }
+        struct Result: Decodable { let names: [GeneratedCallsign] }
+        let names = try JSONDecoder().decode(Result.self, from: data).names
+        guard names.map(\.seat).sorted() == accounts.map(\.seat).sorted(),
+              names.allSatisfy({ CallsignPolicy.isGenerated($0.name) }) else { throw GameNetworkError.invalidResponse }
+        return names
+    }
+
+    /// Account keys travel only in the request body, never URLs or logs.
     /// This read-only check must succeed before an imported key replaces one.
     public func fetchAccountInfo(baseURL: URL, publicToken: String) async throws -> AccountInfo {
         try JSONDecoder().decode(AccountInfo.self, from: await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account"))

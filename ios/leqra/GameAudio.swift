@@ -7,7 +7,7 @@ import leqraCore
 @MainActor
 final class GameAudio {
     var enabled = true {
-        didSet { if oldValue != enabled && !enabled { pause() } }
+        didSet { if oldValue != enabled && !enabled { pause(fadeLoop: false) } }
     }
     var volume: Float = 0.5 {
         didSet {
@@ -15,7 +15,7 @@ final class GameAudio {
             renderState.setVolume(volume)
             if volume <= 0 {
                 let ongoing = requestedActive
-                pause(); requestedActive = ongoing
+                pause(fadeLoop: false); requestedActive = ongoing
             } else if requestedActive && enabled { resume() }
         }
     }
@@ -39,6 +39,8 @@ final class GameAudio {
     private var lastHaptic = 0.0
     private var lastChat = -Double.infinity
     private var previewTask: Task<Void, Never>?
+    private var shutdownTask: Task<Void, Never>?
+    private var starmanRequested = false
     private var interruptionObserver: NSObjectProtocol?
     private var configurationObserver: NSObjectProtocol?
     private let pickupHaptic = UIImpactFeedbackGenerator(style: .light)
@@ -59,7 +61,7 @@ final class GameAudio {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if rawType == AVAudioSession.InterruptionType.began.rawValue {
-                    self.renderState.clear()
+                    self.clearPlayback()
                     self.router.reset(); self.generation = nil
                     self.engine?.pause()
                     self.active = false
@@ -100,7 +102,7 @@ final class GameAudio {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.engine?.isRunning != true else { return }
-                self.renderState.clear()
+                self.clearPlayback()
                 self.router.reset(); self.generation = nil; self.active = false
                 if self.requestedActive && self.enabled && UIApplication.shared.applicationState == .active { self.resume() }
             }
@@ -110,6 +112,7 @@ final class GameAudio {
 
     deinit {
         previewTask?.cancel()
+        shutdownTask?.cancel()
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         engine?.stop()
@@ -119,6 +122,7 @@ final class GameAudio {
     func resume() {
         guard enabled else { return }
         requestedActive = true
+        shutdownTask?.cancel(); shutdownTask = nil
         guard volume > 0, !active || engine?.isRunning != true else { return }
         do {
             let session = AVAudioSession.sharedInstance()
@@ -128,8 +132,7 @@ final class GameAudio {
             sessionActive = true
             let engine = playbackEngine()
             renderState.setVolume(volume, immediate: true)
-            engine.prepare()
-            try engine.start()
+            if !engine.isRunning { engine.prepare(); try engine.start() }
             active = true
         } catch {
             active = false
@@ -139,13 +142,25 @@ final class GameAudio {
         }
     }
 
-    func pause() {
+    func pause(fadeLoop: Bool = true) {
         previewTask?.cancel(); previewTask = nil
+        shutdownTask?.cancel(); shutdownTask = nil
         requestedActive = false; active = false
-        renderState.clear()
+        starmanRequested = false
         router.reset(); generation = nil
-        engine?.pause()
-        deactivateSession()
+        if fadeLoop, engine?.isRunning == true, UIApplication.shared.applicationState == .active,
+           renderState.fadeLoopAndClearEffects() {
+            // Let the 12ms envelope and the shared 6ms look-ahead drain. One
+            // cancelable task covers pause/menu/connection transitions.
+            shutdownTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 22_000_000)
+                guard !Task.isCancelled, let self, !self.requestedActive else { return }
+                self.clearPlayback(); self.engine?.pause(); self.deactivateSession()
+                self.shutdownTask = nil
+            }
+        } else {
+            clearPlayback(); engine?.pause(); deactivateSession()
+        }
     }
 
     private func deactivateSession() {
@@ -160,17 +175,19 @@ final class GameAudio {
         generation = nil; previousHP = nil; lastHaptic = 0; lastChat = -.infinity
     }
 
-    func consume(snapshot: ArenaSnapshot, localID: Int, infinity: Bool, online: Bool) {
+    func consume(snapshot: ArenaSnapshot, localID: Int, infinity: Bool, online: Bool,
+                 secondaryLocalID: Int? = nil, gameplayActive: Bool = true) {
         let local = snapshot.tanks.first { $0.id == localID }
         if generation != snapshot.generation {
             generation = snapshot.generation
-            renderState.clear()
+            clearPlayback()
             previousHP = local?.hp
         }
         let justDied = (previousHP ?? 0) > 0 && local?.hp == 0
         previousHP = local?.hp
         let now = ProcessInfo.processInfo.systemUptime
         let requests = router.consume(snapshot: snapshot, localID: localID, infinity: infinity, online: online, now: now)
+        updateStarman(snapshot: snapshot, localID: localID, secondaryLocalID: secondaryLocalID, gameplayActive: gameplayActive)
         guard enabled, volume > 0, active, engine?.isRunning == true else { return }
         if justDied, now - lastHaptic >= 0.1 {
             hitHaptic.impactOccurred(intensity: 0.55)
@@ -183,6 +200,19 @@ final class GameAudio {
                 lastHaptic = now
             }
         }
+    }
+
+    func updateStarman(snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int? = nil, gameplayActive: Bool) {
+        let wanted = enabled && volume > 0 && active && engine?.isRunning == true && generation == snapshot.generation
+            && StarmanAudio.isActive(snapshot: snapshot, primaryID: localID, secondaryID: secondaryLocalID, gameplayActive: gameplayActive)
+        guard starmanRequested != wanted else { return }
+        starmanRequested = wanted
+        renderState.setStarman(wanted)
+    }
+
+    private func clearPlayback() {
+        starmanRequested = false
+        renderState.clear()
     }
 
     func notifyChat() {
@@ -225,8 +255,24 @@ private final class NativeAudioRenderState: @unchecked Sendable {
     private let lock = NSLock()
     private var voices = Array(repeating: Voice(), count: 32)
     private var processor: AudioMixProcessor
+    private var starman: AudioLoopVoice
 
-    init(sampleRate: Double) { processor = AudioMixProcessor(sampleRate: sampleRate) }
+    init(sampleRate: Double) {
+        processor = AudioMixProcessor(sampleRate: sampleRate)
+        starman = AudioLoopVoice(samples: StarmanAudio.samples(sampleRate: sampleRate), sampleRate: sampleRate)
+    }
+
+    func setStarman(_ active: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        starman.setActive(active)
+    }
+
+    func fadeLoopAndClearEffects() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        for index in voices.indices { voices[index].cursor = voices[index].samples.count }
+        starman.setActive(false)
+        return starman.sounding
+    }
 
     func enqueue(_ samples: [Float]) {
         lock.lock(); defer { lock.unlock() }
@@ -245,13 +291,14 @@ private final class NativeAudioRenderState: @unchecked Sendable {
     func clear() {
         lock.lock(); defer { lock.unlock() }
         for index in voices.indices { voices[index].cursor = voices[index].samples.count }
+        starman.reset()
         processor.reset()
     }
 
     func render(into output: UnsafeMutablePointer<Float>, count: Int) {
         lock.lock(); defer { lock.unlock() }
         for frame in 0..<count {
-            var mixed: Float = 0
+            var mixed = starman.nextSample()
             for index in voices.indices where voices[index].cursor < voices[index].samples.count {
                 mixed += voices[index].samples[voices[index].cursor]
                 voices[index].cursor += 1

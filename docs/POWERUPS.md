@@ -21,6 +21,8 @@ In fixed mazes, weapons and most buffs last **10 seconds** on Compact, Standard,
 
 Your own shots and grenade blasts leave your tank and shields unharmed. Friendly fire is a room rule. The next Fire press detonates an armed grenade even if you changed weapons. Spawn protection blocks firing and remote grenade detonation until it expires. Starman contact kills through spawn protection and Shield charges; another active Starman and Shield hit invulnerability still protect against contact.
 
+While either local tank has Starman, a bright arcade loop plays on web, iOS, and Android. It follows the game's volume and mute controls, and stops during menus, pauses, and backgrounding. Remote tanks and bots do not start extra loops.
+
 Ghost and Starman let you cross internal walls. If phasing ends inside a wall, the game moves you to a safe position. Ordinary weapons need a clear muzzle. Cannon can shoot through internal walls.
 
 Starman lasts 4 seconds on Compact and Standard, 5 on Large, 6 on Huge, 7 on Giant, and 8 on Ultra Wide. It protects existing shields, destroys opposing tanks on contact, and grants unlimited ammunition with no reload for every equipped weapon. Extra shots fired during Starman do not occupy ordinary ammunition slots after it expires. Another pickup refreshes it. Fixed-maze objective interaction pauses while invulnerability is active. With all pickups enabled, about **1 in 27** spawns is Starman. Shield and Super Speed each have six times its spawn weight, and other pickups each have twice its weight.

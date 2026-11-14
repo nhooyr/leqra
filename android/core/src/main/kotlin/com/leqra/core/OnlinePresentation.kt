@@ -90,6 +90,7 @@ class OnlinePresentation(
     private var indexedLatest: Long? = null
     private val pathChecks = HashMap<Int, Boolean>()
     private val curves = HashMap<Int, Curve>()
+    private val ricochetPaths = HashMap<Int, RicochetPath?>()
     private var previousTanks = emptyMap<Int, ArenaTank>()
     private var followingTanks = emptyMap<Int, ArenaTank>()
     var stale = false
@@ -121,11 +122,18 @@ class OnlinePresentation(
         var correctionX = 0.0
         var correctionY = 0.0
         var correctionAngle = 0.0
+        var correctionVelocityX = 0.0
+        var correctionVelocityY = 0.0
+        var correctionVelocityAngle = 0.0
+        var lastInput = GameInput()
 
         fun clearCorrection() {
             correctionX = 0.0
             correctionY = 0.0
             correctionAngle = 0.0
+            correctionVelocityX = 0.0
+            correctionVelocityY = 0.0
+            correctionVelocityAngle = 0.0
             presenter.reset()
         }
 
@@ -140,11 +148,13 @@ class OnlinePresentation(
             sent.clear()
             step = 0
             accumulator = 0.0
+            lastInput = GameInput()
             clearCorrection()
         }
 
         fun neutralize() {
             accumulator = 0.0
+            lastInput = GameInput()
             clearCorrection()
         }
 
@@ -200,17 +210,21 @@ class OnlinePresentation(
                     authoritative.y - old.y,
                     TankMovement.angleDelta(authoritative.angle, old.angle),
                 )
+                // Preserve displayed velocity when jitter changes replay's pose.
+                // Authority and gameplay adopt the new state immediately.
+                val oldNext = old.copy()
+                val newNext = authoritative.copy()
+                move(oldNext, lastInput, 1.0 / 60)
+                move(newNext, lastInput, 1.0 / 60)
+                correctionVelocityX += ((oldNext.x - old.x) - (newNext.x - authoritative.x)) * 60
+                correctionVelocityY += ((oldNext.y - old.y) - (newNext.y - authoritative.y)) * 60
+                correctionVelocityAngle += (TankMovement.angleDelta(oldNext.angle, old.angle) -
+                    TankMovement.angleDelta(newNext.angle, authoritative.angle)) * 60
                 correctionX += old.x - authoritative.x
                 correctionY += old.y - authoritative.y
                 correctionAngle =
                     TankMovement.angleDelta(correctionAngle + old.angle, authoritative.angle)
-                        .coerceIn(-.7, .7)
-                val distance = hypot(correctionX, correctionY)
-                val limit = if (authoritative.ghostTime > 0) 12.0 else 48.0
-                if (distance > limit) {
-                    correctionX *= limit / distance
-                    correctionY *= limit / distance
-                }
+                clampCorrection(if (authoritative.ghostTime > 0) 12.0 else 48.0)
             }
             predicted = authoritative
             while (frames.firstOrNull()?.step?.let { it <= processed } == true) frames.removeFirst()
@@ -226,6 +240,7 @@ class OnlinePresentation(
             if (stale) clearCorrection()
             accumulator += elapsed
             var controls = if (stale) GameInput() else input.copy()
+            lastInput = controls
             while (accumulator + 1e-9 >= 1.0 / 60) {
                 accumulator = max(0.0, accumulator - 1.0 / 60)
                 step++
@@ -248,6 +263,8 @@ class OnlinePresentation(
 
         fun present(controls: GameInput, newest: ArenaSnapshot, elapsed: Double): ArenaTank? {
             val raw = predicted ?: return null
+            advanceCorrection(elapsed)
+            clampCorrection(if (raw.ghostTime > 0) 12.0 else 48.0)
             var tank = raw.copy()
             if (tank.hp > 0 && newest.phase == "playing" && !stale) {
                 tank =
@@ -271,19 +288,45 @@ class OnlinePresentation(
                 else {
                     correctionX = 0.0
                     correctionY = 0.0
+                    correctionVelocityX = 0.0
+                    correctionVelocityY = 0.0
                 }
                 tank.angle = TankMovement.angleDelta(tank.angle + correctionAngle, 0.0)
             }
-            val decay = exp(-elapsed / .11)
-            correctionX *= decay
-            correctionY *= decay
-            correctionAngle *= decay
-            if (hypot(correctionX, correctionY) < 1e-5) {
-                correctionX = 0.0
-                correctionY = 0.0
-            }
-            if (abs(correctionAngle) < 1e-5) correctionAngle = 0.0
             return tank
+        }
+
+        private fun advanceCorrection(dt: Double) {
+            val omega = 20.0
+            val decay = exp(-omega * dt)
+            var impulse = (correctionVelocityX + omega * correctionX) * dt
+            correctionX = (correctionX + impulse) * decay
+            correctionVelocityX = (correctionVelocityX - omega * impulse) * decay
+            impulse = (correctionVelocityY + omega * correctionY) * dt
+            correctionY = (correctionY + impulse) * decay
+            correctionVelocityY = (correctionVelocityY - omega * impulse) * decay
+            impulse = (correctionVelocityAngle + omega * correctionAngle) * dt
+            correctionAngle = (correctionAngle + impulse) * decay
+            correctionVelocityAngle = (correctionVelocityAngle - omega * impulse) * decay
+            if (abs(correctionX) < 1e-5 && abs(correctionVelocityX) < 1e-4) { correctionX = 0.0; correctionVelocityX = 0.0 }
+            if (abs(correctionY) < 1e-5 && abs(correctionVelocityY) < 1e-4) { correctionY = 0.0; correctionVelocityY = 0.0 }
+            if (abs(correctionAngle) < 1e-5 && abs(correctionVelocityAngle) < 1e-4) { correctionAngle = 0.0; correctionVelocityAngle = 0.0 }
+        }
+
+        private fun clampCorrection(limit: Double) {
+            val distance = hypot(correctionX, correctionY)
+            if (distance >= limit) {
+                val nx = correctionX / distance
+                val ny = correctionY / distance
+                correctionX = nx * limit
+                correctionY = ny * limit
+                val outward = correctionVelocityX * nx + correctionVelocityY * ny
+                if (outward > 0) { correctionVelocityX -= nx * outward; correctionVelocityY -= ny * outward }
+            }
+            if (abs(correctionAngle) >= .7) {
+                correctionAngle = correctionAngle.coerceIn(-.7, .7)
+                if (correctionVelocityAngle * correctionAngle > 0) correctionVelocityAngle = 0.0
+            }
         }
     }
 
@@ -298,6 +341,7 @@ class OnlinePresentation(
         indexedLatest = null
         pathChecks.clear()
         curves.clear()
+        ricochetPaths.clear()
         clock = null
         playbackRate = 1.0
         oldTanks = emptyMap()
@@ -357,6 +401,7 @@ class OnlinePresentation(
             indexedLatest = null
             pathChecks.clear()
             curves.clear()
+            ricochetPaths.clear()
         }
         latest = snapshot
         lastArrival = at
@@ -452,6 +497,7 @@ class OnlinePresentation(
             oldBullets.replace(a.state.bullets)
             newBullets.replace(b.state.bullets)
             pathChecks.clear()
+            ricochetPaths.clear()
         }
         if (indexedLatest != newest.state.tick) {
             indexedLatest = newest.state.tick
@@ -531,7 +577,11 @@ class OnlinePresentation(
             if (bullet.id !in liveBullets) return@mapNotNull null
             val first = oldBullets[bullet.id]
             val second = newBullets[bullet.id]
-            if (first == null || second == null || first.bounces != second.bounces) bullet
+            if (first == null || second == null) bullet
+            else if (first.bounces != second.bounces) {
+                if (!ricochetPaths.containsKey(bullet.id)) ricochetPaths[bullet.id] = RicochetPath.between(first, second, span, maze)
+                ricochetPaths[bullet.id]?.sample(second, first, alpha) ?: bullet
+            }
             else
                 second.copy(
                     x = first.x + (second.x - first.x) * alpha,

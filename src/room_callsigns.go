@@ -28,8 +28,12 @@ func (h *Hub) claimRoomCallsigns(c *Client, action, token string, names []string
 
 func (h *Hub) accountClaimError(c *Client, action string, err error) {
 	var conflict *callsignConflictError
+	var reserved *callsignReservedError
 	var message map[string]any
 	switch {
+	case errors.As(err, &reserved):
+		message = roomError("callsign_reserved", reserved.Error())
+		message["conflicts"], message["reason"] = reserved.Conflicts, "reserved"
 	case errors.As(err, &conflict):
 		message = roomError("callsign_taken", conflict.Error())
 		message["conflicts"] = conflict.Conflicts

@@ -25,7 +25,7 @@ func TestSelectingFixedRulesAddsNormalOpponentsForALonePrimary(t *testing.T) {
 			if participantCount(r.Players) != 4 || r.lineupError() != "" {
 				t.Fatalf("fixed room is not playable: count=%d error=%q", participantCount(r.Players), r.lineupError())
 			}
-			for id, name := range []string{"RUST", "VAPOR", "EMBER"} {
+			for id, name := range []string{"Rust", "Vapor", "Ember"} {
 				p := r.Players[id+1]
 				if p == nil || p.Name != name || p.Kind != "bot" || p.Difficulty != "normal" || p.Owner != r.Host || p.Controller != clients[0].player || p.Member == 0 {
 					t.Fatalf("invalid fallback bot: %+v", p)

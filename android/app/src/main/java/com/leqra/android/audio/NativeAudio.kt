@@ -25,6 +25,8 @@ class NativeAudio(context: Context) {
     private val outputGuard = Any()
     private val main = Handler(Looper.getMainLooper())
     private var previewStop: Runnable? = null
+    private var gameplayStop: Runnable? = null
+    private var gameplayActive = false
     internal val pendingCueCount: Int
         get() = pending.size
 
@@ -56,6 +58,13 @@ class NativeAudio(context: Context) {
     @Volatile private var released = false
     private var thread: Thread? = null
     @Volatile private var track: AudioTrack? = null
+    @Volatile private var starmanBank: FloatArray? = null
+    @Volatile private var starmanRequested = false
+    private var nextLoopStart = 0L
+    internal val preparedLoop: Boolean
+        get() = starmanBank != null
+    internal val activeLoopCount: Int
+        get() = mixer.activeLoops
     var enabled: Boolean = true
         set(value) {
             if (field == value) return
@@ -96,6 +105,15 @@ class NativeAudio(context: Context) {
                     else AudioSynthesis.samples(cue, false),
                 )
             }
+            if (released) return@execute
+            val loop = StarmanSynthesis.samples()
+            synchronized(outputGuard) {
+                starmanBank = loop
+                if (!released && starmanRequested && enabled && volume > 0) {
+                    mixer.setLoop(loop, true)
+                    resume()
+                }
+            }
         }
     }
 
@@ -110,6 +128,10 @@ class NativeAudio(context: Context) {
     }
 
     fun pause() {
+        starmanRequested = false
+        gameplayActive = false
+        gameplayStop?.let(main::removeCallbacks)
+        gameplayStop = null
         previewStop?.let(main::removeCallbacks)
         previewStop = null
         val previous =
@@ -135,6 +157,8 @@ class NativeAudio(context: Context) {
     }
 
     fun reset() {
+        starmanRequested = false
+        nextLoopStart = 0L
         pending.clear()
         mixer.clear()
         router.reset()
@@ -146,8 +170,36 @@ class NativeAudio(context: Context) {
         lastOnline = null
     }
 
+    /** No work is queued per snapshot: one cached voice tracks both local power timers. */
+    fun updateStarman(snapshot: ArenaSnapshot, localID: Int, localID2: Int?, gameplayActive: Boolean) {
+        val wasActive = this.gameplayActive
+        this.gameplayActive = gameplayActive
+        if (gameplayActive) {
+            gameplayStop?.let(main::removeCallbacks)
+            gameplayStop = null
+        } else if (wasActive && running && gameplayStop == null) {
+            gameplayStop = Runnable {
+                gameplayStop = null
+                if (!this.gameplayActive) pause()
+            }.also { main.postDelayed(it, 18) }
+        }
+        val wanted = enabled && volume > 0 && !released && StarmanLoopState.active(snapshot, localID, localID2, gameplayActive)
+        if (wanted != starmanRequested) {
+            synchronized(outputGuard) {
+                starmanRequested = wanted
+                mixer.setLoop(starmanBank, wanted)
+            }
+        }
+        if (wanted && starmanBank != null && !running && System.nanoTime() >= nextLoopStart) {
+            nextLoopStart = System.nanoTime() + 1_000_000_000L
+            resume()
+        }
+    }
+
     fun play(cue: AudioCue, local: Boolean = true) {
         if (!enabled || volume <= 0 || released) return
+        gameplayStop?.let(main::removeCallbacks)
+        gameplayStop = null
         pending.offer(cue.ordinal * 2 + if (local) 0 else 1, System.nanoTime())
         resume()
     }

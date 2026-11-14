@@ -171,6 +171,7 @@ data class ArenaSnapshot(
     var bullets: List<ArenaBullet> = emptyList(),
     var pickups: List<ArenaPickup> = emptyList(),
     var effects: List<ArenaEffect> = emptyList(),
+    var godlikeSpawns: List<GodlikeSpawn> = emptyList(),
     var leaderboard: List<LeaderboardEntry> = emptyList(),
     var players: Int = 0,
     var tankCount: Int = 0,

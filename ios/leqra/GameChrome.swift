@@ -88,7 +88,9 @@ struct ArenaStatusBar: View {
                 WebIconButton(symbol: "rectangle.rightthird.inset.filled", label: "Open sidebar") { session.showSidebar = true }
             }
         }.foregroundStyle(WebStyle.text).padding(.horizontal, 12).padding(.vertical, 8)
-            .frame(minHeight: 39).background(WebStyle.surface)
+            // The finite preview's sidebar button establishes a 52pt row.
+            // Keep that footprint when Infinity uses its shorter leaderboard.
+            .frame(minHeight: preview ? 52 : 39).background(WebStyle.surface)
             .overlay(alignment: .bottom) { WebStyle.border.frame(height: 1).allowsHitTesting(false) }
     }
     private var title: String {
@@ -192,8 +194,9 @@ struct ArenaStandings: View {
                 ForEach(Array(entries.prefix(10).enumerated()), id: \.element.id) { index, entry in
                     HStack(alignment: .top, spacing: 6) {
                         Text("\(index + 1).")
-                        Text(entry.id == session.localID && !preview ? "\(entry.name) (P1)" : entry.name)
+                        Text(entry.id == session.localID && !preview ? "\(entry.name) (P1)" : CallsignPolicy.displayName(entry.name, bot: entry.bot))
                             .fontWeight(entry.id == session.localID && !preview ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
+                        if entry.bot { Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
                         Spacer(minLength: 2); Text("\(entry.score)").bold().monospacedDigit()
                     }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex)).padding(.vertical, 5).padding(.horizontal, 10)
                         .background(entry.id == session.localID && !preview ? WebStyle.paint(entry.colorIndex).opacity(0.08) : .clear)

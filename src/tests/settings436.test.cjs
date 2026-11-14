@@ -46,7 +46,7 @@ test('a new public Infinity setup starts with only P1 and switching it off adds 
  assert.deepEqual(Array.from(s.localRoom.players,p=>p.kind),['human']);
  assert.equal(s.infinityPlayMode(),'online');
  s.selectPublicInfinity(false);
- assert.deepEqual(Array.from(s.localRoom.players,p=>[p.id,p.kind,p.name,p.difficulty]),[[0,'human','Player 1',undefined],[1,'bot','RUST','normal'],[2,'bot','VAPOR','normal'],[3,'bot','EMBER','normal']]);
+ assert.deepEqual(Array.from(s.localRoom.players,p=>[p.id,p.kind,p.name,p.difficulty]),[[0,'human','Player 1',undefined],[1,'bot','Rust','normal'],[2,'bot','Vapor','normal'],[3,'bot','Ember','normal']]);
  assert.equal(new Set(s.localRoom.players.map(p=>p.member)).size,4);
  assert.equal(s.localRoom.players.every(p=>p.owner===0&&p.team===0),true);
  assert.equal(s.previewReset,true);
@@ -113,7 +113,7 @@ test('online Infinity exit presets acknowledge the exact normalized fallback ros
   s.selectedPreset=()=>preset;vm.runInContext(declaration('validatePreset')+'\n'+declaration('canLoadPreset')+'\n'+declaration('applySelectedPreset'),s);
   s.applySelectedPreset();const sent=s.sent;
   assert.equal(sent.type,'preset');assert.equal(sent.roster.length,4);assert.equal(preset.roster.length,1,'saved preset stays unchanged');
-  assert.deepEqual(Array.from(sent.roster.slice(1),p=>[p.name,p.kind,p.difficulty]),[['RUST','bot','normal'],['VAPOR','bot','normal'],['EMBER','bot','normal']]);
+  assert.deepEqual(Array.from(sent.roster.slice(1),p=>[p.name,p.kind,p.difficulty]),[['Rust','bot','normal'],['Vapor','bot','normal'],['Ember','bot','normal']]);
   assert.deepEqual(Array.from(sent.roster,p=>p.team),mode==='survival'?[1,1,1,1]:mode==='ctf'?[1,2,1,2]:[0,0,0,0]);
   assert.equal(s.presetsPending,true);assert.notEqual(s.closed,true);
   const packet={...s.online.roomData,rules:sent.rules,players:sent.roster.map((p,i)=>({...p,id:i===0?3:i-1,member:50+i,owner:3}))};

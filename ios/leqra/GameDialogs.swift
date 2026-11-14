@@ -45,8 +45,9 @@ struct PauseCard: View {
                                 Text("LEADERBOARD").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
                                 ForEach(Array(session.standings.prefix(10).enumerated()), id: \.element.id) { index, entry in
                                     HStack(alignment: .top) {
-                                        Text("\(index + 1). " + (entry.id == session.localID ? session.identity : entry.name))
+                                        Text("\(index + 1). " + (entry.id == session.localID ? session.identity : CallsignPolicy.displayName(entry.name, bot: entry.bot)))
                                             .fontWeight(entry.id == session.localID ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
+                                        if entry.bot { Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
                                         Spacer(); Text("\(entry.score)").bold()
                                     }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
                                 }
@@ -83,7 +84,7 @@ struct PauseCard: View {
                     .task { session.scheduleCallsignAvailability() }
                 AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "pauseAccount")
             }
-            CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
+            CallsignFeedback(session: session)
             Button(session.offline ? "← BACK TO THE BATTLE" : "← BACK TO THE ARENA") { session.saveCallsign(); session.setPaused(false) }
                 .buttonStyle(WebButtonStyle(kind: .primary)).disabled(!session.canResume).accessibilityIdentifier("Resume")
             Button("Controls") { session.showControls = true }.buttonStyle(WebButtonStyle())
@@ -345,7 +346,8 @@ struct SidebarPanel: View {
                     ForEach(report.players) { player in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
-                                Text(player.name + ((player.member == session.roomMemberID || player.controllerMember == session.roomMemberID) ? " (P1)" : "")).fontWeight(player.member == session.roomMemberID || player.controllerMember == session.roomMemberID ? .bold : .regular)
+                                Text(CallsignPolicy.displayName(player.name, bot: player.kind == "bot") + ((player.member == session.roomMemberID || player.controllerMember == session.roomMemberID) ? " (P1)" : "")).fontWeight(player.member == session.roomMemberID || player.controllerMember == session.roomMemberID ? .bold : .regular)
+                                Text(player.kind == "bot" ? "BOT" : "HUMAN PILOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                                 Spacer(); Text("\(player.score)").bold()
                             }.foregroundStyle(WebStyle.mapped(player.color))
                             Text("\(player.eliminations) eliminations, \(player.deaths) deaths, \(player.selfDestructs) self-destructs").foregroundStyle(WebStyle.soft)
@@ -357,7 +359,7 @@ struct SidebarPanel: View {
                 }
                 Text("LEADERBOARD").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
                 ForEach(session.standings) { entry in
-                    HStack { Text(entry.id == session.localID ? session.identity : entry.name).fontWeight(entry.id == session.localID ? .bold : .regular); Spacer(); Text("\(entry.score)").font(WebStyle.mono(22)) }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
+                    HStack { Text(entry.id == session.localID ? session.identity : CallsignPolicy.displayName(entry.name, bot: entry.bot)).fontWeight(entry.id == session.localID ? .bold : .regular); if entry.bot || !session.isInfinity { Text(entry.bot ? "BOT" : "HUMAN PILOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }; Spacer(); Text("\(entry.score)").font(WebStyle.mono(22)) }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
                 }
                 WebStyle.border.frame(height: 1)
                 FieldManualContent(session: session)
@@ -414,7 +416,7 @@ struct JoinRoomPanel: View {
                         .task { session.scheduleCallsignAvailability() }
                     AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "joinAccount")
                 }
-                CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
+                CallsignFeedback(session: session)
                 Text("ROOM NAME OR CODE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("Friday tanks 💥", text: $code).modifier(WebField()).autocorrectionDisabled()
                 Button("JOIN →") { session.showJoin = false; session.connect(code: code) }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -476,7 +478,7 @@ struct QueuePanel: View {
                 if let queue = session.queueState {
                     Text(queue.name).font(.system(size: 18, weight: .bold)).foregroundStyle(WebStyle.accent)
                     Text("\(queue.players) / \(queue.required) players, \(queue.stage)").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
-                    ForEach(queue.members) { member in HStack { Text(member.name); Spacer(); Text(member.accepted ? "READY" : "WAITING") }.font(.system(size: 12)) }
+                    ForEach(queue.members) { member in HStack { Text(CallsignPolicy.displayName(member.name, bot: member.kind == "bot")); Spacer(); Text(member.accepted ? "READY" : "WAITING") }.font(.system(size: 12)) }
                     if session.canConfirmQueue { Button("READY") { session.send(.queueAccept(queue.id)) }.buttonStyle(WebButtonStyle(kind: .play)) }
                     if session.canCancelQueue { Button("CANCEL SEARCH") { session.send(.queueCancel(queue.id)) }.buttonStyle(WebButtonStyle()) }
                 } else {

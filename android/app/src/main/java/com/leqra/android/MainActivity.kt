@@ -356,9 +356,11 @@ class MainActivity : Activity() {
         }
         arena.onInput = { session.input = it }
         session.present = { snapshot, maze, localID, localID2, online ->
+            arena.encounterNotice = session.encounterNotice
             arena.submit(snapshot, localID, maze, localID2, online)
             if (session.screen == Screen.PLAYING && !session.paused)
                 audio.consume(snapshot, localID, session.infinity, online)
+            audio.updateStarman(snapshot, localID, localID2, session.audioGameplayActive)
         }
         loadout = NativeHudView(this)
         loadout.onHeightChanged = { height ->
@@ -366,6 +368,10 @@ class MainActivity : Activity() {
         }
         root.add(loadout, gap = 0)
         root.setOnApplyWindowInsetsListener { _, insets ->
+            val oldLeft = safeLeft
+            val oldRight = safeRight
+            val oldTop = safeTop
+            val oldBottom = safeBottom
             if (Build.VERSION.SDK_INT >= 30) {
                 val cuts = insets.getInsets(WindowInsets.Type.displayCutout())
                 val gestures = insets.getInsets(WindowInsets.Type.systemGestures())
@@ -383,6 +389,11 @@ class MainActivity : Activity() {
             header.setPadding(dp(12) + safeLeft, dp(5), dp(8) + safeRight, dp(5))
             loadoutLayoutKey = ""
             configureLoadoutLayout()
+            if (oldLeft != safeLeft || oldRight != safeRight || oldTop != safeTop || oldBottom != safeBottom) {
+                readySignature = ""
+                scoreSignature = ""
+                if (foreground) main.post { refresh(true) }
+            }
             insets
         }
         refresh(true)
@@ -403,6 +414,7 @@ class MainActivity : Activity() {
             audio.enabled = !session.muted
         }
         audio.volume = session.volume
+        audio.updateStarman(session.snapshot, session.localID, session.localID2, session.audioGameplayActive)
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         brandSubtitle.visibility = if (landscape) View.GONE else View.VISIBLE
         brandMark.visibility =
@@ -745,7 +757,13 @@ class MainActivity : Activity() {
             session.room?.optString(
                 if (session.publicSelected) "startPublicInfinityError" else "startError",
             )
-        if (!startError.isNullOrBlank()) panel.add(label(this, startError, 11f, danger))
+        // All room modes keep the same readiness space, including a valid solo Infinity room.
+        panel.add(
+            label(this, startError.orEmpty(), 11f, danger).apply {
+                minLines = 2
+                visibility = if (startError.isNullOrBlank()) View.INVISIBLE else View.VISIBLE
+            },
+        )
         val configurationStart = panel.childCount
         panel.add(
             label(
@@ -875,7 +893,9 @@ class MainActivity : Activity() {
             },
         )
         field.setOnFocusChangeListener { _, focused ->
-            if (!focused) session.renameCallsign(field.text.toString(), seat)
+            val current = if (seat == 0) session.callsign else session.localCallsign
+            if (!focused && current == field.text.toString())
+                session.renameCallsign(field.text.toString(), seat)
         }
         row.weighted(field)
         row.add(
@@ -889,7 +909,9 @@ class MainActivity : Activity() {
         panel.add(row, gap = 0)
         feedback[seat] =
             label(this, "", 10f, danger).apply {
-                minHeight = dp(30)
+                minHeight = dp(46)
+                movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                highlightColor = android.graphics.Color.TRANSPARENT
                 gravity = Gravity.TOP
                 setPadding(0, dp(4), 0, 0)
             }
@@ -918,10 +940,52 @@ class MainActivity : Activity() {
         panel.add(feedback[seat]!!, height = hintHeight, gap = 4)
     }
 
+    private fun feedbackText(
+        seat: Int,
+        reserved: Boolean = false,
+        taken: Boolean = false,
+    ): CharSequence {
+        val name = if (seat == 0) session.callsign else session.localCallsign
+        val isReserved = reserved || Callsigns.botReserved(name)
+        val message =
+            if (isReserved) "Bot names are reserved.\n\nGenerate random?"
+            else if (taken) CALLSIGN_TAKEN_HINT
+            else if (session.automaticNamePending(seat))
+                "Choosing available callsign…\n\nGenerate random?"
+            else "\n\nGenerate random?"
+        val text = android.text.SpannableString(message)
+        fun link(label: String, action: () -> Unit) {
+            val start = message.indexOf(label)
+            if (start < 0) return
+            text.setSpan(
+                object : android.text.style.ClickableSpan() {
+                    override fun onClick(widget: View) {
+                        action()
+                    }
+
+                    override fun updateDrawState(paint: android.text.TextPaint) {
+                        paint.color = accent
+                        paint.isUnderlineText = true
+                    }
+                },
+                start,
+                start + label.length,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+        if (!isReserved) link("Import account key") { showAccount(seat) }
+        link("Generate random?") { session.generateCallsign(seat) }
+        return text
+    }
+
+    private fun feedbackMessage(seat: Int) {
+        feedback[seat]?.text = feedbackText(seat)
+    }
+
     private fun checkAvailability() {
         val epoch = ++availabilityEpoch
         availability?.cancel()
-        feedback.forEach { it?.text = "" }
+        (0..1).forEach { feedbackMessage(it) }
         val names =
             listOf(session.callsign.trim()) +
                 if (session.localSelected) listOf(session.localCallsign.trim()) else emptyList()
@@ -935,7 +999,7 @@ class MainActivity : Activity() {
                         result.onSuccess { rows ->
                             rows.forEach { row ->
                                 feedback.getOrNull(row.seat)?.text =
-                                    if (row.available) "" else CALLSIGN_TAKEN_HINT
+                                    feedbackText(row.seat, row.reason == "reserved", !row.available && !session.automaticNamePending(row.seat))
                             }
                         }
                     }
@@ -1001,15 +1065,18 @@ class MainActivity : Activity() {
                 val own =
                     player.optInt("id") == session.network.welcome?.id ||
                         player.optInt("id") == session.network.welcome?.localId
+                val bot = player.optString("kind") == "bot" || player.optBoolean("bot")
+                val seat = if (own) if (player.optInt("id") == session.network.welcome?.id) 1 else 2 else 0
                 panel.add(
                     label(
                         this,
-                        "${player.optString("name")} ${if(own) if(player.optInt("id")==session.network.welcome?.id) "(P1)" else "(P2)" else ""}${if((player.optString("kind")=="bot" || player.optBoolean("bot"))) " · BOT" else ""}",
+                        PilotIdentity.label(player.optString("name"), bot, seat),
                         12f,
                         paint(player.optInt("colorIndex")),
                         own,
                     ),
                 )
+                if (!bot) panel.add(label(this, "HUMAN PILOT", 10f, muted, mono = true))
                 if (session.isHost || own)
                     panel.add(button(this, "PLAYER OPTIONS", { playerOptions(player) }))
             }
@@ -1052,7 +1119,7 @@ class MainActivity : Activity() {
                             session.command(
                                 "add",
                                 "kind" to "bot",
-                                "name" to "Bot",
+                                "name" to BotNames.next((0 until players.length()).map { players.getJSONObject(it).optString("name") }, players.length() + 1),
                                 "difficulty" to session.difficulty,
                             )
                         },
@@ -1134,9 +1201,10 @@ class MainActivity : Activity() {
 
     private fun localBotRow(panel: LinearLayout, bot: LocalBot) {
         val card = column(this, 10).apply { background = background(this@MainActivity, sunken, 7) }
+        card.add(label(this, "BOT", 10f, muted, mono = true))
         val nameRow = row(this)
         val name =
-            field(this, bot.name, "Bot callsign").apply {
+            field(this, PilotIdentity.botName(bot.name), "Bot callsign").apply {
                 textSize = 12f
                 setTextColor(paint(bot.colorIndex))
                 contentDescription = "${bot.name} callsign"
@@ -2012,6 +2080,7 @@ class MainActivity : Activity() {
                         checked?.let { verified ->
                             runCatching {
                                 session.accounts.useChecked(verified, seat)
+                                session.accountImported(seat)
                                 val name = verified.info.preferredCallsign
                                 if (name != null) {
                                     if (seat == 0) session.callsign = name
@@ -2159,7 +2228,7 @@ class MainActivity : Activity() {
                 panel.add(
                     label(
                         this,
-                        "${index+1}. ${p.name}${if(p.id==session.localID) " (P1)" else if(p.id==session.localID2) " (P2)" else ""}    ${p.score}",
+                        "${index+1}. ${PilotIdentity.leaderboardLabel(p.name, p.bot, if(p.id==session.localID) 1 else if(p.id==session.localID2) 2 else 0)}    ${p.score}",
                         12f,
                         paint(p.colorIndex),
                         p.id == session.localID || p.id == session.localID2,
@@ -2169,7 +2238,7 @@ class MainActivity : Activity() {
         else
             session.publicStatus?.leaders?.take(10)?.forEachIndexed { index, p ->
                 panel.add(
-                    label(this, "${index+1}. ${p.name}    ${p.score}", 12f, paint(p.colorIndex)),
+                    label(this, "${index+1}. ${PilotIdentity.leaderboardLabel(p.name, p.bot)}    ${p.score}", 12f, paint(p.colorIndex)),
                 )
             }
         panel.add(
@@ -2630,7 +2699,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val CALLSIGN_TAKEN_HINT =
-            "Callsign taken. Import its key if it's yours. Lost keys need manual help on GitHub."
+            "Used online; offline is OK.\nYours? Import account key\nGenerate random?"
         private val gamepadFireKeys =
             setOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_BUTTON_R2)
         private val gameKeys =
