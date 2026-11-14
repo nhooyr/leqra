@@ -11,16 +11,17 @@ import (
 )
 
 const (
-	infiniteCapacity      = 32
-	infiniteBotsPerPlayer = 16
-	infiniteBotLimit      = infiniteCapacity * infiniteBotsPerPlayer // Storage follows the public human capacity, not an extra population cap.
-	infiniteRoomBotLimit  = maxTanks * infiniteBotsPerPlayer
-	infiniteSight         = 1200
-	infiniteTankSpeed     = 128
-	infiniteMaxHP         = 1
-	infiniteRespawnTicks  = 60
-	infiniteBulletRadius  = 3.5
-	infiniteLeaderCount   = 10
+	infiniteCapacity         = 32
+	infiniteBotsPerPlayer    = 16
+	infiniteBotLimit         = infiniteCapacity * infiniteBotsPerPlayer   // Storage follows the public human capacity, not an extra population cap.
+	infiniteBotIdentityLimit = infiniteBotLimit * len(infiniteBotTunings) // Each tier can fill the active budget independently.
+	infiniteRoomBotLimit     = maxTanks * infiniteBotsPerPlayer
+	infiniteSight            = 1200
+	infiniteTankSpeed        = 128
+	infiniteMaxHP            = 1
+	infiniteRespawnTicks     = 60
+	infiniteBulletRadius     = 3.5
+	infiniteLeaderCount      = 10
 )
 
 type infiniteTank struct {
@@ -504,9 +505,6 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 		// has viewers again; the maze is reproducible from the seed.
 		a.pilots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil
 		a.projectileEffects, a.wireEffects, a.wireTanks = nil, nil, nil
-		if a.publicEntries == nil {
-			a.inactiveBots = nil
-		}
 		a.maze = nil
 		a.snapshot = emptyInfiniteSnapshot()
 		a.snapshotTankIndex = nil
@@ -628,14 +626,7 @@ func (a *infiniteArena) step(now time.Time) {
 			if a.tick >= p.respawn && !p.paused && !p.disconnected {
 				x, y := p.X, p.Y
 				if p.Bot && p.roomBot == nil {
-					if a.roamingBotBudget() == 0 {
-						continue
-					}
-					anchor := a.nearestActivePilot(p, math.Inf(1))
-					if anchor == nil {
-						continue
-					}
-					x, y = anchor.X, anchor.Y
+					continue // Ambient corpses are parked by populate, then await their tier's next opportunity.
 				}
 				a.spawn(p, x, y, 2, 5)
 				if p.Bot {
@@ -742,13 +733,30 @@ func (a *infiniteArena) trimRoamingBots() int {
 	for i := len(a.pilots) - 1; i >= 0 && bots > budget; i-- {
 		p := a.pilots[i]
 		if p.Bot && p.roomBot == nil {
-			a.inactiveBots = append(a.inactiveBots, p)
-			a.pilots = slices.Delete(a.pilots, i, i+1)
+			a.parkAmbientBot(i)
 			bots--
 		}
 	}
 	a.enforcePublicGodlikeLimit()
+	bots = 0
+	for _, p := range a.pilots {
+		if p.Bot && p.roomBot == nil {
+			bots++
+		}
+	}
 	return bots
+}
+
+func (a *infiniteArena) parkAmbientBot(index int) {
+	p := a.pilots[index]
+	if p.HP > 0 || a.tick >= p.respawn {
+		p.respawn = 0
+	}
+	p.HP, p.VX, p.VY = 0, 0, 0
+	p.clearControls()
+	a.godlikeSpawns = slices.DeleteFunc(a.godlikeSpawns, func(event infiniteGodlikeSpawn) bool { return event.ID == p.ID })
+	a.inactiveBots = append(a.inactiveBots, p)
+	a.pilots = slices.Delete(a.pilots, index, index+1)
 }
 
 func (a *infiniteArena) nearestActivePilot(p *infinitePilot, maxDist float64) *infinitePilot {
@@ -792,11 +800,9 @@ func (a *infiniteArena) populate() {
 	// kept active by a spectator watching an abandoned part of the maze.
 	for i := len(a.pilots) - 1; i >= 0; i-- {
 		bot := a.pilots[i]
-		if bot.Bot && bot.roomBot == nil && a.outsideActiveViews(bot) {
-			bot.HP, bot.VX, bot.VY, bot.respawn, bot.ambientRetired = 0, 0, 0, 0, true
-			bot.clearControls()
-			a.inactiveBots = append(a.inactiveBots, bot)
-			a.pilots = slices.Delete(a.pilots, i, i+1)
+		if bot.Bot && bot.roomBot == nil && (a.outsideActiveViews(bot) || bot.HP == 0 && a.tick >= bot.respawn) {
+			bot.ambientRetired = true
+			a.parkAmbientBot(i)
 			bots--
 		}
 	}
@@ -825,7 +831,12 @@ func (a *infiniteArena) populate() {
 		return
 	}
 	var assigned [infiniteCapacity]int
-	var used [infiniteBotLimit + 1]bool
+	var used [infiniteBotIdentityLimit + 1]bool
+	for _, bot := range a.inactiveBots {
+		if bot.ambientNumber > 0 && bot.ambientNumber < len(used) {
+			used[bot.ambientNumber] = true
+		}
+	}
 	for _, bot := range a.pilots {
 		if !bot.Bot || bot.roomBot != nil {
 			continue
@@ -851,38 +862,51 @@ func (a *infiniteArena) populate() {
 			}
 		}
 		p := pilots[anchor]
-		assigned[anchor]++
-		bots++
-		if len(a.inactiveBots) > 0 {
-			i := len(a.inactiveBots) - 1
-			bot := a.inactiveBots[i]
-			a.inactiveBots = slices.Delete(a.inactiveBots, i, i+1)
-			if bot.HP > 0 || bot.ambientRetired {
-				a.spawn(bot, p.X, p.Y, 3, 6)
-				if bot.ambientRetired {
-					bot.ambientRetired = false
-					a.startBotLife(bot)
-				} else if a.rules != nil && a.rules.BotSpawnRates[infiniteBotTunings[bot.botLevel].name] <= 0 {
-					bot.botLevel = a.chooseRoomBotLevel()
-					a.resetBotDecisions(bot)
+		level := a.chooseAmbientBotLevel()
+		var bot *infinitePilot
+		for i, inactive := range a.inactiveBots {
+			if inactive.botLevel == level && a.tick >= inactive.respawn {
+				bot = inactive
+				a.inactiveBots = slices.Delete(a.inactiveBots, i, i+1)
+				break
+			}
+		}
+		if bot == nil {
+			identityCount, identityLimit := 0, infiniteBotLimit
+			if a.rules != nil {
+				identityLimit = infiniteRoomBotLimit
+			}
+			for _, list := range [2][]*infinitePilot{a.pilots, a.inactiveBots} {
+				for _, other := range list {
+					if other.Bot && other.roomBot == nil && other.botLevel == level {
+						identityCount++
+					}
 				}
 			}
-			a.pilots = append(a.pilots, bot)
-			continue
+			if identityCount >= identityLimit {
+				continue // Existing matching identities are still active or in their death contact window.
+			}
+			number := 1
+			for number < len(used) && used[number] {
+				number++
+			}
+			if number == len(used) {
+				return // At most one full active budget of identities is needed per tier.
+			}
+			used[number] = true
+			a.nextID++
+			bot = &infinitePilot{infiniteTank: infiniteTank{ID: a.nextID, Name: "Bot " + strconv.Itoa(number), Bot: true, ColorIndex: (a.nextID - 1) % len(tankColors)}, ambientNumber: number, botLevel: level}
 		}
-		number := 1
-		for used[number] {
-			number++
-		}
-		used[number] = true
-		bot := a.addPilot("Bot "+strconv.Itoa(number), true, p.X, p.Y, 3, 6)
-		bot.ambientNumber = number
-		if a.rules != nil {
-			bot.botLevel = a.chooseRoomBotLevel()
-		} else {
+		assigned[anchor]++
+		bots++
+		a.spawn(bot, p.X, p.Y, 3, 6)
+		bot.ambientRetired = false
+		a.resetBotDecisions(bot)
+		if a.rules == nil {
 			bot.publicBotName()
-			a.recordGodlikeSpawn(bot)
 		}
+		a.pilots = append(a.pilots, bot)
+		a.recordGodlikeSpawn(bot)
 		if a.teams() {
 			var counts [5]int
 			for _, other := range a.pilots {
@@ -1042,6 +1066,9 @@ func (a *infiniteArena) rankedLeaders(entries []infiniteLeader) []infiniteLeader
 	for _, p := range a.pilots {
 		entries = append(entries, p.leader())
 	}
+	for _, p := range a.inactiveBots {
+		entries = append(entries, p.leader())
+	}
 	slices.SortFunc(entries, func(left, right infiniteLeader) int {
 		if order := cmp.Compare(right.Score, left.Score); order != 0 {
 			return order
@@ -1054,6 +1081,15 @@ func (a *infiniteArena) rankedLeaders(entries []infiniteLeader) []infiniteLeader
 func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 	entries = a.rankedLeaders(entries)
 	return entries[:min(len(entries), infiniteLeaderCount)]
+}
+
+// Call after rankedLeaders refreshes the public archive. Public merging keeps
+// only the archive's top ten candidates, but the count covers every listed row.
+func (a *infiniteArena) leaderboardPoolCount(leaders []infiniteLeader) int {
+	if a.publicEntries != nil {
+		return len(a.publicArchive) + len(a.pilots)
+	}
+	return len(leaders)
 }
 
 func (a *infiniteArena) broadcast() {
@@ -1072,6 +1108,7 @@ func (a *infiniteArena) broadcast() {
 		packet.Scores = &a.teamScores
 	}
 	leaders := a.rankedLeaders(packet.Leaders)
+	packet.TankCount = a.leaderboardPoolCount(leaders)
 	packet.Leaders = leaders[:min(len(leaders), infiniteLeaderCount)]
 	if cap(a.wireTanks) < len(a.pilots) {
 		a.wireTanks = make([]infiniteTank, len(a.pilots))
@@ -1180,6 +1217,11 @@ func (a *infiniteArena) broadcast() {
 		packet.Party = parties[viewer.party]
 		packet.Tanks, packet.Bullets, packet.Pickups, packet.Effects = packet.Tanks[:0], packet.Bullets[:0], packet.Pickups[:0], packet.Effects[:0]
 		packet.GodlikeSpawns = packet.GodlikeSpawns[:0]
+		if observer != nil && a.observerPilot(observer) == nil {
+			// A parked identity remains selectable in the standings. Wait for
+			// its next matching-tier opportunity instead of showing the origin.
+			viewer.X, viewer.Y = math.Inf(1), math.Inf(1)
+		}
 		if a.rules == nil {
 			for i, event := range a.godlikeSpawns {
 				if viewer.nearGodlikeSpawn(event, now) {

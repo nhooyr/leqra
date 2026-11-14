@@ -29,6 +29,9 @@ class PracticeArena(
     private var starDuration = 8.0
     private var activeRules: RoomRules? = null
     private val roamingIDs = mutableSetOf<Int>()
+    // Inactive identities retain their tier, score and projectile ownership between spawn waves.
+    private val inactiveRoamingBots = mutableMapOf<Int, ArenaTank>()
+    private val inactiveRoamingReadyAt = mutableMapOf<Int, Double>()
     private val roamingHomes = mutableMapOf<Int, Int>()
     private var nextRoamingID = 2
     private var nextRoamingSpawn = 0.0
@@ -126,6 +129,7 @@ class PracticeArena(
         team: Int = 0,
         difficulty: String = "normal",
     ) {
+        if (configured && id in roamingIDs) return
         val t = snapshot.tanks.firstOrNull { it.id == id } ?: return
         t.name = Callsigns.limit(name)
         val side = if (activeRules?.teamMode == "ffa") 0 else team.coerceIn(0, 4)
@@ -152,13 +156,14 @@ class PracticeArena(
             configurePilot(2, name, colorIndex, team)
             return 2
         }
-        snapshot.tanks
-            .firstOrNull { it.id == 2 }
+        (snapshot.tanks.firstOrNull { it.id == 2 } ?: inactiveRoamingBots[2])
             ?.let { bot ->
                 val replacement =
-                    displacedBotID?.takeIf { id -> id > 2 && snapshot.tanks.none { it.id == id } }
-                        ?: (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1
+                    displacedBotID?.takeIf { id -> id > 2 && snapshot.tanks.none { it.id == id } && id !in inactiveRoamingBots }
+                        ?: max(nextRoamingID, max(snapshot.tanks.maxOfOrNull { it.id } ?: 1, inactiveRoamingBots.keys.maxOrNull() ?: 1) + 1)
+                nextRoamingID = max(nextRoamingID, replacement + 1)
                 if (roamingIDs.remove(2)) roamingIDs.add(replacement)
+                roamingHomes.remove(2)?.let { roamingHomes[replacement] = it }
                 held.remove(2)?.let { held[replacement] = it }
                 movementInputs.remove(2)?.let { movementInputs[replacement] = it }
                 if (fireBlocked.remove(2)) fireBlocked.add(replacement)
@@ -183,6 +188,8 @@ class PracticeArena(
                         if (effect.owner == 2) effect.copy(owner = replacement) else effect
                     }
                 bot.id = replacement
+                if (inactiveRoamingBots.remove(2) != null) inactiveRoamingBots[replacement] = bot
+                inactiveRoamingReadyAt.remove(2)?.let { inactiveRoamingReadyAt[replacement] = it }
             }
         val p = spawnPoint(snapshot.tanks[0], 1, 3)
         snapshot.tanks +=
@@ -223,19 +230,21 @@ class PracticeArena(
                 }
         } else {
             if (configured) {
-                roamingIDs.forEach { dumbBrains.remove(it) }
-                snapshot.tanks = snapshot.tanks.filter { it.id !in roamingIDs }
-                projectiles.removeAll { it.wire.owner in roamingIDs }
+                parkRoamingBots(roamingIDs.toSet())
             }
             configured = true
             roamingIDs.clear()
             roamingHomes.clear()
-            nextRoamingID = max(nextRoamingID, (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1)
+            nextRoamingID = max(nextRoamingID, max(snapshot.tanks.maxOfOrNull { it.id } ?: 1, inactiveRoamingBots.keys.maxOrNull() ?: 1) + 1)
             nextRoamingSpawn = time
             snapshot.tanks.forEachIndexed { i, t ->
                 t.team = if (rules.teamMode == "teams") if (t.team > 0) t.team else i % 2 + 1 else 0
                 if (t.team > 0)
                     t.colorIndex = rules.teamColors.getOrNull(t.team - 1) ?: t.colorIndex
+            }
+            inactiveRoamingBots.values.forEach { t ->
+                t.team = if (rules.teamMode == "teams") t.team.takeIf { it > 0 } ?: (t.id % 2 + 1) else 0
+                if (t.team > 0) t.colorIndex = rules.teamColors.getOrNull(t.team - 1) ?: t.colorIndex
             }
         }
         updateStandings()
@@ -267,6 +276,7 @@ class PracticeArena(
         effectTimes.keys.retainAll(live)
         populateRoamingBots()
         populatePickups(dt)
+        val finishedRoamingLives = mutableSetOf<Int>()
         for (i in snapshot.tanks.indices) {
             val t = snapshot.tanks[i]
             if (t.hp == 0) {
@@ -275,11 +285,15 @@ class PracticeArena(
                     continue
                 }
                 t.respawnTime = max(0.0, t.respawnTime - dt)
-                if (t.respawnTime <= 1e-9) respawn(i)
+                if (t.respawnTime <= 1e-9) {
+                    if (configured && t.id in roamingIDs) finishedRoamingLives += t.id
+                    else respawn(i)
+                }
                 continue
             }
             advanceEquipment(t, dt)
         }
+        parkRoamingBots(finishedRoamingLives)
         val count = snapshot.tanks.size
         repeat(count) { offset ->
             val i = ((snapshot.tick % count).toInt() + offset) % count
@@ -375,31 +389,38 @@ class PracticeArena(
             (budget == 0 || humans.none { abs(it.x - bot.x) <= 16 * 84 && abs(it.y - bot.y) <= 16 * 84 }) }.map { it.id }.toMutableSet()
         val excess = (roamingIDs.size - retired.size - budget).coerceAtLeast(0)
         if (excess > 0) retired += roamingIDs.filter { it !in retired }.sortedDescending().take(excess)
-        if (retired.isNotEmpty()) {
-            snapshot.tanks = snapshot.tanks.filter { it.id !in retired }
-            projectiles.removeAll { it.wire.owner in retired }
-            snapshot.bullets = snapshot.bullets.filter { it.owner !in retired }
-            for (id in retired) {
-                roamingIDs.remove(id); roamingHomes.remove(id); held.remove(id); movementInputs.remove(id)
-                fireBlocked.remove(id); botCourses.remove(id); botDecisions.remove(id); dumbBrains.remove(id)
-                nextBoostEffects.remove(id); motionPresenters.remove(id)
-            }
-        }
+        parkRoamingBots(retired)
         if (time < nextRoamingSpawn || living.isEmpty() || roamingIDs.size >= budget) return
         nextRoamingSpawn = time + (1 + unitRandom()) / rate
         repeat(min(living.size, budget - roamingIDs.size)) {
-            val anchor = living.minWith(compareBy<ArenaTank> { human -> roamingHomes.values.count { it == human.id } }.thenBy { it.id })
-            val id = max(nextRoamingID, (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1)
-            nextRoamingID = id + 1
-            val p = spawnPoint(anchor, 2, 5)
             val level = rules.roamingBotDifficulty(unitRandom()) ?: return@repeat
-            val team = if (rules.teamMode == "teams") snapshot.tanks.size % 2 + 1 else 0
-            snapshot.tanks += ArenaTank(id = id, name = "Bot ${id - 1}", x = p.x, y = p.y, angle = unitRandom() * 2 * PI - PI,
-                colorIndex = if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0 else GamePalette.index(id - 1), team = team,
-                bot = true, spawnProtected = true, spawnSerial = 1, invulnerable = 1.0, difficulty = level)
+            val anchor = living.minWith(compareBy<ArenaTank> { human -> roamingHomes.values.count { it == human.id } }.thenBy { it.id })
+            val previous = inactiveRoamingBots.values.filter { it.difficulty == level && time + 1e-9 >= (inactiveRoamingReadyAt[it.id] ?: 0.0) }.minByOrNull { it.id }
+            if (previous == null && inactiveRoamingBots.values.count { it.difficulty == level } + snapshot.tanks.count { it.id in roamingIDs && it.difficulty == level } >= 128) return@repeat
+            val id = previous?.id ?: max(nextRoamingID, max(snapshot.tanks.maxOfOrNull { it.id } ?: 1, inactiveRoamingBots.keys.maxOrNull() ?: 1) + 1)
+            nextRoamingID = max(nextRoamingID, id + 1)
+            inactiveRoamingBots.remove(id)
+            inactiveRoamingReadyAt.remove(id)
+            val p = spawnPoint(anchor, 2, 5)
+            val team = if (rules.teamMode == "teams") previous?.team?.takeIf { it > 0 } ?: (snapshot.tanks.size % 2 + 1) else 0
+            snapshot.tanks += ArenaTank(id = id, name = previous?.name ?: "Bot ${id - 1}", x = p.x, y = p.y, angle = unitRandom() * 2 * PI - PI,
+                colorIndex = previous?.colorIndex ?: if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0 else GamePalette.index(id - 1), team = team,
+                score = previous?.score ?: 0, bot = true, spawnProtected = true, spawnSerial = (previous?.spawnSerial ?: 0) + 1, invulnerable = 1.0, difficulty = level)
             roamingIDs += id
             roamingHomes[id] = anchor.id
         }
+    }
+
+    private fun parkRoamingBots(ids: Set<Int>) {
+        if (ids.isEmpty()) return
+        for (tank in snapshot.tanks) if (tank.id in ids) {
+            inactiveRoamingBots[tank.id] = tank.copy(hp = 0, respawnTime = 0.0)
+            inactiveRoamingReadyAt[tank.id] = time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
+            roamingIDs.remove(tank.id); roamingHomes.remove(tank.id); held.remove(tank.id); movementInputs.remove(tank.id)
+            fireBlocked.remove(tank.id); botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
+            nextBoostEffects.remove(tank.id); motionPresenters.remove(tank.id)
+        }
+        snapshot.tanks = snapshot.tanks.filter { it.id !in ids }
     }
 
     fun presentationSnapshot(
@@ -544,7 +565,6 @@ class PracticeArena(
 
     private fun respawn(index: Int) {
         val old = snapshot.tanks[index]
-        val level = if (configured && old.id in roamingIDs) activeRules?.roamingBotDifficulty(unitRandom()) ?: return else old.difficulty
         val p =
             respawnLocation?.invoke(old)
                 ?: spawnPoint(if (old.id in roamingIDs) snapshot.tanks.filter { !it.bot && it.hp > 0 }.minByOrNull { hypot(it.x - old.x, it.y - old.y) } ?: old else if (old.bot) snapshot.tanks[0] else old, 2, 5)
@@ -564,7 +584,7 @@ class PracticeArena(
                 invulnerable = if (maze.world == null) 1.0 else 1.2,
                 survivalEnemy = old.survivalEnemy,
                 survivalBoss = old.survivalBoss,
-                difficulty = level,
+                difficulty = old.difficulty,
             )
         snapshot.tanks = snapshot.tanks.toMutableList().also { it[index] = replacement }
         fireBlocked.remove(old.id)
@@ -1248,8 +1268,7 @@ class PracticeArena(
         t.hp = 0
         if (killScoring) t.score--
         t.respawnTime = if (respawnsEnabled) respawnDelay else 0.0
-        snapshot.tanks
-            .firstOrNull { it.id == owner }
+        identity(owner)
             ?.let {
                 if (killScoring) it.score++
                 t.killedBy = it.name
@@ -1258,7 +1277,9 @@ class PracticeArena(
         effect("hit", t.x, t.y, owner, contact = contact)
     }
 
-    private fun team(id: Int) = snapshot.tanks.firstOrNull { it.id == id }?.team ?: 0
+    private fun identity(id: Int) = snapshot.tanks.firstOrNull { it.id == id } ?: inactiveRoamingBots[id]
+
+    private fun team(id: Int) = identity(id)?.team ?: 0
 
     private fun opposes(owner: Int, target: ArenaTank) =
         owner != target.id && (team(owner) == 0 || team(owner) != target.team)
@@ -1310,17 +1331,18 @@ class PracticeArena(
             }
         }
         snapshot.boostedBulletIds = boosted
-        val sorted =
-            snapshot.tanks.sortedWith(compareByDescending<ArenaTank> { it.score }.thenBy { it.id })
+        val roster = snapshot.tanks + inactiveRoamingBots.values
+        val sorted = roster.sortedWith(compareByDescending<ArenaTank> { it.score }.thenBy { it.id })
+        val ranks = sorted.mapIndexed { index, tank -> tank.id to index + 1 }.toMap()
         snapshot.leaderboard =
-            sorted.take(10).map {
+            (if (configured && maze.world == null) sorted else sorted.take(10)).map {
                 LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team, it.difficulty)
             }
-        snapshot.tankCount = snapshot.tanks.size
+        snapshot.tankCount = roster.size
         snapshot.teamScores =
-            (1..4).map { team -> snapshot.tanks.filter { it.team == team }.sumOf { it.score } }
+            (1..4).map { team -> roster.filter { it.team == team }.sumOf { it.score } }
         snapshot.tanks.forEachIndexed { i, t ->
-            t.rank = sorted.indexOfFirst { it.id == t.id } + 1
+            t.rank = ranks[t.id] ?: 0
             t.ammoUsed = owned[i].ammo
             t.grenades = owned[i].grenades
             t.grenadeLife = owned[i].grenadeLife
@@ -1373,7 +1395,7 @@ class PracticeArena(
         )
 
         private val rapidSpec = WeaponSpec(846.0, 3.5 / 3, 18 * 84.0 / 846, 0.0, 115)
-        private val scatterSpec = WeaponSpec(846.0, 3.5, 3.9, .54, 12)
+        private val scatterSpec = WeaponSpec(846.0, 3.5, 3.9, .27, 12)
         private val homingSpec = WeaponSpec(235.0, 5.0, 18 * 84.0 / 235, .72, 3)
         private val grenadeSpec = WeaponSpec(205.0, 6.0, 10.0, .8, 3)
         private val cannonSpec = WeaponSpec(1128.0, 14.0, 5.3, .85 * 2 / 3, 3)

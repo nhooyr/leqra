@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"math"
 	"strings"
 	"testing"
 	"time"
@@ -89,30 +88,30 @@ func TestGodlikeSpawnNoticesOnlyTrackTruePublicBossLives(t *testing.T) {
 	if len(a.godlikeSpawns) != 1 || a.godlikeSpawns[0].Spawn != first.Spawn || human.nearGodlikeSpawn(first, now) {
 		t.Fatal("offscreen relocation created a new near-birth warning")
 	}
-	// Reactivate a living pooled identity near the pilot without starting a life.
+	// A parked boss cannot reappear on an ordinary encounter slot.
 	for i, p := range a.pilots {
 		if p == bot {
-			a.pilots = append(a.pilots[:i], a.pilots[i+1:]...)
+			a.parkAmbientBot(i)
 			break
 		}
 	}
-	a.inactiveBots = append(a.inactiveBots, bot)
 	a.nextBot = a.tick
 	a.populate()
-	if len(a.godlikeSpawns) != 1 || a.godlikeSpawns[0].Spawn != first.Spawn {
-		t.Fatal("pool activation created a new spawn event")
+	if bot.HP != 0 || len(a.godlikeSpawns) != 0 {
+		t.Fatal("ordinary opportunity reactivated a boss or retained its warning")
 	}
-	bot.HP, bot.respawn = 0, a.tick+1
 	a.publicBotLives = 127
-	a.nextBot = math.MaxUint64
-	a.step(now.Add(time.Second))
-	if bot.HP == 0 || len(a.godlikeSpawns) != 2 || a.godlikeSpawns[1].Spawn != bot.Spawn || a.godlikeSpawns[1].at != now.Add(time.Second) {
-		t.Fatal("true Godlike respawn did not create a new bounded life event")
+	a.clock = now.Add(time.Second)
+	a.nextBot = a.tick
+	a.populate()
+	if bot.HP == 0 || len(a.godlikeSpawns) != 1 || a.godlikeSpawns[0].Spawn != bot.Spawn || a.godlikeSpawns[0].at != now.Add(time.Second) {
+		t.Fatal("matching Godlike opportunity lacked its new life warning")
 	}
+
 	a.connected = 0
 	a.trimRoamingBots()
 	if len(a.godlikeSpawns) != 0 {
-		t.Fatal("tier downgrade retained stale Godlike warnings")
+		t.Fatal("parked boss retained a stale spawn warning")
 	}
 	private := newRoomInfiniteArena(defaultRules(), nil)
 	private.clock = now

@@ -105,21 +105,21 @@ final class RoamingBotRateMapTests: XCTestCase {
         XCTAssertTrue(fast.snapshot.tanks.filter(\.bot).allSatisfy { ["dumb", "normal"].contains($0.difficulty) })
     }
 
-    func testEachAmbientRespawnReselectsEnabledTierWhileRosterBotsKeepTheirTier() {
+    func testAuthoredRosterRespawnsKeepTheirTierWhileAmbientCorpsesWaitForTheNextWave() {
         let arena = arena(rates: ["dumb": 4], roster: 1)
         let roster = arena.snapshot.tanks[1].id
         arena.step(input: GameInput(), dt: 1 / 60)
         let ambient = arena.snapshot.tanks.last!.id
         XCTAssertNotEqual(roster, ambient)
-        for _ in 0..<30 {
-            for index in arena.snapshot.tanks.indices where [roster, ambient].contains(arena.snapshot.tanks[index].id) {
-                arena.snapshot.tanks[index].difficulty = "godlike"
-                arena.snapshot.tanks[index].hp = 0; arena.snapshot.tanks[index].respawnTime = 0
-            }
-            arena.step(input: GameInput(), dt: 1 / 60)
-            XCTAssertEqual(arena.snapshot.tanks.first(where: { $0.id == ambient })?.difficulty, "dumb")
-            XCTAssertEqual(arena.snapshot.tanks.first(where: { $0.id == roster })?.difficulty, "godlike")
+        for index in arena.snapshot.tanks.indices where [roster, ambient].contains(arena.snapshot.tanks[index].id) {
+            arena.snapshot.tanks[index].hp = 0; arena.snapshot.tanks[index].respawnTime = 0
         }
+        arena.step(input: GameInput(), dt: 1 / 60)
+        XCTAssertNil(arena.snapshot.tanks.first(where: { $0.id == ambient }), "Ambient identities wait for their weighted spawn opportunity")
+        XCTAssertEqual(arena.snapshot.tanks.first(where: { $0.id == roster })?.difficulty, "hard")
+        XCTAssertEqual(arena.snapshot.tanks.first(where: { $0.id == roster })?.hp, 1)
+        advance(arena, seconds: 0.6)
+        XCTAssertEqual(arena.snapshot.tanks.first(where: { $0.id == ambient })?.difficulty, "dumb")
     }
 
     func testAllOffAndMasterOffRetireAmbientBotsWithoutRemovingAuthoredRoster() {

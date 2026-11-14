@@ -118,7 +118,7 @@ func TestInfinityTierRatesUseSummedCadenceAndCanonicalWeightedSelection(t *testi
 	}
 }
 
-func TestInfinityTierRatesApplyOnRespawnWithoutChangingRosterOrIdentity(t *testing.T) {
+func TestInfinityTierRatesSelectNewIdentitiesWithoutRetieringOldOnes(t *testing.T) {
 	rules := defaultRules()
 	rules.InfinityRandomBots = true
 	rules.InfinityBotSpawnRates = spawnRateMap(map[string]float64{"hard": 2})
@@ -127,43 +127,30 @@ func TestInfinityTierRatesApplyOnRespawnWithoutChangingRosterOrIdentity(t *testi
 	human := a.join(fakeClient(), "Human", time.Unix(0, 0))
 	human.kit.Invulnerable = 1e9
 	a.populate()
-	bots := roamingBots(a)
-	if len(bots) != 1 {
-		t.Fatal("fixture missing ambient")
-	}
-	ambient, roster := bots[0], a.pilots[1]
+	ambient, roster := roamingBots(a)[0], a.pilots[1]
 	id, name, serial := ambient.ID, ambient.Name, ambient.Spawn
 	ambient.Score = 31
-	ambient.HP = 0
-	ambient.respawn = a.tick + 1
-	roster.HP = 0
-	roster.respawn = a.tick + 1
+	ambient.HP, ambient.respawn = 0, a.tick+1
+	roster.HP, roster.respawn = 0, a.tick+1
 	a.rules.BotSpawnRates = map[string]float64{"normal": 2}
-	a.nextBot = math.MaxUint64
-	a.nextPickup = math.MaxUint64
+	a.nextBot, a.nextPickup = math.MaxUint64, math.MaxUint64
 	a.step(time.Unix(1, 0))
-	if ambient.HP == 0 || ambient.botLevel != infiniteBotLevel("normal") || ambient.ID != id || ambient.Name != name || ambient.Spawn != serial+1 || ambient.Score != 31 {
-		t.Fatal("reborn ambient kept disabled tier or lost identity", ambient)
+	if ambient.HP != 0 || ambient.botLevel != infiniteBotLevel("hard") || ambient.ID != id || ambient.Name != name || ambient.Spawn != serial || ambient.Score != 31 {
+		t.Fatal("parked identity lost permanent tier or score")
 	}
 	if roster.HP == 0 || roster.botLevel != infiniteBotLevel("godlike") {
-		t.Fatal("roster bot inherited ambient mix")
+		t.Fatal("authored roster stopped respawning")
 	}
-	ambient.HP = 0
-	ambient.respawn = a.tick + 1
-	a.suspend(human)
-	if len(roamingBots(a)) != 0 {
-		t.Fatal("disconnected population not pooled")
-	}
-	if reason := a.resume(fakeClient(), human, 0, time.Unix(2, 0)); reason != "" {
-		t.Fatal(reason)
-	}
-	a.rules.BotSpawnRates = map[string]float64{"easy": 2}
 	a.nextBot = a.tick
 	a.populate()
-	a.nextBot = math.MaxUint64
-	a.step(time.Unix(2, 0))
-	if ambient.HP == 0 || ambient.botLevel != infiniteBotLevel("easy") || ambient.ID != id || ambient.Score != 31 {
-		t.Fatal("dead pooled ambient escaped current mix")
+	if len(roamingBots(a)) != 1 || roamingBots(a)[0] == ambient || roamingBots(a)[0].botLevel != infiniteBotLevel("normal") {
+		t.Fatal("Normal opportunity reused Hard identity")
+	}
+	a.rules.BotSpawnRates = map[string]float64{"hard": 2}
+	a.nextBot = a.tick
+	a.populate()
+	if ambient.HP == 0 || ambient.ID != id || ambient.Score != 31 || ambient.Spawn != serial+1 || ambient.botLevel != infiniteBotLevel("hard") {
+		t.Fatal("matching opportunity failed to reuse parked identity")
 	}
 }
 
@@ -260,7 +247,7 @@ func TestInfinityTierRatesDisabledTierCannotReenterFromALivingBudgetPool(t *test
 	}
 	a.nextBot = a.tick
 	a.populate()
-	if bot.HP == 0 || bot.ID != id || bot.Score != 17 || bot.botLevel != infiniteBotLevel("easy") {
+	if bot.HP != 0 || bot.ID != id || bot.Score != 17 || bot.botLevel != infiniteBotLevel("hard") || len(roamingBots(a)) != 1 || roamingBots(a)[0] == bot || roamingBots(a)[0].botLevel != infiniteBotLevel("easy") {
 		t.Fatal("living pool reintroduced a disabled tier or lost the identity")
 	}
 }

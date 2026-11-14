@@ -84,6 +84,24 @@ final class InfinitySpectatorTests: XCTestCase {
         XCTAssertEqual(rendered.following, 0); XCTAssertTrue(rendered.tanks.isEmpty); XCTAssertTrue(rendered.leaderboard.isEmpty)
     }
 
+    func testParkedBotKeepsItsFollowIdentityAndStandingsUntilTheSameBotSpawnsAgain() throws {
+        let timeline = RenderTimeline(localID: -1) { _, _, _ in XCTFail("A spectator cannot predict") }
+        var state = ArenaSnapshot(tick: 60, tanks: [ArenaTank(id: 12, name: "Bot 1", x: 200, score: 7, bot: true, spawnSerial: 1)],
+                                  leaderboard: [LeaderboardEntry(id: 12, name: "Bot 1", score: 7, bot: true, difficulty: "normal")])
+        state.spectating = true; state.following = 12
+        timeline.accept(state, at: 1)
+        state.tick = 62; state.tanks = []
+        timeline.accept(state, at: 1.04)
+        let waiting = try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1.1) { _ in XCTFail("No spectator input") })
+        XCTAssertTrue(waiting.tanks.isEmpty); XCTAssertEqual(waiting.following, 12)
+        XCTAssertEqual(waiting.leaderboard.first?.score, 7)
+        state.tick = 120; state.tanks = [ArenaTank(id: 12, name: "Bot 1", x: 500, score: 7, bot: true, spawnSerial: 2)]
+        timeline.accept(state, at: 2)
+        let resumed = try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 2.1) { _ in XCTFail("No spectator input") })
+        XCTAssertEqual(resumed.following, 12); XCTAssertEqual(resumed.tanks.first?.spawnSerial, 2)
+        XCTAssertEqual(resumed.tanks.first?.score, 7)
+    }
+
     @MainActor func testLiveRoomInfinitySpectatorCanFollowTheFullRosterAndReconnectWithoutATank() async throws {
         guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
             throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable local server.")

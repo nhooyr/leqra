@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.0.1';
+const GAME_VERSION='5.0.2';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -654,7 +654,7 @@ function addRing(x,y,color,max=52){rings.push({x,y,color,life:.45,maxLife:.45,ma
 function projectileSpec(power){
  const base={speed:282,r:3.5,life:5.3,cooldown:.34,kind:''};
  if(power==='rapid')return{...base,speed:MACHINE_SPEED,r:MACHINE_RADIUS,life:(W+H)/(2*MACHINE_SPEED),cooldown:0,kind:'rapid'};
- if(power==='scatter')return{...base,speed:282*3,life:3.9,cooldown:.54,kind:'scatter'};
+ if(power==='scatter')return{...base,speed:282*3,life:3.9,cooldown:.27,kind:'scatter'};
  if(power==='homing')return{speed:MISSILE_SPEED,r:5,life:(W+H)/MISSILE_SPEED+.5,cooldown:.72,kind:'homing'};
  if(power==='grenade')return{speed:GRENADE_SPEED,r:6,life:GRENADE_FUSE,cooldown:.8,kind:'grenade'};
  if(power==='cannon')return{speed:CANNON_SPEED,r:CANNON_RADIUS,life:CANNON_LIFETIME,cooldown:CANNON_COOLDOWN,kind:'cannon'};
@@ -4590,7 +4590,7 @@ function renderInfinityLoadout(t,num,projectiles,blocked,state,twoPilots){
  else if(state==='paused')unavailable={text:'PAUSED',label:'PAUSED',ready:1};
  renderPilotReadiness(t,num,projectiles,blocked,unavailable,infinityHUDId);
 }
-function cooldownDuration(power){return power==='cannon'?CANNON_COOLDOWN:power==='laser'?LASER_COOLDOWN:power==='rapid'?0:power==='scatter'?.54:power==='homing'?.72:power==='grenade'?.8:.34;}
+function cooldownDuration(power){return power==='cannon'?CANNON_COOLDOWN:power==='laser'?LASER_COOLDOWN:power==='rapid'?0:power==='scatter'?.27:power==='homing'?.72:power==='grenade'?.8:.34;}
 function drawHomingWarnings(c,t,source,damage){
  if(!combatPrefs.visual||!t?.alive)return;
  for(const b of missileLocks(t,source,damage).slice(0,3)){

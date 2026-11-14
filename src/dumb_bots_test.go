@@ -130,116 +130,103 @@ func TestDumbInfinityBotUsesStaleBadAimAndSlowTriggerPulses(t *testing.T) {
 	}
 }
 
-func TestPublicGodlikeCadenceCountsRespawnsAndLimitsLivingBosses(t *testing.T) {
-	a, bot, _ := dumbInfinityFixture(t)
-	a.nextBot = math.MaxUint64
-	for life := 2; life <= 64; life++ {
-		bot.HP, bot.respawn = 0, a.tick+1
-		a.step(time.Unix(0, 0))
-		if a.publicBotLives != uint64(life) {
-			t.Fatal("actual respawn did not advance bot life count", life, a.publicBotLives)
+func TestPublicBotIdentitiesKeepTheirTierAcrossSpawnOpportunities(t *testing.T) {
+	a := newSeededInfiniteArena(37)
+	human := a.join(fakeClient(), "Human", time.Unix(0, 0))
+	identities := map[string]*infinitePilot{}
+	numbers := map[int]string{}
+	var previous *infinitePilot
+	for life := 1; life <= 128; life++ {
+		if previous != nil {
+			previous.X = human.X + 30*cellSize
 		}
-		wantLevel := "dumb"
-		if life%16 == 8 {
-			wantLevel = "normal"
+		a.nextBot = a.tick
+		a.populate()
+		bots := roamingBots(a)
+		if len(bots) != 1 {
+			t.Fatal("opportunity did not replace the retired encounter", len(bots))
 		}
-		if life < 64 && bot.botLevel != infiniteBotLevel(wantLevel) {
-			t.Fatal("public respawn did not use its scheduled encounter difficulty", life, wantLevel)
+		bot := bots[0]
+		want := "dumb"
+		if life%64 == 0 {
+			want = "godlike"
+		} else if life%16 == 8 {
+			want = "normal"
 		}
-	}
-	if bot.botLevel != infiniteBotLevel("godlike") || bot.Name != "Bot 1 - Godlike" || bot.wireTank(a.tick).Difficulty != "godlike" {
-		t.Fatal("64th life lacked a real, visibly marked Godlike bot")
-	}
-	other := a.addPilot("Bot 2", true, 0, 0, 1, 3)
-	other.ambientNumber = 2
-	a.publicBotLives = 127
-	a.startBotLife(other)
-	if other.botLevel != infiniteBotLevel("dumb") {
-		t.Fatal("existing living Godlike allowed boss difficulty buildup")
-	}
-	// An offscreen pooled boss is still alive, and must not permit a duplicate.
-	a.inactiveBots = append(a.inactiveBots, bot)
-	for i, p := range a.pilots {
-		if p == bot {
-			a.pilots = append(a.pilots[:i], a.pilots[i+1:]...)
-			break
+		if infiniteBotTunings[bot.botLevel].name != want || a.publicBotLives != uint64(life) {
+			t.Fatal("spawn opportunity changed public cadence", life, bot.Name, a.publicBotLives)
 		}
+		if old := identities[want]; old != nil {
+			if bot != old || bot.Score != 23 {
+				t.Fatal("matching tier did not reuse its identity and score", life, bot.Name)
+			}
+		} else {
+			if other := numbers[bot.ambientNumber]; other != "" {
+				t.Fatal("new tier reused another identity's number", want, other)
+			}
+			identities[want], numbers[bot.ambientNumber] = bot, want
+			bot.Score = 23
+		}
+		for tier, identity := range identities {
+			if infiniteBotTunings[identity.botLevel].name != tier {
+				t.Fatal("parked identity changed tier")
+			}
+		}
+		previous = bot
 	}
-	a.publicBotLives = 191
-	a.startBotLife(other)
-	if other.botLevel != infiniteBotLevel("dumb") {
-		t.Fatal("pooled living boss was ignored")
-	}
-	bot.HP = 0
-	a.startBotLife(bot)
-	if bot.botLevel != infiniteBotLevel("dumb") || bot.Name != "Bot 1 - Dumb" || bot.wireTank(a.tick).Difficulty != "dumb" {
-		t.Fatal("next ordinary life retained a stale Godlike warning")
+	if len(identities) != 3 || a.nextID != 4 {
+		t.Fatal("repeated opportunities allocated duplicate identities", len(identities), a.nextID)
 	}
 }
 
 func TestPublicGodlikeNameUsesBotNamespaceThroughoutPresentation(t *testing.T) {
 	a, bot, _ := dumbInfinityFixture(t)
-	bot.ambientNumber, bot.Score = 1234, 23
-	a.publicBotLives = 63
+	bot.ambientNumber, bot.Score, bot.botLevel = 1234, 23, infiniteBotLevel("godlike")
 	a.startBotLife(bot)
 	const name = "Bot 1234 - Godlike"
 	if bot.Name != name || bot.wireTank(a.tick).Name != name || !reservedCallsign(name) {
-		t.Fatal("Godlike tank name lost its number, suffix, or reserved namespace", bot.Name)
+		t.Fatal("Godlike name lost its identity", bot.Name)
 	}
 	leaders := a.leaderboard(nil)
 	if len(leaders) == 0 || leaders[0].ID != bot.ID || leaders[0].Name != name || leaders[0].Score != 23 {
-		t.Fatal("leaderboard did not preserve the full Godlike name and score", leaders)
+		t.Fatal("leaderboard lost Godlike identity", leaders)
 	}
 	if len(a.godlikeSpawns) != 1 || a.godlikeSpawns[0].Name != name {
-		t.Fatal("spawn notice did not carry the full Godlike name", a.godlikeSpawns)
+		t.Fatal("spawn notice lost name", a.godlikeSpawns)
 	}
-	a.publicBotLives = 64
+	lives := a.publicBotLives
 	a.startBotLife(bot)
-	if bot.Name != "Bot 1234 - Dumb" || bot.Score != 23 {
-		t.Fatal("ordinary life retained a Godlike suffix or lost its score", bot.Name, bot.Score)
+	if bot.Name != name || bot.Score != 23 || a.publicBotLives != lives {
+		t.Fatal("reset changed permanent identity or encounter cadence")
 	}
 }
 
-func TestPublicStrayedBotStartsNewLifeWhileBudgetPoolKeepsTier(t *testing.T) {
+func TestPublicDeadBotWaitsForMatchingTierOpportunity(t *testing.T) {
 	a, bot, human := dumbInfinityFixture(t)
-	a.publicBotLives = 63
-	a.startBotLife(bot)
-	if bot.Name != "Bot 1 - Godlike" {
-		t.Fatal("fixture lacked boss")
-	}
-	bot.X, bot.Y = human.X+17*cellSize, human.Y
-	lives, spawn := a.publicBotLives, bot.Spawn
-	a.tick = a.nextBot
+	bot.Score = 23
+	a.eliminatePilot(bot, human.ID, human.Team, human.Name)
+	deadline, serial := bot.respawn, bot.Spawn
+	a.nextBot = math.MaxUint64
+	a.tick = deadline - 1
 	a.populate()
-	if bot.Spawn != spawn+1 || bot.Name != "Bot 1 - Dumb" || bot.botLevel != infiniteBotLevel("dumb") || a.publicBotLives != lives+1 {
-		t.Fatal("a strayed encounter retained its old life or failed to advance the birth cadence")
+	if len(roamingBots(a)) != 1 || bot.HP != 0 {
+		t.Fatal("corpse disappeared before its contact window ended")
 	}
-	a.join(fakeClient(), "Second", time.Unix(0, 0))
-	fillRoamingBots(a)
-	a.publicBotLives = 127
-	a.startBotLife(bot)
-	// Place this boss last so reducing the budget moves it into the pool while
-	// one connected pilot still permits the encounter.
-	for i, p := range a.pilots {
-		if p == bot {
-			a.pilots = append(append(a.pilots[:i], a.pilots[i+1:]...), bot)
-			break
-		}
+	a.tick = deadline
+	a.populate()
+	if len(roamingBots(a)) != 0 || len(a.inactiveBots) != 1 || bot.Score != 22 || human.Score != 1 || bot.Spawn != serial {
+		t.Fatal("death did not park scored identity")
 	}
-	lives = a.publicBotLives
-	a.suspend(human)
-	if len(a.inactiveBots) < 1 {
-		t.Fatal("bot was not pooled")
+	a.publicBotLives = 7
+	a.nextBot = a.tick
+	a.populate()
+	if bot.HP != 0 || bot.botLevel != infiniteBotLevel("dumb") || len(roamingBots(a)) != 1 || roamingBots(a)[0] == bot {
+		t.Fatal("Normal opportunity reused a Dumb identity")
 	}
-	if reason := a.resume(fakeClient(), human, 0, time.Unix(1, 0)); reason != "" {
-		t.Fatal(reason)
-	}
-	for len(a.inactiveBots) > 0 {
-		a.tick = a.nextBot
-		a.populate()
-	}
-	if a.publicBotLives != lives || bot.Name != "Bot 1 - Godlike" || bot.botLevel != infiniteBotLevel("godlike") {
-		t.Fatal("reactivating the pool counted a new life or changed the boss")
+	a.nextBot = a.tick
+	a.populate()
+	if bot.HP == 0 || bot.Score != 22 || bot.Spawn != serial+1 || a.publicBotLives != 9 {
+		t.Fatal("Dumb opportunity lost original score or life", bot)
 	}
 }
 
@@ -265,7 +252,7 @@ func TestPublicGodlikeLimitScalesPer16ConnectedSeats(t *testing.T) {
 	}
 }
 
-func TestPublicGodlikeLimitShrinkDowngradesExcessWithoutNewLives(t *testing.T) {
+func TestPublicGodlikeLimitShrinkParksExcessWithoutRetiering(t *testing.T) {
 	a, ordinary, human := dumbInfinityFixture(t)
 	a.connected = 33
 	bosses := make([]*infinitePilot, 3)
@@ -275,35 +262,32 @@ func TestPublicGodlikeLimitShrinkDowngradesExcessWithoutNewLives(t *testing.T) {
 		bosses[i].ambientNumber = i + 2
 		bosses[i].publicBotName()
 		bosses[i].Score = 20 + i
-		bosses[i].botHasAim = true
 	}
 	bosses[0].X, bosses[0].Y = human.X+30*cellSize, human.Y
 	bosses[1].X, bosses[1].Y = human.X+cellSize, human.Y
-	pooled := bosses[2]
-	a.pilots = a.pilots[:len(a.pilots)-1]
-	a.inactiveBots = append(a.inactiveBots, pooled)
-	lives, spawn, x, y := a.publicBotLives, bosses[0].Spawn, bosses[0].X, bosses[0].Y
+	a.parkAmbientBot(len(a.pilots) - 1)
+	lives := a.publicBotLives
 	a.connected = 1
 	a.trimRoamingBots()
-	if a.livingPublicGodlikes(nil) != 1 || bosses[1].botLevel != infiniteBotLevel("godlike") {
-		t.Fatal("population shrink did not keep the visible boss first")
+	if a.livingPublicGodlikes(nil) != 1 || bosses[1].HP == 0 {
+		t.Fatal("shrink did not retain visible encounter")
 	}
-	for _, p := range []*infinitePilot{bosses[0], pooled} {
-		if p.botLevel != infiniteBotLevel("dumb") || strings.HasSuffix(p.Name, " - Godlike") || p.botHasAim || p.botShot != a.tick+108 || p.HP != 1 {
-			t.Fatal("excess boss did not become a fresh-thinking Dumb bot", p.Name, p.botHasAim)
+	for _, p := range []*infinitePilot{bosses[0], bosses[2]} {
+		if p.botLevel != infiniteBotLevel("godlike") || !strings.HasSuffix(p.Name, " - Godlike") || p.HP != 0 {
+			t.Fatal("parked boss lost its tier or remained alive", p.Name)
 		}
 	}
-	if bosses[0].Score != 20 || pooled.Score != 22 || bosses[0].Spawn != spawn || bosses[0].X != x || bosses[0].Y != y || a.publicBotLives != lives || ordinary.botLevel != infiniteBotLevel("dumb") {
-		t.Fatal("downgrade changed position, score, spawn, or life count")
+	if bosses[0].Score != 20 || bosses[2].Score != 22 || a.publicBotLives != lives || ordinary.botLevel != infiniteBotLevel("dumb") {
+		t.Fatal("population shrink changed points or cadence")
 	}
 	a.connected = 0
 	a.trimRoamingBots()
-	if a.livingPublicGodlikes(nil) != 0 || bosses[1].Score != 21 || bosses[1].HP != 1 || bosses[1].Name != "Bot 3 - Dumb" {
-		t.Fatal("empty arena retained a boss or erased its score/body")
+	if a.livingPublicGodlikes(nil) != 0 || bosses[1].Score != 21 || bosses[1].HP != 0 || bosses[1].Name != "Bot 3 - Godlike" {
+		t.Fatal("empty arena lost permanent boss identity")
 	}
 }
 
-func TestPublicBotCounterPersistsAndRestoredTiersDefaultToDumb(t *testing.T) {
+func TestPublicBotCounterAndPermanentTierSurviveRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.sqlite")
 	s := publicStoreFixture(t, path)
 	_, _, _ = savedPublicJoin(t, s, infiniteMessage{Name: "Pilot"})
@@ -313,20 +297,27 @@ func TestPublicBotCounterPersistsAndRestoredTiersDefaultToDumb(t *testing.T) {
 	bot.publicBotName()
 	bot.Score = 12
 	commitPublicFixture(t, s)
-	id := bot.ID
+	id, seed, nextID := bot.ID, s.public.seed, s.public.nextID
 	s.close()
 	s = publicStoreFixture(t, path)
-	if s.public.publicBotLives != 64 || len(s.public.inactiveBots) != 1 {
-		t.Fatal("restart reset the rare encounter cadence")
+	defer s.close()
+	if s.public.publicBotLives != 64 || len(s.public.inactiveBots) != 1 || s.public.seed != seed || s.public.nextID != nextID {
+		t.Fatal("restart reset cadence, seed, or identities")
 	}
 	restored := s.public.inactiveBots[0]
-	if restored.ID != id || restored.Score != 12 || restored.botLevel != infiniteBotLevel("dumb") || restored.Name != "Bot 1 - Dumb" || restored.HP != 0 {
-		t.Fatal("restart changed score or restored a stale living boss")
+	if restored.ID != id || restored.Score != 12 || restored.botLevel != infiniteBotLevel("godlike") || restored.Name != "Bot 1 - Godlike" || restored.HP != 0 {
+		t.Fatal("restart changed permanent tier or score")
 	}
 	_, _, _ = savedPublicJoin(t, s, infiniteMessage{Name: "Other"})
 	s.public.step(time.Now())
-	if s.public.publicBotLives != 65 || restored.HP == 0 || restored.wireTank(s.public.tick).Difficulty != "dumb" {
-		t.Fatal("restored dead bot did not start a fresh ordinary life")
+	if s.public.publicBotLives != 65 || restored.HP != 0 {
+		t.Fatal("ordinary opportunity reactivated parked Godlike")
+	}
+	s.public.publicBotLives = 127
+	s.public.nextBot = s.public.tick
+	s.public.populate()
+	if restored.HP == 0 || restored.Score != 12 || restored.ID != id || s.public.publicBotLives != 128 {
+		t.Fatal("Godlike opportunity did not recover permanent identity")
 	}
 }
 

@@ -101,9 +101,14 @@ final class BotDifficultyTests: XCTestCase {
         XCTAssertEqual(dumb.snapshot.tanks.count, 2)
         XCTAssertTrue(dumb.snapshot.tanks.dropFirst().allSatisfy { $0.difficulty == "dumb" })
         dumb.configurePilot(id: 2, name: "CUSTOM", colorIndex: 1, difficulty: "godlike")
+        XCTAssertEqual(dumb.snapshot.tanks[1].name, "Bot 1")
+        XCTAssertEqual(dumb.snapshot.tanks[1].difficulty, "dumb", "Ambient identities cannot be edited as authored roster seats")
         dumb.snapshot.tanks[1].hp = 0; dumb.snapshot.tanks[1].respawnTime = 0
         dumb.step(input: GameInput(), dt: 1 / 60)
-        XCTAssertEqual(dumb.snapshot.tanks[1].difficulty, "dumb", "An ambient life reselects from enabled tiers, even if its previous body was edited")
+        XCTAssertFalse(dumb.snapshot.tanks.contains { $0.id == 2 })
+        XCTAssertEqual(dumb.snapshot.leaderboard.first { $0.id == 2 }?.difficulty, "dumb")
+        for _ in 0..<60 { dumb.step(input: GameInput(), dt: 1 / 60) }
+        XCTAssertEqual(dumb.snapshot.tanks.first { $0.id == 2 }?.difficulty, "dumb")
     }
 
     func testActualWireTierControlsWarningRegardlessOfCallsign() throws {

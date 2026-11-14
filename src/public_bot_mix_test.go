@@ -18,7 +18,9 @@ func TestPublicBotMixHasFourNormalAndOneGodlikeOpportunityPer64Lives(t *testing.
 	a.publicBotLives = 0
 	counts := make(map[string]int)
 	for life := 1; life <= 128; life++ {
-		a.startBotLife(bot)
+		bot.HP = 0
+		bot.botLevel = a.chooseAmbientBotLevel()
+		bot.publicBotName()
 		level := infiniteBotTunings[bot.botLevel].name
 		counts[level]++
 		want := "dumb"
@@ -134,7 +136,7 @@ func TestPublicStatusCarriesBotDifficultyWithoutAllocatingAPlayer(t *testing.T) 
 	}
 }
 
-func TestRestoredNormalBotLeaderBecomesDumbWithItsPreservedScore(t *testing.T) {
+func TestRestoredNormalBotLeaderKeepsItsTierAndPreservedScore(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.sqlite")
 	s := publicStoreFixture(t, path)
 	s.public.publicBotLives = 7
@@ -151,8 +153,8 @@ func TestRestoredNormalBotLeaderBecomesDumbWithItsPreservedScore(t *testing.T) {
 	s = publicStoreFixture(t, path)
 	defer s.close()
 	leader := s.public.leaderboard(nil)[0]
-	if leader.ID != id || leader.Score != 42 || leader.Name != "Bot 1 - Dumb" || leader.Difficulty != "dumb" || s.public.publicBotLives != 8 {
-		t.Fatal("restart lost score/cadence or retained a stale normal identity", leader)
+	if leader.ID != id || leader.Score != 42 || leader.Name != "Bot 1 - Normal" || leader.Difficulty != "normal" || s.public.publicBotLives != 8 {
+		t.Fatal("restart lost score, cadence, or permanent normal identity", leader)
 	}
 }
 
@@ -179,7 +181,7 @@ func TestLongCanonicalGodlikeBotNameSurvivesPublicStoreRestart(t *testing.T) {
 			restored = p
 		}
 	}
-	if restored == nil || restored.Name != "Bot 128 - Dumb" || restored.Score != 23 {
+	if restored == nil || restored.Name != "Bot 128 - Godlike" || restored.Score != 23 {
 		t.Fatal("long canonical bot label broke durable score restoration", restored)
 	}
 }
@@ -195,7 +197,9 @@ func TestSavedPublicNameExceptionOnlyAllowsCanonicalAmbientBotLabels(t *testing.
 		{"Bot 512 - Godlike", true, 512, true},
 		{"Bot 128 - Godlike", false, 128, false},
 		{"Bot 128 - Godlike", true, 129, false},
-		{"Bot 999 - Godlike", true, 999, false},
+		{"Bot 999 - Godlike", true, 999, true},
+		{"Bot 2560 - Godlike", true, 2560, true},
+		{"Bot 2561 - Godlike", true, 2561, false},
 		{"Bot 128 - Whatever", true, 128, false},
 		{"ABCDEFGHIJKLMNOPQ", false, 0, false},
 		{"ABCDEFGHIJKLMNOP", false, 0, true},

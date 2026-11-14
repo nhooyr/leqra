@@ -845,7 +845,7 @@ func (g *Game) fire(t *Tank) bool {
 		life = g.machineTravelRange() / machineSpeed
 	}
 	if t.Power == "scatter" {
-		cooldown = .54
+		cooldown = .27
 		life = 3.9
 		speed = shotgunSpeed
 	}

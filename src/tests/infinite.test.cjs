@@ -332,6 +332,15 @@ test('nearby Godlike spawn notices precede encounters, deduplicate by life and n
  h.infinity.close();assert.equal(notice.hidden,true);
 });
 
+test('a reconnecting session announces the next persisted Godlike life without replaying snapshots',()=>{
+ const h=harness(undefined,true);h.infinity.start('online');const first=h.sockets[0];first.receive({type:'welcome',id:1,seed:0,publicToken:'p_owner'});
+ const state=serial=>({type:'state',tick:1,tanks:[{id:1,name:'Human',hp:1,x:42,y:42},{id:3,name:'Bot 3 - Godlike',bot:true,difficulty:'godlike',hp:1,x:462,y:42,spawnSerial:serial}],bullets:[],players:1,leaderboard:[],godlikeSpawns:[{id:3,name:'Bot 3 - Godlike',spawnSerial:serial}]});
+ first.receive(state(4));const oldUntil=h.state().godlikeWarningUntil;assert.ok(h.state().godlikeSeen.has('3:4'));
+ first.close();h.elapse(450);const next=h.sockets.at(-1);assert.notEqual(next,first);next.receive({type:'welcome',id:1,seed:0});next.receive(state(5));
+ assert.ok(h.state().godlikeSeen.has('3:4'));assert.ok(h.state().godlikeSeen.has('3:5'));assert.ok(h.state().godlikeWarningUntil>oldUntil,'restored serial advances so the new life is announced');
+ const until=h.state().godlikeWarningUntil;h.elapse(100);next.receive({...state(5),tick:2});assert.equal(h.state().godlikeWarningUntil,until,'repeated snapshot never extends the warning');h.infinity.close();
+});
+
 test('spawn notices cannot turn human callsigns into Godlike bot alerts',()=>{
  const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];
  socket.receive({type:'welcome',id:1,seed:0});
@@ -2188,10 +2197,75 @@ test('room all-Off/master-Off trims roaming bots while preserving authored roste
  }
 });
 
-test('ambient room respawns reselect enabled tiers without changing roster difficulty or scores',()=>{
+test('ambient room identities keep their tier and score until the next matching spawn opportunity',()=>{
  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:{godlike:2}},roster:[{kind:'bot',id:2,name:'RUST',difficulty:'hard'}]});
  h.setRandom(()=>.5);const w=h.state();w.nextBot=0;w.nextPickup=Infinity;h.advance();
  const ambient=w.tanks.find(t=>t.ambient),authored=w.tanks.find(t=>t.name==='RUST');assert.equal(ambient.difficulty,'godlike');
- w.rules={...w.rules,infinityBotSpawnRates:{dumb:2}};w.nextBot=Infinity;Object.assign(ambient,{hp:0,alive:false,respawn:0,score:7});h.advance();
- assert.equal(ambient.hp,1);assert.equal(ambient.difficulty,'dumb');assert.equal(ambient.score,7);assert.equal(authored.difficulty,'hard');h.infinity.close();
+ w.rules={...w.rules,infinityBotSpawnRates:{dumb:2}};w.nextBot=Infinity;Object.assign(ambient,{hp:0,alive:false,respawn:0,score:7});h.advance(4);
+ assert.ok(w.botPool.includes(ambient));assert.ok(!w.tanks.includes(ambient));assert.equal(ambient.difficulty,'godlike');assert.equal(ambient.score,7);
+ const row=h.byID('infiniteLeaderboard').children.find(row=>standingName(row)===ambient.name);assert.ok(row,'parked identity remains ranked');assert.equal(standingScore(row),7);assert.equal(standingNode(row,'leaderboard-difficulty').textContent,'GODLIKE');
+ w.nextBot=0;h.advance();const dumb=w.tanks.find(t=>t.ambient);assert.equal(dumb.difficulty,'dumb');assert.notEqual(dumb.botNumber,ambient.botNumber);assert.ok(w.botPool.includes(ambient));
+ const serial=ambient.spawnSerial;w.rules={...w.rules,infinityBotSpawnRates:{godlike:2}};w.nextBot=0;h.advance();
+ assert.ok(w.tanks.includes(ambient));assert.equal(ambient.spawnSerial,serial+1);assert.equal(ambient.hp,1);assert.equal(ambient.score,7);assert.equal(ambient.difficulty,'godlike');assert.equal(authored.difficulty,'hard');h.infinity.close();
+});
+
+test('ambient bot death keeps its contact window and never bypasses the spawn timer',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:{normal:2}}});
+ const w=h.state();w.nextBot=0;w.nextPickup=Infinity;h.advance();const bot=w.tanks.find(t=>t.ambient),serial=bot.spawnSerial;
+ Object.assign(bot,{hp:0,alive:false,respawn:1,score:4});w.nextBot=Infinity;h.advance(30);
+ assert.ok(w.tanks.includes(bot));assert.ok(!w.botPool.includes(bot));assert.equal(bot.hp,0,'corpse stays available for projectile contact playback');
+ h.advance(40);assert.ok(w.botPool.includes(bot));assert.equal(bot.hp,0);assert.equal(bot.spawnSerial,serial,'death delay alone never creates another spawn');
+ w.nextBot=0;h.advance();assert.ok(w.tanks.includes(bot));assert.equal(bot.hp,1);assert.equal(bot.spawnSerial,serial+1);assert.equal(bot.score,4);assert.equal(bot.difficulty,'normal');h.infinity.close();
+});
+
+test('all five room bot tiers use distinct permanent numbers and reuse their own pools',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:{dumb:2}}});
+ const w=h.state(),identities=new Map();w.nextPickup=Infinity;
+ for(const difficulty of ['dumb','easy','normal','hard','godlike']){
+  w.rules={...w.rules,infinityRandomBots:true,infinityBotSpawnRates:{[difficulty]:2}};w.nextBot=0;h.advance();
+  const bot=w.tanks.find(t=>t.ambient);assert.equal(bot.difficulty,difficulty);bot.score=10+identities.size;identities.set(difficulty,bot);
+  w.rules={...w.rules,infinityRandomBots:false};h.advance();assert.ok(w.botPool.includes(bot));
+ }
+ assert.equal(new Set([...identities.values()].map(bot=>bot.botNumber)).size,5);
+ const allocated=w.lastBot;
+ for(const [difficulty,bot] of identities){
+  w.rules={...w.rules,infinityRandomBots:true,infinityBotSpawnRates:{[difficulty]:2}};w.nextBot=0;h.advance();
+  assert.equal(w.tanks.find(t=>t.ambient),bot);assert.equal(bot.difficulty,difficulty);assert.ok(bot.score>=10);
+  w.rules={...w.rules,infinityRandomBots:false};h.advance();
+ }
+ assert.equal(w.lastBot,allocated);h.infinity.close();
+});
+
+test('retiring a dead bot preserves its remaining contact delay while its identity waits',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:{normal:2}}});
+ const w=h.state();w.nextBot=0;w.nextPickup=Infinity;h.advance();const bot=w.tanks.find(t=>t.ambient),serial=bot.spawnSerial;
+ Object.assign(bot,{hp:0,alive:false,respawn:1,score:4});w.rules={...w.rules,infinityRandomBots:false};h.advance();assert.ok(w.botPool.includes(bot));
+ w.rules={...w.rules,infinityRandomBots:true};w.nextBot=0;h.advance();const replacement=w.tanks.find(t=>t.ambient);
+ assert.ok(replacement);assert.notEqual(replacement.id,bot.id);assert.notEqual(replacement.botNumber,bot.botNumber);assert.equal(bot.spawnSerial,serial);assert.equal(bot.hp,0);
+ w.nextBot=Infinity;h.advance(65);w.nextBot=0;h.advance();assert.ok(w.tanks.includes(bot));assert.equal(bot.spawnSerial,serial+1);assert.equal(bot.score,4);h.infinity.close();
+});
+
+test('a tier with a full waiting identity pool skips allocation until an existing bot is ready',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:{normal:2}}});
+ const w=h.state();w.nextBot=0;w.nextPickup=Infinity;h.advance();const bot=w.tanks.find(t=>t.ambient);
+ w.tanks=w.tanks.filter(t=>!t.ambient);w.botPool=Array.from({length:128},(_,i)=>({...bot,id:'bot-'+(i+1),botNumber:i+1,name:'Bot '+(i+1),hp:0,respawn:10,pooledAt:w.time,score:i}));w.lastBot=128;
+ w.nextBot=0;h.advance();assert.equal(w.tanks.filter(t=>t.ambient).length,0);assert.equal(w.lastBot,128);assert.equal(w.botPool.length,128);
+ const ready=w.botPool[0];ready.respawn=0;w.nextBot=0;h.advance();assert.ok(w.tanks.includes(ready));assert.equal(w.lastBot,128);assert.equal(ready.difficulty,'normal');assert.equal(ready.score,0);h.infinity.close();
+});
+
+test('spectators retain a parked bot identity and wait for the same tank to return',()=>{
+ const h=harness(undefined,true);h.infinity.start('online',{code:'ROOM',token:'spectator',spectating:true});const ws=h.sockets[0];
+ ws.receive({type:'welcome',id:0,spectating:true,following:64,seed:0,generation:1});
+ const state={type:'state',tick:1,spectating:true,following:64,tanks:[],bullets:[],players:1,leaderboard:[{id:64,name:'Bot 64 - Godlike',bot:true,difficulty:'godlike',score:18}]};
+ ws.receive(state);h.advance(4);assert.equal(h.state().following,64);assert.match(h.byID('infiniteKills').textContent,/Following Bot 64 - Godlike · respawning/);assert.equal(h.state().failed,false);
+ ws.receive({...state,tick:2,tanks:[{id:64,name:'Bot 64 - Godlike',bot:true,difficulty:'godlike',score:18,hp:1,x:420,y:420,spawnSerial:2}]});h.advance(4);
+ assert.equal(h.state().following,64);assert.equal(h.byID('infiniteKills').textContent,'Following Bot 64 - Godlike');h.infinity.close();
+});
+
+test('offline Infinity shotgun reloads on the first tick after270ms',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
+ const w=h.state(),p=w.tanks[0];w.nextBot=w.nextPickup=Infinity;
+ Object.assign(p,{x:100,y:100,angle:0,invulnerable:1000,spawnProtected:false,power:'scatter',powerTime:15,charges:5});
+ h.window.testFire(w,p);assert.equal(p.cooldown,.27);assert.equal(p.cooldownTotal,.27);assert.equal(p.charges,4);assert.equal(w.lastBullet,3);
+ h.byID('infiniteArena').emit('keydown',{code:'KeyQ'});h.advance(16);assert.equal(p.charges,4,'270ms has not elapsed');h.advance();assert.equal(p.charges,3);assert.equal(w.lastBullet,6);h.infinity.close();
 });

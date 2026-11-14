@@ -218,7 +218,7 @@ func infiniteSpec(kind string) infiniteProjectileSpec {
 	case "rapid":
 		return infiniteProjectileSpec{machineSpeed, machineRadius, infiniteShotRange / machineSpeed, 0}
 	case "scatter":
-		return infiniteProjectileSpec{shotgunSpeed, regularRadius, 3.9, .54}
+		return infiniteProjectileSpec{shotgunSpeed, regularRadius, 3.9, .27}
 	case "homing":
 		return infiniteProjectileSpec{missileSpeed, 5, infiniteShotRange / missileSpeed, .72}
 	case "grenade":
