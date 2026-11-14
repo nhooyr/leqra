@@ -96,7 +96,7 @@ struct ContentView: View {
                         Spacer()
                     }.frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.top, 30).allowsHitTesting(false)
                 }
-                if !session.spectating && (session.snapshot.phase == "matchOver" || session.snapshot.result != nil) {
+                if !session.spectating && !session.presentingFinalShot && (session.snapshot.phase == "matchOver" || session.snapshot.result != nil) {
                     results.padding(.bottom, !session.isInfinity && !landscape ? 216 : 0)
                 }
             }

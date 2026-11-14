@@ -58,8 +58,6 @@ class OnlinePresentation(
             }
         }
 
-        operator fun contains(id: Int) = get(id) != null
-
         fun clear() {
             keys = IntArray(0)
             values = arrayOfNulls(0)
@@ -86,15 +84,15 @@ class OnlinePresentation(
     private var newTanks = emptyMap<Int, ArenaTank>()
     private val oldBullets = BulletIndex()
     private val newBullets = BulletIndex()
-    private val liveBullets = BulletIndex()
-    private var indexedLatest: Long? = null
     private val pathChecks = HashMap<Int, Boolean>()
     private val curves = HashMap<Int, Curve>()
     private val ricochetPaths = HashMap<Int, RicochetPath?>()
+    private val completedFlights = ProjectileFlightPresentation()
     private var previousTanks = emptyMap<Int, ArenaTank>()
     private var followingTanks = emptyMap<Int, ArenaTank>()
     var stale = false
         private set
+    val hasPendingProjectileFlights: Boolean get() = completedFlights.hasPending
 
     internal val bufferedAcknowledgementCount
         get() = primary.sent.size
@@ -338,17 +336,16 @@ class OnlinePresentation(
         secondaryInitialSequence = localInitialSequence
         pair = null
         context = null
-        indexedLatest = null
         pathChecks.clear()
         curves.clear()
         ricochetPaths.clear()
+        completedFlights.reset()
         clock = null
         playbackRate = 1.0
         oldTanks = emptyMap()
         newTanks = emptyMap()
         oldBullets.clear()
         newBullets.clear()
-        liveBullets.clear()
         lastArrival = 0.0
         stale = false
     }
@@ -399,11 +396,13 @@ class OnlinePresentation(
             playbackRate = 1.0
             pair = null
             context = null
-            indexedLatest = null
             pathChecks.clear()
             curves.clear()
             ricochetPaths.clear()
         }
+        if (previous == null || previous.generation != snapshot.generation || changedView || recovering)
+            completedFlights.reset(snapshot.effects)
+        else completedFlights.accept(snapshot.effects, clock ?: snapshot.tick / 60.0 - .085)
         latest = snapshot
         lastArrival = at
         stale = false
@@ -435,7 +434,7 @@ class OnlinePresentation(
         val newest = latest ?: return null
         val elapsed = if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0
         stale = now - lastArrival > 2.5
-        if (newest.spectating) return interpolated(elapsed, null)
+        if (newest.spectating || newest.result != null || newest.phase in listOf("roundOver", "matchOver")) return interpolated(elapsed, null)
         val controls = primary.advance(elapsed, input, newest, send)
         val second = secondary
         val secondControls =
@@ -452,6 +451,13 @@ class OnlinePresentation(
                 else if (tank.id == second?.id && secondTank != null) secondTank else tank
             }
         return result
+    }
+
+    /** Finishes visual paths after a result overlay pauses controls; no simulation or packets. */
+    fun renderTerminal(dt: Double): ArenaSnapshot? {
+        val state = latest ?: return null
+        if (!completedFlights.hasPending || state.result == null && state.phase !in listOf("roundOver", "matchOver")) return null
+        return interpolated(if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0, null)
     }
 
     fun neutralize() {
@@ -476,7 +482,8 @@ class OnlinePresentation(
         val fill = target - playhead
         val wanted = if (fill > .02) 1.05 else if (fill < -.02) .95 else 1.0
         playbackRate += (wanted - playbackRate) * min(1.0, dt * 6)
-        playhead = min(playhead + dt * playbackRate, newest.time)
+        val terminal = newest.state.result != null || newest.state.phase in listOf("roundOver", "matchOver")
+        playhead = min(playhead + dt * playbackRate, newest.time + if (terminal) .1 else 0.0)
         clock = playhead
         var ai = 0
         var bi = 0
@@ -500,10 +507,6 @@ class OnlinePresentation(
             newBullets.replace(b.state.bullets)
             pathChecks.clear()
             ricochetPaths.clear()
-        }
-        if (indexedLatest != newest.state.tick) {
-            indexedLatest = newest.state.tick
-            liveBullets.replace(newest.state.bullets)
         }
         val nextContext =
             listOf(a.state.tick, b.state.tick, preceding?.state?.tick, following?.state?.tick)
@@ -575,8 +578,7 @@ class OnlinePresentation(
                 tank
             }
         val visible = if (alpha < 1) a.state.bullets else b.state.bullets
-        result.bullets = visible.mapNotNull { bullet ->
-            if (bullet.id !in liveBullets) return@mapNotNull null
+        result.bullets = visible.map { bullet ->
             val first = oldBullets[bullet.id]
             val second = newBullets[bullet.id]
             if (first == null || second == null) bullet
@@ -592,6 +594,9 @@ class OnlinePresentation(
                     vy = first.vy + (second.vy - first.vy) * alpha,
                 )
         }
+        val flights = completedFlights.render(result.bullets, result.effects, playhead)
+        result.bullets = flights.bullets
+        result.effects = flights.effects
         return result
     }
 

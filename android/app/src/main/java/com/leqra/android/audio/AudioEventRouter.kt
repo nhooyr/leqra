@@ -8,7 +8,8 @@ data class AudioCueRequest(val cue: AudioCue, val local: Boolean = true)
 /** Baselines retained snapshots, deduplicates events, and bounds rapid-fire audio. */
 class AudioEventRouter {
     private var generation: Int? = null
-    private var highestEffectID = 0
+    private var baselineEffectID = 0
+    private val seenEffectIDs = LinkedHashSet<Int>()
     private var bounceCounts = BounceHistory()
     private var nextBounceCounts = BounceHistory()
     private var previousTick: Long? = null
@@ -26,7 +27,8 @@ class AudioEventRouter {
 
     fun reset() {
         generation = null
-        highestEffectID = 0
+        baselineEffectID = 0
+        seenEffectIDs.clear()
         bounceCounts.clear()
         nextBounceCounts.clear()
         previousTick = null
@@ -68,7 +70,7 @@ class AudioEventRouter {
             previousLocalID = localID
             previousInfinity = infinity
             previousOnline = online
-            highestEffectID = snapshot.effects.maxOfOrNull { it.id } ?: 0
+            baselineEffectID = snapshot.effects.maxOfOrNull { it.id } ?: 0
             snapshot.bullets.forEach { bounceCounts.put(it.id, it.bounces) }
             appendPhase(snapshot, infinity, online, requests)
             appendWarning(snapshot, localTank, now, requests)
@@ -109,8 +111,8 @@ class AudioEventRouter {
         }
         val effects = if (ordered) snapshot.effects else snapshot.effects.sortedBy { it.id }
         for (effect in effects) {
-            if (effect.id <= 0 || effect.id <= highestEffectID) continue
-            highestEffectID = effect.id
+            if (effect.id <= 0 || effect.id <= baselineEffectID || !seenEffectIDs.add(effect.id)) continue
+            if (seenEffectIDs.size > 512) seenEffectIDs.iterator().let { it.next(); it.remove() }
             val own = (effect.player ?: effect.owner) == localID
             if (infinity && effect.owner != localID && !near(effect.x, effect.y, focusTank, 504.0))
                 continue

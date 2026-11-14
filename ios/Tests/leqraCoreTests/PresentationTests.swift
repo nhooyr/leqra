@@ -97,13 +97,16 @@ final class PresentationTests: XCTestCase {
         XCTAssertGreaterThan(Set(positions).count, 20)
     }
 
-    func testRemovedOnlineBulletsNeverReappearFromDelayedSamples() {
+    func testRemovedOnlineBulletsRemainOnlyUntilTheirDelayedDespawn() {
         let timeline = RenderTimeline(localID: 99) { _, _, _ in }
         let bullet = ArenaBullet(id: 1, x: 42, y: 42, vx: 282, life: 5)
         timeline.accept(ArenaSnapshot(tick: 0, bullets: [bullet]), at: 0)
         timeline.accept(ArenaSnapshot(tick: 2), at: 2 / 60)
         let image = timeline.render(dt: 1 / 120, input: GameInput(), now: 3 / 60) { _ in }
-        XCTAssertTrue(image?.bullets.isEmpty == true)
+        XCTAssertEqual(image?.bullets.first?.id, 1)
+        var last = image
+        for frame in 1...24 { last = timeline.render(dt: 1 / 120, input: GameInput(), now: 3 / 60 + Double(frame) / 120) { _ in } }
+        XCTAssertTrue(last?.bullets.isEmpty == true)
     }
 
     func testOnlineRicochetDoesNotBlendThroughWallCorner() throws {

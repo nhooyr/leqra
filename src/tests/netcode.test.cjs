@@ -300,7 +300,7 @@ test('subtick phasing expiry drops offsets before a solid-wall frame',()=>{
  close(p.offset.angle,0);
 });
 test('alternating snapshot corrections do not move an active Starman backward',()=>{
- const p=new Net.Predictor(free),start=tank({ghostTime:8,starmanTime:8,vx:128}),step=128*Net.STEP;
+ const speed=128*2.3,p=new Net.Predictor(free),start=tank({ghostTime:8,starmanTime:8,vx:speed}),step=speed*Net.STEP;
  p.reset(start);
  let last=start.x;
  for(let frame=1;frame<=120;frame++){

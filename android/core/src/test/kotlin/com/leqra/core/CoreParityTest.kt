@@ -299,7 +299,7 @@ class CoreParityTest {
             advance(a, input)
             assertEquals(weapon, t.power)
             assertEquals(
-                128 * (if (start.speedStacks == 5) 4.25 else 1.0) / 60,
+                128 * (1 + .65 * maxOf(start.speedStacks, if (boosted) 2 else 0)) / 60,
                 t.x - start.x,
                 1e-8,
             )

@@ -23,7 +23,7 @@ function boot(){
   clearInput(){s.clears=(s.clears||0)+1;},sendOnlineInput(){s.releases=(s.releases||0)+1;},toast(message){s.notice=message;},
   sendOnline(message){s.sent.push(message);return s.sendSucceeds;},sent:[],sendSucceeds:true,setTimeout(fn){const id=++timerID;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
   performance:{now:()=>1000},COLORS:['#fff'],particles:[{}],rings:[{}],traces:[{}],bullets:[{}],pickups:[{}],tanks:[],goUntil:99,bestWins:0,
-  Net:{STEP_MS:1000/60,expandMachineBullets:()=>[]},cacheMap(){},resize(){},resetOnlineMotion(){s.online.snapshots=[];},closeVictory(){s.pendingMatchPresentation=null;s.closed=(s.closed||0)+1;},
+  Net:{...require(assetPath('netcode.js')),STEP_MS:1000/60,expandMachineBullets:()=>[]},cacheMap(){},resize(){},resetOnlineMotion(){s.online.snapshots=[];},closeVictory(){s.pendingMatchPresentation=null;s.closed=(s.closed||0)+1;},
   setScreen(screen){s.screen=screen;},showStartingControls(){},showLocalSpawnGuide(){},renderOnlineRoom(){},updateHUD(){},syncPauseButton(){},onlineEffect(){},showVictory(){s.results=(s.results||0)+1;},save(){},teamKey:t=>t.team,
   startMatch(){s.newRun=true;},matchmaking:{rematchPending:false},requestQueueRematch(){},confirm(){throw Error('Native confirmation is forbidden');}};
  vm.createContext(s);
@@ -135,6 +135,16 @@ test('online end timing subtracts the authoritative hold even if roundOver snaps
  packet.tick=160;packet.events.pop();assert.ok(Math.abs(s.onlineMatchResultDelay(packet,'roundOver',false)-1000)<1e-9,'only the remaining part of a partial hold is presented');
  packet.events=[{generation:6,tick:10,type:'roundEnd'},{generation:7,tick:160,type:'matchEnd'}];assert.equal(s.onlineMatchResultDelay(packet,'playing',false),2000,'direct objective, Survival and forfeit finishes start a two-second hold');
  packet.tick=190;assert.equal(s.onlineMatchResultDelay(packet,'playing',false),1500,'late final snapshots do not restart the full timer');assert.equal(s.onlineMatchResultDelay(packet,'onlineLobby',true),0,'joining an already-finished match does not replay its hold');
+});
+
+test('a skipped round-over hold still presents a previously unseen terminal shot before the victory overlay',()=>{
+ const b=boot(),{s}=b;b.room.phase='matchOver';s.online.lastMatch=-1;s.online.eventsInitialized=true;s.online.lastEvent=0;
+ const packet=statePacket({generation:1,tick:220,phase:'matchOver',status:'lost'});
+ packet.events=[{id:1,generation:1,tick:100,type:'roundEnd'},{id:2,generation:1,tick:219,type:'impact',owner:2,player:-1,
+  flight:{id:7,owner:2,colorIndex:0,kind:'cannon',radius:14,startTick:218,endTick:219,points:[{x:100,y:100,tick:218},{x:110,y:100,tick:219}]}}];
+ s.receiveOnlineState(packet);assert.equal(s.results,undefined);assert.ok(s.pendingMatchPresentation);
+ s.online.flights.sample(220,1000);s.flushMatchPresentation(1000);assert.equal(s.results,undefined);
+ s.online.flights.sample(224,1051);s.flushMatchPresentation(1051);assert.equal(s.results,1);
 });
 
 test('online win and loss previews remain visible for exactly the existing two-second result interval',()=>{

@@ -8,6 +8,24 @@ import org.junit.Test
 
 /** Repeatable desktop allocation/timing evidence; not a physical Android frame-rate claim. */
 class PerformanceTest {
+    @Test
+    fun fullRoomRoamingPopulationRemainsBoundedAndReportsItsSimulationCost() {
+        val arena = PracticeArena(123, "Pilot", 0, 0)
+        arena.configure(RoomRules(infinity = true, infinityRandomBots = true, infinityBotSpawnRate = 4.0))
+        arena.snapshot.tanks = List(8) { index -> ArenaTank(id = index + 1, x = index * 4000.0 + 42, y = 42.0, invulnerable = 10000.0) }
+        repeat(600) { arena.step(GameInput(), 1.0 / 60) }
+        assertEquals(128, arena.snapshot.tanks.count { it.bot })
+        val samples = LongArray(300)
+        val before = bytes()
+        repeat(samples.size) { index ->
+            val start = System.nanoTime()
+            arena.step(GameInput(), 1.0 / 60)
+            samples[index] = System.nanoTime() - start
+            assertTrue(arena.snapshot.tanks.count { it.bot } <= 128)
+        }
+        samples.sort()
+        println("Room Infinity128 roaming bots: p50=${samples[150] / 1e6}ms p95=${samples[285] / 1e6}ms p99=${samples[297] / 1e6}ms bytes/tick=${(bytes() - before) / samples.size}")
+    }
     private val allocation =
         (ManagementFactory.getThreadMXBean() as? ThreadMXBean)?.apply {
             if (isThreadAllocatedMemorySupported) isThreadAllocatedMemoryEnabled = true

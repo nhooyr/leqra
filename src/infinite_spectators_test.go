@@ -376,7 +376,7 @@ func TestRoomInfinitySpectatorGalleryDoesNotIncreaseRoamingBudget(t *testing.T) 
 		viewer := spectatorRoomClient(t, s, room, fmt.Sprintf("Observer %d", i))
 		_, client = joinRoomObserver(t, s, room, viewer, now)
 	}
-	if a.players != 2 || a.connected != 2 || a.nextID != 2 || s.privateCount != 2 || a.roamingBotBudget() != 16 {
+	if a.players != 2 || a.connected != 2 || a.nextID != 2 || s.privateCount != 2 || a.roamingBotBudget() != 32 {
 		t.Fatal("a full spectator gallery increased combat capacity or bot population")
 	}
 	for range 16 {
@@ -386,7 +386,7 @@ func TestRoomInfinitySpectatorGalleryDoesNotIncreaseRoamingBudget(t *testing.T) 
 	a.mu.Lock()
 	a.broadcast()
 	a.mu.Unlock()
-	if state := readPartySnapshot(t, client); len(state.Leaders) != 18 || state.Players != 2 || state.TankCount != 18 {
+	if state := readPartySnapshot(t, client); len(state.Leaders) != 34 || state.Players != 2 || state.TankCount != 34 {
 		t.Fatal("real roaming population did not produce a full scrollable leaderboard", len(state.Leaders), state.Players, state.TankCount)
 	}
 }
@@ -474,13 +474,13 @@ func TestRoomInfinitySetupAndLocalPromotionRejectP2OnlyController(t *testing.T) 
 	}
 }
 
-func TestRoomInfinityObserverKeepsExistingBotViewActiveWithoutChangingPopulation(t *testing.T) {
+func TestRoomInfinityObserverDoesNotKeepStrayedAmbientLivesActive(t *testing.T) {
 	rules := defaultRules()
 	rules.Infinity, rules.InfinityRandomBots, rules.TeamMode = true, true, "ffa"
 	a := newRoomInfiniteArena(rules, nil)
 	now := time.Now()
 	human := a.join(fakeClient(), "Human", now)
-	fillRoamingBots(a)
+	a.populate()
 	bot := roamingBots(a)[0]
 	bot.X, bot.Y = human.X+50*cellSize, human.Y-40*cellSize
 	bot.Score = 12
@@ -489,20 +489,21 @@ func TestRoomInfinityObserverKeepsExistingBotViewActiveWithoutChangingPopulation
 	if !a.addObserver(partySnapshotClient(), observer, 1, false, 0) {
 		t.Fatal("could not register the read-only view")
 	}
-	a.tick = a.nextBot
+	a.nextBot = a.tick + 60
 	a.populate()
-	if a.outsideActiveViews(bot) || bot.X != x || bot.Y != y || bot.Spawn != life || a.nextID != nextID || len(roamingBots(a)) != 8 {
-		t.Fatal("a currently observed bot was relocated, replaced, or increased the budget")
+	if !a.outsideActiveViews(bot) || bot.HP != 0 || !bot.ambientRetired || bot.X != x || bot.Y != y || bot.Spawn != life || a.nextID != nextID || len(roamingBots(a)) != 0 || bot.Score != 12 {
+		t.Fatal("a spectator retained or teleported a strayed life, changed its score, or created another bot")
 	}
 	human.HP, human.paused = 0, true
 	humanLife := human.Spawn
-	bot.HP, bot.respawn = 0, a.tick+1
 	a.step(now.Add(time.Second))
-	if human.HP != 0 || human.Spawn != humanLife || bot.HP != infiniteMaxHP || bot.Spawn != life+1 || bot.ID != id || bot.Score != 12 || a.nextID != nextID || a.roamingBotBudget() != 8 {
-		t.Fatal("observer failed to activate the existing bot life or altered the human's paused respawn/count")
+	if human.HP != 0 || human.Spawn != humanLife || bot.HP != 0 || bot.Spawn != life || bot.ID != id || bot.Score != 12 || a.nextID != nextID || a.roamingBotBudget() != 16 {
+		t.Fatal("observer respawned a body without a living human or altered paused player state")
 	}
-	if observer.following != id || math.Hypot(bot.X-x, bot.Y-y) > 6*cellSize {
-		t.Fatal("observed respawn jumped back to a distant human instead of its visible region")
+	human.HP, human.paused, a.nextBot = 1, false, a.tick
+	a.populate()
+	if bot.HP != infiniteMaxHP || bot.Spawn != life+1 || math.Hypot(bot.X-human.X, bot.Y-human.Y) > 7*cellSize || bot.Score != 12 {
+		t.Fatal("retired body did not return as a fresh encounter around the live human")
 	}
 	a.suspend(human)
 	a.step(now.Add(2 * time.Second))

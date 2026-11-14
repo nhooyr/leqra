@@ -46,6 +46,9 @@ func normalizedRules(r MatchRules) MatchRules {
 	if r.InfinityBotDifficulty == "" {
 		r.InfinityBotDifficulty = "normal"
 	}
+	if r.InfinityBotSpawnRate == 0 {
+		r.InfinityBotSpawnRate = 2
+	}
 	r.Weapons = append([]string{}, r.Weapons...)
 	names := defaultTeamNames()
 	if len(r.TeamNames) == 4 {

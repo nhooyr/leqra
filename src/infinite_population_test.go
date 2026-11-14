@@ -8,7 +8,7 @@ import (
 )
 
 func fillRoamingBots(a *infiniteArena) {
-	for range infiniteBotLimit + 1 {
+	for range infiniteBotsPerPlayer + 1 {
 		a.tick = a.nextBot
 		a.populate()
 	}
@@ -70,19 +70,19 @@ func TestInfiniteRoamingBudgetCountsConnectedSeatsAndKeepsStableNumbers(t *testi
 	primary, local := a.joinSeats(fakeClient(), infiniteSeat{name: "P1"}, &infiniteSeat{name: "P2"}, 0, now)
 	fillRoamingBots(a)
 	bots := roamingBots(a)
-	if len(bots) != 16 {
-		t.Fatalf("two connected seats have %d roaming bots, want 16", len(bots))
+	if len(bots) != 32 {
+		t.Fatalf("two connected seats have %d roaming bots, want 32", len(bots))
 	}
 	for i, bot := range bots {
 		if bot.Name != fmt.Sprintf("Bot %d", i+1) || bot.ID <= local.ID {
 			t.Fatal("bot labels share the monotonic human/owner ID counter")
 		}
 	}
-	dead := bots[8]
+	dead := bots[16]
 	dead.HP, dead.Score, dead.respawn = 0, -7, a.tick+60
 	a.removeLocal(primary)
-	if len(roamingBots(a)) != 8 || len(a.inactiveBots) != 8 || a.players != 1 || a.connected != 1 {
-		t.Fatal("removing P2 did not immediately trim to eight roaming bots")
+	if len(roamingBots(a)) != 16 || len(a.inactiveBots) != 16 || a.players != 1 || a.connected != 1 {
+		t.Fatal("removing P2 did not immediately trim to sixteen roaming bots")
 	}
 	a.join(fakeClient(), "Replacement", now)
 	lastID := a.nextID
@@ -92,18 +92,18 @@ func TestInfiniteRoamingBudgetCountsConnectedSeatsAndKeepsStableNumbers(t *testi
 		t.Fatal("reusing the first pooled identity lost its death deadline, score, or owner ID")
 	}
 	fillRoamingBots(a)
-	if len(roamingBots(a)) != 16 || len(a.inactiveBots) != 0 || a.nextID != lastID {
+	if len(roamingBots(a)) != 32 || len(a.inactiveBots) != 0 || a.nextID != lastID {
 		t.Fatal("growing the budget allocated replacements instead of reusing the pool")
 	}
 	a.join(fakeClient(), "Third", now)
 	fillRoamingBots(a)
-	if len(roamingBots(a)) != 24 {
-		t.Fatal("three connected seats did not reach the global roaming ceiling")
+	if len(roamingBots(a)) != 48 {
+		t.Fatal("three connected seats did not receive sixteen roaming bots each")
 	}
 	a.join(fakeClient(), "Fourth", now)
 	fillRoamingBots(a)
-	if len(roamingBots(a)) != 24 {
-		t.Fatal("four connected seats exceeded the global roaming ceiling")
+	if len(roamingBots(a)) != 64 {
+		t.Fatal("four connected seats were restricted by an old global ceiling")
 	}
 }
 
@@ -130,7 +130,7 @@ func TestInfiniteRoamingRelocationPreservesVisibleAndDistantIdentities(t *testin
 	}
 }
 
-func TestInfiniteRoamingRespawnWaitsForDeadlineAndLiveConnectedAnchor(t *testing.T) {
+func TestInfiniteRoamingRetiresFarLivesAndWaitsForLiveConnectedAnchor(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	now := time.Unix(0, 0)
 	p := a.join(fakeClient(), "P1", now)
@@ -145,17 +145,18 @@ func TestInfiniteRoamingRespawnWaitsForDeadlineAndLiveConnectedAnchor(t *testing
 	p.HP, p.respawn = 0, a.tick+1000
 	a.tick = bot.respawn - 2
 	a.step(now)
-	if bot.HP != 0 || bot.Spawn != spawn {
-		t.Fatal("distant dead bot respawned before its deadline")
+	if bot.HP != 0 || bot.Spawn != spawn || !bot.ambientRetired {
+		t.Fatal("abandoned bot was not retired without creating a life")
 	}
 	a.step(now)
 	if bot.HP != 0 || bot.Spawn != spawn {
 		t.Fatal("dead bot used an unavailable or disconnected human as its spawn anchor")
 	}
 	p.HP = 1
+	a.nextBot = a.tick
 	a.step(now)
 	if bot.HP == 0 || bot.Spawn != spawn+1 || bot.Score != -3 || bot.ID != id || bot.Name != name || math.Hypot(bot.X-p.X, bot.Y-p.Y) > 6*cellSize {
-		t.Fatal("bot did not respawn near the live connected pilot with its identity and score")
+		t.Fatal("retired bot did not start a fresh life near the live connected pilot with its identity and score")
 	}
 }
 

@@ -67,5 +67,7 @@ class RuleEditorLimitsTest {
             RuleEditorLimits.draft(source.copy(infinityBotDifficulty = "invalid"))
                 .infinityBotDifficulty,
         )
+        for (rate in listOf(.5, 1.0, 2.0, 4.0)) assertEquals(rate, RuleEditorLimits.draft(source.copy(infinityBotSpawnRate = rate)).infinityBotSpawnRate, 0.0)
+        for (rate in listOf(Double.NaN, Double.POSITIVE_INFINITY, 0.0, 3.0)) assertEquals(2.0, RuleEditorLimits.draft(source.copy(infinityBotSpawnRate = rate)).infinityBotSpawnRate, 0.0)
     }
 }

@@ -171,7 +171,7 @@ final class RenderTimelineTests: XCTestCase {
         XCTAssertFalse(packets[2].fire)
     }
 
-    func testProjectileDespawnRefreshesWithoutAdvancingTheDelayedPair() throws {
+    func testProjectileDespawnUsesTheSameTimelineAsItsDelayedBirth() throws {
         let timeline = timeline(localID: 99)
         var first = snapshot(tick: 60)
         first.bullets = [ArenaBullet(id: 8, x: 10, owner: 1)]
@@ -182,7 +182,75 @@ final class RenderTimelineTests: XCTestCase {
         timeline.accept(second, at: 1 / 30)
         XCTAssertEqual(timeline.render(dt: 0, input: GameInput(), now: 1 / 30) { _ in }?.bullets.first?.x, 10)
         timeline.accept(snapshot(tick: 64), at: 2 / 30)
-        XCTAssertTrue(try XCTUnwrap(timeline.render(dt: 0, input: GameInput(), now: 2 / 30) { _ in }).bullets.isEmpty)
+        XCTAssertEqual(timeline.render(dt: 0, input: GameInput(), now: 2 / 30) { _ in }?.bullets.first?.id, 8)
+        var last: ArenaSnapshot?
+        for frame in 1...24 {
+            last = timeline.render(dt: 1 / 120, input: GameInput(), now: 2 / 30 + Double(frame) / 120) { _ in }
+        }
+        XCTAssertTrue(try XCTUnwrap(last).bullets.isEmpty)
+    }
+
+    func testShortLivedCannonIsVisibleEvenAfterTheNewestStateReportsTheKill() throws {
+        for delay in [0.001, 0.05, 0.2, 0.4] {
+            let timeline = timeline(localID: 99)
+            timeline.accept(snapshot(tick: 60), at: delay)
+            var fired = snapshot(tick: 62)
+            fired.bullets = [ArenaBullet(id: 9, x: 100, y: 100, vx: 520, owner: 1, kind: "cannon", life: 5.3)]
+            timeline.accept(fired, at: delay + 2 / 60)
+            timeline.accept(snapshot(tick: 64, hp: 0), at: delay + 4 / 60)
+            var seen = false, last: ArenaSnapshot?
+            for frame in 0...30 {
+                last = timeline.render(dt: 1 / 120, input: GameInput(), now: delay + 4 / 60 + Double(frame) / 120) { _ in }
+                seen = seen || last?.bullets.contains(where: { $0.id == 9 && $0.kind == "cannon" }) == true
+                XCTAssertEqual(last?.tanks.first?.hp, 0, "Presentation never rolls back authoritative damage")
+            }
+            XCTAssertTrue(seen, "Authoritative cannon must survive delayed playback at \(delay)s latency")
+            XCTAssertTrue(try XCTUnwrap(last).bullets.isEmpty)
+        }
+    }
+
+    func testTerminalFlightRecordsRenderBetweenSnapshotsAndResetWithTheirContext() throws {
+        for kind in ["regular", "rapid", "scatter", "homing", "grenade", "cannon"] {
+            let timeline = timeline(localID: 99)
+            timeline.accept(snapshot(tick: 60), at: 0)
+            let flight = CannonFlight(id: 9, owner: 1, colorIndex: 3, startTick: 61, endTick: 61.5,
+                points: [CannonFlightPoint(x: 100, y: 100, tick: 61), CannonFlightPoint(x: 106, y: 100, tick: 61.5)], kind: kind)
+            var killed = snapshot(tick: 62, hp: 0)
+            killed.effects = [ArenaEffect(id: 1, kind: kind == "grenade" ? "blast" : "impact", flight: flight)]
+            timeline.accept(killed, at: 1 / 30)
+            var seen = false, impact = false
+            for frame in 1...30 {
+                let value = try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1 / 30 + Double(frame) / 120) { _ in })
+                seen = seen || value.bullets.contains { $0.id == 9 }
+                impact = impact || value.effects.contains { $0.id == 1 }
+                XCTAssertEqual(value.tanks.first?.hp, 0)
+                XCTAssertTrue(value.bullets.allSatisfy { (100...106).contains($0.x) })
+            }
+            XCTAssertTrue(seen, kind); XCTAssertTrue(impact, kind)
+            var reset = killed; reset.generation = 2; reset.tick = 0
+            timeline.accept(reset, at: 1)
+            XCTAssertTrue(try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1) { _ in }).bullets.isEmpty)
+        }
+    }
+
+    func testInfinityResultFreezesCombatWhileTerminalFlightFinishes() throws {
+        let timeline = timeline()
+        timeline.accept(snapshot(tick: 60, x: 42), at: 0)
+        _ = timeline.render(dt: 1 / 30, input: GameInput(forward: true, fire: true), now: 1 / 30) { _ in }
+        var won = snapshot(tick: 62, x: 43)
+        won.result = ArenaResult(id: 1, name: "Winner", score: 1)
+        won.effects = [ArenaEffect(id: 1, kind: "impact", flight: CannonFlight(id: 9, owner: 1, colorIndex: 0,
+            startTick: 61, endTick: 61.5, points: [CannonFlightPoint(x: 80, y: 42, tick: 61), CannonFlightPoint(x: 86, y: 42, tick: 61.5)]))]
+        timeline.accept(won, at: 1 / 30)
+        var seen = false, last: ArenaSnapshot?
+        for frame in 1...30 {
+            last = timeline.render(dt: 1 / 120, input: GameInput(forward: true, fire: true), now: 1 / 30 + Double(frame) / 120) { packet in
+                XCTAssertFalse(packet.forward || packet.fire)
+            }
+            XCTAssertEqual(last?.tanks.first?.x, 43)
+            seen = seen || last?.bullets.contains { $0.id == 9 } == true
+        }
+        XCTAssertTrue(seen); XCTAssertTrue(try XCTUnwrap(last).bullets.isEmpty)
     }
 
     func testGenerationReusingSnapshotAndProjectileIDsStartsWithFreshIndices() {

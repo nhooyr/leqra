@@ -71,7 +71,10 @@ class DumbBotTest {
                     infinityRandomDifficulty = true,
                 )
         )
-        assertEquals(8, arena.snapshot.tanks.count { it.bot })
+        assertEquals(0, arena.snapshot.tanks.count { it.bot })
+        arena.snapshot.tanks.first().invulnerable = 1000.0
+        repeat(1200) { arena.step(GameInput(), 1.0 / 60) }
+        assertEquals(16, arena.snapshot.tanks.count { it.bot })
         repeat(7) {
             arena.snapshot.tanks
                 .filter { it.bot }
@@ -91,6 +94,7 @@ class DumbBotTest {
             RoomRules.localDefaults("infinity")
                 .copy(infinityBotDifficulty = "invalid", infinityRandomBots = true)
         )
+        invalid.step(GameInput(), 1.0 / 60)
         assertTrue(invalid.snapshot.tanks.filter { it.bot }.all { it.difficulty == "normal" })
     }
 

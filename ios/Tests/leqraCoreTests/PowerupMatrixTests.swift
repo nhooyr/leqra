@@ -117,7 +117,7 @@ final class PowerupMatrixTests: XCTestCase {
                     advance(arena, input: input)
                     let tank = arena.snapshot.tanks[0]
                     XCTAssertEqual(tank.power, weapon, label)
-                    XCTAssertEqual(tank.x - equipped.x, 128 * (equipped.speedStacks == 5 ? 4.25 : 1) / 60, accuracy: 1e-8, label)
+                    XCTAssertEqual(tank.x - equipped.x, 128 * (1 + 0.65 * Double(max(equipped.speedStacks, boosted ? 2 : 0))) / 60, accuracy: 1e-8, label)
                     XCTAssertEqual(tank.charges, equipped.charges - (!boosted && !weapon.isEmpty && weapon != "rapid" ? 1 : 0), label)
                     XCTAssertEqual(tank.machineRounds, equipped.machineRounds - (!boosted && weapon == "rapid" ? 1 : 0), label)
                     XCTAssertEqual(tank.ammoUsed, boosted || weapon == "laser" ? 0 : weapon == "scatter" ? 3 : 1, label)

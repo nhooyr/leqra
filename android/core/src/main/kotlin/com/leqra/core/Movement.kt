@@ -6,6 +6,12 @@ import kotlin.math.*
 object TankMovement {
     fun angleDelta(a: Double, b: Double) = atan2(sin(a - b), cos(a - b))
 
+    /** Starman supplies two stacks without consuming or replacing pickup stacks. */
+    fun effectiveSpeedStacks(tank: ArenaTank): Int = max(
+        if (tank.speedTime > 0) tank.speedStacks.coerceIn(1, 5) else 0,
+        if (tank.starmanTime > 0) 2 else 0,
+    )
+
     private fun smoothStep(value: Double): Double {
         val x = value.coerceIn(0.0, 1.0)
         return x * x * (3 - 2 * x)
@@ -38,18 +44,18 @@ object TankMovement {
         return Steering(atan2(sin(a), cos(a)), throttle)
     }
 
-    fun step(tank: ArenaTank, input: GameInput, dt: Double, maze: InfiniteMaze) {
+    fun step(tank: ArenaTank, input: GameInput, dt: Double, maze: InfiniteMaze, ageStarman: Boolean = true) {
         if (maze.world != null) {
-            step(tank, input, dt, maze.world.walls, maze.world.width, maze.world.height)
+            step(tank, input, dt, maze.world.walls, maze.world.width, maze.world.height, ageStarman)
             return
         }
         if (!dt.isFinite() || dt <= 0 || dt > .1 || tank.hp <= 0) return
-        equipment(tank, dt) {
+        equipment(tank, dt, ageStarman) {
             val p = maze.phaseExit(tank.x, tank.y)
             tank.x = p.x
             tank.y = p.y
         }
-        val stacks = if (tank.speedTime > 0) tank.speedStacks.coerceIn(1, 5) else 0
+        val stacks = effectiveSpeedStacks(tank)
         val steering = steer(tank.angle, input, 1 + .25 * stacks, dt)
         tank.angle = steering.angle
         val speed = 128 * (1 + .65 * stacks)
@@ -62,7 +68,8 @@ object TankMovement {
         tank.track += hypot(tank.x - oldX, tank.y - oldY)
     }
 
-    private inline fun equipment(t: ArenaTank, dt: Double, finishGhost: () -> Unit) {
+    private inline fun equipment(t: ArenaTank, dt: Double, ageStarman: Boolean, finishGhost: () -> Unit) {
+        if (ageStarman) t.starmanTime = max(0.0, t.starmanTime - dt)
         t.speedTime = max(0.0, t.speedTime - dt)
         if (t.speedTime <= 0) t.speedStacks = 0
         val ghost = t.ghostTime > 0
@@ -77,11 +84,12 @@ object TankMovement {
         walls: List<MazeWall>,
         width: Double,
         height: Double,
+        ageStarman: Boolean = true,
     ) {
         if (!dt.isFinite() || dt <= 0 || dt > .1 || tank.hp <= 0 || width < 42 || height < 42)
             return
-        equipment(tank, dt) { finishGhost(tank, walls, width, height) }
-        val stacks = if (tank.speedTime > 0) tank.speedStacks.coerceIn(1, 5) else 0
+        equipment(tank, dt, ageStarman) { finishGhost(tank, walls, width, height) }
+        val stacks = effectiveSpeedStacks(tank)
         val steering = steer(tank.angle, input, 1 + .25 * stacks, dt)
         tank.angle = steering.angle
         val speed = 128 * (1 + .65 * stacks)
@@ -132,11 +140,11 @@ object TankMovement {
         tank.y = tank.y.coerceIn(21.0, world.height - 21)
     }
 
-    fun stepBot(tank: ArenaTank, input: GameInput, dt: Double, world: ArenaWorld) {
+    fun stepBot(tank: ArenaTank, input: GameInput, dt: Double, world: ArenaWorld, ageStarman: Boolean = true) {
         if (dt <= 0 || dt > .1 || tank.hp <= 0) return
-        equipment(tank, dt) { finishGhost(tank, world.walls, world.width, world.height) }
+        equipment(tank, dt, ageStarman) { finishGhost(tank, world.walls, world.width, world.height) }
         val tuning = BotDifficulty.from(tank.difficulty)
-        val stacks = if (tank.speedTime > 0) tank.speedStacks.coerceIn(1, 5) else 0
+        val stacks = effectiveSpeedStacks(tank)
         var throttle = 0.0
         val magnitude = hypot(input.stickX, input.stickY)
         if (magnitude > .1) {
@@ -218,7 +226,7 @@ object TankMovement {
                 !canInterpolate(tank, next)
         )
             return tank.copy().also { move(it, input, alpha * tick) }
-        if (tank.speedStacks != next.speedStacks || (tank.speedTime > 0) != (next.speedTime > 0))
+        if (effectiveSpeedStacks(tank) != effectiveSpeedStacks(next))
             return tank.copy(
                 x = tank.x + (next.x - tank.x) * alpha,
                 y = tank.y + (next.y - tank.y) * alpha,
@@ -243,7 +251,7 @@ object TankMovement {
             it.spawnSerial == tank.spawnSerial &&
                 it.hp == tank.hp &&
                 (it.ghostTime > 0) == (tank.ghostTime > 0) &&
-                it.speedStacks == tank.speedStacks &&
+                effectiveSpeedStacks(it) == effectiveSpeedStacks(tank) &&
                 hypot(it.x - tank.x, it.y - tank.y) <= 84 &&
                 canInterpolate(it, tank)
         }

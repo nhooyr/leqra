@@ -15,6 +15,7 @@ type MatchRules struct {
 	Infinity                 bool     `json:"infinity,omitempty"`
 	InfinityTarget           int      `json:"infinityTarget,omitempty"`
 	InfinityRandomBots       bool     `json:"infinityRandomBots,omitempty"`
+	InfinityBotSpawnRate     float64  `json:"infinityBotSpawnRate"`
 	InfinityBotDifficulty    string   `json:"infinityBotDifficulty,omitempty"`
 	InfinityRandomDifficulty bool     `json:"infinityRandomDifficulty,omitempty"`
 	TeamMode                 string   `json:"teamMode"`
@@ -31,7 +32,7 @@ type MatchRules struct {
 }
 
 func defaultRules() MatchRules {
-	return MatchRules{Mode: "elimination", InfinityBotDifficulty: "normal", TeamMode: "ffa", TeamNames: defaultTeamNames(), TeamColors: defaultTeamColors(), MapSize: "large", ScoreTarget: 5, TimeLimit: 75, RespawnSeconds: 3, PickupRate: "superfast", Weapons: append([]string{}, pickupTypes...)}
+	return MatchRules{Mode: "elimination", InfinityBotDifficulty: "normal", InfinityBotSpawnRate: 2, TeamMode: "ffa", TeamNames: defaultTeamNames(), TeamColors: defaultTeamColors(), MapSize: "large", ScoreTarget: 5, TimeLimit: 75, RespawnSeconds: 3, PickupRate: "superfast", Weapons: append([]string{}, pickupTypes...)}
 }
 func (g *Game) settings() MatchRules {
 	if g.Rules.Mode == "" {
@@ -73,6 +74,9 @@ func validateRules(r MatchRules) error {
 	}
 	if r.InfinityBotDifficulty != "" && !validDifficulty(r.InfinityBotDifficulty) {
 		return errors.New("Choose a valid Infinity bot difficulty.")
+	}
+	if r.InfinityBotSpawnRate != 0 && r.InfinityBotSpawnRate != .5 && r.InfinityBotSpawnRate != 1 && r.InfinityBotSpawnRate != 2 && r.InfinityBotSpawnRate != 4 {
+		return errors.New("Choose an Infinity bot spawn rate of 0.5, 1, 2, or 4.")
 	}
 	if r.TimeLimit < 30 || r.TimeLimit > 600 {
 		return errors.New("Time limit must be 30–600 seconds.")

@@ -1060,6 +1060,11 @@ internal class GameSession(context: Context) {
                 fixed?.let { maze = it.maze }
             }
         }
+        if (screen == Screen.PLAYING && paused && (snapshot.result != null || snapshot.phase in listOf("roundOver", "matchOver"))) {
+            snapshot = if (online) timeline.renderTerminal(dt) ?: snapshot
+            else if (finishingProjectilePresentation) practice?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9)
+                ?: fixed?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9) ?: snapshot else snapshot
+        }
         present(snapshot, maze, localID, localID2, online)
         if (screen == Screen.PLAYING) {
             uiElapsed += dt
@@ -1069,6 +1074,9 @@ internal class GameSession(context: Context) {
             }
         } else uiElapsed = 0.0
     }
+
+    val finishingProjectilePresentation: Boolean
+        get() = if (online) timeline.hasPendingProjectileFlights else practice?.hasPendingProjectileFlights ?: fixed?.hasPendingProjectileFlights ?: false
 
     fun renameCallsign(name: String, seat: Int = 0) {
         require(seat in 0..1)
@@ -1395,6 +1403,7 @@ internal class GameSession(context: Context) {
                 .put("infinityRandomBots", r.infinityRandomBots)
                 .put("infinityBotDifficulty", r.infinityBotDifficulty)
                 .put("infinityRandomDifficulty", r.infinityRandomDifficulty)
+                .put("infinityBotSpawnRate", r.infinityBotSpawnRate)
                 .put("teamMode", r.teamMode)
                 .put("mapSize", r.mapSize)
                 .put("portraitMaze", r.portraitMaze)

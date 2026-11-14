@@ -377,7 +377,7 @@ func TestPrivateInfinityRandomBotsKeepConfiguredRosterAndUseRoomDifficulty(t *te
 			for i := range 24 {
 				a.tick = a.nextBot
 				a.populate()
-				if len(a.pilots) != 2+min(i+1, 8) || a.pilots[1] != roster || roster.X != far {
+				if len(a.pilots) != 2+min(i+1, 16) || a.pilots[1] != roster || roster.X != far {
 					t.Fatal("spawn cycle did not preserve the configured roster and roaming budget")
 				}
 				for _, bot := range a.pilots[2:] {
@@ -385,7 +385,9 @@ func TestPrivateInfinityRandomBotsKeepConfiguredRosterAndUseRoomDifficulty(t *te
 						t.Fatalf("roaming bot ignored the room setup: team %d, level %d", bot.Team, bot.botLevel)
 					}
 					seen |= 1 << bot.botLevel
-					bot.X = far
+				}
+				if i >= 15 {
+					a.pilots[2].X = far // Retire one life, then sample a fresh nearby encounter.
 				}
 			}
 			if tc.random && seen != (1<<(maxLevel+1))-1 {

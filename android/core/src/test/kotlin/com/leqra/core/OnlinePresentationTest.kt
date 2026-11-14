@@ -237,7 +237,7 @@ class OnlinePresentationTest {
     }
 
     @Test
-    fun projectilesEnterDelayedTimelineMonotonicallyAndDespawnImmediately() {
+    fun projectilesEnterDelayedTimelineMonotonicallyAndDespawnAtTheirTimelineBoundary() {
         val t = timeline(99)
         t.accept(ArenaSnapshot(tick = 0), 0.0)
         val positions = mutableListOf<Double>()
@@ -270,7 +270,53 @@ class OnlinePresentationTest {
         positions.zipWithNext().forEach { assertTrue(it.second >= it.first) }
         assertTrue(positions.toSet().size > 20)
         t.accept(ArenaSnapshot(tick = 26), .41)
-        assertTrue(render(t, now = .41).bullets.isEmpty())
+        assertFalse("A future removal must not erase the buffered flight", render(t, now = .41).bullets.isEmpty())
+        repeat(20) { render(t, 1.0 / 120, now = .41 + (it + 1) / 120.0) }
+        assertTrue(render(t, now = .6).bullets.isEmpty())
+    }
+
+    @Test
+    fun killingCannonSurvivesANewerDeathSnapshotUntilTheBufferedFlightCompletes() {
+        for (rtt in listOf(.001, .05, .2, .4)) {
+            val t = timeline(99)
+            val bullet = ArenaBullet(id = 7, kind = "cannon", owner = 1, x = 120.0, y = 42.0, vx = 846.0, life = 5.3)
+            val empty = ArenaSnapshot(tick = 0)
+            val inFlight = ArenaSnapshot(tick = 2, bullets = listOf(bullet))
+            val killed = ArenaSnapshot(tick = 4, tanks = listOf(ArenaTank(id = 2, hp = 0)))
+            t.accept(empty, rtt / 2)
+            t.accept(inFlight, rtt / 2 + 2 * tick)
+            t.accept(killed, rtt / 2 + 4 * tick)
+            val shown = mutableListOf<ArenaBullet>()
+            repeat(30) { frame -> shown += render(t, 1.0 / 120, now = rtt / 2 + 4 * tick + frame / 120.0).bullets }
+            assertTrue("Short killing flight was erased at RTT=$rtt", shown.any { it.id == 7 })
+            assertTrue(render(t, now = rtt / 2 + .5).bullets.isEmpty())
+            assertEquals(listOf(bullet), inFlight.bullets)
+            assertTrue(killed.bullets.isEmpty())
+        }
+    }
+
+    @Test
+    fun resultPresentationFinishesTerminalShotsWithoutUnfreezingControlsOrPhysics() {
+        for (phase in listOf("playing", "roundOver", "matchOver")) {
+            val timeline = timeline()
+            timeline.accept(state(), 0.0)
+            val flight = ProjectileFlight(7, 1, 0, 0.0, .2, listOf(ProjectileFlightPoint(100.0, 210.0, 0.0), ProjectileFlightPoint(110.0, 210.0, .2)))
+            val terminal = state(tick = 1).copy(phase = phase, result = if (phase == "playing") ArenaResult(id = 1, score = 1) else null,
+                effects = listOf(ArenaEffect(id = 1, kind = "impact", flight = flight)))
+            timeline.accept(terminal, tick)
+            val packets = mutableListOf<GameInput>()
+            val initial = timeline.render(0.0, GameInput(forward = true, fire = true), tick, send = packets::add)!!
+            var visible = initial.bullets.isNotEmpty()
+            repeat(40) {
+                timeline.renderTerminal(1.0 / 120)?.let { view ->
+                    visible = visible || view.bullets.isNotEmpty()
+                    assertEquals(100.0, view.tanks.first().x, 0.0)
+                }
+            }
+            assertTrue("Final shot must finish even if result state tick freezes", visible)
+            assertFalse(timeline.hasPendingProjectileFlights)
+            assertTrue(packets.isEmpty())
+        }
     }
 
     @Test
