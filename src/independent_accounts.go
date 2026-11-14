@@ -40,6 +40,7 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 	accounts := make([]claimedSeatAccount, len(requests))
 	seenNames, seenOwners := make(map[string]bool), make(map[string]bool)
 	var conflicts []callsignConflict
+	var reserved []callsignConflict
 	for seat, request := range requests {
 		token := request.token
 		if token == "" {
@@ -60,6 +61,7 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 			return nil, &seatAccountError{seat, errOnlineOwnerRevoked}
 		}
 		known := r.owners[hash]
+		fresh := !known || request.newAccount && r.generatedFresh[hash]
 		if request.token != "" && !known && !request.newAccount {
 			return nil, &seatAccountError{seat, errOnlineOwnerInvalid}
 		}
@@ -68,9 +70,12 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 		}
 		seenOwners[hash] = true
 		name, key := cleanName(request.name), canonicalCallsign(request.name)
+		if reservedCallsign(name) {
+			reserved = append(reserved, callsignConflict{Seat: seat, Name: name})
+		}
 		owner, claimed := r.claims[key]
 		transferHash, transferValid := publicTokenHash(request.transferFrom)
-		authorizedSplit := !known && transferValid && r.owners[transferHash] && !r.revoked[transferHash]
+		authorizedSplit := fresh && transferValid && r.owners[transferHash] && !r.revoked[transferHash]
 		if authorizedSplit {
 			// Mirror SQLite's unique previous-owner index before any allocation.
 			// Until its first split is applied, a second candidate must not take
@@ -86,10 +91,13 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 			conflicts = append(conflicts, callsignConflict{seat, cleanCallsign(request.name)})
 		}
 		seenNames[key] = true
-		accounts[seat] = claimedSeatAccount{token: token, hash: hash, name: name, fresh: !known}
+		accounts[seat] = claimedSeatAccount{token: token, hash: hash, name: name, fresh: fresh}
 		if authorizedSplit {
 			accounts[seat].migration = &seatAccountMigration{next: hash, previous: transferHash, name: key}
 		}
+	}
+	if len(reserved) != 0 {
+		return nil, &callsignReservedError{Conflicts: reserved}
 	}
 	if len(conflicts) != 0 {
 		return nil, &callsignConflictError{Conflicts: conflicts}
@@ -105,6 +113,11 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 		for _, account := range accounts {
 			if _, err = tx.Exec("INSERT OR IGNORE INTO online_owners(token_hash) VALUES(?)", account.hash); err != nil {
 				return nil, err
+			}
+			if r.generatedFresh[account.hash] {
+				if _, err = tx.Exec("DELETE FROM online_generated_fresh WHERE token_hash=?", account.hash); err != nil {
+					return nil, err
+				}
 			}
 		}
 		for _, account := range accounts {
@@ -139,6 +152,7 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 	}
 	for _, account := range accounts {
 		r.owners[account.hash] = true
+		delete(r.generatedFresh, account.hash)
 		if r.names[account.hash] == nil {
 			r.names[account.hash] = make(map[string]string)
 		}

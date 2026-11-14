@@ -1,10 +1,10 @@
-# leqra v4.49.42 — current game protocol (protocol 1)
+# leqra v4.49.43 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.42**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.43**.
 
 ```json
-{"type":"server_hello","version":"4.49.42","protocol":1}
-{"type":"client_hello","version":"4.49.42","protocol":1}
+{"type":"server_hello","version":"4.49.43","protocol":1}
+{"type":"client_hello","version":"4.49.43","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -21,7 +21,7 @@ The server negotiates no context takeover in either direction. Compressed client
 
 ## Infinity
 
-`GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The ready-room preview reads these standings immediately, then every second, without allocating a tank or joining a room. The same request supplies the menu's server round-trip measurement, refreshing ping and the online count together. Private arenas are not included. Public roaming bots use Chill difficulty; private rooms retain their configured bot settings.
+`GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The ready-room preview reads these standings immediately, then every second, without allocating a tank or joining a room. The same request supplies the menu's server round-trip measurement, refreshing ping and the online count together. Private arenas are not included. Public roaming bots normally use Dumb difficulty with the rare Godlike schedule below; private rooms retain their configured bot settings.
 
 `/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
@@ -49,7 +49,39 @@ Room Infinity uses configured bot seats from the room roster. The host can set `
 
 Public Infinity normally spawns Dumb bots: short sight, slow wandering, stale inaccurate aim, frequent hesitation and at least 1.8 seconds between shots, including machine-gun trigger pulses. Every 64th bot birth or respawn is eligible to become Godlike within a cap of one living Godlike bot per group of up to 16 connected human tanks, including local P2. Empty arenas allow none. When the connected population falls, excess Godlike bots become Dumb without changing their scores or spawning new lives. Relocation and reactivation do not count as new lives. Private rooms retain their chosen difficulty and do not use this public encounter schedule.
 
-Infinity bot snapshots include their actual `difficulty`; human snapshots omit it. Clients show an amber **GODLIKE** warning above Godlike bots. Public Godlike bots also use the name `Godlike Bot N`, keeping the encounter identifiable on older clients. Clients must use the authoritative bot flag and difficulty for the warning, never infer it from a player's callsign.
+Infinity bot snapshots include their actual `difficulty`; human snapshots omit it. Clients show an amber **GODLIKE** warning above Godlike bots. Public Godlike bots also use the name `Bot N - Godlike`, keeping the encounter identifiable on older clients and within the reserved bot namespace. Clients must use the authoritative bot flag and difficulty for the warning, never infer it from a player's callsign.
+
+For eight seconds after a true public Godlike birth or respawn, nearby recipients
+also receive `godlikeSpawns:[{"id":7,"spawnSerial":3,"name":"Bot 7 - Godlike"}]`.
+Recipients qualify within twelve cells of the birth location, using either local
+seat. Relocation and pooled reactivation do not create birth notices. Clients
+deduplicate by tank ID and life serial, and show a six-second passive warning
+over the arena without changing layout or connection/error status. Notices are
+absent from private arenas. Infinity tank `vx`/`vy` report actual server movement
+after wall resolution, allowing bounded visual extrapolation during packet gaps.
+
+## Generated callsigns
+
+`POST /api/callsigns/generate` accepts
+`{"requestId":"<persisted UUID>","accounts":[{"seat":0,"publicToken":"<saved key>"}]}`.
+One or two distinct seats and independent valid keys are allowed. The response is
+`{"names":[{"seat":0,"name":"pilot#BDF3XZ"}]}`. Registration and all requested
+name claims commit atomically. A key/UUID pair is idempotent across retries and
+restarts; a new UUID requests a new alias. Existing names, profiles, scores and
+active transports are unchanged. No tank is allocated. Revoked keys fail rather
+than being replaced. Origin, request-size and rate limits match account APIs.
+
+Clients save independent keys and retry IDs before requesting names, retain P2's
+first-game migration intent until gameplay confirms it, and ignore late replies
+after a key, server, draft or seat changes. Generated-name registration alone
+does not consume legacy P2 score-migration eligibility; an already used/imported
+account cannot use that mechanism to merge another score.
+
+Player names beginning with case-insensitive `Bot `, or equal to `Bot`, are
+reserved online and offline. Availability reports `reason:"reserved"`; account
+claim paths report `callsign_reserved`. Importing a key cannot unlock this
+namespace. Bots are identified by authoritative metadata. `RUST`, `Godlike Bot N`
+and `godlike-n` are ordinary player callsigns, subject to normal account ownership.
 
 ## Mouse and touch steering
 

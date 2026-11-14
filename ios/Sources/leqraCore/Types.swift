@@ -124,6 +124,8 @@ public struct BeamPoint: Codable, Equatable, Sendable {
 }
 
 public struct ArenaTank: Codable, Equatable, Sendable {
+    public var vx: Double = 0
+    public var vy: Double = 0
     public var survivalEnemy: Bool = false
     public var survivalBoss: Bool = false
     public var difficulty: String = "normal"
@@ -207,7 +209,9 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         killedByColor: String = "",
         survivalEnemy: Bool = false,
         survivalBoss: Bool = false,
-        difficulty: String = "normal"
+        difficulty: String = "normal",
+        vx: Double = 0,
+        vy: Double = 0
     ) {
         self.id = id
         self.name = name
@@ -250,10 +254,11 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         self.survivalEnemy = survivalEnemy
         self.survivalBoss = survivalBoss
         self.difficulty = difficulty
+        self.vx = vx; self.vy = vy
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, x, y, angle, hp, colorIndex, score, rank, team, bot, protected, spawnProtected, ack, ackSteps, spawnSerial, track, recoil, cooldown, cooldownTotal, invulnerable, powerTime, shield, speedTime, ghostTime, starmanTime, respawnTime, grenadeLife, power, charges, machineRounds, shieldCharges, speedStacks, ammoUsed, grenades, locked, killedBy, killedByColor, survivalEnemy, survivalBoss, difficulty
+        case id, name, x, y, vx, vy, angle, hp, colorIndex, score, rank, team, bot, protected, spawnProtected, ack, ackSteps, spawnSerial, track, recoil, cooldown, cooldownTotal, invulnerable, powerTime, shield, speedTime, ghostTime, starmanTime, respawnTime, grenadeLife, power, charges, machineRounds, shieldCharges, speedStacks, ammoUsed, grenades, locked, killedBy, killedByColor, survivalEnemy, survivalBoss, difficulty
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -261,6 +266,8 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         x = try c.decodeIfPresent(Double.self, forKey: .x) ?? 0
         y = try c.decodeIfPresent(Double.self, forKey: .y) ?? 0
+        vx = try c.decodeIfPresent(Double.self, forKey: .vx) ?? 0
+        vy = try c.decodeIfPresent(Double.self, forKey: .vy) ?? 0
         angle = try c.decodeIfPresent(Double.self, forKey: .angle) ?? 0
         hp = try c.decodeIfPresent(Int.self, forKey: .hp) ?? 1
         colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
@@ -524,6 +531,7 @@ public struct ArenaWorld: Codable, Equatable, Sendable {
 }
 
 public struct ArenaSnapshot: Codable, Equatable, Sendable {
+    public var godlikeSpawns: [GodlikeSpawn] = []
     public var rules: RoomRules?
     public var matchStats: NativeMatchReport?
     public var boostedBulletIds: [Int] = []
@@ -585,10 +593,11 @@ public struct ArenaSnapshot: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case rules, matchStats, boostedBulletIds, generation, objectives, result, teamScores, type, tick, tanks, bullets, pickups, effects, leaderboard, players, tankCount, world, phase, phaseTime, roundClock, round, scores, winner
+        case godlikeSpawns, rules, matchStats, boostedBulletIds, generation, objectives, result, teamScores, type, tick, tanks, bullets, pickups, effects, leaderboard, players, tankCount, world, phase, phaseTime, roundClock, round, scores, winner
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        godlikeSpawns = Array((try c.decodeIfPresent([GodlikeSpawn].self, forKey: .godlikeSpawns) ?? []).prefix(64))
         rules = try c.decodeIfPresent(RoomRules.self, forKey: .rules)
         matchStats = try c.decodeIfPresent(NativeMatchReport.self, forKey: .matchStats)
         boostedBulletIds = try c.decodeIfPresent([Int].self, forKey: .boostedBulletIds) ?? []

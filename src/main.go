@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version         = "4.49.42"
+	version         = "4.49.43"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -46,7 +46,7 @@ var appIconPNGs = [...]string{
 
 var appShellFiles = [...]string{
 	"theme.js", "theme.css", "style.css", "favicon.svg",
-	"netcode.js", "game.js", "infinite-maze.js", "infinite.js",
+	"netcode.js", "game.js", "callsigns.js", "infinite-maze.js", "infinite.js",
 	"pwa.js", "manifest.webmanifest", "sw.js",
 }
 
@@ -348,6 +348,7 @@ func (a *App) handler() http.Handler {
 	mux.HandleFunc("/ws", a.socket)
 	mux.HandleFunc("/api/infinity", a.infinityStatus)
 	mux.HandleFunc("/api/callsigns", a.callsignAvailability)
+	mux.HandleFunc("/api/callsigns/generate", a.generateCallsigns)
 	mux.HandleFunc("/api/account", a.onlineAccount)
 	mux.HandleFunc("/api/account/rotate", a.onlineAccount)
 	mux.HandleFunc("/ws/infinite", a.infiniteSocket)

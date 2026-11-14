@@ -358,4 +358,113 @@ class SessionParityTest {
             context.noBackupFilesDir.deleteRecursively()
         }
     }
+    @Test
+    fun freshPairedEntryWaitsForAtomicNamesAndKeepsThemAcrossColdLoad() {
+        val server = InstrumentationRegistry.getArguments().getString("server")
+        assumeTrue("Local server argument was not supplied", server != null)
+        val context = context()
+        var session: GameSession? = null
+        try {
+            main {
+                session = GameSession(context)
+                assertTrue(session!!.automaticNamePending(0))
+                assertTrue(session!!.automaticNamePending(1))
+                assertTrue(Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(session!!.callsign))
+                assertNotEquals(session!!.callsign, session!!.localCallsign)
+                session!!.setServer(server!!)
+                session!!.localSelected = true
+                session!!.publicSelected = true
+                session!!.play()
+                assertEquals(Screen.CONNECTING, session!!.screen)
+                assertTrue(session!!.store.selected(server, 0)!!.registrationPending)
+                assertTrue(session!!.store.selected(server, 1)!!.registrationPending)
+                assertNotEquals(session!!.store.selected(server, 0)!!.key, session!!.store.selected(server, 1)!!.key)
+            }
+            eventually("Fresh P1/P2 automatic names should enter Public Infinity") {
+                session!!.screen == Screen.PLAYING && session!!.localID2 != null &&
+                    session!!.snapshot.tanks.any { it.id == session!!.localID2 }
+            }
+            main {
+                val first = session!!.callsign
+                val second = session!!.localCallsign
+                assertFalse(session!!.automaticNamePending(0))
+                assertFalse(session!!.automaticNamePending(1))
+                assertFalse(session!!.store.selected(server!!, 1)!!.registrationPending)
+                session!!.leave()
+                session!!.release()
+                session = GameSession(context)
+                assertEquals(first, session!!.callsign)
+                assertEquals(second, session!!.localCallsign)
+                assertFalse(session!!.automaticNamePending(0))
+                assertFalse(session!!.automaticNamePending(1))
+                session!!.callsign = "Bot RUST"
+                val errors = mutableListOf<String>()
+                session!!.notifyError = { errors.add(it) }
+                session!!.publicSelected = false
+                session!!.play()
+                assertEquals(Screen.READY, session!!.screen)
+                assertEquals("Bot RUST", session!!.callsign)
+                assertTrue(errors.single().contains("reserved"))
+                val offline = "http://10.0.2.2:1"
+                session!!.setServer(offline)
+                session!!.generateCallsign(0)
+                val fallback = session!!.callsign
+                val draft = field(session!!, "nameDrafts") as com.leqra.android.accounts.CallsignDrafts
+                val requestID = draft.requestID(0)
+                val key = session!!.store.selected(offline, 0)!!.key
+                assertTrue(Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(fallback))
+                assertTrue(session!!.automaticNamePending(0))
+                session!!.publicSelected = false
+                session!!.localSelected = false
+                session!!.play()
+                assertEquals(Screen.PLAYING, session!!.screen)
+                session!!.save()
+                session!!.release()
+                session = GameSession(context)
+                assertEquals(fallback, session!!.callsign)
+                assertEquals(requestID, (field(session!!, "nameDrafts") as com.leqra.android.accounts.CallsignDrafts).requestID(0))
+                assertEquals(key, session!!.store.selected(offline, 0)!!.key)
+                assertTrue(session!!.automaticNamePending(0))
+            }
+        } finally {
+            main { session?.leave(); session?.release() }
+            context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun onlinePowerAudioRequiresFreshStateForTheCurrentTransport() {
+        val context = context()
+        lateinit var session: GameSession
+        try {
+            main {
+                session = GameSession(context)
+                set(session, "screen", Screen.PLAYING)
+                assertTrue(session.audioGameplayActive)
+                session.pause(true)
+                assertFalse(session.audioGameplayActive)
+                session.pause(false)
+                set(session, "online", true)
+                set(session, "arenaActive", true)
+                set(session.arenaNetwork, "connected", true)
+                assertFalse("A connected Welcome must not replay a stale pre-background power", session.audioGameplayActive)
+                event(session, NetworkEvent.State(ArenaSnapshot(tick = 1, tanks = listOf(ArenaTank(id = 1, starmanTime = 8.0)))), true)
+                assertTrue(session.audioGameplayActive)
+                set(session.arenaNetwork, "epoch", session.arenaNetwork.connectionGeneration + 1)
+                assertFalse(session.audioGameplayActive)
+                event(session, NetworkEvent.State(ArenaSnapshot(tick = 2, tanks = listOf(ArenaTank(id = 1)))), true)
+                assertTrue(session.audioGameplayActive)
+                set(session.arenaNetwork, "welcome", NetworkWelcome.parse(JSONObject().put("id", 1).put("spectating", true)))
+                assertFalse("Spectators cannot activate a local power-up loop", session.audioGameplayActive)
+                set(session.arenaNetwork, "connected", false)
+                assertFalse(session.audioGameplayActive)
+                session.background()
+                assertFalse(session.audioGameplayActive)
+            }
+        } finally {
+            main { session.leave(); session.release() }
+            context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
 }

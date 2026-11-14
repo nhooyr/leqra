@@ -105,7 +105,7 @@ final class BotDifficultyTests: XCTestCase {
     }
 
     func testActualWireTierControlsWarningRegardlessOfCallsign() throws {
-        let data = Data(#"{"type":"state","tanks":[{"id":1,"name":"Godlike Bot 1","bot":false,"difficulty":"godlike"},{"id":2,"name":"Godlike Bot 2","bot":true,"difficulty":"normal"},{"id":3,"name":"PLAIN BOT","bot":true,"difficulty":"godlike"},{"id":4,"name":"DUMB BOT","bot":true,"difficulty":"dumb"},{"id":5,"name":"Godlike Bot 5","bot":true}],"bullets":[],"pickups":[],"leaderboard":[]}"#.utf8)
+        let data = Data(#"{"type":"state","tanks":[{"id":1,"name":"Godlike Bot 1","bot":false,"difficulty":"godlike"},{"id":2,"name":"Bot 2 - Godlike","bot":true,"difficulty":"normal"},{"id":3,"name":"PLAIN BOT","bot":true,"difficulty":"godlike"},{"id":4,"name":"DUMB BOT","bot":true,"difficulty":"dumb"},{"id":5,"name":"Bot 5 - Godlike","bot":true}],"bullets":[],"pickups":[],"leaderboard":[]}"#.utf8)
         let normalized = try SnapshotDecoder.normalized(data: data, previousWorld: nil)
         let state = try JSONDecoder().decode(ArenaSnapshot.self, from: normalized.data)
         XCTAssertEqual(state.tanks.map(\.difficulty), ["godlike", "normal", "godlike", "dumb", "normal"])

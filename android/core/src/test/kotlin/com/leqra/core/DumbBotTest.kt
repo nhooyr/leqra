@@ -97,7 +97,7 @@ class DumbBotTest {
     @Test
     fun godlikeWarningRequiresActualBotTierNotItsCallsign() {
         assertTrue(ArenaTank(bot = true, difficulty = "godlike", name = "BOT").isGodlikeBot)
-        assertFalse(ArenaTank(bot = true, difficulty = "dumb", name = "Godlike Bot 1").isGodlikeBot)
+        assertFalse(ArenaTank(bot = true, difficulty = "dumb", name = "Bot 1 - Godlike").isGodlikeBot)
         assertFalse(
             ArenaTank(bot = false, difficulty = "godlike", name = "Godlike Bot 1").isGodlikeBot
         )

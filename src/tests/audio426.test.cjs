@@ -38,6 +38,48 @@ function boot(options={}){
  return{s,contexts,native,plays,playEvents,nodes,blobs,listeners,timers,advance(ms){clock+=ms;for(const a of native){if(a.playingEvent&&!a.paused&&clock>=a.playingEvent.until){a.playingEvent.stopAt=Math.min(a.playingEvent.stopAt,a.playingEvent.until);a.ended=a.paused=true;a.onended?.();}}for(const [id,timer]of [...timers])if(timer.time<=clock){timers.delete(id);timer.fn();}},fire(event,extra={}){listeners.get(event)?.({isTrusted:true,...extra});},focus(value){focused=value;listeners.get(value?'focus':'blur')();}};
 }
 
+test('Starman PCM matches the shared native fixtures with quiet headroom and a silent loop seam',()=>{
+ const {s}=boot(),fixture=JSON.parse(readFileSync(require('node:path').join(__dirname,'starman-audio-fixtures.json'),'utf8'));
+ for(const reference of fixture.profiles){
+  const pcm=s.starmanLoopSamples(reference.rate);assert.equal(pcm.length,reference.frames);
+  let peak=0,energy=0;for(const value of pcm){assert.ok(Number.isFinite(value));peak=Math.max(peak,Math.abs(value));energy+=value*value;}
+  assert.ok(Math.abs(peak-reference.peak)<1e-8);assert.ok(Math.abs(Math.sqrt(energy/pcm.length)-reference.rms)<1e-8);
+  for(const {index,value}of reference.samples)assert.ok(Math.abs(pcm[index]-value)<1e-8);
+  assert.equal(pcm[0],0);assert.equal(pcm.at(-1),0);assert.ok(peak*32<.17,'leaves headroom for ordinary effects and external music');
+ }
+});
+test('one Starman loop survives repeated frames and volume edits, then fades on expiry, menu, mute and blur',async()=>{
+ const b=boot();await b.s.initAudio();const loops=()=>b.nodes.filter(node=>node.kind==='buffer'&&node.loop);
+ b.s.syncStarmanAudio(true);assert.equal(loops().length,1);const first=loops()[0],buffer=first.buffer;
+ for(let i=0;i<1200;i++)b.s.syncStarmanAudio(true);
+ b.s.setAudioVolume(75);b.s.syncStarmanAudio(true);assert.equal(loops().length,1);assert.equal(first.stopCalls,undefined);
+ b.s.pickupSound();b.s.syncStarmanAudio(true);assert.equal(loops().length,1,'pickup and shots do not restart or duplicate the loop');
+ b.s.syncStarmanAudio(false);assert.equal(first.stopped,.014);
+ b.s.syncStarmanAudio(true);assert.equal(loops().length,2);assert.equal(loops()[1].buffer,buffer,'PCM buffer is reused');
+ b.s.muted=true;b.s.syncSound();assert.equal(loops()[1].stopped,.014);
+ b.s.muted=false;b.s.syncSound();b.s.syncStarmanAudio(true);b.focus(false);assert.equal(loops().at(-1).stopped,.014);
+ b.focus(true);b.s.syncStarmanAudio(true);b.s.setArenaAudio(false);assert.equal(loops().at(-1).stopped,.014);
+});
+test('Starman loop ignores bot and remote boosts, follows either live local pilot, and stops on stale online state',async()=>{
+ const b=boot();await b.s.initAudio();Object.assign(b.s,{gameStarted:true,phase:'playing',mode:'room',tanks:[{id:8,alive:true,starmanTime:5}],localPlayerID:()=>0,secondaryID:()=>1});
+ const loops=()=>b.nodes.filter(node=>node.kind==='buffer'&&node.loop);
+ b.s.syncFiniteStarmanAudio();assert.equal(loops().length,0);
+ b.s.tanks.push({id:1,alive:true,starmanTime:5});b.s.syncFiniteStarmanAudio();assert.equal(loops().length,1);
+ b.s.phase='paused';b.s.syncFiniteStarmanAudio();assert.equal(loops()[0].stopped,.014);
+ b.s.phase='playing';b.s.syncFiniteStarmanAudio();b.s.tanks[1].alive=false;b.s.syncFiniteStarmanAudio();assert.equal(loops()[1].stopped,.014);
+ b.s.tanks[1].alive=true;b.s.mode='online';b.s.online={connected:true,menu:false,spectating:false,snapshots:[{received:0}]};b.s.syncFiniteStarmanAudio();
+ b.advance(2100);b.s.syncFiniteStarmanAudio();assert.equal(loops().at(-1).stopped,.014);
+});
+test('a delayed audio unlock cannot start an expired Starman loop',async()=>{
+ const b=boot({state:'suspended',deferResume:true});b.s.syncStarmanAudio(true);b.s.syncStarmanAudio(false);b.contexts[0].finishResume();await flush();
+ assert.equal(b.nodes.filter(node=>node.kind==='buffer'&&node.loop).length,0);
+ b.s.syncStarmanAudio(true);assert.equal(b.nodes.filter(node=>node.kind==='buffer'&&node.loop).length,1);
+});
+test('a volume edit during first audio creation cannot strand the Starman startup latch',async()=>{
+ const b=boot();b.s.syncStarmanAudio(true);b.s.setAudioVolume(75);await flush();b.s.syncStarmanAudio(true);
+ assert.equal(b.nodes.filter(node=>node.kind==='buffer'&&node.loop).length,1);
+});
+
 async function mixedNativePCM(b){
  const layers=[];let length=1;
  for(const event of b.playEvents){

@@ -137,4 +137,65 @@ class NativeAudioIntegrationTest {
         fun p(fraction: Double) = ordered[((ordered.size - 1) * fraction).toInt()] / 1e6
         return "p50=%.3f p95=%.3f max=%.3f".format(p(.5), p(.95), p(1.0))
     }
+    @Test
+    fun starmanUsesOneCachedLocalLoopAndRespectsEveryPlaybackGate() {
+        lateinit var audio: NativeAudio
+        main { audio = NativeAudio(instrumentation.targetContext) }
+        val first = ArenaTank(id = 1)
+        val second = ArenaTank(id = 2, starmanTime = 8.0)
+        val remote = ArenaTank(id = 3, starmanTime = 8.0)
+        val snapshot = ArenaSnapshot(tanks = listOf(first, second, remote))
+        try {
+            waitUntil("Starman loop bank did not prepare") { audio.preparedLoop }
+            main {
+                audio.updateStarman(snapshot, 1, null, true)
+                assertEquals(0, audio.outputStarts)
+                audio.enabled = false
+                audio.updateStarman(snapshot, 1, 2, true)
+                assertEquals(0, audio.outputStarts)
+                audio.enabled = true
+                audio.volume = 0f
+                audio.updateStarman(snapshot, 1, 2, true)
+                assertEquals(0, audio.outputStarts)
+                audio.volume = .5f
+                audio.consume(snapshot, 1, true, false)
+                audio.updateStarman(snapshot, 1, 2, true)
+            }
+            waitUntil("P2 power did not start one native loop") { audio.activeLoopCount == 1 && audio.framesWritten > 0 }
+            val starts = audio.outputStarts
+            main {
+                first.starmanTime = 8.0
+                repeat(1000) { audio.updateStarman(snapshot, 1, 2, true) }
+                assertEquals(1, audio.activeLoopCount)
+                assertEquals(0, audio.pendingCueCount)
+                assertEquals(starts, audio.outputStarts)
+                audio.updateStarman(snapshot, 1, 2, false)
+            }
+            SystemClock.sleep(100)
+            val stopped = audio.framesWritten
+            SystemClock.sleep(50)
+            assertEquals("Pause/menu/disconnect must release the native output", stopped, audio.framesWritten)
+            assertEquals(0, audio.activeLoopCount)
+            main { audio.updateStarman(snapshot, 1, 2, true) }
+            waitUntil("Powered resume did not restart a single loop") { audio.outputStarts > starts && audio.activeLoopCount == 1 && audio.framesWritten > stopped }
+            main {
+                first.hp = 0
+                second.hp = 0
+                audio.updateStarman(snapshot, 1, 2, true)
+            }
+            waitUntil("Dead local pilots must not leave the power loop running") { audio.activeLoopCount == 0 }
+            main {
+                second.hp = 1
+                audio.updateStarman(snapshot, 1, 2, true)
+                audio.enabled = false
+                assertEquals(0, audio.activeLoopCount)
+                audio.enabled = true
+                audio.updateStarman(snapshot, 1, 2, true)
+            }
+            waitUntil("Unmute while powered did not resume") { audio.activeLoopCount == 1 }
+            main { audio.pause() }
+            assertEquals(0, audio.activeLoopCount)
+        } finally { main { audio.release() } }
+    }
+
 }

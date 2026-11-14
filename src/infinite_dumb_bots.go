@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"slices"
 	"strconv"
 )
 
@@ -25,6 +26,7 @@ func (a *infiniteArena) startBotLife(p *infinitePilot) {
 		p.botLevel = infiniteBotLevel("godlike")
 	}
 	p.publicBotName()
+	a.recordGodlikeSpawn(p)
 }
 
 func (a *infiniteArena) publicGodlikeLimit() int {
@@ -76,6 +78,7 @@ func (a *infiniteArena) enforcePublicGodlikeLimit() {
 				continue
 			}
 			p.botLevel = infiniteBotLevel("dumb")
+			a.godlikeSpawns = slices.DeleteFunc(a.godlikeSpawns, func(event infiniteGodlikeSpawn) bool { return event.ID == p.ID })
 			p.publicBotName()
 			p.clearControls()
 			a.resetBotDecisions(p)
@@ -89,7 +92,7 @@ func (p *infinitePilot) publicBotName() {
 	}
 	p.Name = "Bot " + strconv.Itoa(p.ambientNumber)
 	if infiniteBotTunings[p.botLevel].name == "godlike" {
-		p.Name = "Godlike " + p.Name
+		p.Name += " - Godlike"
 	}
 }
 

@@ -28,7 +28,7 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 	}
 	name := cleanCallsign(msg.Name)
 	if name == "" {
-		fail("Use letters, numbers, spaces, hyphens or underscores (up to 16 characters).")
+		fail("Use letters, numbers, #, spaces, hyphens or underscores (up to 16 characters).")
 		return
 	}
 	pilot, member := connection.pilot, connection.seat
@@ -68,7 +68,10 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 	if err := claimErr; err != nil {
 		packet := map[string]any{"type": "rename_error", "requestId": msg.RequestID, "seat": msg.Seat, "message": err.Error()}
 		var conflict *callsignConflictError
-		if errors.As(err, &conflict) {
+		var reserved *callsignReservedError
+		if errors.As(err, &reserved) {
+			packet["code"], packet["reason"], packet["conflicts"] = "callsign_reserved", "reserved", reserved.Conflicts
+		} else if errors.As(err, &conflict) {
 			packet["code"] = "callsign_taken"
 			packet["conflicts"] = conflict.Conflicts
 		} else if errors.Is(err, errOnlineOwnerRevoked) {

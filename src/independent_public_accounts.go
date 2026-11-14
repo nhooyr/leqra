@@ -72,7 +72,7 @@ func (s *infiniteServer) joinIndependentPublic(c *Client, msg infiniteMessage, n
 			if !exists {
 				id = reservedIDs[seat]
 			}
-			if seat == 1 && account.fresh && primarySaved && primaryProfile.local != 0 {
+			if seat == 1 && !exists && account.fresh && primarySaved && primaryProfile.local != 0 {
 				if _, ok := oldEntries[primaryProfile.local]; ok {
 					id = primaryProfile.local
 					migratedLocal = id

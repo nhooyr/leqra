@@ -470,7 +470,7 @@ func (h *Hub) renameLocal(c *Client, m clientMessage, now time.Time) {
 	}
 	name := cleanCallsign(m.Name)
 	if name == "" {
-		fail("bad_name", "Use letters, numbers, spaces, hyphens or underscores (up to 16 characters).")
+		fail("bad_name", "Use letters, numbers, #, spaces, hyphens or underscores (up to 16 characters).")
 		return
 	}
 	ownerToken, ok := h.claimControllerCallsigns(c, "rename_local", r, c.player, p, name)

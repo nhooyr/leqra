@@ -34,6 +34,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
 
     var fireAvailable = true
+    var encounterNotice: String? = null
+    private var noticeLayoutText: String? = null
+    private var noticeLayoutWidth = 0f
+    private var noticeLayoutSize = 0f
+    private var noticeLines: List<String> = emptyList()
     val input = GameInput(touchAim = true)
     var renderedFrames: Long = 0
         private set
@@ -193,6 +198,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private data class Label(
         val name: String,
         val seat: Int,
+        val bot: Boolean,
         val maxWidth: Float,
         val fontSize: Float,
         val width: Float,
@@ -498,6 +504,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && tank.hp > 0)
                 drawIdentity(canvas, tank)
             drawPhase(canvas, state)
+            drawEncounterNotice(canvas)
         }
         if (showControls) drawControls(canvas, width, height, state)
         canvas.restore()
@@ -703,10 +710,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             label == null ||
                 label.name != tank.name ||
                 label.seat != seat ||
+                label.bot != tank.bot ||
                 label.maxWidth != maxWidth ||
                 label.fontSize != textPaint.textSize
         ) {
-            val text = tank.name + if (seat > 0) " (P$seat)" else ""
+            val text = PilotIdentity.label(tank.name, tank.bot, seat)
             val lines = ArrayList<String>()
             var start = 0
             var actualWidth = 36f
@@ -730,6 +738,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 Label(
                     tank.name,
                     seat,
+                    tank.bot,
                     maxWidth,
                     textPaint.textSize,
                     actualWidth,
@@ -1178,6 +1187,55 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             path.close()
             canvas.drawPath(path, paint)
             canvas.restore()
+        }
+    }
+
+    private fun drawEncounterNotice(canvas: Canvas) {
+        val message = encounterNotice ?: return
+        textPaint.typeface = boldTypeface
+        textPaint.textSize = 12f * textScale
+        val maxWidth = min(460f, max(40f, viewport.width() - 40))
+        if (
+            noticeLayoutText != message ||
+                noticeLayoutWidth != maxWidth ||
+                noticeLayoutSize != textPaint.textSize
+        ) {
+            val lines = ArrayList<String>()
+            var start = 0
+            while (start < message.length) {
+                val count =
+                    textPaint
+                        .breakText(message, start, message.length, true, maxWidth - 20, null)
+                        .coerceAtLeast(1)
+                lines.add(message.substring(start, start + count))
+                start += count
+            }
+            noticeLines = lines
+            noticeLayoutText = message
+            noticeLayoutWidth = maxWidth
+            noticeLayoutSize = textPaint.textSize
+        }
+        val lineHeight = textPaint.textSize + 4
+        val top = viewport.top + 10
+        val center = viewport.centerX()
+        fill(0xee302217.toInt())
+        canvas.drawRoundRect(
+            center - maxWidth / 2,
+            top,
+            center + maxWidth / 2,
+            top + noticeLines.size * lineHeight + 12,
+            6f,
+            6f,
+            paint,
+        )
+        textPaint.color = 0xffffc46b.toInt()
+        noticeLines.forEachIndexed { index, line ->
+            canvas.drawText(
+                line,
+                center,
+                top + textPaint.textSize + 4 + index * lineHeight,
+                textPaint,
+            )
         }
     }
 

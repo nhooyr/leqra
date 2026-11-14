@@ -48,9 +48,9 @@ body.settings-reset{overflow:hidden}
 .settings-reset-dialog p{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
 .settings-reset-dialog .feature-footer{flex-wrap:wrap;gap:10px}
 .settings-reset-dialog .feature-footer button{margin:0}
-body.infinity-preview .arena-shell>.arena-bar:not(.infinity-preview-header){display:none}
-body.infinity-preview #objectiveBar{display:none!important}
-body.infinity-preview .log-panel,body.infinity-header-active .log-panel{display:none}
+body.public-infinity-preview .arena-shell>.arena-bar:not(.infinity-preview-header){display:none}
+body.public-infinity-preview #objectiveBar{display:none!important}
+body.public-infinity-preview .log-panel,body.infinity-header-active .log-panel{display:none}
 .infinity-preview-header{position:relative;z-index:6}
 .infinity-preview-header>.infinity-preview-scoreboard{top:calc(100% + 8px);right:10px;width:min(280px,calc(100% - 20px));max-height:50dvh;z-index:7}
 .infinity-preview-scoreboard.is-empty>ol{display:none}
@@ -742,7 +742,7 @@ body #roomScreen.unified-room .room-mode-picker>.field-label{margin:0 0 8px}
 .room-mode-choice:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .room-mode-choice[aria-disabled="true"]{cursor:default}
 body #roomScreen.unified-room .room-mode-help,body #roomScreen.unified-room .room-mode-notice{font:10px/1.45 var(--sans);color:var(--text-soft);margin:0}
-body #roomScreen.unified-room .room-mode-help{min-height:29px;padding-top:6px}
+body #roomScreen.unified-room .room-mode-help{min-height:35px;padding-top:6px}
 body #roomScreen.unified-room .room-mode-notice{margin-top:4px;color:var(--accent-ink)}
 body #roomScreen.unified-room .room-mode-notice.error{color:var(--danger)}
 .room-mode-picker+.room-config-actions{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:8px}
@@ -981,6 +981,7 @@ body.touch-landscape #infiniteControlsHint{min-width:0;margin:0}
  #infiniteControlsHint .control-player{justify-content:flex-start}
 }
 .infinite-stage{position:relative;min-height:0;overflow:hidden}
+.godlike-spawn-notice{position:absolute;z-index:12;top:12px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 24px);padding:10px 14px;border:1px solid #ffc46b;border-radius:7px;background:#302217f2;color:#ffc46b;font:700 12px/1.5 var(--mono);text-align:center;overflow-wrap:anywhere;pointer-events:none}
 #infiniteCanvas{width:100%;height:100%;cursor:crosshair}
 #infiniteRetry{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:auto;min-height:44px;margin:0}
 .death-notices{position:absolute;inset:0;z-index:1;pointer-events:none}
@@ -1036,6 +1037,10 @@ body .callsign-status{min-height:2.8em;font:var(--min-font-size)/1.4 var(--mono)
 body .callsign-status[hidden]{display:block!important;visibility:hidden}
 body .callsign-status.error{color:var(--orange)}
 body :is(#roomScreen,#onlineMenuScreen,#infinitePauseMenu) .callsign-status,body #infinitePauseMenu .callsign-status,body #onlineMenuScreen .callsign-status{min-height:2.8em}
+body :is(#roomScreen,#onlineMenuScreen,#infinitePauseMenu) .callsign-status,body #infinitePauseMenu .callsign-status,body #onlineMenuScreen .callsign-status,body #pilotNameStatus{min-height:calc(1.4em + 52px)}
+body .callsign-status>span{display:block}
+body .callsign-status .callsign-account-action{min-height:24px;margin:0;padding:3px 0;line-height:1.4}
+body .callsign-status .callsign-random-action{display:block}
 
 body #roomScreen.unified-room #roomStatus,body #joinDialog #netStatus{min-height:2.8em}
 /* Account secrets stay masked until an explicit copy fallback is needed. */

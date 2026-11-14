@@ -166,6 +166,18 @@ test('an unregistered P2 candidate cannot be copied or reset until the server co
  s.openAccount(1);requests[1].resolve(response({names:['WING'],publicProfile:{name:'WING',score:9}}));await flush();assert.equal($('accountCopyBtn').disabled,false);assert.equal(s.publicIdentityToken(1),candidate);assert.equal(storage.has('leqra.localAccountRegistration'),false);assert.equal(s.publicIdentityToken(),oldKey);
 });
 
+test('reading or rotating a generated P2 key preserves first-game migration intent',async()=>{
+ const {s,$,requests,storage}=boot(),candidate=s.prepareLocalAccount().localPublicToken;
+ s.openAccount(1);requests[0].resolve(response({names:['pilot-abcdefgh23']}));await flush();
+ assert.equal($('accountCopyBtn').disabled,false);
+ assert.equal(JSON.parse(storage.get('leqra.localAccountRegistration')).token,candidate);
+ assert.equal(s.prepareLocalAccount().localNewAccount,true);
+ const reset=s.savePendingAccountKey(candidate,1);s.completeAccountReset(reset,{names:['pilot-abcdefgh23']});
+ assert.equal(s.publicIdentityToken(1),reset.replacement);
+ assert.equal(JSON.parse(storage.get('leqra.localAccountRegistration')).token,reset.replacement);
+ assert.equal(s.prepareLocalAccount().localNewAccount,true);
+});
+
 test('malformed P2 registration data fails closed without leaking its contents',()=>{
  const {s,storage}=boot();storage.set('leqra.localAccountRegistration','private-malformed-key');assert.throws(()=>s.prepareLocalAccount(),error=>!error.message.includes('private-malformed-key'));assert.equal(storage.get('leqra.localAccountRegistration'),'private-malformed-key');assert.equal(s.publicIdentityToken(),oldKey);
 });

@@ -7,6 +7,33 @@ import org.junit.Test
 
 class SnapshotDecoderTest {
     @Test
+    fun authoritativeLongGodlikeNamesRemainWholeAcrossTankLeaderboardAndNotice() {
+        val name = "Bot 1234567890 - Godlike"
+        assertTrue(name.length > 16)
+        val packet = JSONObject("""{"type":"state","tick":1,"tanks":[{"id":7,"name":"$name","bot":true,"difficulty":"godlike"}],"bullets":[],"leaderboard":[{"id":7,"name":"$name","score":1,"bot":true}],"godlikeSpawns":[{"id":7,"spawnSerial":2,"name":"$name"}],"players":0,"tankCount":1}""")
+        val state = SnapshotDecoder().decode(packet)
+        assertEquals(name, state.tanks.single().name)
+        assertEquals(name, state.leaderboard.single().name)
+        assertEquals(name, state.godlikeSpawns.single().name)
+        assertTrue(state.tanks.single().isGodlikeBot)
+    }
+
+    @Test
+    fun optionalGodlikeSpawnEventsRemainBoundedAndOldPacketsNeedNoNewFields() {
+        val packet = JSONObject("""{"type":"state","tick":1,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0}""")
+        assertTrue(SnapshotDecoder().decode(packet).godlikeSpawns.isEmpty())
+        packet.put("godlikeSpawns", org.json.JSONArray().apply {
+            repeat(200) { put(JSONObject().put("id", it).put("spawnSerial", 3).put("name", "Bot $it - Godlike")) }
+        })
+        val events = SnapshotDecoder().decode(packet).godlikeSpawns
+        assertEquals(128, events.size)
+        assertEquals(3, events[0].spawnSerial)
+        assertEquals("Bot 0 - Godlike", events[0].name)
+        packet.put("phase", "playing")
+        assertTrue(SnapshotDecoder().decode(packet).godlikeSpawns.isEmpty())
+    }
+
+    @Test
     fun fixedWorldSurvivesOmittedUpdatesAndPackedRapidBulletsAreDecoded() {
         val decoder = SnapshotDecoder()
         val packet =
@@ -51,7 +78,7 @@ class SnapshotDecoderTest {
             SnapshotDecoder()
                 .decode(
                     JSONObject(
-                        """{"type":"state","tick":1,"tanks":[{"id":2,"name":"BOT 2","bot":true,"difficulty":"godlike"},{"id":3,"name":"Godlike Bot 3","bot":true,"difficulty":"dumb"},{"id":4,"name":"Godlike Bot 4","bot":false,"difficulty":"godlike"},{"id":5,"name":"Old server bot","bot":true}],"bullets":[],"leaderboard":[],"players":1,"tankCount":4}"""
+                        """{"type":"state","tick":1,"tanks":[{"id":2,"name":"Bot 2 - Godlike","bot":true,"difficulty":"godlike"},{"id":3,"name":"Bot 3 - Godlike","bot":true,"difficulty":"dumb"},{"id":4,"name":"Godlike Bot 4","bot":false,"difficulty":"godlike"},{"id":5,"name":"Old server bot","bot":true}],"bullets":[],"leaderboard":[],"players":1,"tankCount":4}"""
                     )
                 )
         assertEquals(

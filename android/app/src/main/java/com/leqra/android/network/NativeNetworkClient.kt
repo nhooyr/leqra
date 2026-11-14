@@ -583,6 +583,7 @@ class NativeNetworkClient(
                 val seat = json.intOrNull("seat")
                 val message =
                     when (code) {
+                        "callsign_reserved" -> com.leqra.core.Callsigns.botNamespaceMessage
                         "session_replaced" ->
                             "${if (seat == 1) "P2's tank" else "This tank"} was taken over on another device. Rejoin to take it back."
                         "account_key_revoked" ->

@@ -1028,7 +1028,8 @@ private final class TankNode: SKNode {
             }
             speedLines.path = path
         }
-        let text = local ? tank.name + " (P1)" : tank.name
+        let displayName = CallsignPolicy.displayName(tank.name, bot: tank.bot)
+        let text = local ? displayName + " (P1)" : displayName
         let warning = tank.botWarning
         nameLabel.fontColor = paint
         let size = max(10, infinity ? 11 * zoom : 10 * zoom)

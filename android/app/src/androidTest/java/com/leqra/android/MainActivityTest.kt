@@ -345,4 +345,170 @@ class MainActivityTest {
         }
         bitmap.recycle()
     }
+    @Test
+    fun freshNamesReservedRepairP2AndPassiveNoticeRemainStable() {
+        val activity = launch()
+        val device = UiDevice.getInstance(instrumentation)
+        fun field(instance: Any, name: String): Any? = instance.javaClass.getDeclaredField(name).run { isAccessible = true; get(instance) }
+        fun eventually(message: String, condition: () -> Boolean) {
+            val deadline = SystemClock.elapsedRealtime() + 20000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (main(condition)) return
+                SystemClock.sleep(30)
+            }
+            fail(message)
+        }
+        @Suppress("UNCHECKED_CAST")
+        fun names() = field(activity, "callsignFields") as Array<android.widget.EditText?>
+        @Suppress("UNCHECKED_CAST")
+        fun feedback() = field(activity, "feedback") as Array<android.widget.TextView?>
+        fun y(view: View): Int { val point = IntArray(2); view.getLocationOnScreen(point); return point[1] }
+        val errors = mutableListOf<String>()
+        try {
+            val session = main { state(activity) }
+            main { session.notifyError = { errors.add(it) } }
+            eventually("Both fresh seats must receive claimed server defaults") { !session.automaticNamePending(0) && !session.automaticNamePending(1) }
+            val initial = main { session.callsign to session.localCallsign }
+            assertTrue(Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(initial.first))
+            assertTrue(Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(initial.second))
+            assertNotEquals(initial.first, initial.second)
+            main {
+                session.localSelected = true
+                session.save()
+                session.changed(true)
+            }
+            instrumentation.waitForIdleSync()
+            val secondKey = main { session.store.selected(session.server, 1)!!.key }
+            val secondWasPending = main { session.store.selected(session.server, 1)!!.registrationPending }
+            val layoutBefore = main { y(names()[1]!!) to feedback()[0]!!.height }
+            main { names()[0]!!.requestFocus(); names()[0]!!.setText("Bot RUST") }
+            instrumentation.waitForIdleSync()
+            SystemClock.sleep(150)
+            assertTrue(device.takeScreenshot(File(instrumentation.targetContext.getExternalFilesDir(null), "identity-native-reserved.png")))
+            main {
+                assertTrue(feedback()[0]!!.text.toString().contains("reserved"))
+                assertFalse(feedback()[0]!!.text.toString().contains("Import"))
+                assertEquals(layoutBefore.first, y(names()[1]!!))
+                assertEquals(layoutBefore.second, feedback()[0]!!.height)
+                val spans = (feedback()[0]!!.text as android.text.Spanned).getSpans(0, feedback()[0]!!.length(), android.text.style.ClickableSpan::class.java)
+                assertEquals(1, spans.size)
+                spans.single().onClick(feedback()[0]!!)
+                assertFalse(com.leqra.core.Callsigns.botReserved(session.callsign))
+            }
+            eventually("Generate repair must complete without a stale blur overwriting it") { !session.automaticNamePending(0) }
+            main {
+                assertTrue(errors.isEmpty())
+                assertEquals(layoutBefore.first, y(names()[1]!!))
+                names()[1]!!.requestFocus(); names()[1]!!.setText("bOt WING")
+                val spans = (feedback()[1]!!.text as android.text.Spanned).getSpans(0, feedback()[1]!!.length(), android.text.style.ClickableSpan::class.java)
+                spans.single().onClick(feedback()[1]!!)
+            }
+            eventually("P2 gets an independent repaired name") { !session.automaticNamePending(1) }
+            main {
+                assertEquals(secondKey, session.store.selected(session.server, 1)!!.key)
+                assertNotEquals(session.store.selected(session.server, 0)!!.key, secondKey)
+                assertEquals(secondWasPending, session.store.selected(session.server, 1)!!.registrationPending)
+                session.publicSelected = true
+                session.play()
+            }
+            eventually("Public entry with both generated accounts must succeed") { session.screen == Screen.PLAYING && session.localID2 != null && session.snapshot.tanks.any { it.id == session.localID2 } }
+            main {
+                assertFalse(session.store.selected(session.server, 1)!!.registrationPending)
+                assertTrue(session.store.pending(session.server, 1).none { it.purpose == "registration" })
+                val status = session.status
+                val packet = session.snapshot.copy(tick = session.snapshot.tick + 2, godlikeSpawns = listOf(com.leqra.core.GodlikeSpawn(2000000, 1, "Bot 999 - Godlike")))
+                GameSession::class.java.getDeclaredMethod("networkEvent", com.leqra.android.network.NetworkEvent::class.java, Boolean::class.javaPrimitiveType).run {
+                    isAccessible = true
+                    invoke(session, com.leqra.android.network.NetworkEvent.State(packet), true)
+                }
+                assertEquals(status, session.status)
+                assertFalse(session.paused)
+                assertEquals("Bot 999 - Godlike spawned nearby. Watch out!", session.encounterNotice)
+                assertTrue(errors.isEmpty())
+            }
+            eventually("The passive notice reaches Canvas without opening an error") {
+                (field(activity, "arena") as com.leqra.android.render.NativeArenaView).encounterNotice != null
+            }
+            SystemClock.sleep(250)
+            val image = File(instrumentation.targetContext.getExternalFilesDir(null), "identity-native-warning.png")
+            assertTrue(device.takeScreenshot(image))
+            main { session.leave() }
+        } finally { main { activity.finish() } }
+    }
+
+    @Test
+    fun roomModeSwitchKeepsReadyCardPlayAndSharedControlsFixedInBothOrientations() {
+        val activity = launch()
+        val device = UiDevice.getInstance(instrumentation)
+        fun field(name: String): Any? = MainActivity::class.java.getDeclaredField(name).run { isAccessible = true; get(activity) }
+        fun eventually(message: String, condition: () -> Boolean) {
+            val deadline = SystemClock.elapsedRealtime() + 20000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (main(condition)) return
+                SystemClock.sleep(30)
+            }
+            fail(message)
+        }
+        data class Bounds(val x: Int, val y: Int, val width: Int, val height: Int)
+        data class Layout(val card: Bounds, val play: Bounds, val shared: Set<String>)
+        fun bounds(view: View): Bounds { val point = IntArray(2); view.getLocationOnScreen(point); return Bounds(point[0], point[1], view.width, view.height) }
+        fun buttons(view: View): List<android.widget.Button> = if (view is android.widget.Button) listOf(view)
+            else if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
+        val report = StringBuilder()
+        val shared = setOf("COPY INVITE LINK ↗", "Join another room ↗", "LEAVE ROOM", "FIND ONLINE BATTLE")
+        fun capture(label: String): Layout {
+            eventually("Ready-room layout did not settle") {
+                val scroll = field("readyScroll") as? android.widget.ScrollView
+                scroll != null && scroll.isLaidOut && !scroll.isLayoutRequested
+            }
+            SystemClock.sleep(180)
+            val layout = main {
+                val scroll = field("readyScroll") as android.widget.ScrollView
+                scroll.scrollTo(0, 0)
+                val holder = scroll.getChildAt(0) as android.view.ViewGroup
+                val card = holder.getChildAt(0)
+                Layout(bounds(card), bounds(field("readyPlay") as View), buttons(card).filter { it.visibility == View.VISIBLE && it.text.toString() in shared }.map { it.text.toString() }.toSet())
+            }
+            report.appendLine("$label $layout")
+            device.takeScreenshot(File(instrumentation.targetContext.getExternalFilesDir(null), "android-room-$label.png"))
+            return layout
+        }
+        try {
+            val session = main { state(activity) }
+            main {
+                session.publicSelected = false
+                session.localSelected = false
+                session.botCount = 0
+                session.selectMode("elimination")
+                session.share()
+            }
+            eventually("Published native room did not reach its lobby") { session.room != null && session.network.connected && session.screen == Screen.READY }
+            for (orientation in listOf(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)) {
+                val name = if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) "portrait" else "landscape"
+                main { activity.requestedOrientation = orientation; session.changeRules(com.leqra.core.RoomRules.localDefaults("elimination")) }
+                eventually("Elimination lobby orientation did not settle") { activity.resources.configuration.orientation == if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) android.content.res.Configuration.ORIENTATION_PORTRAIT else android.content.res.Configuration.ORIENTATION_LANDSCAPE }
+                SystemClock.sleep(500) // Let the system's rotation surface animation finish before screenshots.
+                eventually("Room did not select Elimination") { session.room?.optJSONObject("rules")?.optBoolean("infinity") == false }
+                val before = capture("$name-elimination")
+                main { session.changeRules(com.leqra.core.RoomRules.localDefaults("infinity")) }
+                eventually("Room did not select room Infinity") { session.room?.optJSONObject("rules")?.optBoolean("infinity") == true && !session.publicSelected }
+                val infinity = capture("$name-infinity")
+                main { session.changeRules(com.leqra.core.RoomRules.localDefaults("elimination")) }
+                eventually("Room did not return to Elimination") { session.room?.optJSONObject("rules")?.optBoolean("infinity") == false }
+                val restored = capture("$name-restored")
+                assertEquals("$name common room actions", shared, before.shared)
+                assertEquals("$name Infinity must keep every common action", shared, infinity.shared)
+                assertEquals("$name restored must keep every common action", shared, restored.shared)
+                assertEquals("$name ready card moved/resized on room-mode switch: $report", before.card, infinity.card)
+                assertEquals("$name Play moved/resized on room-mode switch: $report", before.play, infinity.play)
+                assertEquals(before.card, restored.card)
+                assertEquals(before.play, restored.play)
+            }
+            main { session.leave() }
+        } finally {
+            File(instrumentation.targetContext.getExternalFilesDir(null), "android-room-bounds.txt").writeText(report.toString())
+            main { activity.finish() }
+        }
+    }
+
 }

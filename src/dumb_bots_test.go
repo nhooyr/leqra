@@ -143,7 +143,7 @@ func TestPublicGodlikeCadenceCountsRespawnsAndLimitsLivingBosses(t *testing.T) {
 			t.Fatal("public boss appeared before its rare life")
 		}
 	}
-	if bot.botLevel != infiniteBotLevel("godlike") || bot.Name != "Godlike Bot 1" || bot.wireTank(a.tick).Difficulty != "godlike" {
+	if bot.botLevel != infiniteBotLevel("godlike") || bot.Name != "Bot 1 - Godlike" || bot.wireTank(a.tick).Difficulty != "godlike" {
 		t.Fatal("64th life lacked a real, visibly marked Godlike bot")
 	}
 	other := a.addPilot("Bot 2", true, 0, 0, 1, 3)
@@ -173,18 +173,41 @@ func TestPublicGodlikeCadenceCountsRespawnsAndLimitsLivingBosses(t *testing.T) {
 	}
 }
 
+func TestPublicGodlikeNameUsesBotNamespaceThroughoutPresentation(t *testing.T) {
+	a, bot, _ := dumbInfinityFixture(t)
+	bot.ambientNumber, bot.Score = 1234, 23
+	a.publicBotLives = 63
+	a.startBotLife(bot)
+	const name = "Bot 1234 - Godlike"
+	if bot.Name != name || bot.wireTank(a.tick).Name != name || !reservedCallsign(name) {
+		t.Fatal("Godlike tank name lost its number, suffix, or reserved namespace", bot.Name)
+	}
+	leaders := a.leaderboard(nil)
+	if len(leaders) == 0 || leaders[0].ID != bot.ID || leaders[0].Name != name || leaders[0].Score != 23 {
+		t.Fatal("leaderboard did not preserve the full Godlike name and score", leaders)
+	}
+	if len(a.godlikeSpawns) != 1 || a.godlikeSpawns[0].Name != name {
+		t.Fatal("spawn notice did not carry the full Godlike name", a.godlikeSpawns)
+	}
+	a.publicBotLives = 64
+	a.startBotLife(bot)
+	if bot.Name != "Bot 1234" || bot.Score != 23 {
+		t.Fatal("ordinary life retained a Godlike suffix or lost its score", bot.Name, bot.Score)
+	}
+}
+
 func TestPublicBotRelocationAndPoolKeepTierWithoutNewLives(t *testing.T) {
 	a, bot, human := dumbInfinityFixture(t)
 	a.publicBotLives = 63
 	a.startBotLife(bot)
-	if bot.Name != "Godlike Bot 1" {
+	if bot.Name != "Bot 1 - Godlike" {
 		t.Fatal("fixture lacked boss")
 	}
 	bot.X, bot.Y = human.X+17*cellSize, human.Y
 	think, shot, lives, spawn := bot.botThink, bot.botShot, a.publicBotLives, bot.Spawn
 	a.tick = a.nextBot
 	a.populate()
-	if bot.Spawn != spawn+1 || bot.Name != "Godlike Bot 1" || bot.botLevel != infiniteBotLevel("godlike") || bot.botThink != think || bot.botShot != shot || a.publicBotLives != lives+1 {
+	if bot.Spawn != spawn+1 || bot.Name != "Bot 1 - Godlike" || bot.botLevel != infiniteBotLevel("godlike") || bot.botThink != think || bot.botShot != shot || a.publicBotLives != lives+1 {
 		t.Fatal("relocation rerolled boss life, tier, or cadence")
 	}
 	// populate may add one brand-new ordinary bot, accounting for +1 above.
@@ -210,7 +233,7 @@ func TestPublicBotRelocationAndPoolKeepTierWithoutNewLives(t *testing.T) {
 		a.tick = a.nextBot
 		a.populate()
 	}
-	if a.publicBotLives != lives || bot.Name != "Godlike Bot 1" || bot.botLevel != infiniteBotLevel("godlike") {
+	if a.publicBotLives != lives || bot.Name != "Bot 1 - Godlike" || bot.botLevel != infiniteBotLevel("godlike") {
 		t.Fatal("reactivating the pool counted a new life or changed the boss")
 	}
 }
@@ -261,7 +284,7 @@ func TestPublicGodlikeLimitShrinkDowngradesExcessWithoutNewLives(t *testing.T) {
 		t.Fatal("population shrink did not keep the visible boss first")
 	}
 	for _, p := range []*infinitePilot{bosses[0], pooled} {
-		if p.botLevel != infiniteBotLevel("dumb") || strings.HasPrefix(p.Name, "Godlike ") || p.botHasAim || p.botShot != a.tick+108 || p.HP != 1 {
+		if p.botLevel != infiniteBotLevel("dumb") || strings.HasSuffix(p.Name, " - Godlike") || p.botHasAim || p.botShot != a.tick+108 || p.HP != 1 {
 			t.Fatal("excess boss did not become a fresh-thinking Dumb bot", p.Name, p.botHasAim)
 		}
 	}

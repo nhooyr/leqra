@@ -32,8 +32,8 @@ final class GameSession: ObservableObject {
     @Published var frameRateDetails = ""
     @Published var localID = -1
     @Published var showScores = false
-    @Published var showSettings = false
-    @Published var showAccount = false
+    @Published var showSettings = false { didSet { refreshStarmanActivity() } }
+    @Published var showAccount = false { didSet { refreshStarmanActivity() } }
     @Published var accountSeatContext = 0
     @Published var accountInfo: AccountInfo?
     @Published var accountStatus = ""
@@ -41,13 +41,13 @@ final class GameSession: ObservableObject {
     @Published var accountRecoveryKeyPending = false
     @Published var accountPendingKeyVerified = false
     @Published var accountSavedActivationCount = 0
-    @Published var showRules = false
-    @Published var showControls = false
-    @Published var showSidebar = false
-    @Published var showJoin = false
-    @Published var showChat = false
-    @Published var showQueues = false
-    @Published var showPresets = false
+    @Published var showRules = false { didSet { refreshStarmanActivity() } }
+    @Published var showControls = false { didSet { refreshStarmanActivity() } }
+    @Published var showSidebar = false { didSet { refreshStarmanActivity() } }
+    @Published var showJoin = false { didSet { refreshStarmanActivity() } }
+    @Published var showChat = false { didSet { refreshStarmanActivity() } }
+    @Published var showQueues = false { didSet { refreshStarmanActivity() } }
+    @Published var showPresets = false { didSet { refreshStarmanActivity() } }
     @Published var publicInfinitySelected = true
     @Published var publicStatus: NativePublicStatus?
     @Published var showFPS = true
@@ -70,11 +70,23 @@ final class GameSession: ObservableObject {
     @Published var callsignFeedback = ""
     @Published var localCallsignFeedback = ""
     @Published var callsignChecking = false
-    @Published var callsign = UserDefaults.standard.string(forKey: "callsign") ?? "SNOW FOX" {
-        didSet { UserDefaults.standard.set(callsign, forKey: "callsign"); scheduleCallsignAvailability() }
+    @Published var callsignGenerating = false
+    @Published var callsignReserved = false
+    @Published var localCallsignReserved = false
+    @Published var localCallsignTaken = false
+    @Published var godlikeNotice = ""
+    @Published var callsign: String {
+        didSet {
+            guard oldValue != callsign else { return }
+            if !applyingGeneratedCallsign { callsignDrafts.editorChanged(from: oldValue, to: callsign, seat: 0) }
+            scheduleCallsignAvailability()
+        }
     }
-    @Published var localCallsign = UserDefaults.standard.string(forKey: "localCallsign") ?? "CO-PILOT" {
-        didSet { UserDefaults.standard.set(localCallsign, forKey: "localCallsign") }
+    @Published var localCallsign: String {
+        didSet {
+            guard oldValue != localCallsign else { return }
+            if !applyingGeneratedCallsign { callsignDrafts.editorChanged(from: oldValue, to: localCallsign, seat: 1) }
+        }
     }
     @Published var colorIndex = GamePalette.index(UserDefaults.standard.integer(forKey: "tankColor")) {
         didSet { UserDefaults.standard.set(colorIndex, forKey: "tankColor") }
@@ -99,6 +111,13 @@ final class GameSession: ObservableObject {
     private let roomClient = NetworkClient()
     private let arenaClient = NetworkClient()
     private let publicSessions: PublicInfinitySessionStoring
+    private let callsignDrafts: CallsignDraftStore
+    private var applyingGeneratedCallsign = false
+    private var nextAutomaticGeneration = 0.0
+    private var pendingOnlineAction: UUID?
+    private var spawnNotices = GodlikeSpawnNotices()
+    private var spawnNoticeTask: Task<Void, Never>?
+    private var spawnNoticeOrigin: String?
     private var practice: PracticeArena?
     private var fixedArena: FixedArena?
     private var maze: InfiniteMaze?
@@ -126,6 +145,7 @@ final class GameSession: ObservableObject {
     private var publicResumePaused = false
     private var publicSuspended = false
     private var lifecycleInactive = false
+    private var audioStateFresh = false
     private var resumeAfterActivation = false
     private var publicScoreResetPending = false
     private var callsignCheckTask: Task<Void, Never>?
@@ -136,6 +156,9 @@ final class GameSession: ObservableObject {
 
     init(publicSessions: PublicInfinitySessionStoring? = nil) {
         self.publicSessions = publicSessions ?? KeychainPublicInfinitySessions.applicationStore()
+        let drafts = CallsignDraftStore()
+        callsignDrafts = drafts
+        callsign = drafts.name(seat: 0); localCallsign = drafts.name(seat: 1)
         localRules.infinity = false
         if let data = UserDefaults.standard.data(forKey: "nativePresets"), let presets = try? JSONDecoder().decode([LocalPreset].self, from: data) { savedPresets = presets }
         scene.scaleMode = .resizeFill
@@ -166,6 +189,13 @@ final class GameSession: ObservableObject {
             }
         } else if !ProcessInfo.processInfo.arguments.contains("--skip-public-session-restore") {
             Task { @MainActor [weak self] in self?.restorePublicSessionIfNeeded() }
+        }
+        if !ProcessInfo.processInfo.arguments.contains("--native-performance-probe"), !ProcessInfo.processInfo.arguments.contains("--native-render-probe") {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let pending = [0, 1].filter { self.callsignDrafts.automaticPending(seat: $0) }
+                if !pending.isEmpty { await self.generateCallsigns(seats: pending, automatic: true) }
+            }
         }
     }
 
@@ -203,7 +233,7 @@ final class GameSession: ObservableObject {
     }
     var accountHasKey: Bool { accountServer.map { accountSession(for: $0, seat: accountSeatContext) != nil || publicSessions.pendingKey(for: $0, seat: accountSeatContext) != nil } ?? false }
     var accountCanCopyKey: Bool {
-        accountPendingKeyVerified || (accountServer.map { accountSession(for: $0, seat: accountSeatContext) != nil && !publicSessions.registrationPending(for: $0, seat: accountSeatContext) } ?? false)
+        accountPendingKeyVerified || (accountServer.map { accountSession(for: $0, seat: accountSeatContext) != nil && (accountInfo != nil || !publicSessions.registrationPending(for: $0, seat: accountSeatContext)) } ?? false)
     }
     var accountCanResetKey: Bool { accountServer.map { accountHasKey && !publicSessions.registrationPending(for: $0, seat: accountSeatContext) } ?? false }
     private var accountServer: URL? {
@@ -228,6 +258,131 @@ final class GameSession: ObservableObject {
         let candidate = try KeychainPublicInfinitySessions.newCredential(for: server)
         guard publicSessions.rememberNew(candidate, seat: 1) else { throw AccountActionError.keychain }
         return (candidate.publicToken, true)
+    }
+
+    func generateRandomCallsign(seat: Int = 0) {
+        Task { @MainActor [weak self] in await self?.generateCallsigns(seats: [seat == 1 ? 1 : 0], automatic: false) }
+    }
+
+    private func generateCallsigns(seats: [Int], automatic: Bool, offlineRepair: Bool = true) async {
+        guard !callsignGenerating, let server = accountServer else { return }
+        if automatic {
+            guard readyRoom, room == nil, ProcessInfo.processInfo.systemUptime >= nextAutomaticGeneration else { return }
+            nextAutomaticGeneration = ProcessInfo.processInfo.systemUptime + 5
+        }
+        let address = serverAddress
+        callsignGenerating = true
+        defer { callsignGenerating = false }
+        var pendingAttempt: CallsignGenerationAttempt?
+        var pendingCredentials: [(seat: Int, credential: PublicInfinitySession)] = []
+        do {
+            var requested = seats
+            // Preferences may be fresh after reinstall while Keychain still
+            // contains an account. Recover its name instead of renaming it.
+            if automatic {
+                let draft = try callsignDrafts.begin(server: server, seats: requested)
+                for seat in requested {
+                    if let credential = accountSession(for: server, seat: seat), !publicSessions.registrationPending(for: server, seat: seat),
+                       let info = try? await arenaClient.fetchAccountInfo(baseURL: server, publicToken: credential.publicToken), let name = info.preferredCallsign,
+                       serverAddress == address, accountSession(for: server, seat: seat) == credential,
+                       callsignDrafts.apply(name, seat: seat, attempt: draft) {
+                        applyingGeneratedCallsign = true
+                        if seat == 1 { localCallsign = name } else { callsign = name }
+                        applyingGeneratedCallsign = false
+                    }
+                }
+                requested = requested.filter { callsignDrafts.automaticPending(seat: $0) }
+                if requested.isEmpty { callsignDrafts.complete(draft); return }
+            }
+            var credentials: [(seat: Int, credential: PublicInfinitySession)] = []
+            for seat in requested {
+                let credential: PublicInfinitySession
+                if let saved = accountSession(for: server, seat: seat) { credential = saved }
+                else {
+                    credential = try KeychainPublicInfinitySessions.newCredential(for: server)
+                    guard publicSessions.rememberNew(credential, seat: seat) else { throw AccountActionError.keychain }
+                }
+                guard credential.publicToken != accountSession(for: server, seat: seat == 1 ? 0 : 1)?.publicToken else { throw AccountActionError.duplicateAccount }
+                credentials.append((seat, credential))
+            }
+            // Persist the UUID and both independent keys before contacting the
+            // atomic endpoint; ambiguous failures retry this exact request.
+            let attempt = try callsignDrafts.begin(server: server, seats: requested)
+            pendingAttempt = attempt; pendingCredentials = credentials
+            let names = try await arenaClient.generateCallsigns(baseURL: server, requestId: attempt.requestId,
+                accounts: credentials.map { ($0.seat, $0.credential.publicToken) })
+            guard serverAddress == address else { return }
+            if automatic, !readyRoom || room != nil { return }
+            for generated in names {
+                guard let saved = credentials.first(where: { $0.seat == generated.seat }),
+                      accountSession(for: server, seat: generated.seat) == saved.credential else { continue }
+                if generated.seat == 0, !publicSessions.confirm(saved.credential, requested: saved.credential.publicToken, seat: 0) { throw AccountActionError.keychain }
+                guard callsignDrafts.apply(generated.name, seat: generated.seat, attempt: attempt) else { continue }
+                applyingGeneratedCallsign = true
+                if generated.seat == 1 { localCallsign = generated.name } else { callsign = generated.name }
+                applyingGeneratedCallsign = false
+                if !automatic {
+                    if generated.seat == 0 { callsignTaken = false; saveCallsign() }
+                    else if let local = accountLocalPlayer { send(.renameLocal(target: local.id, member: local.member, name: generated.name)) }
+                }
+            }
+            callsignDrafts.complete(attempt)
+            scheduleCallsignAvailability(localName: localCallsign)
+        } catch {
+            if !automatic, serverAddress == address {
+                let unavailable = (error as? URLError).map { [.notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost, .timedOut].contains($0.code) } ?? false
+                if offlineRepair, unavailable, let attempt = pendingAttempt {
+                    for saved in pendingCredentials where accountSession(for: server, seat: saved.seat) == saved.credential {
+                        if let name = try? callsignDrafts.provisionalName(seat: saved.seat, attempt: attempt) {
+                            applyingGeneratedCallsign = true
+                            if saved.seat == 1 { localCallsign = name } else { callsign = name }
+                            applyingGeneratedCallsign = false
+                            if saved.seat == 0, offline { saveCallsign() }
+                        }
+                    }
+                    scheduleCallsignAvailability(localName: localCallsign)
+                    status = "Random callsign ready offline. Connect to reserve it before going online."
+                } else {
+                    let message = error.localizedDescription
+                    if seats.contains(0) { callsignFeedback = message } else { localCallsignFeedback = message }
+                }
+            }
+        }
+    }
+
+    private func finishPendingCallsigns(seats: [Int], action: @escaping @MainActor () -> Void) -> Bool {
+        let pending = seats.filter { callsignDrafts.automaticPending(seat: $0) }
+        guard !pending.isEmpty else { return false }
+        let operation = UUID(); pendingOnlineAction = operation
+        status = "Reserving the random callsign before going online…"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.callsignGenerating {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard self.pendingOnlineAction == operation else { return }
+            }
+            await self.generateCallsigns(seats: pending, automatic: false, offlineRepair: false)
+            guard self.pendingOnlineAction == operation else { return }
+            self.pendingOnlineAction = nil
+            if pending.allSatisfy({ !self.callsignDrafts.automaticPending(seat: $0) }) { action() }
+            else { self.status = "Connect to reserve the generated callsign before going online." }
+        }
+        return true
+    }
+
+    private func installAuthoritativeCallsign(_ name: String, seat: Int) {
+        callsignDrafts.edited(name, seat: seat)
+        applyingGeneratedCallsign = true
+        if seat == 1 { localCallsign = name } else { callsign = name }
+        applyingGeneratedCallsign = false
+        scheduleCallsignAvailability(localName: localCallsign)
+    }
+
+    private func validPlayerCallsign(_ name: String, seat: Int) -> Bool {
+        guard CallsignPolicy.reservedForBots(name) else { return true }
+        if seat == 1 { localCallsignReserved = true; localCallsignFeedback = "Reserved for bots." }
+        else { callsignReserved = true; callsignFeedback = "Reserved for bots." }
+        return false
     }
 
     func openAccount(seat: Int = 0) {
@@ -268,7 +423,7 @@ final class GameSession: ObservableObject {
                 }
                 let info = try await self.arenaClient.fetchAccountInfo(baseURL: server, publicToken: credential.publicToken)
                 guard !Task.isCancelled, self.accountOperation == operation, let current = self.accountServer, credential.matches(current), self.showAccount else { return }
-                if self.publicSessions.registrationPending(for: server, seat: slot), self.publicSessions.session(for: server, seat: slot) == credential {
+                if slot == 0, self.publicSessions.registrationPending(for: server, seat: slot), self.publicSessions.session(for: server, seat: slot) == credential {
                     self.publicSessions.remember(credential, seat: slot)
                 }
                 self.accountInfo = info; self.accountBusy = false
@@ -340,7 +495,7 @@ final class GameSession: ObservableObject {
         }
         clearAccountIntent(for: checked.credential, seat: slot)
         accountInfo = info
-        if let name = info.preferredCallsign { if slot == 1 { localCallsign = name } else { callsign = name } }
+        if let name = info.preferredCallsign { installAuthoritativeCallsign(name, seat: slot) }
         accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
         scheduleCallsignAvailability()
         accountStatus = "Account imported. PLAY will use its callsign and server score."
@@ -403,7 +558,7 @@ final class GameSession: ObservableObject {
         accountPendingKeyVerified = false
         if let current = accountServer, pending.replacement.matches(current) {
             accountInfo = info
-            if let name = info.preferredCallsign { if slot == 1 { localCallsign = name } else { callsign = name } }
+            if let name = info.preferredCallsign { installAuthoritativeCallsign(name, seat: slot) }
             scheduleCallsignAvailability()
         }
         accountStatus = "New account key saved for \(pending.replacement.origin). All other devices are signed out; names and scores are unchanged."
@@ -462,6 +617,8 @@ final class GameSession: ObservableObject {
     }
 
     func refreshPublicStatus() async {
+        let pending = [0, 1].filter { callsignDrafts.automaticPending(seat: $0) }
+        if !pending.isEmpty { await generateCallsigns(seats: pending, automatic: true) }
         guard readyRoom, !hasModal, (room?.infinityPublic ?? publicInfinitySelected) || (showFPS && !roomClient.connected),
               let base = URL(string: serverAddress) else { return }
         let address = serverAddress
@@ -485,12 +642,13 @@ final class GameSession: ObservableObject {
         scene.resetWorld()
         scene.display(snapshot: preview, localID: 1, maze: previewMaze)
     }
-    var canResume: Bool { !disconnected }
+    var canResume: Bool { !disconnected && !CallsignPolicy.reservedForBots(cleanName) }
     private var onlineTitle: String {
         arenaActive ? (room == nil || room?.infinityPublic == true ? "Public Infinity" : "Room Infinity") : "Private match"
     }
 
     func startPractice() {
+        guard validPlayerCallsign(cleanName, seat: 0) else { return }
         leave()
         let game = PracticeArena(seed: UInt32.random(in: 1...UInt32.max), name: cleanName, colorIndex: GamePalette.index(colorIndex))
         practice = game; maze = game.maze; localID = game.localID
@@ -504,6 +662,8 @@ final class GameSession: ObservableObject {
     }
 
     func play() {
+        guard validPlayerCallsign(cleanName, seat: 0) else { return }
+        if let local = accountLocalPlayer, !validPlayerCallsign(local.name, seat: 1) { return }
         if let room {
             if room.infinityActive, let baseURL, let welcome, let token = welcome.token {
                 guard welcome.spectating == false else { error = "Return to a combat seat to enter Infinity."; return }
@@ -520,6 +680,7 @@ final class GameSession: ObservableObject {
     }
 
     func startLocal() {
+        guard validPlayerCallsign(cleanName, seat: 0) else { return }
         let rules = localRules
         leave()
         let seed = UInt32.random(in: 1...UInt32.max)
@@ -586,7 +747,7 @@ final class GameSession: ObservableObject {
 
     func addBot() {
         let used = Set((room?.players.map(\.name) ?? ([cleanName] + localBots.map(\.name))).map { $0.uppercased() })
-        let name = ["RUST", "VAPOR", "EMBER", "NOVA", "COMET", "ONYX", "BLITZ"].first { !used.contains($0) } ?? "BOT"
+        let name = ["Rust", "Vapor", "Ember", "Nova", "Comet", "Onyx", "Blitz"].first { !used.contains($0.uppercased()) } ?? "Bot"
         if room != nil { roomClient.send(.add(kind: "bot", name: name, difficulty: "normal")); return }
         let capacity = !localRules.infinity && localRules.mode == "survival" ? 3 : 7
         guard localBots.count < capacity else { return }
@@ -595,6 +756,8 @@ final class GameSession: ObservableObject {
     }
 
     func shareRoom() {
+        guard validPlayerCallsign(cleanName, seat: 0) else { return }
+        if finishPendingCallsigns(seats: [0], action: { [weak self] in self?.shareRoom() }) { return }
         guard room == nil else { return }
         guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
             error = "Enter an HTTP or HTTPS server address."; return
@@ -609,6 +772,8 @@ final class GameSession: ObservableObject {
     }
 
     func saveCallsign() {
+        guard validPlayerCallsign(cleanName, seat: 0) else { return }
+        if !offline, (arenaActive || room != nil), callsignDrafts.automaticPending(seat: 0) { return }
         if !offline, (arenaActive || room != nil), callsignTaken { return }
         callsign = cleanName
         if let practice { practice.configurePilot(id: localID, name: callsign, colorIndex: colorIndex, team: localTeam, difficulty: "normal") }
@@ -619,11 +784,15 @@ final class GameSession: ObservableObject {
         } else if room != nil { roomClient.send(.rename(callsign)) }
     }
 
-    /// Offline names remain unrestricted. The advisory is useful before a
+    /// Used names remain available offline; the bot namespace is reserved. The advisory is useful before a
     /// local room is shared, while the server remains the final atomic check.
     func scheduleCallsignAvailability(localName: String? = nil) {
         callsignCheckTask?.cancel()
-        callsignTaken = false; callsignFeedback = ""; localCallsignFeedback = ""
+        callsignTaken = false; localCallsignTaken = false; callsignFeedback = ""; localCallsignFeedback = ""
+        callsignReserved = CallsignPolicy.reservedForBots(cleanName)
+        localCallsignReserved = CallsignPolicy.reservedForBots(localName ?? localCallsign)
+        if callsignReserved { callsignFeedback = "Reserved for bots." }
+        if localCallsignReserved { localCallsignFeedback = "Reserved for bots." }
         guard let server = URL(string: serverAddress), (try? PublicInfinitySession.normalizedOrigin(server)) != nil else { return }
         let name = cleanName
         let local = localName ?? room?.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id })?.name
@@ -641,14 +810,15 @@ final class GameSession: ObservableObject {
                 guard !Task.isCancelled, self.cleanName == name, self.serverAddress == address else { return }
                 self.callsignChecking = false
                 self.callsignTaken = checks.first?.available == false
-                self.callsignFeedback = self.callsignTaken ? "\(name) (P1) is taken. Yours? Import its account key." : ""
+                self.callsignFeedback = self.callsignReserved ? "Reserved for bots." : self.callsignTaken ? "Used online; offline is OK." : ""
                 if let local = checks.dropFirst().first, !local.available {
-                    self.localCallsignFeedback = "\(local.name) (P2) is taken. Yours? Import its account key."
-                } else { self.localCallsignFeedback = "" }
+                    self.localCallsignTaken = true
+                    self.localCallsignFeedback = self.localCallsignReserved ? "Reserved for bots." : "Used online; offline is OK."
+                } else { self.localCallsignTaken = false; self.localCallsignFeedback = self.localCallsignReserved ? "Reserved for bots." : "" }
             } catch {
                 guard !Task.isCancelled, let self, self.cleanName == name, self.serverAddress == address else { return }
                 self.callsignChecking = false
-                self.callsignFeedback = "Online availability could not be checked."
+                if !self.callsignReserved { self.callsignFeedback = "Online availability could not be checked." }
             }
         }
     }
@@ -659,11 +829,12 @@ final class GameSession: ObservableObject {
         let primary = conflicts?.first(where: { $0.seat == 0 })
         if primary != nil || conflicts?.isEmpty != false {
             callsignTaken = true
-            callsignFeedback = primary.map { "\($0.name) (P1) is taken. Yours? Import its account key." }
-                ?? message ?? "This callsign is taken online. Choose another callsign."
+            callsignReserved = CallsignPolicy.reservedForBots(primary?.name ?? callsign)
+            callsignFeedback = callsignReserved ? "Reserved for bots." : "Used online; offline is OK."
         }
         if let local = conflicts?.first(where: { $0.seat == 1 }) {
-            localCallsignFeedback = "\(local.name) (P2) is taken. Yours? Import its account key."
+            localCallsignTaken = true; localCallsignReserved = CallsignPolicy.reservedForBots(local.name)
+            localCallsignFeedback = localCallsignReserved ? "Reserved for bots." : "Used online; offline is OK."
         }
         status = message ?? "Rename the indicated local players before going online."
     }
@@ -679,7 +850,18 @@ final class GameSession: ObservableObject {
         let roster = payload["roster"] as? [[String: Any]]
         let addsLocal = type == "add" && payload["kind"] as? String == "local"
             || type == "preset" && roster?.contains(where: { $0["kind"] as? String == "local" }) == true
+        if type == "add", payload["kind"] as? String == "local", payload["name"] == nil { payload["name"] = localCallsign }
         let editsLocal = ["configure", "rename_local"].contains(type ?? "") && payload["target"] as? Int == accountLocalPlayer?.id
+        if addsLocal || editsLocal, finishPendingCallsigns(seats: [1], action: { [weak self] in self?.send(action) }) { return }
+        if addsLocal || editsLocal {
+            let name = payload["name"] as? String ?? localCallsign
+            guard validPlayerCallsign(name, seat: 1) else { return }
+        }
+        if let roster {
+            for seat in roster where seat["kind"] as? String != "bot" {
+                guard validPlayerCallsign(seat["name"] as? String ?? "", seat: seat["kind"] as? String == "local" ? 1 : 0) else { return }
+            }
+        }
         if addsLocal || editsLocal, let server = baseURL ?? accountServer {
             do {
                 let local = try prepareLocalAccount(for: server)
@@ -732,11 +914,18 @@ final class GameSession: ObservableObject {
     }
 
     func connect(code: String? = nil, publicArena: Bool = false, restoringPublicSession: Bool = false) {
+        guard validPlayerCallsign(cleanName, seat: 0) else { return }
+        if !restoringPublicSession, finishPendingCallsigns(seats: [0], action: { [weak self] in self?.connect(code: code, publicArena: publicArena) }) { return }
         guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
             error = "Enter an HTTP or HTTPS server address."; return
         }
         let restoreLocal = publicArena && restoringPublicSession && publicSessions.activeLocal
+        if restoreLocal, !validPlayerCallsign(localCallsign, seat: 1) { return }
+        if spawnNoticeOrigin != (try? PublicInfinitySession.normalizedOrigin(url)) {
+            spawnNoticeOrigin = try? PublicInfinitySession.normalizedOrigin(url)
+            spawnNotices = GodlikeSpawnNotices(); godlikeNotice = ""; spawnNoticeTask?.cancel()
+        }
         let local: (key: String, fresh: Bool)?
         do { local = restoreLocal ? try prepareLocalAccount(for: url) : nil }
         catch { self.error = error.localizedDescription; return }
@@ -757,6 +946,10 @@ final class GameSession: ObservableObject {
     }
 
     private func connectRoomArena(server: URL, code: String, token: String, resume: Bool = false) {
+        if spawnNoticeOrigin != (try? PublicInfinitySession.normalizedOrigin(server)) {
+            spawnNoticeOrigin = try? PublicInfinitySession.normalizedOrigin(server)
+            spawnNotices = GodlikeSpawnNotices(); godlikeNotice = ""; spawnNoticeTask?.cancel()
+        }
         let needsLocal = accountLocalPlayer?.spectating == false
         do {
             let local = needsLocal ? try prepareLocalAccount(for: server) : nil
@@ -781,6 +974,7 @@ final class GameSession: ObservableObject {
     func scenePhaseChanged(_ phase: ScenePhase) {
         switch phase {
         case .inactive, .background:
+            audioStateFresh = false
             if !lifecycleInactive {
                 lifecycleInactive = true
                 resumeAfterActivation = screen == .playing && !paused && !hasModal
@@ -834,7 +1028,7 @@ final class GameSession: ObservableObject {
             (arenaActive ? arenaClient : roomClient).sendInput(packet, paused: value)
         }
         UIApplication.shared.isIdleTimerDisabled = screen == .playing && !value
-        if value { audio.pause() } else { applyAudioSetting() }
+        if value { audio.pause(fadeLoop: !lifecycleInactive) } else { applyAudioSetting() }
     }
 
     func setSoundVolume(_ value: Double) {
@@ -845,11 +1039,29 @@ final class GameSession: ObservableObject {
     func applyAudioSetting(preview: AudioCue? = nil) {
         audio.enabled = soundEnabled
         audio.volume = Float(soundVolume / 100)
-        if screen == .playing && !paused { audio.resume() }
+        if gameplayAudioActive { audio.resume() }
+        refreshStarmanActivity()
         if let preview { audio.preview(preview) }
     }
 
+    private var gameplayAudioActive: Bool {
+        screen == .playing && !paused && !hasModal && !lifecycleInactive && !disconnected && timeline?.stale != true
+            && (offline || audioStateFresh)
+    }
+
+    private var secondaryAudioPilotID: Int? {
+        guard !offline else { return nil }
+        return arenaActive ? arenaClient.welcome?.localId : accountLocalPlayer?.id
+    }
+
+    private func refreshStarmanActivity() {
+        audio.updateStarman(snapshot: lastSnapshot, localID: localID, secondaryLocalID: secondaryAudioPilotID,
+                            gameplayActive: gameplayAudioActive)
+    }
+
     func leave(clearPublicIntent: Bool = true) {
+        audioStateFresh = false
+        pendingOnlineAction = nil
         if clearPublicIntent { publicSessions.activate(nil) }
         frameProfiler = nil; scene.profilesRendering = false
         audio.reset()
@@ -904,6 +1116,7 @@ final class GameSession: ObservableObject {
         switch event {
         case .status(let value): status = value
         case .welcome(let value):
+            if arena == arenaActive { audioStateFresh = false }
             disconnected = false
             if let token = value.publicToken, let server = baseURL,
                let session = try? PublicInfinitySession(baseURL: server, publicToken: token) {
@@ -976,7 +1189,21 @@ final class GameSession: ObservableObject {
             connectRoomArena(server: url, code: code, token: token)
         case .state(let snapshot):
             guard arena == arenaActive else { return }
+            if arena {
+                let fresh = spawnNotices.accept(snapshot.godlikeSpawns, now: ProcessInfo.processInfo.systemUptime)
+                let notice = spawnNotices.text(at: ProcessInfo.processInfo.systemUptime)
+                if godlikeNotice != notice { godlikeNotice = notice }
+                if fresh {
+                    spawnNoticeTask?.cancel()
+                    spawnNoticeTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 6_000_000_000)
+                        guard !Task.isCancelled, let self else { return }
+                        self.godlikeNotice = self.spawnNotices.text(at: ProcessInfo.processInfo.systemUptime)
+                    }
+                }
+            }
             if snapshot.phase == "lobby", !arena { return }
+            audioStateFresh = !lifecycleInactive && UIApplication.shared.applicationState == .active
             if snapshot.generation != lastSnapshot.generation, !arena {
                 scene.resetWorld()
             }
@@ -1012,6 +1239,7 @@ final class GameSession: ObservableObject {
             if screen == .connecting { screen = room == nil ? .menu : .lobby }
         case .disconnected(let reason):
             if arena == arenaActive {
+                audioStateFresh = false
                 disconnected = true
                 if publicIdentityActive {
                     publicRecoveryPending = false
@@ -1081,6 +1309,7 @@ final class GameSession: ObservableObject {
                 }
                 if notice.action == "chat" { chatPending = false; pendingChatText = nil; chatError = notice.message }
             case .reconnecting(let attempt):
+                if arena == arenaActive { audioStateFresh = false }
                 if publicIdentityActive, arena {
                     if !publicRecoveryPending { publicResumePaused = lifecycleInactive ? !resumeAfterActivation : paused || hasModal }
                     publicRecoveryPending = true
@@ -1119,6 +1348,8 @@ final class GameSession: ObservableObject {
     }
 
     private func frame(_ dt: TimeInterval) {
+        let notice = spawnNotices.text(at: ProcessInfo.processInfo.systemUptime)
+        if godlikeNotice != notice { godlikeNotice = notice }
         guard screen == .playing, !paused else { return }
         let profiling = frameProfiler != nil
         let cpuStart = profiling ? CACurrentMediaTime() : 0
@@ -1179,7 +1410,8 @@ final class GameSession: ObservableObject {
         }
         lastSnapshot = snapshot
         let audioStart = profiling ? CACurrentMediaTime() : 0
-        audio.consume(snapshot: snapshot, localID: localID, infinity: isInfinity, online: !offline)
+        audio.consume(snapshot: snapshot, localID: localID, infinity: isInfinity, online: !offline,
+                      secondaryLocalID: secondaryAudioPilotID, gameplayActive: gameplayAudioActive)
         if profiling { audioSeconds = CACurrentMediaTime() - audioStart }
         scene.display(snapshot: snapshot, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
         hudElapsed += dt

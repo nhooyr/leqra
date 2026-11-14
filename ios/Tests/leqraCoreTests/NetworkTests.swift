@@ -3,6 +3,12 @@ import XCTest
 @testable import leqraCore
 
 final class NetworkTests: XCTestCase {
+    func testAuthoritativeTankVelocityIsRetainedWithoutRequiringOlderServersToSendIt() throws {
+        let tank = try JSONDecoder().decode(ArenaTank.self, from: Data(#"{"id":1,"vx":-128,"vy":64}"#.utf8))
+        XCTAssertEqual(tank.vx, -128); XCTAssertEqual(tank.vy, 64)
+        let legacy = try JSONDecoder().decode(ArenaTank.self, from: Data("{}".utf8))
+        XCTAssertEqual(legacy.vx, 0); XCTAssertEqual(legacy.vy, 0)
+    }
     func testFixedAudioMetadataSurvivesNormalizationAndInfinityAllowsItsAbsence() throws {
         let data = Data(#"{"type":"state","phase":"playing","tanks":[],"bullets":[],"events":[{"id":8,"type":"shot","text":"laser","owner":0,"player":0,"tick":420,"spawnSerial":7,"shotSerial":9007199254740991}]}"#.utf8)
         let normalized = try SnapshotDecoder.normalized(data: data, previousWorld: nil)

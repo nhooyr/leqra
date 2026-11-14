@@ -35,7 +35,9 @@ data class AccountInfo(
 
 class CheckedAccount(val origin: String, val key: String, val info: AccountInfo)
 
-data class CallsignAvailability(val seat: Int, val name: String, val available: Boolean)
+data class CallsignAvailability(val seat: Int, val name: String, val available: Boolean, val reason: String = "")
+
+class GeneratedCallsign(val seat: Int, val name: String, val key: String, val selected: Boolean)
 
 data class PublicStatus(
     val players: Int,
@@ -156,10 +158,71 @@ class AccountService(
                                 index,
                                 it.getString("name"),
                                 it.getBoolean("available"),
+                                it.optString("reason"),
                             )
                         }
                     }
                 },
+            )
+        }
+    }
+
+    /** Both selected bearer and backup reach durable storage before the HTTP request exists. */
+    fun generate(
+        origin: String,
+        seats: List<Int>,
+        requestID: String,
+        callback: (Result<List<GeneratedCallsign>>) -> Unit,
+    ): CancelRequest {
+        require(
+            seats.size in 1..2 && seats.distinct().size == seats.size && seats.all { it in 0..1 }
+        )
+        require(java.util.UUID.fromString(requestID).toString() == requestID)
+        val normalized = ServerAddress.origin(origin)
+        val ordered = seats.sorted()
+        val credentials =
+            ordered.associateWith {
+                store.selected(normalized, it) ?: store.prepareRegistration(normalized, it)
+            }
+        val epochs = ordered.associateWith { next(normalized, it) }
+        val body =
+            JSONObject()
+                .put("requestId", requestID)
+                .put(
+                    "accounts",
+                    JSONArray().apply {
+                        ordered.forEach {
+                            put(
+                                JSONObject()
+                                    .put("seat", it)
+                                    .put("publicToken", credentials.getValue(it).key)
+                            )
+                        }
+                    },
+                )
+        return request(normalized, "/api/callsigns/generate", body) { result ->
+            callback(
+                result.mapCatching { json ->
+                    val rows = json.getJSONArray("names")
+                    require(rows.length() == ordered.size)
+                    val names =
+                        ordered.mapIndexed { index, seat ->
+                            val row = rows.getJSONObject(index)
+                            require(row.getInt("seat") == seat)
+                            row.getString("name").also {
+                            require(Regex("(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})").matches(it))
+                            }
+                        }
+                    ordered.mapIndexed { index, seat ->
+                        val key = credentials.getValue(seat).key
+                        val selected =
+                            current(normalized, seat, epochs.getValue(seat)) &&
+                                store.selected(normalized, seat)?.key == key
+                        // Name generation is not the first gameplay acknowledgement.
+                        // Preserve fresh-P2 legacy migration intent until Welcome confirms the key.
+                        GeneratedCallsign(seat, names[index], key, selected)
+                    }
+                }
             )
         }
     }
@@ -375,6 +438,7 @@ class AccountService(
                                     )
                                 val message =
                                     when (code) {
+                                        "callsign_reserved" -> com.leqra.core.Callsigns.botNamespaceMessage
                                         "account_key_revoked" ->
                                             "This account key was reset. Import its new key to sign in again."
                                         "invalid_account_key",

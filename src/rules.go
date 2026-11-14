@@ -323,7 +323,7 @@ func addDefaultRoomBots(r *Room, host *Player, now time.Time) {
 			return
 		}
 	}
-	for _, name := range []string{"RUST", "VAPOR", "EMBER"} {
+	for _, name := range []string{"Rust", "Vapor", "Ember"} {
 		id := r.freeCombatSeat()
 		if id < 0 {
 			return

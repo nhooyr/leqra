@@ -35,10 +35,11 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in session.scenePhaseChanged(phase) }
         .statusBarHidden(session.fullscreen)
         .persistentSystemOverlays(session.fullscreen ? .hidden : .automatic)
-        .task {
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 let started = ProcessInfo.processInfo.systemUptime
-                if scenePhase == .active { await session.refreshPublicStatus() }
+                await session.refreshPublicStatus()
                 try? await Task.sleep(nanoseconds: NetworkRefreshCadence.remainingNanoseconds(startedAt: started, now: ProcessInfo.processInfo.systemUptime))
             }
         }
@@ -86,6 +87,15 @@ struct ContentView: View {
                 }
                 if session.showScores { ArenaStandings(session: session).padding(10) }
                 announcements.padding(.bottom, !session.isInfinity && !landscape ? 216 : 0)
+                if !session.godlikeNotice.isEmpty {
+                    VStack {
+                        Text(session.godlikeNotice).font(.system(size: 12, weight: .bold)).foregroundStyle(Color(hex: "#ffc46b"))
+                            .fixedSize(horizontal: false, vertical: true).padding(10)
+                            .background(WebStyle.sunken.opacity(0.94), in: RoundedRectangle(cornerRadius: 6))
+                            .accessibilityIdentifier("godlikeSpawnNotice")
+                        Spacer()
+                    }.frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.top, 30).allowsHitTesting(false)
+                }
                 if session.snapshot.phase == "matchOver" || session.snapshot.result != nil {
                     results.padding(.bottom, !session.isInfinity && !landscape ? 216 : 0)
                 }
@@ -124,7 +134,7 @@ struct ContentView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false)
         } else if session.snapshot.phase == "roundOver" {
             VStack(spacing: 8) {
-                Text(session.snapshot.winner < 0 ? "ROUND DRAW" : (session.snapshot.tanks.first { $0.id == session.snapshot.winner }?.name ?? "TANK") + " WINS")
+                Text(session.snapshot.winner < 0 ? "ROUND DRAW" : (session.snapshot.tanks.first { $0.id == session.snapshot.winner }.map { CallsignPolicy.displayName($0.name, bot: $0.bot) } ?? "TANK") + " WINS")
                     .font(.system(size: 28, weight: .black)).foregroundStyle(WebStyle.accent)
                 Text("NEW MAZE IN \(Int(ceil(session.snapshot.phaseTime)))").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
             }.padding(18).background(WebStyle.surface.opacity(0.95), in: RoundedRectangle(cornerRadius: 6))
@@ -140,7 +150,7 @@ struct ContentView: View {
                     Text(resultTitle).font(.system(size: 32, weight: .black)).foregroundStyle(WebStyle.accent)
                     if !resultSubtitle.isEmpty { Text(resultSubtitle).font(.system(size: 12)).foregroundStyle(WebStyle.soft) }
                     ForEach(session.standings.prefix(8)) { entry in
-                        HStack { Text(entry.id == session.localID ? session.identity : entry.name).fontWeight(entry.id == session.localID ? .bold : .regular); Spacer(); Text("\(entry.score)").font(WebStyle.mono(20)) }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
+                        HStack { Text(entry.id == session.localID ? session.identity : CallsignPolicy.displayName(entry.name, bot: entry.bot)).fontWeight(entry.id == session.localID ? .bold : .regular); Spacer(); Text("\(entry.score)").font(WebStyle.mono(20)) }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
                     }
                     if session.isInfinity {
                         Button("BACK TO ROOM") { session.exitArenaToRoom() }.buttonStyle(WebButtonStyle(kind: .primary))
@@ -158,7 +168,7 @@ struct ContentView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(hex: "#091218").opacity(0.7))
     }
     private var resultTitle: String {
-        if let result = session.snapshot.result { return result.name + " WINS" }
+        if let result = session.snapshot.result { return CallsignPolicy.displayName(result.name, bot: result.team == 0 && session.snapshot.tanks.first(where: { $0.id == result.id })?.bot == true) + " WINS" }
         if let survival = session.snapshot.objectives?.survival { return survival.status == "won" ? "SURVIVAL COMPLETE" : "SQUAD DOWN." }
         if session.snapshot.winner < 0 && session.snapshot.matchStats?.players.contains(where: \.winner) != true { return "MATCH DRAW" }
         let locals = session.snapshot.matchStats?.players.filter { $0.member == session.roomMemberID || $0.controllerMember == session.roomMemberID } ?? []
@@ -175,6 +185,7 @@ struct ContentView: View {
         let tankWinner = session.snapshot.tanks.first { $0.id == session.snapshot.winner }
         let team = reportWinner?.team ?? tankWinner?.team ?? 0
         if team > 0 && session.effectiveRules.teamNames.indices.contains(team - 1) { return session.effectiveRules.teamNames[team - 1] }
-        return reportWinner?.name ?? tankWinner?.name ?? "TANK"
+        if let reportWinner { return CallsignPolicy.displayName(reportWinner.name, bot: reportWinner.kind == "bot") }
+        return tankWinner.map { CallsignPolicy.displayName($0.name, bot: $0.bot) } ?? "TANK"
     }
 }

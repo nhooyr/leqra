@@ -46,8 +46,17 @@ internal class GameSession(context: Context) {
     var server = prefs.getString("server", "https://leqra.com")!!
         private set
 
-    var callsign = prefs.getString("callsign", "Pilot ${100 + SecureRandom().nextInt(900)}")!!
-    var localCallsign = prefs.getString("localCallsign", "Co-pilot")!!
+    private val nameDrafts = CallsignDrafts(
+        listOf(prefs.getString("callsign", null), prefs.getString("localCallsign", null)),
+        (0..1).map { if (prefs.contains("autoPending$it")) prefs.getBoolean("autoPending$it", false) else null },
+        (0..1).map { prefs.getString("autoRequest$it", null) },
+    )
+    var callsign: String
+        get() = nameDrafts.name(0)
+        set(value) { nameDrafts.edit(0, value) }
+    var localCallsign: String
+        get() = nameDrafts.name(1)
+        set(value) { nameDrafts.edit(1, value) }
     var colorIndex = prefs.getInt("color", 0)
     var localColorIndex = prefs.getInt("localColor", 1)
     var localSelected = prefs.getBoolean("localSelected", false)
@@ -89,6 +98,9 @@ internal class GameSession(context: Context) {
     var online = false
         private set
 
+    val audioGameplayActive: Boolean
+        get() = active && screen == Screen.PLAYING && !paused && (!online || activeNetwork.connected && activeNetwork.welcome?.spectating != true && !timeline.stale && audioStateOwner === activeNetwork && audioStateConnection == activeNetwork.connectionGeneration)
+
     var infinity = true
         private set
 
@@ -120,6 +132,9 @@ internal class GameSession(context: Context) {
         private set
 
     val chat = mutableListOf<String>()
+    private val spawnNotices = GodlikeSpawnNotices()
+    val encounterNotice: String?
+        get() = if (online && activeNetwork.isPublic) spawnNotices.current(System.nanoTime() / 1e9) else null
     var input = GameInput()
     var input2 = GameInput()
     private var practice: PracticeArena? = null
@@ -137,8 +152,14 @@ internal class GameSession(context: Context) {
     private var timeline = OnlinePresentation()
     private var timelineOwner: NativeNetworkClient? = null
     private var timelineConnection = -1L
+    private var audioStateOwner: NativeNetworkClient? = null
+    private var audioStateConnection = -1L
     private var pendingAutoStart = false
     private val main = Handler(Looper.getMainLooper())
+    private var nameRequest: CancelRequest? = null
+    private var nameRequestEpoch = 0L
+    private var nextNameAttempt = 0L
+    private var pendingOnlineAction: (() -> Unit)? = null
     private var statusRequest: CancelRequest? = null
     private var statusInFlight = false
     private var statusEpoch = 0L
@@ -205,10 +226,143 @@ internal class GameSession(context: Context) {
         normalizeLocalTeams(resetCTF = false)
         preparePreview()
         save()
+        persistNameDrafts()
     }
 
     private val profileContext: String
         get() = roomCode?.takeIf { online } ?: if (online) "online" else "local"
+
+    fun automaticNamePending(seat: Int) = nameDrafts.pending(seat)
+
+    private fun persistNameDrafts() {
+        val editor = prefs.edit()
+        for (seat in 0..1) {
+            if (!Callsigns.botReserved(nameDrafts.name(seat)))
+                editor.putString(
+                    if (seat == 0) "callsign" else "localCallsign",
+                    nameDrafts.name(seat),
+                )
+            editor
+                .putBoolean("autoPending$seat", nameDrafts.pending(seat))
+                .putString("autoRequest$seat", nameDrafts.requestID(seat))
+        }
+        check(editor.commit()) {
+            "Callsign settings could not be saved. Retry before going online."
+        }
+    }
+
+    fun accountImported(seat: Int) {
+        nameDrafts.cancel(seat)
+        persistNameDrafts()
+    }
+
+    fun generateCallsign(seat: Int) {
+        require(seat in 0..1)
+        if (!canImportAccount) {
+            error("Leave the online room before generating a callsign.")
+            return
+        }
+        nameDrafts.generate(seat)
+        renameCallsign(nameDrafts.name(seat), seat)
+        persistNameDrafts()
+        nextNameAttempt = 0
+        ensureDefaultNames()
+        changed(true)
+    }
+
+    private fun validHumanNames(): Boolean {
+        if (
+            Callsigns.botReserved(callsign) || localSelected && Callsigns.botReserved(localCallsign)
+        ) {
+            error(Callsigns.botNamespaceMessage)
+            return false
+        }
+        return true
+    }
+
+    private fun awaitDefaultNames(action: () -> Unit): Boolean {
+        if (online || !(nameDrafts.pending(0) || localSelected && nameDrafts.pending(1)))
+            return false
+        pendingOnlineAction = action
+        screen = Screen.CONNECTING
+        status = "Choosing available callsigns…"
+        nextNameAttempt = 0
+        ensureDefaultNames()
+        changed(true)
+        return true
+    }
+
+    private fun ensureDefaultNames() {
+        if (!active || nameRequest != null || System.nanoTime() < nextNameAttempt) return
+        if (!(nameDrafts.pending(0) || localSelected && nameDrafts.pending(1))) {
+            pendingOnlineAction?.let {
+                pendingOnlineAction = null
+                screen = Screen.READY
+                it()
+            }
+        }
+        val requested = (0..1).filter { nameDrafts.pending(it) }
+        if (requested.isEmpty()) return
+        val requestID = nameDrafts.requestID(requested.first())
+        val seats = requested.filter { nameDrafts.requestID(it) == requestID }
+        val origin = server
+        val epoch = ++nameRequestEpoch
+        runCatching {
+                persistNameDrafts()
+                val stamps =
+                    seats.associateWith {
+                        nameDrafts.request(
+                            it,
+                            origin,
+                            (store.selected(origin, it) ?: store.prepareRegistration(origin, it))
+                                .key,
+                        )
+                    }
+                nameRequest =
+                    accounts.generate(origin, seats, requestID) { result ->
+                        if (epoch != nameRequestEpoch) return@generate
+                        nameRequest = null
+                        nextNameAttempt = System.nanoTime() + 3_000_000_000L
+                        if (origin != server) return@generate
+                        result
+                            .onSuccess { rows ->
+                                var updated = false
+                                rows.forEach { row ->
+                                    val stamp = stamps.getValue(row.seat)
+                                    if (
+                                        row.selected &&
+                                            nameDrafts.complete(
+                                                stamp,
+                                                server,
+                                                store.selected(server, row.seat)?.key,
+                                                row.name,
+                                            )
+                                    ) {
+                                        renameCallsign(row.name, row.seat)
+                                        updated = true
+                                    }
+                                }
+                                persistNameDrafts()
+                                if (updated) changed(true)
+                                nextNameAttempt = 0
+                                ensureDefaultNames()
+                            }
+                            .onFailure {
+                        if ((it as? NetworkFailure)?.code in setOf("account_key_revoked", "invalid_account_key", "account_invalid", "invalid_key")) {
+                                    seats.forEach { seat -> nameDrafts.cancel(seat) }
+                                    persistNameDrafts()
+                                    pendingOnlineAction = null
+                                    screen = Screen.READY
+                                    error(it.message)
+                                }
+                            }
+                    }
+            }
+            .onFailure {
+                nextNameAttempt = System.nanoTime() + 3_000_000_000L
+                status = it.message ?: "Callsign settings could not be saved."
+            }
+    }
 
     fun save() {
         if (!online) {
@@ -224,8 +378,11 @@ internal class GameSession(context: Context) {
         }
         prefs
             .edit()
-            .putString("callsign", Callsigns.limit(callsign.trim()))
-            .putString("localCallsign", Callsigns.limit(localCallsign.trim()))
+            .apply {
+                if (!Callsigns.botReserved(callsign)) putString("callsign", Callsigns.limit(callsign.trim()))
+                if (!Callsigns.botReserved(localCallsign)) putString("localCallsign", Callsigns.limit(localCallsign.trim()))
+                for (seat in 0..1) putBoolean("autoPending$seat", nameDrafts.pending(seat)).putString("autoRequest$seat", nameDrafts.requestID(seat))
+            }
             .putInt("color", colorIndex)
             .putInt("localColor", localColorIndex)
             .putString("mode", savedLocalMode)
@@ -268,6 +425,10 @@ internal class GameSession(context: Context) {
         if (normalized == server) return
         leave()
         server = normalized
+        nameRequest?.cancel()
+        nameRequest = null
+        nameRequestEpoch++
+        nextNameAttempt = 0
         prefs.edit().putString("server", server).apply()
         statusRequest?.cancel()
         statusRequest = null
@@ -323,14 +484,7 @@ internal class GameSession(context: Context) {
         while (mutableLocalBots.size > count) mutableLocalBots.removeAt(mutableLocalBots.lastIndex)
         while (mutableLocalBots.size < count) {
             val id = (mutableLocalBots.maxOfOrNull { it.id } ?: 1) + 1
-            val used =
-                (mutableLocalBots.map { it.name } + callsign + localCallsign)
-                    .map { it.uppercase(java.util.Locale.ROOT) }
-                    .toSet()
-            val name =
-                listOf("RUST", "VAPOR", "EMBER", "NOVA", "COMET", "ONYX", "BLITZ").firstOrNull {
-                    it !in used
-                } ?: "BOT $id"
+            val name = BotNames.next(mutableLocalBots.map { it.name } + callsign + localCallsign, id)
             mutableLocalBots.add(
                 LocalBot(
                     id,
@@ -423,6 +577,8 @@ internal class GameSession(context: Context) {
     }
 
     fun play() {
+        if (!validHumanNames()) return
+        if (!online && publicSelected && awaitDefaultNames(::play)) return
         save()
         neutral()
         if (online) {
@@ -544,6 +700,7 @@ internal class GameSession(context: Context) {
     }
 
     fun share() {
+        if (!validHumanNames() || awaitDefaultNames(::share)) return
         save()
         arenaNetwork.disconnect(false)
         arenaActive = false
@@ -596,6 +753,7 @@ internal class GameSession(context: Context) {
     }
 
     fun join(code: String, spectator: Boolean = false) {
+        if (!validHumanNames() || awaitDefaultNames { join(code, spectator) }) return
         save()
         arenaNetwork.disconnect(false)
         arenaActive = false
@@ -613,6 +771,7 @@ internal class GameSession(context: Context) {
     }
 
     fun findMatch() {
+        if (!validHumanNames() || !online && awaitDefaultNames(::findMatch)) return
         if (online) command("queue_info")
         else {
             pendingAutoStart = true
@@ -624,6 +783,8 @@ internal class GameSession(context: Context) {
     }
 
     fun leave() {
+        pendingOnlineAction = null
+        spawnNotices.clear()
         neutral()
         arenaNetwork.disconnect()
         network.disconnect()
@@ -772,6 +933,9 @@ internal class GameSession(context: Context) {
         statusRequest = null
         statusInFlight = false
         statusEpoch++
+        nameRequest?.cancel()
+        nameRequest = null
+        nameRequestEpoch++
         main.removeCallbacks(statusTicker)
     }
 
@@ -784,6 +948,7 @@ internal class GameSession(context: Context) {
     }
 
     fun refreshStatus() {
+        ensureDefaultNames()
         if (!active || statusInFlight) return
         statusInFlight = true
         val requestedServer = server
@@ -866,6 +1031,10 @@ internal class GameSession(context: Context) {
         require(seat in 0..1)
         val cleaned =
             Callsigns.limit(name.trim()).ifBlank { if (seat == 0) "Pilot" else "Co-pilot" }
+        if (Callsigns.botReserved(cleaned)) {
+            error(Callsigns.botNamespaceMessage)
+            return
+        }
         if (seat == 0) callsign = cleaned else localCallsign = cleaned
         save()
         val confirmed =
@@ -1004,6 +1173,9 @@ internal class GameSession(context: Context) {
             }
             is NetworkEvent.State ->
                 if (isPlayingClient) {
+                    audioStateOwner = client
+                    audioStateConnection = client.connectionGeneration
+                    if (client.isPublic) spawnNotices.accept(event.snapshot.godlikeSpawns, System.nanoTime() / 1e9)
                     timeline.accept(event.snapshot, System.nanoTime() / 1e9)
                     event.snapshot.world?.let { world ->
                         if (maze?.world !== world) maze = InfiniteMaze(world)

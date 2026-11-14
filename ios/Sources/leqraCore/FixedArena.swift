@@ -152,7 +152,7 @@ public final class FixedArena {
             let id = index + 1, team = rules.mode == "survival" ? 1 : rules.teamMode == "teams"
                 ? (index == 0 ? (localTeam > 0 ? localTeam : 1) : (botTeams.indices.contains(index - 1) && botTeams[index - 1] > 0 ? botTeams[index - 1] : index % 2 + 1)) : 0
             let paint = team > 0 ? rules.teamColors[safe: team - 1] ?? (team - 1) : index == 0 ? colorIndex : botColors[safe: index - 1] ?? GamePalette.index(colorIndex + index)
-            combat.configurePilot(id: id, name: index == 0 ? name : botNames[safe: index - 1] ?? "BOT \(index)", colorIndex: paint, team: team,
+            combat.configurePilot(id: id, name: index == 0 ? name : botNames[safe: index - 1] ?? "Bot \(index)", colorIndex: paint, team: team,
                                   difficulty: index == 0 ? difficulty : botDifficulties[safe: index - 1] ?? difficulty)
             if let configured = pilotConfigurations[id] {
                 let team = rules.mode == "survival" ? 1 : configured.team

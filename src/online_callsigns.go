@@ -29,6 +29,7 @@ type callsignAvailability struct {
 	Seat      int    `json:"seat"`
 	Name      string `json:"name"`
 	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 type callsignConflictError struct{ Conflicts []callsignConflict }
 
@@ -48,10 +49,11 @@ type onlineCallsignRegistry struct {
 	names          map[string]map[string]string // Owner hash -> canonical name -> first display spelling.
 	revoked        map[string]bool
 	seatMigrations map[string]seatAccountMigration
+	generatedFresh map[string]bool // Registered by generation, never admitted to gameplay.
 }
 
 func newOnlineCallsignRegistry() *onlineCallsignRegistry {
-	return &onlineCallsignRegistry{owners: make(map[string]bool), claims: make(map[string]string), names: make(map[string]map[string]string), revoked: make(map[string]bool), seatMigrations: make(map[string]seatAccountMigration)}
+	return &onlineCallsignRegistry{owners: make(map[string]bool), claims: make(map[string]string), names: make(map[string]map[string]string), revoked: make(map[string]bool), seatMigrations: make(map[string]seatAccountMigration), generatedFresh: make(map[string]bool)}
 }
 func canonicalCallsign(name string) string {
 	var key strings.Builder
@@ -77,6 +79,7 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS online_revoked (token_hash TEXT PRIMARY KEY) WITHOUT ROWID`,
 		`CREATE TABLE IF NOT EXISTS online_seat_migrations (new_hash TEXT PRIMARY KEY, previous_hash TEXT NOT NULL, name TEXT NOT NULL) WITHOUT ROWID`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS online_seat_migrations_previous ON online_seat_migrations(previous_hash)`,
+		`CREATE TABLE IF NOT EXISTS online_generated_fresh (token_hash TEXT PRIMARY KEY REFERENCES online_owners(token_hash)) WITHOUT ROWID`,
 	} {
 		if _, err := db.Exec(query); err != nil {
 			return err
@@ -186,6 +189,30 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	generatedFresh := make(map[string]bool)
+	rows, err = db.Query("SELECT token_hash FROM online_generated_fresh")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var hash string
+		if err = rows.Scan(&hash); err != nil {
+			break
+		}
+		if !owners[hash] {
+			err = errors.New("invalid generated account freshness")
+			break
+		}
+		generatedFresh[hash] = true
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	r.generatedFresh = generatedFresh
 	return nil
 }
 func (r *onlineCallsignRegistry) owner(token string) (string, bool) {
@@ -218,7 +245,10 @@ func (r *onlineCallsignRegistry) availability(token string, names []string) []ca
 		key := canonicalCallsign(clean)
 		owner, claimed := r.claims[key]
 		available := key != "" && !seen[key] && (!claimed || valid && owner == hash)
-		rows[i] = callsignAvailability{i, clean, available}
+		rows[i] = callsignAvailability{Seat: i, Name: clean, Available: available}
+		if reservedCallsign(clean) {
+			rows[i].Available, rows[i].Reason = false, "reserved"
+		}
 		seen[key] = true
 	}
 	return rows
@@ -251,6 +281,9 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 		}
 	}
 	seen := make(map[string]bool, len(names))
+	if err := reservedCallsigns(names); err != nil {
+		return "", err
+	}
 	var conflicts []callsignConflict
 	for i, name := range names {
 		key := canonicalCallsign(name)
@@ -279,6 +312,11 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 				return "", err
 			}
 		}
+		if r.generatedFresh[hash] {
+			if _, err = tx.Exec("DELETE FROM online_generated_fresh WHERE token_hash=?", hash); err != nil {
+				return "", err
+			}
+		}
 	}
 	if commit != nil {
 		if err := commit(tx, hash); err != nil {
@@ -291,6 +329,7 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 		}
 	}
 	r.owners[hash] = true
+	delete(r.generatedFresh, hash)
 	if r.names[hash] == nil {
 		r.names[hash] = make(map[string]string)
 	}
@@ -347,13 +386,14 @@ func (a *App) callsignAvailability(w http.ResponseWriter, r *http.Request) {
 		second := a.hub.callsigns.availability(request.LocalPublicToken, request.Names[1:])
 		for i := range second {
 			rows[i+1].Available = second[i].Available
+			rows[i+1].Reason = second[i].Reason
 		}
 		if request.LocalNewAccount && request.LocalPublicToken != "" {
 			r := a.hub.callsigns
 			hash, valid := r.owner(request.PublicToken)
 			localHash, localValid := publicTokenHash(request.LocalPublicToken)
 			r.mu.Lock()
-			if valid && localValid && !r.owners[localHash] && !r.revoked[localHash] && r.claims[canonicalCallsign(rows[1].Name)] == hash {
+			if valid && localValid && rows[1].Reason != "reserved" && (!r.owners[localHash] || r.generatedFresh[localHash]) && !r.revoked[localHash] && r.claims[canonicalCallsign(rows[1].Name)] == hash {
 				rows[1].Available = true
 			}
 			r.mu.Unlock()

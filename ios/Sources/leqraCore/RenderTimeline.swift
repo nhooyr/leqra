@@ -18,6 +18,8 @@ public final class RenderTimeline {
     private var clock: Double?
     private var playbackRate = 1.0
     private var correction = (x: 0.0, y: 0.0, angle: 0.0)
+    private var correctionVelocity = (x: 0.0, y: 0.0, angle: 0.0)
+    private var lastInput = GameInput()
     private let motionPresenter = TankMotionPresenter()
     private var latest: ArenaSnapshot?
     private var sequence: UInt64 = 0
@@ -29,6 +31,10 @@ public final class RenderTimeline {
     private var newTanks: [Int: ArenaTank] = [:]
     private var oldBullets: [Int: ArenaBullet] = [:]
     private var newBullets: [Int: ArenaBullet] = [:]
+    private var ricochetPaths: [Int: ProjectileRicochetPath] = [:]
+    private var checkedRicochets = Set<Int>()
+    private var projectileMaze: InfiniteMaze?
+    private var projectileWorld: ArenaWorld?
     private var indexedLatest: UInt64?
     private var liveBullets: [Int: ArenaBullet] = [:]
     private struct CurveContext: Equatable {
@@ -69,6 +75,8 @@ public final class RenderTimeline {
                 oldTanks.removeAll(keepingCapacity: true); newTanks.removeAll(keepingCapacity: true)
                 oldBullets.removeAll(keepingCapacity: true); newBullets.removeAll(keepingCapacity: true)
                 liveBullets.removeAll(keepingCapacity: true)
+                ricochetPaths.removeAll(keepingCapacity: true); checkedRicochets.removeAll(keepingCapacity: true)
+                projectileMaze = nil; projectileWorld = nil
                 curveContext = nil; tankCurves.removeAll(keepingCapacity: true)
                 previousTanks.removeAll(keepingCapacity: true); followingTanks.removeAll(keepingCapacity: true)
             } else if snapshot.tick <= previous.tick { return }
@@ -101,7 +109,7 @@ public final class RenderTimeline {
         // by several pixels when Speed is stacked.
         let error = hypot(old.x - tank.x, old.y - tank.y)
         if !historyComplete || tank.hp <= 0 || error > 64 || (old.ghostTime > 0) != (tank.ghostTime > 0) {
-            correction = (0, 0, 0)
+            clearCorrection()
             motionPresenter.reset()
         } else {
             // The short control-transition bias and the slower authority
@@ -109,6 +117,15 @@ public final class RenderTimeline {
             // so the presenter does not smooth this same network delta twice.
             motionPresenter.rebase(dx: tank.x - old.x, dy: tank.y - old.y,
                                    angle: atan2(sin(tank.angle - old.angle), cos(tank.angle - old.angle)))
+            // Preserve display velocity as well as position when replay moves
+            // the authoritative pose. Packet jitter must not become a camera
+            // speed pulse, including while turning with stacked Speed.
+            var oldNext = old, newNext = tank
+            move(&oldNext, lastInput, 1 / 60); move(&newNext, lastInput, 1 / 60)
+            correctionVelocity.x += ((oldNext.x - old.x) - (newNext.x - tank.x)) * 60
+            correctionVelocity.y += ((oldNext.y - old.y) - (newNext.y - tank.y)) * 60
+            correctionVelocity.angle += (atan2(sin(oldNext.angle - old.angle), cos(oldNext.angle - old.angle))
+                - atan2(sin(newNext.angle - tank.angle), cos(newNext.angle - tank.angle))) * 60
             correction.x += old.x - tank.x
             correction.y += old.y - tank.y
             correction.angle = atan2(sin(correction.angle + old.angle - tank.angle), cos(correction.angle + old.angle - tank.angle))
@@ -116,6 +133,7 @@ public final class RenderTimeline {
             let limit = tank.ghostTime > 0 ? 12.0 : 48.0
             if distance > limit { correction.x *= limit / distance; correction.y *= limit / distance }
             correction.angle = min(max(correction.angle, -0.7), 0.7)
+            clampCorrection(limit: limit)
         }
         predicted = tank
         frames.removeAll { $0.step <= processed }
@@ -129,9 +147,10 @@ public final class RenderTimeline {
         guard let latest else { return nil }
         let elapsed = max(0, min(0.1, dt))
         stale = now - lastArrival > 2.5
-        if stale { correction = (0, 0, 0); motionPresenter.reset() }
+        if stale { clearCorrection(); motionPresenter.reset() }
         accumulator += elapsed
         var controls = stale ? GameInput() : input
+        lastInput = controls
         while accumulator + 1e-9 >= 1 / 60 {
             accumulator = max(0, accumulator - 1 / 60)
             step += 1
@@ -142,12 +161,13 @@ public final class RenderTimeline {
             if var tank = predicted, tank.hp > 0, latest.phase == "playing", !stale {
                 let wasPhasing = tank.ghostTime > 0
                 move(&tank, controls, 1 / 60)
-                if wasPhasing != (tank.ghostTime > 0) { correction = (0, 0, 0); motionPresenter.reset() }
+                if wasPhasing != (tank.ghostTime > 0) { clearCorrection(); motionPresenter.reset() }
                 predicted = tank
                 frames.append(Frame(step: step, input: controls))
                 if frames.count > 240 { frames.removeFirst() }
             }
         }
+        advanceCorrection(dt: elapsed)
         var result = interpolated(dt: elapsed)
         if var tank = predicted {
             if tank.hp > 0, latest.phase == "playing", !stale {
@@ -165,21 +185,48 @@ public final class RenderTimeline {
                     if TankMovement.presentationFitsBounds(tank: corrected, world: latest.world ?? maze?.world)
                         && (tank.ghostTime > 0 || movementPathClear(from: tank, to: corrected, world: latest.world)) {
                         tank.x = corrected.x; tank.y = corrected.y
-                    } else { correction.x = 0; correction.y = 0 }
+                    } else { correction.x = 0; correction.y = 0; correctionVelocity.x = 0; correctionVelocity.y = 0 }
                 }
                 tank.angle = atan2(sin(tank.angle + correction.angle), cos(tank.angle + correction.angle))
             }
             if let index = result.tanks.firstIndex(where: { $0.id == localID }) { result.tanks[index] = tank }
         }
-        let decay = exp(-elapsed / 0.11)
-        correction.x *= decay; correction.y *= decay; correction.angle *= decay
-        if hypot(correction.x, correction.y) < 1e-5 { correction.x = 0; correction.y = 0 }
-        if abs(correction.angle) < 1e-5 { correction.angle = 0 }
         return result
     }
 
+    private func advanceCorrection(dt: Double) {
+        // Exact critically damped spring integration keeps velocity continuous
+        // across arrivals. First-order decay instantly changes velocity every
+        // time an acknowledgement adds a new positional offset.
+        let omega = 20.0, decay = exp(-omega * dt)
+        func advance(_ position: inout Double, _ velocity: inout Double) {
+            let impulse = (velocity + omega * position) * dt
+            position = (position + impulse) * decay
+            velocity = (velocity - omega * impulse) * decay
+            if abs(position) < 1e-5 && abs(velocity) < 1e-4 { position = 0; velocity = 0 }
+        }
+        advance(&correction.x, &correctionVelocity.x)
+        advance(&correction.y, &correctionVelocity.y)
+        advance(&correction.angle, &correctionVelocity.angle)
+        clampCorrection(limit: (predicted?.ghostTime ?? 0) > 0 ? 12 : 48)
+    }
+
+    private func clampCorrection(limit: Double) {
+        let distance = hypot(correction.x, correction.y)
+        if distance >= limit {
+            let nx = correction.x / distance, ny = correction.y / distance
+            correction.x = nx * limit; correction.y = ny * limit
+            let outward = correctionVelocity.x * nx + correctionVelocity.y * ny
+            if outward > 0 { correctionVelocity.x -= nx * outward; correctionVelocity.y -= ny * outward }
+        }
+        if abs(correction.angle) >= 0.7 {
+            correction.angle = min(max(correction.angle, -0.7), 0.7)
+            if correctionVelocity.angle * correction.angle > 0 { correctionVelocity.angle = 0 }
+        }
+    }
+
     public func neutralize() {
-        accumulator = 0; correction = (0, 0, 0)
+        accumulator = 0; clearCorrection(); lastInput = GameInput()
         motionPresenter.reset()
         // No display time advances while the pause menu is open. Resume from
         // the current snapshot buffer rather than retaining its old playhead.
@@ -204,9 +251,14 @@ public final class RenderTimeline {
     private func resetPrediction(_ tank: ArenaTank?) {
         predicted = tank
         frames.removeAll(); sent.removeAll(); step = 0; accumulator = 0
-        correction = (0, 0, 0)
+        clearCorrection()
+        lastInput = GameInput()
         motionPresenter.reset()
         // Sequence numbers must remain increasing for the life of a socket.
+    }
+
+    private func clearCorrection() {
+        correction = (0, 0, 0); correctionVelocity = (0, 0, 0)
     }
 
     private func interpolated(dt: Double) -> ArenaSnapshot {
@@ -240,6 +292,7 @@ public final class RenderTimeline {
             oldBullets = Dictionary(a.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
             newBullets = Dictionary(b.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
             indexedPair = (a.state.tick, b.state.tick)
+            ricochetPaths.removeAll(keepingCapacity: true); checkedRicochets.removeAll(keepingCapacity: true)
         }
         if indexedLatest != newest.state.tick {
             liveBullets = Dictionary(newest.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
@@ -313,8 +366,17 @@ public final class RenderTimeline {
         let visibleBullets = alpha < 1 ? a.state.bullets : b.state.bullets
         result.bullets = visibleBullets.compactMap { visible in
             guard let current = liveBullets[visible.id] else { return nil }
-            guard let first = oldBullets[current.id], let second = newBullets[current.id],
-                  first.bounces == second.bounces else { return visible }
+            guard let first = oldBullets[current.id], let second = newBullets[current.id] else { return visible }
+            if first.bounces != second.bounces {
+                if checkedRicochets.insert(current.id).inserted {
+                    if let world = newest.state.world {
+                        if projectileWorld != world { projectileWorld = world; projectileMaze = InfiniteMaze(world: world) }
+                    } else { projectileWorld = nil; projectileMaze = maze }
+                    if let geometry = projectileMaze,
+                       let path = ProjectileRicochetPath(from: first, to: second, span: span, maze: geometry) { ricochetPaths[current.id] = path }
+                }
+                return ricochetPaths[current.id]?.sample(fraction: alpha) ?? visible
+            }
             var bullet = second
             bullet.x = first.x + (second.x - first.x) * alpha
             bullet.y = first.y + (second.y - first.y) * alpha

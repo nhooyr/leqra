@@ -78,7 +78,7 @@ test('match statistics use frozen colored callsigns without rewriting report nam
  for(const [index,label,color]of [[0,'YOU (P1)','#abcdef'],[1,'WING (P2)','#fedcba'],[2,'RUST','#123456']]){
   const name=rows[index].children[0].children[0].children[1];assert.equal(name.textContent,label);assert.equal(name.style.color,color);
  }
- assert.ok(rows[1].children[0].children[1].textContent.includes('LOCAL PILOT'));assert.equal($('victoryStats').textContent.includes('LOCAL P2'),false);
+ assert.ok(rows[1].children[0].children[1].textContent.includes('HUMAN PILOT'));assert.equal($('victoryStats').textContent.includes('LOCAL P2'),false);
  assert.equal(JSON.stringify(report),before);assert.equal(rows[0].children[1].textContent,'2');
  let seat;s.teamColor=id=>{seat=id;return '#beef00';};const identity=s.resultPilotIdentity({id:999,seat:3,name:'PILOT',kind:'human',team:0});assert.equal(seat,3);assert.equal(identity.color,'#beef00');
 });
@@ -212,7 +212,7 @@ test('local result reveal is canceled by navigation, restarting or setup replace
 });
 
 test('animation frames reveal queued results at the deadline after rendering impact-only updates',()=>{
- const {s,$}=boot();s.currentRules().mode='ctf';s.now=1000;s.lastFrame=1000;s.accumulator=0;s.clamp=(n,min,max)=>Math.max(min,Math.min(max,n));s.updateCombatFeedback=()=>{};s.render=()=>s.renders=(s.renders||0)+1;s.sampleFrame=()=>{};s.requestAnimationFrame=()=>{};
+ const {s,$}=boot();s.currentRules().mode='ctf';s.now=1000;s.lastFrame=1000;s.accumulator=0;s.clamp=(n,min,max)=>Math.max(min,Math.min(max,n));s.syncFiniteStarmanAudio=()=>{};s.updateCombatFeedback=()=>{};s.render=()=>s.renders=(s.renders||0)+1;s.sampleFrame=()=>{};s.requestAnimationFrame=()=>{};
  vm.runInContext(declaration('frame'),s);s.finishMatch(0);s.now=2999;s.frame(2999);assert.equal($('victoryDialog').open,false);s.now=3000;s.frame(3000);assert.equal($('victoryDialog').open,true);assert.equal(s.renders,2);assert.equal(s.pendingMatchPresentation,null);
 });
 
