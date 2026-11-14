@@ -34,6 +34,26 @@ type infinitePublicEntry struct {
 	listed  bool
 }
 
+func validSavedPublicName(entry infinitePublicEntry) bool {
+	if entry.Name == "" {
+		return false
+	}
+	if cleanCallsign(entry.Name) == entry.Name {
+		return true
+	}
+	// Canonical server-owned ambient labels may exceed the human limit once
+	// their number has three digits. Never relax validation for player names.
+	if entry.Bot && entry.ambient > 0 && entry.ambient <= infiniteBotLimit {
+		base := fmt.Sprintf("Bot %d", entry.ambient)
+		for _, suffix := range []string{"", " - Dumb", " - Normal", " - Godlike"} {
+			if entry.Name == base+suffix {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 type infinitePublicProfile struct {
 	hash           string
 	primary, local int
@@ -134,7 +154,7 @@ func (s *infiniteServer) openPublicStore(path string) error {
 		if err = rows.Scan(&e.ID, &e.Name, &e.Score, &e.Bot, &e.ColorIndex, &e.ambient, &e.listed); err != nil {
 			break
 		}
-		if e.ID <= 0 || cleanCallsign(e.Name) != e.Name || e.Name == "" || e.ColorIndex < 0 || e.ColorIndex >= len(tankColors) || e.ambient < 0 || e.ambient > infiniteBotLimit {
+		if e.ID <= 0 || !validSavedPublicName(e) || e.ColorIndex < 0 || e.ColorIndex >= len(tankColors) || e.ambient < 0 || e.ambient > infiniteBotLimit {
 			err = errors.New("invalid saved public ranking")
 			break
 		}
@@ -655,7 +675,7 @@ func (s *infiniteServer) resumePublic(c *Client, msg infiniteMessage, now time.T
 }
 
 func infiniteEntry(p *infinitePilot) infinitePublicEntry {
-	return infinitePublicEntry{infiniteLeader: infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team, ColorIndex: p.ColorIndex}, ambient: p.ambientNumber, listed: true}
+	return infinitePublicEntry{infiniteLeader: p.leader(), ambient: p.ambientNumber, listed: true}
 }
 
 // Capture only live/pending changes. The durable identity table is never scanned

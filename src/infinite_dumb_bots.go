@@ -8,6 +8,7 @@ import (
 
 const (
 	publicGodlikeLifeInterval = 64
+	publicNormalLifeInterval  = 16
 	publicPlayersPerGodlike   = 16
 	dumbBotThinkTicks         = 54
 	dumbBotShotTicks          = 108
@@ -17,13 +18,23 @@ const (
 // bot near a viewer or reactivating its pooled identity is still the same life.
 func (a *infiniteArena) startBotLife(p *infinitePilot) {
 	a.resetBotDecisions(p)
-	if a.rules != nil || p.roomBot != nil {
+	if a.rules != nil {
+		if p.roomBot == nil && p.ambientNumber > 0 {
+			p.botLevel = a.chooseRoomBotLevel()
+		}
+		return
+	}
+	if p.roomBot != nil {
 		return
 	}
 	a.publicBotLives++
 	p.botLevel = infiniteBotLevel("dumb")
 	if a.publicBotLives%publicGodlikeLifeInterval == 0 && a.livingPublicGodlikes(p) < a.publicGodlikeLimit() {
 		p.botLevel = infiniteBotLevel("godlike")
+	} else if a.publicBotLives%publicNormalLifeInterval == publicNormalLifeInterval/2 {
+		// Stagger Normal lives between Godlike slots so neither rarity
+		// consumes the other's opportunity.
+		p.botLevel = infiniteBotLevel("normal")
 	}
 	p.publicBotName()
 	a.recordGodlikeSpawn(p)
@@ -91,8 +102,13 @@ func (p *infinitePilot) publicBotName() {
 		return
 	}
 	p.Name = "Bot " + strconv.Itoa(p.ambientNumber)
-	if infiniteBotTunings[p.botLevel].name == "godlike" {
+	switch infiniteBotTunings[p.botLevel].name {
+	case "godlike":
 		p.Name += " - Godlike"
+	case "normal":
+		p.Name += " - Normal"
+	default:
+		p.Name += " - Dumb"
 	}
 }
 

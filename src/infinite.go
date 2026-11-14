@@ -145,8 +145,17 @@ type infiniteLeader struct {
 	Name       string `json:"name"`
 	Score      int    `json:"score"`
 	Bot        bool   `json:"bot"`
+	Difficulty string `json:"difficulty,omitempty"`
 	Team       int    `json:"team,omitempty"`
 	ColorIndex int    `json:"colorIndex"`
+}
+
+func (p *infinitePilot) leader() infiniteLeader {
+	leader := infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team, ColorIndex: p.ColorIndex}
+	if p.Bot {
+		leader.Difficulty = infiniteBotTunings[p.botLevel].name
+	}
+	return leader
 }
 
 type infinitePartyLeader struct {
@@ -159,15 +168,17 @@ type infinitePartyLeader struct {
 }
 
 type infiniteRules struct {
-	Target       int      `json:"infinityTarget"`
-	TeamMode     string   `json:"teamMode"`
-	TeamNames    []string `json:"teamNames"`
-	TeamColors   []int    `json:"teamColors"`
-	FriendlyFire bool     `json:"friendlyFire"`
-	BotSpawnRate float64  `json:"infinityBotSpawnRate"`
+	Target        int                `json:"infinityTarget"`
+	TeamMode      string             `json:"teamMode"`
+	TeamNames     []string           `json:"teamNames"`
+	TeamColors    []int              `json:"teamColors"`
+	FriendlyFire  bool               `json:"friendlyFire"`
+	BotSpawnRate  float64            `json:"infinityBotSpawnRate"`
+	BotSpawnRates map[string]float64 `json:"infinityBotSpawnRates"`
+	RandomBots    bool               `json:"infinityRandomBots"`
 
-	randomBots, randomDifficulty bool
-	botLevel                     int
+	randomDifficulty bool
+	botLevel         int
 }
 
 type infiniteResult struct {
@@ -230,12 +241,19 @@ func newInfiniteArena() *infiniteArena {
 func newRoomInfiniteArena(rules MatchRules, bots []infiniteRoomBot) *infiniteArena {
 	a := newInfiniteArena()
 	rules = normalizedRules(rules)
+	rates := effectiveInfinityBotSpawnRates(rules)
+	for _, tuning := range infiniteBotTunings {
+		if _, ok := rates[tuning.name]; !ok {
+			rates[tuning.name] = 0
+		}
+	}
 	a.rules = &infiniteRules{
 		Target: rules.InfinityTarget, TeamMode: rules.TeamMode, TeamNames: rules.TeamNames,
 		TeamColors: rules.TeamColors, FriendlyFire: rules.FriendlyFire,
-		BotSpawnRate: rules.InfinityBotSpawnRate,
-		randomBots:   rules.InfinityRandomBots, randomDifficulty: rules.InfinityRandomDifficulty,
-		botLevel: infiniteBotLevel(rules.InfinityBotDifficulty),
+		BotSpawnRate:  rules.InfinityBotSpawnRate,
+		BotSpawnRates: rates, RandomBots: rules.InfinityRandomBots,
+		randomDifficulty: rules.InfinityRandomDifficulty,
+		botLevel:         infiniteBotLevel(rules.InfinityBotDifficulty),
 	}
 	a.roomBots = bots
 	return a
@@ -610,6 +628,9 @@ func (a *infiniteArena) step(now time.Time) {
 			if a.tick >= p.respawn && !p.paused && !p.disconnected {
 				x, y := p.X, p.Y
 				if p.Bot && p.roomBot == nil {
+					if a.roamingBotBudget() == 0 {
+						continue
+					}
 					anchor := a.nearestActivePilot(p, math.Inf(1))
 					if anchor == nil {
 						continue
@@ -700,7 +721,7 @@ func (a *infiniteArena) drive(p *infinitePilot, input Input) {
 }
 
 func (a *infiniteArena) roamingBotBudget() int {
-	if a.rules != nil && !a.rules.randomBots {
+	if a.rules != nil && (!a.rules.RandomBots || a.roomBotSpawnRate() <= 0) {
 		return 0
 	}
 	budget := a.connected * infiniteBotsPerPlayer
@@ -783,10 +804,15 @@ func (a *infiniteArena) populate() {
 		return
 	}
 	rate := 2.0
-	if a.rules != nil && a.rules.BotSpawnRate > 0 {
-		rate = a.rules.BotSpawnRate
+	if a.rules != nil {
+		rate = a.roomBotSpawnRate()
 	}
-	a.nextBot = a.tick + uint64(math.Round(float64(60+a.random.IntN(61))/rate))
+	delay := math.Round(float64(60+a.random.IntN(61)) / rate)
+	if math.IsInf(delay, 1) || delay >= float64(math.MaxUint64-a.tick) {
+		a.nextBot = math.MaxUint64
+	} else {
+		a.nextBot = a.tick + max(1, uint64(delay))
+	}
 	var pilots [infiniteCapacity]*infinitePilot
 	n := 0
 	for _, p := range a.pilots {
@@ -835,10 +861,10 @@ func (a *infiniteArena) populate() {
 				a.spawn(bot, p.X, p.Y, 3, 6)
 				if bot.ambientRetired {
 					bot.ambientRetired = false
-					if a.rules != nil && a.rules.randomDifficulty {
-						bot.botLevel = a.random.IntN(a.rules.botLevel + 1)
-					}
 					a.startBotLife(bot)
+				} else if a.rules != nil && a.rules.BotSpawnRates[infiniteBotTunings[bot.botLevel].name] <= 0 {
+					bot.botLevel = a.chooseRoomBotLevel()
+					a.resetBotDecisions(bot)
 				}
 			}
 			a.pilots = append(a.pilots, bot)
@@ -852,10 +878,7 @@ func (a *infiniteArena) populate() {
 		bot := a.addPilot("Bot "+strconv.Itoa(number), true, p.X, p.Y, 3, 6)
 		bot.ambientNumber = number
 		if a.rules != nil {
-			bot.botLevel = a.rules.botLevel
-			if a.rules.randomDifficulty {
-				bot.botLevel = a.random.IntN(bot.botLevel + 1)
-			}
+			bot.botLevel = a.chooseRoomBotLevel()
 		} else {
 			bot.publicBotName()
 			a.recordGodlikeSpawn(bot)
@@ -1017,7 +1040,7 @@ func (a *infiniteArena) rankedLeaders(entries []infiniteLeader) []infiniteLeader
 	}
 	entries = entries[:0]
 	for _, p := range a.pilots {
-		entries = append(entries, infiniteLeader{ID: p.ID, Name: p.Name, Score: p.Score, Bot: p.Bot, Team: p.Team, ColorIndex: p.ColorIndex})
+		entries = append(entries, p.leader())
 	}
 	slices.SortFunc(entries, func(left, right infiniteLeader) int {
 		if order := cmp.Compare(right.Score, left.Score); order != 0 {

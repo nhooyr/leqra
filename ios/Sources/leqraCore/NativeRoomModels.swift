@@ -19,6 +19,7 @@ public struct NativePublicLeader: Codable, Identifiable, Equatable, Sendable {
     public let colorIndex: Int
     public let rank: Int
     public let team: Int?
+    public let difficulty: String?
 }
 
 public struct NativePublicStatus: Decodable, Sendable {

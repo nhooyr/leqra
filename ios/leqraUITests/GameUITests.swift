@@ -16,24 +16,44 @@ final class GameUITests: XCTestCase {
         reveal(rules, in: app); rules.tap()
         let toggle = app.switches["randomRoamingBots"]
         let scroll = app.scrollViews["modalScroll"]
+        func expose(_ element: XCUIElement) {
+            for _ in 0..<12 {
+                let viewport = scroll.frame.intersection(app.frame).insetBy(dx: 4, dy: 8), frame = element.frame
+                if frame.minY >= viewport.minY && frame.maxY <= viewport.maxY { return }
+                let upward = frame.midY > viewport.midY
+                let distance = min(160, max(65, abs(frame.midY - viewport.midY)))
+                let origin = app.coordinate(withNormalizedOffset: .zero), x = viewport.minX + 10
+                origin.withOffset(CGVector(dx: x, dy: viewport.midY + (upward ? distance / 2 : -distance / 2)))
+                    .press(forDuration: 0.08, thenDragTo: origin.withOffset(CGVector(dx: x, dy: viewport.midY - (upward ? distance / 2 : -distance / 2))),
+                           withVelocity: .slow, thenHoldForDuration: 0.15)
+            }
+            XCTFail("Could not reveal modal control \(element.identifier)")
+        }
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        for _ in 0..<6 where !toggle.isHittable { scroll.swipeUp() }
+        let nativeToggle = toggle.switches.firstMatch.exists ? toggle.switches.firstMatch : toggle
+        expose(nativeToggle)
         if toggle.value as? String == "1" { setSwitch(toggle, to: "0") }
-        XCTAssertFalse(app.buttons["roamingSpawnRate"].exists)
+        for tier in ["dumb", "easy", "normal", "hard", "godlike"] { XCTAssertFalse(app.buttons["roamingSpawnRate_\(tier)"].exists) }
         setSwitch(toggle, to: "1")
-        let rate = app.buttons["roamingSpawnRate"]
+        let rate = app.buttons["roamingSpawnRate_normal"]
         XCTAssertTrue(rate.waitForExistence(timeout: 5))
-        for _ in 0..<6 where !rate.isHittable { scroll.swipeUp() }
-        rate.tap(); app.buttons["4×"].tap()
+        expose(rate)
+        rate.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).tap(); app.buttons["4×"].tap()
         let apply = app.buttons["APPLY RULES"]
-        for _ in 0..<6 where !apply.isHittable { scroll.swipeUp() }
-        apply.tap()
+        expose(apply)
+        apply.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         reveal(rules, in: app); rules.tap()
-        XCTAssertTrue(app.buttons["roamingSpawnRate"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["roamingSpawnRate"].label.contains("4×"))
+        XCTAssertTrue(app.buttons["roamingSpawnRate_normal"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["roamingSpawnRate_normal"].label.contains("4×"))
+        for tier in ["dumb", "easy", "hard", "godlike"] { XCTAssertTrue(app.buttons["roamingSpawnRate_\(tier)"].label.contains("Off")) }
+        expose(app.buttons["roamingSpawnRate_normal"])
+        capture(app, name: "Native per-tier bot spawn rates portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         try await Task.sleep(nanoseconds: 700_000_000)
-        capture(app, name: "Native roaming spawn rate landscape")
+        for tier in ["dumb", "normal", "godlike"] {
+            expose(app.buttons["roamingSpawnRate_\(tier)"])
+            capture(app, name: "Native per-tier bot spawn rates landscape \(tier)")
+        }
         XCTAssertEqual(app.alerts.count, 0)
         app.terminate()
     }

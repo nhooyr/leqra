@@ -1010,6 +1010,12 @@ body.touch-ui .infinite-leaderboard[open]{max-height:max(38px,calc(100% - 112px)
 .infinite-leaderboard li[data-local]{border-radius:5px;box-shadow:inset 0 0 0 1px var(--local-highlight);background:color-mix(in srgb,var(--local-highlight) 8%,transparent)}
 .infinite-leaderboard li[data-party]:not([data-local]){border-radius:5px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tank-color) 40%,transparent);background:color-mix(in srgb,var(--tank-color) 8%,transparent)}
 .infinite-leaderboard li span{margin-right:6px}
+.infinite-leaderboard .leaderboard-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin-right:0}
+.infinite-leaderboard .leaderboard-row>strong{float:none}
+.infinite-leaderboard .leaderboard-identity{display:inline-flex;align-items:baseline;vertical-align:middle;min-width:0;max-width:100%;gap:6px}
+.infinite-leaderboard .leaderboard-identity>span{margin-right:0}
+.infinite-leaderboard .leaderboard-name{min-width:0}
+.infinite-leaderboard .leaderboard-difficulty{font:10px/1.3 var(--mono);color:var(--text-soft);font-weight:400;flex-shrink:0}
 .infinite-leaderboard li[data-local]>span{font-weight:700}
 .infinite-leaderboard li strong{float:right;color:inherit}
 .infinite-leaderboard ol:empty::before{content:"No tanks yet";color:var(--text-soft)}

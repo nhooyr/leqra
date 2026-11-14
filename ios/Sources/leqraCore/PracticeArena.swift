@@ -298,8 +298,9 @@ public final class PracticeArena {
     private func retireDistantRoamingBots() {
         guard maze.world == nil, hasConfiguredRules else { return }
         let humans = snapshot.tanks.filter { !$0.bot }
+        let disabled = activeRules.map { !$0.infinityRandomBots || $0.totalInfinityBotSpawnRate <= 0 } ?? false
         let retired = Set(snapshot.tanks.filter { tank in
-            roamingIDs.contains(tank.id) && !humans.contains { abs(tank.x - $0.x) <= 16 * 84 && abs(tank.y - $0.y) <= 16 * 84 }
+            roamingIDs.contains(tank.id) && (disabled || !humans.contains { abs(tank.x - $0.x) <= 16 * 84 && abs(tank.y - $0.y) <= 16 * 84 })
         }.map(\.id))
         guard !retired.isEmpty else { return }
         snapshot.tanks.removeAll { retired.contains($0.id) }
@@ -315,7 +316,8 @@ public final class PracticeArena {
         guard maze.world == nil, let rules = activeRules, rules.infinityRandomBots, time + 1e-9 >= nextRoamingWave else { return }
         let humans = snapshot.tanks.filter { !$0.bot && $0.hp > 0 }.sorted { $0.id < $1.id }
         guard !humans.isEmpty else { return }
-        let rate = [0.5, 1, 2, 4].contains(rules.infinityBotSpawnRate) ? rules.infinityBotSpawnRate : 2
+        let rate = rules.totalInfinityBotSpawnRate
+        guard rate > 0 else { return }
         nextRoamingWave = time + (1 + unitRandom()) / rate
         let budget = min(128, snapshot.tanks.filter { !$0.bot }.count * 16)
         var served = Dictionary(uniqueKeysWithValues: humans.map { ($0.id, 0) })
@@ -324,8 +326,6 @@ public final class PracticeArena {
                 served[nearest.id, default: 0] += 1
             }
         }
-        let levels = BotDifficulty.allCases.map(\.rawValue)
-        let selected = levels.firstIndex(of: rules.infinityBotDifficulty) ?? levels.firstIndex(of: "normal")!
         for _ in 0..<min(humans.count, max(0, budget - roamingIDs.count)) {
             let anchor = humans.min { (served[$0.id] ?? 0, $0.id) < (served[$1.id] ?? 0, $1.id) }!
             served[anchor.id, default: 0] += 1
@@ -334,7 +334,7 @@ public final class PracticeArena {
             let point = spawnPoint(near: anchor, minCells: 2, maxCells: 5)
             let team = rules.teamMode == "teams" ? (snapshot.tanks.count % 2 + 1) : 0
             let color = team > 0 && rules.teamColors.indices.contains(team - 1) ? rules.teamColors[team - 1] : GamePalette.index(number)
-            let level = rules.infinityRandomDifficulty ? levels[random(selected + 1)] : levels[selected]
+            guard let level = rules.infinityRoamingDifficulty(at: unitRandom()) else { continue }
             snapshot.tanks.append(ArenaTank(id: id, name: "Bot \(number)", x: point.x, y: point.y,
                 angle: unitRandom() * 2 * .pi - .pi, colorIndex: color, team: team, bot: true,
                 spawnProtected: true, spawnSerial: 1, invulnerable: 1, difficulty: level))
@@ -371,6 +371,11 @@ public final class PracticeArena {
 
     private func respawn(_ index: Int) {
         let old = snapshot.tanks[index]
+        var difficulty = old.difficulty
+        if roamingIDs.contains(old.id), let rules = activeRules {
+            guard rules.infinityRandomBots, let selected = rules.infinityRoamingDifficulty(at: unitRandom()) else { return }
+            difficulty = selected
+        }
         let origin = roamingIDs.contains(old.id)
             ? snapshot.tanks.filter { !$0.bot && $0.hp > 0 }.min { hypot($0.x - old.x, $0.y - old.y) < hypot($1.x - old.x, $1.y - old.y) } ?? old
             : old.bot ? snapshot.tanks[0] : old
@@ -379,11 +384,11 @@ public final class PracticeArena {
                                          angle: unitRandom() * 2 * .pi - .pi, colorIndex: old.colorIndex,
                                          score: old.score, team: old.team, bot: old.bot, spawnProtected: true,
                                          spawnSerial: old.spawnSerial + 1, invulnerable: maze.world == nil ? 1 : 1.2,
-                                         survivalEnemy: old.survivalEnemy, survivalBoss: old.survivalBoss, difficulty: old.difficulty)
+                                         survivalEnemy: old.survivalEnemy, survivalBoss: old.survivalBoss, difficulty: difficulty)
         fireBlocked.remove(old.id)
         botCourses.removeValue(forKey: old.id)
         dumbBots.removeValue(forKey: old.id)
-        if old.difficulty == "dumb" { dumbBots[old.id] = (old.spawnSerial + 1, DumbBotBrain(spawnedAt: time)) }
+        if difficulty == "dumb" { dumbBots[old.id] = (old.spawnSerial + 1, DumbBotBrain(spawnedAt: time)) }
         nextBoostEffects.removeValue(forKey: old.id)
     }
 
@@ -911,7 +916,7 @@ public final class PracticeArena {
         }
         snapshot.boostedBulletIds = boosted
         let sorted = snapshot.tanks.sorted { $0.score == $1.score ? $0.id < $1.id : $0.score > $1.score }
-        snapshot.leaderboard = sorted.prefix(10).map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team) }
+        snapshot.leaderboard = sorted.prefix(10).map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team, difficulty: $0.bot ? $0.difficulty : nil) }
         snapshot.tankCount = snapshot.tanks.count
         snapshot.teamScores = (1...4).map { team in snapshot.tanks.filter { $0.team == team }.map(\.score).reduce(0, +) }
         for index in snapshot.tanks.indices {

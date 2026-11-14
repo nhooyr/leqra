@@ -103,7 +103,7 @@ final class BotDifficultyTests: XCTestCase {
         dumb.configurePilot(id: 2, name: "CUSTOM", colorIndex: 1, difficulty: "godlike")
         dumb.snapshot.tanks[1].hp = 0; dumb.snapshot.tanks[1].respawnTime = 0
         dumb.step(input: GameInput(), dt: 1 / 60)
-        XCTAssertEqual(dumb.snapshot.tanks[1].difficulty, "godlike")
+        XCTAssertEqual(dumb.snapshot.tanks[1].difficulty, "dumb", "An ambient life reselects from enabled tiers, even if its previous body was edited")
     }
 
     func testActualWireTierControlsWarningRegardlessOfCallsign() throws {

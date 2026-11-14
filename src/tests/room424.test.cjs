@@ -29,7 +29,7 @@ function boot(extra={}){
  vm.createContext(sandbox);identityFixture(sandbox,source);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),sandbox);
  vm.runInContext(source.match(/^const teamKey=.*$/m)[0],sandbox);
  for(const name of ['canPlayOnlineInfinity','infinityPlayMode'])vm.runInContext(declaration(name),sandbox);
- for(const name of ['survivalMode','roomCapacity','survivalSeatLocked','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','mapSetupChanged','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','syncPendingSpectatorRole','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['survivalMode','roomCapacity','survivalSeatLocked','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','mapSetupChanged','setLocalRules','syncPauseButton','roomPlayerStatus','makeRoomPlayerRow','changeSeat','addRoomSeat','cleanPilotName','validatePreset','setPlayerSpectating','syncPendingSpectatorRole','infinityBotSpawnRates','roomStartError','updateRuleHelp','readRuleTeamSettings','syncFeatureSummary'])vm.runInContext(declaration(name),sandbox);
  return {...sandbox,s:sandbox,$,elements};
 }
 const players=n=>Array.from({length:n},(_,id)=>({id,member:id+1,name:'P'+id,kind:id?'bot':'human',team:0,difficulty:'normal'}));
@@ -104,6 +104,8 @@ test('only the requested role change or its own timeout releases the spectator c
 test('score-target Infinity requires an opponent or roaming bots',()=>{
  const {s}=boot(),[pilot,bot]=players(2),rules={infinity:true,infinityTarget:5,teamMode:'teams'};
  const check=(players,changes={})=>s.roomStartError({players,rules:{...rules,...changes}});
+ assert.match(check([{id:0,kind:'human',team:0}],{infinityRandomBots:true,infinityBotSpawnRates:{}}),/spawn rate/);
+ assert.equal(check([{id:0,kind:'human',team:0}],{infinityRandomBots:true,infinityBotSpawnRates:{},infinityTarget:0}),'');
  pilot.team=bot.team=1;
  assert.match(check([pilot]),/opposing tank/);
  assert.match(check([pilot,bot]),/opposing tank/);

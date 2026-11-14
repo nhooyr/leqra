@@ -203,8 +203,9 @@ class PracticeArena(
     }
 
     fun configure(rules: RoomRules) {
-        activeRules = rules.copy()
-        snapshot.rules = rules.copy()
+        val configuredRules = rules.copy(infinityBotSpawnRates = rules.roamingBotSpawnRates())
+        activeRules = configuredRules
+        snapshot.rules = configuredRules.copy()
         friendlyFire = rules.friendlyFire
         val world = maze.world
         if (world != null) {
@@ -368,7 +369,8 @@ class PracticeArena(
         if (maze.world != null || !configured) return
         val humans = snapshot.tanks.filter { !it.bot }
         val living = humans.filter { it.hp > 0 }
-        val budget = if (rules.infinityRandomBots) min(128, humans.size * 16) else 0
+        val rate = rules.roamingBotSpawnRates().values.sum()
+        val budget = if (rules.infinityRandomBots && rate > 0) min(128, humans.size * 16) else 0
         val retired = snapshot.tanks.filter { bot -> bot.id in roamingIDs &&
             (budget == 0 || humans.none { abs(it.x - bot.x) <= 16 * 84 && abs(it.y - bot.y) <= 16 * 84 }) }.map { it.id }.toMutableSet()
         val excess = (roamingIDs.size - retired.size - budget).coerceAtLeast(0)
@@ -384,15 +386,13 @@ class PracticeArena(
             }
         }
         if (time < nextRoamingSpawn || living.isEmpty() || roamingIDs.size >= budget) return
-        val rate = rules.infinityBotSpawnRate.takeIf { it in listOf(.5, 1.0, 2.0, 4.0) } ?: 2.0
         nextRoamingSpawn = time + (1 + unitRandom()) / rate
         repeat(min(living.size, budget - roamingIDs.size)) {
             val anchor = living.minWith(compareBy<ArenaTank> { human -> roamingHomes.values.count { it == human.id } }.thenBy { it.id })
             val id = max(nextRoamingID, (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1)
             nextRoamingID = id + 1
             val p = spawnPoint(anchor, 2, 5)
-            val selected = BotDifficulty.index(rules.infinityBotDifficulty)
-            val level = if (rules.infinityRandomDifficulty) BotDifficulty.names[random(selected + 1)] else BotDifficulty.names[selected]
+            val level = rules.roamingBotDifficulty(unitRandom()) ?: return@repeat
             val team = if (rules.teamMode == "teams") snapshot.tanks.size % 2 + 1 else 0
             snapshot.tanks += ArenaTank(id = id, name = "Bot ${id - 1}", x = p.x, y = p.y, angle = unitRandom() * 2 * PI - PI,
                 colorIndex = if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0 else GamePalette.index(id - 1), team = team,
@@ -544,6 +544,7 @@ class PracticeArena(
 
     private fun respawn(index: Int) {
         val old = snapshot.tanks[index]
+        val level = if (configured && old.id in roamingIDs) activeRules?.roamingBotDifficulty(unitRandom()) ?: return else old.difficulty
         val p =
             respawnLocation?.invoke(old)
                 ?: spawnPoint(if (old.id in roamingIDs) snapshot.tanks.filter { !it.bot && it.hp > 0 }.minByOrNull { hypot(it.x - old.x, it.y - old.y) } ?: old else if (old.bot) snapshot.tanks[0] else old, 2, 5)
@@ -563,7 +564,7 @@ class PracticeArena(
                 invulnerable = if (maze.world == null) 1.0 else 1.2,
                 survivalEnemy = old.survivalEnemy,
                 survivalBoss = old.survivalBoss,
-                difficulty = old.difficulty,
+                difficulty = level,
             )
         snapshot.tanks = snapshot.tanks.toMutableList().also { it[index] = replacement }
         fireBlocked.remove(old.id)
@@ -1313,7 +1314,7 @@ class PracticeArena(
             snapshot.tanks.sortedWith(compareByDescending<ArenaTank> { it.score }.thenBy { it.id })
         snapshot.leaderboard =
             sorted.take(10).map {
-                LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team)
+                LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team, it.difficulty)
             }
         snapshot.tankCount = snapshot.tanks.size
         snapshot.teamScores =

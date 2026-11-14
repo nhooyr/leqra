@@ -6,6 +6,9 @@ const {test} = require('node:test');
 const vm = require('node:vm');
 const {assetPath} = require('./web_assets.cjs');
 
+function standingNode(node,kind){if(node.className===kind)return node;for(const child of node.children||[]){const found=standingNode(child,kind);if(found)return found;}return null;}
+const standingName=row=>standingNode(row,'leaderboard-name').textContent,standingScore=row=>standingNode(row,'leaderboard-score').textContent;
+
 function harness(url = 'https://example.test/', openField = false, storage = new Map(), savedName = 'Saved pilot') {
  class Element {
   listeners = {};
@@ -138,10 +141,12 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   setTimeout: (callback,delay) => {timers.set(++nextTimer,{callback,at:now+delay});return nextTimer;},
   clearTimeout: id => timers.delete(id),
  });
+ const botSource=readFileSync(assetPath('callsigns.js'),'utf8');vm.runInContext('const botLabels=new Map();'+botSource.slice(botSource.indexOf('function botName('),botSource.indexOf('function record(')),context);window.leqraInfinityArt.leaderboardBot=context.leaderboardBot;
  vm.runInContext(readFileSync(assetPath('infinite-maze.js'), 'utf8'), context);
  vm.runInContext(readFileSync(assetPath('netcode.js'), 'utf8'), context);
  window.leqraNet = context.leqraNet;
  const game = readFileSync(assetPath('game.js'), 'utf8');
+ const spawnStart=game.indexOf('function infinityBotSpawnRates(');vm.runInContext(game.slice(spawnStart,game.indexOf('\n}',spawnStart)+2),context);window.leqraInfinityArt.infinityBotSpawnRates=context.infinityBotSpawnRates;
  Object.assign(context, {$:byID,combatPrefs});
  vm.runInContext('const MAX_TANKS=8;'+game.match(/^const COLORS=.*$/m)[0]+game.match(/^const colorIndex=.*$/m)[0]+';this.colorIndex=colorIndex;this.canonicalColor=index=>COLORS[index]||"";',context);
  window.leqraInfinityArt.colorIndex = context.colorIndex;
@@ -186,7 +191,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
    },
   })};
  }
- vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.testDraw = draw; window.testFire = fireShot; window.testBotInput = botInput; window.leqraInfinity ='), context);
+ vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.testDraw = draw; window.testFire = fireShot; window.testBotInput = botInput; window.testRoamingDifficulty = roamingDifficulty; window.leqraInfinity ='), context);
  byID('pauseBtn').addEventListener('click',()=>window.leqraInfinity.togglePause());
  const advance = (frames = 1) => {
   for (let i = 0; i < frames; i++) {
@@ -441,10 +446,10 @@ test('Infinity runs offline directly from a file and adds nearby bots to the sta
  assert.equal(byID('infiniteArena').open, true);
  assert.equal(byID('infiniteKills').textContent, 'Explorer (P1): score: 0, rank: #1');
  assert.equal(byID('infiniteLeaderboardTitle').textContent, 'LEADERBOARD');
- assert.equal(byID('infiniteLeaderboard').children[0].children[0].textContent, 'Explorer (P1)');
+ assert.equal(standingName(byID('infiniteLeaderboard').children[0]), 'Explorer (P1)');
  advance(90);
  assert.equal(byID('infiniteStatus').hidden,true);assert.equal(byID('infiniteOnlineCount').hidden,true);
- assert.match(byID('infiniteLeaderboard').children[1].children[0].textContent, /^Bot /);
+ assert.match(standingName(byID('infiniteLeaderboard').children[1]), /^Bot /);
  assert.equal(byID('infiniteLeaderboardTitle').textContent, 'LEADERBOARD');
  assert.equal(sockets.length, 0);
  infinity.close();
@@ -702,14 +707,14 @@ test('Infinity refreshes names and paint while paused without rebuilding unchang
  const oldRow=byID('infiniteLeaderboard').children[0],oldCounter=byID('infiniteKills').children[0];
  snapshot();assert.equal(byID('infiniteLeaderboard').children[0],oldRow);assert.equal(byID('infiniteKills').children[0],oldCounter);
  Object.assign(tanks[0],{name:'New lead',colorIndex:2});Object.assign(tanks[1],{name:'New wing',colorIndex:5});snapshot();
- assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>[row.children[0].textContent,row.style['--tank-color']]),
+ assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>[standingName(row),row.style['--tank-color']]),
   [['New lead (P1)',colors[2]],['New wing (P2)',colors[5]]]);
  assert.deepEqual(byID('infiniteLeaderboard').children.map(row=>row.style['--local-highlight']),[colors[2],colors[5]],'paused local highlights refresh with tank paint even without a score change');
  assert.match(byID('infiniteControlsHint').innerHTML,/New lead \(P1\)/);assert.ok(byID('infiniteControlsHint').innerHTML.includes('color:'+colors[5]));
  assert.deepEqual(Array.from(infinity.localPilots(),pilot=>pilot.name),['New lead','New wing']);
  socket.receive({type:'welcome',id:1,seed:0});tanks.pop();snapshot();
  assert.equal(byID('infiniteKills').textContent,'New lead (P1): score: 1, rank: #1');
- assert.equal(byID('infiniteLeaderboard').children[0].children[0].textContent,'New lead (P1)');
+ assert.equal(standingName(byID('infiniteLeaderboard').children[0]),'New lead (P1)');
  assert.ok(!byID('infiniteControlsHint').textContent.includes('(P2)'));
  assert.equal(infinity.localPilots().length,1);
  infinity.close();
@@ -804,8 +809,8 @@ test('public Infinity keeps the top ten and appends local standings with their r
   const rows=byID('infiniteLeaderboard').children;
   assert.equal(rows.length,12);
   assert.ok(rows.slice(0,10).every(row=>row.dataset.local===undefined));
-  assert.deepEqual(rows.slice(0,10).map(row=>row.children[0].textContent),leaders.map(tank=>tank.name));
-  assert.deepEqual(rows.slice(10).map(row=>[row.value,row.dataset.local,row.children[0].textContent,row.children[1].textContent]),
+  assert.deepEqual(rows.slice(0,10).map(row=>standingName(row)),leaders.map(tank=>tank.name));
+  assert.deepEqual(rows.slice(10).map(row=>[row.value,row.dataset.local,standingName(row),standingScore(row)]),
    [[11,'p2','Local 2 (P2)',-1],[12,'p1','Local 1 (P1)',-1]]);
   assert.ok(rows.slice(10).every(row=>row.className==='off-board-local'));
  }
@@ -896,7 +901,7 @@ test('opening offline Infinity pause refreshes local rows before the next HUD fr
  const rows=byID('infiniteLeaderboard').children;
  assert.equal(byID('infiniteLeaderboardPanel').parentElement,byID('gameSidebar'));
  assert.equal(rows.length,12);
- assert.deepEqual(rows.slice(10).map(row=>[row.value,row.children[0].textContent]),[[12,'Twin (P2)'],[13,'Twin (P1)']]);
+ assert.deepEqual(rows.slice(10).map(row=>[row.value,standingName(row)]),[[12,'Twin (P2)'],[13,'Twin (P1)']]);
  infinity.close();
 });
 
@@ -1031,8 +1036,8 @@ test('offline Infinity awards the kill and keeps the death penalty after respawn
  advance(4);
  assert.equal(byID('infiniteKills').textContent, 'Saved pilot (P1): score: -1, rank: #2');
  const rows = byID('infiniteLeaderboard').children;
- assert.deepEqual(rows[0].children.map(cell => cell.textContent), ['Bot 1', 1]);
- assert.deepEqual(rows[1].children.map(cell => cell.textContent), ['Saved pilot (P1)', -1]);
+ assert.deepEqual([standingName(rows[0]),standingScore(rows[0])], ['Bot 1', 1]);
+ assert.deepEqual([standingName(rows[1]),standingScore(rows[1])], ['Saved pilot (P1)', -1]);
  const notice = byID('infiniteDeathNotice1');
  assert.equal(notice.textContent,'Killed by Bot 1');
  assert.equal(notice.hidden,false);
@@ -1573,7 +1578,7 @@ test('private Infinity sends room credentials, honors keyboard remaps, and uses 
  advance();
  assert.equal(byID('infiniteKills').textContent, 'Explorer (P1): score: -1, rank: #0');
  assert.equal(byID('infiniteStatus').hidden,true);
- assert.equal(byID('infiniteLeaderboard').children[0].children[0].textContent, '<Distant pilot>');
+ assert.equal(standingName(byID('infiniteLeaderboard').children[0]), '<Distant pilot>');
  assert.equal(byID('infiniteLeaderboardTitle').textContent,'LEADERBOARD');
  const distantRow=byID('infiniteLeaderboard').children[0];
  assert.equal(distantRow.style.getPropertyValue('--tank-color'),'#ff758f');
@@ -1905,7 +1910,7 @@ test('public, private and party Infinity renames wait for matching acknowledgeme
   socket.receive(packet);h.advance(4);
   assert.deepEqual(Array.from(h.state().tanks,tank=>tank.name),['New First','New Second'],'an older queued snapshot cannot undo confirmation');
   assert.equal(h.state().tanks[0].score,9);assert.equal(h.state().tanks[1].power,'laser');assert.equal(h.state().tanks[1].hp,0);
-  assert.deepEqual(h.byID('infiniteLeaderboard').children.map(row=>row.children[0].textContent),['New First (P1)','New Second (P2)']);
+  assert.deepEqual(h.byID('infiniteLeaderboard').children.map(row=>standingName(row)),['New First (P1)','New Second (P2)']);
   tanks[0].name='New First';tanks[1].name='New Second';socket.receive(packet);h.advance(4);assert.equal(h.state().confirmedNames.size,0);
   tanks[0].name='Authoritative';socket.receive(packet);h.advance(4);assert.equal(h.infinity.localPilots()[0].name,'Authoritative');
   assert.equal(h.byID('infinitePauseMenu').open,true);h.infinity.close();
@@ -2139,4 +2144,54 @@ test('a manual public name conflict returns to its editor without clearing or re
  const [socket]=h.sockets;socket.emit('open');assert.equal(socket.sent[0].updateNames,true);
  const rejection={type:'error',code:'callsign_taken',conflicts:[{seat:0,name:'Taken'}],message:'Choose an unused online callsign.'};socket.receive(rejection);h.elapse(30000);
  assert.deepEqual(JSON.parse(JSON.stringify(conflicts)),[rejection]);assert.deepEqual(remembered,[]);assert.equal(h.sockets.length,1);assert.equal(h.byID('infiniteArena').open,false);
+});
+
+test('active and spectated standings show bot base names with real difficulty and preserve follow identity',()=>{
+ for(const spectating of [false,true]){
+  const h=harness(undefined,true);h.infinity.start('online',spectating?{code:'ROOM',spectating:true}:{});
+  const socket=h.sockets[0];socket.receive({type:'welcome',id:spectating?0:1,seed:0,spectating,following:64});
+  const leaders=[
+   {id:64,name:'Bot 64 - Godlike',score:10,bot:true,difficulty:'godlike'},
+   {id:8,name:'Bot 8 - Normal',score:9,bot:true,difficulty:'normal'},
+   {id:2,name:'Bot 2 - Dumb',score:8,bot:true,difficulty:'dumb'},
+   {id:5,name:'RUST',score:7,bot:true,difficulty:'hard'},
+   {id:1,name:'Godlike fan',score:6,bot:false,difficulty:'godlike'}];
+  socket.receive({type:'state',tick:1,following:64,tanks:[{id:1,name:'Godlike fan',hp:1,x:42,y:42}],bullets:[],players:1,leaderboard:leaders});h.advance(4);
+  const rows=h.byID('infiniteLeaderboard').children;
+  assert.deepEqual(rows.map(standingName),['Bot 64','Bot 8','Bot 2','Bot Rust',spectating?'Godlike fan':'Godlike fan (P1)']);
+  assert.deepEqual(rows.map(row=>standingNode(row,'leaderboard-difficulty')?.textContent||''),['GODLIKE','NORMAL','DUMB','FIERCE','']);
+  if(spectating){const button=rows[1].children[0];assert.match(button.attributes['aria-label'],/Follow Bot 8, Normal, rank 2, score 9/);button.emit('click');assert.deepEqual(socket.sent.at(-1),{type:'follow',target:8});}
+  h.infinity.close();
+ }
+});
+
+test('per-tier room rates choose weighted difficulties while Off never appears',()=>{
+ const h=harness(undefined,true),rules={infinityRandomBots:true,infinityBotSpawnRates:{normal:1,godlike:3}},counts={normal:0,godlike:0};
+ for(let n=0;n<1000;n++){h.setRandom(()=>(n+.5)/1000);counts[h.window.testRoamingDifficulty(rules)]++;}
+ assert.deepEqual(counts,{normal:250,godlike:750});
+ assert.equal(h.window.testRoamingDifficulty({infinityBotSpawnRates:{}}),null);
+ for(const rates of [{dumb:.5,normal:1.5},{godlike:.5},{normal:4}]){
+  h.setRandom(()=>.5);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:rates}});
+  const w=h.state();w.nextBot=0;w.nextPickup=Infinity;h.advance();
+  assert.ok(Math.abs(w.nextBot-w.time-1.5/Object.values(rates).reduce((sum,r)=>sum+r,0))<1e-9,'aggregate intensity controls the shared wave timer');h.infinity.close();
+ }
+});
+
+test('room all-Off/master-Off trims roaming bots while preserving authored roster bots and rates',()=>{
+ for(const master of [false,true]){
+  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:{normal:2}},roster:[{kind:'bot',id:2,name:'RUST',difficulty:'hard'}]});
+  const w=h.state();w.nextBot=0;w.nextPickup=Infinity;h.advance();
+  const authored=w.tanks.find(t=>t.name==='RUST');assert.ok(authored);assert.ok(w.tanks.some(t=>t.ambient));
+  w.rules={...w.rules,infinityRandomBots:master,infinityBotSpawnRates:master?{}:{normal:2}};h.advance();
+  assert.equal(w.tanks.filter(t=>t.ambient).length,0);assert.ok(w.tanks.includes(authored));assert.equal(authored.difficulty,'hard');
+  h.infinity.close();
+ }
+});
+
+test('ambient room respawns reselect enabled tiers without changing roster difficulty or scores',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:true,infinityBotSpawnRates:{godlike:2}},roster:[{kind:'bot',id:2,name:'RUST',difficulty:'hard'}]});
+ h.setRandom(()=>.5);const w=h.state();w.nextBot=0;w.nextPickup=Infinity;h.advance();
+ const ambient=w.tanks.find(t=>t.ambient),authored=w.tanks.find(t=>t.name==='RUST');assert.equal(ambient.difficulty,'godlike');
+ w.rules={...w.rules,infinityBotSpawnRates:{dumb:2}};w.nextBot=Infinity;Object.assign(ambient,{hp:0,alive:false,respawn:0,score:7});h.advance();
+ assert.equal(ambient.hp,1);assert.equal(ambient.difficulty,'dumb');assert.equal(ambient.score,7);assert.equal(authored.difficulty,'hard');h.infinity.close();
 });

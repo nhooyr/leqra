@@ -66,6 +66,7 @@ internal object RuleEditorLimits {
             if (infinityBotDifficulty !in BotDifficulty.names)
                 infinityBotDifficulty = "normal"
             if (infinityBotSpawnRate !in listOf(.5, 1.0, 2.0, 4.0)) infinityBotSpawnRate = 2.0
+            infinityBotSpawnRates = roamingBotSpawnRates()
         }
 }
 
@@ -766,7 +767,7 @@ class MainActivity : Activity() {
         val startError =
             session.room?.optString(
                 if (session.publicSelected) "startPublicInfinityError" else "startError",
-            )
+            ) ?: session.localStartError
         // All room modes keep the same readiness space, including a valid solo Infinity room.
         panel.add(
             label(this, startError.orEmpty(), 11f, danger).apply {
@@ -870,7 +871,7 @@ class MainActivity : Activity() {
             else "PLAY  →"
         readyPlay?.value(label)
         val allowed =
-            if (room == null) true
+            if (room == null) session.localStartError == null
             else if (active) own != null || session.roomSpectating && !room.optBoolean("infinityPublic")
             else if (session.roomSpectating) false
             else
@@ -1779,31 +1780,21 @@ class MainActivity : Activity() {
                     setOnCheckedChangeListener { _, v -> draft.infinityRandomBots = v; syncRoaming() }
                 },
             )
-            val difficultyValues = BotDifficulty.names
             val difficultyTitles = listOf("Dumb", "Chill", "Normal", "Fierce", "Godlike")
-            roamingControls += select(
-                "ROAMING BOT DIFFICULTY",
-                difficultyTitles,
-                difficultyTitles[
-                    BotDifficulty.index(draft.infinityBotDifficulty)],
-            ) {
-                draft.infinityBotDifficulty = difficultyValues[difficultyTitles.indexOf(it)]
+            val configuredRates = draft.roamingBotSpawnRates().toMutableMap()
+            for ((index, level) in BotDifficulty.names.withIndex()) {
+                val current = configuredRates.getValue(level)
+                val rates = (listOf(0.0, .5, 1.0, 2.0, 4.0) + current).distinct().sorted()
+                val rateLabels = rates.map { if (it == 0.0) "Off" else java.math.BigDecimal.valueOf(it).round(java.math.MathContext(3)).stripTrailingZeros().toString().replace("E", "e") + "×" }
+                panel.add(label(this, "${difficultyTitles[index].uppercase(java.util.Locale.ROOT)} BOT SPAWN RATE", 10f, muted, mono = true))
+                val picker = choice(rateLabels, rates.indexOf(current)) { selection ->
+                    configuredRates[level] = rates[selection]
+                    draft.infinityBotSpawnRates = configuredRates.toMap()
+                }.apply { tag = "roamingRate:$level"; contentDescription = "${difficultyTitles[index]} bot spawn rate" }
+                panel.add(picker)
+                roamingControls += picker
             }
-            val randomDifficulty = CheckBox(this).apply {
-                    text = "Random bot difficulty"
-                    textSize = 13f
-                    setTextColor(NativeStyle.text)
-                    isChecked = draft.infinityRandomDifficulty
-                    setOnCheckedChangeListener { _, v -> draft.infinityRandomDifficulty = v }
-                }
-            panel.add(randomDifficulty)
-            roamingControls += randomDifficulty
-            val rates = listOf(.5, 1.0, 2.0, 4.0)
-            val rateLabels = listOf("0.5×", "1×", "2×", "4×")
-            roamingControls += select("ROAMING BOT SPAWN RATE", rateLabels, rateLabels[rates.indexOf(draft.infinityBotSpawnRate)]) {
-                draft.infinityBotSpawnRate = rates[rateLabels.indexOf(it)]
-            }
-            panel.add(label(this, "16 roaming bots per player, up to 128 in a room.", 11f, muted))
+            panel.add(label(this, "1× averages one bot every 1.5 seconds per living human while the room has capacity. Shared limit: 16 roaming bots per human, 128 per room. Roster bots always play.", 11f, muted))
             syncRoaming()
         }
         panel.add(label(this, "POWER-UPS", 10f, muted, mono = true))
@@ -2224,7 +2215,7 @@ class MainActivity : Activity() {
         }
         val signature =
             if (session.screen == Screen.PLAYING)
-                "${stage.width}:${stage.height}:${resources.configuration.orientation}:${session.localID}:${session.localID2}:${session.spectating}:${session.followingID}:${session.snapshot.leaderboard}:" + if (session.snapshot.leaderboard.isEmpty()) session.snapshot.tanks.map { listOf(it.id,it.name,it.score,it.colorIndex) }.toString() else ""
+                "${stage.width}:${stage.height}:${resources.configuration.orientation}:${session.localID}:${session.localID2}:${session.spectating}:${session.followingID}:${session.snapshot.leaderboard}:" + if (session.snapshot.leaderboard.isEmpty()) session.snapshot.tanks.map { listOf(it.id,it.name,it.score,it.colorIndex,it.bot,it.difficulty) }.toString() else ""
             else session.publicStatus?.leaders.toString()
         if (scores != null && signature == scoreSignature) return
         scoreSignature = signature
@@ -2249,41 +2240,34 @@ class MainActivity : Activity() {
                                 it.colorIndex,
                                 it.bot,
                                 it.team,
+                                it.difficulty,
                             )
                         }
             else null
         if (leaders != null)
             (if (session.spectating) leaders else leaders.take(10)).forEachIndexed { index, p ->
-                panel.add(
-                    label(
-                        this,
-                        "${index+1}. ${PilotIdentity.leaderboardLabel(p.name, p.bot, if(p.id==session.localID) 1 else if(p.id==session.localID2) 2 else 0)}    ${p.score}" + if (session.spectating && p.id == session.followingID) "\nFOLLOWING" else "",
-                        12f,
-                        paint(p.colorIndex),
-                        p.id == session.localID || p.id == session.localID2,
-                    ).apply {
-                        if (session.spectating) {
-                            minHeight = dp(44)
-                            setPadding(dp(6), dp(6), dp(6), dp(6))
-                            contentDescription = "Follow ${p.name}"
-                            isClickable = true
-                            setOnClickListener {
-                                session.followTank(p.id)
-                                if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
-                                    showScores = false
-                                    updateScores()
-                                }
+                val seat = if (session.spectating || p.bot) 0 else if (p.id == session.localID) 1 else if (p.id == session.localID2) 2 else 0
+                val following = session.spectating && p.id == session.followingID
+                panel.add(standingsRow(p, index + 1, seat, following).apply {
+                    if (session.spectating) {
+                        minimumHeight = dp(44)
+                        setPadding(dp(6), dp(6), dp(6), dp(6))
+                        contentDescription = "Follow ${p.name}"
+                        isClickable = true
+                        setOnClickListener {
+                            session.followTank(p.id)
+                            if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+                                showScores = false
+                                updateScores()
                             }
-                            if (p.id == session.followingID) setBackgroundColor(raised)
                         }
-                    },
-                )
+                        if (following) setBackgroundColor(raised)
+                    }
+                })
             }
         else
             session.publicStatus?.leaders?.take(10)?.forEachIndexed { index, p ->
-                panel.add(
-                    label(this, "${index+1}. ${PilotIdentity.leaderboardLabel(p.name, p.bot)}    ${p.score}", 12f, paint(p.colorIndex)),
-                )
+                panel.add(standingsRow(LeaderboardEntry(p.id, p.name, p.score, p.colorIndex, p.bot, difficulty = p.difficulty), index + 1))
             }
         panel.add(
             button(
@@ -2310,6 +2294,21 @@ class MainActivity : Activity() {
                 )
                 .apply { setMargins(dp(12) + safeLeft, dp(12), dp(12) + safeRight, dp(12)) },
         )
+    }
+
+    private fun standingsRow(entry: LeaderboardEntry, rank: Int, seat: Int = 0, following: Boolean = false): LinearLayout {
+        val name = PilotIdentity.leaderboardLabel(entry.name, entry.bot, seat)
+        val difficulty = PilotIdentity.leaderboardDifficulty(entry.name, entry.bot, entry.difficulty)
+        val difficultyTitle = difficulty?.let { when (it) { "easy" -> "Chill"; "hard" -> "Fierce"; else -> it.replaceFirstChar { letter -> letter.titlecase(java.util.Locale.ROOT) } } }
+        val identity = column(this, 0)
+        identity.add(label(this, "$rank. $name", 12f, paint(entry.colorIndex), seat > 0), gap = 0)
+        if (difficultyTitle != null) identity.add(label(this, difficultyTitle.uppercase(java.util.Locale.ROOT), 10f, muted, mono = true), gap = 0)
+        if (following) identity.add(label(this, "FOLLOWING", 10f, accent, mono = true), gap = 0)
+        return row(this).apply {
+            weighted(identity, gap = 8)
+            addView(label(this@MainActivity, entry.score.toString(), 12f, paint(entry.colorIndex), bold = true))
+            contentDescription = "$rank. $name" + (difficultyTitle?.let { ", $it" } ?: "") + ", score ${entry.score}"
+        }
     }
 
     private fun showChat() {

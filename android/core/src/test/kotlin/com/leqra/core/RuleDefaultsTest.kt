@@ -119,6 +119,7 @@ class RuleDefaultsTest {
                     infinityRandomBots = true,
                     infinityBotDifficulty = "godlike",
                     infinityRandomDifficulty = true,
+                    infinityBotSpawnRates = mapOf("godlike" to 4.0),
                     friendlyFire = true,
                 )
                 .restoringModeDefaults()
@@ -130,6 +131,8 @@ class RuleDefaultsTest {
         assertFalse(endless.infinityRandomBots)
         assertEquals("normal", endless.infinityBotDifficulty)
         assertFalse(endless.infinityRandomDifficulty)
+        assertNull(endless.infinityBotSpawnRates)
+        assertEquals(2.0, endless.roamingBotSpawnRates().getValue("normal"), 0.0)
         assertFalse(endless.friendlyFire)
     }
 

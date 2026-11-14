@@ -54,6 +54,7 @@ data class PublicLeader(
     val colorIndex: Int,
     val rank: Int,
     val bot: Boolean,
+    val difficulty: String = "",
 )
 
 class RecoveredAccount(
@@ -248,6 +249,7 @@ class AccountService(
                                     optInt("colorIndex"),
                                     optInt("rank"),
                                     optBoolean("bot"),
+                                    optString("difficulty", ""),
                                 )
                             }
                         }

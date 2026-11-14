@@ -107,8 +107,8 @@ func (r *Room) lineupError() string {
 	if !primary {
 		return "Infinity needs at least one connected player in a combat seat."
 	}
-	if rules.InfinityTarget > 0 && !rules.InfinityRandomBots && len(sides) < 2 {
-		return "Add an opposing tank or enable random bots to play to a score target."
+	if rules.InfinityTarget > 0 && (!rules.InfinityRandomBots || infinitySpawnRateTotal(effectiveInfinityBotSpawnRates(rules)) == 0) && len(sides) < 2 {
+		return "Add an opposing tank or enable a roaming bot spawn rate to play to a score target."
 	}
 	return ""
 }

@@ -27,7 +27,7 @@ function boot(storage=new Map(),touchUI=false){
  Object.assign(s.document,{body:{classList:{remove(){}}},documentElement:{style:{removeProperty(){}}}});
  try{s.infinityOffline=storage.get('leqra.infinityOffline')==='1';s.infinityOnline=storage.get('leqra.infinityOnline')!=='0';}catch(_){}
  vm.createContext(s);if(source.includes('function orderedRoster('))vm.runInContext(declaration('orderedRoster'),s);vm.runInContext(source.match(/^const COLORS=.*$/m)[0]+'\n'+source.match(/^const colorIndex=.*$/m)[0],s);vm.runInContext("const LOCAL_RULES_KEY='leqra.roomRules.v1',ROOM_SETUP_KEY='leqra.roomSetup.v2';let rememberedRoomSetup=null,lastPersistedRoomSetup='';",s);
- for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','canPlayOnlineInfinity','infinityPlayMode','selectLocalInfinity','ensureDefaultLocalBots','selectPublicInfinity','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','startInfinity','createLocalRoom'])vm.runInContext(declaration(name),s);
+ for(const name of ['defaultRoomRules','defaultModeRules','defaultLocalRoomRules','validateTeamNames','infinityBotSpawnRates','validateRoomRules','cleanPilotName','survivalMode','roomCapacity','currentRules','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validateSavedRoster','restoreRoomRules','loadRememberedRoomSetup','loadLocalRoomRules','rememberedRulesForMode','persistLocalRoomRules','rememberRenderedRoomSetup','restoreSavedLocalRoster','rulesForRoomMode','canPlayOnlineInfinity','infinityPlayMode','selectLocalInfinity','ensureDefaultLocalBots','selectPublicInfinity','selectRoomMode','selectRoomSetting','roomModeEditable','modeLabel','fillRulesForm','resetRuleDefaults','readRuleTeamSettings','submitRules','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','startInfinity','createLocalRoom'])vm.runInContext(declaration(name),s);
  s.localRoom.rules=s.loadLocalRoomRules();return {s,$,storage,toggles};
 }
 const pilot=(options={})=>({id:0,kind:'human',name:'PILOT',team:0,...options});
@@ -133,10 +133,9 @@ test('Infinity room target, teams and random bots persist separately from fixed-
  s.fillRulesForm();assert.equal($('rulesDialog').dataset.mode,'infinity');
  assert.equal($('rule-infinityTarget').value,0);
  assert.equal($('rule-infinityRandomBots').checked,false);
- assert.equal($('rule-infinityBotDifficulty').value,'normal');
- assert.equal($('rule-infinityRandomDifficulty').value,'fixed');
- $('rule-infinityTarget').value='35';$('rule-teamName1').value='North';$('rule-friendlyFire').checked=true;
- $('rule-infinityRandomBots').checked=true;$('rule-infinityBotDifficulty').value='hard';$('rule-infinityRandomDifficulty').value='upTo';
+ assert.equal(Number($('rule-infinityBotSpawnRate-normal').value),2);
+  $('rule-infinityTarget').value='35';$('rule-teamName1').value='North';$('rule-friendlyFire').checked=true;
+ $('rule-infinityRandomBots').checked=true;$('rule-infinityBotSpawnRate-normal').value=0;$('rule-infinityBotSpawnRate-hard').value=2;$('rule-infinityBotSpawnRate-dumb').value=.5;
  s.submitRules({preventDefault(){}});
  const {s:restored,$:restoredElement}=boot(storage);
  assert.equal(restored.localRoom.rules.infinity,true);
@@ -146,8 +145,8 @@ test('Infinity room target, teams and random bots persist separately from fixed-
  assert.equal(restored.localRoom.rules.friendlyFire,true);
  restored.fillRulesForm();
  assert.equal(restoredElement('rule-infinityRandomBots').checked,true);
- assert.equal(restoredElement('rule-infinityBotDifficulty').value,'hard');
- assert.equal(restoredElement('rule-infinityRandomDifficulty').value,'upTo');
+ assert.equal(Number(restoredElement('rule-infinityBotSpawnRate-hard').value),2);
+ assert.equal(Number(restoredElement('rule-infinityBotSpawnRate-dumb').value),.5);
  assert.equal(s.selectRoomMode('elimination'),true);
  assert.equal(s.localRoom.rules.infinity,false);
  assert.equal(s.localRoom.rules.scoreTarget,9);
@@ -157,8 +156,7 @@ test('Infinity room target, teams and random bots persist separately from fixed-
  assert.equal(s.selectRoomMode('infinity'),true);
  assert.equal(s.localRoom.rules.infinityTarget,35);
  assert.equal(s.localRoom.rules.infinityRandomBots,true);
- assert.equal(s.localRoom.rules.infinityBotDifficulty,'hard');
- assert.equal(s.localRoom.rules.infinityRandomDifficulty,true);
+ assert.deepEqual(clone(s.localRoom.rules.infinityBotSpawnRates),{dumb:.5,easy:0,normal:0,hard:2,godlike:0});
  s.resetRuleDefaults();
  assert.equal(s.localRoom.rules.infinityRandomBots,true,'Default Rules stages changes until Apply');
  s.submitRules({preventDefault(){}});
@@ -180,42 +178,38 @@ test('old offline Infinity selection remains endless and room rule requests incl
  assert.notEqual(s.roomSetupRulesKey(s.sent.rules),s.roomSetupRulesKey(s.online.roomData.rules));
 });
 
-test('random Infinity bot settings validate and each affects authoritative room confirmation',()=>{
+test('per-difficulty Infinity settings validate and affect authoritative room confirmation',()=>{
  const {s,$}=boot(new Map([['leqra.infinityOffline','1']]));
- const {infinityRandomBots,infinityBotDifficulty,infinityRandomDifficulty,...legacy}=s.localRoom.rules;
+ const {infinityRandomBots,infinityBotDifficulty,infinityRandomDifficulty,infinityBotSpawnRates,...legacy}=s.localRoom.rules;
  const normalized=s.validateRoomRules(legacy);
- assert.equal(normalized.infinityRandomBots,false);
- assert.equal(normalized.infinityBotDifficulty,'normal');
- assert.equal(normalized.infinityRandomDifficulty,false);
+ assert.equal(normalized.infinityRandomBots,false);assert.equal(normalized.infinityBotDifficulty,'normal');assert.equal(normalized.infinityRandomDifficulty,false);
  assert.equal(s.roomSetupRulesKey(legacy),s.roomSetupRulesKey({...legacy,infinityBotDifficulty:''}));
- for(const [field,value,error] of [
-  ['infinityRandomBots','true',/must be on or off/],
-  ['infinityBotDifficulty','toString',/valid difficulty/],
-  ['infinityBotDifficulty',null,/valid difficulty/],
-  ['infinityRandomDifficulty',1,/must be Fixed or Up to/],
- ])assert.throws(()=>s.validateRoomRules({...legacy,[field]:value}),error);
- s.mode='online';s.online.roomData={rules:normalized};s.fillRulesForm();
- $('rule-infinityRandomBots').checked=true;$('rule-infinityBotDifficulty').value='godlike';$('rule-infinityRandomDifficulty').value='upTo';
- s.submitRules({preventDefault(){}});
- assert.equal(s.sent.rules.infinityRandomBots,true);
- assert.equal(s.sent.rules.infinityBotDifficulty,'godlike');
- assert.equal(s.sent.rules.infinityRandomDifficulty,true);
- for(const field of ['infinityRandomBots','infinityBotDifficulty','infinityRandomDifficulty']){
-  assert.notEqual(s.roomSetupRulesKey({...s.sent.rules,[field]:normalized[field]}),s.online.setupPending.rulesKey);
- }
+ for(const [field,value,error]of [['infinityRandomBots','true',/must be on or off/],['infinityBotDifficulty','toString',/valid difficulty/],['infinityBotDifficulty',null,/valid difficulty/],['infinityRandomDifficulty',1,/must be Fixed or Up to/]])assert.throws(()=>s.validateRoomRules({...legacy,[field]:value}),error);
+ s.mode='online';s.online.roomData={rules:normalized};s.fillRulesForm();$('rule-infinityRandomBots').checked=true;
+ $('rule-infinityBotSpawnRate-dumb').value=.5;$('rule-infinityBotSpawnRate-normal').value=0;$('rule-infinityBotSpawnRate-godlike').value=4;
+ s.submitRules({preventDefault(){}});assert.equal(s.sent.rules.infinityRandomBots,true);
+ assert.deepEqual(clone(s.sent.rules.infinityBotSpawnRates),{dumb:.5,easy:0,normal:0,hard:0,godlike:4});
+ assert.notEqual(s.roomSetupRulesKey({...s.sent.rules,infinityRandomBots:false}),s.online.setupPending.rulesKey);
+ assert.notEqual(s.roomSetupRulesKey({...s.sent.rules,infinityBotSpawnRates:{dumb:1,godlike:4}}),s.online.setupPending.rulesKey);
+ assert.equal(s.roomSetupRulesKey({...s.sent.rules,infinityBotDifficulty:'godlike',infinityRandomDifficulty:true}),s.online.setupPending.rulesKey,'legacy tier fields do not override an explicit map');
 });
 
-test('room Infinity spawn rate survives legacy defaults, form roundtrips and preset serialization',()=>{
- const {s,$}=boot(new Map([['leqra.infinityOffline','1']]));
- const {infinityBotSpawnRate,...legacy}=s.localRoom.rules;
- assert.equal(s.validateRoomRules(legacy).infinityBotSpawnRate,2);assert.equal(s.validateRoomRules({...legacy,infinityBotSpawnRate:0}).infinityBotSpawnRate,2);
+test('room Infinity tier rates migrate old presets exactly and survive forms and serialization',()=>{
+ const {s,$,storage}=boot(new Map([['leqra.infinityOffline','1']]));
+ const {infinityBotSpawnRate,infinityBotSpawnRates,...legacy}=s.localRoom.rules;
+ assert.equal(s.validateRoomRules(legacy).infinityBotSpawnRate,2);
  for(const rate of [.5,1,2,4]){
-  const rules=s.validateRoomRules({...legacy,infinityBotSpawnRate:rate});s.fillRulesForm(rules);
-  assert.equal(Number($('rule-infinityBotSpawnRate').value),rate);s.submitRules({preventDefault(){}});
-  assert.equal(s.localRoom.rules.infinityBotSpawnRate,rate);
-  assert.equal(s.validateRoomRules(JSON.parse(JSON.stringify(s.localRoom.rules))).infinityBotSpawnRate,rate);
-  assert.notEqual(s.roomSetupRulesKey({...rules,infinityBotSpawnRate:rate===4?2:4}),s.roomSetupRulesKey(rules));
+  const r=s.validateRoomRules({...legacy,infinityBotSpawnRate:rate,infinityBotDifficulty:'hard'});assert.deepEqual(clone(r.infinityBotSpawnRates),{dumb:0,easy:0,normal:0,hard:rate,godlike:0});
  }
+ const split=s.validateRoomRules({...legacy,infinityBotSpawnRate:2,infinityBotDifficulty:'normal',infinityRandomDifficulty:true});
+ assert.deepEqual(clone(split.infinityBotSpawnRates),{dumb:2/3,easy:2/3,normal:2/3,hard:0,godlike:0});s.fillRulesForm(split);
+ assert.equal(Number($('rule-infinityBotSpawnRate-dumb').value),2/3);assert.ok($('rule-infinityBotSpawnRate-dumb').innerHTML.includes('value="'+2/3+'"'),'custom fractional migration remains selectable');
+ s.submitRules({preventDefault(){}});assert.deepEqual(clone(s.localRoom.rules.infinityBotSpawnRates),clone(split.infinityBotSpawnRates));
+ const changed={dumb:.5,easy:0,normal:2,hard:1,godlike:4};s.fillRulesForm({...split,infinityBotSpawnRates:changed});s.submitRules({preventDefault(){}});
+ const stored=JSON.parse(storage.get('leqra.roomSetup.v2'));assert.deepEqual(stored.modes.infinity.infinityBotSpawnRates,changed);
+ assert.deepEqual(clone(s.validateRoomRules({...legacy,infinityBotSpawnRates:{}}).infinityBotSpawnRates),{dumb:0,easy:0,normal:0,hard:0,godlike:0});
+ const source={normal:1},copy=s.validateRoomRules({...legacy,infinityBotSpawnRates:source});source.normal=4;assert.equal(copy.infinityBotSpawnRates.normal,1,'rule drafts own their rate map');
+ for(const invalid of [{normal:-1},{normal:4.1},{normal:Infinity},{normal:NaN},{normal:'2'},{normal:null},{unknown:1},[],1,'bad'])assert.throws(()=>s.validateRoomRules({...legacy,infinityBotSpawnRates:invalid}),/spawn rate/);
  for(const invalid of [-1,.25,3,16,Infinity,'2',null])assert.throws(()=>s.validateRoomRules({...legacy,infinityBotSpawnRate:invalid}),/spawn rate/);
 });
 

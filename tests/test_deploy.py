@@ -21,7 +21,7 @@ with open(os.environ["DEPLOY_TEST_LOG"], "a") as log:
                           "goos": os.environ.get("GOOS"),
                           "goarch": os.environ.get("GOARCH")}) + "\n")
 if name == "go":
-    if args == ["run", "../src", "-check-assets"]:
+    if args == ["run", "./src", "-check-assets"]:
         sys.exit(6 if os.environ.get("DEPLOY_TEST_ASSETS_FAIL") == "1" else 0)
     if os.environ.get("DEPLOY_TEST_GO_FAIL") == "1":
         sys.exit(7)
@@ -102,10 +102,10 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         names = [event["command"] for event in events]
         self.assertEqual(names[:2], ["go", "go"])
-        self.assertEqual(events[0]["args"], ["run", "../src", "-check-assets"])
+        self.assertEqual(events[0]["args"], ["run", "./src", "-check-assets"])
         self.assertEqual(names.count("ssh"), 2)
         self.assertEqual(names.count("useradd"), int(new_user))
-        self.assertEqual(events[0]["cwd"], str(self.deploy))
+        self.assertEqual(events[0]["cwd"], str(self.deploy.parent))
         self.assertEqual((events[1]["goos"], events[1]["goarch"]),
                          ("linux", "amd64"))
         mkdir = next(event for event in events if event["command"] == "mkdir")
@@ -136,7 +136,7 @@ class DeployTests(unittest.TestCase):
     def test_asset_check_failure_prevents_build_and_remote_commands(self):
         result, events = self.run_deploy(ASSETS_FAIL="1")
         self.assertEqual(result.returncode, 6)
-        self.assertEqual([event["args"] for event in events], [["run", "../src", "-check-assets"]])
+        self.assertEqual([event["args"] for event in events], [["run", "./src", "-check-assets"]])
 
     def test_build_failure_never_contacts_remote(self):
         result, events = self.run_deploy(GO_FAIL="1")

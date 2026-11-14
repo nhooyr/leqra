@@ -11,7 +11,7 @@ class IdentityNoticeTest {
         assertEquals("Bot Rust", PilotIdentity.label("BOT RUST", true))
         assertEquals("Bot Rust", PilotIdentity.leaderboardLabel("RUST", true))
         assertEquals(
-            "Bot 50 - Godlike · BOT",
+            "Bot 50",
             PilotIdentity.leaderboardLabel("Bot 50 - Godlike", true),
         )
         assertEquals("Godlike Bot 50", PilotIdentity.leaderboardLabel("Godlike Bot 50", false))
@@ -24,7 +24,28 @@ class IdentityNoticeTest {
         val longPublicName = "Bot 1234567890 - Godlike"
         assertTrue(longPublicName.length > 16)
         assertEquals(longPublicName, PilotIdentity.label(longPublicName, true))
-        assertEquals("$longPublicName · BOT", PilotIdentity.leaderboardLabel(longPublicName, true))
+        assertEquals("Bot 1234567890", PilotIdentity.leaderboardLabel(longPublicName, true))
+    }
+
+    @Test
+    fun standingsSeparateNumberedBotNamesFromActualDifficultyWithoutSpoofingHumans() {
+        for (level in BotDifficulty.names) {
+            val suffix = level.replaceFirstChar { it.titlecase() }
+            val name = "Bot 9182 - $suffix"
+            assertEquals(name, PilotIdentity.label(name, true))
+            assertEquals("Bot 9182", PilotIdentity.leaderboardLabel(name, true))
+            assertEquals(level, PilotIdentity.leaderboardDifficulty(name, true))
+            assertEquals("normal", PilotIdentity.leaderboardDifficulty(name, true, "normal"))
+            assertEquals(name, PilotIdentity.leaderboardLabel(name, false))
+            assertNull(PilotIdentity.leaderboardDifficulty(name, false, level))
+        }
+        assertEquals("Bot Rust", PilotIdentity.leaderboardLabel("RUST", true))
+        assertEquals("hard", PilotIdentity.leaderboardDifficulty("RUST", true, "hard"))
+        assertNull(PilotIdentity.leaderboardDifficulty("RUST", true))
+        assertNull(PilotIdentity.leaderboardDifficulty("Bot 17", true))
+        assertNull(PilotIdentity.leaderboardDifficulty("Bot 17", true, "unknown"))
+        assertEquals("normal", PilotIdentity.leaderboardDifficulty("Bot 17 - Normal", true, "unknown"))
+        assertEquals("Pilot (P2)", PilotIdentity.leaderboardLabel("Pilot", false, 2))
     }
 
     @Test

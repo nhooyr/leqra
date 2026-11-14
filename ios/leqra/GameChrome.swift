@@ -191,7 +191,7 @@ struct ArenaStandings: View {
     var preview = false
     private var selecting: Bool { session.spectating && session.isInfinity && !preview }
     private var entries: [LeaderboardEntry] {
-        if preview { return session.publicStatus?.leaders.map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team ?? 0) } ?? [] }
+        if preview { return session.publicStatus?.leaders.map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team ?? 0, difficulty: $0.difficulty) } ?? [] }
         return session.standings
     }
     var body: some View {
@@ -226,9 +226,9 @@ struct ArenaStandings: View {
         let seat = preview ? nil : session.localPilotSeat(entry.id)
         return HStack(alignment: .top, spacing: 6) {
                         Text("\(rank).")
-                        Text(CallsignPolicy.displayName(entry.name, bot: entry.bot) + (seat.map { " (P\($0))" } ?? ""))
+                        Text(entry.displayName + (seat.map { " (P\($0))" } ?? ""))
                             .fontWeight(seat != nil ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
-                        if entry.bot { Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
+                        if let difficulty = entry.difficultyLabel { Text(difficulty).font(WebStyle.mono()).foregroundStyle(WebStyle.muted).fixedSize() }
                         if selecting && entry.id == session.followingID { Image(systemName: "eye").font(.system(size: 10)).accessibilityHidden(true) }
                         Spacer(minLength: 2); Text("\(entry.score)").bold().monospacedDigit()
                     }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex)).padding(.vertical, 5).padding(.horizontal, 10)

@@ -105,3 +105,19 @@ test('taken feedback has three stable lines, reserved feedback has no misleading
  h.api.status(h.field,h.form,'The Bot prefix is reserved for bots.',true,'reserved');assert.equal(h.status.children.length,2);
  h.field.value='Bot RUST';await h.api.generate(h.field,h.form);assert.match(h.field.value,/^pilot#[A-HJ-NP-Z2-9]{6}$/);assert.equal(h.pending.length,0);
 });
+
+test('bot standings separate difficulty from numbered names while arena labels retain it',()=>{
+ const {api}=boot();
+ for(const level of ['Dumb','Easy','Normal','Hard','Godlike']){
+  const full='Bot 64 - '+level;
+  assert.equal(api.botName(full,true),full);
+  const row=api.leaderboardBot(full,true,level.toLowerCase());assert.equal(row.name,'Bot 64');assert.equal(row.difficulty,({Easy:'Chill',Hard:'Fierce'}[level]||level));
+  const legacy=api.leaderboardBot(full,true);assert.equal(legacy.name,'Bot 64');assert.equal(legacy.difficulty,({Easy:'Chill',Hard:'Fierce'}[level]||level));
+ }
+ const authoritative=api.leaderboardBot('Bot 64 - Godlike',true,' NORMAL ');assert.equal(authoritative.name,'Bot 64');assert.equal(authoritative.difficulty,'Normal');
+ const named=api.leaderboardBot('RUST',true,'hard');assert.equal(named.name,'Bot Rust');assert.equal(named.difficulty,'Fierce');
+ const unknown=api.leaderboardBot('Bot 42',true,'unknown');assert.equal(unknown.name,'Bot 42');assert.equal(unknown.difficulty,'');
+ for(const name of ['GODLIKE 7','Godlike Bot 7','Bot 7 - Normal','pilot#BDF3XZ - Normal']){
+  const human=api.leaderboardBot(name,false,'godlike');assert.equal(human.name,name);assert.equal(human.difficulty,'','human labels cannot acquire a bot badge from text or metadata');
+ }
+});

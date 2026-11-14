@@ -8,6 +8,15 @@ import org.junit.Test
 
 class RulePersistenceTest {
     @Test
+    fun tierMapsPreserveOffPartialAndFractionalPresetsExactly() {
+        for (rates in listOf(emptyMap(), mapOf("normal" to .125), mapOf("dumb" to 2.0 / 3, "easy" to 2.0 / 3, "normal" to 2.0 / 3))) {
+            val rules = RoomRules.localDefaults("infinity").copy(infinityRandomBots = true, infinityBotSpawnRates = rates)
+            val stored = GameSession.rulesJson(rules).toString()
+            assertEquals(rules, SnapshotDecoder.rules(JSONObject(stored)))
+        }
+    }
+
+    @Test
     fun allCustomRuleFieldsSurviveJsonPreferenceRoundTrip() {
         val rules =
             RoomRules.localDefaults("koth")

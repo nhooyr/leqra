@@ -20,7 +20,7 @@ function boot(){
   syncRoomModePicker(){s.syncRoomSetupPending();},syncFeatureSummary(){s.syncRoomModePicker();const editable=s.roomModeEditable();$('applyRulesBtn').disabled=!editable;$('rulesFields').disabled=!editable;},renderOnlineRoom(){s.syncFeatureSummary();},
   selectedPreset:()=>s.preset};
  vm.createContext(s);vm.runInContext(declaration('orderedRoster'),s);
- for(const name of ['defaultRoomRules','defaultModeRules','currentRules','cleanPilotName','validateRoomRules','validateTeamNames','survivalMode','roomCapacity','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validatePreset','isRoomHost','isRoomEditable','roomModeEditable','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','featureNotice','fillRulesForm','readRuleTeamSettings','submitRules','setDifficulty','canLoadPreset','applySelectedPreset','syncOnlineRoomInfinity','connectOnline'])vm.runInContext(declaration(name),s);
+ for(const name of ['defaultRoomRules','defaultModeRules','currentRules','cleanPilotName','infinityBotSpawnRates','validateRoomRules','validateTeamNames','survivalMode','roomCapacity','activeTeamCount','nextRoomTeam','balanceLocalTeams','normalizeRoomTeams','validatePreset','isRoomHost','isRoomEditable','roomModeEditable','roomSetupRulesKey','roomSetupRosterKey','finishRoomSetupRequest','syncRoomSetupPending','sendRoomSetupRequest','featureNotice','fillRulesForm','readRuleTeamSettings','submitRules','setDifficulty','canLoadPreset','applySelectedPreset','syncOnlineRoomInfinity','connectOnline'])vm.runInContext(declaration(name),s);
  s.connectOnline({type:'join',code:'TEST'},true);timers.clear();Object.assign(s.online,{connected:true,connecting:false,code:'TEST',token:'secret'});s.phase='onlineLobby';
  const players=[{id:0,member:51,kind:'bot',name:'OLD BOT',difficulty:'normal',team:0},{id:3,member:50,kind:'human',name:'HOST',team:0}];
  s.online.roomData={type:'room',code:'TEST',host:3,phase:'lobby',players,spectators:[],rules:s.defaultRoomRules()};s.localRoom.rules=s.defaultRoomRules();
@@ -107,7 +107,7 @@ test('saved room rules and presets migrate the retired Scope pickup to Laser',()
  for(const [weapons,expected] of [[['scope'],['laser']],[['shield','laser','scope'],['shield','laser']],[[],[]]]){
   const rules={...s.defaultRoomRules(),weapons,mapSize:'giant',scoreTarget:7};
   const migrated=clone(s.validateRoomRules(rules));
-  assert.deepEqual(migrated,clone({...rules,weapons:expected}));
+  assert.deepEqual(migrated,clone({...rules,weapons:expected,infinityBotSpawnRates:{dumb:0,easy:0,normal:2,hard:0,godlike:0}}));
   assert.deepEqual(clone(s.validatePreset({rules,roster})).rules,migrated);
   assert.equal(rules.weapons,weapons);
  }

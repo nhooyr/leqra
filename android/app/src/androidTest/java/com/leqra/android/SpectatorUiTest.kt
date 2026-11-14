@@ -132,10 +132,12 @@ class SpectatorUiTest {
                     }
                 assertEquals(24, rows.size)
                 assertTrue(rows.all { it.isClickable })
-                val last = rows.last() as TextView
-                assertTrue(last.text.toString().contains("Bot 1234567890 - Godlike"))
-                assertTrue(last.text.toString().contains("FOLLOWING"))
-                assertNull(last.ellipsize)
+                val last = descendants(rows.last()).filterIsInstance<TextView>()
+                assertTrue(last.any { it.text.toString().contains("Bot 1234567890") })
+                assertTrue(last.any { it.text.toString() == "GODLIKE" })
+                assertFalse(last.any { it.text.toString().contains(" - Godlike") || it.text.toString() == "BOT" })
+                assertTrue(last.any { it.text.toString() == "FOLLOWING" })
+                assertTrue(last.all { it.ellipsize == null })
                 scroll.scrollTo(0, scroll.getChildAt(0).height)
                 oldPosition = scroll.scrollY
                 assertTrue(oldPosition > 0)
@@ -258,10 +260,11 @@ class SpectatorUiTest {
                             it.contentDescription?.startsWith("Follow ") == true
                         }
                     assertEquals(viewer.snapshot.leaderboard.size, rows.size)
-                    assertTrue(rows.any { (it as TextView).text.contains("Bot ") })
+                    val textViews = rows.flatMap { descendants(it).filterIsInstance<TextView>() }
+                    assertTrue(textViews.any { it.text.contains("Bot ") })
                     assertTrue(
-                        rows.all {
-                            (it as TextView).textSize / it.resources.displayMetrics.scaledDensity >=
+                        textViews.all {
+                            it.textSize / it.resources.displayMetrics.scaledDensity >=
                                 10f
                         }
                     )

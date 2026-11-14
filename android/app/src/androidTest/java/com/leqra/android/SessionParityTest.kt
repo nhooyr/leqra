@@ -24,6 +24,56 @@ class SessionParityTest {
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
     @Test
+    fun targetedOfflineInfinityNeedsAnOpponentWhenEveryRoamingTierIsOff() {
+        val context = context()
+        context.getSharedPreferences("leqra-settings", 0).edit().putString("server", "http://127.0.0.1:1").putString("callsign", "Rate Pilot").putBoolean("autoPending0", false).putBoolean("publicSelected", false).commit()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                session.botCount = 0; session.localSelected = false
+                session.changeRules(RoomRules.localDefaults("infinity").copy(infinityTarget = 3, infinityRandomBots = true, infinityBotSpawnRates = emptyMap()))
+                val errors = mutableListOf<String>(); session.notifyError = { errors.add(it) }
+                assertNotNull(session.localStartError)
+                session.play(); assertEquals(Screen.READY, session.screen)
+                assertEquals(1, errors.size)
+                session.botCount = 1
+                assertNull(session.localStartError)
+                session.play(); assertEquals(Screen.PLAYING, session.screen)
+            }
+        } finally { main { session.leave(); session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun roomTierMapsPublishAndAcknowledgeExactRatesAndAllOffReadiness() {
+        val server = InstrumentationRegistry.getArguments().getString("server")
+        assumeTrue("A disposable current Go backend is required", server != null)
+        val context = context()
+        context.getSharedPreferences("leqra-settings", 0).edit().putString("server", server).putString("callsign", "rates-${UUID.randomUUID().toString().take(8)}").putBoolean("autoPending0", false).putBoolean("publicSelected", false).commit()
+        val session = main { GameSession(context) }
+        val configured = mapOf("dumb" to 2.0 / 3, "normal" to 1.5, "godlike" to 4.0)
+        try {
+            main {
+                session.botCount = 0; session.localSelected = false
+                session.changeRules(RoomRules.localDefaults("infinity").copy(infinityRandomBots = true, infinityBotSpawnRates = configured))
+                session.share()
+            }
+            eventually("Per-tier room did not publish") { session.network.connected && session.room != null }
+            main { assertEquals(configured.withDefault { 0.0 }.let { r -> BotDifficulty.names.associateWith { r.getValue(it) } }, com.leqra.android.network.ProtocolJson.roomRules(session.room!!.getJSONObject("rules")).roamingBotSpawnRates()) }
+            main { session.changeRules(session.rules.copy(infinityTarget = 3, infinityBotSpawnRates = emptyMap())) }
+            eventually("All-Off target room still allowed a single-side start") {
+                val room = session.room
+                room != null && room.getJSONObject("rules").optInt("infinityTarget") == 3 &&
+                    com.leqra.android.network.ProtocolJson.roomRules(room.getJSONObject("rules")).roamingBotSpawnRates().values.all { it == 0.0 } && !room.optBoolean("canStart")
+            }
+            main {
+                assertEquals("Add an opposing tank or enable a roaming bot spawn rate to play to a score target.", session.room!!.optString("startError"))
+                session.command("add", "kind" to "bot", "name" to "Rate Bot", "difficulty" to "hard")
+            }
+            eventually("An authored opposing bot did not make the target room playable") { session.room?.optBoolean("canStart") == true }
+        } finally { main { session.leave(); session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
     fun pausedResultOverlayFinishesOnlyTheProjectilePresentation() {
         val context = context()
         val session = main { GameSession(context) }

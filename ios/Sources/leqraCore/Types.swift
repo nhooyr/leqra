@@ -473,6 +473,12 @@ public struct LeaderboardEntry: Codable, Equatable, Sendable, Identifiable {
     public var colorIndex: Int = 0
     public var bot: Bool = false
     public var team: Int = 0
+    public var difficulty: String?
+
+    public var displayName: String { CallsignPolicy.leaderboardName(name, bot: bot) }
+    public var difficultyLabel: String? {
+        CallsignPolicy.leaderboardDifficulty(name, bot: bot, difficulty: difficulty).flatMap(BotDifficulty.init(rawValue:))?.displayName.uppercased()
+    }
 
     public init(
         id: Int = 0,
@@ -480,7 +486,8 @@ public struct LeaderboardEntry: Codable, Equatable, Sendable, Identifiable {
         score: Int = 0,
         colorIndex: Int = 0,
         bot: Bool = false,
-        team: Int = 0
+        team: Int = 0,
+        difficulty: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -488,10 +495,11 @@ public struct LeaderboardEntry: Codable, Equatable, Sendable, Identifiable {
         self.colorIndex = colorIndex
         self.bot = bot
         self.team = team
+        self.difficulty = difficulty
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, score, colorIndex, bot, team
+        case id, name, score, colorIndex, bot, team, difficulty
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -501,6 +509,7 @@ public struct LeaderboardEntry: Codable, Equatable, Sendable, Identifiable {
         colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
         bot = try c.decodeIfPresent(Bool.self, forKey: .bot) ?? false
         team = try c.decodeIfPresent(Int.self, forKey: .team) ?? 0
+        difficulty = try c.decodeIfPresent(String.self, forKey: .difficulty)
     }
 }
 

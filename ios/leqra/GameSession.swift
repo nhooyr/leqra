@@ -736,6 +736,7 @@ final class GameSession: ObservableObject {
 
     func startLocal() {
         guard validPlayerCallsign(cleanName, seat: 0) else { return }
+        guard localInfinityStartError.isEmpty else { status = localInfinityStartError; return }
         let rules = localRules
         leave()
         let seed = UInt32.random(in: 1...UInt32.max)
@@ -756,6 +757,13 @@ final class GameSession: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = true
         scene.display(snapshot: lastSnapshot, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
         syncHUD(lastSnapshot); applyAudioSetting()
+    }
+
+    var localInfinityStartError: String {
+        let roster = [NativeSeatSpec(kind: "human", name: cleanName, team: localTeam)] + localBots.map {
+            NativeSeatSpec(kind: "bot", name: $0.name, difficulty: $0.difficulty, team: $0.team, colorIndex: $0.colorIndex)
+        }
+        return localRules.infinityStartError(roster: roster)
     }
 
     func restartMatch(wave: Bool = false) {

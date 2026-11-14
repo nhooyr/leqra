@@ -147,6 +147,7 @@ object ProtocolJson {
             colorIndex = json.optInt("colorIndex", 0),
             bot = json.optBoolean("bot", false),
             team = json.optInt("team", 0),
+            difficulty = json.optString("difficulty", ""),
         )
 
     fun arenaWorld(json: JSONObject) =
@@ -212,6 +213,7 @@ object ProtocolJson {
             infinityBotDifficulty = json.optString("infinityBotDifficulty", "normal"),
             infinityRandomDifficulty = json.optBoolean("infinityRandomDifficulty", false),
             infinityBotSpawnRate = json.number("infinityBotSpawnRate", 2.0),
+            infinityBotSpawnRates = roamingSpawnRates(json),
             teamMode = json.optString("teamMode", "ffa"),
             mapSize = json.optString("mapSize", "large"),
             portraitMaze = json.optBoolean("portraitMaze", false),
@@ -249,6 +251,7 @@ object ProtocolJson {
             put("infinityBotDifficulty", rules.infinityBotDifficulty)
             put("infinityRandomDifficulty", rules.infinityRandomDifficulty)
             put("infinityBotSpawnRate", rules.infinityBotSpawnRate)
+            rules.infinityBotSpawnRates?.let { put("infinityBotSpawnRates", JSONObject(it)) }
             put("teamMode", rules.teamMode)
             put("mapSize", rules.mapSize)
             put("portraitMaze", rules.portraitMaze)
@@ -261,6 +264,15 @@ object ProtocolJson {
             put("teamNames", JSONArray(rules.teamNames))
             put("teamColors", JSONArray(rules.teamColors))
         }
+
+    private fun roamingSpawnRates(json: JSONObject): Map<String, Double>? {
+        if (json.isNull("infinityBotSpawnRates")) return null
+        val rates = json.getJSONObject("infinityBotSpawnRates")
+        return rates.keys().asSequence().associateWith { level ->
+            require(level in BotDifficulty.names && !rates.isNull(level)) { "Invalid roaming bot rate." }
+            rates.number(level).also { require(it in 0.0..4.0) { "Invalid roaming bot rate." } }
+        }
+    }
 }
 
 internal fun JSONObject.number(key: String, fallback: Double = 0.0): Double {

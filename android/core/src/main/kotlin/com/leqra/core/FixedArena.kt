@@ -206,7 +206,7 @@ class FixedArena(
                     .filter { !it.survivalEnemy }
                     .sortedWith(compareByDescending<ArenaTank> { it.score }.thenBy { it.id })
                     .map {
-                        LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team)
+                        LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team, it.difficulty)
                     },
             teamScores =
                 (1..4).map { team ->
