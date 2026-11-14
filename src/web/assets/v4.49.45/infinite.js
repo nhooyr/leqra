@@ -45,7 +45,7 @@ const PROJECTILES = Object.freeze({
  laser: {r: 3, cooldown: .85},
 });
 const TAU = Math.PI * 2;
-const MAX_BOTS = 24, BOTS_PER_PLAYER = 8;
+const MAX_BOTS = 128, BOTS_PER_PLAYER = 16;
 const RECONNECT_WINDOW = 18000, SNAPSHOT_TIMEOUT = 2500;
 const PING_INTERVAL = 1000, PING_TIMEOUT = 6000;
 const ROOM_RESUME_KEY = 'leqra.infinityResume.v1';
@@ -330,7 +330,8 @@ function tankHit(world, bullet, dx, dy, limit) {
 }
 
 function effect(world, kind, x, y, owner, points) {
- presentEffect(world, {kind, x, y, owner, points}, performance.now());
+ const present=()=>presentEffect(world,{kind,x,y,owner,points},performance.now());
+ if(world.impactFlight!==undefined&&world.flights?.pending(world.impactFlight))world.flights.defer(world.impactFlight,present);else present();
 }
 
 function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false,ownerColor='') {
@@ -362,6 +363,8 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
 }
 
 function detonate(world, bullet) {
+ world.flights?.terminal(bullet,world.time/STEP,Math.max(0,COLORS.indexOf(bullet.color)),performance.now());
+ const previousFlight=world.impactFlight;world.impactFlight=bullet.id;
  bullet.dead = true;
  effect(world, 'blast', bullet.x, bullet.y, bullet.owner);
  for (const tank of world.tanks) {
@@ -369,6 +372,7 @@ function detonate(world, bullet) {
   if (tank.hp && tank.id !== bullet.owner && Math.hypot(dx, dy) <= BLAST_RADIUS + RADIUS &&
       !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'');
  }
+ world.impactFlight=previousFlight;
 }
 
 function weaponControl(world, tank, held, pressed) {
@@ -468,6 +472,7 @@ function fireShot(world, tank) {
    ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, x: launch.x, y: launch.y, color: COLORS[tank.colorIndex] || COLORS[0],
    vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: launch.bounced?1:0, seekDelay: launch.bounced?.04:0, target: null, trail: [],
   };
+  (world.flights||=new net.ProjectileFlights()).begin(bullet,world.time/STEP);
   if (advanceBullet(world, bullet, launch.muzzle / spec.speed)) world.bullets.push(bullet);
  }
  art.recycleStarmanProjectiles(world.bullets, tank.id, boosted);
@@ -486,11 +491,14 @@ function advanceBullet(world, bullet, remaining) {
   if (hit.tank) {
    bullet.x += dx * hit.fraction;
    bullet.y += dy * hit.fraction;
+   world.flights?.terminal(bullet,world.time/STEP,Math.max(0,COLORS.indexOf(bullet.color)),performance.now());
+   const previousFlight=world.impactFlight;world.impactFlight=bullet.id;
    if (bullet.kind === 'grenade') detonate(world, bullet);
    else {
     if (bullet.kind === 'cannon' || bullet.kind === 'homing') effect(world, 'impact', bullet.x, bullet.y, bullet.owner);
     hurt(world, hit.tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'');
    }
+   world.impactFlight=previousFlight;
    return false;
   }
   if (!wall) {
@@ -503,8 +511,10 @@ function advanceBullet(world, bullet, remaining) {
    if (bullet.kind === 'grenade') detonate(world, bullet);
    return false;
   }
-  bullet.x += dx * wall.fraction + wall.nx * .12;
-  bullet.y += dy * wall.fraction + wall.ny * .12;
+  bullet.x += dx * wall.fraction;
+  bullet.y += dy * wall.fraction;
+  world.flights?.vertex(bullet,world.time/STEP);
+  bullet.x += wall.nx * .12;bullet.y += wall.ny * .12;
   if (wall.nx) bullet.vx *= -1;
   if (wall.ny) bullet.vy *= -1;
   bullet.target = null;
@@ -674,35 +684,37 @@ function populateBots(world, locals) {
   });
   world.botBudget = limit;
  }
- if (world.time < world.nextBot) return;
- world.nextBot = world.time + between(1.2, 3.4);
  const living = locals.filter(tank => tank.hp);
+ for(let i=world.tanks.length-1;i>=0;i--){
+  const bot=world.tanks[i];
+  if(!bot.ambient||locals.some(pilot=>Math.abs(pilot.x-bot.x)<=CELL*16&&Math.abs(pilot.y-bot.y)<=CELL*16))continue;
+  bot.pooledAt=world.time;bot.retired=true;world.botPool.push(bot);world.tanks.splice(i,1);
+ }
+ if (world.time < world.nextBot) return;
+ world.nextBot = world.time + between(1,2)/(world.rules?.infinityBotSpawnRate||2);
  if (!living.length) return;
  const roaming = world.tanks.filter(tank => tank.ambient);
- for (const bot of roaming) {
-  if (!bot.hp || locals.some(pilot => Math.abs(pilot.x-bot.x) <= CELL*16 && Math.abs(pilot.y-bot.y) <= CELL*16)) continue;
-  const pilot = living[Math.floor(Math.random()*living.length)];
-  const point = clearCell(world, pilot, 3 * CELL, 6 * CELL, 1.9 * CELL);
-  if (point) respawnOfflineTank(world,bot,point);
+ const counts=living.map(()=>0);
+ for(const bot of roaming){let nearest=0,best=Infinity;for(let i=0;i<living.length;i++){const d=Math.hypot(bot.x-living[i].x,bot.y-living[i].y);if(d<best){best=d;nearest=i;}}counts[nearest]++;}
+ for(let spawn=0;spawn<living.length&&roaming.length<limit;spawn++){
+  let index=0;for(let i=1;i<counts.length;i++)if(counts[i]<counts[index])index=i;
+  if(counts[index]>=BOTS_PER_PLAYER)break;
+  const point=clearCell(world,living[index],3*CELL,6*CELL,1.9*CELL);
+  if(!point){counts[index]=BOTS_PER_PLAYER;continue;}
+  counts[index]++;
+  let bot=world.botPool.shift();
+  if(bot){
+   if(bot.hp||bot.retired)respawnOfflineTank(world,bot,point);
+   else bot.respawn=Math.max(0,bot.respawn-(world.time-bot.pooledAt));
+   delete bot.pooledAt;delete bot.retired;
+  }else{
+   let number=1;while(roaming.some(bot=>bot.botNumber===number))number++;
+   bot=makeTank('bot-'+ ++world.lastBot,point.x,point.y,true);
+   Object.assign(bot,{ambient:true,botNumber:number,name:'Bot '+number,difficulty:roamingDifficulty(world.rules)});
+   applyTankAppearance(world,bot);
+  }
+  world.tanks.push(bot);roaming.push(bot);
  }
- if (roaming.length >= limit) return;
- const pilot = living[roaming.length % living.length];
- const point = clearCell(world, pilot, 3 * CELL, 6 * CELL, 1.9 * CELL);
- if (!point) return;
- const pooled = world.botPool.shift();
- if (pooled) {
-  if (pooled.hp) respawnOfflineTank(world,pooled,point);
-  else pooled.respawn = Math.max(0,pooled.respawn-(world.time-pooled.pooledAt));
-  delete pooled.pooledAt;
-  world.tanks.push(pooled);
-  return;
- }
- let number = 1;
- while (roaming.some(bot => bot.botNumber === number)) number++;
- const bot = makeTank('bot-' + ++world.lastBot,point.x,point.y,true);
- Object.assign(bot,{ambient:true,botNumber:number,name:'Bot '+number,difficulty:roamingDifficulty(world.rules)});
- applyTankAppearance(world,bot);
- world.tanks.push(bot);
 }
 
 function offlineStep(world, dt) {
@@ -744,7 +756,7 @@ function offlineStep(world, dt) {
   const controls = tank.bot ? botInput(world,tank,locals) : inputState(tank.id === world.local?.id ? world.local : world);
   if (tank.bot && tank.fireBlocked) controls.fire = false;
   (world.movementInputs ||= new Map()).set(tank.id,controls);
-  net.move(tank, controls, dt, world.moveTank);
+  net.move(tank, controls, dt, world.moveTank,false);
   for (const pickup of world.pickups) {
    if (pickup.life <= 0 || Math.hypot(pickup.x - tank.x, pickup.y - tank.y) >= RADIUS + 13) continue;
    pickup.life = 0;
@@ -1047,6 +1059,8 @@ function presentEffect(world, effect, now) {
 
 function drawEffects(world, now) {
  for (const effect of world.visualEffects) {
+  if(effect.flight&&world.flights?.pending(effect.flight.id)){effect.waitingFlight=true;continue;}
+  if(effect.waitingFlight){effect.end=now+430;delete effect.waitingFlight;}
   if (effect.kind === 'laser') {
    if (effect.points) {
     const alpha = clamp((effect.end - now) / 180, 0, 1);
@@ -1273,6 +1287,7 @@ function draw(world, now, dt) {
   else ctx.fillRect(0,top-1,width,2);
  }
  updateHUD(world,world.display,world.local?.display,now);
+ for(let i=0;i<(world.pendingImpacts?.length||0);){const event=world.pendingImpacts[i];if(world.flights?.pending(event.flight.id)){i++;continue;}world.pendingImpacts.splice(i,1);presentEffect(world,event,now);}
 }
 
 function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
@@ -1311,7 +1326,10 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
  }
  const bullets = world.visibleBullets;
  bullets.length = 0;
- for (const bullet of world.bullets) {
+ const frame=world.online&&world.remoteFrame;
+ const presentedBullets=frame?(frame.alpha===1?frame.b:frame.a).bullets:world.bullets;
+ for (const bullet of presentedBullets) {
+  if(world.online&&world.flights?.controls(bullet.id))continue;
   if (!visible(bullet)) continue;
   if(world.online){const displayed=onlineBulletPose(world,bullet,world.remoteFrame);if(displayed!==undefined){if(displayed)bullets.push({...displayed,trail:displayed.kind==='rapid'?noTrail:displayed.trail||null});continue;}}
   const previous = world.online && world.previousBullets.get(bullet.id);
@@ -1322,6 +1340,10 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
     trail: kind === 'rapid' ? noTrail : bullet.trail || [previous, bullet]});
   } else bullets.push(!world.online&&!world.result&&!pauseMenu.open?offlineBulletPose(world,bullet,accumulator):bullet);
  }
+ world.flights?.observe(bullets);
+ const flightTick=frame?frame.time/net.STEP_MS:world.online?(world.motionBuffer?.items.at(-1)?.tick??0):world.time/STEP;
+ for(const item of world.flights?.sample(flightTick,now)||[])if(visible(item))bullets.push({...item,color:COLORS[item.colorIndex]});
+ world.flights?.flush();
  art.bullets(bullets, ctx, now / 1000);
  if (!world.spectating && !world.result && !world.failed && !pauseMenu.open) {
   art.drawHomingWarnings(ctx,pilot,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
@@ -1385,7 +1407,7 @@ function showResult(world, now) {
   world.resultAt = now + (localDeath ? RESULT_NOTICE_MS : 0);
   world.nextHUD = 0;
  }
- if (now < world.resultAt) return;
+ if (now < world.resultAt || world.flights?.items.size) return;
  const winner=resultIdentity(world);
  byID('infiniteResultTitle').textContent = winner.label + ' wins';
  byID('infiniteResultTitle').style.color=winner.color;
@@ -1582,7 +1604,8 @@ function receive(ws, event) {
  acceptGodlikeSpawns(session,message,now);
  session.bullets = message.bullets.map(bullet => ({...bullet, trail: bullet.trail || null,
   color: COLORS[bullet.colorIndex] || COLORS[0], r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
- if(followChanged){session.viewFollowing=message.following;session.previousTanks.clear();session.previousBullets.clear();session.motionBuffer?.reset();session.visualEffects=[];session.bulletPaths?.clear();}
+ if(followChanged){session.viewFollowing=message.following;session.previousTanks.clear();session.previousBullets.clear();session.motionBuffer?.reset();session.visualEffects=[];session.pendingImpacts=[];session.bulletPaths?.clear();session.flights?.reset();}
+ (session.flights||=new net.ProjectileFlights()).accept(message.effects,now,!joined||resumed||followChanged,message.tick);
  if(Number.isSafeInteger(message.tick)){
   session.motionBuffer ||= new net.SnapshotBuffer({delay:1000/30,minimumDelay:1000/30,maximumDelay:90,intervals:1});
   if(!joined)session.motionBuffer.reset();
@@ -1613,7 +1636,7 @@ function receive(ws, event) {
  for (const event of Array.isArray(message.effects) ? message.effects : []) {
   if (!event || typeof event.kind !== 'string' || !Number.isInteger(event.id) || event.id <= session.lastEffect) continue;
   session.lastEffect = event.id;
-  if (!resumed) presentEffect(session, event, now);
+  if(joined&&!resumed){if(event.flight&&session.flights?.pending(event.flight.id)){(session.pendingImpacts||=[]).push(event);if(session.pendingImpacts.length>128)session.pendingImpacts.shift();}else presentEffect(session,event,now);}
  }
  if (resumed) resetControls();
  session.joined = true;
@@ -1646,6 +1669,7 @@ function connect() {
  world.latency = world.pendingPing = null;
  world.nextPing = performance.now();
  world.visualEffects = [];
+ world.flights?.reset();world.pendingImpacts=[];
  if (!world.resumeGeneration) {
   world.maze = null;
   world.tanks = [];
@@ -1819,7 +1843,7 @@ function start(mode, options = {}) {
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,latency:null,pendingPing:null,nextPing:0,latencyAt:0,
   rules:options.public?null:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
-  time:0,nextBot:between(.4,1.2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,botPool:[],botBudget:0,
+  time:0,nextBot:between(1,2)/(options.roomRules?.infinityBotSpawnRate||2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,botPool:[],botBudget:0,
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
  const world = session;

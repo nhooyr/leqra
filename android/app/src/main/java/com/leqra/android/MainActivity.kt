@@ -65,6 +65,7 @@ internal object RuleEditorLimits {
             }
             if (infinityBotDifficulty !in BotDifficulty.names)
                 infinityBotDifficulty = "normal"
+            if (infinityBotSpawnRate !in listOf(.5, 1.0, 2.0, 4.0)) infinityBotSpawnRate = 2.0
         }
 }
 
@@ -467,7 +468,7 @@ class MainActivity : Activity() {
             else {
                 val resultKey =
                     "${session.snapshot.generation}:${session.snapshot.round}:${session.snapshot.winner}:${session.snapshot.result}:${session.snapshot.scores}"
-                if (dialog == null && lastResultKey != resultKey) {
+                if (dialog == null && lastResultKey != resultKey && !session.finishingProjectilePresentation) {
                     lastResultKey = resultKey
                     showResult()
                 }
@@ -1654,12 +1655,12 @@ class MainActivity : Activity() {
             current: String,
             enabled: Boolean = true,
             set: (String) -> Unit,
-        ) {
+        ): View {
             panel.add(label(this, title, 10f, muted, mono = true))
-            panel.add(
-                choice(values, values.indexOf(current).coerceAtLeast(0)) { set(values[it]) }
-                    .apply { isEnabled = enabled },
-            )
+            val options = choice(values, values.indexOf(current).coerceAtLeast(0)) { set(values[it]) }
+                .apply { isEnabled = enabled }
+            panel.add(options)
+            return options
         }
         select(
             "MAP SIZE",
@@ -1761,18 +1762,26 @@ class MainActivity : Activity() {
             ) {
                 draft.infinityTarget = it
             }
+            val roamingControls = ArrayList<View>()
+            fun enableRoaming(view: View, enabled: Boolean) {
+                view.isEnabled = enabled
+                if (view is ViewGroup) for (i in 0 until view.childCount) enableRoaming(view.getChildAt(i), enabled)
+            }
+            fun syncRoaming() {
+                roamingControls.forEach { enableRoaming(it, draft.infinityRandomBots); it.alpha = if (draft.infinityRandomBots) 1f else .45f }
+            }
             panel.add(
                 CheckBox(this).apply {
                     text = "Fill Infinity with random bots"
                     textSize = 13f
                     setTextColor(NativeStyle.text)
                     isChecked = draft.infinityRandomBots
-                    setOnCheckedChangeListener { _, v -> draft.infinityRandomBots = v }
+                    setOnCheckedChangeListener { _, v -> draft.infinityRandomBots = v; syncRoaming() }
                 },
             )
             val difficultyValues = BotDifficulty.names
             val difficultyTitles = listOf("Dumb", "Chill", "Normal", "Fierce", "Godlike")
-            select(
+            roamingControls += select(
                 "ROAMING BOT DIFFICULTY",
                 difficultyTitles,
                 difficultyTitles[
@@ -1780,15 +1789,22 @@ class MainActivity : Activity() {
             ) {
                 draft.infinityBotDifficulty = difficultyValues[difficultyTitles.indexOf(it)]
             }
-            panel.add(
-                CheckBox(this).apply {
+            val randomDifficulty = CheckBox(this).apply {
                     text = "Random bot difficulty"
                     textSize = 13f
                     setTextColor(NativeStyle.text)
                     isChecked = draft.infinityRandomDifficulty
                     setOnCheckedChangeListener { _, v -> draft.infinityRandomDifficulty = v }
-                },
-            )
+                }
+            panel.add(randomDifficulty)
+            roamingControls += randomDifficulty
+            val rates = listOf(.5, 1.0, 2.0, 4.0)
+            val rateLabels = listOf("0.5×", "1×", "2×", "4×")
+            roamingControls += select("ROAMING BOT SPAWN RATE", rateLabels, rateLabels[rates.indexOf(draft.infinityBotSpawnRate)]) {
+                draft.infinityBotSpawnRate = rates[rateLabels.indexOf(it)]
+            }
+            panel.add(label(this, "16 roaming bots per player, up to 128 in a room.", 11f, muted))
+            syncRoaming()
         }
         panel.add(label(this, "POWER-UPS", 10f, muted, mono = true))
         listOf(
@@ -2543,7 +2559,7 @@ class MainActivity : Activity() {
                         setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                     }
             setSelection(selected, false)
-            var initialized = false
+            var previousSelection = selected
             onItemSelectedListener =
                 object : AdapterView.OnItemSelectedListener {
                     override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -2554,8 +2570,10 @@ class MainActivity : Activity() {
                         position: Int,
                         id: Long,
                     ) {
-                        if (initialized && position != selected) onSelect(position)
-                        initialized = true
+                        if (position != previousSelection) {
+                            previousSelection = position
+                            onSelect(position)
+                        }
                     }
                 }
         }

@@ -21,9 +21,11 @@ public final class RenderTimeline {
     private var correctionVelocity = (x: 0.0, y: 0.0, angle: 0.0)
     private var lastInput = GameInput()
     private let motionPresenter = TankMotionPresenter()
+    private let cannonFlights = CannonFlightPresenter()
     private var latest: ArenaSnapshot?
     private var sequence: UInt64 = 0
     private var lastArrival = 0.0
+    private var renderNow = 0.0
     private struct PathCheck { var first: UInt64; var second: UInt64; var clear: Bool }
     private var pathChecks: [Int: PathCheck] = [:]
     private var indexedPair: (UInt64, UInt64)?
@@ -35,8 +37,6 @@ public final class RenderTimeline {
     private var checkedRicochets = Set<Int>()
     private var projectileMaze: InfiniteMaze?
     private var projectileWorld: ArenaWorld?
-    private var indexedLatest: UInt64?
-    private var liveBullets: [Int: ArenaBullet] = [:]
     private struct CurveContext: Equatable {
         var first: UInt64; var second: UInt64; var previous: UInt64?; var following: UInt64?
     }
@@ -49,6 +49,7 @@ public final class RenderTimeline {
     private var followingTanks: [Int: ArenaTank] = [:]
     private var tankCurves: [Int: TankCurve] = [:]
     public private(set) var stale = false
+    public var hasPendingProjectileFlights: Bool { cannonFlights.hasPending }
     var bufferedAcknowledgementCount: Int { sent.count }
 
     public init(localID: Int, initialSequence: UInt64 = 0, maze: InfiniteMaze? = nil, move: @escaping Move) {
@@ -65,18 +66,19 @@ public final class RenderTimeline {
     }
 
     public func accept(_ snapshot: ArenaSnapshot, at now: Double) {
+        var baselineFlights = latest == nil
         let recovering = latest != nil && (stale || now - lastArrival > 2.5)
         if let previous = latest {
             if snapshot.generation < previous.generation { return }
             if snapshot.generation == previous.generation, snapshot.tick < previous.tick { return }
             let changedView = snapshot.spectating && previous.spectating && snapshot.following != previous.following
             if previous.generation != snapshot.generation || changedView {
+                baselineFlights = true; cannonFlights.reset()
                 samples.removeAll(); resetPrediction(nil); clock = nil; playbackRate = 1
                 pathChecks.removeAll()
-                indexedPair = nil; indexedLatest = nil
+                indexedPair = nil
                 oldTanks.removeAll(keepingCapacity: true); newTanks.removeAll(keepingCapacity: true)
                 oldBullets.removeAll(keepingCapacity: true); newBullets.removeAll(keepingCapacity: true)
-                liveBullets.removeAll(keepingCapacity: true)
                 ricochetPaths.removeAll(keepingCapacity: true); checkedRicochets.removeAll(keepingCapacity: true)
                 projectileMaze = nil; projectileWorld = nil
                 curveContext = nil; tankCurves.removeAll(keepingCapacity: true)
@@ -85,8 +87,10 @@ public final class RenderTimeline {
         }
         latest = snapshot
         if recovering {
+            baselineFlights = true; cannonFlights.reset()
             samples.removeAll(); clock = nil; playbackRate = 1
         }
+        cannonFlights.accept(snapshot.effects, baseline: baselineFlights, throughTick: Double(snapshot.tick))
         let liveTankIDs = Set(snapshot.tanks.map(\.id))
         pathChecks = pathChecks.filter { liveTankIDs.contains($0.key) }
         lastArrival = now
@@ -100,7 +104,7 @@ public final class RenderTimeline {
         }
         guard !recovering else { resetPrediction(tank); return }
         guard let old = predicted, old.hp == tank.hp, old.spawnSerial == tank.spawnSerial,
-              snapshot.phase == "playing" else { resetPrediction(tank); return }
+              snapshot.phase == "playing", snapshot.result == nil else { resetPrediction(tank); return }
         let processed = sent[tank.ack].map { $0 + max(1, Int(tank.ackSteps)) - 1 } ?? (tank.ack == 0 ? 0 : step)
         let historyComplete = processed >= (frames.first?.step ?? step + 1) - 1
         if historyComplete, tank.hp > 0 {
@@ -147,11 +151,12 @@ public final class RenderTimeline {
     public func render(dt: Double, input: GameInput, now: Double,
                        send: (GameInput) -> Void) -> ArenaSnapshot? {
         guard let latest else { return nil }
+        renderNow = now
         let elapsed = max(0, min(0.1, dt))
         stale = now - lastArrival > 2.5
         if stale { clearCorrection(); motionPresenter.reset() }
         accumulator += elapsed
-        var controls = stale ? GameInput() : input
+        var controls = stale || latest.result != nil ? GameInput() : input
         lastInput = controls
         while accumulator + 1e-9 >= 1 / 60 {
             accumulator = max(0, accumulator - 1 / 60)
@@ -162,7 +167,7 @@ public final class RenderTimeline {
                 rememberSent(at: step)
                 send(controls)
             }
-            if var tank = predicted, tank.hp > 0, latest.phase == "playing", !stale {
+            if var tank = predicted, tank.hp > 0, latest.phase == "playing", latest.result == nil, !stale {
                 let wasPhasing = tank.ghostTime > 0
                 move(&tank, controls, 1 / 60)
                 if wasPhasing != (tank.ghostTime > 0) { clearCorrection(); motionPresenter.reset() }
@@ -174,7 +179,7 @@ public final class RenderTimeline {
         advanceCorrection(dt: elapsed)
         var result = interpolated(dt: elapsed)
         if var tank = predicted {
-            if tank.hp > 0, latest.phase == "playing", !stale {
+            if tank.hp > 0, latest.phase == "playing", latest.result == nil, !stale {
                 tank = motionPresenter.present(tank: tank, input: controls, tick: UInt64(step),
                     generation: latest.generation, fraction: accumulator * 60,
                     move: move, canInterpolate: { first, second in
@@ -182,7 +187,7 @@ public final class RenderTimeline {
                             && (first.ghostTime > 0 || self.movementPathClear(from: first, to: second, world: latest.world))
                     })
             }
-            if tank.hp > 0, latest.phase == "playing", !stale {
+            if tank.hp > 0, latest.phase == "playing", latest.result == nil, !stale {
                 if correction.x != 0 || correction.y != 0 {
                     var corrected = tank
                     corrected.x += correction.x; corrected.y += correction.y
@@ -298,10 +303,6 @@ public final class RenderTimeline {
             indexedPair = (a.state.tick, b.state.tick)
             ricochetPaths.removeAll(keepingCapacity: true); checkedRicochets.removeAll(keepingCapacity: true)
         }
-        if indexedLatest != newest.state.tick {
-            liveBullets = Dictionary(newest.state.bullets.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-            indexedLatest = newest.state.tick
-        }
         let context = CurveContext(first: a.state.tick, second: b.state.tick,
                                    previous: preceding?.state.tick, following: following?.state.tick)
         if curveContext != context {
@@ -364,22 +365,21 @@ public final class RenderTimeline {
             }
             return tank
         }
-        // New bullets enter at the same delayed timestamp as existing ones.
-        // Showing them at newest-time and later moving them onto this timeline
-        // makes every fresh shot jump backwards after the buffer fills.
+        // Birth and despawn use the same presentation clock. Filtering this
+        // delayed sample through newest-state membership erases a projectile
+        // that hit before the playhead reaches its birth, even a visible kill.
         let visibleBullets = alpha < 1 ? a.state.bullets : b.state.bullets
         result.bullets = visibleBullets.compactMap { visible in
-            guard let current = liveBullets[visible.id] else { return nil }
-            guard let first = oldBullets[current.id], let second = newBullets[current.id] else { return visible }
+            guard let first = oldBullets[visible.id], let second = newBullets[visible.id] else { return visible }
             if first.bounces != second.bounces {
-                if checkedRicochets.insert(current.id).inserted {
+                if checkedRicochets.insert(visible.id).inserted {
                     if let world = newest.state.world {
                         if projectileWorld != world { projectileWorld = world; projectileMaze = InfiniteMaze(world: world) }
                     } else { projectileWorld = nil; projectileMaze = maze }
                     if let geometry = projectileMaze,
-                       let path = ProjectileRicochetPath(from: first, to: second, span: span, maze: geometry) { ricochetPaths[current.id] = path }
+                       let path = ProjectileRicochetPath(from: first, to: second, span: span, maze: geometry) { ricochetPaths[visible.id] = path }
                 }
-                return ricochetPaths[current.id]?.sample(fraction: alpha) ?? visible
+                return ricochetPaths[visible.id]?.sample(fraction: alpha) ?? visible
             }
             var bullet = second
             bullet.x = first.x + (second.x - first.x) * alpha
@@ -388,6 +388,8 @@ public final class RenderTimeline {
             bullet.vy = first.vy + (second.vy - first.vy) * alpha
             return bullet
         }
+        cannonFlights.append(to: &result.bullets, tick: playhead * 60, now: renderNow)
+        result.effects = cannonFlights.effects(result.effects)
         return result
     }
 

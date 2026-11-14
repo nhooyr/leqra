@@ -6,6 +6,18 @@ import org.junit.Test
 
 class AudioRoutingTest {
     @Test
+    fun aDelayedImpactIsPlayedOnceAfterANewerShotWithoutReplayingJoinHistory() {
+        val router = AudioEventRouter()
+        val base = ArenaSnapshot(tick = 10, effects = listOf(ArenaEffect(id = 5, kind = "impact", owner = 1)))
+        assertTrue(router.consume(base, 1, false, true, 0.0).isEmpty())
+        assertEquals(AudioCue.REGULAR, router.consume(base.copy(tick = 11, effects = listOf(ArenaEffect(id = 9, kind = "shot:regular", owner = 1))), 1, false, true, .1).single().cue)
+        val delayed = base.copy(tick = 12, effects = listOf(ArenaEffect(id = 8, kind = "impact", owner = 1)))
+        assertEquals(AudioCue.IMPACT, router.consume(delayed, 1, false, true, .2).single().cue)
+        assertTrue(router.consume(delayed.copy(tick = 13), 1, false, true, .3).isEmpty())
+        assertTrue(router.consume(base.copy(tick = 14), 1, false, true, .4).isEmpty())
+        assertTrue(router.consume(base.copy(tick = 15, effects = listOf(ArenaEffect(id = 10, kind = "projectileFlight", owner = 1))), 1, false, true, .5).isEmpty())
+    }
+    @Test
     fun startingAnotherMatchDoesNotSilenceItsLowerEffectIDs() {
         val router = AudioEventRouter()
         fun frame(tick: Long, id: Int) =

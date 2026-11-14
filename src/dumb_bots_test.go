@@ -196,7 +196,7 @@ func TestPublicGodlikeNameUsesBotNamespaceThroughoutPresentation(t *testing.T) {
 	}
 }
 
-func TestPublicBotRelocationAndPoolKeepTierWithoutNewLives(t *testing.T) {
+func TestPublicStrayedBotStartsNewLifeWhileBudgetPoolKeepsTier(t *testing.T) {
 	a, bot, human := dumbInfinityFixture(t)
 	a.publicBotLives = 63
 	a.startBotLife(bot)
@@ -204,15 +204,16 @@ func TestPublicBotRelocationAndPoolKeepTierWithoutNewLives(t *testing.T) {
 		t.Fatal("fixture lacked boss")
 	}
 	bot.X, bot.Y = human.X+17*cellSize, human.Y
-	think, shot, lives, spawn := bot.botThink, bot.botShot, a.publicBotLives, bot.Spawn
+	lives, spawn := a.publicBotLives, bot.Spawn
 	a.tick = a.nextBot
 	a.populate()
-	if bot.Spawn != spawn+1 || bot.Name != "Bot 1 - Godlike" || bot.botLevel != infiniteBotLevel("godlike") || bot.botThink != think || bot.botShot != shot || a.publicBotLives != lives+1 {
-		t.Fatal("relocation rerolled boss life, tier, or cadence")
+	if bot.Spawn != spawn+1 || bot.Name != "Bot 1" || bot.botLevel != infiniteBotLevel("dumb") || a.publicBotLives != lives+1 {
+		t.Fatal("a strayed encounter retained its old life or failed to advance the birth cadence")
 	}
-	// populate may add one brand-new ordinary bot, accounting for +1 above.
 	a.join(fakeClient(), "Second", time.Unix(0, 0))
 	fillRoamingBots(a)
+	a.publicBotLives = 127
+	a.startBotLife(bot)
 	// Place this boss last so reducing the budget moves it into the pool while
 	// one connected pilot still permits the encounter.
 	for i, p := range a.pilots {

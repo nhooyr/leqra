@@ -139,6 +139,21 @@ data class ArenaEffect(
     var tick: Int? = null,
     var spawnSerial: Int? = null,
     var shotSerial: Long? = null,
+    var flight: ProjectileFlight? = null,
+)
+
+data class ProjectileFlightPoint(val x: Double, val y: Double, val tick: Double)
+
+/** The server's completed visual path; never participates in native collision or scoring. */
+data class ProjectileFlight(
+    val id: Int,
+    val owner: Int,
+    val colorIndex: Int,
+    val startTick: Double,
+    val endTick: Double,
+    val points: List<ProjectileFlightPoint>,
+    val kind: String = "cannon",
+    val radius: Double = 18.0,
 )
 
 data class LeaderboardEntry(
@@ -234,6 +249,7 @@ data class RoomRules(
     var infinityRandomBots: Boolean = false,
     var infinityBotDifficulty: String = "normal",
     var infinityRandomDifficulty: Boolean = false,
+    var infinityBotSpawnRate: Double = 2.0,
     var teamMode: String = "ffa",
     var mapSize: String = "large",
     var portraitMaze: Boolean = false,

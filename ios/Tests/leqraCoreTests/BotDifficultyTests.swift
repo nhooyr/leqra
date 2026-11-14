@@ -96,7 +96,9 @@ final class BotDifficultyTests: XCTestCase {
         var rules = RoomRules(); rules.infinity = true; rules.infinityRandomBots = true
         rules.infinityBotDifficulty = "dumb"; rules.infinityRandomDifficulty = true
         dumb.configure(rules: rules)
-        XCTAssertEqual(dumb.snapshot.tanks.count, 9)
+        XCTAssertEqual(dumb.snapshot.tanks.count, 1)
+        dumb.step(input: GameInput(), dt: 1 / 60)
+        XCTAssertEqual(dumb.snapshot.tanks.count, 2)
         XCTAssertTrue(dumb.snapshot.tanks.dropFirst().allSatisfy { $0.difficulty == "dumb" })
         dumb.configurePilot(id: 2, name: "CUSTOM", colorIndex: 1, difficulty: "godlike")
         dumb.snapshot.tanks[1].hp = 0; dumb.snapshot.tanks[1].respawnTime = 0

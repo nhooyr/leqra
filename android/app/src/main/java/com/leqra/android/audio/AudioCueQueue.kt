@@ -21,6 +21,7 @@ internal class AudioCueQueue(capacity: Int = 32, private val maxAgeNanos: Long =
     fun clear() {
         epoch.incrementAndGet()
         queue.clear()
+        lastLatencyNanos = 0L
     }
 
     fun drain(now: Long, prepared: (Int) -> FloatArray?, play: (FloatArray) -> Boolean): Int {

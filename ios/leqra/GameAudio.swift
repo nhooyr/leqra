@@ -27,7 +27,7 @@ final class GameAudio {
 
     private static let sampleRate = 48_000.0
     private var engine: AVAudioEngine?
-    private let renderState = NativeAudioRenderState(sampleRate: 48_000)
+    private let renderState = AudioRenderBus(sampleRate: 48_000)
     private var source: AVAudioSourceNode?
     private var buffers: [BufferKey: [Float]] = [:]
     private var router = AudioEventRouter()
@@ -150,10 +150,13 @@ final class GameAudio {
         router.reset(); generation = nil
         if fadeLoop, engine?.isRunning == true, UIApplication.shared.applicationState == .active,
            renderState.fadeLoopAndClearEffects() {
-            // Let the 12ms envelope and the shared 6ms look-ahead drain. One
-            // cancelable task covers pause/menu/connection transitions.
+            // Include one I/O block for mailbox delivery, then let the 12ms
+            // envelope and shared 6ms look-ahead drain. One cancelable task
+            // covers pause/menu/connection transitions.
+            let bufferDuration = AVAudioSession.sharedInstance().ioBufferDuration
+            let drain = bufferDuration.isFinite ? min(0.25, max(0, bufferDuration) + 0.022) : 0.022
             shutdownTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 22_000_000)
+                try? await Task.sleep(nanoseconds: UInt64(drain * 1_000_000_000))
                 guard !Task.isCancelled, let self, !self.requestedActive else { return }
                 self.clearPlayback(); self.engine?.pause(); self.deactivateSession()
                 self.shutdownTask = nil
@@ -241,69 +244,5 @@ final class GameAudio {
     private func play(_ cue: AudioCue, local: Bool = true) {
         guard let samples = buffers[BufferKey(cue: cue, local: local)] else { return }
         renderState.enqueue(samples)
-    }
-}
-
-/// Control changes and the audio callback share this short, bounded critical
-/// section. Sounds and the 32 voice slots are prepared before playback; the
-/// callback neither constructs sounds nor truncates a playing waveform.
-private final class NativeAudioRenderState: @unchecked Sendable {
-    private struct Voice {
-        var samples: [Float] = []
-        var cursor = 0
-    }
-    private let lock = NSLock()
-    private var voices = Array(repeating: Voice(), count: 32)
-    private var processor: AudioMixProcessor
-    private var starman: AudioLoopVoice
-
-    init(sampleRate: Double) {
-        processor = AudioMixProcessor(sampleRate: sampleRate)
-        starman = AudioLoopVoice(samples: StarmanAudio.samples(sampleRate: sampleRate), sampleRate: sampleRate)
-    }
-
-    func setStarman(_ active: Bool) {
-        lock.lock(); defer { lock.unlock() }
-        starman.setActive(active)
-    }
-
-    func fadeLoopAndClearEffects() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        for index in voices.indices { voices[index].cursor = voices[index].samples.count }
-        starman.setActive(false)
-        return starman.sounding
-    }
-
-    func enqueue(_ samples: [Float]) {
-        lock.lock(); defer { lock.unlock() }
-        // Omit a new effect if every voice is busy instead of clicking by
-        // interrupting another sound partway through its waveform.
-        guard let index = voices.indices.first(where: { voices[$0].cursor >= voices[$0].samples.count }) else { return }
-        voices[index].samples = samples
-        voices[index].cursor = 0
-    }
-
-    func setVolume(_ volume: Float, immediate: Bool = false) {
-        lock.lock(); defer { lock.unlock() }
-        processor.setVolume(volume, immediate: immediate)
-    }
-
-    func clear() {
-        lock.lock(); defer { lock.unlock() }
-        for index in voices.indices { voices[index].cursor = voices[index].samples.count }
-        starman.reset()
-        processor.reset()
-    }
-
-    func render(into output: UnsafeMutablePointer<Float>, count: Int) {
-        lock.lock(); defer { lock.unlock() }
-        for frame in 0..<count {
-            var mixed = starman.nextSample()
-            for index in voices.indices where voices[index].cursor < voices[index].samples.count {
-                mixed += voices[index].samples[voices[index].cursor]
-                voices[index].cursor += 1
-            }
-            output[frame] = processor.process(mixed)
-        }
     }
 }

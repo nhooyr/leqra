@@ -35,6 +35,7 @@ class FixedArena(
 
     val snapshot
         get() = compose(combat.snapshot)
+    val hasPendingProjectileFlights: Boolean get() = combat.hasPendingProjectileFlights
 
     private data class PilotConfiguration(
         val name: String,
@@ -138,11 +139,10 @@ class FixedArena(
         fraction: Double,
         localInput: GameInput? = null,
         localInput2: GameInput? = null,
+        nowSeconds: Double = System.nanoTime() / 1e9,
     ) =
         compose(
-            if (phase == "playing" && objectives?.survival?.status != "break")
-                combat.presentationSnapshot(fraction, localInput, localInput2)
-            else combat.snapshot,
+            combat.presentationSnapshot(if (phase == "playing" && objectives?.survival?.status != "break") fraction else 0.0, localInput, localInput2, nowSeconds),
         )
 
     fun configurePilot(

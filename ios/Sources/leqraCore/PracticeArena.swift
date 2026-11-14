@@ -23,6 +23,9 @@ public final class PracticeArena {
     private var randomState: UInt32
     private var time = 0.0
     private var nextPickup = 0.0
+    private var nextRoamingWave = 0.0
+    private var nextRoamingNumber = 1
+    private var nextRoamingID = 1
     private var nextID = 1
     private var nextEffect = 0
     private var effectTimes: [Int: Double] = [:]
@@ -34,12 +37,16 @@ public final class PracticeArena {
     private var dumbBots: [Int: (spawnSerial: Int, brain: DumbBotBrain)] = [:]
     private var nextBoostEffects: [Int: Double] = [:]
     private let motionPresenter = TankMotionPresenter()
+    private let flightPresenter = CannonFlightPresenter()
+    public var hasPendingProjectileFlights: Bool { flightPresenter.hasPending }
     private struct Projectile {
         var wire: ArenaBullet
         var age = 0.0
         var seekDelay = 0.0
         var boosted = false
         var rangeLeft: Double?
+        var flightPoints: [CannonFlightPoint] = []
+        var flightTick = 0.0
         var radius: Double { PracticeArena.spec(wire.kind).radius }
     }
     private var projectiles: [Projectile] = []
@@ -115,27 +122,13 @@ public final class PracticeArena {
                     if rules.teamColors.indices.contains(team) { snapshot.tanks[index].colorIndex = rules.teamColors[team] }
                 }
             }
-            if rules.infinityRandomBots {
-                let levels = BotDifficulty.allCases.map(\.rawValue)
-                let selected = levels.firstIndex(of: rules.infinityBotDifficulty) ?? levels.firstIndex(of: "normal")!
-                let firstID = (snapshot.tanks.map(\.id).max() ?? 1) + 1
-                for offset in 0..<8 {
-                    let id = firstID + offset, point = spawnPoint(near: snapshot.tanks[0], minCells: 2, maxCells: 5)
-                    let team = rules.teamMode == "teams" ? (snapshot.tanks.count % 2 + 1) : 0
-                    let color = team > 0 && rules.teamColors.indices.contains(team - 1) ? rules.teamColors[team - 1] : GamePalette.index(offset + 1)
-                    let level = rules.infinityRandomDifficulty ? levels[random(selected + 1)] : levels[selected]
-                    snapshot.tanks.append(ArenaTank(id: id, name: "Bot \(offset + 1)", x: point.x, y: point.y,
-                        angle: unitRandom() * 2 * .pi - .pi, colorIndex: color, team: team, bot: true,
-                        spawnProtected: true, spawnSerial: 1, invulnerable: 1, difficulty: level))
-                    roamingIDs.insert(id)
-                    if level == "dumb" { dumbBots[id] = (1, DumbBotBrain(spawnedAt: time)) }
-                }
-            }
+            nextRoamingWave = time; nextRoamingNumber = 1
+            nextRoamingID = max(nextRoamingID, (snapshot.tanks.map(\.id).max() ?? 0) + 1)
         }
         updateStandings()
     }
 
-    func clearProjectiles() { projectiles.removeAll(); snapshot.bullets.removeAll() }
+    func clearProjectiles() { projectiles.removeAll(); snapshot.bullets.removeAll(); flightPresenter.reset() }
     func refreshStandings() { updateStandings() }
 
     public func step(input: GameInput, dt: Double) {
@@ -147,6 +140,7 @@ public final class PracticeArena {
         let liveEffects = Set(snapshot.effects.map(\.id))
         effectTimes = effectTimes.filter { liveEffects.contains($0.key) }
         populatePickups(dt: dt)
+        retireDistantRoamingBots()
         for index in snapshot.tanks.indices {
             if snapshot.tanks[index].hp == 0 {
                 guard respawnsEnabled else { snapshot.tanks[index].respawnTime = 0; continue }
@@ -156,6 +150,7 @@ public final class PracticeArena {
             }
             advanceEquipment(index, dt: dt)
         }
+        populateRoamingBots()
         let count = snapshot.tanks.count
         for offset in 0..<count {
             let index = (Int(snapshot.tick % UInt64(count)) + offset) % count
@@ -163,7 +158,7 @@ public final class PracticeArena {
             var controls = snapshot.tanks[index].bot ? botInput(index, dt: dt) : input
             if snapshot.tanks[index].bot && fireBlocked.contains(snapshot.tanks[index].id) { controls.fire = false }
             movementInputs[snapshot.tanks[index].id] = controls
-            move(tank: &snapshot.tanks[index], input: controls, dt: dt)
+            move(tank: &snapshot.tanks[index], input: controls, dt: dt, ageStarman: false)
             collectPickups(index)
             weaponControl(index, fire: controls.fire)
         }
@@ -193,6 +188,7 @@ public final class PracticeArena {
             let span = min(dt, projectile.wire.life, projectile.rangeLeft.map { $0 / max(1, hypot(projectile.wire.vx, projectile.wire.vy)) } ?? .infinity)
             projectile.wire.life -= span
             projectile.age += span
+            if projectile.wire.kind != "cannon", projectile.age > 3 / 60 { projectile.flightPoints.removeAll(keepingCapacity: false) }
             if projectile.wire.kind == "homing" || projectile.wire.kind == "grenade" { guide(&projectile, dt: span) }
             if projectile.wire.kind == "grenade" {
                 let drag = Self.grenadeDragFactor(lifeBefore: projectile.wire.life + span, lifeAfter: projectile.wire.life)
@@ -203,7 +199,7 @@ public final class PracticeArena {
                 projectiles[survivorCount] = projectile
                 survivorCount += 1
             }
-            else if projectile.wire.kind == "grenade" { detonate(projectile.wire) }
+            else if projectile.wire.kind == "grenade" { detonate(projectile.wire, flight: terminalFlight(projectile)) }
             else if projectile.wire.kind == "homing" && maze.world != nil {
                 effect("impact", x: projectile.wire.x, y: projectile.wire.y, owner: projectile.wire.owner)
             }
@@ -217,10 +213,14 @@ public final class PracticeArena {
     /// Smooth presentation between deterministic 60 Hz simulation ticks.
     /// `fraction` is the remaining fraction of one tick, clamped to 0...1.
     /// Prediction changes only this returned copy, never damage or score.
-    public func presentationSnapshot(fraction: Double, localInput: GameInput? = nil) -> ArenaSnapshot {
+    public func presentationSnapshot(fraction: Double, localInput: GameInput? = nil, now: Double = ProcessInfo.processInfo.systemUptime) -> ArenaSnapshot {
         guard fraction.isFinite, fraction >= 0, snapshot.result == nil else {
             motionPresenter.reset()
-            return snapshot
+            var result = snapshot
+            flightPresenter.accept(result.effects, throughTick: Double(snapshot.tick))
+            flightPresenter.append(to: &result.bullets, tick: Double(snapshot.tick), now: now)
+            result.effects = flightPresenter.effects(result.effects)
+            return result
         }
         let fraction = min(fraction, 1), dt = fraction / 60
         var result = snapshot
@@ -230,8 +230,7 @@ public final class PracticeArena {
             result.tanks[index] = present(result.tanks[index], input: input, fraction: fraction, local: id == localID)
         }
         if !result.tanks.contains(where: { $0.id == localID && $0.hp > 0 }) { motionPresenter.reset() }
-        guard dt > 0 else { return result }
-        result.bullets = projectiles.map { original in
+        if dt > 0 { result.bullets = projectiles.map { original in
             var projectile = original
             let span = min(dt, projectile.wire.life)
             projectile.wire.life -= span; projectile.age += span
@@ -260,7 +259,10 @@ public final class PracticeArena {
                 if wall.fraction == 1 { break }
             }
             return projectile.wire
-        }
+        } }
+        flightPresenter.accept(result.effects, throughTick: Double(snapshot.tick))
+        flightPresenter.append(to: &result.bullets, tick: Double(snapshot.tick) + fraction, now: now)
+        result.effects = flightPresenter.effects(result.effects)
         return result
     }
 
@@ -280,9 +282,57 @@ public final class PracticeArena {
                                          move: movement, canInterpolate: clear)
     }
 
-    private func move(tank: inout ArenaTank, input: GameInput, dt: Double) {
-        if tank.bot, let world = maze.world { TankMovement.stepBot(tank: &tank, input: input, dt: dt, world: world) }
-        else { TankMovement.step(tank: &tank, input: input, dt: dt, maze: maze) }
+    private func move(tank: inout ArenaTank, input: GameInput, dt: Double, ageStarman: Bool = true) {
+        if tank.bot, let world = maze.world { TankMovement.stepBot(tank: &tank, input: input, dt: dt, world: world, ageStarman: ageStarman) }
+        else { TankMovement.step(tank: &tank, input: input, dt: dt, maze: maze, ageStarman: ageStarman) }
+    }
+
+    private func retireDistantRoamingBots() {
+        guard maze.world == nil, hasConfiguredRules else { return }
+        let humans = snapshot.tanks.filter { !$0.bot }
+        let retired = Set(snapshot.tanks.filter { tank in
+            roamingIDs.contains(tank.id) && !humans.contains { abs(tank.x - $0.x) <= 16 * 84 && abs(tank.y - $0.y) <= 16 * 84 }
+        }.map(\.id))
+        guard !retired.isEmpty else { return }
+        snapshot.tanks.removeAll { retired.contains($0.id) }
+        projectiles.removeAll { retired.contains($0.wire.owner) }
+        for id in retired {
+            roamingIDs.remove(id); held.removeValue(forKey: id); movementInputs.removeValue(forKey: id)
+            botCourses.removeValue(forKey: id); botDecisions.removeValue(forKey: id)
+            dumbBots.removeValue(forKey: id); fireBlocked.remove(id); nextBoostEffects.removeValue(forKey: id)
+        }
+    }
+
+    private func populateRoamingBots() {
+        guard maze.world == nil, let rules = activeRules, rules.infinityRandomBots, time + 1e-9 >= nextRoamingWave else { return }
+        let humans = snapshot.tanks.filter { !$0.bot && $0.hp > 0 }.sorted { $0.id < $1.id }
+        guard !humans.isEmpty else { return }
+        let rate = [0.5, 1, 2, 4].contains(rules.infinityBotSpawnRate) ? rules.infinityBotSpawnRate : 2
+        nextRoamingWave = time + (1 + unitRandom()) / rate
+        let budget = min(128, snapshot.tanks.filter { !$0.bot }.count * 16)
+        var served = Dictionary(uniqueKeysWithValues: humans.map { ($0.id, 0) })
+        for bot in snapshot.tanks where roamingIDs.contains(bot.id) {
+            if let nearest = humans.min(by: { hypot(bot.x - $0.x, bot.y - $0.y) < hypot(bot.x - $1.x, bot.y - $1.y) }) {
+                served[nearest.id, default: 0] += 1
+            }
+        }
+        let levels = BotDifficulty.allCases.map(\.rawValue)
+        let selected = levels.firstIndex(of: rules.infinityBotDifficulty) ?? levels.firstIndex(of: "normal")!
+        for _ in 0..<min(humans.count, max(0, budget - roamingIDs.count)) {
+            let anchor = humans.min { (served[$0.id] ?? 0, $0.id) < (served[$1.id] ?? 0, $1.id) }!
+            served[anchor.id, default: 0] += 1
+            let id = nextRoamingID; nextRoamingID += 1
+            let number = nextRoamingNumber; nextRoamingNumber += 1
+            let point = spawnPoint(near: anchor, minCells: 2, maxCells: 5)
+            let team = rules.teamMode == "teams" ? (snapshot.tanks.count % 2 + 1) : 0
+            let color = team > 0 && rules.teamColors.indices.contains(team - 1) ? rules.teamColors[team - 1] : GamePalette.index(number)
+            let level = rules.infinityRandomDifficulty ? levels[random(selected + 1)] : levels[selected]
+            snapshot.tanks.append(ArenaTank(id: id, name: "Bot \(number)", x: point.x, y: point.y,
+                angle: unitRandom() * 2 * .pi - .pi, colorIndex: color, team: team, bot: true,
+                spawnProtected: true, spawnSerial: 1, invulnerable: 1, difficulty: level))
+            roamingIDs.insert(id)
+            if level == "dumb" { dumbBots[id] = (1, DumbBotBrain(spawnedAt: time)) }
+        }
     }
 
     private func random(_ maximum: Int) -> Int {
@@ -313,7 +363,9 @@ public final class PracticeArena {
 
     private func respawn(_ index: Int) {
         let old = snapshot.tanks[index]
-        let origin = old.bot ? snapshot.tanks[0] : old
+        let origin = roamingIDs.contains(old.id)
+            ? snapshot.tanks.filter { !$0.bot && $0.hp > 0 }.min { hypot($0.x - old.x, $0.y - old.y) < hypot($1.x - old.x, $1.y - old.y) } ?? old
+            : old.bot ? snapshot.tanks[0] : old
         let point = respawnLocation?(old) ?? spawnPoint(near: origin, minCells: 2, maxCells: 5)
         snapshot.tanks[index] = ArenaTank(id: old.id, name: old.name, x: point.x, y: point.y,
                                          angle: unitRandom() * 2 * .pi - .pi, colorIndex: old.colorIndex,
@@ -424,24 +476,18 @@ public final class PracticeArena {
         }
     }
 
-    private func effect(_ kind: String, x: Double, y: Double, owner: Int, points: [BeamPoint] = []) {
+    private func effect(_ kind: String, x: Double, y: Double, owner: Int, points: [BeamPoint] = [], flight: CannonFlight? = nil) {
         nextEffect += 1
-        snapshot.effects.append(ArenaEffect(id: nextEffect, kind: kind, x: x, y: y, owner: owner, points: points))
+        snapshot.effects.append(ArenaEffect(id: nextEffect, kind: kind, x: x, y: y, owner: owner, points: points, flight: flight))
         effectTimes[nextEffect] = time
         if snapshot.effects.count > 48 { snapshot.effects.removeFirst() }
     }
 
     private func botInput(_ index: Int, dt: Double) -> GameInput {
         let bot = snapshot.tanks[index]
-        let targets = maze.world == nil && bot.team == 0 ? [snapshot.tanks[0]] : snapshot.tanks
+        let targets = maze.world == nil && bot.team == 0 ? snapshot.tanks.filter { !$0.bot } : snapshot.tanks
         guard let pilot = targets.filter({ $0.hp > 0 && opposes(owner: bot.id, target: $0) })
             .min(by: { hypot($0.x - bot.x, $0.y - bot.y) < hypot($1.x - bot.x, $1.y - bot.y) }) else { return GameInput() }
-        if maze.world == nil && roamingIDs.contains(bot.id) && hypot(bot.x - pilot.x, bot.y - pilot.y) > 10 * 84 {
-            let point = spawnPoint(near: pilot, minCells: 3, maxCells: 5)
-            snapshot.tanks[index].x = point.x; snapshot.tanks[index].y = point.y
-            botCourses.removeValue(forKey: bot.id)
-            return GameInput()
-        }
         let level = bot.difficulty.isEmpty ? botDifficulty : bot.difficulty
         if level == "dumb" { return dumbBotInput(bot, pilot: pilot, dt: dt) }
         let tuning: (range: Double, roam: Double, aim: Double) = level == "easy" ? (0.7, 0.75, 1.65) : level == "hard" ? (1.15, 1.15, 0.7) : level == "godlike" ? (1.3, 1.3, 0.45) : (1, 1, 1)
@@ -585,6 +631,8 @@ public final class PracticeArena {
                 var projectile = Projectile(wire: ArenaBullet(id: nextID, x: launch.x, y: launch.y,
                                                              vx: launch.ux * spec.speed, vy: launch.uy * spec.speed,
                                                              owner: tank.id, kind: tank.power, colorIndex: tank.colorIndex, life: spec.life), boosted: boosted)
+                projectile.flightTick = Double(snapshot.tick) - 1
+                projectile.flightPoints = [CannonFlightPoint(x: launch.x, y: launch.y, tick: projectile.flightTick)]
                 if let world = maze.world, tank.power == "homing" { projectile.rangeLeft = world.width + world.height }
                 if launch.bounced {
                     projectile.wire.bounces = 1
@@ -640,17 +688,23 @@ public final class PracticeArena {
 
     private func advance(_ projectile: inout Projectile, dt: Double) -> Bool {
         var dx = projectile.wire.vx * dt, dy = projectile.wire.vy * dt
+        let startTick = projectile.flightTick, endTick = max(startTick, Double(snapshot.tick))
+        var traversed = 0.0, remaining = 1.0
         for _ in 0..<4 {
             let bullet = projectile.wire
             let wall = maze.projectileHit(kind: bullet.kind, x: bullet.x, y: bullet.y, dx: dx, dy: dy, radius: projectile.radius)
             if let target = targetHit(owner: bullet.owner, x: bullet.x, y: bullet.y, dx: dx, dy: dy,
                                       radius: projectile.radius, limit: wall?.fraction ?? 1.00000001, contact: bullet.kind == "grenade") {
                 projectile.wire.x += dx * target.fraction; projectile.wire.y += dy * target.fraction
+                projectile.flightTick = startTick + (endTick - startTick) * (traversed + remaining * target.fraction)
                 if projectile.rangeLeft != nil { projectile.rangeLeft! -= hypot(dx, dy) * target.fraction }
-                if bullet.kind == "grenade" { detonate(projectile.wire) }
+                let flight = terminalFlight(projectile)
+                if bullet.kind == "grenade" { detonate(projectile.wire, flight: flight) }
                 else {
                     if bullet.kind == "homing" || bullet.kind == "cannon" {
-                        effect("impact", x: projectile.wire.x, y: projectile.wire.y, owner: bullet.owner)
+                        effect("impact", x: projectile.wire.x, y: projectile.wire.y, owner: bullet.owner, flight: flight)
+                    } else if let flight {
+                        effect("projectileFlight", x: projectile.wire.x, y: projectile.wire.y, owner: bullet.owner, flight: flight)
                     }
                     hurt(target.index, owner: bullet.owner)
                 }
@@ -658,6 +712,7 @@ public final class PracticeArena {
             }
             guard let wall else {
                 projectile.wire.x += dx; projectile.wire.y += dy
+                projectile.flightTick = endTick
                 if projectile.rangeLeft != nil { projectile.rangeLeft! -= hypot(dx, dy) }
                 return true
             }
@@ -669,6 +724,11 @@ public final class PracticeArena {
             }
             projectile.wire.x += dx * wall.fraction + wall.nx * 0.12
             projectile.wire.y += dy * wall.fraction + wall.ny * 0.12
+            traversed += remaining * wall.fraction; remaining *= 1 - wall.fraction
+            projectile.flightTick = startTick + (endTick - startTick) * traversed
+            if !projectile.flightPoints.isEmpty && projectile.flightPoints.count < 31 {
+                projectile.flightPoints.append(CannonFlightPoint(x: projectile.wire.x, y: projectile.wire.y, tick: projectile.flightTick))
+            }
             if projectile.rangeLeft != nil { projectile.rangeLeft! -= hypot(dx, dy) * wall.fraction }
             dx *= 1 - wall.fraction; dy *= 1 - wall.fraction
             if wall.nx != 0 { dx = -dx; projectile.wire.vx = -projectile.wire.vx }
@@ -676,7 +736,17 @@ public final class PracticeArena {
             projectile.wire.target = 0; projectile.seekDelay = 0.04
             if wall.fraction == 1 { return true }
         }
+        projectile.flightTick = endTick
         return true
+    }
+
+    private func terminalFlight(_ projectile: Projectile) -> CannonFlight? {
+        guard !projectile.flightPoints.isEmpty else { return nil }
+        var points = projectile.flightPoints
+        points.append(CannonFlightPoint(x: projectile.wire.x, y: projectile.wire.y, tick: projectile.flightTick))
+        return CannonFlight(id: projectile.wire.id, owner: projectile.wire.owner, colorIndex: projectile.wire.colorIndex,
+            startTick: points[0].tick, endTick: projectile.flightTick, points: points,
+            kind: projectile.wire.kind.isEmpty ? "regular" : projectile.wire.kind, radius: projectile.radius)
     }
 
     private func guide(_ projectile: inout Projectile, dt: Double) {
@@ -742,8 +812,8 @@ public final class PracticeArena {
         if let hitTarget { hurt(hitTarget, owner: tank.id) }
     }
 
-    private func detonate(_ bullet: ArenaBullet) {
-        effect("blast", x: bullet.x, y: bullet.y, owner: bullet.owner)
+    private func detonate(_ bullet: ArenaBullet, flight: CannonFlight? = nil) {
+        effect("blast", x: bullet.x, y: bullet.y, owner: bullet.owner, flight: flight)
         for index in snapshot.tanks.indices {
             let tank = snapshot.tanks[index]
             guard tank.id != bullet.owner, tank.hp > 0, tank.invulnerable == 0, hypot(tank.x - bullet.x, tank.y - bullet.y) <= 237,

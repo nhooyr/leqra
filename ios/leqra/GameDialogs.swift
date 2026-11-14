@@ -116,9 +116,19 @@ struct RulesEditor: View {
                 Toggle("Portrait maze", isOn: $rules.portraitMaze).font(.system(size: 13))
                 if rules.infinity {
                     Stepper("Score target: \(rules.infinityTarget == 0 ? "Endless" : String(rules.infinityTarget))", value: $rules.infinityTarget, in: 0...999)
-                    Toggle("Random roaming bots", isOn: $rules.infinityRandomBots)
-                    menu("ROAMING BOT DIFFICULTY", value: $rules.infinityBotDifficulty, choices: BotDifficulty.allCases.map { ($0.rawValue, $0.displayName) })
-                    Toggle("Randomize roaming bot difficulty", isOn: $rules.infinityRandomDifficulty)
+                    Toggle("Random roaming bots", isOn: $rules.infinityRandomBots).accessibilityIdentifier("randomRoamingBots")
+                    if rules.infinityRandomBots {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("ROAMING BOT SPAWN RATE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                            Picker("Roaming bot spawn rate", selection: $rules.infinityBotSpawnRate) {
+                                ForEach([0.5, 1, 2, 4], id: \.self) { rate in Text("\(rate.formatted())×").tag(rate) }
+                            }.pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading).modifier(WebField()).accessibilityIdentifier("roamingSpawnRate")
+                        }
+                        Text("16 roaming bots per player, up to 128 in a room. Bots spread around players and retire when nobody is nearby.")
+                            .font(.system(size: 11)).foregroundStyle(WebStyle.muted).fixedSize(horizontal: false, vertical: true)
+                        menu("ROAMING BOT DIFFICULTY", value: $rules.infinityBotDifficulty, choices: BotDifficulty.allCases.map { ($0.rawValue, $0.displayName) })
+                        Toggle("Randomize roaming bot difficulty", isOn: $rules.infinityRandomDifficulty)
+                    }
                 } else {
                     Stepper("\(rules.mode == "survival" ? "Wave" : "Score") target: \(rules.scoreTarget)", value: $rules.scoreTarget, in: 1...(rules.mode == "koth" ? 300 : 20))
                     Stepper("Time limit: \(rules.timeLimit)s", value: $rules.timeLimit, in: 30...600, step: 15)

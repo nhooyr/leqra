@@ -14,7 +14,9 @@ public struct AudioCueRequest: Equatable, Sendable {
 /// owns one router; skipped, muted, or paused history can be baselined with reset.
 public struct AudioEventRouter: Sendable {
     private var generation: Int?
-    private var highestEffectID = 0
+    private var baselineEffectID = 0
+    private var seenEffects = Set<Int>()
+    private var effectOrder: [Int] = []
     private var bounceCounts: [Int: Int] = [:]
     private var previousPhase: String?
     private var countdownNumber: Int?
@@ -41,7 +43,7 @@ public struct AudioEventRouter: Sendable {
             reset()
             generation = snapshot.generation
             spectatorFocus = focus
-            highestEffectID = snapshot.effects.map(\.id).max() ?? 0
+            baselineEffectID = snapshot.effects.map(\.id).max() ?? 0
             for bullet in snapshot.bullets { bounceCounts[bullet.id] = bullet.bounces }
             // Countdown is current presentation, rather than retained combat
             // history. Joining a live round must not replay its effects or GO.
@@ -69,8 +71,9 @@ public struct AudioEventRouter: Sendable {
         }
 
         for effect in snapshot.effects.sorted(by: { $0.id < $1.id }) {
-            guard effect.id > 0, effect.id > highestEffectID else { continue }
-            highestEffectID = effect.id
+            guard effect.id > 0, effect.id > baselineEffectID, seenEffects.insert(effect.id).inserted else { continue }
+            effectOrder.append(effect.id)
+            if effectOrder.count > 512 { seenEffects.remove(effectOrder.removeFirst()) }
             let own = !snapshot.spectating && localID >= 0 && (effect.player ?? effect.owner) == localID
             guard !infinity || own || near(effect.x, effect.y, localTank: listener, radius: 504) else { continue }
             let shot: AudioCue?

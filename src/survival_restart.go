@@ -82,6 +82,7 @@ func (g *Game) restartSurvivalWave(players [maxTanks]*Player) {
 	g.roundClinched, g.objectiveEnded = false, false
 	g.SpawnClock = g.pickupDelay()
 	g.events = nil
+	g.projectileEvents = nil
 	g.Bullets, g.Pickups = []*Bullet{}, []*Pickup{}
 	g.Tanks, g.Scores = [maxTanks]*Tank{}, [maxTanks]int{}
 	s.Status, s.BreakTime = "wave", 0
