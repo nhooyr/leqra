@@ -148,6 +148,7 @@ public final class PracticeArena {
         populatePickups(dt: dt)
         retireDistantRoamingBots()
         var finishedLives = Set<Int>()
+        var expiredEquipment = Set<Int>()
         for index in snapshot.tanks.indices {
             if snapshot.tanks[index].hp == 0 {
                 guard respawnsEnabled else { snapshot.tanks[index].respawnTime = 0; continue }
@@ -158,7 +159,11 @@ public final class PracticeArena {
                 }
                 continue
             }
+            let before = snapshot.tanks[index]
             advanceEquipment(index, dt: dt)
+            let after = snapshot.tanks[index]
+            if before.shield > 0 && after.shield == 0 || before.starmanTime > 0 && after.starmanTime == 0
+                || before.powerTime > 0 && after.powerTime == 0 { expiredEquipment.insert(before.id) }
         }
         parkRoamingBots(finishedLives)
         populateRoamingBots()
@@ -167,10 +172,14 @@ public final class PracticeArena {
             let index = (Int(snapshot.tick % UInt64(count)) + offset) % count
             guard snapshot.tanks[index].hp > 0 else { continue }
             var controls = snapshot.tanks[index].bot ? botInput(index, dt: dt) : input
-            if snapshot.tanks[index].bot && fireBlocked.contains(snapshot.tanks[index].id) { controls.fire = false }
             movementInputs[snapshot.tanks[index].id] = controls
+            let before = snapshot.tanks[index]
             move(tank: &snapshot.tanks[index], input: controls, dt: dt, ageStarman: false)
+            let after = snapshot.tanks[index]
+            if expiredEquipment.contains(before.id) || before.speedTime > 0 && after.speedTime == 0
+                || before.ghostTime > 0 && after.ghostTime == 0 { refillAmmo(index) }
             collectPickups(index)
+            if snapshot.tanks[index].bot && fireBlocked.contains(snapshot.tanks[index].id) { controls.fire = false }
             weaponControl(index, fire: controls.fire)
         }
         starmanContacts()
@@ -370,7 +379,8 @@ public final class PracticeArena {
             let serial = (previous?.spawnSerial ?? 0) + 1
             snapshot.tanks.append(ArenaTank(id: id, name: name, x: point.x, y: point.y,
                 angle: unitRandom() * 2 * .pi - .pi, colorIndex: color, score: previous?.score ?? 0, team: team, bot: true,
-                spawnProtected: true, spawnSerial: serial, invulnerable: 1, difficulty: level))
+                spawnProtected: true, spawnSerial: serial, invulnerable: 1, difficulty: level,
+                ammoEpoch: previous.map { ArenaTank.nextAmmoEpoch($0.ammoEpoch) } ?? 0))
             roamingIDs.insert(id)
             if level == "dumb" { dumbBots[id] = (serial, DumbBotBrain(spawnedAt: time)) }
         }
@@ -413,7 +423,8 @@ public final class PracticeArena {
                                          angle: unitRandom() * 2 * .pi - .pi, colorIndex: old.colorIndex,
                                          score: old.score, team: old.team, bot: old.bot, spawnProtected: true,
                                          spawnSerial: old.spawnSerial + 1, invulnerable: maze.world == nil ? 1 : 1.2,
-                                         survivalEnemy: old.survivalEnemy, survivalBoss: old.survivalBoss, difficulty: difficulty)
+                                         survivalEnemy: old.survivalEnemy, survivalBoss: old.survivalBoss, difficulty: difficulty,
+                                         ammoEpoch: ArenaTank.nextAmmoEpoch(old.ammoEpoch))
         fireBlocked.remove(old.id)
         botCourses.removeValue(forKey: old.id)
         dumbBots.removeValue(forKey: old.id)
@@ -494,6 +505,7 @@ public final class PracticeArena {
             guard pickup.life > 0, hypot(pickup.x - tank.x, pickup.y - tank.y) < 30 else { continue }
             snapshot.pickups[pickupIndex].life = 0
             Self.applyPower(tank: &snapshot.tanks[index], kind: pickup.type, duration: powerDuration, starDuration: starDuration)
+            fireBlocked.remove(tank.id)
             // Bots may collect a grenade while holding ordinary Fire. Create
             // a fresh throw edge, as in the Go and browser offline simulation.
             if tank.bot && pickup.type == "grenade" { held[tank.id] = false }
@@ -511,11 +523,14 @@ public final class PracticeArena {
             tank.ghostTime = max(tank.ghostTime, starDuration); tank.cooldown = 0; tank.cooldownTotal = 0
         case "rapid", "scatter", "homing", "grenade", "laser", "cannon":
             tank.power = kind; tank.powerTime = duration
-            tank.charges = kind == "rapid" || kind == "scatter" ? 5 : 3
-            tank.machineRounds = kind == "rapid" ? 180 : 0
-            if kind == "rapid" { tank.cooldown = 0; tank.cooldownTotal = 0 }
-        default: break
+        default: return
         }
+        tank.refillAmmo()
+    }
+
+    private func refillAmmo(_ index: Int) {
+        snapshot.tanks[index].refillAmmo()
+        fireBlocked.remove(snapshot.tanks[index].id)
     }
 
     private func effect(_ kind: String, x: Double, y: Double, owner: Int, points: [BeamPoint] = [], flight: CannonFlight? = nil, contact: ImpactContact? = nil) {
@@ -634,10 +649,10 @@ public final class PracticeArena {
         if !fire { fireBlocked.remove(tank.id) }
         guard tank.hp > 0, !(tank.spawnProtected && tank.invulnerable > 1e-9) else { return }
         if pressed {
-            let grenades = projectiles.filter { $0.wire.owner == tank.id && $0.wire.kind == "grenade" }
+            let grenades = projectiles.filter { $0.wire.owner == tank.id && $0.wire.ammoEpoch == tank.ammoEpoch && $0.wire.kind == "grenade" }
             if !grenades.isEmpty {
                 for grenade in grenades { detonate(grenade.wire, flight: terminalFlight(grenade)) }
-                projectiles.removeAll { $0.wire.owner == tank.id && $0.wire.kind == "grenade" }
+                projectiles.removeAll { $0.wire.owner == tank.id && $0.wire.ammoEpoch == tank.ammoEpoch && $0.wire.kind == "grenade" }
                 fireBlocked.insert(tank.id)
                 return
             }
@@ -657,7 +672,7 @@ public final class PracticeArena {
               boosted || tank.cooldown <= 1e-9 && (tank.power != "rapid" || tank.machineRounds > 0) else { return }
         let offsets: [Double] = tank.power == "scatter" ? [-0.21, 0, 0.21] : [0]
         var ordinary = 0
-        for index in projectiles.indices where projectiles[index].wire.owner == tank.id && !projectiles[index].boosted { ordinary += 1 }
+        for index in projectiles.indices where projectiles[index].wire.owner == tank.id && projectiles[index].wire.ammoEpoch == tank.ammoEpoch && !projectiles[index].boosted { ordinary += 1 }
         guard boosted || tank.power == "laser" || ordinary + offsets.count <= spec.capacity else { return }
         let cooldown = boosted ? 0 : spec.cooldown
         snapshot.tanks[index].cooldown = cooldown; snapshot.tanks[index].cooldownTotal = cooldown; snapshot.tanks[index].recoil = 1
@@ -672,7 +687,8 @@ public final class PracticeArena {
                 nextID += 1
                 var projectile = Projectile(wire: ArenaBullet(id: nextID, x: launch.x, y: launch.y,
                                                              vx: launch.ux * spec.speed, vy: launch.uy * spec.speed,
-                                                             owner: tank.id, kind: tank.power, colorIndex: tank.colorIndex, life: spec.life), boosted: boosted)
+                                                             owner: tank.id, kind: tank.power, colorIndex: tank.colorIndex, life: spec.life,
+                                                             ammoEpoch: tank.ammoEpoch), boosted: boosted)
                 projectile.flightTick = Double(snapshot.tick) - 1
                 projectile.flightBirth = CannonFlightPoint(x: launch.x, y: launch.y, tick: projectile.flightTick)
                 if let world = maze.world, tank.power == "homing" { projectile.rangeLeft = world.width + world.height }
@@ -689,7 +705,7 @@ public final class PracticeArena {
                 effect("shot:" + tank.power, x: tank.x, y: tank.y, owner: tank.id)
             }
             var remaining = max(0, 115 - (boosted ? 0 : ordinary + offsets.count))
-            for i in projectiles.indices.reversed() where projectiles[i].wire.owner == tank.id && (boosted || projectiles[i].boosted) {
+            for i in projectiles.indices.reversed() where projectiles[i].wire.owner == tank.id && projectiles[i].wire.ammoEpoch == tank.ammoEpoch && (boosted || projectiles[i].boosted) {
                 if remaining > 0 { remaining -= 1 } else { projectiles[i].wire.life = 0 }
             }
             projectiles.removeAll { $0.wire.life <= 0 }
@@ -699,6 +715,7 @@ public final class PracticeArena {
         else { snapshot.tanks[index].charges -= 1 }
         if tank.power == "rapid" ? snapshot.tanks[index].machineRounds <= 0 : snapshot.tanks[index].charges <= 0 {
             snapshot.tanks[index].power = ""; snapshot.tanks[index].powerTime = 0; snapshot.tanks[index].charges = 0
+            refillAmmo(index)
         }
     }
 
@@ -877,7 +894,7 @@ public final class PracticeArena {
             target: tank.id, spawnSerial: tank.spawnSerial, before: ImpactContactPose(tank))
         if !starman && tank.shield > 0 {
             snapshot.tanks[index].shieldCharges = max(1, tank.shieldCharges) - 1
-            if snapshot.tanks[index].shieldCharges == 0 { snapshot.tanks[index].shield = 0 }
+            if snapshot.tanks[index].shieldCharges == 0 { snapshot.tanks[index].shield = 0; refillAmmo(index) }
             snapshot.tanks[index].invulnerable = 0.35; snapshot.tanks[index].spawnProtected = false
             effect("shield", x: tank.x, y: tank.y, owner: owner, contact: contact)
             return
@@ -935,7 +952,7 @@ public final class PracticeArena {
         for index in projectiles.indices {
             let owner = projectiles[index].wire.owner
             if projectiles[index].boosted { boosted.append(projectiles[index].wire.id) }
-            if let ownerIndex = tankIndices[owner] {
+            if let ownerIndex = tankIndices[owner], projectiles[index].wire.ammoEpoch == snapshot.tanks[ownerIndex].ammoEpoch {
                 if !projectiles[index].boosted { owned[ownerIndex].ammo += 1 }
                 if projectiles[index].wire.kind == "grenade" {
                     owned[ownerIndex].grenades += 1

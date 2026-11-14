@@ -64,6 +64,13 @@ final class CannonFlightTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ArenaEffect.self, from: JSONEncoder().encode(old)), old)
     }
 
+    func testFlightValidationPreservesSupportedKindsAndLegacyCannonWhileRejectingUnknownKinds() {
+        for kind in ["regular", "rapid", "scatter", "homing", "grenade", "cannon"] { XCTAssertTrue(flight(kind: kind).valid) }
+        var legacy = flight(); legacy.kind = nil
+        XCTAssertTrue(legacy.valid)
+        for kind in ["", "laser", "starman", "Cannon", "unknown"] { XCTAssertFalse(flight(kind: kind).valid) }
+    }
+
     func testAudioAcceptsDelayedImpactAfterNewerShotWithoutReplayingEither() {
         var router = AudioEventRouter(), snapshot = ArenaSnapshot(tanks: [ArenaTank(id: 1)])
         _ = router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0)

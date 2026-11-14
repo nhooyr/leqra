@@ -213,6 +213,10 @@ func TestStarmanRetiresOldestProjectileAtSafetyLimit(t *testing.T) {
 	g.Bullets = append(g.Bullets, foreign)
 	g.nextBullet = foreign.ID
 	g.grantPower(pilot, "starman")
+	for i := 0; i < machineCapacity; i++ {
+		g.Bullets[i].AmmoEpoch = pilot.AmmoEpoch
+		g.Bullets[i].boosted = true
+	}
 	if !g.fire(pilot) {
 		t.Fatal("safety ceiling blocked Starman from firing")
 	}
@@ -246,10 +250,10 @@ func TestStarmanShotsDoNotOccupyWeaponSlotsAfterExpiry(t *testing.T) {
 	if pilot.StarmanTime != 0 || pilot.ShotSerial != uint64(machineCapacity+1) {
 		t.Fatal("bonus rounds blocked the first shot after expiry")
 	}
-	if len(g.Bullets) != machineCapacity || ordinary.Dead || !oldestBoosted.Dead || nextBoosted.Dead || g.Bullets[len(g.Bullets)-1].boosted {
-		t.Fatal("the safety cap must retain ordinary rounds and replace only the oldest bonus round")
+	if len(g.Bullets) != machineCapacity+1 || ordinary.Dead || oldestBoosted.Dead || nextBoosted.Dead || g.Bullets[len(g.Bullets)-1].boosted {
+		t.Fatal("expiry refill must retain all older-epoch ordinary and bonus rounds")
 	}
-	for range capacity(pilot) - 2 {
+	for range capacity(pilot) - 1 {
 		pilot.Cooldown = 0
 		if !g.fire(pilot) {
 			t.Fatal("a free ordinary slot was blocked")

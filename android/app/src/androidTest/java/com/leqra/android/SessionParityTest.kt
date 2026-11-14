@@ -24,6 +24,35 @@ class SessionParityTest {
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
     @Test
+    fun eitherAmmoEpochRefreshesHudImmediatelyWithoutWaitingForTheTenHzTicker() {
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                val arena = PracticeArena(42, "P1", 0, 0, world = testWorld)
+                arena.configureLocal("P2", 1)
+                arena.snapshot.tanks.forEach { it.invulnerable = 0.0; it.spawnProtected = false }
+                set(session, "practice", arena); set(session, "fixed", null)
+                set(session, "online", false); set(session, "screen", Screen.PLAYING)
+                set(session, "localID", 1); set(session, "localID2", 2)
+                var updates = 0
+                session.changed = { updates++ }
+                val start = System.nanoTime()
+                session.frame(start)
+                updates = 0
+                session.frame(start + 1_000_000_000L / 120)
+                assertEquals(0, updates)
+                PracticeArena.applyPower(arena.snapshot.tanks.first(), "speed")
+                session.frame(start + 2_000_000_000L / 120)
+                assertEquals(1, updates)
+                PracticeArena.applyPower(arena.snapshot.tanks[1], "shield")
+                session.frame(start + 3_000_000_000L / 120)
+                assertEquals(2, updates)
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
     fun targetedOfflineInfinityNeedsAnOpponentWhenEveryRoamingTierIsOff() {
         val context = context()
         context.getSharedPreferences("leqra-settings", 0).edit().putString("server", "http://127.0.0.1:1").putString("callsign", "Rate Pilot").putBoolean("autoPending0", false).putBoolean("publicSelected", false).commit()

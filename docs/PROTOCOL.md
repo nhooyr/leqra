@@ -1,10 +1,10 @@
-# leqra v5.0.3 — current game protocol (protocol 1)
+# leqra v5.0.4 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.0.3**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.0.4**.
 
 ```json
-{"type":"server_hello","version":"5.0.3","protocol":1}
-{"type":"client_hello","version":"5.0.3","protocol":1}
+{"type":"server_hello","version":"5.0.4","protocol":1}
+{"type":"client_hello","version":"5.0.4","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -37,7 +37,7 @@ The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, 
 
 Human tanks also carry a one-based `rank` in the full arena standings, including tanks outside the top ten. Rankings use score descending, then tank ID ascending, across the same distant, respawning, and reserved pilots included in `tankCount`. Bots omit `rank`.
 
-Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts live projectiles even outside the pilot's view, and boosted Starman shots do not occupy ordinary ammo slots. Visible homing missiles and grenades include `target` when locked onto a pilot ID. Fixed-maze and Infinity tanks also report `spawnProtected` to distinguish spawn invulnerability from Starman and Shield hit protection. While `spawnProtected` and `invulnerable` are both active, the tank cannot fire or remotely detonate grenades.
+Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts current-ammo-epoch live projectiles even outside the pilot's view; old-epoch and boosted Starman shots do not occupy the fresh magazine's slots. Grenade counts/lifetime and remote detonation select only current-epoch grenades; older grenades remain visible and damaging until natural fuse/contact. Visible homing missiles and grenades include `target` when locked onto a pilot ID. Fixed-maze and Infinity tanks also report `spawnProtected` to distinguish spawn invulnerability from Starman and Shield hit protection. While `spawnProtected` and `invulnerable` are both active, the tank cannot fire or remotely detonate grenades.
 
 For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots and room spectators. Room packets include `infinityActive` so members can rejoin a running arena. The Infinity socket join includes the room `code` and the member's existing room `token`. The host's `lobby` command ends the private run.
 
@@ -143,7 +143,7 @@ Fixed-maze and Infinity tank snapshots report the attacker's callsign in `killed
 
 Grenades use the same server-owned line-of-sight seeker, turn rate, and reacquisition delays as homing missiles. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
 
-While `starmanTime` is positive, firing has no cooldown and preserves the equipped weapon's ammo and remaining lifetime. Movement and turning use at least two speed-pickup stacks; stronger actual speed pickups still win. This is a movement floor, so actual speed-stack counts and timers stay independent and resume naturally after Starman expires. Starman shots stay live after the boost ends and leave ordinary projectile slots free. At the safety limit, boosted fire replaces the oldest active shots, and ordinary fire replaces the oldest boosted shots. Fixed-maze snapshots include optional `boostedBulletIds` for active shots fired during Starman, covering both `bullets` and `machineBullets`.
+While `starmanTime` is positive, firing has no cooldown and preserves the equipped weapon's ammo and remaining lifetime. Movement and turning use at least two speed-pickup stacks; stronger actual speed pickups still win. This is a movement floor, so actual speed-stack counts and timers stay independent and resume naturally after Starman expires. Starman shots stay live after the boost ends and leave ordinary projectile slots free. At the safety limit, boosted fire replaces only the oldest boosted shots in its current ammo epoch. Starting a fresh epoch never deletes or retags older shots, and old bonus rounds cannot block fresh ordinary ammo. Fixed-maze snapshots include optional `boostedBulletIds` for active shots fired during Starman, covering both `bullets` and `machineBullets`.
 
 An authoritative projectile can be born and hit before any snapshot contains it. Fixed-mode events and Infinity effects can therefore carry an optional cosmetic `flight` descriptor:
 
@@ -237,9 +237,9 @@ The Laser pickup supplies three ricocheting shots and a long dotted guide while 
 
 Uncollected lifetime remains `floor(pickupCap * 8 / 3)` seconds, with a 30-second minimum for maze area at most `12 * 10` cells. The current six map values are **30, 30, 32, 45, 61 and 90 seconds**. These values are derived by the simulation; clients cannot supply expiry times.
 
-Tank snapshots add server-owned `machineRounds`, an integer remaining budget from 0–180 for the equipped `rapid` weapon. A Machine gun pickup grants 180 rounds, equivalent to three seconds at the existing maximum of 60 successful emissions per second. Each successfully emitted round consumes one; dry or rejected attempts do not. Releasing Fire preserves the remaining budget while `powerTime` continues normally. A new Machine gun pickup refreshes the budget, and a weapon replacement, expiry or fresh life resets it as appropriate. The final budgeted round remains a valid projectile; the tank then returns to its standard weapon.
+Tank snapshots add server-owned `machineRounds`, an integer remaining budget from 0–180 for the equipped `rapid` weapon. A Machine gun pickup grants 180 rounds, equivalent to three seconds at the existing maximum of 60 successful emissions per second. Each successfully emitted round consumes one; dry or rejected attempts do not. Releasing Fire preserves the remaining budget while `powerTime` continues normally. Any pickup or equipment expiry refreshes the surviving Machine gun budget to 180; its unused `charges` field is zero. Weapon depletion/expiry switches to a fresh standard magazine, while a fresh life resets equipment as usual. The final budgeted round remains a valid projectile; the tank then returns to its standard weapon.
 
-The browser subtracts outstanding predicted emissions from the server budget when deciding whether to preview another shot. Predictions never replenish authoritative rounds. The 96-projectile per-owner active cap, compact `machineBullets` stream, fire-rate ceiling and other server ownership checks remain intact. `machineRounds` cannot be set by input, and the existing `charges` field is not the Machine gun's firing budget.
+The browser subtracts outstanding predicted emissions from the server budget when deciding whether to preview another shot. Predictions never replenish authoritative rounds. The 115 slots in the current magazine, compact `machineBullets` stream, 60 Hz fire-rate ceiling and other server ownership checks remain intact. The largest fixed arena's natural rapid-shot lifetime permits at most 114 live shots per owner; Infinity permits at most 108, so the existing 920-row rapid transport bound still covers all old and current epochs. `machineRounds` cannot be set by input, and the existing `charges` field is not the Machine gun's firing budget.
 
 ---
 
@@ -1078,6 +1078,33 @@ chord across cover. The event includes the normal `id`, `generation`, `owner`,
 state, not cosmetic events, determines hits. History bounds and generation/ID
 deduplication remain unchanged. Use the current client for the correct visuals.
 
+### Fresh ammo generations
+
+Every valid power-up pickup starts a fresh magazine and clears `cooldown` and
+`cooldownTotal`. Buff pickups replenish the currently selected weapon; weapon
+pickups select and fully replenish that weapon. Machine gun gets 180 rounds,
+Shotgun gets 5 volleys, and Homing/Grenade/Laser/Cannon get 3 charges. Existing
+standard and per-weapon simultaneous-shot capacities remain unchanged.
+
+The end of any Shield, Speed, Ghost, Starman or weapon timer does the same for
+the surviving selected weapon, or standard if the weapon ended. Simultaneous
+timer expiries in one simulation step reset once. Consuming the last Shield
+charge also refills the surviving tank. The shot that consumes a weapon's final
+round/charge remains live; the tank immediately returns to full standard ammo
+with no leftover cooldown. Surviving weapon timers are not extended. Held Fire
+is retained, the consumed grenade-hold block is cleared, and the existing limit
+of one rapid projectile per 60 Hz simulation tick is retained.
+
+Tank and ordinary bullet snapshots carry optional `ammoEpoch` (missing means `0`).
+Initial fresh actors start at `0`. Each refill or true respawn increments the
+epoch; pooled bot reactivation preserves then increments it. Values are safe
+JSON integers from `0` through `9007199254740991`, wrapping to `1` at that limit.
+Only matching-epoch, nonboosted live shots occupy a magazine. Older shots keep
+their original ownership, flight, collision, fuse, damage and contact metadata;
+they are never removed merely to refill. Existing firing cadence and finite
+lifetimes bound retained physical shots. These fields are server output and
+local prediction metadata, never client-authoritative ammo, damage or score.
+
 ### Remote grenade button semantics (v2.7)
 
 No new client damage/detonation command is accepted. The hub derives a rising
@@ -1088,12 +1115,17 @@ replaying an input backlog. The internal `Input.FirePressed` field is excluded
 from JSON; clients cannot supply it. Pending presses are dropped on input timeout,
 disconnect, and round reset. Repeated held packets do not create new presses.
 
-On a fresh press, a living tank detonates all its owned live `grenade` projectiles
-first. This does not consume a weapon charge and bypasses throw cooldowns. It
-works regardless of current power/expiry/remaining charges. If no grenade is
-active, a grenade-equipped tank launches one subject to normal charges/cooldowns.
+On a fresh press, a living tank detonates its owned live `grenade` projectiles
+from the current ammo epoch first. This does not consume a weapon charge and
+bypasses throw cooldowns. If no current-epoch grenade is active, a grenade-equipped
+tank launches one
+subject to normal charges/cooldowns. A refill starts a fresh throw cycle: old
+epoch grenades keep their natural fuse/contact behavior but are no longer
+selected by this detonator or its HUD readout. This includes the final charge
+throw, which becomes old-epoch when the tank immediately returns to standard.
 These actions consume the whole hold, preventing same-press follow-up shots and
-preventing repeats when the five-second fuse or the final weapon charge expires.
+preventing repeated grenade throws while a grenade remains selected. A weapon
+ending clears the hold block so held standard Fire can resume immediately.
 Other weapon types retain hold-to-fire. The next explicit release/press permits
 another throw. Only the authenticated socket's own tank can trigger this action;
 a supplied owner, target, or forged damage field has no authority.
@@ -1201,6 +1233,12 @@ rounds. Optional `state.machineBullets` carries those rounds as numeric tuples:
 ```
 [id, owner, shotSerial, spawnSerial, x, y, vx, vy, age, life, bounces, colorIndex]
 ```
+
+Optional `state.machineAmmoEpochs` is a parallel array indexed identically to
+`machineBullets`, leaving every tuple exactly 12 fields for compatibility. A
+missing array/entry means `0`; servers omit the entire array when all entries are `0`.
+Epoch values match ordinary bullet/tank `ammoEpoch` and do not identify a new
+shot or alter volley/life reconciliation.
 
 Geometry/time samples use the same rounding as conventional bullet objects.
 The decoder reconstructs `kind:"rapid"`, `r:3.5/3`, `pellet:0`, `target:-1` and

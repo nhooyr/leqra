@@ -41,6 +41,7 @@ func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []Be
 
 func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
 	t, k := p.infiniteTank, &p.kit
+	t.AmmoEpoch = k.AmmoEpoch
 	if p.Bot {
 		t.Difficulty = infiniteBotTunings[p.botLevel].name
 	} else {
@@ -71,6 +72,7 @@ func infinitePrecision(value float64) float64 { return math.Round(value*1000) / 
 
 func (a *infiniteArena) advanceEquipment(p *infinitePilot) {
 	k := &p.kit
+	wasShield, wasStar, wasSpeed, hadWeapon := k.Shield > 0, k.StarmanTime > 0, k.SpeedTime > 0, k.Power != ""
 	k.Invulnerable = max(0, k.Invulnerable-tickDT)
 	if k.Invulnerable <= 1e-9 {
 		k.SpawnProtected = false
@@ -97,8 +99,11 @@ func (a *infiniteArena) advanceEquipment(p *infinitePilot) {
 	if k.StarmanTime <= 0 {
 		k.PowerTime = max(0, k.PowerTime-tickDT)
 		if k.PowerTime < 1e-9 {
-			k.Power, k.PowerTime, k.Charges, k.MachineRounds = "", 0, 0, 0
+			clearWeapon(k)
 		}
+	}
+	if wasShield && k.Shield == 0 || wasStar && k.StarmanTime == 0 || wasSpeed && k.SpeedTime == 0 || wasGhost && k.GhostTime == 0 || hadWeapon && k.Power == "" {
+		refillAmmo(k)
 	}
 	k.Cooldown = max(0, k.Cooldown-tickDT)
 	k.Recoil = max(0, k.Recoil-9*tickDT)
@@ -243,7 +248,7 @@ func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 		detonated := false
 		for i := range a.bullets {
 			b := &a.bullets[i]
-			if b.Owner == p.ID && b.Kind == "grenade" && !b.dead {
+			if b.Owner == p.ID && b.AmmoEpoch == k.AmmoEpoch && b.Kind == "grenade" && !b.dead {
 				a.detonate(b)
 				detonated = true
 			}
@@ -301,7 +306,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 		spec.cooldown = 0
 	} else {
 		for _, b := range a.bullets {
-			if !b.dead && b.Owner == p.ID {
+			if !b.dead && b.Owner == p.ID && b.AmmoEpoch == k.AmmoEpoch {
 				if b.boosted {
 					boosted++
 				} else {
@@ -328,7 +333,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 			continue
 		}
 		a.nextBullet++
-		b := infiniteBullet{ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, ownerName: p.Name, X: launch.x, Y: launch.y, Kind: kind, Color: p.ColorIndex,
+		b := infiniteBullet{AmmoEpoch: k.AmmoEpoch, ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, ownerName: p.Name, X: launch.x, Y: launch.y, Kind: kind, Color: p.ColorIndex,
 			VX: launch.ux * spec.speed, VY: launch.uy * spec.speed, Life: spec.life, radius: spec.radius, boosted: starman}
 		if launch.bounced {
 			b.Bounces = 1
@@ -358,7 +363,7 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 		}
 		for i := len(a.bullets) - 1; i >= 0; i-- {
 			b := &a.bullets[i]
-			if b.Owner != p.ID || b.dead || !starman && !b.boosted {
+			if b.Owner != p.ID || b.dead || b.AmmoEpoch != k.AmmoEpoch || !b.boosted {
 				continue
 			}
 			b.dead = remaining == 0
@@ -386,7 +391,8 @@ func (a *infiniteArena) spendWeapon(k *Tank) {
 			return
 		}
 	}
-	k.Power, k.PowerTime, k.Charges = "", 0, 0
+	clearWeapon(k)
+	refillAmmo(k)
 }
 
 func (a *infiniteArena) fireLaser(p *infinitePilot) {
@@ -492,6 +498,7 @@ func (a *infiniteArena) hurtWithContact(target *infinitePilot, owner, ownerTeam 
 		k.ShieldCharges = shieldCount(k) - 1
 		if k.ShieldCharges == 0 {
 			k.Shield = 0
+			refillAmmo(k)
 		}
 		k.Invulnerable = .35
 		k.SpawnProtected = false

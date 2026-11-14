@@ -38,6 +38,6 @@ test('fixed local deaths capture the killer color before departure and clear met
  const noop=()=>{};Object.assign(s,{tanks:[owner,target],canDamage:()=>true,recordLocalDeath:noop,objectiveMode:()=>false,burst:noop,addRing:noop,reduceMotion:true,boom:noop,addLog:noop,mode:'room',touchUI:false,updateHUD:noop});
  vm.runInContext(declaration('hurt'),s);assert.equal(s.hurt(target,{owner:1}),true);assert.equal(target.killedByColor,fixtures[3].canonical);
  s.tanks=[target];s.renderDeathNotice(target,2,true);assert.equal(s.$('deathNotice2').children[1].style.color,fixtures[3].painted);
- Object.assign(s,{localObjectives:null,spawnCells:()=>Array(8).fill(0),MAX_TANKS:8,grid:[{neighbors:[]}],center:()=>({x:42,y:42}),flagSafeSpawn:()=>true,distance:()=>1000,bullets:[],cols:1,rows:1,newTank:()=>({alive:true,r:17,color:target.color}),firePresses:new Set(),localPlayerID:()=>3,mouseAim:{},addRing:noop});
+ Object.assign(s,{Net:require(assetPath('netcode.js')),localObjectives:null,spawnCells:()=>Array(8).fill(0),MAX_TANKS:8,grid:[{neighbors:[]}],center:()=>({x:42,y:42}),flagSafeSpawn:()=>true,distance:()=>1000,bullets:[],cols:1,rows:1,newTank:()=>({alive:true,r:17,color:target.color}),firePresses:new Set(),localPlayerID:()=>3,mouseAim:{},addRing:noop});
  vm.runInContext(declaration('respawnLocalTank'),s);s.respawnLocalTank(target);assert.equal(target.killedBy,'');assert.equal(target.killedByColor,'');s.renderDeathNotice(target,2,true);assert.equal(s.$('deathNotice2').hidden,true);
 });

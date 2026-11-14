@@ -51,6 +51,9 @@ class PracticeArena(
     private val held = mutableMapOf<Int, Boolean>()
     private val movementInputs = mutableMapOf<Int, GameInput>()
     private val fireBlocked = mutableSetOf<Int>()
+    private val fireAmmoEpochs = mutableMapOf<Int, Long>()
+    private val rapidShotTicks = mutableMapOf<Int, Long>()
+    private val expiredAmmo = mutableSetOf<Int>()
     private val botCourses = mutableMapOf<Int, BeamPoint>()
     private val botDecisions = mutableMapOf<Int, Double>()
     private val dumbBrains = mutableMapOf<Int, Pair<Int, DumbBotBrain>>()
@@ -167,6 +170,8 @@ class PracticeArena(
                 held.remove(2)?.let { held[replacement] = it }
                 movementInputs.remove(2)?.let { movementInputs[replacement] = it }
                 if (fireBlocked.remove(2)) fireBlocked.add(replacement)
+                fireAmmoEpochs.remove(2)?.let { fireAmmoEpochs[replacement] = it }
+                rapidShotTicks.remove(2)?.let { rapidShotTicks[replacement] = it }
                 botCourses.remove(2)?.let { botCourses[replacement] = it }
                 botDecisions.remove(2)?.let { botDecisions[replacement] = it }
                 dumbBrains.remove(2)?.let { dumbBrains[replacement] = it }
@@ -271,6 +276,7 @@ class PracticeArena(
         stepStarted = time
         time += dt
         snapshot.tick++
+        expiredAmmo.clear()
         snapshot.effects = snapshot.effects.filter { time - (effectTimes[it.id] ?: 0.0) < .15 }
         val live = snapshot.effects.map { it.id }.toSet()
         effectTimes.keys.retainAll(live)
@@ -302,7 +308,10 @@ class PracticeArena(
                 val controls = if (t.bot) botInput(i, dt) else inputs[t.id] ?: GameInput()
                 if (t.bot && t.id in fireBlocked) controls.fire = false
                 movementInputs[t.id] = controls.copy()
+                val hadSpeed = t.speedTime > 0
+                val hadGhost = t.ghostTime > 0
                 move(t, controls, dt, ageStarman = false)
+                if (expiredAmmo.remove(t.id) || hadSpeed && t.speedTime <= 0 || hadGhost && t.ghostTime <= 0) refillAmmo(t)
                 collectPickups(i)
                 weaponControl(i, controls.fire)
             }
@@ -405,7 +414,8 @@ class PracticeArena(
             val team = if (rules.teamMode == "teams") previous?.team?.takeIf { it > 0 } ?: (snapshot.tanks.size % 2 + 1) else 0
             snapshot.tanks += ArenaTank(id = id, name = previous?.name ?: "Bot ${id - 1}", x = p.x, y = p.y, angle = unitRandom() * 2 * PI - PI,
                 colorIndex = previous?.colorIndex ?: if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0 else GamePalette.index(id - 1), team = team,
-                score = previous?.score ?: 0, bot = true, spawnProtected = true, spawnSerial = (previous?.spawnSerial ?: 0) + 1, invulnerable = 1.0, difficulty = level)
+                score = previous?.score ?: 0, bot = true, spawnProtected = true, spawnSerial = (previous?.spawnSerial ?: 0) + 1, invulnerable = 1.0, difficulty = level,
+                ammoEpoch = if (previous == null) 0 else AmmoEpoch.next(previous.ammoEpoch))
             roamingIDs += id
             roamingHomes[id] = anchor.id
         }
@@ -418,6 +428,7 @@ class PracticeArena(
             inactiveRoamingReadyAt[tank.id] = time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
             roamingIDs.remove(tank.id); roamingHomes.remove(tank.id); held.remove(tank.id); movementInputs.remove(tank.id)
             fireBlocked.remove(tank.id); botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
+            fireAmmoEpochs.remove(tank.id); rapidShotTicks.remove(tank.id); expiredAmmo.remove(tank.id)
             nextBoostEffects.remove(tank.id); motionPresenters.remove(tank.id)
         }
         snapshot.tanks = snapshot.tanks.filter { it.id !in ids }
@@ -585,6 +596,7 @@ class PracticeArena(
                 survivalEnemy = old.survivalEnemy,
                 survivalBoss = old.survivalBoss,
                 difficulty = old.difficulty,
+                ammoEpoch = AmmoEpoch.next(old.ammoEpoch),
             )
         snapshot.tanks = snapshot.tanks.toMutableList().also { it[index] = replacement }
         fireBlocked.remove(old.id)
@@ -594,6 +606,9 @@ class PracticeArena(
     }
 
     private fun advanceEquipment(t: ArenaTank, dt: Double) {
+        val hadShield = t.shield > 0
+        val hadStar = t.starmanTime > 0
+        val hadWeapon = t.power.isNotEmpty() && t.powerTime > 0
         t.invulnerable = max(0.0, t.invulnerable - dt)
         if (t.invulnerable < 1e-9) {
             t.invulnerable = 0.0
@@ -617,6 +632,12 @@ class PracticeArena(
         }
         t.cooldown = max(0.0, t.cooldown - dt)
         t.recoil = max(0.0, t.recoil - 9 * dt)
+        if (hadShield && t.shield <= 0 || hadStar && t.starmanTime <= 0 || hadWeapon && t.powerTime <= 0) expiredAmmo += t.id
+    }
+
+    private fun refillAmmo(tank: ArenaTank) {
+        AmmoEpoch.refill(tank)
+        fireBlocked.remove(tank.id)
     }
 
     private fun populatePickups(dt: Double) {
@@ -708,6 +729,7 @@ class PracticeArena(
             if (p.life <= 0 || hypot(p.x - t.x, p.y - t.y) >= 30) continue
             p.life = 0.0
             applyPower(t, p.type, powerDuration, starDuration)
+            fireBlocked.remove(t.id)
             if (t.bot && p.type == "grenade") held[t.id] = false
             effect("pickup", t.x, t.y, t.id)
         }
@@ -900,15 +922,19 @@ class PracticeArena(
 
     private fun weaponControl(index: Int, fire: Boolean) {
         val t = snapshot.tanks[index]
+        if (fireAmmoEpochs[t.id] != t.ammoEpoch) {
+            fireBlocked.remove(t.id)
+            fireAmmoEpochs[t.id] = t.ammoEpoch
+        }
         val pressed = fire && held[t.id] != true
         held[t.id] = fire
         if (!fire) fireBlocked.remove(t.id)
         if (t.hp <= 0 || t.spawnProtected && t.invulnerable > 1e-9) return
         if (pressed) {
-            val grenades = projectiles.filter { it.wire.owner == t.id && it.wire.kind == "grenade" }
+            val grenades = projectiles.filter { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == t.ammoEpoch }
             if (grenades.isNotEmpty()) {
                 grenades.forEach { detonate(it.wire, completedFlight(it)) }
-                projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" }
+                projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == t.ammoEpoch }
                 fireBlocked.add(t.id)
                 return
             }
@@ -937,12 +963,14 @@ class PracticeArena(
         if (
             t.hp <= 0 ||
                 t.spawnProtected && t.invulnerable > 1e-9 ||
-                !boosted && (t.cooldown > 1e-9 || kind == "rapid" && t.machineRounds <= 0)
+                !boosted && (t.cooldown > 1e-9 || kind == "rapid" && t.machineRounds <= 0) ||
+                kind == "rapid" && rapidShotTicks[t.id] == snapshot.tick
         )
             return
         val offsets = if (kind == "scatter") listOf(-.21, 0.0, .21) else listOf(0.0)
-        val ordinary = projectiles.count { it.wire.owner == t.id && !it.boosted }
+        val ordinary = projectiles.count { it.wire.owner == t.id && !it.boosted && it.wire.ammoEpoch == t.ammoEpoch }
         if (!boosted && kind != "laser" && ordinary + offsets.size > spec.capacity) return
+        if (kind == "rapid") rapidShotTicks[t.id] = snapshot.tick
         val cooldown = if (boosted) 0.0 else spec.cooldown
         t.cooldown = cooldown
         t.cooldownTotal = cooldown
@@ -967,6 +995,7 @@ class PracticeArena(
                             kind = kind,
                             colorIndex = t.colorIndex,
                             life = spec.life,
+                            ammoEpoch = t.ammoEpoch,
                         ),
                         boosted = boosted,
                         rangeLeft =
@@ -989,7 +1018,7 @@ class PracticeArena(
             var remaining = max(0, 115 - if (boosted) 0 else ordinary + offsets.size)
             for (i in projectiles.indices.reversed()) {
                 val p = projectiles[i]
-                if (p.wire.owner == t.id && (boosted || p.boosted)) {
+                if (p.wire.owner == t.id && p.wire.ammoEpoch == t.ammoEpoch && (boosted || p.boosted)) {
                     if (remaining > 0) remaining-- else p.wire.life = 0.0
                 }
             }
@@ -1001,6 +1030,8 @@ class PracticeArena(
             t.power = ""
             t.powerTime = 0.0
             t.charges = 0
+            t.machineRounds = 0
+            refillAmmo(t)
         }
     }
 
@@ -1259,7 +1290,7 @@ class PracticeArena(
             ContactTankState(t.x, t.y, t.angle, hp = t.hp, shield = t.shield, shieldCharges = t.shieldCharges, invulnerable = t.invulnerable, spawnProtected = t.spawnProtected))
         if (!starman && t.shield > 0) {
             t.shieldCharges = max(1, t.shieldCharges) - 1
-            if (t.shieldCharges == 0) t.shield = 0.0
+            if (t.shieldCharges == 0) { t.shield = 0.0; refillAmmo(t) }
             t.invulnerable = .35
             t.spawnProtected = false
             effect("shield", t.x, t.y, owner, contact = contact)
@@ -1314,8 +1345,8 @@ class PracticeArena(
             val b = p.wire
             if (p.boosted) boosted.add(b.id)
             indices[b.owner]?.let { i ->
-                if (!p.boosted) owned[i].ammo++
-                if (b.kind == "grenade") {
+                if (!p.boosted && b.ammoEpoch == snapshot.tanks[i].ammoEpoch) owned[i].ammo++
+                if (b.kind == "grenade" && b.ammoEpoch == snapshot.tanks[i].ammoEpoch) {
                     owned[i].grenades++
                     owned[i].grenadeLife = max(owned[i].grenadeLife, b.life)
                 }
@@ -1419,6 +1450,7 @@ class PracticeArena(
             duration: Double = 15.0,
             starDuration: Double = 8.0,
         ) {
+            if (kind !in pickupKinds) return
             with(tank) {
                 when (kind) {
                     "shield" -> {
@@ -1446,7 +1478,7 @@ class PracticeArena(
                     "cannon" -> {
                         power = kind
                         powerTime = duration
-                        charges = if (kind in listOf("rapid", "scatter")) 5 else 3
+                        charges = if (kind == "rapid") 0 else if (kind == "scatter") 5 else 3
                         machineRounds = if (kind == "rapid") 180 else 0
                         if (kind == "rapid") {
                             cooldown = 0.0
@@ -1455,6 +1487,7 @@ class PracticeArena(
                     }
                 }
             }
+            AmmoEpoch.refill(tank)
         }
 
         fun grenadeDragFactor(lifeBefore: Double, lifeAfter: Double): Double {

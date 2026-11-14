@@ -198,7 +198,7 @@ function makeTank(id, x, y, bot = false) {
   id, x, y, bot, angle: between(-Math.PI, Math.PI), hp: 1, alive: true, score: 0,
   colorIndex: bot ? 1 + Math.floor(Math.random() * (COLORS.length - 1)) : 0,
   name: bot ? 'Bot ' + id.slice(4) : pilotName(), cooldown: 0, invulnerable: 1, spawnProtected: true, respawn: 0,
-  track: 0, recoil: 0, speedStacks: 0, spawnSerial: 1,
+  track: 0, recoil: 0, speedStacks: 0, spawnSerial: 1, ammoEpoch: 0, machineRounds: 0, charges: 0,
   course: null, nextDecision: 0, nextDumbShot: null, dumbTarget: null, dumbAim: null, dumbAttack: false,
  };
 }
@@ -341,7 +341,7 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
  const contact=(world.flights||=new net.ProjectileFlights()).recordContact(projectile||{id:world.impactFlight,owner:ownerID,kind:starmanContact?'starman':'laser'},target,world.time/STEP,performance.now());
  if (target.shield > 0 && !starmanContact) {
   target.shieldCharges = Math.max(0, (target.shieldCharges || 1) - 1);
-  if (!target.shieldCharges) target.shield = 0;
+  if (!target.shieldCharges) {target.shield = 0;net.refillAmmo(target);world.nextHUD=0;}
   target.invulnerable = .35;
   target.spawnProtected = false;
   world.impactContact=contact;effect(world, 'shield', target.x, target.y, ownerID);delete world.impactContact;
@@ -385,7 +385,7 @@ function weaponControl(world, tank, held, pressed) {
  if (pressed) {
   let detonated = false;
   for (const bullet of world.bullets) {
-   if (!bullet.dead && bullet.kind === 'grenade' && bullet.owner === tank.id) {
+   if (!bullet.dead && bullet.kind === 'grenade' && bullet.owner === tank.id && net.ammoEpoch(bullet) === net.ammoEpoch(tank)) {
     detonate(world, bullet);
     detonated = true;
    }
@@ -402,7 +402,7 @@ function weaponControl(world, tank, held, pressed) {
 function spendWeapon(tank) {
  if (!tank.power || tank.starmanTime > 0) return;
  if (tank.power === 'rapid' ? --tank.machineRounds > 0 : --tank.charges > 0) return;
- Object.assign(tank, {power: '', powerTime: 0, charges: 0});
+ Object.assign(tank, {power: '', powerTime: 0, charges: 0});net.refillAmmo(tank);
 }
 
 function traceLaser(world, tank, preview = false) {
@@ -464,7 +464,7 @@ function fireShot(world, tank) {
  const offsets = kind === 'scatter' ? [-.21, 0, .21] : [0];
  if (!boosted) {
   let ammo = 0;
-  for (const bullet of world.bullets) if (!bullet.dead && !bullet.boosted && bullet.owner === tank.id) ammo++;
+  for (const bullet of world.bullets) if (!bullet.dead && !bullet.boosted && bullet.owner === tank.id && net.ammoEpoch(bullet) === net.ammoEpoch(tank)) ammo++;
   if (ammo + offsets.length > spec.ammo) return;
  }
  Object.assign(tank, {cooldown, cooldownTotal:cooldown, recoil:1});
@@ -472,13 +472,13 @@ function fireShot(world, tank) {
   const angle = tank.angle + offset,launch=projectileLaunch(world,tank,angle,spec.r,kind==='cannon'?RADIUS+spec.r+1:28),ux=launch.ux,uy=launch.uy;
   if(!launch.valid){effect(world,'impact',tank.x,tank.y,tank.id);continue;}
   const bullet = {
-   ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, x: launch.x, y: launch.y, color: COLORS[tank.colorIndex] || COLORS[0],
+   ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, ammoEpoch: net.ammoEpoch(tank), x: launch.x, y: launch.y, color: COLORS[tank.colorIndex] || COLORS[0],
    vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: launch.bounced?1:0, seekDelay: launch.bounced?.04:0, target: null, trail: [],
   };
   (world.flights||=new net.ProjectileFlights()).begin(bullet,world.time/STEP);
   if (advanceBullet(world, bullet, launch.muzzle / spec.speed)) world.bullets.push(bullet);
  }
- art.recycleStarmanProjectiles(world.bullets, tank.id, boosted);
+ art.recycleStarmanProjectiles(world.bullets, tank.id, boosted, net.ammoEpoch(tank));
  if (showShot && (boosted || kind !== 'rapid' || tank.machineRounds % 4 === 0)) {
   tank.nextBoostEffect = world.time + 4 * STEP;
   effect(world, 'shot:' + kind, tank.x, tank.y, tank.id);
@@ -671,8 +671,8 @@ function respawnOfflineTank(world, tank, point) {
  const fresh = makeTank(tank.id, point.x, point.y, tank.bot);
  const fireHeld = !tank.bot && inputState(tank.id === world.local?.id ? world.local : world).fire;
  Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
-  spawnSerial: tank.spawnSerial + 1, killedBy: '', killedByColor:'',power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
-  ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});
+  ammoEpoch: net.ammoEpoch(tank), spawnSerial: tank.spawnSerial + 1, killedBy: '', killedByColor:'',power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
+  ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});net.refillAmmo(tank);
 }
 
 function parkBot(world, bot) {
@@ -744,6 +744,7 @@ function offlineStep(world, dt) {
    }
    continue;
   }
+  tank.ammoRefillPending=tank.shield>0&&tank.shield<=dt+1e-9||tank.starmanTime>0&&tank.starmanTime<=dt+1e-9;
   for (const key of ['invulnerable', 'shield', 'starmanTime', 'cooldown']) {
    const value = (tank[key] || 0) - dt;
    tank[key] = value > 1e-9 ? value : 0;
@@ -752,7 +753,7 @@ function offlineStep(world, dt) {
   if (tank.shield === 0) tank.shieldCharges = 0;
   if (!(tank.starmanTime > 0)) {
    tank.powerTime = Math.max(0, (tank.powerTime || 0) - dt);
-   if (tank.powerTime <= 1e-9) Object.assign(tank, {power: '', powerTime: 0, charges: 0, machineRounds: 0});
+   if (tank.power&&tank.powerTime <= 1e-9) {Object.assign(tank, {power: '', powerTime: 0, charges: 0, machineRounds: 0});tank.ammoRefillPending=true;}
   }
   tank.recoil = Math.max(0, tank.recoil - 9 * dt);
  }
@@ -764,11 +765,13 @@ function offlineStep(world, dt) {
   const controls = tank.bot ? botInput(world,tank,locals) : inputState(tank.id === world.local?.id ? world.local : world);
   if (tank.bot && tank.fireBlocked) controls.fire = false;
   (world.movementInputs ||= new Map()).set(tank.id,controls);
+  const refill=tank.ammoRefillPending||tank.speedTime>0&&tank.speedTime<=dt||tank.ghostTime>0&&tank.ghostTime<=dt;tank.ammoRefillPending=false;
   net.move(tank, controls, dt, world.moveTank,false);
+  if(refill){net.refillAmmo(tank);world.nextHUD=0;}
   for (const pickup of world.pickups) {
    if (pickup.life <= 0 || Math.hypot(pickup.x - tank.x, pickup.y - tank.y) >= RADIUS + 13) continue;
    pickup.life = 0;
-   art.grantPower(tank, pickup.type, POWER_DURATION, STAR_DURATION);
+   art.grantPower(tank, pickup.type, POWER_DURATION, STAR_DURATION);world.nextHUD=0;
    if (tank.bot && pickup.type === 'grenade') tank.fireHeld = false;
    effect(world, 'pickup', tank.x, tank.y, tank.id);
   }
@@ -1654,6 +1657,7 @@ function receive(ws, event) {
   const pilot = session.tanks.find(tank=>tank.id===seat.id);
   if (!pilot) continue;
   const old = session.previousTanks.get(pilot.id);
+  if(net.ammoEpoch(old)!==net.ammoEpoch(pilot))session.nextHUD=0;
   const snap = !joined || !old || old.spawnSerial !== pilot.spawnSerial;
   seat.predictor.reconcile(pilot,snap);
   if (snap) seat.lastSent = null;

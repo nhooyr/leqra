@@ -15,7 +15,7 @@ function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||assetPath('game.js'),mod
  const tanks=Array.from({length:8},(_,id)=>({id,name:'PILOT '+id,color:'#73cee4',team:id===0||id===7?1:2,alive:true,power:id===0?'grenade':'scatter',charges:3,powerTime:8,machineRounds:180,cooldown:.2,cooldownTotal:.54,ghostTime:0,shield:0,speedTime:0}));
  const bullets=Array.from({length:projectileCount},(_,n)=>({owner:n%8,kind:n%17===0?'homing':n%29===0?'grenade':'rapid',life:2.2+n%8/10,dead:n%31===0,target:n%2?7:0}));
  const rules={friendlyFire:false},online={snapshots:[{bullets,tankMap:new Map(tanks.map(t=>[t.id,t])),received:1000}]};
- const env={mode,phase:'playing',bullets,tanks,online,rules,$,nodes,now:1000,performance:{now:()=>env.now},feedbackAt:-Infinity,time:1,
+ const env={Net:require(assetPath('netcode.js')),mode,phase:'playing',bullets,tanks,online,rules,$,nodes,now:1000,performance:{now:()=>env.now},feedbackAt:-Infinity,time:1,
   controlledTank:()=>tanks[0],secondaryID:()=>7,roomData:()=>({players:tanks}),currentRules:()=>rules,isEnemy:(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team),
   survivalState:()=>env.survival,survivalBreak:()=>env.survival?.status==='break',survivalMode:()=>!!env.survival,objectiveMode:()=>false,combatPrefs:{visual:true,audio:false},homingAlerts:[{},{}],clearTankAt:()=>true,muzzleBlocked:()=>false,
   clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),paintColor:c=>c,pilotFeedback:[],shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,COLORS:['#fff'],MACHINE_CAPACITY:96,MACHINE_FIRING_ROUNDS:180,CANNON_COOLDOWN:.85};

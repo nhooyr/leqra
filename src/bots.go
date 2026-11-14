@@ -624,9 +624,13 @@ func (g *Game) botHoldingHill(t *Tank) bool {
 
 func (g *Game) botControl(t *Tank, dt float64) {
 	d := tuneBot(t.Difficulty)
+	wasSpeed := t.SpeedTime > 0
 	t.SpeedTime = math.Max(0, t.SpeedTime-dt)
 	if t.SpeedTime <= 0 {
 		t.SpeedStacks = 0
+		if wasSpeed {
+			refillExpiredAmmo(t)
+		}
 	}
 	g.advanceGhost(t, dt)
 	if n := movementSpeedCount(t); n > 0 {
@@ -700,7 +704,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 	// Remotely detonate against an exposed opponent, not an ally or a guessed hit.
 	if a.Shot <= 0 && (t.Difficulty != "godlike" || g.godlikeCanDetonate(t)) {
 		for _, b := range g.Bullets {
-			if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && b.Age > .22 && dist(b.X, b.Y, enemy.X, enemy.Y) < blastRadius+enemy.R && !g.rayBlocked(b.X, b.Y, enemy.X-b.X, enemy.Y-b.Y, 0) {
+			if !b.Dead && b.Owner == t.ID && b.AmmoEpoch == t.AmmoEpoch && b.Kind == "grenade" && b.Age > .22 && dist(b.X, b.Y, enemy.X, enemy.Y) < blastRadius+enemy.R && !g.rayBlocked(b.X, b.Y, enemy.X-b.X, enemy.Y-b.Y, 0) {
 				g.detonateOwned(t)
 				a.Shot = d.reaction
 				break
@@ -835,7 +839,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		}
 		hasGrenade := false
 		for _, b := range g.Bullets {
-			if !b.Dead && b.Kind == "grenade" && b.Owner == t.ID {
+			if !b.Dead && b.Kind == "grenade" && b.Owner == t.ID && b.AmmoEpoch == t.AmmoEpoch {
 				hasGrenade = true
 			}
 		}

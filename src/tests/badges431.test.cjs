@@ -87,6 +87,20 @@ test('badge orbits reuse cached icon sprites across movement and rotation, remov
  Object.assign(t,{alive:false,powerTime:10});ctx.events.length=0;s.drawTank(t);assert.equal(pictures(ctx).length,0);assert.equal(ctx.events.filter(e=>e.type==='text').length,0);
 });
 
+test('setup prepares every pickup badge without changing first-pickup artwork, tank state or geometry',()=>{
+ const cold=boot(),warm=boot();warm.s.document.querySelectorAll=()=>[];
+ vm.runInContext(declaration('renderPowerLegend'),warm.s);warm.s.renderPowerLegend();
+ assert.equal(warm.made.length,10);warm.s.renderPowerLegend();assert.equal(warm.made.length,10,'layout refreshes reuse the prepared sprites');
+ for(const kind of ['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman']){
+  const t=tank({power:kind,powerTime:15,starmanTime:kind==='starman'?8:0}),before=structuredClone(t);
+  cold.ctx.events.length=warm.ctx.events.length=0;cold.s.drawTank(t);warm.s.drawTank(t);
+  const geometry=ctx=>pictures(ctx).map(({image,...rest})=>({kind:image.kind,...rest}));
+  assert.deepEqual(geometry(warm.ctx),geometry(cold.ctx),kind+' keeps the same badge artwork and placement');
+  assert.deepEqual(t,before,kind+' preparation/drawing leaves hitboxes and equipment untouched');
+  assert.equal(warm.made.length,10,kind+' first pickup creates no badge canvas');
+ }
+});
+
 test('bot and remote power icons keep their tank-relative offsets through every edge and corner',()=>{
  for(const mode of ['room','online'])for(const scale of [1,.25,.08])for(const count of [1,2,3,4]){
   const {s,ctx}=boot();Object.assign(s,{mode,scale});

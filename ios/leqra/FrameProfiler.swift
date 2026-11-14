@@ -17,6 +17,18 @@ final class FrameProfiler {
     private let firstShotProbe: Bool
     private let badgeCountProbe: Bool
     private let hitMatrixProbe: Bool
+    private let pickupMatrixProbe: Bool
+    private let ammoRefillProbe: Bool
+    private var ammoArena: PracticeArena?
+    private var ammoEpisode = -1
+    private var ammoAccumulator = 0.0
+    private var ammoSteps = 0
+    private var ammoChecks = 0
+    private var ammoFailures: [String] = []
+    let world: ArenaWorld?
+    private var pickupEvents: [[String: Any]] = []
+    private var pickupEvent: (episode: Int, stage: String, power: String)?
+    private var previousPickupEvent = ""
     private var hitArena: PracticeArena?
     private var hitEpisode = -1
     private var hitAccumulator = 0.0
@@ -37,7 +49,7 @@ final class FrameProfiler {
     private var previousMotionPose: ArenaTank?
     private var previousVelocity: (x: Double, y: Double)?
     private var previousAcceleration: (x: Double, y: Double)?
-    let maze = InfiniteMaze(seed: 42)
+    let maze: InfiniteMaze
     private var elapsed = 0.0
     private var reported = false
     private var samples: [[Double]] = []
@@ -61,6 +73,12 @@ final class FrameProfiler {
         firstShotProbe = arguments.contains("--probe-first-shot")
         badgeCountProbe = arguments.contains("--probe-badge-counts")
         hitMatrixProbe = arguments.contains("--probe-hit-matrix")
+        pickupMatrixProbe = arguments.contains("--probe-pickup-matrix")
+        ammoRefillProbe = arguments.contains("--probe-ammo-refill")
+        if arguments.contains("--probe-fixed") {
+            world = FixedArena(rules: RoomRules(), name: "PROBE", colorIndex: 0, botCount: 0, seed: 42).world
+        } else { world = nil }
+        maze = world.map { InfiniteMaze(world: $0) } ?? InfiniteMaze(seed: 42)
         if motionMode != nil {
             var tank = ArenaTank(id: 1, name: "PROBE PILOT", x: 420, y: 420)
             tank.speedTime = 120; tank.speedStacks = 5
@@ -86,6 +104,8 @@ final class FrameProfiler {
     func snapshot(dt: Double) -> ArenaSnapshot {
         elapsed += dt
         if hitMatrixProbe { return hitSnapshot(dt: dt) }
+        if ammoRefillProbe { return ammoSnapshot(dt: dt) }
+        if pickupMatrixProbe { return pickupSnapshot() }
         let time = elapsed, serial = Int(time * 60) + 200
         if var tank = motionTank {
             motionAccumulator += min(dt, 0.1)
@@ -180,6 +200,85 @@ final class FrameProfiler {
         return value
     }
 
+    private func pickupSnapshot() -> ArenaSnapshot {
+        let powers = ["regular", "rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"]
+        let time = max(0, elapsed - 1), episode = Int(time / 0.55), age = time - Double(episode) * 0.55
+        let power = powers[episode % powers.count]
+        let stage = age < 0.1 || elapsed < 1 ? "plain" : age < 0.25 ? "pickup" : "fire"
+        pickupEvent = (episode, stage, power)
+        var tank = ArenaTank(id: 1, name: "PROBE PILOT", x: 420, y: 420, spawnSerial: 1)
+        if stage != "plain" {
+            switch power {
+            case "shield": tank.shield = 15; tank.shieldCharges = 1
+            case "speed": tank.speedTime = 15; tank.speedStacks = 1
+            case "ghost": tank.ghostTime = 15
+            case "starman": tank.starmanTime = 8
+            case "regular": break
+            default: tank.power = power; tank.powerTime = 15; tank.charges = 3; tank.machineRounds = 180
+            }
+        }
+        var value = ArenaSnapshot(tick: UInt64(elapsed * 60), tanks: [tank])
+        value.generation = 1; value.phase = "playing"; value.players = 1; value.tankCount = 1; value.world = world
+        if stage == "pickup", power != "regular" {
+            value.effects = [ArenaEffect(id: episode * 1000 + 1, kind: "pickup", x: 420, y: 420, owner: 1)]
+        }
+        if stage == "fire" {
+            let kind = ["rapid", "scatter", "homing", "grenade", "cannon", "laser"].contains(power) ? power : ""
+            let id = episode * 1000 + 2
+            if kind == "laser" {
+                value.effects = [ArenaEffect(id: id, kind: "laser", owner: 1, points: [BeamPoint(x: 448, y: 420), BeamPoint(x: 700, y: 420)])]
+            } else {
+                value.bullets = (0..<(kind == "scatter" ? 3 : 1)).map {
+                    ArenaBullet(id: id + $0, x: 452 + (age - 0.25) * 420, y: 420 + Double($0) * 7, vx: 420, owner: 1, kind: kind, life: 5)
+                }
+                value.effects = [ArenaEffect(id: id, kind: "shot:" + kind, x: 420, y: 420, owner: 1)]
+            }
+        }
+        value.leaderboard = [LeaderboardEntry(id: 1, name: tank.name)]
+        return value
+    }
+
+    private func ammoSnapshot(dt: Double) -> ArenaSnapshot {
+        let cases = ["rapid", "scatter", "homing", "grenade", "laser", "cannon", "shieldExpiry", "speedExpiry", "ghostExpiry", "starmanExpiry", "weaponExpiry"]
+        let episode = Int(elapsed / 0.65), scenario = cases[episode % cases.count]
+        let expiry = scenario.hasSuffix("Expiry")
+        if episode != ammoEpisode {
+            ammoEpisode = episode; ammoAccumulator = 0; ammoSteps = 0
+            var tank = ArenaTank(id: 1, name: "AMMO CHECK", x: 42, y: 42, spawnSerial: 1,
+                cooldown: expiry ? 0.5 : 0, powerTime: scenario == "weaponExpiry" ? 0.001 : 15,
+                power: expiry ? "cannon" : scenario, charges: scenario == "rapid" ? 0 : 1,
+                machineRounds: scenario == "rapid" ? 1 : 0, ammoEpoch: 41)
+            if scenario == "shieldExpiry" { tank.shield = 0.001; tank.shieldCharges = 1 }
+            if scenario == "speedExpiry" { tank.speedTime = 0.001; tank.speedStacks = 5 }
+            if scenario == "ghostExpiry" { tank.ghostTime = 0.001 }
+            if scenario == "starmanExpiry" { tank.starmanTime = 0.001 }
+            ammoArena = PracticeArena(seed: 42, name: tank.name, colorIndex: 0, botCount: 0, world: world, initialTanks: [tank])
+        }
+        let arena = ammoArena!
+        ammoAccumulator += min(dt, 0.1)
+        while ammoAccumulator + 1e-9 >= 1 / 60 {
+            arena.step(input: GameInput(fire: !expiry || ammoSteps > 0), dt: 1 / 60)
+            ammoSteps += 1; ammoAccumulator = max(0, ammoAccumulator - 1 / 60)
+            let tank = arena.snapshot.tanks[0]
+            if ammoSteps == 1 {
+                ammoChecks += 1
+                let standard = !expiry || scenario == "weaponExpiry"
+                if tank.ammoEpoch != 42 || tank.cooldown != 0 || tank.ammoUsed != 0
+                    || tank.power != (standard ? "" : "cannon") || tank.charges != (standard ? 0 : 3) {
+                    ammoFailures.append(scenario + ": magazine did not refill before firing")
+                }
+            } else if ammoSteps == 2 {
+                ammoChecks += 1
+                if !arena.snapshot.bullets.contains(where: { $0.ammoEpoch == 42 }) {
+                    ammoFailures.append(scenario + ": held fire did not use the new magazine")
+                }
+            }
+        }
+        var visible = arena.presentationSnapshot(fraction: ammoAccumulator * 60, now: elapsed)
+        visible.generation = episode + 1
+        return visible
+    }
+
     /// The real offline simulation and presenter drive this opt-in device
     /// matrix. The report checks contact geometry on the exact snapshot passed
     /// to SpriteKit, including shields and every stacked movement/fire buff.
@@ -246,6 +345,28 @@ final class FrameProfiler {
             previousVelocity = velocity
         }
         previousMotionPose = motionPose
+        if let event = pickupEvent {
+            let key = "\(event.episode):\(event.stage)"
+            if key != previousPickupEvent {
+                if event.stage == "plain" {
+                    FileHandle.standardOutput.write(Data("leqra pickup probe: \(event.power) at \(elapsed)s\n".utf8))
+                }
+                pickupEvents.append(["power": event.power, "stage": event.stage, "elapsed": elapsed,
+                    "cpuMS": cpu * 1000, "renderMS": rendering.totalSeconds * 1000,
+                    "tanksMS": rendering.tankSeconds * 1000, "textureCreations": rendering.textureCreations,
+                    "audioMS": audio * 1000, "hudMS": hud * 1000, "nextFrameMS": 0.0,
+                    "cpuMaxMS": cpu * 1000, "frameMaxMS": dt * 1000, "hudMaxMS": hud * 1000])
+                previousPickupEvent = key
+            } else if !pickupEvents.isEmpty, pickupEvents[pickupEvents.count - 1]["nextFrameMS"] as? Double == 0 {
+                pickupEvents[pickupEvents.count - 1]["nextFrameMS"] = dt * 1000
+            }
+            if !pickupEvents.isEmpty {
+                let index = pickupEvents.count - 1
+                pickupEvents[index]["cpuMaxMS"] = max(pickupEvents[index]["cpuMaxMS"] as? Double ?? 0, cpu * 1000)
+                pickupEvents[index]["frameMaxMS"] = max(pickupEvents[index]["frameMaxMS"] as? Double ?? 0, dt * 1000)
+                pickupEvents[index]["hudMaxMS"] = max(pickupEvents[index]["hudMaxMS"] as? Double ?? 0, hud * 1000)
+            }
+        }
         if firstShotProbe {
             let visible = weapon == "laser" ? rendering.effects : rendering.bullets
             if visible > 0 && previousBulletCount == 0 {
@@ -294,9 +415,20 @@ final class FrameProfiler {
         }
         if firstShotProbe { report["firstShots"] = firstShots }
         if hitMatrixProbe { report["contactChecks"] = hitChecks; report["contactFailures"] = hitFailures }
-        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
-           let json = String(data: data, encoding: .utf8) {
-            FileHandle.standardOutput.write(Data(("leqra performance: " + json + "\n").utf8))
+        if pickupMatrixProbe { report["pickupEvents"] = pickupEvents; report["fixed"] = world != nil }
+        if ammoRefillProbe { report["ammoRefillChecks"] = ammoChecks; report["ammoRefillFailures"] = ammoFailures; report["fixed"] = world != nil }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys])
+            if pickupMatrixProbe {
+                let destination = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("leqra-profile.json")
+                try data.write(to: destination, options: .atomic)
+                FileHandle.standardOutput.write(Data("leqra performance report saved\n".utf8))
+            } else if let json = String(data: data, encoding: .utf8) {
+                FileHandle.standardOutput.write(Data(("leqra performance: " + json + "\n").utf8))
+            }
+        } catch {
+            let invalid = report.filter { !JSONSerialization.isValidJSONObject([$0.key: $0.value]) }.map(\.key)
+            FileHandle.standardOutput.write(Data("leqra performance report error: \(error), fields \(invalid)\n".utf8))
         }
     }
 }

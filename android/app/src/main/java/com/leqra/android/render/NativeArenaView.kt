@@ -6,6 +6,7 @@ import android.util.AttributeSet
 import android.util.SparseArray
 import android.view.*
 import com.leqra.core.*
+import java.util.concurrent.Executors
 import kotlin.math.*
 
 /** Native display-paced hardware Canvas. The owner supplies fractional simulation snapshots. */
@@ -66,7 +67,15 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private val countText = Array(181) { it.toString() }
     private val countWidths = FloatArray(181)
     private var countFontSize = -1f
-    private val art = NativeArt()
+    private var art = NativeArt()
+    private var artworkPrepared = false
+    private var released = false
+    private val artworkPreparation = Executors.newSingleThreadExecutor { task ->
+        Thread({
+            runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
+            task.run()
+        }, "leqra-artwork").apply { isDaemon = true }
+    }
     private val terrain = TerrainCache { postInvalidateOnAnimation() }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val textPaint =
@@ -241,6 +250,19 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         // Keep hardware acceleration enabled: display lists render on Android's RenderThread.
         setLayerType(LAYER_TYPE_NONE, null)
+        artworkPreparation.execute {
+            val prepared = NativeArt()
+            if (!prepared.prepare()) { prepared.clear(); return@execute }
+            post {
+                if (released) prepared.clear()
+                else {
+                    art.clear()
+                    art = prepared
+                    artworkPrepared = true
+                    invalidate()
+                }
+            }
+        }
     }
 
     fun start() {
@@ -258,6 +280,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     fun release() {
+        released = true
+        artworkPreparation.shutdownNow()
         pause()
         terrain.release()
         art.clear()

@@ -263,10 +263,10 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 	a.advanceEquipment(p)
 	far := p.X + 2*infiniteSight
 	a.bullets = append(a.bullets,
-		infiniteBullet{ID: 2, Owner: p.ID, X: far, Kind: "grenade", Life: 4},
-		infiniteBullet{ID: 3, Owner: p.ID, X: far, Kind: "grenade", Life: 7, boosted: true},
-		infiniteBullet{ID: 4, Owner: p.ID, X: far, Kind: "grenade", Life: 9, dead: true},
-		infiniteBullet{ID: 5, Owner: p.ID, X: far, Kind: "grenade", Life: 0},
+		infiniteBullet{ID: 2, Owner: p.ID, AmmoEpoch: p.kit.AmmoEpoch, X: far, Kind: "grenade", Life: 4},
+		infiniteBullet{ID: 3, Owner: p.ID, AmmoEpoch: p.kit.AmmoEpoch, X: far, Kind: "grenade", Life: 7, boosted: true},
+		infiniteBullet{ID: 4, Owner: p.ID, AmmoEpoch: p.kit.AmmoEpoch, X: far, Kind: "grenade", Life: 9, dead: true},
+		infiniteBullet{ID: 5, Owner: p.ID, AmmoEpoch: p.kit.AmmoEpoch, X: far, Kind: "grenade", Life: 0},
 		infiniteBullet{ID: 6, Owner: other.ID, X: far, Kind: "homing", Life: 1, Target: p.ID},
 	)
 	other.HP, other.respawn = 0, a.tick+infiniteRespawnTicks
@@ -282,9 +282,9 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 		t.Fatalf("expected both nearby tanks: %+v", packet.Tanks)
 	}
 	hud := packet.Tanks[0]
-	if hud.ID != p.ID || hud.Power != "homing" || hud.CooldownTotal != infinitePrecision(cannonCooldown) ||
-		hud.Cooldown != infinitePrecision(cannonCooldown-tickDT) ||
-		hud.AmmoUsed != 2 || hud.Grenades != 2 || hud.GrenadeLife != 7 || !hud.Locked {
+	if hud.ID != p.ID || hud.Power != "homing" || hud.CooldownTotal != 0 ||
+		hud.Cooldown != 0 ||
+		hud.AmmoUsed != 1 || hud.Grenades != 2 || hud.GrenadeLife != 7 || !hud.Locked {
 		t.Fatalf("incorrect combat state: %+v", hud)
 	}
 	if packet.Tanks[1].RespawnTime != 1 {
@@ -430,8 +430,8 @@ func TestInfiniteRespawnDoesNotTurnHeldFireIntoGrenadeDetonation(t *testing.T) {
 	a.setInput(p, Input{Seq: 63}, false, now)
 	a.setInput(p, Input{Seq: 64, Fire: true}, false, now)
 	a.step(now)
-	if hasGrenade() {
-		t.Fatal("a fresh press could not detonate the previous life's grenade")
+	if !hasGrenade() {
+		t.Fatal("a fresh press detonated the previous life's retired grenade")
 	}
 }
 
@@ -607,6 +607,10 @@ func TestInfiniteStarmanRetiresOldestProjectileAtSafetyLimit(t *testing.T) {
 	a.bullets = append(a.bullets, infiniteBullet{ID: machineCapacity + 1, Owner: p.ID + 1})
 	a.nextBullet = machineCapacity + 1
 	applyPower(&p.kit, "starman", infinitePowerDuration, infiniteStarDuration)
+	for i := 0; i < machineCapacity; i++ {
+		a.bullets[i].AmmoEpoch = p.kit.AmmoEpoch
+		a.bullets[i].boosted = true
+	}
 	a.fire(p)
 	if a.nextBullet != machineCapacity+2 {
 		t.Fatal("safety ceiling blocked Starman from firing")
@@ -634,16 +638,16 @@ func TestInfiniteStarmanShotsDoNotOccupyWeaponSlotsAfterExpiry(t *testing.T) {
 	if p.kit.StarmanTime != 0 || p.kit.ShotSerial != uint64(machineCapacity+1) {
 		t.Fatal("bonus rounds blocked the first shot after expiry")
 	}
-	if a.bullets[0].dead || !a.bullets[1].dead || a.bullets[2].dead || a.bullets[len(a.bullets)-1].boosted {
-		t.Fatal("the safety cap must retain ordinary rounds and replace only the oldest bonus round")
+	if a.bullets[0].dead || a.bullets[1].dead || a.bullets[2].dead || a.bullets[len(a.bullets)-1].boosted {
+		t.Fatal("expiry refill must retain all older-epoch ordinary and bonus rounds")
 	}
-	for range capacity(&p.kit) - 2 {
+	for range capacity(&p.kit) - 1 {
 		p.kit.Cooldown = 0
 		a.fire(p)
 	}
 	p.kit.Cooldown = 0
 	a.fire(p)
-	if p.kit.ShotSerial != uint64(machineCapacity+capacity(&p.kit)-1) {
+	if p.kit.ShotSerial != uint64(machineCapacity+capacity(&p.kit)) {
 		t.Fatal("ordinary slots did not return to their usual limit")
 	}
 }

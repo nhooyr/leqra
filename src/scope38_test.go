@@ -155,7 +155,7 @@ func TestLaserRefreshKeepsIndependentBuffs(t *testing.T) {
 	p.Cooldown = .5
 	p.Charges, p.PowerTime = 1, 2
 	g.grantPower(p, "laser")
-	if p.Power != "laser" || p.PowerTime != 10 || p.Charges != 3 || p.ShieldCharges != 1 || p.SpeedStacks != 1 || p.Cooldown != .5 {
+	if p.Power != "laser" || p.PowerTime != 10 || p.Charges != 3 || p.ShieldCharges != 1 || p.SpeedStacks != 1 || p.Cooldown != 0 {
 		t.Fatalf("laser refresh changed unrelated state: %+v", p)
 	}
 }

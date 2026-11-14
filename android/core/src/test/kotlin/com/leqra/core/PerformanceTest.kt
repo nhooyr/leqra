@@ -8,6 +8,23 @@ import org.junit.Test
 
 /** Repeatable desktop allocation/timing evidence; not a physical Android frame-rate claim. */
 class PerformanceTest {
+    @Test fun everyPickupAndWeaponReadoutReportsItsUpdateCost() {
+        val powers = listOf("") + PracticeArena.pickupKinds
+        for (infinity in listOf(false, true)) {
+            val tanks = powers.mapIndexed { index, power -> ArenaTank(id = index + 1, power = power, powerTime = 13.4,
+                charges = 3, machineRounds = 90, cooldown = .17, cooldownTotal = .34, shield = 10.0, shieldCharges = 3,
+                speedTime = 10.0, speedStacks = 2, starmanTime = if (power == "starman") 8.0 else 0.0, ghostTime = 10.0) }
+            val bullets = List(768) { ArenaBullet(id = it + 1, owner = it % powers.size + 1, kind = if (it % 16 == 0) "grenade" else "rapid", life = 7.24) }
+            val snapshot = ArenaSnapshot(tanks = tanks, bullets = bullets, boostedBulletIds = bullets.filter { it.id % 3 == 0 }.map { it.id })
+            var digest = 0L
+            fun update() { for (tank in tanks) { val readout = PilotReadout(tank, snapshot, infinity); digest += readout.weapon.hashCode() + readout.buffs.hashCode() + readout.readiness.hashCode() } }
+            repeat(200) { update() }
+            val samples = LongArray(600); val before = bytes()
+            repeat(samples.size) { index -> val start = System.nanoTime(); update(); samples[index] = System.nanoTime() - start }
+            samples.sort()
+            println("all powers readouts ${if(infinity) "infinity" else "fixed"}: p50=${samples[300]/1e6}ms p95=${samples[570]/1e6}ms p99=${samples[594]/1e6}ms bytes/update=${(bytes()-before)/samples.size} digest=$digest")
+        }
+    }
     @Test fun retainedStarShotgunContactsReportTheirWorstBatchCost() {
         val tanks = (1..8).map { ArenaTank(id = it, x = 140.0, y = 42.0, spawnSerial = 2, hp = 0) }
         val effects = (1..864).flatMap { id -> val path = ArenaEffect(id = id * 2, kind = "projectileFlight", tick = 6, flight = ProjectileFlight(id, 0, 0, 0.0, 6.0,

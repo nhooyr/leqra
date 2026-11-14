@@ -244,6 +244,9 @@ final class GameScene: SKScene {
     /// Reused pools survive resetWorld, so returning to the room stays warm.
     private func prepareCombatResources() {
         for digit in 0...9 { combatTextures.append(NativeArt.badgeDigit(digit)) }
+        for kind in ["rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"] {
+            combatTextures.append(NativeArt.badge(kind: kind))
+        }
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             for color in 0..<8 {
                 let style = ProjectileStyle(ArenaBullet(kind: kind, colorIndex: color))
@@ -280,6 +283,12 @@ final class GameScene: SKScene {
         let path = CGMutablePath(); path.move(to: CGPoint(x: 10, y: 10)); path.addLine(to: CGPoint(x: 300, y: 10))
         let trail = SKShapeNode(path: path); trail.strokeColor = Palette.accent; trail.lineWidth = 12; trail.lineCap = .round
         warmup.addChild(trail)
+        for (index, kind) in ["rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"].enumerated() {
+            let badge = PowerBadgeNode(kind: kind)
+            badge.position = CGPoint(x: index % 8 * 48 + 24, y: 280 - index / 8 * 48)
+            badge.update(size: 24, zoom: 1, count: 180, remaining: 15, warning: 3)
+            warmup.addChild(badge)
+        }
         combatRendererPrepared = view.texture(from: warmup, crop: CGRect(x: 0, y: 0, width: 384, height: 300)) != nil
         warmup.removeAllChildren()
     }

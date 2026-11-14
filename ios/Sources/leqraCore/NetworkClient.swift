@@ -894,11 +894,17 @@ enum SnapshotDecoder {
             return bullet
         }
         if let packed = object["machineBullets"] as? [[Double]] {
-            for row in packed where row.count == 12 {
+            let epochs: [UInt64]
+            if let rawEpochs = object["machineAmmoEpochs"], !(rawEpochs is NSNull) {
+                guard JSONSerialization.isValidJSONObject(rawEpochs) else { throw GameNetworkError.invalidResponse }
+                epochs = try JSONDecoder().decode([UInt64].self, from: JSONSerialization.data(withJSONObject: rawEpochs))
+            } else { epochs = [] }
+            for (index, row) in packed.enumerated() where row.count == 12 {
                 guard row.allSatisfy(\.isFinite), let id = Int(exactly: row[0]), let owner = Int(exactly: row[1]),
                       let bounces = Int(exactly: row[10]), let color = Int(exactly: row[11]) else { throw GameNetworkError.invalidResponse }
                 mappedBullets.append(["id": id, "owner": owner, "kind": "rapid", "x": row[4], "y": row[5],
-                    "vx": row[6], "vy": row[7], "age": row[8], "life": row[9], "bounces": bounces, "colorIndex": color])
+                    "vx": row[6], "vy": row[7], "age": row[8], "life": row[9], "bounces": bounces, "colorIndex": color,
+                    "ammoEpoch": index < epochs.count ? epochs[index] : 0])
             }
         }
         object["bullets"] = mappedBullets
@@ -906,7 +912,8 @@ enum SnapshotDecoder {
         let friendlyFire = (object["rules"] as? [String: Any])?["friendlyFire"] as? Bool ?? false
         for index in mappedTanks.indices {
             let id = mappedTanks[index]["id"] as? Int ?? -1
-            let owned = mappedBullets.filter { ($0["owner"] as? Int) == id }
+            let epoch = mappedTanks[index]["ammoEpoch"] as? UInt64 ?? 0
+            let owned = mappedBullets.filter { ($0["owner"] as? Int) == id && ($0["ammoEpoch"] as? UInt64 ?? 0) == epoch }
             let grenades = owned.filter { ($0["kind"] as? String) == "grenade" }
             let power = mappedTanks[index]["power"] as? String ?? ""
             mappedTanks[index]["ammoUsed"] = power == "laser" ? max(0, 3 - (mappedTanks[index]["charges"] as? Int ?? 0))

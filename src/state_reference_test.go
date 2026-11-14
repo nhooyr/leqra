@@ -12,6 +12,8 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 	ts := make([]Tank, 0, maxTanks)
 	bs := make([]Bullet, 0, len(g.Bullets))
 	var boosted []int
+	var epochs []uint64
+	hasEpoch := false
 	ms := make([][12]float64, 0, len(g.Bullets)) // Compact Machine gun records; same authoritative samples.
 	ps := make([]Pickup, 0, len(g.Pickups))
 	for _, t := range g.Tanks {
@@ -47,6 +49,8 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 		if v.Kind == "rapid" {
 			color := tankColorIndex[v.Color]
 			ms = append(ms, [12]float64{float64(v.ID), float64(v.Owner), float64(v.ShotSerial), float64(v.SpawnSerial), v.X, v.Y, v.VX, v.VY, v.Age, v.Life, float64(v.Bounces), float64(color)})
+			epochs = append(epochs, v.AmmoEpoch)
+			hasEpoch = hasEpoch || v.AmmoEpoch != 0
 		} else {
 			bs = append(bs, v)
 		}
@@ -80,6 +84,9 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 	}
 	if len(ms) > 0 {
 		s["machineBullets"] = ms
+	}
+	if hasEpoch {
+		s["machineAmmoEpochs"] = epochs
 	}
 	if g.Phase == "matchOver" && g.matchReportWire != nil {
 		s["matchStats"] = g.matchReportWire

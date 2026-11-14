@@ -323,7 +323,7 @@ func (g *Game) godlikeRoutePenalty(t *Tank, penalty []float64) {
 func (g *Game) godlikeCanDetonate(t *Tank) bool {
 	hit := false
 	for _, b := range g.Bullets {
-		if b == nil || b.Dead || b.Owner != t.ID || b.Kind != "grenade" {
+		if b == nil || b.Dead || b.Owner != t.ID || b.AmmoEpoch != t.AmmoEpoch || b.Kind != "grenade" {
 			continue
 		}
 		for _, other := range g.Tanks {

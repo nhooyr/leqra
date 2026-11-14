@@ -105,50 +105,52 @@ type Input struct {
 	TouchAim    bool    `json:"touchAim,omitempty"` // Touch joystick steering uses the faster turn curve.
 }
 type Tank struct {
-	ShotSerial    uint64            `json:"shotSerial"` // Accepted volleys in this life; cosmetic reconciliation only.
-	stats         *PlayerMatchStats // Participant ledger; intentionally absent from movement snapshots.
-	suddenLife    bool              // Participated at sudden-death entry; replacements wait for the next match.
-	RespawnTime   float64           `json:"respawnTime"`
-	SpawnSerial   int               `json:"spawnSerial"`
-	Team          int               `json:"team"`
-	Bot           bool              `json:"bot"`
-	Difficulty    string            `json:"difficulty,omitempty"`
-	SurvivalEnemy bool              `json:"survivalEnemy,omitempty"`
-	SurvivalBoss  bool              `json:"survivalBoss,omitempty"`
-	AI            *BotState         `json:"-"`
-	fireHeld      bool              // Last simulated button state.
-	fireBlocked   bool              // A grenade action consumes the entire hold, even after expiry.
-	ID            int               `json:"id"`
-	Name          string            `json:"name"`
-	KilledBy      string            `json:"killedBy,omitempty"`
-	KilledByColor string            `json:"killedByColor,omitempty"`
-	Color         string            `json:"color"`
-	X             float64           `json:"x"`
-	Y             float64           `json:"y"`
-	Angle         float64           `json:"angle"`
-	R             float64           `json:"r"`
-	VX            float64           `json:"vx"`
-	VY            float64           `json:"vy"`
-	Alive         bool              `json:"alive"`
-	Cooldown      float64           `json:"cooldown"`
-	CooldownTotal float64           `json:"cooldownTotal"`
-	Invulnerable  float64           `json:"invulnerable"`
-	Shield        float64           `json:"shield"`
-	ShieldCharges int               `json:"shieldCharges"`
-	rapidTick     int
-	rapidFired    bool
-	Power         string  `json:"power"`
-	SpeedTime     float64 `json:"speedTime"`
-	SpeedStacks   int     `json:"speedStacks"`
-	GhostTime     float64 `json:"ghostTime"`
-	StarmanTime   float64 `json:"starmanTime,omitempty"`
-	PowerTime     float64 `json:"powerTime"`
-	MachineRounds int     `json:"machineRounds"` // Successful rapid projectiles left, at 60 per second.
-	Charges       int     `json:"charges"`
-	Recoil        float64 `json:"recoil"`
-	Track         float64 `json:"track"`
-	Ack           uint64  `json:"ack"`
-	AckSteps      uint32  `json:"ackSteps"`
+	AmmoEpoch      uint64            `json:"ammoEpoch,omitempty"`
+	expiryRefilled bool              // Coalesce timer expiries in one simulation step.
+	ShotSerial     uint64            `json:"shotSerial"` // Accepted volleys in this life; cosmetic reconciliation only.
+	stats          *PlayerMatchStats // Participant ledger; intentionally absent from movement snapshots.
+	suddenLife     bool              // Participated at sudden-death entry; replacements wait for the next match.
+	RespawnTime    float64           `json:"respawnTime"`
+	SpawnSerial    int               `json:"spawnSerial"`
+	Team           int               `json:"team"`
+	Bot            bool              `json:"bot"`
+	Difficulty     string            `json:"difficulty,omitempty"`
+	SurvivalEnemy  bool              `json:"survivalEnemy,omitempty"`
+	SurvivalBoss   bool              `json:"survivalBoss,omitempty"`
+	AI             *BotState         `json:"-"`
+	fireHeld       bool              // Last simulated button state.
+	fireBlocked    bool              // A grenade action consumes the entire hold, even after expiry.
+	ID             int               `json:"id"`
+	Name           string            `json:"name"`
+	KilledBy       string            `json:"killedBy,omitempty"`
+	KilledByColor  string            `json:"killedByColor,omitempty"`
+	Color          string            `json:"color"`
+	X              float64           `json:"x"`
+	Y              float64           `json:"y"`
+	Angle          float64           `json:"angle"`
+	R              float64           `json:"r"`
+	VX             float64           `json:"vx"`
+	VY             float64           `json:"vy"`
+	Alive          bool              `json:"alive"`
+	Cooldown       float64           `json:"cooldown"`
+	CooldownTotal  float64           `json:"cooldownTotal"`
+	Invulnerable   float64           `json:"invulnerable"`
+	Shield         float64           `json:"shield"`
+	ShieldCharges  int               `json:"shieldCharges"`
+	rapidTick      int
+	rapidFired     bool
+	Power          string  `json:"power"`
+	SpeedTime      float64 `json:"speedTime"`
+	SpeedStacks    int     `json:"speedStacks"`
+	GhostTime      float64 `json:"ghostTime"`
+	StarmanTime    float64 `json:"starmanTime,omitempty"`
+	PowerTime      float64 `json:"powerTime"`
+	MachineRounds  int     `json:"machineRounds"` // Successful rapid projectiles left, at 60 per second.
+	Charges        int     `json:"charges"`
+	Recoil         float64 `json:"recoil"`
+	Track          float64 `json:"track"`
+	Ack            uint64  `json:"ack"`
+	AckSteps       uint32  `json:"ackSteps"`
 
 	SpawnProtected bool `json:"spawnProtected"`
 }
@@ -156,6 +158,7 @@ type Tank struct {
 // Kind is empty for an ordinary round; special projectiles share the same
 // bounded, authoritative collision and ownership system.
 type Bullet struct {
+	AmmoEpoch   uint64  `json:"ammoEpoch,omitempty"`
 	ShotSerial  uint64  `json:"shotSerial"`
 	SpawnSerial int     `json:"spawnSerial"`
 	Pellet      int     `json:"pellet"`
@@ -677,9 +680,13 @@ func (g *Game) moveTank(t *Tank, dx, dy float64) {
 func (g *Game) control(t *Tank, in Input, dt float64) {
 	// Decrement here (also mirrored by the prediction client) so input replay
 	// crosses boost expiry on exactly the same simulation step.
+	wasSpeed := t.SpeedTime > 0
 	t.SpeedTime = math.Max(0, t.SpeedTime-dt)
 	if t.SpeedTime <= 0 {
 		t.SpeedStacks = 0
+		if wasSpeed {
+			refillExpiredAmmo(t)
+		}
 	}
 	g.advanceGhost(t, dt)
 	n := movementSpeedCount(t)
@@ -779,7 +786,7 @@ func (g *Game) detonateOwned(t *Tank) bool {
 	var owned [3]*Bullet
 	count := 0
 	for _, b := range g.Bullets {
-		if !b.Dead && b.Owner == t.ID && b.Kind == "grenade" && count < len(owned) {
+		if !b.Dead && b.Owner == t.ID && b.AmmoEpoch == t.AmmoEpoch && b.Kind == "grenade" && count < len(owned) {
 			owned[count] = b
 			count++
 		}
@@ -825,7 +832,7 @@ func (g *Game) fire(t *Tank) bool {
 	ordinary, boosted := 0, 0
 	if !starman {
 		for _, b := range g.Bullets {
-			if !b.Dead && b.Owner == t.ID {
+			if !b.Dead && b.Owner == t.ID && b.AmmoEpoch == t.AmmoEpoch {
 				if b.boosted {
 					boosted++
 				} else {
@@ -889,7 +896,7 @@ func (g *Game) fire(t *Tank) bool {
 		}
 		cs, sn, travel := launch.ux, launch.uy, launch.muzzle
 		g.nextBullet++
-		b := &Bullet{ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: launch.x + cs*travel, Y: launch.y + sn*travel, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1, boosted: starman}
+		b := &Bullet{AmmoEpoch: t.AmmoEpoch, ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Pellet: pellet, ID: g.nextBullet, Owner: t.ID, X: launch.x + cs*travel, Y: launch.y + sn*travel, VX: cs * speed, VY: sn * speed, R: radius, Life: life, Color: t.Color, Kind: kind, Target: -1, boosted: starman}
 		if launch.bounced {
 			b.Bounces = 1
 			if kind == "homing" || kind == "grenade" {
@@ -956,7 +963,7 @@ func (g *Game) fire(t *Tank) bool {
 		}
 		for i := len(g.Bullets) - 1; i >= 0; i-- {
 			b := g.Bullets[i]
-			if b.Owner != t.ID || b.Dead || !starman && !b.boosted {
+			if b.Owner != t.ID || b.Dead || b.AmmoEpoch != t.AmmoEpoch || !b.boosted {
 				continue
 			}
 			b.Dead = remaining == 0
@@ -969,16 +976,15 @@ func (g *Game) fire(t *Tank) bool {
 	if kind == "rapid" {
 		t.MachineRounds--
 		if t.MachineRounds == 0 {
-			t.Power = ""
-			t.PowerTime = 0
-			t.Charges = 0
+			clearWeapon(t)
+			refillAmmo(t)
 		}
 	}
 	if t.Power == "scatter" || t.Power == "homing" || t.Power == "grenade" || t.Power == "cannon" {
 		t.Charges--
 		if t.Charges <= 0 {
-			t.Power = ""
-			t.PowerTime = 0
+			clearWeapon(t)
+			refillAmmo(t)
 		}
 	}
 	return true
@@ -1084,8 +1090,8 @@ func (g *Game) fireLaser(t *Tank) bool {
 	if !starman {
 		t.Charges--
 		if t.Charges <= 0 {
-			t.Power = ""
-			t.PowerTime = 0
+			clearWeapon(t)
+			refillAmmo(t)
 		}
 	}
 	return true
@@ -1100,6 +1106,7 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 		t.ShieldCharges = shieldCount(t) - 1
 		if t.ShieldCharges == 0 {
 			t.Shield = 0
+			refillAmmo(t)
 		}
 		t.Invulnerable = .35
 		t.SpawnProtected = false
@@ -1432,6 +1439,8 @@ func applyPower(t *Tank, kind string, duration, starDuration float64) bool {
 	default:
 		return false
 	}
+	t.expiryRefilled = false
+	refillAmmo(t)
 	return true
 }
 func (g *Game) spawnPower() {
@@ -1573,6 +1582,8 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		if t != nil && t.Alive {
 			actors[count] = id
 			count++
+			t.expiryRefilled = false
+			wasStar, wasShield := t.StarmanTime > 0, t.Shield > 0
 			t.Invulnerable = math.Max(0, t.Invulnerable-dt)
 			if t.Invulnerable == 0 {
 				t.SpawnProtected = false
@@ -1581,6 +1592,9 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 			t.Shield = math.Max(0, t.Shield-dt)
 			if t.Shield <= 0 {
 				t.ShieldCharges = 0
+			}
+			if wasStar && t.StarmanTime <= 0 || wasShield && t.Shield <= 0 {
+				refillExpiredAmmo(t)
 			}
 		}
 	}
@@ -1595,9 +1609,8 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 		if t.Power != "" && t.StarmanTime <= 0 {
 			t.PowerTime -= dt
 			if t.PowerTime <= 0 {
-				t.MachineRounds = 0
-				t.Power = ""
-				t.PowerTime = 0
+				clearWeapon(t)
+				refillExpiredAmmo(t)
 			}
 		}
 		// Resolve the expiry snap before measuring movement. Extrapolation

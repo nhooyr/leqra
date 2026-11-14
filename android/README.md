@@ -83,6 +83,11 @@ claims. `MainAppPerformanceTest` measures the actual Activity, including its HUD
 status and open leaderboard, with the same stress scene. It saves timings and
 screenshots in `cache/main-app-benchmark`; reported deadline misses use Android's
 per-frame deadline, rather than assuming every display has a 16.7 ms budget.
+`PickupFirePerformanceTest` collects and fires with each regular/power-up loadout
+through the actual Activity in fixed/Infinity scenes with audio on/off, recording
+the same event window in `cache/pickup-fire-benchmark`. `NativeArtPerformanceTest`
+checks lazy/prepared bitmap pixel parity and reports first-use versus prepared
+artwork CPU costs. These reports describe the device/emulator used for that run.
 `NativeAudioIntegrationTest` exercises muted launch, bounded cue scheduling,
 preview lifecycle, pause/resume and native audio output. Run UI and performance
 checks in a disposable emulator with an isolated local server.
@@ -94,8 +99,9 @@ at 60 Hz; continuous motion presentation and a bounded input/reconciliation
 timeline run at the display cadence. P1 and P2 have independent prediction and
 acknowledgement histories while sharing remote interpolation. Collision and bot
 pathfinding use reusable primitive storage. The renderer batches rapid-fire
-projectiles, rebases large world coordinates before GPU float conversion, caches
-tank artwork and builds bounded maze textures on a worker. The native HUD caches
+projectiles, rebases large world coordinates before GPU float conversion, and
+prepares cached tank/power-up artwork and bounded maze textures on workers.
+Artwork uploads are scheduled before first use. The native HUD caches
 text layout while animating progress at display cadence. The audio mixer uses the
 web recipes with a bounded voice pool, common compressor/limiter and lazy
 AudioTrack output without requesting audio focus. Its bounded command queue never waits for waveform

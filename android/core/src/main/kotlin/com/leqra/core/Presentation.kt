@@ -72,37 +72,34 @@ class PilotReadout(
                 "cannon" -> 3
                 else -> 5
             }
-        val boosted = snapshot.boostedBulletIds.toHashSet()
-        val allOwned = snapshot.bullets.filter { it.owner == tank.id }
-        val ordinary = allOwned.filter { it.id !in boosted }
+        val boosted = if (infinity || snapshot.boostedBulletIds.isEmpty()) emptySet() else snapshot.boostedBulletIds.toHashSet()
+        var ordinary = 0
+        var ownedGrenades = 0
+        var ownedGrenadeLife = 0.0
+        var projectileLocked = tank.locked
+        if (!infinity || !projectileLocked) for (bullet in snapshot.bullets) {
+            if (!infinity && bullet.owner == tank.id && bullet.ammoEpoch == tank.ammoEpoch) {
+                if (bullet.id !in boosted) ordinary++
+                if (bullet.kind == "grenade") {
+                    ownedGrenades++
+                    ownedGrenadeLife = max(ownedGrenadeLife, bullet.life)
+                }
+            }
+            if (!projectileLocked && (bullet.kind == "homing" || bullet.kind == "grenade") && bullet.target == tank.id && bullet.owner != tank.id) {
+                val owner = snapshot.tanks.firstOrNull { it.id == bullet.owner }
+                projectileLocked = snapshot.rules?.friendlyFire == true || owner == null || owner.team == 0 || owner.team != tank.team
+            }
+        }
         val used =
             if (tank.power == "laser") max(0, 3 - tank.charges)
-            else if (infinity) tank.ammoUsed else max(tank.ammoUsed, ordinary.size)
+            else if (infinity) tank.ammoUsed else max(tank.ammoUsed, ordinary)
         available = if (alive) max(0, capacity - used) else 0
-        val ownedGrenades = allOwned.filter { it.kind == "grenade" }
         val grenadeLife =
             if (infinity) tank.grenadeLife
-            else max(tank.grenadeLife, ownedGrenades.maxOfOrNull { it.life } ?: 0.0)
+            else max(tank.grenadeLife, ownedGrenadeLife)
         val grenades =
             if (infinity) if (grenadeLife > 0) tank.grenades else 0
-            else max(tank.grenades, ownedGrenades.size)
-        val projectileLocked =
-            tank.locked ||
-                snapshot.bullets.any { b ->
-                    if (
-                        (b.kind != "homing" && b.kind != "grenade") ||
-                            b.target != tank.id ||
-                            b.owner == tank.id
-                    )
-                        false
-                    else {
-                        val owner = snapshot.tanks.firstOrNull { it.id == b.owner }
-                        snapshot.rules?.friendlyFire == true ||
-                            owner == null ||
-                            owner.team == 0 ||
-                            owner.team != tank.team
-                    }
-                }
+            else max(tank.grenades, ownedGrenades)
         val base =
             when (tank.power) {
                 "rapid" -> "MACHINE GUN"
@@ -145,7 +142,7 @@ class PilotReadout(
                     lines
                         .map {
                             if (it.startsWith("SHD")) it.substringBefore(' ')
-                            else it.replace(Regex(" ([0-9]+)s$"), "$1")
+                            else it.replace(compactBuffTime, "$1")
                         }
                         .joinToString(" ")
                 else lines.joinToString(", ")
@@ -220,7 +217,8 @@ class PilotReadout(
                 if (cooldown > 0) (1 - cooldown / max(.001, total)).coerceIn(0.0, 1.0)
                 else if (free < need) 0.0 else 1.0
             if (cooldown > 0) {
-                val time = decimal(max(.1, (cooldown * 10).roundToInt() / 10.0))
+                val tenths = max(1, (cooldown * 10).roundToInt())
+                val time = cooldownTimes.getOrNull(tenths) ?: decimal(tenths / 10.0)
                 readiness = "COOLDOWN ${time}s"
                 fireLabel = "${time}s"
             } else if (free < need) {
@@ -231,6 +229,8 @@ class PilotReadout(
     }
 
     companion object {
+        private val compactBuffTime = Regex(" ([0-9]+)s$")
+        private val cooldownTimes = arrayOf("0.0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0")
         private fun decimal(value: Double) = String.format(Locale.ROOT, "%.1f", value)
     }
 }

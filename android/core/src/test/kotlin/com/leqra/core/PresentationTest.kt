@@ -147,6 +147,24 @@ class PresentationTest {
     }
 
     @Test
+    fun cachedCooldownLabelsMatchThePreviousDecimalFormattingAtEveryBoundary() {
+        val values = mutableListOf(.0001, 1.25, 12.34)
+        for (tenths in 0..10) {
+            val boundary = (tenths + .5) / 10
+            values += listOf(Math.nextDown(boundary), boundary, Math.nextUp(boundary))
+        }
+        for (value in values) {
+            val expected = String.format(java.util.Locale.ROOT, "%.1f", max(.1, (value * 10).roundToInt() / 10.0))
+            val tank = ArenaTank(id = 1, cooldown = value, cooldownTotal = .34)
+            for (infinity in listOf(false, true)) {
+                val readout = read(tank, infinity = infinity)
+                assertEquals("COOLDOWN ${expected}s", readout.readiness)
+                assertEquals("${expected}s", readout.fireLabel)
+            }
+        }
+    }
+
+    @Test
     fun spawnProtectionSuppressesFireAndLockWarning() {
         val r =
             read(
@@ -264,6 +282,32 @@ class PresentationTest {
         state.rules!!.friendlyFire = false
         owner.team = 2
         assertTrue(read(t, state).locked)
+    }
+
+    @Test
+    fun combinedProjectileScanKeepsBoostedGrenadesMetadataAndHostileLocksIndependent() {
+        val tank = ArenaTank(id = 1, team = 1, power = "grenade", charges = 2, ammoUsed = 1, grenades = 2, grenadeLife = 2.9)
+        val friend = ArenaTank(id = 2, team = 1)
+        val bullets = listOf(
+            ArenaBullet(id = 1000, owner = 1),
+            ArenaBullet(id = 1001, owner = 1, kind = "grenade", life = 7.24),
+            ArenaBullet(id = 1002, owner = 2, kind = "homing", target = 1),
+            ArenaBullet(id = 1003, owner = 99, kind = "homing", target = 1),
+            ArenaBullet(id = 1004, owner = 99, kind = "rapid", target = 1),
+        )
+        for (ordered in listOf(bullets, bullets.reversed())) {
+            val state = ArenaSnapshot(tanks = listOf(tank, friend), bullets = ordered, boostedBulletIds = listOf(1001), rules = RoomRules(friendlyFire = false))
+            val fixed = read(tank, state)
+            assertEquals(2, fixed.available)
+            assertEquals("GRENADE, 7.2s", fixed.weapon)
+            assertEquals("DETONATE READY", fixed.readiness)
+            assertTrue(fixed.locked)
+            val infinity = read(tank, state, infinity = true)
+            assertEquals(2, infinity.available)
+            assertEquals("GRENADE, 2.9s", infinity.weapon)
+            assertEquals("DETONATE READY", infinity.readiness)
+            assertTrue(infinity.locked)
+        }
     }
 
     @Test

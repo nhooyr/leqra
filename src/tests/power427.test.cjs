@@ -15,7 +15,7 @@ function tank(id=0){return {id,x:100+id*200,y:100,angle:0,r:17,human:true,alive:
 function boot(){
  const noop=()=>{},s={Net:N,POWER_EFFECT_DURATION:10,MACHINE_FIRING_ROUNDS:firingRounds,MACHINE_CAPACITY:N.MACHINE_CAPACITY,MAX_SPEED_STACKS:5,POWER:Object.fromEntries(kinds.map(k=>[k,{name:k.toUpperCase()}])),cols:12,rows:10,time:0,localTick:0,localTankActors:Array(8),mode:'solo',phase:'playing',fxTime:0,phaseTime:0,toastTime:0,particles:[],rings:[],shake:0,roundClock:120,spawnClock:Infinity,uiClock:Infinity,bullets:[],pickups:[],bulletId:0,tanks:[tank(),tank(1)],updateTraces:noop,compactLife:noop,objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,liveLocalStats:()=>false,advanceGhost:(t,dt)=>t.ghostTime=Math.max(0,t.ghostTime-dt),humanControl:noop,botControl:noop,updateBullets:noop,finishRound:noop,updateHUD:noop,muzzleBlocked:()=>false,burst:noop,shotSound:noop,
   projectileSpec:power=>({kind:power,cooldown:0}),muzzleProjectile:(t,a)=>({owner:t.id,kind:t.power}),
-  activeAmmo:t=>s.bullets.filter(b=>!b.dead&&b.owner===t.id).length,shieldCount:t=>t.shield>0?t.shieldCharges||1:0,speedCount:t=>t.speedTime>0?t.speedStacks||1:0};
+  activeAmmo:t=>s.bullets.filter(b=>!b.dead&&!b.boosted&&b.owner===t.id&&N.ammoEpoch(b)===N.ammoEpoch(t)).length,shieldCount:t=>t.shield>0?t.shieldCharges||1:0,speedCount:t=>t.speedTime>0?t.speedStacks||1:0};
  vm.createContext(s);for(const name of ['choosePickup','powerEffectDuration','starmanDuration','pickupCap','pickupLifetime','grantPower','pickupMessage','powerCapacity','recycleStarmanProjectiles','fire','update'])vm.runInContext(declaration(name),s);return s;
 }
 test('local equipped and ground durations match each of the six map tiers',()=>{
@@ -80,7 +80,7 @@ test('local machine gun fires exactly 180 rapid projectiles at 60 Hz on a 120 Hz
 test('local cooldown, wall, slot and same-tick blocks never spend firing budget',()=>{
  const s=boot(),t=tank();s.grantPower(t,'rapid');t.cooldown=1;assert.equal(s.fire(t),false);t.cooldown=0;
  t.ghostTime=5;s.muzzleBlocked=()=>true;assert.equal(s.fire(t),false);s.muzzleBlocked=()=>false;
- s.bullets=Array.from({length:N.MACHINE_CAPACITY},()=>({owner:0}));assert.equal(s.fire(t),false);assert.equal(t.machineRounds,180);
+ s.bullets=Array.from({length:N.MACHINE_CAPACITY},()=>({owner:0,ammoEpoch:t.ammoEpoch}));assert.equal(s.fire(t),false);assert.equal(t.machineRounds,180);
  s.bullets=[];assert.equal(s.fire(t),true);assert.equal(s.fire(t),false);assert.equal(t.machineRounds,179);
 });
 test('local released fire preserves budget but the regular timer still expires unused guns',()=>{
@@ -92,8 +92,8 @@ test('local released fire preserves budget but the regular timer still expires u
   s.phase='playing';s.update(2/120);assert.equal(t.power,null);assert.equal(t.machineRounds,0);
  }
 });
-test('machine-gun pickup refreshes its firing budget; other buffs preserve it',()=>{
- const s=boot(),t=tank();s.grantPower(t,'rapid');s.fire(t);s.grantPower(t,'shield');assert.equal(t.machineRounds,179);
+test('machine-gun pickup refreshes its firing budget; other buffs refill it',()=>{
+ const s=boot(),t=tank();s.grantPower(t,'rapid');s.fire(t);s.grantPower(t,'shield');assert.equal(t.machineRounds,180);
  s.grantPower(t,'rapid');assert.equal(t.machineRounds,180);assert.equal(t.shieldCharges,1);
  s.grantPower(t,'cannon');assert.equal(t.machineRounds,0);assert.equal(t.charges,3);
 });
@@ -122,4 +122,65 @@ test('predicted firing budget is independent for P2 and resets with a new life',
 test('pickup feedback explains map duration, Starman, machine-gun firing time and grenade fuse',()=>{
  const s=boot();s.cols=14;s.rows=12;assert.match(s.pickupMessage('speed'),/15 SECONDS/);assert.match(s.pickupMessage('laser'),/LONG AIM GUIDE/);
  assert.match(s.pickupMessage('rapid'),/3s FIRING, 15s TO USE/);assert.match(s.pickupMessage('grenade'),/10s FUSE/);assert.match(s.pickupMessage('starman'),/6s$/);
+});
+
+const weapons=['rapid','scatter','homing','grenade','laser','cannon'];
+test('every pickup refills the selected weapon and leaves older shells alive for either local pilot',()=>{
+ for(const id of [0,1])for(const equipped of ['',...weapons])for(const pickup of kinds){
+  const s=boot(),t=s.tanks[id];Object.assign(t,{power:equipped,machineRounds:1,charges:1,cooldown:3,cooldownTotal:3,fireBlocked:true,rapidTick:42});
+  const old={owner:id,ammoEpoch:0,kind:'grenade',life:7};s.bullets=[old];s.grantPower(t,pickup);
+  const label=[id,equipped,pickup].join('/'),power=weapons.includes(pickup)?pickup:equipped;
+  assert.equal(t.power,power,label);assert.equal(t.ammoEpoch,1,label);assert.equal(t.cooldown,0,label);assert.equal(t.cooldownTotal,0,label);
+  assert.equal(t.machineRounds,power==='rapid'?180:0,label);assert.equal(t.charges,power==='scatter'?5:weapons.includes(power)&&power!=='rapid'?3:0,label);
+  assert.equal(t.fireBlocked,false,label);assert.equal(t.rapidTick,42,label);assert.equal(s.bullets[0],old,label);assert.equal(old.life,7,label);assert.ok(!old.dead,label);assert.equal(s.activeAmmo(t),0,label);
+ }
+});
+test('each power ending and simultaneous expiries refill once before the next local firing action',()=>{
+ for(const id of [0,1])for(const ending of kinds){
+  const s=boot(),t=s.tanks[id];s.grantPower(t,ending);t.cooldown=t.cooldownTotal=3;t.charges=1;t.machineRounds=1;
+  const field={shield:'shield',speed:'speedTime',ghost:'ghostTime',starman:'starmanTime'}[ending]||'powerTime';t[field]=.001;
+  const epoch=t.ammoEpoch;s.update(1/120);assert.equal(t.ammoEpoch,epoch+1,ending);assert.equal(t.cooldown,0,ending);
+  assert.equal(t.power||'',weapons.includes(ending)?'':t.power||'',ending);assert.equal(t.charges,0,ending);assert.equal(t.machineRounds,0,ending);
+ }
+ const s=boot(),t=s.tanks[0];Object.assign(t,{shield:.001,shieldCharges:1,speedTime:.001,speedStacks:2,ghostTime:.001,starmanTime:.001,power:'rapid',powerTime:.001,cooldown:2,machineRounds:1});
+ s.update(1/120);assert.equal(t.ammoEpoch,1);assert.equal(t.cooldown,0);assert.equal(t.power,null);
+});
+test('a buff ending refills a surviving weapon without extending its duration',()=>{
+ for(const power of weapons)for(const ending of ['shield','speedTime','ghostTime','starmanTime']){
+  const s=boot(),t=s.tanks[0];Object.assign(t,{power,powerTime:7,machineRounds:1,charges:1,[ending]:.001,cooldown:3});
+  s.update(1/120);assert.equal(t.power,power);assert.equal(t.powerTime,7-1/120);assert.equal(t.cooldown,0);
+  assert.equal(t.machineRounds,power==='rapid'?180:0);assert.equal(t.charges,power==='scatter'?5:power==='rapid'?0:3);
+ }
+});
+test('last charged or machine-gun shot restores ordinary ammo without deleting the final volley',()=>{
+ for(const power of weapons.filter(p=>p!=='laser')){
+  const s=boot(),t=s.tanks[0];s.grantPower(t,power);t.machineRounds=t.charges=1;s.time=1;
+  assert.equal(s.fire(t),true,power);assert.equal(t.power,null,power);assert.equal(t.cooldown,0,power);assert.equal(t.ammoEpoch,2,power);
+  assert.equal(s.bullets.length,power==='scatter'?3:1,power);assert.ok(s.bullets.every(b=>!b.dead&&b.ammoEpoch===1),power);assert.equal(s.activeAmmo(t),0,power);
+  assert.equal(s.fire(t),true,power+' can immediately fire standard ammo');assert.equal(s.bullets.at(-1).ammoEpoch,2);
+ }
+});
+test('a refill cannot bypass the rapid60Hz guard or release a held grenade trigger',()=>{
+ const s=boot(),t=s.tanks[0];s.grantPower(t,'rapid');s.time=1;assert.equal(s.fire(t),true);s.grantPower(t,'speed');assert.equal(s.fire(t),false);assert.equal(t.machineRounds,180);
+ const p=new N.ShotPresentation(),a=onlineTank(0);a.power='grenade';a.charges=3;p.sync(a,'playing',0);
+ const options={...previewOptions,free:3,charged:true};assert.ok(p.tryFire(a,true,1,options));N.refillAmmo(a);p.sync(a,'playing',2);
+ assert.equal(p.tryFire(a,true,20,options),null);p.tryFire(a,false,21,options);assert.ok(p.tryFire(a,true,22,options));
+});
+test('online ammo reset discards only old predicted costs and preserves already-shown flights and movement',()=>{
+ const shots=new N.ShotPresentation(),a=onlineTank(0),b=onlineTank(7);a.machineRounds=1;
+ for(const t of [a,b])shots.sync(t,'playing',0);
+ const old=shots.tryFire(a,true,1,previewOptions);old.shells=[{life:2}];assert.equal(shots.machineRounds(a),0);
+ N.refillAmmo(a);shots.sync(a,'playing',2);assert.equal(shots.machineRounds(a),180);assert.equal(shots.cooldown(a,2),0);assert.equal(shots.machineRounds(b),180);
+ assert.equal(shots.previews.get(old.key),old);assert.equal(shots.tryFire(a,true,3,previewOptions),null,'same tick rapid limit survives');
+ const fresh=shots.tryFire(a,true,21,previewOptions);assert.ok(fresh);assert.equal(fresh.ammoEpoch,1);assert.notEqual(fresh.key,old.key);assert.equal(shots.machineRounds(a),179);
+ const predictor=new N.Predictor((t,dx,dy)=>{t.x+=dx;t.y+=dy;});predictor.reset({...a,ammoEpoch:0,ack:0});predictor.sentInput(1);predictor.advance(N.STEP*2,{...N.neutral(),forward:true});
+ const x=predictor.state.x;assert.ok(x>a.x);predictor.reconcile({...a,ammoEpoch:1,ack:0});assert.equal(predictor.state.x,x);assert.equal(predictor.state.ammoEpoch,1);assert.equal(predictor.metrics.hardResets,0);assert.equal(predictor.metrics.replayed,2);
+});
+test('machine tuple decoding keeps the12-number format and associates optional epochs by wire index',()=>{
+ const tuple=[1,0,1,1,10,20,282,0,.1,1,0,0],colors=['#fff'];
+ assert.ok(!('ammoEpoch' in N.expandMachineBullets([tuple],colors)[0]));assert.equal(tuple.length,12);
+ assert.equal(N.expandMachineBullets([tuple],colors,[42])[0].ammoEpoch,42);
+ assert.equal(N.expandMachineBullets([[],tuple],colors,[12,43])[0].ammoEpoch,43);
+ for(const invalid of [-1,Infinity,NaN,1.5,Number.MAX_SAFE_INTEGER+1])assert.equal(N.ammoEpoch(N.expandMachineBullets([tuple],colors,[invalid])[0]),0);
+ const t={ammoEpoch:Number.MAX_SAFE_INTEGER,power:'rapid',rapidTick:5};N.refillAmmo(t);assert.equal(t.ammoEpoch,1);assert.equal(t.machineRounds,180);assert.equal(t.rapidTick,5);
 });

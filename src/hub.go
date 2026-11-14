@@ -1107,12 +1107,13 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 func rounded(v float64) float64 { return math.Round(v*100) / 100 }
 
 type stateScratch struct {
-	tanks          []Tank
-	bullets        []Bullet
-	boostedIDs     []int
-	machineBullets [][12]float64
-	pickups        []Pickup
-	events         []Event
+	tanks             []Tank
+	bullets           []Bullet
+	boostedIDs        []int
+	machineBullets    [][12]float64
+	machineAmmoEpochs []uint64
+	pickups           []Pickup
+	events            []Event
 }
 
 type stateWire struct {
@@ -1120,24 +1121,25 @@ type stateWire struct {
 	// canonical stateMessage so the optimized packet remains byte-for-byte stable.
 	BoostedBulletIDs []int `json:"boostedBulletIds,omitempty"`
 
-	Bullets        []Bullet        `json:"bullets"`
-	Events         []Event         `json:"events"`
-	Generation     int             `json:"generation"`
-	MachineBullets [][12]float64   `json:"machineBullets,omitempty"`
-	MatchStats     json.RawMessage `json:"matchStats,omitempty"`
-	Objectives     *ObjectiveState `json:"objectives"`
-	Phase          string          `json:"phase"`
-	PhaseTime      float64         `json:"phaseTime"`
-	Pickups        []Pickup        `json:"pickups"`
-	Round          int             `json:"round"`
-	RoundClock     float64         `json:"roundClock"`
-	Rules          MatchRules      `json:"rules"`
-	Scores         [maxTanks]int   `json:"scores"`
-	Tanks          []Tank          `json:"tanks"`
-	Tick           int             `json:"tick"`
-	Type           string          `json:"type"`
-	Winner         int             `json:"winner"`
-	World          *World          `json:"world,omitempty"`
+	Bullets           []Bullet        `json:"bullets"`
+	Events            []Event         `json:"events"`
+	Generation        int             `json:"generation"`
+	MachineAmmoEpochs []uint64        `json:"machineAmmoEpochs,omitempty"`
+	MachineBullets    [][12]float64   `json:"machineBullets,omitempty"`
+	MatchStats        json.RawMessage `json:"matchStats,omitempty"`
+	Objectives        *ObjectiveState `json:"objectives"`
+	Phase             string          `json:"phase"`
+	PhaseTime         float64         `json:"phaseTime"`
+	Pickups           []Pickup        `json:"pickups"`
+	Round             int             `json:"round"`
+	RoundClock        float64         `json:"roundClock"`
+	Rules             MatchRules      `json:"rules"`
+	Scores            [maxTanks]int   `json:"scores"`
+	Tanks             []Tank          `json:"tanks"`
+	Tick              int             `json:"tick"`
+	Type              string          `json:"type"`
+	Winner            int             `json:"winner"`
+	World             *World          `json:"world,omitempty"`
 }
 
 // Direct and periodic snapshots reuse room-owned slice capacity. JSON encoding
@@ -1148,6 +1150,8 @@ func (h *Hub) stateWire(r *Room) stateWire {
 	z.bullets = z.bullets[:0]
 	z.boostedIDs = z.boostedIDs[:0]
 	z.machineBullets = z.machineBullets[:0]
+	z.machineAmmoEpochs = z.machineAmmoEpochs[:0]
+	hasMachineEpoch := false
 	z.pickups = z.pickups[:0]
 	if cap(z.tanks) < maxTanks {
 		z.tanks = make([]Tank, 0, maxTanks)
@@ -1157,6 +1161,9 @@ func (h *Hub) stateWire(r *Room) stateWire {
 	}
 	if cap(z.machineBullets) < len(g.Bullets) {
 		z.machineBullets = make([][12]float64, 0, len(g.Bullets))
+	}
+	if cap(z.machineAmmoEpochs) < len(g.Bullets) {
+		z.machineAmmoEpochs = make([]uint64, 0, len(g.Bullets))
 	}
 	if z.pickups == nil || cap(z.pickups) < len(g.Pickups) {
 		z.pickups = make([]Pickup, 0, len(g.Pickups))
@@ -1194,6 +1201,8 @@ func (h *Hub) stateWire(r *Room) stateWire {
 		if v.Kind == "rapid" {
 			color := tankColorIndex[v.Color]
 			z.machineBullets = append(z.machineBullets, [12]float64{float64(v.ID), float64(v.Owner), float64(v.ShotSerial), float64(v.SpawnSerial), v.X, v.Y, v.VX, v.VY, v.Age, v.Life, float64(v.Bounces), float64(color)})
+			z.machineAmmoEpochs = append(z.machineAmmoEpochs, v.AmmoEpoch)
+			hasMachineEpoch = hasMachineEpoch || v.AmmoEpoch != 0
 		} else {
 			z.bullets = append(z.bullets, v)
 		}
@@ -1205,7 +1214,11 @@ func (h *Hub) stateWire(r *Room) stateWire {
 		z.pickups = append(z.pickups, v)
 	}
 	z.events = g.projectileSnapshotEvents(z.events[:0])
-	wire := stateWire{Type: "state", Tick: g.Tick, Generation: g.Generation, Phase: g.Phase, PhaseTime: rounded(g.PhaseTime), Round: g.Round, RoundClock: rounded(g.Clock), Winner: g.Winner, Scores: g.Scores, Tanks: z.tanks, Bullets: z.bullets, BoostedBulletIDs: z.boostedIDs, MachineBullets: z.machineBullets, Pickups: z.pickups, Events: z.events, Rules: g.settings(), Objectives: g.Objectives}
+	machineEpochs := z.machineAmmoEpochs
+	if !hasMachineEpoch {
+		machineEpochs = nil
+	}
+	wire := stateWire{MachineAmmoEpochs: machineEpochs, Type: "state", Tick: g.Tick, Generation: g.Generation, Phase: g.Phase, PhaseTime: rounded(g.PhaseTime), Round: g.Round, RoundClock: rounded(g.Clock), Winner: g.Winner, Scores: g.Scores, Tanks: z.tanks, Bullets: z.bullets, BoostedBulletIDs: z.boostedIDs, MachineBullets: z.machineBullets, Pickups: z.pickups, Events: z.events, Rules: g.settings(), Objectives: g.Objectives}
 	if g.Phase == "matchOver" && g.matchReportWire != nil {
 		wire.MatchStats = g.matchReportWire
 	}
