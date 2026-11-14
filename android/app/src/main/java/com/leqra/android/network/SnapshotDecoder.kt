@@ -35,6 +35,7 @@ class SnapshotDecoder {
                 .toMutableList()
         if (fixed)
             json.optJSONArray("machineBullets")?.let { packed ->
+                val epochs = json.optJSONArray("machineAmmoEpochs")
                 for (index in 0 until packed.length()) {
                     val row = packed.getJSONArray(index)
                     require(row.length() == 12)
@@ -57,6 +58,7 @@ class SnapshotDecoder {
                             life = row.getDouble(9),
                             bounces = row.getInt(10),
                             colorIndex = row.getInt(11),
+                            ammoEpoch = epochs?.ammoEpoch(index) ?: 0,
                         ),
                     )
                 }
@@ -79,8 +81,8 @@ class SnapshotDecoder {
             for (bullet in bullets) {
                 val shooter = byId[bullet.owner]
                 if (shooter != null) {
-                    if (shooter.power != "laser" && bullet.id !in boostedSet) shooter.ammoUsed++
-                    if (bullet.kind == "grenade") {
+                    if (shooter.power != "laser" && bullet.id !in boostedSet && bullet.ammoEpoch == shooter.ammoEpoch) shooter.ammoUsed++
+                    if (bullet.kind == "grenade" && bullet.ammoEpoch == shooter.ammoEpoch) {
                         shooter.grenades++
                         shooter.grenadeLife = maxOf(shooter.grenadeLife, bullet.life)
                     }

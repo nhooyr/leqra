@@ -201,5 +201,6 @@ func (g *Game) advanceGhost(t *Tank, dt float64) {
 	t.GhostTime = math.Max(0, t.GhostTime-dt)
 	if was && t.GhostTime == 0 {
 		g.finishGhost(t)
+		refillExpiredAmmo(t)
 	}
 }

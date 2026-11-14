@@ -37,7 +37,7 @@ public struct PilotReadout: Equatable, Sendable {
         unlimited = alive && tank.starmanTime > 0
         capacity = tank.power == "rapid" ? 115 : tank.power == "scatter" ? 12 : ["homing", "grenade", "laser", "cannon"].contains(tank.power) ? 3 : 5
         let boosted = Set(snapshot.boostedBulletIds)
-        let allOwned = snapshot.bullets.filter { $0.owner == tank.id }
+        let allOwned = snapshot.bullets.filter { $0.owner == tank.id && $0.ammoEpoch == tank.ammoEpoch }
         let ordinary = allOwned.filter { !boosted.contains($0.id) }
         // Normalized fixed packets retain the authoritative count even while
         // rendering its projectiles on the delayed remote-entity timeline.

@@ -90,7 +90,7 @@ func Test427MachineGunSpendsOnlySuccessfulRounds(t *testing.T) {
 	}
 	p.Cooldown = 0
 	for n := 0; n < machineCapacity; n++ {
-		g.Bullets = append(g.Bullets, &Bullet{Owner: p.ID})
+		g.Bullets = append(g.Bullets, &Bullet{Owner: p.ID, AmmoEpoch: p.AmmoEpoch})
 	}
 	if g.fire(p) || p.MachineRounds != 180 {
 		t.Fatal("capacity-blocked attempt consumed firing time")

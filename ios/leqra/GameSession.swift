@@ -189,8 +189,8 @@ final class GameSession: ObservableObject {
                 let profiler = FrameProfiler(arguments: ProcessInfo.processInfo.arguments)
                 self.frameProfiler = profiler
                 self.practice = PracticeArena(seed: 42, name: "PROBE PILOT", colorIndex: 0, botCount: 0)
-                self.maze = profiler.maze; self.localID = 1
-                self.localRules.infinity = true; self.publicInfinitySelected = false
+                self.maze = profiler.maze; self.world = profiler.world; self.localID = 1
+                self.localRules.infinity = profiler.world == nil; self.publicInfinitySelected = false
                 self.scene.profilesRendering = true
                 self.screen = .playing
                 UIApplication.shared.isIdleTimerDisabled = true
@@ -1125,8 +1125,10 @@ final class GameSession: ObservableObject {
     }
 
     func applyAudioSetting(preview: AudioCue? = nil) {
-        audio.enabled = soundEnabled
-        audio.volume = Float(soundVolume / 100)
+        let arguments = ProcessInfo.processInfo.arguments
+        let probe = arguments.contains("--native-performance-probe")
+        audio.enabled = probe && arguments.contains("--probe-audio-off") ? false : probe && arguments.contains("--probe-audio-on") ? true : soundEnabled
+        audio.volume = probe && arguments.contains("--probe-audio-on") ? 0.5 : Float(soundVolume / 100)
         if gameplayAudioActive { audio.resume() }
         refreshStarmanActivity()
         if let preview { audio.preview(preview) }
@@ -1570,7 +1572,7 @@ final class GameSession: ObservableObject {
         hudElapsed += dt
         if hudElapsed >= 0.1 {
             let hudStart = profiling ? CACurrentMediaTime() : 0
-            let authority = practice?.snapshot ?? fixedArena?.snapshot ?? timeline?.authoritativeSnapshot ?? snapshot
+            let authority = frameProfiler != nil ? snapshot : practice?.snapshot ?? fixedArena?.snapshot ?? timeline?.authoritativeSnapshot ?? snapshot
             hudElapsed = 0; syncHUD(authority)
             if profiling { hudSeconds = CACurrentMediaTime() - hudStart }
         }
@@ -1588,7 +1590,7 @@ final class GameSession: ObservableObject {
         let readout = currentReadout
         scene.configureReadiness(label: readout.fireLabel, hint: readout.fireHint, progress: readout.progress, locked: readout.locked)
         score = tank.score
-        colorIndex = GamePalette.index(tank.colorIndex)
+        if frameProfiler == nil { colorIndex = GamePalette.index(tank.colorIndex) }
         let weapons = ["rapid": "Machine gun", "scatter": "Shotgun", "homing": "Homing missile", "cannon": "Cannon", "laser": "Laser", "grenade": "Grenade"]
         equipment = weapons[tank.power] ?? "Standard rounds"
         if tank.power == "rapid" { equipment += ", \(tank.machineRounds) rounds" }

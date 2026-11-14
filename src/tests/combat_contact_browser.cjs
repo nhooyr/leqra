@@ -84,8 +84,35 @@ __combatProbe.fixedTuning=function(){
  this.fixedSetup();tanks.length=1;const t=tanks[0];grantPower(t,'laser');const guide=aimingGuide(t),length=guide.points.slice(1).reduce((v,p,i)=>v+Math.hypot(p.x-guide.points[i].x,p.y-guide.points[i].y),0),frame=this.take(()=>render(),false,true);fire(t);updateHUD(true);updateCombatFeedback(true);const laser={cooldown:t.cooldown,total:t.cooldownTotal,guide:length,expected:4*(W+H)-28,readiness:$('cooldownText1').textContent,guidePainted:frame.ops.some(o=>o.method==='stroke'&&o.dash.join(',')==='3,7')};
  grantPower(t,'cannon');t.cooldown=0;fire(t);updateHUD(true);updateCombatFeedback(true);return{laser,cannon:{cooldown:t.cooldown,total:t.cooldownTotal,life:bullets[0]?.life,readiness:$('cooldownText1').textContent}};
 };
+__combatProbe.fixedAmmoRefills=function(){
+ const checks=[],check=(value,label)=>{if(!value)throw Error(label);checks.push(label);},kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
+ for(const id of [0,1])for(const kind of kinds){
+  this.fixedSetup();localRoom.players[1].kind='local';const t=tanks[id];t.angle=-Math.PI/2;check(fire(t),kind+' initial shot');const old=bullets.at(-1),epoch=Net.ammoEpoch(t);
+  grantPower(t,kind);check(Net.ammoEpoch(t)===epoch+1&&t.cooldown===0&&activeAmmo(t)===0,kind+' P'+(id+1)+' pickup refills');
+  renderPilotLoadout(t,id+1,true);renderPilotReadiness(t,id+1,pilotProjectileState(t),false,null);check($('cooldownText'+(id+1)).textContent==='READY',kind+' pickup readiness');
+  check(bullets.includes(old)&&!old.dead,kind+' retains old shell');time+=1/60;check(fire(t),kind+' fires immediately');
+  const field={shield:'shield',speed:'speedTime',ghost:'ghostTime',starman:'starmanTime'}[kind]||'powerTime';t[field]=.001;t.cooldown=3;const before=Net.ammoEpoch(t);update(1/120);
+  check(Net.ammoEpoch(t)===before+1&&t.cooldown===0,kind+' ending refills');check(bullets.includes(old)&&!old.dead,kind+' old shell still flying');
+  renderPilotLoadout(t,id+1,true);renderPilotReadiness(t,id+1,pilotProjectileState(t),false,null);check($('cooldownText'+(id+1)).textContent==='READY',kind+' ending readiness');
+ }
+ return checks;
+};
 `;
 const infinityHooks=String.raw`
+__combatProbe.infinityAmmoRefills=function(){
+ const checks=[],check=(value,label)=>{if(!value)throw Error(label);checks.push(label);},kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
+ for(const seat of [0,1])for(const kind of kinds){
+  this.infinitySetup();window.leqraInfinity.close();window.leqraInfinity.start('offline',{name:'Probe',localName:'Wingmate',roomRules:{infinity:true,infinityRandomBots:false}});const w=session;w.maze={wallsNear:()=>[],visitWalls:()=>false,blocked:()=>false};w.nextBot=w.nextPickup=1e9;w.pickups=[];
+  const t=w.tanks[seat];Object.assign(t,{x:100+seat*200,y:210,angle:-Math.PI/2,invulnerable:0,spawnProtected:false,cooldown:0});fireShot(w,t);const old=w.bullets.at(-1),epoch=net.ammoEpoch(t);check(old,kind+' initial shot');
+  art.grantPower(t,kind,15,8);check(net.ammoEpoch(t)===epoch+1&&t.cooldown===0&&art.projectileState(t,false,w.bullets).ammo===0,kind+' P'+(seat+1)+' pickup refills');
+  updatePilotLoadout(w,t,seat?w.local:w,seat+1,this.clock);check(byID('infiniteCooldownText'+(seat+1)).textContent==='READY',kind+' pickup readiness');
+  check(w.bullets.includes(old)&&!old.dead,kind+' retains old shell');w.time+=1/60;fireShot(w,t);
+  const field={shield:'shield',speed:'speedTime',ghost:'ghostTime',starman:'starmanTime'}[kind]||'powerTime';t[field]=.001;t.cooldown=3;const before=net.ammoEpoch(t);offlineStep(w,1/60);
+  check(net.ammoEpoch(t)===before+1&&t.cooldown===0,kind+' ending refills');check(w.bullets.includes(old)&&!old.dead,kind+' old shell still flying');
+  updatePilotLoadout(w,t,seat?w.local:w,seat+1,this.clock);check(byID('infiniteCooldownText'+(seat+1)).textContent==='READY',kind+' ending readiness');
+ }
+ return checks;
+};
 const contactInfinityTank=drawTank;drawTank=function(t,...args){const p=__combatProbe,m=ctx.getTransform(),before=p.pixel(ctx,m,t.x,t.y),result=contactInfinityTank(t,...args);if(p.frame)p.frame.tanks.push({id:t.id,x:t.x,y:t.y,r:17,alive:t.hp>0,hp:t.hp,shield:t.shield||0,shieldCharges:t.shieldCharges||0,life:t.spawnSerial||0,painted:before!==p.pixel(ctx,m,t.x,t.y)});return result;};
 const contactInfinityTrace=drawTrace;drawTrace=function(points,color,width,...args){if(__combatProbe.frame&&width===7)__combatProbe.frame.beams.push({points:points.map(p=>({x:p.x,y:p.y}))});return contactInfinityTrace(points,color,width,...args);};
 const contactInfinityEffect=presentEffect;presentEffect=function(w,e,...args){if(__combatProbe.frame)__combatProbe.frame.effects.push({id:e.id,kind:e.kind,target:e.contact?.target});return contactInfinityEffect(w,e,...args);};
@@ -163,6 +190,7 @@ async function run(){
  const browser=await chromium.launch({headless:true,args:['--disable-features=LocalNetworkAccessChecks']});
  try{for(const profile of profiles){const page=await createPage(browser,profile);try{
   for(const arena of ['fixed','infinity'].filter(a=>!arenaFilter||a===arenaFilter)){
+   const refills=await page.evaluate(arena=>__combatProbe[arena+'AmmoRefills'](),arena);for(const label of refills)check(true,profile.name+' '+arena+' '+label);records.push({label:profile.name+' '+arena+' ammo pickup/expiry P1/P2',checks:refills.length});
    const matrix=[];
    for(const ping of quick?[150]:[50,150,400])for(const role of quick?['remote']:['own','remote','spectator'])for(const published of [false,true])for(const shield of [false,true])for(const kind of quick?['regular','cannon','grenade','laser','starman']:weapons){if(['laser','starman'].includes(kind)&&published||kind==='starman'&&shield)continue;matrix.push({kind,ping,role,published,shield});}
    for(const kind of weapons)matrix.push({kind,ping:400,role:'own',published:ballistics.includes(kind),shield:false,winning:true});

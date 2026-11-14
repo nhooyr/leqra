@@ -175,7 +175,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  vm.runInContext(game.slice(game.indexOf('function choosePickup('), game.indexOf('// Power-up colors')), context);
  window.leqraInfinityArt.choosePickup = context.choosePickup;
  const recycle = game.indexOf('function recycleStarmanProjectiles(');
- context.MACHINE_CAPACITY = window.leqraNet.MACHINE_CAPACITY;
+ context.MACHINE_CAPACITY = window.leqraNet.MACHINE_CAPACITY;context.Net=window.leqraNet;
  vm.runInContext(game.slice(recycle,game.indexOf('\n}',recycle)+2), context);
  window.leqraInfinityArt.recycleStarmanProjectiles = context.recycleStarmanProjectiles;
  const grant = game.slice(game.indexOf('function grantPower('), game.indexOf('function pickupMessage('));
@@ -191,7 +191,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
    },
   })};
  }
- vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.testDraw = draw; window.testFire = fireShot; window.testBotInput = botInput; window.testRoamingDifficulty = roamingDifficulty; window.leqraInfinity ='), context);
+ vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.testDraw = draw; window.testFire = fireShot; window.testStep = offlineStep; window.testHurt = hurt; window.testBotInput = botInput; window.testRoamingDifficulty = roamingDifficulty; window.leqraInfinity ='), context);
  byID('pauseBtn').addEventListener('click',()=>window.leqraInfinity.togglePause());
  const advance = (frames = 1) => {
   for (let i = 0; i < frames; i++) {
@@ -215,6 +215,36 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, botInput:window.testBotInput,setRandom(fn){math.random=fn;},sounds, loadouts, markers, labels, strokes, rings, frameSamples, bulletDraws, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
 }
 
+test('offline Infinity refills all ten pickups and endings for P1/P2 while preserving old projectile physics',()=>{
+ const kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
+ for(const kind of kinds)for(const id of [0,1]){
+  const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});
+  const w=h.state(),t=w.tanks[id];w.nextPickup=w.nextBot=Infinity;
+  Object.assign(t,{x:100+id*100,y:100,angle:0,cooldown:4,invulnerable:0,spawnProtected:false});
+  const old={id:++w.lastBullet,owner:t.id,kind:'regular',ammoEpoch:0,x:600,y:600,vx:100,vy:0,life:2,age:0,r:3.5,bounces:0,trail:[]};w.bullets.push(old);
+  h.window.leqraInfinityArt.grantPower(t,kind,15,8);assert.equal(t.ammoEpoch,1,kind);assert.equal(t.cooldown,0,kind);
+  const field={shield:'shield',speed:'speedTime',ghost:'ghostTime',starman:'starmanTime'}[kind]||'powerTime';t[field]=.001;t.cooldown=4;
+  h.window.testStep(w,1/60);assert.equal(t.ammoEpoch,2,kind);assert.equal(t.cooldown,0,kind);assert.equal(t.power||'','',kind);
+  assert.ok(w.bullets.includes(old),kind);assert.ok(old.x>600&&old.life<2,kind+' old shell still advances');h.infinity.close();
+ }
+});
+test('offline Infinity starts a fresh grenade cycle and preserves old grenades on natural fuses',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[0],arena=h.byID('infiniteArena');w.nextPickup=w.nextBot=Infinity;
+ Object.assign(t,{x:100,y:100,angle:0,invulnerable:0,spawnProtected:false});h.window.leqraInfinityArt.grantPower(t,'grenade',15,8);h.window.testFire(w,t);
+ const old=w.bullets[0];assert.equal(old.ammoEpoch,1);const oldLife=old.life;h.window.leqraInfinityArt.grantPower(t,'speed',15,8);assert.equal(t.charges,3);
+ arena.emit('keydown',{code:'KeyQ'});h.advance();const fresh=w.bullets.find(b=>b!==old&&b.kind==='grenade');assert.ok(fresh);assert.equal(fresh.ammoEpoch,2);assert.ok(w.bullets.includes(old));
+ arena.emit('keyup',{code:'KeyQ'});h.advance();arena.emit('keydown',{code:'KeyQ'});h.advance();assert.ok(!w.bullets.includes(fresh));assert.ok(w.bullets.includes(old));assert.ok(old.life<oldLife&&!old.dead);
+ arena.emit('keyup',{code:'KeyQ'});t.hp=0;t.respawn=100;old.life=1/120;h.window.testStep(w,1/60);assert.ok(!w.bullets.includes(old),'old cycle ends on its natural fuse');h.infinity.close();
+});
+test('offline Infinity last Shield charge and last weapon charge refill immediately',()=>{
+ for(const kind of ['rapid','scatter','homing','grenade','laser','cannon']){
+  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[0];w.nextPickup=w.nextBot=Infinity;
+  Object.assign(t,{x:100,y:100,angle:0,invulnerable:0,spawnProtected:false});h.window.leqraInfinityArt.grantPower(t,kind,15,8);t.charges=t.machineRounds=1;
+  h.window.testFire(w,t);assert.equal(t.power,'',kind);assert.equal(t.ammoEpoch,2,kind);assert.equal(t.cooldown,0,kind);assert.ok(w.bullets.every(b=>b.ammoEpoch===1&&!b.dead),kind);h.infinity.close();
+ }
+ const h=harness(undefined,true);h.infinity.start('offline');const w=h.state(),t=w.tanks[0];Object.assign(t,{invulnerable:0,spawnProtected:false,power:'rapid',powerTime:5,machineRounds:1,shield:4,shieldCharges:1,cooldown:4});
+ h.window.testHurt(w,t,'enemy',0,'Enemy');assert.equal(t.hp,1);assert.equal(t.shield,0);assert.equal(t.machineRounds,180);assert.equal(t.cooldown,0);assert.equal(t.ammoEpoch,1);h.infinity.close();
+});
 test('all online Infinity projectile kinds survive newest removal until playback reaches the terminal frame',()=>{
  const h=harness(undefined,true);h.infinity.start('online');const ws=h.sockets[0];ws.receive({type:'welcome',id:1,seed:0});
  const tank={id:1,hp:1,x:42,y:42,angle:0,spawnSerial:1};
@@ -1097,7 +1127,8 @@ test('offline Infinity keeps an old grenade armed through a held-fire respawn', 
  advance(60);
  arena.emit('keydown',{code:'KeyQ'});
  advance();
- assert.ok(!world.bullets.includes(grenade),'a fresh press can still detonate it');
+ assert.ok(world.bullets.includes(grenade),'a fresh press leaves the previous ammo cycle on its natural fuse');
+ assert.ok(grenade.life<8&&grenade.life>7);infinity.close();
 });
 
 test('Infinity prediction keeps render corrections on the authoritative side of a wall', () => {
@@ -1171,7 +1202,7 @@ test('offline Infinity Cannon passes through walls and expires after 5.3 seconds
   advance(flightTicks-2);
   assert.equal(world.bullets.length,1);
   assert.equal(world.bullets[0].bounces,0);
-  assert.equal(loadouts[1].projectiles.ammo,1);
+  assert.equal(loadouts[1].projectiles.ammo,0,'expired Ghost and Cannon refill without removing the flying shell');
   assert.equal(target.hp,1);
   advance();
   assert.equal(world.bullets.length,0);
@@ -1366,7 +1397,7 @@ test('Starman keeps an equipped Infinity machine gun firing beyond its usual bud
  assert.equal(world.lastBullet,200);
  assert.equal(tank.power,'rapid');
  assert.equal(tank.powerTime,.3);
- assert.equal(tank.machineRounds,1);
+ assert.equal(tank.machineRounds,180);
  assert.equal(tank.cooldown,0);
  assert.ok(world.bullets.length<=window.leqraNet.MACHINE_CAPACITY);
  arena.emit('keyup',{code:'KeyQ'});
@@ -1376,7 +1407,7 @@ test('Starman keeps an equipped Infinity machine gun firing beyond its usual bud
  arena.emit('keydown',{code:'KeyQ'});
  advance();
  assert.equal(world.lastBullet,201);
- assert.equal(tank.power,'');
+ assert.equal(tank.power,'rapid');assert.equal(tank.machineRounds,179);
  infinity.close();
 });
 
@@ -1396,9 +1427,9 @@ test('ordinary Infinity shells can fire immediately after Starman with boosted s
  for(let i=0;i<6;i++){tank.cooldown=0;advance();}
  assert.equal(tank.starmanTime,0);
  assert.equal(world.lastBullet,145);
- assert.equal(world.bullets.length,cap);
+ assert.equal(world.bullets.length,cap+5);
  assert.equal(world.bullets.filter(b=>!b.boosted).length,5);
- assert.ok(oldest.dead && world.bullets.includes(recent));
+ assert.ok(!oldest.dead && world.bullets.includes(oldest) && world.bullets.includes(recent));
  infinity.close();
 });
 

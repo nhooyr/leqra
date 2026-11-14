@@ -29,6 +29,10 @@ func TestNewPickupGrantsAndIndependentBuffs(t *testing.T) {
 				if p.SpeedTime != boostDuration {
 					t.Fatal("speed duration")
 				}
+			case "rapid":
+				if p.Power != kind || p.Charges != 0 || p.MachineRounds != 180 {
+					t.Fatal("Machine gun round budget not granted")
+				}
 			default:
 				if p.Power != kind || p.Charges <= 0 {
 					t.Fatal("weapon not granted")
@@ -96,7 +100,7 @@ func TestNewWeaponsChargesCapacityAndCooldown(t *testing.T) {
 			g.grantPower(p, kind)
 			p.Cooldown = 0
 			for i := 0; i < 3; i++ {
-				g.Bullets = append(g.Bullets, &Bullet{Owner: p.ID})
+				g.Bullets = append(g.Bullets, &Bullet{Owner: p.ID, AmmoEpoch: p.AmmoEpoch})
 			}
 			if g.fire(p) || p.Charges != 3 {
 				t.Fatal("blocked shot consumed charge")

@@ -65,6 +65,7 @@ object ProtocolJson {
             locked = json.optBoolean("locked", false),
             killedBy = json.optString("killedBy", ""),
             killedByColor = json.optString("killedByColor", ""),
+            ammoEpoch = json.ammoEpoch(),
         )
 
     fun arenaBullet(json: JSONObject) =
@@ -80,6 +81,7 @@ object ProtocolJson {
             life = json.number("life", 0.0),
             bounces = json.optInt("bounces", 0),
             target = json.optInt("target", 0),
+            ammoEpoch = json.ammoEpoch(),
         )
 
     fun arenaPickup(json: JSONObject) =
@@ -280,6 +282,20 @@ internal fun JSONObject.number(key: String, fallback: Double = 0.0): Double {
     val value = get(key)
     require(value is Number) { "Invalid numeric field." }
     return value.toDouble().also { require(it.isFinite()) }
+}
+
+internal fun JSONObject.ammoEpoch(): Long = if (isNull("ammoEpoch")) 0 else number("ammoEpoch").let {
+    require(it >= 0 && it <= AmmoEpoch.maximum && it == it.toLong().toDouble()) { "Invalid ammunition epoch." }
+    it.toLong()
+}
+
+internal fun JSONArray.ammoEpoch(index: Int): Long = if (index >= length() || isNull(index)) 0 else {
+    val value = get(index)
+    require(value is Number) { "Invalid ammunition epoch." }
+    value.toDouble().let {
+        require(it.isFinite() && it >= 0 && it <= AmmoEpoch.maximum && it == it.toLong().toDouble()) { "Invalid ammunition epoch." }
+        it.toLong()
+    }
 }
 
 internal fun JSONArray.ints(): List<Int> = (0 until length()).map { getInt(it) }

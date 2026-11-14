@@ -49,6 +49,29 @@ internal class NativeArt {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
 
+    /** Build private artwork off the UI thread before any of these bitmaps reaches a Canvas. */
+    fun prepare(): Boolean {
+        for (color in 0..7) {
+            if (Thread.currentThread().isInterrupted) return false
+            for (phase in 0..3) hull(color, phase)
+            barrel(color); turret(color)
+        }
+        for (kind in ArenaPalette.powers.keys) {
+            if (Thread.currentThread().isInterrupted) return false
+            pickup(kind); badge(kind)
+        }
+        wreck(); stickBase(); stickKnob()
+        for (held in listOf(false, true)) for (detonate in listOf(false, true)) fireButton(held, detonate)
+        for (step in 0..256) grenadeFuse(step)
+        for (image in cache.values) {
+            if (Thread.currentThread().isInterrupted) return false
+            image.prepareToDraw()
+        }
+        return true
+    }
+
+    val bitmapCount: Int get() = cache.size
+
     private fun bitmap(key: String, size: Int, draw: (Canvas) -> Unit): Bitmap =
         cache.getOrPut(key) {
             Bitmap.createBitmap(size * 3, size * 3, Bitmap.Config.ARGB_8888).also { image ->

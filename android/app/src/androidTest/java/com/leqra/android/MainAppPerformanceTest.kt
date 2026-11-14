@@ -66,7 +66,7 @@ class MainAppPerformanceTest {
         prefs
             .edit()
             .clear()
-            .putBoolean("muted", true)
+            .putBoolean("muted", InstrumentationRegistry.getArguments().getString("audio") != "on")
             .putBoolean("publicSelected", false)
             .putString(
                 "server",

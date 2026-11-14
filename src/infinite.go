@@ -25,6 +25,7 @@ const (
 )
 
 type infiniteTank struct {
+	AmmoEpoch  uint64  `json:"ammoEpoch,omitempty"`
 	ID         int     `json:"id"`
 	X          float64 `json:"x"`
 	Y          float64 `json:"y"`
@@ -99,17 +100,18 @@ type infinitePilot struct {
 }
 
 type infiniteBullet struct {
-	ID      int     `json:"id"`
-	X       float64 `json:"x"`
-	Y       float64 `json:"y"`
-	Owner   int     `json:"owner"`
-	Kind    string  `json:"kind,omitempty"`
-	Color   int     `json:"colorIndex"`
-	VX      float64 `json:"vx"`
-	VY      float64 `json:"vy"`
-	Life    float64 `json:"life"`
-	Bounces int     `json:"bounces,omitempty"`
-	Target  int     `json:"target,omitempty"` // Positive pilot ID when a seeker has a lock.
+	AmmoEpoch uint64  `json:"ammoEpoch,omitempty"`
+	ID        int     `json:"id"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+	Owner     int     `json:"owner"`
+	Kind      string  `json:"kind,omitempty"`
+	Color     int     `json:"colorIndex"`
+	VX        float64 `json:"vx"`
+	VY        float64 `json:"vy"`
+	Life      float64 `json:"life"`
+	Bounces   int     `json:"bounces,omitempty"`
+	Target    int     `json:"target,omitempty"` // Positive pilot ID when a seeker has a lock.
 
 	radius, age, seekDelay                  float64
 	ownerTeam                               int
@@ -594,7 +596,10 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 	p.KilledBy = ""
 	p.KilledByColor = ""
 	p.input, p.firePending = Input{Seq: p.input.Seq}, false
-	p.kit = Tank{Invulnerable: 1, SpawnProtected: true}
+	p.kit = Tank{AmmoEpoch: p.kit.AmmoEpoch, Invulnerable: 1, SpawnProtected: true}
+	if p.Spawn > 0 {
+		refillAmmo(&p.kit)
+	}
 	p.Spawn++
 	p.Track = 0
 }
@@ -1161,10 +1166,10 @@ func (a *infiniteArena) broadcast() {
 			continue
 		}
 		if i, ok := tankIndex[b.Owner]; ok {
-			if !b.boosted {
+			if !b.boosted && b.AmmoEpoch == a.pilots[i].kit.AmmoEpoch {
 				tanks[i].AmmoUsed++
 			}
-			if b.Kind == "grenade" {
+			if b.Kind == "grenade" && b.AmmoEpoch == a.pilots[i].kit.AmmoEpoch {
 				tanks[i].Grenades++
 				tanks[i].GrenadeLife = max(tanks[i].GrenadeLife, infinitePrecision(b.Life))
 			}

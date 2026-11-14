@@ -204,6 +204,7 @@ func (g *Game) respawnTank(t *Tank) {
 	t.StarmanTime = 0
 	t.Cooldown = 0
 	t.CooldownTotal = 0
+	refillAmmo(t)
 	t.Invulnerable = 1.2
 	t.SpawnProtected = true
 	t.AI = nil

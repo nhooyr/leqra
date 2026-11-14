@@ -237,23 +237,34 @@ func Test39CannonChargeCooldownAndWeaponExpiry(t *testing.T) {
 		t.Fatal("equip expiry")
 	}
 }
-func Test39CannonRespectsActiveAmmoSlots(t *testing.T) {
+func Test39CannonRespectsFreshActiveAmmoSlots(t *testing.T) {
 	g := battle(2)
 	p := g.Tanks[0]
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		p.Cooldown = 0
 		g.fire(p)
 	}
+	old := append([]*Bullet(nil), g.Bullets...)
 	g.grantPower(p, "cannon")
-	p.Cooldown = 0
-	if g.fire(p) || p.Charges != 3 {
-		t.Fatal("bypassed active shot cap")
-	}
-	g.Bullets[0].Dead = true
 	if !g.fire(p) || p.Charges != 2 {
-		t.Fatal("freed slot not usable")
+		t.Fatal("Cannon pickup did not provide fresh slots")
+	}
+	p.Cooldown, p.Charges = 0, 3
+	g.Bullets = append(g.Bullets, &Bullet{Owner: p.ID, AmmoEpoch: p.AmmoEpoch}, &Bullet{Owner: p.ID, AmmoEpoch: p.AmmoEpoch})
+	if g.fire(p) || p.Charges != 3 {
+		t.Fatal("bypassed current-epoch shot cap")
+	}
+	g.Bullets[3].Dead = true
+	if !g.fire(p) || p.Charges != 2 {
+		t.Fatal("freed current slot not usable")
+	}
+	for _, b := range old {
+		if b.Dead {
+			t.Fatal("new magazine retired an old shot")
+		}
 	}
 }
+
 func Test39CannonNoLifetimeOrArenaLeaks(t *testing.T) {
 	for _, size := range []string{"compact", "standard", "large", "huge", "giant", "ultrawide"} {
 		t.Run(size, func(t *testing.T) {

@@ -25,10 +25,13 @@ public struct CannonFlight: Codable, Equatable, Sendable {
     }
 
     var valid: Bool {
+        switch kind ?? "cannon" {
+        case "cannon", "regular", "rapid", "scatter", "homing", "grenade": break
+        default: return false
+        }
         guard id > 0, owner >= 0, (0..<8).contains(colorIndex), (2...32).contains(points.count),
               startTick.isFinite, endTick.isFinite, endTick >= startTick, endTick - startTick <= 1_200,
               points.first?.tick == startTick, points.last?.tick == endTick,
-              ["cannon", "regular", "rapid", "scatter", "homing", "grenade"].contains(kind ?? "cannon"),
               radius == nil || radius!.isFinite && radius! >= 0 && radius! <= 32 else { return false }
         var previous = startTick
         for point in points {
@@ -105,6 +108,10 @@ final class CannonFlightPresenter {
     private var bodyOrder: [Int] = []
     private var heldBodies: [Int: ArenaTank] = [:]
     private var releases: [Int: Release] = [:]
+    private var firstContactByTarget: [Int: Int] = [:]
+    private var blockedFlights = Set<Int>()
+    private var replacements: [Int: ArenaBullet] = [:]
+    private var firstByTarget: [Int: PendingContact] = [:]
     var hasPending: Bool { !active.isEmpty || !contacts.isEmpty }
 
     func reset() {
@@ -118,6 +125,8 @@ final class CannonFlightPresenter {
         roundEndEffects.removeAll(keepingCapacity: true)
         lives.removeAll(keepingCapacity: true); heldBodies.removeAll(keepingCapacity: true); releases.removeAll(keepingCapacity: true)
         knownBodies.removeAll(keepingCapacity: true); bodyOrder.removeAll(keepingCapacity: true)
+        firstContactByTarget.removeAll(keepingCapacity: true); blockedFlights.removeAll(keepingCapacity: true)
+        replacements.removeAll(keepingCapacity: true); firstByTarget.removeAll(keepingCapacity: true)
     }
 
     func accept(_ effects: [ArenaEffect], baseline: Bool = false, throughTick: Double? = nil, tanks: [ArenaTank]? = nil) {
@@ -165,12 +174,12 @@ final class CannonFlightPresenter {
             if observedOrder.count > presentationLimit * 2 { observed.remove(observedOrder.removeFirst()) }
         }
         bullets.removeAll { completed.contains($0.id) }
-        var firstContact: [Int: Int] = [:]
-        for (id, pending) in contacts { firstContact[pending.contact.target] = min(firstContact[pending.contact.target] ?? id, id) }
-        let blockedFlights = Set(contacts.compactMap { entry in
-            firstContact[entry.value.contact.target] != entry.key ? entry.value.contact.projectileId : nil
-        })
-        var replacements: [Int: ArenaBullet] = [:]
+        firstContactByTarget.removeAll(keepingCapacity: true)
+        for (id, pending) in contacts { firstContactByTarget[pending.contact.target] = min(firstContactByTarget[pending.contact.target] ?? id, id) }
+        blockedFlights.removeAll(keepingCapacity: true)
+        for (id, pending) in contacts where firstContactByTarget[pending.contact.target] != id { blockedFlights.insert(pending.contact.projectileId) }
+        replacements.removeAll(keepingCapacity: true)
+        replacements.reserveCapacity(active.count)
         for (id, var value) in active {
             let flight = value.flight
             if value.endpointShown {
@@ -204,7 +213,7 @@ final class CannonFlightPresenter {
         for (id, var pending) in contacts {
             let contact = pending.contact
             if contact.projectileId > 0, active[contact.projectileId] != nil { continue }
-            guard firstContact[contact.target] == id else { continue }
+            guard firstContactByTarget[contact.target] == id else { continue }
             let clock = contact.projectileId == 0 && pending.effect.owner == localID ? self.authorityTick : tick
             guard completed.contains(contact.projectileId) || clock >= contact.tick else { continue }
             if contact.projectileId > 0, completed.contains(contact.projectileId) {
@@ -228,7 +237,7 @@ final class CannonFlightPresenter {
     /// state remain newest; a newer spawn can never be revived by an old hit.
     func applyContacts(to tanks: inout [ArenaTank], from previous: [Int: ArenaTank] = [:], previousTick: Double? = nil,
                        pathClear: ((ArenaTank, ArenaTank) -> Bool)? = nil) {
-        var firstByTarget: [Int: PendingContact] = [:]
+        firstByTarget.removeAll(keepingCapacity: true)
         for pending in contacts.values {
             if firstByTarget[pending.contact.target].map({ $0.effect.id < pending.effect.id }) != true { firstByTarget[pending.contact.target] = pending }
         }
@@ -285,7 +294,7 @@ final class CannonFlightPresenter {
             readyEffects.append(contentsOf: roundEndEffects.values); roundEndEffects.removeAll(keepingCapacity: true)
         }
         var result = source.filter { effect in
-            guard effect.id > baselineEffectID, contacts[effect.id] == nil,
+            guard effect.id > baselineEffectID, !presentedEffects.contains(effect.id), contacts[effect.id] == nil,
                   effect.flight.map({ active[$0.id] == nil }) ?? true else { return false }
             if effect.kind == "roundEnd", hasPending { return false }
             if let contact = effect.contact, lives[contact.target].map({ $0 == contact.spawnSerial }) == false { return false }

@@ -217,7 +217,7 @@ func TestRemoteGrenadeDetonatesDuringLaunchCooldown(t *testing.T) {
 }
 func TestRemoteGrenadeOnlyOwnerAndOnlyGrenades(t *testing.T) {
 	g, p := grenadeGame()
-	g.Bullets = []*Bullet{{Kind: "grenade", Owner: 0, X: 300, Y: 50, Life: 5}, {Kind: "grenade", Owner: 1, X: 350, Y: 50, Life: 5}, {Kind: "homing", Owner: 0, X: 350, Y: 50, Life: 5}, {Owner: 0, X: 350, Y: 50, Life: 5}}
+	g.Bullets = []*Bullet{{Kind: "grenade", Owner: 0, AmmoEpoch: p.AmmoEpoch, X: 300, Y: 50, Life: 5}, {Kind: "grenade", Owner: 1, X: 350, Y: 50, Life: 5}, {Kind: "homing", Owner: 0, X: 350, Y: 50, Life: 5}, {Owner: 0, X: 350, Y: 50, Life: 5}}
 	if !g.detonateOwned(p) || !g.Bullets[0].Dead {
 		t.Fatal("own grenade not detonated")
 	}
@@ -227,7 +227,7 @@ func TestRemoteGrenadeOnlyOwnerAndOnlyGrenades(t *testing.T) {
 		}
 	}
 }
-func TestRemoteGrenadeLastChargeWeaponSwitchAndExpiry(t *testing.T) {
+func TestRemoteGrenadeLastChargeWeaponSwitchAndExpiryStartFresh(t *testing.T) {
 	for _, next := range []string{"last", "expired", "laser", "rapid"} {
 		t.Run(next, func(t *testing.T) {
 			g, p := grenadeGame()
@@ -238,27 +238,26 @@ func TestRemoteGrenadeLastChargeWeaponSwitchAndExpiry(t *testing.T) {
 			b := g.Bullets[0]
 			b.X, b.Y = 350, 50
 			if next == "expired" {
-				p.Power = ""
-				p.PowerTime = 0
+				p.PowerTime = tickDT / 2
+				g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
 			} else if next != "last" {
 				g.grantPower(p, next)
 			}
-			before := p.Charges
+			serial := p.ShotSerial
 			g.weaponControl(p, false, false)
 			g.weaponControl(p, true, true)
-			if !b.Dead || p.Charges != before {
-				t.Fatal("lost ownership or spent a new-weapon charge")
+			if b.Dead || p.ShotSerial != serial+1 || b.AmmoEpoch == p.AmmoEpoch {
+				t.Fatal("old grenade consumed the new magazine's trigger")
 			}
-			for i := 0; i < 120; i++ {
-				p.Cooldown = 0
-				g.weaponControl(p, true, false)
-			}
-			if len(g.Bullets) != 1 {
-				t.Fatal("detonation fell through to current weapon")
+			b.Life = tickDT / 2
+			g.updateBullets(tickDT)
+			if !b.Dead {
+				t.Fatal("old grenade did not retain natural fuse")
 			}
 		})
 	}
 }
+
 func TestRemoteGrenadeHoldThroughFuseDoesNotRepeat(t *testing.T) {
 	for _, charges := range []int{1, 3} {
 		g, p := grenadeGame()
@@ -270,8 +269,19 @@ func TestRemoteGrenadeHoldThroughFuseDoesNotRepeat(t *testing.T) {
 			g.weaponControl(p, true, false)
 			g.updateBullets(tickDT)
 		}
-		if len(g.Bullets) != 0 || p.Charges != charges-1 {
-			t.Fatal("held throw auto-fired after fuse")
+		if charges > 1 {
+			if len(g.Bullets) != 0 || p.Charges != charges-1 {
+				t.Fatal("holding repeated a grenade throw")
+			}
+		} else {
+			if p.Power != "" || p.Charges != 0 {
+				t.Fatal("last grenade failed to ready standard ammo")
+			}
+			for _, b := range g.Bullets {
+				if b.Kind == "grenade" {
+					t.Fatal("holding repeated an old-epoch grenade")
+				}
+			}
 		}
 	}
 }
@@ -310,7 +320,7 @@ func TestRemoteGrenadeBlastRetainsWallAndShieldRules(t *testing.T) {
 }
 func TestRemoteGrenadeMultipleOwnedDetonateTogether(t *testing.T) {
 	g, p := grenadeGame()
-	g.Bullets = []*Bullet{{Kind: "grenade", Owner: 0, X: p.X, Y: p.Y, Life: 5}, {Kind: "grenade", Owner: 0, X: 350, Y: 50, Life: 5}}
+	g.Bullets = []*Bullet{{Kind: "grenade", Owner: 0, AmmoEpoch: p.AmmoEpoch, X: p.X, Y: p.Y, Life: 5}, {Kind: "grenade", Owner: 0, AmmoEpoch: p.AmmoEpoch, X: 350, Y: 50, Life: 5}}
 	g.detonateOwned(p)
 	if !p.Alive || !g.Bullets[0].Dead || !g.Bullets[1].Dead {
 		t.Fatal("expected both grenades to detonate and their shooter to survive")

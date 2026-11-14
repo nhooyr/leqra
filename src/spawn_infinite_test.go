@@ -41,7 +41,7 @@ func TestInfiniteSpawnProtectionBlocksEveryWeaponWithoutSpendingAmmo(t *testing.
 func TestInfiniteSpawnProtectionBlocksOldGrenadeDetonation(t *testing.T) {
 	a := newSeededInfiniteArena(37)
 	p := a.join(fakeClient(), "Pilot", time.Unix(0, 0))
-	a.bullets = []infiniteBullet{{Owner: p.ID, Kind: "grenade", X: p.X, Y: p.Y, Life: 10}}
+	a.bullets = []infiniteBullet{{Owner: p.ID, AmmoEpoch: p.kit.AmmoEpoch, Kind: "grenade", X: p.X, Y: p.Y, Life: 10}}
 	a.weaponControl(p, true, true)
 	if a.bullets[0].dead || len(a.effects) != 0 {
 		t.Fatal("protected spawn detonated its old grenade")

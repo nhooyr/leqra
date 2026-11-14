@@ -75,7 +75,7 @@ final class PowerupMatrixTests: XCTestCase {
                     XCTAssertFalse(tank.spawnProtected)
                 default:
                     XCTAssertEqual(tank.powerTime, duration.power)
-                    XCTAssertEqual(tank.charges, ["rapid", "scatter"].contains(kind) ? 5 : 3)
+                    XCTAssertEqual(tank.charges, kind == "rapid" ? 0 : kind == "scatter" ? 5 : 3)
                     XCTAssertEqual(tank.machineRounds, kind == "rapid" ? 180 : 0)
                 }
                 advance(arena, ticks: Int((kind == "starman" ? duration.star : duration.power) * 60) + 2)

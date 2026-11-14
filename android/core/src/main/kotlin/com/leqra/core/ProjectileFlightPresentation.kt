@@ -2,6 +2,11 @@ package com.leqra.core
 
 import kotlin.math.*
 
+/** A primitive argument avoids boxing every completed projectile at display cadence. */
+internal fun interface ProjectileCompletion {
+    fun canComplete(id: Int): Boolean
+}
+
 /** Completed server paths fill flights that began and ended between wire snapshots. */
 internal class ProjectileFlightPresentation {
     private data class Flight(
@@ -75,7 +80,7 @@ internal class ProjectileFlightPresentation {
         }
     }
 
-    fun render(bullets: List<ArenaBullet>, effects: List<ArenaEffect>, playhead: Double, canComplete: (Int) -> Boolean = { true }): Image {
+    fun render(bullets: List<ArenaBullet>, effects: List<ArenaEffect>, playhead: Double, canComplete: ProjectileCompletion = ProjectileCompletion { true }): Image {
         if (flights.isEmpty()) {
             for (bullet in bullets) remember(bullet)
             return Image(
@@ -91,7 +96,7 @@ internal class ProjectileFlightPresentation {
         while (iterator.hasNext()) {
             val (_, flight) = iterator.next()
             if (playhead < flight.start) continue
-            if (playhead >= flight.end && flight.endpointShown && canComplete(flight.path.id)) {
+            if (playhead >= flight.end && flight.endpointShown && canComplete.canComplete(flight.path.id)) {
                 completed += flight.effect
                 completedIDs += flight.path.id
                 if (completedIDs.size > capacity)

@@ -343,7 +343,8 @@ public final class FixedArena {
             let old = combat.snapshot.tanks[index], point = respawnPoint(for: old)
             combat.snapshot.tanks[index] = ArenaTank(id: old.id, name: old.name, x: point.x, y: point.y, angle: -.pi / 2,
                 colorIndex: old.colorIndex, score: scores[old.id] ?? 0, team: old.team, bot: old.bot,
-                spawnProtected: true, spawnSerial: old.spawnSerial + 1, invulnerable: 1.2, difficulty: old.difficulty)
+                spawnProtected: true, spawnSerial: old.spawnSerial + 1, invulnerable: 1.2, difficulty: old.difficulty,
+                ammoEpoch: ArenaTank.nextAmmoEpoch(old.ammoEpoch))
         }
     }
 

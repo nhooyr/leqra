@@ -450,7 +450,7 @@ test('every firing power uses rounded timbres with quieter matching remote voice
  }
 });
 test('v441 local and authoritative online shield impacts play the same balanced cue',async()=>{
- const {declaration}=require('./godlike426-harness.cjs'),b=boot({noWebAudio:true}),noop=()=>{},s={online:{id:0},POWER:{shield:{color:'#fff'}},COLORS:['#fff'],canDamage:()=>true,shieldCount:t=>t.shieldCharges,burst:noop,addRing:noop,toast:noop,shieldSound:b.s.shieldSound};
+ const {declaration}=require('./godlike426-harness.cjs'),b=boot({noWebAudio:true}),noop=()=>{},s={Net:require(assetPath('netcode.js')),online:{id:0},POWER:{shield:{color:'#fff'}},COLORS:['#fff'],canDamage:()=>true,shieldCount:t=>t.shieldCharges,burst:noop,addRing:noop,toast:noop,shieldSound:b.s.shieldSound};
  vm.createContext(s);vm.runInContext(declaration('hurt')+'\n'+declaration('onlineEffect'),s);
  const target={id:0,alive:true,shield:10,shieldCharges:1,invulnerable:0};s.hurt(target,{owner:1,kind:''});await flush();assert.equal(target.shieldCharges,0);assert.equal(b.plays.length,1);
  b.s.cancelPendingAudio();s.onlineEffect({type:'shield',player:0,generation:1},{generation:1,tankMap:new Map()});await flush();assert.equal(b.plays.length,2);assert.equal(b.plays[0],b.plays[1]);

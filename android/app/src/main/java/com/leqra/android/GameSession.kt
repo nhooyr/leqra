@@ -1074,12 +1074,21 @@ internal class GameSession(context: Context) {
         present(snapshot, maze, localID, localID2, online)
         if (screen == Screen.PLAYING) {
             uiElapsed += dt
-            if (uiElapsed >= .1) {
+            val authority = authoritativeSnapshot
+            val primaryEpoch = authority.tanks.firstOrNull { it.id == localID }?.ammoEpoch ?: Long.MIN_VALUE
+            val secondaryEpoch = localID2?.let { id -> authority.tanks.firstOrNull { it.id == id }?.ammoEpoch } ?: Long.MIN_VALUE
+            val refilled = primaryEpoch != hudAmmoEpoch || secondaryEpoch != hudLocalAmmoEpoch
+            hudAmmoEpoch = primaryEpoch
+            hudLocalAmmoEpoch = secondaryEpoch
+            if (uiElapsed >= .1 || refilled) {
                 uiElapsed %= .1
                 changed(false)
             }
         } else uiElapsed = 0.0
     }
+
+    private var hudAmmoEpoch = Long.MIN_VALUE
+    private var hudLocalAmmoEpoch = Long.MIN_VALUE
 
     val finishingProjectilePresentation: Boolean
         get() = if (online) timeline.hasPendingProjectileFlights else practice?.hasPendingProjectileFlights ?: fixed?.hasPendingProjectileFlights ?: false

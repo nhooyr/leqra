@@ -163,6 +163,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
     public var shieldCharges: Int = 0
     public var speedStacks: Int = 0
     public var ammoUsed: Int = 0
+    public var ammoEpoch: UInt64 = 0
     public var grenades: Int = 0
     public var locked: Bool = false
     public var killedBy: String = ""
@@ -211,7 +212,8 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         survivalBoss: Bool = false,
         difficulty: String = "normal",
         vx: Double = 0,
-        vy: Double = 0
+        vy: Double = 0,
+        ammoEpoch: UInt64 = 0
     ) {
         self.id = id
         self.name = name
@@ -247,6 +249,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         self.shieldCharges = shieldCharges
         self.speedStacks = speedStacks
         self.ammoUsed = ammoUsed
+        self.ammoEpoch = ammoEpoch
         self.grenades = grenades
         self.locked = locked
         self.killedBy = killedBy
@@ -258,7 +261,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, x, y, vx, vy, angle, hp, colorIndex, score, rank, team, bot, protected, spawnProtected, ack, ackSteps, spawnSerial, track, recoil, cooldown, cooldownTotal, invulnerable, powerTime, shield, speedTime, ghostTime, starmanTime, respawnTime, grenadeLife, power, charges, machineRounds, shieldCharges, speedStacks, ammoUsed, grenades, locked, killedBy, killedByColor, survivalEnemy, survivalBoss, difficulty
+        case id, name, x, y, vx, vy, angle, hp, colorIndex, score, rank, team, bot, protected, spawnProtected, ack, ackSteps, spawnSerial, track, recoil, cooldown, cooldownTotal, invulnerable, powerTime, shield, speedTime, ghostTime, starmanTime, respawnTime, grenadeLife, power, charges, machineRounds, shieldCharges, speedStacks, ammoUsed, ammoEpoch, grenades, locked, killedBy, killedByColor, survivalEnemy, survivalBoss, difficulty
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -298,6 +301,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         shieldCharges = try c.decodeIfPresent(Int.self, forKey: .shieldCharges) ?? 0
         speedStacks = try c.decodeIfPresent(Int.self, forKey: .speedStacks) ?? 0
         ammoUsed = try c.decodeIfPresent(Int.self, forKey: .ammoUsed) ?? 0
+        ammoEpoch = try c.decodeIfPresent(UInt64.self, forKey: .ammoEpoch) ?? 0
         grenades = try c.decodeIfPresent(Int.self, forKey: .grenades) ?? 0
         locked = try c.decodeIfPresent(Bool.self, forKey: .locked) ?? false
         killedBy = try c.decodeIfPresent(String.self, forKey: .killedBy) ?? ""
@@ -320,6 +324,7 @@ public struct ArenaBullet: Codable, Equatable, Sendable {
     public var life: Double = 0
     public var bounces: Int = 0
     public var target: Int = 0
+    public var ammoEpoch: UInt64 = 0
 
     public init(
         id: Int = 0,
@@ -332,7 +337,8 @@ public struct ArenaBullet: Codable, Equatable, Sendable {
         colorIndex: Int = 0,
         life: Double = 0,
         bounces: Int = 0,
-        target: Int = 0
+        target: Int = 0,
+        ammoEpoch: UInt64 = 0
     ) {
         self.id = id
         self.x = x
@@ -345,10 +351,11 @@ public struct ArenaBullet: Codable, Equatable, Sendable {
         self.life = life
         self.bounces = bounces
         self.target = target
+        self.ammoEpoch = ammoEpoch
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, x, y, vx, vy, owner, kind, colorIndex, life, bounces, target
+        case id, x, y, vx, vy, owner, kind, colorIndex, life, bounces, target, ammoEpoch
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -363,6 +370,7 @@ public struct ArenaBullet: Codable, Equatable, Sendable {
         life = try c.decodeIfPresent(Double.self, forKey: .life) ?? 0
         bounces = try c.decodeIfPresent(Int.self, forKey: .bounces) ?? 0
         target = try c.decodeIfPresent(Int.self, forKey: .target) ?? 0
+        ammoEpoch = try c.decodeIfPresent(UInt64.self, forKey: .ammoEpoch) ?? 0
     }
 }
 
