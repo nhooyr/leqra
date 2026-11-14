@@ -367,7 +367,7 @@ public final class FixedArena {
         objectives?.survival = survival; restoreScores()
     }
 
-    private func bossName(_ wave: Int) -> String { wave < 10 ? "NORMAL BOSS" : wave < 15 ? "FIERCE BOSS" : "GODLIKE BOSS" }
+    private func bossName(_ wave: Int) -> String { wave < 10 ? "MEDIUM BOSS" : wave < 15 ? "HARD BOSS" : "GODLIKE BOSS" }
 
     private func survivalEnemySpawn(id: Int) -> (x: Double, y: Double) {
         var best = -Double.infinity, result = (x: 42.0, y: 42.0)

@@ -10,7 +10,7 @@ const profiles=[{name:'desktop',width:1280,height:900,mobile:false},{name:'portr
 const check=(value,label)=>{assert.ok(value,label);checks.push(label);};
 const entries=[
  {id:11,name:'Bot 1 - Dumb',difficulty:'dumb',bot:true,score:2147483647,colorIndex:0},
- {id:12,name:'Bot 2 - Normal',difficulty:'normal',bot:true,score:99999999,colorIndex:1},
+ {id:12,name:'Bot 2 - Medium',difficulty:'normal',bot:true,score:99999999,colorIndex:1},
  {id:13,name:'Bot 3 - Godlike',difficulty:'godlike',bot:true,score:1234567,colorIndex:2},
  {id:14,name:'RUST',difficulty:'hard',bot:true,score:12345,colorIndex:3},
  {id:15,name:'ABCDEFGHIJKLMNOP',difficulty:'easy',bot:true,score:1234,colorIndex:4},
@@ -106,7 +106,7 @@ function validate(result,label,all){
  for(const [i,row]of result.rows.entries()){
   const e=entries[i],expected=e.bot?(i<3?'Bot '+(i+1):i===3?'Bot Rust':i===4?'Bot Abcdefghijklmnop':e.name.replace(/ - Dumb$/,'')):e.id===1?(row.name.includes('(P1)')?row.name:e.name):e.name;
   check(row.name===expected,label+' name '+i+': '+row.name);
-  check(row.badge===(e.bot?({easy:'CHILL',hard:'FIERCE'}[e.difficulty]||e.difficulty.toUpperCase()):''),label+' actual difficulty '+i);
+  check(row.badge===(e.bot?({easy:'EASY',normal:'MEDIUM',hard:'HARD'}[e.difficulty]||e.difficulty.toUpperCase()):''),label+' actual difficulty '+i);
   check(!/\bBOT\b/.test(row.badge),label+' no redundant BOT badge '+i);
   check(row.font>=10&&(!row.badgeFont||row.badgeFont>=10),label+' minimum font '+i);
   check(row.scrollWidth<=row.width+1,label+' row fits horizontally '+i+': '+JSON.stringify(row));
@@ -128,6 +128,7 @@ async function checkRules(page,profile,browser){
  const nonce=String(Date.now()).slice(-7),name='check'+nonce+profile.name[0];
  await page.evaluate(({name})=>__botStandings.rulesSetup(name,true),{name});await page.evaluate(()=>__botStandings.openRules());
  for(const tier of tiers){const select=page.locator('#rule-infinityBotSpawnRate-'+tier),options=await select.locator('option').evaluateAll(items=>items.map(o=>o.value));
+  const title={dumb:'Dumb',easy:'Easy',normal:'Medium',hard:'Hard',godlike:'Godlike'}[tier];check((await select.evaluate(e=>e.closest('label').textContent)).startsWith(title.toUpperCase()+' SPAWN RATE'),profile.name+' '+tier+' uses '+title+' label');
   check(['0','0.5','1','2','4'].every(v=>options.includes(v)),profile.name+' '+tier+' standard choices');
   check(Number(await select.inputValue())===(['dumb','easy','normal'].includes(tier)?2/3:0),profile.name+' '+tier+' exact legacy fraction');
   for(const rate of [0,.5,1,2,4]){await select.selectOption(String(rate));check(Number(await select.inputValue())===rate,profile.name+' '+tier+' accepts '+rate);}
@@ -170,7 +171,7 @@ async function run(){
     for(const [view,spectator,room]of [['public',false,false],['room',false,true],['spectator',true,true]]){
      const arena=await page.evaluate(({entries,spectator,room})=>__botStandings.arena(entries,spectator,room),{entries,spectator,room});
      const result=await inspect(page,'#infiniteLeaderboard');validate(result,profile.name+' '+view,spectator);records.push({profile:profile.name,view,result});
-     check(['Bot 1 - Dumb','Bot 2 - Normal','Bot 3 - Godlike'].every(name=>arena.labels.some(row=>row.text===name)),profile.name+' '+view+' full canonical arena labels retained');
+     check(['Bot 1 - Dumb','Bot 2 - Medium','Bot 3 - Godlike'].every(name=>arena.labels.some(row=>row.text===name)),profile.name+' '+view+' full canonical arena labels retained');
      check(arena.labels.some(row=>row.text==='Bot Rust'),profile.name+' '+view+' room bot arena label retained');
      await page.screenshot({path:path.join(output,profile.name+'-'+view+'.png')});
      if(spectator){const last=page.locator('#infiniteLeaderboard [data-follow-id="33"]');await last.scrollIntoViewIfNeeded();await last.click();const sent=await page.evaluate(()=>__botStandings.sent());check(sent.some(message=>message.type==='follow'&&message.target===33),profile.name+' spectator follows numeric ID after scrolling');}

@@ -637,7 +637,7 @@ class FixedArena(
     }
 
     private fun bossName(wave: Int) =
-        if (wave < 10) "NORMAL BOSS" else if (wave < 15) "FIERCE BOSS" else "GODLIKE BOSS"
+        if (wave < 10) "MEDIUM BOSS" else if (wave < 15) "HARD BOSS" else "GODLIKE BOSS"
 
     private fun survivalEnemySpawn(id: Int): BeamPoint {
         var best = Double.NEGATIVE_INFINITY

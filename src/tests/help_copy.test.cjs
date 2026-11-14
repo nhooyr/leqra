@@ -46,7 +46,7 @@ test('rules help describes two initial teams and only reachable Survival bosses 
  for(const target of [3,5,10,15]){
   $('rule-scoreTarget').value=String(target);s.updateRuleHelp();const text=$('rule-help').textContent;
   assert.match(text,/Between waves, a two-second break leads to a new maze and a three-second countdown/);assert.doesNotMatch(text,/Each cleared wave/);
-  assert.equal(text.includes('Normal debuts'),target>=5);assert.equal(text.includes('Fierce at wave 10'),target>=10);assert.equal(text.includes('Godlike at wave 15'),target>=15);
+  assert.equal(text.includes('Medium debuts'),target>=5);assert.equal(text.includes('Hard at wave 10'),target>=10);assert.equal(text.includes('Godlike at wave 15'),target>=15);
   assert.equal(rules.scoreTarget,15,'editing explanatory copy does not apply draft rules');
  }
  assert.match(source,/\$\('rule-scoreTarget'\)\.oninput=updateRuleHelp/);

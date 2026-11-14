@@ -61,6 +61,6 @@ func TestGodlikeModesSimulation426(t *testing.T) {
 				holds[i] += row.HillSeconds
 			}
 		}
-		t.Logf("%s: Godlike/Fierce scores %v, kills %v, deaths %v, captures %v, hill seconds %.1f/%.1f (3 seeds, up to120s each)", mode, scores, kills, deaths, captures, holds[0], holds[1])
+		t.Logf("%s: Godlike/Hard scores %v, kills %v, deaths %v, captures %v, hill seconds %.1f/%.1f (3 seeds, up to120s each)", mode, scores, kills, deaths, captures, holds[0], holds[1])
 	}
 }

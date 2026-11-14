@@ -33,7 +33,7 @@ func (a *infiniteArena) chooseAmbientBotLevel() int {
 	if a.publicBotLives%publicGodlikeLifeInterval == 0 && a.livingPublicGodlikes(nil) < a.publicGodlikeLimit() {
 		return infiniteBotLevel("godlike")
 	} else if a.publicBotLives%publicNormalLifeInterval == publicNormalLifeInterval/2 {
-		// Stagger Normal lives between Godlike slots so neither rarity
+		// Stagger Medium lives between Godlike slots so neither rarity
 		// consumes the other's opportunity.
 		return infiniteBotLevel("normal")
 	}
@@ -98,7 +98,7 @@ func (p *infinitePilot) publicBotName() {
 	case "godlike":
 		p.Name += " - Godlike"
 	case "normal":
-		p.Name += " - Normal"
+		p.Name += " - Medium"
 	default:
 		p.Name += " - Dumb"
 	}

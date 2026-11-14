@@ -78,7 +78,7 @@ func TestInfiniteRoamingBudgetCountsConnectedSeatsAndKeepsStableNumbers(t *testi
 		t.Fatalf("two connected seats have %d roaming bots, want 32", len(bots))
 	}
 	for i, bot := range bots {
-		tier := map[string]string{"dumb": "Dumb", "normal": "Normal", "godlike": "Godlike"}[infiniteBotTunings[bot.botLevel].name]
+		tier := map[string]string{"dumb": "Dumb", "normal": "Medium", "godlike": "Godlike"}[infiniteBotTunings[bot.botLevel].name]
 		if bot.Name != fmt.Sprintf("Bot %d - %s", i+1, tier) || bot.ID <= local.ID {
 			t.Fatal("bot labels share the monotonic human/owner ID counter")
 		}

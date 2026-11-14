@@ -99,9 +99,9 @@ func survivalBossDifficulty(wave int) string { return survivalDifficulty(wave + 
 func survivalBossName(wave int) string {
 	switch survivalBossDifficulty(wave) {
 	case "normal":
-		return "NORMAL BOSS"
+		return "MEDIUM BOSS"
 	case "hard":
-		return "FIERCE BOSS"
+		return "HARD BOSS"
 	default:
 		return "GODLIKE BOSS"
 	}

@@ -46,7 +46,7 @@ func validSavedPublicName(entry infinitePublicEntry) bool {
 	// their number has three digits. Never relax validation for player names.
 	if entry.Bot && entry.ambient > 0 && entry.ambient <= infiniteBotIdentityLimit {
 		base := fmt.Sprintf("Bot %d", entry.ambient)
-		for _, suffix := range []string{"", " - Dumb", " - Normal", " - Godlike"} {
+		for _, suffix := range []string{"", " - Dumb", " - Normal", " - Medium", " - Godlike"} {
 			if entry.Name == base+suffix {
 				return true
 			}
@@ -169,7 +169,7 @@ func (s *infiniteServer) openPublicStore(path string) error {
 	}
 	// Older stores retained the displayed canonical suffix, but not the tier.
 	// Infer it only for exact server-generated labels; legacy bots default Dumb.
-	if _, err = db.Exec(`UPDATE infinity_scores SET difficulty=CASE WHEN name='Bot '||ambient||' - Godlike' THEN 'godlike' WHEN name='Bot '||ambient||' - Normal' THEN 'normal' ELSE 'dumb' END WHERE bot=1 AND difficulty=''`); err != nil {
+	if _, err = db.Exec(`UPDATE infinity_scores SET difficulty=CASE WHEN name='Bot '||ambient||' - Godlike' THEN 'godlike' WHEN name IN ('Bot '||ambient||' - Normal','Bot '||ambient||' - Medium') THEN 'normal' ELSE 'dumb' END WHERE bot=1 AND difficulty=''`); err != nil {
 		return fail(err)
 	}
 	if _, err = db.Exec("PRAGMA user_version=2"); err != nil {

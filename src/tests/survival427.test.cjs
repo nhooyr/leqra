@@ -30,9 +30,9 @@ test('wave clear awards every squad member once, then starts a new maze countdow
  assert.equal(s.survivalState().status,'break');assert.equal(s.tanks[0].alive,false);assert.equal(s.bullets.length,0);assert.equal(s.pickups.length,1);assert.equal(s.pickups[0].life,4);assert.deepEqual(Array.from(s.scores.slice(0,2)),[1,1]);assert.equal(s.localRoom.players,players);s.stepLocalSurvival(1.9);assert.equal(s.survivalState().wave,1);s.stepLocalSurvival(.1);
  assert.equal(s.survivalState().wave,2);assert.equal(s.survivalState().status,'wave');assert.notEqual(s.grid,grid);assert.equal(s.phase,'countdown');assert.equal(s.phaseTime,3);assert.equal(s.roundClock,75);assert.equal(s.tanks.filter(t=>!t.survivalEnemy).every(t=>t.alive&&t.power===null),true);assert.equal(s.seeds,1);assert.ok(s.inputClears>=3);
 });
-test('fifth-wave boss introduces Normal skill and only enabled gear, with no extra room participant',()=>{
+test('fifth-wave boss introduces Medium skill and only enabled gear, with no extra room participant',()=>{
  for(const [pickupRate,weapons,charges,speed,weapon]of[['superfast',['shield','speed','homing'],1,0,'homing'],['superfast',['cannon'],0,0,'cannon'],['off',['shield','speed','homing'],0,0,null]]){
-  const s=boot({pickupRate,weapons});s.localObjectives.survival.wave=4;s.startLocalSurvivalWave();const boss=s.tanks.find(t=>t.survivalBoss);assert.equal(boss.name,'NORMAL BOSS');assert.equal(boss.difficulty,'normal');assert.equal(boss.shieldCharges,charges);assert.equal(boss.speedStacks,speed);assert.equal(boss.power,weapon);assert.equal(s.localRoom.players.length,2);assert.equal(s.tanks.filter(t=>t.survivalEnemy).length,4);
+  const s=boot({pickupRate,weapons});s.localObjectives.survival.wave=4;s.startLocalSurvivalWave();const boss=s.tanks.find(t=>t.survivalBoss);assert.equal(boss.name,'MEDIUM BOSS');assert.equal(boss.difficulty,'normal');assert.equal(boss.shieldCharges,charges);assert.equal(boss.speedStacks,speed);assert.equal(boss.power,weapon);assert.equal(s.localRoom.players.length,2);assert.equal(s.tanks.filter(t=>t.survivalEnemy).length,4);
  }
 });
 test('squad wipes and timeout lose the run, including simultaneous final-enemy destruction',()=>{
@@ -42,7 +42,7 @@ test('final wave wins without a new maze or another break and freezes squad-only
  const s=boot({target:2});clearWave(s);s.stepLocalSurvival(2);clearWave(s);assert.equal(s.phase,'matchOver');assert.equal(s.survivalState().status,'won');assert.equal(s.survivalState().wavesCleared,2);assert.equal(s.localMatchReport.players.length,2);assert.ok(s.localMatchReport.players.every(p=>p.winner&&p.score===2));assert.equal(s.localMatchReport.survival.status,'won');s.localObjectives.survival.wave=99;assert.equal(s.localMatchReport.survival.wave,2);
 });
 test('survival HUD explains enemies, bosses and squad returns instead of Hill or respawn timers',()=>{
- const s=boot();s.updateObjectiveHUD();assert.equal(s.$('objectiveModeLabel').textContent,'WAVE 1 / 10');assert.equal(s.$('objectiveStatus').textContent,'2 ENEMIES LEFT');s.survivalState().wave=5;s.survivalState().boss=true;s.updateObjectiveHUD();assert.match(s.$('objectiveStatus').textContent,/NORMAL BOSS/);clearWave(s);s.updateObjectiveHUD();assert.equal(s.$('objectiveStatus').textContent,'SQUAD RETURNS IN 2s');assert.equal(s.$('clock').textContent,'2s');
+ const s=boot();s.updateObjectiveHUD();assert.equal(s.$('objectiveModeLabel').textContent,'WAVE 1 / 10');assert.equal(s.$('objectiveStatus').textContent,'2 ENEMIES LEFT');s.survivalState().wave=5;s.survivalState().boss=true;s.updateObjectiveHUD();assert.match(s.$('objectiveStatus').textContent,/MEDIUM BOSS/);clearWave(s);s.updateObjectiveHUD();assert.equal(s.$('objectiveStatus').textContent,'SQUAD RETURNS IN 2s');assert.equal(s.$('clock').textContent,'2s');
 });
 test('survival loss and victory dialogs report waves, never a draw or Hill result',()=>{
  for(const win of [false,true]){const s=boot({target:1});if(win)clearWave(s);else s.endLocalSurvival(false);s.showVictory(s.winner,s.tanks,s.localMatchReport);assert.equal(s.$('victoryTitle').textContent,win?'SURVIVAL COMPLETE!':'RUN ENDED');assert.match(s.$('victoryMessage').textContent,win?/All 1 wave cleared/:/0 \/ 1 waves cleared/);assert.equal(s.$('victoryScores').getAttribute?.('aria-label')??s.$('victoryScores')['aria-label'],'Waves cleared');}
@@ -115,7 +115,7 @@ test('stronger enemy tiers first appear as bosses, with staged armor and speed',
   const enemies=s.tanks.filter(t=>t.survivalEnemy),boss=enemies.find(t=>t.survivalBoss),difficulty=wave<=5?'easy':wave<=10?'normal':wave<=15?'hard':'godlike';
   for(const e of enemies.filter(t=>!t.survivalBoss)){assert.equal(e.difficulty,difficulty,'wave '+wave);assert.ok(seen.has(e.difficulty),'unintroduced regular tier on wave '+wave);}
   if(boss){
-   const stage=Math.min(3,wave/5),skill=['normal','hard','godlike'][stage-1],name=['NORMAL BOSS','FIERCE BOSS','GODLIKE BOSS'][stage-1];
+   const stage=Math.min(3,wave/5),skill=['normal','hard','godlike'][stage-1],name=['MEDIUM BOSS','HARD BOSS','GODLIKE BOSS'][stage-1];
    assert.equal(boss.difficulty,skill);assert.equal(boss.name,name);assert.equal(boss.shieldCharges,stage);assert.equal(boss.speedStacks,stage>=2?1:0);assert.equal(boss.power,['homing','cannon','laser','homing'][wave/5-1]);
    s.updateObjectiveHUD();assert.ok(s.$('objectiveStatus').textContent.endsWith(name));seen.add(skill);
   }
@@ -139,7 +139,7 @@ test('a lost Survival boss wave retries on the same maze with the prior-wave sco
  assert.equal(s.restartLocalSurvivalWave(),true);assert.equal(s.phase,'countdown');assert.equal(s.phaseTime,3);assert.equal(s.roundClock,75);assert.equal(s.grid,maze);assert.equal(s.localRoom.players,roster);
  assert.equal(s.survivalState().wave,5);assert.equal(s.survivalState().wavesCleared,4);assert.equal(s.survivalState().status,'wave');assert.deepEqual(Array.from(s.scores.slice(0,2)),[4,4]);
  assert.equal(s.localMatchReport,null);assert.equal(s.localMatchResult,null);assert.equal(s.localMatchStats.rows[0].eliminations,earned);assert.equal(s.localMatchStats.rows[0].deaths,0);assert.equal(s.localMatchStats.duration,duration);
- const fresh=s.tanks.find(t=>t.survivalBoss);assert.notEqual(fresh,boss);assert.equal(fresh.name,'NORMAL BOSS');assert.equal(fresh.difficulty,'normal');assert.equal(fresh.shieldCharges,1);assert.equal(fresh.power,'homing');
+ const fresh=s.tanks.find(t=>t.survivalBoss);assert.notEqual(fresh,boss);assert.equal(fresh.name,'MEDIUM BOSS');assert.equal(fresh.difficulty,'normal');assert.equal(fresh.shieldCharges,1);assert.equal(fresh.power,'homing');
  assert.equal(s.tanks.every(t=>t.alive),true);assert.equal(s.bullets.length+s.traces.length+s.particles.length+s.rings.length,0);assert.equal(s.shake,0);assert.equal(report.players[0].eliminations,earned+3,'old result stays frozen');
 });
 test('repeated failed attempts cannot farm statistics or advance the Survival wave',()=>{

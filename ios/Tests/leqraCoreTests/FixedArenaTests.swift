@@ -220,22 +220,24 @@ final class FixedArenaTests: XCTestCase {
         XCTAssertEqual(arena.snapshot.tanks.first { $0.id == 2 }?.name, "VIPER")
     }
 
-    func testSurvivalEnemiesStartClearOfEverySquadTankAndBossDebutsOnWaveFive() {
-        let arena = arena("survival", target: 10, bots: 3)
-        for wave in 1...5 {
+    func testSurvivalEnemiesStartClearAndBossNamesUseMediumHardAndGodlikeLabels() {
+        let arena = arena("survival", target: 20, bots: 3)
+        for wave in 1...15 {
             for enemy in arena.snapshot.tanks where enemy.survivalEnemy {
                 for other in arena.snapshot.tanks where other.id != enemy.id {
                     XCTAssertGreaterThan(hypot(enemy.x - other.x, enemy.y - other.y), 34)
                 }
             }
-            if wave == 5 {
+            if wave.isMultiple(of: 5) {
                 let bosses = arena.snapshot.tanks.filter(\.survivalBoss)
                 XCTAssertEqual(bosses.count, 1)
-                XCTAssertEqual(bosses[0].name, "NORMAL BOSS")
-                XCTAssertEqual(bosses[0].difficulty, "normal")
-                XCTAssertEqual(arena.objectives?.survival?.wave, 5)
-                break
+                let expected = wave == 5 ? ("MEDIUM BOSS", "normal") : wave == 10 ? ("HARD BOSS", "hard") : ("GODLIKE BOSS", "godlike")
+                XCTAssertEqual(bosses[0].name, expected.0)
+                XCTAssertEqual(bosses[0].difficulty, expected.1)
+                XCTAssertEqual(arena.objectives?.survival?.wave, wave)
+                if wave == 15 { break }
             }
+            for i in arena.combat.snapshot.tanks.indices where arena.combat.snapshot.tanks[i].bot { arena.combat.snapshot.tanks[i].cooldown = 999 }
             begin(arena)
             for i in arena.combat.snapshot.tanks.indices where arena.combat.snapshot.tanks[i].survivalEnemy { arena.combat.snapshot.tanks[i].hp = 0 }
             advance(arena, ticks: 1); advance(arena, ticks: 120)

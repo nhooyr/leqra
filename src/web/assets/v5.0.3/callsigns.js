@@ -18,15 +18,15 @@ function reserved(name){
 }
 function botName(name,bot){
  if(!bot)return name;if(botLabels.has(name))return botLabels.get(name);
- const label=/^Bot [0-9]+(?: - (?:Dumb|Easy|Normal|Hard|Godlike))?$/.test(name)?name:'Bot'+String(name).replace(/^bot(?:\s+|$)/i,'').trim().toLowerCase().split(/\s+/u).filter(Boolean).map(word=>' '+[...word][0].toUpperCase()+[...word].slice(1).join('')).join('');
+ const label=(/^Bot [0-9]+(?: - (?:Dumb|Easy|Normal|Medium|Hard|Godlike))?$/.test(name)?name:'Bot'+String(name).replace(/^bot(?:\s+|$)/i,'').trim().toLowerCase().split(/\s+/u).filter(Boolean).map(word=>' '+[...word][0].toUpperCase()+[...word].slice(1).join('')).join('')).replace(/^Bot ([0-9]+) - Normal$/,'Bot $1 - Medium');
  botLabels.set(name,label);if(botLabels.size>128)botLabels.delete(botLabels.keys().next().value);return label;
 }
 function leaderboardBot(name,bot,difficulty){
  if(!bot)return{name,difficulty:''};
- const label=botName(name,true),numbered=/^(Bot [0-9]+)(?: - (Dumb|Easy|Normal|Hard|Godlike))?$/.exec(label);
+ const label=botName(name,true),numbered=/^(Bot [0-9]+)(?: - (Dumb|Easy|Normal|Medium|Hard|Godlike))?$/.exec(label);
  const supplied=typeof difficulty==='string'?difficulty.trim():'';
  const level=/^(?:dumb|easy|normal|hard|godlike)$/i.test(supplied)?supplied:numbered?.[2]||'';
- return{name:numbered?.[1]||label,difficulty:level?({easy:'Chill',hard:'Fierce'}[level.toLowerCase()]||level[0].toUpperCase()+level.slice(1).toLowerCase()):''};
+ return{name:numbered?.[1]||label,difficulty:level?({easy:'Easy',normal:'Medium',medium:'Medium',hard:'Hard'}[level.toLowerCase()]||level[0].toUpperCase()+level.slice(1).toLowerCase()):''};
 }
 function record(seat){try{const value=JSON.parse(read(pending[seat])||'null');return value&&typeof value.name==='string'&&typeof value.requestId==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value.requestId)&&(!value.owner||/^p_[A-Za-z0-9_-]{43}$/.test(value.owner))?value:null;}catch(_){return null;}}
 function legacyDefault(name){return /^(?:PILOT|PLAYER [12]|CO-PILOT|YOU|SNOW FOX|PILOT [1-9][0-9]{2})$/.test(String(name).trim().replace(/\s+/gu,' ').toUpperCase());}

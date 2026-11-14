@@ -30,7 +30,7 @@ class IdentityNoticeTest {
     @Test
     fun standingsSeparateNumberedBotNamesFromActualDifficultyWithoutSpoofingHumans() {
         for (level in BotDifficulty.names) {
-            val suffix = level.replaceFirstChar { it.titlecase() }
+            val suffix = BotDifficulty.title(level)
             val name = "Bot 9182 - $suffix"
             assertEquals(name, PilotIdentity.label(name, true))
             assertEquals("Bot 9182", PilotIdentity.leaderboardLabel(name, true))

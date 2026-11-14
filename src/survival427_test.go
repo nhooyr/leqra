@@ -189,7 +189,7 @@ func TestSurvival427ProgressionAndBossRespectsAllowedPowerups(t *testing.T) {
 				bosses++
 				strength := min(3, wave/5)
 				wantSkill := []string{"normal", "hard", "godlike"}[strength-1]
-				wantName := []string{"NORMAL BOSS", "FIERCE BOSS", "GODLIKE BOSS"}[strength-1]
+				wantName := []string{"MEDIUM BOSS", "HARD BOSS", "GODLIKE BOSS"}[strength-1]
 				wantSpeed := 0
 				if strength >= 2 {
 					wantSpeed = 1

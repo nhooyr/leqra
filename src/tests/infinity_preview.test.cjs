@@ -116,7 +116,7 @@ test('public preview shows numbered bot names and actual difficulties without a 
  const rows=h.$('infinityPreviewLeaders').children;
  const identities=rows.map(row=>row.children[0].children[0]);
  assert.deepEqual(identities.map(node=>node.children[0].textContent),['Bot 1','Bot 8','Bot 64','Godlike Bot 9']);
- assert.deepEqual(identities.map(node=>node.children[1]?.textContent||''),['DUMB','NORMAL','GODLIKE','']);
+ assert.deepEqual(identities.map(node=>node.children[1]?.textContent||''),['DUMB','MEDIUM','GODLIKE','']);
  assert.deepEqual(rows.map(row=>row.children[0].children[1].textContent),['9','8','7','6']);
  assert.ok(identities.every(node=>node.children[0].style.fontWeight==='400'));
 });

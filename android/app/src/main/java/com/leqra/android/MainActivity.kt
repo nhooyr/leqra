@@ -1180,7 +1180,7 @@ class MainActivity : Activity() {
             panel.add(label(this, "NEW BOT DIFFICULTY", 10f, muted, mono = true))
             val difficulties = BotDifficulty.names
             panel.add(
-                choice(difficulties, BotDifficulty.index(session.difficulty)) {
+                choice(BotDifficulty.titles, BotDifficulty.index(session.difficulty)) {
                     session.difficulty = difficulties[it]
                     session.save()
                 },
@@ -1259,7 +1259,7 @@ class MainActivity : Activity() {
         val difficulties = BotDifficulty.names
         card.add(label(this, "DIFFICULTY", 10f, muted, mono = true))
         card.add(
-            choice(difficulties, BotDifficulty.index(bot.difficulty)) {
+            choice(BotDifficulty.titles, BotDifficulty.index(bot.difficulty)) {
                 session.updateLocalBot(bot.id, difficulty = difficulties[it])
             },
         )
@@ -1373,7 +1373,7 @@ class MainActivity : Activity() {
                     "Bot difficulty" ->
                         AlertDialog.Builder(this)
                             .setTitle("Bot difficulty")
-                            .setItems(BotDifficulty.names.toTypedArray()) { _, difficulty
+                            .setItems(BotDifficulty.titles.toTypedArray()) { _, difficulty
                                 ->
                                 session.command(
                                     "configure",
@@ -1780,7 +1780,7 @@ class MainActivity : Activity() {
                     setOnCheckedChangeListener { _, v -> draft.infinityRandomBots = v; syncRoaming() }
                 },
             )
-            val difficultyTitles = listOf("Dumb", "Chill", "Normal", "Fierce", "Godlike")
+            val difficultyTitles = BotDifficulty.titles
             val configuredRates = draft.roamingBotSpawnRates().toMutableMap()
             for ((index, level) in BotDifficulty.names.withIndex()) {
                 val current = configuredRates.getValue(level)
@@ -2299,7 +2299,7 @@ class MainActivity : Activity() {
     private fun standingsRow(entry: LeaderboardEntry, rank: Int, seat: Int = 0, following: Boolean = false): LinearLayout {
         val name = PilotIdentity.leaderboardLabel(entry.name, entry.bot, seat)
         val difficulty = PilotIdentity.leaderboardDifficulty(entry.name, entry.bot, entry.difficulty)
-        val difficultyTitle = difficulty?.let { when (it) { "easy" -> "Chill"; "hard" -> "Fierce"; else -> it.replaceFirstChar { letter -> letter.titlecase(java.util.Locale.ROOT) } } }
+        val difficultyTitle = difficulty?.let(BotDifficulty::title)
         val identity = column(this, 0)
         identity.add(label(this, "$rank. $name", 12f, paint(entry.colorIndex), seat > 0), gap = 0)
         if (difficultyTitle != null) identity.add(label(this, difficultyTitle.uppercase(java.util.Locale.ROOT), 10f, muted, mono = true), gap = 0)

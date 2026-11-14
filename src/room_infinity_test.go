@@ -410,7 +410,7 @@ func TestInfinityBotDifficultyRulesAcceptLegacyDefaults(t *testing.T) {
 	}
 	rules.InfinityBotDifficulty = ""
 	if normalizedRules(rules).InfinityBotDifficulty != "normal" {
-		t.Fatal("legacy rules did not default to Normal difficulty")
+		t.Fatal("legacy rules did not default to Medium difficulty")
 	}
 	rules.InfinityBotDifficulty = "impossible"
 	if validateRules(rules) == nil {

@@ -4,15 +4,16 @@ import java.util.Locale
 
 object PilotIdentity {
     private val botPrefix = Regex("^bot(?:\\s+|$)", RegexOption.IGNORE_CASE)
-    private val publicName = Regex("^Bot ([0-9]+)(?: - (Dumb|Easy|Normal|Hard|Godlike))?$")
+    private val publicName = Regex("^Bot ([0-9]+)(?: - (Dumb|Easy|Medium|Normal|Hard|Godlike))?$", RegexOption.IGNORE_CASE)
     private val wordSpace = Regex("\\s+")
 
     fun botName(name: String): String =
-        if (publicName.matches(name)) name
-        else name.trim().replace(botPrefix, "").lowercase(Locale.ROOT).split(wordSpace).joinToString(" ") { it.replaceFirstChar { letter -> letter.titlecase(Locale.ROOT) } }
+        publicName.matchEntire(name)?.let { match ->
+            "Bot " + match.groupValues[1] + match.groupValues[2].takeIf { it.isNotEmpty() }?.let { " - " + BotDifficulty.title(publicDifficulty(it)) }.orEmpty()
+        } ?: name.trim().replace(botPrefix, "").lowercase(Locale.ROOT).split(wordSpace).joinToString(" ") { it.replaceFirstChar { letter -> letter.titlecase(Locale.ROOT) } }
 
     fun label(name: String, bot: Boolean, seat: Int = 0): String =
-        if (bot) if (publicName.matches(name)) name else ("Bot " + botName(name)).trimEnd()
+        if (bot) if (publicName.matches(name)) botName(name) else ("Bot " + botName(name)).trimEnd()
         else name + if (seat in 1..2) " (P$seat)" else ""
 
     fun leaderboardLabel(name: String, bot: Boolean, seat: Int = 0): String =
@@ -24,8 +25,10 @@ object PilotIdentity {
         if (!bot) return null
         val actual = difficulty.lowercase(Locale.ROOT)
         if (actual in BotDifficulty.names) return actual
-        return publicName.matchEntire(name)?.groupValues?.get(2)?.lowercase(Locale.ROOT)?.takeIf { it in BotDifficulty.names }
+        return publicName.matchEntire(name)?.groupValues?.get(2)?.let(::publicDifficulty)?.takeIf { it in BotDifficulty.names }
     }
+
+    private fun publicDifficulty(title: String) = title.lowercase(Locale.ROOT).let { if (it == "medium") "normal" else it }
 }
 
 data class GodlikeSpawn(val id: Int, val spawnSerial: Int, val name: String)

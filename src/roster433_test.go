@@ -10,7 +10,7 @@ func TestAddBot433InheritsLastRosterBotAndDefaultsToNormal(t *testing.T) {
 	host := clients[0]
 	action(t, h, host, map[string]any{"type": "add", "kind": "bot"})
 	if r.Players[1] == nil || r.Players[1].Difficulty != "normal" {
-		t.Fatal("first bot must default to Normal")
+		t.Fatal("first bot must default to Medium")
 	}
 	action(t, h, host, map[string]any{"type": "configure", "target": 1, "member": r.Players[1].Member, "difficulty": "hard"})
 	action(t, h, host, map[string]any{"type": "add", "kind": "local"})
@@ -37,7 +37,7 @@ func TestAddBot433AcceptedEditWinsWhileExplicitDifficultyIsPreserved(t *testing.
 	h, clients, r := makeRoom(t, 1)
 	host := clients[0]
 	action(t, h, host, map[string]any{"type": "add", "kind": "bot", "difficulty": "easy"})
-	// The browser can still display Chill while these ordered messages arrive.
+	// The browser can still display Easy while these ordered messages arrive.
 	action(t, h, host, map[string]any{"type": "configure", "target": 1, "member": r.Players[1].Member, "difficulty": "godlike"})
 	action(t, h, host, map[string]any{"type": "add", "kind": "bot"})
 	if r.Players[2] == nil || r.Players[2].Difficulty != "godlike" {

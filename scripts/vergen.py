@@ -85,7 +85,7 @@ def synchronize(root):
         source.rename(destination)
     for path, text in updates:
         write_atomic(path, text)
-    print(("Synced" if moved or updates else "Already synced") + " leqra v" + version + ".")
+    print(("Generated" if moved or updates else "Already generated") + " leqra v" + version + ".")
 
 
 if __name__ == "__main__":

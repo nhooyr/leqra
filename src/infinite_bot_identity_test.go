@@ -134,6 +134,9 @@ func TestPublicStoreMigratesLegacyBotTiersWithoutLosingAccountsOrCounters(t *tes
 		bot := s.public.addPilot("Legacy", true, 0, 0, 1, 3)
 		bot.botLevel, bot.ambientNumber, bot.Score = infiniteBotLevel(tier), i+1, 20+i
 		bot.publicBotName()
+		if tier == "normal" {
+			bot.Name = "Bot 1 - Normal" // Actual legacy canonical suffix.
+		}
 		if tier == "dumb" {
 			bot.ambientNumber, bot.Name = 0, "Legacy"
 		}

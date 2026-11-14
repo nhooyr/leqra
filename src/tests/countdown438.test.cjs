@@ -52,7 +52,7 @@ test('team and boss advice reflects the current format, friendly fire and config
  const {s}=boot('koth');assert.equal(s.countdownTipPool().some(t=>t.id==='friendly-fire'||t.id==='koth-team-score'),false);
  s.rules.teamMode='teams';s.rules.friendlyFire=true;assert.match(s.countdownTipPool().find(t=>t.id==='friendly-fire').text,/is ON/);assert.ok(s.countdownTipPool().find(t=>t.id==='koth-team-score'));
  s.rules.friendlyFire=false;assert.match(s.countdownTipPool().find(t=>t.id==='friendly-fire').text,/is OFF/);
- s.rules=s.defaultModeRules('survival');for(const target of [4,5,9,10,14,15]){s.rules.scoreTarget=target;const tips=s.countdownTipPool(),tiers=tips.find(t=>t.id==='survival-boss-tiers');assert.equal(!!tiers,target>=5);assert.equal(!!tiers?.text.includes('Fierce'),target>=10);assert.equal(!!tiers?.text.includes('Godlike'),target>=15);}
+ s.rules=s.defaultModeRules('survival');for(const target of [4,5,9,10,14,15]){s.rules.scoreTarget=target;const tips=s.countdownTipPool(),tiers=tips.find(t=>t.id==='survival-boss-tiers');assert.equal(!!tiers,target>=5);assert.equal(!!tiers?.text.includes('Hard'),target>=10);assert.equal(!!tiers?.text.includes('Godlike'),target>=15);}
 });
 
 test('Survival guidance uses the configured wave goal and timer without promising unreachable bosses',()=>{
