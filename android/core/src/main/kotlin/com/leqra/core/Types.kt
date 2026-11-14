@@ -99,7 +99,11 @@ data class ArenaTank(
     var locked: Boolean = false,
     var killedBy: String = "",
     var killedByColor: String = "",
-)
+) {
+    /** The server supplies the actual tier; a callsign cannot create a warning. */
+    val isGodlikeBot: Boolean
+        get() = bot && difficulty == "godlike"
+}
 
 data class ArenaBullet(
     var id: Int = 0,

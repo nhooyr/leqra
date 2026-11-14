@@ -897,6 +897,7 @@ private final class TankNode: SKNode {
     let identity = SKNode()
     private let identityBackground = SKShapeNode()
     private let nameLabel = SKLabelNode(fontNamed: "Menlo-Regular")
+    private let warningLabel = SKLabelNode(fontNamed: "Menlo-Bold")
     private let hull = SKNode()
     private let body = SKSpriteNode()
     private let barrel = SKSpriteNode()
@@ -909,6 +910,7 @@ private final class TankNode: SKNode {
     private var starRings: [SKShapeNode] = []
     private var badges: [String: PowerBadgeNode] = [:]
     private var currentText = ""
+    private var currentWarning: String?
     private var textureKey = ""
     private var previousSpeed = -1
     private var protectionRadius: CGFloat = -1
@@ -961,6 +963,8 @@ private final class TankNode: SKNode {
         }
         identity.addChild(identityBackground)
         identity.addChild(nameLabel)
+        identity.addChild(warningLabel)
+        identityBackground.zPosition = -1
         identityBackground.fillColor = UIColor(hex: 0x0e171d).withAlphaComponent(0.86)
         identityBackground.strokeColor = .clear
         nameLabel.numberOfLines = 0
@@ -968,6 +972,13 @@ private final class TankNode: SKNode {
         nameLabel.verticalAlignmentMode = .bottom
         nameLabel.horizontalAlignmentMode = .center
         nameLabel.position.y = 3
+        warningLabel.fontColor = UIColor(hex: 0xffc46b)
+        warningLabel.fontSize = 10
+        warningLabel.numberOfLines = 0
+        warningLabel.preferredMaxLayoutWidth = 180
+        warningLabel.verticalAlignmentMode = .bottom
+        warningLabel.horizontalAlignmentMode = .center
+        warningLabel.isHidden = true
     }
 
     required init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -1018,17 +1029,22 @@ private final class TankNode: SKNode {
             speedLines.path = path
         }
         let text = local ? tank.name + " (P1)" : tank.name
+        let warning = tank.botWarning
         nameLabel.fontColor = paint
         let size = max(10, infinity ? 11 * zoom : 10 * zoom)
-        if currentText != text || abs(fontSize - size) > 0.01 {
+        if currentText != text || currentWarning != warning || abs(fontSize - size) > 0.01 {
             currentText = text
+            currentWarning = warning
             fontSize = size
             nameLabel.fontName = local ? "Menlo-Bold" : "Menlo-Regular"
             nameLabel.fontSize = size
             nameLabel.fontColor = paint
             nameLabel.text = text
-            identityWidth = max(36, min(190, nameLabel.frame.width + 10))
-            identityHeight = nameLabel.frame.height + 7
+            warningLabel.text = warning
+            warningLabel.isHidden = warning == nil
+            warningLabel.position.y = nameLabel.frame.maxY + 3
+            identityWidth = max(36, min(190, max(nameLabel.frame.width, warning == nil ? 0 : warningLabel.frame.width) + 10))
+            identityHeight = (warning == nil ? nameLabel.frame.maxY : warningLabel.frame.maxY) + 4
             identityBackground.path = CGPath(roundedRect: CGRect(x: -identityWidth / 2, y: 0, width: identityWidth, height: identityHeight), cornerWidth: 3, cornerHeight: 3, transform: nil)
         }
         var kinds: [String] = []

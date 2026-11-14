@@ -64,11 +64,11 @@ public extension RoomRules {
 /// Names and finite-maze movement rates match bots.go / game.js. Infinity uses
 /// its own roaming encounter tuning rather than these finite driving speeds.
 public enum BotDifficulty: String, CaseIterable, Codable, Sendable {
-    case easy, normal, hard, godlike
+    case dumb, easy, normal, hard, godlike
     public var displayName: String {
-        switch self { case .easy: return "Chill"; case .normal: return "Normal"; case .hard: return "Fierce"; case .godlike: return "Godlike" }
+        switch self { case .dumb: return "Dumb"; case .easy: return "Chill"; case .normal: return "Normal"; case .hard: return "Fierce"; case .godlike: return "Godlike" }
     }
-    var speed: Double { self == .easy ? 89 : self == .normal ? 108 : 123 }
-    var turn: Double { self == .easy ? 2.8 : self == .normal ? 3.4 : 4.3 }
-    var think: Double { self == .easy ? 0.30 : self == .normal ? 0.19 : self == .hard ? 0.13 : 0.075 }
+    var speed: Double { self == .dumb ? 60 : self == .easy ? 89 : self == .normal ? 108 : 123 }
+    var turn: Double { self == .dumb ? 1.8 : self == .easy ? 2.8 : self == .normal ? 3.4 : 4.3 }
+    var think: Double { self == .dumb ? 0.9 : self == .easy ? 0.30 : self == .normal ? 0.19 : self == .hard ? 0.13 : 0.075 }
 }

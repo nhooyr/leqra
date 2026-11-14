@@ -46,6 +46,24 @@ class SnapshotDecoderTest {
     }
 
     @Test
+    fun infinityRetainsActualBotDifficultyAndOnlyThatTierCreatesGodlikeWarning() {
+        val state =
+            SnapshotDecoder()
+                .decode(
+                    JSONObject(
+                        """{"type":"state","tick":1,"tanks":[{"id":2,"name":"BOT 2","bot":true,"difficulty":"godlike"},{"id":3,"name":"Godlike Bot 3","bot":true,"difficulty":"dumb"},{"id":4,"name":"Godlike Bot 4","bot":false,"difficulty":"godlike"},{"id":5,"name":"Old server bot","bot":true}],"bullets":[],"leaderboard":[],"players":1,"tankCount":4}"""
+                    )
+                )
+        assertEquals(
+            listOf("godlike", "dumb", "godlike", "normal"),
+            state.tanks.map { it.difficulty },
+        )
+        assertEquals(listOf(true, false, false, false), state.tanks.map { it.isGodlikeBot })
+        val rules = RoomRules(infinityBotDifficulty = "dumb")
+        assertEquals(rules, ProtocolJson.roomRules(ProtocolJson.rules(rules)))
+    }
+
+    @Test
     fun fixedLockedStatusRespectsTeamsAndFriendlyFire() {
         val packet =
             JSONObject(

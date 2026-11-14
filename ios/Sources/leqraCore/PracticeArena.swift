@@ -31,6 +31,7 @@ public final class PracticeArena {
     private var fireBlocked: Set<Int> = []
     private var botCourses: [Int: (x: Double, y: Double)] = [:]
     private var botDecisions: [Int: Double] = [:]
+    private var dumbBots: [Int: (spawnSerial: Int, brain: DumbBotBrain)] = [:]
     private var nextBoostEffects: [Int: Double] = [:]
     private let motionPresenter = TankMotionPresenter()
     private struct Projectile {
@@ -60,6 +61,7 @@ public final class PracticeArena {
                                            colorIndex: GamePalette.index(colorIndex + number), bot: true,
                                            spawnProtected: true, spawnSerial: 1, invulnerable: 1, difficulty: difficulty))
             roamingIDs.insert(number + 1)
+            if difficulty == "dumb" { dumbBots[number + 1] = (1, DumbBotBrain(spawnedAt: 0)) }
         }
         snapshot.players = 1
         updateStandings()
@@ -72,7 +74,13 @@ public final class PracticeArena {
         let paint = team > 0 ? activeRules?.teamColors.indices.contains(team - 1) == true ? activeRules!.teamColors[team - 1] : colorIndex : colorIndex
         snapshot.tanks[index].colorIndex = GamePalette.index(paint)
         snapshot.tanks[index].team = team
-        snapshot.tanks[index].difficulty = difficulty
+        if snapshot.tanks[index].difficulty != difficulty {
+            snapshot.tanks[index].difficulty = difficulty
+            dumbBots.removeValue(forKey: id)
+            if difficulty == "dumb" { dumbBots[id] = (snapshot.tanks[index].spawnSerial, DumbBotBrain(spawnedAt: time)) }
+            botDecisions.removeValue(forKey: id)
+            botCourses.removeValue(forKey: id)
+        }
         updateStandings()
     }
 
@@ -92,6 +100,11 @@ public final class PracticeArena {
             if hasConfiguredRules {
                 snapshot.tanks.removeAll { roamingIDs.contains($0.id) }
                 projectiles.removeAll { roamingIDs.contains($0.wire.owner) }
+                for id in roamingIDs {
+                    dumbBots.removeValue(forKey: id)
+                    botDecisions.removeValue(forKey: id)
+                    botCourses.removeValue(forKey: id)
+                }
             }
             hasConfiguredRules = true
             roamingIDs.removeAll()
@@ -103,7 +116,8 @@ public final class PracticeArena {
                 }
             }
             if rules.infinityRandomBots {
-                let levels = ["easy", "normal", "hard", "godlike"], selected = levels.firstIndex(of: rules.infinityBotDifficulty) ?? 1
+                let levels = BotDifficulty.allCases.map(\.rawValue)
+                let selected = levels.firstIndex(of: rules.infinityBotDifficulty) ?? levels.firstIndex(of: "normal")!
                 let firstID = (snapshot.tanks.map(\.id).max() ?? 1) + 1
                 for offset in 0..<8 {
                     let id = firstID + offset, point = spawnPoint(near: snapshot.tanks[0], minCells: 2, maxCells: 5)
@@ -114,6 +128,7 @@ public final class PracticeArena {
                         angle: unitRandom() * 2 * .pi - .pi, colorIndex: color, team: team, bot: true,
                         spawnProtected: true, spawnSerial: 1, invulnerable: 1, difficulty: level))
                     roamingIDs.insert(id)
+                    if level == "dumb" { dumbBots[id] = (1, DumbBotBrain(spawnedAt: time)) }
                 }
             }
         }
@@ -145,7 +160,7 @@ public final class PracticeArena {
         for offset in 0..<count {
             let index = (Int(snapshot.tick % UInt64(count)) + offset) % count
             guard snapshot.tanks[index].hp > 0 else { continue }
-            var controls = snapshot.tanks[index].bot ? botInput(index) : input
+            var controls = snapshot.tanks[index].bot ? botInput(index, dt: dt) : input
             if snapshot.tanks[index].bot && fireBlocked.contains(snapshot.tanks[index].id) { controls.fire = false }
             movementInputs[snapshot.tanks[index].id] = controls
             move(tank: &snapshot.tanks[index], input: controls, dt: dt)
@@ -307,6 +322,8 @@ public final class PracticeArena {
                                          survivalEnemy: old.survivalEnemy, survivalBoss: old.survivalBoss, difficulty: old.difficulty)
         fireBlocked.remove(old.id)
         botCourses.removeValue(forKey: old.id)
+        dumbBots.removeValue(forKey: old.id)
+        if old.difficulty == "dumb" { dumbBots[old.id] = (old.spawnSerial + 1, DumbBotBrain(spawnedAt: time)) }
         nextBoostEffects.removeValue(forKey: old.id)
     }
 
@@ -414,7 +431,7 @@ public final class PracticeArena {
         if snapshot.effects.count > 48 { snapshot.effects.removeFirst() }
     }
 
-    private func botInput(_ index: Int) -> GameInput {
+    private func botInput(_ index: Int, dt: Double) -> GameInput {
         let bot = snapshot.tanks[index]
         let targets = maze.world == nil && bot.team == 0 ? [snapshot.tanks[0]] : snapshot.tanks
         guard let pilot = targets.filter({ $0.hp > 0 && opposes(owner: bot.id, target: $0) })
@@ -426,6 +443,7 @@ public final class PracticeArena {
             return GameInput()
         }
         let level = bot.difficulty.isEmpty ? botDifficulty : bot.difficulty
+        if level == "dumb" { return dumbBotInput(bot, pilot: pilot, dt: dt) }
         let tuning: (range: Double, roam: Double, aim: Double) = level == "easy" ? (0.7, 0.75, 1.65) : level == "hard" ? (1.15, 1.15, 0.7) : level == "godlike" ? (1.3, 1.3, 0.45) : (1, 1, 1)
         let dx = pilot.x - bot.x, dy = pilot.y - bot.y, distance = hypot(dx, dy)
         let seesPilot = distance < 6 * 84 * tuning.range && maze.rayHit(x: bot.x, y: bot.y, dx: dx, dy: dy, radius: 3.5) == nil
@@ -444,6 +462,36 @@ public final class PracticeArena {
         return GameInput(fire: seesPilot && pilot.invulnerable == 0 && abs(atan2(sin(shotAim - bot.angle), cos(shotAim - bot.angle))) < 0.16 * tuning.aim,
                          stickX: cos(aim) * tilt, stickY: sin(aim) * tilt, touchAim: false,
                          aimOnly: hypot(tx, ty) < 5 || seesPilot && distance < 115)
+    }
+
+    private func dumbBotInput(_ bot: ArenaTank, pilot: ArenaTank, dt: Double) -> GameInput {
+        let dx = pilot.x - bot.x, dy = pilot.y - bot.y, distance = hypot(dx, dy)
+        let infinity = maze.world == nil
+        let seesPilot = distance < (infinity ? 8 * 84 * 0.35 : 6 * 84)
+            && maze.rayHit(x: bot.x, y: bot.y, dx: dx, dy: dy, radius: 3.5) == nil
+        let goal = botGoal?(bot), routingObjective = goal != nil && (!seesPilot || distance > 168)
+        var state = dumbBots[bot.id]
+        if state?.spawnSerial != bot.spawnSerial { state = (bot.spawnSerial, DumbBotBrain(spawnedAt: max(0, time - dt))) }
+        var brain = state!.brain
+        let canAttack = seesPilot && !routingObjective
+        let reconsidered = brain.decide(now: time, visibleAim: canAttack ? atan2(dy, dx) : nil,
+                                        targetID: canAttack ? pilot.id : nil, random: unitRandom)
+        let attacks = canAttack && brain.attacks && brain.targetID == pilot.id
+        if reconsidered && !attacks {
+            var target = pilot
+            if let goal, routingObjective { target.x = goal.x; target.y = goal.y }
+            botCourses[bot.id] = botCourse(bot: bot, target: target)
+        }
+        let fire = brain.fire(now: time, facing: bot.angle, targetID: canAttack ? pilot.id : nil,
+                              protected: pilot.invulnerable > 0 || pilot.starmanTime > 0)
+        dumbBots[bot.id] = (bot.spawnSerial, brain)
+        if attacks {
+            return GameInput(fire: fire, stickX: cos(brain.aim), stickY: sin(brain.aim), touchAim: false, aimOnly: true)
+        }
+        let tx = (botCourses[bot.id]?.x ?? goal?.x ?? bot.x) - bot.x
+        let ty = (botCourses[bot.id]?.y ?? goal?.y ?? bot.y) - bot.y
+        let aim = atan2(ty, tx), tilt = infinity ? 0.72 * 0.4 : 1
+        return GameInput(stickX: cos(aim) * tilt, stickY: sin(aim) * tilt, touchAim: false, aimOnly: hypot(tx, ty) < 5)
     }
 
     private func botCourse(bot: ArenaTank, target: ArenaTank) -> (x: Double, y: Double)? {

@@ -95,7 +95,7 @@ final class RuleDefaultsTests: XCTestCase {
     }
 
     func testDifficultyNamesMatchMobileRoster() {
-        XCTAssertEqual(BotDifficulty.allCases.map(\.displayName), ["Chill", "Normal", "Fierce", "Godlike"])
+        XCTAssertEqual(BotDifficulty.allCases.map(\.displayName), ["Dumb", "Chill", "Normal", "Fierce", "Godlike"])
     }
 
     func testResetRequiredTeamModesNormalizesOldFreeForAllRules() {

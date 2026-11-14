@@ -74,7 +74,7 @@ internal class GameSession(context: Context) {
 
     var localTeam = prefs.getInt("localTeam", 1).coerceIn(1, 4)
     var secondLocalTeam = prefs.getInt("secondLocalTeam", 1).coerceIn(1, 4)
-    var difficulty = prefs.getString("difficulty", "normal")!!
+    var difficulty = prefs.getString("difficulty", "normal")?.takeIf { it in BotDifficulty.names } ?: "normal"
     var roomName = ""
     var muted = prefs.getBoolean("muted", false)
     var volume = prefs.getFloat("volume", .5f)
@@ -190,7 +190,7 @@ internal class GameSession(context: Context) {
                             Callsigns.limit(bot.optString("name", "BOT")).ifBlank { "BOT" },
                             GamePalette.index(bot.optInt("colorIndex", index + 1)),
                             bot.optString("difficulty", "normal").takeIf {
-                                it in listOf("easy", "normal", "hard", "godlike")
+                                it in BotDifficulty.names
                             } ?: "normal",
                             bot.optInt("team").coerceIn(0, 4),
                         ),
@@ -397,7 +397,7 @@ internal class GameSession(context: Context) {
                 name = name?.let { Callsigns.limit(it.trim()).ifBlank { "BOT" } } ?: old.name,
                 colorIndex = colorIndex?.let(GamePalette::index) ?: old.colorIndex,
                 difficulty =
-                    difficulty?.takeIf { it in listOf("easy", "normal", "hard", "godlike") }
+                    difficulty?.takeIf { it in BotDifficulty.names }
                         ?: old.difficulty,
                 team = side,
             )

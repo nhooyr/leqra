@@ -1,5 +1,10 @@
 import Foundation
 
+public extension ArenaTank {
+    /// Trust the actual tier in the snapshot, never the editable callsign.
+    var botWarning: String? { bot && difficulty == "godlike" ? "GODLIKE" : nil }
+}
+
 public extension ArenaSnapshot {
     /// Fixed-match winners identify a tank; every member of its positive team
     /// shares that win. Missing pilots and draws have no local result.

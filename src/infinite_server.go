@@ -59,6 +59,7 @@ type infiniteServer struct {
 	publicScoreOwners      map[int]string
 	publicZeroProfiles     map[string]bool
 	publicSavedNextID      int
+	publicSavedBotLives    uint64
 	publicSavedSeed        uint32
 	publicStoreInitialized bool
 	nextProfilePrune       time.Time

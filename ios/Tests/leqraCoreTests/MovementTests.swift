@@ -55,7 +55,7 @@ final class MovementTests: XCTestCase {
 
     func testFiniteBotsUseDifficultySpeedAndTurnWithSharedBoosts() {
         let world = ArenaWorld(width: 840, height: 840, cols: 10, rows: 10)
-        for (level, speed, turn) in [("easy", 89.0, 2.8), ("normal", 108.0, 3.4),
+        for (level, speed, turn) in [("dumb", 60.0, 1.8), ("easy", 89.0, 2.8), ("normal", 108.0, 3.4),
                                       ("hard", 123.0, 4.3), ("godlike", 123.0, 4.3)] {
             for stacks in [0, 3] {
                 var tank = ArenaTank(x: 420, y: 420, bot: true, speedTime: stacks == 0 ? 0 : 5,

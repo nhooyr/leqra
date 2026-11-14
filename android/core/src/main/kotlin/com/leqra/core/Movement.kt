@@ -298,13 +298,18 @@ object TankMovement {
 }
 
 enum class BotDifficulty(val speed: Double, val turn: Double, val think: Double) {
+    DUMB(60.0, 1.8, .9),
     EASY(89.0, 2.8, .30),
     NORMAL(108.0, 3.4, .19),
     HARD(123.0, 4.3, .13),
     GODLIKE(123.0, 4.3, .075);
 
     companion object {
+        val names = listOf("dumb", "easy", "normal", "hard", "godlike")
+
         fun from(value: String) = entries.firstOrNull { it.name.equals(value, true) } ?: NORMAL
+
+        fun index(value: String) = names.indexOf(value).takeIf { it >= 0 } ?: names.indexOf("normal")
     }
 }
 

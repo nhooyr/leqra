@@ -85,9 +85,10 @@ test('lobby bot editing retains name, team and difficulty events',()=>{
  const b=boot({phase:'lobby'}),row=b.row(bot,false),name=row.querySelector('input'),controls=row.querySelector('.seat-controls');
  name.value='BOUNCE';name.events.change();
  const team=controls.children.find(child=>'team'in child.dataset),difficulty=controls.children.find(child=>'botDifficulty'in child.dataset);
- assert.equal(team.children.length,4);assert.equal(difficulty.children.length,4);
- team.value='3';team.events.change();difficulty.value='godlike';difficulty.events.change();
- assert.deepEqual(JSON.parse(JSON.stringify(b.changes.map(change=>change.patch))),[{name:'BOUNCE'},{team:3},{difficulty:'godlike'}]);
+ assert.equal(team.children.length,4);assert.equal(difficulty.children.length,5);
+ assert.equal(difficulty.children[0].value,'dumb');assert.equal(difficulty.children[0].textContent,'Dumb');
+ team.value='3';team.events.change();difficulty.value='dumb';difficulty.events.change();difficulty.value='godlike';difficulty.events.change();
+ assert.deepEqual(JSON.parse(JSON.stringify(b.changes.map(change=>change.patch))),[{name:'BOUNCE'},{team:3},{difficulty:'dumb'},{difficulty:'godlike'}]);
 });
 
 test('room labels keep raw callsigns, tank colors and local suffixes for every viewer',()=>{

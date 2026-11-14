@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.41';
+const GAME_VERSION='4.49.42';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -23,6 +23,7 @@ const MAX_TANKS=8;
 const COLORS=['#d2f65a','#ff9679','#73cee4','#c5a2ff','#ffc46b','#ff83bd','#75f0cb','#b7c6ee'];
 const NAMES=['Player 1','RUST','VAPOR','EMBER'];
 const DIFFICULTY={
+ dumb:{speed:60,turn:1.8,think:.9,aim:.6,reaction:1.8,lead:0,dodge:false,dodgeLook:0,bank:false},
  easy:{speed:89,turn:2.8,think:.30,aim:.10,reaction:.72,lead:.4,dodge:false,dodgeLook:0,bank:false},
  normal:{speed:108,turn:3.4,think:.19,aim:.037,reaction:.42,lead:.85,dodge:true,dodgeLook:.65,bank:true},
  hard:{speed:123,turn:4.3,think:.13,aim:.012,reaction:.26,lead:1,dodge:true,dodgeLook:.88,bank:true},
@@ -138,7 +139,7 @@ const isEnemy=(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team);
 // One damage rule is used for collision detection, prediction, and the damage
 // handler itself. Friendly fire can enable damage between different pilots.
 function canDamage(owner,target){if(owner===target.id)return false;const shooter=tanks.find(t=>t.id===owner);return !!shooter&&(!!currentRules().friendlyFire||isEnemy(shooter,target));}
-function botLevelName(level){return {easy:'Chill',normal:'Normal',hard:'Fierce',godlike:'Godlike'}[level]||'Normal';}
+function botLevelName(level){return {dumb:'Dumb',easy:'Chill',normal:'Normal',hard:'Fierce',godlike:'Godlike'}[level]||'Normal';}
 function pilotIdentity(index,tank,paired=false){const name=tank?.name||(index?'CO-PILOT':'Player 1');return{name,label:name+(!index||paired?' (P'+(index+1)+')':''),color:tank?.color||COLORS[index]||COLORS[0]};}
 function pilotIdentityHTML(index,tank,paired=false){const identity=pilotIdentity(index,tank,paired);return '<span class="pilot-identity local-pilot" style="color:'+paintColor(identity.color)+'">'+escapeHTML(identity.label)+'</span>';}
 function localPilotIdentity(index=0,tank=null,paired){
@@ -429,7 +430,7 @@ function pathScratch(a){
 }
 function tracePath(from,to,prev,a){const path=a?.pathScratch||[];path.length=0;for(let at=to;at!==from;at=prev[at]){if(at<0||path.length>grid.length){path.length=0;return path;}path.push(at);}path.reverse();return path;}
 function bfs(from,to,a=null){if(from===to){if(a?.pathScratch)a.pathScratch.length=0;return a?.pathScratch||[];}const scratch=pathScratch(a),prev=scratch?.pathPrev||new Int16Array(grid.length),q=scratch?.pathQueue||[];prev.fill(-1);prev[from]=from;q.length=0;q.push(from);for(let p=0;p<q.length;p++){const i=q[p];for(const n of grid[i].neighbors){if(prev[n]!==-1)continue;prev[n]=i;if(n===to)return tracePath(from,to,prev,scratch);q.push(n);}}if(scratch?.pathScratch)scratch.pathScratch.length=0;return scratch?.pathScratch||[];}
-function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRoom.players.find(p=>p.id===i):null;return{id:i,name:member?member.name||(member.kind==='bot'?'BOT':member.kind==='local'?savedLocalCallsign():'Player 1'):mode==='duel'||mode==='solo'&&i===0?localPilotIdentity(i).name:NAMES[i],color:member?teamColor(i,member.team,member.colorIndex):COLORS[i],x:p.x,y:p.y,angle:i===0?-Math.PI/2:Math.PI/2,r:RADIUS,alive:true,human:member?member.kind!=='bot':i===0||mode==='duel',difficulty:member?.difficulty||difficulty,localIndex:member?.kind==='local'?1:0,team:member?member.team:mode==='duel'?'p'+i:i===0?'player':'bots',cooldown:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,starmanTime:0,invulnerable:.75,spawnProtected:true,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,vx:0,vy:0,track:0,ai:{think:rnd(.15,.5),path:[],pathClock:0,target:-1,aim:null,shotClock:rnd(.6,1.6),bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,dodgeAngle:0,dodgeDrive:1,recoverTime:0,recoverAngle:0,recoverDrive:0,stuck:0,lastX:p.x,lastY:p.y}};}
+function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRoom.players.find(p=>p.id===i):null;return{id:i,name:member?member.name||(member.kind==='bot'?'BOT':member.kind==='local'?savedLocalCallsign():'Player 1'):mode==='duel'||mode==='solo'&&i===0?localPilotIdentity(i).name:NAMES[i],color:member?teamColor(i,member.team,member.colorIndex):COLORS[i],x:p.x,y:p.y,angle:i===0?-Math.PI/2:Math.PI/2,r:RADIUS,alive:true,human:member?member.kind!=='bot':i===0||mode==='duel',difficulty:member?.difficulty||difficulty,localIndex:member?.kind==='local'?1:0,team:member?member.team:mode==='duel'?'p'+i:i===0?'player':'bots',cooldown:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,starmanTime:0,invulnerable:.75,spawnProtected:true,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,vx:0,vy:0,track:0,ai:{think:rnd(.15,.5),path:[],pathClock:0,target:-1,aim:null,shotClock:(member?.difficulty||difficulty)==='dumb'?1.8:rnd(.6,1.6),bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,dodgeAngle:0,dodgeDrive:1,recoverTime:0,recoverAngle:0,recoverDrive:0,stuck:0,lastX:p.x,lastY:p.y}};}
 function spawnCells(){return [(rows-1)*cols,cols-1,rows*cols-1,0,Math.floor(cols/2),Math.floor(rows/2)*cols+cols-1,(rows-1)*cols+Math.floor(cols/2),Math.floor(rows/2)*cols];}
 function resetTanks(){const spawn=spawnCells();if(mode==='room'){tanks=localRoom.players.filter(p=>!p.spectating).map(p=>newTank(p.id,spawn[p.id]));return;}if(mode==='solo'&&Math.random()<.5)spawn[2]=0;tanks=spawn.slice(0,mode==='duel'?2:3).map((s,i)=>newTank(i,s));}
 function resetPreview(){localSurvivalCheckpoint=null;localObjectives=null;makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];seedPickups();if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);}
@@ -1388,7 +1389,7 @@ function botControl(t,dt){
   a.think=d.think*rnd(.9,1.1);
   if(enemy.invulnerable<=0&&ownedGrenades(t).some(b=>distance(b,enemy)<=BLAST_RADIUS+enemy.r-5&&!rayWalls(b.x,b.y,enemy.x-b.x,enemy.y-b.y,0))){detonateOwned(t);a.shotClock=Math.max(.25,d.reaction);}
   if(!enemy.alive&&!objective){a.aim=null;return;}
-  a.aim=enemy.alive?chooseBotAim(t,enemy,d):null;
+  a.aim=enemy.alive&&(difficultyKey!=='dumb'||rnd(0,1)>=.35)?chooseBotAim(t,enemy,d):null;
   const goal=cellAt((objective||enemy).x,(objective||enemy).y);
   if(t.ghostTime<=0&&(a.pathClock<=0||goal!==a.goal)){a.pathClock=.55+(t.id%2)*.06;a.goal=goal;a.path=objective?bfs(cellAt(t.x,t.y),goal,a):planBotPath(t,enemy);}
  }
@@ -1402,7 +1403,7 @@ function botControl(t,dt){
  }
  if(a.dodgeTime>0)control={angle:a.dodgeAngle,drive:a.dodgeDrive};
  if(a.recoverTime>0)control={angle:a.recoverAngle,drive:a.recoverDrive};
- const grenadeAvoid=chooseGrenadeAvoid(t,control,d);if(grenadeAvoid)control=grenadeAvoid;
+ const grenadeAvoid=difficultyKey==='dumb'?null:chooseGrenadeAvoid(t,control,d);if(grenadeAvoid)control=grenadeAvoid;
  const diff=angleDelta(t.angle,control.angle);t.angle+=clamp(diff,-d.turn*dt,d.turn*dt);
  const throttle=control.drive*Math.max(0,Math.cos(diff));
  moveTank(t,Math.cos(t.angle)*d.speed*throttle*dt,Math.sin(t.angle)*d.speed*throttle*dt);
@@ -1410,7 +1411,7 @@ function botControl(t,dt){
  if(a.aim!==null&&a.shotClock<=0&&a.recoverTime<=0&&enemy.invulnerable<=.05&&!ownedGrenades(t).length){
   a.shotClock=.09;
   if(Math.abs(angleDelta(t.angle,a.aim))<.13&&evaluateBotShot(t,t.angle,enemy,d,d.bank?1:0)){
-   if(fire(t))a.shotClock=t.power==='rapid'?0:d.reaction*rnd(.9,1.15);
+   if(fire(t))a.shotClock=t.power==='rapid'&&difficultyKey!=='dumb'?0:d.reaction*(difficultyKey==='dumb'?1:rnd(.9,1.15));
   }
  }
  if(Math.abs(throttle)>.25&&Math.hypot(t.x-a.lastX,t.y-a.lastY)<.12)a.stuck+=dt;else a.stuck=Math.max(0,a.stuck-dt*1.5);
@@ -1738,7 +1739,12 @@ function drawTank(t,withLabel=true){
 }
 function drawTankLabel(t,status=tankStatusLayout(t)){
  if(!t.alive)return;
- ctx.save();ctx.font='bold '+status.font+'px ui-monospace,SFMono-Regular,Consolas,monospace';ctx.textAlign='center';const label=tankLabel(t),width=status.labelWidth;ctx.fillStyle=paintColor('#0e171ddb');roundRect(ctx,status.x-width/2,status.labelY,width,status.labelHeight,3);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.fillText(label,status.x,status.labelY+status.labelBaseline);ctx.restore();
+ ctx.save();ctx.font='bold '+status.font+'px ui-monospace,SFMono-Regular,Consolas,monospace';ctx.textAlign='center';const label=tankLabel(t),width=status.labelWidth;ctx.fillStyle=paintColor('#0e171ddb');roundRect(ctx,status.x-width/2,status.labelY,width,status.labelHeight,3);ctx.fill();ctx.fillStyle=paintColor(t.color);ctx.fillText(label,status.x,status.labelY+status.labelBaseline);
+ if((t.bot||t.human===false)&&t.difficulty==='godlike'){
+  const w=measureLabel('GODLIKE')+12,x=clamp(status.x,w/2+2/scale,Math.max(w/2+2/scale,W-w/2-2/scale)),y=Math.max(2/scale,status.labelY-status.labelHeight-Math.max(3,3/scale));
+  ctx.fillStyle=paintColor('#302217f2');ctx.strokeStyle=paintColor('#ffc46b');ctx.lineWidth=Math.max(1,1/scale);roundRect(ctx,x-w/2,y,w,status.labelHeight,3);ctx.fill();ctx.stroke();ctx.fillStyle=paintColor('#ffc46b');ctx.fillText('GODLIKE',x,y+status.labelBaseline);
+ }
+ ctx.restore();
 }
 function powerIcon(kind,c=ctx){
  const def=POWER[kind];if(!def)return;c.fillStyle=def.color;c.strokeStyle=def.color;
@@ -2071,7 +2077,7 @@ function makeRoomPlayerRow(player,r,moderationOnly=false){
  if(editable&&!moderationOnly){
   if((r.rules||currentRules()).teamMode!=='ffa'&&!survivalMode(r.rules||currentRules())){const team=document.createElement('select');team.dataset.team=player.id;team.setAttribute('aria-label','Team for '+player.name);for(let i=1;i<=activeTeamCount(r.rules||currentRules());i++){const o=document.createElement('option');o.value=i;o.textContent=teamName(i,r.rules);o.selected=i===player.team;team.append(o);}team.addEventListener('change',()=>changeSeat(player,{team:Number(team.value)}));controls.append(team);}
   if(player.kind==='bot'){const d=document.createElement('select');d.dataset.botDifficulty=player.id;d.setAttribute('aria-label','Difficulty for '+player.name);
-   for(const [value,label]of[['easy','Chill'],['normal','Normal'],['hard','Fierce'],['godlike','Godlike']]){const o=document.createElement('option');o.value=value;o.textContent=label;o.selected=value===player.difficulty;d.append(o);}
+   for(const [value,label]of[['dumb','Dumb'],['easy','Chill'],['normal','Normal'],['hard','Fierce'],['godlike','Godlike']]){const o=document.createElement('option');o.value=value;o.textContent=label;o.selected=value===player.difficulty;d.append(o);}
    d.addEventListener('change',()=>changeSeat(player,{difficulty:d.value}));controls.append(d);}
  }else if(player.team>0||player.kind==='bot'){const badge=document.createElement('span');badge.className='team-badge';badge.textContent=[player.team>0?teamName(player.team,r.rules):'',player.kind==='bot'?botLevelName(player.difficulty):''].filter(Boolean).join(', ');controls.append(badge);}
  if(!moderationOnly&&canEditTankPaint(player,r))controls.append(makeColorSelect(player.colorIndex??-1,value=>changeTankColor(player,value),'Tank color for '+player.name,true,player.id));
@@ -3229,7 +3235,7 @@ function validateSavedRoster(value,rules){
  const roster=[];
  for(let i=0;i<value.length;i++){
   const p=value[i];if(!p||typeof p!=='object'||(i===0?p.kind!=='human':!['local','bot'].includes(p.kind))||typeof p.name!=='string'||!cleanPilotName(p.name)||!Number.isInteger(p.team)||p.team<0||p.team>4)return null;
-  if(p.spectating!==undefined&&typeof p.spectating!=='boolean'||p.kind==='bot'&&(p.spectating||!['easy','normal','hard','godlike'].includes(p.difficulty)))return null;
+  if(p.spectating!==undefined&&typeof p.spectating!=='boolean'||p.kind==='bot'&&(p.spectating||!['dumb','easy','normal','hard','godlike'].includes(p.difficulty)))return null;
   if(p.kind==='local'&&++locals>1)return null;if(!p.spectating)active++;
   if(p.colorIndex!==undefined&&(!Number.isInteger(p.colorIndex)||p.colorIndex< -1||p.colorIndex>7))return null;
   const spectatorColor=p.spectating&&rules.teamMode==='ffa'&&!(p.team>0)&&(p.colorIndex===undefined||p.colorIndex===-1)&&typeof p.spectatorColor==='string'&&COLORS.includes(p.spectatorColor)?p.spectatorColor:null;
@@ -3314,7 +3320,7 @@ function validateRoomRules(r){
  const infinityTarget=r.infinityTarget===undefined?0:r.infinityTarget;
  if(!Number.isInteger(infinityTarget)||infinityTarget<0||infinityTarget>999)throw Error('Infinity score target must be 0–999. Use 0 for endless play.');
  const infinityBotDifficulty=r.infinityBotDifficulty===undefined||r.infinityBotDifficulty===''?'normal':r.infinityBotDifficulty;
- if(!['easy','normal','hard','godlike'].includes(infinityBotDifficulty))throw Error('Choose a valid difficulty for random Infinity bots.');
+ if(!['dumb','easy','normal','hard','godlike'].includes(infinityBotDifficulty))throw Error('Choose a valid difficulty for random Infinity bots.');
  if(r.infinityRandomBots!==undefined&&typeof r.infinityRandomBots!=='boolean')throw Error('Random Infinity bots must be on or off.');
  if(r.infinityRandomDifficulty!==undefined&&typeof r.infinityRandomDifficulty!=='boolean')throw Error('Random Infinity bot difficulty must be Fixed or Up to.');
  if(!Number.isInteger(r.timeLimit)||r.timeLimit<30||r.timeLimit>600)throw Error('Time limit must be 30–600 seconds.');
@@ -4454,7 +4460,7 @@ function initFeatures(){
  <div id="rule-infinity-bot-options" hidden><div class="rules-grid">
  <label>DIFFICULTY<select id="rule-infinityBotDifficulty">${Object.keys(DIFFICULTY).map(level=>'<option value="'+level+'">'+botLevelName(level)+'</option>').join('')}</select></label>
  <label>DIFFICULTY RANGE<select id="rule-infinityRandomDifficulty"><option value="fixed">Fixed</option><option value="upTo">Random up to limit</option></select></label>
- </div><p class="mode-help">Fixed gives every random bot the selected difficulty. Random picks a difficulty from Chill up to your selection.</p></div></section>
+ </div><p class="mode-help">Fixed gives every random bot the selected difficulty. Random picks a difficulty from Dumb up to your selection.</p></div></section>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Every tank is immune to its own weapons.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><div id="rule-weapon-options"><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="secondary" type="button" id="defaultRulesBtn">DEFAULT RULES</button><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span aria-hidden="true">→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP <span aria-hidden="true">→</span></button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
  <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><div id="controlsKeyboardHelp"><p class="mode-help controls-shortcuts"><span>${controlKeyHTML(['KeyP','ESC'])} opens the menu.</span><span>${controlKeyHTML(['KeyM'])} toggles sound.</span><span>${controlKeyHTML(['KeyF'])} toggles fullscreen.</span></p><p class="mode-help controls-firing-help">Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.</p></div><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
