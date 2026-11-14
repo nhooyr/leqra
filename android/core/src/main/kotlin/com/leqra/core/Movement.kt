@@ -314,10 +314,13 @@ enum class BotDifficulty(val speed: Double, val turn: Double, val think: Double)
 
     companion object {
         val names = listOf("dumb", "easy", "normal", "hard", "godlike")
+        val titles = listOf("Dumb", "Easy", "Medium", "Hard", "Godlike")
 
         fun from(value: String) = entries.firstOrNull { it.name.equals(value, true) } ?: NORMAL
 
         fun index(value: String) = names.indexOf(value).takeIf { it >= 0 } ?: names.indexOf("normal")
+
+        fun title(value: String) = titles[index(value)]
     }
 }
 

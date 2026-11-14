@@ -68,7 +68,7 @@ public extension RoomRules {
 public enum BotDifficulty: String, CaseIterable, Codable, Sendable {
     case dumb, easy, normal, hard, godlike
     public var displayName: String {
-        switch self { case .dumb: return "Dumb"; case .easy: return "Chill"; case .normal: return "Normal"; case .hard: return "Fierce"; case .godlike: return "Godlike" }
+        switch self { case .dumb: return "Dumb"; case .easy: return "Easy"; case .normal: return "Medium"; case .hard: return "Hard"; case .godlike: return "Godlike" }
     }
     var speed: Double { self == .dumb ? 60 : self == .easy ? 89 : self == .normal ? 108 : 123 }
     var turn: Double { self == .dumb ? 1.8 : self == .easy ? 2.8 : self == .normal ? 3.4 : 4.3 }

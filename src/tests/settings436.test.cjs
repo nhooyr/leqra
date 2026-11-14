@@ -41,7 +41,7 @@ test('new primary callsigns default to Player 1 while saved and restored choices
  }
 });
 
-test('a new public Infinity setup starts with only P1 and switching it off adds three Normal bots once',()=>{
+test('a new public Infinity setup starts with only P1 and switching it off adds three Medium bots once',()=>{
  const {s,storage}=boot();s.createLocalRoom();
  assert.deepEqual(Array.from(s.localRoom.players,p=>p.kind),['human']);
  assert.equal(s.infinityPlayMode(),'online');

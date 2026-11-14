@@ -67,7 +67,7 @@ func TestDumbFiniteBotHesitatesAndKeepsRapidReactionDelay(t *testing.T) {
 			t.Fatal("rapid fixture did not fire")
 		}
 		if tier == "dumb" && bot.AI.Shot != 1.8 || tier == "normal" && bot.AI.Shot != 0 {
-			t.Fatal("Dumb bypassed its reaction delay, or Normal rapid fire changed", tier, bot.AI.Shot)
+			t.Fatal("Dumb bypassed its reaction delay, or Medium rapid fire changed", tier, bot.AI.Shot)
 		}
 	}
 }
@@ -221,7 +221,7 @@ func TestPublicDeadBotWaitsForMatchingTierOpportunity(t *testing.T) {
 	a.nextBot = a.tick
 	a.populate()
 	if bot.HP != 0 || bot.botLevel != infiniteBotLevel("dumb") || len(roamingBots(a)) != 1 || roamingBots(a)[0] == bot {
-		t.Fatal("Normal opportunity reused a Dumb identity")
+		t.Fatal("Medium opportunity reused a Dumb identity")
 	}
 	a.nextBot = a.tick
 	a.populate()

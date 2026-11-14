@@ -2161,15 +2161,15 @@ test('active and spectated standings show bot base names with real difficulty an
   const socket=h.sockets[0];socket.receive({type:'welcome',id:spectating?0:1,seed:0,spectating,following:64});
   const leaders=[
    {id:64,name:'Bot 64 - Godlike',score:10,bot:true,difficulty:'godlike'},
-   {id:8,name:'Bot 8 - Normal',score:9,bot:true,difficulty:'normal'},
+   {id:8,name:'Bot 8 - Medium',score:9,bot:true,difficulty:'normal'},
    {id:2,name:'Bot 2 - Dumb',score:8,bot:true,difficulty:'dumb'},
    {id:5,name:'RUST',score:7,bot:true,difficulty:'hard'},
    {id:1,name:'Godlike fan',score:6,bot:false,difficulty:'godlike'}];
   socket.receive({type:'state',tick:1,following:64,tanks:[{id:1,name:'Godlike fan',hp:1,x:42,y:42}],bullets:[],players:1,leaderboard:leaders});h.advance(4);
   const rows=h.byID('infiniteLeaderboard').children;
   assert.deepEqual(rows.map(standingName),['Bot 64','Bot 8','Bot 2','Bot Rust',spectating?'Godlike fan':'Godlike fan (P1)']);
-  assert.deepEqual(rows.map(row=>standingNode(row,'leaderboard-difficulty')?.textContent||''),['GODLIKE','NORMAL','DUMB','FIERCE','']);
-  if(spectating){const button=rows[1].children[0];assert.match(button.attributes['aria-label'],/Follow Bot 8, Normal, rank 2, score 9/);button.emit('click');assert.deepEqual(socket.sent.at(-1),{type:'follow',target:8});}
+  assert.deepEqual(rows.map(row=>standingNode(row,'leaderboard-difficulty')?.textContent||''),['GODLIKE','MEDIUM','DUMB','HARD','']);
+  if(spectating){const button=rows[1].children[0];assert.match(button.attributes['aria-label'],/Follow Bot 8, Medium, rank 2, score 9/);button.emit('click');assert.deepEqual(socket.sent.at(-1),{type:'follow',target:8});}
   h.infinity.close();
  }
 });

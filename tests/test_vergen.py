@@ -61,7 +61,7 @@ class VersionGenerationTests(unittest.TestCase):
                      for name in ("README.md", "docs/releases/old.md", "src/main.go")}
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Synced leqra v1.2.4", result.stdout)
+        self.assertIn("Generated leqra v1.2.4", result.stdout)
         destination = self.root / "src/web/assets/v1.2.4"
         self.assertFalse((self.root / "src/web/assets/v1.2.3").exists())
         self.assertEqual((destination / "icon.png").read_bytes(), self.icon)

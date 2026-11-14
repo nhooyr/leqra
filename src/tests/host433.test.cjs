@@ -38,7 +38,7 @@ test('Free-for-all paint is locked while room Infinity is running',()=>{
 test('host moderation keeps team, public difficulty name and status with the tank identity',()=>{
  const b=boot(),row=b.row(bot),identity=row.querySelector('.seat-identity'),details=identity.querySelector('.seat-details');
  assert.equal(identity.querySelector('.pilot-name').textContent,'RICOCHET');
- assert.equal(details.querySelector('.team-badge').textContent,'Cobalt, Fierce');
+ assert.equal(details.querySelector('.team-badge').textContent,'Cobalt, Hard');
  assert.equal(details.querySelector('.seat-kind').textContent,'BOT');
  assert.equal(row.querySelector('.seat-controls').querySelector('.team-badge'),null);
  assert.equal(row.querySelector('select'),null,'live moderation cannot change team or difficulty');
@@ -75,7 +75,7 @@ test('active P1 and P2 own roster boxes each offer Spectate, including an online
 });
 
 test('read-only lobby metadata uses visible difficulty names and hides nonexistent FFA teams',()=>{
- for(const [difficulty,want]of [['easy','Chill'],['normal','Normal'],['hard','Fierce'],['godlike','Godlike']]){
+ for(const [difficulty,want]of [['easy','Easy'],['normal','Medium'],['hard','Hard'],['godlike','Godlike']]){
   const b=boot({host:1,phase:'lobby',teamMode:'ffa'}),row=b.row({...bot,team:0,difficulty},false);
   assert.equal(row.querySelector('.team-badge').textContent,want);assert.equal(row.querySelector('.seat-identity'),null,'editable lobby layout remains separate');
  }

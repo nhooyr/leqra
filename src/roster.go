@@ -192,7 +192,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			}
 		}
 		if m.Kind == "bot" && !validDifficulty(difficulty) {
-			fail("bad_difficulty", "Choose Dumb, Chill, Normal, Fierce, or Godlike.")
+			fail("bad_difficulty", "Choose Dumb, Easy, Medium, Hard, or Godlike.")
 			return
 		}
 		slot := r.freeCombatSeat()

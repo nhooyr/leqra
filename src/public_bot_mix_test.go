@@ -32,7 +32,7 @@ func TestPublicBotMixHasFourNormalAndOneGodlikeOpportunityPer64Lives(t *testing.
 		if level != want || a.publicBotLives != uint64(life) {
 			t.Fatalf("life %d: got %s, want %s", life, level, want)
 		}
-		title := map[string]string{"dumb": "Dumb", "normal": "Normal", "godlike": "Godlike"}[want]
+		title := map[string]string{"dumb": "Dumb", "normal": "Medium", "godlike": "Godlike"}[want]
 		if bot.Name != "Bot 7 - "+title || !reservedCallsign(bot.Name) {
 			t.Fatal("public bot name lost its tier or reserved namespace", bot.Name)
 		}
@@ -56,7 +56,7 @@ func TestPublicNormalEncountersHaveNoSpecialCapWarningOrGodlikeCompetition(t *te
 		p.ambientNumber = i + 2
 		p.publicBotName()
 		a.recordGodlikeSpawn(p)
-		if infiniteBotTunings[p.botLevel].name != "normal" || p.Name != fmt.Sprintf("Bot %d - Normal", i+2) {
+		if infiniteBotTunings[p.botLevel].name != "normal" || p.Name != fmt.Sprintf("Bot %d - Medium", i+2) {
 			t.Fatal("normal opportunity was capped by another normal or Godlike", p.Name)
 		}
 	}
@@ -146,14 +146,14 @@ func TestRestoredNormalBotLeaderKeepsItsTierAndPreservedScore(t *testing.T) {
 	bot.Score = 42
 	commitPublicFixture(t, s)
 	id := bot.ID
-	if got := s.public.leaderboard(nil)[0]; got.Difficulty != "normal" || got.Name != "Bot 1 - Normal" {
+	if got := s.public.leaderboard(nil)[0]; got.Difficulty != "normal" || got.Name != "Bot 1 - Medium" {
 		t.Fatal("durable normal leaderboard tier missing", got)
 	}
 	s.close()
 	s = publicStoreFixture(t, path)
 	defer s.close()
 	leader := s.public.leaderboard(nil)[0]
-	if leader.ID != id || leader.Score != 42 || leader.Name != "Bot 1 - Normal" || leader.Difficulty != "normal" || s.public.publicBotLives != 8 {
+	if leader.ID != id || leader.Score != 42 || leader.Name != "Bot 1 - Medium" || leader.Difficulty != "normal" || s.public.publicBotLives != 8 {
 		t.Fatal("restart lost score, cadence, or permanent normal identity", leader)
 	}
 }
@@ -194,6 +194,10 @@ func TestSavedPublicNameExceptionOnlyAllowsCanonicalAmbientBotLabels(t *testing.
 		valid   bool
 	}{
 		{"Bot 128 - Godlike", true, 128, true},
+		{"Bot 1024 - Normal", true, 1024, true},
+		{"Bot 1024 - Medium", true, 1024, true},
+		{"Bot 1024 - Medium", true, 1025, false},
+		{"Bot 1024 - Medium", false, 1024, false},
 		{"Bot 512 - Godlike", true, 512, true},
 		{"Bot 128 - Godlike", false, 128, false},
 		{"Bot 128 - Godlike", true, 129, false},

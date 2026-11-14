@@ -77,13 +77,13 @@ class BotStandingsUiTest {
                         val scroll = get(activity, "scores") as ScrollView
                         val labels = descendants(scroll).filterIsInstance<TextView>()
                         for ((rank, number) in listOf(2 to 2, 3 to 3, 4 to 4)) assertTrue(labels.any { it.text.toString() == "$rank. Bot $number" })
-                        for (difficulty in listOf("DUMB", "NORMAL", "GODLIKE", "FIERCE")) {
+                        for (difficulty in listOf("DUMB", "MEDIUM", "GODLIKE", "HARD")) {
                             val badge = labels.single { it.text.toString() == difficulty }
                             assertTrue(badge.textSize / badge.resources.displayMetrics.scaledDensity >= 10)
                         }
                         assertTrue(labels.any { it.text.toString() == "5. Bot Rust" })
                         assertTrue(labels.any { it.text.toString() == "6. Godlike Bot 99" })
-                        assertFalse(labels.any { it.text.toString() == "BOT" || it.text.contains(" - Dumb") || it.text.contains(" - Normal") || it.text.contains(" - Godlike") })
+                        assertFalse(labels.any { it.text.toString() == "BOT" || it.text.contains(" - Dumb") || it.text.contains(" - Normal") || it.text.contains(" - Medium") || it.text.contains(" - Godlike") })
                         assertTrue(labels.all { it.ellipsize == null })
                         val identity = labels.single { it.text.toString().startsWith("1. pilot#ABC234") }
                         assertEquals(screen == Screen.PLAYING, identity.typeface.isBold)

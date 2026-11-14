@@ -13,7 +13,7 @@
 
 The game opens directly into **YOUR ARENA**, a local game room. You are the
 host. The default setup is you on Team 1 against Rust and Vapor on Team 2,
-both at Normal difficulty. Press **START MATCH** to play immediately; local
+both at Medium difficulty. Press **START MATCH** to play immediately; local
 play does not contact the multiplayer server.
 
 There are **four total tank seats**, shared by humans, bots and a second local
@@ -39,10 +39,10 @@ match. Each has separate server-acknowledged input history and client prediction
 With a second local player, arrow keys no longer also move the primary tank.
 Grenades use throw, release, then Fire again to detonate for either player.
 
-**Add bots:** choose **Chill, Normal, or Fierce**, then press **+ ADD BOT**.
+**Add bots:** choose **Easy, Medium, or Hard**, then press **+ ADD BOT**.
 Each bot has its own difficulty selector and editable name. Existing bots can
-have their difficulty changed without removing them. Chill has slower reactions
-and simpler tactics; Normal and Fierce add evasive movement and bank-shot
+have their difficulty changed without removing them. Easy has slower reactions
+and simpler tactics; Medium and Hard add evasive movement and bank-shot
 planning. Shared-room bots run on the Go server, not on a player's browser.
 
 **Assign teams:** every roster row has a host-only selector for **Team 1–4** or

@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.0.2';
+const GAME_VERSION='5.0.3';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -139,7 +139,7 @@ const isEnemy=(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team);
 // One damage rule is used for collision detection, prediction, and the damage
 // handler itself. Friendly fire can enable damage between different pilots.
 function canDamage(owner,target){if(owner===target.id)return false;const shooter=tanks.find(t=>t.id===owner);return !!shooter&&(!!currentRules().friendlyFire||isEnemy(shooter,target));}
-function botLevelName(level){return {dumb:'Dumb',easy:'Chill',normal:'Normal',hard:'Fierce',godlike:'Godlike'}[level]||'Normal';}
+function botLevelName(level){return {dumb:'Dumb',easy:'Easy',normal:'Medium',hard:'Hard',godlike:'Godlike'}[level]||'Medium';}
 function pilotIdentity(index,tank,paired=false){const name=tank?.name||(index?'CO-PILOT':'Player 1');return{name,label:name+(!index||paired?' (P'+(index+1)+')':''),color:tank?.color||COLORS[index]||COLORS[0]};}
 function pilotIdentityHTML(index,tank,paired=false){const identity=pilotIdentity(index,tank,paired);return '<span class="pilot-identity local-pilot" style="color:'+paintColor(identity.color)+'">'+escapeHTML(identity.label)+'</span>';}
 function localPilotIdentity(index=0,tank=null,paired){
@@ -1220,7 +1220,7 @@ function chooseDodge(t,control,d){
  }
  return cost<baseline.risk-10?best:null;
 }
-// Godlike shares Fierce's physical limits. Decisions are throttled to 13 Hz;
+// Godlike shares Hard's physical limits. Decisions are throttled to 13 Hz;
 // bounded threat samples are reused across physically reachable steering plans.
 function godlikeDistances(t,from){
  const a=t.ai,n=grid.length;if(a.godDistances?.length!==n){a.godDistances=new Int16Array(n);a.godQueue=new Int16Array(n);}
@@ -2143,7 +2143,7 @@ function makeRoomPlayerRow(player,r,moderationOnly=false){
  if(editable&&!moderationOnly){
   if((r.rules||currentRules()).teamMode!=='ffa'&&!survivalMode(r.rules||currentRules())){const team=document.createElement('select');team.dataset.team=player.id;team.setAttribute('aria-label','Team for '+player.name);for(let i=1;i<=activeTeamCount(r.rules||currentRules());i++){const o=document.createElement('option');o.value=i;o.textContent=teamName(i,r.rules);o.selected=i===player.team;team.append(o);}team.addEventListener('change',()=>changeSeat(player,{team:Number(team.value)}));controls.append(team);}
   if(player.kind==='bot'){const d=document.createElement('select');d.dataset.botDifficulty=player.id;d.setAttribute('aria-label','Difficulty for '+player.name);
-   for(const [value,label]of[['dumb','Dumb'],['easy','Chill'],['normal','Normal'],['hard','Fierce'],['godlike','Godlike']]){const o=document.createElement('option');o.value=value;o.textContent=label;o.selected=value===player.difficulty;d.append(o);}
+   for(const [value,label]of[['dumb','Dumb'],['easy','Easy'],['normal','Medium'],['hard','Hard'],['godlike','Godlike']]){const o=document.createElement('option');o.value=value;o.textContent=label;o.selected=value===player.difficulty;d.append(o);}
    d.addEventListener('change',()=>changeSeat(player,{difficulty:d.value}));controls.append(d);}
  }else if(player.team>0||player.kind==='bot'){const badge=document.createElement('span');badge.className='team-badge';badge.textContent=[player.team>0?teamName(player.team,r.rules):'',player.kind==='bot'?botLevelName(player.difficulty):''].filter(Boolean).join(', ');controls.append(badge);}
  if(!moderationOnly&&canEditTankPaint(player,r))controls.append(makeColorSelect(player.colorIndex??-1,value=>changeTankColor(player,value),'Tank color for '+player.name,true,player.id));
@@ -3563,7 +3563,7 @@ function countdownTipPool(rules=currentRules()){
   if(rules.scoreTarget>=5){
    add(modeTips,'survival-boss-shield','Boss waves give every ally a starting shield, even with power-ups off.');
    add(modeTips,'survival-boss-cycle','Every fifth wave brings a boss. Clear the escorts to make space.');
-   add(modeTips,'survival-boss-tiers','New boss tiers: Normal at 5'+(rules.scoreTarget>=10?', Fierce at 10':'')+(rules.scoreTarget>=15?', Godlike at 15':'')+'.');
+   add(modeTips,'survival-boss-tiers','New boss tiers: Medium at 5'+(rules.scoreTarget>=10?', Hard at 10':'')+(rules.scoreTarget>=15?', Godlike at 15':'')+'.');
    const bosses=[];for(let wave=5;wave<=rules.scoreTarget;wave+=5)bosses.push(survivalWavePlan(wave,4,rules));
    if(bosses.some(b=>b.weapon==='homing'))add(modeTips,'survival-boss-homing','Break the boss\'s missile lock with a wall, then move before it bounces back.');
    if(bosses.some(b=>b.weapon==='cannon'))add(modeTips,'survival-boss-cannon','Interior walls won\'t stop a Cannon boss. Keep changing your position.');
@@ -3633,7 +3633,7 @@ const ROOM_MODES=[
  {id:'elimination',name:'Elimination',help:'Outlast every opposing tank or team.',icon:'<circle cx="12" cy="12" r="6"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="1"/>'},
  {id:'ctf',name:'Capture the Flag',help:'Steal the enemy flag and bring it home.',icon:'<path d="M5 22V3m0 1c5-5 9 5 14 0v10c-5 5-9-5-14 0"/>'},
  {id:'koth',name:'King of the Hill',help:'Control the hill. Contest it to stop rivals scoring.',icon:'<path d="m2 21 7-10 4 5 3-4 6 9H2ZM8 7 6 2l6 3 6-3-2 5H8Z"/>'},
- {id:'survival',name:'Survival',help:'Survive each wave. Bosses grow from Normal to Fierce to Godlike.',icon:'<path d="m12 2 8 3v7c0 5-8 10-8 10S4 17 4 12V5l8-3Z"/><path d="M12 7v9m-4-5h8"/>'},
+ {id:'survival',name:'Survival',help:'Survive each wave. Bosses grow from Medium to Hard to Godlike.',icon:'<path d="m12 2 8 3v7c0 5-8 10-8 10S4 17 4 12V5l8-3Z"/><path d="M12 7v9m-4-5h8"/>'},
  {id:'infinity',name:'Infinity',help:'Explore an unbounded maze with this room’s pilots and bots.',icon:'<path d="M12 12c-2-3-3-5-6-5a5 5 0 0 0 0 10c3 0 4-2 6-5s3-5 6-5a5 5 0 0 1 0 10c-3 0-4-2-6-5Z"/>'}
 ];
 function canPlayOnlineInfinity(){return ['http:','https:'].includes(location.protocol)&&navigator.onLine!==false;}
@@ -3911,7 +3911,7 @@ function updateRuleHelp(){
  $('ruleTimeLabel').textContent=m==='survival'?'WAVE TIME LIMIT (SECONDS)':'TIME LIMIT (SECONDS)';
  $('ruleScoreLabel').textContent=m==='survival'?'WAVES TO SURVIVE':m==='koth'?'HILL POINTS TO WIN':m==='ctf'?'CAPTURES TO WIN':'ROUNDS TO WIN';
  const [mc,mr]=mapDimensions(rules.mapSize);$('rule-pickup-density').textContent=$('rule-pickupRate').value==='off'?'Power-ups disabled.':pickupLimitText(rules.mapSize)+' Uncollected power-ups expire after '+pickupLifetime(mc,mr)+' seconds.';
- $('rule-help').textContent=m==='survival'?'One to four squad tanks; all-bot squads are welcome. Clear each wave before its timer expires. A squad wipe ends the run. Between waves, a two-second break leads to a new maze and a three-second countdown.'+(waveTarget>=5?' Normal debuts as the wave 5 boss'+(waveTarget>=10?', Fierce at wave 10':'')+(waveTarget>=15?', and Godlike at wave 15':'')+'. Each joins regular waves afterward.':'')+' Restarting a failed wave keeps that wave’s maze.':m==='ctf'?'Two numbered teams. Carry the enemy flag home; your own flag must be at base. Dropped flags return after 12s. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':m==='koth'?'Teams or Free-for-all. Hold the marked hill for 1 point per second. Contested hills give no points. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':'Last side standing wins a round. No respawns until the next round.';
+ $('rule-help').textContent=m==='survival'?'One to four squad tanks; all-bot squads are welcome. Clear each wave before its timer expires. A squad wipe ends the run. Between waves, a two-second break leads to a new maze and a three-second countdown.'+(waveTarget>=5?' Medium debuts as the wave 5 boss'+(waveTarget>=10?', Hard at wave 10':'')+(waveTarget>=15?', and Godlike at wave 15':'')+'. Each joins regular waves afterward.':'')+' Restarting a failed wave keeps that wave’s maze.':m==='ctf'?'Two numbered teams. Carry the enemy flag home; your own flag must be at base. Dropped flags return after 12s. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':m==='koth'?'Teams or Free-for-all. Hold the marked hill for 1 point per second. Contested hills give no points. Respawns are enabled. A tied time limit triggers sudden death: last side surviving wins.':'Last side standing wins a round. No respawns until the next round.';
 }
 function readRuleTeamSettings(rules){
  const count=activeTeamCount(rules),saved=$('rulesDialog').dataset.defaults==='true'?defaultModeRules(rules.mode):currentRules();
@@ -4200,7 +4200,7 @@ async function deleteSelectedPreset(){
 
 // Survival enemies are temporary tank bodies in unused 0..7 seats, never room
 // members. This keeps spectator IDs, local controls and match reports distinct.
-function survivalBossName(wave){return (wave<10?'NORMAL':wave<15?'FIERCE':'GODLIKE')+' BOSS';}
+function survivalBossName(wave){return (wave<10?'MEDIUM':wave<15?'HARD':'GODLIKE')+' BOSS';}
 function survivalWavePlan(wave,slots=4,rules=currentRules()){
  const boss=wave%5===0,count=Math.min(slots,4,2+Math.floor((wave-1)/2));
  // Introduce each stronger tier as a boss before its first regular wave.

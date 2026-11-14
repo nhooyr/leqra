@@ -42,7 +42,7 @@ test('only the device primary and owned co-pilot are bold in FFA and team lineup
 test('team lineup renders every tank on its own escaped line with bot strength',()=>{
  const {s,$,players}=boot();players[0].name='<PILOT & CO>';players[1].name='RUST + "VAPOR"';
  s.renderLineup();const html=$('roster').innerHTML,lines=memberLines(html);
- assert.deepEqual(lines,['&lt;PILOT &amp; CO&gt; (P1)','RUST + &quot;VAPOR&quot; (Fierce bot)']);
+ assert.deepEqual(lines,['&lt;PILOT &amp; CO&gt; (P1)','RUST + &quot;VAPOR&quot; (Hard bot)']);
  assert.equal((html.match(/class="player-name lineup-group-name"/g)||[]).length,1);assert.match(html,/>SQUAD<\/div>/);
  assert.match(html,/<div class="score">2<\/div>/);assert.equal((html.match(/<i class="on">/g)||[]).length,2);
  assert.doesNotMatch(html,/<PILOT|<script|&gt; \+ RUST/);
@@ -50,14 +50,14 @@ test('team lineup renders every tank on its own escaped line with bot strength',
 test('free-for-all preserves one individual heading, strength label, and score per tank',()=>{
  const {s,$}=boot({ffa:true});s.renderLineup();const html=$('roster').innerHTML;
  assert.equal(memberLines(html).length,0);assert.match(html,/>PILOT \(P1\)<\/div>/);assert.match(html,/>RUST<\/div>/);
- assert.match(html,/>HUMAN PILOT<\/div>/);assert.match(html,/>FIERCE BOT<\/div>/);
+ assert.match(html,/>HUMAN PILOT<\/div>/);assert.match(html,/>HARD BOT<\/div>/);
  assert.equal((html.match(/class="score"/g)||[]).length,2);assert.equal(($('miniScores').innerHTML.match(/class="mini-score"/g)||[]).length,2);
 });
 test('local Survival lists current enemies with all strength levels and marks a fallen boss',()=>{
  const {s,$,players}=boot({survival:true});s.tanks.push(enemy(2,'easy'),enemy(3,'normal'),enemy(4,'hard'),enemy(5,'godlike',{boss:true,alive:false,name:'GODLIKE BOSS'}));
  s.renderLineup();const html=$('roster').innerHTML,lines=memberLines(html);
  assert.equal(players.length,2,'generated bots must remain outside room seats');
- assert.equal(lines.length,6);assert.match(lines[2],/Chill bot/);assert.match(lines[3],/Normal bot/);assert.match(lines[4],/Fierce bot/);assert.match(lines[5],/Godlike boss.*aria-label="Eliminated"/);
+ assert.equal(lines.length,6);assert.match(lines[2],/Easy bot/);assert.match(lines[3],/Medium bot/);assert.match(lines[4],/Hard bot/);assert.match(lines[5],/Godlike boss.*aria-label="Eliminated"/);
  assert.match(html,/class="lineup-member out">GODLIKE BOSS/);assert.match(html,/>RAIDERS<\/div>/);
  assert.equal((html.match(/class="score"/g)||[]).length,1,'enemy side does not have a fabricated score');
  assert.equal((html.match(/class="score-pips"/g)||[]).length,1);assert.equal(($('miniScores').innerHTML.match(/class="mini-score"/g)||[]).length,1);
@@ -66,7 +66,7 @@ test('local Survival lists current enemies with all strength levels and marks a 
 test('online Survival uses authoritative bodies and replaces reused enemy seats when waves change',()=>{
  const {s,$}=boot({online:true,survival:true});s.tanks.push(enemy(2,'easy',{name:'OLD DRAWN WAVE'}));
  s.online.snapshots=[{tanks:[...s.tanks.slice(0,2),enemy(2,'normal',{name:'CURRENT RAIDER'})]}];
- s.renderLineup();assert.match($('roster').innerHTML,/CURRENT RAIDER \(Normal bot\)/);assert.doesNotMatch($('roster').innerHTML,/OLD DRAWN WAVE/);
+ s.renderLineup();assert.match($('roster').innerHTML,/CURRENT RAIDER \(Medium bot\)/);assert.doesNotMatch($('roster').innerHTML,/OLD DRAWN WAVE/);
  s.online.snapshots.push({tanks:[...s.tanks.slice(0,2),enemy(2,'godlike',{name:'GODLIKE BOSS',boss:true})]});
  s.renderLineup();assert.match($('roster').innerHTML,/GODLIKE BOSS \(Godlike boss\)/);assert.doesNotMatch($('roster').innerHTML,/CURRENT RAIDER|OLD DRAWN WAVE/);
  s.online.snapshots.at(-1).tanks[2].alive=false;s.renderLineup();assert.match($('roster').innerHTML,/lineup-member out">GODLIKE BOSS/);
@@ -78,7 +78,7 @@ test('removed enemies disappear immediately during local and online wave breaks 
   if(online)s.online.snapshots.push({tanks:squad});else s.tanks=squad;
   s.renderLineup();assert.doesNotMatch($('roster').innerHTML,/OLD WAVE|survival-enemies/);
   const next=[...squad,enemy(2,'easy',{name:'NEW RUN'})];if(online)s.online.snapshots.push({tanks:next});else s.tanks=next;
-  s.renderLineup();assert.match($('roster').innerHTML,/NEW RUN \(Chill bot\)/);assert.doesNotMatch($('roster').innerHTML,/OLD WAVE/);
+  s.renderLineup();assert.match($('roster').innerHTML,/NEW RUN \(Easy bot\)/);assert.doesNotMatch($('roster').innerHTML,/OLD WAVE/);
  }
 });
 test('lobby and other modes never show stale generated bodies',()=>{
@@ -98,7 +98,7 @@ test('lineup cache avoids idle DOM writes but catches member deaths, strength ed
 test('solo practice keeps its bot squad score and gives each bot a separate strength line',()=>{
  const {s,$}=boot();s.mode='solo';s.tanks.push({...enemy(2,'easy',{alive:false}),human:false,survivalEnemy:false});
  s.renderLineup();const lines=memberLines($('roster').innerHTML);
- assert.equal(lines.length,2);assert.match(lines[0],/RUST \(Fierce bot\)/);assert.match(lines[1],/RAIDER 2 \(Chill bot\).*Eliminated/);
+ assert.equal(lines.length,2);assert.match(lines[0],/RUST \(Hard bot\)/);assert.match(lines[1],/RAIDER 2 \(Easy bot\).*Eliminated/);
  assert.match($('miniScores').innerHTML,/PILOT \(P1\) 2/);assert.match($('miniScores').innerHTML,/BOT SQUAD 2/);
 });
 

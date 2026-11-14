@@ -16,7 +16,7 @@ actual maze dimensions in online, solo, and local two-player modes.
 The beam is still instant. It stops at the first vulnerable opponent, with a
 shield absorbing the hit; it does not pierce tanks. The shooter's existing laser
 immunity is retained, including on reflected segments. In solo mode, bot lasers
-pass through other bots and their shields without damage. Normal/Fierce bots
+pass through other bots and their shields without damage. Medium/Hard bots
 can look for laser bank shots.
 
 The pickup still gives **three shots for up to ten seconds**, with a **0.85-second

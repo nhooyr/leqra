@@ -19,7 +19,7 @@ func TestIntegration427HugeSurvivalBossUsesExtendedPowerDuration(t *testing.T) {
 		}
 		return
 	}
-	t.Fatal("wave five has no Normal boss")
+	t.Fatal("wave five has no Medium boss")
 }
 
 func TestIntegration427MachineBudgetPausesDuringBreakAndResetsOnRevival(t *testing.T) {

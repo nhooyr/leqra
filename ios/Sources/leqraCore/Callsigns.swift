@@ -19,14 +19,17 @@ public enum CallsignPolicy {
     }
     public static func displayName(_ name: String, bot: Bool) -> String {
         guard bot else { return name }
-        if name.range(of: #"^Bot [0-9]+(?: - (?:Dumb|Easy|Normal|Hard|Godlike))?$"#, options: .regularExpression) != nil { return name }
+        if name.range(of: #"^Bot [0-9]+(?: - (?:Dumb|Easy|Normal|Medium|Hard|Godlike))?$"#, options: .regularExpression) != nil {
+            return name.hasSuffix(" - Normal") ? String(name.dropLast(6)) + "Medium" : name
+        }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = trimmed.lowercased().hasPrefix("bot ") ? String(trimmed.dropFirst(4)) : trimmed.lowercased() == "bot" ? "" : trimmed
-        return body.isEmpty ? "Bot" : "Bot " + body.capitalized(with: Locale(identifier: "en_US_POSIX"))
+        let formatted = body.isEmpty ? "Bot" : "Bot " + body.capitalized(with: Locale(identifier: "en_US_POSIX"))
+        return formatted.range(of: #"^Bot [0-9]+ - Normal$"#, options: .regularExpression) != nil ? String(formatted.dropLast(6)) + "Medium" : formatted
     }
     public static func leaderboardName(_ name: String, bot: Bool) -> String {
         let formatted = displayName(name, bot: bot)
-        guard bot, formatted.range(of: #"^Bot [0-9]+ - (?:Dumb|Easy|Normal|Hard|Godlike)$"#, options: .regularExpression) != nil,
+        guard bot, formatted.range(of: #"^Bot [0-9]+ - (?:Dumb|Easy|Medium|Hard|Godlike)$"#, options: .regularExpression) != nil,
               let separator = formatted.range(of: " - ") else { return formatted }
         return String(formatted[..<separator.lowerBound])
     }
@@ -35,9 +38,10 @@ public enum CallsignPolicy {
         let levels = ["dumb", "easy", "normal", "hard", "godlike"]
         if let difficulty = difficulty?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), levels.contains(difficulty) { return difficulty }
         let formatted = displayName(name, bot: true)
-        guard formatted.range(of: #"^Bot [0-9]+ - (?:Dumb|Easy|Normal|Hard|Godlike)$"#, options: .regularExpression) != nil,
+        guard formatted.range(of: #"^Bot [0-9]+ - (?:Dumb|Easy|Medium|Hard|Godlike)$"#, options: .regularExpression) != nil,
               let separator = formatted.range(of: " - ") else { return nil }
-        return String(formatted[separator.upperBound...]).lowercased()
+        let label = String(formatted[separator.upperBound...]).lowercased()
+        return label == "medium" ? "normal" : label
     }
     public static func isGenerated(_ name: String) -> Bool {
         name.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression) != nil

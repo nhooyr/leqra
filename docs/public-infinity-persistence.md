@@ -63,8 +63,11 @@ ranked identities, scores and permanent difficulties are saved too. Their bodies
 return only when a new encounter selects their matching difficulty, preserving
 the global ID and `Bot N` number. Parked bots do not count against the active
 population or Godlike cap. SQLite schema v2 adds the bot difficulty and monotonic
-life serial; old rows migrate from exact canonical Normal/Godlike name suffixes,
-defaulting other legacy bot rows to Dumb, with life serial zero. Newly saved serials continue
+life serial; old rows infer their tier from exact canonical Medium/Godlike name
+suffixes, also accepting the former Normal suffix for compatibility. Restored
+`Bot N - Normal` names become `Bot N - Medium`, retaining the same internal
+`normal` tier, ID, number, score and life serial. Other legacy bot rows default
+to Dumb, with life serial zero when it was not saved. Newly saved serials continue
 across restarts so a later Godlike life receives a fresh warning identity.
 Human profiles, scores, the maze seed, the identity counter and the public
 encounter cadence are preserved.

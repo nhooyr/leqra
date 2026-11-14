@@ -144,7 +144,7 @@ func TestInfinityTierRatesSelectNewIdentitiesWithoutRetieringOldOnes(t *testing.
 	a.nextBot = a.tick
 	a.populate()
 	if len(roamingBots(a)) != 1 || roamingBots(a)[0] == ambient || roamingBots(a)[0].botLevel != infiniteBotLevel("normal") {
-		t.Fatal("Normal opportunity reused Hard identity")
+		t.Fatal("Medium opportunity reused Hard identity")
 	}
 	a.rules.BotSpawnRates = map[string]float64{"hard": 2}
 	a.nextBot = a.tick
