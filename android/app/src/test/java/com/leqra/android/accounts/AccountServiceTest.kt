@@ -222,4 +222,81 @@ class AccountServiceTest {
             assertEquals(3, server.requestCount)
         }
     }
+    @Test
+    fun generationPersistsBothIndependentBearersBeforeSendingAndKeepsRetryId() {
+        MockWebServer().use { server ->
+            val store = Store()
+            var persistedBeforeRequest = false
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    persistedBeforeRequest = store.selected.size == 2 && store.backups.size == 2
+                    return MockResponse().setBody("""{"names":[{"seat":0,"name":"pilot#ABC234"},{"seat":1,"name":"pilot-klmnopqrst"}]}""")
+                }
+            }
+            server.start()
+            val origin = server.url("/").toString()
+            val service = AccountService(store) { it() }
+            val id = java.util.UUID.randomUUID().toString()
+            val result = awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(1, 0), id, it) }.getOrThrow()
+            assertTrue(persistedBeforeRequest)
+            assertNotEquals(result[0].key, result[1].key)
+            assertTrue(result.all { it.selected })
+            val first = server.takeRequest()
+            assertEquals("/api/callsigns/generate", first.path)
+            assertEquals("POST", first.method)
+            val body = org.json.JSONObject(first.body.readUtf8())
+            assertEquals(id, body.getString("requestId"))
+            for (seat in 0..1) {
+                assertEquals(seat, body.getJSONArray("accounts").getJSONObject(seat).getInt("seat"))
+                assertEquals(store.selected[seat]!!.key, body.getJSONArray("accounts").getJSONObject(seat).getString("publicToken"))
+                assertTrue(store.selected[seat]!!.registrationPending)
+            }
+            assertEquals(2, store.backups.size)
+            awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(0, 1), id, it) }.getOrThrow()
+            assertEquals(id, org.json.JSONObject(server.takeRequest().body.readUtf8()).getString("requestId"))
+            service.close()
+        }
+    }
+
+    @Test
+    fun reservedAvailabilityHasItsOwnReasonAndNeverAnImportHint() {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setBody("""{"names":[{"seat":0,"name":"Bot RUST","available":false,"reason":"reserved"}]}"""))
+            val service = AccountService(Store()) { it() }
+            val rows = awaitOperation<List<CallsignAvailability>> { service.availability(server.url("/").toString(), listOf("Bot RUST"), it) }.getOrThrow()
+            assertEquals("reserved", rows.single().reason)
+            assertFalse(rows.single().available)
+            service.close()
+        }
+    }
+
+    @Test
+    fun liveGenerationIsAtomicIdempotentAndFreshAttemptsKeepIndependentKeys() {
+        val configured = System.getenv("LEQRA_TEST_SERVER")
+        org.junit.Assume.assumeTrue("Set LEQRA_TEST_SERVER for the isolated Go integration", configured != null)
+        val origin = requireNotNull(configured)
+        val store = Store()
+        val service = AccountService(store) { it() }
+        try {
+            val requestID = java.util.UUID.randomUUID().toString()
+            val first = awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(0, 1), requestID, it) }.getOrThrow()
+            assertNotEquals(first[0].name, first[1].name)
+            assertNotEquals(first[0].key, first[1].key)
+            val repeated = awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(0, 1), requestID, it) }.getOrThrow()
+            assertEquals(first.map { it.name }, repeated.map { it.name })
+            val alone = awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(1), requestID, it) }.getOrThrow()
+            assertEquals(first[1].name, alone.single().name)
+            val fresh = awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(0), java.util.UUID.randomUUID().toString(), it) }.getOrThrow().single()
+            assertNotEquals(first[0].name, fresh.name)
+            assertEquals(first[0].key, fresh.key)
+            val info = awaitOperation<CheckedAccount> { service.inspect(origin, fresh.key, it) }.getOrThrow().info
+            assertTrue(info.names.containsAll(listOf(first[0].name, fresh.name)))
+            assertTrue(store.selected.values.all { it.registrationPending })
+            val reserved = awaitOperation<List<CallsignAvailability>> { service.availability(origin, listOf("Bot RUST"), it) }.getOrThrow().single()
+            assertFalse(reserved.available)
+            assertEquals("reserved", reserved.reason)
+        } finally { service.close() }
+    }
+
 }

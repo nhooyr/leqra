@@ -235,13 +235,47 @@ test('online Godlike warnings use authoritative bot difficulty rather than calls
  socket.receive({type:'welcome',id:1,seed:0});
  const tanks=[{id:1,name:'Godlike fan',bot:false,difficulty:'godlike',hp:1,x:42,y:42,colorIndex:0},
   {id:2,name:'Bot 2',bot:true,difficulty:'dumb',hp:1,x:126,y:42,colorIndex:1},
-  {id:3,name:'Godlike Bot 3',bot:true,difficulty:'godlike',hp:1,x:210,y:42,colorIndex:2}];
+  {id:3,name:'Bot 3 - Godlike',bot:true,difficulty:'godlike',hp:1,x:210,y:42,colorIndex:2}];
  socket.receive({type:'state',tick:1,tanks,bullets:[],players:1,leaderboard:[]});
  h.labels.length=0;h.advance();
  assert.equal(h.state().tanks.find(t=>t.id===3).difficulty,'godlike');
  const warnings=h.labels.filter(label=>label.text==='GODLIKE');assert.equal(warnings.length,1);
  assert.equal(warnings[0].color,'#ffc46b');
  h.infinity.close();
+});
+
+test('Infinity Starman loop follows either local pilot and stops on pause, expiry, death, disconnect and closure',()=>{
+ const h=harness(undefined,true),wanted=[];h.window.leqraInfinityArt.starmanAudio=active=>wanted.push(active);
+ h.infinity.start('offline',{localName:'Wing'});const world=h.state(),pilot=world.tanks.find(t=>t.id===world.local.id);
+ pilot.starmanTime=4;h.advance();assert.equal(wanted.at(-1),true,'P2 starts the shared loop');
+ h.infinity.togglePause();h.advance();assert.equal(wanted.at(-1),false);h.infinity.togglePause();h.advance();assert.equal(wanted.at(-1),true);
+ pilot.hp=0;h.advance();assert.equal(wanted.at(-1),false);pilot.hp=1;pilot.starmanTime=0;
+ world.tanks.find(t=>t.id===world.id).starmanTime=3;h.advance();assert.equal(wanted.at(-1),true);
+ world.tanks.find(t=>t.id===world.id).starmanTime=0;h.advance();assert.equal(wanted.at(-1),false);
+ h.infinity.close();assert.equal(wanted.at(-1),false);
+ h.infinity.start('online');const socket=h.sockets.at(-1);socket.receive({type:'welcome',id:1,seed:0});socket.receive({type:'state',tick:1,tanks:[{id:1,name:'Pilot',hp:1,starmanTime:5,x:42,y:42}],bullets:[],players:1,leaderboard:[]});
+ h.advance();assert.equal(wanted.at(-1),true);h.advance(125);assert.equal(wanted.at(-1),false,'a stale socket cannot sustain the loop');h.infinity.close();
+});
+
+test('nearby Godlike spawn notices precede encounters, deduplicate by life and never shift gameplay',()=>{
+ const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];
+ socket.receive({type:'welcome',id:1,seed:0});
+ const tanks=[{id:1,name:'Pilot',bot:false,hp:1,x:42,y:42,colorIndex:0,spawnSerial:1},
+  {id:3,name:'Bot 3 - Godlike',bot:true,difficulty:'godlike',hp:1,x:462,y:42,colorIndex:2,spawnSerial:2}];
+ const packet={type:'state',tick:1,tanks,bullets:[],players:1,leaderboard:[],godlikeSpawns:[{id:3,spawnSerial:2,name:'Bot 3 - Godlike'}]};
+ socket.receive(packet);const notice=h.byID('godlikeSpawnNotice');
+ assert.equal(notice.hidden,false);assert.match(notice.textContent,/Bot 3 - Godlike spawned nearby/);
+ h.advance(180);socket.receive({...packet,tick:3});h.advance(190);
+ assert.equal(notice.hidden,true,'repeated snapshots must not extend the six-second notice');
+ tanks[1].spawnSerial=3;socket.receive({...packet,tick:5,godlikeSpawns:[{id:3,spawnSerial:3,name:'Bot 3 - Godlike'}]});assert.equal(notice.hidden,false);
+ h.infinity.close();assert.equal(notice.hidden,true);
+});
+
+test('spawn notices cannot turn human callsigns into Godlike bot alerts',()=>{
+ const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];
+ socket.receive({type:'welcome',id:1,seed:0});
+ socket.receive({type:'state',tick:1,tanks:[{id:1,name:'Godlike Bot 7',bot:false,difficulty:'godlike',spawnSerial:1,hp:1,x:42,y:42}],bullets:[],players:1,leaderboard:[],godlikeSpawns:[{id:1,spawnSerial:1,name:'Godlike Bot 7'}]});
+ h.advance();assert.equal(h.byID('godlikeSpawnNotice').hidden,true);h.infinity.close();
 });
 
 test('Infinity primary defaults use Player 1 without replacing saved or explicit callsigns',()=>{

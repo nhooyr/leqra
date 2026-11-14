@@ -43,8 +43,24 @@ final class OnlineMotionTests: XCTestCase {
         let corrected = try XCTUnwrap(timeline.render(dt: 0, input: GameInput(), now: 1 / 120) { _ in }?.tanks.first)
         XCTAssertEqual(corrected.x, first.x, accuracy: 1e-9)
         let boundary = try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1 / 60) { _ in }?.tanks.first)
-        let expected = 100 + (first.x - 100) * exp(-(1 / 120) / 0.04)
+        let dt = 1.0 / 120
+        let authorityProgress = 3 * (1 - (1 + 20 * dt) * exp(-20 * dt))
+        let expected = 100 + (first.x - 100) * exp(-dt / 0.04) + authorityProgress
         XCTAssertEqual(boundary.x, expected, accuracy: 1e-9, "A network delta must not reappear as a second input-transition correction at the next tick.")
+    }
+
+    func testSpringVelocityCannotOvershootTheGhostCorrectionBound() throws {
+        let world = ArenaWorld(width: 4000, height: 4000, cols: 48, rows: 48)
+        let timeline = RenderTimeline(localID: 1) { tank, input, dt in
+            TankMovement.step(tank: &tank, input: input, dt: dt, walls: [], width: world.width, height: world.height)
+        }
+        timeline.accept(state(tick: 0, x: 2000, ghost: 60, world: world), at: 0)
+        let moved = try XCTUnwrap(timeline.render(dt: 1 / 60, input: GameInput(forward: true), now: 1 / 60) { _ in }?.tanks.first)
+        var authority = state(tick: 1, x: moved.x - 50, ack: 1, ghost: 60, world: world)
+        authority.tanks[0].angle = .pi
+        timeline.accept(authority, at: 1 / 60)
+        let shown = try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1 / 40) { _ in }?.tanks.first)
+        XCTAssertLessThanOrEqual(shown.x - authority.tanks[0].x, 12 + 1e-8)
     }
 
     func testFastTurningPredictionHasContinuousVelocityAcrossTheSixtyHzBoundary() throws {

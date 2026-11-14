@@ -25,6 +25,8 @@ type infiniteTank struct {
 	ID         int     `json:"id"`
 	X          float64 `json:"x"`
 	Y          float64 `json:"y"`
+	VX         float64 `json:"vx"`
+	VY         float64 `json:"vy"`
 	Angle      float64 `json:"angle"`
 	HP         int     `json:"hp"`
 	Bot        bool    `json:"bot"`
@@ -113,19 +115,20 @@ type infiniteBullet struct {
 }
 
 type infiniteSnapshot struct {
-	Type      string                `json:"type"`
-	Tick      uint64                `json:"tick"`
-	Tanks     []infiniteTank        `json:"tanks"`
-	Bullets   []infiniteBullet      `json:"bullets"`
-	Pickups   []Pickup              `json:"pickups"`
-	Effects   []infiniteEffect      `json:"effects,omitempty"`
-	Players   int                   `json:"players"`
-	TankCount int                   `json:"tankCount"`
-	Party     []infinitePartyLeader `json:"party,omitempty"`
-	Leaders   []infiniteLeader      `json:"leaderboard"`
-	Rules     *infiniteRules        `json:"rules,omitempty"`
-	Scores    *[4]int               `json:"teamScores,omitempty"`
-	Result    *infiniteResult       `json:"result,omitempty"`
+	Type          string                 `json:"type"`
+	Tick          uint64                 `json:"tick"`
+	Tanks         []infiniteTank         `json:"tanks"`
+	Bullets       []infiniteBullet       `json:"bullets"`
+	Pickups       []Pickup               `json:"pickups"`
+	Effects       []infiniteEffect       `json:"effects,omitempty"`
+	Players       int                    `json:"players"`
+	TankCount     int                    `json:"tankCount"`
+	Party         []infinitePartyLeader  `json:"party,omitempty"`
+	Leaders       []infiniteLeader       `json:"leaderboard"`
+	Rules         *infiniteRules         `json:"rules,omitempty"`
+	Scores        *[4]int                `json:"teamScores,omitempty"`
+	Result        *infiniteResult        `json:"result,omitempty"`
+	GodlikeSpawns []infiniteGodlikeSpawn `json:"godlikeSpawns,omitempty"`
 }
 
 type infiniteLeader struct {
@@ -187,6 +190,8 @@ type infiniteArena struct {
 	random                                  *rand.Rand
 	tick, nextBot                           uint64
 	publicBotLives                          uint64
+	clock                                   time.Time
+	godlikeSpawns                           []infiniteGodlikeSpawn
 	nextPickup                              uint64
 	nextID, nextBullet                      int
 	pickupID, effectID                      int
@@ -244,6 +249,7 @@ func (a *infiniteArena) join(c *Client, name string, now time.Time) *infinitePil
 func (a *infiniteArena) joinSeats(c *Client, first infiniteSeat, second *infiniteSeat, generation uint64, now time.Time) (*infinitePilot, *infinitePilot) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.clock = now
 	if a.maze == nil {
 		a.maze = newInfiniteMaze(a.seed)
 	}
@@ -390,6 +396,7 @@ func (a *infiniteArena) resume(c *Client, p *infinitePilot, generation uint64, n
 
 func (p *infinitePilot) clearControls() {
 	p.input, p.fireDown, p.firePending = Input{}, false, false
+	p.VX, p.VY = 0, 0
 	p.kit.fireHeld, p.kit.fireBlocked = false, false
 	p.lastStickX, p.lastStickY = 0, 0
 }
@@ -550,6 +557,7 @@ func (a *infiniteArena) spawn(p *infinitePilot, nearX, nearY float64, minCells, 
 		}
 	}
 	p.X, p.Y, p.Angle = bestX, bestY, a.random.Float64()*2*math.Pi-math.Pi
+	p.VX, p.VY = 0, 0
 	p.HP, p.Protected, p.hasWaypoint = infiniteMaxHP, true, false
 	p.KilledBy = ""
 	p.KilledByColor = ""
@@ -570,6 +578,7 @@ func infiniteCenter(x, y int) (float64, float64) {
 func (a *infiniteArena) step(now time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.clock = now
 	if a.players == 0 || a.result != nil {
 		return
 	}
@@ -667,6 +676,7 @@ func (a *infiniteArena) drive(p *infinitePilot, input Input) {
 		p.Y += dy
 	}
 	p.Track += math.Hypot(p.X-x, p.Y-y)
+	p.VX, p.VY = (p.X-x)/tickDT, (p.Y-y)/tickDT
 }
 
 func (a *infiniteArena) roamingBotBudget() int {
@@ -783,6 +793,7 @@ func (a *infiniteArena) populate() {
 			}
 		} else {
 			bot.publicBotName()
+			a.recordGodlikeSpawn(bot)
 		}
 		if a.teams() {
 			var counts [5]int
@@ -958,6 +969,8 @@ func (a *infiniteArena) broadcast() {
 	if a.connected == 0 {
 		return
 	}
+	now := a.spawnNoticeTime()
+	a.pruneGodlikeSpawns(now)
 	packet := &a.snapshot
 	packet.Tick, packet.Players, packet.TankCount = a.tick, a.connected, len(a.pilots)
 	packet.Rules, packet.Result = a.rules, a.result
@@ -974,6 +987,9 @@ func (a *infiniteArena) broadcast() {
 	clear(tankIndex)
 	for i, p := range a.pilots {
 		tanks[i] = p.wireTank(a.tick)
+		if a.result != nil {
+			tanks[i].VX, tanks[i].VY = 0, 0
+		}
 		tankIndex[p.ID] = i
 	}
 	var parties map[infiniteRoom][]infinitePartyLeader
@@ -1035,7 +1051,8 @@ func (a *infiniteArena) broadcast() {
 	pickupOffset := len(a.pilots)
 	effectOffset := pickupOffset + len(a.pickups)
 	bulletOffset := effectOffset + len(a.effects)
-	mask := make([]byte, (bulletOffset+len(a.bullets)+7)/8)
+	spawnOffset := bulletOffset + len(a.bullets)
+	mask := make([]byte, (spawnOffset+len(a.godlikeSpawns)+7)/8)
 	mark := func(index int) { mask[index/8] |= 1 << (index % 8) }
 	for _, viewer := range a.pilots {
 		if viewer.client == nil {
@@ -1044,6 +1061,15 @@ func (a *infiniteArena) broadcast() {
 		clear(mask)
 		packet.Party = parties[viewer.party]
 		packet.Tanks, packet.Bullets, packet.Pickups, packet.Effects = packet.Tanks[:0], packet.Bullets[:0], packet.Pickups[:0], packet.Effects[:0]
+		packet.GodlikeSpawns = packet.GodlikeSpawns[:0]
+		if a.rules == nil {
+			for i, event := range a.godlikeSpawns {
+				if viewer.nearGodlikeSpawn(event, now) {
+					mark(spawnOffset + i)
+					packet.GodlikeSpawns = append(packet.GodlikeSpawns, event)
+				}
+			}
+		}
 		for i, p := range a.pilots {
 			if viewer.sees(p.X, p.Y) {
 				mark(i)

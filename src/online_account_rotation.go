@@ -81,6 +81,7 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 			{"UPDATE infinity_profiles SET token_hash=? WHERE token_hash=?", []any{newHash, oldHash}},
 			{"UPDATE online_seat_migrations SET previous_hash=? WHERE previous_hash=?", []any{newHash, oldHash}},
 			{"UPDATE online_seat_migrations SET new_hash=? WHERE new_hash=?", []any{newHash, oldHash}},
+			{"UPDATE online_generated_fresh SET token_hash=? WHERE token_hash=?", []any{newHash, oldHash}},
 			{"INSERT INTO online_revoked(token_hash) VALUES(?)", []any{oldHash}},
 			{"DELETE FROM online_owners WHERE token_hash=?", []any{oldHash}},
 		} {
@@ -108,6 +109,10 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 	}
 	r.seatMigrations = migrations
 	delete(r.owners, oldHash)
+	if r.generatedFresh[oldHash] {
+		delete(r.generatedFresh, oldHash)
+		r.generatedFresh[newHash] = true
+	}
 	r.owners[newHash] = true
 	r.revoked[oldHash] = true
 	r.names[newHash] = r.names[oldHash]

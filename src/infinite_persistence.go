@@ -285,6 +285,11 @@ func publicJoinClaimError(c *Client, err error) string {
 		return infiniteAccountKeyRevoked
 	}
 	var conflict *callsignConflictError
+	var reserved *callsignReservedError
+	if errors.As(err, &reserved) {
+		c.callsignConflicts, c.callsignReserved = reserved.Conflicts, true
+		return reserved.Error()
+	}
 	if errors.As(err, &conflict) {
 		c.callsignConflicts = conflict.Conflicts
 		return conflict.Error()
@@ -540,6 +545,15 @@ func (s *infiniteServer) resumePublic(c *Client, msg infiniteMessage, now time.T
 	}
 	if enabled {
 		seats++
+	}
+	if !msg.UpdateNames {
+		names := []string{a.publicEntries[profile.primary].Name}
+		if enabled {
+			names = append(names, a.publicEntries[profile.local].Name)
+		}
+		if err := reservedCallsigns(names); err != nil {
+			return infiniteConnection{}, publicJoinClaimError(c, err)
+		}
 	}
 	existingSeats := 0
 	if previous.pilot != nil {

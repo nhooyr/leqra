@@ -15,13 +15,13 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.42';
+const GAME_VERSION='4.49.43';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
 const MAX_TANKS=8;
 const COLORS=['#d2f65a','#ff9679','#73cee4','#c5a2ff','#ffc46b','#ff83bd','#75f0cb','#b7c6ee'];
-const NAMES=['Player 1','RUST','VAPOR','EMBER'];
+const NAMES=['Player 1','Rust','Vapor','Ember'];
 const DIFFICULTY={
  dumb:{speed:60,turn:1.8,think:.9,aim:.6,reaction:1.8,lead:0,dodge:false,dodgeLook:0,bank:false},
  easy:{speed:89,turn:2.8,think:.30,aim:.10,reaction:.72,lead:.4,dodge:false,dodgeLook:0,bank:false},
@@ -167,7 +167,7 @@ function scoreboardEntries(rules=currentRules()){
    if(!entry){entry={...p,local,color:p.team>0?teamColor(p.id,p.team):identity.color,name:p.team>0?teamName(p.team):identity.label,alive:false,meta:'',members:[]};groups.set(key,entry);result.push(entry);}
    entry.alive ||= alive;
    if(p.team>0)entry.members.push(lineupMember({...p,name:identity.label},alive,local));
-   else entry.meta=p.kind==='bot'?botLevelName(p.difficulty).toUpperCase()+' BOT':p.kind==='local'?'LOCAL PILOT':'PILOT';
+   else entry.meta=p.kind==='bot'?botLevelName(p.difficulty).toUpperCase()+' BOT':'HUMAN PILOT';
   }
   if(data?.rules?.mode==='survival'&&!['menu','onlineLobby'].includes(phase)){
    const enemies=bodies.filter(t=>t.survivalEnemy);
@@ -200,6 +200,8 @@ function roundRect(c,x,y,w,h,r){r=Math.max(0,Math.min(r,w/2,h/2));c.beginPath();
 let audioLevel=null,audioMix=null,audioEpoch=0,audioResumeStarted=-Infinity,audioResumeActivated=false,pendingAudioEffects=0;
 let arenaAudioActive=false;
 const nativeAudioTimers=new Set(),audioSources=new Set();
+let starmanWanted=false,starmanSource=null,starmanGain=null,starmanBuffer=null,starmanPCM=null,starmanStarting=false,starmanAttempt=0;
+const STARMAN_MELODY=[74,78,81,86,83,81,78,81,76,79,83,88,86,83,79,83,74,81,86,90,88,86,81,78,73,76,81,85,83,81,76,73],STARMAN_BASS=[50,55,50,57,50,55,52,57];
 const SOUND_EFFECT_GAIN=32;
 const SOUND_LEVELS=Object.freeze({ricochet:.016,impact:.025,shield:.020,explosionNoise:.10,explosionBass:.055,explosionNativeBass:.055,explosionNativeTail:.028});
 // Rounded voices leave room for explosions and keep repeated fire comfortable.
@@ -217,6 +219,47 @@ const onlineBounceCounts=new Map();
 const nativeVoices=new Map();
 function audioScale(){return clamp(audioVolume/100,0,1);}
 function canPlayAudio(){return !(typeof settingsResetActive!=='undefined'&&settingsResetActive)&&!muted&&audioVolume>0&&!document.hidden&&document.hasFocus();}
+// An original four-second arcade phrase shared with both native synthesizers.
+// One cached PCM voice avoids timers and oscillator allocation during gameplay.
+function starmanLoopSamples(rate=22050){
+ if(!Number.isFinite(rate)||rate<16000||rate>192000)return new Float32Array(0);
+ const data=new Float32Array(Math.round(rate*4)),lead=STARMAN_MELODY.map(m=>440*Math.pow(2,(m-69)/12)),bass=STARMAN_BASS.map(m=>440*Math.pow(2,(m-69)/12));
+ for(let i=0;i<data.length;i++){
+  const now=i/rate,step=Math.min(31,Math.floor(now/.125)),t=now-step*.125,beat=Math.min(7,Math.floor(now/.5)),b=now-beat*.5;
+  if(t<.105){const p=TAU*lead[step]*t,env=Math.min(1,t/.006)*Math.min(1,(.105-t)/.035)*(.7+.3*Math.exp(-10*t));data[i]=.0035*env*(Math.sin(p)-Math.sin(3*p)/9+Math.sin(5*p)/25)*8/(Math.PI*Math.PI);}
+  if(b<.42){const p=TAU*bass[beat]*b,env=Math.min(1,b/.008)*Math.min(1,(.42-b)/.06);data[i]+=.0018*env*(Math.sin(p)+.18*Math.sin(2*p));}
+ }
+ return data;
+}
+function prepareStarmanBuffer(){
+ if(!starmanPCM)starmanPCM=starmanLoopSamples();
+ if(!starmanBuffer&&audio){starmanBuffer=audio.createBuffer(1,starmanPCM.length,22050);starmanBuffer.getChannelData(0).set(starmanPCM);}
+ return starmanBuffer;
+}
+function stopStarmanAudio(){
+ if(!starmanSource&&!starmanStarting)return;
+ starmanAttempt++;starmanStarting=false;
+ const source=starmanSource,gain=starmanGain;starmanSource=starmanGain=null;
+ if(!source)return;
+ try{const t=audio.currentTime,param=gain.gain;if(param.cancelAndHoldAtTime)param.cancelAndHoldAtTime(t);else{const level=param.value;param.cancelScheduledValues(t);param.setValueAtTime(level,t);}param.linearRampToValueAtTime(0,t+.012);source.stop(t+.014);}catch(_){try{source.stop();}catch(_){}}
+}
+function syncStarmanAudio(wanted){
+ starmanWanted=!!wanted;
+ if(!starmanWanted||!arenaAudioActive||!canPlayAudio()){stopStarmanAudio();return;}
+ if(starmanSource||starmanStarting)return;
+ const attempt=++starmanAttempt,epoch=audioEpoch,waiting=audio?.state!=='running';starmanStarting=true;
+ audioWhenReady(()=>{
+  if(attempt!==starmanAttempt)return;starmanStarting=false;
+  if(epoch!==audioEpoch||!starmanWanted||!arenaAudioActive||!canPlayAudio())return;
+  try{const source=audio.createBufferSource(),gain=audio.createGain(),t=audio.currentTime;source.buffer=prepareStarmanBuffer();source.loop=true;gain.gain.setValueAtTime(0,t);gain.gain.linearRampToValueAtTime(1,t+.012);source.connect(gain);audioConnect(gain);starmanSource=source;starmanGain=gain;source.onended=()=>{source.disconnect();gain.disconnect();};source.start(t);}catch(_){stopStarmanAudio();}
+ });
+ // A blocked autoplay attempt must not accumulate work or strand the loop.
+ if(waiting)initAudio().then(()=>{if(attempt===starmanAttempt)starmanStarting=false;});
+}
+function syncFiniteStarmanAudio(){
+ const playing=gameStarted&&phase==='playing'&&(mode!=='online'||online.connected&&!online.menu&&!online.spectating&&performance.now()-(online.snapshots.at(-1)?.received??-Infinity)<2000);
+ syncStarmanAudio(playing&&tanks.some(t=>t.alive&&t.starmanTime>0&&(t.id===localPlayerID()||t.id===secondaryID())));
+}
 function setArenaAudio(active){
  if(arenaAudioActive===active)return;
  arenaAudioActive=active;
@@ -246,7 +289,8 @@ function ensureNativeAudioPool(){
  if(nativeAudioPool.length)return nativeAudioPool;for(let i=0;i<8;i++){const a=new Audio();a.preload='auto';a.playsInline=true;a.setAttribute('playsinline','');nativeAudioPool.push(a);}return nativeAudioPool;
 }
 function silenceNativeVoices(){for(const voice of nativeVoices.keys()){try{voice.pause();}catch(_){}}nativeVoices.clear();}
-function cancelPendingAudio(){
+function cancelPendingAudio(keepStarman=false){
+ if(!keepStarman)stopStarmanAudio();
  audioEpoch++;lastExplosionSound=lastGrenadeSound=lastRicochetSound=-Infinity;
  for(const source of audioSources){try{source.stop();}catch(_){}}
  audioSources.clear();
@@ -258,7 +302,7 @@ function trackAudioSource(source,cleanup){
  source.onended=()=>{audioSources.delete(source);cleanup();};
 }
 function createAudioGraph(){
- if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;if(audio)cancelPendingAudio();audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;audioMaster=audio.createGain();audioMix=audio.createGain();audioMix.gain.value=SOUND_EFFECT_GAIN;
+ if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;if(audio)cancelPendingAudio();audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;starmanBuffer=null;prepareStarmanBuffer();audioMaster=audio.createGain();audioMix=audio.createGain();audioMix.gain.value=SOUND_EFFECT_GAIN;
  // Protect the combined mix when deaths and shots overlap. Allocate this graph
  // once per context; individual effect shapes and their relative gains stay intact.
  const peak=audio.createDynamicsCompressor(),trim=audio.createGain(),limit=audio.createWaveShaper(),threshold=-3,ratio=4;
@@ -351,7 +395,7 @@ function pickupSound(){tone(480,520,.095,.013,'sine',0,.034);tone(640,700,.10,.0
 function chatNotificationSound(){if(!arenaAudioActive||!canPlayAudio())return;const now=performance.now();if(now-lastChatNotify<180)return;lastChatNotify=now;tone(660,720,.07,.014,'sine',0,.024);tone(880,760,.09,.010,'sine',.065,.024);}
 function normalizeVolume(value){const n=clamp(Math.round(Number(value)||0),0,100);return Math.abs(n-50)<=4?50:n;}
 function syncVolumeControl(){const slider=$('masterVolume'),label=$('masterVolumeValue');if(slider)slider.value=String(audioVolume);if(label)label.textContent=audioVolume+'%';}
-function setAudioVolume(value,persist=false,preview=false){const next=normalizeVolume(value);if(next!==audioVolume)cancelPendingAudio();audioVolume=next;applyAudioLevel();syncVolumeControl();if(persist)save('volume',audioVolume);if(preview&&!muted&&audioVolume>0)playTone(620,760,.10,.008,'sine');}
+function setAudioVolume(value,persist=false,preview=false){const next=normalizeVolume(value);if(next!==audioVolume)cancelPendingAudio(next>0&&audioVolume>0&&!muted);audioVolume=next;applyAudioLevel();syncVolumeControl();if(persist)save('volume',audioVolume);if(preview&&!muted&&audioVolume>0)playTone(620,760,.10,.008,'sine');}
 function syncSound(){ for(const id of ['soundBtn','infiniteSoundBtn']){const button=$(id);if(button){button.classList.toggle('muted',muted);button.setAttribute('aria-pressed',String(!muted));button.setAttribute('aria-label',muted?'Unmute sound':'Mute sound');}}applyAudioLevel();syncVolumeControl(); }
 function toggleSound(){muted=!muted;save('muted',muted?1:0);syncSound();if(!muted){primeWebAudio(true);playTone(500,700,.1,.008);}}
 function primeAudioUnlock(event){if(event?.isTrusted===false||event?.repeat||event?.type==='pointerdown'&&event.pointerType!=='mouse'||!canPlayAudio()||audio?.state==='running')return;primeWebAudio(true);}
@@ -1644,7 +1688,7 @@ function tankPowerBadgeImage(kind){
  const def=POWER[kind];c.translate(32,32);c.fillStyle='#0b141be8';c.strokeStyle=def.color;c.lineWidth=3;c.beginPath();c.arc(0,0,27,0,TAU);c.fill();c.stroke();c.save();c.scale(1.38,1.38);powerIcon(kind,c);c.restore();
  if(tankPowerBadgeCache.size>=16)tankPowerBadgeCache.delete(tankPowerBadgeCache.keys().next().value);tankPowerBadgeCache.set(kind,image);return image;
 }
-function tankLabel(t){const member=mode==='room'?localRoom.players.find(p=>p.id===t.id):mode==='online'?roomMember(t.id):null;if(t.survivalEnemy||t.bot||t.human===false||member?.kind==='bot')return t.name;const index=member?.kind==='local'||t.localIndex===1||mode==='duel'&&t.id===1?1:0;return pilotIdentity(index,t,index===1).label;}
+function tankLabel(t){const member=mode==='room'?localRoom.players.find(p=>p.id===t.id):mode==='online'?roomMember(t.id):null;if(t.survivalEnemy||t.bot||t.human===false||member?.kind==='bot')return (typeof window!=='undefined'&&window.leqraCallsigns?.botName(t.name,true))||t.name;const index=member?.kind==='local'||t.localIndex===1||mode==='duel'&&t.id===1?1:0;return pilotIdentity(index,t,index===1).label;}
 function tankStatusLayout(t){
  const zoom=Math.max(.05,scale),font=Math.max(10,10/zoom),labelHeight=Math.max(13,font*1.25+3),margin=2*Math.max(1,.72/zoom);
  // Anchor to the hull, not the current effects: names stay close and do not
@@ -1903,7 +1947,7 @@ function frame(now){if(typeof settingsResetActive!=='undefined'&&settingsResetAc
  const workStart=performance.now();
  if(mode==='online'){accumulator=0;onlineUpdate(elapsed);renderOnlineMotion(elapsed,now);}
  else{accumulator+=elapsed;let steps=0;while(accumulator>=1/120&&steps<12){update(1/120);accumulator-=1/120;steps++;}}
- flushMatchPresentation(now);updateCombatFeedback();render();sampleFrame(now,performance.now()-workStart);requestAnimationFrame(frame);}
+ flushMatchPresentation(now);syncFiniteStarmanAudio();updateCombatFeedback();render();sampleFrame(now,performance.now()-workStart);requestAnimationFrame(frame);}
 // Online play: the server owns the world. This client sends controls only.
 // Remote entities interpolate snapshots; the local tank predicts movement and
 // reconciles to authoritative positions. Predictions never award hits or points.
@@ -2012,7 +2056,7 @@ function canEditTankPaint(player,r){
 function roomPlayerIdentity(player,r=roomData()){
  if(!player)return pilotIdentity(0,null);
  const color=player.color||(player.spectating&&r?.rules?.teamMode==='ffa'&&!(player.team>0)&&!(Number.isInteger(player.colorIndex)&&player.colorIndex>=0&&player.colorIndex<8)&&player.spectatorColor)||teamColor(player.id,player.team,player.colorIndex,r.rules);
- if(player.kind==='bot'||player.bot||player.survivalEnemy||player.human===false)return{name:player.name,label:player.name,color};
+ if(player.kind==='bot'||player.bot||player.survivalEnemy||player.human===false)return{name:player.name,label:(typeof window!=='undefined'&&window.leqraCallsigns?.botName(player.name,true))||player.name,color};
  const paired=player.kind==='local'||roomMembers(r).some(p=>p.kind==='local'&&p.owner===player.id);
  return pilotIdentity(player.kind==='local'?1:0,{...player,color},paired);
 }
@@ -2101,7 +2145,7 @@ function rememberCallsign(name){
  if(online.code&&online.token)storeOnlineSession();
 }
 function rememberLocalCallsign(name){try{localStorage.setItem('leqra.local2Name',name);}catch(_){}}
-function savedLocalCallsign(){try{return cleanPilotName(localStorage.getItem('leqra.local2Name')||'')||'CO-PILOT';}catch(_){return 'CO-PILOT';}}
+function savedLocalCallsign(){if(typeof window!=='undefined'&&window.leqraCallsigns)return window.leqraCallsigns.initial(1);try{return cleanPilotName(localStorage.getItem('leqra.local2Name')||'')||'CO-PILOT';}catch(_){return 'CO-PILOT';}}
 // Durable bearer ownership is separate from callsigns and room reconnect tokens.
 function publicIdentityToken(seat=0){const memory=seat===1?'localMemory':'memory',key=seat===1?'leqra.localPublicToken':'leqra.publicToken';if(typeof publicIdentityToken[memory]==='string')return publicIdentityToken[memory];try{return localStorage.getItem(key)||(seat===1?JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token:'')||'';}catch(_){return '';}}
 function rememberPublicIdentity(token,expected,seat=0){if(typeof token!=='string'||token.length>256)return;if(expected!==undefined&&publicIdentityToken(seat)!==expected&&publicIdentityToken(seat)!==token)return;const memory=seat===1?'localMemory':'memory',key=seat===1?'leqra.localPublicToken':'leqra.publicToken';delete publicIdentityToken[memory];try{if(token)localStorage.setItem(key,token);else localStorage.removeItem(key);if(seat===1&&(token&&localStorage.getItem(key)===token&&JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===token||!token&&(!expected||JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===expected)))localStorage.removeItem('leqra.localAccountRegistration');}catch(_){publicIdentityToken[memory]=token;} }
@@ -2112,7 +2156,7 @@ function prepareLocalAccount(){
   const bytes=crypto.getRandomValues(new Uint8Array(32));token='p_'+btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const record=JSON.stringify({token});localStorage.setItem('leqra.localAccountRegistration',record);if(localStorage.getItem('leqra.localAccountRegistration')!==record)throw Error('The P2 account key could not be saved. Enable browser storage before going online.');delete publicIdentityToken.localMemory;
  }
- return{localPublicToken:token,localNewAccount:!localStorage.getItem('leqra.localPublicToken')&&localAccountRegistrationPending(token)?true:undefined};
+ return{localPublicToken:token,localNewAccount:localAccountRegistrationPending(token)?true:undefined};
 }
 function localAccountRegistrationPending(token){try{return !!token&&JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===token;}catch(_){return false;}}
 function accountSeat(){return $('accountDialog')?.dataset?.accountSeat==='1'?1:0;}
@@ -2155,7 +2199,7 @@ function openAccount(seat=0){
  const timeout=setTimeout(()=>controller.abort(),6000);
  fetchAccountInfo(token,controller.signal).then(data=>{
   if(!dialog.open||dialog.accountCurrentRequest!==controller||publicIdentityToken(seat)!==token||accountSeat()!==seat)return;
-  dialog.accountRegisteredKey=token;if(seat===1&&localAccountRegistrationPending(token))rememberPublicIdentity(token,token,1);renderAccountInfo($('accountCurrentInfo'),data);accountNotice('accountCurrentNotice','');syncAccountImport();
+  dialog.accountRegisteredKey=token;if(seat===1&&data.publicProfile&&localAccountRegistrationPending(token))rememberPublicIdentity(token,token,1);renderAccountInfo($('accountCurrentInfo'),data);accountNotice('accountCurrentNotice','');syncAccountImport();
  },error=>{if(dialog.open&&dialog.accountCurrentRequest===controller&&error.name!=='AbortError')accountNotice('accountCurrentNotice',seat===1&&error.status===401&&error.code!=='account_key_revoked'&&localAccountRegistrationPending(token)?'P2’s key is saved on this device. Go online with P2 to activate it, then copy the key.':error.message,true);}).finally(()=>{clearTimeout(timeout);if(dialog.accountCurrentRequest===controller)delete dialog.accountCurrentRequest;});
 }
 async function copyAccountKey(){
@@ -2206,11 +2250,13 @@ function clearPendingAccountKeys(previous,seat=0){
 }
 function completeAccountReset(record,data){
  const dialog=$('accountDialog'),seat=record.seat??0,current=publicIdentityToken(seat);
+ const firstGamePending=seat===1&&localAccountRegistrationPending(record.previous)&&!data.publicProfile;
  if(current&&current!==record.previous&&current!==record.replacement){
   if(dialog.open&&accountSeat()===seat&&accountImportAllowed()){$('accountImportKey').value=record.replacement;showAccountImportReview(record.replacement,data,current,record.previous,seat);accountNotice('accountCurrentNotice','A previous key reset completed. Review the recovered account below to use it.');}
   return;
  }
  rememberPublicIdentity(record.replacement,undefined,seat);
+ if(firstGamePending)localStorage.setItem('leqra.localAccountRegistration',JSON.stringify({token:record.replacement}));
  let saved=false;try{saved=localStorage.getItem(accountStorageKey(seat))===record.replacement;if(saved)clearPendingAccountKeys(record.previous,seat);}catch(_){}
  if(!dialog.open||accountSeat()!==seat)return;
  dialog.accountCurrentRequest?.abort();delete dialog.accountCurrentRequest;clearAccountImport();$('accountImportKey').value='';$('accountKey').type='password';$('accountKey').value=record.replacement;renderAccountInfo($('accountCurrentInfo'),data);syncAccountImport();
@@ -2288,9 +2334,11 @@ function scheduleCallsignAvailability(field,form,delay=250){
  field.callsignCheckTimer=setTimeout(()=>checkCallsignAvailability(field,form,revision,draft),delay);
 }
 async function checkCallsignAvailability(field,form,revision,draft){
- if(!['http:','https:'].includes(location.protocol)||field.disabled)return;
+ if(field.disabled)return;
+ if(window.leqraCallsigns?.reserved(draft)){window.leqraCallsigns.status(field,form,'The Bot prefix is reserved for bots.',true,'reserved');return;}
+ if(!['http:','https:'].includes(location.protocol))return;
  const status=form?.querySelector('.callsign-status')||$('pilotNameStatus'),name=cleanPilotName(draft);
- const setStatus=(text,error=false)=>{status.textContent=text;if(error&&status.append){const action=document.createElement('button');action.type='button';action.className='callsign-account-action';action.textContent='Import account key';action.onclick=()=>openAccount(form?.dataset.pilot==='secondary'?1:0);status.append(action);}status.hidden=!text;status.classList.toggle('error',error);field.setAttribute('aria-invalid',String(error));};
+ const setStatus=(text,error=false)=>{if(window.leqraCallsigns){window.leqraCallsigns.status(field,form,text,error);return;}status.textContent=text;if(error&&status.append){const action=document.createElement('button');action.type='button';action.className='callsign-account-action';action.textContent='Import account key';action.onclick=()=>openAccount(form?.dataset.pilot==='secondary'?1:0);status.append(action);}status.hidden=!text;status.classList.toggle('error',error);field.setAttribute('aria-invalid',String(error));};
  if(!name){setStatus(draft?'Enter letters or numbers.':'');return;}
  const controller=new AbortController(),ownerToken=publicIdentityToken(),localToken=publicIdentityToken(1);field.callsignCheckController=controller;
  const timeout=setTimeout(()=>controller.abort(),4000);
@@ -2301,6 +2349,7 @@ async function checkCallsignAvailability(field,form,revision,draft){
   if(publicIdentityToken()!==ownerToken||publicIdentityToken(1)!==localToken||JSON.stringify(callsignAvailabilityNames(field,form))!==JSON.stringify(names)){scheduleCallsignAvailability(field,form,0);return;}
   const seat=form?.dataset.pilot==='secondary'?1:0,entry=data.names?.find(entry=>entry.seat===seat);
   if(typeof entry?.available!=='boolean')throw Error('Invalid availability response');
+  if(entry.reason==='reserved'&&window.leqraCallsigns){window.leqraCallsigns.status(field,form,'The Bot prefix is reserved for bots.',true,'reserved');return;}
   const available=entry.available&&!data.names.some(candidate=>!candidate.available&&cleanPilotName(candidate.name).toLowerCase()===name.toLowerCase());
   field.callsignUnavailable=!available;
   const offline=form&&(form.dataset.arena==='infinity'?$('infiniteArena').dataset.mode==='offline':mode==='room');
@@ -2315,12 +2364,41 @@ function showCallsignConflicts(message){
   if(conflicts.some(conflict=>conflict.seat===seat))callsignStatus(form,'Taken online. Yours?',true);
  }
  if(conflicts.some(conflict=>conflict.seat===0)){
+  if(window.leqraCallsigns){window.leqraCallsigns.status($('pilotName'),null,'Used online; offline is OK.',true);return;}
   const status=$('pilotNameStatus');status.textContent='Taken online. Yours?';if(status.append){const action=document.createElement('button');action.type='button';action.className='callsign-account-action';action.textContent='Import account key';action.onclick=openAccount;status.append(action);}status.hidden=false;status.classList.add('error');
  }
 }
 function callsignForms(){return [$('roomCallsignForm'),$('menuCallsignForm'),$('roomP2CallsignForm'),$('menuP2CallsignForm'),$('infiniteCallsignForm'),$('infiniteP2CallsignForm')].filter(Boolean);}
+function generatedCallsign(seat){return seat?savedLocalCallsign():$('pilotName').value;}
+function generatedEntryScope(){
+ const active=captureActionScope(),revision=window.leqraCallsigns.revision(),keys=[publicIdentityToken(0),publicIdentityToken(1)],rules=JSON.stringify(currentRules());
+ const roster=()=>JSON.stringify(localRoom.players.map(p=>[p.id,p.member,p.kind,p.owner,p.team,p.colorIndex,p.difficulty,p.spectating,p.kind==='bot'?p.name:'']));
+ const initialRoster=roster();
+ return()=>!settingsResetActive&&active()&&window.leqraCallsigns.revision()===revision&&keys.every((key,seat)=>publicIdentityToken(seat)===key)&&JSON.stringify(currentRules())===rules&&roster()===initialRoster;
+}
+function initGeneratedCallsigns(){
+ window.leqraCallsigns?.init({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,openAccount,offline:()=>mode==='room'&&(!$('infiniteArena').open||$('infiniteArena').dataset.mode==='offline'),
+  canApply(seat,draft,context){
+   if(settingsResetActive)return false;
+   if(context)return context.field.isConnected!==false&&context.field.value===context.draft&&context.form?.dataset.member===context.member;
+   if(generatedCallsign(seat)!==draft)return false;
+   return !callsignForms().some(form=>!form.hidden&&(form.dataset.pilot==='secondary'?1:0)===seat&&form.elements.callsign.value.trim()!==draft);
+  },
+  apply(seat,name,context){
+   if(context){context.field.value=name;context.field.callsignUnavailable=false;if(context.form)submitCallsign(context.form);else{rememberCallsign(name);$('pilotName').value=name;}return;}
+   if(seat)rememberLocalCallsign(name);else{rememberCallsign(name);$('pilotName').value=name;}
+   if($('infiniteArena').open&&$('infiniteArena').dataset.mode==='offline')window.leqraInfinity.renamePilot(seat,name).catch(()=>{});
+   if(mode==='room'){
+    const player=seat?secondaryMember():roomMember(localRoom.self);if(player)player.name=name;
+    const tank=player&&tanks.find(t=>t.id===player.id);if(tank)tank.name=name;
+    persistLocalRoomRules();renderOnlineRoom();updateHUD(true);
+   }
+  }
+ });
+}
 function editorPilot(form){return form.dataset.arena==='infinity'?$('infiniteArena')?.open?window.leqraInfinity?.localPilots?.()[form.dataset.pilot==='secondary'?1:0]:null:form.dataset.pilot==='secondary'?secondaryMember():roomMember(localPlayerID());}
 function callsignStatus(form,text,error=false){
+ if(window.leqraCallsigns){window.leqraCallsigns.status(form.elements.callsign,form,text,error,error&&/reserved/i.test(text)?'reserved':error&&/callsign|taken|used online/i.test(text)?'taken':'message');return;}
  const status=form.querySelector('.callsign-status');status.textContent=text;if(error&&/callsign|taken|used online/i.test(text)&&status.append){const action=document.createElement('button');action.type='button';action.className='callsign-account-action';action.textContent='Import account key';action.onclick=()=>openAccount(form.dataset.pilot==='secondary'?1:0);status.append(action);}status.hidden=!text;status.classList.toggle('error',error);form.elements.callsign.setAttribute('aria-invalid',String(error));
 }
 function syncCallsignEditors(force=false){
@@ -2338,7 +2416,7 @@ function syncCallsignEditors(force=false){
   form.setAttribute('aria-label','Change '+localPilotIdentity(secondary?1:0,identity,paired).label+' callsign');
   field.disabled=infinity?typeof window.leqraInfinity?.renamePilot!=='function':mode==='online'&&!online.connected;
   if(oldValue!==field.value||field.callsignCheckRevision===undefined)window.leqraIdentity?.schedule?.(field,form);
-  const saveButton=form.querySelector('button:not(.callsign-account-button)');if(saveButton)saveButton.disabled=field.disabled||!!online.renamePending||!!form.infinityRenamePending||!field.value.trim()||field.value.trim()===name;
+  const saveButton=form.querySelector('button[type="submit"]');if(saveButton)saveButton.disabled=field.disabled||!!online.renamePending||!!form.infinityRenamePending||!field.value.trim()||field.value.trim()===name;
  }
 }
 function cancelCallsignSave(message=''){
@@ -2350,6 +2428,7 @@ function submitCallsign(form){
  if(online.renamePending||form.infinityRenamePending)return;
  const player=editorPilot(form);if(!player){callsignStatus(form,'That local player is no longer in this room.',true);return;}
  const secondary=form.dataset.pilot==='secondary',name=cleanPilotName(form.elements.callsign.value);
+ if(window.leqraCallsigns?.reserved(name)){callsignStatus(form,'The Bot prefix is reserved for bots.',true);return;}
  if(!name){callsignStatus(form,'Enter letters or numbers for the callsign.',true);return;}if(name===player.name){form.elements.callsign.value=player.name;callsignStatus(form,'');syncCallsignEditors();return;}
  if(form.dataset.arena==='infinity'){
   const api=window.leqraInfinity,field=form.elements.callsign,pending={member:player.member,draft:field.value};form.infinityRenamePending=pending;
@@ -2463,6 +2542,16 @@ function showVersionMismatch(message){
 }
 function connectOnline(request,reconnecting=false){
  if(typeof settingsResetActive!=='undefined'&&settingsResetActive)return;
+ if(!reconnecting&&window.leqraCallsigns&&[0,1].some(window.leqraCallsigns.isPending)){
+  const prior=[generatedCallsign(0),generatedCallsign(1)];
+  const ready=window.leqraCallsigns.ensure(),isCurrent=generatedEntryScope();ready.then(()=>{
+   if(!isCurrent()){if(mode==='room')online.publishing=false;return;}
+   const next={...request};if(next.name===prior[0])next.name=generatedCallsign(0);
+   if(next.roster)next.roster=next.roster.map(p=>p.kind==='human'&&p.name===prior[0]?{...p,name:generatedCallsign(0)}:p.kind==='local'&&p.name===prior[1]?{...p,name:generatedCallsign(1)}:p);
+   connectOnline(next,reconnecting);
+  }).catch(error=>{if(isCurrent()){$('roomStatus').textContent=error.message;setNetStatus(error.message,true);}});return;
+ }
+ if(window.leqraCallsigns&&(window.leqraCallsigns.reserved(request.name||'')||request.roster?.some(p=>p.kind!=='bot'&&window.leqraCallsigns.reserved(p.name)))){setNetStatus('The Bot prefix is reserved for bots.',true);$('roomStatus').textContent='Change the marked callsigns before going online.';return;}
  if(!['http:','https:'].includes(location.protocol)){setNetStatus('Online play needs the Go server. Run go run ./src and open the address it prints.',true);return;}
  if(online.connecting||online.connected)return;let localProof={localPublicToken:window.leqraIdentity?.token?.(1)||undefined};if(request.token||request.roster?.some(player=>player.kind==='local')){try{localProof=window.leqraIdentity?.prepareLocal?.()||localProof;}catch(error){online.publishing=false;$('roomStatus').textContent=error.message;return;}}request={...request,publicToken:window.leqraIdentity?.token?.()||undefined,independentAccounts:true,...localProof};mode='online';phase='menu';document.body.classList.add('online-mode');
  if(!reconnecting&&!online.inviteCode){try{sessionStorage.removeItem('leqra.kicked');}catch(_){}}
@@ -2903,7 +2992,12 @@ function projectileOnTimeline(n,sample){
  // previous path drew latest immediately, then jumped BACK to buffered samples.
  if(!a)return null;
  if(!b){return projectOnlineBullet(a,Math.max(0,sample.time-sample.a.netTime)/1000);}
- if(a.bounces!==b.bounces)return projectOnlineBullet(a,Math.max(0,sample.time-sample.a.netTime)/1000);
+ if(a.bounces!==b.bounces){
+  const cache=projectileOnTimeline.paths||=new Map(),key=sample.a.tick+':'+sample.b.tick+':'+n.id;
+  let saved=cache.get(key);
+  if(!saved||saved.a!==a||saved.b!==b){saved={a,b,path:Net.RicochetPath.between(a,b,(sample.b.netTime-sample.a.netTime)/1000,projectileWall,{nudge:.08})};if(cache.size>=256)cache.delete(cache.keys().next().value);cache.set(key,saved);}
+  return saved.path?saved.path.sample(sample.alpha):projectOnlineBullet(a,Math.max(0,sample.time-sample.a.netTime)/1000);
+ }
  const f=sample.alpha,item={...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,vx:a.vx+(b.vx-a.vx)*f,vy:a.vy+(b.vy-a.vy)*f,
   life:a.life+(b.life-a.life)*f,age:a.age+(b.age-a.age)*f,rangeLeft:typeof a.rangeLeft==='number'?a.rangeLeft+(b.rangeLeft-a.rangeLeft)*f:undefined};
  return item;
@@ -2979,6 +3073,8 @@ function onlineHUD(){
 }
 function composingKey(e){return e.isComposing||e.keyCode===229;}
 function startInfinity(kind,credentials={}){
+ if(kind==='online'&&window.leqraCallsigns&&[0,1].some(window.leqraCallsigns.isPending)){const ready=window.leqraCallsigns.ensure(),isCurrent=generatedEntryScope();ready.then(()=>{if(isCurrent())startInfinity(kind,credentials);}).catch(error=>{if(isCurrent())$('roomStatus').textContent=error.message;});return;}
+ if(window.leqraCallsigns&&[roomMember(localPlayerID()),secondLocal()].some(p=>p&&window.leqraCallsigns.reserved(p.name))){$('roomStatus').textContent='The Bot prefix is reserved for bots.';return;}
  if(!window.leqraInfinity){$('roomStatus').textContent='Infinity could not load. Reload the page and try again.';return;}
  if($('infiniteArena').open)return;
  const localRoster=localRoom.players;
@@ -3017,9 +3113,9 @@ function initOnlineUI(){
  $('confirmKickBtn').addEventListener('click',confirmKick);
  $('cancelKickBtn').addEventListener('click',cancelKick);
  $('kickDialog').addEventListener('cancel',e=>{e.preventDefault();cancelKick();});
- try{$('pilotName').value=localStorage.getItem('leqra.name')?.trim()||'Player 1';}catch(_){}
- for(const form of callsignForms()){const field=form.elements.callsign;form.addEventListener('submit',e=>{e.preventDefault();initAudio();submitCallsign(form);});field.addEventListener('input',()=>{callsignStatus(form,'');syncCallsignEditors();scheduleCallsignAvailability(field,form);});field.addEventListener('focus',()=>scheduleCallsignAvailability(field,form,0));field.addEventListener('blur',()=>{if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);});field.addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);field.blur();}});}
- $('pilotName').addEventListener('input',()=>scheduleCallsignAvailability($('pilotName'),null));$('pilotName').addEventListener('focus',()=>scheduleCallsignAvailability($('pilotName'),null,0));
+ try{$('pilotName').value=(typeof window!=='undefined'?window.leqraCallsigns?.initial(0):'')||localStorage.getItem('leqra.name')?.trim()||'Player 1';}catch(_){}
+ for(const form of callsignForms()){const field=form.elements.callsign;form.addEventListener('submit',e=>{e.preventDefault();initAudio();submitCallsign(form);});field.addEventListener('input',()=>{window.leqraCallsigns?.cancelAuto(form.dataset.pilot==='secondary'?1:0);callsignStatus(form,'');syncCallsignEditors();scheduleCallsignAvailability(field,form);});field.addEventListener('focus',()=>scheduleCallsignAvailability(field,form,0));field.addEventListener('blur',()=>{if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);});field.addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();if(cleanPilotName(field.value)!==form.dataset.currentName)submitCallsign(form);field.blur();}});}
+ $('pilotName').addEventListener('input',()=>{window.leqraCallsigns?.cancelAuto(0);scheduleCallsignAvailability($('pilotName'),null);});$('pilotName').addEventListener('focus',()=>scheduleCallsignAvailability($('pilotName'),null,0));
  $('joinRoomBtn').addEventListener('click',joinOnlineRoom);for(const id of ['joinCode','pilotName'])$(id).addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();joinOnlineRoom();}});
  $('onlineBackBtn').addEventListener('click',()=>{if(online.connecting)return;watchInvite=false;watchResume=null;online.inviteCode='';online.inviteWatch=false;resetWatchDialog();if($('joinDialog').open)$('joinDialog').close();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
  $('joinDialog').addEventListener('cancel',e=>{if(online.connecting){e.preventDefault();return;}watchInvite=false;watchResume=null;online.inviteWatch=false;online.inviteCode='';resetWatchDialog();if(!online.connected){mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();}});
@@ -3066,7 +3162,7 @@ function initOnlineUI(){
 }
 
 // v3: one room model for local play and server-backed sessions.
-function cleanPilotName(value){return [...String(value).trim()].filter(c=>/[\p{L}\p{N} _-]/u.test(c)).slice(0,16).join('').replace(/\s+/g,' ').trim();}
+function cleanPilotName(value){return [...String(value).trim()].filter(c=>/[\p{L}\p{N} #_-]/u.test(c)).slice(0,16).join('').replace(/\s+/g,' ').trim();}
 function activeTeamCount(rules=currentRules()){
  return rules.teamMode==='ffa'?0:rules.infinity?4:rules.mode==='survival'?1:rules.mode==='ctf'?2:4;
 }
@@ -3091,7 +3187,7 @@ function normalizeRoomTeams(players,rules){
 }
 function createLocalRoom(){
  localRoom.self=0;localRoom.nextViewer=MAX_TANKS;
- let name='Player 1';try{name=localStorage.getItem('leqra.name')?.trim()||name;}catch(_){}
+ let name='Player 1';try{name=(typeof window!=='undefined'?window.leqraCallsigns?.initial(0):'')||localStorage.getItem('leqra.name')?.trim()||name;}catch(_){}
  mode='room';phase='menu';online.menu=false;gameStarted=false;document.body.classList.remove('online-mode');if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=true;
  localRoom.rules=loadLocalRoomRules();infinityOffline=!!localRoom.rules.infinity;localRoom.code='';localRoom.players=[{id:0,member:++localRoom.nextMember,kind:'human',name,owner:0,team:localRoom.rules.teamMode==='ffa'?0:1}];
  if(!restoreSavedLocalRoster()&&localRoom.rules.teamMode==='teams')balanceLocalTeams();
@@ -3139,7 +3235,7 @@ function addRoomSeat(kind){
  if(kind==='local'&&roomMembers(data).some(p=>p.kind==='local'))return;
  let difficulty='normal';const ordered=orderedRoster(data.players);for(let i=ordered.length-1;i>=0;i--){if(ordered[i].kind==='bot'){difficulty=ordered[i].difficulty||'normal';break;}}
  const team=nextRoomTeam(data.players);
- const name=kind==='local'?savedLocalCallsign():['RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'].find(n=>!data.players.some(p=>p.name===n))||'BOT';
+ const name=kind==='local'?savedLocalCallsign():['Rust','Vapor','Ember','Nova','Comet','Onyx','Blitz'].find(n=>!data.players.some(p=>p.name===n))||'BOT';
  // The server inherits from its current roster, including a just-accepted difficulty edit.
  if(mode==='online'){sendOnline({type:'add',kind,name});return;}
  let id=0;while(localRoom.players.some(p=>p.id===id))id++;
@@ -3370,6 +3466,7 @@ function syncControlsPickupInfo(){
 }
 function pickupInterval(){return currentRules().pickupRate==='off'?[Infinity,Infinity]:currentRules().pickupRate==='superfast'?[1,2]:currentRules().pickupRate==='normal'?[4,6]:currentRules().pickupRate==='slow'?[7,10]:[2,3.5];}
 function roomStartError(data=roomData()){
+ if(typeof window!=='undefined'&&window.leqraCallsigns&&data?.players?.some(p=>p.kind!=='bot'&&window.leqraCallsigns.reserved(p.name)))return 'The Bot prefix is reserved for bots. Change the marked callsign.';
  const players=data?.players.filter(p=>p.connected!==false)||[],r=data?.rules||currentRules();
  if(r.infinity){
   if(!players.some(p=>p.kind==='human'))return localPilotIdentity(0).label+' needs a combat seat to enter Infinity.';
@@ -3481,7 +3578,7 @@ const ROOM_MODES=[
  {id:'ctf',name:'Capture the Flag',help:'Steal the enemy flag and bring it home.',icon:'<path d="M5 22V3m0 1c5-5 9 5 14 0v10c-5 5-9-5-14 0"/>'},
  {id:'koth',name:'King of the Hill',help:'Control the hill. Contest it to stop rivals scoring.',icon:'<path d="m2 21 7-10 4 5 3-4 6 9H2ZM8 7 6 2l6 3 6-3-2 5H8Z"/>'},
  {id:'survival',name:'Survival',help:'Survive each wave. Bosses grow from Normal to Fierce to Godlike.',icon:'<path d="m12 2 8 3v7c0 5-8 10-8 10S4 17 4 12V5l8-3Z"/><path d="M12 7v9m-4-5h8"/>'},
- {id:'infinity',name:'Infinity',help:'Explore an unbounded maze with your room roster. Add bots or a second local pilot, or invite friends online.',icon:'<path d="M12 12c-2-3-3-5-6-5a5 5 0 0 0 0 10c3 0 4-2 6-5s3-5 6-5a5 5 0 0 1 0 10c-3 0-4-2-6-5Z"/>'}
+ {id:'infinity',name:'Infinity',help:'Explore an unbounded maze with this room’s pilots and bots.',icon:'<path d="M12 12c-2-3-3-5-6-5a5 5 0 0 0 0 10c3 0 4-2 6-5s3-5 6-5a5 5 0 0 1 0 10c-3 0-4-2-6-5Z"/>'}
 ];
 function canPlayOnlineInfinity(){return ['http:','https:'].includes(location.protocol)&&navigator.onLine!==false;}
 function infinityPlayMode(){
@@ -3495,7 +3592,7 @@ function selectLocalInfinity(offline){
 }
 function ensureDefaultLocalBots(rules=localRoom.rules){
  if(mode!=='room'||!['menu','matchOver'].includes(phase)||$('infiniteArena')?.open||rules.infinity||infinityPlayMode()||!localRoom.players.some(p=>p.kind==='human')||localRoom.players.some(p=>p.kind==='bot'||p.kind==='local'||p.kind==='human'&&!p.spectating&&p.id!==localRoom.self))return false;
- for(const name of ['RUST','VAPOR','EMBER']){
+ for(const name of ['Rust','Vapor','Ember']){
   let id=0;while(localRoom.players.some(p=>p.id===id))id++;
   localRoom.players.push({id,member:++localRoom.nextMember,kind:'bot',name,owner:localRoom.self,team:nextRoomTeam(localRoom.players,rules),difficulty:'normal'});
  }
@@ -3556,10 +3653,11 @@ function syncRoomModePicker(){
   b.disabled=!editable&&!pendingRoomMode;b.setAttribute('aria-disabled',String(!editable));
  }
  const infinite=selected==='infinity',format=$('roomTeamMode'),map=$('roomMapSize'),portrait=$('roomPortraitMaze'),teamsOnly=!infinite&&(value==='ctf'||value==='survival');
- $('roomMapSizeLabel').hidden=$('roomPortraitLabel').hidden=$('roomPortraitHelp').hidden=infinite;
+ $('roomMapSizeLabel').hidden=$('roomPortraitLabel').hidden=$('roomPortraitHelp').hidden=false;
  if(format){format.value=rules.teamMode;format.disabled=!editable||teamsOnly;}
  if(map){
-  map.value=rules.mapSize;map.disabled=!editable||infinite;map.hidden=infinite;
+  map.value=rules.mapSize;map.disabled=!editable||infinite;map.hidden=false;
+  map.title=infinite?'Fixed-maze size is retained for the next fixed mode. Infinity has no map boundary.':'';
   if(map.dataset.portrait!==String(!!rules.portraitMaze)){
    map.dataset.portrait=String(!!rules.portraitMaze);
    for(const option of map.options){
@@ -3662,7 +3760,7 @@ function syncRoomSetupPending(){
 function sendRoomSetupRequest(type,setup){
  if(type==='preset'&&online.roomData?.rules?.infinity&&!setup.rules.infinity&&setup.roster.length===1){
   const roster=setup.roster.map(p=>({...p}));
-  for(const name of ['RUST','VAPOR','EMBER'])roster.push({kind:'bot',name,team:nextRoomTeam(roster,setup.rules),difficulty:'normal'});
+  for(const name of ['Rust','Vapor','Ember'])roster.push({kind:'bot',name,team:nextRoomTeam(roster,setup.rules),difficulty:'normal'});
   setup={...setup,roster};
  }
  const request={type,socket:online.socket,member:online.member,roomData:online.roomData,rulesKey:roomSetupRulesKey(setup.rules),rosterKey:type==='preset'?roomSetupRosterKey(setup.roster,setup.rules):null,timer:0};
@@ -3685,14 +3783,15 @@ function syncFeatureSummary(){
  $('infinityToggleLabel').hidden=mode!=='room'&&mode!=='online';
  $('infinityToggle').checked=mode==='online'?!!online.roomData?.infinityPublic:infinityOnline&&onlineAvailable;
  $('infinityToggle').disabled=!onlineAvailable||mode==='online'&&(!host||!isRoomEditable()||online.publicInfinityPending!==undefined);
- $('rulesSummary').hidden=$('roomRulesBtn').hidden=false;$('roomPresetsBtn').hidden=infinitySelected;
+ $('rulesSummary').hidden=$('roomRulesBtn').hidden=$('roomPresetsBtn').hidden=false;
  const items=infinity==='online'?['PUBLIC INFINITY','FREE-FOR-ALL','ENDLESS']:[modeLabel(),r.teamMode==='ffa'?'FREE-FOR-ALL':'TEAMS',displayScoreTarget()+(!infinitySelected&&r.mode==='elimination'?' WINS':'')];
  if(infinity!=='online'&&r.teamMode==='teams')items.push('FRIENDLY FIRE '+(r.friendlyFire?'ON':'OFF'));
  const summary=items.map((item,index)=>'<span class="room-rule-item">'+escapeHTML(item)+(index<items.length-1?',':'')+'</span>').join(' ');
  if($('rulesSummary').dataset.content!==summary){$('rulesSummary').innerHTML=summary;$('rulesSummary').dataset.content=summary;}
  $('rulesSummary').title=infinity==='online'?'Endless public maze. All pilots compete individually.':modeInstructions();$('roomRulesBtn').textContent=host?'RULES':'VIEW RULES';$('roomRulesBtn').disabled=!!pendingRoomMode;
  $('roomPresetsBtn').disabled=!host||!!pendingRoomMode;
- const startError=infinity==='online'?(mode==='online'&&!active?online.roomData?.startPublicInfinityError||'':''):mode==='online'?(online.roomData?.startError||''):roomStartError(),guest=mode==='online'&&!host?roomMember(localPlayerID()):null;
+ const namespaceError=typeof window!=='undefined'&&window.leqraCallsigns&&roomMembers(roomData()).some(p=>p.kind!=='bot'&&window.leqraCallsigns.reserved(p.name))?'The Bot prefix is reserved for bots.':'';
+ const startError=namespaceError||(infinity==='online'?(mode==='online'&&!active?online.roomData?.startPublicInfinityError||'':''):mode==='online'?(online.roomData?.startError||''):roomStartError()),guest=mode==='online'&&!host?roomMember(localPlayerID()):null;
  if(mode==='online'&&online.publicInfinityPending!==undefined)$('readyHint').textContent='UPDATING PUBLIC INFINITY SELECTION…';
  else if(infinity)$('readyHint').textContent=guest&&!active?(guest.spectating?'PUBLIC INFINITY, JOIN AS A PLAYER TO ENTER':guest.ready?'READY, PUBLIC INFINITY, FREE-FOR-ALL':'PUBLIC INFINITY, READY UP TO JOIN THE ROOM'):startError||(infinity==='online'?(mode==='online'?'PUBLIC INFINITY, ROOM PARTY, FREE-FOR-ALL':'PUBLIC INFINITY, ENDLESS'):'INFINITY OFFLINE, '+displayScoreTarget());
  else if(guest?.spectating)$('readyHint').textContent='SPECTATING, OPEN PLAYERS AND BOTS TO CHANGE ROLES';
@@ -3937,15 +4036,18 @@ function initInfinityPreview(){
   const publicArena=isPublic(),r=roomData(),rows=publicArena?(snapshot?.leaders||[]):orderedRoster((r?.players||[]).filter(p=>!p.spectating)).map(p=>{const identity=roomPlayerIdentity(p,r);return{name:identity.label,score:0,color:identity.color,local:isDeviceLocalPilot(p,r)};});
   const key=JSON.stringify([publicArena,rows,failed,!!snapshot]);if(key===leaderKey)return;leaderKey=key;
   const title='LEADERBOARD',empty=rows.length===0;$('infinityPreviewScoreboardTitle').textContent=title;$('infinityPreviewScoreboardTitle').hidden=empty;button.textContent=title;panel.classList.toggle('is-empty',empty);list.hidden=empty;
-  list.replaceChildren(...rows.slice(0,publicArena?10:rows.length).map((p,index)=>{const row=document.createElement('li');row.value=Number.isSafeInteger(p.rank)&&p.rank>0?p.rank:index+1;row.style.setProperty('--tank-color',paintColor(p.color||COLORS[p.colorIndex]||COLORS[0]));const name=document.createElement('span');name.className='leaderboard-name';name.textContent=p.name;name.style.fontWeight=p.local?'700':'400';const score=document.createElement('strong');score.className='leaderboard-score';score.textContent=String(p.score);row.append(name,score);return row;}));
+  list.replaceChildren(...rows.slice(0,publicArena?10:rows.length).map((p,index)=>{const row=document.createElement('li');row.value=Number.isSafeInteger(p.rank)&&p.rank>0?p.rank:index+1;row.style.setProperty('--tank-color',paintColor(p.color||COLORS[p.colorIndex]||COLORS[0]));const name=document.createElement('span');name.className='leaderboard-name';name.textContent=(typeof window!=='undefined'&&window.leqraCallsigns?.botName(p.name,p.bot))||p.name;name.style.fontWeight=p.local?'700':'400';const score=document.createElement('strong');score.className='leaderboard-score';score.textContent=String(p.score);row.append(name,score);return row;}));
   note.textContent=publicArena&&!snapshot?(failed?'Public leaderboard unavailable. Retrying…':'Loading public leaderboard…'):empty?'No tanks are playing yet.':'+1 per kill, -1 per death';
  }
  function sync(){
   if(stopped)return;
-  const shown=selected(),publicArena=shown&&isPublic();if(bar.hidden===shown)bar.hidden=!shown;
-  if(document.body.classList.contains('infinity-preview')!==shown){document.body.classList.toggle('infinity-preview',shown);resize();}
-  if(fpsHome){if(shown&&fps.parentElement!==bar)bar.insertBefore(fps,$('infinityPreviewRight'));else if(!shown&&fps.parentElement===bar)fpsHome.parent.insertBefore(fps,fpsHome.next?.parentElement===fpsHome.parent?fpsHome.next:null);}
-  if(!shown){close();cancel();snapshot=null;failed=false;leaderKey='';return;}
+  const shown=selected(),publicArena=shown&&isPublic();if(bar.hidden===publicArena)bar.hidden=!publicArena;
+  const coverChanged=document.body.classList.contains('infinity-preview')!==shown,headerChanged=document.body.classList.contains('public-infinity-preview')!==publicArena;
+  if(coverChanged)document.body.classList.toggle('infinity-preview',shown);
+  if(headerChanged)document.body.classList.toggle('public-infinity-preview',publicArena);
+  if(coverChanged||headerChanged)resize();
+  if(fpsHome){if(publicArena&&fps.parentElement!==bar)bar.insertBefore(fps,$('infinityPreviewRight'));else if(!publicArena&&fps.parentElement===bar)fpsHome.parent.insertBefore(fps,fpsHome.next?.parentElement===fpsHome.parent?fpsHome.next:null);}
+  if(!publicArena){close();cancel();snapshot=null;failed=false;leaderKey='';return;}
   $('infinityPreviewTitle').textContent=publicArena?'Public Infinity':'Infinity';
   if(document.hidden||navigator.onLine===false){snapshot=null;failed=navigator.onLine===false;}
   const pilots=[localPilotIdentity(0),...(secondLocal()?[localPilotIdentity(1)]:[])],key=JSON.stringify(pilots);
@@ -3975,15 +4077,15 @@ function initInfinityPreview(){
 function loadPresets(){try{const p=JSON.parse(localStorage.getItem('leqra.presets.v1'));return p?.version===1&&Array.isArray(p.items)?p.items.slice(0,12).filter(x=>typeof x?.name==='string'&&x.name.length<=40):[];}catch(_){return[];}}
 function builtinPresets(){
  const human={kind:'human',name:roomMember(localPlayerID())?.name||'Player 1',team:1},bot=(name,team,difficulty='normal')=>({kind:'bot',name,team,difficulty}),local={kind:'local',name:savedLocalCallsign(),team:1};
- const ffaBots=['RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'];
- return [{name:'Solo practice',rules:{...defaultRoomRules(),mapSize:'compact'},roster:[human,bot('RUST',2,'easy')]},
+ const ffaBots=['Rust','Vapor','Ember','Nova','Comet','Onyx','Blitz'];
+ return [{name:'Solo practice',rules:{...defaultRoomRules(),mapSize:'compact'},roster:[human,bot('Rust',2,'easy')]},
  {name:'Local duel',rules:{...defaultRoomRules(),teamMode:'ffa'},roster:[{...human,team:0},{...local,team:0}]},
  {name:'4-tank Free-for-all',rules:{...defaultRoomRules(),teamMode:'ffa',mapSize:'large'},roster:[{...human,team:0},...ffaBots.slice(0,3).map(n=>bot(n,0))]},
  {name:'8-tank Free-for-all',rules:{...defaultRoomRules(),teamMode:'ffa',mapSize:'giant'},roster:[{...human,team:0},...ffaBots.map(n=>bot(n,0))]},
- {name:'Two humans vs. bots',rules:{...defaultRoomRules(),teamMode:'teams'},roster:[human,local,bot('RUST',2),bot('VAPOR',2)]},
- {name:'Survival',rules:{...defaultRoomRules(),teamMode:'teams',mode:'survival',scoreTarget:15,timeLimit:75},roster:[human,bot('EMBER',1,'hard')]},
- {name:'Capture the Flag',rules:{...defaultRoomRules(),teamMode:'teams',mode:'ctf',scoreTarget:3,timeLimit:180},roster:[human,bot('EMBER',1),bot('RUST',2),bot('VAPOR',2)]},
- {name:'King of the Hill',rules:{...defaultRoomRules(),mode:'koth',teamMode:'ffa',scoreTarget:30,timeLimit:180},roster:[{...human,team:0},bot('RUST',0),bot('VAPOR',0),bot('EMBER',0)]}];
+ {name:'Two humans vs. bots',rules:{...defaultRoomRules(),teamMode:'teams'},roster:[human,local,bot('Rust',2),bot('Vapor',2)]},
+ {name:'Survival',rules:{...defaultRoomRules(),teamMode:'teams',mode:'survival',scoreTarget:15,timeLimit:75},roster:[human,bot('Ember',1,'hard')]},
+ {name:'Capture the Flag',rules:{...defaultRoomRules(),teamMode:'teams',mode:'ctf',scoreTarget:3,timeLimit:180},roster:[human,bot('Ember',1),bot('Rust',2),bot('Vapor',2)]},
+ {name:'King of the Hill',rules:{...defaultRoomRules(),mode:'koth',teamMode:'ffa',scoreTarget:30,timeLimit:180},roster:[{...human,team:0},bot('Rust',0),bot('Vapor',0),bot('Ember',0)]}];
 }
 function validatePreset(p){
  const rules=validateRoomRules(p.rules);if(!Array.isArray(p.roster)||p.roster.length<1||p.roster.length>roomCapacity(rules))throw Error(survivalMode(rules)?'Survival presets support one to four squad tanks.':'Invalid preset roster.');let local=0;
@@ -4685,7 +4787,9 @@ function syncSpectators(){
  $('roomP2RoleStrip').hidden=!local?.spectating;
  if(local?.spectating)syncRoomRole(local,r,'roomP2RoleLabel','roomP2RoleHelp','toggleP2SpectateBtn');
  const infinity=!!r.rules.infinity;
- $('copySpectateBtn').hidden=$('copyWatchInGameBtn').hidden=mode!=='online'||infinity;
+ $('copySpectateBtn').hidden=$('copyWatchInGameBtn').hidden=mode!=='online';
+ const watchHelp=infinity?'Invite a spectator to this room lobby. Infinity arena viewing is unavailable.':'Invite a spectator to watch this match.';
+ $('copySpectateBtn').title=$('copyWatchInGameBtn').title=watchHelp;
  $('noSpectators').textContent=infinity?'Nobody is waiting as a spectator. Infinity arenas are visible to players with a tank seat.':'Nobody is spectating yet. Share the spectator link to invite spectators.';
  $('roomSpectators').hidden=!spectators.length;$('spectatorSummary').textContent='SPECTATORS, '+spectators.length;
  $('spectatorsBtn').textContent='SPECTATORS '+spectators.length;$('spectatorsBtn').setAttribute('aria-label','Show '+spectators.length+' spectators');
@@ -4926,7 +5030,7 @@ function matchDuration(value,decimal=false){
 }
 function resultPilotIdentity(player){
  const p=player||{},seat=p.seat??p.id??0,color=p.color||teamColor(seat,p.team,p.colorIndex);
- if(p.kind==='bot'||p.bot||p.survivalEnemy||p.human===false)return{name:p.name||'BOT',label:p.name||'BOT',color};
+ if(p.kind==='bot'||p.bot||p.survivalEnemy||p.human===false)return{name:p.name||'Bot',label:(typeof window!=='undefined'&&window.leqraCallsigns?.botName(p.name||'Bot',true))||p.name||'Bot',color};
  const index=p.kind==='local'||mode==='duel'&&seat===1?1:0;
  return pilotIdentity(index,{...p,color},index===1);
 }
@@ -4961,7 +5065,7 @@ function renderMatchStats(report){
   const name=document.createElement('span');name.textContent=identity.label;name.style.color=paintColor(identity.color);name.style.fontWeight=isDeviceLocalPilot(p)?'700':'400';top.append(name);
   if(p.winner){const badge=document.createElement('span');badge.className='stat-win-badge';badge.textContent='WIN';badge.setAttribute('aria-label','Winning side');top.append(badge);}
   const meta=document.createElement('span');meta.className='stat-pilot-meta';
-  meta.textContent=(p.team>0?teamName(p.team):'FREE-FOR-ALL')+', '+(p.kind==='bot'?'BOT':p.kind==='local'?'LOCAL PILOT':'PILOT')+(!p.active?', PLAYED EARLIER':'')+(p.mixedTeams?', CHANGED TEAMS':'');
+  meta.textContent=(p.team>0?teamName(p.team):'FREE-FOR-ALL')+', '+(p.kind==='bot'?'BOT':'HUMAN PILOT')+(!p.active?', PLAYED EARLIER':'')+(p.mixedTeams?', CHANGED TEAMS':'');
   pilot.append(top,meta);row.append(pilot);
   for(const [key,label,help] of columns){const td=document.createElement('td');td.dataset.label=label;td.dataset.metric=key;td.title=help;td.textContent=key==='hillSeconds'?matchDuration(p[key],true):String(p[key]||0);row.append(td);}
   tbody.append(row);
@@ -5490,11 +5594,11 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 window.leqraIdentity=Object.freeze({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,revoke:forgetRevokedAccount,exposeError:exposeAccountError,schedule:scheduleCallsignAvailability});
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work,latency=null)=>sampleFrame(now,work,'infiniteFPSIndicator',latency),
- publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,
+ publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,botName:(name,bot)=>window.leqraCallsigns?.botName(name,bot)||name,
  theme,colors:Theme.colors,canonicalColor:index=>COLORS[index]||'',colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
  openControls:()=>openFeature('controls'),mouseAimEnabled:()=>combatPrefs.mouseAim!==false,mouseFireEnabled:()=>combatPrefs.mouseFire!==false,setMouseControlEnabled,cleanPilotName,persistPilotName:persistInfinityPilotName,syncCallsignEditors,syncSidebarContext,mountSidebar,restoreSidebar,mountHeader,restoreHeader,chatOpen:()=>roomChat.open,arenaKeyBlocked,keyLabel,controlHintHTML,pilotIdentity,pilotIdentityHTML,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,
- recycleStarmanProjectiles,
+ recycleStarmanProjectiles,starmanAudio:syncStarmanAudio,
  missileTurn:MISSILE_TURN,
  rect:roundRect,tile:paintArenaTile,wall:paintArenaWall,hull:drawCachedTankHull,turret:paintTankTurret,pickup:drawPickup,bullets:drawBullets,
  drawBadges:drawTankPowerBadges,ageTank:applyOnlineTankEffects,
@@ -5550,5 +5654,5 @@ function prepareUpdate(){
 }
 // Deterministic hooks are only present in explicit development/test mode.
 if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,syncControlsPickupInfo,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,setCannonTrailCache:on=>useCannonTrailCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,restartLocalSurvivalWave,requestRestartSurvivalWave,canRestartSurvivalWave,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initLocalSurvival,stepLocalSurvival,startLocalSurvivalWave,endLocalSurvival,survivalWavePlan,initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,restoreUnsharedPreview,unshareOnlineRoom,chatHasFocus,onlineControls,balanceLocalTeams,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
-initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initInfinityPreview();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();loadOnlineWins();renderDeviceWins();createLocalRoom();initOnlineUI();initIntroTour();requestAnimationFrame(frame);
+initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initInfinityPreview();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();loadOnlineWins();renderDeviceWins();createLocalRoom();initOnlineUI();initGeneratedCallsigns();initIntroTour();requestAnimationFrame(frame);
 })();

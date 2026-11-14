@@ -118,6 +118,7 @@ class SnapshotDecoder {
             }
         if (fixed) json.optJSONObject("world")?.let { lastWorld = ProtocolJson.arenaWorld(it) }
         else lastWorld = null
+        val spawns = if (fixed) null else json.optJSONArray("godlikeSpawns")
         return ArenaSnapshot(
             rules = rules,
             boostedBulletIds = boosted,
@@ -131,6 +132,14 @@ class SnapshotDecoder {
             pickups =
                 (json.optJSONArray("pickups") ?: JSONArray()).objects(ProtocolJson::arenaPickup),
             effects = effects,
+            godlikeSpawns =
+                if (spawns == null) emptyList()
+                else List(minOf(spawns.length(), 128)) { index ->
+                    val event = spawns.getJSONObject(index)
+                    val name = event.getString("name")
+                    require(name.isNotBlank() && name.codePointCount(0, name.length) <= 64)
+                    GodlikeSpawn(event.getInt("id"), event.getInt("spawnSerial"), name)
+                },
             leaderboard = leaderboard,
             players = if (fixed) tanks.count { !it.bot } else json.getInt("players"),
             tankCount = if (fixed) tanks.size else json.getInt("tankCount"),

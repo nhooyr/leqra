@@ -8,6 +8,142 @@ final class GameUITests: XCTestCase {
 
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor
+    func testRoomModeSwitchKeepsReadyCardAndPlayGeometryInBothOrientations() async throws {
+        let app = launch(callsign: "MENU " + UUID().uuidString.prefix(8))
+        selectPublic(false, in: app)
+        selectMode("elimination", in: app)
+        let share = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'SHARE ROOM ONLINE'")).firstMatch
+        reveal(share, in: app); share.tap()
+        XCTAssertTrue(app.staticTexts["roomCodeValue"].waitForExistence(timeout: 15))
+        let card = app.otherElements["readyRoomCard"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        func top() async throws {
+            let scroll = app.scrollViews["readyRoomScroll"]
+            for _ in 0..<5 {
+                if card.frame.minY >= scroll.frame.minY + 8 { break }
+                scroll.swipeDown()
+            }
+            try await Task.sleep(nanoseconds: 700_000_000)
+        }
+        for landscape in [false, true] {
+            XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+            try await Task.sleep(nanoseconds: 700_000_000)
+            var baseline: (viewport: CGRect, card: CGRect, play: CGRect)?
+            for mode in ["elimination", "infinity", "elimination"] {
+                selectMode(mode, in: app)
+                let summary = app.staticTexts["roomRuleSummary"]
+                let rule = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", mode == "infinity" ? "ENDLESS" : "FIRST TO"), object: summary)
+                await fulfillment(of: [rule], timeout: 10)
+                try await top()
+                let current = (viewport: app.scrollViews["readyRoomScroll"].frame, card: card.frame, play: app.buttons["playRoom"].frame)
+                print("Native ready geometry \(landscape ? "landscape" : "portrait") \(mode): viewport=\(current.viewport), card=\(current.card), play=\(current.play)")
+                if let baseline {
+                    for pair in [(current.viewport, baseline.viewport), (current.card, baseline.card), (current.play, baseline.play)] {
+                        XCTAssertEqual(pair.0.minX, pair.1.minX, accuracy: 0.5)
+                        XCTAssertEqual(pair.0.minY, pair.1.minY, accuracy: 0.5)
+                        XCTAssertEqual(pair.0.width, pair.1.width, accuracy: 0.5)
+                        XCTAssertEqual(pair.0.height, pair.1.height, accuracy: 0.5)
+                    }
+                } else { baseline = current }
+                capture(app, name: "Native stable ready \(landscape ? "landscape" : "portrait") \(mode)")
+            }
+        }
+        app.terminate()
+    }
+
+    /// Run on a disposable simulator with fresh app preferences. Existing
+    /// installations deliberately preserve their saved callsigns and accounts.
+    @MainActor
+    func testFreshGeneratedDefaultsAndReservedFeedbackStayStable() async throws {
+        guard ProcessInfo.processInfo.environment["LEQRA_FRESH_INSTALL_UI"] == "1" else { throw XCTSkip("Requires a disposable fresh installation.") }
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        let server = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18091"
+        app.launchArguments = ["-serverURL", server, "--public-session-test-namespace", publicSessionTestNamespace, "--skip-public-session-restore"]
+        app.launch()
+        let field = app.textFields["callsignField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        app.buttons["openAccount"].tap()
+        let reserved = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Reserved callsigns:'")).firstMatch
+        XCTAssertTrue(reserved.waitForExistence(timeout: 10), "First-open names must be claimed under a durably saved account key")
+        app.buttons["Close Account key"].tap()
+        let primary = try XCTUnwrap(field.value as? String)
+        XCTAssertNotNil(primary.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression))
+        app.buttons.matching(NSPredicate(format: "label == 'Settings'")).firstMatch.tap()
+        let local = app.buttons["settingsLocalAccount"]
+        for _ in 0..<5 where !local.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+        local.tap()
+        XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].waitForExistence(timeout: 5))
+        let secondary = app.staticTexts["accountPlayerIdentity"].label.replacingOccurrences(of: " (P2)", with: "")
+        XCTAssertNotEqual(primary, secondary)
+        XCTAssertNotNil(secondary.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression))
+        XCTAssertTrue(reserved.waitForExistence(timeout: 10))
+        app.buttons["Close Account key"].tap()
+        var editing = false
+        func replace(_ text: String) {
+            if !editing {
+                reveal(field, in: app)
+                field.tap()
+                field.press(forDuration: 1.1)
+                let selectAll = app.menuItems["Select All"].exists ? app.menuItems["Select All"] : app.buttons["Select All"]
+                if selectAll.exists { selectAll.tap() }
+                editing = true
+            }
+            let old = field.value as? String ?? ""
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count + 1) + text)
+        }
+        replace("RUST")
+        let controls = app.buttons["CONTROLS"].frame
+        replace("Bot RUST")
+        let feedback = app.staticTexts["callsignAvailability"]
+        let rejected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == 'Reserved for bots.'"), object: feedback)
+        await fulfillment(of: [rejected], timeout: 5)
+        XCTAssertEqual(app.buttons["CONTROLS"].frame, controls, "The three-line advisory must reserve its layout before errors appear")
+        XCTAssertFalse(app.buttons["Yours? Import account key"].isHittable, "A key cannot unlock the bot namespace")
+        capture(app, name: "Native reserved callsign fixed three-line feedback")
+        app.buttons["generateCallsign"].tap()
+        let generated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH 'pilot#'"), object: field)
+        await fulfillment(of: [generated], timeout: 10)
+        app.scrollViews["readyRoomScroll"].swipeDown()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        try await Task.sleep(nanoseconds: 700_000_000)
+        capture(app, name: "Native generated ready room landscape")
+        app.terminate()
+    }
+
+    /// A temporary localhost protocol fixture emits the real additive packet;
+    /// no product debug flag or gameplay event is needed to preview a notice.
+    @MainActor
+    func testPassiveGodlikeBirthNoticeDoesNotShiftOrRepeat() async throws {
+        guard let server = ProcessInfo.processInfo.environment["LEQRA_NOTICE_TEST_SERVER"] else { throw XCTSkip("Requires the temporary local notice fixture.") }
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["-serverURL", server, "-callsign", "NOTICE PILOT", "-localCallsign", "NOTICE P2",
+                               "--public-session-test-namespace", publicSessionTestNamespace, "--skip-public-session-restore"]
+        app.launch()
+        XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10))
+        selectPublic(true, in: app); play(in: app)
+        let notice = app.staticTexts["godlikeSpawnNotice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        XCTAssertEqual(notice.label, "Bot 1 - Godlike spawned nearby. Watch out!")
+        XCTAssertEqual(app.alerts.count, 0)
+        let original = arena(in: app).frame
+        capture(app, name: "Native passive Godlike birth portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        try await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertTrue(notice.exists)
+        capture(app, name: "Native passive Godlike birth landscape")
+        XCUIDevice.shared.orientation = .portrait
+        try await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertEqual(arena(in: app).frame, original)
+        let expired = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: notice)
+        await fulfillment(of: [expired], timeout: 10)
+        XCTAssertEqual(arena(in: app).frame, original, "A passive overlay must never resize the arena")
+        XCTAssertEqual(app.alerts.count, 0)
+        app.terminate()
+    }
+
     /// Opt in with TEST_RUNNER_LEQRA_RENDER_STRESS_UI=1 when running xcodebuild.
     /// The deterministic workload stays offline and never changes room rules.
     @MainActor
@@ -88,7 +224,9 @@ final class GameUITests: XCTestCase {
         localAccount.tap()
         XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].label.contains("(P2)"))
-        XCTAssertFalse(app.buttons["copyAccountKey"].isEnabled, "Opening P2's panel must not generate or copy P1's credential.")
+        if app.staticTexts["maskedAccountKey"].label == "No account key saved on this device." {
+            XCTAssertFalse(app.buttons["copyAccountKey"].isEnabled, "A missing P2 credential must never fall back to P1's key.")
+        }
         app.buttons["Close Account key"].tap()
         XCTAssertEqual(app.textFields["callsignField"].value as? String, primaryName, "Managing P2 must not rename P1.")
 
@@ -281,7 +419,7 @@ final class GameUITests: XCTestCase {
         XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10))
         let fieldFrame = app.textFields["callsignField"].frame
         let feedback = app.staticTexts["callsignAvailability"]
-        let taken = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'is taken'"), object: feedback)
+        let taken = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Used online'"), object: feedback)
         await fulfillment(of: [taken], timeout: 10)
         XCTAssertEqual(app.textFields["callsignField"].frame, fieldFrame, "Inline validation must reserve its space.")
         selectPublic(false, in: app)

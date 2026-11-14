@@ -242,6 +242,9 @@ func rejectInfinite(c *Client, message string) {
 	if len(c.callsignConflicts) > 0 {
 		packet["code"] = "callsign_taken"
 		packet["conflicts"] = c.callsignConflicts
+		if c.callsignReserved {
+			packet["code"], packet["reason"] = "callsign_reserved", "reserved"
+		}
 	}
 	switch message {
 	case errSameSeatAccount.Error(), errNewAccountKeyInvalid.Error():

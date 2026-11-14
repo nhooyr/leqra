@@ -40,6 +40,10 @@ func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
 		t.Difficulty = ""
 	}
 	t.X, t.Y, t.Angle = infinitePrecision(t.X), infinitePrecision(t.Y), infinitePrecision(t.Angle)
+	t.VX, t.VY = infinitePrecision(t.VX), infinitePrecision(t.VY)
+	if p.HP == 0 || p.disconnected || p.paused {
+		t.VX, t.VY = 0, 0
+	}
 	t.Track, t.Recoil, t.Invuln = infinitePrecision(t.Track), infinitePrecision(k.Recoil), infinitePrecision(k.Invulnerable)
 	t.SpawnProtected = k.SpawnProtected && k.Invulnerable > 1e-9
 	t.Cooldown = infinitePrecision(k.Cooldown)
@@ -511,6 +515,7 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 
 func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam int, ownerName string, ownerColor ...int) {
 	target.HP = 0
+	target.VX, target.VY = 0, 0
 	target.Score--
 	target.respawn = a.tick + infiniteRespawnTicks
 	target.KilledBy = ownerName

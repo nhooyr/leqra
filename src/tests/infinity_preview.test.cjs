@@ -62,11 +62,14 @@ test('leaving or hiding public preview aborts requests and restores the existing
  $('infiniteArena').open=true;s.window.leqraInfinityPreview.sync();assert.equal(h.bar.hidden,true);assert.equal(h.requests[3].options.signal.aborted,true);assert.equal(h.fps.parentElement,h.wrap);
 });
 
-test('private and offline Infinity previews use room pilots without querying public state',async()=>{
+test('private and offline Infinity change only the preview maze while retaining the fixed header',async()=>{
  const h=boot(),{s,$,r}=h;s.playMode='';r.rules.infinity=true;r.players[1].spectating=true;r.players.push({id:3,member:3,name:'REMOTE',kind:'human',color:'#fedcba'},{id:4,member:4,name:'RUST',kind:'bot',color:'#ffeeaa'});s.window.leqraInfinityPreview.sync();await h.flush();
- assert.equal(h.bar.hidden,false);assert.equal($('infinityPreviewOnlineCount').hidden,true);assert.equal($('infinityPreviewScores').children.length,1);assert.equal($('infinityPreviewLeaders').children.length,3);assert.equal(h.timers.size,0);
- assert.equal($('infinityPreviewTitle').textContent,'Infinity','room and offline mode keep their distinct name');assert.equal($('infinityPreviewScoreboardBtn').textContent,'LEADERBOARD');assert.equal($('infinityPreviewScoreboardTitle').textContent,'LEADERBOARD');
- const rows=$('infinityPreviewLeaders').children;assert.equal(rows[0].children[0].style.fontWeight,'700');assert.equal(rows[1].children[0].style.fontWeight,'400');
+ assert.equal(h.bar.hidden,true);assert.equal(h.timers.size,0);assert.equal(h.requests[0].options.signal.aborted,true);
+ assert.equal(s.document.body.classList.contains('infinity-preview'),true,'room Infinity keeps the full-background maze');
+ assert.equal(s.document.body.classList.contains('public-infinity-preview'),false,'only Public Infinity replaces header and log geometry');
+ assert.equal(h.fps.parentElement,h.wrap);assert.equal(h.fps.nextSibling,h.next,'FPS stays in its existing fixed-header position');
+ assert.equal($('infinityPreviewScoreboard').hidden,true);
+ s.mode='online';s.phase='onlineLobby';s.window.leqraInfinityPreview.sync();assert.equal(h.bar.hidden,true);assert.equal(s.document.body.classList.contains('public-infinity-preview'),false);
  s.phase='playing';s.window.leqraInfinityPreview.sync();assert.equal(h.bar.hidden,true);
 });
 
@@ -94,10 +97,10 @@ test('the first menu request supplies ping and online count together on a one-se
  h.requests[1].reject(Error('unavailable'));await h.flush();assert.equal(s.menuSamples.at(-1),null);
 });
 
-test('an empty public or private preview shows one centered message without a title or dividing line',async()=>{
+test('an empty public preview shows one centered message without a title or dividing line',async()=>{
  const h=boot(),{s,$}=h;h.requests[0].resolve({players:0,tankCount:0,leaders:[]});await h.flush();
  const check=()=>{assert.equal($('infinityPreviewScoreboard').classList.contains('is-empty'),true);assert.equal($('infinityPreviewScoreboardTitle').hidden,true);assert.equal($('infinityPreviewLeaders').hidden,true);assert.equal($('infinityPreviewLeaders').children.length,0);assert.equal($('infinityPreviewScoreboardNote').textContent,'No tanks are playing yet.');};check();
- s.playMode='';h.r.rules.infinity=true;h.r.players=[];s.window.leqraInfinityPreview.sync();check();
+ s.playMode='';h.r.rules.infinity=true;h.r.players=[];s.window.leqraInfinityPreview.sync();assert.equal($('infinityPreviewScoreboard').hidden,true,'room Infinity keeps its normal sidebar instead of a separate preview panel');
  const css=readFileSync(assetPath('style.css'),'utf8');assert.match(css,/\.infinity-preview-scoreboard\.is-empty>p\{[^}]*align-items:center;justify-content:center;[^}]*border-top:0;text-align:center/);assert.match(css,/\.infinity-preview-scoreboard\.is-empty>ol\{display:none\}/);
  const previewSelector='body.touch-ui .infinity-preview-header>.infinity-preview-scoreboard[open]',activeSelector='body.touch-ui .infinite-leaderboard[open]';
  assert.ok(css.indexOf(activeSelector)>css.indexOf(previewSelector),'fixture exercises the later active-arena height cap');

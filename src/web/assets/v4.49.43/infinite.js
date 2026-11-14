@@ -84,6 +84,20 @@ function setStatus(text) {
  renderOnlineCount(session);
 }
 function arenaName(world=session) {return world?.online&&(!world.room||world.public)?'Public Infinity':'Infinity';}
+function acceptGodlikeSpawns(world,message,now){
+ if(!world.online||world.room&&!world.public||!Array.isArray(message.godlikeSpawns))return;
+ world.godlikeSeen ||= new Map();
+ const names=[];
+ for(const notice of message.godlikeSpawns.slice(0,24)){
+  if(!Number.isSafeInteger(notice.id)||!Number.isSafeInteger(notice.spawnSerial)||typeof notice.name!=='string')continue;
+  const tank=world.tanks.find(t=>t.id===notice.id&&t.spawnSerial===notice.spawnSerial&&t.bot&&t.difficulty==='godlike'&&t.hp>0);
+  if(!tank)continue;
+  const key=notice.id+':'+notice.spawnSerial;if(world.godlikeSeen.has(key))continue;
+  world.godlikeSeen.set(key,true);if(world.godlikeSeen.size>128)world.godlikeSeen.delete(world.godlikeSeen.keys().next().value);
+  names.push(tank.name);
+ }
+ if(names.length){const node=byID('godlikeSpawnNotice');node.textContent=names.slice(0,3).join(', ')+' spawned nearby. Watch out!';node.hidden=false;world.godlikeWarningUntil=now+6000;}
+}
 
 function localPilots(world=session) {
  if (!world) return [];
@@ -846,8 +860,8 @@ function offlineTankPose(world,tank,remaining) {
 function offlineBulletPose(world,bullet,remaining) {
  if(!(remaining>0))return bullet;
  const value={...bullet},span=Math.min(remaining,bullet.life);
- value.life-=span;value.age+=span;
- if(value.kind==='homing'||value.kind==='grenade')guide(world,value,span);
+ value.life-=span;value.age=(value.age||0)+span;
+ if(!world.online&&(value.kind==='homing'||value.kind==='grenade'))guide(world,value,span);
  if(value.kind==='grenade'){
   const drag=art.grenadeDragFactor(bullet.life,value.life);value.vx*=drag;value.vy*=drag;
  }
@@ -855,14 +869,32 @@ function offlineBulletPose(world,bullet,remaining) {
  for(let i=0;i<4&&rest>1e-8;i++){
   const dx=value.vx*rest,dy=value.vy*rest;
   const wall=value.kind==='cannon'?null:wallHit(world.maze,value.x,value.y,dx,dy,value.r);
-  const hit=tankHit(world,value,dx,dy,wall?.fraction??1.00000001);
-  if(hit.tank){value.x+=dx*hit.fraction;value.y+=dy*hit.fraction;break;}
+  const hit=world.online?null:tankHit(world,value,dx,dy,wall?.fraction??1.00000001);
+  if(hit?.tank){value.x+=dx*hit.fraction;value.y+=dy*hit.fraction;break;}
   if(!wall){value.x+=dx;value.y+=dy;break;}
   value.x+=dx*wall.fraction+wall.nx*.12;value.y+=dy*wall.fraction+wall.ny*.12;value.bounces++;
   if(wall.nx)value.vx=-value.vx;if(wall.ny)value.vy=-value.vy;
   rest*=1-wall.fraction;
  }
  return value;
+}
+
+function onlineBulletPose(world,bullet,frame){
+ if(!frame?.a.bulletMap||!frame.b.bulletMap)return undefined;
+ if(frame.time<frame.a.netTime)return null;
+ const a=frame.a.bulletMap.get(bullet.id),b=frame.b.bulletMap.get(bullet.id);
+ if(frame.alpha===1)return b?offlineBulletPose(world,b,Math.min(.075,frame.extrapolate)):null;
+ if(!a)return null;
+ const span=(frame.b.netTime-frame.a.netTime)/1000,elapsed=Math.max(0,frame.time-frame.a.netTime)/1000;
+ if(!b)return offlineBulletPose(world,a,Math.min(.075,elapsed));
+ if(a.bounces!==b.bounces){
+  const cache=world.ricochetPaths||=new Map(),key=frame.a.tick+':'+frame.b.tick+':'+bullet.id;
+  let saved=cache.get(key);
+  if(!saved||saved.a!==a||saved.b!==b){saved={a,b,path:net.RicochetPath.between(a,b,span,(kind,x,y,dx,dy,r)=>kind==='cannon'?null:wallHit(world.maze,x,y,dx,dy,r))};if(cache.size>=256)cache.delete(cache.keys().next().value);cache.set(key,saved);}
+  return saved.path?saved.path.sample(frame.alpha):offlineBulletPose(world,a,Math.min(.075,elapsed));
+ }
+ const f=frame.alpha;
+ return {...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,vx:a.vx+(b.vx-a.vx)*f,vy:a.vy+(b.vy-a.vy)*f,life:a.life+(b.life-a.life)*f,trail:b.kind==='rapid'?null:b.trail||[a,b]};
 }
 
 function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity) {
@@ -1075,7 +1107,7 @@ function renderScores(world, pilot, second) {
  const title = 'LEADERBOARD';
  const standingRow = (tank,rank,extra=false) => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
-  const name = local ? pilotIdentity(world,local-1,tank).label : tank.name || 'Tank';
+  const name = local ? pilotIdentity(world,local-1,tank).label : art.botName?.(tank.name||'Tank',tank.bot) || tank.name || 'Tank';
   return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra,partyIDs.has(tank.id)];
  };
  const rows = entries.map((tank,i) => standingRow(tank,i+1));
@@ -1136,6 +1168,7 @@ function updatePilotLoadout(world, pilot, seat, num, now) {
 }
 
 function updateHUD(world, pilot, second, now) {
+ if(!(world.godlikeWarningUntil>now))byID('godlikeSpawnNotice').hidden=true;
  if (!pilot || world.failed || world.online && !world.joined || now < world.nextHUD) return;
  world.nextHUD = now + 1000 / 30;
  if(world.controlPilots!==JSON.stringify(localPilots(world)))refreshBindings(world);
@@ -1231,12 +1264,13 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
   drawTank(displayed, !!owner, zoom, ratio,
-   owner?pilotIdentity(world,owner===world?0:1,tank).label:tank.name||'Tank',x0,y0,x1);
+   owner?pilotIdentity(world,owner===world?0:1,tank).label:art.botName?.(tank.name||'Tank',tank.bot)||tank.name||'Tank',x0,y0,x1);
  }
  const bullets = world.visibleBullets;
  bullets.length = 0;
  for (const bullet of world.bullets) {
   if (!visible(bullet)) continue;
+  if(world.online){const displayed=onlineBulletPose(world,bullet,world.remoteFrame);if(displayed!==undefined){if(displayed)bullets.push({...displayed,trail:displayed.kind==='rapid'?noTrail:displayed.trail||null});continue;}}
   const previous = world.online && world.previousBullets.get(bullet.id);
   if (previous && previous.bounces === bullet.bounces) {
    const {kind, color, r, life, vx, vy} = bullet;
@@ -1337,6 +1371,8 @@ function loop(now) {
   }
  }
  lastTime = now;
+ const audioAge=session.online?Math.max(0,(now-session.arrived)/1000):0;
+ art.starmanAudio?.(!pauseMenu.open&&!session.result&&(!session.online||session.joined&&audioAge<2)&&session.controllers.some(seat=>{const tank=session.tanks.find(tank=>tank.id===seat.id);return tank?.hp>0&&tank.starmanTime>audioAge;}));
  showResult(session, now);
  if (session.online ? session.joined || session.retryAt === undefined : !pauseMenu.open) draw(session, now, dt);
  art.sampleFrame(now,performance.now()-workStart,session.online?(session.latency??NaN):null);
@@ -1491,12 +1527,13 @@ function receive(ws, event) {
  session.interval = session.arrived ? clamp(now - session.arrived, 20, 90) : 1000 / 30;
  session.arrived = now;
  session.tanks = message.tanks.map(tank => ({...tank, alive: tank.hp > 0}));
+ acceptGodlikeSpawns(session,message,now);
  session.bullets = message.bullets.map(bullet => ({...bullet, trail: bullet.trail || null,
   color: COLORS[bullet.colorIndex] || COLORS[0], r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
  if(Number.isSafeInteger(message.tick)){
   session.motionBuffer ||= new net.SnapshotBuffer({delay:1000/30,minimumDelay:1000/30,maximumDelay:90,intervals:1});
   if(!joined)session.motionBuffer.reset();
-  session.motionBuffer.push({tick:message.tick,tanks:session.tanks,tankMap:new Map(session.tanks.map(tank=>[tank.id,tank]))},now);
+  session.motionBuffer.push({tick:message.tick,tanks:session.tanks,tankMap:new Map(session.tanks.map(tank=>[tank.id,tank])),bullets:session.bullets,bulletMap:new Map(session.bullets.map(bullet=>[bullet.id,bullet]))},now);
  }
  session.pickups = Array.isArray(message.pickups) ? message.pickups : [];
  session.players = message.players;
@@ -1625,6 +1662,7 @@ function resetControls() {
  knob.style.removeProperty('--stick-y');
  if (session) for (const seat of session.controllers) {
   seat.fireTap = false;
+  seat.predictor.neutralize();
   sendInput(seat,performance.now(),true);
  }
 }
@@ -1665,6 +1703,8 @@ function dismissPause() {
 }
 
 function stop() {
+ art.starmanAudio?.(false);
+ byID('godlikeSpawnNotice').hidden=true;
  if (!session) return;
  cancelRenames(session,'Infinity was closed before the callsign change was confirmed.');
  resetControls();

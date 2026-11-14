@@ -22,7 +22,9 @@ struct ReadyRoomView: View {
                         }
                     } else { VStack(alignment: .leading, spacing: 18) { intro; configuration } }
                 }
-            }.frame(maxWidth: landscape ? 650 : 420).padding(12).frame(maxWidth: .infinity)
+            }.frame(maxWidth: landscape ? 650 : 420)
+                .accessibilityElement(children: .contain).accessibilityIdentifier("readyRoomCard")
+                .padding(12).frame(maxWidth: .infinity)
           }.frame(width: geometry.size.width, height: geometry.size.height)
               .accessibilityIdentifier("readyRoomScroll")
               .scrollDismissesKeyboard(.interactively)
@@ -47,7 +49,11 @@ struct ReadyRoomView: View {
                 HStack { Spacer(); Text(playLabel); Spacer(); Image(systemName: session.isHost ? "arrow.right" : "checkmark") }
             }.buttonStyle(WebButtonStyle(kind: .play)).accessibilityIdentifier("playRoom")
                 .disabled(session.room?.infinityActive == true ? session.ownRoomMember?.spectating != false : session.room != nil && session.isHost && !(session.room?.canStart ?? false) && !(publicSelected && (session.room?.canStartPublicInfinity ?? false)))
-            Text(readyHint).font(WebStyle.mono()).foregroundStyle(WebStyle.muted).multilineTextAlignment(.center).frame(maxWidth: .infinity)
+            ZStack {
+                ForEach(["PUBLIC INFINITY, ENDLESS", "ENDLESS TANK ARENA, START WHEN READY", "BOT SKIRMISH, START WHEN READY"], id: \.self) { hint in
+                    Text(hint).opacity(hint == readyHint ? 1 : 0).accessibilityHidden(hint != readyHint)
+                }
+            }.font(WebStyle.mono()).foregroundStyle(WebStyle.muted).multilineTextAlignment(.center).frame(maxWidth: .infinity)
             Button("FIND ONLINE BATTLE") { session.openQueue() }.buttonStyle(WebButtonStyle())
             if session.room == nil {
                 Button("SHARE ROOM ONLINE ↗") { session.shareRoom() }.buttonStyle(WebButtonStyle(kind: .share))
@@ -70,7 +76,10 @@ struct ReadyRoomView: View {
             }
             Text(session.room == nil ? "Local play is ready. Share to invite online friends." : session.status.isEmpty ? "Room connected. Invite friends or deploy tanks." : session.status)
                 .font(.system(size: 11)).lineSpacing(4).foregroundStyle(WebStyle.soft)
-            if let room = session.room, !room.startError.isEmpty, !publicSelected { Text(room.startError).font(.system(size: 11)).foregroundStyle(WebStyle.danger) }
+            if let room = session.room {
+                Text(publicSelected ? "" : room.startError).font(.system(size: 11)).foregroundStyle(WebStyle.danger)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+            }
         }
     }
 
@@ -84,7 +93,7 @@ struct ReadyRoomView: View {
                     .accessibilityIdentifier("callsignField")
                 AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "openAccount")
             }
-            CallsignFeedback(message: session.callsignFeedback, checking: session.callsignChecking)
+            CallsignFeedback(session: session)
             WebDisclosure(isExpanded: $settingsOpen, title: "Room settings") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("ROOM NAME OR CODE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
@@ -95,13 +104,26 @@ struct ReadyRoomView: View {
                         .disabled(!session.isHost)
                     Text("CHOOSE YOUR BATTLE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                     modeChoices
-                    Text(session.selectedMode.help).font(.system(size: 10)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+                    // Measure every mode's wrapped copy at the current width.
+                    // Selecting a mode changes ink, never the settings footprint.
+                    ZStack(alignment: .topLeading) {
+                        ForEach(BattleMode.allCases) { mode in
+                            Text(mode.help).opacity(mode == session.selectedMode ? 1 : 0)
+                                .accessibilityHidden(mode != session.selectedMode)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }.font(.system(size: 10)).foregroundStyle(WebStyle.soft).frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: 6) {
                         Button("Rules") { session.showRules = true }
                         Button("Teams") { session.showRules = true }
                         Button("Presets") { session.showPresets = true }
                     }.buttonStyle(WebButtonStyle(compact: true))
-                    Text(ruleSummary).font(WebStyle.mono()).foregroundStyle(WebStyle.soft).lineSpacing(4)
+                    ZStack(alignment: .topLeading) {
+                        Text("FIRST TO 999 WAVES, UP TO 8 TANKS\nTeammates share wins. Friendly fire is off.")
+                            .hidden().accessibilityHidden(true)
+                        Text(ruleSummary).accessibilityIdentifier("roomRuleSummary")
+                    }.font(WebStyle.mono()).foregroundStyle(WebStyle.soft).lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                 }.padding(.top, 12)
             }
             WebDisclosure(isExpanded: $playersOpen, title: "Players and bots", detail: "\(session.room?.players.count ?? session.localBots.count + 1) / \(session.room?.maxPlayers ?? 8)") {
@@ -194,6 +216,7 @@ struct LocalBotRow: View {
         VStack(spacing: 8) {
             HStack {
                 TankMark().foregroundStyle(WebStyle.paint(bot.colorIndex))
+                Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("Callsign", text: $bot.name).font(.system(size: 12)).foregroundStyle(WebStyle.paint(bot.colorIndex))
                 Button(action: remove) { Image(systemName: "xmark").frame(width: 32, height: 32) }.foregroundStyle(WebStyle.danger).accessibilityLabel("Remove " + bot.name)
             }
@@ -224,12 +247,16 @@ struct RoomPilotRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 Circle().fill(WebStyle.mapped(member.color)).frame(width: 10, height: 10).padding(.top, 3)
-                Text(label)
+                Text(CallsignPolicy.displayName(label, bot: member.kind == "bot"))
                     .font(.system(size: 12, weight: owned ? .bold : .regular)).foregroundStyle(WebStyle.mapped(member.color))
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier(primary ? "localRoomIdentity" : "roomPilot_\(member.id)")
                 Spacer(minLength: 4)
-                Text(member.spectating ? "WATCHING" : member.kind == "bot" ? "BOT" : member.ready ? "READY" : "WAITING")
-                    .font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(member.kind == "bot" ? "BOT" : "HUMAN PILOT")
+                    if member.kind != "bot" {
+                        Text((member.id == session.room?.host ? "HOST, " : "") + (member.spectating ? "WATCHING" : member.ready ? "READY" : "WAITING"))
+                    }
+                }.font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 if owned || session.isHost {
                     Menu {
                         if session.roomEditable && session.isHost {
@@ -262,7 +289,7 @@ struct RoomPilotRow: View {
                     if ownedLocal { AccountKeyButton(session: session, seat: 1, identity: label, identifier: "openLocalAccount") }
                 }
                 if ownedLocal {
-                    CallsignFeedback(message: session.localCallsignFeedback, identifier: "localCallsignAvailability")
+                    CallsignFeedback(session: session, seat: 1)
                 }
             }
             if canPaint {
@@ -285,16 +312,28 @@ struct AccountKeyButton: View {
     }
 }
 
-/// A fixed two-line slot keeps checking and conflict feedback from moving the
+/// A fixed three-line slot keeps checking and conflict feedback from moving the
 /// callsign editor or the controls below it.
 struct CallsignFeedback: View {
-    var message: String
-    var checking = false
-    var identifier = "callsignAvailability"
+    @ObservedObject var session: GameSession
+    var seat = 0
+    private var message: String { seat == 1 ? session.localCallsignFeedback : session.callsignFeedback }
+    private var reserved: Bool { seat == 1 ? session.localCallsignReserved : session.callsignReserved }
+    private var taken: Bool { message == "Used online; offline is OK." }
+    private var identifier: String { seat == 1 ? "localCallsignAvailability" : "callsignAvailability" }
     var body: some View {
-        Text(message.isEmpty && checking ? "Checking online callsign…" : message)
-            .font(.system(size: 10)).foregroundStyle(checking ? WebStyle.muted : WebStyle.danger)
-            .frame(maxWidth: .infinity, alignment: .leading).frame(height: 30, alignment: .topLeading)
-            .accessibilityIdentifier(identifier)
+        VStack(alignment: .leading, spacing: 0) {
+            Text(message.isEmpty && session.callsignChecking ? "Checking online callsign…" : message)
+                .foregroundStyle(session.callsignChecking && message.isEmpty ? WebStyle.muted : WebStyle.danger)
+                .frame(height: 20, alignment: .leading).accessibilityIdentifier(identifier)
+            Button("Yours? Import account key") { session.openAccount(seat: seat) }
+                .opacity(taken && !reserved ? 1 : 0).disabled(!taken || reserved)
+                .accessibilityHidden(!taken || reserved).frame(height: 20, alignment: .leading)
+            Button("Generate random?") { session.generateRandomCallsign(seat: seat) }
+                .opacity(taken || reserved ? 1 : 0).disabled(!(taken || reserved) || session.callsignGenerating)
+                .accessibilityHidden(!(taken || reserved)).frame(height: 20, alignment: .leading)
+                .accessibilityIdentifier(seat == 1 ? "generateLocalCallsign" : "generateCallsign")
+        }.font(.system(size: 10)).buttonStyle(.plain).foregroundStyle(WebStyle.accent)
+            .frame(maxWidth: .infinity, alignment: .leading).frame(height: 60, alignment: .topLeading)
     }
 }

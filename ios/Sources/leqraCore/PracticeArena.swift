@@ -56,7 +56,7 @@ public final class PracticeArena {
         for number in 0..<max(0, min(world == nil ? 24 : 7, botCount)) {
             let number = number + 1
             let origin = snapshot.tanks[0], point = spawnPoint(near: origin, minCells: 2, maxCells: 5)
-            snapshot.tanks.append(ArenaTank(id: number + 1, name: String(format: "ROVER %02d", number),
+            snapshot.tanks.append(ArenaTank(id: number + 1, name: String(format: "Rover %02d", number),
                                            x: point.x, y: point.y, angle: unitRandom() * 2 * .pi - .pi,
                                            colorIndex: GamePalette.index(colorIndex + number), bot: true,
                                            spawnProtected: true, spawnSerial: 1, invulnerable: 1, difficulty: difficulty))
@@ -124,7 +124,7 @@ public final class PracticeArena {
                     let team = rules.teamMode == "teams" ? (snapshot.tanks.count % 2 + 1) : 0
                     let color = team > 0 && rules.teamColors.indices.contains(team - 1) ? rules.teamColors[team - 1] : GamePalette.index(offset + 1)
                     let level = rules.infinityRandomDifficulty ? levels[random(selected + 1)] : levels[selected]
-                    snapshot.tanks.append(ArenaTank(id: id, name: "BOT \(offset + 1)", x: point.x, y: point.y,
+                    snapshot.tanks.append(ArenaTank(id: id, name: "Bot \(offset + 1)", x: point.x, y: point.y,
                         angle: unitRandom() * 2 * .pi - .pi, colorIndex: color, team: team, bot: true,
                         spawnProtected: true, spawnSerial: 1, invulnerable: 1, difficulty: level))
                     roamingIDs.insert(id)

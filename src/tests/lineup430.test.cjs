@@ -50,7 +50,7 @@ test('team lineup renders every tank on its own escaped line with bot strength',
 test('free-for-all preserves one individual heading, strength label, and score per tank',()=>{
  const {s,$}=boot({ffa:true});s.renderLineup();const html=$('roster').innerHTML;
  assert.equal(memberLines(html).length,0);assert.match(html,/>PILOT \(P1\)<\/div>/);assert.match(html,/>RUST<\/div>/);
- assert.match(html,/>PILOT<\/div>/);assert.match(html,/>FIERCE BOT<\/div>/);
+ assert.match(html,/>HUMAN PILOT<\/div>/);assert.match(html,/>FIERCE BOT<\/div>/);
  assert.equal((html.match(/class="score"/g)||[]).length,2);assert.equal(($('miniScores').innerHTML.match(/class="mini-score"/g)||[]).length,2);
 });
 test('local Survival lists current enemies with all strength levels and marks a fallen boss',()=>{
