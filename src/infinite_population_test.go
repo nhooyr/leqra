@@ -94,7 +94,7 @@ func TestInfiniteRoamingBudgetCountsConnectedSeatsAndKeepsStableNumbers(t *testi
 	a.nextBot = a.tick
 	a.populate()
 	if a.pilotByID(dead.ID) != dead || dead.HP != 0 || dead.Score != -7 || dead.respawn != a.tick+60 || a.nextID != lastID {
-		t.Fatal("reusing the first pooled identity lost its death deadline, score, or owner ID")
+		t.Fatal("parking lost a score or owner ID")
 	}
 	fillRoamingBots(a)
 	if len(roamingBots(a)) != 32 || len(a.inactiveBots) != 0 || a.nextID != lastID {
@@ -180,14 +180,14 @@ func TestInfinitePooledBotKeepsInFlightKillCreditAndClearsWithLastHuman(t *testi
 		t.Fatal("fixture did not fire its Cannon")
 	}
 	a.suspend(target)
-	if len(roamingBots(a)) != 0 || len(a.inactiveBots) != 1 || len(a.leaderboard(nil)) != 1 {
+	if len(roamingBots(a)) != 0 || len(a.inactiveBots) != 1 || len(a.leaderboard(nil)) != 2 {
 		t.Fatal("a disconnected reservation retained active roaming bots")
 	}
 	if a.advanceBullet(&a.bullets[0], 100, 0) || target.HP != 0 || bot.Score != 1 || target.KilledBy != bot.Name {
 		t.Fatal("pooled owner lost in-flight kill credit or callsign")
 	}
 	a.remove(target)
-	if len(a.inactiveBots) != 0 || len(a.pilots) != 0 || len(a.bullets) != 0 {
-		t.Fatal("last human departure retained the inactive population")
+	if len(a.inactiveBots) != 1 || len(a.pilots) != 0 || len(a.bullets) != 0 {
+		t.Fatal("last human departure lost the bot identity or retained its active world")
 	}
 }

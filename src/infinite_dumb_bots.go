@@ -14,30 +14,30 @@ const (
 	dumbBotShotTicks          = 108
 )
 
-// A true birth/respawn advances the public encounter cadence. Moving an alive
-// bot near a viewer or reactivating its pooled identity is still the same life.
+// A bot's difficulty belongs to its identity. Ambient spawn opportunities pick
+// a tier before selecting an inactive identity; respawning never changes it.
 func (a *infiniteArena) startBotLife(p *infinitePilot) {
 	a.resetBotDecisions(p)
-	if a.rules != nil {
-		if p.roomBot == nil && p.ambientNumber > 0 {
-			p.botLevel = a.chooseRoomBotLevel()
-		}
-		return
-	}
-	if p.roomBot != nil {
-		return
-	}
-	a.publicBotLives++
-	p.botLevel = infiniteBotLevel("dumb")
-	if a.publicBotLives%publicGodlikeLifeInterval == 0 && a.livingPublicGodlikes(p) < a.publicGodlikeLimit() {
-		p.botLevel = infiniteBotLevel("godlike")
-	} else if a.publicBotLives%publicNormalLifeInterval == publicNormalLifeInterval/2 {
-		// Stagger Normal lives between Godlike slots so neither rarity
-		// consumes the other's opportunity.
-		p.botLevel = infiniteBotLevel("normal")
+	if a.rules == nil && p.roomBot == nil && p.ambientNumber == 0 {
+		p.botLevel = a.chooseAmbientBotLevel()
 	}
 	p.publicBotName()
 	a.recordGodlikeSpawn(p)
+}
+
+func (a *infiniteArena) chooseAmbientBotLevel() int {
+	if a.rules != nil {
+		return a.chooseRoomBotLevel()
+	}
+	a.publicBotLives++
+	if a.publicBotLives%publicGodlikeLifeInterval == 0 && a.livingPublicGodlikes(nil) < a.publicGodlikeLimit() {
+		return infiniteBotLevel("godlike")
+	} else if a.publicBotLives%publicNormalLifeInterval == publicNormalLifeInterval/2 {
+		// Stagger Normal lives between Godlike slots so neither rarity
+		// consumes the other's opportunity.
+		return infiniteBotLevel("normal")
+	}
+	return infiniteBotLevel("dumb")
 }
 
 func (a *infiniteArena) publicGodlikeLimit() int {
@@ -58,41 +58,33 @@ func publicGodlike(p *infinitePilot) bool {
 
 func (a *infiniteArena) livingPublicGodlikes(except *infinitePilot) int {
 	count := 0
-	for _, pilots := range [2][]*infinitePilot{a.pilots, a.inactiveBots} {
-		for _, other := range pilots {
-			if other != except && publicGodlike(other) {
-				count++
-			}
+	for _, other := range a.pilots {
+		if other != except && publicGodlike(other) {
+			count++
 		}
 	}
 	return count
 }
 
-// Retain visible encounters first, then other active bodies, then the pool.
-// Population changes never need to kill a boss or alter its earned score.
+// Retain visible encounters first. Excess bosses wait for another Godlike
+// opportunity without changing their identity, difficulty, or earned score.
 func (a *infiniteArena) enforcePublicGodlikeLimit() {
 	if a.rules != nil {
 		return
 	}
 	remaining := a.publicGodlikeLimit()
-	for pass := 0; pass < 3; pass++ {
-		pilots := a.pilots
-		if pass == 2 {
-			pilots = a.inactiveBots
-		}
-		for _, p := range pilots {
-			if !publicGodlike(p) || pass < 2 && a.outsideActiveViews(p) != (pass == 1) {
+	for pass := 0; pass < 2; pass++ {
+		for i := len(a.pilots) - 1; i >= 0; i-- {
+			p := a.pilots[i]
+			if !publicGodlike(p) || a.outsideActiveViews(p) != (pass == 1) {
 				continue
 			}
 			if remaining > 0 {
 				remaining--
 				continue
 			}
-			p.botLevel = infiniteBotLevel("dumb")
 			a.godlikeSpawns = slices.DeleteFunc(a.godlikeSpawns, func(event infiniteGodlikeSpawn) bool { return event.ID == p.ID })
-			p.publicBotName()
-			p.clearControls()
-			a.resetBotDecisions(p)
+			a.parkAmbientBot(i)
 		}
 	}
 }

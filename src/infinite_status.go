@@ -19,8 +19,9 @@ func (a *App) infinityStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	arena := a.infinite.public
 	arena.mu.Lock()
-	players, tankCount := arena.connected, len(arena.pilots)
+	players := arena.connected
 	ranked := arena.rankedLeaders(nil)
+	tankCount := arena.leaderboardPoolCount(ranked)
 	leaders := make([]infiniteStatusLeader, min(len(ranked), infiniteLeaderCount))
 	for i := range leaders {
 		leaders[i] = infiniteStatusLeader{ranked[i], i + 1}

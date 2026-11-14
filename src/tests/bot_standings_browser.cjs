@@ -50,6 +50,31 @@ window.__botStandings.arena=function(entries,spectator,room){
  return {labels,count:w.leaderboard.length};
 };
 window.__botStandings.sent=()=>session.sent;
+window.__botStandings.identityLifecycle=()=>{
+ window.leqraInfinity.close();window.leqraInfinity.start('offline',{name:'Local Human',roomRules:{...window.__test.defaultRoomRules(),infinity:true,infinityRandomBots:true,infinityBotSpawnRates:{dumb:2}}});
+ const w=session,pilot=w.tanks[0],identities=[],checks=[],expect=(value,label)=>{if(!value)throw Error(label);checks.push(label);};
+ w.nextPickup=Infinity;pilot.invulnerable=10000;w.maze={wallsNear:()=>[],visitWalls:()=>false,blocked:()=>false};
+ for(const difficulty of BOT_LEVELS){
+  w.rules={...w.rules,infinityRandomBots:true,infinityBotSpawnRates:{[difficulty]:2}};w.nextBot=0;offlineStep(w,STEP);
+  const bot=w.tanks.find(t=>t.ambient);expect(bot?.difficulty===difficulty,'spawn '+difficulty);bot.score=10+identities.length;identities.push(bot);
+  w.rules={...w.rules,infinityRandomBots:false};offlineStep(w,STEP);expect(w.botPool.includes(bot),'park '+difficulty);
+ }
+ expect(new Set(identities.map(b=>b.botNumber)).size===BOT_LEVELS.length,'unique numbers across tier pools');const allocated=w.lastBot;
+ for(const bot of identities){
+  const serial=bot.spawnSerial,score=bot.score;w.rules={...w.rules,infinityRandomBots:true,infinityBotSpawnRates:{[bot.difficulty]:2}};w.nextBot=0;offlineStep(w,STEP);
+  expect(w.tanks.includes(bot)&&bot.spawnSerial===serial+1&&bot.score===score,'reuse same '+bot.difficulty+' identity and score');
+  w.rules={...w.rules,infinityRandomBots:false};offlineStep(w,STEP);
+ }
+ expect(w.lastBot===allocated,'reuse allocates no replacement identities');
+ const normal=identities.find(b=>b.difficulty==='normal');w.rules={...w.rules,infinityRandomBots:true,infinityBotSpawnRates:{normal:2}};w.nextBot=0;offlineStep(w,STEP);
+ const serial=normal.spawnSerial;Object.assign(normal,{hp:0,alive:false,respawn:1});w.nextBot=Infinity;
+ for(let i=0;i<30;i++)offlineStep(w,STEP);expect(w.tanks.includes(normal)&&normal.hp===0,'corpse retained for contact playback');
+ for(let i=0;i<40;i++)offlineStep(w,STEP);expect(w.botPool.includes(normal)&&normal.spawnSerial===serial,'death waits for spawn opportunity');
+ renderScores(w,pilot);leaderboardPanel.open=true;syncScoreboardButton();
+ expect(identities.every(bot=>[...leaderboard.children].some(row=>row.querySelector('.leaderboard-name')?.textContent===bot.name&&Number(row.querySelector('.leaderboard-score')?.textContent)===bot.score)),'parked identities stay on leaderboard');
+ w.nextBot=0;offlineStep(w,STEP);expect(w.tanks.includes(normal)&&normal.spawnSerial===serial+1,'matching tier returns same dead identity');
+ return {checks,identities:identities.map(b=>({id:b.id,name:b.name,difficulty:b.difficulty,score:b.score,number:b.botNumber}))};
+};
 `;
 function boot(){
  for(const [key,value]of Object.entries({'introTour.v1':'1',name:'Fixture Pilot',local2Name:'Fixture Wing',infinityOnline:'0',infinityOffline:'0',muted:'1'}))localStorage.setItem('leqra.'+key,value);
@@ -150,6 +175,7 @@ async function run(){
      await page.screenshot({path:path.join(output,profile.name+'-'+view+'.png')});
      if(spectator){const last=page.locator('#infiniteLeaderboard [data-follow-id="33"]');await last.scrollIntoViewIfNeeded();await last.click();const sent=await page.evaluate(()=>__botStandings.sent());check(sent.some(message=>message.type==='follow'&&message.target===33),profile.name+' spectator follows numeric ID after scrolling');}
     }
+    const lifecycle=await page.evaluate(()=>__botStandings.identityLifecycle());for(const label of lifecycle.checks)check(true,profile.name+' '+label);records.push({profile:profile.name,view:'persistent-identities',...lifecycle});
     await checkRules(page,profile,browser);
    }catch(error){await page.screenshot({path:path.join(output,profile.name+'-failure.png')});throw error;}finally{await page.context().close();}
   }

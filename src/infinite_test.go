@@ -1056,10 +1056,10 @@ func TestInfiniteSnapshotRanksBothLocalHumansBeyondTheTopTen(t *testing.T) {
 	drain(c)
 	drain(otherClient)
 	for pass := range 2 {
-		wantRanks := map[int]int{primary.ID: 13, local.ID: 14, other.ID: 15}
+		wantRanks := map[int]int{primary.ID: 14, local.ID: 15, other.ID: 16}
 		if pass == 1 {
 			primary.Score, local.Score = 250, 250
-			wantRanks[primary.ID], wantRanks[local.ID] = 1, 2
+			wantRanks[primary.ID], wantRanks[local.ID] = 2, 3
 			for i, j := 0, len(a.pilots)-1; i < j; i, j = i+1, j-1 {
 				a.pilots[i], a.pilots[j] = a.pilots[j], a.pilots[i]
 			}

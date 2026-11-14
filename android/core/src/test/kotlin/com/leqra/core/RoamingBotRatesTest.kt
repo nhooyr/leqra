@@ -81,18 +81,21 @@ class RoamingBotRatesTest {
     }
 
     @Test
-    fun everyAmbientRespawnReselectsEnabledTierWhileKeepingIdentityAndScore() {
+    fun ambientDeathsWaitForMatchingTierSpawnWhileRosterRespawnsUnchanged() {
         val arena = configured(mapOf("dumb" to 2.0), roster = 1)
         val roster = arena.snapshot.tanks.single { it.bot }
         arena.step(GameInput(), step)
         val ambient = arena.snapshot.tanks.first { it.bot && it.id != roster.id }
-        ambient.difficulty = "godlike"; ambient.score = 17; ambient.hp = 0; ambient.respawnTime = step
+        ambient.score = 17; ambient.hp = 0; ambient.respawnTime = step
         roster.score = 9; roster.hp = 0; roster.respawnTime = step
         arena.step(GameInput(), step)
+        assertFalse(arena.snapshot.tanks.any { it.id == ambient.id })
+        assertEquals(17, arena.snapshot.leaderboard.single { it.id == ambient.id }.score)
+        assertEquals("hard", arena.snapshot.tanks.single { it.id == roster.id }.difficulty)
+        assertEquals(9, arena.snapshot.tanks.single { it.id == roster.id }.score)
+        repeat(60) { arena.step(GameInput(), step) }
         val next = arena.snapshot.tanks.single { it.id == ambient.id }
         assertEquals(ambient.spawnSerial + 1, next.spawnSerial)
         assertEquals("dumb", next.difficulty); assertEquals(17, next.score)
-        assertEquals("hard", arena.snapshot.tanks.single { it.id == roster.id }.difficulty)
-        assertEquals(9, arena.snapshot.tanks.single { it.id == roster.id }.score)
     }
 }

@@ -59,3 +59,27 @@ func TestInfinityStatusCapsRankedStandingsAndRejectsMutation(t *testing.T) {
 		t.Fatal("preview endpoint accepted a mutation")
 	}
 }
+
+func TestInfinityStatusCountsParkedAndArchivedStandings(t *testing.T) {
+	app := newApp(4, nil)
+	a := app.infinite.public
+	human := a.join(fakeClient(), "Human", time.Now())
+	bot := a.addPilot("Bot", true, 0, 0, 1, 3)
+	bot.ambientNumber, bot.Score = 1, 17
+	bot.publicBotName()
+	commitPublicFixture(t, app.infinite)
+	a.remove(human)
+	commitPublicFixture(t, app.infinite)
+	response := httptest.NewRecorder()
+	app.handler().ServeHTTP(response, httptest.NewRequest("GET", "/api/infinity", nil))
+	var status struct {
+		Players, TankCount int
+		Leaders            []infiniteStatusLeader
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Players != 0 || status.TankCount != 2 || len(status.Leaders) != 2 || status.Leaders[0].ID != bot.ID || status.Leaders[0].Score != 17 || len(a.pilots) != 0 || len(a.inactiveBots) != 1 {
+		t.Fatal("status count diverged from parked and archived standings", status)
+	}
+}

@@ -59,8 +59,15 @@ A superseded transport receives
 a later manual Play. Explicit Exit stops automatic rejoining on the client
 while retaining the credential for a
 later deliberate Play. Native iOS stores it in the app's Keychain. Roaming bots'
-ranked identities and scores are saved too, and their bodies return as players
-repopulate the arena.
+ranked identities, scores and permanent difficulties are saved too. Their bodies
+return only when a new encounter selects their matching difficulty, preserving
+the global ID and `Bot N` number. Parked bots do not count against the active
+population or Godlike cap. SQLite schema v2 adds the bot difficulty and monotonic
+life serial; old rows migrate from exact canonical Normal/Godlike name suffixes,
+defaulting other legacy bot rows to Dumb, with life serial zero. Newly saved serials continue
+across restarts so a later Godlike life receives a fresh warning identity.
+Human profiles, scores, the maze seed, the identity counter and the public
+encounter cadence are preserved.
 
 Meaningful nonzero scores never expire automatically. To bound anonymous
 zero-score churn, the server periodically prunes inactive zero-score credential

@@ -76,4 +76,19 @@ class SpectatorPresentationTest {
         assertEquals(7, revived.following)
         assertEquals(9000.0, revived.tanks.single().x, 0.0)
     }
+
+    @Test
+    fun inactiveBotWaitsWithItsFollowingIdentityAndResumesTheSameTank() {
+        val timeline = OnlinePresentation(localID = -1)
+        timeline.accept(view(100, 7, 100.0), 0.0)
+        timeline.accept(view(102, 7, 0.0).copy(tanks = emptyList()), .033)
+        val parked = timeline.render(.01, GameInput(fire = true), .04, send = { fail("Viewer input escaped") })!!
+        assertEquals(7, parked.following)
+        assertTrue(parked.tanks.isEmpty())
+        assertTrue(parked.leaderboard.any { it.id == 7 })
+        timeline.accept(view(104, 7, 9000.0, spawn = 2), .067)
+        val revived = timeline.render(.01, GameInput(), .08, send = {})!!
+        assertEquals(7, revived.following)
+        assertEquals(9000.0, revived.tanks.single().x, 0.0)
+    }
 }

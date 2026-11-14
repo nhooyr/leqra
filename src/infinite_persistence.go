@@ -31,6 +31,7 @@ const (
 type infinitePublicEntry struct {
 	infiniteLeader
 	ambient int
+	spawn   int
 	listed  bool
 }
 
@@ -43,7 +44,7 @@ func validSavedPublicName(entry infinitePublicEntry) bool {
 	}
 	// Canonical server-owned ambient labels may exceed the human limit once
 	// their number has three digits. Never relax validation for player names.
-	if entry.Bot && entry.ambient > 0 && entry.ambient <= infiniteBotLimit {
+	if entry.Bot && entry.ambient > 0 && entry.ambient <= infiniteBotIdentityLimit {
 		base := fmt.Sprintf("Bot %d", entry.ambient)
 		for _, suffix := range []string{"", " - Dumb", " - Normal", " - Godlike"} {
 			if entry.Name == base+suffix {
@@ -105,11 +106,8 @@ func (s *infiniteServer) openPublicStore(path string) error {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&schema); err != nil {
 		return fail(err)
 	}
-	if schema > 1 {
+	if schema > 2 {
 		return fail(fmt.Errorf("unsupported schema version %d", schema))
-	}
-	if _, err = db.Exec("PRAGMA user_version=1"); err != nil {
-		return fail(err)
 	}
 	columns, err := db.Query("PRAGMA table_info(infinity_profiles)")
 	if err != nil {
@@ -137,6 +135,46 @@ func (s *infiniteServer) openPublicStore(path string) error {
 			return fail(err)
 		}
 	}
+	columns, err = db.Query("PRAGMA table_info(infinity_scores)")
+	if err != nil {
+		return fail(err)
+	}
+	hasDifficulty, hasSpawnSerial := false, false
+	for columns.Next() {
+		var cid, notnull, primary int
+		var name, kind string
+		var fallback any
+		if err = columns.Scan(&cid, &name, &kind, &notnull, &fallback, &primary); err != nil {
+			break
+		}
+		hasDifficulty = hasDifficulty || name == "difficulty"
+		hasSpawnSerial = hasSpawnSerial || name == "spawn_serial"
+	}
+	if err == nil {
+		err = columns.Err()
+	}
+	columns.Close()
+	if err != nil {
+		return fail(err)
+	}
+	if !hasDifficulty {
+		if _, err = db.Exec("ALTER TABLE infinity_scores ADD COLUMN difficulty TEXT NOT NULL DEFAULT ''"); err != nil {
+			return fail(err)
+		}
+	}
+	if !hasSpawnSerial {
+		if _, err = db.Exec("ALTER TABLE infinity_scores ADD COLUMN spawn_serial INTEGER NOT NULL DEFAULT 0 CHECK(spawn_serial>=0)"); err != nil {
+			return fail(err)
+		}
+	}
+	// Older stores retained the displayed canonical suffix, but not the tier.
+	// Infer it only for exact server-generated labels; legacy bots default Dumb.
+	if _, err = db.Exec(`UPDATE infinity_scores SET difficulty=CASE WHEN name='Bot '||ambient||' - Godlike' THEN 'godlike' WHEN name='Bot '||ambient||' - Normal' THEN 'normal' ELSE 'dumb' END WHERE bot=1 AND difficulty=''`); err != nil {
+		return fail(err)
+	}
+	if _, err = db.Exec("PRAGMA user_version=2"); err != nil {
+		return fail(err)
+	}
 	var check string
 	if err = db.QueryRow("PRAGMA quick_check").Scan(&check); err != nil || check != "ok" {
 		if err == nil {
@@ -145,16 +183,16 @@ func (s *infiniteServer) openPublicStore(path string) error {
 		return fail(err)
 	}
 	entries := make(map[int]infinitePublicEntry)
-	rows, err := db.Query("SELECT id,name,score,bot,color_index,ambient,listed FROM infinity_scores")
+	rows, err := db.Query("SELECT id,name,score,bot,color_index,ambient,listed,difficulty,spawn_serial FROM infinity_scores")
 	if err != nil {
 		return fail(err)
 	}
 	for rows.Next() {
 		var e infinitePublicEntry
-		if err = rows.Scan(&e.ID, &e.Name, &e.Score, &e.Bot, &e.ColorIndex, &e.ambient, &e.listed); err != nil {
+		if err = rows.Scan(&e.ID, &e.Name, &e.Score, &e.Bot, &e.ColorIndex, &e.ambient, &e.listed, &e.Difficulty, &e.spawn); err != nil {
 			break
 		}
-		if e.ID <= 0 || !validSavedPublicName(e) || e.ColorIndex < 0 || e.ColorIndex >= len(tankColors) || e.ambient < 0 || e.ambient > infiniteBotLimit {
+		if e.ID <= 0 || !validSavedPublicName(e) || e.ColorIndex < 0 || e.ColorIndex >= len(tankColors) || e.ambient < 0 || e.ambient > infiniteBotIdentityLimit || e.spawn < 0 || e.Bot && infiniteBotTunings[infiniteBotLevel(e.Difficulty)].name != e.Difficulty {
 			err = errors.New("invalid saved public ranking")
 			break
 		}
@@ -245,13 +283,35 @@ func (s *infiniteServer) openPublicStore(path string) error {
 	for _, profile := range profiles {
 		s.indexPublicProfile(profile)
 	}
+	usedNumbers := make(map[int]bool)
+	ids := make([]int, 0, len(entries))
 	for id, e := range entries {
+		ids = append(ids, id)
+		if e.Bot && e.ambient > 0 {
+			if usedNumbers[e.ambient] {
+				return fail(errors.New("duplicate saved roaming bot number"))
+			}
+			usedNumbers[e.ambient] = true
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		e := entries[id]
 		nextID = max(nextID, id)
 		if e.Bot {
-			if len(s.public.inactiveBots) >= infiniteBotLimit {
+			if len(s.public.inactiveBots) >= infiniteBotIdentityLimit {
 				return fail(errors.New("too many saved roaming bots"))
 			}
-			p := &infinitePilot{infiniteTank: infiniteTank{ID: id, Name: e.Name, Score: e.Score, Bot: true, ColorIndex: e.ColorIndex}, ambientNumber: e.ambient, botLevel: infiniteBotLevel("dumb")}
+			if e.ambient == 0 {
+				// Legacy rows without a roaming number receive a stable unused
+				// number once, while preserving their global ID and score.
+				e.ambient = 1
+				for usedNumbers[e.ambient] {
+					e.ambient++
+				}
+				usedNumbers[e.ambient] = true
+			}
+			p := &infinitePilot{infiniteTank: infiniteTank{ID: id, Name: e.Name, Score: e.Score, Bot: true, ColorIndex: e.ColorIndex, Spawn: e.spawn}, ambientNumber: e.ambient, botLevel: infiniteBotLevel(e.Difficulty)}
 			p.publicBotName()
 			s.public.inactiveBots = append(s.public.inactiveBots, p)
 		}
@@ -675,7 +735,11 @@ func (s *infiniteServer) resumePublic(c *Client, msg infiniteMessage, now time.T
 }
 
 func infiniteEntry(p *infinitePilot) infinitePublicEntry {
-	return infinitePublicEntry{infiniteLeader: p.leader(), ambient: p.ambientNumber, listed: true}
+	e := infinitePublicEntry{infiniteLeader: p.leader(), ambient: p.ambientNumber, listed: true}
+	if p.Bot {
+		e.spawn = p.Spawn
+	}
+	return e
 }
 
 // Capture only live/pending changes. The durable identity table is never scanned
@@ -787,7 +851,7 @@ func writePublicRows(tx *sql.Tx, changes map[int]infinitePublicEntry, profiles m
 		return nil
 	}
 	for _, e := range changes {
-		_, err := tx.Exec(`INSERT INTO infinity_scores(id,name,score,bot,color_index,ambient,listed) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,score=excluded.score,bot=excluded.bot,color_index=excluded.color_index,ambient=excluded.ambient,listed=excluded.listed`, e.ID, e.Name, e.Score, e.Bot, e.ColorIndex, e.ambient, e.listed)
+		_, err := tx.Exec(`INSERT INTO infinity_scores(id,name,score,bot,color_index,ambient,listed,difficulty,spawn_serial) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,score=excluded.score,bot=excluded.bot,color_index=excluded.color_index,ambient=excluded.ambient,listed=excluded.listed,difficulty=excluded.difficulty,spawn_serial=excluded.spawn_serial`, e.ID, e.Name, e.Score, e.Bot, e.ColorIndex, e.ambient, e.listed, e.Difficulty, e.spawn)
 		if err != nil {
 			return err
 		}

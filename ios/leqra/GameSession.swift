@@ -233,7 +233,10 @@ final class GameSession: ObservableObject {
         if let entry = standings.first(where: { $0.id == followingID }) { return CallsignPolicy.displayName(entry.name, bot: entry.bot) }
         return lastSnapshot.tanks.first(where: { $0.id == followingID }).map { CallsignPolicy.displayName($0.name, bot: $0.bot) }
     }
-    var spectatorFollowingLabel: String { followingName.map { "FOLLOWING " + $0 } ?? "WAITING FOR TANKS" }
+    var spectatorFollowingLabel: String {
+        guard let followingName else { return "WAITING FOR TANKS" }
+        return (lastSnapshot.tanks.contains { $0.id == followingID } ? "FOLLOWING " : "WAITING FOR ") + followingName
+    }
     func localPilotSeat(_ id: Int) -> Int? {
         guard !spectating, id >= 0 else { return nil }
         if id == localID { return 1 }

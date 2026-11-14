@@ -93,11 +93,8 @@ func (a *infiniteArena) addObserver(c *Client, observer *infiniteObserver, gener
 		return false
 	}
 	if target > 0 {
-		for _, p := range a.pilots {
-			if p.ID == target {
-				observer.following = target
-				break
-			}
+		if a.pilotByID(target) != nil {
+			observer.following = target
 		}
 	}
 	a.observerTarget(observer, a.rankedLeaders(nil))
@@ -126,6 +123,9 @@ func (a *infiniteArena) removeObserver(observer *infiniteObserver) {
 func (a *infiniteArena) observerTarget(observer *infiniteObserver, leaders []infiniteLeader) *infinitePilot {
 	if p := a.observerPilot(observer); p != nil {
 		return p
+	}
+	if a.pilotByID(observer.following) != nil {
+		return nil // Parked bots retain their selected identity while waiting.
 	}
 	observer.following = 0
 	if len(leaders) > 0 {
@@ -167,13 +167,11 @@ func (s *infiniteServer) follow(c *Client, target int, now time.Time) {
 		fail("Choose a tank from this room's leaderboard.")
 		return
 	}
-	for _, p := range a.pilots {
-		if p.ID == target {
-			connection.observer.following = target
-			c.enqueue(map[string]any{"type": "followed", "following": target})
-			a.broadcast()
-			return
-		}
+	if a.pilotByID(target) != nil {
+		connection.observer.following = target
+		c.enqueue(map[string]any{"type": "followed", "following": target})
+		a.broadcast()
+		return
 	}
 	fail("That tank is no longer in this arena.")
 }

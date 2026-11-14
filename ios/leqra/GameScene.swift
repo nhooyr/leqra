@@ -510,7 +510,7 @@ final class GameScene: SKScene {
                 lastLocalHP = focus.hp
                 lastLocalSpawn = focus.spawnSerial
             }
-        } else if snapshot.spectating && layoutMode == .infinity {
+        } else if snapshot.spectating && layoutMode == .infinity && !hasCamera {
             cameraPoint = .zero; hasCamera = true
         }
         world.position = CGPoint(x: worldViewport.midX - cameraPoint.x * zoom,

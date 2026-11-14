@@ -132,7 +132,7 @@ func Test44ShotgunThreeTimesSpeedAndSameRadius(t *testing.T) {
 			t.Fatalf("wrong pellet %+v", b)
 		}
 	}
-	if tank.Cooldown != .54 || tank.Charges != 4 {
+	if tank.Cooldown != .27 || tank.Charges != 4 {
 		t.Fatal("shotgun equip/volley cooldown changed unexpectedly")
 	}
 }

@@ -212,8 +212,8 @@ internal class NativeHudView(context: Context) : View(context) {
                 tank.cooldownTotal.takeIf { it > 0 }
                     ?: when (tank.power) {
                         "cannon",
-                        "laser" -> .85
-                        "scatter" -> .54
+                        "laser" -> .85 * 2 / 3
+                        "scatter" -> .27
                         "homing" -> .72
                         "grenade" -> .8
                         else -> .34
