@@ -74,6 +74,14 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             typeface = Typeface.MONOSPACE
             textAlign = Paint.Align.CENTER
         }
+    private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = boldTypeface
+        textAlign = Paint.Align.RIGHT
+    }
+    private val countOutlinePaint = Paint(countPaint).apply {
+        style = Paint.Style.STROKE
+        strokeJoin = Paint.Join.ROUND
+    }
     private val path = Path()
     private val destination = RectF()
     private val viewport = RectF()
@@ -502,6 +510,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             drawBullets(canvas, state)
             drawMissileWarnings(canvas, state)
             drawEffects(canvas)
+            // Stable overlay passes keep firing shells and neighboring icons below every count.
+            for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, false)
+            for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, true)
             canvas.restore()
             for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && tank.hp > 0)
                 drawIdentity(canvas, tank)
@@ -632,10 +643,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
         paint.alpha = 255
         canvas.restore()
-        if (tank.hp > 0) drawBadges(canvas, tank)
     }
 
-    private fun drawBadges(canvas: Canvas, tank: ArenaTank) {
+    private fun drawBadges(canvas: Canvas, tank: ArenaTank, numbers: Boolean) {
         var index = 0
         fun badge(kind: String, count: Int?, remaining: Double) {
             if (index >= 4) return
@@ -653,28 +663,27 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             val fade = (remaining / (if (kind == "starman") 1 else 3)).coerceIn(0.0, 1.0)
             val alpha = (fade * fade * (3 - 2 * fade) * 255).toInt()
             if (alpha <= 0) return
-            canvas.save()
-            canvas.translate(x, y)
-            paint.style = Paint.Style.FILL
-            paint.alpha = alpha
-            drawBitmap(canvas, art.badge(kind), size / 2)
-            canvas.restore()
-            paint.alpha = 255
-            if (count != null) {
-                textPaint.typeface = boldTypeface
-                textPaint.textSize = max(10 * size / 24, 10 * textScale / zoom)
+            if (!numbers) {
+                canvas.save()
+                canvas.translate(x, y)
+                paint.style = Paint.Style.FILL
+                paint.alpha = alpha
+                drawBitmap(canvas, art.badge(kind), size / 2)
+                canvas.restore()
+                paint.alpha = 255
+            }
+            if (numbers && count != null) {
+                countPaint.textSize = max(10 * size / 24, 10 * textScale / zoom)
                 val text = countText.getOrNull(count) ?: count.toString()
-                if (countFontSize != textPaint.textSize) {
-                    countFontSize = textPaint.textSize
+                if (countFontSize != countPaint.textSize) {
+                    countFontSize = countPaint.textSize
                     countWidths.fill(0f)
                 }
+                val capacity = if (kind == "rapid") 180 else 5
                 val width =
-                    if (count in countWidths.indices) {
-                        if (countWidths[count] == 0f)
-                            countWidths[count] = textPaint.measureText(text) + 4
-                        countWidths[count]
-                    } else textPaint.measureText(text) + 4
-                val height = textPaint.textSize + 2
+                    if (countWidths[capacity] == 0f) (countPaint.measureText(countText[capacity]) + 4).also { countWidths[capacity] = it }
+                    else countWidths[capacity]
+                val height = countPaint.textSize + 2
                 val right = x + size / 2 - 2
                 val bottom = y + size / 2 - 1
                 fill(ArenaPalette.alpha(0xff08131b.toInt(), alpha / 255f * .96f))
@@ -687,10 +696,12 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     2f,
                     paint,
                 )
-                textPaint.color = ArenaPalette.alpha(0xfff3f8ff.toInt(), alpha / 255f)
-                textPaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText(text, right, bottom - 1, textPaint)
-                textPaint.textAlign = Paint.Align.CENTER
+                countPaint.color = ArenaPalette.alpha(0xfff3f8ff.toInt(), alpha / 255f)
+                countOutlinePaint.textSize = countPaint.textSize
+                countOutlinePaint.color = ArenaPalette.alpha(android.graphics.Color.BLACK, alpha / 255f)
+                countOutlinePaint.strokeWidth = max(1.2f * scale, 1.2f / zoom)
+                canvas.drawText(text, right, bottom - 1, countOutlinePaint)
+                canvas.drawText(text, right, bottom - 1, countPaint)
             }
         }
         if (tank.power.isNotEmpty() && tank.powerTime > 0)
@@ -972,8 +983,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                         tank.x,
                         tank.y,
                         tank.angle,
-                        if (infinity) 18 * 84.0
-                        else 2 * ((state.world?.width ?: 756.0) + (state.world?.height ?: 588.0)),
+                        if (infinity) 36 * 84.0
+                        else 4 * ((state.world?.width ?: 756.0) + (state.world?.height ?: 588.0)),
                     )
                 else
                     maze.projectileGuide(

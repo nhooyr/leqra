@@ -42,6 +42,46 @@ class NativeNetworkIntegrationTest {
     }
 
     @Test
+    fun pendingPrimaryRegistrationRecoversCommittedKeysAndReplacesOnlyUnknownCandidates() {
+        val origin = server()
+        for (route in listOf("public", "create", "publish")) for (registered in listOf(false,true)) {
+            val context = isolatedAccountContext()
+            val store = EncryptedAccountStore(context)
+            val candidate = store.prepareRegistration(origin, 0)
+            assertTrue(candidate.registrationPending)
+            val events = LinkedBlockingQueue<NetworkEvent>()
+            var client: NativeNetworkClient? = null
+            var service: AccountService? = null
+            var name = "C${System.nanoTime() % 1_000_000_000}"
+            try {
+                if (registered) {
+                    service = AccountService(store)
+                    val generated = LinkedBlockingQueue<Result<List<GeneratedCallsign>>>()
+                    service.generate(origin,listOf(0),java.util.UUID.randomUUID().toString()) { generated.offer(it) }
+                    name = (generated.poll(20,TimeUnit.SECONDS) ?: throw AssertionError("Registration timed out")).getOrThrow().single().name
+                    // Recreate the durable state after the server commits but its reply is lost.
+                    store.select(origin,0,candidate.key,registrationPending=true)
+                }
+                main {
+                    client = NativeNetworkClient(store, events::offer)
+                    when (route) {
+                        "public" -> client!!.connectPublic(origin, name, 0)
+                        "create" -> client!!.connectRoom(origin, name)
+                        "publish" -> client!!.connectPublishedRoom(origin, name, ProtocolJson.rules(com.leqra.core.RoomRules.localDefaults()),
+                            org.json.JSONArray().put(org.json.JSONObject().put("kind", "human").put("name", name)))
+                    }
+                }
+                val welcome = (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
+                assertNotNull(welcome.publicToken)
+                if(registered) assertEquals(candidate.key,welcome.publicToken) else assertNotEquals(candidate.key, welcome.publicToken)
+                assertEquals(welcome.publicToken, store.selected(origin, 0)!!.key)
+                assertFalse(store.selected(origin, 0)!!.registrationPending)
+                if (!registered) assertTrue(store.pending(origin,0).any { it.key==candidate.key })
+            } finally { main { client?.disconnect(false); service?.close() }; context.noBackupFilesDir.deleteRecursively() }
+        }
+    }
+
+    @Test
     fun publicColdResumePreservesBothAccountsAndNewestDeviceTakesOver() {
         val origin = server()
         val context = isolatedAccountContext()
@@ -70,6 +110,7 @@ class NativeNetworkIntegrationTest {
                 first!!.sendInput(GameInput(fire = true))
                 first!!.suspend()
             }
+            store.select(origin,0,welcome.publicToken!!,registrationPending=true)
             val restored = EncryptedAccountStore(context)
             assertNotNull(restored.activeIntent())
             assertEquals(welcome.localPublicToken, restored.selected(origin, 1)!!.key)

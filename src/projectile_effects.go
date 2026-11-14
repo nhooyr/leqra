@@ -3,13 +3,15 @@ package main
 import "slices"
 
 const projectileEffectHistoryTicks = 36 // 600ms: covers ordinary 50–400ms queue jitter.
-const projectileEffectsPerActor = 40
+// Starman Shotgun can end three shots per actor per 60Hz tick: 108 terminal
+// flights in 600ms. Leave room for their victim contacts and laser paths too.
+const projectileEffectsPerActor = 128
 
 // The ordinary cosmetic queues are intentionally small. Terminal flights and
 // beam paths have separate bounded history so unrelated distant fire cannot
 // evict a short lethal shot before its next visible snapshot.
 func (g *Game) retainProjectileEvent(e Event) {
-	if e.Flight == nil && e.Type != "laser" {
+	if e.Flight == nil && e.Contact == nil && e.Type != "laser" {
 		return
 	}
 	g.pruneProjectileEvents()
@@ -55,7 +57,7 @@ func (a *infiniteArena) attachFlightEffect(b *infiniteBullet) {
 }
 
 func (a *infiniteArena) retainProjectileEffect(e infiniteEffect) {
-	if e.Flight == nil && e.Kind != "laser" {
+	if e.Flight == nil && e.Contact == nil && e.Kind != "laser" {
 		return
 	}
 	a.pruneProjectileEffects()

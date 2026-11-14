@@ -144,7 +144,7 @@ test('a skipped round-over hold still presents a previously unseen terminal shot
   flight:{id:7,owner:2,colorIndex:0,kind:'cannon',radius:14,startTick:218,endTick:219,points:[{x:100,y:100,tick:218},{x:110,y:100,tick:219}]}}];
  s.receiveOnlineState(packet);assert.equal(s.results,undefined);assert.ok(s.pendingMatchPresentation);
  s.online.flights.sample(220,1000);s.flushMatchPresentation(1000);assert.equal(s.results,undefined);
- s.online.flights.sample(224,1051);s.flushMatchPresentation(1051);assert.equal(s.results,1);
+ s.online.flights.sample(224,1051);s.flushMatchPresentation(1051);assert.equal(s.results,undefined,'exact endpoint precedes the overlay');s.online.flights.sample(224,1060);s.flushMatchPresentation(1060);assert.equal(s.results,1);
 });
 
 test('online win and loss previews remain visible for exactly the existing two-second result interval',()=>{

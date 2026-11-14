@@ -282,7 +282,7 @@ func TestInfiniteSnapshotReportsCombatStateOutsideView(t *testing.T) {
 		t.Fatalf("expected both nearby tanks: %+v", packet.Tanks)
 	}
 	hud := packet.Tanks[0]
-	if hud.ID != p.ID || hud.Power != "homing" || hud.CooldownTotal != cannonCooldown ||
+	if hud.ID != p.ID || hud.Power != "homing" || hud.CooldownTotal != infinitePrecision(cannonCooldown) ||
 		hud.Cooldown != infinitePrecision(cannonCooldown-tickDT) ||
 		hud.AmmoUsed != 2 || hud.Grenades != 2 || hud.GrenadeLife != 7 || !hud.Locked {
 		t.Fatalf("incorrect combat state: %+v", hud)

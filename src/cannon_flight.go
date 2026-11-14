@@ -51,11 +51,16 @@ func (f *cannonFlight) advance(x, y, tick float64, vertex bool) {
 }
 
 func (b *Bullet) beginFlight(x, y, tick float64) {
-	b.flightBirth, b.flightTracked = cannonFlightPoint{x, y, tick}, true
+	b.flightBirth, b.flightTracked = cannonFlightPoint{x, y, max(0, tick)}, true
+	b.flightBaseAge, b.flightAge = b.Age, b.Age
+}
+
+func (b *Bullet) flightTick() float64 {
+	return b.flightBirth.Tick + max(0, b.flightAge-b.flightBaseAge)/tickDT
 }
 
 func (b *Bullet) ensureFlight() *cannonFlight {
-	if !b.flightTracked || b.published && b.Kind != "cannon" {
+	if !b.flightTracked {
 		return nil
 	}
 	if b.flight == nil {
@@ -66,24 +71,36 @@ func (b *Bullet) ensureFlight() *cannonFlight {
 }
 
 func (b *Bullet) finishFlight() *cannonFlight {
-	f := b.ensureFlight().finish(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT)
+	f := b.ensureFlight().finish(b.X, b.Y, b.flightTick())
 	b.flightEmitted = f != nil
 	return f
 }
 
-func (b *Bullet) publishFlight() {
+func (b *Bullet) publishFlight(ticks ...float64) {
 	b.published = true
 	if b.Kind != "cannon" {
-		b.flight, b.flightTracked = nil, false
+		at := b.flightBirth.Tick + max(0, b.Age-b.flightBaseAge)/tickDT
+		if len(ticks) > 0 {
+			at = ticks[0]
+		}
+		b.beginFlight(b.X, b.Y, at)
+		if b.flight != nil {
+			b.flight.reset(b.X, b.Y, at)
+		}
 	}
 }
 
 func (b *infiniteBullet) beginFlight(x, y, tick float64) {
-	b.flightBirth, b.flightTracked = cannonFlightPoint{x, y, tick}, true
+	b.flightBirth, b.flightTracked = cannonFlightPoint{x, y, max(0, tick)}, true
+	b.flightBaseAge, b.flightAge = b.age, b.age
+}
+
+func (b *infiniteBullet) flightTick() float64 {
+	return b.flightBirth.Tick + max(0, b.flightAge-b.flightBaseAge)/tickDT
 }
 
 func (b *infiniteBullet) ensureFlight() *cannonFlight {
-	if !b.flightTracked || b.published && b.Kind != "cannon" {
+	if !b.flightTracked {
 		return nil
 	}
 	if b.flight == nil {
@@ -94,15 +111,22 @@ func (b *infiniteBullet) ensureFlight() *cannonFlight {
 }
 
 func (b *infiniteBullet) finishFlight() *cannonFlight {
-	f := b.ensureFlight().finish(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT)
+	f := b.ensureFlight().finish(b.X, b.Y, b.flightTick())
 	b.flightEmitted = f != nil
 	return f
 }
 
-func (b *infiniteBullet) publishFlight() {
+func (b *infiniteBullet) publishFlight(ticks ...float64) {
 	b.published = true
 	if b.Kind != "cannon" {
-		b.flight, b.flightTracked = nil, false
+		at := b.flightBirth.Tick + max(0, b.age-b.flightBaseAge)/tickDT
+		if len(ticks) > 0 {
+			at = ticks[0]
+		}
+		b.beginFlight(b.X, b.Y, at)
+		if b.flight != nil {
+			b.flight.reset(b.X, b.Y, at)
+		}
 	}
 }
 

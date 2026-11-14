@@ -43,6 +43,9 @@ final class CannonFlightTests: XCTestCase {
         bullets = []; presenter.append(to: &bullets, tick: 65, now: 0.01)
         XCTAssertEqual(bullets.first?.x ?? 0, 100 + 20.0 / 3, accuracy: 1e-10)
         bullets = []; presenter.append(to: &bullets, tick: 67, now: 0.02)
+        XCTAssertEqual(bullets.first?.x, 100, "The exact endpoint is drawn for a complete display frame")
+        XCTAssertTrue(presenter.effects([]).isEmpty)
+        bullets = []; presenter.append(to: &bullets, tick: 67, now: 0.03)
         XCTAssertTrue(bullets.isEmpty); XCTAssertEqual(presenter.effects([]), [effect])
     }
 
@@ -71,7 +74,7 @@ final class CannonFlightTests: XCTestCase {
         XCTAssertTrue(router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0.3).isEmpty)
     }
 
-    func testPointBlankPracticeKillRendersItsProjectileAfterAuthoritativeDeath() throws {
+    func testPointBlankPracticeKillKeepsTheBodyUntilRenderedProjectileContact() throws {
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             let world = ArenaWorld(width: 840, height: 840, cols: 10, rows: 10)
             let arena = PracticeArena(seed: 42, name: "Human", colorIndex: 0, botCount: 0, world: world)
@@ -82,9 +85,19 @@ final class CannonFlightTests: XCTestCase {
             XCTAssertTrue(arena.snapshot.bullets.isEmpty || kind == "scatter", kind)
             let presented = arena.presentationSnapshot(fraction: 0, now: 0)
             XCTAssertTrue(presented.bullets.contains { $0.owner == 1 && $0.kind == kind }, kind)
-            XCTAssertEqual(presented.tanks[1].hp, 0, kind)
+            XCTAssertEqual(presented.tanks[1].hp, 1, kind)
             XCTAssertFalse(presented.effects.contains { $0.flight != nil && ["impact", "blast"].contains($0.kind) }, kind)
             XCTAssertEqual(arena.snapshot.tanks[1].hp, 0)
+            let endpoint = arena.presentationSnapshot(fraction: 0, now: 0.05)
+            let terminal = try XCTUnwrap(arena.snapshot.effects.first { $0.flight != nil }?.flight, kind)
+            let bullet = try XCTUnwrap(endpoint.bullets.first { $0.id == terminal.id }, kind)
+            XCTAssertEqual(bullet.x, terminal.points.last?.x)
+            XCTAssertEqual(endpoint.tanks[1].hp, 1, kind)
+            XCTAssertLessThanOrEqual(hypot(bullet.x - endpoint.tanks[1].x, bullet.y - endpoint.tanks[1].y), 17 + (terminal.radius ?? 0) + 1e-7, kind)
+            XCTAssertFalse(endpoint.effects.contains { $0.kind == "hit" }, kind)
+            let after = arena.presentationSnapshot(fraction: 0, now: 0.05 + 1 / 120)
+            XCTAssertEqual(after.tanks[1].hp, 0, kind)
+            XCTAssertTrue(after.effects.contains { $0.kind == "hit" }, kind)
         }
     }
 
@@ -101,7 +114,8 @@ final class CannonFlightTests: XCTestCase {
         XCTAssertTrue(arena.hasPendingProjectileFlights)
         arena.step(input: GameInput(forward: true, fire: true), dt: 1 / 60)
         XCTAssertEqual(arena.snapshot, authority)
-        XCTAssertTrue(arena.presentationSnapshot(fraction: 0, now: 0.1).bullets.isEmpty)
+        XCTAssertFalse(arena.presentationSnapshot(fraction: 0, now: 0.1).bullets.isEmpty)
+        XCTAssertTrue(arena.presentationSnapshot(fraction: 0, now: 0.11).bullets.isEmpty)
         XCTAssertFalse(arena.hasPendingProjectileFlights)
         XCTAssertEqual(arena.snapshot, authority)
     }

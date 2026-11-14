@@ -57,7 +57,7 @@ func TestRicochetLaserPerimeterBudgetAcrossManyBounces(t *testing.T) {
 		g.grantPower(p, "laser")
 		g.fire(p)
 		e := laserEvent(t, g)
-		got, want := beamLength(e.Points), 2*(g.World.Width+g.World.Height)-28
+		got, want := beamLength(e.Points), 4*(g.World.Width+g.World.Height)-28
 		if len(e.Points) < 4 || math.Abs(got-want) > 1e-5 {
 			t.Fatalf("angle %.3f: path %.9f want %.9f, points %d", angle, got, want, len(e.Points))
 		}
@@ -73,7 +73,7 @@ func TestRicochetLaserRangeUsesCurrentMazeDimensions(t *testing.T) {
 		p := g.Tanks[0]
 		p.X, p.Y, p.Angle = 0, 0, 0
 		pts, _ := g.traceLaser(p)
-		if math.Abs(beamLength(pts)-(2*(size[0]+size[1])-28)) > 1e-6 {
+		if math.Abs(beamLength(pts)-(4*(size[0]+size[1])-28)) > 1e-6 {
 			t.Fatal("range not perimeter", size)
 		}
 	}

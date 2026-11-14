@@ -117,7 +117,7 @@ type infiniteBullet struct {
 	boosted                                 bool
 	flight                                  *cannonFlight
 	flightBirth                             cannonFlightPoint
-	flightAge                               float64
+	flightAge, flightBaseAge                float64
 	flightTracked, published, flightEmitted bool
 }
 
@@ -1190,7 +1190,7 @@ func (a *infiniteArena) broadcast() {
 		}
 		for i, b := range a.bullets {
 			if viewer.sees(b.X, b.Y) {
-				a.bullets[i].publishFlight()
+				a.bullets[i].publishFlight(float64(a.tick))
 				b.X, b.Y, b.VX, b.VY, b.Life = infinitePrecision(b.X), infinitePrecision(b.Y), infinitePrecision(b.VX), infinitePrecision(b.VY), infinitePrecision(b.Life)
 				mark(bulletOffset + i)
 				packet.Bullets = append(packet.Bullets, b)

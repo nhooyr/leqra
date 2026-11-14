@@ -88,11 +88,13 @@ class OnlinePresentation(
     private val curves = HashMap<Int, Curve>()
     private val ricochetPaths = HashMap<Int, RicochetPath?>()
     private val completedFlights = ProjectileFlightPresentation()
+    private val contacts = CombatContactPresentation()
     private var previousTanks = emptyMap<Int, ArenaTank>()
     private var followingTanks = emptyMap<Int, ArenaTank>()
     var stale = false
         private set
-    val hasPendingProjectileFlights: Boolean get() = completedFlights.hasPending
+    val hasPendingProjectileFlights: Boolean get() = completedFlights.hasPending || contacts.hasPending
+    val authoritativeSnapshot: ArenaSnapshot? get() = latest
 
     internal val bufferedAcknowledgementCount
         get() = primary.sent.size
@@ -340,6 +342,7 @@ class OnlinePresentation(
         curves.clear()
         ricochetPaths.clear()
         completedFlights.reset()
+        contacts.reset()
         clock = null
         playbackRate = 1.0
         oldTanks = emptyMap()
@@ -380,7 +383,7 @@ class OnlinePresentation(
 
     fun accept(snapshot: ArenaSnapshot, at: Double) {
         val previous = latest
-        val changedView = previous != null && snapshot.spectating && previous.spectating && snapshot.following != previous.following
+        val changedView = previous != null && (snapshot.spectating != previous.spectating || snapshot.spectating && snapshot.following != previous.following)
         if (
             previous != null &&
                 (snapshot.generation < previous.generation ||
@@ -401,8 +404,12 @@ class OnlinePresentation(
             ricochetPaths.clear()
         }
         if (previous == null || previous.generation != snapshot.generation || changedView || recovering)
-            completedFlights.reset(snapshot.effects)
-        else completedFlights.accept(snapshot.effects, clock ?: snapshot.tick / 60.0 - .085)
+            { completedFlights.reset(snapshot.effects); contacts.reset(snapshot.effects) }
+        else {
+            completedFlights.accept(snapshot.effects, clock ?: snapshot.tick / 60.0 - .085, snapshot.tanks.size)
+            contacts.accept(snapshot.effects, snapshot.tanks, clock ?: snapshot.tick / 60.0 - .085, snapshot.tick.toDouble(),
+                if (snapshot.spectating) emptySet() else setOfNotNull(primary.id, secondary?.id))
+        }
         latest = snapshot
         lastArrival = at
         stale = false
@@ -434,7 +441,7 @@ class OnlinePresentation(
         val newest = latest ?: return null
         val elapsed = if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0
         stale = now - lastArrival > 2.5
-        if (newest.spectating || newest.result != null || newest.phase in listOf("roundOver", "matchOver")) return interpolated(elapsed, null)
+        if (newest.spectating || newest.result != null || newest.phase in listOf("roundOver", "matchOver")) return finishPresentation(interpolated(elapsed, null))
         val controls = primary.advance(elapsed, input, newest, send)
         val second = secondary
         val secondControls =
@@ -450,14 +457,14 @@ class OnlinePresentation(
                 if (tank.id == primary.id && firstTank != null) firstTank
                 else if (tank.id == second?.id && secondTank != null) secondTank else tank
             }
-        return result
+        return finishPresentation(result)
     }
 
     /** Finishes visual paths after a result overlay pauses controls; no simulation or packets. */
     fun renderTerminal(dt: Double): ArenaSnapshot? {
         val state = latest ?: return null
-        if (!completedFlights.hasPending || state.result == null && state.phase !in listOf("roundOver", "matchOver")) return null
-        return interpolated(if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0, null)
+        if (!hasPendingProjectileFlights || state.result == null && state.phase !in listOf("roundOver", "matchOver")) return null
+        return finishPresentation(interpolated(if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0, null))
     }
 
     fun neutralize() {
@@ -465,6 +472,8 @@ class OnlinePresentation(
         secondary?.neutralize()
         clock = null
         playbackRate = 1.0
+        completedFlights.reset(latest?.effects ?: emptyList())
+        contacts.reset(latest?.effects ?: emptyList())
     }
 
     fun neutralPacket(): GameInput {
@@ -594,9 +603,20 @@ class OnlinePresentation(
                     vy = first.vy + (second.vy - first.vy) * alpha,
                 )
         }
-        val flights = completedFlights.render(result.bullets, result.effects, playhead)
-        result.bullets = flights.bullets
-        result.effects = flights.effects
+        return result
+    }
+
+    private fun finishPresentation(result: ArenaSnapshot): ArenaSnapshot {
+        val playhead = clock ?: result.tick / 60.0
+        val flightImage = completedFlights.render(result.bullets, result.effects, playhead, contacts::canCompleteProjectile)
+        val contactImage = contacts.render(result.tanks, flightImage.effects, playhead, completedFlights) { from, to ->
+            fits(to, result.world) && (from.ghostTime > 0 || pathClear(from, to, result.world))
+        }
+        result.bullets = flightImage.bullets; result.tanks = contactImage.tanks; result.effects = contactImage.effects
+        if (hasPendingProjectileFlights) {
+            result.result = null
+            if (result.phase in listOf("roundOver", "matchOver")) result.phase = "playing"
+        }
         return result
     }
 

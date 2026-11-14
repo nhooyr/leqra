@@ -104,8 +104,8 @@ test('a terminal path recovers an unseen own shot but never rewinds a preview th
   const s=boot();s.receive();const record={id:8,owner:0,colorIndex:0,kind:'cannon',radius:14,startTick:60,endTick:61,points:[{x:150,y:126,tick:60},{x:180,y:126,tick:61}]};
   s.online.presentedShots=new Set(rendered?[s.online.shots.key(0,1,1)+':0']:[]);
   s.now+=34;const packet=s.packet();packet.events=[{id:1,tick:61,generation:1,type:'impact',owner:0,player:-1,shotSerial:1,spawnSerial:1,flight:record}];s.receiveOnlineState(packet);
-  assert.equal(s.online.flights.pending(8),!rendered);
-  assert.equal(s.online.flights.sample(62,1100).length,rendered?0:1);
+  assert.equal(s.online.flights.pending(8),true);
+  const shell=s.online.flights.sample(62,1100)[0];assert.ok(shell);assert.equal(shell.x,rendered?180:150,'displayed predictions go directly to contact; unseen shots recover the short terminal path');
   assert.equal(packet.bullets.length,0,'the recovered visual never becomes an authoritative bullet');
  }
 });

@@ -22,6 +22,58 @@ class RenderBehaviorTest {
     }
 
     @Test
+    fun powerCountsKeepTheirBackingWidthAndHaveABlackOutlineAtEveryZoom() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            val image = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+            val reference = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+            val draw = NativeArenaView::class.java.getDeclaredMethod("drawBadges", Canvas::class.java, ArenaTank::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+            val zoom = NativeArenaView::class.java.getDeclaredField("zoom").apply { isAccessible = true }
+            val outline = (NativeArenaView::class.java.getDeclaredField("countOutlinePaint").apply { isAccessible = true }.get(view) as android.graphics.Paint)
+            fun assertOutline(tank: ArenaTank, pixels: IntArray) {
+                reference.eraseColor(android.graphics.Color.TRANSPARENT)
+                outline.style = android.graphics.Paint.Style.FILL
+                draw.invoke(view, Canvas(reference), tank, true)
+                outline.style = android.graphics.Paint.Style.STROKE
+                assertEquals(android.graphics.Color.BLACK, outline.color)
+                val plain = IntArray(pixels.size)
+                reference.getPixels(plain, 0, 400, 0, 0, 400, 400)
+                assertTrue("Thin black stroke adds dark edges around${tank.power.ifEmpty { "buff" }} count", pixels.indices.any {
+                    android.graphics.Color.alpha(pixels[it]) > 200 && android.graphics.Color.green(pixels[it]) + 3 < android.graphics.Color.green(plain[it])
+                })
+            }
+            try {
+                for (scale in listOf(.7f, 1f, 1.2f, 2f)) {
+                    zoom.setFloat(view, scale)
+                    var bounds: List<Int>? = null
+                    for (rounds in listOf(180, 179, 100, 99, 10, 9)) {
+                        image.eraseColor(android.graphics.Color.TRANSPARENT)
+                        val tank = ArenaTank(id = 1, x = 100.0, y = 100.0, power = "rapid", powerTime = 10.0, machineRounds = rounds)
+                        draw.invoke(view, Canvas(image), tank, true)
+                        val pixels = IntArray(400 * 400)
+                        image.getPixels(pixels, 0, 400, 0, 0, 400, 400)
+                        val ink = pixels.indices.filter { android.graphics.Color.alpha(pixels[it]) > 0 }
+                        val current = listOf(ink.minOf { it % 400 }, ink.minOf { it / 400 }, ink.maxOf { it % 400 }, ink.maxOf { it / 400 })
+                        if (bounds == null) bounds = current else assertEquals("Ammo width cannot jump when digit count changes", bounds, current)
+                        assertOutline(tank, pixels)
+                        assertTrue("White count fill at zoom$scale", pixels.any { android.graphics.Color.alpha(it) > 240 && android.graphics.Color.red(it) > 210 && android.graphics.Color.green(it) > 220 && android.graphics.Color.blue(it) > 230 })
+                    }
+                    for (kind in listOf("scatter", "homing", "grenade", "laser", "cannon", "shield", "speed")) {
+                        image.eraseColor(android.graphics.Color.TRANSPARENT)
+                        val tank = ArenaTank(id = 1, x = 100.0, y = 100.0, power = kind, powerTime = 10.0, charges = 3)
+                        if (kind == "shield") { tank.power = ""; tank.shield = 10.0; tank.shieldCharges = 2 }
+                        if (kind == "speed") { tank.power = ""; tank.speedTime = 10.0; tank.speedStacks = 5 }
+                        draw.invoke(view, Canvas(image), tank, true)
+                        val pixels = IntArray(400 * 400)
+                        image.getPixels(pixels, 0, 400, 0, 0, 400, 400)
+                        assertOutline(tank, pixels)
+                    }
+                }
+            } finally { view.release(); image.recycle(); reference.recycle() }
+        }
+    }
+
+    @Test
     fun distantInfinityCoordinatesRetainSubpixelTankPositions() {
         main {
             fun centroid(base: Double): Double {

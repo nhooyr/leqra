@@ -243,6 +243,7 @@ final class GameScene: SKScene {
     /// Rasterize and allocate the bounded first volley before a match starts.
     /// Reused pools survive resetWorld, so returning to the room stays warm.
     private func prepareCombatResources() {
+        for digit in 0...9 { combatTextures.append(NativeArt.badgeDigit(digit)) }
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             for color in 0..<8 {
                 let style = ProjectileStyle(ArenaBullet(kind: kind, colorIndex: color))
@@ -558,7 +559,7 @@ final class GameScene: SKScene {
         let radius = tank.power == "laser" ? 3.0 : tank.power == "cannon" ? 14 : tank.power == "grenade" ? 6 : tank.power == "homing" ? 5 : tank.power == "rapid" ? 3.5 / 3 : 3.5
         if tank.power == "laser" {
             points = geometry.laserGuide(x: tank.x, y: tank.y, angle: tank.angle,
-                                        range: layoutMode == .fixed ? 2 * ((fixedWorld?.width ?? 756) + (fixedWorld?.height ?? 588)) : 18 * 84)
+                                        range: layoutMode == .fixed ? 4 * ((fixedWorld?.width ?? 756) + (fixedWorld?.height ?? 588)) : 36 * 84)
         } else {
             points = geometry.projectileGuide(x: tank.x, y: tank.y, angle: tank.angle, kind: tank.power,
                                              range: 112, radius: radius, maxSegments: tank.power == "cannon" ? 32 : 2)
@@ -1140,21 +1141,22 @@ private final class TankNode: SKNode {
 private final class PowerBadgeNode: SKNode {
     private let art = SKSpriteNode()
     private let countBackground = SKShapeNode()
-    private let countLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+    private var digits: [SKSpriteNode] = []
     private var previousSize: CGFloat = -1
     private var previousFontSize: CGFloat = -1
     private var previousCount: Int?
     init(kind: String) {
         super.init()
         art.texture = NativeArt.badge(kind: kind)
+        art.zPosition = 0
         addChild(art)
         countBackground.fillColor = UIColor(hex: 0x08131b).withAlphaComponent(0.96)
         countBackground.strokeColor = .clear
+        // All count ink sits above every badge icon, hull, and projectile, even
+        // with SKView.ignoresSiblingOrder enabled for projectile batching.
+        countBackground.zPosition = 39
         addChild(countBackground)
-        countLabel.fontColor = UIColor(hex: 0xf3f8ff)
-        countLabel.horizontalAlignmentMode = .right
-        countLabel.verticalAlignmentMode = .bottom
-        addChild(countLabel)
+        digits.reserveCapacity(3)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func update(size: CGFloat, zoom: CGFloat, count: Int?, remaining: Double, warning: Double) {
@@ -1163,13 +1165,24 @@ private final class PowerBadgeNode: SKNode {
         if previousSize != size { art.size = CGSize(width: size, height: size) }
         let fade = min(1, max(0, remaining / warning))
         alpha = CGFloat(fade * fade * (3 - 2 * fade))
-        countLabel.isHidden = count == nil
+        if count == nil { for digit in digits { digit.isHidden = true } }
         countBackground.isHidden = count == nil
         if let count, changed {
-            countLabel.fontSize = nextFontSize
-            countLabel.text = String(count)
-            countLabel.position = CGPoint(x: size / 2 - 2, y: -size / 2 + 1)
-            let width = countLabel.frame.width + 4, height = countLabel.frame.height + 2
+            let text = Array(String(max(0, count)).utf8)
+            while digits.count < text.count {
+                let digit = SKSpriteNode(); digit.anchorPoint = .zero; digit.zPosition = 40
+                addChild(digit); digits.append(digit)
+            }
+            let scale = nextFontSize / 20, advance = NativeArt.badgeDigitAdvance * scale
+            let right = size / 2 - 2, bottom = -size / 2 + 1
+            for (index, digit) in digits.enumerated() {
+                digit.isHidden = index >= text.count
+                guard index < text.count else { continue }
+                digit.texture = NativeArt.badgeDigit(Int(text[index] - 48))
+                digit.size = CGSize(width: 16 * scale, height: 26 * scale)
+                digit.position = CGPoint(x: right - advance * CGFloat(text.count - index) - scale * 2, y: bottom - scale * 2)
+            }
+            let width = advance * CGFloat(text.count) + 4, height = 22 * scale + 2
             countBackground.path = CGPath(roundedRect: CGRect(x: size / 2 - width, y: -size / 2, width: width, height: height), cornerWidth: 2, cornerHeight: 2, transform: nil)
         }
         previousSize = size; previousFontSize = nextFontSize; previousCount = count
@@ -1426,6 +1439,19 @@ private enum NativeArt {
         let texture = image(size: size, draw: draw)
         cache[key] = texture
         return texture
+    }
+
+    static let badgeDigitAdvance = ("0" as NSString).size(withAttributes: [.font: UIFont(name: "Menlo-Bold", size: 20) ?? UIFont.monospacedSystemFont(ofSize: 20, weight: .bold)]).width
+
+    /// Ten immutable outlined glyphs serve every ammo/quantity change. Counts
+    /// can change at 60 Hz without rasterizing a new string or growing a cache.
+    static func badgeDigit(_ digit: Int) -> SKTexture {
+        cached("badgeDigit:\(digit)", size: CGSize(width: 16, height: 26)) { _ in
+            (String(digit) as NSString).draw(at: CGPoint(x: 2, y: 0), withAttributes: [
+                .font: UIFont(name: "Menlo-Bold", size: 20) ?? UIFont.monospacedSystemFont(ofSize: 20, weight: .bold),
+                .foregroundColor: UIColor(hex: 0xf3f8ff), .strokeColor: UIColor.black, .strokeWidth: -7
+            ])
+        }
     }
 
     private static func rounded(_ context: CGContext, _ rect: CGRect, _ radius: CGFloat, _ color: UIColor) {

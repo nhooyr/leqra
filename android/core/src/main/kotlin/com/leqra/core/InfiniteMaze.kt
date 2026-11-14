@@ -493,9 +493,9 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
         x: Double,
         y: Double,
         angle: Double,
-        range: Double = 18 * 84.0,
+        range: Double = 36 * 84.0,
         radius: Double = 3.0,
-        maxSegments: Int = 128,
+        maxSegments: Int = 256,
     ) = projectileGuide(x, y, angle, "laser", range, radius, maxSegments)
 
     fun projectileGuide(
@@ -505,7 +505,7 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
         kind: String,
         range: Double,
         radius: Double,
-        maxSegments: Int = 128,
+        maxSegments: Int = if (kind == "laser") 256 else 128,
     ): List<BeamPoint> {
         if (!listOf(x, y, angle, range, radius).all { it.isFinite() } || range <= 0 || radius < 0)
             return emptyList()
@@ -514,9 +514,9 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
         var yy = launch.y
         var ux = launch.ux
         var uy = launch.uy
-        var remaining = max(0.0, min(range, 20000.0) - launch.distance)
+        var remaining = max(0.0, (if (kind == "laser") range else min(range, 20000.0)) - launch.distance)
         val points = mutableListOf<BeamPoint>()
-        for (i in 0 until maxSegments.coerceIn(0, 128)) {
+        for (i in 0 until maxSegments.coerceIn(0, if (kind == "laser") 256 else 128)) {
             val wall = projectileHit(kind, xx, yy, ux * remaining, uy * remaining, radius)
             val length = remaining * (wall?.fraction ?: 1.0)
             if (i == 0) {

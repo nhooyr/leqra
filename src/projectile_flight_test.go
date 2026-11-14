@@ -135,7 +135,7 @@ func TestTerminalScatterFlightKeepsItsPelletIdentity(t *testing.T) {
 	t.Fatal("scatter fixture did not publish its upper pellet impact")
 }
 
-func TestPublishedOrdinaryProjectileDoesNotRepeatFlightButCannonKeepsRimPath(t *testing.T) {
+func TestPublishedProjectileContactKeepsRecentFlightAndCannonKeepsRimPath(t *testing.T) {
 	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade", "cannon"} {
 		g := battle(2)
 		g.Tick = 2
@@ -149,13 +149,23 @@ func TestPublishedOrdinaryProjectileDoesNotRepeatFlightButCannonKeepsRimPath(t *
 			t.Fatal("fixture has no live projectile", kind)
 		}
 		b := g.Bullets[0]
-		b.publishFlight()
+		b.publishFlight(float64(g.Tick))
+		start := BeamPoint{b.X, b.Y}
 		target.X, target.Y = b.X+target.R+b.R+1, b.Y
+		g.Tick++
 		g.updateBullets(tickDT)
+		found := false
 		for _, event := range g.events {
-			if event.Flight != nil && kind != "cannon" {
-				t.Fatal("a published ordinary projectile added redundant terminal wire work", kind)
+			if event.Flight != nil {
+				found = true
+				checkProjectileFlight(t, event.Flight, kind, BeamPoint{event.X, event.Y})
+				if kind != "cannon" && (event.Flight.StartTick != 2 || event.Flight.Points[0].X != start.X || event.Flight.Points[0].Y != start.Y) {
+					t.Fatal("published contact replayed an old muzzle rather than its recent authoritative segment", kind)
+				}
 			}
+		}
+		if !found {
+			t.Fatal("published projectile contact omitted its visual endpoint", kind)
 		}
 	}
 	g := battle(2)

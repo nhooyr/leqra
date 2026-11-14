@@ -33,17 +33,25 @@ class SessionParityTest {
                 event(session, NetworkEvent.Welcome(welcome()))
                 event(session, NetworkEvent.State(snapshot(0)))
                 val flight = ProjectileFlight(17, 1, 0, 0.0, .2, listOf(ProjectileFlightPoint(4200.0, 4200.0, 0.0), ProjectileFlightPoint(4210.0, 4200.0, .2)))
-                val terminal = snapshot(1).copy(result = ArenaResult(id = 1, score = 1), effects = listOf(ArenaEffect(id = 1, kind = "impact", flight = flight)))
+                val victim = ArenaTank(id=8,name="Target",x=4245.0,y=4200.0,hp=0,spawnSerial=2)
+                val terminal = snapshot(1).copy(result = ArenaResult(id = 1, score = 1), tanks=snapshot(1).tanks+victim, effects = listOf(ArenaEffect(id = 1, kind = "impact", flight = flight),
+                    ArenaEffect(id=2,kind="hit",tick=1,contact=CombatContact(17,"cannon",.2,8,2,ContactTankState(4245.0,4200.0,0.0)))))
                 event(session, NetworkEvent.State(terminal))
                 set(session, "paused", true)
                 assertTrue(session.finishingProjectilePresentation)
                 session.input = GameInput(forward = true, fire = true)
                 val beforeSequence = session.network.lastInputSequence
                 val start = System.nanoTime()
-                var visible = false
-                session.present = { image, _, _, _, _ -> visible = visible || image.bullets.any { it.id == 17 } }
+                var visible = false; var contacted=false; var exploded=false
+                session.present = { image, _, _, _, _ ->
+                    val shell=image.bullets.firstOrNull { it.id == 17 }
+                    visible = visible || shell!=null
+                    if(shell?.x==4210.0) { assertEquals(1,image.tanks.first { it.id==8 }.hp); contacted=true; assertNull(image.result) }
+                    if(image.effects.any { it.id==2 }) { assertTrue(contacted); assertEquals(0,image.tanks.first { it.id==8 }.hp); exploded=true }
+                }
                 repeat(40) { session.frame(start + it * 1_000_000_000L / 120) }
                 assertTrue(visible)
+                assertTrue(contacted && exploded)
                 assertFalse(session.finishingProjectilePresentation)
                 assertEquals(4200.0, session.snapshot.tanks.first().x, 0.0)
                 assertEquals(1, session.snapshot.result!!.score)

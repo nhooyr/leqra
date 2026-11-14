@@ -1180,7 +1180,7 @@ func (h *Hub) stateWire(r *Room) stateWire {
 		z.tanks = append(z.tanks, v)
 	}
 	for _, b := range g.Bullets {
-		b.publishFlight()
+		b.publishFlight(float64(g.Tick))
 		v := *b
 		if b.boosted && !b.Dead {
 			z.boostedIDs = append(z.boostedIDs, b.ID)

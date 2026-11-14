@@ -8,6 +8,27 @@ import org.junit.Test
 
 /** Repeatable desktop allocation/timing evidence; not a physical Android frame-rate claim. */
 class PerformanceTest {
+    @Test fun retainedStarShotgunContactsReportTheirWorstBatchCost() {
+        val tanks = (1..8).map { ArenaTank(id = it, x = 140.0, y = 42.0, spawnSerial = 2, hp = 0) }
+        val effects = (1..864).flatMap { id -> val path = ArenaEffect(id = id * 2, kind = "projectileFlight", tick = 6, flight = ProjectileFlight(id, 0, 0, 0.0, 6.0,
+                listOf(ProjectileFlightPoint(40.0,42.0,0.0),ProjectileFlightPoint(119.5,42.0,6.0)),"scatter",3.5))
+            val hit = ArenaEffect(id = id * 2 + 1, kind = "hit", tick = 6, contact = CombatContact(id,"scatter",6.0,1 + id % 8,2,ContactTankState(140.0,42.0,0.0)))
+            if(id>856) listOf(path,hit) else listOf(path) }
+        val flights = ProjectileFlightPresentation(); val contacts = CombatContactPresentation()
+        fun run() {
+            flights.reset(); contacts.reset()
+            flights.accept(effects,0.0,8); contacts.accept(effects,tanks,0.0,6.0)
+            for (t in listOf(.05,.11,.12)) {
+                val image = flights.render(emptyList(),effects,t,contacts::canCompleteProjectile)
+                contacts.render(tanks,image.effects,t,flights)
+            }
+        }
+        repeat(100) { run() }
+        val before = bytes(); val samples = LongArray(300)
+        repeat(samples.size) { index -> val start=System.nanoTime(); run(); samples[index]=System.nanoTime()-start }
+        samples.sort()
+        println("864retained contacts accept+3frames: p50=${samples[150]/1e6}ms p95=${samples[285]/1e6}ms p99=${samples[297]/1e6}ms bytes/batch=${(bytes()-before)/samples.size}")
+    }
     @Test
     fun fullRoomRoamingPopulationRemainsBoundedAndReportsItsSimulationCost() {
         val arena = PracticeArena(123, "Pilot", 0, 0)

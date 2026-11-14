@@ -267,6 +267,29 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testAmmoDigitTransitionsKeepOutlinedCountsAboveEveryPowerIcon() async throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--native-performance-probe", "--probe-weapon", "rapid", "--probe-bullets", "115",
+                               "--probe-buffs", "shield,speed", "--probe-badge-counts", "--probe-seconds", "8"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15))
+        for frame in 0..<6 {
+            try await Task.sleep(nanoseconds: 500_000_000)
+            capture(app, name: "Outlined ammo transitions portrait \(frame)")
+            XCTAssertTrue(app.buttons["pauseGame"].isHittable)
+        }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        for frame in 0..<6 {
+            try await Task.sleep(nanoseconds: 500_000_000)
+            capture(app, name: "Outlined ammo transitions landscape \(frame)")
+            XCTAssertTrue(app.buttons["pauseGame"].isHittable)
+        }
+        XCTAssertEqual(app.alerts.count, 0)
+        app.terminate()
+    }
+
+    @MainActor
     private func launch(callsign: String? = nil) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()

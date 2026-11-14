@@ -105,7 +105,26 @@ object ProtocolJson {
             spawnSerial = json.intOrNull("spawnSerial"),
             shotSerial = json.longOrNull("shotSerial"),
             flight = json.optJSONObject("flight")?.let { runCatching { projectileFlight(it) }.getOrNull() },
+            contact = json.optJSONObject("contact")?.let { runCatching { combatContact(it) }.getOrNull() },
         )
+
+    private fun combatContact(json: JSONObject): CombatContact {
+        val projectile = json.getInt("projectileId")
+        val target = json.getInt("target")
+        val life = json.getInt("spawnSerial")
+        val tick = json.getDouble("tick")
+        val kind = json.getString("kind")
+        require(json.getDouble("projectileId") == projectile.toDouble() && json.getDouble("target") == target.toDouble() && json.getDouble("spawnSerial") == life.toDouble())
+        require(projectile >= 0 && target >= 0 && life >= 0 && tick.isFinite() && tick >= 0)
+        require(kind in listOf("regular", "rapid", "scatter", "homing", "grenade", "cannon", "laser", "starman"))
+        val b = json.getJSONObject("before")
+        val before = ContactTankState(b.getDouble("x"), b.getDouble("y"), b.getDouble("angle"),
+            b.number("vx", 0.0), b.number("vy", 0.0), b.optInt("hp", 1), b.number("shield", 0.0),
+            b.optInt("shieldCharges", 0), b.number("invulnerable", 0.0), b.optBoolean("spawnProtected", false))
+        require(listOf(before.x, before.y, before.angle, before.vx, before.vy, before.shield, before.invulnerable).all { it.isFinite() })
+        require(before.hp > 0 && before.shield >= 0 && before.shieldCharges in 0..5 && before.invulnerable >= 0)
+        return CombatContact(projectile, kind, tick, target, life, before)
+    }
 
     private fun projectileFlight(json: JSONObject): ProjectileFlight {
         require(json.has("startTick") && json.has("endTick"))

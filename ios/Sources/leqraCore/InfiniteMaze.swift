@@ -174,8 +174,8 @@ public final class InfiniteMaze {
 
     struct RayHit { var fraction: Double; var nx: Double; var ny: Double }
 
-    public func laserGuide(x: Double, y: Double, angle: Double, range: Double = 18 * 84,
-                           radius: Double = 3, maxSegments: Int = 128) -> [BeamPoint] {
+    public func laserGuide(x: Double, y: Double, angle: Double, range: Double = 36 * 84,
+                           radius: Double = 3, maxSegments: Int = 256) -> [BeamPoint] {
         projectileGuide(x: x, y: y, angle: angle, kind: "laser", range: range, radius: radius, maxSegments: maxSegments)
     }
 
@@ -187,7 +187,7 @@ public final class InfiniteMaze {
         var x = launch.x, y = launch.y, ux = launch.ux, uy = launch.uy
         var remaining = max(0, min(range, 20000) - launch.distance)
         var points: [BeamPoint] = []
-        for index in 0..<max(0, min(maxSegments, 128)) {
+        for index in 0..<max(0, min(maxSegments, kind == "laser" ? 256 : 128)) {
             let wall = projectileHit(kind: kind, x: x, y: y, dx: ux * remaining, dy: uy * remaining, radius: radius)
             let length = remaining * (wall?.fraction ?? 1)
             if index == 0 {

@@ -19,6 +19,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
@@ -94,7 +96,9 @@ class NativeNetworkClient(
         updateNames: Boolean = false,
     ) {
         val normalized = ServerAddress.origin(origin)
-        val first = store.selected(normalized, 0)
+        // A canceled first-name request can leave a durable, unregistered candidate.
+        // Only confirmed owner keys authenticate P1; fresh joins receive one in welcome.
+        val first = store.selected(normalized, 0)?.takeUnless { it.registrationPending }
         val second = if (localName != null) store.prepareRegistration(normalized, 1) else null
         require(first == null || second?.key != first.key) {
             "P1 and P2 need independent account keys."
@@ -143,7 +147,7 @@ class NativeNetworkClient(
                 .put("type", if (code.isNullOrBlank()) "create" else "join")
                 .put("name", name)
                 .put("spectating", spectating)
-                .put("publicToken", store.selected(origin, 0)?.key)
+                .put("publicToken", store.selected(origin, 0)?.takeUnless { it.registrationPending }?.key)
         if (!code.isNullOrBlank()) join.put("code", code)
         begin(ServerAddress.origin(origin), false, join, false)
     }
@@ -162,7 +166,7 @@ class NativeNetworkClient(
                 .put("rules", rules)
                 .put("roster", roster)
                 .put("code", code)
-                .put("publicToken", store.selected(origin, 0)?.key)
+                .put("publicToken", store.selected(origin, 0)?.takeUnless { it.registrationPending }?.key)
         if ((0 until roster.length()).any { roster.getJSONObject(it).optString("kind") == "local" })
             attachLocalCredential(join, origin)
         begin(ServerAddress.origin(origin), false, join, false)
@@ -411,7 +415,7 @@ class NativeNetworkClient(
                     main.post {
                         if (epoch != current || call.isCanceled()) return@post
                         build.fold(
-                            { version -> openSocket(current, version) },
+                            { version -> resolvePendingPrimary(current, version) },
                             { error ->
                                 fail(
                                     error.message ?: "The server sent an invalid response.",
@@ -424,6 +428,52 @@ class NativeNetworkClient(
                 }
             },
         )
+    }
+
+    /** A lost registration response must not strand an already registered owner key. */
+    private fun resolvePendingPrimary(current: Long, version: String) {
+        val address = origin ?: return
+        val candidate = store.selected(address, 0)?.takeIf { it.registrationPending && !pendingJoin.has("token") }
+        if (candidate == null) { openSocket(current, version); return }
+        val call = http.newCall(Request.Builder().url(ServerAddress.endpoint(address, "/api/account"))
+            .header("Origin", address)
+            .post(JSONObject().put("publicToken", candidate.key).toString().toRequestBody("application/json".toMediaType())).build())
+        discovery = call
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                main.post { if (epoch == current && !call.isCanceled()) fail("The account server could not be reached. Reconnecting…", false) }
+            }
+            override fun onResponse(call: Call, response: Response) {
+                val checked = runCatching {
+                    response.use {
+                        val source = it.body?.source() ?: throw IOException()
+                        if (source.request(65537) && source.buffer.size > 65536) throw IOException()
+                        val json = JSONObject(source.readUtf8())
+                        when {
+                            it.isSuccessful -> { require(json.has("names")); true }
+                            it.code == 401 && json.optString("code") == "account_key_invalid" -> false
+                            else -> throw NetworkFailure(json.optString("code", "account_error"), json.optString("message", "The account could not be checked."), terminal = it.code != 429 && it.code < 500)
+                        }
+                    }
+                }
+                main.post {
+                    if (epoch != current || call.isCanceled()) return@post
+                    checked.fold({ registered ->
+                        if (store.selected(address, 0)?.key != candidate.key) {
+                            fail("The selected account changed while joining. Join again to use it.", true, "account_selection_changed")
+                            return@fold
+                        }
+                        if (registered) {
+                            store.select(address, 0, candidate.key)
+                            pendingJoin.put("publicToken", candidate.key)
+                            if (infinity && !pendingJoin.has("code")) pendingJoin.put("resume", true)
+                        }
+                        if (infinity && !pendingJoin.has("code")) resumeJoin = JSONObject(pendingJoin.toString())
+                        openSocket(current, version)
+                    }, { error -> fail(error.message ?: "The account could not be checked.", (error as? NetworkFailure)?.terminal ?: false, (error as? NetworkFailure)?.code) })
+                }
+            }
+        })
     }
 
     private fun openSocket(current: Long, version: String) {

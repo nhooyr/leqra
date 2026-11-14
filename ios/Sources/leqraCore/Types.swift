@@ -416,6 +416,7 @@ public struct ArenaEffect: Codable, Equatable, Sendable {
     public var spawnSerial: Int?
     public var shotSerial: UInt64?
     public var flight: CannonFlight?
+    public var contact: ImpactContact?
 
     public init(
         id: Int = 0,
@@ -428,7 +429,8 @@ public struct ArenaEffect: Codable, Equatable, Sendable {
         tick: Int? = nil,
         spawnSerial: Int? = nil,
         shotSerial: UInt64? = nil,
-        flight: CannonFlight? = nil
+        flight: CannonFlight? = nil,
+        contact: ImpactContact? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -441,10 +443,11 @@ public struct ArenaEffect: Codable, Equatable, Sendable {
         self.spawnSerial = spawnSerial
         self.shotSerial = shotSerial
         self.flight = flight
+        self.contact = contact
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, x, y, owner, points, player, tick, spawnSerial, shotSerial, flight
+        case id, kind, x, y, owner, points, player, tick, spawnSerial, shotSerial, flight, contact
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -459,6 +462,7 @@ public struct ArenaEffect: Codable, Equatable, Sendable {
         spawnSerial = try c.decodeIfPresent(Int.self, forKey: .spawnSerial)
         shotSerial = try c.decodeIfPresent(UInt64.self, forKey: .shotSerial)
         flight = try c.decodeIfPresent(CannonFlight.self, forKey: .flight)
+        contact = try c.decodeIfPresent(ImpactContact.self, forKey: .contact)
     }
 }
 

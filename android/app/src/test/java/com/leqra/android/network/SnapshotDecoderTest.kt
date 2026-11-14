@@ -7,6 +7,27 @@ import org.junit.Test
 
 class SnapshotDecoderTest {
     @Test
+    fun contactIdentityPoseAndShieldStateDecodeForFixedAndInfinity() {
+        val contact = JSONObject("""{"projectileId":17,"kind":"cannon","tick":1.25,"target":8,"spawnSerial":3,"before":{"x":140,"y":42,"angle":0.4,"vx":8,"vy":0,"hp":1,"shield":3,"shieldCharges":2,"invulnerable":0,"spawnProtected":false}}""")
+        for (fixed in listOf(false, true)) {
+            val packet = JSONObject("""{"type":"state","tick":2,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0}""")
+            val event = JSONObject().put("id", 2).put("kind", "shield").put("type", "shield").put("contact", contact)
+            packet.put(if (fixed) "events" else "effects", org.json.JSONArray().put(event))
+            if (fixed) packet.put("phase", "playing")
+            val decoded = SnapshotDecoder().decode(packet).effects.single().contact!!
+            assertEquals(17, decoded.projectileId)
+            assertEquals(8, decoded.target)
+            assertEquals(3, decoded.spawnSerial)
+            assertEquals(1.25, decoded.tick, 0.0)
+            assertEquals(2, decoded.before.shieldCharges)
+            assertEquals(140.0, decoded.before.x, 0.0)
+        }
+        for ((field, value) in listOf("projectileId" to -1, "target" to 8.5, "spawnSerial" to -1, "tick" to -1, "kind" to "unknown")) {
+            val invalid = JSONObject(contact.toString()).put(field, value)
+            assertNull(ProtocolJson.arenaEffect(JSONObject().put("contact", invalid)).contact)
+        }
+    }
+    @Test
     fun completedProjectilePathsDecodeForFixedAndInfinityWithoutChangingAuthority() {
         val descriptor = """{"id":17,"owner":0,"colorIndex":3,"startTick":1,"endTick":1.25,"kind":"cannon","radius":18,"points":[{"x":10,"y":20,"tick":1},{"x":13,"y":20,"tick":1.25}]}"""
         for (fixed in listOf(false, true)) {
