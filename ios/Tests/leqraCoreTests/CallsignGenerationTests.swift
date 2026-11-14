@@ -4,6 +4,50 @@ import XCTest
 
 final class CallsignGenerationTests: XCTestCase {
     private let server = URL(string: "https://leqra.test")!
+    func testOnlyUnownedExactHistoricalDefaultsMigrateBeforeKeyPreparation() {
+        for old in ["PILOT", "Player 1", "Player 2", "  pLaYeR   1  ", "player\t 2", "CO-PILOT", "you", "  snow   fox  ", "Pilot 100", "pIlOt 999"] {
+            let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
+            memory.values["callsign"] = old; memory.values["localCallsign"] = old
+            XCTAssertEqual(store.migrateLegacyDefaults { $0 == 1 }, [0])
+            XCTAssertTrue(CallsignPolicy.isGenerated(store.name(seat: 0)), old)
+            XCTAssertTrue(store.automaticPending(seat: 0)); XCTAssertEqual(store.name(seat: 1), old)
+            XCTAssertFalse(store.automaticPending(seat: 1), "A key-backed name is never silently renamed")
+            XCTAssertTrue(store.migrateLegacyDefaults { _ in false }.contains(1))
+            XCTAssertNotEqual(store.name(seat: 0), store.name(seat: 1))
+        }
+        for name in ["Custom", "Player1", "player2", " PLAYER1 ", "Pilot 99", "Pilot 1000", "Pilot 012", "PILOT100", "PLAYER 10", "SNOW FOX 2", "pilot#BDF3XZ", "pilot-abcdefghij"] {
+            let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
+            memory.values["callsign"] = name
+            XCTAssertTrue(store.migrateLegacyDefaults { _ in false }.isEmpty, name)
+            XCTAssertEqual(store.name(seat: 0), name); XCTAssertFalse(store.automaticPending(seat: 0))
+        }
+    }
+
+    func testSpacedDefaultsPreserveEitherCredentialBackedSeatExactly() {
+        for names in [["Player 1", "Player 2"], ["  pLaYeR   1  ", " PLAYER\t 2 "]] {
+            for protected in 0...1 {
+                let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
+                memory.values["callsign"] = names[0]; memory.values["localCallsign"] = names[1]
+                XCTAssertEqual(store.migrateLegacyDefaults { $0 == protected }, [1 - protected])
+                XCTAssertEqual(store.name(seat: protected), names[protected])
+                XCTAssertFalse(store.automaticPending(seat: protected))
+                XCTAssertTrue(CallsignPolicy.isGenerated(store.name(seat: 1 - protected)))
+                XCTAssertTrue(store.automaticPending(seat: 1 - protected))
+            }
+        }
+    }
+
+    func testSavedRosterMigrationUsesCurrentSeatIdentityAndPreservesBotsAndOwnedAliases() {
+        let roster = [NativeSeatSpec(kind: "human", name: "Player 1"), NativeSeatSpec(kind: "local", name: "pLaYeR   2"),
+                      NativeSeatSpec(kind: "bot", name: "PILOT"), NativeSeatSpec(kind: "local", name: "MY CUSTOM")]
+        let updated = CallsignPolicy.migratingLegacyRoster(roster, primaryName: "pilot#BDF3XZ", secondaryName: "pilot#ABCD29", unownedSeats: [0, 1])
+        XCTAssertEqual(updated.map(\.name), ["pilot#BDF3XZ", "pilot#ABCD29", "PILOT", "MY CUSTOM"])
+        let protected = CallsignPolicy.migratingLegacyRoster(roster, primaryName: "NEW", secondaryName: "OTHER", unownedSeats: [1])
+        XCTAssertEqual(protected[0].name, "Player 1"); XCTAssertEqual(protected[1].name, "OTHER")
+        let claimed = CallsignPolicy.updatingGeneratedRoster(updated, seat: 0, previous: "pilot#BDF3XZ", claimed: "pilot#XYZ234")
+        XCTAssertEqual(claimed[0].name, "pilot#XYZ234", "A repaired preset must follow its provisional name through the atomic server claim")
+        XCTAssertEqual(claimed[1].name, "pilot#ABCD29"); XCTAssertEqual(claimed[2].name, "PILOT")
+    }
     func testFreshDefaultsAreIndependentPersistedAndPendingUntilClaimed() throws {
         let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
         let primary = store.name(seat: 0), second = store.name(seat: 1)

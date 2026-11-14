@@ -23,6 +23,12 @@ name keeps the same account key and score. A request ID is saved before sending,
 so retrying the request does not reserve extra aliases. Offline repair remains
 playable and waits for server confirmation before going online.
 
+Clients automatically replace historical default names when that seat has no
+saved account key: `PILOT`, `Player 1`, `Player 2`, `CO-PILOT`, `YOU`, `SNOW FOX`,
+and the old Android `Pilot 100` through `Pilot 999` pattern. Matching ignores
+case and repeated spaces. Saved custom names and names with an existing key are
+kept. This migration runs at startup, never in response to a revoked-key error.
+
 Open **Account** beside the pilot's callsign in the ready room to copy that
 pilot's key, then open Account on another
 device and import it. Check the account preview before using it. All platforms use

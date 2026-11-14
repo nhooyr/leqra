@@ -9,17 +9,18 @@ struct NativeGameView: UIViewRepresentable {
     var infinity: Bool = true
     var landscape: Bool = false
     var loadoutHeight: CGFloat = 97
+    var spectating = false
 
     func makeUIView(context: Context) -> UIView {
         let container = KeyboardGameContainer(scene: scene)
-        scene.configureLayout(infinity: infinity, landscape: landscape, loadoutHeight: loadoutHeight)
-        container.configure(scene: scene, highFrameRate: highFrameRate, paused: paused)
+        scene.configureLayout(infinity: infinity, landscape: landscape, loadoutHeight: loadoutHeight, spectating: spectating)
+        container.configure(scene: scene, highFrameRate: highFrameRate, paused: paused, spectating: spectating)
         return container
     }
 
     func updateUIView(_ view: UIView, context: Context) {
-        scene.configureLayout(infinity: infinity, landscape: landscape, loadoutHeight: loadoutHeight)
-        (view as? KeyboardGameContainer)?.configure(scene: scene, highFrameRate: highFrameRate, paused: paused)
+        scene.configureLayout(infinity: infinity, landscape: landscape, loadoutHeight: loadoutHeight, spectating: spectating)
+        (view as? KeyboardGameContainer)?.configure(scene: scene, highFrameRate: highFrameRate, paused: paused, spectating: spectating)
     }
 }
 
@@ -30,6 +31,7 @@ private final class KeyboardGameContainer: UIView {
     private var pressedKeys = Set<UIKeyboardHIDUsage>()
     private var highFrameRate = true
     private var paused = false
+    private var spectating = false
     private var gameScene: GameScene? { gameView.scene as? GameScene }
 
     init(scene: GameScene) {
@@ -50,15 +52,16 @@ private final class KeyboardGameContainer: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(scene: GameScene, highFrameRate: Bool, paused: Bool) {
+    func configure(scene: GameScene, highFrameRate: Bool, paused: Bool, spectating: Bool) {
         self.highFrameRate = highFrameRate
         self.paused = paused
+        self.spectating = spectating
         isAccessibilityElement = !paused
-        isUserInteractionEnabled = !paused
-        gameView.isUserInteractionEnabled = !paused
+        isUserInteractionEnabled = !paused && !spectating
+        gameView.isUserInteractionEnabled = !paused && !spectating
         if gameView.scene !== scene { gameView.presentScene(scene) }
-        scene.isUserInteractionEnabled = !paused
-        if paused { resetKeyboard(); scene.resetControls(); resignFirstResponder() }
+        scene.isUserInteractionEnabled = !paused && !spectating
+        if paused || spectating { resetKeyboard(); scene.resetControls(); resignFirstResponder() }
         else if window != nil && !isFirstResponder { becomeFirstResponder() }
         applyFrameRate()
     }
@@ -75,7 +78,7 @@ private final class KeyboardGameContainer: UIView {
         // Reapply against the attached display; makeUIView can run before a
         // window exists, including when moving between displays.
         applyFrameRate()
-        if window != nil && !paused { becomeFirstResponder() }
+        if window != nil && !paused && !spectating { becomeFirstResponder() }
         else { resetKeyboard(); gameScene?.resetControls() }
     }
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {

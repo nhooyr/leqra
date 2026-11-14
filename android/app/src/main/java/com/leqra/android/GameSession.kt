@@ -46,10 +46,14 @@ internal class GameSession(context: Context) {
     var server = prefs.getString("server", "https://leqra.com")!!
         private set
 
+    private val bootstrapOrigin = store.activeIntent()?.origin ?: server
+    private val bootstrapNames = listOf(prefs.getString("callsign", null), prefs.getString("localCallsign", null)).mapIndexed { seat, name ->
+        name.takeUnless { LegacyCallsignDefaults.shouldGenerate(it, store.selected(bootstrapOrigin, seat) != null) }
+    }
     private val nameDrafts = CallsignDrafts(
-        listOf(prefs.getString("callsign", null), prefs.getString("localCallsign", null)),
-        (0..1).map { if (prefs.contains("autoPending$it")) prefs.getBoolean("autoPending$it", false) else null },
-        (0..1).map { prefs.getString("autoRequest$it", null) },
+        bootstrapNames,
+        (0..1).map { if (bootstrapNames[it] != null && prefs.contains("autoPending$it")) prefs.getBoolean("autoPending$it", false) else null },
+        (0..1).map { if (bootstrapNames[it] != null) prefs.getString("autoRequest$it", null) else null },
     )
     var callsign: String
         get() = nameDrafts.name(0)
@@ -98,8 +102,10 @@ internal class GameSession(context: Context) {
     var online = false
         private set
 
+    val audioSceneActive: Boolean
+        get() = active && screen == Screen.PLAYING && !paused && (!online || activeNetwork.connected && !timeline.stale && audioStateOwner === activeNetwork && audioStateConnection == activeNetwork.connectionGeneration)
     val audioGameplayActive: Boolean
-        get() = active && screen == Screen.PLAYING && !paused && (!online || activeNetwork.connected && activeNetwork.welcome?.spectating != true && !timeline.stale && audioStateOwner === activeNetwork && audioStateConnection == activeNetwork.connectionGeneration)
+        get() = audioSceneActive && !spectating
 
     var infinity = true
         private set
@@ -124,6 +130,18 @@ internal class GameSession(context: Context) {
 
     var localID2: Int? = null
         private set
+
+    val roomSpectating: Boolean
+        get() = online && network.welcome?.spectating == true
+    val spectating: Boolean
+        get() = online && (roomSpectating || arenaActive && arenaNetwork.welcome?.spectating == true)
+    var followingID = 0
+        private set
+
+    fun followTank(id: Int) {
+        if (!spectating || !arenaActive || !arenaNetwork.connected || id <= 0 || snapshot.leaderboard.none { it.id == id }) return
+        arenaNetwork.send(JSONObject().put("type", "follow").put("target", id))
+    }
 
     var maze: InfiniteMaze? = null
         private set
@@ -155,6 +173,7 @@ internal class GameSession(context: Context) {
     private var audioStateOwner: NativeNetworkClient? = null
     private var audioStateConnection = -1L
     private var pendingAutoStart = false
+    private var spectatorAutoEnter = true
     private val main = Handler(Looper.getMainLooper())
     private var nameRequest: CancelRequest? = null
     private var nameRequestEpoch = 0L
@@ -583,6 +602,7 @@ internal class GameSession(context: Context) {
         neutral()
         if (online) {
             if (room?.optBoolean("infinityActive") == true) {
+                spectatorAutoEnter = true
                 if (!arenaNetwork.connected)
                     attachRoomArena(room?.optBoolean("infinityPublic") == true)
                 else {
@@ -591,7 +611,8 @@ internal class GameSession(context: Context) {
                     paused = false
                     changed(true)
                 }
-            } else if (isHost) command(if (publicSelected) "start_public_infinity" else "start")
+            } else if (roomSpectating) return
+            else if (isHost) command(if (publicSelected) "start_public_infinity" else "start")
             else {
                 val rows = room?.optJSONArray("players")
                 val own = rows?.let {
@@ -708,6 +729,7 @@ internal class GameSession(context: Context) {
         infinity = rules.infinity
         screen = Screen.CONNECTING
         pendingAutoStart = false
+        spectatorAutoEnter = true
         val roster =
             JSONArray()
                 .put(
@@ -761,6 +783,7 @@ internal class GameSession(context: Context) {
         screen = Screen.CONNECTING
         infinity = false
         pendingAutoStart = false
+        spectatorAutoEnter = true
         runCatching { network.connectRoom(server, callsign, code.trim(), spectator) }
             .onFailure {
                 online = false
@@ -796,6 +819,7 @@ internal class GameSession(context: Context) {
         screen = Screen.READY
         localID = 1
         localID2 = null
+        followingID = 0
         timeline.reset()
         timelineOwner = null
         timelineConnection = -1
@@ -813,11 +837,14 @@ internal class GameSession(context: Context) {
         neutral()
         paused = false
         if (online && room != null) {
+            val viewer = spectating
             arenaNetwork.disconnect()
             arenaActive = false
+            spectatorAutoEnter = false
+            followingID = 0
             localID = network.welcome?.id ?: localID
             localID2 = network.welcome?.localId
-            command("lobby")
+            if (!viewer) command("lobby")
             screen = Screen.READY
             changed(true)
         } else if (online) leave()
@@ -871,7 +898,7 @@ internal class GameSession(context: Context) {
     fun neutral() {
         input = GameInput()
         input2 = GameInput()
-        if (online) {
+        if (online && !spectating) {
             val client = activeNetwork
             client.sendInput(
                 timeline.neutralPacket(),
@@ -899,6 +926,22 @@ internal class GameSession(context: Context) {
             if (arenaActive) arenaNetwork.resume()
         } else if (store.activeIntent() != null) {
             val intent = store.activeIntent()!!
+            val legacyIntent = LegacyCallsignDefaults.shouldGenerate(intent.name, store.selected(intent.origin, 0) != null) ||
+                intent.localName?.let { LegacyCallsignDefaults.shouldGenerate(it, store.selected(intent.origin, 1) != null) } == true
+            if (legacyIntent) {
+                // A stale no-key auto-resume must not restore an old default over the bootstrap.
+                // The next deliberate Play claims the new defaults with persisted independent keys.
+                store.setActiveIntent(null)
+                server = intent.origin
+                localSelected = intent.localName != null
+                colorIndex = intent.colorIndex
+                localColorIndex = intent.localColorIndex
+                save()
+                changed(true)
+                main.removeCallbacks(statusTicker)
+                main.post(statusTicker)
+                return
+            }
             online = true
             infinity = true
             arenaActive = true
@@ -984,7 +1027,7 @@ internal class GameSession(context: Context) {
                         maze,
                         input2 = input2.takeIf { localID2 != null },
                         sendLocal = { packet ->
-                            client.sendInput(
+                            if (!spectating) client.sendInput(
                                 packet,
                                 local = true,
                                 player = localID2,
@@ -992,7 +1035,7 @@ internal class GameSession(context: Context) {
                             )
                         },
                     ) { packet ->
-                        client.sendInput(packet, player = localID, member = client.welcome?.member)
+                        if (!spectating) client.sendInput(packet, player = localID, member = client.welcome?.member)
                     } ?: snapshot
             } else {
                 accumulator += dt
@@ -1102,6 +1145,11 @@ internal class GameSession(context: Context) {
 
     private fun attachRoomArena(public: Boolean) {
         val identity = network.welcome ?: return
+        if (public && identity.spectating) {
+            status = "Spectating is available for room Infinity."
+            changed(true)
+            return
+        }
         val code = identity.room ?: return
         val token = identity.token ?: return
         infinity = true
@@ -1128,7 +1176,7 @@ internal class GameSession(context: Context) {
                 ),
             )
         runCatching {
-            arenaNetwork.connectRoomInfinity(server, code, token, includeLocal = hasLocal)
+            arenaNetwork.connectRoomInfinity(server, code, token, includeLocal = hasLocal, spectating = identity.spectating)
         }
             .onFailure {
                 arenaActive = false
@@ -1149,7 +1197,8 @@ internal class GameSession(context: Context) {
                 val welcome = event.welcome
                 if (isPlayingClient) {
                     localID = welcome.id
-                    localID2 = welcome.localId
+                    localID2 = welcome.localId.takeUnless { welcome.spectating }
+                    followingID = welcome.following
                     welcome.seed?.let { maze = InfiniteMaze(it) }
                     if (fromArena || welcome.isPublic) {
                         screen = Screen.PLAYING
@@ -1157,7 +1206,7 @@ internal class GameSession(context: Context) {
                     val newTransport =
                         timelineOwner !== client ||
                             timelineConnection != client.connectionGeneration
-                    timeline.setLocalIDs(localID, localID2, client.lastLocalInputSequence)
+                    timeline.setLocalIDs(if (welcome.spectating) -1 else localID, localID2, client.lastLocalInputSequence)
                     if (newTransport) {
                         timeline.reset(client.lastInputSequence, client.lastLocalInputSequence)
                         timelineOwner = client
@@ -1177,6 +1226,7 @@ internal class GameSession(context: Context) {
                     audioStateConnection = client.connectionGeneration
                     if (client.isPublic) spawnNotices.accept(event.snapshot.godlikeSpawns, System.nanoTime() / 1e9)
                     timeline.accept(event.snapshot, System.nanoTime() / 1e9)
+                    if (event.snapshot.spectating) followingID = event.snapshot.following
                     event.snapshot.world?.let { world ->
                         if (maze?.world !== world) maze = InfiniteMaze(world)
                     }
@@ -1184,7 +1234,10 @@ internal class GameSession(context: Context) {
                     snapshot = event.snapshot
                 }
             is NetworkEvent.Latency -> if (isPlayingClient) latency = event.milliseconds
-            is NetworkEvent.InfinityStarted -> if (!fromArena) attachRoomArena(event.isPublic)
+            is NetworkEvent.InfinityStarted -> if (!fromArena) {
+                spectatorAutoEnter = true
+                attachRoomArena(event.isPublic)
+            }
             is NetworkEvent.Reconnecting ->
                 if (isPlayingClient) {
                     neutral()
@@ -1193,7 +1246,15 @@ internal class GameSession(context: Context) {
             is NetworkEvent.Disconnected ->
                 if (isPlayingClient && event.message != null) status = event.message
             is NetworkEvent.Error -> {
-                if (
+                if (fromArena && event.terminal && event.code == "room_access_changed" && room != null) {
+                    neutral()
+                    paused = false
+                    arenaNetwork.disconnect(false)
+                    arenaActive = false
+                    followingID = 0
+                    screen = Screen.READY
+                    status = event.message
+                } else if (
                     event.terminal &&
                         !fromArena &&
                         arenaActive &&
@@ -1244,8 +1305,19 @@ internal class GameSession(context: Context) {
                         localID2 = network.welcome?.localId
                     }
                     screen = Screen.READY
+                    followingID = 0
+                } else if (packet.optBoolean("infinityActive") && !packet.optBoolean("infinityPublic")) {
+                    val changedRole = arenaActive && arenaNetwork.welcome?.let { it.spectating != roomSpectating } == true
+                    if (changedRole) {
+                        spectatorAutoEnter = true
+                        neutral()
+                        arenaNetwork.disconnect(false)
+                        arenaActive = false
+                    }
+                    if (!arenaActive && (roomSpectating && spectatorAutoEnter || changedRole)) attachRoomArena(false)
                 }
             }
+            "followed" -> if (fromArena && spectating) followingID = packet.optInt("following")
             "room_renamed" -> {
                 packet
                     .optString("room")

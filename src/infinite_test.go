@@ -1103,7 +1103,7 @@ func TestInfiniteSnapshotRanksBothLocalHumansBeyondTheTopTen(t *testing.T) {
 	}
 }
 
-func dialInfinite(t *testing.T, url string, first map[string]string, deflate bool) (net.Conn, *bufio.Reader) {
+func dialInfinite(t *testing.T, url string, first any, deflate bool) (net.Conn, *bufio.Reader) {
 	t.Helper()
 	host := strings.TrimPrefix(url, "http://")
 	c, err := net.Dial("tcp", host)
@@ -1276,9 +1276,12 @@ func TestPrivateInfinityAuthenticatesAndIsolatesRoomPilots(t *testing.T) {
 	}
 	action(t, h, clients[0], map[string]any{"type": "leave"})
 	server.step(now)
+	if _, connected := server.connections[firstSocket]; connected || !hasError(firstSocket, "room_access_changed") {
+		t.Fatal("room departure retained authority or omitted its terminal notice")
+	}
 	select {
 	case <-firstSocket.done:
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("room departure did not revoke the Infinity socket")
 	}
 	if first.arena.players > 1 {

@@ -129,6 +129,8 @@ type infiniteSnapshot struct {
 	Scores        *[4]int                `json:"teamScores,omitempty"`
 	Result        *infiniteResult        `json:"result,omitempty"`
 	GodlikeSpawns []infiniteGodlikeSpawn `json:"godlikeSpawns,omitempty"`
+	Spectating    bool                   `json:"spectating,omitempty"`
+	Following     int                    `json:"following"`
 }
 
 type infiniteLeader struct {
@@ -197,6 +199,8 @@ type infiniteArena struct {
 	pickupID, effectID                      int
 	snapshot                                infiniteSnapshot // Reused after immediate encoding under mu.
 	snapshotTankIndex                       map[int]int
+	observers                               map[*Client]*infiniteObserver
+	observerBroadcastAt                     time.Time
 	rules                                   *infiniteRules
 	roomBots                                []infiniteRoomBot
 	teamScores                              [4]int
@@ -580,6 +584,10 @@ func (a *infiniteArena) step(now time.Time) {
 	defer a.mu.Unlock()
 	a.clock = now
 	if a.players == 0 || a.result != nil {
+		if len(a.observers) > 0 && !now.Before(a.observerBroadcastAt) {
+			a.observerBroadcastAt = now.Add(time.Second / 30)
+			a.broadcast()
+		}
 		return
 	}
 	a.tick++
@@ -591,6 +599,9 @@ func (a *infiniteArena) step(now time.Time) {
 				x, y := p.X, p.Y
 				if p.Bot && p.roomBot == nil {
 					anchor := a.nearestActivePilot(p, math.Inf(1))
+					if anchor == nil {
+						anchor = a.nearestObservedPilot(p, math.Inf(1))
+					}
 					if anchor == nil {
 						continue
 					}
@@ -722,6 +733,11 @@ func (a *infiniteArena) nearestActivePilot(p *infinitePilot, maxDist float64) *i
 func (a *infiniteArena) outsideActiveViews(p *infinitePilot) bool {
 	for _, viewer := range a.pilots {
 		if !viewer.Bot && !viewer.disconnected && math.Abs(p.X-viewer.X) <= cellSize*16 && math.Abs(p.Y-viewer.Y) <= cellSize*16 {
+			return false
+		}
+	}
+	for _, observer := range a.observers {
+		if viewer := a.observerPilot(observer); viewer != nil && math.Abs(p.X-viewer.X) <= cellSize*16 && math.Abs(p.Y-viewer.Y) <= cellSize*16 {
 			return false
 		}
 	}
@@ -966,12 +982,13 @@ func (a *infiniteArena) leaderboard(entries []infiniteLeader) []infiniteLeader {
 }
 
 func (a *infiniteArena) broadcast() {
-	if a.connected == 0 {
+	if a.connected == 0 && len(a.observers) == 0 {
 		return
 	}
 	now := a.spawnNoticeTime()
 	a.pruneGodlikeSpawns(now)
 	packet := &a.snapshot
+	packet.Spectating, packet.Following = false, 0
 	packet.Tick, packet.Players, packet.TankCount = a.tick, a.connected, len(a.pilots)
 	packet.Rules, packet.Result = a.rules, a.result
 	if a.teams() {
@@ -1054,11 +1071,30 @@ func (a *infiniteArena) broadcast() {
 	spawnOffset := bulletOffset + len(a.bullets)
 	mask := make([]byte, (spawnOffset+len(a.godlikeSpawns)+7)/8)
 	mark := func(index int) { mask[index/8] |= 1 << (index % 8) }
-	for _, viewer := range a.pilots {
+	viewers := a.pilots
+	if len(a.observers) > 0 {
+		viewers = append(make([]*infinitePilot, 0, len(a.pilots)+len(a.observers)), a.pilots...)
+	}
+	for client, observer := range a.observers {
+		target := a.observerTarget(observer, leaders)
+		view := &infinitePilot{client: client}
+		if target != nil {
+			view.X, view.Y = target.X, target.Y
+		}
+		viewers = append(viewers, view)
+	}
+	for _, viewer := range viewers {
 		if viewer.client == nil {
 			continue
 		}
 		clear(mask)
+		observer := a.observers[viewer.client]
+		packet.Spectating, packet.Following = observer != nil, 0
+		packet.Leaders = leaders[:min(len(leaders), infiniteLeaderCount)]
+		if observer != nil {
+			packet.Following = observer.following
+			packet.Leaders = leaders
+		}
 		packet.Party = parties[viewer.party]
 		packet.Tanks, packet.Bullets, packet.Pickups, packet.Effects = packet.Tanks[:0], packet.Bullets[:0], packet.Pickups[:0], packet.Effects[:0]
 		packet.GodlikeSpawns = packet.GodlikeSpawns[:0]
@@ -1105,6 +1141,9 @@ func (a *infiniteArena) broadcast() {
 			deathViewer = viewer.ID
 		}
 		key := viewKey{string(mask), viewer.party, deathViewer}
+		if observer != nil {
+			key.deathViewer = -observer.following - 1
+		}
 		view := views[key]
 		if view.plain.data == nil {
 			data, ok := encodePacket(packet)

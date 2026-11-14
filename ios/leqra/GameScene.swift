@@ -47,6 +47,7 @@ final class GameScene: SKScene {
     private(set) var layoutMode: LayoutMode = .infinity
     private var landscape = false
     private var fixedLoadoutHeight: CGFloat = 97
+    private var spectating = false
 
     private let world = SKNode()
     private let wallLayer = SKNode()
@@ -248,12 +249,15 @@ final class GameScene: SKScene {
         layoutControls()
     }
 
-    func configureLayout(infinity: Bool, landscape: Bool, loadoutHeight: CGFloat) {
+    func configureLayout(infinity: Bool, landscape: Bool, loadoutHeight: CGFloat, spectating: Bool = false) {
         let mode: LayoutMode = infinity ? .infinity : .fixed
-        guard layoutMode != mode || self.landscape != landscape || fixedLoadoutHeight != loadoutHeight else { return }
+        guard layoutMode != mode || self.landscape != landscape || fixedLoadoutHeight != loadoutHeight || self.spectating != spectating else { return }
         layoutMode = mode
         self.landscape = landscape
         fixedLoadoutHeight = loadoutHeight
+        self.spectating = spectating
+        controls.isHidden = spectating
+        if spectating { resetControls() }
         cachedRegion = nil
         layoutControls()
     }
@@ -278,7 +282,7 @@ final class GameScene: SKScene {
     }
 
     private var worldViewport: CGRect {
-        let reserve = layoutMode == .fixed && !landscape ? min(max(0, size.height - 60), 119 + fixedLoadoutHeight) : 0
+        let reserve = layoutMode == .fixed && !landscape && !spectating ? min(max(0, size.height - 60), 119 + fixedLoadoutHeight) : 0
         return CGRect(x: 0, y: reserve, width: max(1, size.width), height: max(1, size.height - reserve))
     }
 
@@ -430,13 +434,15 @@ final class GameScene: SKScene {
             cachedRegion = nil
         }
         if layoutMode == .fixed, let fixed = fixedWorld {
-            let reserve: CGFloat = landscape ? 252 : 0
+            let reserve: CGFloat = landscape && !spectating ? 252 : 0
             zoom = max(0.05, min((worldViewport.width - reserve - 12) / fixed.width, (worldViewport.height - 12) / fixed.height))
             world.setScale(zoom)
             cameraPoint = CGPoint(x: fixed.width / 2, y: fixed.height / 2)
             hasCamera = true
         }
-        let focus = snapshot.tanks.first { $0.id == localID } ?? snapshot.tanks.first
+        let focus: ArenaTank?
+        if snapshot.spectating { focus = snapshot.tanks.first { $0.id == snapshot.following && $0.id > 0 } }
+        else { focus = snapshot.tanks.first { $0.id == localID } ?? snapshot.tanks.first }
         if let focus {
             let target = CGPoint(x: focus.x, y: focus.y)
             if layoutMode == .infinity {
@@ -448,6 +454,8 @@ final class GameScene: SKScene {
                 lastLocalHP = focus.hp
                 lastLocalSpawn = focus.spawnSerial
             }
+        } else if snapshot.spectating && layoutMode == .infinity {
+            cameraPoint = .zero; hasCamera = true
         }
         world.position = CGPoint(x: worldViewport.midX - cameraPoint.x * zoom,
                                  y: worldViewport.midY + cameraPoint.y * zoom)
@@ -840,6 +848,7 @@ final class GameScene: SKScene {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard !spectating else { return }
         for touch in touches {
             let location = touch.location(in: self)
             if stickTouch == nil && location.x < size.width / 2 && location.y < size.height * 0.75 {

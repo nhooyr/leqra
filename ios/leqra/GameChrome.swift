@@ -69,12 +69,19 @@ struct ArenaStatusBar: View {
             if infinity {
                 VStack(spacing: 2) {
                     if session.showFPS { Text(session.performanceReadout(preview: preview)).foregroundStyle(WebStyle.accent) }
-                    Text("score: \(preview ? 0 : session.score), rank: #\(preview ? 0 : session.localTank?.rank ?? 0)")
-                        .foregroundStyle(WebStyle.paint(session.colorIndex)).accessibilityIdentifier("gameScore")
+                    if session.spectating && !preview {
+                        Text(session.spectatorFollowingLabel).foregroundStyle(WebStyle.soft)
+                            .fixedSize(horizontal: false, vertical: true).frame(minHeight: 24)
+                            .accessibilityIdentifier("spectatorFollowing")
+                    } else {
+                        Text("score: \(preview ? 0 : session.score), rank: #\(preview ? 0 : session.localTank?.rank ?? 0)")
+                            .foregroundStyle(WebStyle.paint(session.colorIndex)).accessibilityIdentifier("gameScore")
+                    }
                 }.font(WebStyle.mono()).frame(maxWidth: .infinity)
                 Button("LEADERBOARD") { session.showScores.toggle() }
                     .font(WebStyle.mono(10, weight: .semibold)).foregroundStyle(WebStyle.accent)
                     .padding(.horizontal, 7).frame(minHeight: 30)
+                    .accessibilityIdentifier("toggleStandings")
                     .background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 4))
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(WebStyle.border, lineWidth: 1).allowsHitTesting(false))
             } else {
@@ -95,7 +102,7 @@ struct ArenaStatusBar: View {
     }
     private var title: String {
         if preview { return infinity ? ((session.room?.infinityPublic ?? session.publicInfinitySelected) ? "Public Infinity" : "Infinity") : "Ready room" }
-        if infinity { return session.gameTitle }
+        if infinity { return session.spectating ? "Spectating" : session.gameTitle }
         return session.snapshot.phase == "playing" ? "Live arena" : session.snapshot.phase == "countdown" ? "Get ready" : session.snapshot.phase == "roundOver" ? "Round complete" : "Match complete"
     }
     private var onlineCount: Int? {
@@ -182,30 +189,52 @@ struct PilotLoadoutView: View {
 struct ArenaStandings: View {
     @ObservedObject var session: GameSession
     var preview = false
+    private var selecting: Bool { session.spectating && session.isInfinity && !preview }
     private var entries: [LeaderboardEntry] {
         if preview { return session.publicStatus?.leaders.map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team ?? 0) } ?? [] }
         return session.standings
     }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                Button { session.showScores = false } label: { HStack { Text("LEADERBOARD"); Spacer(); Image(systemName: "chevron.up") }.font(WebStyle.mono()).foregroundStyle(WebStyle.accent).padding(12) }
+        VStack(alignment: .leading, spacing: 0) {
+                Button { session.showScores = false } label: { HStack { Text("LEADERBOARD"); Spacer(); Image(systemName: "chevron.up") }.font(WebStyle.mono()).foregroundStyle(WebStyle.accent).padding(12) }.accessibilityIdentifier("closeStandings")
+                ScrollView {
+                  LazyVStack(alignment: .leading, spacing: 0) {
                 if entries.isEmpty { Text("No tanks yet").font(.system(size: 12)).foregroundStyle(WebStyle.soft).padding(12) }
-                ForEach(Array(entries.prefix(10).enumerated()), id: \.element.id) { index, entry in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text("\(index + 1).")
-                        Text(entry.id == session.localID && !preview ? "\(entry.name) (P1)" : CallsignPolicy.displayName(entry.name, bot: entry.bot))
-                            .fontWeight(entry.id == session.localID && !preview ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
-                        if entry.bot { Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
-                        Spacer(minLength: 2); Text("\(entry.score)").bold().monospacedDigit()
-                    }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex)).padding(.vertical, 5).padding(.horizontal, 10)
-                        .background(entry.id == session.localID && !preview ? WebStyle.paint(entry.colorIndex).opacity(0.08) : .clear)
-                        .accessibilityElement(children: .combine)
+                ForEach(Array(entries.prefix(selecting ? entries.count : 10).enumerated()), id: \.element.id) { index, entry in
+                    if selecting {
+                        Button { session.followTank(entry.id) } label: { row(entry, rank: index + 1) }
+                            .buttonStyle(.plain).disabled(!session.canFollowTanks || entry.id <= 0)
+                            .accessibilityIdentifier("followTank_\(entry.id)")
+                            .accessibilityValue(entry.id == session.followingID ? "Following" : "Follow tank")
+                    } else { row(entry, rank: index + 1) }
+                }
+                  }
+                }.accessibilityIdentifier("standingsScroll")
+                if selecting {
+                    Text(session.followError.isEmpty ? "Tap a tank to follow" : session.followError)
+                        .foregroundStyle(session.followError.isEmpty ? WebStyle.soft : WebStyle.danger)
+                        .font(.system(size: 11)).fixedSize(horizontal: false, vertical: true).padding(10)
                 }
                 Text("+1 per kill, -1 per death").font(.system(size: 11)).foregroundStyle(WebStyle.soft).padding(10)
-            }
-        }.frame(width: 205).frame(maxHeight: 330).accessibilityIdentifier("arenaStandings")
+        }.frame(width: selecting ? 245 : 205).frame(maxHeight: 330)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("arenaStandings")
             .background(WebStyle.surface, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(WebStyle.edge, lineWidth: 1).allowsHitTesting(false))
+    }
+
+    private func row(_ entry: LeaderboardEntry, rank: Int) -> some View {
+        let seat = preview ? nil : session.localPilotSeat(entry.id)
+        return HStack(alignment: .top, spacing: 6) {
+                        Text("\(rank).")
+                        Text(CallsignPolicy.displayName(entry.name, bot: entry.bot) + (seat.map { " (P\($0))" } ?? ""))
+                            .fontWeight(seat != nil ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
+                        if entry.bot { Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
+                        if selecting && entry.id == session.followingID { Image(systemName: "eye").font(.system(size: 10)).accessibilityHidden(true) }
+                        Spacer(minLength: 2); Text("\(entry.score)").bold().monospacedDigit()
+                    }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex)).padding(.vertical, 5).padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, minHeight: selecting ? 44 : 0, alignment: .leading)
+                        .background((seat != nil || selecting && entry.id == session.followingID) ? WebStyle.paint(entry.colorIndex).opacity(0.08) : .clear)
+                        .contentShape(Rectangle())
+                        .accessibilityElement(children: .combine)
     }
 }

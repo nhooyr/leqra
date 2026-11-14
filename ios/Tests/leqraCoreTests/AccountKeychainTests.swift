@@ -10,6 +10,18 @@ final class AccountKeychainTests: XCTestCase {
         try PublicInfinitySession(baseURL: server ?? base, publicToken: "p_" + String(repeating: letter, count: 43))
     }
 
+    func testMalformedStoredCredentialsStillProtectLegacyNamesFromMigration() throws {
+        let io = MemoryAccountKeychain(), store = KeychainPublicInfinitySessions(namespace: "unit", storage: io)
+        XCTAssertFalse(store.hasStoredCredential(for: base, seat: 0))
+        XCTAssertTrue(store.remember(try credential("A"), seat: 0))
+        let account = try XCTUnwrap(io.values.keys.first { $0.hasPrefix("identity-") })
+        io.values[account] = Data("malformed saved credential".utf8)
+        XCTAssertNil(store.session(for: base, seat: 0))
+        XCTAssertTrue(store.hasStoredCredential(for: base, seat: 0))
+        XCTAssertFalse(store.hasStoredCredential(for: base, seat: 1))
+        XCTAssertFalse(store.hasStoredCredential(for: URL(string: "https://other.test")!, seat: 0))
+    }
+
     func testP1AndP2CredentialsAndOriginsStayIndependent() throws {
         let io = MemoryAccountKeychain()
         let tested = KeychainPublicInfinitySessions(namespace: "unit", storage: io)

@@ -23,6 +23,128 @@ class SessionParityTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
+    @Test
+    fun spacedLegacyPlayerDefaultsUpgradeWithoutKeysAndBothCurrentKeysProtectThem() {
+        for (protected in listOf(false, true)) {
+            val context = context()
+            val first = " pLaYeR   1 "
+            val second = "Player  2"
+            context.getSharedPreferences("leqra-settings", 0).edit().putString("callsign", first).putString("localCallsign", second).putBoolean("autoPending0", false).putBoolean("autoPending1", false).commit()
+            val keys = (0..1).map { com.leqra.android.accounts.AccountKeys.create() }
+            if (protected) {
+                val store = com.leqra.android.accounts.EncryptedAccountStore(context)
+                for (seat in 0..1) store.select("https://leqra.com", seat, keys[seat])
+            }
+            val session = main { GameSession(context) }
+            try {
+                if (protected) {
+                    assertEquals(first, session.callsign)
+                    assertEquals(second, session.localCallsign)
+                    for (seat in 0..1) {
+                        assertFalse(session.automaticNamePending(seat))
+                        assertEquals(keys[seat], session.store.selected(session.server, seat)?.key)
+                    }
+                } else {
+                    assertTrue(session.callsign.startsWith("pilot#"))
+                    assertTrue(session.localCallsign.startsWith("pilot#"))
+                    assertNotEquals(session.callsign, session.localCallsign)
+                    assertTrue(session.automaticNamePending(0))
+                    assertTrue(session.automaticNamePending(1))
+                }
+            } finally {
+                main { session.release() }
+                context.noBackupFilesDir.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun roomDemotionStopsInputAndPowerAudioBeforeTheArenaSocketIsReplaced() {
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                val pilot = welcome()
+                val viewer = NetworkWelcome.parse(JSONObject().put("id", 9).put("spectating", true))
+                set(session, "online", true)
+                set(session, "arenaActive", true)
+                set(session.arenaNetwork, "welcome", pilot)
+                set(session.arenaNetwork, "connected", true)
+                event(session, NetworkEvent.Welcome(pilot), arena = true)
+                val state = snapshot(1).apply { tanks[0].starmanTime = 5.0 }
+                event(session, NetworkEvent.State(state), arena = true)
+                assertTrue(session.audioGameplayActive)
+                // Reliable control identity precedes its roster and arena invalidation.
+                set(session.network, "welcome", viewer)
+                event(session, NetworkEvent.Welcome(viewer))
+                assertTrue(session.spectating)
+                assertTrue("The watched scene still has ordinary audio", session.audioSceneActive)
+                assertFalse(session.audioGameplayActive)
+                session.input = GameInput(forward = true, fire = true)
+                val sequence = session.arenaNetwork.lastInputSequence
+                val start = System.nanoTime()
+                repeat(12) { session.frame(start + it * 1_000_000_000L / 120) }
+                assertEquals("The old actor receives no controls after its room role changes", sequence, session.arenaNetwork.lastInputSequence)
+            }
+        } finally {
+            main { session.release() }
+            context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun legacyNoKeyDefaultsUpgradeBeforeRegistrationAndStaleIntentCannotRestoreThem() {
+        val context = context()
+        context.getSharedPreferences("leqra-settings", 0).edit().putString("callsign", "PILOT").putString("localCallsign", "CO-PILOT").putBoolean("autoPending0", false).putBoolean("autoPending1", false).commit()
+        val store = com.leqra.android.accounts.EncryptedAccountStore(context)
+        store.setActiveIntent(com.leqra.android.accounts.PublicIntent("https://leqra.com", "PILOT", 3, "CO-PILOT", 4))
+        var session = main { GameSession(context) }
+        try {
+            main {
+                assertTrue(session.callsign.startsWith("pilot#"))
+                assertTrue(session.localCallsign.startsWith("pilot#"))
+                assertNotEquals(session.callsign, session.localCallsign)
+                assertTrue(session.automaticNamePending(0))
+                assertTrue(session.automaticNamePending(1))
+                val first = session.callsign
+                val second = session.localCallsign
+                session.foreground()
+                assertFalse(session.online)
+                assertEquals(Screen.READY, session.screen)
+                assertEquals(first, session.callsign)
+                assertEquals(second, session.localCallsign)
+                assertNull(session.store.activeIntent())
+                session.release()
+                session = GameSession(context)
+                assertEquals(first, session.callsign)
+                assertEquals(second, session.localCallsign)
+            }
+        } finally {
+            main { session.release() }
+            context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun accountBackedLegacyDefaultsAndCustomNamesStayUntouched() {
+        val context = context()
+        val key = com.leqra.android.accounts.AccountKeys.create()
+        val store = com.leqra.android.accounts.EncryptedAccountStore(context)
+        store.select("https://leqra.com", 0, key)
+        context.getSharedPreferences("leqra-settings", 0).edit().putString("callsign", "PILOT").putString("localCallsign", "My custom name").commit()
+        val session = main { GameSession(context) }
+        try {
+            assertEquals("PILOT", session.callsign)
+            assertEquals("My custom name", session.localCallsign)
+            assertFalse(session.automaticNamePending(0))
+            assertFalse(session.automaticNamePending(1))
+            assertEquals(key, session.store.selected(session.server, 0)?.key)
+        } finally {
+            main { session.release() }
+            context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
     private fun <T> main(block: () -> T): T {
         var result: Result<T>? = null
         instrumentation.runOnMainSync { result = runCatching(block) }
@@ -66,13 +188,13 @@ class SessionParityTest {
             }
     }
 
-    private fun eventually(message: String, condition: () -> Boolean) {
+    private fun eventually(message: String, diagnostic: (() -> String)? = null, condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
         while (System.nanoTime() < deadline) {
             if (main(condition)) return
             Thread.sleep(30)
         }
-        throw AssertionError(message)
+        throw AssertionError(message + (diagnostic?.let { ": " + main(it) } ?: ""))
     }
 
     private fun welcome(local: Boolean = false) =
@@ -251,7 +373,7 @@ class SessionParityTest {
                 session!!.lobby()
                 session!!.share()
             }
-            eventually("Custom roster did not publish") {
+            eventually("Custom roster did not publish", { session!!.status }) {
                 session!!.room?.optJSONArray("players")?.length() == 4
             }
             main {

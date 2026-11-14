@@ -1012,6 +1012,18 @@ body.touch-ui .infinite-leaderboard[open]{max-height:max(38px,calc(100% - 112px)
 .infinite-leaderboard li[data-local]>span{font-weight:700}
 .infinite-leaderboard li strong{float:right;color:inherit}
 .infinite-leaderboard ol:empty::before{content:"No tanks yet";color:var(--text-soft)}
+.infinite-follow-target{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:36px;margin:0;padding:4px 6px;border:0;border-radius:5px;background:none;color:inherit;text-align:left;font:inherit}
+.infinite-follow-target span{overflow-wrap:anywhere;min-width:0}
+.infinite-follow-target strong{flex-shrink:0}
+.infinite-follow-target:hover,.infinite-follow-target:focus-visible,.infinite-leaderboard li[data-following=true] .infinite-follow-target{background:color-mix(in srgb,var(--tank-color) 15%,var(--surface));box-shadow:inset 0 0 0 1px var(--tank-color)}
+.infinite-arena[data-spectating=true] .infinite-touch-controls,.infinite-arena[data-spectating=true] #infiniteLoadouts{display:none!important}
+.infinite-arena[data-spectating=true] .infinite-leaderboard[open]{width:min(280px,80vw);max-height:calc(100% - 20px)}
+.infinite-arena[data-spectating=true] #infiniteControlsHint{display:block;white-space:normal;overflow-wrap:anywhere}
+.infinite-arena[data-spectating=true] .infinite-statusbar{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+.infinite-arena[data-spectating=true] .infinite-statusbar .arena-title{grid-column:1;grid-row:1;display:flex}
+.infinite-arena[data-spectating=true] .infinite-statusbar .bar-right{display:contents}
+.infinite-arena[data-spectating=true] .infinite-scoreboard-toggle{grid-column:3;grid-row:1;justify-self:end}
+.infinite-arena[data-spectating=true] .infinite-personal-scores{grid-column:1/-1;grid-row:2;justify-self:stretch;align-self:center;align-items:flex-start;min-height:2.8em;max-width:none;white-space:normal;font-weight:400;overflow-wrap:anywhere;min-width:0;text-align:left}
 .infinite-leaderboard p{margin:0;padding:7px 12px;border-top:1px solid var(--border);color:var(--text-soft);font-size:11px;text-align:right}
 .infinite-touch-controls{display:none;position:absolute;inset:auto 0 0;align-items:center;justify-content:space-between;padding:0 max(18px,env(safe-area-inset-right)) 8px max(18px,env(safe-area-inset-left));pointer-events:none}
 body.touch-ui .infinite-touch-controls{display:flex}
@@ -1037,10 +1049,10 @@ body .callsign-status{min-height:2.8em;font:var(--min-font-size)/1.4 var(--mono)
 body .callsign-status[hidden]{display:block!important;visibility:hidden}
 body .callsign-status.error{color:var(--orange)}
 body :is(#roomScreen,#onlineMenuScreen,#infinitePauseMenu) .callsign-status,body #infinitePauseMenu .callsign-status,body #onlineMenuScreen .callsign-status{min-height:2.8em}
-body :is(#roomScreen,#onlineMenuScreen,#infinitePauseMenu) .callsign-status,body #infinitePauseMenu .callsign-status,body #onlineMenuScreen .callsign-status,body #pilotNameStatus{min-height:calc(1.4em + 52px)}
-body .callsign-status>span{display:block}
-body .callsign-status .callsign-account-action{min-height:24px;margin:0;padding:3px 0;line-height:1.4}
-body .callsign-status .callsign-random-action{display:block}
+body :is(#roomScreen,#onlineMenuScreen,#infinitePauseMenu) .callsign-status,body #infinitePauseMenu .callsign-status,body #onlineMenuScreen .callsign-status,body #pilotNameStatus{min-height:72px}
+body .callsign-status>span{display:flex;align-items:center;column-gap:1ch;min-height:24px}
+body .callsign-status .callsign-account-action{display:inline-flex;align-items:center;min-height:24px;margin:0;padding:0;line-height:1.4}
+body .callsign-status .callsign-random-action{display:flex;width:max-content;max-width:100%}
 
 body #roomScreen.unified-room #roomStatus,body #joinDialog #netStatus{min-height:2.8em}
 /* Account secrets stay masked until an explicit copy fallback is needed. */

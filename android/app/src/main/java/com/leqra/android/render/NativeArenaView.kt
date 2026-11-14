@@ -35,6 +35,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
 
     var fireAvailable = true
     var encounterNotice: String? = null
+    /** Camera target is separate from local identity; a viewer never labels a tank P1. */
+    var followingID: Int? = null
     private var noticeLayoutText: String? = null
     private var noticeLayoutWidth = 0f
     private var noticeLayoutSize = 0f
@@ -530,10 +532,13 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     )
                     .coerceAtLeast(.05f)
         } else {
-            val focus = state.tanks.firstOrNull { it.id == localID } ?: state.tanks.firstOrNull()
+            val focus = state.tanks.firstOrNull { it.id == (followingID ?: localID) } ?: if (followingID == null) state.tanks.firstOrNull() else null
             if (focus != null) {
                 cameraX = focus.x
                 cameraY = focus.y
+            } else if (followingID == 0) {
+                cameraX = 0.0
+                cameraY = 0.0
             }
             zoom = (min(viewport.width(), viewport.height()) / 420f).coerceIn(.7f, 1.2f)
         }

@@ -21,8 +21,9 @@ class NetworkWelcome(
     val created: Boolean,
     val full: Boolean,
     val busy: Boolean,
+    val following: Int = 0,
 ) {
-    fun withLocal(id: Int?, member: Long?) =
+    fun withLocal(id: Int?, member: Long?, spectating: Boolean = this.spectating) =
         NetworkWelcome(
             this.id,
             seed,
@@ -40,6 +41,7 @@ class NetworkWelcome(
             created,
             full,
             busy,
+            following,
         )
 
     companion object {
@@ -53,14 +55,15 @@ class NetworkWelcome(
                 json.stringOrNull("localPublicToken"),
                 json.optBoolean("public"),
                 json.optBoolean("spectating"),
-                json.intOrNull("localId"),
+                json.intOrNull("localId")?.takeIf { it >= 0 },
                 json.longOrNull("generation"),
                 json.longOrNull("member"),
-                json.longOrNull("localMember"),
+                json.longOrNull("localMember")?.takeIf { it > 0 },
                 json.optBoolean("resumed"),
                 json.optBoolean("created"),
                 json.optBoolean("full"),
                 json.optBoolean("busy"),
+                json.optInt("following"),
             )
     }
 }

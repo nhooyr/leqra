@@ -76,9 +76,9 @@ struct ContentView: View {
             ZStack(alignment: .topTrailing) {
                 NativeGameView(scene: session.scene, highFrameRate: session.highFrameRate,
                                paused: session.paused || session.hasModal,
-                               infinity: session.isInfinity, landscape: landscape, loadoutHeight: 97)
+                               infinity: session.isInfinity, landscape: landscape, loadoutHeight: 97, spectating: session.spectating)
                     .accessibilityIdentifier("arenaStage")
-                if !session.isInfinity && !landscape {
+                if !session.isInfinity && !landscape && !session.spectating {
                     VStack { Spacer(); PilotLoadoutView(session: session).frame(height: 97); Color.clear.frame(height: 119) }.allowsHitTesting(false)
                 }
                 if !session.isInfinity && session.showFPS {
@@ -96,11 +96,11 @@ struct ContentView: View {
                         Spacer()
                     }.frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.top, 30).allowsHitTesting(false)
                 }
-                if session.snapshot.phase == "matchOver" || session.snapshot.result != nil {
+                if !session.spectating && (session.snapshot.phase == "matchOver" || session.snapshot.result != nil) {
                     results.padding(.bottom, !session.isInfinity && !landscape ? 216 : 0)
                 }
             }
-            if session.isInfinity || landscape { PilotLoadoutView(session: session, compact: landscape) }
+            if !session.spectating && (session.isInfinity || landscape) { PilotLoadoutView(session: session, compact: landscape) }
         }.background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9))
             .overlay(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9).stroke(session.isInfinity ? .clear : WebStyle.edge, lineWidth: 1).allowsHitTesting(false))
     }

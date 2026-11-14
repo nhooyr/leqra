@@ -27,6 +27,28 @@ public enum CallsignPolicy {
     public static func isGenerated(_ name: String) -> Bool {
         name.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression) != nil
     }
+    public static func isLegacyDefault(_ name: String) -> Bool {
+        let key = name.split(whereSeparator: \.isWhitespace).joined(separator: " ").uppercased()
+        return ["PILOT", "PLAYER 1", "PLAYER 2", "CO-PILOT", "YOU", "SNOW FOX"].contains(key)
+            || key.range(of: #"^PILOT [1-9][0-9]{2}$"#, options: .regularExpression) != nil
+    }
+    public static func migratingLegacyRoster(_ roster: [NativeSeatSpec], primaryName: String, secondaryName: String,
+                                             unownedSeats: Set<Int>) -> [NativeSeatSpec] {
+        roster.map { original in
+            var seat = original
+            let index = seat.kind == "human" ? 0 : seat.kind == "local" ? 1 : -1
+            if unownedSeats.contains(index), isLegacyDefault(seat.name) { seat.name = index == 0 ? primaryName : secondaryName }
+            return seat
+        }
+    }
+    public static func updatingGeneratedRoster(_ roster: [NativeSeatSpec], seat: Int, previous: String, claimed: String) -> [NativeSeatSpec] {
+        guard isGenerated(previous) else { return roster }
+        return roster.map { original in
+            var row = original
+            if row.kind == (seat == 1 ? "local" : "human"), row.name == previous { row.name = claimed }
+            return row
+        }
+    }
     public static func bootstrap() -> String {
         let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
         return "pilot#" + String((0..<6).map { _ in alphabet[Int.random(in: 0..<alphabet.count)] })
@@ -64,6 +86,18 @@ public final class CallsignDraftStore {
     private func nameKey(_ seat: Int) -> String { seat == 1 ? "localCallsign" : "callsign" }
     private func pendingKey(_ seat: Int) -> String { nameKey(seat) + "AutoPending" }
     private func revisionKey(_ seat: Int) -> String { nameKey(seat) + "Revision" }
+    /// Invoke once at startup, before any new credential is prepared. Stored
+    /// credentials, including malformed ones, must not be replaced by repair.
+    @discardableResult public func migrateLegacyDefaults(credentialPresent: (Int) -> Bool) -> Set<Int> {
+        var migrated = Set<Int>()
+        for seat in 0...1 {
+            guard !credentialPresent(seat), let old = defaults.string(forKey: nameKey(seat)), CallsignPolicy.isLegacyDefault(old) else { continue }
+            defaults.removeObject(forKey: nameKey(seat))
+            _ = name(seat: seat)
+            migrated.insert(seat)
+        }
+        return migrated
+    }
     public func name(seat: Int) -> String {
         if let existing = defaults.string(forKey: nameKey(seat)) { return existing }
         var value = CallsignPolicy.bootstrap()

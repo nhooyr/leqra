@@ -22,10 +22,23 @@ function botName(name,bot){
  botLabels.set(name,label);if(botLabels.size>128)botLabels.delete(botLabels.keys().next().value);return label;
 }
 function record(seat){try{const value=JSON.parse(read(pending[seat])||'null');return value&&typeof value.name==='string'&&typeof value.requestId==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value.requestId)&&(!value.owner||/^p_[A-Za-z0-9_-]{43}$/.test(value.owner))?value:null;}catch(_){return null;}}
+function legacyDefault(name){return /^(?:PILOT|PLAYER [12]|CO-PILOT|YOU|SNOW FOX|PILOT [1-9][0-9]{2})$/.test(String(name).trim().replace(/\s+/gu,' ').toUpperCase());}
+function hasStoredKey(seat){
+ if(read(seat?'leqra.localPublicToken':'leqra.publicToken'))return true;
+ if(seat){const registration=read('leqra.localAccountRegistration');if(registration){try{return !!JSON.parse(registration)?.token;}catch(_){return true;}}}
+ return false;
+}
 function initial(seat){
- const saved=read(names[seat])?.trim();if(saved)return saved;
- const legacy=read(seat?'ricochet.local2Name':'ricochet.name')?.trim();if(legacy){write(names[seat],legacy);return legacy;}
+ const saved=read(names[seat])?.trim()||read(seat?'ricochet.local2Name':'ricochet.name')?.trim();
+ if(saved&&(!legacyDefault(saved)||hasStoredKey(seat))){write(names[seat],saved);return saved;}
  const name=randomName(seat);write(names[seat],name);write(pending[seat],JSON.stringify({name,requestId:uuid(),auto:true}));return name;
+}
+function restored(seat,name){
+ if(legacyDefault(name)&&!hasStoredKey(seat))return initial(seat);
+ // A saved room may predate the standalone name preference. Keep its custom
+ // identity instead of letting the fresh bootstrap name overwrite that draft.
+ const value=record(seat);if(value?.auto&&value.name!==name)remove(pending[seat]);
+ write(names[seat],name);return name;
 }
 // Generate local names before game.js creates the ready room, including offline launches.
 initial(0);initial(1);
@@ -107,7 +120,7 @@ function status(field,form,text,error=false,kind='taken'){
  }
  node.hidden=!text;
 }
-window.leqraCallsigns=Object.freeze({initial,reserved,botName,isPending,cancelAuto,ensure,generate,status,revision:()=>editRevision,
+window.leqraCallsigns=Object.freeze({initial,restored,legacyDefault,reserved,botName,isPending,cancelAuto,ensure,generate,status,revision:()=>editRevision,
  init(value){hooks=value;Promise.resolve().then(ensure).catch(()=>{});window.addEventListener('online',()=>ensure().catch(()=>{}));}
 });
 })();

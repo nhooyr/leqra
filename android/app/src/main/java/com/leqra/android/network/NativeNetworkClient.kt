@@ -175,10 +175,13 @@ class NativeNetworkClient(
         resume: Boolean = false,
         generation: Long? = null,
         includeLocal: Boolean = false,
+        spectating: Boolean = false,
+        target: Int? = null,
     ) {
-        val join = JSONObject().put("type", "join").put("code", code).put("token", token)
+        val join = JSONObject().put("type", "join").put("code", code).put("token", token).put("spectating", spectating)
+        if (spectating && target != null && target > 0) join.put("target", target)
         if (resume) join.put("resume", true).put("generation", generation)
-        if (includeLocal)
+        if (includeLocal && !spectating)
             store.selected(origin, 1)?.let {
                 join.put("localPublicToken", it.key).put("localNewAccount", it.registrationPending)
             }
@@ -199,6 +202,7 @@ class NativeNetworkClient(
     fun send(command: JSONObject) {
         // These mutations can register/migrate P2, so its durable candidate must precede the send.
         val type = command.optString("type")
+        if (infinity && welcome?.spectating == true && type in setOf("input", "rename", "rename_local")) return
         val includesLocal =
             type == "add" && command.optString("kind") == "local" ||
                 type == "preset" &&
@@ -231,7 +235,7 @@ class NativeNetworkClient(
         player: Int? = null,
         member: Long? = null,
     ) {
-        if (!connected) return
+        if (!connected || welcome?.spectating == true) return
         val previous = if (local) localSequence else sequence
         val next = if (input.seq > 0) input.seq else previous + 1
         if (next <= previous) return
@@ -468,8 +472,10 @@ class NativeNetworkClient(
                                 { incoming ->
                                     try {
                                         when (incoming) {
-                                            is Incoming.State ->
+                                            is Incoming.State -> {
+                                                if (incoming.snapshot.spectating && incoming.snapshot.following > 0) resumeJoin?.put("target", incoming.snapshot.following)
                                                 onEvent(NetworkEvent.State(incoming.snapshot))
+                                            }
                                             is Incoming.Packet -> receive(incoming.json)
                                         }
                                     } catch (error: Exception) {
@@ -552,8 +558,10 @@ class NativeNetworkClient(
                                 }
                         val localId = local?.getInt("id")
                         val localMember = local?.getLong("member")
-                        if (localId != current.localId || localMember != current.localMember) {
-                            welcome = current.withLocal(localId, localMember)
+                        val spectators = json.optJSONArray("spectators") ?: JSONArray()
+                        val spectating = (0 until spectators.length()).any { spectators.getJSONObject(it).optInt("id", -1) == current.id }
+                        if (localId != current.localId || localMember != current.localMember || spectating != current.spectating) {
+                            welcome = current.withLocal(localId, localMember, spectating)
                             onEvent(NetworkEvent.Welcome(welcome!!))
                         }
                     }
@@ -571,6 +579,10 @@ class NativeNetworkClient(
                 onEvent(NetworkEvent.Packet(json))
             }
             "infinity_start" -> onEvent(NetworkEvent.InfinityStarted(json.optBoolean("public")))
+            "followed" -> {
+                if (welcome?.spectating == true) resumeJoin?.put("target", json.optInt("following"))
+                onEvent(NetworkEvent.Packet(json))
+            }
             "pong" -> {
                 val timestamp = json.optLong("t", -1)
                 if (pingTimes.remove(timestamp)) {
@@ -612,7 +624,7 @@ class NativeNetworkClient(
                     fail(message, false, code, seat)
                 else if (
                     !connected ||
-                        code in setOf("kicked", "session_replaced", "account_key_revoked") ||
+                        code in setOf("kicked", "session_replaced", "account_key_revoked", "room_access_changed") ||
                         json.optString("action") == "version"
                 )
                     fail(message, true, code, seat)
@@ -714,9 +726,11 @@ class NativeNetworkClient(
                     .put("code", info.room)
                     .put("token", info.token)
                     .put("name", pendingJoin.optString("name"))
+                    .put("spectating", info.spectating)
                     .put("localPublicToken", info.localPublicToken)
                     .put("independentAccounts", true)
             if (infinity) resumeJoin?.put("resume", true)?.put("generation", info.generation)
+            if (info.spectating && info.following > 0) resumeJoin?.put("target", info.following)
         }
         deadline = null
         retryAttempt = 0

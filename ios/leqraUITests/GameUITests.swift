@@ -8,6 +8,66 @@ final class GameUITests: XCTestCase {
 
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// A disposable real Go host publishes an Infinity room with roaming bots.
+    /// The viewer joins before start, follows rows beyond the first ten in both
+    /// orientations, exits without ending the room, then watches a late join.
+    @MainActor
+    func testRoomInfinitySpectatorCanScrollFollowAndRejoinInBothOrientations() async throws {
+        guard let code = ProcessInfo.processInfo.environment["LEQRA_SPECTATOR_UI_ROOM"] else {
+            throw XCTSkip("Requires a disposable live Room Infinity host.")
+        }
+        let app = launch(callsign: "WATCH " + UUID().uuidString.prefix(7))
+        func joinWatching() {
+            let join = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Join another room'")).firstMatch
+            reveal(join, in: app); join.tap()
+            let field = app.textFields["joinRoomCode"]
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+            field.typeText(code + "\n")
+            let toggle = app.switches["joinSpectatingToggle"]
+            if toggle.value as? String != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap() }
+            let watching = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: toggle)
+            XCTAssertEqual(XCTWaiter.wait(for: [watching], timeout: 3), .completed)
+            app.buttons["joinRoomButton"].tap()
+            XCTAssertTrue(app.staticTexts["spectatorFollowing"].waitForExistence(timeout: 20), "Authorized viewers enter on room start or an active late join")
+        }
+        joinWatching()
+        XCTAssertFalse(app.staticTexts["gameScore"].exists)
+        XCTAssertFalse(app.staticTexts["pilotIdentity"].exists)
+        for (landscape, rank) in [(false, 12), (true, 13)] {
+            XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+            try await Task.sleep(nanoseconds: 700_000_000)
+            let arenaBounds = app.otherElements["arenaStage"].frame
+            if !app.buttons["closeStandings"].exists { app.buttons["toggleStandings"].tap() }
+            let scroll = app.scrollViews["standingsScroll"]
+            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'followTank_' AND label BEGINSWITH %@", "\(rank)." )).firstMatch
+            for _ in 0..<15 where !row.isHittable { scroll.swipeUp() }
+            XCTAssertTrue(row.isHittable, "The complete room leaderboard must scroll beyond row ten")
+            let selectedRow = app.buttons[row.identifier]
+            selectedRow.tap()
+            let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'Following'"), object: selectedRow)
+            await fulfillment(of: [selected], timeout: 8)
+            XCTAssertTrue(app.staticTexts["spectatorFollowing"].label.hasPrefix("FOLLOWING "))
+            XCTAssertEqual(app.otherElements["arenaStage"].frame, arenaBounds, "Changing followed callsigns must not resize the arena")
+            XCTAssertEqual(app.alerts.count, 0)
+            capture(app, name: "Native Infinity spectator full leaderboard \(landscape ? "landscape" : "portrait")")
+            app.buttons["closeStandings"].tap()
+            capture(app, name: "Native Infinity spectator followed arena \(landscape ? "landscape" : "portrait")")
+        }
+        app.buttons["pauseGame"].tap()
+        XCTAssertFalse(app.textFields["Callsign"].exists, "A spectator cannot rename an arena tank")
+        app.buttons["Leave game"].tap()
+        XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 5))
+        try await Task.sleep(nanoseconds: 700_000_000)
+        XCTAssertFalse(app.buttons["pauseGame"].exists, "Roster updates cannot undo an explicit exit")
+        let leave = app.buttons["Leave room"]
+        reveal(leave, in: app); leave.tap()
+        joinWatching()
+        XCTAssertTrue(app.staticTexts["spectatorFollowing"].exists)
+        capture(app, name: "Native Infinity spectator automatic late join")
+        app.terminate()
+    }
+
     @MainActor
     func testRoomModeSwitchKeepsReadyCardAndPlayGeometryInBothOrientations() async throws {
         let app = launch(callsign: "MENU " + UUID().uuidString.prefix(8))

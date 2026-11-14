@@ -251,6 +251,22 @@ func (h *Hub) setSpectating(c *Client, m clientMessage, now time.Time) {
 		h.broadcastRoom(r)
 		return
 	}
+	if r.infinityActive && !r.infinityPublic && r.Game.settings().Infinity {
+		if *m.Spectating && p.Kind != "local" && r.activeInfinityLocal(p) {
+			fail("local_requires_primary", infiniteLocalPrimaryRequired)
+			return
+		}
+		if !*m.Spectating && p.Kind == "local" {
+			owner := p.Controller
+			if owner == nil {
+				owner = r.member(p.Owner)
+			}
+			if !infinityCanPlay(owner) {
+				fail("local_requires_primary", infiniteLocalPrimaryRequired)
+				return
+			}
+		}
+	}
 	if !*m.Spectating && r.combatCapacity() == survivalMaxPlayers {
 		if r.survivalRunning() {
 			fail("survival_active", "Join the squad between survival runs. This run is already underway.")

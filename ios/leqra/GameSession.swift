@@ -31,6 +31,9 @@ final class GameSession: ObservableObject {
     @Published var measuredFPS = 0
     @Published var frameRateDetails = ""
     @Published var localID = -1
+    @Published private(set) var spectating = false
+    @Published private(set) var followingID = 0
+    @Published private(set) var followError = ""
     @Published var showScores = false
     @Published var showSettings = false { didSet { refreshStarmanActivity() } }
     @Published var showAccount = false { didSet { refreshStarmanActivity() } }
@@ -146,6 +149,9 @@ final class GameSession: ObservableObject {
     private var publicSuspended = false
     private var lifecycleInactive = false
     private var audioStateFresh = false
+    private var roomInfinityEntryWanted = false
+    private var spectatorRecoveryPending = false
+    private var spectatorResumePaused = false
     private var resumeAfterActivation = false
     private var publicScoreResetPending = false
     private var callsignCheckTask: Task<Void, Never>?
@@ -155,12 +161,22 @@ final class GameSession: ObservableObject {
     private var accountOperation = UUID()
 
     init(publicSessions: PublicInfinitySessionStoring? = nil) {
-        self.publicSessions = publicSessions ?? KeychainPublicInfinitySessions.applicationStore()
+        let sessions = publicSessions ?? KeychainPublicInfinitySessions.applicationStore()
+        self.publicSessions = sessions
         let drafts = CallsignDraftStore()
+        let server = URL(string: UserDefaults.standard.string(forKey: "serverURL") ?? "https://leqra.com")
+        let unowned = Set((0...1).filter { seat in server.map { !sessions.hasStoredCredential(for: $0, seat: seat) } ?? false })
+        drafts.migrateLegacyDefaults { !unowned.contains($0) }
         callsignDrafts = drafts
         callsign = drafts.name(seat: 0); localCallsign = drafts.name(seat: 1)
         localRules.infinity = false
         if let data = UserDefaults.standard.data(forKey: "nativePresets"), let presets = try? JSONDecoder().decode([LocalPreset].self, from: data) { savedPresets = presets }
+        for index in savedPresets.indices {
+            if let roster = savedPresets[index].roster {
+                savedPresets[index].roster = CallsignPolicy.migratingLegacyRoster(roster, primaryName: callsign, secondaryName: localCallsign, unownedSeats: unowned)
+            }
+        }
+        if !savedPresets.isEmpty { UserDefaults.standard.set(try? JSONEncoder().encode(savedPresets), forKey: "nativePresets") }
         scene.scaleMode = .resizeFill
         scene.onFrame = { [weak self] dt in self?.frame(dt) }
         roomClient.onEvent = { [weak self] event in self?.receive(event, arena: false) }
@@ -210,6 +226,24 @@ final class GameSession: ObservableObject {
     var effectiveRules: RoomRules { room?.rules ?? localRules }
     var selectedMode: BattleMode { effectiveRules.infinity ? .infinity : BattleMode(rawValue: effectiveRules.mode) ?? .elimination }
     var gameTitle: String { isInfinity ? (arenaActive && (room == nil || room?.infinityPublic == true) ? "Public Infinity" : "Infinity") : selectedMode.title }
+    var canFollowTanks: Bool { arenaActive && spectating && !disconnected && arenaClient.connected }
+    var followingName: String? {
+        guard followingID > 0 else { return nil }
+        if let entry = standings.first(where: { $0.id == followingID }) { return CallsignPolicy.displayName(entry.name, bot: entry.bot) }
+        return lastSnapshot.tanks.first(where: { $0.id == followingID }).map { CallsignPolicy.displayName($0.name, bot: $0.bot) }
+    }
+    var spectatorFollowingLabel: String { followingName.map { "FOLLOWING " + $0 } ?? "WAITING FOR TANKS" }
+    func localPilotSeat(_ id: Int) -> Int? {
+        guard !spectating, id >= 0 else { return nil }
+        if id == localID { return 1 }
+        if id == secondaryAudioPilotID { return 2 }
+        return nil
+    }
+    func followTank(_ id: Int) {
+        guard canFollowTanks, id > 0, standings.contains(where: { $0.id == id }) else { return }
+        followError = ""
+        arenaClient.follow(id)
+    }
     var readyRoom: Bool { screen == .menu || screen == .lobby }
     var roomPilotID: Int? { welcome?.id }
     var roomMemberID: UInt64? { welcome?.member }
@@ -249,12 +283,18 @@ final class GameSession: ObservableObject {
     }
 
     private func accountSession(for server: URL, seat: Int = 0) -> PublicInfinitySession? { publicSessions.session(for: server, seat: seat) }
+    private func checkedAccountSession(for server: URL, seat: Int = 0) throws -> PublicInfinitySession? {
+        let saved = accountSession(for: server, seat: seat)
+        guard saved != nil || !publicSessions.hasStoredCredential(for: server, seat: seat) else { throw GameNetworkError.invalidAccountKey }
+        return saved
+    }
 
     private func prepareLocalAccount(for server: URL) throws -> (key: String, fresh: Bool) {
         if let existing = accountSession(for: server, seat: 1) {
             guard existing.publicToken != accountSession(for: server)?.publicToken else { throw AccountActionError.duplicateAccount }
             return (existing.publicToken, publicSessions.registrationPending(for: server, seat: 1))
         }
+        guard !publicSessions.hasStoredCredential(for: server, seat: 1) else { throw GameNetworkError.invalidAccountKey }
         let candidate = try KeychainPublicInfinitySessions.newCredential(for: server)
         guard publicSessions.rememberNew(candidate, seat: 1) else { throw AccountActionError.keychain }
         return (candidate.publicToken, true)
@@ -286,6 +326,7 @@ final class GameSession: ObservableObject {
                        let info = try? await arenaClient.fetchAccountInfo(baseURL: server, publicToken: credential.publicToken), let name = info.preferredCallsign,
                        serverAddress == address, accountSession(for: server, seat: seat) == credential,
                        callsignDrafts.apply(name, seat: seat, attempt: draft) {
+                        if let previous = draft.drafts.first(where: { $0.seat == seat })?.name { updateGeneratedPresets(seat: seat, previous: previous, claimed: name) }
                         applyingGeneratedCallsign = true
                         if seat == 1 { localCallsign = name } else { callsign = name }
                         applyingGeneratedCallsign = false
@@ -299,6 +340,7 @@ final class GameSession: ObservableObject {
                 let credential: PublicInfinitySession
                 if let saved = accountSession(for: server, seat: seat) { credential = saved }
                 else {
+                    guard !publicSessions.hasStoredCredential(for: server, seat: seat) else { throw GameNetworkError.invalidAccountKey }
                     credential = try KeychainPublicInfinitySessions.newCredential(for: server)
                     guard publicSessions.rememberNew(credential, seat: seat) else { throw AccountActionError.keychain }
                 }
@@ -318,6 +360,9 @@ final class GameSession: ObservableObject {
                       accountSession(for: server, seat: generated.seat) == saved.credential else { continue }
                 if generated.seat == 0, !publicSessions.confirm(saved.credential, requested: saved.credential.publicToken, seat: 0) { throw AccountActionError.keychain }
                 guard callsignDrafts.apply(generated.name, seat: generated.seat, attempt: attempt) else { continue }
+                if automatic, let previous = attempt.drafts.first(where: { $0.seat == generated.seat })?.name {
+                    updateGeneratedPresets(seat: generated.seat, previous: previous, claimed: generated.name)
+                }
                 applyingGeneratedCallsign = true
                 if generated.seat == 1 { localCallsign = generated.name } else { callsign = generated.name }
                 applyingGeneratedCallsign = false
@@ -403,7 +448,8 @@ final class GameSession: ObservableObject {
         accountRecoveryKeyPending = publicSessions.pendingKey(for: server, seat: slot) != nil
         accountPendingKeyVerified = false
         guard let credential = accountSession(for: server, seat: slot) ?? publicSessions.pendingKey(for: server, seat: slot)?.previous else {
-            accountStatus = slot == 1 ? "Import P2's key, or add P2 to an online room to create its own account." : "Go online once to create an account key, or import one below."
+            accountStatus = publicSessions.hasStoredCredential(for: server, seat: slot) ? GameNetworkError.invalidAccountKey.localizedDescription
+                : slot == 1 ? "Import P2's key, or add P2 to an online room to create its own account." : "Go online once to create an account key, or import one below."
             return
         }
         accountBusy = true
@@ -615,6 +661,12 @@ final class GameSession: ObservableObject {
         if let code = room?.code { parts?.queryItems = [URLQueryItem(name: "room", value: code)] }
         return parts?.url ?? base
     }
+    var spectatorInviteURL: URL {
+        var parts = URLComponents(url: inviteURL, resolvingAgainstBaseURL: false)
+        let items = parts?.queryItems ?? []
+        parts?.queryItems = items + [URLQueryItem(name: "spectate", value: "1")]
+        return parts?.url ?? inviteURL
+    }
 
     func refreshPublicStatus() async {
         let pending = [0, 1].filter { callsignDrafts.automaticPending(seat: $0) }
@@ -642,7 +694,7 @@ final class GameSession: ObservableObject {
         scene.resetWorld()
         scene.display(snapshot: preview, localID: 1, maze: previewMaze)
     }
-    var canResume: Bool { !disconnected && !CallsignPolicy.reservedForBots(cleanName) }
+    var canResume: Bool { !disconnected && (spectating || !CallsignPolicy.reservedForBots(cleanName)) }
     private var onlineTitle: String {
         arenaActive ? (room == nil || room?.infinityPublic == true ? "Public Infinity" : "Room Infinity") : "Private match"
     }
@@ -666,8 +718,8 @@ final class GameSession: ObservableObject {
         if let local = accountLocalPlayer, !validPlayerCallsign(local.name, seat: 1) { return }
         if let room {
             if room.infinityActive, let baseURL, let welcome, let token = welcome.token {
-                guard welcome.spectating == false else { error = "Return to a combat seat to enter Infinity."; return }
                 if arenaClient.connected { screen = .playing; setPaused(false); return }
+                roomInfinityEntryWanted = true
                 connectRoomArena(server: baseURL, code: room.code, token: token, resume: arenaGeneration != nil)
                 return
             }
@@ -763,15 +815,18 @@ final class GameSession: ObservableObject {
             error = "Enter an HTTP or HTTPS server address."; return
         }
         let queueOpen = showQueues
+        let primary: PublicInfinitySession?
+        do { primary = try checkedAccountSession(for: url) } catch { self.error = error.localizedDescription; return }
         let seats = [NativeSeatSpec(kind: "human", name: cleanName, team: localTeam, colorIndex: colorIndex)] + localBots.map { NativeSeatSpec(kind: "bot", name: $0.name, difficulty: $0.difficulty, team: $0.team, colorIndex: $0.colorIndex) }
         let code = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
         leave()
         baseURL = url; screen = .connecting; pendingShare = true; showQueues = queueOpen
         roomClient.connectPublishedRoom(baseURL: url, code: code.isEmpty ? nil : code, rules: localRules, roster: seats,
-                                        publicToken: accountSession(for: url)?.publicToken)
+                                        publicToken: primary?.publicToken)
     }
 
     func saveCallsign() {
+        guard !(arenaActive && spectating) else { return }
         guard validPlayerCallsign(cleanName, seat: 0) else { return }
         if !offline, (arenaActive || room != nil), callsignDrafts.automaticPending(seat: 0) { return }
         if !offline, (arenaActive || room != nil), callsignTaken { return }
@@ -913,9 +968,19 @@ final class GameSession: ObservableObject {
         } else { localRules = preset.rules; localBots = preset.bots; localTeam = preset.team; publicInfinitySelected = false }
     }
 
-    func connect(code: String? = nil, publicArena: Bool = false, restoringPublicSession: Bool = false) {
+    private func updateGeneratedPresets(seat: Int, previous: String, claimed: String) {
+        var changed = false
+        for index in savedPresets.indices {
+            guard let roster = savedPresets[index].roster else { continue }
+            let updated = CallsignPolicy.updatingGeneratedRoster(roster, seat: seat, previous: previous, claimed: claimed)
+            if updated != roster { savedPresets[index].roster = updated; changed = true }
+        }
+        if changed { UserDefaults.standard.set(try? JSONEncoder().encode(savedPresets), forKey: "nativePresets") }
+    }
+
+    func connect(code: String? = nil, publicArena: Bool = false, restoringPublicSession: Bool = false, spectating: Bool = false) {
         guard validPlayerCallsign(cleanName, seat: 0) else { return }
-        if !restoringPublicSession, finishPendingCallsigns(seats: [0], action: { [weak self] in self?.connect(code: code, publicArena: publicArena) }) { return }
+        if !restoringPublicSession, finishPendingCallsigns(seats: [0], action: { [weak self] in self?.connect(code: code, publicArena: publicArena, spectating: spectating) }) { return }
         guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
             error = "Enter an HTTP or HTTPS server address."; return
@@ -927,21 +992,23 @@ final class GameSession: ObservableObject {
             spawnNotices = GodlikeSpawnNotices(); godlikeNotice = ""; spawnNoticeTask?.cancel()
         }
         let local: (key: String, fresh: Bool)?
-        do { local = restoreLocal ? try prepareLocalAccount(for: url) : nil }
+        let primary: PublicInfinitySession?
+        do { primary = try checkedAccountSession(for: url); local = restoreLocal ? try prepareLocalAccount(for: url) : nil }
         catch { self.error = error.localizedDescription; return }
         leave(clearPublicIntent: !publicArena)
         baseURL = url
+        roomInfinityEntryWanted = spectating && !publicArena
         screen = .connecting
         if publicArena {
             arenaActive = true
             publicIdentityActive = true; publicRecoveryPending = true
             publicSessions.activate(url, local: restoreLocal)
             arenaClient.connectPublic(baseURL: url, name: cleanName, colorIndex: GamePalette.index(colorIndex), localName: restoreLocal ? localCallsign : nil,
-                                      publicToken: accountSession(for: url)?.publicToken, updateNames: !restoringPublicSession,
+                                      publicToken: primary?.publicToken, updateNames: !restoringPublicSession,
                                       localPublicToken: local?.key, localNewAccount: local?.fresh ?? false)
         } else {
-            roomClient.connectRoom(baseURL: url, name: cleanName, code: code,
-                                   publicToken: accountSession(for: url)?.publicToken)
+            roomClient.connectRoom(baseURL: url, name: cleanName, code: code, spectating: spectating,
+                                   publicToken: primary?.publicToken)
         }
     }
 
@@ -950,12 +1017,19 @@ final class GameSession: ObservableObject {
             spawnNoticeOrigin = try? PublicInfinitySession.normalizedOrigin(server)
             spawnNotices = GodlikeSpawnNotices(); godlikeNotice = ""; spawnNoticeTask?.cancel()
         }
-        let needsLocal = accountLocalPlayer?.spectating == false
+        let watching = ownRoomMember?.spectating ?? welcome?.spectating ?? false
+        guard !watching || room?.infinityPublic == false else { error = "Spectating is available in Room Infinity."; return }
+        let needsLocal = !watching && accountLocalPlayer?.spectating == false
         do {
             let local = needsLocal ? try prepareLocalAccount(for: server) : nil
             arenaActive = true
+            spectating = watching
+            followingID = 0; followError = ""
+            localID = watching ? -1 : localID
+            audioStateFresh = false
+            scene.resetControls()
             arenaClient.connectRoomInfinity(baseURL: server, code: code, token: token, resume: resume, generation: arenaGeneration,
-                                            localPublicToken: local?.key, localNewAccount: local?.fresh ?? false)
+                                            localPublicToken: local?.key, localNewAccount: local?.fresh ?? false, spectating: watching)
         } catch { self.error = error.localizedDescription }
     }
 
@@ -1023,7 +1097,7 @@ final class GameSession: ObservableObject {
         scene.resetControls()
         timeline?.neutralize()
         frameElapsed = 0; frameCount = 0
-        if !offline, !disconnected {
+        if !offline, !disconnected, !spectating {
             let packet = timeline?.neutralPacket() ?? GameInput()
             (arenaActive ? arenaClient : roomClient).sendInput(packet, paused: value)
         }
@@ -1050,7 +1124,7 @@ final class GameSession: ObservableObject {
     }
 
     private var secondaryAudioPilotID: Int? {
-        guard !offline else { return nil }
+        guard !offline, !spectating else { return nil }
         return arenaActive ? arenaClient.welcome?.localId : accountLocalPlayer?.id
     }
 
@@ -1069,6 +1143,8 @@ final class GameSession: ObservableObject {
         roomClient.disconnect(); arenaClient.disconnect()
         practice = nil; fixedArena = nil; maze = nil; timeline = nil; world = nil; welcome = nil; room = nil
         arenaActive = false; disconnected = false; paused = false; showScores = false
+        spectating = false; followingID = 0; followError = ""
+        roomInfinityEntryWanted = false; spectatorRecoveryPending = false; spectatorResumePaused = false
         lastSnapshot = ArenaSnapshot(); localID = -1; latency = nil; score = 0
         snapshot = ArenaSnapshot(); standings = []; arenaGeneration = nil
         weaponsLive = false; weaponsLiveRemaining = 0; previousPresentedPhase = ""
@@ -1090,6 +1166,7 @@ final class GameSession: ObservableObject {
         if publicIdentityActive { publicSessions.activate(nil); publicIdentityActive = false; publicRecoveryPending = false }
         audio.pause()
         if arenaActive { arenaClient.disconnect(); arenaActive = false }
+        roomInfinityEntryWanted = false; followingID = 0; followError = ""; spectatorRecoveryPending = false
         timeline = nil; maze = nil; world = nil; paused = false; scene.resetControls(); scene.resetWorld()
         restoreRoomIdentity()
         screen = .lobby
@@ -1098,18 +1175,30 @@ final class GameSession: ObservableObject {
 
     /// Exit only this pilot's Infinity run. The authenticated room remains
     /// available for its roster, chat, settings and a later arena rejoin.
-    func exitArenaToRoom() {
+    func exitArenaToRoom(keepEntryIntent: Bool = false) {
         guard room != nil else { leave(); return }
         audio.pause()
         if publicIdentityActive { publicSessions.activate(nil); publicIdentityActive = false; publicRecoveryPending = false }
         arenaClient.disconnect()
         arenaActive = false; arenaGeneration = nil
+        if !keepEntryIntent { roomInfinityEntryWanted = false }
+        followingID = 0; followError = ""; spectatorRecoveryPending = false
         timeline = nil; maze = nil; world = nil
         localTank = nil; snapshot = ArenaSnapshot(); lastSnapshot = snapshot; standings = []
         paused = false; disconnected = !roomClient.connected; score = 0; showScores = false
         scene.resetControls(); scene.resetWorld(); restoreRoomIdentity()
         screen = .lobby
         UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func reconcileRoomArenaAccess() {
+        guard let room, room.infinityActive, !room.infinityPublic, roomClient.connected,
+              let welcome, let own = ownRoomMember, let token = welcome.token, let server = baseURL else { return }
+        if arenaActive, let arenaRole = arenaClient.welcome?.spectating, arenaRole != own.spectating {
+            exitArenaToRoom(keepEntryIntent: true)
+        }
+        guard roomInfinityEntryWanted, !arenaActive else { return }
+        connectRoomArena(server: server, code: room.code, token: token)
     }
 
     private func receive(_ event: NetworkEvent, arena: Bool) {
@@ -1143,10 +1232,19 @@ final class GameSession: ObservableObject {
                     chatMessages = []; opponentMessages = []; queueState = nil; chatPending = false; pendingChatText = nil; showQueues = false
                 }
                 welcome = value
+                if !arenaActive, value.spectating, screen == .connecting { roomInfinityEntryWanted = true }
             } else { arenaGeneration = value.generation }
             // The retained room socket can update roster identity while its
             // separate Infinity socket owns a different arena tank ID.
-            if !arena && arenaActive { return }
+            if !arena && arenaActive {
+                if value.spectating {
+                    spectating = true; localID = -1
+                    timeline?.setLocalID(-1); scene.resetControls(); refreshStarmanActivity()
+                }
+                reconcileRoomArenaAccess(); return
+            }
+            spectating = value.spectating
+            followingID = value.following ?? 0
             localID = value.spectating ? -1 : value.id
             timeline?.setLocalID(localID)
             if let seed = value.seed {
@@ -1155,10 +1253,12 @@ final class GameSession: ObservableObject {
                 scene.resetWorld(); screen = .playing
                 status = room == nil ? "Public Infinity" : "Room Infinity"
                 if publicIdentityActive, publicRecoveryPending { paused = publicResumePaused }
+                if spectating, spectatorRecoveryPending { paused = spectatorResumePaused }
             }
         case .room(let value):
             let endedArena = room?.infinityActive == true && !value.infinityActive
             room = value
+            if !arenaActive, screen == .connecting { screen = .lobby }
             arenaClient.updateResumeRoomCode(value.code)
             queueState = value.queue
             if pendingShare, isHost {
@@ -1170,6 +1270,7 @@ final class GameSession: ObservableObject {
                 if publicIdentityActive { publicSessions.activate(nil); publicIdentityActive = false; publicRecoveryPending = false }
                 audio.pause()
                 arenaClient.disconnect(); arenaActive = false; arenaGeneration = nil; timeline = nil; maze = nil
+                roomInfinityEntryWanted = false; followingID = 0; followError = ""; spectatorRecoveryPending = false
                 scene.resetControls(); scene.resetWorld(); screen = .lobby; paused = false
                 restoreRoomIdentity()
                 UIApplication.shared.isIdleTimerDisabled = false
@@ -1184,11 +1285,22 @@ final class GameSession: ObservableObject {
                 if let index = GamePalette.colors.firstIndex(of: own.color.lowercased()) { colorIndex = index }
             }
             if let local = value.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id }) { localCallsign = local.name }
+            reconcileRoomArenaAccess()
         case .infinityStarted:
             guard let url = baseURL, let welcome, let code = welcome.room, let token = welcome.token else { return }
+            roomInfinityEntryWanted = true
+            guard !arenaActive else { return }
             connectRoomArena(server: url, code: code, token: token)
+        case .followed(let id):
+            guard arena, spectating else { return }
+            followingID = id; followError = ""
         case .state(let snapshot):
             guard arena == arenaActive else { return }
+            if arena, spectating {
+                followingID = snapshot.following ?? 0
+                localID = -1; localTank = nil; score = 0
+                spectatorRecoveryPending = false
+            }
             if arena {
                 let fresh = spawnNotices.accept(snapshot.godlikeSpawns, now: ProcessInfo.processInfo.systemUptime)
                 let notice = spawnNotices.text(at: ProcessInfo.processInfo.systemUptime)
@@ -1281,6 +1393,17 @@ final class GameSession: ObservableObject {
             case .roomRenamed(let rename): roomName = rename.room; welcome?.room = rename.room
             case .notice(let notice):
                 if let message = notice.message { status = message }
+                if notice.action == "follow" { followError = notice.message ?? "That tank is unavailable." }
+                if !arena, notice.type == "unshared" || notice.type == "kicked" || notice.type == "room_offline" || notice.code == "kicked" {
+                    let message = notice.message ?? "The room is no longer available."
+                    leave(); error = message; return
+                }
+                if arena, notice.code == "room_access_changed", !publicIdentityActive {
+                    let priorRole = spectating
+                    exitArenaToRoom(keepEntryIntent: true)
+                    if ownRoomMember?.spectating != priorRole { reconcileRoomArenaAccess() }
+                    return
+                }
                 if notice.type == "leaderboard_reset" { publicScoreResetPending = true; status = "Public leaderboard updated." }
                 if notice.code == "callsign_taken" { rejectCallsigns(notice.conflicts, message: notice.message) }
                 if notice.code == "session_replaced" {
@@ -1319,6 +1442,11 @@ final class GameSession: ObservableObject {
                     showSettings = false; showAccount = false; showControls = false; showScores = false
                     showChat = false; showRules = false; showSidebar = false
                     UIApplication.shared.isIdleTimerDisabled = false
+                } else if arena, spectating {
+                    spectatorResumePaused = lifecycleInactive ? !resumeAfterActivation : paused || hasModal
+                    spectatorRecoveryPending = true
+                    disconnected = true; paused = false; screen = .connecting
+                    scene.resetControls(); timeline?.neutralize(); audio.pause()
                 } else { disconnected = true; setPaused(true) }
                 status = "Reconnecting, attempt \(attempt)…"
             }
@@ -1333,7 +1461,8 @@ final class GameSession: ObservableObject {
     }
 
     private func restoreRoomIdentity() {
-        localID = welcome?.spectating == true ? -1 : welcome?.id ?? -1
+        spectating = ownRoomMember?.spectating ?? welcome?.spectating ?? false
+        localID = spectating ? -1 : welcome?.id ?? -1
         timeline?.setLocalID(localID)
     }
 
@@ -1351,6 +1480,9 @@ final class GameSession: ObservableObject {
         let notice = spawnNotices.text(at: ProcessInfo.processInfo.systemUptime)
         if godlikeNotice != notice { godlikeNotice = notice }
         guard screen == .playing, !paused else { return }
+        // A reliable room identity can revoke the actor before its roster and
+        // replacement observer stream arrive. Never emit one last tank input.
+        if arenaActive, spectating, arenaClient.welcome?.spectating != true { return }
         let profiling = frameProfiler != nil
         let cpuStart = profiling ? CACurrentMediaTime() : 0
         var simulationSeconds = 0.0, audioSeconds = 0.0, hudSeconds = 0.0

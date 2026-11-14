@@ -1070,6 +1070,10 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 			c.enqueue(roomError("match_active", "Infinity is already running in this room."))
 			return nil
 		}
+		if r.Game.settings().Infinity && r.infinityPrimaryRequired() {
+			c.enqueue(roomError("local_requires_primary", infiniteLocalPrimaryRequired))
+			return nil
+		}
 		if !canStart(r) {
 			message := r.lineupError()
 			if message == "" {

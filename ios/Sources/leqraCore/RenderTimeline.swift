@@ -68,7 +68,9 @@ public final class RenderTimeline {
         let recovering = latest != nil && (stale || now - lastArrival > 2.5)
         if let previous = latest {
             if snapshot.generation < previous.generation { return }
-            if previous.generation != snapshot.generation {
+            if snapshot.generation == previous.generation, snapshot.tick < previous.tick { return }
+            let changedView = snapshot.spectating && previous.spectating && snapshot.following != previous.following
+            if previous.generation != snapshot.generation || changedView {
                 samples.removeAll(); resetPrediction(nil); clock = nil; playbackRate = 1
                 pathChecks.removeAll()
                 indexedPair = nil; indexedLatest = nil
@@ -154,10 +156,12 @@ public final class RenderTimeline {
         while accumulator + 1e-9 >= 1 / 60 {
             accumulator = max(0, accumulator - 1 / 60)
             step += 1
-            sequence += 1
-            controls.seq = sequence
-            rememberSent(at: step)
-            send(controls)
+            if localID >= 0, !latest.spectating {
+                sequence += 1
+                controls.seq = sequence
+                rememberSent(at: step)
+                send(controls)
+            }
             if var tank = predicted, tank.hp > 0, latest.phase == "playing", !stale {
                 let wasPhasing = tank.ghostTime > 0
                 move(&tank, controls, 1 / 60)

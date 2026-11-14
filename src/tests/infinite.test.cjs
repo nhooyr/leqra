@@ -257,6 +257,31 @@ test('Infinity Starman loop follows either local pilot and stops on pause, expir
  h.advance();assert.equal(wanted.at(-1),true);h.advance(125);assert.equal(wanted.at(-1),false,'a stale socket cannot sustain the loop');h.infinity.close();
 });
 
+test('a cached public account key never turns a first private join into a nonexistent body resume',()=>{
+ for(const [options,resume]of [[{code:'ROOM',token:'proof'},undefined],[{code:'ROOM',token:'proof',resumeGeneration:7},true],[{},true],[{code:'ROOM',token:'proof',public:true},true],[{code:'ROOM',token:'proof',spectating:true},undefined]]){
+  const h=harness(undefined,true);h.window.leqraInfinityArt.publicIdentityToken=()=> 'p_'+'a'.repeat(43);
+  h.infinity.start('online',options);const ws=h.sockets[0];ws.emit('open');assert.equal(ws.sent[0].resume,resume,JSON.stringify(options));h.infinity.close();
+ }
+});
+
+test('room spectators can follow every ranked tank without owning or controlling a body',async()=>{
+ const h=harness(undefined,true),audio=[];h.window.leqraInfinityArt.starmanAudio=value=>audio.push(value);
+ h.infinity.start('online',{code:'WATCH',token:'viewer-proof',spectating:true,localName:'Unused P2'});const ws=h.sockets[0];ws.emit('open');
+ const join=ws.sent[0];assert.equal(join.spectating,true);assert.equal(join.localName,undefined);assert.equal(join.publicToken,undefined);
+ ws.receive({type:'welcome',id:0,spectating:true,following:1,seed:0,generation:1});
+ const leaders=Array.from({length:24},(_,i)=>({id:i+1,name:'Tank '+(i+1),score:24-i,bot:i>1,colorIndex:i%8}));
+ const state={type:'state',spectating:true,following:1,tick:1,tanks:[{id:1,name:'Tank 1',hp:1,starmanTime:8,x:42,y:42,spawnSerial:1}],bullets:[],players:2,leaderboard:leaders};
+ ws.receive(state);h.advance();assert.equal(h.byID('infiniteLeaderboard').children.length,24);assert.equal(h.infinity.localPilots().length,0);assert.equal(h.state().local,null);
+ assert.match(h.byID('infiniteKills').textContent,/Following Tank 1/);assert.equal(audio.at(-1),false);
+ const button=h.byID('infiniteLeaderboard').children[22].children[0];button.emit('click');assert.equal(ws.sent.at(-1).type,'follow');assert.equal(ws.sent.at(-1).target,23);
+ ws.receive({type:'followed',following:23});ws.receive({...state,tick:2,following:23,tanks:[{id:23,name:'Tank 23',hp:0,x:8400,y:4200,spawnSerial:2}]});h.advance(3);
+ assert.equal(h.state().camera.x,8400);assert.match(h.byID('infiniteKills').textContent,/respawning/);
+ h.byID('infiniteArena').emit('keydown',{code:'KeyW',target:{tagName:'CANVAS'}});h.infinity.resetControls();assert.equal(ws.sent.filter(packet=>packet.type==='input').length,0);
+ await assert.rejects(h.infinity.renamePilot(0,'Forged'),/Spectators/);
+ ws.receive({type:'error',action:'follow',code:'follow_invalid',message:'Tank removed'});h.advance(3);assert.notEqual(h.state().failed,true);assert.match(h.byID('infiniteStatus').textContent,/Tank removed/);
+ ws.receive({...state,tick:3,following:0,tanks:[],leaderboard:[]});h.advance(3);assert.equal(h.state().camera.x,42);assert.match(h.byID('infiniteKills').textContent,/waiting for tanks/);h.infinity.close();
+});
+
 test('nearby Godlike spawn notices precede encounters, deduplicate by life and never shift gameplay',()=>{
  const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];
  socket.receive({type:'welcome',id:1,seed:0});

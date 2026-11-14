@@ -383,14 +383,15 @@ class OnlinePresentation(
 
     fun accept(snapshot: ArenaSnapshot, at: Double) {
         val previous = latest
+        val changedView = previous != null && snapshot.spectating && previous.spectating && snapshot.following != previous.following
         if (
             previous != null &&
                 (snapshot.generation < previous.generation ||
-                    snapshot.generation == previous.generation && snapshot.tick <= previous.tick)
+                    snapshot.generation == previous.generation && (snapshot.tick < previous.tick || snapshot.tick == previous.tick && !changedView))
         )
             return
         val recovering = previous != null && (stale || at - lastArrival > 2.5)
-        if (previous != null && previous.generation != snapshot.generation) {
+        if (previous != null && (previous.generation != snapshot.generation || changedView)) {
             samples.clear()
             primary.resetPrediction(null)
             secondary?.resetPrediction(null)
@@ -434,6 +435,7 @@ class OnlinePresentation(
         val newest = latest ?: return null
         val elapsed = if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0
         stale = now - lastArrival > 2.5
+        if (newest.spectating) return interpolated(elapsed, null)
         val controls = primary.advance(elapsed, input, newest, send)
         val second = secondary
         val secondControls =

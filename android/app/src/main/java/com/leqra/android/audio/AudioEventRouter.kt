@@ -53,6 +53,7 @@ class AudioEventRouter {
         if (!now.isFinite()) return emptyList()
         val requests = mutableListOf<AudioCueRequest>()
         val localTank = snapshot.tanks.firstOrNull { it.id == localID }
+        val focusTank = if (snapshot.spectating) snapshot.tanks.firstOrNull { it.id == snapshot.following } else localTank
         val restarted = previousTick?.let { snapshot.tick < it } == true
         if (
             generation != snapshot.generation ||
@@ -86,7 +87,7 @@ class AudioEventRouter {
             if (
                 packed != 0L &&
                     bullet.bounces > previous &&
-                    (!infinity || near(bullet.x, bullet.y, localTank, 588.0))
+                    (!infinity || near(bullet.x, bullet.y, focusTank, 588.0))
             )
                 bounced = true
         }
@@ -111,7 +112,7 @@ class AudioEventRouter {
             if (effect.id <= 0 || effect.id <= highestEffectID) continue
             highestEffectID = effect.id
             val own = (effect.player ?: effect.owner) == localID
-            if (infinity && effect.owner != localID && !near(effect.x, effect.y, localTank, 504.0))
+            if (infinity && effect.owner != localID && !near(effect.x, effect.y, focusTank, 504.0))
                 continue
             val shot =
                 when (effect.kind) {

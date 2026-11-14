@@ -8,6 +8,7 @@ struct ReadyRoomView: View {
     @State private var playersOpen = false
     @State private var codeDraft = ""
     @State private var inviteCopied = false
+    @State private var spectatorInviteCopied = false
     @FocusState private var callsignFocused: Bool
 
     var body: some View {
@@ -48,7 +49,7 @@ struct ReadyRoomView: View {
             Button { session.play() } label: {
                 HStack { Spacer(); Text(playLabel); Spacer(); Image(systemName: session.isHost ? "arrow.right" : "checkmark") }
             }.buttonStyle(WebButtonStyle(kind: .play)).accessibilityIdentifier("playRoom")
-                .disabled(session.room?.infinityActive == true ? session.ownRoomMember?.spectating != false : session.room != nil && session.isHost && !(session.room?.canStart ?? false) && !(publicSelected && (session.room?.canStartPublicInfinity ?? false)))
+                .disabled(session.room?.infinityActive == true ? session.ownRoomMember == nil || publicSelected && session.ownRoomMember?.spectating == true : session.room != nil && session.isHost && !(session.room?.canStart ?? false) && !(publicSelected && (session.room?.canStartPublicInfinity ?? false)))
             ZStack {
                 ForEach(["PUBLIC INFINITY, ENDLESS", "ENDLESS TANK ARENA, START WHEN READY", "BOT SKIRMISH, START WHEN READY"], id: \.self) { hint in
                     Text(hint).opacity(hint == readyHint ? 1 : 0).accessibilityHidden(hint != readyHint)
@@ -68,6 +69,16 @@ struct ReadyRoomView: View {
                 } label: {
                     Text(inviteCopied ? "INVITE LINK COPIED ✓" : "COPY INVITE LINK ↗").frame(maxWidth: .infinity)
                 }.buttonStyle(WebButtonStyle())
+                if !publicSelected {
+                    Button(spectatorInviteCopied ? "SPECTATOR LINK COPIED ✓" : "COPY SPECTATOR LINK ↗") {
+                        UIPasteboard.general.url = session.spectatorInviteURL
+                        spectatorInviteCopied = true
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            spectatorInviteCopied = false
+                        }
+                    }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("copySpectatorLink")
+                }
             }
             Button("Join another room ↗") { session.showJoin = true }.buttonStyle(WebButtonStyle(kind: .text)).frame(maxWidth: .infinity)
             if session.room != nil {
@@ -177,7 +188,7 @@ struct ReadyRoomView: View {
         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
     }
     private var playLabel: String {
-        if session.room?.infinityActive == true { return "REJOIN INFINITY" }
+        if session.room?.infinityActive == true { return session.ownRoomMember?.spectating == true ? "WATCH INFINITY" : "REJOIN INFINITY" }
         if session.isHost { return "PLAY" }
         let ready = session.room?.players.first(where: { $0.id == session.localID })?.ready ?? false
         return ready ? "READY ✓" : "READY"
