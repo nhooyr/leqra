@@ -32,8 +32,12 @@ final class GameAudio {
     private var buffers: [BufferKey: [Float]] = [:]
     private var router = AudioEventRouter()
     private var active = false
-    private var sessionActive = false
+    private var sessionLifecycle: AudioSessionLifecycle?
+    private var activationPending = false
+    private var interrupted = false
     private var requestedActive = false
+    private var previewActive = false
+    private var pendingPreview: AudioCue?
     private var generation: Int?
     private var previousHP: Int?
     private var lastHaptic = 0.0
@@ -45,6 +49,7 @@ final class GameAudio {
     private var configurationObserver: NSObjectProtocol?
     private let pickupHaptic = UIImpactFeedbackGenerator(style: .light)
     private let hitHaptic = UIImpactFeedbackGenerator(style: .medium)
+    private nonisolated static let sessionQueue = DispatchQueue(label: "com.leqra.audio-session", qos: .userInitiated)
 
     init() {
         for cue in AudioCue.allCases {
@@ -53,6 +58,19 @@ final class GameAudio {
             buffers[BufferKey(cue: cue, local: false)] = AudioSynthesis.recipe(cue) == AudioSynthesis.recipe(cue, local: false)
                 ? local : AudioSynthesis.samples(for: cue, local: false, sampleRate: Self.sampleRate)
         }
+        sessionLifecycle = AudioSessionLifecycle(
+            activate: { try await Self.activateAudioSession() },
+            deactivate: { [weak self] in
+                self?.engine?.pause()
+                await Self.deactivateAudioSession()
+            },
+            ready: { [weak self] in try self?.startPlayback() },
+            failed: { [weak self] in
+                guard let self else { return }
+                self.active = false; self.activationPending = false
+                self.previewActive = false; self.pendingPreview = nil
+                self.clearPlayback()
+            })
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
         ) { [weak self] notification in
@@ -61,15 +79,25 @@ final class GameAudio {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if rawType == AVAudioSession.InterruptionType.began.rawValue {
+                    self.interrupted = true
+                    self.sessionLifecycle?.invalidateActivation()
+                    self.previewTask?.cancel(); self.previewTask = nil
+                    self.shutdownTask?.cancel(); self.shutdownTask = nil
+                    self.previewActive = false; self.pendingPreview = nil
+                    self.activationPending = false
                     self.clearPlayback()
                     self.router.reset(); self.generation = nil
                     self.engine?.pause()
                     self.active = false
-                    self.sessionActive = false
-                } else if self.requestedActive,
-                          AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume),
+                    self.deactivateSession()
+                } else {
+                    self.interrupted = false
+                    let shouldResume = AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+                    if !shouldResume { self.requestedActive = false }
+                    if self.requestedActive, shouldResume,
                           UIApplication.shared.applicationState == .active {
-                    self.resume()
+                        self.resume()
+                    }
                 }
             }
         }
@@ -104,7 +132,9 @@ final class GameAudio {
                 guard let self, self.engine?.isRunning != true else { return }
                 self.clearPlayback()
                 self.router.reset(); self.generation = nil; self.active = false
-                if self.requestedActive && self.enabled && UIApplication.shared.applicationState == .active { self.resume() }
+                self.activationPending = false
+                self.sessionLifecycle?.invalidateActivation()
+                if self.wantsPlayback && UIApplication.shared.applicationState == .active { self.activatePlayback() }
             }
         }
         return engine
@@ -116,29 +146,40 @@ final class GameAudio {
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         engine?.stop()
-        if sessionActive { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+        let lifecycle = sessionLifecycle
+        Task { @MainActor in lifecycle?.request(false) }
     }
 
     func resume() {
         guard enabled else { return }
         requestedActive = true
         shutdownTask?.cancel(); shutdownTask = nil
-        guard volume > 0, !active || engine?.isRunning != true else { return }
+        activatePlayback()
+    }
+
+    private var wantsPlayback: Bool {
+        enabled && volume > 0 && !interrupted && (requestedActive || previewActive)
+    }
+
+    private func activatePlayback() {
+        guard wantsPlayback, !active || engine?.isRunning != true, !activationPending else { return }
+        activationPending = true
+        sessionLifecycle?.request(true)
+    }
+
+    private func startPlayback() throws {
+        activationPending = false
+        guard wantsPlayback else { deactivateSession(); return }
         do {
-            let session = AVAudioSession.sharedInstance()
-            // Ambient mixes with music and honors the Ring/Silent switch.
-            try session.setCategory(.ambient, mode: .default)
-            try session.setActive(true)
-            sessionActive = true
             let engine = playbackEngine()
             renderState.setVolume(volume, immediate: true)
             if !engine.isRunning { engine.prepare(); try engine.start() }
             active = true
+            playPendingPreview()
         } catch {
             active = false
             engine?.pause()
-            deactivateSession()
-            // Losing an audio route must never stop a match.
+            throw error // The lifecycle releases the route; a match continues silently.
         }
     }
 
@@ -146,6 +187,7 @@ final class GameAudio {
         previewTask?.cancel(); previewTask = nil
         shutdownTask?.cancel(); shutdownTask = nil
         requestedActive = false; active = false
+        activationPending = false; previewActive = false; pendingPreview = nil
         starmanRequested = false
         router.reset(); generation = nil
         if fadeLoop, engine?.isRunning == true, UIApplication.shared.applicationState == .active,
@@ -167,9 +209,38 @@ final class GameAudio {
     }
 
     private func deactivateSession() {
-        guard sessionActive else { return }
-        sessionActive = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        sessionLifecycle?.request(false)
+    }
+
+    private static func sessionWork(_ operation: @escaping @Sendable () throws -> Void) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async {
+                do { try operation(); continuation.resume() }
+                catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
+
+    private static func activateAudioSession() async throws {
+        // Configure mixing before graph creation, including on muted-first launches.
+        try await sessionWork { try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default) }
+        if #available(iOS 27.0, *) {
+            guard try await AVAudioSession.sharedInstance().activate() else {
+                throw NSError(domain: "leqra.AudioSession", code: 1)
+            }
+        } else {
+            try await sessionWork { try AVAudioSession.sharedInstance().setActive(true) }
+        }
+    }
+
+    private static func deactivateAudioSession() async {
+        if #available(iOS 27.0, *) {
+            _ = try? await AVAudioSession.sharedInstance().deactivate(options: .notifyOthersOnDeactivation)
+        } else {
+            try? await sessionWork {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        }
     }
 
     func reset() {
@@ -226,14 +297,19 @@ final class GameAudio {
     }
 
     func preview(_ cue: AudioCue) {
-        guard enabled, volume > 0 else { return }
-        let ongoing = requestedActive
-        resume()
-        requestedActive = ongoing
-        guard active else { return }
-        play(cue)
+        guard enabled, volume > 0, !interrupted else { return }
         previewTask?.cancel()
-        guard !ongoing else { return }
+        shutdownTask?.cancel(); shutdownTask = nil
+        pendingPreview = cue; previewActive = true
+        activatePlayback()
+        if active { playPendingPreview() }
+    }
+
+    private func playPendingPreview() {
+        guard active, let cue = pendingPreview else { return }
+        pendingPreview = nil
+        play(cue)
+        guard !requestedActive else { previewActive = false; return }
         previewTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self, !self.requestedActive else { return }

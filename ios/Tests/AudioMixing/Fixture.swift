@@ -27,6 +27,10 @@ final class AudioMixingFixture: UIResponder, UIApplicationDelegate {
     private var starStarted: TimeInterval?
     private var starPaused = false
     private var starResumed = false
+    private var started = ProcessInfo.processInfo.systemUptime
+    private var history: [[String: Any]] = []
+    private var scenarioStage = 0
+    private var canceledWhilePending = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let arguments = ProcessInfo.processInfo.arguments
@@ -52,9 +56,13 @@ final class AudioMixingFixture: UIResponder, UIApplicationDelegate {
                 if arguments.contains("--zero-volume") { audio?.volume = 0 }
                 if arguments.contains("--game") { audio?.resume(); audio?.preview(.regular) }
                 if arguments.contains("--starman") { starStarted = ProcessInfo.processInfo.systemUptime; updateStarman() }
+                configureScenario(arguments)
             }
+            sampleAudio()
             writeStatus()
-            timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.updateStarman(); self?.writeStatus() }
+            timer = Timer.scheduledTimer(withTimeInterval: 0.025, repeats: true) { [weak self] _ in
+                self?.sampleAudio(); self?.updateScenario(); self?.updateStarman(); self?.writeStatus()
+            }
         } catch {
             writeStatus(error: String(describing: error))
         }
@@ -78,6 +86,71 @@ final class AudioMixingFixture: UIResponder, UIApplicationDelegate {
 
     func applicationWillResignActive(_ application: UIApplication) { audio?.pause(fadeLoop: false) }
     func deactivate() { audio?.pause(fadeLoop: false) }
+
+    private func configureScenario(_ arguments: [String]) {
+        guard let audio else { return }
+        if arguments.contains("--preview") || arguments.contains("--preview-resume") { audio.preview(.regular) }
+        if arguments.contains("--pause-resume") || arguments.contains("--rapid-interruption") { audio.resume() }
+        for flag in ["--resume-pause", "--resume-mute", "--resume-zero-volume", "--activation-interruption"] where arguments.contains(flag) {
+            audio.resume()
+            canceledWhilePending = audioState()["activationPending"] as? Bool == true
+            switch flag {
+            case "--resume-pause": audio.pause(fadeLoop: false)
+            case "--resume-mute": audio.enabled = false
+            case "--resume-zero-volume": audio.volume = 0
+            default:
+                NotificationCenter.default.post(name: AVAudioSession.interruptionNotification,
+                    object: AVAudioSession.sharedInstance(),
+                    userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+            }
+        }
+    }
+
+    private func updateScenario() {
+        guard let audio, scenarioStage == 0, audioState()["running"] as? Bool == true else { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--preview-resume") {
+            scenarioStage = 1
+            audio.resume()
+        } else if arguments.contains("--pause-resume") {
+            scenarioStage = 1
+            audio.pause(fadeLoop: false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.audio?.resume(); self?.scenarioStage = 2
+            }
+        } else if arguments.contains("--rapid-interruption"), UIApplication.shared.applicationState == .active {
+            scenarioStage = 1
+            for type in [AVAudioSession.InterruptionType.began, .ended] {
+                NotificationCenter.default.post(name: AVAudioSession.interruptionNotification,
+                    object: AVAudioSession.sharedInstance(), userInfo: [
+                        AVAudioSessionInterruptionTypeKey: type.rawValue,
+                        AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue])
+            }
+        }
+    }
+
+    private func audioState() -> [String: Any] {
+        guard let audio else { return [:] }
+        let properties = Dictionary(uniqueKeysWithValues: Mirror(reflecting: audio).children.compactMap { child in
+            child.label.map { ($0, child.value) }
+        })
+        let engine = properties["engine"].flatMap { value in
+            (value as? AVAudioEngine) ?? (Mirror(reflecting: value).children.first?.value as? AVAudioEngine)
+        }
+        var state: [String: Any] = ["running": engine?.isRunning ?? false,
+            "hasPendingPreview": properties["pendingPreview"].map { !Mirror(reflecting: $0).children.isEmpty } ?? false]
+        for property in ["active", "activationPending", "requestedActive", "previewActive", "interrupted", "starmanRequested"] {
+            state[property] = properties[property] as? Bool ?? false
+        }
+        return state
+    }
+
+    private func sampleAudio() {
+        guard audio != nil, history.count < 160 else { return }
+        var state = audioState()
+        state["elapsed"] = ProcessInfo.processInfo.systemUptime - started
+        history.append(state)
+    }
 
     private func updateStarman() {
         guard let started = starStarted else { return }
@@ -108,6 +181,10 @@ final class AudioMixingFixture: UIResponder, UIApplicationDelegate {
         status["error"] = error
         if let audio {
             status["starman"] = Mirror(reflecting: audio).children.first(where: { $0.label == "starmanRequested" })?.value as? Bool ?? false
+            status.merge(audioState()) { _, latest in latest }
+            status["history"] = history
+            status["scenarioStage"] = scenarioStage
+            status["canceledWhilePending"] = canceledWhilePending
         }
         let file = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents/status.json")
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)

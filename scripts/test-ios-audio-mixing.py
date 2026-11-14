@@ -71,6 +71,21 @@ def main():
             def status():
                 return json.loads(status_file.read_text())
 
+            def launch_client(*flags):
+                client_status = client_container / "Documents/status.json"
+                client_status.unlink(missing_ok=True)
+                run("xcrun", "simctl", "launch", "--terminate-running-process", args.simulator, identifiers[1], *flags)
+                deadline = time.monotonic() + 10
+                while not client_status.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                assert client_status.exists(), ("client did not report readiness", flags)
+                return client_status
+
+            def read_client(path):
+                client = json.loads(path.read_text())
+                assert "error" not in client, client
+                return client
+
             deadline = time.monotonic() + 10
             while not status_file.exists() and time.monotonic() < deadline:
                 time.sleep(0.2)
@@ -81,17 +96,49 @@ def main():
                                 ("zero-volume game", ["--zero-volume", "--game"]),
                                 ("unmuted game", ["--game"])]:
                 before = status()
-                run("xcrun", "simctl", "launch", "--terminate-running-process", args.simulator, identifiers[1], *flags)
+                client_status = launch_client(*flags)
                 time.sleep(2)
                 after = status()
-                client = json.loads((client_container / "Documents/status.json").read_text())
-                assert "error" not in client, (name, client)
+                client = read_client(client_status)
                 if name == "unmuted game":
                     assert client["category"] == "AVAudioSessionCategoryAmbient" and client["mixes"], client
+                    assert client["active"] and client["running"], (name, client)
+                else:
+                    assert not client["active"] and not client["running"], (name, client)
                 assert after["playing"], (name, after)
                 assert after["interruptions"] == 0, (name, after)
                 assert after["time"] > before["time"] + 1, (name, before, after)
                 print(name + ": background playback continued without interruption", flush=True)
+
+            for name, flag in [("menu preview", "--preview"), ("preview followed by gameplay", "--preview-resume"),
+                               ("pause followed by resume", "--pause-resume"),
+                               ("rapid interruption and resume", "--rapid-interruption"),
+                               ("pause during activation", "--resume-pause"),
+                               ("mute during activation", "--resume-mute"),
+                               ("zero volume during activation", "--resume-zero-volume"),
+                               ("interruption during activation", "--activation-interruption")]:
+                before = status()
+                client_status = launch_client(flag)
+                time.sleep(2)
+                client = read_client(client_status)
+                history = client["history"]
+                if flag in ("--preview", "--preview-resume", "--pause-resume", "--rapid-interruption"):
+                    assert any(row["active"] and row["running"] for row in history), (name, client)
+                    assert any(row["active"] and row["running"] and not row["hasPendingPreview"] for row in history), (name, client)
+                    if flag == "--preview":
+                        assert any(row["previewActive"] for row in history), (name, client)
+                        assert not client["active"] and not client["running"], (name, client)
+                    else:
+                        assert client["active"] and client["running"] and client["requestedActive"], (name, client)
+                        assert client["scenarioStage"] >= 1, (name, client)
+                else:
+                    assert client["canceledWhilePending"], (name, "fixture did not cancel a pending activation", client)
+                    assert not client["active"] and not client["running"] and not client["activationPending"], (name, client)
+                    assert not any(row["active"] or row["running"] for row in history), (name, client)
+                after = status()
+                assert after["playing"] and after["interruptions"] == 0, (name, after)
+                assert after["time"] > before["time"] + 1, (name, before, after)
+                print(name + ": asynchronous lifecycle and background music passed", flush=True)
             # Ensure the fixture can detect the exclusive-session behavior this
             # test protects against, rather than passing on an inert player.
             run("xcrun", "simctl", "launch", "--terminate-running-process", args.simulator, identifiers[1], "--exclusive")
