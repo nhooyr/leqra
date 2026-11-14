@@ -8,6 +8,36 @@ final class GameUITests: XCTestCase {
 
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor
+    func testRoamingSpawnRateIsConditionalAndPersistsInNativeRoomRules() async throws {
+        let app = launch(callsign: "RATE " + UUID().uuidString.prefix(8))
+        selectPublic(false, in: app); selectMode("infinity", in: app)
+        let rules = app.buttons["Rules"]
+        reveal(rules, in: app); rules.tap()
+        let toggle = app.switches["randomRoamingBots"]
+        let scroll = app.scrollViews["modalScroll"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !toggle.isHittable { scroll.swipeUp() }
+        if toggle.value as? String == "1" { setSwitch(toggle, to: "0") }
+        XCTAssertFalse(app.buttons["roamingSpawnRate"].exists)
+        setSwitch(toggle, to: "1")
+        let rate = app.buttons["roamingSpawnRate"]
+        XCTAssertTrue(rate.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !rate.isHittable { scroll.swipeUp() }
+        rate.tap(); app.buttons["4×"].tap()
+        let apply = app.buttons["APPLY RULES"]
+        for _ in 0..<6 where !apply.isHittable { scroll.swipeUp() }
+        apply.tap()
+        reveal(rules, in: app); rules.tap()
+        XCTAssertTrue(app.buttons["roamingSpawnRate"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["roamingSpawnRate"].label.contains("4×"))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        try await Task.sleep(nanoseconds: 700_000_000)
+        capture(app, name: "Native roaming spawn rate landscape")
+        XCTAssertEqual(app.alerts.count, 0)
+        app.terminate()
+    }
+
     /// A disposable real Go host publishes an Infinity room with roaming bots.
     /// The viewer joins before start, follows rows beyond the first ten in both
     /// orientations, exits without ending the room, then watches a late join.

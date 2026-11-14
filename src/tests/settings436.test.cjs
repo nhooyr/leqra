@@ -205,6 +205,20 @@ test('random Infinity bot settings validate and each affects authoritative room 
  }
 });
 
+test('room Infinity spawn rate survives legacy defaults, form roundtrips and preset serialization',()=>{
+ const {s,$}=boot(new Map([['leqra.infinityOffline','1']]));
+ const {infinityBotSpawnRate,...legacy}=s.localRoom.rules;
+ assert.equal(s.validateRoomRules(legacy).infinityBotSpawnRate,2);assert.equal(s.validateRoomRules({...legacy,infinityBotSpawnRate:0}).infinityBotSpawnRate,2);
+ for(const rate of [.5,1,2,4]){
+  const rules=s.validateRoomRules({...legacy,infinityBotSpawnRate:rate});s.fillRulesForm(rules);
+  assert.equal(Number($('rule-infinityBotSpawnRate').value),rate);s.submitRules({preventDefault(){}});
+  assert.equal(s.localRoom.rules.infinityBotSpawnRate,rate);
+  assert.equal(s.validateRoomRules(JSON.parse(JSON.stringify(s.localRoom.rules))).infinityBotSpawnRate,rate);
+  assert.notEqual(s.roomSetupRulesKey({...rules,infinityBotSpawnRate:rate===4?2:4}),s.roomSetupRulesKey(rules));
+ }
+ for(const invalid of [-1,.25,3,16,Infinity,'2',null])assert.throws(()=>s.validateRoomRules({...legacy,infinityBotSpawnRate:invalid}),/spawn rate/);
+});
+
 test('Infinity start passes both local pilots and reserves room rules for room runs',()=>{
  const {s}=boot(),local={id:7,kind:'local',name:'Wing',colorIndex:0};
  s.localRoom.self=4;s.localRoom.rules={...s.localRoom.rules,infinity:true,infinityTarget:12};s.localRoom.players=[local,pilot({id:4,name:'Lead',colorIndex:6})];

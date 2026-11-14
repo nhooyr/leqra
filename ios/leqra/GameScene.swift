@@ -29,6 +29,7 @@ final class GameScene: SKScene {
         var bullets = 0
         var effects = 0
         var projectileCreations = 0
+        var textureCreations = 0
         var effectCreations = 0
         var mapRebuilds = 0
         var mapRasterSeconds = 0.0
@@ -118,6 +119,8 @@ final class GameScene: SKScene {
     private var lastLocalHP = 0
     private var currentLocalID = -1
     private var isReady = false
+    private var combatTextures: [SKTexture] = []
+    private var combatRendererPrepared = false
     private let impact = UIImpactFeedbackGenerator(style: .light)
 
     override init(size: CGSize) {
@@ -230,11 +233,61 @@ final class GameScene: SKScene {
         crosshair.addChild(center)
         crosshair.position.y = 6
         fireButton.addChild(crosshair)
+        let arguments = ProcessInfo.processInfo.arguments
+        if !(arguments.contains("--native-performance-probe") && arguments.contains("--probe-cold-resources")) {
+            prepareCombatResources()
+        }
         layoutControls()
+    }
+
+    /// Rasterize and allocate the bounded first volley before a match starts.
+    /// Reused pools survive resetWorld, so returning to the room stays warm.
+    private func prepareCombatResources() {
+        for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
+            for color in 0..<8 {
+                let style = ProjectileStyle(ArenaBullet(kind: kind, colorIndex: color))
+                combatTextures.append(NativeArt.projectile(kind: kind, color: color))
+                for _ in 0..<(kind == "scatter" ? 3 : 1) {
+                    recycleProjectile(ProjectileNode(style: style))
+                }
+                if kind != "rapid" { _ = trailNode(style) }
+            }
+        }
+        combatTextures.append(NativeArt.missileFlame())
+        for held in [false, true] { for detonate in [false, true] {
+            combatTextures.append(NativeArt.fireButton(held: held, detonate: detonate))
+        } }
+        for _ in 0..<4 { effectPool.append(TransientEffectNode()) }
+    }
+
+    func prepareCombatRenderer(in view: SKView) {
+        guard !combatRendererPrepared, !combatTextures.isEmpty else { return }
+        // Texture preloading alone does not exercise SpriteKit's first sprite
+        // draw. Render the real pooled glyphs into a disposable offscreen image
+        // while attaching the ready-room view, never while handling a shot.
+        let warmup = SKNode()
+        var index = 0
+        for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
+            for color in 0..<8 {
+                let style = ProjectileStyle(ArenaBullet(kind: kind, colorIndex: color))
+                guard let node = projectilePool[style]?.first else { continue }
+                node.update(ArenaBullet(x: Double(index % 8) * 48 + 24, y: -Double(index / 8) * 48 - 24,
+                                      vx: 420, kind: kind, colorIndex: color, life: 10), time: 0)
+                warmup.addChild(node); index += 1
+            }
+        }
+        let path = CGMutablePath(); path.move(to: CGPoint(x: 10, y: 10)); path.addLine(to: CGPoint(x: 300, y: 10))
+        let trail = SKShapeNode(path: path); trail.strokeColor = Palette.accent; trail.lineWidth = 12; trail.lineCap = .round
+        warmup.addChild(trail)
+        combatRendererPrepared = view.texture(from: warmup, crop: CGRect(x: 0, y: 0, width: 384, height: 300)) != nil
+        warmup.removeAllChildren()
     }
 
     override func didMove(to view: SKView) {
         view.isMultipleTouchEnabled = true
+        // Upload cached pixels before the player fires; this is asynchronous
+        // and never delays the fire input or the first visible projectile.
+        if !combatTextures.isEmpty { SKTexture.preload(combatTextures) {} }
         layoutControls()
         previousTime = 0
     }
@@ -392,6 +445,7 @@ final class GameScene: SKScene {
     func display(snapshot: ArenaSnapshot, localID: Int, maze: InfiniteMaze?, fixedWalls: [MazeWall] = []) {
         let profiled = profilesRendering
         let started = profiled ? CACurrentMediaTime() : 0
+        let texturesBefore = profiled ? NativeArt.textureCreationCount : 0
         var checkpoint = started
         var metrics = RenderMetrics()
         if profiled {
@@ -407,6 +461,7 @@ final class GameScene: SKScene {
         defer {
             if profiled {
                 metrics.totalSeconds = CACurrentMediaTime() - started
+                metrics.textureCreations = NativeArt.textureCreationCount - texturesBefore
                 metrics.bullets = bullets.count
                 metrics.effects = effectLayer.children.count
                 metrics.projectileCreations = frameProjectileCreations
@@ -688,20 +743,20 @@ final class GameScene: SKScene {
         }
         for (style, trail) in projectileTrails where paths[style] == nil { trail.isHidden = true }
         for (style, path) in paths {
-            let trail: SKShapeNode
-            if let existing = projectileTrails[style] { trail = existing }
-            else {
-                trail = SKShapeNode()
-                trail.strokeColor = Palette.tank(style.colorIndex).withAlphaComponent(0.16)
-                trail.lineWidth = style.kind == "cannon" ? 12 : style.kind == "homing" ? 4 : 3
-                trail.lineCap = .round
-                trail.zPosition = -1
-                projectileTrails[style] = trail
-                bulletLayer.addChild(trail)
-            }
+            let trail = trailNode(style)
             trail.path = path
             trail.isHidden = false
         }
+    }
+
+    private func trailNode(_ style: ProjectileStyle) -> SKShapeNode {
+        if let existing = projectileTrails[style] { return existing }
+        let trail = SKShapeNode()
+        trail.strokeColor = Palette.tank(style.colorIndex).withAlphaComponent(0.16)
+        trail.lineWidth = style.kind == "cannon" ? 12 : style.kind == "homing" ? 4 : 3
+        trail.lineCap = .round; trail.zPosition = -1; trail.isHidden = true
+        projectileTrails[style] = trail; bulletLayer.addChild(trail)
+        return trail
     }
 
     private func recycleProjectile(_ node: ProjectileNode) {
@@ -1302,6 +1357,7 @@ private final class PickupNode: SKNode {
 /// tank to every ProMotion frame.
 @MainActor
 private enum NativeArt {
+    private(set) static var textureCreationCount = 0
     private static var cache: [String: SKTexture] = [:]
     private static var fusePaths: [Int: CGPath] = [:]
 
@@ -1355,6 +1411,7 @@ private enum NativeArt {
     }
 
     private static func image(size: CGSize, scale: CGFloat = 3, draw: (CGContext) -> Void) -> SKTexture {
+        textureCreationCount += 1
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         format.opaque = false

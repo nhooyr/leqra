@@ -1,9 +1,6 @@
 package main
 
-import (
-	"math"
-	"time"
-)
+import "time"
 
 // Observer state is deliberately separate from pilots: it cannot own a tank,
 // receive input, occupy a player place, or contribute to the bot population.
@@ -149,22 +146,6 @@ func (a *infiniteArena) observerPilot(observer *infiniteObserver) *infinitePilot
 		}
 	}
 	return nil
-}
-
-// A followed position keeps existing roaming lives active when a connected
-// human is dead/paused. It never changes the connected-human population budget.
-func (a *infiniteArena) nearestObservedPilot(p *infinitePilot, maxDist float64) *infinitePilot {
-	var nearest *infinitePilot
-	for _, observer := range a.observers {
-		other := a.observerPilot(observer)
-		if other == nil {
-			continue
-		}
-		if d := math.Hypot(other.X-p.X, other.Y-p.Y); d < maxDist || d == maxDist && nearest != nil && other.ID < nearest.ID {
-			maxDist, nearest = d, other
-		}
-	}
-	return nearest
 }
 
 func (s *infiniteServer) follow(c *Client, target int, now time.Time) {

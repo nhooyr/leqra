@@ -85,7 +85,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var infinity = true
     private var online = false
     private var generation: Int? = null
-    private var highestEffectID = 0
+    private val seenEffectIDs = LinkedHashSet<Int>()
     private var lastSnapshotTick: Long? = null
     private var projectileFrame = 0L
 
@@ -269,7 +269,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         effects.clear()
         labels.clear()
         terrain.clear()
-        highestEffectID = 0
+        seenEffectIDs.clear()
         lastSnapshotTick = null
         projectileHistory.clear()
         guideReady = false
@@ -306,7 +306,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         if (changedWorld) {
             effects.clear()
             labels.clear()
-            highestEffectID = 0
+            seenEffectIDs.clear()
             projectileHistory.clear()
             guideReady = false
         }
@@ -322,16 +322,16 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             generation = snapshot.generation
             effects.clear()
             labels.clear()
-            highestEffectID = 0
+            seenEffectIDs.clear()
         }
         if (labels.size > 128) labels.keys.retainAll(snapshot.tanks.map { it.id }.toSet())
         val now = if (frameTime > 0) frameTime else System.nanoTime() / 1e9
-        for (effect in snapshot.effects) if (effect.id > highestEffectID) {
-            highestEffectID = effect.id
+        for (effect in snapshot.effects) if (effect.id > 0 && seenEffectIDs.add(effect.id)) {
+            if (seenEffectIDs.size > 512) seenEffectIDs.iterator().let { it.next(); it.remove() }
             if (
                 !effect.kind.startsWith("shot") &&
                     effect.kind != "roundEnd" &&
-                    effect.kind != "objective"
+                    effect.kind != "objective" && effect.kind != "projectileFlight"
             ) {
                 if (effects.size == 64) effects.removeAt(0)
                 val shape =

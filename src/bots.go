@@ -629,7 +629,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		t.SpeedStacks = 0
 	}
 	g.advanceGhost(t, dt)
-	if n := speedCount(t); n > 0 {
+	if n := movementSpeedCount(t); n > 0 {
 		d.speed *= 1 + boostSpeedPerStack*float64(n)
 		d.turn *= 1 + boostTurnPerStack*float64(n)
 	}

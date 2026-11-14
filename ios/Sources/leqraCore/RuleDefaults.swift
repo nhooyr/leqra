@@ -49,6 +49,7 @@ public extension RoomRules {
             var rules = self
             rules.infinityTarget = defaults.infinityTarget
             rules.infinityRandomBots = defaults.infinityRandomBots
+            rules.infinityBotSpawnRate = defaults.infinityBotSpawnRate
             rules.infinityBotDifficulty = defaults.infinityBotDifficulty
             rules.infinityRandomDifficulty = defaults.infinityRandomDifficulty
             rules.teamNames = defaults.teamNames; rules.teamColors = defaults.teamColors; rules.friendlyFire = false

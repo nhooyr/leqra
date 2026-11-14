@@ -1112,6 +1112,7 @@ type stateScratch struct {
 	boostedIDs     []int
 	machineBullets [][12]float64
 	pickups        []Pickup
+	events         []Event
 }
 
 type stateWire struct {
@@ -1179,6 +1180,7 @@ func (h *Hub) stateWire(r *Room) stateWire {
 		z.tanks = append(z.tanks, v)
 	}
 	for _, b := range g.Bullets {
+		b.publishFlight()
 		v := *b
 		if b.boosted && !b.Dead {
 			z.boostedIDs = append(z.boostedIDs, b.ID)
@@ -1202,7 +1204,8 @@ func (h *Hub) stateWire(r *Room) stateWire {
 		v.Life = rounded(v.Life)
 		z.pickups = append(z.pickups, v)
 	}
-	wire := stateWire{Type: "state", Tick: g.Tick, Generation: g.Generation, Phase: g.Phase, PhaseTime: rounded(g.PhaseTime), Round: g.Round, RoundClock: rounded(g.Clock), Winner: g.Winner, Scores: g.Scores, Tanks: z.tanks, Bullets: z.bullets, BoostedBulletIDs: z.boostedIDs, MachineBullets: z.machineBullets, Pickups: z.pickups, Events: g.events, Rules: g.settings(), Objectives: g.Objectives}
+	z.events = g.projectileSnapshotEvents(z.events[:0])
+	wire := stateWire{Type: "state", Tick: g.Tick, Generation: g.Generation, Phase: g.Phase, PhaseTime: rounded(g.PhaseTime), Round: g.Round, RoundClock: rounded(g.Clock), Winner: g.Winner, Scores: g.Scores, Tanks: z.tanks, Bullets: z.bullets, BoostedBulletIDs: z.boostedIDs, MachineBullets: z.machineBullets, Pickups: z.pickups, Events: z.events, Rules: g.settings(), Objectives: g.Objectives}
 	if g.Phase == "matchOver" && g.matchReportWire != nil {
 		wire.MatchStats = g.matchReportWire
 	}

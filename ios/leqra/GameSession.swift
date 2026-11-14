@@ -149,6 +149,7 @@ final class GameSession: ObservableObject {
     private var publicSuspended = false
     private var lifecycleInactive = false
     private var audioStateFresh = false
+    @Published private(set) var presentingFinalShot = false
     private var roomInfinityEntryWanted = false
     private var spectatorRecoveryPending = false
     private var spectatorResumePaused = false
@@ -184,7 +185,7 @@ final class GameSession: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--native-performance-probe") {
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.leave()
+                self.leave(clearPublicIntent: false)
                 let profiler = FrameProfiler(arguments: ProcessInfo.processInfo.arguments)
                 self.frameProfiler = profiler
                 self.practice = PracticeArena(seed: 42, name: "PROBE PILOT", colorIndex: 0, botCount: 0)
@@ -510,7 +511,7 @@ final class GameSession: ObservableObject {
 
     func checkSavedActivation(_ index: Int) async throws -> CheckedAccount {
         guard canImportAccount, let server = accountServer else { throw AccountActionError.finishOnline }
-        let slot = accountSeatContext, saved = savedAccountActivations(for: server, seat: accountSeatContext)
+        let saved = savedAccountActivations(for: server, seat: accountSeatContext)
         guard saved.indices.contains(index) else { throw GameNetworkError.invalidResponse }
         return try await checkAccountKey(saved[index].publicToken)
     }
@@ -702,7 +703,9 @@ final class GameSession: ObservableObject {
     func startPractice() {
         guard validPlayerCallsign(cleanName, seat: 0) else { return }
         leave()
-        let game = PracticeArena(seed: UInt32.random(in: 1...UInt32.max), name: cleanName, colorIndex: GamePalette.index(colorIndex))
+        let game = PracticeArena(seed: UInt32.random(in: 1...UInt32.max), name: cleanName, colorIndex: GamePalette.index(colorIndex), botCount: 0)
+        var rules = RoomRules(); rules.infinity = true; rules.infinityRandomBots = true
+        game.configure(rules: rules)
         practice = game; maze = game.maze; localID = game.localID
         lastSnapshot = game.snapshot
         status = "Offline Infinity"
@@ -1135,6 +1138,7 @@ final class GameSession: ObservableObject {
 
     func leave(clearPublicIntent: Bool = true) {
         audioStateFresh = false
+        presentingFinalShot = false
         pendingOnlineAction = nil
         if clearPublicIntent { publicSessions.activate(nil) }
         frameProfiler = nil; scene.profilesRendering = false
@@ -1530,6 +1534,9 @@ final class GameSession: ObservableObject {
             if timeline.stale { status = "Waiting for server…" }
         }
         guard let snapshot else { return }
+        let finalShot = (snapshot.result != nil || snapshot.phase == "matchOver")
+            && (timeline?.hasPendingProjectileFlights == true || practice?.hasPendingProjectileFlights == true || fixedArena?.hasPendingProjectileFlights == true)
+        if presentingFinalShot != finalShot { presentingFinalShot = finalShot }
         if profiling { simulationSeconds = CACurrentMediaTime() - simulationStart }
         if !isInfinity, previousPresentedPhase == "countdown", snapshot.phase == "playing" {
             weaponsLive = true; weaponsLiveRemaining = 0.8

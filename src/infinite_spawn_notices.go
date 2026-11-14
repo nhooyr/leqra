@@ -8,6 +8,7 @@ import (
 
 const godlikeSpawnNoticeTTL = 8 * time.Second
 const godlikeSpawnNoticeRange = 12 * cellSize
+const infiniteGodlikeNoticeLimit = 24
 
 type infiniteGodlikeSpawn struct {
 	ID    int    `json:"id"`
@@ -41,7 +42,7 @@ func (a *infiniteArena) recordGodlikeSpawn(p *infinitePilot) {
 			return
 		}
 	}
-	if len(a.godlikeSpawns) >= infiniteBotLimit {
+	if len(a.godlikeSpawns) >= infiniteGodlikeNoticeLimit {
 		a.godlikeSpawns = slices.Delete(a.godlikeSpawns, 0, 1)
 	}
 	a.godlikeSpawns = append(a.godlikeSpawns, infiniteGodlikeSpawn{ID: p.ID, Spawn: p.Spawn, Name: p.Name, at: now, x: p.X, y: p.Y})

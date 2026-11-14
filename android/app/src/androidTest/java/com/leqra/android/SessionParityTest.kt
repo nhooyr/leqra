@@ -24,6 +24,36 @@ class SessionParityTest {
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
     @Test
+    fun pausedResultOverlayFinishesOnlyTheProjectilePresentation() {
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                set(session, "online", true)
+                event(session, NetworkEvent.Welcome(welcome()))
+                event(session, NetworkEvent.State(snapshot(0)))
+                val flight = ProjectileFlight(17, 1, 0, 0.0, .2, listOf(ProjectileFlightPoint(4200.0, 4200.0, 0.0), ProjectileFlightPoint(4210.0, 4200.0, .2)))
+                val terminal = snapshot(1).copy(result = ArenaResult(id = 1, score = 1), effects = listOf(ArenaEffect(id = 1, kind = "impact", flight = flight)))
+                event(session, NetworkEvent.State(terminal))
+                set(session, "paused", true)
+                assertTrue(session.finishingProjectilePresentation)
+                session.input = GameInput(forward = true, fire = true)
+                val beforeSequence = session.network.lastInputSequence
+                val start = System.nanoTime()
+                var visible = false
+                session.present = { image, _, _, _, _ -> visible = visible || image.bullets.any { it.id == 17 } }
+                repeat(40) { session.frame(start + it * 1_000_000_000L / 120) }
+                assertTrue(visible)
+                assertFalse(session.finishingProjectilePresentation)
+                assertEquals(4200.0, session.snapshot.tanks.first().x, 0.0)
+                assertEquals(1, session.snapshot.result!!.score)
+                assertEquals(beforeSequence, session.network.lastInputSequence)
+                assertTrue(session.snapshot.bullets.isEmpty())
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
     fun spacedLegacyPlayerDefaultsUpgradeWithoutKeysAndBothCurrentKeysProtectThem() {
         for (protected in listOf(false, true)) {
             val context = context()

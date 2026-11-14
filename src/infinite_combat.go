@@ -15,12 +15,13 @@ const (
 )
 
 type infiniteEffect struct {
-	ID     int         `json:"id"`
-	Kind   string      `json:"kind"`
-	X      float64     `json:"x"`
-	Y      float64     `json:"y"`
-	Owner  int         `json:"owner"`
-	Points []BeamPoint `json:"points,omitempty"`
+	Flight *cannonFlight `json:"flight,omitempty"`
+	ID     int           `json:"id"`
+	Kind   string        `json:"kind"`
+	X      float64       `json:"x"`
+	Y      float64       `json:"y"`
+	Owner  int           `json:"owner"`
+	Points []BeamPoint   `json:"points,omitempty"`
 	tick   uint64
 }
 
@@ -29,7 +30,10 @@ func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []Be
 	if len(a.effects) == 48 {
 		a.effects = slices.Delete(a.effects, 0, 1)
 	}
-	a.effects = append(a.effects, infiniteEffect{a.effectID, kind, x, y, owner, points, a.tick})
+	a.effects = append(a.effects, infiniteEffect{ID: a.effectID, Kind: kind, X: x, Y: y, Owner: owner, Points: points, tick: a.tick})
+	if kind == "laser" {
+		a.retainProjectileEffect(a.effects[len(a.effects)-1])
+	}
 }
 
 func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
@@ -327,7 +331,12 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 			b.Bounces = 1
 			b.seekDelay = missileWallDelay
 		}
+		b.beginFlight(b.X, b.Y, float64(a.tick)-1)
 		if a.advanceBullet(&b, launch.ux*launch.muzzle, launch.uy*launch.muzzle) {
+			b.flightBirth = cannonFlightPoint{b.X, b.Y, float64(a.tick) - 1}
+			if b.flight != nil {
+				b.flight.reset(b.X, b.Y, float64(a.tick)-1)
+			}
 			a.bullets = append(a.bullets, b)
 		}
 	}
@@ -551,6 +560,9 @@ func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam i
 func (a *infiniteArena) detonate(b *infiniteBullet) {
 	b.dead = true
 	a.effect("blast", b.X, b.Y, b.Owner, nil)
+	if !b.published {
+		a.attachFlightEffect(b)
+	}
 	for _, p := range a.pilots {
 		if p.ID == b.Owner || p.HP == 0 || p.Protected || math.Hypot(p.X-b.X, p.Y-b.Y) > blastRadius+tankRadius {
 			continue
@@ -562,6 +574,10 @@ func (a *infiniteArena) detonate(b *infiniteBullet) {
 }
 
 func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
+	return a.advanceBulletDuring(b, dx, dy, 0)
+}
+
+func (a *infiniteArena) advanceBulletDuring(b *infiniteBullet, dx, dy, span float64) bool {
 	radius := b.radius
 	if radius <= 0 {
 		radius = regularRadius
@@ -579,11 +595,20 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 		target, contact := a.hitTarget(b.Owner, b.ownerTeam, b.X, b.Y, dx, dy, radius, nearest, b.Kind == "grenade")
 		if target != nil {
 			b.X, b.Y = b.X+dx*contact, b.Y+dy*contact
+			b.flightAge = b.age - span + span*contact
 			if b.Kind == "grenade" {
 				a.detonate(b)
 			} else {
 				if b.Kind == "cannon" || b.Kind == "homing" {
 					a.effect("impact", b.X, b.Y, b.Owner, nil)
+					if b.Kind == "cannon" {
+						a.attachFlightEffect(b)
+					} else if !b.published {
+						a.attachFlightEffect(b)
+					}
+				} else if b.flightTracked && !b.published {
+					a.effect("projectileFlight", b.X, b.Y, b.Owner, nil)
+					a.attachFlightEffect(b)
 				}
 				a.hurt(target, b.Owner, b.ownerTeam, b.ownerName, b.Color)
 			}
@@ -591,6 +616,10 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 		}
 		if !hasWall {
 			b.X, b.Y = b.X+dx, b.Y+dy
+			b.flightAge = b.age
+			if (b.Kind == "homing" || b.Kind == "grenade") && b.age >= .1 {
+				b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
+			}
 			return true
 		}
 		b.Bounces++
@@ -602,6 +631,9 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 		}
 		b.X += dx*wall.T + wall.NX*.12
 		b.Y += dy*wall.T + wall.NY*.12
+		b.flightAge = b.age - span + span*wall.T
+		b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
+		span *= 1 - wall.T
 		dx, dy = dx*(1-wall.T), dy*(1-wall.T)
 		if wall.NX != 0 {
 			dx, b.VX = -dx, -b.VX
@@ -668,12 +700,18 @@ func (a *infiniteArena) advanceBullets() {
 			drag := grenadeDragFactor(b.Life+dt, b.Life)
 			b.VX, b.VY = b.VX*drag, b.VY*drag
 		}
-		if a.advanceBullet(&b, b.VX*dt, b.VY*dt) {
+		if a.advanceBulletDuring(&b, b.VX*dt, b.VY*dt, dt) {
 			if b.Life > 1e-9 {
 				live = append(live, b)
 			} else if b.Kind == "grenade" {
 				a.detonate(&b)
+			} else if !b.published && !b.flightEmitted && b.flightTracked {
+				a.effect("projectileFlight", b.X, b.Y, b.Owner, nil)
+				a.attachFlightEffect(&b)
 			}
+		} else if !b.published && !b.flightEmitted && b.flightTracked {
+			a.effect("projectileFlight", b.X, b.Y, b.Owner, nil)
+			a.attachFlightEffect(&b)
 		}
 	}
 	a.bullets = live

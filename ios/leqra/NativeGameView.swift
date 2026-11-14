@@ -78,6 +78,7 @@ private final class KeyboardGameContainer: UIView {
         // Reapply against the attached display; makeUIView can run before a
         // window exists, including when moving between displays.
         applyFrameRate()
+        if window != nil { gameScene?.prepareCombatRenderer(in: gameView) }
         if window != nil && !paused && !spectating { becomeFirstResponder() }
         else { resetKeyboard(); gameScene?.resetControls() }
     }

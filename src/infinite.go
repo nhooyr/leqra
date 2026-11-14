@@ -11,14 +11,16 @@ import (
 )
 
 const (
-	infiniteCapacity     = 32
-	infiniteBotLimit     = 24
-	infiniteSight        = 1200
-	infiniteTankSpeed    = 128
-	infiniteMaxHP        = 1
-	infiniteRespawnTicks = 60
-	infiniteBulletRadius = 3.5
-	infiniteLeaderCount  = 10
+	infiniteCapacity      = 32
+	infiniteBotsPerPlayer = 16
+	infiniteBotLimit      = infiniteCapacity * infiniteBotsPerPlayer // Storage follows the public human capacity, not an extra population cap.
+	infiniteRoomBotLimit  = maxTanks * infiniteBotsPerPlayer
+	infiniteSight         = 1200
+	infiniteTankSpeed     = 128
+	infiniteMaxHP         = 1
+	infiniteRespawnTicks  = 60
+	infiniteBulletRadius  = 3.5
+	infiniteLeaderCount   = 10
 )
 
 type infiniteTank struct {
@@ -86,6 +88,7 @@ type infinitePilot struct {
 	botTarget              int
 	botHasAim              bool
 	ambientNumber          int
+	ambientRetired         bool
 	party                  infiniteRoom
 	partyMember            uint64
 	publicKey, publicToken string // Private bearer metadata, never part of a tank snapshot.
@@ -107,11 +110,15 @@ type infiniteBullet struct {
 	Bounces int     `json:"bounces,omitempty"`
 	Target  int     `json:"target,omitempty"` // Positive pilot ID when a seeker has a lock.
 
-	radius, age, seekDelay float64
-	ownerTeam              int
-	ownerName              string
-	dead                   bool
-	boosted                bool
+	radius, age, seekDelay                  float64
+	ownerTeam                               int
+	ownerName                               string
+	dead                                    bool
+	boosted                                 bool
+	flight                                  *cannonFlight
+	flightBirth                             cannonFlightPoint
+	flightAge                               float64
+	flightTracked, published, flightEmitted bool
 }
 
 type infiniteSnapshot struct {
@@ -157,6 +164,7 @@ type infiniteRules struct {
 	TeamNames    []string `json:"teamNames"`
 	TeamColors   []int    `json:"teamColors"`
 	FriendlyFire bool     `json:"friendlyFire"`
+	BotSpawnRate float64  `json:"infinityBotSpawnRate"`
 
 	randomBots, randomDifficulty bool
 	botLevel                     int
@@ -187,6 +195,7 @@ type infiniteArena struct {
 	bullets                                 []infiniteBullet
 	pickups                                 []Pickup
 	effects                                 []infiniteEffect
+	projectileEffects, wireEffects          []infiniteEffect
 	seed                                    uint32
 	maze                                    *infiniteMaze
 	random                                  *rand.Rand
@@ -199,6 +208,7 @@ type infiniteArena struct {
 	pickupID, effectID                      int
 	snapshot                                infiniteSnapshot // Reused after immediate encoding under mu.
 	snapshotTankIndex                       map[int]int
+	wireTanks                               []infiniteTank
 	observers                               map[*Client]*infiniteObserver
 	observerBroadcastAt                     time.Time
 	rules                                   *infiniteRules
@@ -223,7 +233,8 @@ func newRoomInfiniteArena(rules MatchRules, bots []infiniteRoomBot) *infiniteAre
 	a.rules = &infiniteRules{
 		Target: rules.InfinityTarget, TeamMode: rules.TeamMode, TeamNames: rules.TeamNames,
 		TeamColors: rules.TeamColors, FriendlyFire: rules.FriendlyFire,
-		randomBots: rules.InfinityRandomBots, randomDifficulty: rules.InfinityRandomDifficulty,
+		BotSpawnRate: rules.InfinityBotSpawnRate,
+		randomBots:   rules.InfinityRandomBots, randomDifficulty: rules.InfinityRandomDifficulty,
 		botLevel: infiniteBotLevel(rules.InfinityBotDifficulty),
 	}
 	a.roomBots = bots
@@ -474,6 +485,7 @@ func (a *infiniteArena) remove(p *infinitePilot) {
 		// controllers leave. Release the world and snapshot buffers until it
 		// has viewers again; the maze is reproducible from the seed.
 		a.pilots, a.bullets, a.pickups, a.effects = nil, nil, nil, nil
+		a.projectileEffects, a.wireEffects, a.wireTanks = nil, nil, nil
 		if a.publicEntries == nil {
 			a.inactiveBots = nil
 		}
@@ -600,9 +612,6 @@ func (a *infiniteArena) step(now time.Time) {
 				if p.Bot && p.roomBot == nil {
 					anchor := a.nearestActivePilot(p, math.Inf(1))
 					if anchor == nil {
-						anchor = a.nearestObservedPilot(p, math.Inf(1))
-					}
-					if anchor == nil {
 						continue
 					}
 					x, y = anchor.X, anchor.Y
@@ -674,7 +683,7 @@ func (a *infiniteArena) step(now time.Time) {
 }
 
 func (a *infiniteArena) drive(p *infinitePilot, input Input) {
-	boost := float64(speedCount(&p.kit))
+	boost := float64(movementSpeedCount(&p.kit))
 	angle, throttle := steerTank(p.Angle, input, 1+boostTurnPerStack*boost, tickDT)
 	p.Angle = angle
 	speed := infiniteTankSpeed * (1 + boostSpeedPerStack*boost)
@@ -694,7 +703,11 @@ func (a *infiniteArena) roamingBotBudget() int {
 	if a.rules != nil && !a.rules.randomBots {
 		return 0
 	}
-	return min(infiniteBotLimit, a.connected*8)
+	budget := a.connected * infiniteBotsPerPlayer
+	if a.rules != nil {
+		return min(infiniteRoomBotLimit, budget)
+	}
+	return budget
 }
 
 func (a *infiniteArena) trimRoamingBots() int {
@@ -720,7 +733,7 @@ func (a *infiniteArena) trimRoamingBots() int {
 func (a *infiniteArena) nearestActivePilot(p *infinitePilot, maxDist float64) *infinitePilot {
 	var nearest *infinitePilot
 	for _, other := range a.pilots {
-		if other.Bot || other.HP == 0 || other.disconnected {
+		if other.Bot || other.HP == 0 || other.disconnected || other.paused {
 			continue
 		}
 		if d := math.Hypot(other.X-p.X, other.Y-p.Y); d < maxDist {
@@ -733,11 +746,6 @@ func (a *infiniteArena) nearestActivePilot(p *infinitePilot, maxDist float64) *i
 func (a *infiniteArena) outsideActiveViews(p *infinitePilot) bool {
 	for _, viewer := range a.pilots {
 		if !viewer.Bot && !viewer.disconnected && math.Abs(p.X-viewer.X) <= cellSize*16 && math.Abs(p.Y-viewer.Y) <= cellSize*16 {
-			return false
-		}
-	}
-	for _, observer := range a.observers {
-		if viewer := a.observerPilot(observer); viewer != nil && math.Abs(p.X-viewer.X) <= cellSize*16 && math.Abs(p.Y-viewer.Y) <= cellSize*16 {
 			return false
 		}
 	}
@@ -757,49 +765,90 @@ func (a *infiniteArena) pilotByID(id int) *infinitePilot {
 
 func (a *infiniteArena) populate() {
 	bots := a.trimRoamingBots()
+	// Existing roaming encounters belong around connected human positions,
+	// including a temporarily dead or paused human. A distant body
+	// ends this life instead of teleporting alive, scoring a death, or being
+	// kept active by a spectator watching an abandoned part of the maze.
+	for i := len(a.pilots) - 1; i >= 0; i-- {
+		bot := a.pilots[i]
+		if bot.Bot && bot.roomBot == nil && a.outsideActiveViews(bot) {
+			bot.HP, bot.VX, bot.VY, bot.respawn, bot.ambientRetired = 0, 0, 0, 0, true
+			bot.clearControls()
+			a.inactiveBots = append(a.inactiveBots, bot)
+			a.pilots = slices.Delete(a.pilots, i, i+1)
+			bots--
+		}
+	}
 	if a.roamingBotBudget() == 0 || a.tick < a.nextBot {
 		return
 	}
-	a.nextBot = a.tick + uint64(60+a.random.IntN(61))
+	rate := 2.0
+	if a.rules != nil && a.rules.BotSpawnRate > 0 {
+		rate = a.rules.BotSpawnRate
+	}
+	a.nextBot = a.tick + uint64(math.Round(float64(60+a.random.IntN(61))/rate))
 	var pilots [infiniteCapacity]*infinitePilot
 	n := 0
 	for _, p := range a.pilots {
-		if !p.Bot && p.HP > 0 && !p.disconnected {
+		if !p.Bot && p.HP > 0 && !p.disconnected && !p.paused {
 			pilots[n] = p
 			n++
 		}
 	}
-	if n > 0 {
-		for _, bot := range a.pilots {
-			if bot.Bot && bot.roomBot == nil && bot.HP > 0 && a.outsideActiveViews(bot) {
-				anchor := pilots[a.random.IntN(n)]
-				a.spawn(bot, anchor.X, anchor.Y, 3, 6)
+	if n == 0 || bots >= a.roamingBotBudget() {
+		return
+	}
+	var assigned [infiniteCapacity]int
+	var used [infiniteBotLimit + 1]bool
+	for _, bot := range a.pilots {
+		if !bot.Bot || bot.roomBot != nil {
+			continue
+		}
+		if bot.ambientNumber > 0 && bot.ambientNumber < len(used) {
+			used[bot.ambientNumber] = true
+		}
+		best, distance := 0, math.Inf(1)
+		for i, p := range pilots[:n] {
+			if d := math.Hypot(bot.X-p.X, bot.Y-p.Y); d < distance {
+				best, distance = i, d
 			}
 		}
-		if bots >= a.roamingBotBudget() {
-			return
+		assigned[best]++
+	}
+	// One encounter per human per wave, allocated to the least served human.
+	// A large arena therefore fills at the same per-player pace as a solo one.
+	for wave := 0; wave < n && bots < a.roamingBotBudget(); wave++ {
+		anchor := 0
+		for i := 1; i < n; i++ {
+			if assigned[i] < assigned[anchor] {
+				anchor = i
+			}
 		}
-		p := pilots[a.random.IntN(n)]
+		p := pilots[anchor]
+		assigned[anchor]++
+		bots++
 		if len(a.inactiveBots) > 0 {
 			i := len(a.inactiveBots) - 1
 			bot := a.inactiveBots[i]
 			a.inactiveBots = slices.Delete(a.inactiveBots, i, i+1)
-			if bot.HP > 0 {
+			if bot.HP > 0 || bot.ambientRetired {
 				a.spawn(bot, p.X, p.Y, 3, 6)
+				if bot.ambientRetired {
+					bot.ambientRetired = false
+					if a.rules != nil && a.rules.randomDifficulty {
+						bot.botLevel = a.random.IntN(a.rules.botLevel + 1)
+					}
+					a.startBotLife(bot)
+				}
 			}
 			a.pilots = append(a.pilots, bot)
-			return
-		}
-		var used [infiniteBotLimit + 1]bool
-		for _, bot := range a.pilots {
-			if bot.ambientNumber > 0 {
-				used[bot.ambientNumber] = true
-			}
+			continue
 		}
 		number := 1
 		for used[number] {
 			number++
 		}
+		used[number] = true
 		bot := a.addPilot("Bot "+strconv.Itoa(number), true, p.X, p.Y, 3, 6)
 		bot.ambientNumber = number
 		if a.rules != nil {
@@ -866,6 +915,9 @@ func infiniteBotLevel(name string) int {
 }
 
 func (a *infiniteArena) botInput(p *infinitePilot) Input {
+	if a.rules == nil && publicGodlike(p) {
+		return a.godlikeHuntInput(p)
+	}
 	tuning := infiniteBotTunings[p.botLevel]
 	if tuning.name == "dumb" {
 		return a.dumbBotInput(p, tuning.sight, tuning.roam, tuning.aim)
@@ -985,6 +1037,8 @@ func (a *infiniteArena) broadcast() {
 	if a.connected == 0 && len(a.observers) == 0 {
 		return
 	}
+	a.wireEffects = a.projectileSnapshotEffects(a.wireEffects[:0])
+	effects := a.wireEffects
 	now := a.spawnNoticeTime()
 	a.pruneGodlikeSpawns(now)
 	packet := &a.snapshot
@@ -996,7 +1050,12 @@ func (a *infiniteArena) broadcast() {
 	}
 	leaders := a.rankedLeaders(packet.Leaders)
 	packet.Leaders = leaders[:min(len(leaders), infiniteLeaderCount)]
-	var tanks [infiniteCapacity + infiniteBotLimit]infiniteTank
+	if cap(a.wireTanks) < len(a.pilots) {
+		a.wireTanks = make([]infiniteTank, len(a.pilots))
+	} else {
+		a.wireTanks = a.wireTanks[:len(a.pilots)]
+	}
+	tanks := a.wireTanks
 	if a.snapshotTankIndex == nil {
 		a.snapshotTankIndex = make(map[int]int, len(a.pilots))
 	}
@@ -1067,7 +1126,7 @@ func (a *infiniteArena) broadcast() {
 	views := make(map[viewKey]encodedView, a.connected)
 	pickupOffset := len(a.pilots)
 	effectOffset := pickupOffset + len(a.pickups)
-	bulletOffset := effectOffset + len(a.effects)
+	bulletOffset := effectOffset + len(effects)
 	spawnOffset := bulletOffset + len(a.bullets)
 	mask := make([]byte, (spawnOffset+len(a.godlikeSpawns)+7)/8)
 	mark := func(index int) { mask[index/8] |= 1 << (index % 8) }
@@ -1123,7 +1182,7 @@ func (a *infiniteArena) broadcast() {
 				packet.Pickups = append(packet.Pickups, pickup)
 			}
 		}
-		for i, effect := range a.effects {
+		for i, effect := range effects {
 			if viewer.sees(effect.X, effect.Y) {
 				mark(effectOffset + i)
 				packet.Effects = append(packet.Effects, effect)
@@ -1131,6 +1190,7 @@ func (a *infiniteArena) broadcast() {
 		}
 		for i, b := range a.bullets {
 			if viewer.sees(b.X, b.Y) {
+				a.bullets[i].publishFlight()
 				b.X, b.Y, b.VX, b.VY, b.Life = infinitePrecision(b.X), infinitePrecision(b.Y), infinitePrecision(b.VX), infinitePrecision(b.VY), infinitePrecision(b.Life)
 				mark(bulletOffset + i)
 				packet.Bullets = append(packet.Bullets, b)

@@ -1,6 +1,9 @@
 package main
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 // Reference wire encoding retained for regression tests. Production builds
 // encode both direct and periodic snapshots from stateWire.
@@ -54,7 +57,24 @@ func (h *Hub) stateMessage(r *Room) map[string]any {
 		v.Life = rounded(v.Life)
 		ps = append(ps, v)
 	}
-	s := map[string]any{"type": "state", "tick": g.Tick, "generation": g.Generation, "phase": g.Phase, "phaseTime": rounded(g.PhaseTime), "round": g.Round, "roundClock": rounded(g.Clock), "winner": g.Winner, "scores": g.Scores, "tanks": ts, "bullets": bs, "pickups": ps, "events": g.events, "rules": g.settings(), "objectives": snapshotObjectives(g.Objectives)}
+	events := append([]Event(nil), g.events...)
+	for _, event := range g.projectileEvents {
+		if event.Generation != g.Generation || g.Tick-event.Tick >= projectileEffectHistoryTicks {
+			continue
+		}
+		duplicate := false
+		for _, existing := range events {
+			if existing.ID == event.ID {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			events = append(events, event)
+		}
+	}
+	sort.Slice(events, func(i, j int) bool { return events[i].ID < events[j].ID })
+	s := map[string]any{"type": "state", "tick": g.Tick, "generation": g.Generation, "phase": g.Phase, "phaseTime": rounded(g.PhaseTime), "round": g.Round, "roundClock": rounded(g.Clock), "winner": g.Winner, "scores": g.Scores, "tanks": ts, "bullets": bs, "pickups": ps, "events": events, "rules": g.settings(), "objectives": snapshotObjectives(g.Objectives)}
 	if len(boosted) > 0 {
 		s["boostedBulletIds"] = boosted
 	}

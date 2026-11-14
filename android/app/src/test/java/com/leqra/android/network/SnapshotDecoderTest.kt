@@ -7,6 +7,26 @@ import org.junit.Test
 
 class SnapshotDecoderTest {
     @Test
+    fun completedProjectilePathsDecodeForFixedAndInfinityWithoutChangingAuthority() {
+        val descriptor = """{"id":17,"owner":0,"colorIndex":3,"startTick":1,"endTick":1.25,"kind":"cannon","radius":18,"points":[{"x":10,"y":20,"tick":1},{"x":13,"y":20,"tick":1.25}]}"""
+        for (fixed in listOf(false, true)) {
+            val packet = JSONObject("""{"type":"state","tick":2,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0,"effects":[{"id":1,"kind":"impact","flight":$descriptor}]}""")
+            if (fixed) { packet.put("phase", "playing"); packet.put("events", org.json.JSONArray().put(JSONObject().put("id", 1).put("type", "impact").put("flight", JSONObject(descriptor)))) }
+            val state = SnapshotDecoder().decode(packet)
+            assertTrue(state.bullets.isEmpty())
+            assertEquals(17, state.effects.single().flight!!.id)
+            assertEquals(0, state.effects.single().flight!!.owner)
+            assertEquals(1.25, state.effects.single().flight!!.points.last().tick, 0.0)
+        }
+        val bad = JSONObject().put("id", 1).put("flight", JSONObject(descriptor).put("points", org.json.JSONArray()))
+        assertNull(ProtocolJson.arenaEffect(bad).flight)
+        val legacy = JSONObject(descriptor).apply { remove("kind"); remove("radius") }
+        assertEquals("cannon", ProtocolJson.arenaEffect(JSONObject().put("flight", legacy)).flight!!.kind)
+        assertEquals(2.0, ProtocolJson.roomRules(JSONObject()).infinityBotSpawnRate, 0.0)
+        assertEquals(.5, ProtocolJson.roomRules(JSONObject().put("infinityBotSpawnRate", .5)).infinityBotSpawnRate, 0.0)
+        assertEquals(4.0, ProtocolJson.rules(com.leqra.core.RoomRules(infinityBotSpawnRate = 4.0)).getDouble("infinityBotSpawnRate"), 0.0)
+    }
+    @Test
     fun spectatorPacketsKeepFullRankingFollowTargetAndDeadDistantTank() {
         val packet = JSONObject("""{"type":"state","tick":24,"spectating":true,"following":81,"tanks":[{"id":81,"name":"Far Tank","x":240000,"y":-300000,"hp":0}],"bullets":[],"leaderboard":[],"players":2,"tankCount":24}""")
         repeat(24) { packet.getJSONArray("leaderboard").put(JSONObject().put("id", it + 81).put("name", "Tank $it").put("score", 24 - it).put("bot", it > 1)) }

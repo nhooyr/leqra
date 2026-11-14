@@ -104,7 +104,21 @@ object ProtocolJson {
             tick = json.intOrNull("tick"),
             spawnSerial = json.intOrNull("spawnSerial"),
             shotSerial = json.longOrNull("shotSerial"),
+            flight = json.optJSONObject("flight")?.let { runCatching { projectileFlight(it) }.getOrNull() },
         )
+
+    private fun projectileFlight(json: JSONObject): ProjectileFlight {
+        require(json.has("startTick") && json.has("endTick"))
+        val points = json.getJSONArray("points")
+        require(points.length() in 2..32)
+        val id = json.getInt("id")
+        val owner = json.getInt("owner")
+        val color = json.getInt("colorIndex")
+        require(json.getDouble("id") == id.toDouble() && json.getDouble("owner") == owner.toDouble() && json.getDouble("colorIndex") == color.toDouble())
+        return ProjectileFlight(id, owner, color, json.number("startTick"), json.number("endTick"),
+            points.objects { require(it.has("x") && it.has("y") && it.has("tick")); ProjectileFlightPoint(it.number("x"), it.number("y"), it.number("tick")) },
+            json.optString("kind", "cannon"), json.number("radius", 18.0))
+    }
 
     fun leaderboardEntry(json: JSONObject) =
         LeaderboardEntry(
@@ -178,6 +192,7 @@ object ProtocolJson {
             infinityRandomBots = json.optBoolean("infinityRandomBots", false),
             infinityBotDifficulty = json.optString("infinityBotDifficulty", "normal"),
             infinityRandomDifficulty = json.optBoolean("infinityRandomDifficulty", false),
+            infinityBotSpawnRate = json.number("infinityBotSpawnRate", 2.0),
             teamMode = json.optString("teamMode", "ffa"),
             mapSize = json.optString("mapSize", "large"),
             portraitMaze = json.optBoolean("portraitMaze", false),
@@ -214,6 +229,7 @@ object ProtocolJson {
             put("infinityRandomBots", rules.infinityRandomBots)
             put("infinityBotDifficulty", rules.infinityBotDifficulty)
             put("infinityRandomDifficulty", rules.infinityRandomDifficulty)
+            put("infinityBotSpawnRate", rules.infinityBotSpawnRate)
             put("teamMode", rules.teamMode)
             put("mapSize", rules.mapSize)
             put("portraitMaze", rules.portraitMaze)

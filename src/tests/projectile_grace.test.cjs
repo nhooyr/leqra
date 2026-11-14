@@ -8,7 +8,7 @@ const specs=[['',282,3.5],['homing',235,5],['grenade',205,6],['cannon',1128,14],
 function tank(id,x=200,y=200){return{id,x,y,r:17,alive:true,team:id+1,invulnerable:0};}
 function boot(kind='',speed=282,radius=3.5,extra={},walls=[]){
  const owner=tank(0),shell={owner:0,x:199.7,y:200+owner.r+radius-.001,vx:speed,vy:0,r:radius,kind,age:.195,life:1,bounces:0,trail:[],seekDelay:1,rangeLeft:1000,...extra};
- const noop=()=>{},s={Math,distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),blastEffect:noop,cols:12,rows:10,CELL:84,WALL:8,W:1008,H:840,wallIndex:null,walls,tanks:[owner],bullets:[shell],hits:[],
+ const noop=()=>{},s={mode:'room',fire(){},Math,distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),blastEffect:noop,cols:12,rows:10,CELL:84,WALL:8,W:1008,H:840,wallIndex:null,walls,tanks:[owner],bullets:[shell],hits:[],
   clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),angleDelta:(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a)),isEnemy:(a,b)=>a.id!==b.id&&a.team!==b.team,currentRules:()=>({friendlyFire:false}),
   burst:noop,ricochetSound:noop,impactEffect:noop,
   hurt(target,b){s.hits.push(target.id);target.alive=false;}};

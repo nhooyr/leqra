@@ -117,6 +117,7 @@ func (g *Game) resetLobby() {
 	g.survivalCheckpoint = nil
 	g.Scores = [maxTanks]int{}
 	g.events = nil
+	g.projectileEvents = nil
 	g.stats = nil
 	g.matchReport, g.matchReportWire = nil, nil
 }

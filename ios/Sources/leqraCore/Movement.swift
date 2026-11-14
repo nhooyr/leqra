@@ -3,6 +3,11 @@ import Foundation
 /// Movement shared by offline play and online prediction. Values and operation
 /// order follow game.go's steerTank and the browser prediction implementation.
 public enum TankMovement {
+    /// Starman supplies the movement and turning benefit of two Speed pickups
+    /// without consuming, replacing or extending separately collected boosts.
+    public static func effectiveSpeedStacks(_ tank: ArenaTank) -> Int {
+        max(tank.speedTime > 0 ? max(1, min(5, tank.speedStacks)) : 0, tank.starmanTime > 0 ? 2 : 0)
+    }
     /// Present a fractional tick along the same path endpoints as the fixed
     /// simulation. Fractional Euler steps trace a different curve from a full
     /// tick, resetting the displayed velocity at every tick boundary.
@@ -24,7 +29,7 @@ public enum TankMovement {
             move(&partial, input, alpha * tick)
             return partial
         }
-        if tank.speedStacks != next.speedStacks || (tank.speedTime > 0) != (next.speedTime > 0) {
+        if effectiveSpeedStacks(tank) != effectiveSpeedStacks(next) {
             // Equipment expiry chooses the next tick's lower speed before
             // movement. A still-boosted start tangent would overshoot that
             // endpoint and then pull the display backwards.
@@ -50,7 +55,7 @@ public enum TankMovement {
         let prior = previous.flatMap { value -> ArenaTank? in
             guard value.spawnSerial == tank.spawnSerial, value.hp == tank.hp,
                   (value.ghostTime > 0) == (tank.ghostTime > 0),
-                  value.speedStacks == tank.speedStacks,
+                  effectiveSpeedStacks(value) == effectiveSpeedStacks(tank),
                   hypot(value.x - tank.x, value.y - tank.y) <= 84,
                   canInterpolate(value, tank) else { return nil }
             return value
@@ -128,12 +133,13 @@ public enum TankMovement {
         return (atan2(sin(angle), cos(angle)), throttle)
     }
 
-    public static func step(tank: inout ArenaTank, input: GameInput, dt: Double, maze: InfiniteMaze) {
+    public static func step(tank: inout ArenaTank, input: GameInput, dt: Double, maze: InfiniteMaze, ageStarman: Bool = true) {
         if let world = maze.world {
-            step(tank: &tank, input: input, dt: dt, walls: world.walls, width: world.width, height: world.height)
+            step(tank: &tank, input: input, dt: dt, walls: world.walls, width: world.width, height: world.height, ageStarman: ageStarman)
             return
         }
         guard dt > 0, dt <= 0.1, tank.hp > 0 else { return }
+        if ageStarman { tank.starmanTime = max(0, tank.starmanTime - dt) }
         tank.speedTime = max(0, tank.speedTime - dt)
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
         let wasGhost = tank.ghostTime > 0
@@ -142,7 +148,7 @@ public enum TankMovement {
             let point = maze.phaseExit(x: tank.x, y: tank.y)
             tank.x = point.x; tank.y = point.y
         }
-        let stacks = tank.speedTime > 0 ? max(1, min(5, tank.speedStacks)) : 0
+        let stacks = effectiveSpeedStacks(tank)
         let steering = steer(angle: tank.angle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
         tank.angle = steering.angle
         let speed = 128 * (1 + 0.65 * Double(stacks)), oldX = tank.x, oldY = tank.y
@@ -156,14 +162,15 @@ public enum TankMovement {
     /// Prediction for fixed mazes uses the server's circle separation and map
     /// bounds, rather than Infinity's endpoint rejection.
     public static func step(tank: inout ArenaTank, input: GameInput, dt: Double,
-                            walls: [MazeWall], width: Double, height: Double) {
+                            walls: [MazeWall], width: Double, height: Double, ageStarman: Bool = true) {
         guard dt > 0, dt <= 0.1, tank.hp > 0, width >= 42, height >= 42 else { return }
+        if ageStarman { tank.starmanTime = max(0, tank.starmanTime - dt) }
         tank.speedTime = max(0, tank.speedTime - dt)
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
         let wasGhost = tank.ghostTime > 0
         tank.ghostTime = max(0, tank.ghostTime - dt)
         if wasGhost && tank.ghostTime == 0 { finishGhost(tank: &tank, walls: walls, width: width, height: height) }
-        let stacks = tank.speedTime > 0 ? max(1, min(5, tank.speedStacks)) : 0
+        let stacks = effectiveSpeedStacks(tank)
         let steering = steer(angle: tank.angle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
         tank.angle = steering.angle
         let speed = 128 * (1 + 0.65 * Double(stacks)), oldX = tank.x, oldY = tank.y
@@ -211,15 +218,16 @@ public enum TankMovement {
         tank.y = min(max(tank.y, 21), world.height - 21)
     }
 
-    static func stepBot(tank: inout ArenaTank, input: GameInput, dt: Double, world: ArenaWorld) {
+    static func stepBot(tank: inout ArenaTank, input: GameInput, dt: Double, world: ArenaWorld, ageStarman: Bool = true) {
         guard dt > 0, dt <= 0.1, tank.hp > 0 else { return }
+        if ageStarman { tank.starmanTime = max(0, tank.starmanTime - dt) }
         tank.speedTime = max(0, tank.speedTime - dt)
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
         let wasGhost = tank.ghostTime > 0
         tank.ghostTime = max(0, tank.ghostTime - dt)
         if wasGhost && tank.ghostTime == 0 { finishGhost(tank: &tank, walls: world.walls, width: world.width, height: world.height) }
         let tuning = BotDifficulty(rawValue: tank.difficulty) ?? .normal
-        let stacks = tank.speedTime > 0 ? max(1, min(5, tank.speedStacks)) : 0
+        let stacks = effectiveSpeedStacks(tank)
         var throttle = 0.0
         let magnitude = hypot(input.stickX, input.stickY)
         if magnitude > 0.1 {

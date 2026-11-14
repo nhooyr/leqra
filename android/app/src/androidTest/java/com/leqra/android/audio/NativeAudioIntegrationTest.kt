@@ -25,6 +25,46 @@ class NativeAudioIntegrationTest {
     }
 
     @Test
+    fun sceneEntryWarmsSilentOutputBeforeTheFirstProjectile() {
+        lateinit var audio: NativeAudio
+        main { audio = NativeAudio(instrumentation.targetContext) }
+        val idle = ArenaSnapshot(tanks = listOf(ArenaTank(id = 1)))
+        val cold = ArrayList<Long>()
+        val warm = ArrayList<Long>()
+        try {
+            waitUntil("PCM bank did not prepare") { audio.preparedVoiceCount == AudioCue.entries.size * 2 }
+            repeat(5) {
+                main { audio.pause() }
+                SystemClock.sleep(50)
+                main { audio.play(AudioCue.REGULAR) }
+                waitUntil("Cold first cue did not drain") { audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 }
+                cold += audio.lastCueLatencyNanos
+                main { audio.pause() }
+                SystemClock.sleep(50)
+                val starts = audio.outputStarts
+                main { audio.updateStarman(idle, 1, null, true) }
+                waitUntil("The arena must warm its silent output before firing") { audio.outputStarts > starts && audio.framesWritten > 0 }
+                assertEquals(0, audio.pendingCueCount)
+                assertEquals(0, audio.activeLoopCount)
+                main { audio.play(AudioCue.REGULAR) }
+                waitUntil("Warm first cue did not drain") { audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 }
+                warm += audio.lastCueLatencyNanos
+                assertEquals("First projectile must reuse its prepared hardware stream", starts + 1, audio.outputStarts)
+            }
+            File(instrumentation.targetContext.cacheDir, "first-shot-audio.txt").writeText("cold first cue ms ${percentiles(cold)}\nscene-prepared first cue ms ${percentiles(warm)}\n")
+            main {
+                audio.pause(); audio.enabled = false
+                audio.updateStarman(idle, 1, null, true)
+                audio.volume = 0f; audio.enabled = true
+                audio.updateStarman(idle, 1, null, true)
+            }
+            val starts = audio.outputStarts
+            SystemClock.sleep(80)
+            assertEquals("Muted/zero-volume scene entry never opens hardware output", starts, audio.outputStarts)
+        } finally { main { audio.release() } }
+    }
+
+    @Test
     fun observerKeepsOrdinaryEffectsOutputWithoutLocalMusicAndStopsAtTheMenu() {
         lateinit var audio: NativeAudio
         main { audio = NativeAudio(instrumentation.targetContext) }
@@ -178,7 +218,7 @@ class NativeAudioIntegrationTest {
         try {
             waitUntil("Starman loop bank did not prepare") { audio.preparedLoop }
             main {
-                audio.updateStarman(snapshot, 1, null, true)
+                audio.updateStarman(snapshot, 1, null, false)
                 assertEquals(0, audio.outputStarts)
                 audio.enabled = false
                 audio.updateStarman(snapshot, 1, 2, true)

@@ -526,6 +526,7 @@ body.touch-landscape .header-right>button{height:30px;min-height:30px}
 
 /* Keep the complete Super fast interval visible in compact rule dialogs. */
 @media(max-width:600px){.rules-grid .pickup-frequency{grid-column:1/-1}}
+.rules-grid .infinity-spawn-rate{grid-column:1/-1}
 
 /* Matchmaking has its own scrolling panel; it never changes canvas geometry. */
 .queue-launch{margin-top:10px;min-height:43px;font-size:11px}

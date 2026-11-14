@@ -29,9 +29,17 @@ class PracticeArena(
     private var starDuration = 8.0
     private var activeRules: RoomRules? = null
     private val roamingIDs = mutableSetOf<Int>()
+    private val roamingHomes = mutableMapOf<Int, Int>()
+    private var nextRoamingID = 2
+    private var nextRoamingSpawn = 0.0
     private var configured = false
     private var randomState = if (seed == 0) 1 else seed
     private var time = 0.0
+    private var stepStarted = 0.0
+    private var visualTime = 0.0
+    private var lastVisualWallTime: Double? = null
+    private val terminalFlights = ProjectileFlightPresentation()
+    val hasPendingProjectileFlights: Boolean get() = terminalFlights.hasPending
     private var nextPickup = 0.0
     private var nextID = 1
     private var nextEffect = 0
@@ -55,6 +63,12 @@ class PracticeArena(
         var seekDelay: Double = 0.0,
         val boosted: Boolean = false,
         var rangeLeft: Double? = null,
+        var published: Boolean = false,
+        var pathTick: Double = 0.0,
+        val birthX: Double = wire.x,
+        val birthY: Double = wire.y,
+        val birthTick: Double = pathTick,
+        var flightPoints: MutableList<ProjectileFlightPoint>? = null,
     ) {
         val radius
             get() = spec(wire.kind).radius
@@ -210,42 +224,13 @@ class PracticeArena(
             }
             configured = true
             roamingIDs.clear()
+            roamingHomes.clear()
+            nextRoamingID = max(nextRoamingID, (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1)
+            nextRoamingSpawn = time
             snapshot.tanks.forEachIndexed { i, t ->
                 t.team = if (rules.teamMode == "teams") if (t.team > 0) t.team else i % 2 + 1 else 0
                 if (t.team > 0)
                     t.colorIndex = rules.teamColors.getOrNull(t.team - 1) ?: t.colorIndex
-            }
-            if (rules.infinityRandomBots) {
-                val levels = BotDifficulty.names
-                val selected = BotDifficulty.index(rules.infinityBotDifficulty)
-                val firstID = (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1
-                repeat(8) { offset ->
-                    val id = firstID + offset
-                    val p = spawnPoint(snapshot.tanks[0], 2, 5)
-                    val team = if (rules.teamMode == "teams") snapshot.tanks.size % 2 + 1 else 0
-                    val color =
-                        if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0
-                        else GamePalette.index(offset + 1)
-                    val level =
-                        if (rules.infinityRandomDifficulty) levels[random(selected + 1)]
-                        else levels[selected]
-                    snapshot.tanks +=
-                        ArenaTank(
-                            id = id,
-                            name = "BOT ${offset+1}",
-                            x = p.x,
-                            y = p.y,
-                            angle = unitRandom() * 2 * PI - PI,
-                            colorIndex = color,
-                            team = team,
-                            bot = true,
-                            spawnProtected = true,
-                            spawnSerial = 1,
-                            invulnerable = 1.0,
-                            difficulty = level,
-                        )
-                    roamingIDs.add(id)
-                }
             }
         }
         updateStandings()
@@ -269,11 +254,13 @@ class PracticeArena(
                 snapshot.result != null
         )
             return
+        stepStarted = time
         time += dt
         snapshot.tick++
         snapshot.effects = snapshot.effects.filter { time - (effectTimes[it.id] ?: 0.0) < .15 }
         val live = snapshot.effects.map { it.id }.toSet()
         effectTimes.keys.retainAll(live)
+        populateRoamingBots()
         populatePickups(dt)
         for (i in snapshot.tanks.indices) {
             val t = snapshot.tanks[i]
@@ -296,7 +283,7 @@ class PracticeArena(
                 val controls = if (t.bot) botInput(i, dt) else inputs[t.id] ?: GameInput()
                 if (t.bot && t.id in fireBlocked) controls.fire = false
                 movementInputs[t.id] = controls.copy()
-                move(t, controls, dt)
+                move(t, controls, dt, ageStarman = false)
                 collectPickups(i)
                 weaponControl(i, controls.fire)
             }
@@ -359,9 +346,9 @@ class PracticeArena(
             if (!advance(p, span)) continue
             if (p.wire.life > 1e-9 && (p.rangeLeft ?: 1.0) > 1e-7) {
                 projectiles[survivors++] = p
-            } else if (p.wire.kind == "grenade") detonate(p.wire)
+            } else if (p.wire.kind == "grenade") detonate(p.wire, completedFlight(p))
             else if (p.wire.kind == "homing" && maze.world != null)
-                effect("impact", p.wire.x, p.wire.y, p.wire.owner)
+                effect("impact", p.wire.x, p.wire.y, p.wire.owner, flight = completedFlight(p))
         }
         while (projectiles.size > survivors) projectiles.removeAt(projectiles.lastIndex)
         snapshot.bullets = projectiles.map { it.wire.copy() }
@@ -369,14 +356,54 @@ class PracticeArena(
         updateStandings()
     }
 
+    private fun populateRoamingBots() {
+        val rules = activeRules ?: return
+        if (maze.world != null || !configured) return
+        val humans = snapshot.tanks.filter { !it.bot }
+        val living = humans.filter { it.hp > 0 }
+        val budget = if (rules.infinityRandomBots) min(128, humans.size * 16) else 0
+        val retired = snapshot.tanks.filter { bot -> bot.id in roamingIDs &&
+            (budget == 0 || humans.none { abs(it.x - bot.x) <= 16 * 84 && abs(it.y - bot.y) <= 16 * 84 }) }.map { it.id }.toMutableSet()
+        val excess = (roamingIDs.size - retired.size - budget).coerceAtLeast(0)
+        if (excess > 0) retired += roamingIDs.filter { it !in retired }.sortedDescending().take(excess)
+        if (retired.isNotEmpty()) {
+            snapshot.tanks = snapshot.tanks.filter { it.id !in retired }
+            projectiles.removeAll { it.wire.owner in retired }
+            snapshot.bullets = snapshot.bullets.filter { it.owner !in retired }
+            for (id in retired) {
+                roamingIDs.remove(id); roamingHomes.remove(id); held.remove(id); movementInputs.remove(id)
+                fireBlocked.remove(id); botCourses.remove(id); botDecisions.remove(id); dumbBrains.remove(id)
+                nextBoostEffects.remove(id); motionPresenters.remove(id)
+            }
+        }
+        if (time < nextRoamingSpawn || living.isEmpty() || roamingIDs.size >= budget) return
+        val rate = rules.infinityBotSpawnRate.takeIf { it in listOf(.5, 1.0, 2.0, 4.0) } ?: 2.0
+        nextRoamingSpawn = time + (1 + unitRandom()) / rate
+        repeat(min(living.size, budget - roamingIDs.size)) {
+            val anchor = living.minWith(compareBy<ArenaTank> { human -> roamingHomes.values.count { it == human.id } }.thenBy { it.id })
+            val id = max(nextRoamingID, (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1)
+            nextRoamingID = id + 1
+            val p = spawnPoint(anchor, 2, 5)
+            val selected = BotDifficulty.index(rules.infinityBotDifficulty)
+            val level = if (rules.infinityRandomDifficulty) BotDifficulty.names[random(selected + 1)] else BotDifficulty.names[selected]
+            val team = if (rules.teamMode == "teams") snapshot.tanks.size % 2 + 1 else 0
+            snapshot.tanks += ArenaTank(id = id, name = "Bot ${id - 1}", x = p.x, y = p.y, angle = unitRandom() * 2 * PI - PI,
+                colorIndex = if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0 else GamePalette.index(id - 1), team = team,
+                bot = true, spawnProtected = true, spawnSerial = 1, invulnerable = 1.0, difficulty = level)
+            roamingIDs += id
+            roamingHomes[id] = anchor.id
+        }
+    }
+
     fun presentationSnapshot(
         fraction: Double,
         localInput: GameInput? = null,
         localInput2: GameInput? = null,
+        nowSeconds: Double = System.nanoTime() / 1e9,
     ): ArenaSnapshot {
         if (!fraction.isFinite() || fraction < 0 || snapshot.result != null) {
             motionPresenters.values.forEach { it.reset() }
-            return snapshot
+            return withTerminalFlights(snapshot, nowSeconds)
         }
         val f = min(fraction, 1.0)
         val dt = f / 60
@@ -400,8 +427,13 @@ class PracticeArena(
             )
         val liveLocals = result.tanks.filter { !it.bot && it.hp > 0 }.map { it.id }.toSet()
         motionPresenters.keys.retainAll(liveLocals)
-        if (dt <= 0) return result
+        if (dt <= 0) {
+            projectiles.forEach { it.published = true; if (it.wire.kind != "cannon") it.flightPoints = null }
+            return withTerminalFlights(result, nowSeconds)
+        }
         result.bullets = projectiles.map { original ->
+            original.published = true
+            if (original.wire.kind != "cannon") original.flightPoints = null
             val p = original.deepCopy()
             val span = min(dt, p.wire.life)
             p.wire.life -= span
@@ -415,7 +447,16 @@ class PracticeArena(
             advance(p, span, visualOnly = true)
             p.wire
         }
-        return result
+        return withTerminalFlights(result, nowSeconds)
+    }
+
+    private fun withTerminalFlights(result: ArenaSnapshot, now: Double): ArenaSnapshot {
+        val elapsed = lastVisualWallTime?.let { (now - it).coerceIn(0.0, .1) } ?: 0.0
+        if (now.isFinite()) lastVisualWallTime = now
+        visualTime = max(time, visualTime + elapsed)
+        terminalFlights.accept(snapshot.effects, visualTime)
+        val image = terminalFlights.render(result.bullets, result.effects, visualTime)
+        return result.copy(bullets = image.bullets, effects = image.effects)
     }
 
     private fun present(
@@ -448,10 +489,10 @@ class PracticeArena(
         else TankMovement.presentation(t, input, fraction, move = movement, canInterpolate = clear)
     }
 
-    private fun move(t: ArenaTank, input: GameInput, dt: Double) {
+    private fun move(t: ArenaTank, input: GameInput, dt: Double, ageStarman: Boolean = true) {
         val world = maze.world
-        if (t.bot && world != null) TankMovement.stepBot(t, input, dt, world)
-        else TankMovement.step(t, input, dt, maze)
+        if (t.bot && world != null) TankMovement.stepBot(t, input, dt, world, ageStarman)
+        else TankMovement.step(t, input, dt, maze, ageStarman)
     }
 
     private fun random(maximum: Int): Int {
@@ -494,7 +535,7 @@ class PracticeArena(
         val old = snapshot.tanks[index]
         val p =
             respawnLocation?.invoke(old)
-                ?: spawnPoint(if (old.bot) snapshot.tanks[0] else old, 2, 5)
+                ?: spawnPoint(if (old.id in roamingIDs) snapshot.tanks.filter { !it.bot && it.hp > 0 }.minByOrNull { hypot(it.x - old.x, it.y - old.y) } ?: old else if (old.bot) snapshot.tanks[0] else old, 2, 5)
         val replacement =
             ArenaTank(
                 id = old.id,
@@ -646,6 +687,7 @@ class PracticeArena(
         y: Double,
         owner: Int,
         points: List<BeamPoint> = emptyList(),
+        flight: ProjectileFlight? = null,
     ) {
         snapshot.effects =
             (snapshot.effects +
@@ -656,6 +698,7 @@ class PracticeArena(
                         y = y,
                         owner = owner,
                         points = points,
+                        flight = flight,
                     ))
                 .takeLast(48)
         effectTimes[nextEffect] = time
@@ -664,22 +707,11 @@ class PracticeArena(
     private fun botInput(index: Int, dt: Double): GameInput {
         val bot = snapshot.tanks[index]
         val targets =
-            if (maze.world == null && bot.team == 0) listOf(snapshot.tanks[0]) else snapshot.tanks
+            if (maze.world == null && bot.id in roamingIDs && bot.team == 0) snapshot.tanks.filter { !it.bot } else snapshot.tanks
         val pilot =
             targets
                 .filter { it.hp > 0 && opposes(bot.id, it) }
                 .minByOrNull { hypot(it.x - bot.x, it.y - bot.y) } ?: return GameInput()
-        if (
-            maze.world == null &&
-                bot.id in roamingIDs &&
-                hypot(bot.x - pilot.x, bot.y - pilot.y) > 10 * 84
-        ) {
-            val p = spawnPoint(pilot, 3, 5)
-            bot.x = p.x
-            bot.y = p.y
-            botCourses.remove(bot.id)
-            return GameInput()
-        }
         val level = bot.difficulty.ifEmpty { botDifficulty }
         val tuning =
             when (level) {
@@ -840,7 +872,7 @@ class PracticeArena(
         if (pressed) {
             val grenades = projectiles.filter { it.wire.owner == t.id && it.wire.kind == "grenade" }
             if (grenades.isNotEmpty()) {
-                grenades.forEach { detonate(it.wire) }
+                grenades.forEach { detonate(it.wire, completedFlight(it)) }
                 projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" }
                 fireBlocked.add(t.id)
                 return
@@ -905,6 +937,7 @@ class PracticeArena(
                         rangeLeft =
                             if (world != null && kind == "homing") world.width + world.height
                             else null,
+                        pathTick = stepStarted * 60,
                     )
                 if (launch.bounced) {
                     p.wire.bounces = 1
@@ -912,7 +945,7 @@ class PracticeArena(
                     p.rangeLeft = p.rangeLeft?.minus(launch.distance)
                 }
                 val muzzle = max(0.0, (if (kind == "cannon") 32.0 else 28.0) - launch.distance)
-                if (advance(p, muzzle / spec.speed)) projectiles.add(p)
+                if (advance(p, muzzle / spec.speed, recordTime = false)) projectiles.add(p)
             }
             if (!boosted || kind == "grenade" || time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0)) {
                 nextBoostEffects[t.id] = time + 4.0 / 60
@@ -970,9 +1003,32 @@ class PracticeArena(
         return target?.let { TargetHit(it, best) }
     }
 
-    private fun advance(p: Projectile, dt: Double, visualOnly: Boolean = false): Boolean {
+    private fun recordFlightPoint(p: Projectile) {
+        if (p.published && p.wire.kind != "cannon") return
+        val points = p.flightPoints ?: ArrayList<ProjectileFlightPoint>(4).also {
+            it += ProjectileFlightPoint(p.birthX, p.birthY, p.birthTick)
+            p.flightPoints = it
+        }
+        val point = ProjectileFlightPoint(p.wire.x, p.wire.y, p.pathTick)
+        if (points.lastOrNull() == point) return
+        if (points.size >= 32) points.removeAt(1)
+        points += point
+    }
+
+    private fun completedFlight(p: Projectile): ProjectileFlight? {
+        if (p.published && p.wire.kind != "cannon") return null
+        recordFlightPoint(p)
+        val recorded = p.flightPoints ?: return null
+        val points = if (recorded.size == 1) recorded + recorded.single() else recorded.toList()
+        if (points.size < 2) return null
+        return ProjectileFlight(p.wire.id, p.wire.owner, p.wire.colorIndex, points.first().tick, points.last().tick,
+            points, p.wire.kind.ifEmpty { "regular" }, p.radius)
+    }
+
+    private fun advance(p: Projectile, dt: Double, visualOnly: Boolean = false, recordTime: Boolean = true): Boolean {
         var dx = p.wire.vx * dt
         var dy = p.wire.vy * dt
+        var remaining = dt
         repeat(4) {
             val b = p.wire
             val wall = maze.projectileHit(b.kind, b.x, b.y, dx, dy, p.radius)
@@ -992,10 +1048,13 @@ class PracticeArena(
                 b.y += dy * target.fraction
                 p.rangeLeft = p.rangeLeft?.minus(hypot(dx, dy) * target.fraction)
                 if (!visualOnly) {
-                    if (b.kind == "grenade") detonate(b)
+                    if (recordTime) p.pathTick += remaining * target.fraction * 60
+                    val flight = completedFlight(p)
+                    if (b.kind == "grenade") detonate(b, flight)
                     else {
                         if ((b.kind == "homing" || b.kind == "cannon"))
-                            effect("impact", b.x, b.y, b.owner)
+                            effect("impact", b.x, b.y, b.owner, flight = flight)
+                        else if (flight != null) effect("projectileFlight", b.x, b.y, b.owner, flight = flight)
                         hurt(target.index, b.owner)
                     }
                 }
@@ -1005,17 +1064,25 @@ class PracticeArena(
                 b.x += dx
                 b.y += dy
                 p.rangeLeft = p.rangeLeft?.minus(hypot(dx, dy))
+                if (!visualOnly && recordTime) p.pathTick += remaining * 60
                 return true
             }
             b.bounces++
             val limit =
                 if ((b.kind == "homing" || b.kind == "rapid" || b.kind == "grenade")) 128 else 22
             if (!visualOnly && b.bounces > limit) {
-                if (b.kind == "grenade") detonate(b)
+                val flight = completedFlight(p)
+                if (b.kind == "grenade") detonate(b, flight)
+                else if (flight != null) effect("projectileFlight", b.x, b.y, b.owner, flight = flight)
                 return false
             }
             b.x += dx * wall.fraction + wall.nx * .12
             b.y += dy * wall.fraction + wall.ny * .12
+            if (!visualOnly) {
+                if (recordTime) p.pathTick += remaining * wall.fraction * 60
+                recordFlightPoint(p)
+            }
+            remaining *= 1 - wall.fraction
             p.rangeLeft = p.rangeLeft?.minus(hypot(dx, dy) * wall.fraction)
             dx *= 1 - wall.fraction
             dy *= 1 - wall.fraction
@@ -1130,8 +1197,8 @@ class PracticeArena(
         hit?.let { hurt(it, t.id) }
     }
 
-    private fun detonate(b: ArenaBullet) {
-        effect("blast", b.x, b.y, b.owner)
+    private fun detonate(b: ArenaBullet, flight: ProjectileFlight? = null) {
+        effect("blast", b.x, b.y, b.owner, flight = flight)
         for (i in snapshot.tanks.indices) {
             val t = snapshot.tanks[i]
             if (

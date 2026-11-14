@@ -13,7 +13,7 @@ import com.leqra.core.ArenaSnapshot
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReferenceArray
 
-/** Lazy low-latency native output. Never requests audio focus, so music keeps playing. */
+/** Low-latency native output. Never requests audio focus, so music keeps playing. */
 class NativeAudio(context: Context) {
     private val vibrator = context.getSystemService(Vibrator::class.java)
     private val mixer = AudioVoiceMixer()
@@ -27,6 +27,7 @@ class NativeAudio(context: Context) {
     private var previewStop: Runnable? = null
     private var gameplayStop: Runnable? = null
     private var sceneActive = false
+    private var sceneOutputPrepared = false
     internal val pendingCueCount: Int
         get() = pending.size
 
@@ -130,6 +131,7 @@ class NativeAudio(context: Context) {
     fun pause() {
         starmanRequested = false
         sceneActive = false
+        sceneOutputPrepared = false
         gameplayStop?.let(main::removeCallbacks)
         gameplayStop = null
         previewStop?.let(main::removeCallbacks)
@@ -182,6 +184,16 @@ class NativeAudio(context: Context) {
                 gameplayStop = null
                 if (!this.sceneActive) pause()
             }.also { main.postDelayed(it, 18) }
+        }
+        // Start the silent hardware stream on its worker when entering a game,
+        // so the first projectile does not also have to initialize AudioTrack.
+        // Muted/menu/background states never prepare output; unmuting during a
+        // live scene warms once on the next frame. A failed route retries on a cue.
+        val prepare = sceneActive && enabled && volume > 0 && !released
+        if (!prepare) sceneOutputPrepared = false
+        else if (!sceneOutputPrepared) {
+            sceneOutputPrepared = true
+            resume()
         }
         val wanted = enabled && volume > 0 && !released && StarmanLoopState.active(snapshot, localID, localID2, gameplayActive)
         if (wanted != starmanRequested) {

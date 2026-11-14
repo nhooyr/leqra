@@ -4,7 +4,7 @@ const {readFileSync}=require('node:fs'),{assetPath}=require('./web_assets.cjs');
 const source=readFileSync(assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot(){
- const noop=()=>{},s={mode:'room',time:0,bulletId:0,bullets:[],tanks:[],traces:[],MACHINE_CAPACITY:96,LASER_COOLDOWN:.85,POWER:{laser:{color:'#fff'}},survivalBreak:()=>false,muzzleBlocked:()=>false,burst:noop,shotSound:noop,
+ const noop=()=>{},s={Net:require(assetPath('netcode.js')),mode:'room',time:0,bulletId:0,bullets:[],tanks:[],traces:[],MACHINE_CAPACITY:96,LASER_COOLDOWN:.85,POWER:{laser:{color:'#fff'}},survivalBreak:()=>false,muzzleBlocked:()=>false,burst:noop,shotSound:noop,
   projectileSpec:power=>({kind:power||'regular',cooldown:.34}),muzzleProjectile:(t,a)=>({owner:t.id,kind:t.power||'regular'}),activeAmmo:()=>0,
   laserTrace:()=>({x:100,y:100,endX:200,endY:100,points:[{x:100,y:100},{x:200,y:100}],target:null}),laserEffect:noop,detonate:b=>b.dead=true,
   canDamage:(id,t)=>t.id!==id,recordLocalDeath:noop,objectiveMode:()=>false,reduceMotion:true,addRing:noop,boom:noop,addLog:noop,updateHUD:noop};

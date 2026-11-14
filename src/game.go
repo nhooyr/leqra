@@ -177,6 +177,11 @@ type Bullet struct {
 	Color       string  `json:"color"`
 	Bounces     int     `json:"bounces"`
 	Dead        bool    `json:"-"`
+
+	flight                                  *cannonFlight
+	flightBirth                             cannonFlightPoint
+	flightAge                               float64
+	flightTracked, published, flightEmitted bool
 }
 
 func (b *Bullet) reflect(wall RayHit) {
@@ -224,6 +229,9 @@ type Event struct {
 	Player      int         `json:"player"`
 	Owner       int         `json:"owner"`
 	Text        string      `json:"text,omitempty"`
+
+	Flight *cannonFlight `json:"flight,omitempty"`
+	Pellet int           `json:"pellet,omitempty"`
 }
 type Game struct {
 	stats                             *matchStatLedger
@@ -245,6 +253,7 @@ type Game struct {
 	PhaseTime, Clock, SpawnClock      float64
 	Round, Winner, Generation, Tick   int
 	events                            []Event
+	projectileEvents                  []Event
 	nextEvent, nextBullet, nextPickup int
 	rng                               *rand.Rand
 }
@@ -390,6 +399,7 @@ func spawnCells(cols, rows int) [][2]int {
 
 func (g *Game) startRound(players [maxTanks]*Player) {
 	g.Generation++
+	g.projectileEvents = nil
 	cols, rows := g.mapDimensions()
 	g.makeMaze(cols, rows)
 	g.buildNavigation()
@@ -671,7 +681,7 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 		t.SpeedStacks = 0
 	}
 	g.advanceGhost(t, dt)
-	n := speedCount(t)
+	n := movementSpeedCount(t)
 	speedScale, turnScale := 1+boostSpeedPerStack*float64(n), 1+boostTurnPerStack*float64(n)
 	angle, throttle := steerTank(t.Angle, in, turnScale, dt)
 	t.Angle = angle
@@ -915,6 +925,16 @@ func (g *Game) fire(t *Tank) bool {
 				b.Life = math.Max(0, (g.machineTravelRange()-launchDistance)/machineSpeed)
 			}
 		}
+		{
+			x, y := b.X, b.Y
+			if target != nil || hitOK {
+				x, y = launch.x, launch.y
+			}
+			b.beginFlight(x, y, float64(g.Tick-1))
+			if hitOK && target == nil {
+				b.ensureFlight().advance(b.X, b.Y, float64(g.Tick-1), true)
+			}
+		}
 		if target != nil {
 			g.projectileTankImpact(b, target)
 		} else {
@@ -1043,6 +1063,7 @@ func (g *Game) fireLaser(t *Tank) bool {
 	if !starman || t.ShotSerial%4 == 1 || target != nil {
 		g.nextEvent++
 		g.events = append(g.events, Event{Tick: g.Tick, ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Angle: t.Angle, Generation: g.Generation, ID: g.nextEvent, Type: "laser", X: start.X, Y: start.Y, EndX: end.X, EndY: end.Y, Points: points, Color: "#f57cff", Player: t.ID, Owner: t.ID})
+		g.retainProjectileEvent(g.events[len(g.events)-1])
 		if len(g.events) > 24 {
 			g.events = g.events[len(g.events)-24:]
 		}
@@ -1187,7 +1208,12 @@ func (g *Game) guideGrenade(b *Bullet, dt, lifeBefore float64) {
 }
 func (g *Game) projectileEvent(kind string, b *Bullet, radius float64) {
 	g.nextEvent++
-	g.events = append(g.events, Event{Tick: g.Tick, Generation: g.Generation, ID: g.nextEvent, Type: kind, X: b.X, Y: b.Y, Color: b.Color, Player: -1, Owner: b.Owner, Radius: radius})
+	e := Event{Tick: g.Tick, Generation: g.Generation, ShotSerial: b.ShotSerial, SpawnSerial: b.SpawnSerial, Pellet: b.Pellet, ID: g.nextEvent, Type: kind, X: b.X, Y: b.Y, Color: b.Color, Player: -1, Owner: b.Owner, Radius: radius}
+	if kind == "impact" || kind == "blast" || kind == "projectileFlight" {
+		e.Flight = b.finishFlight()
+	}
+	g.events = append(g.events, e)
+	g.retainProjectileEvent(e)
 	if len(g.events) > 24 {
 		g.events = g.events[len(g.events)-24:]
 	}
@@ -1249,6 +1275,9 @@ func (g *Game) projectileTankImpact(b *Bullet, target *Tank) {
 	if b.Kind == "cannon" {
 		g.projectileEvent("impact", b, 32) // Cosmetic only, no splash damage.
 	}
+	if b.Kind != "homing" && b.Kind != "cannon" && b.flightTracked && !b.published {
+		g.projectileEvent("projectileFlight", b, 0)
+	}
 	g.hurt(target, b)
 }
 
@@ -1277,6 +1306,7 @@ func (g *Game) updateBullets(dt float64) {
 			g.guideGrenade(b, span, lifeBefore)
 		}
 		remaining := span
+		b.flightAge = b.Age - span
 		for step := 0; step < 4 && remaining > .00001 && !b.Dead; step++ {
 			if b.Kind == "homing" {
 				remaining = math.Min(remaining, math.Max(0, b.RangeLeft)/missileSpeed)
@@ -1287,6 +1317,7 @@ func (g *Game) updateBullets(dt float64) {
 			if target != nil && (!wallOK || first <= wall.T) {
 				b.X += dx * first
 				b.Y += dy * first
+				b.flightAge = b.Age - remaining + remaining*first
 				if b.Kind == "homing" {
 					b.RangeLeft = math.Max(0, b.RangeLeft-math.Hypot(dx, dy)*first)
 				}
@@ -1302,6 +1333,8 @@ func (g *Game) updateBullets(dt float64) {
 				}
 				b.X += dx*wall.T + wall.NX*nudge
 				b.Y += dy*wall.T + wall.NY*nudge
+				b.flightAge = b.Age - remaining + remaining*wall.T
+				b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
 				b.reflect(wall)
 				remaining *= 1 - wall.T
 				if (b.Kind != "homing" && b.Kind != "rapid" && b.Kind != "grenade" && b.Bounces > 22) || b.Bounces > 128 {
@@ -1314,6 +1347,10 @@ func (g *Game) updateBullets(dt float64) {
 			} else {
 				b.X += dx
 				b.Y += dy
+				b.flightAge = b.Age
+				if (b.Kind == "homing" || b.Kind == "grenade") && b.Age >= .1 {
+					b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
+				}
 				if b.Kind == "homing" {
 					b.RangeLeft = math.Max(0, b.RangeLeft-math.Hypot(dx, dy))
 				}
@@ -1332,6 +1369,9 @@ func (g *Game) updateBullets(dt float64) {
 		}
 		if b.X < -15 || b.X > g.World.Width+15 || b.Y < -15 || b.Y > g.World.Height+15 {
 			b.Dead = true
+		}
+		if b.Dead && !b.published && !b.flightEmitted && b.flightTracked {
+			g.projectileEvent("projectileFlight", b, 0)
 		}
 	}
 	live := g.Bullets[:0]

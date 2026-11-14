@@ -14,6 +14,9 @@ final class FrameProfiler {
     let buffs: Set<String>
     private let reflects: Bool
     private let motionMode: String?
+    private let firstShotProbe: Bool
+    private var previousBulletCount = 0
+    private var firstShots: [[String: Any]] = []
     private var motionTank: ArenaTank?
     private let motionPresenter = TankMotionPresenter()
     private var motionTick: UInt64 = 0
@@ -43,6 +46,7 @@ final class FrameProfiler {
         buffs = Set((argument("--probe-buffs") ?? "").split(separator: ",").map(String.init))
         reflects = arguments.contains("--probe-bounces")
         motionMode = argument("--probe-motion")
+        firstShotProbe = arguments.contains("--probe-first-shot")
         if motionMode != nil {
             var tank = ArenaTank(id: 1, name: "PROBE PILOT", x: 420, y: 420)
             tank.speedTime = 120; tank.speedStacks = 5
@@ -134,6 +138,22 @@ final class FrameProfiler {
             }
         }
         value.leaderboard = value.tanks.map { LeaderboardEntry(id: $0.id, name: $0.name, colorIndex: $0.colorIndex) }
+        if firstShotProbe {
+            value.tanks = Array(value.tanks.prefix(1))
+            value.tanks[0].starmanTime = 0; value.tanks[0].ghostTime = 0; value.tanks[0].invulnerable = 0
+            let shot = Int(floor(max(0, time - 1) / 0.8)), age = time - 1 - Double(shot) * 0.8
+            value.bullets = []; value.effects = []; value.boostedBulletIds = []
+            if age >= 0 && age < 0.25 {
+                value.bullets = [ArenaBullet(id: shot + 1, x: centerX + 32 + age * 420, y: centerY,
+                    vx: 420, owner: 1, kind: projectileKind, life: 5)]
+                value.effects = [ArenaEffect(id: shot + 1, kind: "shot:" + projectileKind, x: centerX, y: centerY, owner: 1)]
+                if weapon == "laser" {
+                    value.bullets = []
+                    value.effects = [ArenaEffect(id: shot + 1, kind: "laser", owner: 1,
+                        points: [BeamPoint(x: centerX + 28, y: centerY), BeamPoint(x: centerX + 400, y: centerY)])]
+                }
+            }
+        }
         return value
     }
 
@@ -154,6 +174,19 @@ final class FrameProfiler {
             previousVelocity = velocity
         }
         previousMotionPose = motionPose
+        if firstShotProbe {
+            let visible = weapon == "laser" ? rendering.effects : rendering.bullets
+            if visible > 0 && previousBulletCount == 0 {
+                firstShots.append(["elapsed": elapsed, "cpuMS": cpu * 1000, "renderMS": rendering.totalSeconds * 1000,
+                    "bulletsMS": rendering.bulletSeconds * 1000, "projectileCreations": rendering.projectileCreations,
+                    "textureCreations": rendering.textureCreations, "simulationMS": simulation * 1000,
+                    "audioMS": audio * 1000, "hudMS": hud * 1000, "nextFrameMS": 0.0])
+            } else if previousBulletCount > 0, !firstShots.isEmpty,
+                      firstShots[firstShots.count - 1]["nextFrameMS"] as? Double == 0 {
+                firstShots[firstShots.count - 1]["nextFrameMS"] = dt * 1000
+            }
+            previousBulletCount = visible
+        }
         guard !reported, elapsed > 3 else { return }
         if elapsed <= duration + 3 {
             samples.append([dt, cpu, simulation, audio, hud, rendering.totalSeconds,
@@ -187,6 +220,7 @@ final class FrameProfiler {
             report["accelerationWorldPerSecondSquared"] = distribution(14, multiplier: 1)
             report["jerkWorldPerSecondCubed"] = distribution(15, multiplier: 1)
         }
+        if firstShotProbe { report["firstShots"] = firstShots }
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             FileHandle.standardOutput.write(Data(("leqra performance: " + json + "\n").utf8))

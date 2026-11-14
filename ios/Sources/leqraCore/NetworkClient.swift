@@ -69,6 +69,7 @@ public struct RoomRules: Codable, Equatable, Sendable {
     public var infinity = false
     public var infinityTarget = 0
     public var infinityRandomBots = false
+    public var infinityBotSpawnRate = 2.0
     public var infinityBotDifficulty = "normal"
     public var infinityRandomDifficulty = false
     public var teamMode = "ffa"
@@ -86,7 +87,7 @@ public struct RoomRules: Codable, Equatable, Sendable {
     public init() {}
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case mode, infinity, infinityTarget, infinityRandomBots, infinityBotDifficulty, infinityRandomDifficulty
+        case mode, infinity, infinityTarget, infinityRandomBots, infinityBotSpawnRate, infinityBotDifficulty, infinityRandomDifficulty
         case teamMode, mapSize, portraitMaze, scoreTarget, timeLimit, respawnSeconds, pickupRate, weapons, friendlyFire, teamNames, teamColors
     }
 
@@ -97,6 +98,8 @@ public struct RoomRules: Codable, Equatable, Sendable {
         infinity = try c.decodeIfPresent(Bool.self, forKey: .infinity) ?? infinity
         infinityTarget = try c.decodeIfPresent(Int.self, forKey: .infinityTarget) ?? infinityTarget
         infinityRandomBots = try c.decodeIfPresent(Bool.self, forKey: .infinityRandomBots) ?? infinityRandomBots
+        let spawnRate = try c.decodeIfPresent(Double.self, forKey: .infinityBotSpawnRate) ?? 2
+        infinityBotSpawnRate = [0.5, 1, 2, 4].contains(spawnRate) ? spawnRate : 2
         infinityBotDifficulty = try c.decodeIfPresent(String.self, forKey: .infinityBotDifficulty) ?? infinityBotDifficulty
         infinityRandomDifficulty = try c.decodeIfPresent(Bool.self, forKey: .infinityRandomDifficulty) ?? infinityRandomDifficulty
         teamMode = try c.decodeIfPresent(String.self, forKey: .teamMode) ?? teamMode

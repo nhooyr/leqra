@@ -141,7 +141,7 @@ func TestGodlikeSpawnNoticeHistoryIsBoundedAndLifeDeduplicated(t *testing.T) {
 		a.recordGodlikeSpawn(bot)
 		a.recordGodlikeSpawn(bot)
 	}
-	if len(a.godlikeSpawns) != infiniteBotLimit || a.godlikeSpawns[len(a.godlikeSpawns)-1].Spawn != bot.Spawn {
+	if len(a.godlikeSpawns) != infiniteGodlikeNoticeLimit || a.godlikeSpawns[len(a.godlikeSpawns)-1].Spawn != bot.Spawn {
 		t.Fatal("spawn history was unbounded or not deduplicated")
 	}
 }

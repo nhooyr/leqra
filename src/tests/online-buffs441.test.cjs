@@ -98,3 +98,21 @@ test('a short-lived remote projectile renders from the buffered frame until its 
  assert.deepEqual(renderAt((appeared.netTime+removed.netTime)/2),[9]);
  assert.deepEqual(renderAt(removed.netTime),[]);
 });
+
+test('a terminal path recovers an unseen own shot but never rewinds a preview that was actually rendered',()=>{
+ for(const rendered of [false,true]){
+  const s=boot();s.receive();const record={id:8,owner:0,colorIndex:0,kind:'cannon',radius:14,startTick:60,endTick:61,points:[{x:150,y:126,tick:60},{x:180,y:126,tick:61}]};
+  s.online.presentedShots=new Set(rendered?[s.online.shots.key(0,1,1)+':0']:[]);
+  s.now+=34;const packet=s.packet();packet.events=[{id:1,tick:61,generation:1,type:'impact',owner:0,player:-1,shotSerial:1,spawnSerial:1,flight:record}];s.receiveOnlineState(packet);
+  assert.equal(s.online.flights.pending(8),!rendered);
+  assert.equal(s.online.flights.sample(62,1100).length,rendered?0:1);
+  assert.equal(packet.bullets.length,0,'the recovered visual never becomes an authoritative bullet');
+ }
+});
+
+test('a displayed scatter sibling cannot hide an unseen close-hit pellet from the same volley',()=>{
+ const s=boot();s.receive();s.online.presentedShots=new Set([s.online.shots.key(0,1,1)+':1']);
+ const record={id:8,owner:0,colorIndex:0,kind:'scatter',radius:3.5,startTick:60,endTick:61,points:[{x:150,y:126,tick:60},{x:180,y:126,tick:61}]};
+ s.now+=34;const packet=s.packet();packet.events=[{id:1,tick:61,generation:1,type:'projectileFlight',owner:0,player:-1,shotSerial:1,spawnSerial:1,pellet:0,flight:record}];s.receiveOnlineState(packet);
+ assert.equal(s.online.flights.pending(8),true);assert.equal(s.online.flights.sample(62,1100).length,1);
+});

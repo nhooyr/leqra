@@ -60,13 +60,15 @@
  }
  // Identical movement order, rates, angle normalization and wall collision to Go.
  // No fire, damage or scoring is performed here.
- function move(t,input,dt,moveTank){
+ function movementStacks(t){return Math.max(t.speedTime>0?clamp(t.speedStacks||1,1,5):0,t.starmanTime>0?2:0);}
+ function move(t,input,dt,moveTank,ageStarman=true){
+  if(ageStarman)t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);
   t.speedTime=Math.max(0,(t.speedTime||0)-dt);
   if(t.speedTime<=0)t.speedStacks=0;
   const wasGhost=t.ghostTime>0;t.ghostTime=Math.max(0,(t.ghostTime||0)-dt);
   if(wasGhost&&t.ghostTime===0)moveTank(t,0,0,true);
   const x=t.x,y=t.y;
-  const stacks=t.speedTime>0?Math.max(1,Math.min(5,t.speedStacks||1)):0;
+  const stacks=movementStacks(t);
   const speedScale=1+.65*stacks,turnScale=1+.25*stacks;
   let throttle=(input.forward?1:0)-(input.reverse?.72:0);
   const mag=Math.hypot(input.stickX,input.stickY);
@@ -110,7 +112,7 @@
   const next=copy(t);advance(next,step);
   // A phase exit can eject a tank from a wall. Never blend that discontinuity.
   if((t.ghostTime>0)!==(next.ghostTime>0)){advance(result,f*step);return result;}
-  if((t.speedTime>0)!==(next.speedTime>0)||t.speedStacks!==next.speedStacks){
+  if(movementStacks(t)!==movementStacks(next)){
    moveRenderPose(result,(next.x-t.x)*f,(next.y-t.y)*f,moveTank);
    result.angle=t.angle+delta(t.angle,next.angle)*f;
    result.track=(t.track||0)+((next.track||0)-(t.track||0))*f;
@@ -176,6 +178,81 @@
     vx:segment.vx,vy:segment.vy,bounces:segment.bounces,life:this.first.life-time};
    if(Number.isFinite(this.first.age))value.age=this.first.age+time;
    return value;
+  }
+ }
+ // Terminal paths recover authoritative flights that fit between snapshots.
+ // This cache has no collision, input or score authority.
+ class ProjectileFlights{
+  constructor(){this.reset();}
+  reset(){this.items=new Map();this.seen=new Set();this.completed=new Set();this.readyEffects=[];this.highWater=0;}
+  observe(bullets){for(const b of bullets||[]){this.seen.delete(b.id);this.seen.add(b.id);while(this.seen.size>1024)this.seen.delete(this.seen.values().next().value);}}
+  finish(id){const callbacks=this.items.get(id)?.effects;if(callbacks)this.readyEffects.push(...callbacks);this.items.delete(id);this.completed.add(id);while(this.completed.size>1024)this.completed.delete(this.completed.values().next().value);}
+  defer(id,present){const item=this.items.get(id);if(item)(item.effects||=[]).push(present);else present();}
+  flush(){if(!this.readyEffects.length)return;const ready=this.readyEffects.splice(0);for(const present of ready)present();}
+  controls(id){return this.items.has(id)||this.completed.has(id);}
+  accept(events,now,baseline=false,maxTick=Infinity){
+   for(const event of events||[]){
+    if(!Number.isSafeInteger(event.id)||event.id<=this.highWater)continue;
+    this.highWater=event.id;
+    const f=event.flight;if(baseline||!f||!Number.isSafeInteger(f.id)||f.id<0||!Number.isSafeInteger(f.owner)||f.owner<0||
+     !Number.isInteger(f.colorIndex)||f.colorIndex<0||f.colorIndex>7||!['regular','rapid','scatter','homing','grenade','cannon'].includes(f.kind)||
+     !Number.isFinite(f.radius)||f.radius<=0||f.radius>20||!Number.isFinite(f.startTick)||!Number.isFinite(f.endTick)||
+     f.startTick<0||f.endTick<f.startTick||f.endTick>maxTick||f.endTick-f.startTick>601||!Array.isArray(f.points)||f.points.length<2||f.points.length>32)continue;
+    let last=f.startTick,valid=true;
+    for(const p of f.points){if(!p||![p.x,p.y,p.tick].every(Number.isFinite)||p.tick<last||p.tick<f.startTick||p.tick>f.endTick){valid=false;break;}last=p.tick;}
+    if(!valid||f.points[0].tick!==f.startTick||f.points.at(-1).tick!==f.endTick)continue;
+    if(this.completed.has(f.id))continue;
+    this.items.set(f.id,{flight:{...f,points:f.points.map(p=>({...p}))},received:now,drawn:this.seen.has(f.id),replayAt:null});
+    while(this.items.size>128)this.finish(this.items.keys().next().value);
+   }
+  }
+  sample(tick,now){
+   const out=[];
+   for(const [id,item]of this.items){
+    const f=item.flight;
+    if(now-item.received>11000){this.finish(id);continue;}
+    let at=tick;
+    if(item.replayAt!==null){
+     if(now-item.replayAt>=50){this.finish(id);continue;}
+     const start=Math.max(f.startTick,f.endTick-3);at=start+(f.endTick-start)*clamp((now-item.replayAt)/50,0,1);
+    }else if(at>=f.endTick){
+     if(item.drawn){this.finish(id);continue;}
+     item.replayAt=now;at=Math.max(f.startTick,f.endTick-3);
+    }
+    if(at<f.startTick)continue;
+    const points=f.points;let a=points[0],b=points.at(-1);
+    for(let i=1;i<points.length;i++){b=points[i];if(at<=b.tick)break;a=b;}
+    let span=b.tick-a.tick,alpha=span>0?clamp((at-a.tick)/span,0,1):1,seconds=span*STEP;
+    if(f.endTick===f.startTick&&item.replayAt!==null){
+     const cursor=clamp((now-item.replayAt)/50,0,1)*(points.length-1),index=Math.min(points.length-2,Math.floor(cursor));
+     a=points[index];b=points[index+1];alpha=cursor-index;seconds=.05/(points.length-1);
+    }
+    const shell={id,owner:f.owner,colorIndex:f.colorIndex,kind:f.kind==='regular'?'':f.kind,r:f.radius,
+     x:a.x+(b.x-a.x)*alpha,y:a.y+(b.y-a.y)*alpha,vx:seconds>0?(b.x-a.x)/seconds:0,vy:seconds>0?(b.y-a.y)/seconds:0,
+     life:Math.max(STEP,(f.endTick-at)*STEP),age:Math.max(0,(at-f.startTick)*STEP),bounces:Math.max(0,points.indexOf(a)),flight:true};
+    shell.trail=[];
+    if(f.kind!=='rapid'){
+     const tailTick=Math.max(f.startTick,at-6);let tail=points[0];
+     for(let i=1;i<points.length;i++)if(points[i].tick>=tailTick){const previous=points[i-1],next=points[i],span=next.tick-previous.tick,fraction=span>0?clamp((tailTick-previous.tick)/span,0,1):0;tail={x:previous.x+(next.x-previous.x)*fraction,y:previous.y+(next.y-previous.y)*fraction};break;}
+     shell.trail=[{x:tail.x,y:tail.y},...points.filter(p=>p.tick>tailTick&&p.tick<at).map(p=>({x:p.x,y:p.y})),{x:shell.x,y:shell.y}];
+    }
+    out.push(shell);item.drawn=true;
+   }
+   return out;
+  }
+  pending(id){return this.items.has(id);}
+  begin(b,tick){b.flightStartTick=tick;b.flightStartX=b.x;b.flightStartY=b.y;}
+  vertex(b,tick){
+   if(this.seen.has(b.id)||!Number.isFinite(b.flightStartTick))return;
+   const points=b.flightPoints||=[{x:b.flightStartX,y:b.flightStartY,tick:b.flightStartTick}];
+   if(points.length>=32)points.splice(1,1);
+   points.push({x:b.x,y:b.y,tick:Math.max(b.flightStartTick,tick)});
+  }
+  terminal(b,tick,colorIndex,now){
+   if(this.seen.has(b.id)||this.items.has(b.id)||this.completed.has(b.id)||!Number.isFinite(b.flightStartTick))return;
+   this.vertex(b,tick);
+   this.accept([{id:this.highWater+1,flight:{id:b.id,owner:Number.isSafeInteger(b.owner)?b.owner:0,colorIndex,kind:b.kind||'regular',radius:b.r,
+    startTick:b.flightStartTick,endTick:b.flightPoints.at(-1).tick,points:b.flightPoints}}],now);
   }
  }
  class MotionPresenter{
@@ -425,7 +502,7 @@
     const prev=prior?.tankMap.get(id),span=prior?(newestTime(items)-prior.netTime)/1000:0;
     if(prev?.alive&&prev.spawnSerial===b.spawnSerial&&span>0&&span<.25){
      // A tank can rotate in place: positional velocity alone loses that motion.
-     const stacks=b.speedTime>0?clamp(b.speedStacks||1,1,5):0,maxTurn=5.8*(1+.25*stacks);
+     const stacks=movementStacks(b),maxTurn=5.8*(1+.25*stacks);
      const omega=clamp(delta(prev.angle,b.angle)/span,-maxTurn,maxTurn);
      t.angle=b.angle+omega*dt;
     }
@@ -506,5 +583,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({wallLaunch,expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,presentation,visualMove,RicochetPath,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({wallLaunch,expandMachineBullets,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,movementStacks,presentation,visualMove,RicochetPath,ProjectileFlights,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
 });

@@ -3,6 +3,7 @@ import Foundation
 /// Offline finite-maze matches. Combat uses the same native engine as Infinity;
 /// this owner applies rounds, objectives, team points, and Survival boundaries.
 public final class FixedArena {
+    public var hasPendingProjectileFlights: Bool { combat.hasPendingProjectileFlights }
     public let localID = 1
     public private(set) var world: ArenaWorld
     public private(set) var rules: RoomRules
@@ -102,7 +103,7 @@ public final class FixedArena {
 
     public func presentationSnapshot(fraction: Double, localInput: GameInput? = nil) -> ArenaSnapshot {
         let active = phase == "playing" && objectives?.survival?.status != "break"
-        return compose(active ? combat.presentationSnapshot(fraction: fraction, localInput: localInput) : combat.snapshot)
+        return compose(combat.presentationSnapshot(fraction: active ? fraction : 0, localInput: localInput))
     }
 
     public func configurePilot(id: Int, name: String, colorIndex: Int, team: Int = 0, difficulty: String = "normal") {

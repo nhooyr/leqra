@@ -16,6 +16,7 @@ class RulePersistenceTest {
                     infinityRandomBots = true,
                     infinityBotDifficulty = "godlike",
                     infinityRandomDifficulty = true,
+                    infinityBotSpawnRate = .5,
                     teamMode = "teams",
                     mapSize = "ultrawide",
                     portraitMaze = true,

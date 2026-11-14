@@ -41,6 +41,16 @@ func speedCount(t *Tank) int {
 	}
 	return t.SpeedStacks
 }
+
+// Starman supplies a movement floor, not stored speed pickups. Expiry and
+// pickup refreshes must retain their independent stack counts and timers.
+func movementSpeedCount(t *Tank) int {
+	n := speedCount(t)
+	if t != nil && t.StarmanTime > 0 {
+		n = max(n, 2)
+	}
+	return n
+}
 func pickupWeight(kind string) int {
 	switch kind {
 	case "shield", "speed":

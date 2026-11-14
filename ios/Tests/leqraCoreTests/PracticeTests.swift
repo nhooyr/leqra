@@ -241,11 +241,12 @@ final class PracticeTests: XCTestCase {
         var rules = RoomRules(); rules.infinity = true; rules.infinityRandomBots = true
         rules.infinityBotDifficulty = "hard"; rules.infinityRandomDifficulty = true; rules.pickupRate = "off"; rules.weapons = []
         arena.configure(rules: rules)
-        XCTAssertEqual(arena.snapshot.tanks.count, 12)
+        XCTAssertEqual(arena.snapshot.tanks.count, 4, "Roaming populations fill gradually")
         arena.configure(rules: rules)
-        XCTAssertEqual(arena.snapshot.tanks.count, 12)
-        XCTAssertTrue(arena.snapshot.tanks.dropFirst(4).allSatisfy { ["dumb", "easy", "normal", "hard"].contains($0.difficulty) })
+        XCTAssertEqual(arena.snapshot.tanks.count, 4)
         arena.step(input: GameInput(), dt: 1 / 60)
+        XCTAssertEqual(arena.snapshot.tanks.count, 5)
+        XCTAssertTrue(arena.snapshot.tanks.dropFirst(4).allSatisfy { ["dumb", "easy", "normal", "hard"].contains($0.difficulty) })
         XCTAssertFalse(arena.snapshot.pickups.isEmpty)
     }
 
