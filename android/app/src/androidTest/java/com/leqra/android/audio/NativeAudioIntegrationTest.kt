@@ -25,6 +25,36 @@ class NativeAudioIntegrationTest {
     }
 
     @Test
+    fun observerKeepsOrdinaryEffectsOutputWithoutLocalMusicAndStopsAtTheMenu() {
+        lateinit var audio: NativeAudio
+        main { audio = NativeAudio(instrumentation.targetContext) }
+        val tank = ArenaTank(id = 7, x = 1000.0, y = 2000.0, starmanTime = 5.0)
+        val player = ArenaSnapshot(tick = 1, generation = 1, tanks = listOf(tank))
+        val viewer = player.copy(spectating = true, following = 7)
+        try {
+            waitUntil("PCM voices did not prepare") { audio.preparedVoiceCount == AudioCue.entries.size * 2 && audio.preparedLoop }
+            main { audio.updateStarman(player, 7, null, true) }
+            waitUntil("Player power loop did not start") { audio.framesWritten > 0 && audio.activeLoopCount == 1 }
+            val starts = audio.outputStarts
+            main {
+                audio.consume(viewer, -1, true, true, 1.0)
+                audio.updateStarman(viewer, 0, null, false, sceneActive = true)
+                audio.consume(viewer.copy(tick = 2, effects = listOf(ArenaEffect(id = 1, kind = "shot:regular", owner = 7, x = tank.x, y = tank.y))), -1, true, true, 1.1)
+            }
+            waitUntil("Watched gun sound never reached native output") { audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 && audio.activeLoopCount == 0 }
+            val before = audio.framesWritten
+            SystemClock.sleep(60)
+            assertTrue("Ending local Starman must not stop watched effects output", audio.framesWritten > before)
+            assertEquals(starts, audio.outputStarts)
+            main { audio.updateStarman(viewer, 0, null, false, sceneActive = false) }
+            SystemClock.sleep(100)
+            val stopped = audio.framesWritten
+            SystemClock.sleep(50)
+            assertEquals("Observer menu/pause releases the audio engine", stopped, audio.framesWritten)
+        } finally { main { audio.release() } }
+    }
+
+    @Test
     fun mutedLaunchNeverStartsNativeOutputAndRapidCuesStayBounded() {
         lateinit var audio: NativeAudio
         main {

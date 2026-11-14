@@ -1,10 +1,10 @@
-# leqra v4.49.43 — current game protocol (protocol 1)
+# leqra v4.49.44 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.43**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.44**.
 
 ```json
-{"type":"server_hello","version":"4.49.43","protocol":1}
-{"type":"client_hello","version":"4.49.43","protocol":1}
+{"type":"server_hello","version":"4.49.44","protocol":1}
+{"type":"client_hello","version":"4.49.44","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -39,9 +39,37 @@ Human tanks also carry a one-based `rank` in the full arena standings, including
 
 Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts live projectiles even outside the pilot's view, and boosted Starman shots do not occupy ordinary ammo slots. Visible homing missiles and grenades include `target` when locked onto a pilot ID. Fixed-maze and Infinity tanks also report `spawnProtected` to distinguish spawn invulnerability from Starman and Shield hit protection. While `spawnProtected` and `invulnerable` are both active, the tank cannot fire or remotely detonate grenades.
 
-For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots. Room packets include `infinityActive` so pilots can rejoin a running arena. The Infinity socket join includes the room `code` and the pilot's existing room `token`. The host's `lobby` command ends the private run.
+For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots and room spectators. Room packets include `infinityActive` so members can rejoin a running arena. The Infinity socket join includes the room `code` and the member's existing room `token`. The host's `lobby` command ends the private run.
 
 Private `welcome` includes the run's `generation`. If the Infinity socket disconnects, both local tanks and their scores stay in the arena for up to 20 seconds with neutral controls. They can still be hit, and destroyed tanks wait for their controller before respawning. Reconnect with the same room credentials and `resume:true`, echoing the original `generation` when known. A resumed `welcome` carries `resumed:true` and the same tank IDs. Reset each seat's input sequence and prediction history. A still-active prior socket returns `session_active`, which the client can retry. An expired seat, revoked membership, or ended run returns `resume_expired`. Send `leave` on the Infinity socket to retire both tanks immediately.
+
+### Room Infinity spectators
+
+A room spectator can watch a running **private** Infinity arena without taking a tank seat:
+
+```json
+{"type":"join","version":"4.49.44","code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
+{"type":"welcome","id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
+```
+
+The room token must identify a current human spectator in that room and generation. The `spectating` flag alone grants no access; combat pilots, forged tokens, other rooms, and Public Infinity cannot use this path. No tank, score, account, input authority, player capacity, readiness, or roaming-bot population is allocated. Spectator welcomes contain no local tank ID or account bearer. The ordinary room socket remains connected for membership and role changes.
+
+Spectator `state` messages carry `spectating:true`, `following` (zero for an empty arena), and the **complete ranked `leaderboard` of current arena tanks**, including bots, distant tanks, dead tanks, and disconnected tanks still in their reconnect window. Inactive roaming pools and public score archives are excluded. There are at most eight roster tanks plus 24 active roaming bots. Ordinary combat clients keep their existing top-ten leaderboard. Nearby tanks, projectiles, pickups, and effects are filtered around the followed tank. Its authoritative tank entry is included even while dead, so its position remains available to the camera through respawn.
+
+```json
+{"type":"follow","target":12}
+{"type":"followed","following":12}
+```
+
+Only an authenticated spectator can follow a current tank in that arena. Invalid requests return `{"type":"error","code":"follow_invalid","action":"follow","message":"..."}` without changing the selection. More than eight follow requests per second closes the connection. The server retains a selected dead tank through respawn; if it leaves the current arena, selection falls back to the highest-ranked remaining tank, then zero when empty. A join's optional `target` selects a valid current tank before its welcome; a stale target is ignored. Reconnecting spectators can restore their previous selection with this field, and the server also retains a disconnected observer's selection for its 20-second room reconnect window.
+
+Following also keeps that visible region active for existing roaming bots: they do not relocate out from under an observer, and their existing lives may respawn there while a connected human is dead or paused. This does not release the human's paused respawn or increase the bot budget. When no human controller remains connected, the normal zero-roaming-population policy still applies.
+
+Following is read-only and does not advance simulation. A frozen result can produce another filtered view with the same simulation `tick`; clients must accept a state whose `following` changed even when that tick did not advance. An empty arena stays empty until a real controller joins. Spectator `input` closes the socket with code 1008; arena `rename` returns `rename_error` with `code:"spectator_read_only"` because the member's callsign is edited through the room socket.
+
+Kicks, role changes, revoked credentials, ended generations, room departure, and unsharing revoke arena access. The server removes authority immediately, queues `{"type":"error","code":"room_access_changed","action":"spectate","message":"..."}`, then closes that arena socket after a short delivery window. This error does not sign out the account or leave the ordinary room; current room metadata determines whether to return to the lobby or enter with the new role. Account-key rotation uses its existing terminal `account_key_revoked` notice instead. Ending only the spectator arena socket leaves the room membership and running match intact.
+
+A read-only primary cannot simultaneously control an active local P2 in private Infinity. Launching with that unsupported lineup, demoting the primary while P2 remains active, or promoting P2 while the primary watches returns `code:"local_requires_primary"` with an actionable message. Rejected changes preserve both roles, tanks, and scores atomically. Move P2 to spectators first, or keep the primary in combat. A primary and local P2 both in the gallery use one ordinary read-only spectator stream. Fixed-maze roles retain their existing behavior.
 
 Room Infinity supports `infinityTarget` from 0 to 999. Zero is endless. The first tank or team to reach a positive target wins. Kills add one point and deaths subtract one. Team scores accumulate those changes across team members. Private snapshots carry `rules` with the target, team mode, names, colors and friendly-fire setting. Team snapshots also carry four `teamScores`, starting with Team 1. A completed match freezes and publishes `result` with the winner's name, score, and team for team wins or ID for individual wins. The result remains available until the host ends that room's run. Public Infinity is endless and free-for-all.
 

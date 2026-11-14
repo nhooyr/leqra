@@ -84,7 +84,7 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
                     "roundOver" -> "ROUND COMPLETE"
                     else -> "MATCH COMPLETE"
                 }
-        val titleText = "● $name"
+        val titleText = "● ${if (session.spectating && !preview) "SPECTATING" else name}"
         if (!TextUtils.equals(title.text, titleText)) {
             title.text =
                 android.text.SpannableString(titleText).apply {
@@ -102,11 +102,12 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
             else if (!preview && infinity && session.online) session.snapshot.players else null
         count.value(onlineCount?.let { "$it online" } ?: "")
         count.visibility = if (onlineCount == null) View.GONE else View.VISIBLE
-        val pilot = session.snapshot.tanks.firstOrNull { it.id == session.localID }
+        val pilot = session.snapshot.tanks.firstOrNull { it.id == if (session.spectating) session.followingID else session.localID }
         if (infinity) {
             scoreKey = null
             score.value(
-                "score: ${if(preview) 0 else pilot?.score ?: 0}, rank: #${if(preview) 0 else pilot?.rank ?: 0}",
+                if (session.spectating && !preview) session.snapshot.leaderboard.firstOrNull { it.id == session.followingID }?.let { "Following ${com.leqra.core.PilotIdentity.leaderboardLabel(it.name, it.bot)}" } ?: "Waiting for tanks"
+                else "score: ${if(preview) 0 else pilot?.score ?: 0}, rank: #${if(preview) 0 else pilot?.rank ?: 0}",
             )
             score.setTextColor(NativeStyle.paint(pilot?.colorIndex ?: session.colorIndex))
             val performance =

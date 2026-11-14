@@ -22,6 +22,7 @@ protocol PublicInfinitySessionStoring: AnyObject {
     var activeServer: URL? { get }
     var activeLocal: Bool { get }
     func session(for server: URL, seat: Int) -> PublicInfinitySession?
+    func hasStoredCredential(for server: URL, seat: Int) -> Bool
     @discardableResult func remember(_ session: PublicInfinitySession, seat: Int) -> Bool
     @discardableResult func confirm(_ session: PublicInfinitySession, requested: String?, seat: Int) -> Bool
     @discardableResult func rememberNew(_ session: PublicInfinitySession, seat: Int) -> Bool
@@ -35,6 +36,7 @@ protocol PublicInfinitySessionStoring: AnyObject {
 }
 
 extension PublicInfinitySessionStoring {
+    func hasStoredCredential(for server: URL, seat: Int) -> Bool { session(for: server, seat: seat) != nil || pendingKey(for: server, seat: seat) != nil }
     func session(for server: URL) -> PublicInfinitySession? { session(for: server, seat: 0) }
     @discardableResult func remember(_ session: PublicInfinitySession) -> Bool { remember(session, seat: 0) }
     @discardableResult func activate(_ server: URL?) -> Bool { activate(server, local: false) }
@@ -90,6 +92,12 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
               let data = read(account: account(for: origin, seat: seat)),
               let result = try? JSONDecoder().decode(PublicInfinitySession.self, from: data), result.matches(server) else { return nil }
         return result
+    }
+
+    func hasStoredCredential(for server: URL, seat: Int) -> Bool {
+        guard let origin = try? PublicInfinitySession.normalizedOrigin(server) else { return false }
+        let selected = account(for: origin, seat: seat)
+        return read(account: selected) != nil || read(account: "pending-" + selected) != nil
     }
 
     @discardableResult func remember(_ session: PublicInfinitySession, seat: Int) -> Bool {

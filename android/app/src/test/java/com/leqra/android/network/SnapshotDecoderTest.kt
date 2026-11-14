@@ -7,6 +7,33 @@ import org.junit.Test
 
 class SnapshotDecoderTest {
     @Test
+    fun spectatorPacketsKeepFullRankingFollowTargetAndDeadDistantTank() {
+        val packet = JSONObject("""{"type":"state","tick":24,"spectating":true,"following":81,"tanks":[{"id":81,"name":"Far Tank","x":240000,"y":-300000,"hp":0}],"bullets":[],"leaderboard":[],"players":2,"tankCount":24}""")
+        repeat(24) { packet.getJSONArray("leaderboard").put(JSONObject().put("id", it + 81).put("name", "Tank $it").put("score", 24 - it).put("bot", it > 1)) }
+        val state = SnapshotDecoder().decode(packet)
+        assertTrue(state.spectating)
+        assertEquals(81, state.following)
+        assertEquals(24, state.leaderboard.size)
+        assertEquals(0, state.tanks.single().hp)
+        assertEquals(240000.0, state.tanks.single().x, 0.0)
+        packet.remove("spectating")
+        packet.remove("following")
+        val legacy = SnapshotDecoder().decode(packet)
+        assertFalse(legacy.spectating)
+        assertEquals(0, legacy.following)
+        val welcome = NetworkWelcome.parse(JSONObject().put("id", 0).put("seed", 123).put("spectating", true).put("following", 81))
+        assertEquals(0, welcome.id)
+        assertTrue(welcome.spectating)
+        assertEquals(81, welcome.following)
+        assertNull(welcome.localId)
+        assertNull(welcome.publicToken)
+        val roleChange = NetworkWelcome.parse(JSONObject().put("id", 3).put("localId", -1).put("localMember", 0))
+        assertNull("The room identity sentinel means no P2", roleChange.localId)
+        assertNull(roleChange.localMember)
+        assertEquals(0, NetworkWelcome.parse(JSONObject().put("id", 3).put("localId", 0).put("localMember", 21)).localId)
+    }
+
+    @Test
     fun authoritativeLongGodlikeNamesRemainWholeAcrossTankLeaderboardAndNotice() {
         val name = "Bot 1234567890 - Godlike"
         assertTrue(name.length > 16)

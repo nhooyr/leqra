@@ -24,6 +24,7 @@ public struct AudioEventRouter: Sendable {
     private var lastMachineShot = -Double.infinity
     private var homingLocked = false
     private var lastHomingWarning = -Double.infinity
+    private var spectatorFocus: Int?
 
     public init() {}
 
@@ -33,10 +34,13 @@ public struct AudioEventRouter: Sendable {
                                  infinity: Bool, online: Bool, now: Double) -> [AudioCueRequest] {
         guard now.isFinite else { return [] }
         var requests: [AudioCueRequest] = []
-        let localTank = snapshot.tanks.first { $0.id == localID }
-        if generation != snapshot.generation {
+        let localTank = snapshot.spectating || localID < 0 ? nil : snapshot.tanks.first { $0.id == localID }
+        let listener = snapshot.spectating ? snapshot.tanks.first { $0.id == snapshot.following && $0.id > 0 } : localTank
+        let focus = snapshot.spectating ? snapshot.following ?? 0 : nil
+        if generation != snapshot.generation || spectatorFocus != focus {
             reset()
             generation = snapshot.generation
+            spectatorFocus = focus
             highestEffectID = snapshot.effects.map(\.id).max() ?? 0
             for bullet in snapshot.bullets { bounceCounts[bullet.id] = bullet.bounces }
             // Countdown is current presentation, rather than retained combat
@@ -54,21 +58,21 @@ public struct AudioEventRouter: Sendable {
             let previous = bounceCounts[bullet.id]
             liveBounces[bullet.id] = max(previous ?? bullet.bounces, bullet.bounces)
             if let previous, bullet.bounces > previous,
-               !infinity || near(bullet.x, bullet.y, localTank: localTank, radius: 588) {
+               !infinity || near(bullet.x, bullet.y, localTank: listener, radius: 588) {
                 bounced = true
             }
         }
         bounceCounts = liveBounces
         if bounced, now - lastRicochet >= AudioSynthesis.ricochetInterval {
             lastRicochet = now
-            requests.append(AudioCueRequest(cue: .ricochet))
+            requests.append(AudioCueRequest(cue: .ricochet, local: !snapshot.spectating))
         }
 
         for effect in snapshot.effects.sorted(by: { $0.id < $1.id }) {
             guard effect.id > 0, effect.id > highestEffectID else { continue }
             highestEffectID = effect.id
-            let own = (effect.player ?? effect.owner) == localID
-            guard !infinity || effect.owner == localID || near(effect.x, effect.y, localTank: localTank, radius: 504) else { continue }
+            let own = !snapshot.spectating && localID >= 0 && (effect.player ?? effect.owner) == localID
+            guard !infinity || own || near(effect.x, effect.y, localTank: listener, radius: 504) else { continue }
             let shot: AudioCue?
             switch effect.kind {
             case "shot", "shot:", "shot:regular": shot = .regular
@@ -97,19 +101,19 @@ public struct AudioEventRouter: Sendable {
                 if infinity || !online || own { requests.append(AudioCueRequest(cue: .pickup, local: own)) }
             case "objective":
                 if !infinity { requests.append(AudioCueRequest(cue: .pickup, local: own)) }
-            case "shield": requests.append(AudioCueRequest(cue: .shield))
-            case "impact": requests.append(AudioCueRequest(cue: .impact))
+            case "shield": requests.append(AudioCueRequest(cue: .shield, local: !snapshot.spectating))
+            case "impact": requests.append(AudioCueRequest(cue: .impact, local: !snapshot.spectating))
             case "blast":
                 // A grenade has its own cooldown, so an unrelated recent tank
                 // death cannot suppress it. Its victims share the death gate.
                 if now - lastGrenade >= AudioSynthesis.explosionInterval {
                     lastGrenade = now; lastExplosion = now
-                    requests.append(AudioCueRequest(cue: .grenadeExplosion))
+                    requests.append(AudioCueRequest(cue: .grenadeExplosion, local: !snapshot.spectating))
                 }
             case "hit":
                 if now - lastExplosion >= AudioSynthesis.explosionInterval {
                     lastExplosion = now
-                    requests.append(AudioCueRequest(cue: .explosion))
+                    requests.append(AudioCueRequest(cue: .explosion, local: !snapshot.spectating))
                 }
             case "roundEnd":
                 if online && !infinity {

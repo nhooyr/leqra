@@ -30,6 +30,7 @@ type infiniteConnection struct {
 	room      infiniteRoom
 	seat      *Player
 	localSeat *Player
+	observer  *infiniteObserver
 }
 
 type infiniteReservation struct {
@@ -84,6 +85,8 @@ type infiniteMessage struct {
 	Local               bool   `json:"local"`
 	Paused              bool   `json:"paused"`
 	Seat                int    `json:"seat"`
+	Spectating          bool   `json:"spectating"`
+	Target              int    `json:"target"`
 	RequestID           uint64 `json:"requestId"`
 	Input
 
@@ -149,7 +152,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 	window := time.Now()
 	var lastTouch time.Time
 	var count [2]int
-	var renames, pings int
+	var renames, pings, follows int
 	for {
 		data, err = c.ws.readMessage()
 		if err != nil {
@@ -159,7 +162,7 @@ func (s *infiniteServer) readLoop(c *Client) {
 		now := time.Now()
 		if now.Sub(window) >= time.Second {
 			window, count = now, [2]int{}
-			renames, pings = 0, 0
+			renames, pings, follows = 0, 0, 0
 		}
 		var msg infiniteMessage
 		if json.Unmarshal(data, &msg) != nil {
@@ -191,11 +194,28 @@ func (s *infiniteServer) readLoop(c *Client) {
 				c.ws.writeClose(1008, "Callsign change rate exceeded")
 				return
 			}
+			if connection.observer != nil {
+				c.enqueue(map[string]any{"type": "rename_error", "requestId": msg.RequestID, "seat": msg.Seat, "code": "spectator_read_only", "message": "Change your callsign from the room."})
+				continue
+			}
 			s.renamePilot(c, msg, now)
+			continue
+		}
+		if msg.Type == "follow" {
+			follows++
+			if follows > 8 {
+				c.ws.writeClose(1008, "Follow rate exceeded")
+				return
+			}
+			s.follow(c, msg.Target, now)
 			continue
 		}
 		if msg.Type != "input" {
 			c.ws.writeClose(1008, "Unsupported Infinity message")
+			return
+		}
+		if connection.observer != nil {
+			c.ws.writeClose(1008, "Spectators cannot control tanks")
 			return
 		}
 		pilot, seat := connection.pilot, 0
@@ -275,11 +295,15 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 	if s.closed {
 		return infiniteConnection{}, "The leqra server is shutting down."
 	}
-	if existing, admitted := s.connections[c]; !admitted || existing.pilot != nil {
+	if existing, admitted := s.connections[c]; !admitted || existing.arena != nil {
 		return infiniteConnection{}, "Could not join Infinity."
 	}
+	s.pruneObservers(now)
 	if err := s.applySeatMigrations(); err != nil {
 		return infiniteConnection{}, infinitePublicStoreBusy
+	}
+	if msg.Spectating {
+		return s.joinObserver(c, msg, now)
 	}
 	connection := infiniteConnection{arena: s.public}
 	if msg.Code == "" && (msg.IndependentAccounts || msg.LocalPublicToken != "") {
@@ -332,6 +356,11 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 			}
 		}
 		reservationKey := infiniteRoomPilot{key, seat}
+		if reservation, exists := s.reservations[reservationKey]; exists && reservation.connection.observer != nil {
+			// A disconnected spectator may return as a combat pilot before the
+			// next sweep. Its read-only reservation is not a resumable body.
+			s.expireReservation(reservationKey, reservation)
+		}
 		if reservation, exists := s.reservations[reservationKey]; exists {
 			if !now.After(reservation.until) {
 				if local := reservation.connection.localSeat; local != nil && local != setup.seat {
@@ -440,7 +469,11 @@ func (s *infiniteServer) disconnect(c *Client, now time.Time) {
 }
 
 func (s *infiniteServer) reserve(connection infiniteConnection, now time.Time) {
-	connection.arena.suspend(connection.pilot)
+	if connection.observer != nil {
+		connection.arena.removeObserver(connection.observer)
+	} else {
+		connection.arena.suspend(connection.pilot)
+	}
 	s.reservations[infiniteRoomPilot{connection.room, connection.seat}] = infiniteReservation{connection, now.Add(reconnectGrace)}
 }
 
@@ -473,17 +506,32 @@ func (s *infiniteServer) retire(connection infiniteConnection) {
 	if connection.arena == nil {
 		return
 	}
+	if connection.observer != nil {
+		connection.arena.removeObserver(connection.observer)
+		s.releaseEmptyPrivate(connection)
+		return
+	}
 	connection.arena.remove(connection.pilot)
 	if connection.seat != nil && connection.arena != s.public {
 		s.privateCount--
 		if connection.local != nil {
 			s.privateCount--
 		}
-		if a := connection.arena; a.players == 0 {
-			if !a.teams() && a.rules.Target == 0 || !s.hub.validInfiniteRoom(connection.room.room, connection.room.generation) {
-				delete(s.private, connection.room)
-			}
-		}
+		s.releaseEmptyPrivate(connection)
+	}
+}
+
+func (s *infiniteServer) releaseEmptyPrivate(connection infiniteConnection) {
+	a := connection.arena
+	if a == nil || a == s.public {
+		return
+	}
+	a.mu.Lock()
+	empty := a.players == 0 && len(a.observers) == 0
+	endless := !a.teams() && a.rules.Target == 0
+	a.mu.Unlock()
+	if empty && s.private[connection.room] == a && (endless || !s.hub.validInfiniteRoom(connection.room.room, connection.room.generation)) {
+		delete(s.private, connection.room)
 	}
 }
 
@@ -520,6 +568,13 @@ func (s *infiniteServer) step(now time.Time) {
 	}
 	s.processPublicInfinity(now)
 	for c, connection := range s.connections {
+		if connection.observer != nil {
+			if !s.hub.validInfiniteObserver(connection.room.room, connection.seat, connection.room.generation, now) {
+				s.removeLocked(c)
+				stopInfiniteRoomAccess(c)
+			}
+			continue
+		}
 		if connection.arena == s.public && s.public.idle(connection.pilot, now) {
 			c.stop()
 			s.removeLocked(c)
@@ -533,8 +588,12 @@ func (s *infiniteServer) step(now time.Time) {
 			connection.arena.removeRoomBots(removed)
 		}
 		if !valid {
-			c.stop()
 			s.removeLocked(c)
+			if connection.arena != s.public {
+				stopInfiniteRoomAccess(c)
+			} else {
+				c.stop()
+			}
 		} else if localRevoked {
 			// Reuse the authenticated reconnect to deliver the solo seat binding.
 			// Keep the primary tank and invalidate the old transport first.
@@ -564,6 +623,12 @@ func (s *infiniteServer) step(now time.Time) {
 		}
 		for key, reservation := range s.reservations {
 			connection := reservation.connection
+			if connection.observer != nil {
+				if now.After(reservation.until) || !s.hub.validInfiniteObserver(key.room.room, key.seat, key.room.generation, now) {
+					s.expireReservation(key, reservation)
+				}
+				continue
+			}
 			valid, localRevoked, removed := s.hub.infiniteConnectionStatus(key.room.room, key.seat, connection.localSeat, key.room.generation, connection.arena.roomBots, now)
 			if !valid || now.After(reservation.until) {
 				s.expireReservation(key, reservation)
@@ -583,6 +648,7 @@ func (s *infiniteServer) step(now time.Time) {
 			if sweep && !s.hub.validInfiniteRoom(key.room, key.generation) {
 				delete(s.private, key)
 			}
+			arena.step(now)
 			continue
 		}
 		arena.step(now)
@@ -595,7 +661,7 @@ func (s *infiniteServer) notifyShutdown() int {
 	data, _ := encodePacket(map[string]string{"type": "error", "code": "server_shutdown", "message": "The leqra server is shutting down."})
 	count := 0
 	for c, connection := range s.connections {
-		if connection.pilot != nil && c.enqueueBytes(data) {
+		if connection.arena != nil && c.enqueueBytes(data) {
 			count++
 		}
 	}

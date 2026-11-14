@@ -150,6 +150,8 @@ class SnapshotDecoder {
             round = json.optInt("round"),
             scores = scores,
             winner = json.optInt("winner", -1),
+            spectating = json.optBoolean("spectating"),
+            following = json.optInt("following"),
         )
     }
 

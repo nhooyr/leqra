@@ -16,11 +16,12 @@ const check=(value,label)=>{if(!value){bugs.push(label);throw Error(label);}chec
 const mime={'.js':'text/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 (async()=>{
  const browser=await chromium.launch({headless:true,args:['--disable-features=LocalNetworkAccessChecks']});
- async function make(label,mobile=false,saved){
+ async function make(label,mobile=false,saved,keyed=false){
   const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},isMobile:mobile,hasTouch:mobile,deviceScaleFactor:mobile?2:1,serviceWorkers:'block'});
-  await context.addInitScript(saved=>{
+  await context.addInitScript(({saved,keyed})=>{
    localStorage.setItem('leqra.introTour.v1','1');
    if(saved&&!localStorage.getItem('__callsignSeeded')){localStorage.setItem('leqra.name',saved[0]);localStorage.setItem('leqra.local2Name',saved[1]);localStorage.setItem('__callsignSeeded','1');}
+   if(keyed)for(const key of ['leqra.publicToken','leqra.localPublicToken'])if(!localStorage.getItem(key)){const bytes=crypto.getRandomValues(new Uint8Array(32));localStorage.setItem(key,'p_'+btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''));}
    window.__generationAudit=[];window.__safePackets=[];window.__delayGeneration=0;
    const fetchOriginal=window.fetch.bind(window);
    window.fetch=async(input,options)=>{
@@ -33,7 +34,7 @@ const mime={'.js':'text/javascript','.css':'text/css','.png':'image/png','.svg':
     return fetchOriginal(input,options);
    };
    const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(...args){super(...args);this.addEventListener('message',event=>{try{const p=JSON.parse(event.data);if(['welcome','error','renamed'].includes(p.type))__safePackets.push({type:p.type,code:p.code,id:p.id,localId:p.localId,resumed:p.resumed,public:p.public,hasKey:!!p.publicToken,hasLocalKey:!!p.localPublicToken});}catch(_){}});}};
-  },saved);
+  },{saved,keyed});
   const page=await context.newPage();
   page.on('pageerror',error=>errors.push({label,message:redact(error.message),stack:redact(error.stack)}));page.on('console',message=>{if(message.type()==='error')console.log('BROWSER',redact(message.text()));});
   await page.route('**/*',async route=>{
@@ -67,8 +68,11 @@ const mime={'.js':'text/javascript','.css':'text/css','.png':'image/png','.svg':
    const before=await layout(page),field=page.locator('#roomCallsign'),status=page.locator('#roomCallsignStatus');
    await field.fill('RUST');await page.waitForFunction(()=>document.querySelector('#roomCallsignStatus .callsign-random-action'));
    const taken=await layout(page);stable(before,taken,env.label+' taken feedback');
-   const lines=await status.evaluate(node=>({spans:[...node.children].map(n=>({tag:n.tagName,text:n.textContent,display:getComputedStyle(n).display,height:n.getBoundingClientRect().height})),import:node.querySelectorAll('.callsign-account-action:not(.callsign-random-action)').length,random:node.querySelectorAll('.callsign-random-action').length,height:node.getBoundingClientRect().height}));
+   const lines=await status.evaluate(node=>({spans:[...node.children].map(n=>{const text=document.createRange(),leaf=document.createTreeWalker(n,NodeFilter.SHOW_TEXT).nextNode();text.selectNodeContents(leaf||n);return{tag:n.tagName,text:n.textContent,display:getComputedStyle(n).display,height:n.getBoundingClientRect().height,top:n.getBoundingClientRect().top,textTop:text.getBoundingClientRect().top};}),import:node.querySelectorAll('.callsign-account-action:not(.callsign-random-action)').length,random:node.querySelectorAll('.callsign-random-action').length,height:node.getBoundingClientRect().height}));
    check(lines.import===1&&lines.random===1&&lines.spans.length===3,env.label+' taken feedback has three lines with Import and Generate actions');
+   const gaps=lines.spans.slice(1).map((line,i)=>line.textTop-lines.spans[i].textTop);
+   layouts.push({label:env.label+' feedback text spacing',gaps,height:lines.height,rows:lines.spans.map(({top,textTop,height})=>({top,textTop,height}))});
+   check(Math.abs(gaps[0]-gaps[1])<.2&&gaps.every(gap=>Math.abs(gap-24)<.2)&&Math.abs(lines.height-72)<.2,env.label+' feedback text has equal24px spacing inside its reserved72px slot');
    await page.screenshot({path:path.join(out,env.label+'-taken.png'),fullPage:true});
    await page.evaluate(()=>window.__delayGeneration=450);
    await status.locator('.callsign-random-action').click();await page.waitForFunction(()=>document.querySelector('#roomCallsignStatus').textContent.includes('Generating'));
@@ -82,6 +86,14 @@ const mime={'.js':'text/javascript','.css':'text/css','.png':'image/png','.svg':
    await page.evaluate(()=>leqraInfinity.close());await env.context.close();
   }
   check(new Set(generated).size===generated.length,'Fresh desktop/mobile contexts never reuse each other’s generated names');
+  for(const [label,names]of [['spaced',['Player 1','CO-PILOT']],['duel',['PLAYER 1','PLAYER 2']]]){
+   const legacy=await make('legacy-unkeyed-'+label,false,names);
+   check(await legacy.page.evaluate(()=>{const names=[localStorage.getItem('leqra.name'),localStorage.getItem('leqra.local2Name')];return names.every(name=>/^pilot#[A-HJ-NP-Z2-9]{6}$/.test(name))&&names[0]!==names[1];}),'Unkeyed '+label+' legacy defaults migrate to distinct generated callsigns');
+   const keyed=await make('legacy-keyed-'+label,false,names,true);
+   check(await keyed.page.evaluate(names=>localStorage.getItem('leqra.name')===names[0]&&localStorage.getItem('leqra.local2Name')===names[1]&&__generationAudit.length===0,names),'Keyed '+label+' legacy callsigns remain unchanged');
+  }
+  const compact=await make('compact-custom',false,['PLAYER1','PLAYER2']);
+  check(await compact.page.evaluate(()=>localStorage.getItem('leqra.name')==='PLAYER1'&&localStorage.getItem('leqra.local2Name')==='PLAYER2'&&__generationAudit.length===0),'Unkeyed compact custom names remain unchanged');
   const saved=await make('saved',false,['SavedAlpha','SavedBeta']);
   const savedResult=await saved.page.evaluate(()=>({names:[localStorage.getItem('leqra.name'),localStorage.getItem('leqra.local2Name')],requests:__generationAudit.length}));
   check(savedResult.names.join('|')==='SavedAlpha|SavedBeta'&&savedResult.requests===0,'Existing chosen names remain unchanged without automatic claims');

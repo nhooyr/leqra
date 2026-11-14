@@ -26,7 +26,7 @@ class NativeAudio(context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var previewStop: Runnable? = null
     private var gameplayStop: Runnable? = null
-    private var gameplayActive = false
+    private var sceneActive = false
     internal val pendingCueCount: Int
         get() = pending.size
 
@@ -129,7 +129,7 @@ class NativeAudio(context: Context) {
 
     fun pause() {
         starmanRequested = false
-        gameplayActive = false
+        sceneActive = false
         gameplayStop?.let(main::removeCallbacks)
         gameplayStop = null
         previewStop?.let(main::removeCallbacks)
@@ -171,16 +171,16 @@ class NativeAudio(context: Context) {
     }
 
     /** No work is queued per snapshot: one cached voice tracks both local power timers. */
-    fun updateStarman(snapshot: ArenaSnapshot, localID: Int, localID2: Int?, gameplayActive: Boolean) {
-        val wasActive = this.gameplayActive
-        this.gameplayActive = gameplayActive
-        if (gameplayActive) {
+    fun updateStarman(snapshot: ArenaSnapshot, localID: Int, localID2: Int?, gameplayActive: Boolean, sceneActive: Boolean = gameplayActive) {
+        val wasActive = this.sceneActive
+        this.sceneActive = sceneActive
+        if (sceneActive) {
             gameplayStop?.let(main::removeCallbacks)
             gameplayStop = null
         } else if (wasActive && running && gameplayStop == null) {
             gameplayStop = Runnable {
                 gameplayStop = null
-                if (!this.gameplayActive) pause()
+                if (!this.sceneActive) pause()
             }.also { main.postDelayed(it, 18) }
         }
         val wanted = enabled && volume > 0 && !released && StarmanLoopState.active(snapshot, localID, localID2, gameplayActive)

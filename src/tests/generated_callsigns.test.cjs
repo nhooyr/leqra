@@ -33,6 +33,28 @@ test('fresh P1/P2 defaults are distinct, durable random names and saved choices 
  assert.deepEqual(boot(new Map([['leqra.name','RUST'],['leqra.local2Name','Godlike Bot 7']])).models,['RUST','Godlike Bot 7']);
  assert.deepEqual(boot(new Map([['ricochet.name','OLD FOX'],['ricochet.local2Name','OLD WING']])).models,['OLD FOX','OLD WING']);
 });
+test('historical defaults without saved seat keys migrate once, including old saved-room names',()=>{
+ for(const name of ['PILOT','Player 1','PLAYER 2','  player   1  ','Co-pilot','YOU','Snow Fox','Pilot 100','PILOT 999']){
+  const h=boot(new Map([['leqra.name',name],['leqra.local2Name',name]]));
+  assert.ok(h.models.every(value=>/^pilot#[A-HJ-NP-Z2-9]{6}$/.test(value)),name);assert.notEqual(...h.models);
+  assert.equal(h.api.restored(0,name),h.models[0]);assert.equal(h.api.restored(1,name),h.models[1]);assert.deepEqual(boot(h.storage).models,h.models);
+ }
+ for(const name of ['Pilot 99','Pilot 1000','PILOT CUSTOM','SNOW FOX TWO','Player1','Player2','RUST'])assert.equal(boot(new Map([['leqra.name',name]])).models[0],name);
+});
+test('stored credentials protect legacy names and migration never replaces malformed or revoked keys',()=>{
+ for(const key of ['p_'+Buffer.alloc(32,3).toString('base64url'),'malformed-key']){
+  for(const name of ['PILOT','CO-PILOT','Player 1','Player 2','Player1','Player2']){
+   const h=boot(new Map([['leqra.name',name],['leqra.local2Name',name],['leqra.publicToken',key],['leqra.localPublicToken',key]]));
+   assert.deepEqual(h.models,[name,name]);assert.equal(h.api.isPending(0),false);assert.equal(h.api.restored(1,name),name);
+  }
+ }
+ const pending=boot(new Map([['leqra.local2Name','Player 2'],['leqra.localAccountRegistration',JSON.stringify({token:'saved-candidate'})]]));assert.equal(pending.models[1],'Player 2');
+});
+test('a saved custom room identity replaces provisional bootstrap defaults without automatic claiming',()=>{
+ const h=boot();assert.equal(h.api.restored(0,'Falcon'),'Falcon');assert.equal(h.api.initial(0),'Falcon');assert.equal(h.api.isPending(0),false);
+ assert.equal(h.api.restored(1,'Wing'),'Wing');assert.equal(h.api.initial(1),'Wing');assert.equal(h.api.isPending(1),false);
+ assert.equal(h.storage.has('leqra.publicToken'),false);
+});
 test('offline repair handles transport failure without hiding credential or auth errors',async()=>{
  const h=boot(new Map([['leqra.name','Bot RUST'],['leqra.local2Name','WING']]));h.hooks.offline=()=>true;h.api.init(h.hooks);await flush();
  const request=h.api.generate(h.field,h.form);await flush();h.pending[0].reject(Error('Network unavailable'));await request;
