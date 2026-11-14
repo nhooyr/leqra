@@ -18,7 +18,7 @@ function boot({kind='regular',pilots=8,sourcePath=assetPath('game.js')}={}){
  const factory=new Function('env','let {'+Object.keys(env).join(',')+'}=env;\n'+constants+'\n'+names.map(name=>declaration(source,name)).join('\n')+`
  makeMaze();
  for(let id=0;id<8;id++)tanks.push({id,team:0,x:(1+id%4*5+.5)*CELL,y:(1+Math.floor(id/4)*8+.5)*CELL,r:17,angle:id*Math.PI/4,alive:true,human:true,color:'#d2f65a',invulnerable:1e9,ghostTime:1e9,spawnProtected:false,starmanTime:1e9,power:null,cooldown:0,charges:3,machineRounds:180});
- return{tanks,step(){time+=1/120;for(let id=0;id<env.pilots;id++)fire(tanks[id]);updateBullets(1/120);updateTraces(1/120);for(const p of particles)p.life-=1/120;compactLife(particles);if(Math.round(time*120)%2===0)fire.flights?.observe(bullets);},stats(){return{projectiles:bullets.length,particles:particles.length,traces:traces.length,shots:bulletId};}};
+ return{tanks,step(){time+=1/120;for(let id=0;id<env.pilots;id++)fire(tanks[id]);updateBullets(1/120);updateTraces(1/120);for(const p of particles)p.life-=1/120;compactLife(particles);if(Math.round(time*120)%2===0&&fire.flights){fire.flights.observe(bullets,time*60);fire.flights.sample(time*60,time*1000);fire.flights.flush();}},stats(){return{projectiles:bullets.length,particles:particles.length,traces:traces.length,shots:bulletId};}};
  `);
  env.pilots=pilots;const fixture=factory(env);
  for(const tank of fixture.tanks.slice(0,pilots))tank.power=kind==='regular'?null:kind;

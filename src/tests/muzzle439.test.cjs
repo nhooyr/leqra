@@ -56,7 +56,7 @@ test('grenades keep their full fuse through more than 22 ricochets',()=>{
  const grenade=s.bullets[0];
  s.fire.flights.observe([grenade]);
  for(let i=0;i<1201&&!grenade.dead;i++)s.updateBullets(1/120);
- assert.ok(grenade.bounces>22);assert.ok(Math.abs(grenade.age-10)<1e-6);assert.equal(blasts,1);
+ assert.ok(grenade.bounces>22);assert.ok(Math.abs(grenade.age-10)<1e-6);assert.equal(blasts,0,'fuse authority ends immediately while blast waits for the endpoint frame');s.fire.flights.sample(600,1);s.fire.flights.flush();s.fire.flights.sample(600,10);s.fire.flights.flush();assert.equal(blasts,1);
 });
 
 test('close grazing shots hit before the muzzle can skip nonoverlapping tanks',()=>{

@@ -39,7 +39,8 @@ class PracticeArena(
     private var visualTime = 0.0
     private var lastVisualWallTime: Double? = null
     private val terminalFlights = ProjectileFlightPresentation()
-    val hasPendingProjectileFlights: Boolean get() = terminalFlights.hasPending
+    private val contacts = CombatContactPresentation()
+    val hasPendingProjectileFlights: Boolean get() = terminalFlights.hasPending || contacts.hasPending
     private var nextPickup = 0.0
     private var nextID = 1
     private var nextEffect = 0
@@ -69,6 +70,9 @@ class PracticeArena(
         val birthY: Double = wire.y,
         val birthTick: Double = pathTick,
         var flightPoints: MutableList<ProjectileFlightPoint>? = null,
+        var segmentX: Double = birthX,
+        var segmentY: Double = birthY,
+        var segmentTick: Double = birthTick,
     ) {
         val radius
             get() = spec(wire.kind).radius
@@ -326,6 +330,9 @@ class PracticeArena(
         var survivors = 0
         for (i in projectiles.indices) {
             val p = projectiles[i]
+            if (p.wire.kind != "cannon") {
+                p.segmentX = p.wire.x; p.segmentY = p.wire.y; p.segmentTick = p.pathTick; p.flightPoints = null
+            }
             val span =
                 min(
                     dt,
@@ -428,12 +435,11 @@ class PracticeArena(
         val liveLocals = result.tanks.filter { !it.bot && it.hp > 0 }.map { it.id }.toSet()
         motionPresenters.keys.retainAll(liveLocals)
         if (dt <= 0) {
-            projectiles.forEach { it.published = true; if (it.wire.kind != "cannon") it.flightPoints = null }
+            projectiles.forEach { it.published = true }
             return withTerminalFlights(result, nowSeconds)
         }
         result.bullets = projectiles.map { original ->
             original.published = true
-            if (original.wire.kind != "cannon") original.flightPoints = null
             val p = original.deepCopy()
             val span = min(dt, p.wire.life)
             p.wire.life -= span
@@ -454,9 +460,14 @@ class PracticeArena(
         val elapsed = lastVisualWallTime?.let { (now - it).coerceIn(0.0, .1) } ?: 0.0
         if (now.isFinite()) lastVisualWallTime = now
         visualTime = max(time, visualTime + elapsed)
-        terminalFlights.accept(snapshot.effects, visualTime)
-        val image = terminalFlights.render(result.bullets, result.effects, visualTime)
-        return result.copy(bullets = image.bullets, effects = image.effects)
+        terminalFlights.accept(snapshot.effects, visualTime, snapshot.tanks.size)
+        contacts.accept(snapshot.effects, snapshot.tanks, visualTime, snapshot.tick.toDouble(), snapshot.tanks.filter { !it.bot }.map { it.id }.toSet())
+        val image = terminalFlights.render(result.bullets, result.effects, visualTime, contacts::canCompleteProjectile)
+        val contactImage = contacts.render(result.tanks, image.effects, visualTime, terminalFlights) { from, to ->
+            TankMovement.presentationFitsBounds(to, maze.world) && (from.ghostTime > 0 || maze.rayHit(from.x, from.y, to.x-from.x, to.y-from.y, 17.0) == null)
+        }
+        return result.copy(tanks = contactImage.tanks, bullets = image.bullets, effects = contactImage.effects,
+            result = if (hasPendingProjectileFlights) null else result.result)
     }
 
     private fun present(
@@ -688,6 +699,7 @@ class PracticeArena(
         owner: Int,
         points: List<BeamPoint> = emptyList(),
         flight: ProjectileFlight? = null,
+        contact: CombatContact? = null,
     ) {
         snapshot.effects =
             (snapshot.effects +
@@ -699,6 +711,8 @@ class PracticeArena(
                         owner = owner,
                         points = points,
                         flight = flight,
+                        contact = contact,
+                        tick = snapshot.tick.toInt(),
                     ))
                 .takeLast(48)
         effectTimes[nextEffect] = time
@@ -1004,9 +1018,8 @@ class PracticeArena(
     }
 
     private fun recordFlightPoint(p: Projectile) {
-        if (p.published && p.wire.kind != "cannon") return
         val points = p.flightPoints ?: ArrayList<ProjectileFlightPoint>(4).also {
-            it += ProjectileFlightPoint(p.birthX, p.birthY, p.birthTick)
+            it += if (p.wire.kind == "cannon") ProjectileFlightPoint(p.birthX, p.birthY, p.birthTick) else ProjectileFlightPoint(p.segmentX, p.segmentY, p.segmentTick)
             p.flightPoints = it
         }
         val point = ProjectileFlightPoint(p.wire.x, p.wire.y, p.pathTick)
@@ -1016,7 +1029,6 @@ class PracticeArena(
     }
 
     private fun completedFlight(p: Projectile): ProjectileFlight? {
-        if (p.published && p.wire.kind != "cannon") return null
         recordFlightPoint(p)
         val recorded = p.flightPoints ?: return null
         val points = if (recorded.size == 1) recorded + recorded.single() else recorded.toList()
@@ -1055,7 +1067,7 @@ class PracticeArena(
                         if ((b.kind == "homing" || b.kind == "cannon"))
                             effect("impact", b.x, b.y, b.owner, flight = flight)
                         else if (flight != null) effect("projectileFlight", b.x, b.y, b.owner, flight = flight)
-                        hurt(target.index, b.owner)
+                        hurt(target.index, b.owner, projectileId = b.id, kind = b.kind.ifEmpty { "regular" }, contactTick = p.pathTick)
                     }
                 }
                 return false
@@ -1156,11 +1168,11 @@ class PracticeArena(
         var remaining =
             max(
                 0.0,
-                (maze.world?.let { 2 * (it.width + it.height) } ?: 18 * 84.0) - launch.distance,
+                (maze.world?.let { 4 * (it.width + it.height) } ?: 36 * 84.0) - launch.distance,
             )
         val points = mutableListOf<BeamPoint>()
         var hit: Int? = null
-        for (i in 0 until 128) {
+        for (i in 0 until 256) {
             val dx = ux * remaining
             val dy = uy * remaining
             val wall = maze.rayHit(x, y, dx, dy, 3.0)
@@ -1189,12 +1201,12 @@ class PracticeArena(
         if (
             t.starmanTime <= 0 ||
                 time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0) ||
-                maze.world != null && hit != null
+                hit != null
         ) {
             nextBoostEffects[t.id] = time + 4.0 / 60
             effect("laser", t.x, t.y, t.id, points)
         }
-        hit?.let { hurt(it, t.id) }
+        hit?.let { hurt(it, t.id, kind = "laser") }
     }
 
     private fun detonate(b: ArenaBullet, flight: ProjectileFlight? = null) {
@@ -1209,11 +1221,11 @@ class PracticeArena(
                     maze.rayHit(b.x, b.y, t.x - b.x, t.y - b.y, 0.0) != null
             )
                 continue
-            hurt(i, b.owner)
+            hurt(i, b.owner, projectileId = b.id, kind = "grenade", contactTick = flight?.endTick ?: snapshot.tick.toDouble())
         }
     }
 
-    private fun hurt(index: Int, owner: Int, starman: Boolean = false) {
+    private fun hurt(index: Int, owner: Int, starman: Boolean = false, projectileId: Int = 0, kind: String = if (starman) "starman" else "laser", contactTick: Double = snapshot.tick.toDouble()) {
         val t = snapshot.tanks[index]
         if (
             owner == t.id ||
@@ -1222,12 +1234,14 @@ class PracticeArena(
                 !starman && t.invulnerable != 0.0
         )
             return
+        val contact = CombatContact(projectileId, kind, contactTick, t.id, t.spawnSerial,
+            ContactTankState(t.x, t.y, t.angle, hp = t.hp, shield = t.shield, shieldCharges = t.shieldCharges, invulnerable = t.invulnerable, spawnProtected = t.spawnProtected))
         if (!starman && t.shield > 0) {
             t.shieldCharges = max(1, t.shieldCharges) - 1
             if (t.shieldCharges == 0) t.shield = 0.0
             t.invulnerable = .35
             t.spawnProtected = false
-            effect("shield", t.x, t.y, owner)
+            effect("shield", t.x, t.y, owner, contact = contact)
             return
         }
         t.hp = 0
@@ -1240,7 +1254,7 @@ class PracticeArena(
                 t.killedBy = it.name
                 t.killedByColor = GamePalette.colors[GamePalette.index(it.colorIndex)]
             }
-        effect("hit", t.x, t.y, owner)
+        effect("hit", t.x, t.y, owner, contact = contact)
     }
 
     private fun team(id: Int) = snapshot.tanks.firstOrNull { it.id == id }?.team ?: 0
@@ -1361,8 +1375,8 @@ class PracticeArena(
         private val scatterSpec = WeaponSpec(846.0, 3.5, 3.9, .54, 12)
         private val homingSpec = WeaponSpec(235.0, 5.0, 18 * 84.0 / 235, .72, 3)
         private val grenadeSpec = WeaponSpec(205.0, 6.0, 10.0, .8, 3)
-        private val cannonSpec = WeaponSpec(1128.0, 14.0, 5.3, .85, 3)
-        private val laserSpec = WeaponSpec(0.0, 3.0, 0.0, .85, 3)
+        private val cannonSpec = WeaponSpec(1128.0, 14.0, 5.3, .85 * 2 / 3, 3)
+        private val laserSpec = WeaponSpec(0.0, 3.0, 0.0, .85 * 2 / 3, 3)
         private val standardSpec = WeaponSpec(282.0, 3.5, 5.3, .34, 5)
 
         fun spec(kind: String) =

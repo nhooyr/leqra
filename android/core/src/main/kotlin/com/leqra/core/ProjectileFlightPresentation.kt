@@ -9,25 +9,38 @@ internal class ProjectileFlightPresentation {
         val path: ProjectileFlight,
         val start: Double,
         val end: Double,
+        val sampleStartTick: Double = path.startTick,
         var shown: Boolean = false,
+        var endpointShown: Boolean = false,
     )
 
     data class Image(val bullets: List<ArenaBullet>, val effects: List<ArenaEffect>)
 
     private val flights = LinkedHashMap<Int, Flight>()
     private val shown = LinkedHashSet<Int>()
+    private val lastPoses = HashMap<Int, ArenaBullet>()
     private val completedIDs = LinkedHashSet<Int>()
     private var highestEffect = 0
+    private var capacity = 1024
+    private var observationCapacity = 1024
     val hasPending: Boolean get() = flights.isNotEmpty()
+    fun pending(id: Int) = flights.containsKey(id)
+    fun completed(id: Int) = id in completedIDs
+    fun endpointShown(id: Int) = flights[id]?.endpointShown == true
+    fun endTime(id: Int): Double? = flights[id]?.end
 
     fun reset(effects: List<ArenaEffect> = emptyList()) {
         flights.clear()
         shown.clear()
+        lastPoses.clear()
         completedIDs.clear()
         highestEffect = effects.maxOfOrNull { it.id } ?: 0
+        capacity = 1024; observationCapacity = 1024
     }
 
-    fun accept(effects: List<ArenaEffect>, playhead: Double) {
+    fun accept(effects: List<ArenaEffect>, playhead: Double, actors: Int = 1) {
+        capacity = max(capacity, combatPresentationCapacity(actors))
+        observationCapacity = max(observationCapacity, actors.coerceIn(1, 256) * 128).coerceAtMost(32768)
         val baseline = highestEffect
         for (effect in effects) {
             highestEffect = max(highestEffect, effect.id)
@@ -36,12 +49,25 @@ internal class ProjectileFlightPresentation {
             if (!valid(path) || flights.containsKey(path.id)) continue
             val start = path.startTick / 60
             val end = path.endTick / 60
-            if (path.id in shown && playhead >= end) continue
-            val grace = path.id !in shown && (end - start < .05 || playhead >= end)
+            val observed = path.id in shown
+            val grace = !observed && (end - start < .05 || playhead >= end)
             val visualStart = if (grace) max(start, playhead) else start
-            flights[path.id] =
-                Flight(effect, path, visualStart, if (grace) visualStart + .05 else end)
-            if (flights.size > 128)
+            // A published projectile can already be ahead of its final wire segment.
+            // Keep its visual clock moving forward, then draw the exact contact once.
+            val resumeTick = lastPoses[path.id]?.let { last ->
+                var nearest = Double.POSITIVE_INFINITY
+                var tick = path.startTick
+                for ((a, b) in path.points.zipWithNext()) {
+                    val dx = b.x - a.x; val dy = b.y - a.y
+                    val f = if (dx * dx + dy * dy > 1e-9) (((last.x - a.x) * dx + (last.y - a.y) * dy) / (dx * dx + dy * dy)).coerceIn(0.0, 1.0) else 1.0
+                    val distance = hypot(last.x - a.x - dx * f, last.y - a.y - dy * f)
+                    if (distance <= nearest) { nearest = distance; tick = a.tick + (b.tick - a.tick) * f }
+                }
+                max(tick, (playhead * 60).coerceIn(path.startTick, path.endTick))
+            } ?: path.startTick
+            flights[path.id] = if (observed) Flight(effect, path, playhead, max(playhead, end), resumeTick)
+                else Flight(effect, path, visualStart, if (grace) visualStart + .05 else end)
+            if (flights.size > capacity)
                 flights.entries.iterator().let {
                     it.next()
                     it.remove()
@@ -49,9 +75,9 @@ internal class ProjectileFlightPresentation {
         }
     }
 
-    fun render(bullets: List<ArenaBullet>, effects: List<ArenaEffect>, playhead: Double): Image {
+    fun render(bullets: List<ArenaBullet>, effects: List<ArenaEffect>, playhead: Double, canComplete: (Int) -> Boolean = { true }): Image {
         if (flights.isEmpty()) {
-            for (bullet in bullets) if (bullet.kind == "cannon") remember(bullet.id)
+            for (bullet in bullets) remember(bullet)
             return Image(
                 if (completedIDs.isEmpty()) bullets else bullets.filter { it.id !in completedIDs },
                 effects,
@@ -65,10 +91,10 @@ internal class ProjectileFlightPresentation {
         while (iterator.hasNext()) {
             val (_, flight) = iterator.next()
             if (playhead < flight.start) continue
-            if (playhead >= flight.end && flight.shown) {
+            if (playhead >= flight.end && flight.endpointShown && canComplete(flight.path.id)) {
                 completed += flight.effect
                 completedIDs += flight.path.id
-                if (completedIDs.size > 1024)
+                if (completedIDs.size > capacity)
                     completedIDs.iterator().let {
                         it.next()
                         it.remove()
@@ -80,11 +106,13 @@ internal class ProjectileFlightPresentation {
                 if (flight.end > flight.start)
                     ((playhead - flight.start) / (flight.end - flight.start)).coerceIn(0.0, 1.0)
                 else 1.0
-            val tick = flight.path.startTick + (flight.path.endTick - flight.path.startTick) * alpha
+            val tick = flight.sampleStartTick + (flight.path.endTick - flight.sampleStartTick) * alpha
             val points = flight.path.points
             val zeroDuration = flight.path.endTick - flight.path.startTick <= 1e-9
+            val endpoint = alpha >= 1 || !zeroDuration && tick >= flight.path.endTick
             var index =
-                if (zeroDuration) min(points.lastIndex - 1, (alpha * points.lastIndex).toInt())
+                if (endpoint) points.lastIndex - 1
+                else if (zeroDuration) min(points.lastIndex - 1, (alpha * points.lastIndex).toInt())
                 else 0
             while (
                 !zeroDuration && index < points.lastIndex - 1 && tick > points[index + 1].tick
@@ -93,7 +121,8 @@ internal class ProjectileFlightPresentation {
             val b = points[index + 1]
             val dt = b.tick - a.tick
             val fraction =
-                if (zeroDuration) (alpha * points.lastIndex - index).coerceIn(0.0, 1.0)
+                if (endpoint) 1.0
+                else if (zeroDuration) (alpha * points.lastIndex - index).coerceIn(0.0, 1.0)
                 else if (dt > 1e-9) ((tick - a.tick) / dt).coerceIn(0.0, 1.0) else 1.0
             poses[flight.path.id] =
                 ArenaBullet(
@@ -109,6 +138,7 @@ internal class ProjectileFlightPresentation {
                     bounces = index,
                 )
             flight.shown = true
+            if (playhead >= flight.end) flight.endpointShown = true
         }
         for (bullet in bullets) {
             if (bullet.id in completedIDs) continue
@@ -116,11 +146,11 @@ internal class ProjectileFlightPresentation {
                 poses[bullet.id]?.let {
                     output += it
                     supplied += bullet.id
-                }
+                } ?: run { if (playhead < flights.getValue(bullet.id).start) output += bullet }
             } else output += bullet
         }
         for ((id, bullet) in poses) if (id !in supplied) output += bullet
-        for (bullet in output) if (bullet.kind == "cannon") remember(bullet.id)
+        for (bullet in output) remember(bullet)
         val visibleEffects =
             effects.filter { effect -> effect.flight?.id?.let { it !in flights } ?: true }
         return Image(
@@ -130,11 +160,12 @@ internal class ProjectileFlightPresentation {
         )
     }
 
-    private fun remember(id: Int) {
-        shown += id
-        if (shown.size > 1024)
+    private fun remember(bullet: ArenaBullet) {
+        shown += bullet.id
+        lastPoses[bullet.id] = bullet
+        if (shown.size > observationCapacity)
             shown.iterator().let {
-                it.next()
+                lastPoses.remove(it.next())
                 it.remove()
             }
     }

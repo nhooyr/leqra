@@ -11,18 +11,21 @@ const (
 	infinitePowerDuration = 15.0
 	infiniteStarDuration  = 8.0
 	infiniteShotRange     = 18 * cellSize
+	infiniteLaserRange    = 36 * cellSize
 	infinitePickupLife    = 30.0
 )
 
 type infiniteEffect struct {
-	Flight *cannonFlight `json:"flight,omitempty"`
-	ID     int           `json:"id"`
-	Kind   string        `json:"kind"`
-	X      float64       `json:"x"`
-	Y      float64       `json:"y"`
-	Owner  int           `json:"owner"`
-	Points []BeamPoint   `json:"points,omitempty"`
-	tick   uint64
+	Contact *projectileContact `json:"contact,omitempty"`
+	Tick    uint64             `json:"tick"`
+	Flight  *cannonFlight      `json:"flight,omitempty"`
+	ID      int                `json:"id"`
+	Kind    string             `json:"kind"`
+	X       float64            `json:"x"`
+	Y       float64            `json:"y"`
+	Owner   int                `json:"owner"`
+	Points  []BeamPoint        `json:"points,omitempty"`
+	tick    uint64
 }
 
 func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []BeamPoint) {
@@ -30,7 +33,7 @@ func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []Be
 	if len(a.effects) == 48 {
 		a.effects = slices.Delete(a.effects, 0, 1)
 	}
-	a.effects = append(a.effects, infiniteEffect{ID: a.effectID, Kind: kind, X: x, Y: y, Owner: owner, Points: points, tick: a.tick})
+	a.effects = append(a.effects, infiniteEffect{ID: a.effectID, Kind: kind, X: x, Y: y, Owner: owner, Points: points, Tick: a.tick, tick: a.tick})
 	if kind == "laser" {
 		a.retainProjectileEffect(a.effects[len(a.effects)-1])
 	}
@@ -399,11 +402,11 @@ func (a *infiniteArena) fireLaser(p *infinitePilot) {
 	}
 	k.Cooldown, k.CooldownTotal, k.Recoil = cooldown, cooldown, 1
 	points, target := a.traceLaser(p)
-	if !starman || k.ShotSerial%4 == 1 {
+	if !starman || k.ShotSerial%4 == 1 || target != nil {
 		a.effect("laser", p.X, p.Y, p.ID, points)
 	}
 	if target != nil {
-		a.hurt(target, p.ID, p.Team, p.Name)
+		a.hurtWithContact(target, p.ID, p.Team, p.Name, a.instantContact(target, "laser"))
 	}
 	a.spendWeapon(k)
 }
@@ -415,7 +418,7 @@ func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilo
 	}
 	x, y, ux, uy := launch.x, launch.y, launch.ux, launch.uy
 	points := make([]BeamPoint, 0, 12)
-	remaining := infiniteShotRange - launch.distance
+	remaining := infiniteLaserRange - launch.distance
 	for i := 0; i < laserMaxSegments && remaining > 1e-7; i++ {
 		dx, dy := ux*remaining, uy*remaining
 		wall, hasWall := a.rayWalls(x, y, dx, dy, laserRadius)
@@ -477,6 +480,10 @@ func (a *infiniteArena) hitTarget(owner, ownerTeam int, x, y, dx, dy, radius, li
 }
 
 func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int, ownerName string, ownerColor ...int) {
+	a.hurtWithContact(target, owner, ownerTeam, ownerName, nil, ownerColor...)
+}
+
+func (a *infiniteArena) hurtWithContact(target *infinitePilot, owner, ownerTeam int, ownerName string, contact *projectileContact, ownerColor ...int) {
 	if a.result != nil || target.HP == 0 || target.Protected || !a.canDamage(owner, ownerTeam, target) {
 		return
 	}
@@ -489,10 +496,10 @@ func (a *infiniteArena) hurt(target *infinitePilot, owner, ownerTeam int, ownerN
 		k.Invulnerable = .35
 		k.SpawnProtected = false
 		target.Protected = true
-		a.effect("shield", target.X, target.Y, owner, nil)
+		a.contactEffect("shield", target, owner, contact)
 		return
 	}
-	a.eliminatePilot(target, owner, ownerTeam, ownerName, ownerColor...)
+	a.eliminatePilotWithContact(target, owner, ownerTeam, ownerName, contact, ownerColor...)
 }
 
 func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
@@ -514,7 +521,7 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 			}) {
 				continue
 			}
-			a.eliminatePilot(target, attacker.ID, attacker.Team, attacker.Name)
+			a.eliminatePilotWithContact(target, attacker.ID, attacker.Team, attacker.Name, a.instantContact(target, "starman"))
 			if a.result != nil {
 				return
 			}
@@ -523,6 +530,10 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 }
 
 func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam int, ownerName string, ownerColor ...int) {
+	a.eliminatePilotWithContact(target, owner, ownerTeam, ownerName, nil, ownerColor...)
+}
+
+func (a *infiniteArena) eliminatePilotWithContact(target *infinitePilot, owner, ownerTeam int, ownerName string, contact *projectileContact, ownerColor ...int) {
 	target.HP = 0
 	target.VX, target.VY = 0, 0
 	target.Score--
@@ -532,7 +543,7 @@ func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam i
 	if len(ownerColor) > 0 && ownerColor[0] >= 0 && ownerColor[0] < len(tankColors) {
 		target.KilledByColor = tankColors[ownerColor[0]]
 	}
-	a.effect("hit", target.X, target.Y, owner, nil)
+	a.contactEffect("hit", target, owner, contact)
 	shooter := a.pilotByID(owner)
 	if shooter != nil {
 		shooter.Score++
@@ -560,15 +571,13 @@ func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam i
 func (a *infiniteArena) detonate(b *infiniteBullet) {
 	b.dead = true
 	a.effect("blast", b.X, b.Y, b.Owner, nil)
-	if !b.published {
-		a.attachFlightEffect(b)
-	}
+	a.attachFlightEffect(b)
 	for _, p := range a.pilots {
 		if p.ID == b.Owner || p.HP == 0 || p.Protected || math.Hypot(p.X-b.X, p.Y-b.Y) > blastRadius+tankRadius {
 			continue
 		}
 		if !a.rayBlocked(b.X, b.Y, p.X-b.X, p.Y-b.Y, 0) {
-			a.hurt(p, b.Owner, b.ownerTeam, b.ownerName, b.Color)
+			a.hurtProjectile(p, b)
 		}
 	}
 }
@@ -601,16 +610,12 @@ func (a *infiniteArena) advanceBulletDuring(b *infiniteBullet, dx, dy, span floa
 			} else {
 				if b.Kind == "cannon" || b.Kind == "homing" {
 					a.effect("impact", b.X, b.Y, b.Owner, nil)
-					if b.Kind == "cannon" {
-						a.attachFlightEffect(b)
-					} else if !b.published {
-						a.attachFlightEffect(b)
-					}
-				} else if b.flightTracked && !b.published {
+					a.attachFlightEffect(b)
+				} else if b.flightTracked {
 					a.effect("projectileFlight", b.X, b.Y, b.Owner, nil)
 					a.attachFlightEffect(b)
 				}
-				a.hurt(target, b.Owner, b.ownerTeam, b.ownerName, b.Color)
+				a.hurtProjectile(target, b)
 			}
 			return false
 		}
@@ -618,7 +623,7 @@ func (a *infiniteArena) advanceBulletDuring(b *infiniteBullet, dx, dy, span floa
 			b.X, b.Y = b.X+dx, b.Y+dy
 			b.flightAge = b.age
 			if (b.Kind == "homing" || b.Kind == "grenade") && b.age >= .1 {
-				b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
+				b.ensureFlight().advance(b.X, b.Y, b.flightTick(), true)
 			}
 			return true
 		}
@@ -632,7 +637,7 @@ func (a *infiniteArena) advanceBulletDuring(b *infiniteBullet, dx, dy, span floa
 		b.X += dx*wall.T + wall.NX*.12
 		b.Y += dy*wall.T + wall.NY*.12
 		b.flightAge = b.age - span + span*wall.T
-		b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
+		b.ensureFlight().advance(b.X, b.Y, b.flightTick(), true)
 		span *= 1 - wall.T
 		dx, dy = dx*(1-wall.T), dy*(1-wall.T)
 		if wall.NX != 0 {

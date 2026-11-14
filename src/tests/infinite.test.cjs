@@ -229,7 +229,7 @@ test('all offline Infinity ballistic muzzle kills present a shell without leavin
   const target={...p,id:'target',name:'Target',bot:true,x:134,y:100,power:'',charges:0,team:0,score:0};w.tanks.push(target);
   h.window.testFire(w,p);assert.equal(target.hp,0,kind);h.window.testDraw(w,100,0);
   assert.ok(h.bulletDraws.at(-1).some(b=>(b.kind||'regular')===kind),kind+' remains visible');
-  h.window.testDraw(w,151,0);assert.ok(!h.bulletDraws.at(-1).some(b=>b.flight),kind+' visual grace is bounded');h.infinity.close();
+  h.window.testDraw(w,151,0);assert.ok(h.bulletDraws.at(-1).some(b=>b.flight));h.window.testDraw(w,159,0);assert.ok(!h.bulletDraws.at(-1).some(b=>b.flight),kind+' visual grace is bounded');h.infinity.close();
  }
 });
 
@@ -238,7 +238,7 @@ test('room Infinity shows a between-snapshot terminal cannon even when that shot
  const packet={type:'state',tick:10,tanks:[{id:1,hp:1,x:42,y:42,angle:0}],bullets:[],players:1,leaderboard:[]};ws.receive(packet);
  ws.receive({...packet,tick:12,result:{id:1,name:'Winner',score:5},effects:[{id:1,kind:'impact',x:100,y:42,owner:1,flight:{id:7,owner:1,colorIndex:0,kind:'cannon',radius:14,startTick:10,endTick:11,points:[{x:70,y:42,tick:10},{x:100,y:42,tick:11}]}}]});
  const w=h.state();h.window.testDraw(w,100,0);assert.equal(h.bulletDraws.at(-1)[0]?.id,7);
- h.window.testDraw(w,151,0);assert.equal(h.bulletDraws.at(-1).length,0);assert.ok(h.sounds.includes('impact'));h.infinity.close();
+ h.window.testDraw(w,151,0);assert.equal(h.bulletDraws.at(-1)[0]?.x,100);h.window.testDraw(w,159,0);assert.equal(h.bulletDraws.at(-1).length,0);assert.ok(h.sounds.includes('impact'));h.infinity.close();
 });
 
 test('Dumb Infinity bots retain stale aim, hesitate and space trigger pulses',()=>{
@@ -987,6 +987,7 @@ test('offline room Infinity passes allied tanks and freezes on the first team sc
  assert.equal(pilot.colorIndex,3);
  assert.deepEqual(Array.from(world.teamScores),[1,-1,0,0]);
  assert.equal(world.result.name,'Blue');
+ advance(); // The beam/contact frame must precede the result overlay.
  assert.equal(byID('infiniteResultTitle').textContent,'Blue wins');
  assert.equal(byID('infiniteResult').open,true);
  const finish=world.time;
@@ -1257,7 +1258,7 @@ test('Starman contact in offline Infinity bypasses shields and spawn protection 
   assert.equal(target.hp,eliminated?0:1,label);
   assert.equal(target.score,eliminated?-1:0,label);
   assert.equal(pilot.score,eliminated?1:0,label);
-  if(eliminated){assert.equal(target.respawn,1);assert.ok(sounds.includes('blast'));assert.ok(!sounds.includes('grenadeblast'));}
+  if(eliminated){assert.equal(target.respawn,1);assert.ok(!sounds.includes('blast'),'contact frame precedes hit audio');advance();assert.ok(sounds.includes('blast'));assert.ok(!sounds.includes('grenadeblast'));}
   infinity.close();
  }
 });

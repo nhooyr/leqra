@@ -184,16 +184,88 @@
  // This cache has no collision, input or score authority.
  class ProjectileFlights{
   constructor(){this.reset();}
-  reset(){this.items=new Map();this.seen=new Set();this.completed=new Set();this.readyEffects=[];this.highWater=0;}
-  observe(bullets){for(const b of bullets||[]){this.seen.delete(b.id);this.seen.add(b.id);while(this.seen.size>1024)this.seen.delete(this.seen.values().next().value);}}
-  finish(id){const callbacks=this.items.get(id)?.effects;if(callbacks)this.readyEffects.push(...callbacks);this.items.delete(id);this.completed.add(id);while(this.completed.size>1024)this.completed.delete(this.completed.values().next().value);}
+  reset(){this.items=new Map();this.seen=new Set();this.observed=new Map();this.completed=new Set();this.readyEffects=[];this.sceneEffects=[];this.contacts=new Map();this.byTank=new Map();this.byFlight=new Map();this.held=new Map();this.bodies=new Map();this.capacity=1024;this.contactCount=0;this.highWater=0;this.tick=0;this.now=0;}
+  observe(bullets,tick=this.tick){for(const b of bullets||[]){this.seen.delete(b.id);this.seen.add(b.id);if(Number.isFinite(b.x)&&Number.isFinite(b.y)){const pose=this.observed.get(b.id)||{};Object.assign(pose,{x:b.x,y:b.y,tick});this.observed.set(b.id,pose);}while(this.seen.size>this.capacity*2){const oldest=this.seen.values().next().value;this.seen.delete(oldest);this.observed.delete(oldest);}}}
+  finish(id){const callbacks=this.items.get(id)?.effects;if(callbacks)this.readyEffects.push(...callbacks);this.items.delete(id);this.completed.add(id);while(this.completed.size>this.capacity*2)this.completed.delete(this.completed.values().next().value);}
   defer(id,present){const item=this.items.get(id);if(item)(item.effects||=[]).push(present);else present();}
+  deferScene(present){if(this.pendingPresentation)this.sceneEffects.push(present);else present();}
   flush(){if(!this.readyEffects.length)return;const ready=this.readyEffects.splice(0);for(const present of ready)present();}
-  controls(id){return this.items.has(id)||this.completed.has(id);}
+  controls(id,tick=this.tick){const item=this.items.get(id);return this.completed.has(id)||!!item&&(item.fastForward||item.replayAt!==null||tick>=item.flight.startTick);}
+  expedite(id){const item=this.items.get(id);if(item)item.fastForward=true;}
+  get pendingPresentation(){return this.items.size>0||this.contactCount>0;}
+  addContact(id,contact,owner,now){
+   const key=String(contact.target)+':'+contact.spawnSerial;
+   const record={contact,owner,received:now,released:false,endpointAt:null};
+   this.contacts.set(id,record);let group=this.byTank.get(key);if(!group)this.byTank.set(key,group=[]);group.push(id);group.sort((a,b)=>this.contacts.get(a).contact.tick-this.contacts.get(b).contact.tick||a-b);this.contactCount++;
+   if(contact.projectileId>0){let linked=this.byFlight.get(contact.projectileId);if(!linked)this.byFlight.set(contact.projectileId,linked=new Set());linked.add(id);}
+   while(this.contacts.size>this.capacity*2){const oldest=this.contacts.keys().next().value;this.removeContact(oldest);}
+  }
+  removeContact(id){const record=this.contacts.get(id);if(!record)return;if(!record.released)this.releaseContact(record);const key=String(record.contact.target)+':'+record.contact.spawnSerial,group=this.byTank.get(key);if(group){const index=group.indexOf(id);if(index>=0)group.splice(index,1);if(!group.length)this.byTank.delete(key);}const linked=this.byFlight.get(record.contact.projectileId);if(linked){linked.delete(id);if(!linked.size)this.byFlight.delete(record.contact.projectileId);}this.contacts.delete(id);}
+  releaseContact(record){if(record.released)return;record.released=true;record.releasedAt=this.now;this.contactCount--;if(record.effects)this.readyEffects.push(...record.effects);}
+  deferContact(id,present){const record=this.contacts.get(id);if(record&&!record.released)(record.effects||=[]).push(present);else present();}
+  recordContact(b,tank,tick,now){
+   const before={x:tank.x,y:tank.y,angle:tank.angle||0,vx:tank.vx||0,vy:tank.vy||0,hp:tank.hp??(tank.alive?1:0),shield:tank.shield||0,shieldCharges:tank.shieldCharges||0,invulnerable:tank.invulnerable||0,spawnProtected:!!tank.spawnProtected};
+   const id=++this.highWater;this.addContact(id,{projectileId:Number.isSafeInteger(b.id)?b.id:0,kind:b.kind||'regular',tick,target:tank.id,spawnSerial:tank.spawnSerial||0,before},b.owner,now);return id;
+  }
+  status(event,authority){
+   if(!event.contact)return'ready';const record=this.contacts.get(event.id);if(!record)return'drop';
+   const target=authority?.get(record.contact.target);
+   if(target&&(target.spawnSerial||0)!==record.contact.spawnSerial){record.effects=null;this.releaseContact(record);return'drop';}
+   return record.released?'ready':'wait';
+  }
+  rememberTanks(tanks,now){
+   this.capacity=Math.min(32768,Math.max(1024,tanks.length*128));
+   for(const tank of tanks)this.bodies.set(tank.id,{tank,at:now});
+   for(const [id,body]of this.bodies)if(now-body.at>1000)this.bodies.delete(id);
+   while(this.bodies.size>this.capacity)this.bodies.delete(this.bodies.keys().next().value);
+  }
+  missingTanks(authority){
+   const out=[],seen=new Set();
+   for(const record of this.contacts.values()){
+    const c=record.contact;if(record.released||authority.has(c.target)||seen.has(c.target))continue;
+    const tank=this.bodies.get(c.target)?.tank;
+    if(tank&&(tank.spawnSerial||0)===c.spawnSerial){out.push(tank);seen.add(c.target);}
+   }
+   return out;
+  }
+  holdsTank(tank){return this.byTank.get(String(tank.id)+':'+(tank.spawnSerial||0))?.some(id=>!this.contacts.get(id).released)||false;}
+  earlierContact(record){
+   const c=record.contact,group=this.byTank.get(String(c.target)+':'+c.spawnSerial);
+   for(const id of group||[]){const earlier=this.contacts.get(id);if(earlier===record)return false;if(!earlier.released)return true;}
+   return false;
+  }
+  blockedFlight(id){for(const contact of this.byFlight.get(id)||[]){const record=this.contacts.get(contact);if(!record.released&&this.earlierContact(record))return true;}return false;}
+  visualTank(authority,pose,frame,now,moveTank){
+   if(!authority)return pose;pose||=authority;
+   const life=authority.spawnSerial||0,key=String(authority.id)+':'+life,group=this.byTank.get(key);
+   let record;for(const id of group||[]){const next=this.contacts.get(id);if(next&&!next.released){record=next;break;}}
+   if(record){
+    const c=record.contact,before=c.before,flight=this.items.get(c.projectileId),endpoint=flight&&(flight.endpointAt!==null||flight.replayAt!==null)||record.endpointAt!==null;
+    let x=before.x,y=before.y,angle=before.angle;
+    const a=frame?.a.tankMap.get(authority.id),span=c.tick-(frame?.a.tick??c.tick);
+    if(!endpoint&&a&&(a.spawnSerial||0)===life&&(a.alive??a.hp>0)&&(a.ghostTime>0)===(authority.ghostTime>0)&&span>0&&Math.hypot(a.x-before.x,a.y-before.y)<200){
+     const f=clamp((frame.time/STEP_MS-frame.a.tick)/span,0,1);x=a.x+(before.x-a.x)*f;y=a.y+(before.y-a.y)*f;angle=a.angle+delta(a.angle,before.angle)*f;
+    }else if(!endpoint&&!frame&&(pose.alive??pose.hp>0)){x=pose.x;y=pose.y;angle=pose.angle;}
+    const value={...authority,...pose,...before,x,y,angle,alive:before.hp>0,score:authority.score,rank:authority.rank};
+    this.held.set(key,{x,y,angle,at:now,holding:true});return value;
+   }
+   const held=this.held.get(key);
+   if(!held)return pose;
+   if(!(authority.alive??authority.hp>0)){this.held.delete(key);return pose;}
+   if(held.holding){held.holding=false;held.dx=held.x-pose.x;held.dy=held.y-pose.y;held.da=delta(pose.angle,held.angle);held.at=now;}
+   const fade=Math.exp(-Math.max(0,now-held.at)/40),value={...pose};
+   if(fade<.005){this.held.delete(key);return pose;}
+   if(moveTank)moveRenderPose(value,held.dx*fade,held.dy*fade,moveTank);else{value.x+=held.dx*fade;value.y+=held.dy*fade;}
+   value.angle+=held.da*fade;return value;
+  }
   accept(events,now,baseline=false,maxTick=Infinity){
    for(const event of events||[]){
     if(!Number.isSafeInteger(event.id)||event.id<=this.highWater)continue;
     this.highWater=event.id;
+    const c=event.contact;
+    if(!baseline&&c&&Number.isSafeInteger(c.projectileId)&&c.projectileId>=0&&Number.isSafeInteger(c.target)&&c.target>=0&&Number.isSafeInteger(c.spawnSerial)&&c.spawnSerial>=0&&
+     ['regular','rapid','scatter','homing','grenade','cannon','laser','starman'].includes(c.kind)&&Number.isFinite(c.tick)&&c.tick>=0&&c.tick<=maxTick&&c.before&&
+     ['x','y','angle','vx','vy','hp','shield','shieldCharges','invulnerable'].every(k=>Number.isFinite(c.before[k]))&&c.before.hp>0&&c.before.shield>=0&&c.before.shieldCharges>=0&&typeof c.before.spawnProtected==='boolean')this.addContact(event.id,{...c,before:{...c.before}},event.owner,now);
     const f=event.flight;if(baseline||!f||!Number.isSafeInteger(f.id)||f.id<0||!Number.isSafeInteger(f.owner)||f.owner<0||
      !Number.isInteger(f.colorIndex)||f.colorIndex<0||f.colorIndex>7||!['regular','rapid','scatter','homing','grenade','cannon'].includes(f.kind)||
      !Number.isFinite(f.radius)||f.radius<=0||f.radius>20||!Number.isFinite(f.startTick)||!Number.isFinite(f.endTick)||
@@ -202,28 +274,32 @@
     for(const p of f.points){if(!p||![p.x,p.y,p.tick].every(Number.isFinite)||p.tick<last||p.tick<f.startTick||p.tick>f.endTick){valid=false;break;}last=p.tick;}
     if(!valid||f.points[0].tick!==f.startTick||f.points.at(-1).tick!==f.endTick)continue;
     if(this.completed.has(f.id))continue;
-    this.items.set(f.id,{flight:{...f,points:f.points.map(p=>({...p}))},received:now,drawn:this.seen.has(f.id),replayAt:null});
-    while(this.items.size>128)this.finish(this.items.keys().next().value);
+    this.items.set(f.id,{flight:{...f,points:f.points.map(p=>({...p}))},received:now,drawn:this.seen.has(f.id),replayAt:null,endpointAt:null});
+    while(this.items.size>this.capacity)this.finish(this.items.keys().next().value);
    }
   }
-  sample(tick,now){
-   const out=[];
+  sample(tick,now,options={}){
+   const out=[];this.tick=tick;this.now=now;
+   for(const [key,held]of this.held)if(now-held.at>11000)this.held.delete(key);
    for(const [id,item]of this.items){
     const f=item.flight;
     if(now-item.received>11000){this.finish(id);continue;}
     let at=tick;
-    if(item.replayAt!==null){
-     if(now-item.replayAt>=50){this.finish(id);continue;}
+    if(item.endpointAt!==null){if(now>item.endpointAt&&!this.blockedFlight(id)){this.finish(id);continue;}at=f.endTick;}
+    else if(item.fastForward){at=f.endTick;item.endpointAt=now;}
+    else if(item.replayAt!==null){
      const start=Math.max(f.startTick,f.endTick-3);at=start+(f.endTick-start)*clamp((now-item.replayAt)/50,0,1);
+     if(now-item.replayAt>=50){at=f.endTick;item.endpointAt=now;}
     }else if(at>=f.endTick){
-     if(item.drawn){this.finish(id);continue;}
-     item.replayAt=now;at=Math.max(f.startTick,f.endTick-3);
+     if(item.drawn){at=f.endTick;item.endpointAt=now;}
+     else{item.replayAt=now;at=Math.max(f.startTick,f.endTick-3);}
     }
     if(at<f.startTick)continue;
     const points=f.points;let a=points[0],b=points.at(-1);
     for(let i=1;i<points.length;i++){b=points[i];if(at<=b.tick)break;a=b;}
+    if(item.endpointAt!==null){a=points.at(-2);b=points.at(-1);}
     let span=b.tick-a.tick,alpha=span>0?clamp((at-a.tick)/span,0,1):1,seconds=span*STEP;
-    if(f.endTick===f.startTick&&item.replayAt!==null){
+    if(f.endTick===f.startTick&&item.replayAt!==null&&item.endpointAt===null){
      const cursor=clamp((now-item.replayAt)/50,0,1)*(points.length-1),index=Math.min(points.length-2,Math.floor(cursor));
      a=points[index];b=points[index+1];alpha=cursor-index;seconds=.05/(points.length-1);
     }
@@ -238,21 +314,36 @@
     }
     out.push(shell);item.drawn=true;
    }
+   for(const [id,record]of this.contacts){
+    if(now-record.received>11000||record.released&&now-record.releasedAt>1000){this.removeContact(id);continue;}
+    if(record.released)continue;
+    const c=record.contact;
+    if(this.earlierContact(record))continue;
+    if(c.projectileId>0&&this.items.has(c.projectileId))continue;
+    if(c.projectileId>0&&this.completed.has(c.projectileId)){this.releaseContact(record);continue;}
+    const clock=c.kind==='starman'&&options.own?.has(record.owner)?options.localTick??tick:tick;
+    if(clock<c.tick)continue;
+    if(record.endpointAt===null)record.endpointAt=now;else if(now>record.endpointAt)this.releaseContact(record);
+   }
+   if(!this.pendingPresentation&&this.sceneEffects.length)this.readyEffects.push(...this.sceneEffects.splice(0));
    return out;
   }
   pending(id){return this.items.has(id);}
   begin(b,tick){b.flightStartTick=tick;b.flightStartX=b.x;b.flightStartY=b.y;}
   vertex(b,tick){
-   if(this.seen.has(b.id)||!Number.isFinite(b.flightStartTick))return;
+   if(!Number.isFinite(b.flightStartTick))return;
    const points=b.flightPoints||=[{x:b.flightStartX,y:b.flightStartY,tick:b.flightStartTick}];
    if(points.length>=32)points.splice(1,1);
    points.push({x:b.x,y:b.y,tick:Math.max(b.flightStartTick,tick)});
   }
   terminal(b,tick,colorIndex,now){
-   if(this.seen.has(b.id)||this.items.has(b.id)||this.completed.has(b.id)||!Number.isFinite(b.flightStartTick))return;
+   if(this.items.has(b.id)||this.completed.has(b.id)||!Number.isFinite(b.flightStartTick))return;
    this.vertex(b,tick);
+   const observed=this.observed.get(b.id),start=observed&&observed.tick<=tick?observed:null;
+   const points=start?[{...start},...b.flightPoints.filter(p=>p.tick>start.tick)]:b.flightPoints;
+   if(points.length===1)points.push({x:b.x,y:b.y,tick});
    this.accept([{id:this.highWater+1,flight:{id:b.id,owner:Number.isSafeInteger(b.owner)?b.owner:0,colorIndex,kind:b.kind||'regular',radius:b.r,
-    startTick:b.flightStartTick,endTick:b.flightPoints.at(-1).tick,points:b.flightPoints}}],now);
+    startTick:points[0].tick,endTick:points.at(-1).tick,points}}],now);
   }
  }
  class MotionPresenter{

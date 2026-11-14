@@ -218,6 +218,10 @@ class AccountService(
                         val selected =
                             current(normalized, seat, epochs.getValue(seat)) &&
                                 store.selected(normalized, seat)?.key == key
+                        // The HTTP response proves P1's candidate is registered. A canceled
+                        // request leaves it pending so a later custom-name join can start fresh.
+                        if (seat == 0 && selected && credentials.getValue(seat).registrationPending)
+                            store.select(normalized, seat, key)
                         // Name generation is not the first gameplay acknowledgement.
                         // Preserve fresh-P2 legacy migration intent until Welcome confirms the key.
                         GeneratedCallsign(seat, names[index], key, selected)

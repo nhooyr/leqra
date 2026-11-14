@@ -1060,7 +1060,7 @@ internal class GameSession(context: Context) {
                 fixed?.let { maze = it.maze }
             }
         }
-        if (screen == Screen.PLAYING && paused && (snapshot.result != null || snapshot.phase in listOf("roundOver", "matchOver"))) {
+        if (screen == Screen.PLAYING && paused && (authoritativeSnapshot.result != null || authoritativeSnapshot.phase in listOf("roundOver", "matchOver"))) {
             snapshot = if (online) timeline.renderTerminal(dt) ?: snapshot
             else if (finishingProjectilePresentation) practice?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9)
                 ?: fixed?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9) ?: snapshot else snapshot
@@ -1077,6 +1077,10 @@ internal class GameSession(context: Context) {
 
     val finishingProjectilePresentation: Boolean
         get() = if (online) timeline.hasPendingProjectileFlights else practice?.hasPendingProjectileFlights ?: fixed?.hasPendingProjectileFlights ?: false
+
+    /** HUD and input readiness always read immediate authority, never a held contact body. */
+    val authoritativeSnapshot: ArenaSnapshot
+        get() = if (online) timeline.authoritativeSnapshot ?: snapshot else practice?.snapshot ?: fixed?.snapshot ?: snapshot
 
     fun renameCallsign(name: String, seat: Int = 0) {
         require(seat in 0..1)

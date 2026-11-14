@@ -59,15 +59,15 @@ const (
 	grenadeBrakeStart  = 7.0
 	grenadeBrakeDrag   = 2.0
 	blastRadius        = 220.0
-	laserMaxSegments   = 128
+	laserMaxSegments   = 256
 	laserRadius        = 3.0
-	laserCooldown      = .85
+	laserCooldown      = .85 * 2 / 3
 	ghostDuration      = powerEffectDuration
 	// Cannon scales normal round radius (and diameter) and speed, not damage.
 	cannonRadius   = 3.5 * 4
 	cannonSpeed    = 282.0 * 4
 	cannonLifetime = 5.3
-	cannonCooldown = .85
+	cannonCooldown = .85 * 2 / 3
 )
 
 var tankColors = [maxTanks]string{"#d2f65a", "#ff9679", "#73cee4", "#c5a2ff", "#ffc46b", "#ff83bd", "#75f0cb", "#b7c6ee"}
@@ -180,7 +180,7 @@ type Bullet struct {
 
 	flight                                  *cannonFlight
 	flightBirth                             cannonFlightPoint
-	flightAge                               float64
+	flightAge, flightBaseAge                float64
 	flightTracked, published, flightEmitted bool
 }
 
@@ -230,8 +230,9 @@ type Event struct {
 	Owner       int         `json:"owner"`
 	Text        string      `json:"text,omitempty"`
 
-	Flight *cannonFlight `json:"flight,omitempty"`
-	Pellet int           `json:"pellet,omitempty"`
+	Flight  *cannonFlight      `json:"flight,omitempty"`
+	Pellet  int                `json:"pellet,omitempty"`
+	Contact *projectileContact `json:"contact,omitempty"`
 }
 type Game struct {
 	stats                             *matchStatLedger
@@ -985,7 +986,7 @@ func (g *Game) fire(t *Tank) bool {
 
 // Weapon path budgets are TOTAL travel distances, not fresh allowances at each bounce.
 func (g *Game) machineTravelRange() float64 { return (g.World.Width + g.World.Height) / 2 }
-func (g *Game) laserRange() float64         { return 2 * (g.World.Width + g.World.Height) }
+func (g *Game) laserRange() float64         { return 4 * (g.World.Width + g.World.Height) }
 
 // Trace from the tank centre to avoid tunneling with a barrel against a wall.
 // Only the first hidden barrel segment is cropped for rendering. The shooter
@@ -1094,6 +1095,7 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 	if !t.Alive || t.Invulnerable > 0 || !g.canDamage(b.Owner, t) {
 		return
 	}
+	contact := g.bulletContact(t, b)
 	if t.Shield > 0 {
 		t.ShieldCharges = shieldCount(t) - 1
 		if t.ShieldCharges == 0 {
@@ -1101,21 +1103,21 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 		}
 		t.Invulnerable = .35
 		t.SpawnProtected = false
-		g.emit("shield", t, b.Owner, "")
+		g.emitContact("shield", t, b.Owner, "", contact)
 		return
 	}
-	g.eliminateTank(t, b.Owner)
+	g.eliminateTank(t, b.Owner, contact)
 }
 
 func (g *Game) starmanRam(attacker, target *Tank) bool {
 	if attacker.StarmanTime <= 0 || target.StarmanTime > 0 || target.Invulnerable > 0 && !target.SpawnProtected || !g.canDamage(attacker.ID, target) {
 		return false
 	}
-	g.eliminateTank(target, attacker.ID)
+	g.eliminateTank(target, attacker.ID, g.bulletContact(target, &Bullet{Owner: attacker.ID, Kind: "starman"}))
 	return true
 }
 
-func (g *Game) eliminateTank(t *Tank, attacker int) {
+func (g *Game) eliminateTank(t *Tank, attacker int, contacts ...*projectileContact) {
 	g.recordDeath(t, attacker)
 	t.Alive = false
 	t.KilledBy = ""
@@ -1132,7 +1134,11 @@ func (g *Game) eliminateTank(t *Tank, attacker int) {
 		t.KilledByColor = owner.Color
 		text = t.KilledBy + " eliminated " + t.Name + "."
 	}
-	g.emit("hit", t, attacker, text)
+	var contact *projectileContact
+	if len(contacts) > 0 {
+		contact = contacts[0]
+	}
+	g.emitContact("hit", t, attacker, text, contact)
 }
 
 // One distance budget for the entire flight, including every bend and bounce.
@@ -1275,7 +1281,7 @@ func (g *Game) projectileTankImpact(b *Bullet, target *Tank) {
 	if b.Kind == "cannon" {
 		g.projectileEvent("impact", b, 32) // Cosmetic only, no splash damage.
 	}
-	if b.Kind != "homing" && b.Kind != "cannon" && b.flightTracked && !b.published {
+	if b.Kind != "homing" && b.Kind != "cannon" && b.flightTracked {
 		g.projectileEvent("projectileFlight", b, 0)
 	}
 	g.hurt(target, b)
@@ -1334,7 +1340,7 @@ func (g *Game) updateBullets(dt float64) {
 				b.X += dx*wall.T + wall.NX*nudge
 				b.Y += dy*wall.T + wall.NY*nudge
 				b.flightAge = b.Age - remaining + remaining*wall.T
-				b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
+				b.ensureFlight().advance(b.X, b.Y, b.flightTick(), true)
 				b.reflect(wall)
 				remaining *= 1 - wall.T
 				if (b.Kind != "homing" && b.Kind != "rapid" && b.Kind != "grenade" && b.Bounces > 22) || b.Bounces > 128 {
@@ -1349,7 +1355,7 @@ func (g *Game) updateBullets(dt float64) {
 				b.Y += dy
 				b.flightAge = b.Age
 				if (b.Kind == "homing" || b.Kind == "grenade") && b.Age >= .1 {
-					b.ensureFlight().advance(b.X, b.Y, b.flightBirth.Tick+b.flightAge/tickDT, true)
+					b.ensureFlight().advance(b.X, b.Y, b.flightTick(), true)
 				}
 				if b.Kind == "homing" {
 					b.RangeLeft = math.Max(0, b.RangeLeft-math.Hypot(dx, dy))

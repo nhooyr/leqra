@@ -143,7 +143,7 @@ class FixedArena(
     ) =
         compose(
             combat.presentationSnapshot(if (phase == "playing" && objectives?.survival?.status != "break") fraction else 0.0, localInput, localInput2, nowSeconds),
-        )
+        ).let { if (hasPendingProjectileFlights && it.phase in listOf("roundOver", "matchOver")) it.copy(phase = "playing") else it }
 
     fun configurePilot(
         id: Int,

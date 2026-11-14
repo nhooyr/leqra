@@ -7,6 +7,7 @@ function declaration(name,code=source){const start=code.indexOf('function '+name
 function recorder(){
  let matrix={x:0,y:0,angle:0},stack=[],shape,clipped=false;
  const events=[],c={events,canvas:{},globalAlpha:1,textBaseline:'alphabetic',save(){stack.push({matrix:{...matrix},clipped,alpha:this.globalAlpha,textBaseline:this.textBaseline});},restore(){const state=stack.pop();({matrix,clipped}=state);this.globalAlpha=state.alpha;this.textBaseline=state.textBaseline;},clip(){clipped=true;},translate(x,y){matrix.x+=Math.cos(matrix.angle)*x-Math.sin(matrix.angle)*y;matrix.y+=Math.sin(matrix.angle)*x+Math.cos(matrix.angle)*y;},rotate(a){matrix.angle+=a;},beginPath(){shape=null;},rect(x,y,w,h){shape={x,y,w,h};},arc(x,y,r,start,end){shape={arc:true,x,y,r,start,end};},stroke(){if(shape?.arc)events.push({type:'arc',...shape,color:this.strokeStyle,alpha:this.globalAlpha,width:this.lineWidth,matrix:{...matrix}});},fill(){if(shape&&!shape.arc)events.push({type:'rect',...shape,alpha:this.globalAlpha,matrix:{...matrix}});},fillText(text,x,y){events.push({type:'text',text,x,y,font:this.font,alpha:this.globalAlpha,textBaseline:this.textBaseline,clipped,matrix:{...matrix}});},drawImage(image,x,y,w,h){events.push({type:'image',image,x,y,w,h,alpha:this.globalAlpha,matrix:{...matrix}});},measureText(text){return{width:text.length*6};}};
+ c.strokeText=function(text,x,y){events.push({type:'text-stroke',text,x,y,font:this.font,color:this.strokeStyle,width:this.lineWidth,alpha:this.globalAlpha});};
  return new Proxy(c,{get:(t,k)=>k in t?t[k]:(()=>{})});
 }
 function boot(){
@@ -327,4 +328,24 @@ test('local spawn and protection rings use the same eased final 300 ms without e
 test('shield-hit grace may fade grey but never creates a local spawn locator',()=>{
  for(const id of [0,1]){const {s,ctx}=boot(),t=tank({id,human:true,shield:0,spawnProtected:false,invulnerable:.15});s.drawTank(t);
  assert.equal(spawnGuides(ctx).length,0);assert.equal(ctx.events.find(e=>e.type==='arc'&&e.r===27).alpha,.175);}
+});
+
+test('ammo transitions keep thin black outlines and a stable top layer above every icon',()=>{
+ for(const zoom of [.08,.5,1,2])for(const power of ['rapid','laser','cannon','homing','grenade','scatter']){
+  const {s,ctx,made}=boot();s.scale=zoom;const t=tank({power});let anchor;
+  for(const rounds of power==='rapid'?[180,179,100,99,10,9]:[3,2,1]){
+   Object.assign(t,{machineRounds:rounds,charges:rounds});ctx.events.length=0;
+   s.drawTankPowerBadges(t,ctx,zoom,'icons');const iconsEnd=ctx.events.length;
+   s.drawTankPowerBadges(t,ctx,zoom,'counts');
+   const texts=ctx.events.filter(e=>e.type==='text'),outlines=ctx.events.filter(e=>e.type==='text-stroke');
+   assert.equal(texts[0].text,String(rounds));assert.equal(outlines.length,texts.length);
+   for(let i=0;i<texts.length;i++){
+    const text=texts[i],outline=outlines[i];assert.equal(outline.text,text.text);assert.equal(outline.x,text.x);assert.equal(outline.y,text.y);assert.equal(outline.color,'#000');
+    assert.ok(outline.width*zoom>=1-1e-8&&outline.width*zoom<=2+1e-8,'one thin screen-space outline');
+    assert.ok(ctx.events.indexOf(outline)>=iconsEnd);assert.ok(ctx.events.indexOf(outline)<ctx.events.indexOf(text));
+   }
+   const current={x:texts[0].x,y:texts[0].y,font:texts[0].font};if(anchor)assert.deepEqual(current,anchor,'100→99 and10→9 do not move the label');else anchor=current;
+  }
+  assert.equal(made.length,4,'all ammo values reuse icon textures');
+ }
 });

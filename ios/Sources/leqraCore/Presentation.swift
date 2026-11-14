@@ -98,7 +98,7 @@ public struct PilotReadout: Equatable, Sendable {
             let cooldown = unlimited ? 0 : tank.cooldown
             let free = unlimited ? Int.max : tank.power == "laser" ? tank.charges : available
             let need = tank.power == "scatter" ? 3 : 1
-            let cooldowns: [String: Double] = ["cannon": 0.85, "laser": 0.85, "rapid": 0, "scatter": 0.54, "homing": 0.72, "grenade": 0.8]
+            let cooldowns: [String: Double] = ["cannon": 0.85 * 2 / 3, "laser": 0.85 * 2 / 3, "rapid": 0, "scatter": 0.54, "homing": 0.72, "grenade": 0.8]
             let fallback = cooldowns[tank.power] ?? 0.34
             let total = tank.cooldownTotal > 0 ? tank.cooldownTotal : fallback
             progress = cooldown > 0 ? max(0, min(1, 1 - cooldown / max(0.001, total))) : free < need ? 0 : 1
