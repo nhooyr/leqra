@@ -1,13 +1,13 @@
 #!/bin/sh
 set -eu
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
-go run ../src -check-assets
+go run ./src -check-assets
 
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/leqra-deploy.XXXXXX")
 trap 'rm -rf "$build_dir"' 0
 trap 'exit 1' HUP INT TERM
-GOOS=linux GOARCH=amd64 go build -trimpath -o "$build_dir/leqra" ../src
+GOOS=linux GOARCH=amd64 go build -trimpath -o "$build_dir/leqra" ./src
 
 ssh leqra sh -s <<'EOF'
 set -eu
@@ -23,8 +23,8 @@ sudo chown leqra:leqra /opt/leqra /var/lib/leqra
 EOF
 
 rsync --rsync-path='sudo rsync' -avz --progress "$build_dir/leqra" leqra:/opt/leqra/leqra-server
-rsync --rsync-path='sudo rsync' -avz --progress leqra.service leqra:/etc/systemd/system/leqra.service
-rsync --rsync-path='sudo rsync' -avz --progress leqra.env leqra:/etc/leqra/leqra.env
+rsync --rsync-path='sudo rsync' -avz --progress ./deploy/leqra.service leqra:/etc/systemd/system/leqra.service
+rsync --rsync-path='sudo rsync' -avz --progress ./deploy/leqra.env leqra:/etc/leqra/leqra.env
 ssh leqra sh -s <<'EOF'
 set -eu
 sudo chown leqra:leqra /opt/leqra/leqra-server

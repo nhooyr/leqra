@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Rect
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -15,9 +16,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import com.leqra.core.RoomRules
+import com.leqra.core.roamingBotSpawnRates
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class RoamingRuleUiTest {
@@ -86,10 +89,11 @@ class RoamingRuleUiTest {
                 SystemClock.sleep(150)
                 main {
                     val session = field(activity, "session") as GameSession
-                    session.changeRules(
-                        RoomRules.localDefaults("infinity")
-                            .copy(infinityRandomBots = false, infinityBotSpawnRate = if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) 4.0 else .5)
-                    )
+                    val legacy = orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    session.changeRules(RoomRules.localDefaults("infinity").copy(
+                        infinityRandomBots = false, infinityBotDifficulty = "normal", infinityRandomDifficulty = true,
+                        infinityBotSpawnRates = if (legacy) null else mapOf("dumb" to 4.0, "normal" to 1.0, "godlike" to .5),
+                    ))
                     activity.javaClass
                         .getDeclaredMethod("showRules")
                         .apply { isAccessible = true }
@@ -101,52 +105,53 @@ class RoamingRuleUiTest {
                     val dialog = field(activity, "dialog") as AlertDialog
                     val root = dialog.window!!.decorView
                     val all = descendants(root)
-                    val rate = all.filterIsInstance<Spinner>().single { it.adapter.count == 4 && it.adapter.getItem(0).toString() == "0.5×" }
-                    val fill =
-                        all.filterIsInstance<CheckBox>().single {
-                            it.text.toString() == "Fill Infinity with random bots"
-                        }
-                    assertFalse(rate.isEnabled)
+                    val rates = all.filterIsInstance<Spinner>().filter { it.tag?.toString()?.startsWith("roamingRate:") == true }.associateBy { it.tag.toString().substringAfter(":") }
+                    val fill = all.filterIsInstance<CheckBox>().single { it.text.toString() == "Fill Infinity with random bots" }
+                    assertEquals(5, rates.size)
+                    assertTrue(rates.values.all { !it.isEnabled })
+                    assertFalse(all.filterIsInstance<TextView>().any { it.text.toString() == "Random bot difficulty" })
+                    if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) {
+                        assertEquals("0.667×", rates.getValue("easy").selectedItem)
+                    }
                     val before = bounds(root)
                     assertTrue("The rules dialog must be laid out", before.width() > 0 && before.height() > 0)
                     fill.performClick()
-                    assertTrue(rate.isEnabled)
-                    assertEquals(
-                        "Enabling options must not resize the rules dialog",
-                        before,
-                        bounds(root),
-                    )
-                    rate.setSelection(if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) 0 else 3)
-                    rate.requestRectangleOnScreen(Rect(0, 0, rate.width, rate.height), true)
-                }
-                SystemClock.sleep(100)
-                if (orientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
-                    main {
-                        val dialog = field(activity, "dialog") as AlertDialog
-                        descendants(dialog.window!!.decorView).filterIsInstance<Spinner>().single { it.adapter.count == 4 && it.adapter.getItem(0).toString() == "0.5×" }.setSelection(0)
+                    assertTrue(rates.values.all { it.isEnabled })
+                    assertEquals("Enabling options must not resize the rules dialog", before, bounds(root))
+                    fun pick(level: String, value: String) {
+                        val spinner = rates.getValue(level)
+                        spinner.setSelection((0 until spinner.adapter.count).first { spinner.adapter.getItem(it).toString() == value })
                     }
-                    SystemClock.sleep(100)
+                    if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) {
+                        pick("dumb", "Off"); pick("normal", "4×"); pick("godlike", "1×")
+                    } else {
+                        pick("dumb", "0.5×"); pick("normal", "Off"); pick("godlike", "4×")
+                    }
+                    rates.getValue("normal").requestRectangleOnScreen(Rect(0, 0, rates.getValue("normal").width, rates.getValue("normal").height), true)
                 }
+                SystemClock.sleep(150)
                 main {
                     val session = field(activity, "session") as GameSession
                     val dialog = field(activity, "dialog") as AlertDialog
+                    val shown = dialog.window!!.decorView
+                    val bitmap = Bitmap.createBitmap(shown.width, shown.height, Bitmap.Config.ARGB_8888)
+                    shown.draw(android.graphics.Canvas(bitmap))
+                    File(instrumentation.targetContext.cacheDir, "roaming-rates-${if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) "portrait" else "landscape"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
                     val apply = descendants(dialog.window!!.decorView).filterIsInstance<TextView>().single { it.text.toString() == "APPLY RULES" }
                     apply.performClick()
-                    assertEquals(.5, session.rules.infinityBotSpawnRate, 0.0)
+                    val actual = session.rules.roamingBotSpawnRates()
+                    assertEquals(if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) 0.0 else .5, actual.getValue("dumb"), 0.0)
+                    assertEquals(if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) 4.0 else 0.0, actual.getValue("normal"), 0.0)
+                    assertEquals(if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) 1.0 else 4.0, actual.getValue("godlike"), 0.0)
+                    if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) assertEquals(2.0 / 3, actual.getValue("easy"), 0.0)
                     assertTrue(session.rules.infinityRandomBots)
                     val saved =
                         instrumentation.targetContext
                             .getSharedPreferences("leqra-settings", 0)
                             .getString("rules", null)
                     assertNotNull(saved)
-                    assertEquals(
-                        .5,
-                        com.leqra.android.network.ProtocolJson.roomRules(
-                                org.json.JSONObject(saved!!)
-                            )
-                            .infinityBotSpawnRate,
-                        0.0,
-                    )
+                    assertEquals(actual, com.leqra.android.network.ProtocolJson.roomRules(org.json.JSONObject(saved!!)).roamingBotSpawnRates())
                 }
             }
         } finally {

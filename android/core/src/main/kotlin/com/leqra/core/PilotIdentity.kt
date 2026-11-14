@@ -4,7 +4,7 @@ import java.util.Locale
 
 object PilotIdentity {
     private val botPrefix = Regex("^bot(?:\\s+|$)", RegexOption.IGNORE_CASE)
-    private val publicName = Regex("^Bot [0-9]+(?: - Godlike)?$")
+    private val publicName = Regex("^Bot ([0-9]+)(?: - (Dumb|Easy|Normal|Hard|Godlike))?$")
     private val wordSpace = Regex("\\s+")
 
     fun botName(name: String): String =
@@ -16,7 +16,16 @@ object PilotIdentity {
         else name + if (seat in 1..2) " (P$seat)" else ""
 
     fun leaderboardLabel(name: String, bot: Boolean, seat: Int = 0): String =
-        label(name, bot, seat) + if (bot && publicName.matches(name)) " · BOT" else ""
+        if (bot) publicName.matchEntire(name)?.let { "Bot " + it.groupValues[1] } ?: label(name, true)
+        else label(name, false, seat)
+
+    /** A callsign never assigns a difficulty to a human or invents a missing room tier. */
+    fun leaderboardDifficulty(name: String, bot: Boolean, difficulty: String = ""): String? {
+        if (!bot) return null
+        val actual = difficulty.lowercase(Locale.ROOT)
+        if (actual in BotDifficulty.names) return actual
+        return publicName.matchEntire(name)?.groupValues?.get(2)?.lowercase(Locale.ROOT)?.takeIf { it in BotDifficulty.names }
+    }
 }
 
 data class GodlikeSpawn(val id: Int, val spawnSerial: Int, val name: String)

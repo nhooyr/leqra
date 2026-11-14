@@ -79,6 +79,11 @@ internal class GameSession(context: Context) {
     val localBots: List<LocalBot>
         get() = mutableLocalBots
 
+    val localStartError: String?
+        get() = if (online || publicSelected) null else rules.infinityStartError(
+            listOf(localTeam) + (if (localSelected) listOf(secondLocalTeam) else emptyList()) + localBots.map { it.team },
+        )
+
     var botCount: Int
         get() = mutableLocalBots.size
         set(value) {
@@ -597,6 +602,7 @@ internal class GameSession(context: Context) {
 
     fun play() {
         if (!validHumanNames()) return
+        localStartError?.let { error(it); return }
         if (!online && publicSelected && awaitDefaultNames(::play)) return
         save()
         neutral()
@@ -1399,25 +1405,6 @@ internal class GameSession(context: Context) {
                 "survival" to "Survival",
             )
 
-        fun rulesJson(r: RoomRules) =
-            JSONObject()
-                .put("mode", r.mode)
-                .put("infinity", r.infinity)
-                .put("infinityTarget", r.infinityTarget)
-                .put("infinityRandomBots", r.infinityRandomBots)
-                .put("infinityBotDifficulty", r.infinityBotDifficulty)
-                .put("infinityRandomDifficulty", r.infinityRandomDifficulty)
-                .put("infinityBotSpawnRate", r.infinityBotSpawnRate)
-                .put("teamMode", r.teamMode)
-                .put("mapSize", r.mapSize)
-                .put("portraitMaze", r.portraitMaze)
-                .put("scoreTarget", r.scoreTarget)
-                .put("timeLimit", r.timeLimit)
-                .put("respawnSeconds", r.respawnSeconds)
-                .put("pickupRate", r.pickupRate)
-                .put("weapons", JSONArray(r.weapons))
-                .put("friendlyFire", r.friendlyFire)
-                .put("teamNames", JSONArray(r.teamNames))
-                .put("teamColors", JSONArray(r.teamColors))
+        fun rulesJson(r: RoomRules) = ProtocolJson.rules(r)
     }
 }

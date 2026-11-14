@@ -26,7 +26,7 @@ function boot(){
   resize(){s.resizes=(s.resizes||0)+1;},$:id=>elements.get(id),MutationObserver:class{constructor(fn){this.fn=fn;this.entries=[];observers.push(this);}observe(node,options){this.entries.push([node,options]);}disconnect(){this.disconnected=true;}},
   setTimeout(fn,ms){timers.set(++serial,{fn,ms});return serial;},clearTimeout(id){timers.delete(id);},fetch(url,options){return new Promise((resolve,reject)=>{const request={url:String(url),options,resolve:data=>resolve({ok:true,json:async()=>data}),reject};requests.push(request);options.signal.addEventListener('abort',()=>reject(Error('Aborted')));});},
  };
- vm.createContext(s);require('./identity_fixture.cjs')(s,source);for(const name of ['orderedRoster','initInfinityPreview'])vm.runInContext(declaration(name),s);s.initInfinityPreview();
+ vm.createContext(s);const botSource=readFileSync(assetPath('callsigns.js'),'utf8');vm.runInContext('const botLabels=new Map();'+botSource.slice(botSource.indexOf('function botName('),botSource.indexOf('function record(')),s);s.window.leqraCallsigns={leaderboardBot:s.leaderboardBot};require('./identity_fixture.cjs')(s,source);for(const name of ['orderedRoster','initInfinityPreview'])vm.runInContext(declaration(name),s);s.initInfinityPreview();
  const flush=()=>new Promise(setImmediate),run=ms=>{for(const [id,timer]of [...timers])if(timer.ms===ms){timers.delete(id);timer.fn();}};
  return{s,$:s.$,r,requests,timers,observers,bar,wrap,fps,next,flush,run};
 }
@@ -36,7 +36,7 @@ test('Infinity preview uses real public counts, a measured FPS node and the shar
  assert.equal($('infinityPreviewTitle').textContent,'Public Infinity');
  const pilots=$('infinityPreviewScores').children;assert.deepEqual(pilots.map(p=>p.children[0].textContent),['SNOW <FOX> (P1)','WING (P2)']);assert.equal(pilots[0].style.color,'#123456');assert.equal(pilots[1].children[1].textContent,': ');assert.equal(pilots[1].children[2].textContent,'score: 0, rank: #0');assert.equal(pilots[0].attributes['aria-label'],'SNOW <FOX> (P1): score: 0, rank: #0');
  requests[0].resolve({players:7,tankCount:18,leaders:Array.from({length:12},(_,i)=>({id:i+1,name:'Tank <'+i+'>',score:30-i,colorIndex:i%2,rank:i+1}))});await h.flush();
- assert.equal($('infinityPreviewOnlineCount').textContent,'7 online');assert.equal($('infinityPreviewLeaders').children.length,10);assert.equal($('infinityPreviewLeaders').children[0].children[0].textContent,'Tank <0>');assert.equal($('infinityPreviewLeaders').children[0].children[0].style.fontWeight,'400','public pilots are not local merely because the room is on this device');
+ assert.equal($('infinityPreviewOnlineCount').textContent,'7 online');assert.equal($('infinityPreviewLeaders').children.length,10);assert.equal($('infinityPreviewLeaders').children[0].children[0].children[0].children[0].textContent,'Tank <0>');assert.equal($('infinityPreviewLeaders').children[0].children[0].children[0].children[0].style.fontWeight,'400','public pilots are not local merely because the room is on this device');
  assert.equal($('infinityPreviewScoreboardBtn').textContent,'LEADERBOARD');$('infinityPreviewScoreboardBtn').onclick();assert.equal($('infinityPreviewScoreboard').hidden,false);assert.equal($('infinityPreviewScoreboardBtn').attributes['aria-expanded'],'true');
  assert.equal($('infinityPreviewScoreboardTitle').hidden,false);assert.equal($('infinityPreviewScoreboardTitle').textContent,'LEADERBOARD');
  const escape={key:'Escape',preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};s.document.emit('keydown',escape);assert.equal(escape.prevented,true);assert.equal($('infinityPreviewScoreboard').hidden,true);
@@ -105,4 +105,18 @@ test('an empty public preview shows one centered message without a title or divi
  const previewSelector='body.touch-ui .infinity-preview-header>.infinity-preview-scoreboard[open]',activeSelector='body.touch-ui .infinite-leaderboard[open]';
  assert.ok(css.indexOf(activeSelector)>css.indexOf(previewSelector),'fixture exercises the later active-arena height cap');
  assert.match(css,/body\.touch-ui \.infinity-preview-header>\.infinity-preview-scoreboard\[open\]\{max-height:50dvh\}/,'the preview parent adds specificity so the active touch arena height cap cannot clip an empty preview');
+});
+
+test('public preview shows numbered bot names and actual difficulties without a redundant BOT badge',async()=>{
+ const h=boot();h.requests[0].resolve({players:1,tankCount:4,leaders:[
+  {id:1,name:'Bot 1 - Dumb',score:9,bot:true,difficulty:'dumb'},
+  {id:8,name:'Bot 8 - Normal',score:8,bot:true,difficulty:'normal'},
+  {id:64,name:'Bot 64 - Godlike',score:7,bot:true,difficulty:'godlike'},
+  {id:99,name:'Godlike Bot 9',score:6,bot:false,difficulty:'godlike'}]});await h.flush();
+ const rows=h.$('infinityPreviewLeaders').children;
+ const identities=rows.map(row=>row.children[0].children[0]);
+ assert.deepEqual(identities.map(node=>node.children[0].textContent),['Bot 1','Bot 8','Bot 64','Godlike Bot 9']);
+ assert.deepEqual(identities.map(node=>node.children[1]?.textContent||''),['DUMB','NORMAL','GODLIKE','']);
+ assert.deepEqual(rows.map(row=>row.children[0].children[1].textContent),['9','8','7','6']);
+ assert.ok(identities.every(node=>node.children[0].style.fontWeight==='400'));
 });

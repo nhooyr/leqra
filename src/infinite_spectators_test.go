@@ -370,7 +370,7 @@ func TestRoomInfinitySpectatorGalleryDoesNotIncreaseRoamingBudget(t *testing.T) 
 		t.Fatal(rejection)
 	}
 	a := pair.arena
-	a.rules.randomBots = true
+	a.rules.RandomBots = true
 	var client *Client
 	for i := range maxSpectators {
 		viewer := spectatorRoomClient(t, s, room, fmt.Sprintf("Observer %d", i))

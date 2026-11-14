@@ -41,6 +41,7 @@ fun RoomRules.restoringModeDefaults(): RoomRules {
             infinityBotDifficulty = defaults.infinityBotDifficulty,
             infinityRandomDifficulty = defaults.infinityRandomDifficulty,
             infinityBotSpawnRate = defaults.infinityBotSpawnRate,
+            infinityBotSpawnRates = defaults.infinityBotSpawnRates,
             teamNames = defaults.teamNames,
             teamColors = defaults.teamColors,
             friendlyFire = false,

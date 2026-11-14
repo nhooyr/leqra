@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.0.0';
+const GAME_VERSION='5.0.1';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -3445,6 +3445,23 @@ function survivalSeatLocked(r=roomData()){return survivalMode(r?.rules||currentR
 function survivalState(){return objectiveState()?.survival;}
 function survivalBreak(){return survivalState()?.status==='break';}
 function suddenDeath(){return !!objectiveState()?.suddenDeath;}
+function infinityBotSpawnRates(r={}){
+ const levels=['dumb','easy','normal','hard','godlike'],rates=Object.fromEntries(levels.map(level=>[level,0]));
+ if(r.infinityBotSpawnRates!=null){
+  const supplied=r.infinityBotSpawnRates;
+  if(typeof supplied!=='object'||Array.isArray(supplied))throw Error('Choose valid per-difficulty Infinity bot spawn rates.');
+  for(const [level,rate]of Object.entries(supplied)){
+   if(!levels.includes(level)||typeof rate!=='number'||!Number.isFinite(rate)||rate<0||rate>4)throw Error('Each Infinity bot spawn rate must be 0–4. Use 0 for Off.');
+   rates[level]=rate;
+  }
+  return rates;
+ }
+ const selected=r.infinityBotDifficulty||'normal',rate=r.infinityBotSpawnRate===undefined||r.infinityBotSpawnRate===0?2:r.infinityBotSpawnRate;
+ if(!levels.includes(selected)||![.5,1,2,4].includes(rate))throw Error('Choose valid legacy Infinity bot spawn rates.');
+ const eligible=r.infinityRandomDifficulty?levels.slice(0,levels.indexOf(selected)+1):[selected];
+ for(const level of eligible)rates[level]=rate/eligible.length;
+ return rates;
+}
 function validateRoomRules(r){
  if(!r||!['elimination','ctf','koth','survival'].includes(r.mode)||!['teams','ffa'].includes(r.teamMode)||!['compact','standard','large','huge','giant','ultrawide'].includes(r.mapSize)||!['superfast','fast','normal','slow','off'].includes(r.pickupRate))throw Error('Choose valid mode, format, map and power-up settings.');
  if(!r.infinity&&(r.mode==='ctf'||r.mode==='survival')&&r.teamMode!=='teams')throw Error(r.mode==='survival'?'Survival needs teams.':'Capture the Flag needs two numbered teams.');
@@ -3457,6 +3474,7 @@ function validateRoomRules(r){
  const infinityBotSpawnRate=r.infinityBotSpawnRate===undefined||r.infinityBotSpawnRate===0?2:r.infinityBotSpawnRate;
  if(![.5,1,2,4].includes(infinityBotSpawnRate))throw Error('Choose a roaming bot spawn rate: 0.5×, 1×, 2× or 4×.');
  if(r.infinityRandomDifficulty!==undefined&&typeof r.infinityRandomDifficulty!=='boolean')throw Error('Random Infinity bot difficulty must be Fixed or Up to.');
+ const spawnRates=infinityBotSpawnRates(r);
  if(!Number.isInteger(r.timeLimit)||r.timeLimit<30||r.timeLimit>600)throw Error('Time limit must be 30–600 seconds.');
  if(!Number.isInteger(r.respawnSeconds)||r.respawnSeconds<1||r.respawnSeconds>10)throw Error('Respawn delay must be 1–10 seconds.');
  if(!Array.isArray(r.weapons)||new Set(r.weapons).size!==r.weapons.length||r.weapons.some(w=>w!=='scope'&&!Object.prototype.hasOwnProperty.call(POWER,w)))throw Error('Invalid power-up selection.');
@@ -3466,7 +3484,7 @@ function validateRoomRules(r){
  if(r.portraitMaze!==undefined&&typeof r.portraitMaze!=='boolean')throw Error('Portrait maze must be on or off.');
  if(r.infinity!==undefined&&typeof r.infinity!=='boolean')throw Error('Infinity must be on or off.');
  const teamNames=validateTeamNames(r.teamNames);const teamColors=r.teamColors??[0,1,2,3];if(!Array.isArray(teamColors)||teamColors.length!==4||teamColors.some(i=>!Number.isInteger(i)||i<0||i>7))throw Error('Choose a palette color for each team.');
- return {...JSON.parse(JSON.stringify(r)),weapons,teamNames,teamColors:[...teamColors],friendlyFire:r.friendlyFire??false,portraitMaze:r.portraitMaze??false,infinityTarget,infinityRandomBots:r.infinityRandomBots??false,infinityBotSpawnRate,infinityBotDifficulty,infinityRandomDifficulty:r.infinityRandomDifficulty??false};
+ return {...JSON.parse(JSON.stringify(r)),weapons,teamNames,teamColors:[...teamColors],friendlyFire:r.friendlyFire??false,portraitMaze:r.portraitMaze??false,infinityTarget,infinityRandomBots:r.infinityRandomBots??false,infinityBotSpawnRate,infinityBotDifficulty,infinityRandomDifficulty:r.infinityRandomDifficulty??false,infinityBotSpawnRates:spawnRates};
 }
 function validateTeamNames(names){
  if(names===undefined||names===null)return ['Team 1','Team 2','Team 3','Team 4'];
@@ -3508,7 +3526,7 @@ function roomStartError(data=roomData()){
  const players=data?.players.filter(p=>p.connected!==false)||[],r=data?.rules||currentRules();
  if(r.infinity){
   if(!players.some(p=>p.kind==='human'))return localPilotIdentity(0).label+' needs a combat seat to enter Infinity.';
-  if(r.infinityTarget>0&&!r.infinityRandomBots&&new Set(players.map(teamKey)).size<2)return 'Add an opposing tank or enable random bots to play to a score target.';
+  if(r.infinityTarget>0&&(!r.infinityRandomBots||!Object.values(infinityBotSpawnRates(r)).some(rate=>rate>0))&&new Set(players.map(teamKey)).size<2)return 'Add an opposing tank or enable a roaming bot spawn rate to play to a score target.';
   return '';
  }
  if(survivalMode(r)){if((data?.players.length||0)>4)return 'Survival supports up to four squad tanks.';if(!players.length)return 'Survival needs at least one available squad tank.';return '';}
@@ -3767,7 +3785,7 @@ function initRoomModePicker(toolbar){
 // confirms Apply; disconnects and timeouts keep the draft available for retry.
 function roomSetupRulesKey(rules){
  const r=validateRoomRules(rules);
- return JSON.stringify([r.mode,!!r.infinity,r.infinityTarget,r.infinityRandomBots,r.infinityBotSpawnRate??2,r.infinityBotDifficulty,r.infinityRandomDifficulty,r.teamMode,r.mapSize,r.portraitMaze,r.scoreTarget,r.timeLimit,r.respawnSeconds,r.pickupRate,[...r.weapons].sort(),r.friendlyFire,r.teamNames,r.teamColors]);
+ return JSON.stringify([r.mode,!!r.infinity,r.infinityTarget,r.infinityRandomBots,infinityBotSpawnRates(r),r.teamMode,r.mapSize,r.portraitMaze,r.scoreTarget,r.timeLimit,r.respawnSeconds,r.pickupRate,[...r.weapons].sort(),r.friendlyFire,r.teamNames,r.teamColors]);
 }
 function roomSetupRosterKey(roster,rules){
  return JSON.stringify(roster.map((p,i)=>[i===0?'human':p.kind,cleanPilotName(p.name),p.team,p.kind==='bot'?p.difficulty:'',rules.teamMode==='ffa'?(p.colorIndex??-1):-1]));
@@ -3848,9 +3866,10 @@ function fillRulesForm(r=currentRules()){
  $('rulesDialog').dataset.mode=r.infinity?'infinity':r.mode;for(const k of ['scoreTarget','timeLimit','respawnSeconds','pickupRate'])$('rule-'+k).value=r[k];
  $('rule-infinityTarget').value=r.infinityTarget??0;
  $('rule-infinityRandomBots').checked=!!r.infinityRandomBots;
- $('rule-infinityBotSpawnRate').value=r.infinityBotSpawnRate||2;
- $('rule-infinityBotDifficulty').value=r.infinityBotDifficulty||'normal';
- $('rule-infinityRandomDifficulty').value=r.infinityRandomDifficulty?'upTo':'fixed';
+ for(const [level,rate]of Object.entries(infinityBotSpawnRates(r))){
+  const input=$('rule-infinityBotSpawnRate-'+level),choices=[0,.5,1,2,4];if(!choices.includes(rate))choices.push(rate);choices.sort((a,b)=>a-b);
+  input.innerHTML=choices.map(value=>'<option value="'+value+'">'+(value===0?'Off':Number(value.toPrecision(3))+'×')+'</option>').join('');input.value=rate;
+ }
  $('rule-friendlyFire').checked=!!r.friendlyFire;
  for(let i=1;i<=4;i++){$('rule-teamName'+i).value=teamName(i,r);const box=$('rule-teamName'+i).parentElement;if(!box.querySelector('[data-team-palette]')){const picker=makeColorSelect(r.teamColors?.[i-1]??i-1,()=>{},'Color for team '+i);picker.querySelector('select').id='rule-teamColor'+i;picker.dataset.teamPalette=i;box.append(picker);}const sel=$('rule-teamColor'+i);sel.value=r.teamColors?.[i-1]??i-1;sel.previousElementSibling.style.background=Theme.colors[+sel.value];}
  for(const c of document.querySelectorAll('[data-weapon-toggle]'))c.checked=r.weapons.includes(c.dataset.weaponToggle);
@@ -3860,7 +3879,7 @@ function fillRulesForm(r=currentRules()){
 function resetRuleDefaults(){
  if(!roomModeEditable())return;
  const current=currentRules(),defaults=defaultModeRules(current.mode);
- if(current.infinity)fillRulesForm({...current,infinityTarget:defaults.infinityTarget,infinityRandomBots:defaults.infinityRandomBots,infinityBotSpawnRate:defaults.infinityBotSpawnRate,infinityBotDifficulty:defaults.infinityBotDifficulty,infinityRandomDifficulty:defaults.infinityRandomDifficulty,teamNames:defaults.teamNames,teamColors:defaults.teamColors,friendlyFire:false});
+ if(current.infinity)fillRulesForm({...current,infinityTarget:defaults.infinityTarget,infinityRandomBots:defaults.infinityRandomBots,infinityBotSpawnRate:defaults.infinityBotSpawnRate,infinityBotDifficulty:defaults.infinityBotDifficulty,infinityRandomDifficulty:defaults.infinityRandomDifficulty,infinityBotSpawnRates:defaults.infinityBotSpawnRates,teamNames:defaults.teamNames,teamColors:defaults.teamColors,friendlyFire:false});
  else fillRulesForm({...defaults,mapSize:current.mapSize,portraitMaze:!!current.portraitMaze,teamMode:current.teamMode});
  $('rulesDialog').dataset.defaults='true';
  featureNotice('rulesNotice','Default '+modeLabel().toLowerCase()+' rules loaded. Select APPLY RULES to save.');
@@ -3879,8 +3898,7 @@ function updateRuleHelp(){
  const randomBots=$('rule-infinityRandomBots'),showBotOptions=infinite&&randomBots.checked;
  $('rule-infinity-bots').hidden=!infinite;randomBots.disabled=!infinite||!editable;
  $('rule-infinity-bot-options').hidden=!showBotOptions;
- $('rule-infinityBotDifficulty').disabled=$('rule-infinityRandomDifficulty').disabled=!showBotOptions||!editable;
- $('rule-infinityBotSpawnRate').disabled=!showBotOptions||!editable;
+ for(const level of ['dumb','easy','normal','hard','godlike'])$('rule-infinityBotSpawnRate-'+level).disabled=!showBotOptions||!editable;
  for(const key of ['scoreTarget','timeLimit','pickupRate']){const input=$('rule-'+key);input.parentElement.hidden=infinite;input.disabled=infinite||!editable;}
  $('rule-weapon-options').hidden=$('rule-pickup-density').hidden=infinite;
  if(infinite){
@@ -3909,9 +3927,7 @@ function submitRules(e){
   if(current.infinity){
    r.infinityTarget=Number($('rule-infinityTarget').value);
    r.infinityRandomBots=$('rule-infinityRandomBots').checked;
-   r.infinityBotSpawnRate=Number($('rule-infinityBotSpawnRate').value);
-   r.infinityBotDifficulty=$('rule-infinityBotDifficulty').value;
-   r.infinityRandomDifficulty=$('rule-infinityRandomDifficulty').value==='upTo';
+   r.infinityBotSpawnRates=Object.fromEntries(['dumb','easy','normal','hard','godlike'].map(level=>[level,Number($('rule-infinityBotSpawnRate-'+level).value)]));
   }
   else{
    const defaults=$('rulesDialog').dataset.defaults==='true'?defaultModeRules(current.mode):current;
@@ -4074,10 +4090,16 @@ function initInfinityPreview(){
  const close=()=>{panel.hidden=true;panel.open=false;button.setAttribute('aria-expanded','false');};
  function cancel(){clearTimeout(timer);timer=0;const old=request;request=null;clearTimeout(old?.previewTimeout);old?.abort();}
  function renderStandings(){
-  const publicArena=isPublic(),r=roomData(),rows=publicArena?(snapshot?.leaders||[]):orderedRoster((r?.players||[]).filter(p=>!p.spectating)).map(p=>{const identity=roomPlayerIdentity(p,r);return{name:identity.label,score:0,color:identity.color,local:isDeviceLocalPilot(p,r)};});
+  const publicArena=isPublic(),r=roomData(),rows=publicArena?(snapshot?.leaders||[]):orderedRoster((r?.players||[]).filter(p=>!p.spectating)).map(p=>{const identity=roomPlayerIdentity(p,r);return{name:identity.label,score:0,color:identity.color,local:isDeviceLocalPilot(p,r),bot:p.kind==='bot',difficulty:p.difficulty};});
   const key=JSON.stringify([publicArena,rows,failed,!!snapshot]);if(key===leaderKey)return;leaderKey=key;
   const title='LEADERBOARD',empty=rows.length===0;$('infinityPreviewScoreboardTitle').textContent=title;$('infinityPreviewScoreboardTitle').hidden=empty;button.textContent=title;panel.classList.toggle('is-empty',empty);list.hidden=empty;
-  list.replaceChildren(...rows.slice(0,publicArena?10:rows.length).map((p,index)=>{const row=document.createElement('li');row.value=Number.isSafeInteger(p.rank)&&p.rank>0?p.rank:index+1;row.style.setProperty('--tank-color',paintColor(p.color||COLORS[p.colorIndex]||COLORS[0]));const name=document.createElement('span');name.className='leaderboard-name';name.textContent=(typeof window!=='undefined'&&window.leqraCallsigns?.botName(p.name,p.bot))||p.name;name.style.fontWeight=p.local?'700':'400';const score=document.createElement('strong');score.className='leaderboard-score';score.textContent=String(p.score);row.append(name,score);return row;}));
+  list.replaceChildren(...rows.slice(0,publicArena?10:rows.length).map((p,index)=>{
+   const row=document.createElement('li');row.value=Number.isSafeInteger(p.rank)&&p.rank>0?p.rank:index+1;row.style.setProperty('--tank-color',paintColor(p.color||COLORS[p.colorIndex]||COLORS[0]));
+   const identity=window.leqraCallsigns?.leaderboardBot?.(p.name,p.bot,p.difficulty)||{name:p.name,difficulty:''},name=document.createElement('span');name.className='leaderboard-name';name.textContent=identity.name;name.style.fontWeight=p.local?'700':'400';
+   const details=document.createElement('span');details.className='leaderboard-identity';details.append(name);
+   if(identity.difficulty){const badge=document.createElement('small');badge.className='leaderboard-difficulty';badge.textContent=identity.difficulty.toUpperCase();details.append(badge);}
+   const score=document.createElement('strong');score.className='leaderboard-score';score.textContent=String(p.score);const content=document.createElement('span');content.className='leaderboard-row';content.append(details,score);row.append(content);return row;
+  }));
   note.textContent=publicArena&&!snapshot?(failed?'Public leaderboard unavailable. Retrying…':'Loading public leaderboard…'):empty?'No tanks are playing yet.':'+1 per kill, -1 per death';
  }
  function sync(){
@@ -4601,10 +4623,8 @@ function initFeatures(){
  <label class="pickup-frequency">POWER-UP FREQUENCY<select id="rule-pickupRate"><option value="superfast">Super fast, every 1–2s (default)</option><option value="fast">Fast, every 2–3.5s</option><option value="normal">Normal, every 4–6s</option><option value="slow">Slow, every 7–10s</option><option value="off">Off, no power-ups</option></select></label></div>
  <section id="rule-infinity-bots" hidden><h3>RANDOM BOTS</h3><label class="check-label"><input id="rule-infinityRandomBots" type="checkbox">Spawn random bots</label><p class="mode-help">Up to 16 roaming bots per connected human, 128 per room. Roaming bots stay near living humans. Bots on the room roster always play.</p>
  <div id="rule-infinity-bot-options" hidden><div class="rules-grid">
- <label>DIFFICULTY<select id="rule-infinityBotDifficulty">${Object.keys(DIFFICULTY).map(level=>'<option value="'+level+'">'+botLevelName(level)+'</option>').join('')}</select></label>
- <label>DIFFICULTY RANGE<select id="rule-infinityRandomDifficulty"><option value="fixed">Fixed</option><option value="upTo">Random up to limit</option></select></label>
- <label class="infinity-spawn-rate">SPAWN RATE<select id="rule-infinityBotSpawnRate"><option value="0.5">0.5×, every 2–4s</option><option value="1">1×, every 1–2s</option><option value="2">2×, every 0.5–1s (default)</option><option value="4">4×, every 0.25–0.5s</option></select></label>
- </div><p class="mode-help">Spawn intervals apply to each living human until the bot budget is filled. Fixed gives every random bot the selected difficulty. Random picks a difficulty from Dumb up to your selection.</p></div></section>
+ ${Object.keys(DIFFICULTY).map(level=>'<label>'+botLevelName(level).toUpperCase()+' SPAWN RATE<select id="rule-infinityBotSpawnRate-'+level+'">'+[0,.5,1,2,4].map(rate=>'<option value="'+rate+'">'+(rate===0?'Off':rate+'×')+'</option>').join('')+'</select></label>').join('')}
+ </div><p class="mode-help">Each rate adds to the spawn mix. 1× averages one bot every 1.5 seconds per living human while the shared bot budget has space. Off disables that difficulty; all Off disables roaming bots. Roster bots keep their own difficulty.</p></div></section>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Every tank is immune to its own weapons.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><div id="rule-weapon-options"><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="secondary" type="button" id="defaultRulesBtn">DEFAULT RULES</button><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span aria-hidden="true">→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP <span aria-hidden="true">→</span></button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
  <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><div id="controlsKeyboardHelp"><p class="mode-help controls-shortcuts"><span>${controlKeyHTML(['KeyP','ESC'])} opens the menu.</span><span>${controlKeyHTML(['KeyM'])} toggles sound.</span><span>${controlKeyHTML(['KeyF'])} toggles fullscreen.</span></p><p class="mode-help controls-firing-help">Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.</p></div><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>MAZE POWER-UPS</h3><p class="mode-help" id="controlsPickupInfo"></p><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
@@ -5638,7 +5658,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 window.leqraIdentity=Object.freeze({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,revoke:forgetRevokedAccount,exposeError:exposeAccountError,schedule:scheduleCallsignAvailability});
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work,latency=null)=>sampleFrame(now,work,'infiniteFPSIndicator',latency),
- publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,botName:(name,bot)=>window.leqraCallsigns?.botName(name,bot)||name,
+ publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,infinityBotSpawnRates,botName:(name,bot)=>window.leqraCallsigns?.botName(name,bot)||name,leaderboardBot:(name,bot,difficulty)=>window.leqraCallsigns?.leaderboardBot?.(name,bot,difficulty)||{name,difficulty:''},
  theme,colors:Theme.colors,canonicalColor:index=>COLORS[index]||'',colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
  openControls:()=>openFeature('controls'),mouseAimEnabled:()=>combatPrefs.mouseAim!==false,mouseFireEnabled:()=>combatPrefs.mouseFire!==false,setMouseControlEnabled,cleanPilotName,persistPilotName:persistInfinityPilotName,syncCallsignEditors,syncSidebarContext,mountSidebar,restoreSidebar,mountHeader,restoreHeader,chatOpen:()=>roomChat.open,arenaKeyBlocked,keyLabel,controlHintHTML,pilotIdentity,pilotIdentityHTML,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,

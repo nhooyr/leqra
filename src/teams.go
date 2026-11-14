@@ -38,7 +38,7 @@ func validateTeamNames(names []string) error {
 	return nil
 }
 
-// Copy slice fields so accepted room rules never alias a request or preset buffer.
+// Copy collection fields so accepted rules never alias a request or preset buffer.
 func normalizedRules(r MatchRules) MatchRules {
 	if !r.Infinity && r.Mode == "survival" {
 		r.TeamMode = "teams"
@@ -50,6 +50,13 @@ func normalizedRules(r MatchRules) MatchRules {
 		r.InfinityBotSpawnRate = 2
 	}
 	r.Weapons = append([]string{}, r.Weapons...)
+	if r.InfinityBotSpawnRates != nil {
+		rates := make(infinityBotSpawnRates, len(*r.InfinityBotSpawnRates))
+		for tier, rate := range *r.InfinityBotSpawnRates {
+			rates[tier] = rate
+		}
+		r.InfinityBotSpawnRates = &rates
+	}
 	names := defaultTeamNames()
 	if len(r.TeamNames) == 4 {
 		for i, name := range r.TeamNames {

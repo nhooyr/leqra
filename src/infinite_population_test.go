@@ -24,7 +24,7 @@ func roamingBots(a *infiniteArena) []*infinitePilot {
 	return bots
 }
 
-func TestPublicInfinityRoamingBotsUseDumbAndPrivateSettingsStillApply(t *testing.T) {
+func TestPublicInfinityRoamingBotsUsePublicMixAndPrivateSettingsStillApply(t *testing.T) {
 	now := time.Unix(0, 0)
 	public := newSeededInfiniteArena(37)
 	pilot := public.join(fakeClient(), "PILOT", now)
@@ -32,10 +32,14 @@ func TestPublicInfinityRoamingBotsUseDumbAndPrivateSettingsStillApply(t *testing
 	if len(roamingBots(public)) == 0 {
 		t.Fatal("public population did not spawn")
 	}
+	levels := make(map[int]int)
+	counts := make(map[string]int)
 	for _, bot := range roamingBots(public) {
-		if infiniteBotTunings[bot.botLevel].name != "dumb" {
-			t.Fatal("public roaming bot was not Dumb")
-		}
+		levels[bot.ID] = bot.botLevel
+		counts[infiniteBotTunings[bot.botLevel].name]++
+	}
+	if counts["dumb"] != 15 || counts["normal"] != 1 || counts["godlike"] != 0 {
+		t.Fatal("initial roaming budget did not use the public encounter mix", counts)
 	}
 	public.suspend(pilot)
 	if reason := public.resume(fakeClient(), pilot, 0, now.Add(time.Second)); reason != "" {
@@ -43,8 +47,8 @@ func TestPublicInfinityRoamingBotsUseDumbAndPrivateSettingsStillApply(t *testing
 	}
 	fillRoamingBots(public)
 	for _, bot := range roamingBots(public) {
-		if infiniteBotTunings[bot.botLevel].name != "dumb" {
-			t.Fatal("pooled public bot lost its Dumb difficulty")
+		if bot.botLevel != levels[bot.ID] {
+			t.Fatal("pooled public bot lost its encounter difficulty")
 		}
 	}
 	for _, difficulty := range []string{"dumb", "easy", "normal", "hard", "godlike"} {
@@ -74,7 +78,8 @@ func TestInfiniteRoamingBudgetCountsConnectedSeatsAndKeepsStableNumbers(t *testi
 		t.Fatalf("two connected seats have %d roaming bots, want 32", len(bots))
 	}
 	for i, bot := range bots {
-		if bot.Name != fmt.Sprintf("Bot %d", i+1) || bot.ID <= local.ID {
+		tier := map[string]string{"dumb": "Dumb", "normal": "Normal", "godlike": "Godlike"}[infiniteBotTunings[bot.botLevel].name]
+		if bot.Name != fmt.Sprintf("Bot %d - %s", i+1, tier) || bot.ID <= local.ID {
 			t.Fatal("bot labels share the monotonic human/owner ID counter")
 		}
 	}

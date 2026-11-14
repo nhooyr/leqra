@@ -221,10 +221,11 @@ function applyTankAppearance(world, tank, member) {
 }
 
 function roamingDifficulty(rules) {
- const ceiling = rules?.infinityBotDifficulty || 'normal';
- if (!rules?.infinityRandomDifficulty) return ceiling;
- const levels = BOT_LEVELS.indexOf(ceiling)+1;
- return BOT_LEVELS[Math.floor(Math.random()*levels)];
+ const rates=art.infinityBotSpawnRates(rules||{}),total=Object.values(rates).reduce((sum,rate)=>sum+rate,0);
+ if(!(total>0))return null;
+ let choice=Math.random()*total,last=null;
+ for(const level of BOT_LEVELS){const rate=rates[level];if(rate>0){last=level;if(choice<rate)return level;choice-=rate;}}
+ return last;
 }
 
 function mouseAimEnabled(){return art.mouseAimEnabled?.()!==false;}
@@ -672,10 +673,12 @@ function respawnOfflineTank(world, tank, point) {
  Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
   spawnSerial: tank.spawnSerial + 1, killedBy: '', killedByColor:'',power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
   ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});
+ if(tank.ambient)tank.difficulty=roamingDifficulty(world.rules);
 }
 
 function populateBots(world, locals) {
- const limit = Math.min(MAX_BOTS, locals.length * BOTS_PER_PLAYER);
+ const rate=Object.values(art.infinityBotSpawnRates(world.rules||{})).reduce((sum,value)=>sum+value,0);
+ const limit = (!world.rules||world.rules.infinityRandomBots)&&rate>0?Math.min(MAX_BOTS, locals.length * BOTS_PER_PLAYER):0;
  if (world.botBudget !== limit) {
   let count = 0;
   world.tanks = world.tanks.filter(tank => {
@@ -692,8 +695,8 @@ function populateBots(world, locals) {
   if(!bot.ambient||locals.some(pilot=>Math.abs(pilot.x-bot.x)<=CELL*16&&Math.abs(pilot.y-bot.y)<=CELL*16))continue;
   bot.pooledAt=world.time;bot.retired=true;world.botPool.push(bot);world.tanks.splice(i,1);
  }
- if (world.time < world.nextBot) return;
- world.nextBot = world.time + between(1,2)/(world.rules?.infinityBotSpawnRate||2);
+ if (!limit||world.time < world.nextBot) return;
+ world.nextBot = world.time + between(1,2)/rate;
  if (!living.length) return;
  const roaming = world.tanks.filter(tank => tank.ambient);
  const counts=living.map(()=>0);
@@ -722,7 +725,7 @@ function populateBots(world, locals) {
 function offlineStep(world, dt) {
  world.time += dt;
  const locals = world.tanks.slice(0, world.controllers.length);
- if (!world.rules || world.rules.infinityRandomBots) populateBots(world,locals);
+ populateBots(world,locals);
  populatePickups(world, locals, dt);
  for (const tank of world.tanks) {
   if (!tank.hp) {
@@ -1138,8 +1141,9 @@ function renderScores(world, pilot, second) {
  const title = 'LEADERBOARD';
  const standingRow = (tank,rank,extra=false) => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
-  const name = local ? pilotIdentity(world,local-1,tank).label : art.botName?.(tank.name||'Tank',tank.bot) || tank.name || 'Tank';
-  return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra,partyIDs.has(tank.id),tank.id];
+  const identity=art.leaderboardBot?.(tank.name||'Tank',tank.bot,tank.difficulty)||{name:art.botName?.(tank.name||'Tank',tank.bot)||tank.name||'Tank',difficulty:''};
+  const name = local ? pilotIdentity(world,local-1,tank).label : identity.name;
+  return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra,partyIDs.has(tank.id),tank.id,identity.difficulty];
  };
  const rows = entries.map((tank,i) => standingRow(tank,i+1));
  const seen = new Set(entries.map(tank=>tank.id)), extraRows = [];
@@ -1160,7 +1164,7 @@ function renderScores(world, pilot, second) {
  world.scoreRows = signature;
  leaderboardTitle.textContent = title;
  scoreboardButton.textContent = title;
- const makeRow = ([name, score, local, color,rank,extra,partyMember,id]) => {
+ const makeRow = ([name, score, local, color,rank,extra,partyMember,id,difficulty]) => {
   const row = document.createElement('li');
   if (rank) row.value = rank;
   if (extra) row.className = 'off-board-local';
@@ -1171,15 +1175,19 @@ function renderScores(world, pilot, second) {
    row.style.setProperty('--local-highlight',color);
   }
   const callsign = document.createElement('span');
+  callsign.className='leaderboard-name';
   const total = document.createElement('strong');
+  total.className='leaderboard-score';
   callsign.textContent = name + (!local&&partyMember?' (room)':'');
+  const identity=document.createElement('span');identity.className='leaderboard-identity';identity.append(callsign);
+  if(difficulty){const badge=document.createElement('small');badge.className='leaderboard-difficulty';badge.textContent=difficulty.toUpperCase();identity.append(badge);}
   total.textContent = score;
   if(world.spectating&&Number.isSafeInteger(id)&&id>0){
    row.dataset.following=String(world.following===id);
    const button=document.createElement('button');button.type='button';button.className='infinite-follow-target';button.dataset.followId=String(id);
-   button.setAttribute('aria-pressed',String(world.following===id));button.setAttribute('aria-label',(world.following===id?'Following ':'Follow ')+name+', rank '+rank+', score '+score);
-   button.append(callsign,total);button.addEventListener('click',()=>followTank(id));row.append(button);
-  }else row.append(callsign, total);
+   button.setAttribute('aria-pressed',String(world.following===id));button.setAttribute('aria-label',(world.following===id?'Following ':'Follow ')+name+(difficulty?', '+difficulty:'')+', rank '+rank+', score '+score);
+   button.append(identity,total);button.addEventListener('click',()=>followTank(id));row.append(button);
+  }else{const content=document.createElement('span');content.className='leaderboard-row';content.append(identity,total);row.append(content);}
   return row;
  };
  const scroll=leaderboardPanel.scrollTop,focused=document.activeElement?.dataset?.followId;
@@ -1855,6 +1863,7 @@ function start(mode, options = {}) {
  const online = mode === 'online', name = options.name?.trim() || pilotName();
  const readBindings = typeof options.bindings === 'function' ? options.bindings : () => options.bindings;
  const selectedColor = value => Number.isInteger(value)&&value>=0&&value<COLORS.length?value:undefined;
+ const spawnRate=Object.values(art.infinityBotSpawnRates(options.roomRules||{})).reduce((sum,rate)=>sum+rate,0);
  session = {
   online, name, spectating:online&&!!options.code&&options.spectating===true,following:0,preferredFollowing:options.following||0,localName:options.spectating?undefined:options.localName, serial:++sessionSerial,renames:new Map(),confirmedNames:new Map(),readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
   public:!!options.public,party:[],publicToken:art.publicIdentityToken?.()||'',localPublicToken:options.localName?art.publicIdentityToken?.(1)||'':'',independentAccounts:typeof art.prepareLocalAccount==='function',onConflict:options.onConflict,
@@ -1862,7 +1871,7 @@ function start(mode, options = {}) {
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,latency:null,pendingPing:null,nextPing:0,latencyAt:0,
   rules:options.public?null:options.roomRules,teamScores:[0,0,0,0],previousTanks:new Map(),previousBullets:new Map(),
-  time:0,nextBot:between(1,2)/(options.roomRules?.infinityBotSpawnRate||2),nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,botPool:[],botBudget:0,
+  time:0,nextBot:spawnRate>0?between(1,2)/spawnRate:0,nextPickup:0,pickupPilot:0,lastBot:0,lastBullet:0,nextHUD:0,lastEffect:0,botPool:[],botBudget:0,
   mapCache: new Map(), visibleBullets: [], visualEffects: [], interval: 1000 / 30, arrived: 0,
  };
  const world = session;

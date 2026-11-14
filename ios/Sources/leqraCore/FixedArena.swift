@@ -125,7 +125,7 @@ public final class FixedArena {
         for index in value.tanks.indices { value.tanks[index].score = scores[value.tanks[index].id] ?? 0 }
         value.leaderboard = value.tanks.filter { !$0.survivalEnemy }.sorted {
             $0.score == $1.score ? $0.id < $1.id : $0.score > $1.score
-        }.map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team) }
+        }.map { LeaderboardEntry(id: $0.id, name: $0.name, score: $0.score, colorIndex: $0.colorIndex, bot: $0.bot, team: $0.team, difficulty: $0.bot ? $0.difficulty : nil) }
         value.teamScores = (1...4).map { team in value.tanks.filter { $0.team == team }.map(\.score).max() ?? 0 }
         return value
     }

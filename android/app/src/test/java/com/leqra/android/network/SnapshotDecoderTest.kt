@@ -1,11 +1,52 @@
 package com.leqra.android.network
 
 import com.leqra.core.RoomRules
+import com.leqra.core.roamingBotSpawnRates
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 
 class SnapshotDecoderTest {
+    @Test
+    fun perTierRatesRoundTripAndLegacyRandomPresetsMigrateExactly() {
+        val legacy = JSONObject().put("infinityBotDifficulty", "normal").put("infinityBotSpawnRate", 2.0).put("infinityRandomDifficulty", true)
+        val rules = ProtocolJson.roomRules(legacy)
+        assertNull(rules.infinityBotSpawnRates)
+        val migrated = ProtocolJson.roomRules(ProtocolJson.rules(rules))
+        assertEquals(2.0 / 3, migrated.roamingBotSpawnRates().getValue("dumb"), 0.0)
+        assertEquals(2.0 / 3, migrated.roamingBotSpawnRates().getValue("easy"), 0.0)
+        assertEquals(2.0 / 3, migrated.roamingBotSpawnRates().getValue("normal"), 0.0)
+        assertEquals(0.0, migrated.roamingBotSpawnRates().getValue("hard"), 0.0)
+        val modern = JSONObject(legacy.toString()).put("infinityBotSpawnRates", JSONObject().put("dumb", .125).put("godlike", 4.0))
+        val actual = ProtocolJson.roomRules(modern)
+        assertEquals(.125, actual.roamingBotSpawnRates().getValue("dumb"), 0.0)
+        assertEquals(0.0, actual.roamingBotSpawnRates().getValue("normal"), 0.0)
+        assertEquals(actual.roamingBotSpawnRates(), ProtocolJson.roomRules(ProtocolJson.rules(actual)).roamingBotSpawnRates())
+        val allOff = ProtocolJson.roomRules(JSONObject(legacy.toString()).put("infinityBotSpawnRates", JSONObject()))
+        assertNotNull(allOff.infinityBotSpawnRates)
+        assertTrue(allOff.roamingBotSpawnRates().values.all { it == 0.0 })
+        for (invalid in listOf(JSONObject().put("normal", -1), JSONObject().put("normal", 4.1), JSONObject().put("unknown", 1), JSONObject().put("normal", "2"), JSONObject().put("normal", JSONObject.NULL))) {
+            assertThrows(IllegalArgumentException::class.java) { ProtocolJson.roomRules(JSONObject().put("infinityBotSpawnRates", invalid)) }
+        }
+    }
+
+    @Test
+    fun botStandingsKeepAuthoritativeDifficultyForInfinityAndFixedModes() {
+        for (level in listOf("dumb", "normal", "godlike")) {
+            val name = "Bot 27 - " + level.replaceFirstChar { it.titlecase() }
+            val entry = JSONObject().put("id", 27).put("name", name).put("bot", true).put("difficulty", level)
+            val packet = JSONObject().put("type", "state").put("tick", 1)
+                .put("tanks", org.json.JSONArray().put(entry)).put("bullets", org.json.JSONArray())
+                .put("players", 0).put("tankCount", 1)
+                .put("leaderboard", org.json.JSONArray().put(entry))
+            assertEquals(level, SnapshotDecoder().decode(packet).leaderboard.single().difficulty)
+            assertEquals(name, SnapshotDecoder().decode(packet).leaderboard.single().name)
+            packet.put("phase", "playing")
+            assertEquals(level, SnapshotDecoder().decode(packet).leaderboard.single().difficulty)
+        }
+        assertEquals("", ProtocolJson.leaderboardEntry(JSONObject().put("bot", true).put("name", "Bot 3")).difficulty)
+    }
+
     @Test
     fun contactIdentityPoseAndShieldStateDecodeForFixedAndInfinity() {
         val contact = JSONObject("""{"projectileId":17,"kind":"cannon","tick":1.25,"target":8,"spawnSerial":3,"before":{"x":140,"y":42,"angle":0.4,"vx":8,"vy":0,"hp":1,"shield":3,"shieldCharges":2,"invulnerable":0,"spawnProtected":false}}""")

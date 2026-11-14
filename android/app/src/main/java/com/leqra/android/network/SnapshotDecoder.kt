@@ -104,7 +104,7 @@ class SnapshotDecoder {
         val leaderboard =
             if (fixed)
                 tanks.sortedWith(compareByDescending<ArenaTank> { it.score }.thenBy { it.id }).map {
-                    LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team)
+                    LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team, it.difficulty)
                 }
             else json.getJSONArray("leaderboard").objects(ProtocolJson::leaderboardEntry)
         val effects =

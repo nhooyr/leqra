@@ -62,6 +62,18 @@ class AccountServiceTest {
     }
 
     @Test
+    fun publicPreviewCarriesBotDifficultyAndKeepsLegacyFieldsOptional() {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setBody("""{"players":1,"tankCount":4,"capacity":32,"leaders":[{"id":1,"name":"Pilot","score":9},{"id":2,"name":"Bot 2 - Normal","score":8,"bot":true,"difficulty":"normal"},{"id":3,"name":"Bot 3 - Dumb","score":7,"bot":true,"difficulty":"dumb"},{"id":4,"name":"Bot 4 - Godlike","score":6,"bot":true,"difficulty":"godlike"}]}"""))
+            val result = awaitOperation<PublicStatus> { AccountService(Store()) { it() }.publicStatus(server.url("/").toString(), it) }.getOrThrow()
+            assertEquals(listOf("", "normal", "dumb", "godlike"), result.leaders.map { it.difficulty })
+            assertEquals("Bot 2 - Normal", result.leaders[1].name)
+            assertEquals("GET", server.takeRequest().method)
+        }
+    }
+
+    @Test
     fun keysHaveCanonicalCryptographic32ByteFormat() {
         val keys = (0 until 128).map { AccountKeys.create() }
         assertEquals(128, keys.toSet().size)

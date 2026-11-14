@@ -49,7 +49,7 @@ struct ReadyRoomView: View {
             Button { session.play() } label: {
                 HStack { Spacer(); Text(playLabel); Spacer(); Image(systemName: session.isHost ? "arrow.right" : "checkmark") }
             }.buttonStyle(WebButtonStyle(kind: .play)).accessibilityIdentifier("playRoom")
-                .disabled(session.room?.infinityActive == true ? session.ownRoomMember == nil || publicSelected && session.ownRoomMember?.spectating == true : session.room != nil && session.isHost && !(session.room?.canStart ?? false) && !(publicSelected && (session.room?.canStartPublicInfinity ?? false)))
+                .disabled(session.room == nil && !publicSelected && !session.localInfinityStartError.isEmpty || (session.room?.infinityActive == true ? session.ownRoomMember == nil || publicSelected && session.ownRoomMember?.spectating == true : session.room != nil && session.isHost && !(session.room?.canStart ?? false) && !(publicSelected && (session.room?.canStartPublicInfinity ?? false))))
             ZStack {
                 ForEach(["PUBLIC INFINITY, ENDLESS", "ENDLESS TANK ARENA, START WHEN READY", "BOT SKIRMISH, START WHEN READY"], id: \.self) { hint in
                     Text(hint).opacity(hint == readyHint ? 1 : 0).accessibilityHidden(hint != readyHint)
@@ -87,8 +87,8 @@ struct ReadyRoomView: View {
             }
             Text(session.room == nil ? "Local play is ready. Share to invite online friends." : session.status.isEmpty ? "Room connected. Invite friends or deploy tanks." : session.status)
                 .font(.system(size: 11)).lineSpacing(4).foregroundStyle(WebStyle.soft)
-            if let room = session.room {
-                Text(publicSelected ? "" : room.startError).font(.system(size: 11)).foregroundStyle(WebStyle.danger)
+            if !publicSelected {
+                Text(session.room?.startError ?? session.localInfinityStartError).font(.system(size: 11)).foregroundStyle(WebStyle.danger)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
             }
         }

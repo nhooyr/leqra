@@ -139,8 +139,12 @@ func TestPublicGodlikeCadenceCountsRespawnsAndLimitsLivingBosses(t *testing.T) {
 		if a.publicBotLives != uint64(life) {
 			t.Fatal("actual respawn did not advance bot life count", life, a.publicBotLives)
 		}
-		if life < 64 && bot.botLevel != infiniteBotLevel("dumb") {
-			t.Fatal("public boss appeared before its rare life")
+		wantLevel := "dumb"
+		if life%16 == 8 {
+			wantLevel = "normal"
+		}
+		if life < 64 && bot.botLevel != infiniteBotLevel(wantLevel) {
+			t.Fatal("public respawn did not use its scheduled encounter difficulty", life, wantLevel)
 		}
 	}
 	if bot.botLevel != infiniteBotLevel("godlike") || bot.Name != "Bot 1 - Godlike" || bot.wireTank(a.tick).Difficulty != "godlike" {
@@ -168,7 +172,7 @@ func TestPublicGodlikeCadenceCountsRespawnsAndLimitsLivingBosses(t *testing.T) {
 	}
 	bot.HP = 0
 	a.startBotLife(bot)
-	if bot.botLevel != infiniteBotLevel("dumb") || bot.Name != "Bot 1" || bot.wireTank(a.tick).Difficulty != "dumb" {
+	if bot.botLevel != infiniteBotLevel("dumb") || bot.Name != "Bot 1 - Dumb" || bot.wireTank(a.tick).Difficulty != "dumb" {
 		t.Fatal("next ordinary life retained a stale Godlike warning")
 	}
 }
@@ -191,7 +195,7 @@ func TestPublicGodlikeNameUsesBotNamespaceThroughoutPresentation(t *testing.T) {
 	}
 	a.publicBotLives = 64
 	a.startBotLife(bot)
-	if bot.Name != "Bot 1234" || bot.Score != 23 {
+	if bot.Name != "Bot 1234 - Dumb" || bot.Score != 23 {
 		t.Fatal("ordinary life retained a Godlike suffix or lost its score", bot.Name, bot.Score)
 	}
 }
@@ -207,7 +211,7 @@ func TestPublicStrayedBotStartsNewLifeWhileBudgetPoolKeepsTier(t *testing.T) {
 	lives, spawn := a.publicBotLives, bot.Spawn
 	a.tick = a.nextBot
 	a.populate()
-	if bot.Spawn != spawn+1 || bot.Name != "Bot 1" || bot.botLevel != infiniteBotLevel("dumb") || a.publicBotLives != lives+1 {
+	if bot.Spawn != spawn+1 || bot.Name != "Bot 1 - Dumb" || bot.botLevel != infiniteBotLevel("dumb") || a.publicBotLives != lives+1 {
 		t.Fatal("a strayed encounter retained its old life or failed to advance the birth cadence")
 	}
 	a.join(fakeClient(), "Second", time.Unix(0, 0))
@@ -294,7 +298,7 @@ func TestPublicGodlikeLimitShrinkDowngradesExcessWithoutNewLives(t *testing.T) {
 	}
 	a.connected = 0
 	a.trimRoamingBots()
-	if a.livingPublicGodlikes(nil) != 0 || bosses[1].Score != 21 || bosses[1].HP != 1 || bosses[1].Name != "Bot 3" {
+	if a.livingPublicGodlikes(nil) != 0 || bosses[1].Score != 21 || bosses[1].HP != 1 || bosses[1].Name != "Bot 3 - Dumb" {
 		t.Fatal("empty arena retained a boss or erased its score/body")
 	}
 }
@@ -316,7 +320,7 @@ func TestPublicBotCounterPersistsAndRestoredTiersDefaultToDumb(t *testing.T) {
 		t.Fatal("restart reset the rare encounter cadence")
 	}
 	restored := s.public.inactiveBots[0]
-	if restored.ID != id || restored.Score != 12 || restored.botLevel != infiniteBotLevel("dumb") || restored.Name != "Bot 1" || restored.HP != 0 {
+	if restored.ID != id || restored.Score != 12 || restored.botLevel != infiniteBotLevel("dumb") || restored.Name != "Bot 1 - Dumb" || restored.HP != 0 {
 		t.Fatal("restart changed score or restored a stale living boss")
 	}
 	_, _, _ = savedPublicJoin(t, s, infiniteMessage{Name: "Other"})

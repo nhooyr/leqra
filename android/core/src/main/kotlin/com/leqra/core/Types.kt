@@ -177,6 +177,7 @@ data class LeaderboardEntry(
     var colorIndex: Int = 0,
     var bot: Boolean = false,
     var team: Int = 0,
+    var difficulty: String = "",
 )
 
 data class ArenaWorld(
@@ -264,6 +265,7 @@ data class RoomRules(
     var infinityBotDifficulty: String = "normal",
     var infinityRandomDifficulty: Boolean = false,
     var infinityBotSpawnRate: Double = 2.0,
+    var infinityBotSpawnRates: Map<String, Double>? = null,
     var teamMode: String = "ffa",
     var mapSize: String = "large",
     var portraitMaze: Boolean = false,

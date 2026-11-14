@@ -118,16 +118,11 @@ struct RulesEditor: View {
                     Stepper("Score target: \(rules.infinityTarget == 0 ? "Endless" : String(rules.infinityTarget))", value: $rules.infinityTarget, in: 0...999)
                     Toggle("Random roaming bots", isOn: $rules.infinityRandomBots).accessibilityIdentifier("randomRoamingBots")
                     if rules.infinityRandomBots {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("ROAMING BOT SPAWN RATE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                            Picker("Roaming bot spawn rate", selection: $rules.infinityBotSpawnRate) {
-                                ForEach([0.5, 1, 2, 4], id: \.self) { rate in Text("\(rate.formatted())×").tag(rate) }
-                            }.pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading).modifier(WebField()).accessibilityIdentifier("roamingSpawnRate")
-                        }
+                        ForEach(BotDifficulty.allCases, id: \.self) { difficulty in roamingRate(difficulty) }
+                        Text("1× averages 1 bot every 1.5 seconds per living human while the shared budget has space.")
+                            .font(.system(size: 11)).foregroundStyle(WebStyle.muted).fixedSize(horizontal: false, vertical: true)
                         Text("16 roaming bots per player, up to 128 in a room. Bots spread around players and retire when nobody is nearby.")
                             .font(.system(size: 11)).foregroundStyle(WebStyle.muted).fixedSize(horizontal: false, vertical: true)
-                        menu("ROAMING BOT DIFFICULTY", value: $rules.infinityBotDifficulty, choices: BotDifficulty.allCases.map { ($0.rawValue, $0.displayName) })
-                        Toggle("Randomize roaming bot difficulty", isOn: $rules.infinityRandomDifficulty)
                     }
                 } else {
                     Stepper("\(rules.mode == "survival" ? "Wave" : "Score") target: \(rules.scoreTarget)", value: $rules.scoreTarget, in: 1...(rules.mode == "koth" ? 300 : 20))
@@ -163,6 +158,19 @@ struct RulesEditor: View {
                 }.buttonStyle(WebButtonStyle())
             }.font(.system(size: 13)).foregroundStyle(WebStyle.text).tint(WebStyle.accent)
         }.onAppear { rules = session.effectiveRules }
+    }
+    private func roamingRate(_ difficulty: BotDifficulty) -> some View {
+        let value = Binding<Double>(get: { rules.effectiveInfinityBotSpawnRates[difficulty.rawValue] ?? 0 },
+                                    set: { rules.setInfinityBotSpawnRate($0, for: difficulty.rawValue) })
+        return VStack(alignment: .leading, spacing: 5) {
+            Text("\(difficulty.displayName.uppercased()) BOT SPAWN RATE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+            Picker("\(difficulty.displayName) bot spawn rate", selection: value) {
+                ForEach(rules.infinityBotSpawnRateChoices(for: difficulty.rawValue), id: \.self) { rate in
+                    Text(rate == 0 ? "Off" : "\(rate.formatted(.number.precision(.significantDigits(1...3))))×").tag(rate)
+                }
+            }.pickerStyle(.menu).frame(maxWidth: .infinity, alignment: .leading).modifier(WebField())
+                .accessibilityIdentifier("roamingSpawnRate_\(difficulty.rawValue)")
+        }
     }
     private func menu(_ label: String, value: Binding<String>, choices: [(String, String)]) -> some View {
         VStack(alignment: .leading, spacing: 5) {

@@ -11,24 +11,25 @@ import (
 // Rules are room-owned, validated atomically, and immutable during a match.
 // Never trust a browser to set objective scores, respawns, or pickup state.
 type MatchRules struct {
-	Mode                     string   `json:"mode"`
-	Infinity                 bool     `json:"infinity,omitempty"`
-	InfinityTarget           int      `json:"infinityTarget,omitempty"`
-	InfinityRandomBots       bool     `json:"infinityRandomBots,omitempty"`
-	InfinityBotSpawnRate     float64  `json:"infinityBotSpawnRate"`
-	InfinityBotDifficulty    string   `json:"infinityBotDifficulty,omitempty"`
-	InfinityRandomDifficulty bool     `json:"infinityRandomDifficulty,omitempty"`
-	TeamMode                 string   `json:"teamMode"`
-	MapSize                  string   `json:"mapSize"`
-	PortraitMaze             bool     `json:"portraitMaze"`
-	ScoreTarget              int      `json:"scoreTarget"`
-	TimeLimit                int      `json:"timeLimit"`
-	RespawnSeconds           int      `json:"respawnSeconds"`
-	PickupRate               string   `json:"pickupRate"`
-	Weapons                  []string `json:"weapons"`
-	FriendlyFire             bool     `json:"friendlyFire"`
-	TeamNames                []string `json:"teamNames,omitempty"`
-	TeamColors               []int    `json:"teamColors,omitempty"`
+	Mode                     string                 `json:"mode"`
+	Infinity                 bool                   `json:"infinity,omitempty"`
+	InfinityTarget           int                    `json:"infinityTarget,omitempty"`
+	InfinityRandomBots       bool                   `json:"infinityRandomBots,omitempty"`
+	InfinityBotSpawnRate     float64                `json:"infinityBotSpawnRate"`
+	InfinityBotSpawnRates    *infinityBotSpawnRates `json:"infinityBotSpawnRates,omitempty"`
+	InfinityBotDifficulty    string                 `json:"infinityBotDifficulty,omitempty"`
+	InfinityRandomDifficulty bool                   `json:"infinityRandomDifficulty,omitempty"`
+	TeamMode                 string                 `json:"teamMode"`
+	MapSize                  string                 `json:"mapSize"`
+	PortraitMaze             bool                   `json:"portraitMaze"`
+	ScoreTarget              int                    `json:"scoreTarget"`
+	TimeLimit                int                    `json:"timeLimit"`
+	RespawnSeconds           int                    `json:"respawnSeconds"`
+	PickupRate               string                 `json:"pickupRate"`
+	Weapons                  []string               `json:"weapons"`
+	FriendlyFire             bool                   `json:"friendlyFire"`
+	TeamNames                []string               `json:"teamNames,omitempty"`
+	TeamColors               []int                  `json:"teamColors,omitempty"`
 }
 
 func defaultRules() MatchRules {
@@ -77,6 +78,13 @@ func validateRules(r MatchRules) error {
 	}
 	if r.InfinityBotSpawnRate != 0 && r.InfinityBotSpawnRate != .5 && r.InfinityBotSpawnRate != 1 && r.InfinityBotSpawnRate != 2 && r.InfinityBotSpawnRate != 4 {
 		return errors.New("Choose an Infinity bot spawn rate of 0.5, 1, 2, or 4.")
+	}
+	if r.InfinityBotSpawnRates != nil {
+		for tier, rate := range *r.InfinityBotSpawnRates {
+			if !validDifficulty(tier) || math.IsNaN(rate) || math.IsInf(rate, 0) || rate < 0 || rate > 4 {
+				return errors.New("Choose an Infinity spawn rate from 0 to 4 for each valid bot difficulty.")
+			}
+		}
 	}
 	if r.TimeLimit < 30 || r.TimeLimit > 600 {
 		return errors.New("Time limit must be 30–600 seconds.")
