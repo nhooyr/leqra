@@ -1,10 +1,10 @@
-# leqra v4.49.41 — current game protocol (protocol 1)
+# leqra v4.49.42 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **4.49.41**.
+The JSON framing protocol is **1**. The application-version handshake requires **4.49.42**.
 
 ```json
-{"type":"server_hello","version":"4.49.41","protocol":1}
-{"type":"client_hello","version":"4.49.41","protocol":1}
+{"type":"server_hello","version":"4.49.42","protocol":1}
+{"type":"client_hello","version":"4.49.42","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -45,7 +45,11 @@ Private `welcome` includes the run's `generation`. If the Infinity socket discon
 
 Room Infinity supports `infinityTarget` from 0 to 999. Zero is endless. The first tank or team to reach a positive target wins. Kills add one point and deaths subtract one. Team scores accumulate those changes across team members. Private snapshots carry `rules` with the target, team mode, names, colors and friendly-fire setting. Team snapshots also carry four `teamScores`, starting with Team 1. A completed match freezes and publishes `result` with the winner's name, score, and team for team wins or ID for individual wins. The result remains available until the host ends that room's run. Public Infinity is endless and free-for-all.
 
-Room Infinity uses configured bot seats from the room roster. The host can set `infinityRandomBots` to true to allow additional roaming bots. `infinityBotDifficulty` defaults to `normal` and supports `easy`, `normal`, `hard`, and `godlike`. With `infinityRandomDifficulty` enabled, each roaming bot draws a level from Chill through the selected difficulty. Public Infinity continues to spawn roaming bots. The roaming population grows up to eight bots per connected human tank, including local Player 2, with a global ceiling of 24. Disconnected reserved tanks do not increase this budget. Configured roster bots are separate from it. Roaming bots retain their identity, number, and score when they die or relocate beyond all connected views. When the budget shrinks, surplus roaming bots leave the active standings and keep their identities for reuse if the budget grows again.
+Room Infinity uses configured bot seats from the room roster. The host can set `infinityRandomBots` to true to allow additional roaming bots. `infinityBotDifficulty` defaults to `normal` and supports `dumb`, `easy`, `normal`, `hard`, and `godlike`, displayed as Dumb, Chill, Normal, Fierce and Godlike. With `infinityRandomDifficulty` enabled, each roaming bot draws a level from Dumb through the selected difficulty. Public Infinity continues to spawn roaming bots. The roaming population grows up to eight bots per connected human tank, including local Player 2, with a global ceiling of 24. Disconnected reserved tanks do not increase this budget. Configured roster bots are separate from it. Roaming bots retain their identity, number, and score when they die or relocate beyond all connected views. When the budget shrinks, surplus roaming bots leave the active standings and keep their identities for reuse if the budget grows again.
+
+Public Infinity normally spawns Dumb bots: short sight, slow wandering, stale inaccurate aim, frequent hesitation and at least 1.8 seconds between shots, including machine-gun trigger pulses. Every 64th bot birth or respawn is eligible to become Godlike within a cap of one living Godlike bot per group of up to 16 connected human tanks, including local P2. Empty arenas allow none. When the connected population falls, excess Godlike bots become Dumb without changing their scores or spawning new lives. Relocation and reactivation do not count as new lives. Private rooms retain their chosen difficulty and do not use this public encounter schedule.
+
+Infinity bot snapshots include their actual `difficulty`; human snapshots omit it. Clients show an amber **GODLIKE** warning above Godlike bots. Public Godlike bots also use the name `Godlike Bot N`, keeping the encounter identifiable on older clients. Clients must use the authoritative bot flag and difficulty for the warning, never infer it from a player's callsign.
 
 ## Mouse and touch steering
 

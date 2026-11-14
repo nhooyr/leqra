@@ -199,7 +199,7 @@ struct LocalBotRow: View {
             }
             HStack {
                 Picker("Difficulty", selection: $bot.difficulty) {
-                    Text("Chill").tag("easy"); Text("Normal").tag("normal"); Text("Fierce").tag("hard"); Text("Godlike").tag("godlike")
+                    ForEach(BotDifficulty.allCases, id: \.rawValue) { Text($0.displayName).tag($0.rawValue) }
                 }.font(.system(size: 11))
                 Spacer()
                 if teams { Picker("Team", selection: $bot.team) { ForEach(1...4, id: \.self) { Text("Team \($0)").tag($0) } }.font(.system(size: 11)) }
@@ -234,8 +234,8 @@ struct RoomPilotRow: View {
                     Menu {
                         if session.roomEditable && session.isHost {
                             if member.kind == "bot" {
-                                ForEach(["easy", "normal", "hard", "godlike"], id: \.self) { difficulty in
-                                    Button(["easy": "Chill", "normal": "Normal", "hard": "Fierce", "godlike": "Godlike"][difficulty] ?? difficulty) { session.send(.configure(target: member.id, member: member.member, difficulty: difficulty)) }
+                                ForEach(BotDifficulty.allCases, id: \.rawValue) { difficulty in
+                                    Button(difficulty.displayName) { session.send(.configure(target: member.id, member: member.member, difficulty: difficulty.rawValue)) }
                                 }
                             }
                             if session.effectiveRules.teamMode == "teams" && !member.spectating {

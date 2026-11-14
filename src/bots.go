@@ -47,6 +47,8 @@ type botTuning struct {
 
 func tuneBot(s string) botTuning {
 	switch s {
+	case "dumb":
+		return botTuning{60, 1.8, .9, 1.8, .6, 0, false, false}
 	case "easy":
 		return botTuning{89, 2.8, .30, .72, .10, .4, false, false}
 	case "godlike":
@@ -633,6 +635,9 @@ func (g *Game) botControl(t *Tank, dt float64) {
 	}
 	if t.AI == nil {
 		t.AI = &BotState{Think: g.random(.1, .35), Shot: g.random(.3, .9), Goal: -1, Target: -1, LastX: t.X, LastY: t.Y}
+		if t.Difficulty == "dumb" {
+			t.AI.Shot = 1.8
+		}
 	}
 	a := t.AI
 	a.ctfCoverClock -= dt
@@ -711,7 +716,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 				gx, gy, objective = p.X, p.Y, true
 			}
 		}
-		if enemy.Alive {
+		if enemy.Alive && (t.Difficulty != "dumb" || g.rng.Float64() >= .35) {
 			a.Aim, a.HasAim = g.botAim(t, enemy, d)
 			if a.HasAim && t.Difficulty == "godlike" && !g.godlikeSafeShot(t, enemy, a.Aim) {
 				a.HasAim = false
@@ -810,7 +815,7 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		angle = t.Angle
 		drive = -.8
 	}
-	if t.Difficulty != "godlike" {
+	if t.Difficulty != "godlike" && t.Difficulty != "dumb" {
 		angle, drive = g.botAvoidGrenades(t, d, angle, drive)
 	}
 	diff := delta(t.Angle, angle)
@@ -839,7 +844,10 @@ func (g *Game) botControl(t *Tank, dt float64) {
 		}
 		if safe && !hasGrenade && g.fire(t) {
 			a.Shot = d.reaction * g.random(.9, 1.15)
-			if t.Power == "rapid" {
+			if t.Difficulty == "dumb" {
+				a.Shot = d.reaction
+			}
+			if t.Power == "rapid" && t.Difficulty != "dumb" {
 				a.Shot = 0
 			}
 		}

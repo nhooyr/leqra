@@ -4,10 +4,23 @@ const {assetPath}=require('./web_assets.cjs');
 const source=readFileSync(process.env.LEQRA_ROSTER_SOURCE||assetPath('game.js'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 const clone=x=>JSON.parse(JSON.stringify(x));
+test('Dumb difficulty survives rules and saved-roster validation without changing defaults',()=>{
+ const {s,storage}=boot();
+ assert.equal(s.localRoom.rules.infinityBotDifficulty,'normal');
+ const rules=s.validateRoomRules({...s.localRoom.rules,infinity:true,infinityBotDifficulty:'dumb'});
+ assert.equal(rules.infinityBotDifficulty,'dumb');
+ const input=[{id:0,kind:'human',name:'HOST',team:0},{id:1,kind:'bot',name:'BUDDY',team:0,difficulty:'dumb'}];
+ const roster=s.validateSavedRoster(input,rules);
+ assert.equal(roster[1].difficulty,'dumb');
+ s.persistLocalRoomRules(rules,input);
+ const restored=boot(storage).s;
+ assert.equal(restored.localRoom.rules.infinityBotDifficulty,'dumb');
+ assert.equal(restored.loadRememberedRoomSetup().roster[1].difficulty,'dumb');
+});
 function boot(storage=new Map(),touchUI=false){
  const elements=new Map(),toggles=['rapid','shield','laser'].map(weapon=>({dataset:{weaponToggle:weapon},checked:true}));
  const $=id=>{if(!elements.has(id))elements.set(id,{value:'',checked:false,disabled:false,dataset:{},style:{},classList:{toggle(){}},previousElementSibling:{style:{}},parentElement:{querySelector(){return true;}}});return elements.get(id);};
- const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'].map(kind=>[kind,{}])),DIFFICULTY:{easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival','infinity'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
+ const s={console,mode:'room',phase:'menu',touchUI,MAX_TANKS:8,POWER:Object.fromEntries(['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'].map(kind=>[kind,{}])),DIFFICULTY:{dumb:{},easy:{},normal:{},hard:{},godlike:{}},ROOM_MODES:['elimination','ctf','koth','survival','infinity'].map(id=>({id})),localRoom:{self:0,nextMember:0,nextViewer:8,players:[]},online:{id:0,connected:true,roomData:null,snapshots:[]},pendingRoomMode:null,rulesPending:false,presetsPending:false,
  localStorage:{getItem:key=>storage.get(key)||null,setItem(key,value){if(s.storageFails)throw Error('Storage unavailable');storage.set(key,value);s.writes++;}},writes:0,
  $,document:{querySelectorAll:selector=>selector.endsWith(':checked')?toggles.filter(c=>c.checked):toggles},Theme:{colors:['a','b','c','d','e','f','g','h']},teamName:(n,r)=>r.teamNames[n-1],featureNotice(id,message){$(id).textContent=message;},updateRuleHelp(){},renderPowerLegend(){},isRoomEditable:()=>s.editable!==false,roomData:()=>({rules:s.localRoom.rules,players:s.localRoom.players.filter(p=>!p.spectating)}),roomModeEditable:()=>s.editable!==false,rejectRoomMode(message){s.rejected=message;},localPlayerID:()=>s.mode==='online'?s.online.id:s.localRoom.self,roomMembers:r=>[...r.players,...(r.spectators||[])],setLocalRules(r){s.localRoom.rules=s.validateRoomRules(r);s.persistLocalRoomRules(r);},setTimeout(){return 1;},clearTimeout(){},syncFeatureSummary(){},updateHUD(){},syncRoomModePicker(){},sendOnline(message){s.sent=message;return !s.sendFails;},closeFeature(){s.closed=true;}};
  Object.assign(s,{infinityOffline:false,infinityOnline:true,location:{protocol:'https:'},navigator:{onLine:true},renderOnlineRoom(){},resetPreviewIfLobby(){s.previewReset=true;},readyRoom(){s.persistLocalRoomRules();},callsignForms:()=>[],save(key,value){storage.set('leqra.'+key,String(value));}});

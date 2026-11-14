@@ -186,7 +186,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
    },
   })};
  }
- vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.leqraInfinity ='), context);
+ vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.testBotInput = botInput; window.leqraInfinity ='), context);
  byID('pauseBtn').addEventListener('click',()=>window.leqraInfinity.togglePause());
  const advance = (frames = 1) => {
   for (let i = 0; i < frames; i++) {
@@ -207,8 +207,42 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   }
   now = until;
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, sounds, loadouts, markers, labels, strokes, rings, frameSamples, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, botInput:window.testBotInput,setRandom(fn){math.random=fn;},sounds, loadouts, markers, labels, strokes, rings, frameSamples, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
 }
+
+test('Dumb Infinity bots retain stale aim, hesitate and space trigger pulses',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline');h.setRandom(()=>.5);
+ const world=h.state(),pilot=world.tanks[0];pilot.invulnerable=0;
+ const bot={id:'bot-test',bot:true,hp:1,x:pilot.x+100,y:pilot.y,angle:Math.PI,difficulty:'dumb',nextDecision:0,nextDumbShot:null};
+ world.tanks.push(bot);
+ const input=()=>h.botInput(world,bot,[pilot]);
+ assert.equal(input().fire,false);
+ const old=input();pilot.y+=60;world.time=.3;
+ assert.equal(input().stickY,old.stickY,'aim must not track between slow decisions');
+ world.time=1.81;let controls=input();bot.angle=Math.atan2(controls.stickY,controls.stickX);
+ assert.equal(input().fire,true);
+ world.time=1.82;assert.equal(input().fire,false,'a trigger pulse cannot become held rapid fire');
+ world.time=3.62;assert.equal(input().fire,true);
+ h.setRandom(()=>.1);world.time=5.5;assert.equal(input().fire,false,'Dumb bots sometimes forget to attack');
+ h.setRandom(()=>.5);world.time=6.5;pilot.invulnerable=1;controls=input();bot.angle=Math.atan2(controls.stickY,controls.stickX);
+ assert.equal(input().fire,false,'spawn protection remains respected');
+ pilot.invulnerable=0;assert.equal(input().fire,true);
+ h.infinity.close();
+});
+
+test('online Godlike warnings use authoritative bot difficulty rather than callsigns',()=>{
+ const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];
+ socket.receive({type:'welcome',id:1,seed:0});
+ const tanks=[{id:1,name:'Godlike fan',bot:false,difficulty:'godlike',hp:1,x:42,y:42,colorIndex:0},
+  {id:2,name:'Bot 2',bot:true,difficulty:'dumb',hp:1,x:126,y:42,colorIndex:1},
+  {id:3,name:'Godlike Bot 3',bot:true,difficulty:'godlike',hp:1,x:210,y:42,colorIndex:2}];
+ socket.receive({type:'state',tick:1,tanks,bullets:[],players:1,leaderboard:[]});
+ h.labels.length=0;h.advance();
+ assert.equal(h.state().tanks.find(t=>t.id===3).difficulty,'godlike');
+ const warnings=h.labels.filter(label=>label.text==='GODLIKE');assert.equal(warnings.length,1);
+ assert.equal(warnings[0].color,'#ffc46b');
+ h.infinity.close();
+});
 
 test('Infinity primary defaults use Player 1 without replacing saved or explicit callsigns',()=>{
  for(const saved of [undefined,'','   ','PILOT','Pilot','YOU']){

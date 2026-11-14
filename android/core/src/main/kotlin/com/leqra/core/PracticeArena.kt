@@ -41,6 +41,7 @@ class PracticeArena(
     private val fireBlocked = mutableSetOf<Int>()
     private val botCourses = mutableMapOf<Int, BeamPoint>()
     private val botDecisions = mutableMapOf<Int, Double>()
+    private val dumbBrains = mutableMapOf<Int, Pair<Int, DumbBotBrain>>()
     private val nextBoostEffects = mutableMapOf<Int, Double>()
     private val motionPresenters = mutableMapOf<Int, TankMotionPresenter>()
     private var routeMarks = IntArray(0)
@@ -116,6 +117,7 @@ class PracticeArena(
                 if (side > 0) activeRules?.teamColors?.getOrNull(side - 1) ?: colorIndex
                 else colorIndex,
             )
+        if (t.difficulty != difficulty) dumbBrains.remove(id)
         t.difficulty = difficulty
         updateStandings()
     }
@@ -144,6 +146,7 @@ class PracticeArena(
                 if (fireBlocked.remove(2)) fireBlocked.add(replacement)
                 botCourses.remove(2)?.let { botCourses[replacement] = it }
                 botDecisions.remove(2)?.let { botDecisions[replacement] = it }
+                dumbBrains.remove(2)?.let { dumbBrains[replacement] = it }
                 nextBoostEffects.remove(2)?.let { nextBoostEffects[replacement] = it }
                 motionPresenters.remove(2)
                 for (projectile in projectiles) {
@@ -201,6 +204,7 @@ class PracticeArena(
                 }
         } else {
             if (configured) {
+                roamingIDs.forEach { dumbBrains.remove(it) }
                 snapshot.tanks = snapshot.tanks.filter { it.id !in roamingIDs }
                 projectiles.removeAll { it.wire.owner in roamingIDs }
             }
@@ -212,8 +216,8 @@ class PracticeArena(
                     t.colorIndex = rules.teamColors.getOrNull(t.team - 1) ?: t.colorIndex
             }
             if (rules.infinityRandomBots) {
-                val levels = listOf("easy", "normal", "hard", "godlike")
-                val selected = levels.indexOf(rules.infinityBotDifficulty).coerceAtLeast(0)
+                val levels = BotDifficulty.names
+                val selected = BotDifficulty.index(rules.infinityBotDifficulty)
                 val firstID = (snapshot.tanks.maxOfOrNull { it.id } ?: 1) + 1
                 repeat(8) { offset ->
                     val id = firstID + offset
@@ -289,7 +293,7 @@ class PracticeArena(
             val i = ((snapshot.tick % count).toInt() + offset) % count
             val t = snapshot.tanks[i]
             if (t.hp > 0) {
-                val controls = if (t.bot) botInput(i) else inputs[t.id] ?: GameInput()
+                val controls = if (t.bot) botInput(i, dt) else inputs[t.id] ?: GameInput()
                 if (t.bot && t.id in fireBlocked) controls.fire = false
                 movementInputs[t.id] = controls.copy()
                 move(t, controls, dt)
@@ -512,6 +516,7 @@ class PracticeArena(
         snapshot.tanks = snapshot.tanks.toMutableList().also { it[index] = replacement }
         fireBlocked.remove(old.id)
         botCourses.remove(old.id)
+        dumbBrains.remove(old.id)
         nextBoostEffects.remove(old.id)
     }
 
@@ -656,7 +661,7 @@ class PracticeArena(
         effectTimes[nextEffect] = time
     }
 
-    private fun botInput(index: Int): GameInput {
+    private fun botInput(index: Int, dt: Double): GameInput {
         val bot = snapshot.tanks[index]
         val targets =
             if (maze.world == null && bot.team == 0) listOf(snapshot.tanks[0]) else snapshot.tanks
@@ -678,6 +683,7 @@ class PracticeArena(
         val level = bot.difficulty.ifEmpty { botDifficulty }
         val tuning =
             when (level) {
+                "dumb" -> Triple(.35, .4, 3.0)
                 "easy" -> Triple(.7, .75, 1.65)
                 "hard" -> Triple(1.15, 1.15, .7)
                 "godlike" -> Triple(1.3, 1.3, .45)
@@ -686,10 +692,52 @@ class PracticeArena(
         val dx = pilot.x - bot.x
         val dy = pilot.y - bot.y
         val distance = hypot(dx, dy)
-        val sees =
-            distance < 6 * 84 * tuning.first && maze.rayHit(bot.x, bot.y, dx, dy, 3.5) == null
+        val sight =
+            if (level == "dumb") {
+                if (maze.world == null) 8 * 84 * tuning.first else 6 * 84.0
+            } else 6 * 84 * tuning.first
+        val sees = distance < sight && maze.rayHit(bot.x, bot.y, dx, dy, 3.5) == null
         val goal = botGoal?.invoke(bot)
         val routing = goal != null && (!sees || distance > 168)
+        if (level == "dumb") {
+            val previous = dumbBrains[bot.id]
+            val brain =
+                if (previous?.first == bot.spawnSerial) previous.second
+                else DumbBotBrain(max(0.0, time - dt)).also {
+                    dumbBrains[bot.id] = bot.spawnSerial to it
+                }
+            val decided =
+                brain.reconsider(time, pilot.id, atan2(dy, dx), sees && !routing, ::unitRandom)
+            if (brain.tracks(pilot.id, sees && !routing)) {
+                return GameInput(
+                    fire =
+                        brain.trigger(
+                            time,
+                            bot.angle,
+                            pilot.invulnerable == 0.0 &&
+                                pilot.starmanTime == 0.0 && bot.id !in fireBlocked,
+                        ),
+                    stickX = cos(brain.aim),
+                    stickY = sin(brain.aim),
+                    touchAim = false,
+                    aimOnly = true,
+                )
+            }
+            if (decided) {
+                val target = if (routing) pilot.copy(x = goal!!.x, y = goal.y) else pilot
+                botCourse(bot, target)?.let { botCourses[bot.id] = it }
+            }
+            val tx = (botCourses[bot.id]?.x ?: goal?.x ?: bot.x) - bot.x
+            val ty = (botCourses[bot.id]?.y ?: goal?.y ?: bot.y) - bot.y
+            val aim = atan2(ty, tx)
+            val tilt = if (maze.world == null) .72 * tuning.second else 1.0
+            return GameInput(
+                stickX = cos(aim) * tilt,
+                stickY = sin(aim) * tilt,
+                touchAim = false,
+                aimOnly = hypot(tx, ty) < 5,
+            )
+        }
         if ((!sees || routing) && time >= (botDecisions[bot.id] ?: 0.0)) {
             val target = if (routing) pilot.copy(x = goal!!.x, y = goal.y) else pilot
             botCourse(bot, target)?.let { botCourses[bot.id] = it }

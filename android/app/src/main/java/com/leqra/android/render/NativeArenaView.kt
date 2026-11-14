@@ -738,20 +738,46 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 )
             labels[tank.id] = label
         }
+        val warningHeight = if (tank.isGodlikeBot) textPaint.textSize + 10 else 0f
+        val warningWidth =
+            if (tank.isGodlikeBot) {
+                textPaint.typeface = boldTypeface
+                val measured = textPaint.measureText("GODLIKE") + 12
+                textPaint.typeface = if (seat > 0) boldTypeface else Typeface.MONOSPACE
+                measured
+            } else 0f
+        val identityWidth = max(label.width, warningWidth)
         val x =
             (viewport.centerX() + ((tank.x - cameraX) * zoom).toFloat()).coerceIn(
-                max(viewport.left, safe.left) + label.width / 2 + 6,
+                max(viewport.left, safe.left) + identityWidth / 2 + 6,
                 max(
-                    max(viewport.left, safe.left) + label.width / 2 + 6,
-                    min(viewport.right, width / density - safe.right) - label.width / 2 - 6,
+                    max(viewport.left, safe.left) + identityWidth / 2 + 6,
+                    min(viewport.right, width / density - safe.right) - identityWidth / 2 - 6,
                 ),
             )
         val y =
             (viewport.centerY() + ((tank.y - cameraY) * zoom).toFloat() - max(30f, 36f * zoom))
                 .coerceIn(
-                    viewport.top + label.height + 6,
-                    max(viewport.top + label.height + 6, viewport.bottom - 6),
+                    viewport.top + label.height + warningHeight + 6,
+                    max(viewport.top + label.height + warningHeight + 6, viewport.bottom - 6),
                 )
+        if (tank.isGodlikeBot) {
+            textPaint.typeface = boldTypeface
+            val top = y - label.height - warningHeight
+            fill(0xff302217.toInt())
+            canvas.drawRoundRect(
+                x - warningWidth / 2,
+                top,
+                x + warningWidth / 2,
+                y - label.height - 3,
+                3f,
+                3f,
+                paint,
+            )
+            textPaint.color = 0xffffc46b.toInt()
+            canvas.drawText("GODLIKE", x, top + textPaint.textSize + 2, textPaint)
+            textPaint.typeface = if (seat > 0) boldTypeface else Typeface.MONOSPACE
+        }
         fill(0xdb0e171d.toInt())
         canvas.drawRoundRect(
             x - label.width / 2,

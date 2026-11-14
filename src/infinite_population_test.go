@@ -24,7 +24,7 @@ func roamingBots(a *infiniteArena) []*infinitePilot {
 	return bots
 }
 
-func TestPublicInfinityRoamingBotsUseChillAndPrivateSettingsStillApply(t *testing.T) {
+func TestPublicInfinityRoamingBotsUseDumbAndPrivateSettingsStillApply(t *testing.T) {
 	now := time.Unix(0, 0)
 	public := newSeededInfiniteArena(37)
 	pilot := public.join(fakeClient(), "PILOT", now)
@@ -33,8 +33,8 @@ func TestPublicInfinityRoamingBotsUseChillAndPrivateSettingsStillApply(t *testin
 		t.Fatal("public population did not spawn")
 	}
 	for _, bot := range roamingBots(public) {
-		if infiniteBotTunings[bot.botLevel].name != "easy" {
-			t.Fatal("public roaming bot was not Chill")
+		if infiniteBotTunings[bot.botLevel].name != "dumb" {
+			t.Fatal("public roaming bot was not Dumb")
 		}
 	}
 	public.suspend(pilot)
@@ -43,11 +43,11 @@ func TestPublicInfinityRoamingBotsUseChillAndPrivateSettingsStillApply(t *testin
 	}
 	fillRoamingBots(public)
 	for _, bot := range roamingBots(public) {
-		if infiniteBotTunings[bot.botLevel].name != "easy" {
-			t.Fatal("pooled public bot lost its Chill difficulty")
+		if infiniteBotTunings[bot.botLevel].name != "dumb" {
+			t.Fatal("pooled public bot lost its Dumb difficulty")
 		}
 	}
-	for _, difficulty := range []string{"normal", "hard", "godlike"} {
+	for _, difficulty := range []string{"dumb", "easy", "normal", "hard", "godlike"} {
 		rules := defaultRules()
 		rules.InfinityRandomBots, rules.InfinityBotDifficulty = true, difficulty
 		private := newRoomInfiniteArena(rules, nil)

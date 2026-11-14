@@ -21,6 +21,18 @@ function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,i
 function pictures(ctx){return ctx.events.filter(e=>e.type==='image');}
 function spawnGuides(ctx){return ctx.events.filter(e=>e.type==='arc'&&e.r===34&&e.width>=2.5&&e.color!=='#081015');}
 
+test('Godlike bot warnings remain readable above names and cannot be spoofed by a human callsign',()=>{
+ for(const scale of [.08,.5,1,2]){
+  const {s,ctx}=boot();s.scale=scale;
+  const t=tank({difficulty:'godlike',bot:true,name:'ROVER'});s.drawTank(t);
+  const warning=ctx.events.find(e=>e.type==='text'&&e.text==='GODLIKE'),name=ctx.events.find(e=>e.type==='text'&&e.text==='ROVER');
+  assert.ok(warning.y<name.y,'warning is above the callsign');
+  assert.ok(parseFloat(warning.font.match(/[\d.]+px/)[0])*scale>=10);
+  ctx.events.length=0;Object.assign(t,{human:true,bot:false,name:'Godlike fan'});s.drawTank(t);
+  assert.equal(ctx.events.filter(e=>e.type==='text'&&e.text==='GODLIKE').length,0);
+ }
+});
+
 function badgeOverlap(a,b){return Math.hypot(a.x+a.w/2-b.x-b.w/2,a.y+a.h/2-b.y-b.h/2)<(a.w+b.w)*28.5/64-1e-8;}
 function labelRect(ctx){return ctx.events.findLast(e=>e.type==='rect');}
 function nameGeometry(ctx){const text=ctx.events.findLast(e=>e.type==='text'),label=labelRect(ctx);return{x:text.x,y:text.y,font:text.font,background:{x:label.x,y:label.y,w:label.w,h:label.h}};}

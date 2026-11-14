@@ -28,6 +28,7 @@ type infiniteTank struct {
 	Angle      float64 `json:"angle"`
 	HP         int     `json:"hp"`
 	Bot        bool    `json:"bot"`
+	Difficulty string  `json:"difficulty,omitempty"`
 	ColorIndex int     `json:"colorIndex"`
 	Team       int     `json:"team,omitempty"`
 	Score      int     `json:"score"`
@@ -78,6 +79,10 @@ type infinitePilot struct {
 	kit                    Tank // Reuses fixed-maze equipment state and pickup rules.
 	roomBot                *Player
 	botLevel               int
+	botThink, botShot      uint64
+	botAim                 float64
+	botTarget              int
+	botHasAim              bool
 	ambientNumber          int
 	party                  infiniteRoom
 	partyMember            uint64
@@ -181,6 +186,7 @@ type infiniteArena struct {
 	maze                                    *infiniteMaze
 	random                                  *rand.Rand
 	tick, nextBot                           uint64
+	publicBotLives                          uint64
 	nextPickup                              uint64
 	nextID, nextBullet                      int
 	pickupID, effectID                      int
@@ -513,6 +519,9 @@ func (a *infiniteArena) addPilot(name string, bot bool, nearX, nearY float64, mi
 	a.nextID++
 	p := &infinitePilot{infiniteTank: infiniteTank{ID: a.nextID, Name: name, Bot: bot, ColorIndex: (a.nextID - 1) % len(tankColors)}, botLevel: infiniteNormalBot}
 	a.spawn(p, nearX, nearY, minCells, maxCells)
+	if bot {
+		a.startBotLife(p)
+	}
 	a.pilots = append(a.pilots, p)
 	return p
 }
@@ -579,6 +588,9 @@ func (a *infiniteArena) step(now time.Time) {
 					x, y = anchor.X, anchor.Y
 				}
 				a.spawn(p, x, y, 2, 5)
+				if p.Bot {
+					a.startBotLife(p)
+				}
 			}
 			continue
 		}
@@ -680,6 +692,7 @@ func (a *infiniteArena) trimRoamingBots() int {
 			bots--
 		}
 	}
+	a.enforcePublicGodlikeLimit()
 	return bots
 }
 
@@ -769,7 +782,7 @@ func (a *infiniteArena) populate() {
 				bot.botLevel = a.random.IntN(bot.botLevel + 1)
 			}
 		} else {
-			bot.botLevel = infiniteBotLevel("easy")
+			bot.publicBotName()
 		}
 		if a.teams() {
 			var counts [5]int
@@ -803,12 +816,13 @@ func (a *infiniteArena) nearestPilot(p *infinitePilot, maxDist float64, findOppo
 	return nearest
 }
 
-const infiniteNormalBot = 1
+const infiniteNormalBot = 2
 
 var infiniteBotTunings = [...]struct {
 	name             string
 	sight, roam, aim float64
 }{
+	{"dumb", .35, .4, 3},
 	{"easy", .7, .75, 1.65},
 	{"normal", 1, 1, 1},
 	{"hard", 1.15, 1.15, .7},
@@ -826,6 +840,9 @@ func infiniteBotLevel(name string) int {
 
 func (a *infiniteArena) botInput(p *infinitePilot) Input {
 	tuning := infiniteBotTunings[p.botLevel]
+	if tuning.name == "dumb" {
+		return a.dumbBotInput(p, tuning.sight, tuning.roam, tuning.aim)
+	}
 	target := a.nearestPilot(p, cellSize*8*tuning.sight, true)
 	if target != nil {
 		dx, dy := target.X-p.X, target.Y-p.Y
@@ -840,12 +857,16 @@ func (a *infiniteArena) botInput(p *infinitePilot) Input {
 			return Input{StickX: math.Cos(angle), StickY: math.Sin(angle), AimOnly: true, Fire: fire}
 		}
 	}
+	return a.botRoam(p, target, tuning.roam)
+}
+
+func (a *infiniteArena) botRoam(p, target *infinitePilot, roam float64) Input {
 	cx, cy := infiniteCell(p.X, p.Y)
 	if p.hasWaypoint {
 		x, y := infiniteCenter(p.waypoint[0], p.waypoint[1])
 		if math.Hypot(x-p.X, y-p.Y) > 4 {
 			angle := math.Atan2(y-p.Y, x-p.X)
-			return Input{StickX: .72 * tuning.roam * math.Cos(angle), StickY: .72 * tuning.roam * math.Sin(angle)}
+			return Input{StickX: .72 * roam * math.Cos(angle), StickY: .72 * roam * math.Sin(angle)}
 		}
 		p.hasWaypoint = false
 	}

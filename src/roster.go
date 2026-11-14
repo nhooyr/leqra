@@ -20,7 +20,7 @@ func playerKind(p *Player) string {
 	return p.Kind
 }
 func validDifficulty(s string) bool {
-	return s == "easy" || s == "normal" || s == "hard" || s == "godlike"
+	return s == "dumb" || s == "easy" || s == "normal" || s == "hard" || s == "godlike"
 }
 func sideKey(id, team int) int {
 	if team > 0 {
@@ -191,7 +191,7 @@ func (h *Hub) configureRoom(c *Client, m clientMessage, now time.Time) {
 			}
 		}
 		if m.Kind == "bot" && !validDifficulty(difficulty) {
-			fail("bad_difficulty", "Choose Chill, Normal, Fierce, or Godlike.")
+			fail("bad_difficulty", "Choose Dumb, Chill, Normal, Fierce, or Godlike.")
 			return
 		}
 		slot := r.freeCombatSeat()
