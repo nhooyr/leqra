@@ -43,7 +43,7 @@ An online multiplayer tank arena battle game. Inspired by [TankTrouble](https://
 - Quick tour on first startup.
 - A second local player.
 - Mobile & PWA support.
-- [wip iOS port.](./ios)
+- wip [iOS](./ios) & [android](./android) ports.
 - Managed deployments to minimize downtime.
 
 ## Getting Started
