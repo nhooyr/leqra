@@ -208,6 +208,15 @@ func (s *infiniteServer) openPublicStore(path string) error {
 	if nextID < 0 {
 		return fail(errors.New("invalid public identity counter"))
 	}
+	var botLives int64
+	err = db.QueryRow("SELECT value FROM infinity_meta WHERE key='bot_lives'").Scan(&botLives)
+	if err != nil && err != sql.ErrNoRows {
+		return fail(err)
+	}
+	if botLives < 0 {
+		return fail(errors.New("invalid public bot life counter"))
+	}
+	s.public.publicBotLives = uint64(botLives)
 	s.public.publicEntries = entries
 	s.public.publicArchiveDirty = true
 	s.publicProfiles = profiles
@@ -222,7 +231,8 @@ func (s *infiniteServer) openPublicStore(path string) error {
 			if len(s.public.inactiveBots) >= infiniteBotLimit {
 				return fail(errors.New("too many saved roaming bots"))
 			}
-			p := &infinitePilot{infiniteTank: infiniteTank{ID: id, Name: e.Name, Score: e.Score, Bot: true, ColorIndex: e.ColorIndex}, ambientNumber: e.ambient, botLevel: infiniteBotLevel("easy")}
+			p := &infinitePilot{infiniteTank: infiniteTank{ID: id, Name: e.Name, Score: e.Score, Bot: true, ColorIndex: e.ColorIndex}, ambientNumber: e.ambient, botLevel: infiniteBotLevel("dumb")}
+			p.publicBotName()
 			s.public.inactiveBots = append(s.public.inactiveBots, p)
 		}
 	}
@@ -663,9 +673,9 @@ func (s *infiniteServer) persistPublicLocked(extra map[int]infinitePublicEntry, 
 	for id, e := range extra {
 		changes[id] = e
 	}
-	seed, nextID := a.seed, a.nextID
+	seed, nextID, botLives := a.seed, a.nextID, a.publicBotLives
 	a.mu.Unlock()
-	if len(changes) == 0 && len(profiles) == 0 && s.publicStoreInitialized && seed == s.publicSavedSeed && nextID == s.publicSavedNextID {
+	if len(changes) == 0 && len(profiles) == 0 && s.publicStoreInitialized && seed == s.publicSavedSeed && nextID == s.publicSavedNextID && botLives == s.publicSavedBotLives {
 		return nil
 	}
 	if s.publicDB != nil {
@@ -674,7 +684,7 @@ func (s *infiniteServer) persistPublicLocked(extra map[int]infinitePublicEntry, 
 			return err
 		}
 		defer tx.Rollback()
-		if err = writePublicRows(tx, changes, profiles, seed, nextID); err != nil {
+		if err = writePublicRows(tx, changes, profiles, seed, nextID, botLives); err != nil {
 			return err
 		}
 		if err = tx.Commit(); err != nil {
@@ -702,6 +712,7 @@ func (s *infiniteServer) persistPublicLocked(extra map[int]infinitePublicEntry, 
 	s.publicStoreInitialized = true
 	s.publicSavedSeed = seed
 	s.publicSavedNextID = nextID
+	s.publicSavedBotLives = botLives
 	return nil
 }
 
@@ -737,7 +748,7 @@ func (s *infiniteServer) refreshPublicZero(hash string) {
 	}
 }
 
-func writePublicRows(tx *sql.Tx, changes map[int]infinitePublicEntry, profiles map[string]infinitePublicProfile, seed uint32, nextID int) error {
+func writePublicRows(tx *sql.Tx, changes map[int]infinitePublicEntry, profiles map[string]infinitePublicProfile, seed uint32, nextID int, botLives ...uint64) error {
 	if tx == nil {
 		return nil
 	}
@@ -756,7 +767,11 @@ func writePublicRows(tx *sql.Tx, changes map[int]infinitePublicEntry, profiles m
 			return err
 		}
 	}
-	for key, value := range map[string]any{"seed": seed, "next_id": nextID} {
+	meta := map[string]any{"seed": seed, "next_id": nextID}
+	if len(botLives) != 0 {
+		meta["bot_lives"] = botLives[0]
+	}
+	for key, value := range meta {
 		if _, err := tx.Exec(`INSERT INTO infinity_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE value<>excluded.value`, key, value); err != nil {
 			return err
 		}

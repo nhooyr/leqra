@@ -1,5 +1,6 @@
 package com.leqra.android
 
+import com.leqra.core.BotDifficulty
 import com.leqra.core.RoomRules
 import org.junit.Assert.*
 import org.junit.Test
@@ -56,6 +57,11 @@ class RuleEditorLimitsTest {
         )
         assertEquals(999, RuleEditorLimits.draft(source.copy(infinityTarget = 1000)).infinityTarget)
         assertEquals(0, RuleEditorLimits.draft(source.copy(infinityTarget = -1)).infinityTarget)
+        for (difficulty in BotDifficulty.names) assertEquals(
+            difficulty,
+            RuleEditorLimits.draft(source.copy(infinityBotDifficulty = difficulty))
+                .infinityBotDifficulty,
+        )
         assertEquals(
             "normal",
             RuleEditorLimits.draft(source.copy(infinityBotDifficulty = "invalid"))

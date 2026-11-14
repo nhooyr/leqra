@@ -244,7 +244,7 @@ final class PracticeTests: XCTestCase {
         XCTAssertEqual(arena.snapshot.tanks.count, 12)
         arena.configure(rules: rules)
         XCTAssertEqual(arena.snapshot.tanks.count, 12)
-        XCTAssertTrue(arena.snapshot.tanks.dropFirst(4).allSatisfy { ["easy", "normal", "hard"].contains($0.difficulty) })
+        XCTAssertTrue(arena.snapshot.tanks.dropFirst(4).allSatisfy { ["dumb", "easy", "normal", "hard"].contains($0.difficulty) })
         arena.step(input: GameInput(), dt: 1 / 60)
         XCTAssertFalse(arena.snapshot.pickups.isEmpty)
     }

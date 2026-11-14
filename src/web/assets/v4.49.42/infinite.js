@@ -49,8 +49,9 @@ const MAX_BOTS = 24, BOTS_PER_PLAYER = 8;
 const RECONNECT_WINDOW = 18000, SNAPSHOT_TIMEOUT = 2500;
 const PING_INTERVAL = 1000, PING_TIMEOUT = 6000;
 const ROOM_RESUME_KEY = 'leqra.infinityResume.v1';
-const BOT_LEVELS = ['easy','normal','hard','godlike'];
+const BOT_LEVELS = ['dumb','easy','normal','hard','godlike'];
 const BOT_TUNING = {
+ dumb:{range:.35,roam:.4,aim:3},
  easy:{range:.7,roam:.75,aim:1.65}, normal:{range:1,roam:1,aim:1},
  hard:{range:1.15,roam:1.15,aim:.7}, godlike:{range:1.3,roam:1.3,aim:.45},
 };
@@ -182,7 +183,7 @@ function makeTank(id, x, y, bot = false) {
   colorIndex: bot ? 1 + Math.floor(Math.random() * (COLORS.length - 1)) : 0,
   name: bot ? 'Bot ' + id.slice(4) : pilotName(), cooldown: 0, invulnerable: 1, spawnProtected: true, respawn: 0,
   track: 0, recoil: 0, speedStacks: 0, spawnSerial: 1,
-  course: null, nextDecision: 0,
+  course: null, nextDecision: 0, nextDumbShot: null, dumbTarget: null, dumbAim: null, dumbAttack: false,
  };
 }
 
@@ -579,10 +580,29 @@ function botInput(world, tank, locals) {
   const distance = Math.hypot(target.x - tank.x, target.y - tank.y);
   if (distance < best) { pilot = target; best = distance; }
  }
+ if (tank.difficulty === 'dumb' && world.time < tank.nextDecision && tank.dumbTarget != null) {
+  pilot = targets.find(target => target.id === tank.dumbTarget && target.hp && target !== tank && !(tank.team && target.team === tank.team));
+ }
  if (!pilot) return net.neutral();
  const tune = BOT_TUNING[tank.difficulty] || BOT_TUNING.normal;
  const dx = pilot.x - tank.x, dy = pilot.y - tank.y, distance = Math.hypot(dx, dy);
- const seesPilot = distance < CELL * 6 * tune.range && !wallHit(world.maze, tank.x, tank.y, dx, dy, BULLET_RADIUS);
+ const seesPilot = distance < CELL * (tank.difficulty === 'dumb' ? 8 : 6) * tune.range && !wallHit(world.maze, tank.x, tank.y, dx, dy, BULLET_RADIUS);
+ if (tank.difficulty === 'dumb') {
+  if (!Number.isFinite(tank.nextDumbShot)) tank.nextDumbShot = world.time + 1.8;
+  if (world.time >= tank.nextDecision) {
+   tank.nextDecision = world.time + .9;
+   tank.dumbTarget = pilot.id;
+   tank.dumbAim = Math.atan2(dy, dx) + between(-.6,.6);
+   tank.dumbAttack = Math.random() >= .35;
+   if (!seesPilot) tank.course = botCourse(world.maze, tank, pilot);
+  }
+  const tx = seesPilot ? Math.cos(tank.dumbAim) : (tank.course?.x ?? tank.x) - tank.x;
+  const ty = seesPilot ? Math.sin(tank.dumbAim) : (tank.course?.y ?? tank.y) - tank.y;
+  const aim = Math.atan2(ty,tx);
+  const fire = seesPilot && tank.dumbAttack && !(pilot.invulnerable > 0) && world.time >= tank.nextDumbShot && Math.abs(angleOf(aim-tank.angle)) < .36;
+  if (fire) tank.nextDumbShot = world.time + 1.8;
+  return {stickX:Math.cos(aim)*.72*tune.roam,stickY:Math.sin(aim)*.72*tune.roam,aimOnly:seesPilot||Math.hypot(tx,ty)<5,fire};
+ }
  if (!seesPilot && world.time >= tank.nextDecision) {
   tank.course = botCourse(world.maze, tank, pilot);
   tank.nextDecision = world.time + between(.25,.5)/tune.roam;
@@ -845,7 +865,7 @@ function offlineBulletPose(world,bullet,remaining) {
  return value;
 }
 
-function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank') {
+function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity) {
  const color = COLORS[tank.colorIndex] || COLORS[0];
  ctx.save();
  ctx.translate(tank.x, tank.y);
@@ -899,6 +919,15 @@ function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank') {
  ctx.fill();
  ctx.fillStyle = color;
  ctx.fillText(label, 0, -32-height+(height-3)/1.25);
+ if (tank.bot && tank.difficulty === 'godlike') {
+  const warningWidth = (ctx.measureText('GODLIKE')?.width || 50) + 12;
+  const warningX = clamp(0,viewLeft-tank.x+warningWidth/2+2/zoom,viewRight-tank.x-warningWidth/2-2/zoom);
+  const warningY = Math.max(viewTop-tank.y+2/zoom,-32-height*2-Math.max(3,3/zoom));
+  ctx.fillStyle = '#302217f2';
+  ctx.strokeStyle = '#ffc46b';ctx.lineWidth = Math.max(1,1/zoom);
+  art.rect(ctx,warningX-warningWidth/2,warningY,warningWidth,height,3);ctx.fill();ctx.stroke();
+  ctx.fillStyle = '#ffc46b';ctx.fillText('GODLIKE',warningX,warningY+(height-3)/1.25);
+ }
  ctx.restore();
  art.drawBadges(tank, ctx, zoom);
 }
@@ -1202,7 +1231,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
   drawTank(displayed, !!owner, zoom, ratio,
-   owner?pilotIdentity(world,owner===world?0:1,tank).label:tank.name||'Tank');
+   owner?pilotIdentity(world,owner===world?0:1,tank).label:tank.name||'Tank',x0,y0,x1);
  }
  const bullets = world.visibleBullets;
  bullets.length = 0;

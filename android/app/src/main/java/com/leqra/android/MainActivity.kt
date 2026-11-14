@@ -63,7 +63,7 @@ internal object RuleEditorLimits {
                 respawnSeconds = respawnSeconds.coerceIn(1, 10)
                 if (mode == "ctf" || mode == "survival") teamMode = "teams"
             }
-            if (infinityBotDifficulty !in listOf("easy", "normal", "hard", "godlike"))
+            if (infinityBotDifficulty !in BotDifficulty.names)
                 infinityBotDifficulty = "normal"
         }
 }
@@ -1099,9 +1099,9 @@ class MainActivity : Activity() {
             )
             for (bot in session.localBots) localBotRow(panel, bot)
             panel.add(label(this, "NEW BOT DIFFICULTY", 10f, muted, mono = true))
-            val difficulties = listOf("easy", "normal", "hard", "godlike")
+            val difficulties = BotDifficulty.names
             panel.add(
-                choice(difficulties, difficulties.indexOf(session.difficulty).coerceAtLeast(0)) {
+                choice(difficulties, BotDifficulty.index(session.difficulty)) {
                     session.difficulty = difficulties[it]
                     session.save()
                 },
@@ -1176,10 +1176,10 @@ class MainActivity : Activity() {
             )
         }
         card.add(paints)
-        val difficulties = listOf("easy", "normal", "hard", "godlike")
+        val difficulties = BotDifficulty.names
         card.add(label(this, "DIFFICULTY", 10f, muted, mono = true))
         card.add(
-            choice(difficulties, difficulties.indexOf(bot.difficulty).coerceAtLeast(0)) {
+            choice(difficulties, BotDifficulty.index(bot.difficulty)) {
                 session.updateLocalBot(bot.id, difficulty = difficulties[it])
             },
         )
@@ -1293,14 +1293,14 @@ class MainActivity : Activity() {
                     "Bot difficulty" ->
                         AlertDialog.Builder(this)
                             .setTitle("Bot difficulty")
-                            .setItems(arrayOf("easy", "normal", "hard", "godlike")) { _, difficulty
+                            .setItems(BotDifficulty.names.toTypedArray()) { _, difficulty
                                 ->
                                 session.command(
                                     "configure",
                                     "target" to target,
                                     "member" to member,
                                     "difficulty" to
-                                        listOf("easy", "normal", "hard", "godlike")[difficulty],
+                                        BotDifficulty.names[difficulty],
                                 )
                             }
                             .show()
@@ -1691,13 +1691,13 @@ class MainActivity : Activity() {
                     setOnCheckedChangeListener { _, v -> draft.infinityRandomBots = v }
                 },
             )
-            val difficultyValues = listOf("easy", "normal", "hard", "godlike")
-            val difficultyTitles = listOf("Chill", "Normal", "Fierce", "Godlike")
+            val difficultyValues = BotDifficulty.names
+            val difficultyTitles = listOf("Dumb", "Chill", "Normal", "Fierce", "Godlike")
             select(
                 "ROAMING BOT DIFFICULTY",
                 difficultyTitles,
                 difficultyTitles[
-                    difficultyValues.indexOf(draft.infinityBotDifficulty).coerceAtLeast(0)],
+                    BotDifficulty.index(draft.infinityBotDifficulty)],
             ) {
                 draft.infinityBotDifficulty = difficultyValues[difficultyTitles.indexOf(it)]
             }

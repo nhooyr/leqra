@@ -34,6 +34,11 @@ func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []Be
 
 func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
 	t, k := p.infiniteTank, &p.kit
+	if p.Bot {
+		t.Difficulty = infiniteBotTunings[p.botLevel].name
+	} else {
+		t.Difficulty = ""
+	}
 	t.X, t.Y, t.Angle = infinitePrecision(t.X), infinitePrecision(t.Y), infinitePrecision(t.Angle)
 	t.Track, t.Recoil, t.Invuln = infinitePrecision(t.Track), infinitePrecision(k.Recoil), infinitePrecision(k.Invulnerable)
 	t.SpawnProtected = k.SpawnProtected && k.Invulnerable > 1e-9

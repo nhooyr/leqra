@@ -114,7 +114,7 @@ struct RulesEditor: View {
                 if rules.infinity {
                     Stepper("Score target: \(rules.infinityTarget == 0 ? "Endless" : String(rules.infinityTarget))", value: $rules.infinityTarget, in: 0...999)
                     Toggle("Random roaming bots", isOn: $rules.infinityRandomBots)
-                    menu("ROAMING BOT DIFFICULTY", value: $rules.infinityBotDifficulty, choices: [("easy", "Chill"), ("normal", "Normal"), ("hard", "Fierce"), ("godlike", "Godlike")])
+                    menu("ROAMING BOT DIFFICULTY", value: $rules.infinityBotDifficulty, choices: BotDifficulty.allCases.map { ($0.rawValue, $0.displayName) })
                     Toggle("Randomize roaming bot difficulty", isOn: $rules.infinityRandomDifficulty)
                 } else {
                     Stepper("\(rules.mode == "survival" ? "Wave" : "Score") target: \(rules.scoreTarget)", value: $rules.scoreTarget, in: 1...(rules.mode == "koth" ? 300 : 20))
