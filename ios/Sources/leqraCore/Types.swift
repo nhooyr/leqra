@@ -531,6 +531,8 @@ public struct ArenaWorld: Codable, Equatable, Sendable {
 }
 
 public struct ArenaSnapshot: Codable, Equatable, Sendable {
+    public var spectating = false
+    public var following: Int?
     public var godlikeSpawns: [GodlikeSpawn] = []
     public var rules: RoomRules?
     public var matchStats: NativeMatchReport?
@@ -593,10 +595,12 @@ public struct ArenaSnapshot: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case godlikeSpawns, rules, matchStats, boostedBulletIds, generation, objectives, result, teamScores, type, tick, tanks, bullets, pickups, effects, leaderboard, players, tankCount, world, phase, phaseTime, roundClock, round, scores, winner
+        case spectating, following, godlikeSpawns, rules, matchStats, boostedBulletIds, generation, objectives, result, teamScores, type, tick, tanks, bullets, pickups, effects, leaderboard, players, tankCount, world, phase, phaseTime, roundClock, round, scores, winner
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        spectating = try c.decodeIfPresent(Bool.self, forKey: .spectating) ?? false
+        following = try c.decodeIfPresent(Int.self, forKey: .following)
         godlikeSpawns = Array((try c.decodeIfPresent([GodlikeSpawn].self, forKey: .godlikeSpawns) ?? []).prefix(64))
         rules = try c.decodeIfPresent(RoomRules.self, forKey: .rules)
         matchStats = try c.decodeIfPresent(NativeMatchReport.self, forKey: .matchStats)

@@ -42,7 +42,7 @@ public enum StarmanAudio {
     /// come from the active arena identity rather than a retained room socket.
     public static func isActive(snapshot: ArenaSnapshot, primaryID: Int, secondaryID: Int? = nil,
                                 gameplayActive: Bool = true) -> Bool {
-        guard gameplayActive, snapshot.phase == "playing", snapshot.result == nil,
+        guard gameplayActive, !snapshot.spectating, snapshot.phase == "playing", snapshot.result == nil,
               snapshot.objectives?.survival?.status != "break" else { return false }
         return snapshot.tanks.contains { tank in
             (tank.id == primaryID && primaryID >= 0 || secondaryID.map { $0 >= 0 && tank.id == $0 } == true)

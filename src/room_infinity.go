@@ -2,8 +2,39 @@ package main
 
 import "time"
 
+const infiniteLocalPrimaryRequired = "Move P2 to spectators before spectating Infinity, or keep P1 in a combat seat."
+
 func infinityCanPlay(p *Player) bool {
 	return p != nil && !p.Spectating && p.Away == nil && playerKind(p) == "human"
+}
+
+func infinityCanSpectate(p *Player) bool {
+	return p != nil && p.Spectating && p.Away == nil && playerKind(p) == "human"
+}
+
+func (r *Room) infinityPrimaryRequired() bool {
+	for _, local := range r.Players {
+		if local == nil || local.Kind != "local" || local.Spectating || local.Away != nil {
+			continue
+		}
+		owner := local.Controller
+		if owner == nil {
+			owner = r.member(local.Owner)
+		}
+		if owner != nil && owner.Spectating {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Room) activeInfinityLocal(owner *Player) bool {
+	for _, local := range r.Players {
+		if infinityOwnsLocal(owner, local) {
+			return true
+		}
+	}
+	return false
 }
 
 func infinityOwnsLocal(owner, local *Player) bool {
@@ -42,6 +73,9 @@ func (r *Room) lineupError() string {
 	rules := r.Game.settings()
 	if !rules.Infinity {
 		return r.Game.lineupError(r.Players)
+	}
+	if r.infinityPrimaryRequired() {
+		return infiniteLocalPrimaryRequired
 	}
 	sides := make(map[int]bool)
 	primary := false
@@ -91,8 +125,8 @@ func (h *Hub) startRoomInfinity(r *Room) {
 	resetReady(r)
 	h.broadcastRoom(r)
 	data, _ := encodePacket(map[string]string{"type": "infinity_start"})
-	for _, p := range r.Players {
-		if infinityCanPlay(p) && p.Client != nil {
+	for _, p := range r.members() {
+		if (infinityCanPlay(p) || infinityCanSpectate(p)) && p.Client != nil {
 			p.Client.enqueueBytes(data)
 		}
 	}
@@ -100,7 +134,7 @@ func (h *Hub) startRoomInfinity(r *Room) {
 
 // Authenticate the separate Infinity socket with the current room identity.
 // The pilot's callsign is copied while Hub.mu protects the roster.
-func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, infiniteRoomSetup) {
+func (h *Hub) infiniteMember(code, token string, spectating ...bool) (*Room, *Player, uint64, infiniteRoomSetup) {
 	if token == "" {
 		return nil, nil, 0, infiniteRoomSetup{}
 	}
@@ -115,8 +149,13 @@ func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, infini
 	if r == nil || !r.infinityActive {
 		return nil, nil, 0, infiniteRoomSetup{}
 	}
-	for _, p := range r.Players {
-		if p != nil && p.Token == token && h.infiniteMemberValid(r, p, r.infinityGeneration, now) {
+	observer := len(spectating) > 0 && spectating[0]
+	for _, p := range r.members() {
+		valid := h.infiniteMemberValid(r, p, r.infinityGeneration, now)
+		if observer {
+			valid = h.infiniteObserverValid(r, p, r.infinityGeneration, now)
+		}
+		if p != nil && p.Token == token && valid {
 			rules := r.Game.settings()
 			setup := infiniteRoomSetup{public: r.infinityPublic, rules: rules, pilot: infiniteRoomSeat(p, rules)}
 			for _, member := range r.Players {
@@ -134,6 +173,17 @@ func (h *Hub) infiniteMember(code, token string) (*Room, *Player, uint64, infini
 		}
 	}
 	return nil, nil, 0, infiniteRoomSetup{}
+}
+
+func (h *Hub) validInfiniteObserver(r *Room, p *Player, generation uint64, now time.Time) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.infiniteObserverValid(r, p, generation, now)
+}
+
+func (h *Hub) infiniteObserverValid(r *Room, p *Player, generation uint64, now time.Time) bool {
+	return h.infiniteRoomValid(r, generation) && !r.infinityPublic && infinityCanSpectate(p) && r.contains(p) &&
+		(p.Client != nil || now.Sub(p.DisconnectedAt) <= reconnectGrace)
 }
 
 func (h *Hub) validInfiniteMember(r *Room, p *Player, generation uint64) bool {

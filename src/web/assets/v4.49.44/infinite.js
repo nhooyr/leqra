@@ -78,6 +78,7 @@ function pilotName() {
 }
 
 function setStatus(text) {
+ if(!text&&session?.followErrorUntil>performance.now())text=session.followError;
  if(!text&&session?.leaderboardNoticeUntil>performance.now())text=session.leaderboardNotice;
  status.hidden = !text;
  if (status.textContent !== text) status.textContent = text;
@@ -100,7 +101,7 @@ function acceptGodlikeSpawns(world,message,now){
 }
 
 function localPilots(world=session) {
- if (!world) return [];
+ if (!world || world.spectating) return [];
  return world.controllers.map((seat,index)=>{
   const tank=world.tanks.find(tank=>tank.id===seat.id);
   return {id:seat.id,member:'infinity-'+world.serial+'-'+index,name:tank?.name||(index?world.localName:world.name)||(index?'CO-PILOT':'Player 1'),
@@ -140,6 +141,7 @@ function applyPilotName(world,index,name) {
 
 function renamePilot(index,value) {
  const world=session;
+ if(world?.spectating)return Promise.reject(Error('Spectators do not control a tank.'));
  if(!world||![0,1].includes(index)||index===1&&!world.local)return Promise.reject(Error('That local tank is no longer available.'));
  const name=art.cleanPilotName(value);
  if(!name)return Promise.reject(Error('Enter letters or numbers for the callsign.'));
@@ -811,6 +813,13 @@ function alignControlHints(hint) {
 }
 
 function refreshBindings(world) {
+ arena.dataset.spectating=String(!!world.spectating);
+ if(world.spectating){
+  world.keys={};
+  const hint=byID('infiniteControlsHint');if(hint)hint.textContent='Choose a tank in the leaderboard to follow. Scroll to see everyone.';
+  canvas.setAttribute('aria-label','Spectating room Infinity. Choose a tank in the leaderboard to follow.');
+  world.controlPilots='[]';art.syncCallsignEditors?.();return;
+ }
  const bindings = world.readBindings();
  const layout = Array.isArray(bindings) ? bindings : [bindings];
  world.keys = world.local ? setupBindings(layout[0],PRIMARY_KEYS) : setupBindings(layout,{...PRIMARY_KEYS,...LOCAL_KEYS});
@@ -1076,6 +1085,11 @@ function renderScores(world, pilot, second) {
   [...world.tanks].sort((a, b) => b.score - a.score || Number(a.bot) - Number(b.bot));
  const score = tank => String(tank?.score ?? 0);
  if (personalScore) {
+  if(world.spectating){
+   const followed=world.leaderboard.find(tank=>tank.id===world.following),name=followed&&(art.botName?.(followed.name,followed.bot)||followed.name);
+   const text=name?'Following '+name+(pilot?.hp===0?' · respawning':''):'Spectating · waiting for tanks';
+   if(world.personalScoreRows!==text){world.personalScoreRows=text;personalScore.textContent=text;personalScore.setAttribute('aria-label',text);}
+  }else{
   const rows = [pilot,...(world.local?[second]:[])].map((tank,index)=>{
    const identity=pilotIdentity(world,index,tank),rank=world.online?tank?.rank:standings.findIndex(entry=>entry.id===tank?.id)+1;
    return [identity.label,score(tank),rank,identity.color];
@@ -1098,9 +1112,10 @@ function renderScores(world, pilot, second) {
    }
    personalScore.replaceChildren(...children);
   }
+  }
  }
  if (!leaderboard) return;
- const entries = standings.slice(0, 10);
+ const entries = world.spectating ? standings : standings.slice(0, 10);
  const publicArena = world.online && (!world.room || world.public);
  const party = world.public ? world.party || [] : [];
  const partyIDs = new Set(party.map(tank=>tank.id));
@@ -1108,7 +1123,7 @@ function renderScores(world, pilot, second) {
  const standingRow = (tank,rank,extra=false) => {
   const local = tank.id===world.id ? 1 : tank.id===world.local?.id ? 2 : 0;
   const name = local ? pilotIdentity(world,local-1,tank).label : art.botName?.(tank.name||'Tank',tank.bot) || tank.name || 'Tank';
-  return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra,partyIDs.has(tank.id)];
+  return [name, tank.score, local, COLORS[tank.colorIndex] || COLORS[0],rank,extra,partyIDs.has(tank.id),tank.id];
  };
  const rows = entries.map((tank,i) => standingRow(tank,i+1));
  const seen = new Set(entries.map(tank=>tank.id)), extraRows = [];
@@ -1124,12 +1139,12 @@ function renderScores(world, pilot, second) {
  rows.push(...extraRows);
  const teams = !publicArena && world.rules?.teamMode==='teams' ? world.teamScores.flatMap((score,i)=>
   i<2||score||entries.some(tank=>tank.team===i+1)?[[teamName(world,i+1),score,0,COLORS[world.rules.teamColors?.[i]] || COLORS[i]]]:[]) : [];
- const signature = JSON.stringify([title,rows,teams]);
+ const signature = JSON.stringify([title,rows,teams,world.spectating,world.following]);
  if (signature === world.scoreRows) return;
  world.scoreRows = signature;
  leaderboardTitle.textContent = title;
  scoreboardButton.textContent = title;
- const makeRow = ([name, score, local, color,rank,extra,partyMember]) => {
+ const makeRow = ([name, score, local, color,rank,extra,partyMember,id]) => {
   const row = document.createElement('li');
   if (rank) row.value = rank;
   if (extra) row.className = 'off-board-local';
@@ -1143,12 +1158,29 @@ function renderScores(world, pilot, second) {
   const total = document.createElement('strong');
   callsign.textContent = name + (!local&&partyMember?' (room)':'');
   total.textContent = score;
-  row.append(callsign, total);
+  if(world.spectating&&Number.isSafeInteger(id)&&id>0){
+   row.dataset.following=String(world.following===id);
+   const button=document.createElement('button');button.type='button';button.className='infinite-follow-target';button.dataset.followId=String(id);
+   button.setAttribute('aria-pressed',String(world.following===id));button.setAttribute('aria-label',(world.following===id?'Following ':'Follow ')+name+', rank '+rank+', score '+score);
+   button.append(callsign,total);button.addEventListener('click',()=>followTank(id));row.append(button);
+  }else row.append(callsign, total);
   return row;
  };
+ const scroll=leaderboardPanel.scrollTop,focused=document.activeElement?.dataset?.followId;
  leaderboard.replaceChildren(...rows.map(makeRow));
  teamLeaderboard.hidden = !teams.length;
  teamLeaderboard.replaceChildren(...teams.map(makeRow));
+ if(world.spectating){
+  if(focused)leaderboard.querySelector?.('[data-follow-id="'+focused+'"]')?.focus({preventScroll:true});
+  leaderboardPanel.scrollTop=scroll;
+ }
+}
+
+function followTank(target){
+ const world=session;
+ if(!world?.spectating||!world.joined||socket?.readyState!==WebSocket.OPEN||!Number.isSafeInteger(target)||target<=0||!world.leaderboard.some(tank=>tank.id===target))return;
+ world.followErrorUntil=0;socket.send(JSON.stringify({type:'follow',target}));
+ if(art.isTouchUI()&&canvas.clientHeight>canvas.clientWidth){if(pauseMenu.open)resume();leaderboardPanel.open=false;syncScoreboardButton();}
 }
 
 function updatePilotLoadout(world, pilot, seat, num, now) {
@@ -1169,6 +1201,10 @@ function updatePilotLoadout(world, pilot, seat, num, now) {
 
 function updateHUD(world, pilot, second, now) {
  if(!(world.godlikeWarningUntil>now))byID('godlikeSpawnNotice').hidden=true;
+ if(world.spectating){
+  if(world.failed||!world.joined||now<world.nextHUD)return;world.nextHUD=now+1000/30;renderScores(world,pilot);renderOnlineCount(world);setStatus('');
+  art.renderLoadout(null,1);art.renderLoadout(null,2);return;
+ }
  if (!pilot || world.failed || world.online && !world.joined || now < world.nextHUD) return;
  world.nextHUD = now + 1000 / 30;
  if(world.controlPilots!==JSON.stringify(localPilots(world)))refreshBindings(world);
@@ -1208,7 +1244,14 @@ function draw(world, now, dt) {
  const remaining=!world.online&&!world.result&&!pauseMenu.open?accumulator:0;
  world.displayTanks ||= new Map();world.displayTanks.clear();
  if(!world.online)for(const tank of world.tanks)world.displayTanks.set(tank.id,!world.result&&!pauseMenu.open?offlineTankPose(world,tank,remaining):tank);
- for (const seat of world.controllers) {
+ if(world.spectating){
+  const target=world.tanks.find(tank=>tank.id===world.following);
+  const remote=target&&world.remoteFrame&&world.motionBuffer.tank(target.id,world.remoteFrame,world.moveTank);
+  const pose=target&&(remote||interpolate(world.previousTanks.get(target.id),target,alpha));
+  world.display=pose&&art.ageTank({...pose},target,age);
+  if(pose)Object.assign(world.camera,{x:pose.x,y:pose.y});
+  else if(!world.following)Object.assign(world.camera,{x:CELL/2,y:CELL/2});
+ }else for (const seat of world.controllers) {
   const authority = world.tanks.find(tank=>tank.id===seat.id);
   const pilot = world.online&&!world.result ? seat.predictor.visual(dt)||authority : world.displayTanks.get(seat.id)||authority;
   seat.display = pilot && (world.online ? art.ageTank({...pilot},authority,age) : pilot);
@@ -1280,7 +1323,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   } else bullets.push(!world.online&&!world.result&&!pauseMenu.open?offlineBulletPose(world,bullet,accumulator):bullet);
  }
  art.bullets(bullets, ctx, now / 1000);
- if (!world.result && !world.failed && !pauseMenu.open) {
+ if (!world.spectating && !world.result && !world.failed && !pauseMenu.open) {
   art.drawHomingWarnings(ctx,pilot,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
  }
  drawEffects(world, now);
@@ -1306,7 +1349,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
 
 function sendInput(seat = session, now = performance.now(), immediate = false, input) {
  const world = session;
- if (!world?.online || !world.joined || world.result || seat.id==null ||
+ if (!world?.online || world.spectating || !world.joined || world.result || seat.id==null ||
      socket?.readyState !== WebSocket.OPEN || socket.bufferedAmount > 4096) return;
  input ||= inputState(seat);
  const changed = input.paused !== seat.lastSent?.paused || !net.controlsEqual(input, seat.lastSent);
@@ -1355,7 +1398,7 @@ function loop(now) {
  const workStart = performance.now();
  const dt = clamp((now - lastTime) / 1000, 0, .1);
  measureLatency(session,now);
- if (session.online && session.joined && !session.result) {
+ if (session.online && !session.spectating && session.joined && !session.result) {
   for (const seat of session.controllers) {
    const input = inputState(seat);
    sendInput(seat,now,false,input);
@@ -1372,7 +1415,7 @@ function loop(now) {
  }
  lastTime = now;
  const audioAge=session.online?Math.max(0,(now-session.arrived)/1000):0;
- art.starmanAudio?.(!pauseMenu.open&&!session.result&&(!session.online||session.joined&&audioAge<2)&&session.controllers.some(seat=>{const tank=session.tanks.find(tank=>tank.id===seat.id);return tank?.hp>0&&tank.starmanTime>audioAge;}));
+ art.starmanAudio?.(!session.spectating&&!pauseMenu.open&&!session.result&&(!session.online||session.joined&&audioAge<2)&&session.controllers.some(seat=>{const tank=session.tanks.find(tank=>tank.id===seat.id);return tank?.hp>0&&tank.starmanTime>audioAge;}));
  showResult(session, now);
  if (session.online ? session.joined || session.retryAt === undefined : !pauseMenu.open) draw(session, now, dt);
  art.sampleFrame(now,performance.now()-workStart,session.online?(session.latency??NaN):null);
@@ -1457,6 +1500,10 @@ function receive(ws, event) {
   return;
  }
  if(message.type==='renamed'||message.type==='rename_error'){acceptRename(message);return;}
+ if(message.type==='followed'&&session.spectating){
+  if(Number.isSafeInteger(message.following)&&message.following>=0){session.following=message.following;session.preferredFollowing=message.following;session.scoreRows=null;session.followErrorUntil=0;}
+  return;
+ }
  if(message.type==='leaderboard_reset'){
   session.leaderboardNotice=message.selected===true?'Selected Public Infinity scores were reset.':'The Public Infinity leaderboard was reset.';
   session.leaderboardNoticeUntil=performance.now()+5000;setStatus(session.leaderboardNotice);return;
@@ -1471,6 +1518,7 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'error') {
+  if(message.action==='follow'&&session.spectating){session.followError=message.message||'That tank is no longer available. Choose another.';session.followErrorUntil=performance.now()+4000;setStatus(session.followError);return;}
   if(message.code==='session_replaced'){art.exposeAccountError?.();connectionFailed((message.seat===1?'P2’s tank':'Your tank')+' was taken over by another device using this account.');return;}
   if(message.code==='account_key_revoked'){art.exposeAccountError?.();const seat=message.seat===1?1:0;art.forgetRevokedAccount?.(seat?session.localPublicToken:session.publicToken,seat);connectionFailed((seat?'P2’s':'P1’s')+' account key was reset. Import the latest key in Account to continue.');return;}
   if(message.code==='callsign_taken'&&session.onConflict){session.onConflict(message);return;}
@@ -1482,6 +1530,9 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'welcome') {
+  if(session.spectating&&message.spectating!==true){connectionFailed('The server did not confirm spectator access. Update the server.');return;}
+  session.spectating=message.spectating===true;
+  if(session.spectating){session.following=Number.isSafeInteger(message.following)?message.following:0;session.preferredFollowing=session.following;session.local=null;session.controllers=[session];refreshBindings(session);leaderboardPanel.open=true;syncScoreboardButton();}
   if(session.independentAccounts&&message.localId!=null&&message.localPublicToken!==session.localPublicToken){connectionFailed('The server did not confirm the separate P2 account key. Update the server before using P2 online.');return;}
   session.welcomed=true;
   if(message.publicToken){art.rememberPublicIdentity?.(message.publicToken,session.publicToken||'');session.publicToken=message.publicToken;}
@@ -1522,6 +1573,7 @@ function receive(ws, event) {
  }
  preserveConfirmedNames(session,message);
  const now = performance.now(), joined = session.joined, resumed = !joined && session.resumed;
+ const followChanged=session.spectating&&Number.isSafeInteger(message.following)&&session.viewFollowing!==message.following;
  session.previousTanks = new Map(session.tanks.map(tank => [tank.id, tank]));
  session.previousBullets = new Map(session.bullets.map(bullet => [bullet.id, bullet]));
  session.interval = session.arrived ? clamp(now - session.arrived, 20, 90) : 1000 / 30;
@@ -1530,6 +1582,7 @@ function receive(ws, event) {
  acceptGodlikeSpawns(session,message,now);
  session.bullets = message.bullets.map(bullet => ({...bullet, trail: bullet.trail || null,
   color: COLORS[bullet.colorIndex] || COLORS[0], r: (PROJECTILES[bullet.kind || 'regular'] || PROJECTILES.regular).r}));
+ if(followChanged){session.viewFollowing=message.following;session.previousTanks.clear();session.previousBullets.clear();session.motionBuffer?.reset();session.visualEffects=[];session.bulletPaths?.clear();}
  if(Number.isSafeInteger(message.tick)){
   session.motionBuffer ||= new net.SnapshotBuffer({delay:1000/30,minimumDelay:1000/30,maximumDelay:90,intervals:1});
   if(!joined)session.motionBuffer.reset();
@@ -1539,6 +1592,7 @@ function receive(ws, event) {
  session.players = message.players;
  session.tankCount = message.tankCount ?? message.leaderboard.length;
  session.leaderboard = message.leaderboard;
+ if(session.spectating&&Number.isSafeInteger(message.following)&&message.following>=0){session.following=message.following;session.preferredFollowing=message.following;}
  if (Array.isArray(message.party)) session.party = message.party;
  if (message.rules && !session.public) session.rules = message.rules;
  if (message.teamScores) session.teamScores = message.teamScores;
@@ -1632,11 +1686,11 @@ function connect() {
  }
  ws.addEventListener('open', () => {
   if (ws === socket && session === world) {
-   ws.send(JSON.stringify({type:'join',version:window.leqra.version,name:world.name,
+   ws.send(JSON.stringify({type:'join',version:window.leqra.version,name:world.name,spectating:world.spectating||undefined,target:world.spectating&&world.preferredFollowing>0?world.preferredFollowing:undefined,
     localName:world.room?undefined:world.localName,
     colorIndex:world.room?undefined:world.colorIndex,
     localColorIndex:world.room||!world.localName?undefined:world.localColorIndex,...world.room,
-    independentAccounts:world.independentAccounts||undefined,localPublicToken:world.localPublicToken||undefined,localNewAccount:world.localNewAccount,updateNames:!world.welcomed?true:undefined,publicToken:world.publicToken||undefined,resume:world.resumeGeneration||world.publicToken?true:undefined,generation:world.resumeGeneration}));
+    independentAccounts:!world.spectating&&world.independentAccounts||undefined,localPublicToken:!world.spectating&&world.localPublicToken||undefined,localNewAccount:world.spectating?undefined:world.localNewAccount,updateNames:!world.spectating&&!world.welcomed?true:undefined,publicToken:!world.spectating&&world.publicToken||undefined,resume:world.resumeGeneration||(!world.room||world.public)&&!world.spectating&&world.publicToken?true:undefined,generation:world.resumeGeneration}));
   }
  });
  ws.addEventListener('message', event => receive(ws, event));
@@ -1735,9 +1789,9 @@ function exitArena() {
  }
 }
 
-function syncRoom(code,token,active) {
+function syncRoom(code,token,active,spectating=session?.spectating) {
  if (!session?.room || session.room.token !== token) return;
- if (active) session.room.code = code;
+ if (active&&session.spectating===!!spectating) session.room.code = code;
  else stop();
 }
 
@@ -1759,7 +1813,7 @@ function start(mode, options = {}) {
  const readBindings = typeof options.bindings === 'function' ? options.bindings : () => options.bindings;
  const selectedColor = value => Number.isInteger(value)&&value>=0&&value<COLORS.length?value:undefined;
  session = {
-  online, name, localName:options.localName, serial:++sessionSerial,renames:new Map(),confirmedNames:new Map(),readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
+  online, name, spectating:online&&!!options.code&&options.spectating===true,following:0,preferredFollowing:options.following||0,localName:options.spectating?undefined:options.localName, serial:++sessionSerial,renames:new Map(),confirmedNames:new Map(),readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
   public:!!options.public,party:[],publicToken:art.publicIdentityToken?.()||'',localPublicToken:options.localName?art.publicIdentityToken?.(1)||'':'',independentAccounts:typeof art.prepareLocalAccount==='function',onConflict:options.onConflict,
   colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
@@ -1824,7 +1878,7 @@ function start(mode, options = {}) {
 }
 
 function mousePosition(event) {
- if(!session||art.chatOpen())return null;
+ if(!session||session.spectating||art.chatOpen())return null;
  const rect = canvas.getBoundingClientRect();
  const [width,height] = primaryView(rect.width,rect.height,!!session?.local);
  const px=event.clientX-rect.left,py=event.clientY-rect.top;
@@ -1843,7 +1897,7 @@ function updateMouse(event,position) {
 }
 
 function pressFire(event,seat=session,mouse=false) {
- if (!session || session.result || pauseMenu.open || art.chatOpen() || session.online && !session.joined || mouse&&!mouseFireEnabled()) return;
+ if (!session || session.spectating || session.result || pauseMenu.open || art.chatOpen() || session.online && !session.joined || mouse&&!mouseFireEnabled()) return;
  art.primeAudioUnlock(event);
  if(mouse)mouseTap=true;else seat.fireTap = true;
  const now = performance.now(), world = session;
@@ -1919,7 +1973,7 @@ arena.addEventListener('keydown', event => {
   }
   return;
  }
- if (pauseMenu.open || art.chatOpen() || session.online && !session.joined) return;
+ if (session.spectating || pauseMenu.open || art.chatOpen() || session.online && !session.joined) return;
  const seat = session.controllers.find(controller=>controller.keys[event.code]);
  const action = seat?.keys[event.code];
  if (!action) return;
@@ -2059,12 +2113,13 @@ document.addEventListener('visibilitychange', () => {
 const pickupHelp = `Power-ups spawn near active pilots. Most last ${POWER_DURATION} seconds once collected. Starman lasts ${STAR_DURATION} seconds. Machine gun allows 3 seconds of firing. Uncollected power-ups expire after ${PICKUP_LIFETIME} seconds.`;
 function sidebarHelp() {
  if (!session || !pauseMenu.open) return null;
+ if(session.spectating)return{title:'Spectating Infinity',twoPilots:false,pilots:[],pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,instructions:'Select a tank in the full leaderboard to follow its camera. Scroll to see every tank. The match continues while this menu is open.'};
  const target = session.rules?.infinityTarget;
  return {title:arenaName(session),twoPilots:!!session.local,pilots:localPilots(),pickupHelp,starDuration:STAR_DURATION,weaponRange:SHOT_RANGE/CELL,
   instructions:'Gain a point per kill and lose a point per death. Respawn after '+RESPAWN_DELAY+' second. '+
    (target?'Reach '+target+' points to win.':'Keep growing the score without a time limit.')+
    (session.public&&session.room?' Everyone competes individually, including pilots from your room.':'')};
 }
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls, resetMouseControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, localPilots, renamePilot, togglePause});
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, resetMouseControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, localPilots, renamePilot, togglePause,followTank});
 art.roomSessionReady?.();
 })();

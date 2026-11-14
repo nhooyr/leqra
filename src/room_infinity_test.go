@@ -53,10 +53,8 @@ func TestRoomInfinityLaunchRequiresReadyCombatPilots(t *testing.T) {
 			t.Fatal("combat pilot did not receive the private launch after room metadata")
 		}
 	}
-	for _, packet := range drain(viewer) {
-		if packet["type"] == "infinity_start" {
-			t.Fatal("room spectator received a private combat launch")
-		}
+	if !receivedType(viewer, "infinity_start") {
+		t.Fatal("room spectator did not receive its read-only Infinity launch")
 	}
 	if _, p, _, _ := h.infiniteMember(r.Code, viewer.player.Token); p != nil {
 		t.Fatal("spectator credentials authenticated a private combat pilot")
@@ -117,7 +115,7 @@ func TestRoomInfinityDoesNotCountLocalTankOfSpectatingController(t *testing.T) {
 	if availableSides(r.Players) != 2 {
 		t.Fatal("test fixture needs a spectator-owned tank in the combat roster")
 	}
-	if got := h.roomWire(r); got.CanStart || got.StartError != "Add an opposing tank or enable random bots to play to a score target." {
+	if got := h.roomWire(r); got.CanStart || got.StartError != infiniteLocalPrimaryRequired {
 		t.Fatalf("unavailable local player counted as an Infinity opponent: %+v", got)
 	}
 }

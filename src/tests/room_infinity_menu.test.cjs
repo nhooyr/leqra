@@ -16,7 +16,7 @@ test('room Infinity keeps spectator invites visible in the lobby and while its a
   room.rules.infinity=infinity;room.infinityActive=active;s.syncSpectators();
   for(const id of ['copySpectateBtn','copyWatchInGameBtn']){
    assert.equal($(id).hidden,false,`${id} remains in the same online menu position`);
-   assert.match($(id).title,infinity?/room lobby.*viewing is unavailable/:/watch this match/);
+   assert.match($(id).title,infinity?/follow tanks.*Infinity room/:/watch this match/);
   }
  }
  s.mode='room';s.syncSpectators();assert.equal($('copySpectateBtn').hidden,true,'a local room still needs sharing before an invite exists');
@@ -34,4 +34,26 @@ test('only Public Infinity replaces the fixed room header and room presets retai
  assert.doesNotMatch(css,/body\.infinity-preview[^\n]*\{display:none/,'room preview cover styling cannot remove header or log height');
  assert.match(declaration('syncFeatureSummary'),/\$\('roomRulesBtn'\)\.hidden=\$\('roomPresetsBtn'\)\.hidden=false/);
  assert.match(css,/\.room-mode-help\{min-height:35px;padding-top:6px\}/,'two14.5px description lines plus6px padding fit without moving the next field');
+});
+
+test('room spectator auto-entry is private, happens once per run, and remains manually reenterable',()=>{
+ const calls=[],sync=[],online={connected:true,spectating:true,code:'ROOM',token:'room-proof',restoreInfinity:true,roomData:{infinityActive:true,infinityPublic:false}};
+ const s={online,window:{leqraInfinity:{syncRoom:(...args)=>sync.push(args),savedRoomGeneration:()=>7}},closeChat(){},startInfinity:(...args)=>calls.push(args)};
+ vm.createContext(s);vm.runInContext(declaration('startRoomInfinity')+'\n'+declaration('syncOnlineRoomInfinity'),s);
+ s.syncOnlineRoomInfinity();assert.equal(calls.length,1);assert.equal(calls[0][1].spectating,true);assert.equal(online.restoreInfinity,false);assert.equal(sync[0][3],true);
+ s.syncOnlineRoomInfinity();assert.equal(calls.length,1,'ordinary room updates do not undo an explicit viewer exit');
+ s.startRoomInfinity();assert.equal(calls.length,2,'Watch Infinity remains available for explicit reentry');
+ online.roomData.infinityActive=false;s.syncOnlineRoomInfinity();assert.equal(sync.at(-1)[2],false);
+ online.roomData.infinityActive=true;s.syncOnlineRoomInfinity();assert.equal(calls.length,3,'the next run starts a new spectator view');
+ online.spectating=false;s.syncOnlineRoomInfinity();assert.equal(calls.length,4,'an explicit promotion enters combat with the new role');assert.equal(calls.at(-1)[1].spectating,false);
+ online.spectating=true;s.syncOnlineRoomInfinity();assert.equal(calls.length,5,'demotion switches back to a read-only viewer');
+ online.roomData.infinityPublic=true;s.syncOnlineRoomInfinity();s.startRoomInfinity();assert.equal(calls.length,5,'room watcher credentials never enter Public Infinity');
+});
+
+test('room Infinity role help describes following while public-party watchers remain in the lobby',()=>{
+ const s={survivalSeatLocked:()=>false,roomCapacity:()=>8};vm.createContext(s);vm.runInContext(declaration('roomRoleHelpText'),s);
+ const room={rules:{infinity:true},players:[]};
+ assert.match(s.roomRoleHelpText({spectating:false},room),/spectating and follow tanks/);
+ assert.match(s.roomRoleHelpText({spectating:false},{...room,infinityPublic:true}),/lobby-only/);
+ assert.equal(s.roomRoleHelpText({spectating:true},room),'Select Play to enter the arena.');
 });

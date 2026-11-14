@@ -15,6 +15,26 @@ final class AudioEventRouterTests: XCTestCase {
         ArenaEffect(id: id, kind: kind, x: x, owner: owner, player: player)
     }
 
+    func testSpectatorHearsTheFollowedSceneAsRemoteWithoutWarningsOrReplayingANewViewsHistory() {
+        var router = AudioEventRouter()
+        var state = snapshot(bullets: [ArenaBullet(id: 1, x: 10_000)],
+                             tanks: [ArenaTank(id: 2, x: 0), ArenaTank(id: 9, x: 10_000, starmanTime: 4, locked: true)])
+        state.spectating = true; state.following = 9
+        XCTAssertEqual(router.consume(snapshot: state, localID: -1, infinity: true, online: true, now: 0), [])
+        state.bullets[0].bounces = 1
+        state.effects = [effect(1, "shot:", owner: 9, x: 10_000), effect(2, "hit", owner: 9, x: 10_000),
+                         effect(3, "shot:", owner: -1, x: 0), effect(4, "pickup", owner: 9, x: 10_000)]
+        let cues = router.consume(snapshot: state, localID: -1, infinity: true, online: true, now: 1)
+        XCTAssertEqual(cues, [.init(cue: .ricochet, local: false), .init(cue: .regular, local: false),
+                              .init(cue: .explosion, local: false), .init(cue: .pickup, local: false)])
+        XCTAssertFalse(cues.contains { $0.cue == .homingWarning || $0.local }, "Following is a listener position, never ownership or haptic eligibility")
+        state.following = 2
+        state.effects = [effect(5, "shot:", owner: 2)]
+        XCTAssertEqual(router.consume(snapshot: state, localID: -1, infinity: true, online: true, now: 2), [], "Changing views baselines retained effects")
+        state.effects = [effect(6, "shot:", owner: 2), effect(7, "shot:", owner: 9, x: 10_000)]
+        XCTAssertEqual(router.consume(snapshot: state, localID: -1, infinity: true, online: true, now: 3), [.init(cue: .regular, local: false)])
+    }
+
     func testJoiningAndNewGenerationsBaselineEffectsAndBouncesWithoutHistory() {
         var router = AudioEventRouter()
         let old = snapshot([effect(9, "hit"), effect(10, "shot:")], bullets: [ArenaBullet(id: 1, bounces: 5)])

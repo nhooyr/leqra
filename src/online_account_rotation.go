@@ -132,6 +132,12 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 	var retired []infiniteConnection
 	transports := make(map[*Client]int)
 	for client, connection := range s.connections {
+		if connection.observer != nil && connection.seat.PublicToken == oldToken {
+			delete(s.connections, client)
+			retired = append(retired, connection)
+			transports[client] = 0
+			continue
+		}
 		if connection.pilot == nil || connection.pilot.publicKey != oldHash && (connection.local == nil || connection.local.publicKey != oldHash) {
 			continue
 		}
@@ -151,6 +157,11 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 		transports[client] = seat
 	}
 	for key, reservation := range s.reservations {
+		if reservation.connection.observer != nil && reservation.connection.seat.PublicToken == oldToken {
+			delete(s.reservations, key)
+			retired = append(retired, reservation.connection)
+			continue
+		}
 		if reservation.connection.pilot != nil && (reservation.connection.pilot.publicKey == oldHash || reservation.connection.local != nil && reservation.connection.local.publicKey == oldHash) {
 			delete(s.reservations, key)
 			retired = append(retired, reservation.connection)

@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='4.49.43';
+const GAME_VERSION='4.49.44';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -2781,6 +2781,7 @@ function renderOnlineRoom(){
  $('leaveRoomBtn').hidden=!isOnline;$('leaveRoomBtn').textContent='Leave room';$('unshareRoomBtn').hidden=!(isOnline&&host&&editable);$('unshareRoomBtn').disabled=!!online.unsharePending;
  $('roomBtn').hidden=false;$('roomBtn').textContent=isOnline?online.code:'ROOM';
  syncFeatureSummary();syncSpectators();renderMatchmaking();
+ if(isOnline&&own?.spectating&&r.infinityActive&&!r.infinityPublic){$('readyBtn').hidden=true;$('startRoomBtn').hidden=false;$('startRoomBtn').disabled=!online.connected;$('startRoomBtn').firstElementChild.textContent='WATCH INFINITY';}
 }
 function inviteCopyDetails(watch){
  const url=onlineInviteURL(watch);
@@ -3093,13 +3094,16 @@ function startInfinity(kind,credentials={}){
   launcher:()=>$(credentials.code&&!isRoomHost()?'readyBtn':'startRoomBtn'),...credentials});
 }
 function startRoomInfinity(resumeGeneration,publicArena=!!online.roomData?.infinityPublic){
- if(!online.connected||!online.roomData?.infinityActive||online.spectating)return;
- closeChat();startInfinity('online',{code:online.code,token:online.token,resumeGeneration,public:!!publicArena});
+ if(!online.connected||!online.roomData?.infinityActive||online.spectating&&publicArena)return;
+ closeChat();startInfinity('online',{code:online.code,token:online.token,resumeGeneration,public:!!publicArena,spectating:!!online.spectating});
 }
 function syncOnlineRoomInfinity(){
- const infinity=window.leqraInfinity,active=!!online.roomData?.infinityActive&&!online.spectating;
+ const infinity=window.leqraInfinity,watching=!!online.spectating&&!online.roomData?.infinityPublic,active=!!online.roomData?.infinityActive&&(!online.spectating||watching);
  if(!infinity||!online.roomData)return;
- infinity.syncRoom(online.code,online.token,active);
+ const entered=online.infinityWatchToken===online.token;online.infinityWatchToken=active&&watching?online.token:'';
+ infinity.syncRoom(online.code,online.token,active,watching);
+ if(active&&watching&&!entered){online.restoreInfinity=false;startRoomInfinity();return;}
+ if(active&&entered&&!watching&&!online.spectating){online.restoreInfinity=false;startRoomInfinity();return;}
  if(!online.restoreInfinity)return;
  online.restoreInfinity=false;
  const generation=infinity.savedRoomGeneration(online.token);
@@ -3398,7 +3402,7 @@ function rememberRenderedRoomSetup(r,acceptedEdit=false){
 function restoreSavedLocalRoster(){
  const saved=validateSavedRoster(loadRememberedRoomSetup().roster,localRoom.rules);if(!saved)return false;
  let next=0;localRoom.nextViewer=MAX_TANKS;
- localRoom.players=saved.map(p=>({...p,id:p.spectating?localRoom.nextViewer++:next++,member:++localRoom.nextMember}));
+ localRoom.players=saved.map(p=>({...p,name:p.kind==='bot'?p.name:typeof window!=='undefined'&&window.leqraCallsigns?window.leqraCallsigns.restored(p.kind==='local'?1:0,p.name):p.name,id:p.spectating?localRoom.nextViewer++:next++,member:++localRoom.nextMember}));
  localRoom.self=localRoom.players[0].id;for(const p of localRoom.players)p.owner=localRoom.self;return true;
 }
 function currentRules(){return mode==='online'?(online.roomData?.rules||(online.publishing?localRoom.rules:null)||online.snapshots.at(-1)?.rules||defaultRoomRules()):localRoom.rules||defaultRoomRules();}
@@ -4766,7 +4770,7 @@ function syncSpectatingHUD(){
 }
 function roomRoleHelpText(player,r){
  const spectating=!!player?.spectating,infinity=!!r.rules.infinity;
- return survivalSeatLocked(r)&&spectating?'The squad is locked for this run. Joining opens after it ends.':r.awayMatch?'This lineup is reserved until the party returns.':r.matchmaking&&spectating?'Queue matches do not admit replacement tanks. Keep spectating, or return to the party.':infinity?(spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Wait in the room or ask the host for a swap.':'Select Play to enter the arena.'):'Switch to a lobby-only role and keep the room membership.'):spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Keep spectating, or ask the host for a swap.':'The spectator role stays active until Play is selected.'):'Switch to spectating without leaving the room.';
+ return survivalSeatLocked(r)&&spectating?'The squad is locked for this run. Joining opens after it ends.':r.awayMatch?'This lineup is reserved until the party returns.':r.matchmaking&&spectating?'Queue matches do not admit replacement tanks. Keep spectating, or return to the party.':infinity?(spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Wait in the room or ask the host for a swap.':'Select Play to enter the arena.'):r.infinityPublic?'Switch to a lobby-only role and keep the room membership.':'Switch to spectating and follow tanks without leaving the room.'):spectating?(r.players.length>=roomCapacity(r.rules)?'Arena full. Keep spectating, or ask the host for a swap.':'The spectator role stays active until Play is selected.'):'Switch to spectating without leaving the room.';
 }
 function syncRoomRole(player,r,label,help,button){
  const spectating=!!player?.spectating;
@@ -4788,9 +4792,9 @@ function syncSpectators(){
  if(local?.spectating)syncRoomRole(local,r,'roomP2RoleLabel','roomP2RoleHelp','toggleP2SpectateBtn');
  const infinity=!!r.rules.infinity;
  $('copySpectateBtn').hidden=$('copyWatchInGameBtn').hidden=mode!=='online';
- const watchHelp=infinity?'Invite a spectator to this room lobby. Infinity arena viewing is unavailable.':'Invite a spectator to watch this match.';
+ const watchHelp=infinity?'Invite a spectator to follow tanks in this Infinity room.':'Invite a spectator to watch this match.';
  $('copySpectateBtn').title=$('copyWatchInGameBtn').title=watchHelp;
- $('noSpectators').textContent=infinity?'Nobody is waiting as a spectator. Infinity arenas are visible to players with a tank seat.':'Nobody is spectating yet. Share the spectator link to invite spectators.';
+ $('noSpectators').textContent='Nobody is spectating yet. Share the spectator link to invite spectators.';
  $('roomSpectators').hidden=!spectators.length;$('spectatorSummary').textContent='SPECTATORS, '+spectators.length;
  $('spectatorsBtn').textContent='SPECTATORS '+spectators.length;$('spectatorsBtn').setAttribute('aria-label','Show '+spectators.length+' spectators');
  const key=JSON.stringify([spectators,survivalSeatLocked(r),roomCapacity(r.rules),!!r.matchmaking,!!r.awayMatch,r.host,r.players.map(p=>[p.id,p.member,p.name,p.kind,p.team]),localPlayerID(),!!rolePending,online.connected]);
@@ -4805,7 +4809,7 @@ function syncSpectators(){
  for(const id of ['roomSpectatorList','spectatorList'])for(const button of $(id).querySelectorAll('[data-kick-target]'))button.disabled=kickDisabled;
  if(swapPending&&!spectators.some(p=>p.id===swapPending.id&&p.member===swapPending.member))cancelSwap();
  if($('spectatorsDialog').open&&!isRoomHost())cancelSwap();
- $('spectatorLimit').textContent='Up to '+roomCapacity(r.rules)+' tanks + '+(r.maxSpectators||16)+' spectators. '+(infinity?'Infinity spectators wait in the lobby.':'Spectating does not use a tank seat.');
+ $('spectatorLimit').textContent='Up to '+roomCapacity(r.rules)+' tanks + '+(r.maxSpectators||16)+' spectators. '+(infinity?'Choose a tank in the full leaderboard to follow.':'Spectating does not use a tank seat.');
  syncSpectatingHUD();
 }
 function initSpectators(){

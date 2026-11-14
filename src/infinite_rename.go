@@ -22,6 +22,10 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 		fail("Reconnect before changing the callsign.")
 		return
 	}
+	if connection.seat != nil && !s.hub.validInfiniteMember(connection.room.room, connection.seat, connection.room.generation) {
+		fail("That room seat is no longer available.")
+		return
+	}
 	if msg.RequestID == 0 || msg.RequestID > 1<<53-1 || msg.Seat < 0 || msg.Seat > 1 {
 		fail("Choose a current local tank.")
 		return

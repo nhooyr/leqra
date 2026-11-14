@@ -182,6 +182,8 @@ data class ArenaSnapshot(
     var round: Int = 0,
     var scores: List<Int> = emptyList(),
     var winner: Int = -1,
+    var spectating: Boolean = false,
+    var following: Int = 0,
 )
 
 data class ArenaFlag(

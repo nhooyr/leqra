@@ -9,6 +9,7 @@ public struct NetworkWelcome: Decodable, Sendable {
     public let localPublicToken: String?
     public let isPublic: Bool
     public let spectating: Bool
+    public let following: Int?
     public let localId: Int?
     public let generation: UInt64?
     public let member: UInt64?
@@ -19,7 +20,7 @@ public struct NetworkWelcome: Decodable, Sendable {
     public let busy: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, seed, room, token, publicToken, localPublicToken, spectating, localId, generation, member, localMember, resumed, created, full, busy
+        case id, seed, room, token, publicToken, localPublicToken, spectating, following, localId, generation, member, localMember, resumed, created, full, busy
         case isPublic = "public"
     }
     public init(from decoder: Decoder) throws {
@@ -32,10 +33,11 @@ public struct NetworkWelcome: Decodable, Sendable {
         localPublicToken = try c.decodeIfPresent(String.self, forKey: .localPublicToken)
         isPublic = try c.decodeIfPresent(Bool.self, forKey: .isPublic) ?? false
         spectating = try c.decodeIfPresent(Bool.self, forKey: .spectating) ?? false
-        localId = try c.decodeIfPresent(Int.self, forKey: .localId)
+        following = try c.decodeIfPresent(Int.self, forKey: .following)
+        localId = try c.decodeIfPresent(Int.self, forKey: .localId).flatMap { $0 >= 0 ? $0 : nil }
         generation = try c.decodeIfPresent(UInt64.self, forKey: .generation)
         member = try c.decodeIfPresent(UInt64.self, forKey: .member)
-        localMember = try c.decodeIfPresent(UInt64.self, forKey: .localMember)
+        localMember = try c.decodeIfPresent(UInt64.self, forKey: .localMember).flatMap { $0 > 0 ? $0 : nil }
         resumed = try c.decodeIfPresent(Bool.self, forKey: .resumed) ?? false
         created = try c.decodeIfPresent(Bool.self, forKey: .created) ?? false
         full = try c.decodeIfPresent(Bool.self, forKey: .full) ?? false
@@ -144,6 +146,7 @@ public enum NetworkEvent {
     case state(ArenaSnapshot)
     case room(RoomInfo)
     case infinityStarted(Bool)
+    case followed(Int)
     case latency(Double)
     case error(String)
     case disconnected(String?)
@@ -249,12 +252,15 @@ struct NetworkLatencySampler {
         var token: String
         var name: String
         var generation: UInt64?
+        var spectating = false
+        var target: Int?
         var publicJoin: [String: Any]? = nil
         var isPublic: Bool { publicJoin != nil }
         var command: [String: Any] {
             if let publicJoin { return publicJoin }
             var result: [String: Any] = ["type": "join", "code": code, "token": token, "name": name]
             if infinity { result["resume"] = true; result["generation"] = generation }
+            if spectating { result["spectating"] = true; result["target"] = target }
             return result
         }
     }
@@ -317,12 +323,20 @@ struct NetworkLatencySampler {
     }
 
     public func connectRoomInfinity(baseURL: URL, code: String, token: String, resume: Bool = false, generation: UInt64? = nil,
-                                    localPublicToken: String? = nil, localNewAccount: Bool = false) {
+                                    localPublicToken: String? = nil, localNewAccount: Bool = false, spectating: Bool = false, target: Int? = nil) {
         var join: [String: Any] = ["type": "join", "code": code, "token": token]
         if resume { join["resume"] = true; join["generation"] = generation }
-        join["localPublicToken"] = localPublicToken
-        if localNewAccount { join["localNewAccount"] = true }
+        if spectating { join["spectating"] = true; if let target, target > 0 { join["target"] = target } }
+        else {
+            join["localPublicToken"] = localPublicToken
+            if localNewAccount { join["localNewAccount"] = true }
+        }
         begin(baseURL: baseURL, infinity: true, join: join, resuming: resume)
+    }
+
+    public func follow(_ target: Int) {
+        guard connected, isInfinity, welcome?.spectating == true, target > 0 else { return }
+        sendCommand(["type": "follow", "target": target])
     }
 
     /// The ready-room preview never joins an arena or allocates a pilot.
@@ -473,6 +487,7 @@ struct NetworkLatencySampler {
 
     /// Infinity rename acknowledgements carry request IDs, unlike room rename.
     @discardableResult public func renameInfinity(_ name: String, seat: Int = 0) -> UInt64 {
+        guard welcome?.spectating != true else { return 0 }
         renameRequestID &+= 1
         sendCommand(["type": "rename", "seat": seat, "name": name, "requestId": renameRequestID])
         return renameRequestID
@@ -485,7 +500,7 @@ struct NetworkLatencySampler {
         if publicArena, join["localName"] == nil, join["localPublicToken"] == nil {
             localAccountKey = nil; localAccountRequestKey = nil
         }
-        if resuming, let code = join["code"] as? String, code == resumeContext?.code,
+        if resuming, join["spectating"] as? Bool != true, let code = join["code"] as? String, code == resumeContext?.code,
            join["localPublicToken"] == nil, let localAccountKey { join["localPublicToken"] = localAccountKey }
         if resuming {
             let old = socket
@@ -501,7 +516,8 @@ struct NetworkLatencySampler {
                 name: join["name"] as? String ?? "", generation: nil, publicJoin: join)
         } else if infinity, let code = join["code"] as? String, let token = join["token"] as? String {
             resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: code, token: token,
-                                          name: join["name"] as? String ?? "", generation: join["generation"] as? UInt64)
+                                          name: join["name"] as? String ?? "", generation: join["generation"] as? UInt64,
+                                          spectating: join["spectating"] as? Bool ?? false, target: join["target"] as? Int)
         }
         isInfinity = infinity
         pendingJoin = join
@@ -574,7 +590,7 @@ struct NetworkLatencySampler {
 
     /// Input sequences belong to this socket; pause always clears held controls.
     public func sendInput(_ input: GameInput, paused: Bool = false, local: Bool = false, player: Int? = nil, member: UInt64? = nil) {
-        guard connected else { return }
+        guard connected, welcome?.spectating != true else { return }
         var sequence = local ? localSentSequence : sentSequence
         if input.seq > 0 {
             guard input.seq > sequence else { return }
@@ -734,10 +750,12 @@ struct NetworkLatencySampler {
                         name: join["name"] as? String ?? "", generation: nil, publicJoin: join)
                 } else if let code = info.room, let token = info.token {
                     resumeContext = ResumeContext(baseURL: baseURL, infinity: isInfinity, code: code, token: token,
-                                                  name: pendingJoin["name"] as? String ?? "", generation: nil)
+                                                  name: pendingJoin["name"] as? String ?? "", generation: nil,
+                                                  spectating: info.spectating)
                 } else if isInfinity, info.generation != nil { resumeContext?.generation = info.generation }
             }
             reconnectDeadline = nil; reconnectAttempt = 0; reconnectTask = nil
+            if isInfinity, info.spectating { resumeContext?.target = info.following }
             onEvent?(.welcome(info))
             onEvent?(.status("Connected"))
         case "identity":
@@ -751,11 +769,13 @@ struct NetworkLatencySampler {
             if let key = info.localPublicToken { localAccountKey = key; pendingLocalAccountKey = nil }
             else if info.localId == nil { localAccountKey = nil; localAccountRequestKey = nil; pendingLocalAccountKey = nil }
             welcome = info
+            if !isInfinity { resumeContext?.spectating = info.spectating }
             onEvent?(.welcome(info))
         case "state":
             let normalized = try SnapshotDecoder.normalized(data: data, previousWorld: lastWorld)
             lastWorld = normalized.world
             let state = try JSONDecoder().decode(ArenaSnapshot.self, from: normalized.data)
+            if isInfinity, state.spectating { resumeContext?.target = state.following }
             onEvent?(.state(state))
         case "room":
             let room = try JSONDecoder().decode(RoomInfo.self, from: data)
@@ -780,6 +800,10 @@ struct NetworkLatencySampler {
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             if type == "unshared" { disconnect() }
         case "infinity_start": onEvent?(.infinityStarted(object["public"] as? Bool ?? false))
+        case "followed":
+            guard let following = object["following"] as? Int, following >= 0 else { throw GameNetworkError.invalidResponse }
+            if isInfinity, welcome?.spectating == true { resumeContext?.target = following }
+            onEvent?(.followed(following))
         case "pong":
             if let t = object["t"] as? Double,
                let elapsed = latencySampler.roundTrip(echo: t, now: ProcessInfo.processInfo.systemUptime * 1000) {
@@ -799,11 +823,13 @@ struct NetworkLatencySampler {
                     fail(message); return
                 }
             }
+            let noticeEpoch = epoch
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
+            guard epoch == noticeEpoch else { return }
             if (object["code"] as? String) == "session_active", reconnectDeadline != nil { fail(message); return }
             if !connected || code == "kicked" || code == "session_replaced" || code == "account_key_revoked" || (object["action"] as? String) == "version" {
                 fail(message, terminal: true)
-            } else { onEvent?(.error(message)) }
+            } else if (object["action"] as? String) != "follow" { onEvent?(.error(message)) }
         case "server_shutdown", "kicked", "room_offline":
             if type == "server_shutdown", resumeContext?.isPublic == true { fail("Reconnecting after server restart…"); return }
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))

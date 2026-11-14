@@ -67,7 +67,7 @@ struct PauseCard: View {
             Text(session.offline ? "TAKE A BREATHER" : "ONLINE MATCH").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
             (Text(session.offline ? (session.isInfinity ? "HOLD YOUR\n" : "TAKE A\n") : "STAY\n").foregroundColor(WebStyle.text) + Text(session.offline ? (session.isInfinity ? "FIRE." : "BREATHER.") : "CONNECTED.").foregroundColor(WebStyle.accent))
                 .font(.system(size: landscape ? 26 : 34, weight: .black)).accessibilityIdentifier("Paused")
-            Text(session.offline ? "The battle is paused. Tanks are safe." : "The match keeps running. Tanks remain vulnerable." + (session.isInfinity ? " Respawning waits until the menu closes." : ""))
+            Text(session.spectating ? "The arena keeps running while you browse the menu." : session.offline ? "The battle is paused. Tanks are safe." : "The match keeps running. Tanks remain vulnerable." + (session.isInfinity ? " Respawning waits until the menu closes." : ""))
                 .font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
             if !session.canResume { Text(session.status).font(.system(size: 12)).foregroundStyle(WebStyle.danger) }
             if session.showFPS {
@@ -78,6 +78,7 @@ struct PauseCard: View {
     }
     private var actions: some View {
         VStack(alignment: .leading, spacing: 9) {
+          if !session.spectating {
             Text("CALLSIGN").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
             HStack(spacing: 8) {
                 TextField("Callsign", text: $session.callsign).modifier(WebField()).autocorrectionDisabled().onSubmit { session.saveCallsign() }
@@ -85,9 +86,10 @@ struct PauseCard: View {
                 AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "pauseAccount")
             }
             CallsignFeedback(session: session)
+          }
             Button(session.offline ? "← BACK TO THE BATTLE" : "← BACK TO THE ARENA") { session.saveCallsign(); session.setPaused(false) }
                 .buttonStyle(WebButtonStyle(kind: .primary)).disabled(!session.canResume).accessibilityIdentifier("Resume")
-            Button("Controls") { session.showControls = true }.buttonStyle(WebButtonStyle())
+            if !session.spectating { Button("Controls") { session.showControls = true }.buttonStyle(WebButtonStyle()) }
             Button("Settings") { session.showSettings = true }.buttonStyle(WebButtonStyle())
             if session.room != nil, session.isHost {
                 Button("End match") { session.returnToRoom() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("Return to room")
@@ -407,6 +409,8 @@ struct FieldManualContent: View {
 struct JoinRoomPanel: View {
     @ObservedObject var session: GameSession
     @State private var code = ""
+    @State private var spectating = false
+    @FocusState private var codeFocused: Bool
     var body: some View {
         WebModal(title: "Find a room.", close: { session.showJoin = false }) {
             VStack(alignment: .leading, spacing: 12) {
@@ -418,9 +422,11 @@ struct JoinRoomPanel: View {
                 }
                 CallsignFeedback(session: session)
                 Text("ROOM NAME OR CODE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                TextField("Friday tanks 💥", text: $code).modifier(WebField()).autocorrectionDisabled()
-                Button("JOIN →") { session.showJoin = false; session.connect(code: code) }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Text("Missing rooms are created with the joining pilot as host.").font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                TextField("Friday tanks 💥", text: $code).modifier(WebField()).autocorrectionDisabled().focused($codeFocused)
+                    .submitLabel(.done).onSubmit { codeFocused = false }.accessibilityIdentifier("joinRoomCode")
+                Toggle("Spectate", isOn: $spectating).font(.system(size: 12, weight: .bold)).accessibilityIdentifier("joinSpectatingToggle")
+                Button(spectating ? "WATCH →" : "JOIN →") { session.showJoin = false; session.connect(code: code, spectating: spectating) }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("joinRoomButton")
+                Text(spectating ? "Join as a spectator without a tank." : "Missing rooms are created with the joining pilot as host.").font(.system(size: 11)).foregroundStyle(WebStyle.soft)
             }
         }
     }

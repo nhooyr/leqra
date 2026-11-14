@@ -173,7 +173,9 @@ class MainActivity : Activity() {
             ) {
                 handleBack()
             }
-        intent.data?.getQueryParameter("room")?.takeIf { it.length <= 32 }?.let { session.join(it) }
+        intent.data?.getQueryParameter("room")?.takeIf { it.length <= 32 }?.let {
+            session.join(it, intent.data?.getQueryParameter("spectate") == "1")
+        }
     }
 
     private fun immersive() {
@@ -357,10 +359,11 @@ class MainActivity : Activity() {
         arena.onInput = { session.input = it }
         session.present = { snapshot, maze, localID, localID2, online ->
             arena.encounterNotice = session.encounterNotice
+            arena.followingID = session.followingID.takeIf { session.spectating }
             arena.submit(snapshot, localID, maze, localID2, online)
-            if (session.screen == Screen.PLAYING && !session.paused)
-                audio.consume(snapshot, localID, session.infinity, online)
-            audio.updateStarman(snapshot, localID, localID2, session.audioGameplayActive)
+            if (session.audioSceneActive)
+                audio.consume(snapshot, if (session.spectating) -1 else localID, session.infinity, online)
+            audio.updateStarman(snapshot, localID, localID2, session.audioGameplayActive, session.audioSceneActive)
         }
         loadout = NativeHudView(this)
         loadout.onHeightChanged = { height ->
@@ -414,17 +417,18 @@ class MainActivity : Activity() {
             audio.enabled = !session.muted
         }
         audio.volume = session.volume
-        audio.updateStarman(session.snapshot, session.localID, session.localID2, session.audioGameplayActive)
+        audio.updateStarman(session.snapshot, session.localID, session.localID2, session.audioGameplayActive, session.audioSceneActive)
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         brandSubtitle.visibility = if (landscape) View.GONE else View.VISIBLE
         brandMark.visibility =
             if (resources.configuration.screenWidthDp < 375) View.GONE else View.VISIBLE
         chatButton.visibility = if (session.room != null) View.VISIBLE else View.GONE
         val playing = session.screen == Screen.PLAYING
+        if (!playing && previousPlaying) showScores = false
         menuButton.value(if (playing) "Ⅱ" else "☰")
         val awake = playing && !session.paused
-        arena.controlsLayout = playing
-        arena.showControls = awake && dialog == null
+        arena.controlsLayout = playing && !session.spectating
+        arena.showControls = awake && dialog == null && !session.spectating
         arena.keepScreenOn = awake
         if (keepAwake != awake) {
             keepAwake = awake
@@ -432,13 +436,14 @@ class MainActivity : Activity() {
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         configureLoadoutLayout()
-        loadout.visibility = if (playing) View.VISIBLE else View.GONE
+        loadout.visibility = if (playing && !session.spectating) View.VISIBLE else View.GONE
         statusLine.update(session, fps)
         val objective = if (playing) objectiveText().removePrefix("\n") else ""
         objectiveLine.value(objective)
         objectiveLine.visibility = if (objective.isEmpty()) View.GONE else View.VISIBLE
         if (playing) {
             val entering = !previousPlaying
+            if (entering && session.spectating) showScores = true
             if (readyScroll != null || connecting != null) hideKeyboard()
             readyScroll?.let(stage::removeView)
             readyScroll = null
@@ -743,6 +748,10 @@ class MainActivity : Activity() {
                 role = if (session.online) null else "share",
             ),
         )
+        if (session.online)
+            panel.add(button(this, "COPY SPECTATOR LINK ↗", {
+                copy("Room spectator link", "${session.server}/?room=${android.net.Uri.encode(session.roomCode ?: "")}&spectate=1")
+            }))
         panel.add(button(this, "Join another room ↗", { showJoin() }, role = "text"))
         if (session.online) {
             panel.add(button(this, "LEAVE ROOM", { session.leave() }, danger = true))
@@ -854,14 +863,15 @@ class MainActivity : Activity() {
         }
         val active = room?.optBoolean("infinityActive") == true
         val label =
-            if (active) "REJOIN INFINITY  →"
+            if (active) if (session.roomSpectating) "WATCH INFINITY  →" else "REJOIN INFINITY  →"
             else if (session.online && !session.isHost)
-                if (own?.optBoolean("ready") == true) "READY ✓" else "READY"
+                if (session.roomSpectating) "WAITING FOR HOST" else if (own?.optBoolean("ready") == true) "READY ✓" else "READY"
             else "PLAY  →"
         readyPlay?.value(label)
         val allowed =
             if (room == null) true
-            else if (active) own != null && !own.optBoolean("spectating")
+            else if (active) own != null || session.roomSpectating && !room.optBoolean("infinityPublic")
+            else if (session.roomSpectating) false
             else
                 !session.isHost ||
                     room.optBoolean("canStart") ||
@@ -1625,10 +1635,11 @@ class MainActivity : Activity() {
 
     private fun showJoin() {
         prompt("JOIN ROOM", "", 160) { value ->
+            val uri = runCatching { android.net.Uri.parse(value) }.getOrNull()
             val code =
-                runCatching { android.net.Uri.parse(value).getQueryParameter("room") }.getOrNull()
+                runCatching { uri?.getQueryParameter("room") }.getOrNull()
                     ?: value
-            session.join(code)
+            session.join(code, runCatching { uri?.getQueryParameter("spectate") == "1" }.getOrDefault(false))
         }
     }
 
@@ -2197,16 +2208,18 @@ class MainActivity : Activity() {
         }
         val signature =
             if (session.screen == Screen.PLAYING)
-                "${session.localID}:${session.localID2}:${session.snapshot.leaderboard}:${session.snapshot.tanks.map { listOf(it.id,it.name,it.score,it.colorIndex) }}"
+                "${stage.width}:${stage.height}:${resources.configuration.orientation}:${session.localID}:${session.localID2}:${session.spectating}:${session.followingID}:${session.snapshot.leaderboard}:" + if (session.snapshot.leaderboard.isEmpty()) session.snapshot.tanks.map { listOf(it.id,it.name,it.score,it.colorIndex) }.toString() else ""
             else session.publicStatus?.leaders.toString()
         if (scores != null && signature == scoreSignature) return
         scoreSignature = signature
+        val previousScroll = (scores as? ScrollView)?.scrollY ?: 0
         scores?.let(stage::removeView)
         scores = null
         scorePanelBuilds++
         val panel =
             column(this, 12).apply { background = background(this@MainActivity, surface, 9) }
         panel.add(label(this, "LEADERBOARD", 10f, accent, true, mono = true))
+        if (session.spectating) panel.add(label(this, "Tap a tank to follow. Dead tanks stay selectable through respawn.", 10f, soft))
         val leaders =
             if (session.screen == Screen.PLAYING)
                 session.snapshot.leaderboard.takeIf { it.isNotEmpty() }
@@ -2224,15 +2237,30 @@ class MainActivity : Activity() {
                         }
             else null
         if (leaders != null)
-            leaders.take(10).forEachIndexed { index, p ->
+            (if (session.spectating) leaders else leaders.take(10)).forEachIndexed { index, p ->
                 panel.add(
                     label(
                         this,
-                        "${index+1}. ${PilotIdentity.leaderboardLabel(p.name, p.bot, if(p.id==session.localID) 1 else if(p.id==session.localID2) 2 else 0)}    ${p.score}",
+                        "${index+1}. ${PilotIdentity.leaderboardLabel(p.name, p.bot, if(p.id==session.localID) 1 else if(p.id==session.localID2) 2 else 0)}    ${p.score}" + if (session.spectating && p.id == session.followingID) "\nFOLLOWING" else "",
                         12f,
                         paint(p.colorIndex),
                         p.id == session.localID || p.id == session.localID2,
-                    ),
+                    ).apply {
+                        if (session.spectating) {
+                            minHeight = dp(44)
+                            setPadding(dp(6), dp(6), dp(6), dp(6))
+                            contentDescription = "Follow ${p.name}"
+                            isClickable = true
+                            setOnClickListener {
+                                session.followTank(p.id)
+                                if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+                                    showScores = false
+                                    updateScores()
+                                }
+                            }
+                            if (p.id == session.followingID) setBackgroundColor(raised)
+                        }
+                    },
                 )
             }
         else
@@ -2251,13 +2279,17 @@ class MainActivity : Activity() {
                 },
             ),
         )
-        val scroll = ScrollView(this).apply { addView(panel) }
+        val scroll = ScrollView(this).apply {
+            contentDescription = "Leaderboard list"
+            addView(panel)
+            post { scrollTo(0, previousScroll) }
+        }
         scores = scroll
         stage.addView(
             scroll,
             FrameLayout.LayoutParams(
-                    minOf(dp(205), resources.displayMetrics.widthPixels - dp(24)),
-                    -2,
+                    minOf(dp(if (session.spectating) 280 else 205), resources.displayMetrics.widthPixels - dp(24)),
+                    if (session.spectating) (stage.height - dp(24)).coerceAtLeast(dp(120)) else -2,
                     Gravity.TOP or Gravity.END,
                 )
                 .apply { setMargins(dp(12) + safeLeft, dp(12), dp(12) + safeRight, dp(12)) },
