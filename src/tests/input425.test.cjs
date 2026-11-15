@@ -109,8 +109,8 @@ test('hold-fire help follows the solo pilot or both pilots according to the acti
  const s=boot();let fired=0,detonated=0,activeGrenade=false;s.fire=()=>{fired++;};s.detonateOwned=()=>{if(!activeGrenade)return false;activeGrenade=false;detonated++;return true;};
  vm.runInContext(declaration('weaponControl'),s);
  const ordinary={alive:true,power:'homing'};s.weaponControl(ordinary,true,true);s.weaponControl(ordinary,true,false);s.weaponControl(ordinary,true,false);assert.equal(fired,3,'held fire keeps requesting shots at the weapon cadence');
- const grenade={alive:true,power:'grenade'};s.weaponControl(grenade,true,true);s.weaponControl(grenade,true,false);assert.equal(fired,4,'holding the launch press cannot repeatedly throw or detonate');
- activeGrenade=true;s.weaponControl(grenade,false,false);s.weaponControl(grenade,true,true);assert.equal(detonated,1);assert.equal(fired,4,'a separate press detonates the active grenade');
+ const grenade={alive:true,power:'grenade'};s.weaponControl(grenade,true,true);s.weaponControl(grenade,true,false);assert.equal(fired,5,'holding keeps requesting grenade throws at their cooldown');
+ activeGrenade=true;s.weaponControl(grenade,false,false);s.weaponControl(grenade,true,true);assert.equal(detonated,1);assert.equal(fired,5,'a separate press detonates without also throwing');
 });
 
 test('Controls shortcuts share themed keycaps and separate firing help from the shortcut line',()=>{

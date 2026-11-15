@@ -1077,3 +1077,13 @@ body.touch-ui .account-dialog .account-key{font-size:16px}
 
 .callsign-row.account-key-row{grid-template-columns:minmax(0,1fr) auto}
 body .callsign-account-button.secondary{min-height:var(--callsign-input-height);min-width:82px;margin:0;padding:8px 9px;font:var(--min-font-size)/1.3 var(--mono)}
+
+/* Readiness hints wrap in their own column without moving touch targets. */
+@media(max-width:530px){
+ body.touch-ui:not(.touch-landscape) #touchControls{display:grid;grid-template-columns:minmax(96px,1fr) minmax(0,112px) minmax(91px,1fr)}
+ body.touch-ui:not(.touch-landscape) #touchControls>.stick-zone,body.touch-ui:not(.touch-landscape) #touchControls>.fire-zone{width:100%;min-width:0}
+ body.touch-ui:not(.touch-landscape) #touchControls>.touch-center{min-width:0;overflow-wrap:anywhere}
+}
+@media(max-width:350px){
+ body.touch-ui:not(.touch-landscape) #touchControls>.touch-center svg,body.touch-ui:not(.touch-landscape) #touchControls>.touch-center .alive-status,body.touch-ui:not(.touch-landscape) #touchControls>.touch-center br{display:none}
+}

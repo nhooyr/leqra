@@ -85,6 +85,7 @@ final class GameScene: SKScene {
     private let fireCaption = SKLabelNode(fontNamed: "Menlo-Bold")
 
     private var tanks: [Int: TankNode] = [:]
+    private var tankPool: [TankNode] = []
     private var bullets: [Int: ProjectileNode] = [:]
     private var projectilePool: [ProjectileStyle: [ProjectileNode]] = [:]
     private var pooledProjectileCount = 0
@@ -128,6 +129,7 @@ final class GameScene: SKScene {
     private var currentLocalID = -1
     private var isReady = false
     private var combatTextures: [SKTexture] = []
+    private var tankTextures: [SKTexture] = []
     private var combatRendererPrepared = false
     private let impact = UIImpactFeedbackGenerator(style: .light)
 
@@ -251,6 +253,16 @@ final class GameScene: SKScene {
     /// Rasterize and allocate the bounded first volley before a match starts.
     /// Reused pools survive resetWorld, so returning to the room stays warm.
     private func prepareCombatResources() {
+        // Deaths and a new pilot's first movement must not rasterize artwork on
+        // the display callback. Keep the full bounded paint/track set warm.
+        for color in 0..<8 {
+            for phase in 0..<4 { tankTextures.append(NativeArt.hull(color: color, phase: phase)) }
+            tankTextures.append(NativeArt.barrel(color: color))
+            tankTextures.append(NativeArt.turret(color: color))
+        }
+        tankTextures.append(NativeArt.wreck())
+        combatTextures.append(contentsOf: tankTextures)
+        for _ in 0..<8 { tankPool.append(TankNode()) }
         for digit in 0...9 { combatTextures.append(NativeArt.badgeDigit(digit)) }
         for kind in ["rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"] {
             combatTextures.append(NativeArt.badge(kind: kind))
@@ -272,7 +284,7 @@ final class GameScene: SKScene {
         for held in [false, true] { for detonate in [false, true] {
             combatTextures.append(NativeArt.fireButton(held: held, detonate: detonate))
         } }
-        for _ in 0..<4 { effectPool.append(TransientEffectNode()) }
+        for _ in 0..<32 { effectPool.append(TransientEffectNode()) }
     }
 
     func prepareCombatRenderer(in view: SKView) {
@@ -282,6 +294,21 @@ final class GameScene: SKScene {
         // while attaching the ready-room view, never while handling a shot.
         let warmup = SKNode()
         var index = 0
+        for texture in tankTextures {
+            let sprite = SKSpriteNode(texture: texture)
+            sprite.position = CGPoint(x: index % 8 * 48 + 24, y: -index / 8 * 48 - 24)
+            warmup.addChild(sprite); index += 1
+        }
+        // Exercise both identity fonts and the real reusable tank graph before
+        // a remote pilot first enters view. Texture uploads alone miss this.
+        for index in 0..<min(2, tankPool.count) {
+            let node = tankPool[index]
+            node.update(ArenaTank(id: index + 1, name: "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789#-_", colorIndex: index),
+                        local: index == 0, zoom: 1, infinity: false)
+            node.position = CGPoint(x: index * 200 + 100, y: 50)
+            node.identity.position = CGPoint(x: index * 200 + 100, y: 80)
+            warmup.addChild(node); warmup.addChild(node.identity)
+        }
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             for color in 0..<8 {
                 for speed in kind == "rapid" ? [846.0, 1692] : [420] {
@@ -449,7 +476,7 @@ final class GameScene: SKScene {
         lastLocalHP = 0
         currentLocalID = -1
         previousTime = 0
-        tanks.values.forEach { $0.removeFromParent(); $0.identity.removeFromParent() }
+        tanks.values.forEach { recycleTank($0) }
         for node in bullets.values { recycleProjectile(node) }
         for trail in projectileTrails.values { trail.path = nil; trail.isHidden = true }
         pickups.values.forEach { $0.removeFromParent() }
@@ -711,14 +738,13 @@ final class GameScene: SKScene {
     private func synchronizeTanks(_ items: [ArenaTank], localID: Int, visible: CGRect) {
         let liveIDs = Set(items.map(\.id))
         for id in Array(tanks.keys) where !liveIDs.contains(id) {
-            tanks[id]?.identity.removeFromParent()
-            tanks.removeValue(forKey: id)?.removeFromParent()
+            if let node = tanks.removeValue(forKey: id) { recycleTank(node) }
         }
         for tank in items {
             let node: TankNode
             if let existing = tanks[tank.id] { node = existing }
             else {
-                node = TankNode()
+                node = tankPool.popLast() ?? TankNode()
                 tanks[tank.id] = node
                 tankLayer.addChild(node)
                 labelLayer.addChild(node.identity)
@@ -736,6 +762,11 @@ final class GameScene: SKScene {
             node.identity.position = CGPoint(x: min(max(screen.x, halfWidth + 5), max(halfWidth + 5, size.width - halfWidth - 5)),
                                              y: min(worldViewport.maxY - 6 - node.identityHeight, screen.y + 32 * zoom))
         }
+    }
+
+    private func recycleTank(_ node: TankNode) {
+        node.removeFromParent(); node.identity.removeFromParent()
+        if tankPool.count < 32 { tankPool.append(node) }
     }
 
     private func synchronizeBullets(_ items: [ArenaBullet], visible: CGRect, time: Double) {

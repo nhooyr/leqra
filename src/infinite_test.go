@@ -2,11 +2,8 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"net/http"
@@ -501,10 +498,6 @@ func TestInfiniteStarmanContactAwardsOneKillAndRespectsProtection(t *testing.T) 
 	target.X, target.Y = attacker.X+2*tankRadius, attacker.Y
 	applyPower(&attacker.kit, "starman", infinitePowerDuration, infiniteStarDuration)
 	applyPower(&target.kit, "starman", infinitePowerDuration, infiniteStarDuration)
-	a.step(now)
-	if attacker.HP == 0 || target.HP == 0 {
-		t.Fatal("contact killed one of two active Starmen")
-	}
 	target.kit.StarmanTime, target.kit.GhostTime = 0, 0
 	target.kit.Invulnerable = 1
 	a.step(now)
@@ -994,10 +987,9 @@ func TestPrivateInfinityFreeForAllReachesPersonalTarget(t *testing.T) {
 func TestInfiniteSnapshotSharesOnlyEqualVisibility(t *testing.T) {
 	a := newSeededInfiniteArena(9)
 	now := time.Now()
-	for i, x := range []float64{0, 0, 0, 1} {
+	for _, x := range []float64{0, 0, 0, 1} {
 		c := fakeClient()
 		c.updates = make(chan snapshotFrame, 1)
-		c.ws = &wsConn{deflate: i != 2}
 		p := a.join(c, "Pilot", now)
 		p.X, p.Y = x, 0
 	}
@@ -1007,21 +999,14 @@ func TestInfiniteSnapshotSharesOnlyEqualVisibility(t *testing.T) {
 	a.pickups = append(a.pickups, Pickup{ID: 1, X: -infiniteSight, Life: 1})
 	a.broadcast()
 	first, same, plain, edge := <-a.pilots[0].client.updates, <-a.pilots[1].client.updates, <-a.pilots[2].client.updates, <-a.pilots[3].client.updates
-	if !first.compressed || !same.compressed || plain.compressed || !edge.compressed || &first.data[0] != &same.data[0] {
+	if &first.data[0] != &same.data[0] || &first.data[0] != &plain.data[0] {
 		t.Fatal("equal views did not share an encoded snapshot across compatible peers")
-	}
-	if decoded, err := inflateMessage(first.data, lenLimitForTest); err != nil || !bytes.Equal(decoded, plain.data) {
-		t.Fatalf("compressed and plain views differ: %v", err)
 	}
 	var nearState, edgeState infiniteSnapshot
 	if err := json.Unmarshal(plain.data, &nearState); err != nil {
 		t.Fatal(err)
 	}
-	edgeData, err := inflateMessage(edge.data, lenLimitForTest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(edgeData, &edgeState); err != nil {
+	if err := json.Unmarshal(edge.data, &edgeState); err != nil {
 		t.Fatal(err)
 	}
 	if len(nearState.Pickups) != 1 || len(edgeState.Pickups) != 0 || len(edgeState.Tanks) != 4 || len(edgeState.Bullets) != 30 {
@@ -1136,7 +1121,7 @@ func dialInfinite(t *testing.T, url string, first any, deflate bool) (net.Conn, 
 	}
 	want := ""
 	if deflate {
-		want = "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+		want = "permessage-deflate; client_no_context_takeover; server_no_context_takeover"
 	}
 	if got := response.Header.Get("Sec-WebSocket-Extensions"); got != want {
 		t.Fatalf("unexpected negotiated extension %q, want %q", got, want)
@@ -1153,23 +1138,8 @@ func dialInfinite(t *testing.T, url string, first any, deflate bool) (net.Conn, 
 
 func readInfinitePacket(t *testing.T, reader *bufio.Reader, target any) bool {
 	t.Helper()
-	var header [2]byte
-	if _, err := io.ReadFull(reader, header[:]); err != nil {
-		t.Fatal(err)
-	}
-	if header[0]&^wsCompressed != 129 {
-		t.Fatalf("expected a text frame, got %d", header[0])
-	}
-	compressed := header[0]&wsCompressed != 0
-	size := int(header[1])
-	if size == 126 {
-		if _, err := io.ReadFull(reader, header[:]); err != nil {
-			t.Fatal(err)
-		}
-		size = int(binary.BigEndian.Uint16(header[:]))
-	}
-	packet := make([]byte, size)
-	if _, err := io.ReadFull(reader, packet); err != nil {
+	packet, compressed, err := readTransportMessage(reader)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if compressed {

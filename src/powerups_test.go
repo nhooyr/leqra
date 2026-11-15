@@ -453,6 +453,9 @@ func TestAllPowerupsStayFiniteAcrossSeededBattles(t *testing.T) {
 			g.step(tickDT, inputs, ps)
 			for _, b := range g.Bullets {
 				maxLife := 5.4
+				if b.Kind == "grenade" {
+					maxLife = grenadeFuse
+				}
 				if b.Kind == "homing" {
 					maxLife = g.missileTravelRange()/missileSpeed + .5
 					if b.RangeLeft < 0 || b.RangeLeft > g.missileTravelRange() {
@@ -460,7 +463,7 @@ func TestAllPowerupsStayFiniteAcrossSeededBattles(t *testing.T) {
 					}
 				}
 				if math.IsNaN(b.X) || math.IsInf(b.X, 0) || math.IsNaN(b.VX) || b.Life > maxLife {
-					t.Fatal("invalid projectile")
+					t.Fatalf("invalid projectile at seed %d, step %d: kind %q, life %g, maximum %g", seed, step, b.Kind, b.Life, maxLife)
 				}
 			}
 			if len(g.Bullets) > maxTanks*machineCapacity {

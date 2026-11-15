@@ -35,7 +35,6 @@ public final class PracticeArena {
     private var capturedFireDown: Set<Int> = []
     private var pendingFirePresses: Set<Int> = []
     private var movementInputs: [Int: GameInput] = [:]
-    private var fireBlocked: Set<Int> = []
     private var botCourses: [Int: (x: Double, y: Double)] = [:]
     private var botDecisions: [Int: Double] = [:]
     private var dumbBots: [Int: (spawnSerial: Int, brain: DumbBotBrain)] = [:]
@@ -145,13 +144,13 @@ public final class PracticeArena {
             guard snapshot.tanks.contains(where: { $0.id == player && $0.hp > 0 }) else { return }
             if capturedFireDown.insert(player).inserted { pendingFirePresses.insert(player) }
         } else {
-            capturedFireDown.remove(player); held[player] = false; fireBlocked.remove(player)
+            capturedFireDown.remove(player); held[player] = false
         }
     }
 
     public func resetFireInput(player: Int) {
         capturedFireDown.remove(player); pendingFirePresses.remove(player)
-        held.removeValue(forKey: player); fireBlocked.remove(player)
+        held.removeValue(forKey: player)
     }
 
     public func step(input: GameInput, dt: Double) {
@@ -188,14 +187,13 @@ public final class PracticeArena {
         for offset in 0..<count {
             let index = (Int(snapshot.tick % UInt64(count)) + offset) % count
             guard snapshot.tanks[index].hp > 0 else { continue }
-            var controls = snapshot.tanks[index].bot ? botInput(index, dt: dt) : input
+            let controls = snapshot.tanks[index].bot ? botInput(index, dt: dt) : input
             movementInputs[snapshot.tanks[index].id] = controls
             let before = snapshot.tanks[index]
             move(tank: &snapshot.tanks[index], input: controls, dt: dt, ageStarman: false, ageGhost: false)
             let after = snapshot.tanks[index]
             if expiredEquipment.contains(before.id) || before.speedTime > 0 && after.speedTime == 0 { refillAmmo(index) }
             collectPickups(index)
-            if snapshot.tanks[index].bot && fireBlocked.contains(snapshot.tanks[index].id) { controls.fire = false }
             weaponControl(index, fire: controls.fire)
         }
         starmanContacts()
@@ -460,7 +458,6 @@ public final class PracticeArena {
         if tank.starmanTime <= 0 {
             tank.powerTime = max(0, tank.powerTime - dt)
             if tank.powerTime < 1e-9 {
-                if !tank.power.isEmpty && held[tank.id] == true { fireBlocked.insert(tank.id) }
                 tank.powerTime = 0; tank.power = ""; tank.charges = 0; tank.machineRounds = 0
             }
         }
@@ -528,9 +525,6 @@ public final class PracticeArena {
             guard pickup.life > 0, hypot(pickup.x - tank.x, pickup.y - tank.y) < 30 else { continue }
             snapshot.pickups[pickupIndex].life = 0
             Self.applyPower(tank: &snapshot.tanks[index], kind: pickup.type, duration: powerDuration, starDuration: starDuration)
-            // Bots may collect a grenade while holding ordinary Fire. Create
-            // a fresh throw edge, as in the Go and browser offline simulation.
-            if tank.bot && pickup.type == "grenade" { held[tank.id] = false }
             effect("pickup", x: tank.x, y: tank.y, owner: tank.id)
         }
     }
@@ -552,8 +546,6 @@ public final class PracticeArena {
 
     private func refillAmmo(_ index: Int) {
         snapshot.tanks[index].refillAmmo()
-        // Ending a weapon consumes the hold, even if a later refill restores
-        // standard ammunition before Fire is released.
     }
 
     private func effect(_ kind: String, x: Double, y: Double, owner: Int, points: [BeamPoint] = [], flight: CannonFlight? = nil, contact: ImpactContact? = nil) {
@@ -671,7 +663,6 @@ public final class PracticeArena {
         let captured = pendingFirePresses.remove(tank.id) != nil
         let pressed = captured || fire && held[tank.id] != true
         held[tank.id] = fire
-        if !fire || pressed { fireBlocked.remove(tank.id) }
         guard tank.hp > 0, !(tank.spawnProtected && tank.invulnerable > 1e-9) else { return }
         if pressed {
             let grenadeEpoch = tank.grenadeEpoch ?? tank.ammoEpoch
@@ -680,12 +671,13 @@ public final class PracticeArena {
                 snapshot.tanks[index].grenadeEpoch = nil
                 for grenade in grenades { detonate(grenade.wire, flight: terminalFlight(grenade)) }
                 projectiles.removeAll { $0.wire.owner == tank.id && $0.wire.ammoEpoch == grenadeEpoch && $0.wire.kind == "grenade" }
-                fireBlocked.insert(tank.id)
                 return
             }
-            if tank.power == "grenade" { fireBlocked.insert(tank.id); fireShot(index); return }
         }
-        if (fire || pressed) && !fireBlocked.contains(tank.id) && tank.power != "grenade" { fireShot(index) }
+        // A real press may detonate the current grenade bank, but consumes only
+        // that simulation tick. A held trigger retries readiness and ammunition
+        // on every following tick, including after a pickup or weapon change.
+        if fire || pressed { fireShot(index) }
     }
 
     private func fireShot(_ index: Int) {
@@ -750,7 +742,6 @@ public final class PracticeArena {
         if tank.power == "rapid" { snapshot.tanks[index].machineRounds -= 1 }
         else { snapshot.tanks[index].charges -= 1 }
         if tank.power == "rapid" ? snapshot.tanks[index].machineRounds <= 0 : snapshot.tanks[index].charges <= 0 {
-            fireBlocked.insert(tank.id)
             snapshot.tanks[index].power = ""; snapshot.tanks[index].powerTime = 0; snapshot.tanks[index].charges = 0
             refillAmmo(index)
             if tank.power == "grenade" { snapshot.tanks[index].grenadeEpoch = tank.ammoEpoch }
@@ -968,14 +959,24 @@ public final class PracticeArena {
     private func canDamage(owner: Int, target: ArenaTank) -> Bool { owner != target.id && (friendlyFire || opposes(owner: owner, target: target)) }
 
     private func starmanContacts() {
-        for attacker in snapshot.tanks where attacker.hp > 0 && attacker.starmanTime > 0 {
-            for index in snapshot.tanks.indices {
-                let tank = snapshot.tanks[index]
-                guard tank.hp > 0, tank.id != attacker.id, tank.starmanTime == 0,
-                      tank.invulnerable == 0 || tank.spawnProtected,
-                      hypot(tank.x - attacker.x, tank.y - attacker.y) <= 34,
-                      !maze.segmentBlocked(x: attacker.x, y: attacker.y, dx: tank.x - attacker.x, dy: tank.y - attacker.y) else { continue }
-                hurt(index, owner: attacker.id, starman: true)
+        for firstIndex in snapshot.tanks.indices where snapshot.tanks[firstIndex].hp > 0 && snapshot.tanks[firstIndex].starmanTime > 0 {
+            for secondIndex in snapshot.tanks.indices where secondIndex != firstIndex {
+                // Re-read both lives for each pair: a tank which just died in a
+                // mutual contact cannot continue killing a third neighbour.
+                let first = snapshot.tanks[firstIndex], second = snapshot.tanks[secondIndex]
+                guard first.hp > 0, second.hp > 0,
+                      second.starmanTime == 0 || secondIndex > firstIndex,
+                      canDamage(owner: first.id, target: second),
+                      hypot(second.x - first.x, second.y - first.y) <= 34,
+                      !maze.segmentBlocked(x: first.x, y: first.y, dx: second.x - first.x, dy: second.y - first.y) else { continue }
+                if first.starmanTime > 0 && second.starmanTime > 0 {
+                    // Commit both ordinary kill/death ledgers before standings
+                    // and score-target evaluation, with no transient winner.
+                    hurt(secondIndex, owner: first.id, starman: true)
+                    hurt(firstIndex, owner: second.id, starman: true)
+                } else if second.invulnerable == 0 || second.spawnProtected {
+                    hurt(secondIndex, owner: first.id, starman: true)
+                }
             }
         }
     }

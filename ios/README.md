@@ -22,7 +22,7 @@ The standard SpriteKit view requests up to 120 FPS, bounded by the attached disp
 
 Simulation stays at 60 Hz. Fractional native presentation smooths local play at the display rate. Online movement uses acknowledged-input replay and a bounded remote interpolation buffer; the server owns damage, pickups, respawns, and scores. Pausing clears controls. Online arenas continue, and Infinity holds a paused pilot's respawn. Backgrounding pauses the native client and releases held controls.
 
-Drag the left stick to drive and aim; hold Fire to shoot. Grenades use a new press to throw or detonate. Hardware keyboards support WASD/arrow keys and Q/C/Space for Fire.
+Drag the left stick to drive and aim; hold Fire to shoot or throw grenades. A fresh press detonates the current grenade bank, and holding continues firing when ready. Hardware keyboards support WASD/arrow keys and Q/C/Space/Enter for Fire.
 
 Native sound uses the browser's sine/triangle voices, exponential pitch and volume envelopes, layered pickup notes, and filtered explosion noise. Cached PCM feeds a bounded voice pool and shared browser-matched compressor/limiter; volume defaults to 50% and can be adjusted in Settings. Native sound honors the silent switch, mixes with other audio, and adds local haptic cues.
 

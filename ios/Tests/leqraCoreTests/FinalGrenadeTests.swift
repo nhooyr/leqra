@@ -22,18 +22,19 @@ final class FinalGrenadeTests: XCTestCase {
             XCTAssertEqual(tank.ammoUsed, 0); XCTAssertEqual(tank.grenades, 1)
             let readout = PilotReadout(tank: tank, snapshot: arena.snapshot, infinity: !fixed)
             XCTAssertEqual(readout.available, 5); XCTAssertEqual(readout.readiness, "DETONATE READY")
+            XCTAssertEqual(readout.fireHint, "TAP TO DETONATE, HOLD TO FIRE")
             for _ in 0..<4 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
-            XCTAssertEqual(arena.snapshot.bullets.map(\.id), [grenade.id])
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.map(\.id), [grenade.id])
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty }.count, 1, "The following held tick fires standard ammunition")
             arena.step(input: GameInput(), dt: 1 / 60)
+            let standardIDs = arena.snapshot.bullets.filter { $0.kind.isEmpty }.map(\.id)
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
-            XCTAssertTrue(arena.snapshot.bullets.isEmpty)
+            XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind == "grenade" })
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty }.map(\.id), standardIDs, "Detonation cannot also fire a shot in the same tick")
             XCTAssertNil(arena.snapshot.tanks[0].grenadeEpoch)
             XCTAssertTrue(arena.snapshot.effects.contains { $0.kind == "blast" })
-            for _ in 0..<4 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
-            XCTAssertTrue(arena.snapshot.bullets.isEmpty, "Popping consumes the held press")
-            arena.step(input: GameInput(), dt: 1 / 60)
-            arena.step(input: GameInput(fire: true), dt: 1 / 60)
-            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty }.count, 1)
+            for _ in 0..<30 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+            XCTAssertGreaterThan(arena.snapshot.bullets.filter { $0.kind.isEmpty }.count, 1, "Held fire resumes after the existing standard cooldown")
         } }
     }
 

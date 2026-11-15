@@ -8,31 +8,42 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),
 const {chromium}=require('playwright'),{assetPath,assetVersion}=require('./web_assets.cjs');
 const root=path.resolve(__dirname,'../..'),web=path.join(root,'src/web'),output=path.resolve(process.argv[2]||'/tmp/leqra-powerup-browser');
 const only=process.argv.find(arg=>arg.startsWith('--only='))?.slice(7);
-const events=process.argv.includes('--events');
+const transitions=process.argv.includes('--transitions');
+const events=transitions||process.argv.includes('--events');
 const audioModes=process.argv.find(arg=>arg.startsWith('--audio='))?.slice(8).split(',')||['on'];
 const seconds=Number(process.argv.find(arg=>arg.startsWith('--seconds='))?.slice(10));
 if(Number.isFinite(seconds)&&seconds!==0&&(seconds<1||seconds>30))throw Error('--seconds must be 1–30.');
 const variants=process.argv.find(arg=>arg.startsWith('--variant='))?.slice(10).split(',')||['before','after'];
 const arenas=process.argv.find(arg=>arg.startsWith('--arena='))?.slice(8).split(',')||['fixed','infinity'];
 const powers=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
-const cases=(events?['regular',...powers].map(kind=>({name:kind,powers:[],eventPower:kind,grenade:kind==='grenade'})):[...powers.map(kind=>({name:kind,powers:[kind],grenade:kind==='grenade'})),...['regular','rapid','scatter','homing','grenade','laser','cannon'].map(kind=>({name:'stacked-'+kind,powers:[...Array(5).fill('shield'),...Array(5).fill('speed'),'ghost','starman',...(kind==='regular'?[]:[kind])],grenade:kind==='grenade'}))]).filter(item=>!only||item.name===only);
+const cases=(transitions?['death','kill','wall'].map(kind=>({name:kind,powers:[],eventPower:'regular',transition:kind})):events?['regular',...powers].map(kind=>({name:kind,powers:[],eventPower:kind,grenade:kind==='grenade'})):[...powers.map(kind=>({name:kind,powers:[kind],grenade:kind==='grenade'})),...['regular','rapid','scatter','homing','grenade','laser','cannon'].map(kind=>({name:'stacked-'+kind,powers:[...Array(5).fill('shield'),...Array(5).fill('speed'),'ghost','starman',...(kind==='regular'?[]:[kind])],grenade:kind==='grenade'}))]).filter(item=>!only||item.name===only);
 fs.mkdirSync(output,{recursive:true});
 
 const fixedHooks=String.raw`
 window.__stress={capture:false,spec:null,frames:[],longTasks:[],renderMs:0,maxProjectiles:0,maxParticles:0,maxEffects:0,audioSources:0,held:false,costs:{},eventAt:null,eventDone:false,eventStage:'idle',
- reset(){this.frames=[];this.longTasks=[];this.costs={};this.powerGrants=[];this.badgeMisses=[];this.shots=0;this.firstShot=null;this.eventAt=null;this.eventDone=false;this.eventStage='idle';this.maxProjectiles=this.maxParticles=this.maxEffects=this.audioSources=0;this.capture=true;},
+ reset(){this.frames=[];this.longTasks=[];this.costs={};this.powerGrants=[];this.badgeMisses=[];this.shots=0;this.firstShot=null;this.eventAt=null;this.eventDone=false;this.transitionDone=false;this.eventStage='idle';this.maxProjectiles=this.maxParticles=this.maxEffects=this.audioSources=0;this.capture=true;},
  primary(tank){return tank.id===(this.arena==='infinity'?window.__stressInfinity.world().id:0);},
  shot(tank,at){this.shots++;this.firstShot??={at,power:tank.power||'regular'};},
  record(now,work){if(!this.capture)return;const infinity=$('infiniteArena').open,w=infinity?window.__stressInfinity?.world():null;this.frames.push({at:now,work,render:this.renderMs,costs:this.costs,stage:this.eventStage});this.costs={};this.maxProjectiles=Math.max(this.maxProjectiles,w?w.bullets.length:bullets.length);this.maxParticles=Math.max(this.maxParticles,w?0:particles.length);this.maxEffects=Math.max(this.maxEffects,w?w.visualEffects.length:traces.length+rings.length);},
  controls(clock,set){let held=!this.spec?.grenade||Math.floor(clock*4)%2===0;
   if(this.spec?.eventPower){if(!this.capture){set.clear();return false;}this.eventAt??=clock+.05;
-   if(clock>=this.eventAt&&!this.eventDone){this.eventDone=true;this.eventStage='pickup';if(this.spec.eventPower!=='regular'){const w=this.arena==='infinity'?window.__stressInfinity.world():null,t=w?w.tanks[0]:tanks[0];(w?w.pickups:pickups).push({x:t.x,y:t.y,type:this.spec.eventPower,age:0,life:30});}}
-   if(clock>=this.eventAt+.08)this.eventStage='firing';held=held&&clock>=this.eventAt+.08;
+   if(clock>=this.eventAt&&!this.eventDone){this.eventDone=true;this.eventStage=this.spec.transition||'pickup';if(this.spec.transition)this.transition(this.spec.transition);if(this.spec.eventPower!=='regular'){const w=this.arena==='infinity'?window.__stressInfinity.world():null,t=w?w.tanks[0]:tanks[0];(w?w.pickups:pickups).push({x:t.x,y:t.y,type:this.spec.eventPower,age:0,life:30});}}
+   if(!this.spec.transition&&clock>=this.eventAt+.08)this.eventStage='firing';held=held&&clock>=this.eventAt+.08&&this.spec.transition!=='death';
   }
   set.add('KeyW');set.add('KeyD');if(held)set.add('KeyQ');else set.delete('KeyQ');return held;},
+ transition(kind){
+  if(this.arena==='infinity'){this.transitionDone=window.__stressInfinity.transition(kind);return;}
+  const t=tanks[0];
+  if(kind==='wall'){
+   const wall=walls.find(w=>w.w===WALL&&w.x>CELL&&w.x<W-CELL&&w.h>=CELL);if(!wall)throw Error('No collision wall');
+   Object.assign(t,{x:wall.x-RADIUS-1,y:wall.y+wall.h/2,angle:0});moveTank(t,10,0);this.transitionDone=t.x<=wall.x-RADIUS+.01;
+  }else{
+   const victim=tanks[kind==='death'?0:1],owner=tanks[kind==='death'?1:0];Object.assign(victim,{invulnerable:0,spawnProtected:false});hurt(victim,{owner:owner.id,kind:'regular'});this.transitionDone=!victim.alive;
+  }
+ },
  fixed(spec){window.leqraInfinity?.close();this.capture=false;this.spec=spec;this.arena='fixed';this.held=false;let seed=44937;Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};mode='room';localRoom.rules=validateRoomRules({...defaultRoomRules(),infinity:false,mode:'elimination',mapSize:'ultrawide',teamMode:'ffa',timeLimit:600,scoreTarget:20});localRoom.players=Array.from({length:8},(_,id)=>({id,member:id+1,kind:id?'bot':'human',name:['PILOT','RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'][id],owner:0,team:0,colorIndex:id,difficulty:'normal'}));startMatch();phase='playing';time=0;spawnClock=1e9;pickups=[];for(const t of tanks){Object.assign(t,{x:(1+t.id%4*5+.5)*CELL,y:(1+Math.floor(t.id/4)*8+.5)*CELL,angle:t.id*Math.PI/4,human:true,localIndex:0,invulnerable:1000,spawnProtected:false,cooldown:0,ghostTime:0,starmanTime:0,power:null,powerTime:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,fireHeld:false});for(const power of spec.powers)grantPower(t,power);}clearInput();initAudio();setArenaAudio(true);audio?.resume();updateHUD(true);return this.initial();},
  initial(){return{audio:audio?.state||'none',audioEnabled:canPlayAudio(),volume:audioVolume,canvas:{width:canvas.width,height:canvas.height},powers:tanks.map(t=>({power:t.power,shield:shieldCount(t),speed:speedCount(t),ghost:t.ghostTime,starman:t.starmanTime}))};},
- finish(){this.capture=false;return{frames:this.frames,longTasks:this.longTasks,powerGrants:this.powerGrants,badgeMisses:this.badgeMisses,shots:this.shots,firstShot:this.firstShot,maxProjectiles:this.maxProjectiles,maxParticles:this.maxParticles,maxEffects:this.maxEffects,audio:audio?.state||'none',audioEnabled:canPlayAudio(),audioSources:this.audioSources};}
+ finish(){this.capture=false;return{transitionDone:this.transitionDone,frames:this.frames,longTasks:this.longTasks,powerGrants:this.powerGrants,badgeMisses:this.badgeMisses,shots:this.shots,firstShot:this.firstShot,maxProjectiles:this.maxProjectiles,maxParticles:this.maxParticles,maxEffects:this.maxEffects,audio:audio?.state||'none',audioEnabled:canPlayAudio(),audioSources:this.audioSources};}
 };
 window.__stress.verifyGameplay=function(){
  this.fixed({name:'checks',powers:[]});this.spec=null;clearInput();const passed=[],check=(value,label)=>{if(!value)throw Error(label);passed.push(label);};
@@ -57,7 +68,7 @@ window.__stress.verifyDryFire=function(){
   weaponControl(t,true,true);check(voices.join(',')==='dryFire'&&bullets.length===5,'fixed empty press emits only dry feedback');check(this.audioSources-sources===(enabled?1:0),'fixed dry WebAudio source respects audio setting');
   time+=1;weaponControl(t,true,false);check(voices.length===1,'fixed empty hold is silent');weaponControl(t,false,false);bullets=[];weaponControl(t,true,true);check(voices.length===2&&voices[1]===''&&bullets.length===1,'fixed available ammo emits one real shot');
   bullets=[];grantPower(t,'grenade');t.charges=1;weaponControl(t,true,true);check(bullets.length===1&&bullets[0].kind==='grenade','fixed last grenade throws once');
-  for(let i=0;i<5;i++){time+=1/60;weaponControl(t,true,false);}grantPower(t,'shield');weaponControl(t,true,false);check(bullets.length===1,'fixed grenade hold survives refills');weaponControl(t,false,false);weaponControl(t,true,true);check(bullets.length===2&&bullets[1].kind==='','fixed fresh press returns to standard');
+  for(let i=0;i<5;i++){time+=1/60;weaponControl(t,true,false);}grantPower(t,'shield');weaponControl(t,true,false);if(this.continuousFire){check(bullets.length===3&&bullets[1].kind===''&&bullets[2].kind==='','fixed hold resumes regular fire and retries on pickup');}else{check(bullets.length===1,'legacy fixed hold survives refills');weaponControl(t,false,false);weaponControl(t,true,true);check(bullets.length===2&&bullets[1].kind==='','legacy fixed fresh press returns to standard');}
  }finally{shotSound=original;}return checks;
 };
 window.__stress.verifyCannonTrails=function(){
@@ -86,9 +97,16 @@ window.__verifyInfinityDryFire=function(){
  w.time+=1;weaponControl(w,t,true,false);check(window.__stress.audioSources-sources===(enabled?1:0),'Infinity held empty fire is silent');
  weaponControl(w,t,false,false);w.bullets=[];weaponControl(w,t,true,true);check(w.lastBullet===6,'Infinity fresh loaded press fires normally');
  w.bullets=[];art.grantPower(t,'grenade',15,8);t.charges=1;weaponControl(w,t,true,true);const grenade=w.bullets[0];check(w.bullets.length===1&&grenade.kind==='grenade','Infinity last grenade throws once');
- for(let i=0;i<5;i++){w.time+=1/60;weaponControl(w,t,true,false);}art.grantPower(t,'shield',15,8);weaponControl(w,t,true,false);check(w.bullets.length===1,'Infinity grenade hold survives refills');weaponControl(w,t,false,false);weaponControl(w,t,true,true);check(w.bullets.length===2&&w.bullets.includes(grenade),'Infinity fresh press returns to standard without deleting the grenade');return checks;
+ for(let i=0;i<5;i++){w.time+=1/60;weaponControl(w,t,true,false);}art.grantPower(t,'shield',15,8);weaponControl(w,t,true,false);if(window.__stress.continuousFire){check(w.bullets.length===3&&w.bullets.includes(grenade),'Infinity hold resumes regular fire and retries on pickup');}else{check(w.bullets.length===1,'legacy Infinity hold survives refills');weaponControl(w,t,false,false);weaponControl(w,t,true,true);check(w.bullets.length===2&&w.bullets.includes(grenade),'legacy Infinity fresh press returns to standard');}return checks;
 };
-window.__stressInfinity={world:()=>session,prepare(spec){window.leqraInfinity.close();window.__stress.capture=false;window.__stress.spec=spec;window.__stress.arena='infinity';window.leqraInfinity.start('offline',{name:'PILOT',roomRules:{infinity:true,infinityRandomBots:false,teamMode:'ffa'}});const w=session;w.maze=geometry.create(44937);w.tanks=[];w.nextPickup=1e9;w.pickups=[];w.time=0;for(let id=0;id<8;id++){const t=makeTank(id?'stress-'+id:w.id,(id%4*2+.5)*CELL,(Math.floor(id/4)*2+.5)*CELL,false);Object.assign(t,{name:['PILOT','RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'][id],angle:id*Math.PI/4,colorIndex:id,invulnerable:1000,spawnProtected:false,cooldown:0});for(const power of spec.powers)art.grantPower(t,power,15,8);w.tanks.push(t);}w.camera.x=w.tanks[0].x;w.camera.y=w.tanks[0].y;resetControls();w.nextHUD=0;draw(w,performance.now(),0);return{audio:window.__stress.initial().audio,powers:w.tanks.map(t=>({power:t.power,shield:t.shieldCharges||0,speed:t.speedStacks||0,ghost:t.ghostTime,starman:t.starmanTime})),canvas:{width:canvas.width,height:canvas.height}};}};
+window.__stressInfinity={world:()=>session,transition(kind){
+ const w=session,t=w.tanks[0];
+ if(kind==='wall'){
+  const wall=w.maze.wallsNear(t.x-CELL*2,t.y-CELL*2,t.x+CELL*2,t.y+CELL*2).find(wall=>wall.w===8&&wall.h>=CELL);if(!wall)throw Error('No Infinity collision wall');
+  Object.assign(t,{x:wall.x-RADIUS-1,y:wall.y+wall.h/2,angle:0});w.moveTank(t,10,0);return t.x<=wall.x-RADIUS+.01;
+ }
+ const victim=w.tanks[kind==='death'?0:1],owner=w.tanks[kind==='death'?1:0];Object.assign(victim,{invulnerable:0,spawnProtected:false});hurt(w,victim,owner.id,owner.team,owner.name);return !victim.hp;
+},prepare(spec){window.leqraInfinity.close();window.__stress.capture=false;window.__stress.spec=spec;window.__stress.arena='infinity';window.leqraInfinity.start('offline',{name:'PILOT',roomRules:{infinity:true,infinityRandomBots:false,teamMode:'ffa'}});const w=session;w.maze=geometry.create(44937);w.tanks=[];w.nextPickup=1e9;w.pickups=[];w.time=0;for(let id=0;id<8;id++){const t=makeTank(id?'stress-'+id:w.id,(id%4*2+.5)*CELL,(Math.floor(id/4)*2+.5)*CELL,false);Object.assign(t,{name:['PILOT','RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'][id],angle:id*Math.PI/4,colorIndex:id,invulnerable:1000,spawnProtected:false,cooldown:0});for(const power of spec.powers)art.grantPower(t,power,15,8);w.tanks.push(t);}w.camera.x=w.tanks[0].x;w.camera.y=w.tanks[0].y;resetControls();w.nextHUD=0;draw(w,performance.now(),0);return{audio:window.__stress.initial().audio,powers:w.tanks.map(t=>({power:t.power,shield:t.shieldCharges||0,speed:t.speedStacks||0,ghost:t.ghostTime,starman:t.starmanTime})),canvas:{width:canvas.width,height:canvas.height}};}};
 const stressOfflineStep=offlineStep;offlineStep=function(w,dt){if(window.__stress.spec&&window.__stress.arena==='infinity')window.__stress.controls(w.time,pressed);return stressOfflineStep(w,dt);};
 const stressDraw=draw;draw=function(...args){const start=performance.now();const result=stressDraw(...args);window.__stress.renderMs=performance.now()-start;return result;};
 const stressFireShot=fireShot;fireShot=function(world,tank,...args){const start=performance.now(),serial=world.lastBullet,recoil=tank.recoil;try{return stressFireShot(world,tank,...args);}finally{const p=window.__stress;if(p.capture){p.costs.fireShot=(p.costs.fireShot||0)+performance.now()-start;if(p.primary(tank)&&(world.lastBullet>serial||tank.recoil===1&&recoil!==1))p.shot(tank,start);}}};
@@ -99,7 +117,7 @@ function staged(name,variant){
  if(name==='game.js'){
   const marker='window.leqraInfinityArt=Object.freeze({';
   if(!source.includes(marker))throw Error('fixed fixture marker missing');
-  return source.replace(marker,fixedHooks+'\n'+marker);
+  return source.replace(marker,fixedHooks+'\nwindow.__stress.continuousFire='+(!source.includes("if(!t.fireBlocked&&t.power!=='grenade'"))+';\n'+marker);
  }
  if(name==='infinite.js')return source.replace('window.leqraInfinity =',infinityHooks+'\nwindow.leqraInfinity =');
  return source;
@@ -144,10 +162,11 @@ function summary(values){if(!values.length)return null;const sorted=[...values].
     const raw=await page.evaluate(()=>__stress.finish()),intervals=raw.frames.slice(1).map((frame,index)=>frame.at-raw.frames[index].at);
     const metric=name=>(after.find(m=>m.name===name)?.value||0)-(before.find(m=>m.name===name)?.value||0);
     const record={variant,audioMode,arena,case:spec.name,initial,frames:summary(intervals),frameWorkMs:summary(raw.frames.map(frame=>frame.work)),renderSubmissionMs:summary(raw.frames.map(frame=>frame.render)),eventFrames:events?raw.frames:undefined,powerGrants:raw.powerGrants,badgeMisses:raw.badgeMisses,shots:raw.shots,firstShot:raw.firstShot,over25ms:intervals.filter(value=>value>25).length,longTasks:raw.longTasks,maxProjectiles:raw.maxProjectiles,maxParticles:raw.maxParticles,maxEffects:raw.maxEffects,audio:raw.audio,audioSources:raw.audioSources,scriptSeconds:metric('ScriptDuration'),taskSeconds:metric('TaskDuration'),layoutSeconds:metric('LayoutDuration')};
+    if(spec.transition&&!raw.transitionDone)throw Error('Scheduled transition did not occur: '+arena+'/'+spec.name);
     if(raw.frames.length<30)throw Error('Insufficient actual animation frames: '+arena+'/'+spec.name);
     if(events&&spec.eventPower!=='regular'&&!raw.powerGrants.some(grant=>grant.kind===spec.eventPower))throw Error('Scheduled P1 pickup was not collected: '+arena+'/'+spec.name);
     if(events&&spec.eventPower!=='regular'){const grant=raw.powerGrants.find(grant=>grant.kind===spec.eventPower),field={shield:'shield',speed:'speed',ghost:'ghost',starman:'starman'}[spec.eventPower];if(field?!(grant.state[field]>0):grant.state.power!==spec.eventPower)throw Error('P1 pickup state was not applied: '+arena+'/'+spec.name);}
-    if(events&&!raw.shots)throw Error('Scheduled P1 fire did not launch: '+arena+'/'+spec.name);
+    if(events&&!spec.transition&&!raw.shots)throw Error('Scheduled P1 fire did not launch: '+arena+'/'+spec.name);
     if(events&&raw.powerGrants.length&&!(raw.firstShot.at>=raw.powerGrants[0].at))throw Error('P1 fired before its scheduled pickup: '+arena+'/'+spec.name);
     if(events&&variant==='after'&&raw.badgeMisses.length)throw Error('First pickup created an unprepared badge: '+arena+'/'+spec.name);
     if(audioMode==='on'&&(raw.audio!=='running'||!raw.audioEnabled||!raw.audioSources))throw Error('WebAudio did not render active sources: '+JSON.stringify(record));

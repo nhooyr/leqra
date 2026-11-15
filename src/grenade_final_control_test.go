@@ -59,15 +59,12 @@ func TestEveryGrenadeIncludingLastChargeKeepsItsNextDetonationPress(t *testing.T
 								}
 							}
 						}
-						for range 8 {
-							control(true, false)
-						}
 						if !coalesced {
 							control(false, false)
 						}
 						control(true, true)
 						if tank.ShotSerial != uint64(throw) || !tank.fireBlocked || tank.GrenadeEpoch != nil {
-							t.Fatal("detonation also fired, left the control bank armed, or did not consume its hold")
+							t.Fatal("detonation also fired, left the control bank armed, or did not consume its tick")
 						}
 						if infinity {
 							if len(a.bullets) != throw || !a.bullets[throw-1].dead || a.bullets[throw-1].AmmoEpoch != epoch {
@@ -75,12 +72,6 @@ func TestEveryGrenadeIncludingLastChargeKeepsItsNextDetonationPress(t *testing.T
 							}
 						} else if len(g.Bullets) != throw || !g.Bullets[throw-1].Dead || g.Bullets[throw-1].AmmoEpoch != epoch {
 							t.Fatal("detonation spawned another projectile or retagged the grenade")
-						}
-						for range 8 {
-							control(true, false)
-						}
-						if tank.ShotSerial != uint64(throw) {
-							t.Fatal("held detonation fell through to standard fire")
 						}
 						control(false, false)
 					}

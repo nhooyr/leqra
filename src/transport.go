@@ -1,17 +1,14 @@
 package main
 
-// A bounded, text-only RFC 6455 server transport. It accepts fragmented UTF-8
-// text and interleaved control frames, requires client masking, and bounds
-// frames, full messages, and inflated messages.
-// Keeping this separate from rooms/physics makes it replaceable independently.
-
+// Game messages use coder/websocket for the RFC 6455 handshake, framing,
+// fragmentation, control frames and independently compressed messages. The
+// wrapper retains leqra's origin, message, rate and connection-liveness policy.
 import (
 	"bufio"
-	"crypto/sha1" // Required by the WebSocket handshake; not used for authentication.
+	"compress/flate"
+	"context"
 	"encoding/base64"
-	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -21,28 +18,28 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/coder/websocket"
 )
 
 // Accommodates escaped-Unicode chat and eight-seat preset payloads, still bounded.
 const maxMessage = 8192
-const maxFramesPerSecond = 220 // Two input streams plus control frames.
-const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-const wsCompressed = 0x40
+const maxTransportMessagesPerSecond = 220 // Two input streams plus control messages.
 const wsReadTimeout = 35 * time.Second
+const wsWriteTimeout = 3 * time.Second
+const wsInboundBytesPerSecond = 256 << 10
+const wsInboundByteBurst = 512 << 10
 
 type wsConn struct {
-	conn              net.Conn
-	reader            *bufio.Reader
-	writeMu           sync.Mutex
-	closeOnce         sync.Once
-	deflate           bool
-	fragmented        bool
-	messageCompressed bool
-	message           []byte
-	frameWindow       time.Time
-	frames            int
-	openedAt          time.Time
-	lastPeerRead      atomic.Int64 // Nanoseconds since openedAt, including WebSocket pongs.
+	conn          net.Conn // Deadlines and forced shutdown; websocket owns all wire IO.
+	socket        *websocket.Conn
+	closeOnce     sync.Once
+	messageWindow time.Time
+	messages      int
+	rateMu        sync.Mutex
+	rateExceeded  atomic.Bool
+	openedAt      time.Time
+	lastPeerRead  atomic.Int64 // Nanoseconds since openedAt, including WebSocket pongs.
 }
 
 type wsError struct {
@@ -50,8 +47,7 @@ type wsError struct {
 	reason string
 }
 
-func (e *wsError) Error() string        { return e.reason }
-func protocolError(reason string) error { return &wsError{1002, reason} }
+func (e *wsError) Error() string { return e.reason }
 
 // List-valued HTTP headers can span several field lines.
 func headerToken(values []string, token string) bool {
@@ -104,38 +100,91 @@ func validateUpgrade(w http.ResponseWriter, r *http.Request, allowed []string) (
 	return key, nil
 }
 
-func upgradeWS(w http.ResponseWriter, key string, deflate bool) (*wsConn, error) {
-	hj, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "WebSocket upgrade unavailable", 500)
-		return nil, errors.New("WebSocket upgrade unavailable")
-	}
-	conn, rw, err := hj.Hijack()
-	if err != nil {
-		return nil, err
-	}
-	sum := sha1.Sum([]byte(key + wsGUID))
-	accept := base64.StdEncoding.EncodeToString(sum[:])
-	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	extension := ""
-	if deflate {
-		extension = "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n"
-	}
-	_, err = fmt.Fprintf(rw, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n%s\r\n", accept, extension)
-	if err == nil {
-		err = rw.Flush()
-	}
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	_ = conn.SetWriteDeadline(time.Time{})
-	now := time.Now()
-	_ = conn.SetReadDeadline(now.Add(wsReadTimeout))
-	return &wsConn{conn: conn, reader: rw.Reader, deflate: deflate, frameWindow: now, openedAt: now}, nil
+// Capture the accepted connection only for deadlines and immediate shutdown.
+// The library performs every handshake and frame read/write.
+type socketResponseWriter struct {
+	http.ResponseWriter
+	conn net.Conn
 }
 
-func (c *wsConn) close() { c.closeOnce.Do(func() { _ = c.conn.Close() }) }
+func (w *socketResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+	// A byte budget bounds floods of empty continuation frames without keeping
+	// a second WebSocket parser. Include bytes buffered during the HTTP upgrade.
+	guarded := &socketByteBudget{Conn: conn, at: time.Now(), available: wsInboundByteBurst - float64(rw.Reader.Buffered())}
+	w.conn = guarded
+	return guarded, rw, nil
+}
+
+type socketByteBudget struct {
+	net.Conn
+	at        time.Time
+	available float64
+}
+
+func (c *socketByteBudget) allowance(now time.Time) int {
+	c.available = min(wsInboundByteBurst, c.available+max(0, now.Sub(c.at).Seconds())*wsInboundBytesPerSecond)
+	c.at = now
+	return int(c.available)
+}
+
+func (c *socketByteBudget) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	n := c.allowance(time.Now())
+	if n == 0 {
+		return 0, &wsError{1008, "Inbound byte rate exceeded"}
+	}
+	count, err := c.Conn.Read(p[:min(n, len(p))])
+	c.available -= float64(count)
+	return count, err
+}
+
+func upgradeWS(w http.ResponseWriter, r *http.Request, deflate bool) (*wsConn, error) {
+	now := time.Now()
+	c := &wsConn{messageWindow: now, openedAt: now}
+	writer := &socketResponseWriter{ResponseWriter: w}
+	opts := websocket.AcceptOptions{
+		// serveSocket already enforces exact origins, including rejecting missing
+		// origins and URL paths which the library's host patterns do not reject.
+		InsecureSkipVerify:   true,
+		CompressionThreshold: 1024,
+		OnPingReceived: func(context.Context, []byte) bool {
+			return c.controlReceived()
+		},
+		OnPongReceived: func(context.Context, []byte) {
+			c.controlReceived()
+		},
+	}
+	if deflate {
+		opts.CompressionMode = websocket.CompressionNoContextTakeover
+	}
+	socket, err := websocket.Accept(writer, r, &opts)
+	if err != nil {
+		return nil, err
+	}
+	c.conn, c.socket = writer.conn, socket
+	socket.SetReadLimit(maxMessage)
+	c.refreshReadDeadline()
+	return c, nil
+}
+
+func (c *wsConn) close() {
+	c.closeOnce.Do(func() {
+		// Close the underlying connection first so even a concurrent library
+		// close handshake or blocked writer ends immediately.
+		if c.conn != nil {
+			_ = c.conn.Close()
+		}
+		if c.socket != nil {
+			_ = c.socket.CloseNow()
+		}
+	})
+}
 
 func (c *wsConn) refreshReadDeadline() {
 	now := time.Now()
@@ -147,156 +196,98 @@ func (c *wsConn) peerReadRecently(now time.Time, limit time.Duration) bool {
 	return now.Sub(c.openedAt)-time.Duration(c.lastPeerRead.Load()) < limit
 }
 
-func (c *wsConn) writeFrame(flags byte, payload []byte) error {
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	_ = c.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-	h := []byte{0x80 | flags}
-	n := len(payload)
-	if n < 126 {
-		h = append(h, byte(n))
-	} else if n <= 65535 {
-		h = append(h, 126, byte(n>>8), byte(n))
-	} else {
-		h = append(h, 127)
-		var b [8]byte
-		binary.BigEndian.PutUint64(b[:], uint64(n))
-		h = append(h, b[:]...)
+func (c *wsConn) countMessage() bool {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	now := time.Now()
+	if now.Sub(c.messageWindow) >= time.Second {
+		c.messageWindow, c.messages = now, 0
 	}
-	// net.Buffers handles short writes and avoids copying large state packets.
-	bufs := net.Buffers{h, payload}
-	_, err := bufs.WriteTo(c.conn)
-	return err
+	c.messages++
+	return c.messages <= maxTransportMessagesPerSecond
 }
+
+func (c *wsConn) controlReceived() bool {
+	if !c.countMessage() {
+		c.rateExceeded.Store(true)
+		// End the current Reader outside its control callback. The read loop
+		// then sends one bounded close handshake after releasing the read lock.
+		_ = c.conn.SetReadDeadline(time.Now())
+		return false
+	}
+	c.refreshReadDeadline()
+	return true
+}
+
+func (c *wsConn) writeText(payload []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wsWriteTimeout)
+	defer cancel()
+	return c.socket.Write(ctx, websocket.MessageText, payload)
+}
+
+func (c *wsConn) ping() error {
+	ctx, cancel := context.WithTimeout(context.Background(), wsWriteTimeout)
+	defer cancel()
+	return c.socket.Ping(ctx)
+}
+
 func (c *wsConn) writeClose(code uint16, reason string) {
 	if len(reason) > 120 {
 		reason = "Connection closed"
 	}
-	p := make([]byte, 2, len(reason)+2)
-	binary.BigEndian.PutUint16(p, code)
-	p = append(p, reason...)
-	_ = c.writeFrame(8, p)
+	// Bound the library's graceful handshake even if the peer stops reading.
+	_ = c.conn.SetDeadline(time.Now().Add(wsWriteTimeout))
+	_ = c.socket.Close(websocket.StatusCode(code), reason)
 }
-func validCloseCode(code uint16) bool {
-	return (code >= 1000 && code <= 1014 && code != 1004 && code != 1005 && code != 1006) || (code >= 3000 && code <= 4999)
-}
+
 func (c *wsConn) readMessage() ([]byte, error) {
-	for {
-		var h [2]byte
-		if _, err := io.ReadFull(c.reader, h[:]); err != nil {
-			return nil, err
+	return c.readMessageWithTimeout(wsReadTimeout)
+}
+
+func (c *wsConn) readMessageWithTimeout(messageTimeout time.Duration) ([]byte, error) {
+	kind, reader, err := c.socket.Reader(context.Background())
+	if err != nil {
+		if c.rateExceeded.Load() {
+			return nil, &wsError{1008, "Too many transport messages"}
 		}
-		now := time.Now()
-		if now.Sub(c.frameWindow) >= time.Second {
-			c.frameWindow = now
-			c.frames = 0
-		}
-		c.frames++
-		if c.frames > maxFramesPerSecond {
-			return nil, &wsError{1008, "Too many frames"}
-		}
-		fin := h[0]&0x80 != 0
-		compressed := h[0]&wsCompressed != 0
-		op := h[0] & 0x0f
-		if h[0]&0x30 != 0 || h[1]&0x80 == 0 || compressed && (!c.deflate || op != 1 && op != 2) {
-			return nil, protocolError("Invalid frame flags or missing mask")
-		}
-		if op != 0 && op != 1 && op != 2 && op != 8 && op != 9 && op != 10 {
-			return nil, protocolError("Unknown opcode")
-		}
-		n := uint64(h[1] & 0x7f)
-		if op >= 8 && (!fin || n > 125) {
-			return nil, protocolError("Invalid control frame")
-		}
-		switch n {
-		case 126:
-			var b [2]byte
-			if _, err := io.ReadFull(c.reader, b[:]); err != nil {
-				return nil, err
-			}
-			n = uint64(binary.BigEndian.Uint16(b[:]))
-			if n < 126 {
-				return nil, protocolError("Non-minimal length")
-			}
-		case 127:
-			var b [8]byte
-			if _, err := io.ReadFull(c.reader, b[:]); err != nil {
-				return nil, err
-			}
-			n = binary.BigEndian.Uint64(b[:])
-			if b[0]&0x80 != 0 || n < 65536 {
-				return nil, protocolError("Invalid extended length")
-			}
-		}
-		if n > maxMessage || (op < 8 && n+uint64(len(c.message)) > maxMessage) {
-			return nil, &wsError{1009, "Message too large"}
-		}
-		var mask [4]byte
-		if _, err := io.ReadFull(c.reader, mask[:]); err != nil {
-			return nil, err
-		}
-		data := make([]byte, int(n))
-		if _, err := io.ReadFull(c.reader, data); err != nil {
-			return nil, err
-		}
-		for i := range data {
-			data[i] ^= mask[i%4]
-		}
-		switch op {
-		case 8:
-			if len(data) == 1 {
-				return nil, protocolError("Invalid close frame")
-			}
-			if len(data) >= 2 {
-				if !validCloseCode(binary.BigEndian.Uint16(data[:2])) {
-					return nil, protocolError("Invalid close code")
-				}
-				if !utf8.Valid(data[2:]) {
-					return nil, &wsError{1007, "Invalid close reason"}
-				}
-			}
-			_ = c.writeFrame(8, data)
-			return nil, io.EOF
-		case 9:
-			if err := c.writeFrame(10, data); err != nil {
-				return nil, err
-			}
-			continue
-		case 10:
-			c.refreshReadDeadline()
-			continue
-		case 2:
-			return nil, &wsError{1003, "Only JSON text is supported"}
-		case 1:
-			if c.fragmented {
-				return nil, protocolError("Nested fragmented message")
-			}
-			c.messageCompressed = compressed
-			c.message = data
-			c.fragmented = !fin
-		case 0:
-			if !c.fragmented {
-				return nil, protocolError("Unexpected continuation")
-			}
-			c.message = append(c.message, data...)
-			c.fragmented = !fin
-		}
-		if !fin {
-			continue
-		}
-		data = c.message
-		c.message = nil
-		if c.messageCompressed {
-			c.messageCompressed = false
-			var err error
-			if data, err = inflateMessage(data, maxMessage); err != nil {
-				return nil, err
-			}
-		}
-		if !utf8.Valid(data) {
-			return nil, &wsError{1007, "Invalid UTF-8"}
-		}
-		c.refreshReadDeadline()
-		return data, nil
+		return nil, transportReadError(err)
 	}
+	// Pongs keep an idle menu alive, but cannot extend one incomplete
+	// fragmented message indefinitely.
+	timeout := time.AfterFunc(messageTimeout, c.close)
+	defer timeout.Stop()
+	if kind != websocket.MessageText {
+		return nil, &wsError{1003, "Only JSON text is supported"}
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		if c.rateExceeded.Load() {
+			return nil, &wsError{1008, "Too many transport messages"}
+		}
+		return nil, transportReadError(err)
+	}
+	if c.rateExceeded.Load() || !c.countMessage() {
+		return nil, &wsError{1008, "Too many transport messages"}
+	}
+	if !utf8.Valid(data) {
+		return nil, &wsError{1007, "Invalid UTF-8"}
+	}
+	c.refreshReadDeadline()
+	return data, nil
+}
+
+func transportReadError(err error) error {
+	var policy *wsError
+	var network net.Error
+	if errors.As(err, &policy) || errors.As(err, &network) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) || websocket.CloseStatus(err) >= 0 {
+		return err
+	}
+	if errors.Is(err, websocket.ErrMessageTooBig) {
+		return &wsError{1009, "Message too large"}
+	}
+	var corrupt flate.CorruptInputError
+	if errors.As(err, &corrupt) {
+		return &wsError{1007, "Invalid compressed message"}
+	}
+	return &wsError{1002, "Invalid WebSocket message"}
 }

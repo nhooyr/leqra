@@ -51,8 +51,6 @@ class PracticeArena(
     private val held = mutableMapOf<Int, Boolean>()
     private val pendingFirePresses = mutableSetOf<Int>()
     private val movementInputs = mutableMapOf<Int, GameInput>()
-    // Grenade actions and a weapon ending consume the current Fire hold until release.
-    private val fireBlocked = mutableSetOf<Int>()
     private val rapidShotTicks = mutableMapOf<Int, Long>()
     private val expiredAmmo = mutableSetOf<Int>()
     private val botCourses = mutableMapOf<Int, BeamPoint>()
@@ -171,7 +169,6 @@ class PracticeArena(
                 held.remove(2)?.let { held[replacement] = it }
                 if (pendingFirePresses.remove(2)) pendingFirePresses.add(replacement)
                 movementInputs.remove(2)?.let { movementInputs[replacement] = it }
-                if (fireBlocked.remove(2)) fireBlocked.add(replacement)
                 rapidShotTicks.remove(2)?.let { rapidShotTicks[replacement] = it }
                 botCourses.remove(2)?.let { botCourses[replacement] = it }
                 botDecisions.remove(2)?.let { botDecisions[replacement] = it }
@@ -268,14 +265,12 @@ class PracticeArena(
         if (fire) pendingFirePresses += id
         else {
             held[id] = false
-            fireBlocked -= id
         }
     }
 
     fun resetFire(id: Int) {
         held[id] = false
         pendingFirePresses -= id
-        fireBlocked -= id
     }
 
     fun step(input: GameInput, dt: Double) = step(mapOf(localID to input), dt)
@@ -323,7 +318,6 @@ class PracticeArena(
             val t = snapshot.tanks[i]
             if (t.hp > 0) {
                 val controls = if (t.bot) botInput(i, dt) else inputs[t.id] ?: GameInput()
-                if (t.bot && t.id in fireBlocked) controls.fire = false
                 movementInputs[t.id] = controls.copy()
                 val hadSpeed = t.speedTime > 0
                 val hadGhost = t.ghostTime > 0
@@ -445,7 +439,7 @@ class PracticeArena(
             inactiveRoamingReadyAt[tank.id] = time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
             roamingIDs.remove(tank.id); roamingHomes.remove(tank.id); held.remove(tank.id); movementInputs.remove(tank.id)
             pendingFirePresses.remove(tank.id)
-            fireBlocked.remove(tank.id); botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
+            botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
             rapidShotTicks.remove(tank.id); expiredAmmo.remove(tank.id)
             nextBoostEffects.remove(tank.id); motionPresenters.remove(tank.id)
         }
@@ -617,7 +611,6 @@ class PracticeArena(
                 ammoEpoch = AmmoEpoch.next(old.ammoEpoch),
             )
         snapshot.tanks = snapshot.tanks.toMutableList().also { it[index] = replacement }
-        fireBlocked.remove(old.id)
         pendingFirePresses.remove(old.id)
         botCourses.remove(old.id)
         dumbBrains.remove(old.id)
@@ -653,7 +646,6 @@ class PracticeArena(
         }
         t.cooldown = max(0.0, t.cooldown - dt)
         t.recoil = max(0.0, t.recoil - 9 * dt)
-        if (hadWeapon && t.powerTime <= 0 && held[t.id] == true) fireBlocked += t.id
         if (ghostEnds || hadShield && t.shield <= 0 || hadStar && t.starmanTime <= 0 || hadWeapon && t.powerTime <= 0) expiredAmmo += t.id
     }
 
@@ -826,7 +818,7 @@ class PracticeArena(
                             time,
                             bot.angle,
                             pilot.invulnerable == 0.0 &&
-                                pilot.starmanTime == 0.0 && bot.id !in fireBlocked,
+                                pilot.starmanTime == 0.0,
                         ),
                     stickX = cos(brain.aim),
                     stickY = sin(brain.aim),
@@ -946,7 +938,6 @@ class PracticeArena(
         val t = snapshot.tanks[index]
         val pressed = pendingFirePresses.remove(t.id) || fire && held[t.id] != true
         held[t.id] = fire
-        if (!fire || pressed) fireBlocked.remove(t.id)
         if (t.hp <= 0 || t.spawnProtected && t.invulnerable > 1e-9) return
         if (pressed) {
             val grenadeEpoch = t.grenadeEpoch ?: t.ammoEpoch
@@ -955,16 +946,10 @@ class PracticeArena(
                 grenades.forEach { detonate(it.wire, completedFlight(it)) }
                 projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == grenadeEpoch }
                 t.grenadeEpoch = null
-                if (fire) fireBlocked.add(t.id)
-                return
-            }
-            if (t.power == "grenade") {
-                if (fire) fireBlocked.add(t.id)
-                fireShot(index)
                 return
             }
         }
-        if ((fire || pressed) && t.id !in fireBlocked && t.power != "grenade") fireShot(index)
+        if (fire || pressed) fireShot(index)
     }
 
     private fun fireShot(index: Int) {
@@ -1054,7 +1039,6 @@ class PracticeArena(
         if (kind == "rapid") t.machineRounds-- else t.charges--
         if (if (kind == "rapid") t.machineRounds <= 0 else t.charges <= 0) {
             val grenadeEpoch = t.ammoEpoch.takeIf { kind == "grenade" }
-            if (held[t.id] == true) fireBlocked += t.id
             t.power = ""
             t.powerTime = 0.0
             t.charges = 0
@@ -1346,20 +1330,34 @@ class PracticeArena(
         owner != target.id && (team(owner) == 0 || team(owner) != target.team)
 
     private fun starmanContacts() {
-        for (attacker in snapshot.tanks.filter { it.hp > 0 && it.starmanTime > 0 }) for (i in
-            snapshot.tanks.indices) {
-            val t = snapshot.tanks[i]
-            if (
-                t.hp > 0 &&
-                    t.id != attacker.id &&
-                    t.starmanTime == 0.0 &&
-                    (t.invulnerable == 0.0 || t.spawnProtected) &&
-                    hypot(t.x - attacker.x, t.y - attacker.y) <= 34 &&
-                    !maze.segmentBlocked(attacker.x, attacker.y, t.x - attacker.x, t.y - attacker.y)
-            )
-                hurt(i, attacker.id, true)
+        // Resolve mutual Star contacts before ordinary victims, independent of
+        // roster order. In the common no-Star case this is only a linear scan.
+        for (i in snapshot.tanks.indices) {
+            val a = snapshot.tanks[i]
+            if (a.hp <= 0 || a.starmanTime <= 0) continue
+            for (j in 0 until i) {
+                if (a.hp <= 0) break
+                val b = snapshot.tanks[j]
+                if (b.hp <= 0 || b.starmanTime <= 0 || !starContact(a, b)) continue
+                hurt(i, b.id, true)
+                hurt(j, a.id, true)
+            }
+        }
+        for (attacker in snapshot.tanks) {
+            if (attacker.hp <= 0 || attacker.starmanTime <= 0) continue
+            for (i in snapshot.tanks.indices) {
+                val target = snapshot.tanks[i]
+                if (target.hp > 0 && target.starmanTime <= 0 &&
+                    (target.invulnerable == 0.0 || target.spawnProtected) && starContact(attacker, target))
+                    hurt(i, attacker.id, true)
+            }
         }
     }
+
+    private fun starContact(a: ArenaTank, b: ArenaTank): Boolean =
+        a.id != b.id && (friendlyFire || opposes(a.id, b)) &&
+            hypot(a.x - b.x, a.y - b.y) <= 34 &&
+            !maze.segmentBlocked(a.x, a.y, b.x - a.x, b.y - a.y)
 
     private fun updateStandings() {
         data class Owned(

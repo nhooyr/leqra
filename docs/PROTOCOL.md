@@ -1,10 +1,10 @@
-# leqra v5.1.5 — current game protocol (protocol 1)
+# leqra v5.2.0 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.1.5**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.2.0**.
 
 ```json
-{"type":"server_hello","version":"5.1.5","protocol":1}
-{"type":"client_hello","version":"5.1.5","protocol":1}
+{"type":"server_hello","version":"5.2.0","protocol":1}
+{"type":"client_hello","version":"5.2.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -15,9 +15,9 @@ The sections below this release describe earlier protocol additions and are reta
 
 ## Snapshot compression
 
-Fixed-maze and Infinity clients that offer WebSocket per-message DEFLATE can receive compressed periodic snapshots. Each compressed frame contains the complete existing JSON message and uses an independent dictionary. Replaceable snapshots can still be dropped without breaking later frames. Reliable world updates and control messages use ordinary JSON text frames. Clients without the extension continue to receive all snapshots as ordinary text frames. [RFC 7692](https://www.rfc-editor.org/rfc/rfc7692.html)
+The Go server uses `github.com/coder/websocket` for WebSocket handshakes, framing, fragmentation, control frames and [per-message DEFLATE](https://www.rfc-editor.org/rfc/rfc7692.html). Fixed-maze and Infinity peers can negotiate compression without context takeover in either direction. Messages of at least 1 KiB, including large reliable world/control messages, can be compressed. Every message uses an independent dictionary, so replacing an unsent snapshot never prevents decoding a later one. Peers without the extension receive ordinary UTF-8 JSON text messages.
 
-The server negotiates no context takeover in either direction. Compressed client messages follow the same 8 KiB size limit before and after inflation, and must decode to UTF-8 text.
+The server shares immutable encoded JSON between equal views and compresses it in each connection's library writer. Reliable room/world/control messages precede replaceable snapshots; each connection retains at most one pending replaceable snapshot. Client messages are limited to 8 KiB of reassembled, inflated UTF-8 text. A separate inbound wire-byte budget permits a 512 KiB burst and refills at 256 KiB/second, bounding empty-fragment floods without another frame parser. Completed data messages and ping/pong controls share a 220-per-second transport budget. Pongs refresh idle liveness, but one incomplete data message cannot last longer than 35 seconds.
 
 ## Infinity
 
@@ -172,7 +172,7 @@ Current Laser range is `4 * (world.width + world.height)` in fixed mazes and 36 
 
 Terminal flights, victim contacts and existing Laser paths have a separate 600ms history, bounded at 128 records per actual actor and merged into snapshots in event-ID order without duplicates. This covers Starman Shotgun's 108 possible terminal pellets per actor in that window, with room for victim transitions. It keeps a nearby short shot visible when many distant shooters fill the ordinary cosmetic queue or a replaceable snapshot waits through 50–400ms of jitter. Infinity still filters these records to the recipient's view. This bounded history does not attempt to replay arbitrarily long connection outages.
 
-An active Starman also destroys tanks on body contact, including tanks with Shield charges or spawn protection. Contact respects wall separation, another active Starman, Shield hit invulnerability, and team friendly-fire rules. The kill uses the same scoring, flag drop, and respawn rules as projectile damage.
+An active Starman also destroys tanks on body contact, including tanks with Shield charges or spawn protection. Two touching active Starmen destroy each other atomically, with both kills/deaths credited normally and both pre-contact living states preserved. Infinity applies both reciprocal score changes before resolving a target, so a transient first kill cannot end a match whose final net score did not change. Contact respects wall separation and team friendly-fire rules; a single Starman still respects a non-Starman target's temporary Shield hit invulnerability. Both victims use the ordinary flag-drop and respawn paths.
 
 Frozen match reports use the public `controllerMember` field on local Player 2 rows to attribute wins to that device after a roster change. The field carries a member ID and cannot authenticate a session.
 
@@ -453,7 +453,7 @@ must both be updated: older rules validators do not understand `giant` or `scope
 
 The game page and the backend are served by the same Go process. Connect to `/ws` using WS on HTTP or WSS on HTTPS. The production upgrade requires an HTTP(S) Origin whose host matches the request Host, or an explicitly configured additional exact origin. Missing, opaque (`null`), and unrelated origins are rejected. Messages are JSON text with optional [snapshot compression](#snapshot-compression).
 
-All application messages are UTF-8 JSON objects with a `type`. Client messages are limited to 8,192 bytes, including the aggregate size of fragmented messages. Each connection has a 100-message budget per second and a separate 100-message budget for input addressed to its attached local Player 2. Each connection may send eight room actions per second. The first successful handshake, input, and ping do not count as room actions. Excess room actions return an `action_rate` error with the rejected `action`. The transport separately caps connections at 220 frames per second.
+All application messages are UTF-8 JSON objects with a `type`. Client messages are limited to 8,192 bytes after reassembly and inflation. Each connection has a 100-message budget per second and a separate 100-message budget for input addressed to its attached local Player 2. Each connection may send eight room actions per second. The first successful handshake, input, and ping do not count as room actions. Excess room actions return an `action_rate` error with the rejected `action`. The transport separately caps completed messages and ping/pong controls at 220 per second, with the wire-byte and incomplete-message bounds above.
 
 Upgrade budgets allow 120 attempts per minute and up to 256 active connections per IPv4 address or IPv6 /64. Matchmaking uses the same source identity.
 
@@ -988,6 +988,8 @@ Room/action errors include `already_joined`, `server_full`, `server_error`, `bad
 
 Protocol violations close the socket: malformed framing uses 1002; binary data 1003; invalid JSON/UTF-8 1007; invalid commands/rate limits 1008; oversized messages 1009. The server may close overloaded connections with 1013. Clients should never assume every disconnect has a clean close frame.
 
+Wire parsing and close-handshake details follow `coder/websocket`: it accepts non-minimal extended frame lengths and echoes close-frame reasons using its library policy. Those control-frame reasons never enter application JSON; application text retains strict UTF-8 validation.
+
 ## Client reconciliation and buffered playback (v2.1)
 
 Protocol 1 remains wire-compatible with the original controls. `ackSteps` is an additive server field; the matching v2.1 client and server should be upgraded together to get correct reconciliation.
@@ -1099,15 +1101,15 @@ timer expiries in one simulation step reset once. Consuming the last Shield
 charge also refills the surviving tank. The shot that consumes a weapon's final
 round/charge remains live; the tank immediately returns to full standard ammo
 with no leftover cooldown. Surviving weapon timers are not extended. Held Fire
-is retained. Ending any finite weapon (`rapid`, `scatter`, `homing`, `grenade`,
-`laser`, `cannon`) while Fire was held consumes that hold until release, whether
-the weapon depleted its ammo or its timer expired. Standard ammo is full and its
-cooldown is zero, but another standard shot requires a fresh press. A trusted
-release/repress latched between simulation ticks also counts as that fresh press.
-Passive buff expiry refills the surviving weapon without interrupting its normal
-held fire, and never clears an already-consumed hold. Grenade actions consume
-their whole hold even before the final charge. The existing limit of one rapid
-projectile per 60 Hz simulation tick is retained.
+is retained. Holding Fire keeps retrying through cooldown, full active-projectile
+capacity, pickups, passive expiry and the end of any finite weapon (`rapid`,
+`scatter`, `homing`, `grenade`, `laser`, `cannon`). No release is required. The
+final finite shot remains that simulation tick's only action; the following
+tick can use the fresh standard magazine. Timer expiry happens before weapon
+control, so a held trigger can immediately use its surviving weapon or standard
+ammo. Passive buff expiry refills the surviving weapon without interrupting held
+fire. Manual grenade detonation consumes only its current simulation tick. The
+existing limit of one rapid projectile per 60 Hz simulation tick is retained.
 
 Tank and ordinary bullet snapshots carry optional `ammoEpoch` (missing means `0`).
 Initial fresh actors start at `0`. Each refill or true respawn increments the
@@ -1151,17 +1153,17 @@ tank launches one subject to normal charges/cooldowns. Actual pickups and expiry
 refills start a fresh throw cycle: old grenades keep their natural fuse/contact
 behavior but are no longer selected by this detonator or its HUD readout. The
 final-charge automatic return to standard is the exception: `grenadeEpoch`
-retains that grenade bank, so the next fresh press detonates it, and a further
-fresh press fires standard ammo. Infinity's `grenades`/`grenadeLife` aggregates
+retains that grenade bank, so the next fresh press can detonate it. Infinity's `grenades`/`grenadeLife` aggregates
 use this control epoch separately from the magazine's `ammoUsed` epoch.
-These actions consume the whole hold, preventing same-press follow-up shots and
-preventing repeated grenade throws and standard follow-up shots during the same
-hold. The final throw replenishes standard ammo and clears its cooldown, but
-another shot still requires release followed by a fresh Fire press. A fresh
-press latched between simulation ticks also releases the consumed hold.
-Other weapon types retain hold-to-fire within the same weapon; their final
-charge/budget or timer ending still requires a new press for standard ammo. The
-next explicit release/press permits another throw. Only the authenticated socket's
+Holding Fire automatically throws another grenade whenever its 0.8-second reload
+is ready. Starman retains its existing zero cooldown and may throw one grenade
+per simulation tick while held. A fresh press with controlled live grenades
+detonates the complete bank, including boosted banks larger than three, and
+returns without firing another projectile in that tick. On the following tick,
+continued held Fire retries the selected weapon or standard ammo, subject to its
+remaining cooldown/capacity. The final throw replenishes standard ammo and clears
+its cooldown, so a continued hold can fire standard ammo on the next tick. Other
+finite weapons follow the same next-tick continuation rule. Only the authenticated socket's
 own tank can trigger this action;
 a supplied owner, target, or forged damage field has no authority.
 

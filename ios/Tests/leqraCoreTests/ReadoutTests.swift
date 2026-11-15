@@ -70,7 +70,7 @@ final class ReadoutTests: XCTestCase {
         XCTAssertEqual(readout.weapon, "GRENADE, 7.2s")
         XCTAssertEqual(readout.readiness, "DETONATE READY")
         XCTAssertEqual(readout.fireLabel, "BOOM")
-        XCTAssertEqual(readout.fireHint, "TAP TO DETONATE")
+        XCTAssertEqual(readout.fireHint, "HOLD TO THROW, TAP TO DETONATE")
     }
 
     func testInfinityUsesFullArenaGrenadeAndAmmoMetadataOutsideVisibleSnapshot() {

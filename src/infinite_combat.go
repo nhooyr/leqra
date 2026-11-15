@@ -238,10 +238,11 @@ func infiniteSpec(kind string) infiniteProjectileSpec {
 
 func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 	k := &p.kit
-	k.fireHeld = held
-	if !held || pressed {
-		k.fireBlocked = false
+	if p.HP == 0 {
+		return
 	}
+	k.fireHeld = held
+	k.fireBlocked = false
 	if k.SpawnProtected && k.Invulnerable > 1e-9 {
 		return
 	}
@@ -259,14 +260,13 @@ func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 			k.fireBlocked = held
 			return
 		}
-		if k.Power == "grenade" {
-			k.fireBlocked = held
-			a.fire(p)
-			return
-		}
 	}
-	if !k.fireBlocked && k.Power != "grenade" && (held || pressed) {
+	if held || pressed {
+		grenade, serial := k.Power == "grenade", k.ShotSerial
 		a.fire(p)
+		if grenade && k.ShotSerial != serial {
+			k.fireBlocked = held // Only the AI's next input sample uses this marker.
+		}
 	}
 }
 
@@ -528,7 +528,11 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 			continue
 		}
 		for _, target := range actors {
-			if target.HP == 0 || target.Protected && !target.kit.SpawnProtected || target.kit.StarmanTime > 0 || !a.canDamage(attacker.ID, attacker.Team, target) {
+			if target.HP == 0 || !a.canDamage(attacker.ID, attacker.Team, target) {
+				continue
+			}
+			mutual := target.kit.StarmanTime > 0
+			if !mutual && target.Protected && !target.kit.SpawnProtected {
 				continue
 			}
 			dx, dy := target.X-attacker.X, target.Y-attacker.Y
@@ -539,6 +543,20 @@ func (a *infiniteArena) resolveStarmanContacts(actors []*infinitePilot) {
 				return w.intersectsSegment(attacker.X, attacker.Y, dx, dy)
 			}) {
 				continue
+			}
+			if mutual {
+				if !a.canDamage(target.ID, target.Team, attacker) {
+					continue
+				}
+				targetContact := a.instantContact(target, "starman")
+				attackerContact := a.instantContact(attacker, "starman")
+				result := a.result
+				a.eliminatePilotWithContact(target, attacker.ID, attacker.Team, attacker.Name, targetContact)
+				a.eliminatePilotWithContact(attacker, target.ID, target.Team, target.Name, attackerContact)
+				// A mutual pair has zero net personal/team score. The temporary
+				// first +1 cannot decide a target before the reciprocal death.
+				a.result = result
+				break // A dead attacker cannot ram another overlapping tank.
 			}
 			a.eliminatePilotWithContact(target, attacker.ID, attacker.Team, attacker.Name, a.instantContact(target, "starman"))
 			if a.result != nil {

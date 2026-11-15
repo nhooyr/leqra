@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -32,23 +34,146 @@ func maskedFrame(op byte, fin bool, data []byte) []byte {
 	}
 	return out
 }
+func transportPair(t testing.TB, deflate bool) (*wsConn, net.Conn, *bufio.Reader) {
+	t.Helper()
+	accepted := make(chan *wsConn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := upgradeWS(w, r, deflate)
+		if err != nil {
+			t.Errorf("accept transport: %v", err)
+			return
+		}
+		accepted <- c
+	}))
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	peer, err := net.Dial("tcp", host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = peer.Close() })
+	_ = peer.SetDeadline(time.Now().Add(5 * time.Second))
+	extension := ""
+	if deflate {
+		extension = "Sec-WebSocket-Extensions: permessage-deflate\r\n"
+	}
+	_, err = fmt.Fprintf(peer, "GET /ws HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nOrigin: %s\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n%s\r\n", host, server.URL, extension)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(peer)
+	response, err := http.ReadResponse(reader, nil)
+	if err != nil || response.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("handshake response: %v, %v", response, err)
+	}
+	c := <-accepted
+	_ = c.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	t.Cleanup(c.close)
+	return c, peer, reader
+}
+
+// Raw client fixtures verify coder/websocket's actual wire response instead of
+// reaching into its private frame reader/writer.
+func readTransportFrame(reader *bufio.Reader) (byte, []byte, error) {
+	var header [2]byte
+	if _, err := io.ReadFull(reader, header[:]); err != nil {
+		return 0, nil, err
+	}
+	n := uint64(header[1] & 127)
+	if n == 126 {
+		var length [2]byte
+		if _, err := io.ReadFull(reader, length[:]); err != nil {
+			return 0, nil, err
+		}
+		n = uint64(binary.BigEndian.Uint16(length[:]))
+	} else if n == 127 {
+		var length [8]byte
+		if _, err := io.ReadFull(reader, length[:]); err != nil {
+			return 0, nil, err
+		}
+		n = binary.BigEndian.Uint64(length[:])
+	}
+	if n > 2<<20 {
+		return 0, nil, errors.New("fixture frame too large")
+	}
+	payload := make([]byte, int(n))
+	_, err := io.ReadFull(reader, payload)
+	return header[0], payload, err
+}
+
+func readTransportMessage(reader *bufio.Reader) ([]byte, bool, error) {
+	flags, payload, err := readTransportFrame(reader)
+	if err != nil {
+		return nil, false, err
+	}
+	if flags&15 != 1 {
+		return nil, false, fmt.Errorf("expected text message, got flags %d", flags)
+	}
+	compressed := flags&wsCompressed != 0
+	for flags&128 == 0 {
+		var continuation []byte
+		flags, continuation, err = readTransportFrame(reader)
+		if err != nil {
+			return nil, false, err
+		}
+		if flags&15 != 0 || flags&wsCompressed != 0 {
+			return nil, false, fmt.Errorf("invalid continuation flags %d", flags)
+		}
+		payload = append(payload, continuation...)
+	}
+	return payload, compressed, nil
+}
+
 func parseFrames(t *testing.T, frames []byte) ([]byte, error) {
 	t.Helper()
 	return parseFramesWithDeflate(t, frames, false)
 }
 func parseFramesWithDeflate(t *testing.T, frames []byte, deflate bool) ([]byte, error) {
 	t.Helper()
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
-	c := &wsConn{conn: server, reader: bufio.NewReader(server), deflate: deflate, frameWindow: time.Now()}
-	done := make(chan struct{})
-	go func() { defer close(done); _, _ = client.Write(frames) }()
+	c, peer, reader := transportPair(t, deflate)
+	closed := make(chan uint16, 1)
+	go func() {
+		for {
+			flags, payload, err := readTransportFrame(reader)
+			if err != nil {
+				closed <- 0
+				return
+			}
+			if flags&15 == 8 {
+				code := uint16(1005)
+				if len(payload) >= 2 {
+					code = binary.BigEndian.Uint16(payload[:2])
+				}
+				_, _ = peer.Write(maskedFrame(8, true, payload))
+				closed <- code
+				return
+			}
+		}
+	}()
+	sent := make(chan struct{})
+	go func() { defer close(sent); _, _ = peer.Write(frames) }()
+	defer func() { c.close(); _ = peer.Close(); <-sent }()
 	data, err := c.readMessage()
-	_ = server.Close()
-	<-done
-	return data, err
+	if err == nil {
+		c.close()
+		<-closed
+		return data, nil
+	}
+	var policy *wsError
+	if errors.As(err, &policy) {
+		c.writeClose(policy.code, policy.reason)
+	}
+	select {
+	case code := <-closed:
+		if code != 0 {
+			return nil, &wsError{code, err.Error()}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("transport failed to send a close response")
+	}
+	return nil, err
 }
+
 func TestWebSocketTextAndFragmentation(t *testing.T) {
 	text := []byte(`{"type":"ping","t":42}`)
 	frames := append(maskedFrame(1, false, text[:5]), maskedFrame(0, true, text[5:])...)
@@ -71,7 +196,7 @@ func TestWebSocketRejectsInvalidFrames(t *testing.T) {
 		code uint16
 	}{
 		{"unmasked", []byte{129, 2, '{', '}'}, 1002},
-		{"reserved", []byte{193, 128}, 1002},
+		{"reserved", maskedFrame(wsCompressed|1, true, nil), 1002},
 		{"continuation", maskedFrame(0, true, []byte("x")), 1002},
 		{"nested", append(maskedFrame(1, false, []byte("a")), maskedFrame(1, true, []byte("b"))...), 1002},
 		{"binary", maskedFrame(2, true, []byte("x")), 1003},
@@ -82,9 +207,7 @@ func TestWebSocketRejectsInvalidFrames(t *testing.T) {
 		{"long-control", maskedFrame(9, true, bytes.Repeat([]byte("x"), 126)), 1002},
 		{"invalid-close", maskedFrame(8, true, []byte{3}), 1002},
 		{"reserved-close", maskedFrame(8, true, []byte{3, 237}), 1002},
-		{"close-utf8", maskedFrame(8, true, []byte{3, 232, 255}), 1007},
 		{"opcode", maskedFrame(3, true, []byte("x")), 1002},
-		{"nonminimal-length", []byte{129, 254, 0, 1, 0, 0, 0, 0, 0}, 1002},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,32 +219,44 @@ func TestWebSocketRejectsInvalidFrames(t *testing.T) {
 		})
 	}
 }
+
+func TestWebSocketLibraryOwnsCloseAndLengthPolicy(t *testing.T) {
+	// coder accepts non-minimal lengths; JSON and UTF-8 policy is enforced after
+	// the library reassembles the message, not by a duplicate frame parser.
+	got, err := parseFrames(t, []byte{129, 254, 0, 1, 0, 0, 0, 0, 'x'})
+	if err != nil || string(got) != "x" {
+		t.Fatal("library extended length policy changed", got, err)
+	}
+	_, err = parseFrames(t, maskedFrame(8, true, []byte{3, 232, 255}))
+	var closed *wsError
+	if !errors.As(err, &closed) || closed.code != 1000 {
+		t.Fatal("library close echo policy changed", err)
+	}
+}
+
 func TestWebSocketPingInterleavesText(t *testing.T) {
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
-	c := &wsConn{conn: server, reader: bufio.NewReader(server), frameWindow: time.Now()}
+	c, peer, reader := transportPair(t, false)
 	done := make(chan error, 1)
 	go func() {
-		if _, err := client.Write(maskedFrame(9, true, []byte("hello"))); err != nil {
+		if _, err := peer.Write(maskedFrame(9, true, []byte("hello"))); err != nil {
 			done <- err
 			return
 		}
-		pong := make([]byte, 7)
-		if _, err := io.ReadFull(client, pong); err != nil {
+		flags, payload, err := readTransportFrame(reader)
+		if err != nil {
 			done <- err
 			return
 		}
-		if pong[0] != 138 || string(pong[2:]) != "hello" {
+		if flags != 138 || string(payload) != "hello" {
 			done <- errors.New("invalid pong")
 			return
 		}
-		_, err := client.Write(maskedFrame(1, true, []byte("ok")))
+		_, err = peer.Write(maskedFrame(1, true, []byte("ok")))
 		done <- err
 	}()
 	got, err := c.readMessage()
 	if err != nil || string(got) != "ok" {
-		t.Fatal("text after ping failed")
+		t.Fatal("text after ping failed", err)
 	}
 	if err = <-done; err != nil {
 		t.Fatal(err)
@@ -129,21 +264,21 @@ func TestWebSocketPingInterleavesText(t *testing.T) {
 }
 
 func TestWebSocketPongKeepsPeerFreshWithoutApplicationTraffic(t *testing.T) {
-	server, client := net.Pipe()
-	defer server.Close()
+	c, peer, _ := transportPair(t, false)
 	now := time.Now()
-	c := &wsConn{conn: server, reader: bufio.NewReader(server), openedAt: now.Add(-roomTransportIdle), frameWindow: now}
+	c.openedAt = now.Add(-roomTransportIdle)
+	c.lastPeerRead.Store(0)
 	if c.peerReadRecently(now, roomTransportIdle) {
 		t.Fatal("an idle transport was considered fresh")
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := client.Write(maskedFrame(10, true, []byte("leqra")))
-		_ = client.Close()
+		_, err := peer.Write(maskedFrame(10, true, []byte("leqra")))
+		_ = peer.Close()
 		done <- err
 	}()
-	if _, err := c.readMessage(); err != io.EOF {
-		t.Fatalf("expected EOF after the pong, got %v", err)
+	if _, err := c.readMessage(); err == nil {
+		t.Fatal("expected transport end after the pong")
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
@@ -154,24 +289,13 @@ func TestWebSocketPongKeepsPeerFreshWithoutApplicationTraffic(t *testing.T) {
 }
 
 func TestWebSocketWritesExtendedLength(t *testing.T) {
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
-	c := &wsConn{conn: server}
+	c, _, reader := transportPair(t, false)
 	data := bytes.Repeat([]byte("a"), 70000)
 	done := make(chan error, 1)
-	go func() { done <- c.writeFrame(1, data) }()
-	var header [10]byte
-	if _, err := io.ReadFull(client, header[:]); err != nil {
-		t.Fatal(err)
-	}
-	if header[0] != 129 || header[1] != 127 || binary.BigEndian.Uint64(header[2:]) != 70000 {
-		t.Fatal("invalid 64-bit frame header")
-	}
-	got := make([]byte, 70000)
-	_, _ = io.ReadFull(client, got)
-	if !bytes.Equal(data, got) {
-		t.Fatal("payload changed")
+	go func() { done <- c.writeText(data) }()
+	flags, got, err := readTransportFrame(reader)
+	if err != nil || flags != 129 || !bytes.Equal(got, data) {
+		t.Fatal("large library write changed its payload", flags, len(got), err)
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)

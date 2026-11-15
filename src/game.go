@@ -120,7 +120,7 @@ type Tank struct {
 	SurvivalBoss   bool              `json:"survivalBoss,omitempty"`
 	AI             *BotState         `json:"-"`
 	fireHeld       bool              // Last simulated button state.
-	fireBlocked    bool              // A grenade action consumes the entire hold, even after expiry.
+	fireBlocked    bool              // A grenade acted last sample; bots release before a fresh detonation press.
 	ID             int               `json:"id"`
 	Name           string            `json:"name"`
 	KilledBy       string            `json:"killedBy,omitempty"`
@@ -751,17 +751,15 @@ func smoothStep(value float64) float64 {
 	return t * t * (3 - 2*t)
 }
 
-// A press launches a grenade; the next fresh press detonates owned live grenades.
-// Detonation is independent of the current weapon/charges/cooldown. Holding never
-// immediately detonates, repeats a throw, or falls through to an ordinary shot.
+// Holding retries the equipped weapon every simulation sample. A fresh press
+// detonates owned grenades first, independently of weapon/charges/cooldown.
+// Returning after that action prevents a second shot in the same sample.
 func (g *Game) weaponControl(t *Tank, held, pressed bool) {
 	if !t.Alive || (g.survivalState() != nil && g.survivalState().Status != "wave") {
 		return
 	}
 	t.fireHeld = held
-	if !held || pressed {
-		t.fireBlocked = false
-	}
+	t.fireBlocked = false
 	if t.SpawnProtected && t.Invulnerable > 0 {
 		return
 	}
@@ -770,14 +768,12 @@ func (g *Game) weaponControl(t *Tank, held, pressed bool) {
 			t.fireBlocked = held
 			return
 		}
-		if t.Power == "grenade" {
-			t.fireBlocked = held
-			g.fire(t)
-			return
-		}
 	}
-	if !t.fireBlocked && t.Power != "grenade" && (held || pressed) {
-		g.fire(t)
+	if held || pressed {
+		grenade := t.Power == "grenade"
+		if g.fire(t) && grenade {
+			t.fireBlocked = held // Only the AI's next input sample uses this marker.
+		}
 	}
 }
 func (g *Game) detonateOwned(t *Tank) bool {
@@ -785,7 +781,7 @@ func (g *Game) detonateOwned(t *Tank) bool {
 		return false
 	}
 	// One press detonates all of the shooter's live grenades.
-	var owned [3]*Bullet
+	var owned [machineCapacity]*Bullet
 	count := 0
 	for _, b := range g.Bullets {
 		if !b.Dead && b.Owner == t.ID && b.AmmoEpoch == grenadeControlEpoch(t) && b.Kind == "grenade" && count < len(owned) {
@@ -1120,7 +1116,22 @@ func (g *Game) hurt(t *Tank, b *Bullet) {
 }
 
 func (g *Game) starmanRam(attacker, target *Tank) bool {
-	if attacker.StarmanTime <= 0 || target.StarmanTime > 0 || target.Invulnerable > 0 && !target.SpawnProtected || !g.canDamage(attacker.ID, target) {
+	if !attacker.Alive || !target.Alive || attacker.StarmanTime <= 0 || !g.canDamage(attacker.ID, target) {
+		return false
+	}
+	if target.StarmanTime > 0 {
+		if !g.canDamage(target.ID, attacker) {
+			return false
+		}
+		// Capture both living states before committing either death. Round and
+		// objective resolution runs after the complete contact pair.
+		targetContact := g.bulletContact(target, &Bullet{Owner: attacker.ID, Kind: "starman"})
+		attackerContact := g.bulletContact(attacker, &Bullet{Owner: target.ID, Kind: "starman"})
+		g.eliminateTank(target, attacker.ID, targetContact)
+		g.eliminateTank(attacker, target.ID, attackerContact)
+		return true
+	}
+	if target.Invulnerable > 0 && !target.SpawnProtected {
 		return false
 	}
 	g.eliminateTank(target, attacker.ID, g.bulletContact(target, &Bullet{Owner: attacker.ID, Kind: "starman"}))

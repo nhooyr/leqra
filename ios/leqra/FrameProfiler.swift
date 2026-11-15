@@ -18,6 +18,7 @@ final class FrameProfiler {
     private let badgeCountProbe: Bool
     private let hitMatrixProbe: Bool
     private let pickupMatrixProbe: Bool
+    private let eventMatrixProbe: Bool
     private let ammoRefillProbe: Bool
     private let emptyFireProbe: Bool
     private let projectileSpeedOverride: Double?
@@ -78,7 +79,8 @@ final class FrameProfiler {
         firstShotProbe = arguments.contains("--probe-first-shot")
         badgeCountProbe = arguments.contains("--probe-badge-counts")
         hitMatrixProbe = arguments.contains("--probe-hit-matrix")
-        pickupMatrixProbe = arguments.contains("--probe-pickup-matrix")
+        eventMatrixProbe = arguments.contains("--probe-event-matrix")
+        pickupMatrixProbe = arguments.contains("--probe-pickup-matrix") || eventMatrixProbe
         ammoRefillProbe = arguments.contains("--probe-ammo-refill")
         emptyFireProbe = arguments.contains("--probe-empty-fire-feedback")
         let requestedSpeed = argument("--probe-projectile-speed").flatMap(Double.init)
@@ -214,6 +216,7 @@ final class FrameProfiler {
 
     private func pickupSnapshot() -> ArenaSnapshot {
         let powers = ["regular", "rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"]
+            + (eventMatrixProbe ? ["death", "kill", "wall"] : [])
         let time = max(0, elapsed - 1), episode = Int(time / 0.55), age = time - Double(episode) * 0.55
         let power = powers[episode % powers.count]
         let stage = age < 0.1 || elapsed < 1 ? "plain" : age < 0.25 ? "pickup" : "fire"
@@ -231,6 +234,17 @@ final class FrameProfiler {
         }
         var value = ArenaSnapshot(tick: UInt64(elapsed * 60), tanks: [tank])
         value.generation = 1; value.phase = "playing"; value.players = 1; value.tankCount = 1; value.world = world
+        if ["death", "kill", "wall"].contains(power) {
+            let struck = stage != "plain"
+            if power == "death" { value.tanks[0].hp = struck ? 0 : 1 }
+            if power == "kill" { value.tanks.append(ArenaTank(id: 2, name: "PROBE TARGET", x: 510, y: 420, hp: struck ? 0 : 1, colorIndex: 1, bot: true)) }
+            if struck {
+                let x = power == "death" ? 420.0 : 510
+                value.effects = [ArenaEffect(id: episode * 1000 + 1, kind: power == "wall" ? "impact" : "hit", x: x, y: 420, owner: power == "death" ? 2 : 1)]
+            }
+            value.tanks[0].power = ""
+            return value
+        }
         if stage == "pickup", power != "regular" {
             value.effects = [ArenaEffect(id: episode * 1000 + 1, kind: "pickup", x: 420, y: 420, owner: 1)]
         }
@@ -283,13 +297,13 @@ final class FrameProfiler {
             } else if ammoSteps == 2 {
                 ammoChecks += 1
                 let fired = arena.snapshot.bullets.contains { $0.ammoEpoch == 42 }
-                if fired != expiry {
-                    ammoFailures.append(scenario + ": weapon end did not consume its hold or expiry refill blocked a fresh press")
+                if !fired {
+                    ammoFailures.append(scenario + ": held fire did not retry the refilled magazine")
                 }
             } else if !expiry && ammoSteps == 4 {
                 ammoChecks += 1
                 let fired = arena.snapshot.bullets.contains { $0.ammoEpoch == 42 }
-                if scenario == "grenade" ? fired || arena.snapshot.tanks[0].grenades != 0 : !fired {
+                if !fired || scenario == "grenade" && arena.snapshot.tanks[0].grenades != 0 {
                     ammoFailures.append(scenario + ": fresh press did not pop the final grenade or fire standard ammo")
                 }
             } else if scenario == "grenade" && ammoSteps == 7 {
@@ -300,8 +314,10 @@ final class FrameProfiler {
             }
         }
         var visible = arena.presentationSnapshot(fraction: ammoAccumulator * 60, now: elapsed)
-        visible.generation = episode + 1
-        return visible
+        // Each magazine case uses this same maze. Remap its fresh simulation
+        // IDs without forcing a full map rebuild on every ammo transition.
+        visible.generation = 1
+        return ContactProbeCase.renderSnapshot(visible, episode: episode)
     }
 
     /// The real offline simulation and presenter drive this opt-in device

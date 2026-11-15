@@ -10,6 +10,7 @@ class AmmoResetTest {
         world = if (fixed) ArenaWorld(10000.0, 10000.0, 120, 120) else null).apply {
         snapshot.tanks.first().apply { x = if (fixed) 5000.0 else 42.0; y = x; invulnerable = 0.0; spawnProtected = false }
     }
+    private fun shots(arena: PracticeArena) = arena.snapshot.effects.count { it.kind.startsWith("shot:") || it.kind == "laser" }
     private fun full(tank: ArenaTank, power: String, epoch: Long, remoteGrenades: Int = 0) {
         assertEquals(power, tank.power)
         assertEquals(epoch, tank.ammoEpoch)
@@ -59,58 +60,35 @@ class AmmoResetTest {
         full(tank, "", 1)
     }
 
-    @Test fun everyWeaponDepletionRequiresAFreshPressForTheReadyStandardBank() {
+    @Test fun everyWeaponDepletionKeepsTryingTheReadyStandardBankWithoutASameTickDoubleShot() {
         for (fixed in listOf(false, true)) for (kind in weapons) {
-            val arena = arena(fixed)
-            val tank = arena.snapshot.tanks.first()
+            val arena = arena(fixed); val tank = arena.snapshot.tanks.first()
             PracticeArena.applyPower(tank, kind)
             if (kind == "rapid") tank.machineRounds = 1 else tank.charges = 1
-            val oldEpoch = tank.ammoEpoch
-            arena.step(GameInput(fire = true), dt)
-            full(tank, "", oldEpoch + 1, if (kind == "grenade") 1 else 0)
-            val ready = PilotReadout(tank, arena.snapshot, false)
-            assertEquals(5, ready.available); assertEquals(if (kind == "grenade") "DETONATE READY" else "READY", ready.readiness)
-            if (kind != "laser") assertTrue(arena.snapshot.bullets.any { it.ammoEpoch == oldEpoch })
-            repeat(8) { arena.step(GameInput(fire = true), dt) }
-            assertFalse("Held $kind cannot fire the restored standard bank", arena.snapshot.bullets.any { it.kind.isEmpty() })
-            assertFalse(arena.snapshot.effects.any { it.kind == "shot:" })
-            arena.step(GameInput(), dt)
-            arena.step(GameInput(fire = true), dt)
-            if (kind == "grenade") {
-                assertFalse("The first fresh press pops the final grenade", arena.snapshot.bullets.any { it.kind.isEmpty() || it.kind == "grenade" })
-                arena.step(GameInput(), dt)
-                arena.step(GameInput(fire = true), dt)
-            }
-            assertEquals("Fresh standard shot after $kind", 1, arena.snapshot.bullets.count { it.kind.isEmpty() && it.ammoEpoch == tank.ammoEpoch })
-        }
-    }
-
-    @Test fun everyHeldWeaponExpiryRequiresReleaseButAFreshExpiryTickPressDoesNot() {
-        for (fixed in listOf(false, true)) for (kind in weapons) {
-            val arena = arena(fixed)
-            val tank = arena.snapshot.tanks.first()
-            PracticeArena.applyPower(tank, kind)
-            arena.step(GameInput(fire = true), dt)
-            tank.powerTime = .001
             val epoch = tank.ammoEpoch
             arena.step(GameInput(fire = true), dt)
-            full(tank, "", epoch + 1)
-            repeat(8) { arena.step(GameInput(fire = true), dt) }
-            assertFalse("Held $kind expiry cannot fire standard", arena.snapshot.bullets.any { it.kind.isEmpty() })
-            assertFalse(arena.snapshot.effects.any { it.kind == "shot:" })
-            arena.step(GameInput(), dt)
+            full(tank, "", epoch + 1, if (kind == "grenade") 1 else 0)
+            assertFalse("Last $kind charge cannot also shoot standard", arena.snapshot.bullets.any { it.kind.isEmpty() })
+            val serial = shots(arena)
             arena.step(GameInput(fire = true), dt)
+            assertEquals("Held $kind continues next tick", serial + 1, shots(arena))
             assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
-
-            val fresh = arena(fixed)
-            val pilot = fresh.snapshot.tanks.first()
-            PracticeArena.applyPower(pilot, kind, duration = .001)
-            fresh.step(GameInput(fire = true), dt)
-            assertEquals("Fresh press at $kind expiry is usable", 1, fresh.snapshot.bullets.count { it.kind.isEmpty() })
         }
     }
 
-    @Test fun passiveExpiryKeepsCurrentWeaponAutofireAndNeverReleasesAConsumedHold() {
+    @Test fun everyHeldWeaponExpiryFiresTheNewBankImmediately() {
+        for (fixed in listOf(false, true)) for (kind in weapons) {
+            val arena = arena(fixed); val tank = arena.snapshot.tanks.first()
+            PracticeArena.applyPower(tank, kind); arena.step(GameInput(fire = true), dt)
+            tank.powerTime = .001; val epoch = tank.ammoEpoch; val serial = shots(arena)
+            arena.step(GameInput(fire = true), dt)
+            assertEquals("", tank.power); assertEquals(epoch + 1, tank.ammoEpoch)
+            assertEquals("Held $kind expiry keeps firing", serial + 1, shots(arena))
+            assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+        }
+    }
+
+    @Test fun passiveExpiryKeepsTryingTheCurrentWeaponAndRestoredStandardBank() {
         for (fixed in listOf(false, true)) for (buff in listOf("shield", "speed", "ghost", "starman")) {
             val arena = arena(fixed)
             val tank = arena.snapshot.tanks.first()
@@ -127,8 +105,8 @@ class AmmoResetTest {
             arena.step(GameInput(fire = true), dt)
             PracticeArena.applyPower(tank, buff, duration = .001, starDuration = .001)
             repeat(8) { arena.step(GameInput(fire = true), dt) }
-            assertFalse("Passive $buff expiry cannot release consumed hold", arena.snapshot.bullets.any { it.kind.isEmpty() })
-            assertEquals(5, PilotReadout(tank, arena.snapshot, !fixed).available)
+            assertTrue("Passive $buff expiry keeps held standard firing", arena.snapshot.bullets.any { it.kind.isEmpty() })
+            assertEquals(4, PilotReadout(tank, arena.snapshot, !fixed).available)
         }
     }
 
@@ -169,28 +147,21 @@ class AmmoResetTest {
         assertTrue("Reset discards queued press edges", arena.snapshot.bullets.isEmpty())
     }
 
-    @Test fun finalGrenadeConsumesItsHoldAcrossRefillsAndExpiryUntilRelease() {
+    @Test fun finalGrenadeAndActualRefillsKeepHeldFireTryingWhileOldFusesStayNatural() {
         for (fixed in listOf(false, true)) {
-            val arena = arena(fixed)
-            val tank = arena.snapshot.tanks.first()
-            PracticeArena.applyPower(tank, "grenade")
-            tank.charges = 1
-            arena.step(GameInput(fire = true), dt)
-            assertEquals("", tank.power)
-            val grenade = arena.snapshot.bullets.single().id
-            repeat(8) { arena.step(GameInput(fire = true), dt) }
-            assertEquals(listOf(grenade), arena.snapshot.bullets.map { it.id })
-            arena.snapshot.pickups = listOf(ArenaPickup(id = 999, x = tank.x, y = tank.y, type = "speed"))
-            arena.step(GameInput(fire = true), dt)
-            assertTrue(tank.speedTime > 0)
-            PracticeArena.applyPower(tank, "shield", duration = .001)
-            repeat(8) { arena.step(GameInput(fire = true), dt) }
-            assertEquals(listOf(grenade), arena.snapshot.bullets.map { it.id })
-            assertEquals(5, PilotReadout(tank, arena.snapshot, !fixed).available)
-            arena.step(GameInput(), dt)
+            val arena = arena(fixed); val tank = arena.snapshot.tanks.first()
+            PracticeArena.applyPower(tank, "grenade"); tank.charges = 1
+            arena.step(GameInput(fire = true), dt); val grenade = arena.snapshot.bullets.single().id
             arena.step(GameInput(fire = true), dt)
             assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
-            assertTrue(arena.snapshot.bullets.any { it.id == grenade })
+            val serial = shots(arena)
+            arena.snapshot.pickups = listOf(ArenaPickup(id = 999, x = tank.x, y = tank.y, type = "speed"))
+            arena.step(GameInput(fire = true), dt)
+            assertEquals(serial + 1, shots(arena)); assertNull(tank.grenadeEpoch)
+            assertTrue("A true refill leaves old grenades on natural fuses", arena.snapshot.bullets.any { it.id == grenade })
+            PracticeArena.applyPower(tank, "shield", duration = .001)
+            arena.step(GameInput(fire = true), dt)
+            assertEquals(serial + 2, shots(arena))
         }
     }
 
@@ -212,16 +183,16 @@ class AmmoResetTest {
             assertEquals("DETONATE READY", hud.readiness)
             assertEquals("BOOM", hud.fireLabel)
             repeat(5) { arena.step(GameInput(fire = true), dt) }
-            assertEquals(listOf(grenade.id), arena.snapshot.bullets.map { it.id })
-            arena.step(GameInput(), dt)
-            arena.step(GameInput(fire = true), dt)
-            assertTrue("A fresh press pops the final grenade without a standard shot", arena.snapshot.bullets.isEmpty())
-            assertNull(tank.grenadeEpoch)
-            repeat(5) { arena.step(GameInput(fire = true), dt) }
-            assertTrue("Popping consumes the whole hold", arena.snapshot.bullets.isEmpty())
-            arena.step(GameInput(), dt)
-            arena.step(GameInput(fire = true), dt)
+            assertTrue(arena.snapshot.bullets.any { it.id == grenade.id })
             assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+            arena.step(GameInput(), dt)
+            arena.step(GameInput(fire = true), dt)
+            assertFalse("A fresh press pops the final grenade", arena.snapshot.bullets.any { it.kind == "grenade" })
+            assertEquals("Pop does not also shoot", 1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+            assertNull(tank.grenadeEpoch)
+            tank.cooldown = 0.0
+            arena.step(GameInput(fire = true), dt)
+            assertEquals("The next held tick retries standard", 2, arena.snapshot.bullets.count { it.kind.isEmpty() })
         }
         for (power in PracticeArena.pickupKinds) {
             val arena = arena()
@@ -278,39 +249,22 @@ class AmmoResetTest {
         assertEquals(115, star.snapshot.bullets.count { it.ammoEpoch == pilot.ammoEpoch })
     }
 
-    @Test fun aRefillPreservesTheRapidTickGuardAndPhysicalHeldGrenadeCycle() {
-        val arena = arena()
-        val tank = arena.snapshot.tanks.first()
+    @Test fun aRefillPreservesRapidTickGuardAndStartsAFreshHeldGrenadeBank() {
+        val arena = arena(); val tank = arena.snapshot.tanks.first()
         PracticeArena.applyPower(tank, "rapid")
         val fire = PracticeArena::class.java.getDeclaredMethod("fireShot", Int::class.javaPrimitiveType).apply { isAccessible = true }
-        fire.invoke(arena, 0)
-        PracticeArena.applyPower(tank, "shield")
-        fire.invoke(arena, 0)
+        fire.invoke(arena, 0); PracticeArena.applyPower(tank, "shield"); fire.invoke(arena, 0)
         arena.step(GameInput(fire = true), dt)
-        assertEquals(2, arena.snapshot.bullets.size)
-        assertEquals(179, tank.machineRounds)
-        val grenades = arena()
-        val pilot = grenades.snapshot.tanks.first()
-        PracticeArena.applyPower(pilot, "grenade")
-        grenades.step(GameInput(fire = true), dt)
+        assertEquals(2, arena.snapshot.bullets.size); assertEquals(179, tank.machineRounds)
+        val grenades = arena(); val pilot = grenades.snapshot.tanks.first()
+        PracticeArena.applyPower(pilot, "grenade"); grenades.step(GameInput(fire = true), dt)
         val old = grenades.snapshot.bullets.single().id
-        PracticeArena.applyPower(pilot, "speed")
-        grenades.step(GameInput(fire = true), dt)
-        assertEquals(1, grenades.snapshot.bullets.size)
-        assertEquals(0, pilot.grenades)
-        assertEquals("GRENADE ×3, 15s", PilotReadout(pilot, grenades.snapshot, false).weapon)
+        PracticeArena.applyPower(pilot, "speed"); grenades.step(GameInput(fire = true), dt)
+        assertEquals(2, grenades.snapshot.bullets.size); assertEquals(1, pilot.grenades)
         grenades.step(GameInput(), dt); grenades.step(GameInput(fire = true), dt)
-        assertEquals(2, grenades.snapshot.bullets.size)
-        assertEquals(1, pilot.grenades)
-        grenades.step(GameInput(), dt); grenades.step(GameInput(fire = true), dt)
-        assertEquals(listOf(old), grenades.snapshot.bullets.map { it.id })
-        grenades.snapshot.tanks += ArenaTank(id = 2, name = "Target", x = pilot.x + 100, y = pilot.y)
-        val shells = PracticeArena::class.java.getDeclaredField("projectiles").run { isAccessible = true; get(grenades) as List<*> }
-        val wire = shells.single()!!.let { shell -> shell.javaClass.getDeclaredField("wire").run { isAccessible = true; get(shell) as ArenaBullet } }
-        wire.life = .001
-        grenades.step(GameInput(), dt)
-        assertEquals(0, grenades.snapshot.tanks[1].hp)
-        assertTrue(grenades.snapshot.effects.any { it.kind == "blast" && it.flight?.id == old })
+        assertEquals("Pop controls only the new bank", listOf(old), grenades.snapshot.bullets.map { it.id })
+        pilot.cooldown = 0.0; grenades.step(GameInput(fire = true), dt)
+        assertEquals("Held throw resumes after pop tick", 2, grenades.snapshot.bullets.size)
     }
 
     @Test fun finalShieldChargeAndRespawnEachStartAFullBank() {

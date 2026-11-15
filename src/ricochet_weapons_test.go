@@ -175,33 +175,34 @@ func TestRemoteGrenadeLaunchHoldThenPress(t *testing.T) {
 	if len(g.Bullets) != 1 || g.Bullets[0].Life != grenadeFuse || p.Charges != 2 {
 		t.Fatal("wrong launch/fuse")
 	}
-	b := g.Bullets[0]
-	b.X, b.Y = 300, 50
-	for i := 0; i < 120; i++ {
-		p.Cooldown = 0
-		g.Tick++ // Held Machine gun fires once on each authoritative simulation tick.
-		g.weaponControl(p, true, false)
+	first := g.Bullets[0]
+	first.X, first.Y = 300, 50
+	g.Tick++
+	g.weaponControl(p, true, false)
+	if first.Dead || p.ShotSerial != 1 {
+		t.Fatal("holding bypassed grenade reload or detonated it")
 	}
-	if b.Dead || p.Charges != 2 || len(g.Bullets) != 1 {
-		t.Fatal("hold detonates or repeats")
+	p.Cooldown = 0
+	g.Tick++
+	g.weaponControl(p, true, false)
+	if p.ShotSerial != 2 || p.Charges != 1 || len(g.Bullets) != 2 || first.Dead {
+		t.Fatal("ready held trigger did not throw another grenade")
 	}
-	g.weaponControl(p, false, false)
+	g.Tick++
 	g.weaponControl(p, true, true)
-	if !b.Dead || p.Charges != 2 {
-		t.Fatal("next press did not detonate without a charge")
+	if p.ShotSerial != 2 || p.Charges != 1 || !first.Dead || !g.Bullets[1].Dead {
+		t.Fatal("fresh press failed to pop the bank exclusively")
 	}
-	for i := 0; i < 90; i++ {
-		p.Cooldown = 0
-		g.Tick++ // Held Machine gun fires once on each authoritative simulation tick.
-		g.weaponControl(p, true, false)
+	p.Cooldown = 0
+	g.Tick++
+	g.weaponControl(p, true, false)
+	if p.ShotSerial != 3 || p.Power != "" || len(g.Bullets) != 3 {
+		t.Fatal("continued hold did not make exactly one final throw")
 	}
-	if len(g.Bullets) != 1 {
-		t.Fatal("detonate hold also launched")
-	}
-	g.weaponControl(p, false, false)
-	g.weaponControl(p, true, true)
-	if len(g.Bullets) != 2 || p.Charges != 1 {
-		t.Fatal("next throw failed")
+	g.Tick++
+	g.weaponControl(p, true, false)
+	if p.ShotSerial != 4 || len(g.Bullets) != 4 || g.Bullets[3].Kind != "" {
+		t.Fatal("standard fire did not resume on the tick after the last grenade")
 	}
 }
 func TestRemoteGrenadeDetonatesDuringLaunchCooldown(t *testing.T) {
@@ -264,33 +265,28 @@ func TestRemoteGrenadeLastChargeKeepsControlWhileWeaponSwitchAndExpiryStartFresh
 	}
 }
 
-func TestRemoteGrenadeHoldThroughFuseDoesNotRepeat(t *testing.T) {
+func TestRemoteGrenadeHoldThroughFuseKeepsTryingWithoutDetonating(t *testing.T) {
 	for _, charges := range []int{1, 3} {
-		g, p := grenadeGame()
-		p.Charges = charges
-		g.weaponControl(p, true, true)
-		g.Bullets[0].X, g.Bullets[0].Y, g.Bullets[0].VX = 350, 50, 0
-		for i := 0; i < int(grenadeFuse/tickDT)+60; i++ {
-			p.Cooldown = 0
-			g.weaponControl(p, true, false)
-			g.updateBullets(tickDT)
+		h := newMachineSynergyArena(false)
+		h.grant("grenade")
+		h.tank.Charges = charges
+		h.stepHeld(true, true)
+		first := h.game.Bullets[0]
+		first.X, first.Y, first.VX, first.VY = 350, 50, 0, 0
+		for range int(grenadeFuse/tickDT) + 120 {
+			h.stepHeld(true, false)
 		}
-		if charges > 1 {
-			if len(g.Bullets) != 0 || p.Charges != charges-1 {
-				t.Fatal("holding repeated a grenade throw")
-			}
-		} else {
-			if p.Power != "" || p.Charges != 0 || p.ShotSerial != 1 || !p.fireBlocked || len(g.Bullets) != 0 {
-				t.Fatal("last grenade hold leaked a standard shot or lost fresh ammo")
-			}
-			for _, b := range g.Bullets {
-				if b.Kind == "grenade" {
-					t.Fatal("holding repeated an old-epoch grenade")
-				}
+		if !first.Dead || h.tank.Power != "" || h.tank.Charges != 0 || h.tank.ShotSerial < uint64(charges+1) {
+			t.Fatal("held fire failed to throw remaining grenades, preserve natural fuse, or continue with standard ammo")
+		}
+		for _, b := range h.game.Bullets {
+			if b.Kind == "grenade" {
+				t.Fatal("continued hold reset a thrown grenade's natural fuse")
 			}
 		}
 	}
 }
+
 func TestRemoteGrenadeDeadOwnerCannotPressButFuseStillWorks(t *testing.T) {
 	g, p := grenadeGame()
 	g.fire(p)

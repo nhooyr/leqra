@@ -359,20 +359,18 @@ class CoreParityTest {
     }
 
     @Test
-    fun grenadeNeedsReleaseThenPressAndNeverDamagesItsOwner() {
+    fun heldGrenadesAutoThrowAndFreshPressPopsOnlyThatTickWithoutSelfDamage() {
         for (boosted in listOf(false, true)) {
-            val a = arena("compact")
-            val t = a.snapshot.tanks[0]
+            val a = arena("compact"); val t = a.snapshot.tanks[0]
             equip(t, "grenade", if (boosted) "starman" else "ghost")
-            advance(a, GameInput(fire = true), 30)
-            assertEquals(1, a.snapshot.bullets.count { it.kind == "grenade" })
+            advance(a, GameInput(fire = true), if (boosted) 4 else 49)
+            assertEquals(if (boosted) 4 else 2, a.snapshot.bullets.count { it.kind == "grenade" })
             assertFalse(a.snapshot.effects.any { it.kind == "blast" })
-            advance(a)
-            advance(a, GameInput(fire = true))
+            advance(a); advance(a, GameInput(fire = true))
             assertFalse(a.snapshot.bullets.any { it.kind == "grenade" })
-            assertTrue(a.snapshot.effects.any { it.kind == "blast" })
-            assertEquals(1, t.hp)
-            assertEquals(if (boosted) 3 else 2, t.charges)
+            assertTrue(a.snapshot.effects.any { it.kind == "blast" }); assertEquals(1, t.hp)
+            t.cooldown = 0.0; advance(a, GameInput(fire = true))
+            assertEquals(1, a.snapshot.bullets.count { it.kind == "grenade" })
         }
     }
 
