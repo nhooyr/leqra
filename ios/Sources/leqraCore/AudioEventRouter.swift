@@ -23,7 +23,11 @@ public struct AudioEventRouter: Sendable {
     private var lastExplosion = -Double.infinity
     private var lastGrenade = -Double.infinity
     private var lastRicochet = -Double.infinity
-    private var lastMachineShot = -Double.infinity
+    private var machineShotDue = -Double.infinity
+    private var machineShotClock = -Double.infinity
+    private var machineShotArrival = -Double.infinity
+    private var machineSourceHighWater: Int?
+    private var machinePlayedSource: Int?
     private var homingLocked = false
     private var lastHomingWarning = -Double.infinity
     private var spectatorFocus: Int?
@@ -44,6 +48,7 @@ public struct AudioEventRouter: Sendable {
             generation = snapshot.generation
             spectatorFocus = focus
             baselineEffectID = snapshot.effects.map(\.id).max() ?? 0
+            machineShotClock = now
             for bullet in snapshot.bullets { bounceCounts[bullet.id] = bullet.bounces }
             // Countdown is current presentation, rather than retained combat
             // history. Joining a live round must not replay its effects or GO.
@@ -51,6 +56,8 @@ public struct AudioEventRouter: Sendable {
             appendHomingWarning(snapshot, localTank: localTank, now: now, into: &requests)
             return requests
         }
+        if now < machineShotClock { machineShotDue = -.infinity; machineShotArrival = -.infinity }
+        machineShotClock = now
 
         appendPhaseCues(snapshot, infinity: infinity, online: online, into: &requests)
         appendHomingWarning(snapshot, localTank: localTank, now: now, into: &requests)
@@ -93,8 +100,27 @@ public struct AudioEventRouter: Sendable {
             if let shot {
                 let shooter = snapshot.tanks.first { $0.id == (effect.player ?? effect.owner) }
                 if shot == .rapid || (shooter?.starmanTime ?? 0) > 0 && shot != .grenade {
-                    guard now - lastMachineShot >= AudioSynthesis.repeatedShotInterval else { continue }
-                    lastMachineShot = now
+                    let interval = AudioSynthesis.repeatedShotInterval, tolerance = 1.0 / 60
+                    let sourceTick = effect.tick.flatMap { $0 >= 0 ? $0 : nil }
+                    if let tick = sourceTick {
+                        if let high = machineSourceHighWater, tick < high { continue }
+                        machineSourceHighWater = tick
+                    }
+                    // Trusted source time preserves cadence when 15 Hz events
+                    // arrive in uneven snapshot batches. A real-arrival floor
+                    // prevents backlog or same-frame bursts. Legacy events
+                    // without a tick retain a phase-preserving deadline.
+                    guard now - machineShotArrival + 1e-12 >= interval / 2 else { continue }
+                    if let tick = sourceTick {
+                        if let previous = machinePlayedSource,
+                           Double(tick) - Double(previous) + 1e-12 < interval * 60 { continue }
+                        machinePlayedSource = tick
+                        machineShotDue = now + interval
+                    } else {
+                        guard now + tolerance + 1e-12 >= machineShotDue else { continue }
+                        machineShotDue = max(now, machineShotDue) + interval
+                    }
+                    machineShotArrival = now
                 }
                 requests.append(AudioCueRequest(cue: shot, local: own))
                 continue

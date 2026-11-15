@@ -14,6 +14,20 @@ const (
 	maxShieldCharges    = 5
 )
 
+func machineProjectileSpeed(t *Tank) float64 {
+	if t.Power == "rapid" && t.StarmanTime > 0 {
+		return machineSpeed * 2
+	}
+	return machineSpeed
+}
+
+func machineProjectileRange(t *Tank, ordinaryRange float64) float64 {
+	if t.Power == "rapid" && t.StarmanTime > 0 {
+		return ordinaryRange * 2
+	}
+	return ordinaryRange
+}
+
 // Old deterministic fixtures may specify only Shield. Treat that as one charge;
 // real pickups always initialize the explicit charge count.
 func shieldCount(t *Tank) int {

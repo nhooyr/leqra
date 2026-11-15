@@ -379,7 +379,7 @@ func (g *Game) godlikeSafeShot(t, e *Tank, angle float64) bool {
 		radius, left = laserRadius, g.laserRange()
 	}
 	if t.Power == "rapid" {
-		radius, left = machineRadius, g.machineTravelRange()
+		radius, left = machineRadius, machineProjectileRange(t, g.machineTravelRange())
 	}
 	ex, ey := g.botLead(t, e, tuneBot("godlike"))
 	x, y, ux, uy := t.X, t.Y, math.Cos(angle), math.Sin(angle)

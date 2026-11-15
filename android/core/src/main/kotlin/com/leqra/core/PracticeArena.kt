@@ -971,7 +971,7 @@ class PracticeArena(
         val t = snapshot.tanks[index]
         val kind = t.power
         val boosted = t.starmanTime > 0
-        var spec = spec(kind)
+        var spec = spec(kind, boosted)
         val world = maze.world
         if (world != null) {
             if (kind == "rapid")
@@ -1003,6 +1003,12 @@ class PracticeArena(
                     effect("impact", t.x, t.y, t.id)
                     continue
                 }
+                val muzzle = max(0.0, (if (kind == "cannon") 32.0 else 28.0) - launch.distance)
+                val launchPath = launch.distance + muzzle
+                val life = if (kind == "rapid" && boosted) {
+                    if (world != null) max(0.0, world.width + world.height - launchPath) / spec.speed
+                    else (rapidSpec.life * rapidSpec.speed * 2 + launchPath) / spec.speed
+                } else spec.life
                 val p =
                     Projectile(
                         ArenaBullet(
@@ -1014,7 +1020,7 @@ class PracticeArena(
                             owner = t.id,
                             kind = kind,
                             colorIndex = t.colorIndex,
-                            life = spec.life,
+                            life = life,
                             ammoEpoch = t.ammoEpoch,
                         ),
                         boosted = boosted,
@@ -1028,10 +1034,10 @@ class PracticeArena(
                     p.seekDelay = .04
                     p.rangeLeft = p.rangeLeft?.minus(launch.distance)
                 }
-                val muzzle = max(0.0, (if (kind == "cannon") 32.0 else 28.0) - launch.distance)
                 if (advance(p, muzzle / spec.speed, recordTime = false)) projectiles.add(p)
             }
-            if (!boosted || kind == "grenade" || time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0)) {
+            // Rapid audio has one display-time gate; do not sparsify its source a second time.
+            if (!boosted || kind == "rapid" || kind == "grenade" || time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0)) {
                 nextBoostEffects[t.id] = time + 4.0 / 60
                 effect("shot:$kind", t.x, t.y, t.id)
             }
@@ -1450,6 +1456,10 @@ class PracticeArena(
         )
 
         private val rapidSpec = WeaponSpec(846.0, 3.5 / 3, 18 * 84.0 / 846, 0.0, 115)
+        private val starRapidSpec = rapidSpec.let { ordinary ->
+            val speed = ordinary.speed * 2
+            ordinary.copy(speed = speed, life = (ordinary.life * ordinary.speed * 2 + 28) / speed)
+        }
         private val scatterSpec = WeaponSpec(846.0, 3.5, 3.9, .27, 12)
         private val homingSpec = WeaponSpec(235.0, 5.0, 18 * 84.0 / 235, .36, 3)
         private val grenadeSpec = WeaponSpec(205.0, 6.0, 10.0, .8, 3)
@@ -1467,6 +1477,9 @@ class PracticeArena(
                 "laser" -> laserSpec
                 else -> standardSpec
             }
+
+        fun spec(kind: String, boosted: Boolean) =
+            if (kind == "rapid" && boosted) starRapidSpec else spec(kind)
 
         fun applyPower(
             tank: ArenaTank,

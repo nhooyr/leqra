@@ -119,7 +119,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         var tails = FloatArray(1024)
         var count = 0
 
-        fun add(b: ArenaBullet, originX: Double, originY: Double) {
+        fun add(b: ArenaBullet, originX: Double, originY: Double, maze: InfiniteMaze?) {
             if ((count + 1) * 4 > tails.size) {
                 heads = heads.copyOf(heads.size * 2)
                 tails = tails.copyOf(tails.size * 2)
@@ -127,8 +127,15 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             val x = (b.x - originX).toFloat()
             val y = (b.y - originY).toFloat()
             val length = hypot(b.vx, b.vy)
-            val dx = if (length > 0) (b.vx / length * 8).toFloat() else 8f
-            val dy = if (length > 0) (b.vy / length * 8).toFloat() else 0f
+            val spec = PracticeArena.spec("rapid")
+            var tail = (8 * length / spec.speed).coerceIn(8.0, 16.0)
+            val ux = if (length > 0) b.vx / length else 1.0
+            val uy = if (length > 0) b.vy / length else 0.0
+            // A longer backward streak must stay on this side of a just-ricocheted wall.
+            if (tail > 8 && maze != null)
+                tail *= maze.rayHit(b.x, b.y, -ux * tail, -uy * tail, spec.radius)?.fraction ?: 1.0
+            val dx = (ux * tail).toFloat()
+            val dy = (uy * tail).toFloat()
             heads[count * 2] = x
             heads[count * 2 + 1] = y
             tails[count * 4] = x - dx
@@ -924,7 +931,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             if (!isVisible(bullet.x, bullet.y, if (bullet.kind == "rapid") 45.0 else 128.0))
                 continue
             val color = Math.floorMod(bullet.colorIndex, 8)
-            if (bullet.kind == "rapid") rapidBatches[color].add(bullet, originX, originY)
+            if (bullet.kind == "rapid") rapidBatches[color].add(bullet, originX, originY, geometry)
             else {
                 var history = projectileHistory[bullet.id]
                 if (history == null || history.kind != bullet.kind || history.color != color) {

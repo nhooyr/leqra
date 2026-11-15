@@ -20,6 +20,7 @@ final class FrameProfiler {
     private let pickupMatrixProbe: Bool
     private let ammoRefillProbe: Bool
     private let emptyFireProbe: Bool
+    private let projectileSpeedOverride: Double?
     private var ammoArena: PracticeArena?
     private var ammoEpisode = -1
     private var ammoAccumulator = 0.0
@@ -80,6 +81,8 @@ final class FrameProfiler {
         pickupMatrixProbe = arguments.contains("--probe-pickup-matrix")
         ammoRefillProbe = arguments.contains("--probe-ammo-refill")
         emptyFireProbe = arguments.contains("--probe-empty-fire-feedback")
+        let requestedSpeed = argument("--probe-projectile-speed").flatMap(Double.init)
+        projectileSpeedOverride = requestedSpeed.flatMap { $0.isFinite && $0 > 0 && $0 <= 4000 ? $0 : nil }
         if arguments.contains("--probe-fixed") {
             world = FixedArena(rules: RoomRules(), name: "PROBE", colorIndex: 0, botCount: 0, seed: 42).world
         } else { world = nil }
@@ -156,7 +159,7 @@ final class FrameProfiler {
             let owner = index / 115, age = index % 115
             let angle = Double(owner) * 0.7 + Double(serial - age) * 0.018
             let distance = Double(age) * (weapon == "homing" ? 4 : 7) + (time * 60).truncatingRemainder(dividingBy: 1) * 7
-            let speed = weapon == "homing" ? 240.0 : 420.0
+            let speed = projectileSpeedOverride ?? (weapon == "homing" ? 240.0 : 420.0)
             let rawX = cos(angle) * distance
             var x = centerX + rawX, velocity = cos(angle) * speed, bounces = 0
             if reflects && projectileKind != "cannon" {
@@ -195,8 +198,9 @@ final class FrameProfiler {
             let shot = Int(floor(max(0, time - 1) / 0.8)), age = time - 1 - Double(shot) * 0.8
             value.bullets = []; value.effects = []; value.boostedBulletIds = []
             if age >= 0 && age < 0.25 {
-                value.bullets = [ArenaBullet(id: shot + 1, x: centerX + 32 + age * 420, y: centerY,
-                    vx: 420, owner: 1, kind: projectileKind, life: 5)]
+                let speed = projectileSpeedOverride ?? 420
+                value.bullets = [ArenaBullet(id: shot + 1, x: centerX + 32 + age * speed, y: centerY,
+                    vx: speed, owner: 1, kind: projectileKind, life: 5)]
                 value.effects = [ArenaEffect(id: shot + 1, kind: "shot:" + projectileKind, x: centerX, y: centerY, owner: 1)]
                 if weapon == "laser" {
                     value.bullets = []
@@ -428,6 +432,7 @@ final class FrameProfiler {
             "bulletsMS": distribution(9), "effectsMS": distribution(10),
             "mapRasterMS": distribution(11), "mapInstallMS": distribution(12),
             "projectileCreations": projectileCreations, "effectCreations": effectCreations, "mapRebuilds": mapRebuilds]
+        if let projectileSpeedOverride { report["projectileSpeed"] = projectileSpeedOverride }
         if let motionMode {
             report["motion"] = motionMode
             report["speedWorldPerSecond"] = distribution(13, multiplier: 1)

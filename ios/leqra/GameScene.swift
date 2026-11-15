@@ -6,9 +6,11 @@ import leqraCore
 private struct ProjectileStyle: Hashable {
     let kind: String
     let colorIndex: Int
+    let rapidTracerLength: Int
     init(_ bullet: ArenaBullet) {
         kind = bullet.kind
         colorIndex = max(0, bullet.colorIndex) % 8
+        rapidTracerLength = ProjectileAppearance.rapidTracerLength(bullet)
     }
 }
 
@@ -255,12 +257,15 @@ final class GameScene: SKScene {
         }
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             for color in 0..<8 {
-                let style = ProjectileStyle(ArenaBullet(kind: kind, colorIndex: color))
-                combatTextures.append(NativeArt.projectile(kind: kind, color: color))
-                for _ in 0..<(kind == "scatter" ? 3 : 1) {
-                    recycleProjectile(ProjectileNode(style: style))
+                for speed in kind == "rapid" ? [846.0, 1692] : [0] {
+                    let style = ProjectileStyle(ArenaBullet(vx: speed, kind: kind, colorIndex: color))
+                    combatTextures.append(NativeArt.projectile(kind: kind, color: color, rapidTracerLength: style.rapidTracerLength))
+                    for _ in 0..<(kind == "scatter" ? 3 : 1) {
+                        recycleProjectile(ProjectileNode(style: style))
+                    }
+                    if kind != "rapid" { _ = trailNode(style) }
                 }
-                if kind != "rapid" { _ = trailNode(style) }
+                if kind == "rapid" { combatTextures.append(NativeArt.projectile(kind: kind, color: color, rapidTracerLength: 0)) }
             }
         }
         combatTextures.append(NativeArt.missileFlame())
@@ -279,12 +284,20 @@ final class GameScene: SKScene {
         var index = 0
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             for color in 0..<8 {
-                let style = ProjectileStyle(ArenaBullet(kind: kind, colorIndex: color))
-                guard let node = projectilePool[style]?.first else { continue }
-                node.update(ArenaBullet(x: Double(index % 8) * 48 + 24, y: -Double(index / 8) * 48 - 24,
-                                      vx: 420, kind: kind, colorIndex: color, life: 10), time: 0)
-                warmup.addChild(node); index += 1
+                for speed in kind == "rapid" ? [846.0, 1692] : [420] {
+                    let style = ProjectileStyle(ArenaBullet(vx: speed, kind: kind, colorIndex: color))
+                    guard let node = projectilePool[style]?.first else { continue }
+                    node.update(ArenaBullet(x: Double(index % 8) * 48 + 24, y: -Double(index / 8) * 48 - 24,
+                                          vx: speed, kind: kind, colorIndex: color, life: 10), time: 0)
+                    warmup.addChild(node); index += 1
+                }
             }
+        }
+        for color in 0..<8 {
+            let head = SKSpriteNode(texture: NativeArt.projectile(kind: "rapid", color: color, rapidTracerLength: 0))
+            head.size = CGSize(width: 24, height: 24)
+            head.position = CGPoint(x: Double(index % 8) * 48 + 24, y: -Double(index / 8) * 48 - 24)
+            warmup.addChild(head); index += 1
         }
         let path = CGMutablePath(); path.move(to: CGPoint(x: 10, y: 10)); path.addLine(to: CGPoint(x: 300, y: 10))
         let trail = SKShapeNode(path: path); trail.strokeColor = Palette.accent; trail.lineWidth = 12; trail.lineCap = .round
@@ -295,7 +308,7 @@ final class GameScene: SKScene {
             badge.update(size: 24, zoom: 1, count: 180, remaining: 15, warning: 3)
             warmup.addChild(badge)
         }
-        combatRendererPrepared = view.texture(from: warmup, crop: CGRect(x: 0, y: 0, width: 384, height: 300)) != nil
+        combatRendererPrepared = view.texture(from: warmup) != nil
         warmup.removeAllChildren()
     }
 
@@ -750,7 +763,7 @@ final class GameScene: SKScene {
                 bulletLayer.addChild(node)
             }
             node.lastSeenFrame = projectileFrame
-            node.update(bullet, time: time)
+            node.update(bullet, time: time, geometry: renderGeometry)
             if style.kind != "rapid" {
                 let path: CGMutablePath
                 if let existing = paths[style] { path = existing }
@@ -1221,6 +1234,11 @@ private final class ProjectileNode: SKNode {
     let style: ProjectileStyle
     var lastSeenFrame = 0
     private let glyph = SKNode()
+    private let art = SKSpriteNode()
+    private let fullTexture: SKTexture
+    private let headTexture: SKTexture?
+    private var rapidWallPoint: (x: Double, y: Double)?
+    private var rapidHeadOnly = false
     private let fuse = SKShapeNode()
     private let flame = SKSpriteNode()
     private var history: [CGPoint] = []
@@ -1232,10 +1250,13 @@ private final class ProjectileNode: SKNode {
 
     init(style: ProjectileStyle) {
         self.style = style
+        fullTexture = NativeArt.projectile(kind: style.kind, color: style.colorIndex, rapidTracerLength: style.rapidTracerLength)
+        headTexture = style.rapidTracerLength == 16 ? NativeArt.projectile(kind: "rapid", color: style.colorIndex, rapidTracerLength: 0) : nil
         super.init()
         addChild(glyph)
-        let art = SKSpriteNode(texture: NativeArt.projectile(kind: style.kind, color: style.colorIndex))
-        art.size = CGSize(width: style.kind == "cannon" ? 40 : 24, height: style.kind == "cannon" ? 40 : 24)
+        art.texture = fullTexture
+        art.size = CGSize(width: style.kind == "cannon" || style.rapidTracerLength == 16 ? 40 : 24,
+                          height: style.kind == "cannon" ? 40 : 24)
         glyph.addChild(art)
         if style.kind == "grenade" {
             fuse.strokeColor = Palette.power("grenade")
@@ -1259,13 +1280,35 @@ private final class ProjectileNode: SKNode {
         lastTrailTime = -.infinity
         fuseStep = -1
         previousVX = .nan; previousVY = .nan
+        rapidWallPoint = nil
+        setRapidHeadOnly(false)
     }
 
-    func update(_ bullet: ArenaBullet, time: Double) {
+    private func setRapidHeadOnly(_ value: Bool) {
+        guard headTexture != nil, value != rapidHeadOnly else { return }
+        rapidHeadOnly = value
+        art.texture = value ? headTexture : fullTexture
+        art.size.width = value ? 24 : 40
+    }
+
+    func update(_ bullet: ArenaBullet, time: Double, geometry: InfiniteMaze? = nil) {
         position = CGPoint(x: bullet.x, y: -bullet.y)
-        if previousVX != bullet.vx || previousVY != bullet.vy {
+        let directionChanged = previousVX != bullet.vx || previousVY != bullet.vy
+        if directionChanged {
             previousVX = bullet.vx; previousVY = bullet.vy
             glyph.zRotation = -atan2(bullet.vy, bullet.vx)
+        }
+        if style.rapidTracerLength == 16 {
+            if directionChanged || previousBounce != bullet.bounces {
+                rapidWallPoint = geometry.flatMap { ProjectileAppearance.rapidTailWallPoint(bullet, maze: $0) }
+            }
+            previousBounce = bullet.bounces
+            if let wall = rapidWallPoint {
+                let speed = hypot(bullet.vx, bullet.vy)
+                let distance = ((bullet.x - wall.x) * bullet.vx + (bullet.y - wall.y) * bullet.vy) / speed
+                if distance >= 16 { rapidWallPoint = nil }
+            }
+            setRapidHeadOnly(rapidWallPoint != nil)
         }
         if style.kind == "grenade" {
             // One angular step is less than a physical pixel at the fuse's
@@ -1401,10 +1444,13 @@ private enum NativeArt {
     private static var cache: [String: SKTexture] = [:]
     private static var fusePaths: [Int: CGPath] = [:]
 
-    static func projectile(kind: String, color: Int) -> SKTexture {
-        let width: CGFloat = kind == "cannon" ? 40 : 24
-        return cached("projectile:\(kind):\(color)", size: CGSize(width: width, height: width)) { context in
-            context.translateBy(x: width / 2, y: width / 2)
+    static func projectile(kind: String, color: Int, rapidTracerLength: Int = 8) -> SKTexture {
+        let fastRapid = kind == "rapid" && rapidTracerLength == 16
+        let rapidHeadOnly = kind == "rapid" && rapidTracerLength == 0
+        let width: CGFloat = kind == "cannon" || fastRapid ? 40 : 24
+        let height: CGFloat = kind == "cannon" ? 40 : 24
+        return cached("projectile:\(kind):\(color)" + (fastRapid ? ":fast" : rapidHeadOnly ? ":head" : ""), size: CGSize(width: width, height: height)) { context in
+            context.translateBy(x: width / 2, y: height / 2)
             context.scaleBy(x: 1, y: -1)
             let paint = Palette.tank(color)
             context.setFillColor((kind == "grenade" ? UIColor(hex: 0x253039) : paint).cgColor)
@@ -1418,8 +1464,11 @@ private enum NativeArt {
             } else {
                 context.fillEllipse(in: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2))
                 if kind == "rapid" {
-                    context.setFillColor(paint.withAlphaComponent(0.55).cgColor)
-                    context.fill(CGRect(x: -8, y: -3.5 / 3, width: 8, height: 3.5 * 2 / 3))
+                    if !rapidHeadOnly {
+                        context.setFillColor(paint.withAlphaComponent(0.55).cgColor)
+                        let length: CGFloat = fastRapid ? 16 : 8
+                        context.fill(CGRect(x: -length, y: -3.5 / 3, width: length, height: 3.5 * 2 / 3))
+                    }
                 } else if kind == "grenade" {
                     context.setStrokeColor(paint.cgColor); context.setLineWidth(2)
                     context.strokeEllipse(in: CGRect(x: -6, y: -6, width: 12, height: 12))

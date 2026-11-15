@@ -81,8 +81,9 @@ final class AudioEventRouterTests: XCTestCase {
         _ = router.consume(snapshot: snapshot(tanks: [boosted]), localID: 1, infinity: true, online: false, now: 0)
         let burst = snapshot([effect(1, "shot:"), effect(2, "laser"), effect(3, "shot:grenade")], tanks: [boosted])
         XCTAssertEqual(router.consume(snapshot: burst, localID: 1, infinity: true, online: false, now: 1).map(\.cue), [.regular, .grenade])
-        XCTAssertEqual(router.consume(snapshot: snapshot([effect(4, "shot:rapid")]), localID: 1, infinity: true, online: false, now: 1.064), [])
-        XCTAssertEqual(router.consume(snapshot: snapshot([effect(5, "shot:rapid")]), localID: 1, infinity: true, online: false, now: 1.066).map(\.cue), [.rapid])
+        XCTAssertEqual(router.consume(snapshot: snapshot([effect(4, "shot:rapid")]), localID: 1, infinity: true, online: false, now: 1.040), [])
+        XCTAssertEqual(router.consume(snapshot: snapshot([effect(5, "shot:rapid")]), localID: 1, infinity: true, online: false, now: 1.064).map(\.cue), [.rapid])
+        XCTAssertEqual(router.consume(snapshot: snapshot([effect(6, "shot:rapid")]), localID: 1, infinity: true, online: false, now: 1.066), [], "The next deadline prevents a second cue in this callback burst")
     }
 
     func testGrenadeVictimsShareDeathGateButRecentDeathCannotSuppressGrenade() {
