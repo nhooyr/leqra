@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.leqra.android.accounts.*
+import com.leqra.android.audio.AudioCue
 import com.leqra.android.network.*
 import com.leqra.core.*
 import java.security.SecureRandom
@@ -43,6 +44,7 @@ internal class GameSession(context: Context) {
     var present: (ArenaSnapshot, InfiniteMaze?, Int, Int?, Boolean) -> Unit = { _, _, _, _, _ -> }
     var notifyError: (String) -> Unit = {}
     var notifyChat: () -> Unit = {}
+    var emitAudioCue: (AudioCue) -> Unit = {}
     var server = prefs.getString("server", "https://leqra.com")!!
         private set
 
@@ -1121,7 +1123,8 @@ internal class GameSession(context: Context) {
         val id = if (local) localID2 else localID
         val tank = id?.let { target -> state.tanks.firstOrNull { it.id == target } }
         val age = if (online) max(0.0, nanos / 1e9 - timeline.authoritativeArrivalTime) else 0.0
-        (if (local) localFireFeedback else fireFeedback).controls(fire, tank, state.generation, fireFeedbackPlaying(state), nanos / 1e9, age)
+        val accepted = (if (local) localFireFeedback else fireFeedback).controls(fire, tank, state.generation, fireFeedbackPlaying(state), nanos / 1e9, age)
+        if (accepted && tank != null && !muted && volume > 0 && PressFireFeedback.ammoUnavailable(tank, state, age)) emitAudioCue(AudioCue.DRY_FIRE)
     }
 
     val finishingProjectilePresentation: Boolean

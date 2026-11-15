@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.1.1';
+const GAME_VERSION='5.1.2';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -212,6 +212,7 @@ const SHOT_SOUNDS=Object.freeze({
  laser:[[720,270,.18,.021,.013,'sine'],[1080,540,.10,.006,.004,'sine']],
  homing:[[150,300,.21,.027,.016,'sine'],[260,390,.13,.009,.005,'triangle']],
  grenade:[[180,85,.14,.032,.019,'triangle']],
+ dryFire:[[240,100,.045,.016,.016,'triangle']],
  cannon:[[105,55,.24,.055,.033,'sine'],[240,110,.13,.022,.013,'triangle']]
 });
 let lastExplosionSound=-Infinity,lastGrenadeSound=-Infinity,lastRicochetSound=-Infinity,onlineBounceGeneration=null;
@@ -692,6 +693,7 @@ function shotSound(kind,local=true,clock=time,boosted=false){
  const recipe=SHOT_SOUNDS[kind]||SHOT_SOUNDS.regular;let group=0;for(const layer of recipe)group+=layer[local?3:4];
  for(const [freq,end,duration,near,far,type]of recipe)tone(freq,end,duration,local?near:far,type,0,group);
 }
+function dryFireSound(){shotSound('dryFire');}
 function fire(t){
  const boosted=t.starmanTime>0;
  if(survivalBreak()||!t.alive||t.spawnProtected&&t.invulnerable>0||!boosted&&t.cooldown>0)return false;
@@ -807,12 +809,13 @@ function detonateOwned(t){
 }
 function weaponControl(t,held,pressed){
  if(!t.alive)return;
- if(!held)t.fireBlocked=false;
+ if((!held||pressed)&&t.fireBlocked)t.fireBlocked=false;
  if(t.spawnProtected&&t.invulnerable>0)return;
  if(pressed){
   if(detonateOwned(t)){t.fireBlocked=held;return;}
   if(t.power==='grenade'){t.fireBlocked=held;fire(t);return;}
  }
+ if(pressed&&t.human&&!t.fireBlocked&&phase==='playing'&&!survivalBreak()&&t.cooldown<=0&&Net.ammoUnavailable(t,activeAmmo(t))&&time-(t.dryFireAt??-Infinity)+1e-9>=Net.firePressInterval(t)){t.dryFireAt=time;dryFireSound();}
  if(!t.fireBlocked&&t.power!=='grenade'&&(held||pressed))fire(t);
 }
 
@@ -2981,7 +2984,7 @@ function previewOnlineFire(second,controls,now){
   blocked:muzzleBlocked(t),
   // Lasers bypass the projectile-slot cap, matching authoritative fireLaser.
   free:power==='laser'?Infinity:powerCapacity(t)-activeAmmo(t),need:power==='laser'?0:power==='scatter'?3:1,
-  charged:['laser','cannon','homing','grenade','scatter'].includes(power),cooldown:cooldownDuration(power),
+  charged:['laser','cannon','homing','grenade','scatter'].includes(power),cooldown:cooldownDuration(power),onDryFire:dryFireSound,
   ttl:Math.max(350,online.latency*2+120)});
  if(!v)return;
  online.presentationMetrics.previews++;
@@ -5670,7 +5673,7 @@ window.leqraInfinityArt=Object.freeze({
  missileTurn:MISSILE_TURN,
  rect:roundRect,tile:paintArenaTile,wall:paintArenaWall,hull:drawCachedTankHull,turret:paintTankTurret,pickup:drawPickup,bullets:drawBullets,
  drawBadges:drawTankPowerBadges,ageTank:applyOnlineTankEffects,
- shot:shotSound,ricochet:ricochetSound,collect:pickupSound,shield:shieldSound,blast:boom,grenade:grenadeBoom,
+ shot:shotSound,dryFire:dryFireSound,ricochet:ricochetSound,collect:pickupSound,shield:shieldSound,blast:boom,grenade:grenadeBoom,
  impact:()=>tone(170,95,.095,SOUND_LEVELS.impact,'sine')
 });
 

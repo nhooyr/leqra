@@ -55,6 +55,9 @@ class SessionParityTest {
                     assertTrue(session.audioGameplayActive)
                     val before = session.authoritativeSnapshot.tanks.map { it.copy() }
                     val bullets = session.authoritativeSnapshot.bullets.map { it.copy() }
+                    val clicks = mutableListOf<com.leqra.android.audio.AudioCue>()
+                    session.muted = false; session.volume = .5f
+                    session.emitAudioCue = { clicks += it }
                     session.input = GameInput(fire = true)
                     session.input = GameInput()
                     session.input2 = GameInput(fire = true)
@@ -66,12 +69,32 @@ class SessionParityTest {
                     assertEquals(before, session.authoritativeSnapshot.tanks)
                     assertEquals(bullets, session.authoritativeSnapshot.bullets)
                     assertTrue(session.snapshot.tanks.all { it.recoil == 0.0 })
+                    assertEquals(listOf(com.leqra.android.audio.AudioCue.DRY_FIRE, com.leqra.android.audio.AudioCue.DRY_FIRE), clicks)
+                    session.cancelFireFeedback()
+                    session.muted = true
+                    session.input = GameInput(fire = true); session.input = GameInput()
+                    assertEquals(2, clicks.size)
+                    session.cancelFireFeedback()
+                    session.muted = false; session.volume = 0f
+                    session.input = GameInput(fire = true); session.input = GameInput()
+                    assertEquals(2, clicks.size)
+                    session.cancelFireFeedback()
+                    session.volume = .5f
+                    session.authoritativeSnapshot.tanks.first().starmanTime = 1.0
+                    session.input = GameInput(fire = true); session.input = GameInput()
+                    assertEquals(2, clicks.size)
+                    session.cancelFireFeedback()
+                    session.authoritativeSnapshot.tanks.first().starmanTime = 0.0
+                    AmmoEpoch.refill(session.authoritativeSnapshot.tanks.first())
+                    session.input = GameInput(fire = true); session.input = GameInput()
+                    assertEquals("Available ammo must use normal shot audio only", 2, clicks.size)
                     session.cancelFireFeedback()
                     session.fireFeedbackAllowed = { false }
                     session.input = GameInput(fire = true)
                     session.input = GameInput()
                     session.frame(System.nanoTime())
                     assertEquals(0.0, session.previewRecoil, 0.0)
+                    assertEquals(2, clicks.size)
                     session.fireFeedbackAllowed = { true }
                     session.neutral()
                     assertEquals(0.0, session.localPreviewRecoil, 0.0)

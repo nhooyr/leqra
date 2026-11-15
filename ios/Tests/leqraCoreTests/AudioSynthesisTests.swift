@@ -2,6 +2,19 @@ import XCTest
 @testable import leqraCore
 
 final class AudioSynthesisTests: XCTestCase {
+    func testDryFireIsTheSameSoftCachedTriangleClickNearAndFar() {
+        let expected = AudioRecipe(tones: [AudioTone(frequency: 240, endFrequency: 100,
+            duration: 0.045, gain: 0.016, waveform: .triangle)])
+        XCTAssertEqual(AudioSynthesis.recipe(.dryFire), expected)
+        XCTAssertEqual(AudioSynthesis.recipe(.dryFire, local: false), expected)
+        XCTAssertTrue(AudioCue.allCases.contains(.dryFire))
+        let samples = AudioSynthesis.samples(for: .dryFire, sampleRate: 48_000)
+        XCTAssertEqual(samples, AudioSynthesis.samples(for: .dryFire, local: false, sampleRate: 48_000))
+        XCTAssertEqual(samples.count, Int(ceil(0.057 * 48_000)))
+        XCTAssertTrue(samples.contains { abs($0) > 0.001 })
+        XCTAssertLessThan(samples.map(abs).max() ?? 1, 0.016)
+    }
+
     func testWeaponRecipesMatchCurrentBrowserSource() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

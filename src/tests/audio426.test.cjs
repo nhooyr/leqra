@@ -38,6 +38,17 @@ function boot(options={}){
  return{s,contexts,native,plays,playEvents,nodes,blobs,listeners,timers,advance(ms){clock+=ms;for(const a of native){if(a.playingEvent&&!a.paused&&clock>=a.playingEvent.until){a.playingEvent.stopAt=Math.min(a.playingEvent.stopAt,a.playingEvent.until);a.ended=a.paused=true;a.onended?.();}}for(const [id,timer]of [...timers])if(timer.time<=clock){timers.delete(id);timer.fn();}},fire(event,extra={}){listeners.get(event)?.({isTrusted:true,...extra});},focus(value){focused=value;listeners.get(value?'focus':'blur')();}};
 }
 
+test('dry fire has the shared soft triangle voice and respects mute, zero volume and inactive scenes',async()=>{
+ const {declaration}=require('./godlike426-harness.cjs');
+ const b=boot();b.s.time=1;vm.runInContext(declaration('shotSound')+'\n'+declaration('dryFireSound'),b.s);
+ const tones=[],original=b.s.tone;b.s.tone=(...args)=>tones.push(args);b.s.dryFireSound();assert.deepEqual(tones,[[240,100,.045,.016,'triangle',0,.016]]);b.s.tone=original;
+ await b.s.initAudio();const sources=()=>b.nodes.filter(node=>node.kind==='oscillator').length;
+ const before=sources();b.s.dryFireSound();assert.equal(sources(),before+1);
+ b.s.muted=true;b.s.dryFireSound();assert.equal(sources(),before+1);b.s.muted=false;b.s.setAudioVolume(0);b.s.dryFireSound();assert.equal(sources(),before+1);
+ b.s.setAudioVolume(50);b.s.setArenaAudio(false);b.s.dryFireSound();assert.equal(sources(),before+1);
+ const fallback=boot({noWebAudio:true});fallback.s.time=1;vm.runInContext(declaration('shotSound')+'\n'+declaration('dryFireSound'),fallback.s);fallback.s.dryFireSound();assert.equal(fallback.plays.length,1);
+});
+
 test('Starman PCM matches the shared native fixtures with quiet headroom and a silent loop seam',()=>{
  const {s}=boot(),fixture=JSON.parse(readFileSync(require('node:path').join(__dirname,'starman-audio-fixtures.json'),'utf8'));
  for(const reference of fixture.profiles){

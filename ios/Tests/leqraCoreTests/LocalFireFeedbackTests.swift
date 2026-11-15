@@ -2,6 +2,69 @@ import XCTest
 @testable import leqraCore
 
 final class LocalFireFeedbackTests: XCTestCase {
+    func testDryFireClassifiesCurrentMagazineBoundariesWithoutChangingAuthority() {
+        let cases: [(String, Int, Int, Int, Bool)] = [
+            ("", 4, 0, 0, false), ("", 5, 0, 0, true),
+            ("scatter", 9, 1, 0, false), ("scatter", 10, 1, 0, true), ("scatter", 0, 0, 0, true),
+            ("rapid", 114, 0, 1, false), ("rapid", 115, 0, 1, true), ("rapid", 0, 0, 0, true),
+            ("homing", 2, 1, 0, false), ("homing", 3, 1, 0, true), ("homing", 0, 0, 0, true),
+            ("cannon", 2, 1, 0, false), ("cannon", 3, 1, 0, true), ("cannon", 0, 0, 0, true),
+            ("laser", 3, 1, 0, false), ("laser", 0, 0, 0, true),
+            ("grenade", 2, 1, 0, false), ("grenade", 3, 1, 0, true), ("grenade", 0, 0, 0, true)
+        ]
+        for (power, used, charges, rounds, expected) in cases {
+            let tank = ArenaTank(id: 1, power: power, charges: charges, machineRounds: rounds,
+                ammoUsed: used, ammoEpoch: 9)
+            let before = tank
+            XCTAssertEqual(LocalFireFeedback.ammoUnavailable(for: tank), expected, "\(power), used=\(used), charges=\(charges), rounds=\(rounds)")
+            XCTAssertEqual(tank, before)
+            var boosted = tank; boosted.starmanTime = 1
+            XCTAssertFalse(LocalFireFeedback.ammoUnavailable(for: boosted, stateAge: 0.5), power)
+            XCTAssertEqual(LocalFireFeedback.ammoUnavailable(for: boosted, stateAge: 1), expected, power)
+        }
+        // A newly refilled epoch has empty occupancy even while older shots
+        // remain in the renderer; do not reconstruct quota from those shots.
+        XCTAssertFalse(LocalFireFeedback.ammoUnavailable(for: ArenaTank(ammoUsed: 0, ammoEpoch: 10), stateAge: 10))
+        XCTAssertTrue(LocalFireFeedback.ammoUnavailable(for: ArenaTank(ammoUsed: 5), stateAge: 10))
+    }
+
+    func testDryFireRequiresAnAcceptedFreshEmptyPressAndNeverDuplicatesARealShot() {
+        var feedback = LocalFireFeedback()
+        let empty = ArenaTank(id: 1, ammoUsed: 5)
+        func press(_ down: Bool, _ tank: ArenaTank, _ now: Double, active: Bool = true, age: Double = 0) -> Bool {
+            feedback.setFire(down, tank: tank, generation: 1, now: now, stateAge: age, active: active)
+                && LocalFireFeedback.ammoUnavailable(for: tank, stateAge: age)
+        }
+        XCTAssertTrue(press(true, empty, 1))
+        XCTAssertFalse(press(true, empty, 2))
+        XCTAssertFalse(press(false, empty, 2))
+        XCTAssertTrue(press(true, empty, 2))
+        XCTAssertFalse(press(false, empty, 2.01))
+        XCTAssertFalse(press(true, empty, 2.2))
+        feedback.reset()
+        XCTAssertFalse(press(true, ArenaTank(id: 1, ammoUsed: 4), 3))
+        feedback.reset()
+        var boosted = empty; boosted.starmanTime = 1
+        XCTAssertFalse(press(true, boosted, 4))
+        for reason in ["dead", "inactive", "spawn", "cooldown", "grenade", "detonate"] {
+            feedback.reset()
+            var tank = empty
+            switch reason {
+            case "dead": tank.hp = 0
+            case "spawn": tank.spawnProtected = true; tank.invulnerable = 1
+            case "cooldown": tank.cooldown = 0.2
+            case "grenade": tank.power = "grenade"
+            case "detonate": tank.grenades = 1
+            default: break
+            }
+            XCTAssertFalse(press(true, tank, 5, active: reason != "inactive"), reason)
+            XCTAssertFalse(press(true, empty, 6), reason) // No deferred click from a consumed press.
+        }
+        feedback.reset()
+        var cooling = empty; cooling.cooldown = 0.2
+        XCTAssertTrue(press(true, cooling, 7, age: 0.2))
+    }
+
     func testRejectedPacketsCannotReplaceTheAuthorityOrRefreshItsCooldownClock() {
         let timeline = RenderTimeline(localID: 1) { _, _, _ in }
         let current = ArenaSnapshot(tick: 60, tanks: [ArenaTank(id: 1, cooldown: 0.2)])

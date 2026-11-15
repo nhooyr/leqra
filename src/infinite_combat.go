@@ -238,7 +238,7 @@ func infiniteSpec(kind string) infiniteProjectileSpec {
 func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 	k := &p.kit
 	k.fireHeld = held
-	if !held {
+	if !held || pressed {
 		k.fireBlocked = false
 	}
 	if k.SpawnProtected && k.Invulnerable > 1e-9 {

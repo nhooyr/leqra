@@ -11,7 +11,6 @@ func refillAmmo(t *Tank) {
 		t.AmmoEpoch++
 	}
 	t.Cooldown, t.CooldownTotal = 0, 0
-	t.fireBlocked = false
 	t.MachineRounds = 0
 	switch t.Power {
 	case "rapid":

@@ -31,7 +31,7 @@ window.__stress={capture:false,spec:null,frames:[],longTasks:[],renderMs:0,maxPr
   }
   set.add('KeyW');set.add('KeyD');if(held)set.add('KeyQ');else set.delete('KeyQ');return held;},
  fixed(spec){window.leqraInfinity?.close();this.capture=false;this.spec=spec;this.arena='fixed';this.held=false;let seed=44937;Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};mode='room';localRoom.rules=validateRoomRules({...defaultRoomRules(),infinity:false,mode:'elimination',mapSize:'ultrawide',teamMode:'ffa',timeLimit:600,scoreTarget:20});localRoom.players=Array.from({length:8},(_,id)=>({id,member:id+1,kind:id?'bot':'human',name:['PILOT','RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'][id],owner:0,team:0,colorIndex:id,difficulty:'normal'}));startMatch();phase='playing';time=0;spawnClock=1e9;pickups=[];for(const t of tanks){Object.assign(t,{x:(1+t.id%4*5+.5)*CELL,y:(1+Math.floor(t.id/4)*8+.5)*CELL,angle:t.id*Math.PI/4,human:true,localIndex:0,invulnerable:1000,spawnProtected:false,cooldown:0,ghostTime:0,starmanTime:0,power:null,powerTime:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,fireHeld:false});for(const power of spec.powers)grantPower(t,power);}clearInput();initAudio();setArenaAudio(true);audio?.resume();updateHUD(true);return this.initial();},
- initial(){return{audio:audio?.state||'none',volume:audioVolume,canvas:{width:canvas.width,height:canvas.height},powers:tanks.map(t=>({power:t.power,shield:shieldCount(t),speed:speedCount(t),ghost:t.ghostTime,starman:t.starmanTime}))};},
+ initial(){return{audio:audio?.state||'none',audioEnabled:canPlayAudio(),volume:audioVolume,canvas:{width:canvas.width,height:canvas.height},powers:tanks.map(t=>({power:t.power,shield:shieldCount(t),speed:speedCount(t),ghost:t.ghostTime,starman:t.starmanTime}))};},
  finish(){this.capture=false;return{frames:this.frames,longTasks:this.longTasks,powerGrants:this.powerGrants,badgeMisses:this.badgeMisses,shots:this.shots,firstShot:this.firstShot,maxProjectiles:this.maxProjectiles,maxParticles:this.maxParticles,maxEffects:this.maxEffects,audio:audio?.state||'none',audioEnabled:canPlayAudio(),audioSources:this.audioSources};}
 };
 window.__stress.verifyGameplay=function(){
@@ -46,6 +46,19 @@ window.__stress.verifyGameplay=function(){
  Object.assign(a,{x:100,y:210,ghostTime:0,starmanTime:0,cooldown:0,angle:0});bullets=[];grantPower(a,'cannon');check(fire(a),'Cannon launch succeeds');const shell=bullets[0];check(shell.life===5.3,'Cannon retains its 5.3-second lifetime');updateBullets(.1);check(!shell.dead&&shell.x>208&&shell.vx>0,'Cannon penetrates the internal wall');updateBullets(5.199);check(!shell.dead,'Cannon survives until its original lifetime');updateBullets(.001);check(shell.dead,'Cannon expires at 5.3 seconds');
  bullets=[];Object.assign(a,{x:100,y:210,cooldown:0,ghostTime:0,starmanTime:0});grantPower(a,'grenade');weaponControl(a,true,true);const grenade=bullets[0];check(grenade?.kind==='grenade'&&!grenade.dead,'fresh Grenade press launches');weaponControl(a,false,false);const count=rings.length;weaponControl(a,true,true);const presentAt=performance.now();for(const offset of [0,51,52])fire.flights?.sample(time/Net.STEP,presentAt+offset);fire.flights?.flush();check(grenade.dead&&rings.length>count,'release then fresh Grenade press detonates with a blast visual after its terminal flight');check(a.charges===2,'remote detonation does not spend another Grenade charge');
  return passed;
+};
+window.__stress.verifyDryFire=function(){
+ this.fixed({name:'dry-check',powers:[]});this.spec=null;clearInput();const checks=[],check=(ok,label)=>{if(!ok)throw Error(label);checks.push(label);};
+ const t=tanks[0];for(const other of tanks.slice(1))other.alive=false;Object.assign(t,{x:100,y:210,angle:-Math.PI/2,invulnerable:0,spawnProtected:false});
+ window.__test.setWorld({width:8000,height:1000,cols:95,rows:12,walls:[]});
+ for(let i=0;i<5;i++){t.cooldown=0;check(fire(t),'fixed full-magazine setup');}t.cooldown=0;
+ this.capture=true;const sources=this.audioSources,enabled=canPlayAudio(),voices=[],original=shotSound;shotSound=function(kind,...args){voices.push(kind);return original(kind,...args);};
+ try{
+  weaponControl(t,true,true);check(voices.join(',')==='dryFire'&&bullets.length===5,'fixed empty press emits only dry feedback');check(this.audioSources-sources===(enabled?1:0),'fixed dry WebAudio source respects audio setting');
+  time+=1;weaponControl(t,true,false);check(voices.length===1,'fixed empty hold is silent');weaponControl(t,false,false);bullets=[];weaponControl(t,true,true);check(voices.length===2&&voices[1]===''&&bullets.length===1,'fixed available ammo emits one real shot');
+  bullets=[];grantPower(t,'grenade');t.charges=1;weaponControl(t,true,true);check(bullets.length===1&&bullets[0].kind==='grenade','fixed last grenade throws once');
+  for(let i=0;i<5;i++){time+=1/60;weaponControl(t,true,false);}grantPower(t,'shield');weaponControl(t,true,false);check(bullets.length===1,'fixed grenade hold survives refills');weaponControl(t,false,false);weaponControl(t,true,true);check(bullets.length===2&&bullets[1].kind==='','fixed fresh press returns to standard');
+ }finally{shotSound=original;}return checks;
 };
 window.__stress.verifyCannonTrails=function(){
  const T=window.__test;if(!T.setCannonTrailCache)return[];const results=[];
@@ -65,6 +78,16 @@ for(const name of ['grantPower','fire','fireLaser','shotSound','pickupSound','ta
 try{new PerformanceObserver(list=>{if(window.__stress.capture)for(const entry of list.getEntries())window.__stress.longTasks.push(entry.duration);}).observe({type:'longtask'});}catch(_){}
 `;
 const infinityHooks=String.raw`
+window.__verifyInfinityDryFire=function(){
+ window.__stressInfinity.prepare({name:'dry-check',powers:[]});window.__stress.spec=null;resetControls();const w=session,t=w.tanks[0],checks=[],check=(ok,label)=>{if(!ok)throw Error(label);checks.push(label);};
+ w.tanks=[t];w.maze={wallsNear:()=>[],visitWalls:()=>false,blocked:()=>false};Object.assign(t,{x:100,y:210,angle:-Math.PI/2,invulnerable:0,spawnProtected:false});
+ for(let i=0;i<5;i++){t.cooldown=0;fireShot(w,t);}t.cooldown=0;window.__stress.capture=true;const sources=window.__stress.audioSources,enabled=window.__stress.initial().audioEnabled;
+ weaponControl(w,t,true,true);check(w.lastBullet===5,'Infinity empty press cannot spawn a shot');check(window.__stress.audioSources-sources===(enabled?1:0),'Infinity dry WebAudio source respects audio setting');
+ w.time+=1;weaponControl(w,t,true,false);check(window.__stress.audioSources-sources===(enabled?1:0),'Infinity held empty fire is silent');
+ weaponControl(w,t,false,false);w.bullets=[];weaponControl(w,t,true,true);check(w.lastBullet===6,'Infinity fresh loaded press fires normally');
+ w.bullets=[];art.grantPower(t,'grenade',15,8);t.charges=1;weaponControl(w,t,true,true);const grenade=w.bullets[0];check(w.bullets.length===1&&grenade.kind==='grenade','Infinity last grenade throws once');
+ for(let i=0;i<5;i++){w.time+=1/60;weaponControl(w,t,true,false);}art.grantPower(t,'shield',15,8);weaponControl(w,t,true,false);check(w.bullets.length===1,'Infinity grenade hold survives refills');weaponControl(w,t,false,false);weaponControl(w,t,true,true);check(w.bullets.length===2&&w.bullets.includes(grenade),'Infinity fresh press returns to standard without deleting the grenade');return checks;
+};
 window.__stressInfinity={world:()=>session,prepare(spec){window.leqraInfinity.close();window.__stress.capture=false;window.__stress.spec=spec;window.__stress.arena='infinity';window.leqraInfinity.start('offline',{name:'PILOT',roomRules:{infinity:true,infinityRandomBots:false,teamMode:'ffa'}});const w=session;w.maze=geometry.create(44937);w.tanks=[];w.nextPickup=1e9;w.pickups=[];w.time=0;for(let id=0;id<8;id++){const t=makeTank(id?'stress-'+id:w.id,(id%4*2+.5)*CELL,(Math.floor(id/4)*2+.5)*CELL,false);Object.assign(t,{name:['PILOT','RUST','VAPOR','EMBER','NOVA','COMET','ONYX','BLITZ'][id],angle:id*Math.PI/4,colorIndex:id,invulnerable:1000,spawnProtected:false,cooldown:0});for(const power of spec.powers)art.grantPower(t,power,15,8);w.tanks.push(t);}w.camera.x=w.tanks[0].x;w.camera.y=w.tanks[0].y;resetControls();w.nextHUD=0;draw(w,performance.now(),0);return{audio:window.__stress.initial().audio,powers:w.tanks.map(t=>({power:t.power,shield:t.shieldCharges||0,speed:t.speedStacks||0,ghost:t.ghostTime,starman:t.starmanTime})),canvas:{width:canvas.width,height:canvas.height}};}};
 const stressOfflineStep=offlineStep;offlineStep=function(w,dt){if(window.__stress.spec&&window.__stress.arena==='infinity')window.__stress.controls(w.time,pressed);return stressOfflineStep(w,dt);};
 const stressDraw=draw;draw=function(...args){const start=performance.now();const result=stressDraw(...args);window.__stress.renderMs=performance.now()-start;return result;};
@@ -132,7 +155,7 @@ function summary(values){if(!values.length)return null;const sorted=[...values].
     results.push(record);fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({browser:browser.version(),environment:'Headless Chromium, macOS, mobile touch 390×844 DPR3. Actual production RAF, Canvas2D, DOM and running WebAudio. Frames are 60Hz headless scheduling; no iPhone/Safari/ProMotion FPS claim. Protected tanks sustain deterministic load. Test-only seeded 8-pilot inputs move/rotate/fire; grenade inputs alternate press/release/detonate. Before=HEAD game assets, after=working tree; current HTML/CSS/PWA are shared.',results,validations,errors},null,2));
     console.log(JSON.stringify({variant,arena,case:spec.name,frames:record.frames.samples,frameP95:record.frames.p95,workP95:record.frameWorkMs.p95,renderP95:record.renderSubmissionMs.p95,projectiles:record.maxProjectiles,audio:raw.audio}));
     if(spec.name==='stacked-laser')await page.screenshot({path:path.join(output,variant+'-'+arena+'-stacked-laser.png')});
-   if(arena===arenas.at(-1)&&spec===cases.at(-1))validations.push({variant,audioMode,checks:await page.evaluate(()=>__stress.verifyGameplay()),cannonTrailPixels:await page.evaluate(()=>__stress.verifyCannonTrails())});
+   if(arena===arenas.at(-1)&&spec===cases.at(-1))validations.push({variant,audioMode,checks:await page.evaluate(()=>__stress.verifyGameplay()),dryFireChecks:await page.evaluate(()=>[...__stress.verifyDryFire(),...__verifyInfinityDryFire()]),cannonTrailPixels:await page.evaluate(()=>__stress.verifyCannonTrails())});
    await context.close();
   }
   const report=JSON.parse(fs.readFileSync(path.join(output,'report.json'),'utf8'));report.validations=validations;report.errors=errors;fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2));

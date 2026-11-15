@@ -168,6 +168,7 @@ class MainActivity : Activity() {
             alert("leqra", message)
         }
         session.notifyChat = { audio.notifyChat() }
+        session.emitAudioCue = { audio.play(it) }
         buildShell()
         if (Build.VERSION.SDK_INT >= 33)
             onBackInvokedDispatcher.registerOnBackInvokedCallback(

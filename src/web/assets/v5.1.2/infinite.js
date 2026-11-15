@@ -380,7 +380,7 @@ function detonate(world, bullet) {
 
 function weaponControl(world, tank, held, pressed) {
  tank.fireHeld = held;
- if (!held) tank.fireBlocked = false;
+ if (!held || pressed) tank.fireBlocked = false;
  if (tank.spawnProtected && tank.invulnerable > 1e-9) return;
  if (pressed) {
   let detonated = false;
@@ -396,6 +396,7 @@ function weaponControl(world, tank, held, pressed) {
    return;
   }
  }
+ if(pressed&&!tank.bot&&!tank.fireBlocked&&!(tank.cooldown>1e-9)&&net.ammoUnavailable(tank,art.projectileState(tank,false,world.bullets).ammo)&&world.time-(tank.dryFireAt??-Infinity)+1e-9>=net.firePressInterval(tank)){tank.dryFireAt=world.time;art.dryFire();}
  if (!tank.fireBlocked && tank.power !== 'grenade' && (held || pressed)) fireShot(world, tank);
 }
 
@@ -775,7 +776,9 @@ function offlineStep(world, dt) {
    if (tank.bot && pickup.type === 'grenade') tank.fireHeld = false;
    effect(world, 'pickup', tank.x, tank.y, tank.id);
   }
-  weaponControl(world, tank, controls.fire, controls.fire && !tank.fireHeld);
+  const seat=tank.id===world.local?.id?world.local:world,pressed=controls.fire&&!tank.fireHeld||!tank.bot&&(seat.fireTap||seat===world&&mouseTap);
+  weaponControl(world, tank, controls.fire, pressed);
+  if(!tank.bot){seat.fireTap=false;if(seat===world)mouseTap=false;}
   if (world.result) return;
  }
  for (let i = 0; i < actors.length; i++) {
@@ -1961,15 +1964,16 @@ function pressFire(event,seat=session,mouse=false) {
  art.primeAudioUnlock(event);
  if(mouse)mouseTap=true;else seat.fireTap = true;
  const now = performance.now(), world = session;
- const pilot = seat.predictor.state;
+ const pilot = world.authorityTanks?.get(seat.id) || seat.predictor.state;
  const age = now - world.arrived, boosted = pilot?.starmanTime > age / 1000;
  const canDetonate = pilot?.grenades > 0;
- if (world.online && pilot?.alive && !(pilot.spawnProtected && pilot.invulnerable > age / 1000) && now - seat.previewShotAt >= (boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
+ if (world.online && age<2500 && pilot?.alive && !(pilot.spawnProtected && pilot.invulnerable > age / 1000) && now - seat.previewShotAt >= (boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
      (boosted || age >= (pilot.cooldown || 0) * 1000) &&
      pilot.power !== 'grenade' && !canDetonate && !muzzleBlocked(world.maze, pilot, PROJECTILES[pilot.power || 'regular'].r)) {
-  seat.previewShotAt = seat.pendingShotAt = now;
+  seat.previewShotAt = now;
   seat.previewRecoilUntil = now + 100;
-  art.shot(pilot.power || '', true, now / 1000);
+  if(net.ammoUnavailable({...pilot,starmanTime:boosted?1:0}))art.dryFire();
+  else{seat.pendingShotAt=now;art.shot(pilot.power || '', true, now / 1000);}
  }
  sendInput(seat,now,true);
 }

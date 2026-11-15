@@ -296,6 +296,11 @@ final class GameAudio {
         play(.chat)
     }
 
+    func dryFire() {
+        guard enabled, volume > 0, active, engine?.isRunning == true else { return }
+        play(.dryFire)
+    }
+
     func preview(_ cue: AudioCue) {
         guard enabled, volume > 0, !interrupted else { return }
         previewTask?.cancel()

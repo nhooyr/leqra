@@ -1649,8 +1649,12 @@ final class GameSession: ObservableObject {
 
     private func fireInputChanged(_ down: Bool) {
         let now = ProcessInfo.processInfo.systemUptime
-        fireFeedback.setFire(down, tank: fireAuthority, generation: fireGeneration, now: now,
-            stateAge: offline ? 0 : max(0, now - fireArrival), active: fireFeedbackActive)
+        let age = offline ? 0 : max(0, now - fireArrival)
+        let accepted = fireFeedback.setFire(down, tank: fireAuthority, generation: fireGeneration, now: now,
+            stateAge: age, active: fireFeedbackActive)
+        if accepted, let tank = fireAuthority, LocalFireFeedback.ammoUnavailable(for: tank, stateAge: age) {
+            audio.dryFire()
+        }
     }
 
     private func localFireRecoil(real: Double) -> Double {
