@@ -1443,6 +1443,18 @@ test('offline Infinity last grenade consumes the hold through refills for both l
   arena.emit('keyup',{code:key});if(sampledRelease)h.advance();arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,2);assert.equal(w.bullets.at(-1).kind,'');h.infinity.close();
  }
 });
+test('offline Infinity every weapon ending stops held standard follow-up for both local pilots',()=>{
+ for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const expiry of [false,true])for(const local of [false,true]){
+  const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
+  for(const tank of w.tanks)Object.assign(tank,{x:100+tank.colorIndex*200,y:100,angle:-Math.PI/2,invulnerable:1000,spawnProtected:false});
+  h.window.leqraInfinityArt.grantPower(t,power,15,8);const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');
+  if(expiry){t.fireHeld=true;t.powerTime=.001;arena.emit('keydown',{code:key});seat.fireTap=false;}
+  else{t.charges=t.machineRounds=1;arena.emit('keydown',{code:key});}
+  h.advance();const shots=w.lastBullet,label=[power,expiry?'timer':'ammo',local?'P2':'P1'].join('/');assert.equal(t.power,'',label);assert.equal(t.fireBlocked,true,label);assert.equal(t.cooldown,0,label);
+  h.advance(5);assert.equal(w.lastBullet,shots,label+' no automatic standard');h.window.leqraInfinityArt.grantPower(t,'shield',.001,8);h.advance(2);assert.equal(w.lastBullet,shots,label+' passive refill retains hold');
+  arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,shots+1,label+' fresh standard press');h.infinity.close();
+ }
+});
 test('offline Infinity empty slots sound only on fresh presses, never while holding or when ammo is available',()=>{
  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[0],arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;Object.assign(t,{invulnerable:1000,spawnProtected:false});
  w.bullets=Array.from({length:5},(_,i)=>({id:i+1,owner:t.id,kind:'',ammoEpoch:t.ammoEpoch,x:10000,y:10000,vx:0,vy:0,r:3.5,life:5,age:0,bounces:0,trail:[]}));w.lastBullet=5;

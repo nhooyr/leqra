@@ -49,6 +49,13 @@ public final class FixedArena {
 
     public var snapshot: ArenaSnapshot { compose(combat.snapshot) }
 
+    public func captureFire(_ down: Bool, player: Int) {
+        guard !down || phase == "playing" else { return }
+        combat.captureFire(down, player: player)
+    }
+
+    public func resetFireInput(player: Int) { combat.resetFireInput(player: player) }
+
     public func restart() {
         tick = 0; round = 1; winner = -1; scores.removeAll()
         startRound(wave: 1, cleared: 0)

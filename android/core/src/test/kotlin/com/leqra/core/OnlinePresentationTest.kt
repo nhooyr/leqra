@@ -155,6 +155,54 @@ class OnlinePresentationTest {
     }
 
     @Test
+    fun inputEdgesShareSequenceAndAcknowledgementsWithoutAdvancingMovementOrHistory() {
+        val t = timeline()
+        t.setLocalIDs(1, 2, 50)
+        val initial = state(x = 0.0).copy(tanks = listOf(ArenaTank(id = 1), ArenaTank(id = 2)))
+        t.accept(initial, 0.0)
+        val baseline = timeline()
+        baseline.setLocalIDs(1, 2, 50)
+        baseline.accept(initial, 0.0)
+        val controls = GameInput(forward = true, stickX = .4)
+        val down = t.inputEdgePacket(controls.copy(fire = true))!!
+        val up = t.inputEdgePacket(controls)!!
+        val second = t.inputEdgePacket(controls.copy(fire = true), local = true)!!
+        assertEquals(listOf(1L, 2L), listOf(down.seq, up.seq))
+        assertTrue(down.fire); assertFalse(up.fire)
+        assertEquals(51L, second.seq)
+        assertEquals(.4, down.stickX, 0.0)
+        assertEquals(0, t.bufferedFrameCount)
+        assertEquals(0, t.secondaryFrameCount)
+        assertEquals(2, t.bufferedAcknowledgementCount)
+        assertEquals(1, t.secondaryAcknowledgementCount)
+        assertEquals(0.0, render(t).tanks[0].x, 0.0)
+        render(baseline)
+        val packets = mutableListOf<GameInput>()
+        val moved = render(t, tick, controls, tick, packets::add)
+        assertEquals(render(baseline, tick, controls, tick).tanks, moved.tanks)
+        assertEquals(listOf(3L), packets.map { it.seq })
+        assertEquals(1, t.bufferedFrameCount)
+        repeat(1000) { t.inputEdgePacket(controls.copy(fire = it % 2 == 0)) }
+        assertTrue(t.bufferedAcknowledgementCount <= 240)
+        assertEquals(1, t.bufferedFrameCount)
+    }
+
+    @Test
+    fun anEdgeAcknowledgementReplaysOnlyRemainingMovementSteps() {
+        val t = timeline()
+        val controls = GameInput(forward = true, fire = true)
+        t.accept(state(tick = 60, x = 0.0), 0.0)
+        render(t, 2 * tick, controls, 2 * tick)
+        assertEquals(3L, t.inputEdgePacket(controls.copy(fire = false))!!.seq)
+        assertEquals(4L, t.inputEdgePacket(controls)!!.seq)
+        render(t, 2 * tick, controls, 4 * tick)
+        assertEquals(4, t.bufferedFrameCount)
+        t.accept(state(tick = 63, x = 3.0, ack = 4, ackSteps = 1), 4 * tick)
+        assertEquals(1, t.bufferedFrameCount)
+        assertEquals(4.0, render(t, now = 4 * tick).tanks[0].x, 1e-9)
+    }
+
+    @Test
     fun subframeMovesWithoutExtraPacketAndStallsBoundCatchUp() {
         val t = timeline()
         t.accept(state(x = 0.0), 0.0)

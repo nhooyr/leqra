@@ -3,6 +3,56 @@ import XCTest
 @testable import leqraCore
 
 final class RenderTimelineTests: XCTestCase {
+    func testRealFireEdgesPreserveQuickTapsWithoutSteppingOrResettingMovement() throws {
+        var moves = 0
+        let timeline = RenderTimeline(localID: 1) { tank, input, _ in
+            moves += 1
+            if input.forward { tank.x += 1 }
+        }
+        timeline.accept(snapshot(), at: 0)
+        let down = try XCTUnwrap(timeline.inputEdgePacket(GameInput(forward: true, fire: true), now: 0.001))
+        let up = try XCTUnwrap(timeline.inputEdgePacket(GameInput(forward: true), now: 0.002))
+        XCTAssertEqual([down.fire, up.fire], [true, false])
+        XCTAssertEqual([down.seq, up.seq], [1, 2])
+        XCTAssertEqual(moves, 0)
+        XCTAssertEqual(timeline.bufferedAcknowledgementCount, 2)
+        var packets: [GameInput] = []
+        let frame = timeline.render(dt: 1 / 60, input: GameInput(forward: true), now: 1 / 60) { packets.append($0) }
+        XCTAssertEqual(packets.map(\.seq), [3])
+        XCTAssertEqual(try XCTUnwrap(frame?.tanks.first?.x), 1)
+        XCTAssertEqual(moves, 1)
+        // Acknowledging an edge must do the same movement work as the ordinary
+        // packet for that step, including the presenter's correction probes.
+        var baselineMoves = 0
+        let baseline = RenderTimeline(localID: 1) { tank, input, _ in
+            baselineMoves += 1
+            if input.forward { tank.x += 1 }
+        }
+        baseline.accept(snapshot(), at: 0)
+        _ = baseline.render(dt: 1 / 60, input: GameInput(forward: true), now: 1 / 60) { _ in }
+        baseline.accept(snapshot(tick: 1, x: 1, ack: 1, ackSteps: 1), at: 0.02)
+        timeline.accept(snapshot(tick: 1, x: 1, ack: up.seq, ackSteps: 1), at: 0.02)
+        XCTAssertEqual(moves, baselineMoves)
+        let beforeRepress = moves
+        let repress = try XCTUnwrap(timeline.inputEdgePacket(GameInput(forward: true, fire: true), now: 0.021))
+        XCTAssertEqual(repress.seq, 4)
+        XCTAssertEqual(moves, beforeRepress)
+        XCTAssertEqual(timeline.bufferedAcknowledgementCount, 4)
+    }
+
+    func testFireEdgePacketsRejectStaleDeadAndSpectatorActorsWithoutUsingASequence() throws {
+        let timeline = timeline()
+        timeline.accept(snapshot(), at: 0)
+        XCTAssertNil(timeline.inputEdgePacket(GameInput(fire: true), now: 3))
+        timeline.accept(snapshot(tick: 1, hp: 0), at: 3)
+        XCTAssertNil(timeline.inputEdgePacket(GameInput(fire: true), now: 3.01))
+        var observer = snapshot(tick: 2); observer.spectating = true
+        timeline.accept(observer, at: 3.02)
+        XCTAssertNil(timeline.inputEdgePacket(GameInput(fire: true), now: 3.03))
+        timeline.accept(snapshot(tick: 3), at: 3.04)
+        XCTAssertEqual(try XCTUnwrap(timeline.inputEdgePacket(GameInput(fire: true), now: 3.05)).seq, 1)
+    }
+
     private func timeline(localID: Int = 1) -> RenderTimeline {
         RenderTimeline(localID: localID) { tank, input, dt in
             if input.forward { tank.x += dt * 60 }

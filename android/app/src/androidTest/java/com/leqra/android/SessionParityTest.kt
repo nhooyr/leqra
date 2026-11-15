@@ -24,6 +24,69 @@ class SessionParityTest {
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
     @Test
+    fun subphysicsFireEdgesRearmBothSeatsAndReachOnlineSequenceChronology() {
+        for (finite in listOf(false, true)) for (power in listOf("rapid", "scatter", "homing", "grenade", "laser", "cannon")) {
+            val context = context()
+            val session = main { GameSession(context) }
+            try {
+                main {
+                    val arena = PracticeArena(42, "P1", 0, 0, world = if (finite) ArenaWorld(10000.0, 10000.0, 120, 120) else null)
+                    arena.configureLocal("P2", 1)
+                    arena.snapshot.tanks.forEachIndexed { index, tank ->
+                        tank.x = 42.0 + index * 24 * 84; tank.y = tank.x; tank.angle = 0.0
+                        tank.invulnerable = 0.0; tank.spawnProtected = false
+                        PracticeArena.applyPower(tank, power)
+                        if (power == "rapid") tank.machineRounds = 1 else tank.charges = 1
+                    }
+                    set(session, "practice", arena); set(session, "fixed", null)
+                    set(session, "online", false); set(session, "screen", Screen.PLAYING)
+                    set(session, "infinity", !finite); set(session, "localID", 1); set(session, "localID2", 2)
+                    set(session, "snapshot", arena.snapshot)
+                    val clicks = mutableListOf<com.leqra.android.audio.AudioCue>()
+                    session.muted = false; session.volume = .5f; session.emitAudioCue = { clicks += it }
+                    session.input = GameInput(fire = true); session.input2 = GameInput(fire = true)
+                    arena.step(mapOf(1 to session.input, 2 to session.input2), 1.0 / 60)
+                    assertTrue(arena.snapshot.tanks.all { it.power.isEmpty() })
+                    for (seat in 0..1) {
+                        if (seat == 0) {
+                            session.input = GameInput(); session.input = GameInput(fire = true); session.input = GameInput()
+                        } else {
+                            session.input2 = GameInput(); session.input2 = GameInput(fire = true); session.input2 = GameInput()
+                        }
+                    }
+                    arena.step(mapOf(1 to session.input, 2 to session.input2), 1.0 / 60)
+                    for (id in 1..2) assertEquals("A captured $power repress fires one standard shot for P$id", 1, arena.snapshot.bullets.count { it.owner == id && it.kind.isEmpty() })
+                    repeat(8) { arena.step(GameInput(), 1.0 / 60) }
+                    assertEquals(2, arena.snapshot.bullets.count { it.kind.isEmpty() })
+                    assertTrue("Available ammo never generates a dry click", clicks.isEmpty())
+                    session.input = GameInput(fire = true); session.input2 = GameInput(fire = true)
+                    session.neutral()
+                    arena.step(GameInput(), 1.0 / 60)
+                    assertEquals("Neutral discards queued taps", 2, arena.snapshot.bullets.count { it.kind.isEmpty() })
+                }
+            } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+        }
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                set(session, "online", true); set(session, "screen", Screen.PLAYING)
+                set(session.network, "connected", true)
+                event(session, NetworkEvent.Welcome(welcome(local = true)))
+                event(session, NetworkEvent.State(ArenaSnapshot(tanks = listOf(ArenaTank(id = 1), ArenaTank(id = 2)))))
+                val before = session.authoritativeSnapshot.tanks.map { it.copy() }
+                val primary = session.network.lastInputSequence
+                val secondary = session.network.lastLocalInputSequence
+                session.input = GameInput(fire = true); session.input = GameInput()
+                session.input2 = GameInput(fire = true); session.input2 = GameInput()
+                assertEquals(primary + 2, session.network.lastInputSequence)
+                assertEquals(secondary + 2, session.network.lastLocalInputSequence)
+                assertEquals(before, session.authoritativeSnapshot.tanks)
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
     fun emptyQuickPressesAnimateBothSeatsInEveryModeWithoutInventingShotsOrMutatingAuthority() {
         for (online in listOf(false, true)) for (finite in listOf(false, true)) {
             val context = context()

@@ -162,6 +162,8 @@ internal class GameSession(context: Context) {
         get() = if (online && activeNetwork.isPublic) spawnNotices.current(System.nanoTime() / 1e9) else null
     private val fireFeedback = PressFireFeedback()
     private val localFireFeedback = PressFireFeedback()
+    private var observedFire = false
+    private var observedLocalFire = false
     var previewRecoil = 0.0
         private set
     var localPreviewRecoil = 0.0
@@ -915,6 +917,10 @@ internal class GameSession(context: Context) {
     fun neutral() {
         input = GameInput()
         input2 = GameInput()
+        for (id in listOfNotNull(localID, localID2)) {
+            practice?.resetFire(id)
+            fixed?.combat?.resetFire(id)
+        }
         cancelFireFeedback()
         if (online && !spectating) {
             val client = activeNetwork
@@ -1034,6 +1040,9 @@ internal class GameSession(context: Context) {
         val dt =
             if (previousFrame == 0L) 0.0 else ((nanos - previousFrame) / 1e9).coerceIn(0.0, .08)
         previousFrame = nanos
+        // Mutable controller inputs must be sampled before physics so their edge is not replayed.
+        observeFire(false, input.fire, nanos)
+        observeFire(true, input2.fire, nanos)
         if (screen == Screen.PLAYING && !paused) {
             if (online) {
                 val client = activeNetwork
@@ -1083,8 +1092,6 @@ internal class GameSession(context: Context) {
             else if (finishingProjectilePresentation) practice?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9)
                 ?: fixed?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9) ?: snapshot else snapshot
         }
-        observeFire(false, input.fire, nanos)
-        observeFire(true, input2.fire, nanos)
         val authority = authoritativeSnapshot
         val feedbackPlaying = fireFeedbackPlaying(authority)
         previewRecoil = fireFeedback.pulse(authority.tanks.firstOrNull { it.id == localID }, authority.generation, feedbackPlaying, nanos / 1e9)
@@ -1122,8 +1129,23 @@ internal class GameSession(context: Context) {
         val state = authoritativeSnapshot
         val id = if (local) localID2 else localID
         val tank = id?.let { target -> state.tanks.firstOrNull { it.id == target } }
+        val edge = fire != (if (local) observedLocalFire else observedFire)
+        if (local) observedLocalFire = fire else observedFire = fire
+        val playing = fireFeedbackPlaying(state)
+        if (edge && playing && id != null && tank != null && tank.hp > 0) {
+            if (online) {
+                val client = activeNetwork
+                timeline.inputEdgePacket(if (local) input2 else input, local)?.let { packet ->
+                    client.sendInput(packet, local = local, player = id,
+                        member = if (local) client.welcome?.localMember else client.welcome?.member)
+                }
+            } else {
+                practice?.captureFire(id, fire)
+                fixed?.combat?.captureFire(id, fire)
+            }
+        }
         val age = if (online) max(0.0, nanos / 1e9 - timeline.authoritativeArrivalTime) else 0.0
-        val accepted = (if (local) localFireFeedback else fireFeedback).controls(fire, tank, state.generation, fireFeedbackPlaying(state), nanos / 1e9, age)
+        val accepted = (if (local) localFireFeedback else fireFeedback).controls(fire, tank, state.generation, playing, nanos / 1e9, age)
         if (accepted && tank != null && !muted && volume > 0 && PressFireFeedback.ammoUnavailable(tank, state, age)) emitAudioCue(AudioCue.DRY_FIRE)
     }
 

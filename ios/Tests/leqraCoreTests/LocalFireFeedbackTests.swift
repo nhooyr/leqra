@@ -2,6 +2,35 @@ import XCTest
 @testable import leqraCore
 
 final class LocalFireFeedbackTests: XCTestCase {
+    func testEarlyRepressAgainstOldWeaponAuthorityCannotSuppressTheRealStandardShot() throws {
+        for infinity in [false, true] { for power in ["rapid", "scatter", "homing", "grenade", "laser", "cannon"] {
+            var feedback = LocalFireFeedback(), router = AudioEventRouter()
+            let timeline = RenderTimeline(localID: 1) { _, _, _ in }
+            var old = ArenaTank(id: 1, powerTime: 15, power: power, charges: 1, machineRounds: 1, ammoEpoch: 4)
+            let before = ArenaSnapshot(tanks: [old])
+            timeline.accept(before, at: 1)
+            _ = router.consume(snapshot: before, localID: 1, infinity: infinity, online: true, now: 1)
+            XCTAssertEqual(feedback.setFire(true, tank: old, generation: 0, now: 1), power != "grenade")
+            _ = timeline.inputEdgePacket(GameInput(fire: true), now: 1)
+            feedback.setFire(false, tank: old, generation: 0, now: 1.01)
+            let up = try XCTUnwrap(timeline.inputEdgePacket(GameInput(), now: 1.01))
+            old.cooldown = 0.5
+            let down = try XCTUnwrap(timeline.inputEdgePacket(GameInput(fire: true), now: 1.02))
+            XCTAssertFalse(feedback.setFire(true, tank: old, generation: 0, now: 1.02))
+            XCTAssertEqual([up.fire, down.fire], [false, true])
+            XCTAssertEqual([up.seq, down.seq], [2, 3])
+            let standard = ArenaTank(id: 1, recoil: 1, ammoUsed: 1, ammoEpoch: 5)
+            let fired = ArenaSnapshot(tick: 1, tanks: [standard],
+                bullets: [ArenaBullet(id: 1, owner: 1, life: 5, ammoEpoch: 5)],
+                effects: [ArenaEffect(id: 1, kind: "shot:", owner: 1)])
+            let unchanged = fired
+            XCTAssertEqual(feedback.recoil(real: standard.recoil, tank: standard, generation: 0, now: 1.03), 1)
+            XCTAssertEqual(router.consume(snapshot: fired, localID: 1, infinity: infinity, online: true, now: 1.03), [.init(cue: .regular)])
+            XCTAssertEqual(router.consume(snapshot: fired, localID: 1, infinity: infinity, online: true, now: 1.04), [])
+            XCTAssertEqual(fired, unchanged)
+        } }
+    }
+
     func testDryFireClassifiesCurrentMagazineBoundariesWithoutChangingAuthority() {
         let cases: [(String, Int, Int, Int, Bool)] = [
             ("", 4, 0, 0, false), ("", 5, 0, 0, true),

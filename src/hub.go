@@ -716,12 +716,11 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 			c.mapGeneration = -1
 			r.LastAction = now
 			h.electHost(r)
-			c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": p.ID, "token": p.Token, "publicToken": p.PublicToken, "resumed": true, "created": false, "spectating": p.Spectating, "member": p.Member, "localPublicToken": func() string {
-				if local := roomLocalController(r, p); local != nil {
-					return local.PublicToken
-				}
-				return ""
-			}()})
+			welcome := map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": p.ID, "token": p.Token, "publicToken": p.PublicToken, "resumed": true, "created": false, "spectating": p.Spectating, "member": p.Member}
+			if local := roomLocalController(r, p); local != nil && local.PublicToken != "" {
+				welcome["localPublicToken"] = local.PublicToken
+			}
+			c.enqueue(welcome)
 			h.broadcastRoom(r)
 			h.sendState(c, r)
 			h.sendChatHistory(c, r)
@@ -787,7 +786,11 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 	c.mapGeneration = -1
 	r.LastAction = now
 	h.electHost(r)
-	c.enqueue(map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": id, "token": secret, "publicToken": ownerToken, "resumed": false, "created": created, "spectating": p.Spectating, "member": p.Member, "full": fallback, "busy": busy, "localPublicToken": c.localOwnerToken})
+	welcome := map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": id, "token": secret, "publicToken": ownerToken, "resumed": false, "created": created, "spectating": p.Spectating, "member": p.Member, "full": fallback, "busy": busy}
+	if c.localOwnerToken != "" {
+		welcome["localPublicToken"] = c.localOwnerToken
+	}
+	c.enqueue(welcome)
 	if !deferInitialState {
 		h.broadcastRoom(r)
 		h.sendState(c, r)

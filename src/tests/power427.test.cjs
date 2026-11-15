@@ -209,6 +209,19 @@ test('last grenade consumes the entire hold through refills; only a new press fi
   s.weaponControl(t,true,true);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
  }
 });
+test('every depleted or expired weapon consumes held Fire until a fresh press',()=>{
+ for(const power of weapons)for(const expiry of [false,true])for(const sampledRelease of [false,true]){
+  const s=boot(),t=s.tanks[0],noop=()=>{};Object.assign(s,{detonateOwned:()=>false,LASER_COOLDOWN:.85*2/3,laserTrace:()=>({x:0,y:0,endX:1,endY:0,target:null}),laserEffect:noop});
+  vm.runInContext(declaration('weaponControl')+'\n'+declaration('fireLaser'),s);s.grantPower(t,power);
+  if(expiry){t.fireHeld=true;t.powerTime=.001;s.humanControl=pilot=>{if(pilot===t)s.weaponControl(t,true,false);};s.update(1/120);}
+  else{t.charges=t.machineRounds=1;s.weaponControl(t,true,true);}
+  const label=[power,expiry?'timer':'ammo',sampledRelease?'sampled':'coalesced'].join('/'),fired=s.bullets.length;
+  assert.equal(t.power,null,label);assert.equal(t.cooldown,0,label);assert.equal(t.fireBlocked,true,label);
+  for(let i=0;i<5;i++){s.time+=(1/60);s.weaponControl(t,true,false);}assert.equal(s.bullets.length,fired,label+' no standard follow-up');
+  s.grantPower(t,'shield',.001);s.update(1/120);s.weaponControl(t,true,false);assert.equal(s.bullets.length,fired,label+' passive refill preserves latch');
+  if(sampledRelease)s.weaponControl(t,false,false);s.weaponControl(t,true,true);assert.equal(s.bullets.length,fired+1,label+' fresh press fires standard');
+ }
+});
 
 test('fixed local empty-ammo presses play one dry cue per fresh eligible press for either pilot',()=>{
  for(const id of [0,1])for(const power of ['', 'rapid','scatter','homing','laser','cannon']){

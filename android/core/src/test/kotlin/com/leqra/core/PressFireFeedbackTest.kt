@@ -45,6 +45,23 @@ class PressFireFeedbackTest {
         assertEquals(before, tank)
     }
 
+    @Test fun weaponEndingWhileHeldCannotInventAStandardPulseOrDryClick() {
+        for (power in listOf("rapid", "scatter", "homing", "grenade", "laser", "cannon")) {
+            val feedback = PressFireFeedback()
+            val tank = tank(power).copy(ammoUsed = 0, charges = 1, machineRounds = 1)
+            feedback.controls(true, tank, 1, true, 0.0)
+            tank.power = ""
+            AmmoEpoch.refill(tank)
+            val before = tank.copy()
+            assertFalse("Held $power end is not a new accepted press", feedback.controls(true, tank, 1, true, .2))
+            assertEquals(0.0, feedback.pulse(tank, 1, true, .2), 0.0)
+            assertFalse(PressFireFeedback.ammoUnavailable(tank, ArenaSnapshot(tanks = listOf(tank))))
+            assertEquals(before, tank)
+            feedback.controls(false, tank, 1, true, .4)
+            assertTrue(feedback.controls(true, tank, 1, true, .8))
+        }
+    }
+
     @Test fun blockedPressesAreConsumedAndWeaponCadencesMatchTheWeb() {
         for ((power, cadence) in listOf("" to .34, "rapid" to .15, "scatter" to .27, "homing" to .36, "laser" to .85 * 2 / 3, "cannon" to .85 * 2 / 3)) {
             val feedback = PressFireFeedback()

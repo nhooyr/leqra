@@ -49,7 +49,9 @@ class PracticeArena(
     private var nextEffect = 0
     private val effectTimes = mutableMapOf<Int, Double>()
     private val held = mutableMapOf<Int, Boolean>()
+    private val pendingFirePresses = mutableSetOf<Int>()
     private val movementInputs = mutableMapOf<Int, GameInput>()
+    // Grenade actions and a weapon ending consume the current Fire hold until release.
     private val fireBlocked = mutableSetOf<Int>()
     private val rapidShotTicks = mutableMapOf<Int, Long>()
     private val expiredAmmo = mutableSetOf<Int>()
@@ -167,6 +169,7 @@ class PracticeArena(
                 if (roamingIDs.remove(2)) roamingIDs.add(replacement)
                 roamingHomes.remove(2)?.let { roamingHomes[replacement] = it }
                 held.remove(2)?.let { held[replacement] = it }
+                if (pendingFirePresses.remove(2)) pendingFirePresses.add(replacement)
                 movementInputs.remove(2)?.let { movementInputs[replacement] = it }
                 if (fireBlocked.remove(2)) fireBlocked.add(replacement)
                 rapidShotTicks.remove(2)?.let { rapidShotTicks[replacement] = it }
@@ -260,6 +263,21 @@ class PracticeArena(
 
     fun refreshStandings() = updateStandings()
 
+    /** Preserve real button edges that arrive between two physics steps. */
+    fun captureFire(id: Int, fire: Boolean) {
+        if (fire) pendingFirePresses += id
+        else {
+            held[id] = false
+            fireBlocked -= id
+        }
+    }
+
+    fun resetFire(id: Int) {
+        held[id] = false
+        pendingFirePresses -= id
+        fireBlocked -= id
+    }
+
     fun step(input: GameInput, dt: Double) = step(mapOf(localID to input), dt)
 
     fun step(inputs: Map<Int, GameInput>, dt: Double) {
@@ -284,6 +302,7 @@ class PracticeArena(
         for (i in snapshot.tanks.indices) {
             val t = snapshot.tanks[i]
             if (t.hp == 0) {
+                pendingFirePresses -= t.id
                 if (!respawnsEnabled) {
                     t.respawnTime = 0.0
                     continue
@@ -425,6 +444,7 @@ class PracticeArena(
             inactiveRoamingBots[tank.id] = tank.copy(hp = 0, respawnTime = 0.0)
             inactiveRoamingReadyAt[tank.id] = time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
             roamingIDs.remove(tank.id); roamingHomes.remove(tank.id); held.remove(tank.id); movementInputs.remove(tank.id)
+            pendingFirePresses.remove(tank.id)
             fireBlocked.remove(tank.id); botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
             rapidShotTicks.remove(tank.id); expiredAmmo.remove(tank.id)
             nextBoostEffects.remove(tank.id); motionPresenters.remove(tank.id)
@@ -598,6 +618,7 @@ class PracticeArena(
             )
         snapshot.tanks = snapshot.tanks.toMutableList().also { it[index] = replacement }
         fireBlocked.remove(old.id)
+        pendingFirePresses.remove(old.id)
         botCourses.remove(old.id)
         dumbBrains.remove(old.id)
         nextBoostEffects.remove(old.id)
@@ -630,6 +651,7 @@ class PracticeArena(
         }
         t.cooldown = max(0.0, t.cooldown - dt)
         t.recoil = max(0.0, t.recoil - 9 * dt)
+        if (hadWeapon && t.powerTime <= 0 && held[t.id] == true) fireBlocked += t.id
         if (hadShield && t.shield <= 0 || hadStar && t.starmanTime <= 0 || hadWeapon && t.powerTime <= 0) expiredAmmo += t.id
     }
 
@@ -918,25 +940,25 @@ class PracticeArena(
 
     private fun weaponControl(index: Int, fire: Boolean) {
         val t = snapshot.tanks[index]
-        val pressed = fire && held[t.id] != true
+        val pressed = pendingFirePresses.remove(t.id) || fire && held[t.id] != true
         held[t.id] = fire
-        if (!fire) fireBlocked.remove(t.id)
+        if (!fire || pressed) fireBlocked.remove(t.id)
         if (t.hp <= 0 || t.spawnProtected && t.invulnerable > 1e-9) return
         if (pressed) {
             val grenades = projectiles.filter { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == t.ammoEpoch }
             if (grenades.isNotEmpty()) {
                 grenades.forEach { detonate(it.wire, completedFlight(it)) }
                 projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == t.ammoEpoch }
-                fireBlocked.add(t.id)
+                if (fire) fireBlocked.add(t.id)
                 return
             }
             if (t.power == "grenade") {
-                fireBlocked.add(t.id)
+                if (fire) fireBlocked.add(t.id)
                 fireShot(index)
                 return
             }
         }
-        if (fire && t.id !in fireBlocked && t.power != "grenade") fireShot(index)
+        if ((fire || pressed) && t.id !in fireBlocked && t.power != "grenade") fireShot(index)
     }
 
     private fun fireShot(index: Int) {
@@ -1019,6 +1041,7 @@ class PracticeArena(
         if (boosted || kind.isEmpty()) return
         if (kind == "rapid") t.machineRounds-- else t.charges--
         if (if (kind == "rapid") t.machineRounds <= 0 else t.charges <= 0) {
+            if (held[t.id] == true) fireBlocked += t.id
             t.power = ""
             t.powerTime = 0.0
             t.charges = 0

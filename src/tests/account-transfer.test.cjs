@@ -22,6 +22,27 @@ function boot(){
 }
 const info={names:['SAVED','WING'],totalNames:2,publicProfile:{name:'SAVED',score:17,localName:'WING',localScore:9}};
 
+test('P1-only room welcomes preserve the pending P2 key until P2 is acknowledged',()=>{
+ for(const localPublicToken of [undefined,'']){
+  const {s,storage}=boot(),candidate=s.prepareLocalAccount().localPublicToken;
+  storage.set('leqra.local2Name','pilot#TEST42');
+  s.window={leqraIdentity:{remember:s.rememberPublicIdentity}};
+  s.request={publicToken:oldKey,localPublicToken:candidate};s.msg={publicToken:oldKey,localPublicToken};
+  const start=source.indexOf('   window.leqraIdentity?.remember?.(msg.publicToken'),end=source.indexOf('\n   matchmakingWelcome',start),welcomeIdentity=source.slice(start,end);
+  assert.ok(start>=0&&end>start,'actual room welcome identity handler');
+  vm.runInContext(welcomeIdentity,s);
+  assert.equal(s.publicIdentityToken(1),candidate);
+  assert.equal(JSON.parse(storage.get('leqra.localAccountRegistration')).token,candidate);
+  assert.equal(storage.get('leqra.local2Name'),'pilot#TEST42');
+  const reloaded=boot();for(const [key,value]of storage)reloaded.storage.set(key,value);
+  assert.equal(reloaded.s.prepareLocalAccount().localPublicToken,candidate,'reload keeps ownership of the generated name');
+  assert.equal(reloaded.s.prepareLocalAccount().localNewAccount,true);
+  s.msg.localPublicToken=candidate;vm.runInContext(welcomeIdentity,s);
+  assert.equal(storage.get('leqra.localPublicToken'),candidate);
+  assert.equal(storage.has('leqra.localAccountRegistration'),false,'only the real P2 acknowledgement completes registration');
+ }
+});
+
 test('invalid and unverified account keys never replace the current account',async()=>{
  const {s,$,requests}=boot();$('accountImportKey').value='bad';await s.checkImportedAccount();assert.equal(requests.length,0);assert.equal(s.publicIdentityToken(),oldKey);assert.match($('accountImportNotice').textContent,/complete account key/);
  $('accountImportKey').value=key;const pending=s.checkImportedAccount();assert.equal(s.publicIdentityToken(),oldKey);assert.equal($('accountUseBtn').disabled,true);

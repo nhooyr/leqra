@@ -151,8 +151,8 @@ public final class RenderTimeline {
         sent = sent.filter { $0.value >= step - 240 }
     }
 
-    /// Call once per display frame. Input packets are emitted on fixed steps,
-    /// bounded to 60/s regardless of a 60, 90, or 120 Hz display.
+    /// Call once per display frame. Movement packets remain fixed at 60/s;
+    /// actual Fire edges can also be sent through inputEdgePacket between ticks.
     public func render(dt: Double, input: GameInput, now: Double,
                        send: (GameInput) -> Void) -> ArenaSnapshot? {
         guard let latest else { return nil }
@@ -257,6 +257,19 @@ public final class RenderTimeline {
         sequence += 1
         rememberSent(at: step + 1)
         return GameInput(seq: sequence)
+    }
+
+    /// Send actual Fire edges immediately, without advancing movement or
+    /// resetting prediction. The server derives trusted presses from these
+    /// ordered boolean transitions, including taps shorter than one tick.
+    public func inputEdgePacket(_ input: GameInput, now: Double) -> GameInput? {
+        guard let latest, now.isFinite, now - lastArrival <= 2.5, localID >= 0,
+              !latest.spectating, latest.phase == "playing", latest.result == nil,
+              latest.tanks.contains(where: { $0.id == localID && $0.hp > 0 }) else { return nil }
+        sequence += 1
+        rememberSent(at: step + 1)
+        var packet = input; packet.seq = sequence
+        return packet
     }
 
     private func rememberSent(at step: Int) {

@@ -1,10 +1,10 @@
-# leqra v5.1.2 — current game protocol (protocol 1)
+# leqra v5.1.3 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.1.2**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.1.3**.
 
 ```json
-{"type":"server_hello","version":"5.1.2","protocol":1}
-{"type":"client_hello","version":"5.1.2","protocol":1}
+{"type":"server_hello","version":"5.1.3","protocol":1}
+{"type":"client_hello","version":"5.1.3","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -110,6 +110,9 @@ first-game migration intent until gameplay confirms it, and ignore late replies
 after a key, server, draft or seat changes. Generated-name registration alone
 does not consume legacy P2 score-migration eligibility; an already used/imported
 account cannot use that mechanism to merge another score.
+Room welcomes omit `localPublicToken` when no independent P2 seat is admitted.
+An omitted or empty P2 welcome field must not erase a saved P2 key or pending
+registration; only a nonempty confirmation completes that seat's registration.
 
 Player names beginning with case-insensitive `Bot `, or equal to `Bot`, are
 reserved online and offline. Availability reports `reason:"reserved"`; account
@@ -1092,9 +1095,15 @@ timer expiries in one simulation step reset once. Consuming the last Shield
 charge also refills the surviving tank. The shot that consumes a weapon's final
 round/charge remains live; the tank immediately returns to full standard ammo
 with no leftover cooldown. Surviving weapon timers are not extended. Held Fire
-is retained. A grenade action consumes its whole hold until release, including
-when its final charge starts a fresh standard magazine or another refill occurs.
-The existing limit of one rapid projectile per 60 Hz simulation tick is retained.
+is retained. Ending any finite weapon (`rapid`, `scatter`, `homing`, `grenade`,
+`laser`, `cannon`) while Fire was held consumes that hold until release, whether
+the weapon depleted its ammo or its timer expired. Standard ammo is full and its
+cooldown is zero, but another standard shot requires a fresh press. A trusted
+release/repress latched between simulation ticks also counts as that fresh press.
+Passive buff expiry refills the surviving weapon without interrupting its normal
+held fire, and never clears an already-consumed hold. Grenade actions consume
+their whole hold even before the final charge. The existing limit of one rapid
+projectile per 60 Hz simulation tick is retained.
 
 Tank and ordinary bullet snapshots carry optional `ammoEpoch` (missing means `0`).
 Initial fresh actors start at `0`. Each refill or true respawn increments the
@@ -1116,6 +1125,14 @@ replaying an input backlog. The internal `Input.FirePressed` field is excluded
 from JSON; clients cannot supply it. Pending presses are dropped on input timeout,
 disconnect, and round reset. Repeated held packets do not create new presses.
 
+Clients retain actual Fire down/up edges between local simulation samples.
+Online, they send an ordinary `input` immediately for each actual edge, using
+the same increasing per-seat sequence and acknowledgement history as periodic
+movement inputs. Edge transmission does not advance or reset movement prediction
+and adds no client-supplied press, damage or detonation field. Offline play
+latches a pending press until one simulation step; leaving active gameplay clears
+that pending input so it cannot fire later on resume.
+
 On a fresh press, a living tank detonates its owned live `grenade` projectiles
 from the current ammo epoch first. This does not consume a weapon charge and
 bypasses throw cooldowns. If no current-epoch grenade is active, a grenade-equipped
@@ -1129,8 +1146,10 @@ preventing repeated grenade throws and standard follow-up shots during the same
 hold. The final throw replenishes standard ammo and clears its cooldown, but
 another shot still requires release followed by a fresh Fire press. A fresh
 press latched between simulation ticks also releases the consumed hold.
-Other weapon types retain hold-to-fire. The next explicit release/press permits
-another throw. Only the authenticated socket's own tank can trigger this action;
+Other weapon types retain hold-to-fire within the same weapon; their final
+charge/budget or timer ending still requires a new press for standard ammo. The
+next explicit release/press permits another throw. Only the authenticated socket's
+own tank can trigger this action;
 a supplied owner, target, or forged damage field has no authority.
 
 Fuses continue after weapon changes and owner death (dead owners cannot manually
