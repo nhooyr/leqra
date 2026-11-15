@@ -359,7 +359,11 @@ class MainActivity : Activity() {
             }
         }
         arena.onInput = { session.input = it }
+        arena.onControlsReset = { session.cancelFireFeedback() }
+        session.fireFeedbackAllowed = { dialog == null && currentFocus !is EditText }
         session.present = { snapshot, maze, localID, localID2, online ->
+            arena.previewRecoil = session.previewRecoil
+            arena.localPreviewRecoil = session.localPreviewRecoil
             arena.encounterNotice = session.encounterNotice
             arena.followingID = session.followingID.takeIf { session.spectating }
             arena.submit(snapshot, localID, maze, localID2, online)

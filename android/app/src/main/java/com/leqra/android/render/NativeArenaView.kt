@@ -16,6 +16,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     View(context, attributes), Choreographer.FrameCallback {
     var onFrame: ((Long) -> Unit)? = null
     var onInput: ((GameInput) -> Unit)? = null
+    var onControlsReset: (() -> Unit)? = null
     var onFirstFrame: (() -> Unit)? = null
     var showControls = true
         set(value) {
@@ -35,6 +36,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
 
     var fireAvailable = true
+    var previewRecoil = 0.0
+    var localPreviewRecoil = 0.0
     var encounterNotice: String? = null
     /** Camera target is separate from local identity; a viewer never labels a tank P1. */
     var followingID: Int? = null
@@ -321,6 +324,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         input.stickX = 0.0
         input.stickY = 0.0
         onInput?.invoke(input.copy())
+        previewRecoil = 0.0
+        localPreviewRecoil = 0.0
+        onControlsReset?.invoke()
         invalidate()
     }
 
@@ -654,7 +660,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         drawBitmap(canvas, if (tank.hp > 0) art.hull(tank.colorIndex, phase) else art.wreck(), 24f)
         if (tank.hp > 0) {
             canvas.save()
-            canvas.translate((-tank.recoil * 4).toFloat(), 0f)
+            val preview = if (tank.id == localID) previewRecoil else if (tank.id == localID2) localPreviewRecoil else 0.0
+            canvas.translate((-max(tank.recoil, preview) * 4).toFloat(), 0f)
             drawBitmap(canvas, art.barrel(tank.colorIndex), 32f)
             canvas.restore()
             drawBitmap(canvas, art.turret(tank.colorIndex), 12f)

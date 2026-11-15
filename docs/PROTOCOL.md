@@ -1,10 +1,10 @@
-# leqra v5.1.0 — current game protocol (protocol 1)
+# leqra v5.1.1 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.1.0**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.1.1**.
 
 ```json
-{"type":"server_hello","version":"5.1.0","protocol":1}
-{"type":"client_hello","version":"5.1.0","protocol":1}
+{"type":"server_hello","version":"5.1.1","protocol":1}
+{"type":"client_hello","version":"5.1.1","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
