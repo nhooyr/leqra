@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version         = "5.1.5"
+	version         = "5.2.0"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -276,13 +276,13 @@ func (a *App) socket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) serveSocket(w http.ResponseWriter, r *http.Request, admit func(*Client) bool, read func(*Client)) {
-	key, err := validateUpgrade(w, r, a.origins)
+	_, err := validateUpgrade(w, r, a.origins)
 	if err != nil {
 		return
 	}
 	ip := connectionSource(r.RemoteAddr)
 	deflate := acceptsSnapshotDeflate(r.Header.Values("Sec-WebSocket-Extensions"))
-	c := a.openSocket(w, key, ip, admit, deflate)
+	c := a.openSocket(w, r, ip, admit, deflate)
 	if c == nil {
 		return
 	}
@@ -290,7 +290,7 @@ func (a *App) serveSocket(w http.ResponseWriter, r *http.Request, admit func(*Cl
 	read(c)
 }
 
-func (a *App) openSocket(w http.ResponseWriter, key, ip string, admit func(*Client) bool, deflate bool) *Client {
+func (a *App) openSocket(w http.ResponseWriter, r *http.Request, ip string, admit func(*Client) bool, deflate bool) *Client {
 	a.upgradeMu.RLock()
 	defer a.upgradeMu.RUnlock()
 	if a.stopping {
@@ -301,7 +301,7 @@ func (a *App) openSocket(w http.ResponseWriter, key, ip string, admit func(*Clie
 		http.Error(w, "Too many connections. Try again shortly.", 429)
 		return nil
 	}
-	ws, err := upgradeWS(w, key, deflate)
+	ws, err := upgradeWS(w, r, deflate)
 	if err != nil {
 		a.release(ip)
 		return nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestWebSocketDeflateOffer(t *testing.T) {
@@ -72,32 +73,26 @@ func TestWebSocketDeflateBoundsAndFragmentation(t *testing.T) {
 	}
 }
 
-func TestSnapshotDeflateSharesOneFrameAndKeepsWorldReliable(t *testing.T) {
+func TestSnapshotSharesOneJSONBufferAndKeepsWorldReliable(t *testing.T) {
 	h := newHub(1)
 	players := testPlayers(4)
 	g := newGame(42)
 	g.startMatch(players)
 	r := &Room{Game: g, Players: players}
-	for id, p := range players {
+	for _, p := range players {
 		if p == nil {
 			continue
 		}
 		p.Client = &Client{send: make(chan []byte, 1), updates: make(chan snapshotFrame, 1), done: make(chan struct{}), mapGeneration: g.Generation}
-		if id != 0 {
-			p.Client.ws = &wsConn{deflate: true}
-		}
 	}
 	players[3].Client.mapGeneration = -1
 	h.broadcastState(r)
 	plain := <-players[0].Client.updates
-	compressed := <-players[1].Client.updates
+	second := <-players[1].Client.updates
 	shared := <-players[2].Client.updates
 	world := <-players[3].Client.send
-	if plain.compressed || !compressed.compressed || !shared.compressed || &compressed.data[0] != &shared.data[0] {
-		t.Fatal("mixed peers did not get shared compressed and raw snapshots")
-	}
-	if got, err := inflateMessage(compressed.data, lenLimitForTest); err != nil || !bytes.Equal(got, plain.data) {
-		t.Fatalf("compressed snapshot changed JSON: %v", err)
+	if &plain.data[0] != &second.data[0] || &second.data[0] != &shared.data[0] {
+		t.Fatal("peers did not share immutable JSON before per-socket compression")
 	}
 	var packet stateWire
 	if err := json.Unmarshal(world, &packet); err != nil || packet.World == nil || packet.Generation != g.Generation {
@@ -110,8 +105,8 @@ func TestSnapshotDeflateSharesOneFrameAndKeepsWorldReliable(t *testing.T) {
 	h.sendState(players[1].Client, r)
 	latest := <-players[1].Client.updates
 	want, _ := encodePacket(h.stateWire(r))
-	if got, err := inflateMessage(latest.data, lenLimitForTest); !latest.compressed || err != nil || !bytes.Equal(got, want) {
-		t.Fatalf("coalesced snapshot depends on a prior frame: %v", err)
+	if !bytes.Equal(latest.data, want) {
+		t.Fatal("coalescing did not retain the newest complete JSON snapshot")
 	}
 }
 
@@ -155,18 +150,35 @@ func machineGunWireLoad(t testing.TB) [][]byte {
 
 func TestSnapshotDeflateUnderMachineGunLoad(t *testing.T) {
 	packets := machineGunWireLoad(t)
+	c, _, reader := transportPair(t, true)
+	written := make(chan error, 1)
+	go func() {
+		for _, packet := range packets {
+			if err := c.writeText(packet); err != nil {
+				written <- err
+				return
+			}
+		}
+		written <- nil
+	}()
 	var rawSecond, compressedSecond, rawPeak, compressedPeak int
 	for i, data := range packets {
-		frame := compressSnapshot(data)
-		decoded, err := inflateMessage(frame.data, lenLimitForTest)
-		if !frame.compressed || err != nil || !bytes.Equal(decoded, data) {
+		encoded, compressed, err := readTransportMessage(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := inflateMessage(encoded, lenLimitForTest)
+		if !compressed || err != nil || !bytes.Equal(decoded, data) {
 			t.Fatalf("snapshot %d did not round-trip: %v", i, err)
 		}
-		rawPeak, compressedPeak = max(rawPeak, len(data)), max(compressedPeak, len(frame.data))
+		rawPeak, compressedPeak = max(rawPeak, len(data)), max(compressedPeak, len(encoded))
 		if i >= len(packets)-30 {
 			rawSecond += len(data)
-			compressedSecond += len(frame.data)
+			compressedSecond += len(encoded)
 		}
+	}
+	if err := <-written; err != nil {
+		t.Fatal(err)
 	}
 	if compressedSecond > rawSecond/3 {
 		t.Fatalf("expected at least 2/3 bandwidth saved, got %d vs %d bytes in last second", compressedSecond, rawSecond)
@@ -177,10 +189,41 @@ func TestSnapshotDeflateUnderMachineGunLoad(t *testing.T) {
 func BenchmarkSnapshotDeflateMachineGunLoad(b *testing.B) {
 	packets := machineGunWireLoad(b)
 	packets = packets[len(packets)-30:]
+	benchmarkSocketCompression(b, packets)
+}
+
+// Measure the library's real compressed socket writes rather than an obsolete
+// shared compressor. JSON is already encoded, matching the production queue.
+func benchmarkSocketCompression(b *testing.B, packets [][]byte) {
+	c, peer, reader := transportPair(b, true)
+	_ = peer.SetDeadline(time.Time{})
+	type drained struct{ messages, bytes int }
+	read := make(chan drained, 1)
+	go func() {
+		var total drained
+		for {
+			packet, _, err := readTransportMessage(reader)
+			if err != nil {
+				read <- total
+				return
+			}
+			total.messages++
+			total.bytes += len(packet)
+		}
+	}()
 	b.SetBytes(int64(len(packets[len(packets)-1])))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		compressSnapshot(packets[i%len(packets)])
+		if err := c.writeText(packets[i%len(packets)]); err != nil {
+			b.Fatal(err)
+		}
 	}
+	b.StopTimer()
+	c.close()
+	total := <-read
+	if total.messages != b.N {
+		b.Fatalf("reader received %d of %d snapshots", total.messages, b.N)
+	}
+	b.ReportMetric(float64(total.bytes)/float64(total.messages), "wire-bytes")
 }

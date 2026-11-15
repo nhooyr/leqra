@@ -45,7 +45,7 @@ test('fixed-maze Starman destroys shielded tanks at contact and honors protectio
  for(const [label,targetPatch,friendlyFire,walls,killed] of [
   ['shield',{},false,[],true],
   ['spawn protection',{invulnerable:1},false,[],false],
-  ['opposing Starman',{invulnerable:1,starmanTime:1,ghostTime:1},false,[],false],
+  ['opposing Starman',{invulnerable:1,starmanTime:1,ghostTime:1},false,[],true],
   ['teammate',{team:1},false,[],false],
   ['friendly fire',{team:1},true,[],true],
   ['wall between centers',{},false,[{x:111,y:78,w:8,h:48}],false],
@@ -56,7 +56,7 @@ test('fixed-maze Starman destroys shielded tanks at contact and honors protectio
   s.friendlyFire=friendlyFire;s.recordLocalDeath=(t,owner)=>deaths.push([t.id,owner]);
   s.update(1/60);
   assert.equal(target.alive,!killed,label);
-  assert.equal(pilot.alive,true,label);
-  assert.deepEqual(deaths,killed?[[6,0]]:[],label);
+  assert.equal(pilot.alive,label!=='opposing Starman',label);
+  assert.deepEqual(deaths,label==='opposing Starman'?[[0,6],[6,0]]:killed?[[6,0]]:[],label);
  }
 });

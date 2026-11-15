@@ -82,7 +82,6 @@ func TestInfinitePartySnapshotSharingRespectsRoomAndGeneration(t *testing.T) {
 	var pilots [5]*infinitePilot
 	for i := range clients {
 		clients[i] = partySnapshotClient()
-		clients[i].ws = &wsConn{deflate: true}
 		pilots[i] = a.join(clients[i], fmt.Sprintf("Pilot %d", i), now)
 		pilots[i].X, pilots[i].Y = 0, 0
 	}
@@ -104,10 +103,7 @@ func TestInfinitePartySnapshotSharingRespectsRoomAndGeneration(t *testing.T) {
 		}
 	}
 	for i, frame := range frames {
-		data, err := inflateMessage(frame.data, lenLimitForTest)
-		if err != nil {
-			t.Fatal(err)
-		}
+		data := frame.data
 		var snapshot infiniteSnapshot
 		if err := json.Unmarshal(data, &snapshot); err != nil {
 			t.Fatal(err)

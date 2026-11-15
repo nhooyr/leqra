@@ -51,10 +51,5 @@ func refillExpiredAmmo(t *Tank) {
 }
 
 func clearWeapon(t *Tank) {
-	// Ending a finite weapon never turns its held trigger into a standard shot.
-	// Timer expiry sees the prior held state; a fresh input edge can release it.
-	if t.Power != "" && t.fireHeld {
-		t.fireBlocked = true
-	}
 	t.Power, t.PowerTime, t.Charges, t.MachineRounds = "", 0, 0, 0
 }

@@ -1308,6 +1308,19 @@ test('Starman contact in offline Infinity bypasses shields and spawn protection 
  }
 });
 
+test('opposing Starman tanks mutually die without a transient Infinity target winner',()=>{
+ for(const [sameTeam,friendly,wall,dead] of [[false,false,false,true],[true,false,false,false],[true,true,false,true],[false,false,true,false]]){
+  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{teamMode:sameTeam?'teams':'ffa',friendlyFire:friendly,infinityTarget:1,infinityRandomBots:false}});
+  const w=h.state(),a=w.tanks[0];w.nextPickup=w.nextBot=Infinity;
+  w.maze.wallsNear=()=>wall?[{x:111,y:78,w:8,h:48}]:[];
+  Object.assign(a,{x:100,y:100,team:sameTeam?1:0,score:0});h.window.leqraInfinityArt.grantPower(a,'starman',15,4);
+  const b={...a,id:'star-target',x:134,score:0};w.tanks.push(b);h.advance();
+  assert.equal(a.hp,dead?0:1);assert.equal(b.hp,dead?0:1);assert.equal(a.score,0);assert.equal(b.score,0);assert.ok(!w.result,'net-zero mutual contact cannot trigger a target-score win');
+  if(dead){assert.equal(a.killedBy,b.name);assert.equal(b.killedBy,a.name);assert.equal(a.respawn,1);assert.equal(b.respawn,1);}
+  h.infinity.close();
+ }
+});
+
 test('the Infinity pause menu freezes the offline simulation until Resume', () => {
  const {infinity, byID, state, advance} = harness();
  infinity.start('offline');
@@ -1433,37 +1446,34 @@ test('ordinary Infinity shells can fire immediately after Starman with boosted s
  infinity.close();
 });
 
-test('offline Infinity last grenade consumes the hold through refills for both local pilots',()=>{
- for(const local of [false,true])for(const sampledRelease of [false,true]){
+test('offline Infinity auto-throws held grenades on cooldown for both local pilots',()=>{
+ for(const local of [false,true]){
   const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
   for(const tank of w.tanks)Object.assign(tank,{invulnerable:1000,spawnProtected:false});
-  h.window.leqraInfinityArt.grantPower(t,'grenade',15,8);t.charges=1;const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');arena.emit('keydown',{code:key});h.advance();
-  assert.equal(t.power,'');assert.equal(t.charges,0);assert.equal(w.lastBullet,1);assert.equal(w.bullets[0].kind,'grenade');h.advance(3);assert.equal(w.lastBullet,1);
-  h.window.leqraInfinityArt.grantPower(t,'shield',.001,8);h.advance(2);assert.equal(w.lastBullet,1,'pickup and expiry retain the consumed hold');
-  arena.emit('keyup',{code:key});if(sampledRelease)h.advance();arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,2);assert.equal(w.bullets.at(-1).kind,'');h.infinity.close();
+  h.window.leqraInfinityArt.grantPower(t,'grenade',15,8);const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');arena.emit('keydown',{code:key});h.advance();
+  assert.equal(w.lastBullet,1);h.advance(46);assert.equal(w.lastBullet,1);h.advance(3);assert.equal(w.lastBullet,2);assert.equal(t.charges,1);h.infinity.close();
  }
 });
-test('offline Infinity pops the last grenade before allowing standard fire for either pilot',()=>{
+test('offline Infinity last grenade stays poppable without latching held standard fire',()=>{
  for(const local of [false,true])for(const epoch of [0,42]){
   const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
   for(const tank of w.tanks)Object.assign(tank,{x:100+tank.colorIndex*300,y:100,angle:-Math.PI/2,invulnerable:1000,spawnProtected:false});
   h.window.leqraInfinityArt.grantPower(t,'grenade',15,8);Object.assign(t,{charges:1,ammoEpoch:epoch});const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');
-  arena.emit('keydown',{code:key});h.advance();const grenade=w.bullets[0];assert.equal(t.grenadeEpoch,epoch);assert.equal(t.ammoEpoch,epoch+1);assert.equal(w.lastBullet,1);
-  h.advance(3);assert.equal(w.lastBullet,1);assert.ok(!grenade.dead);
-  arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.ok(grenade.dead,'next fresh press detonates');assert.equal(w.lastBullet,1,'no regular shell accompanies the pop');assert.equal(t.grenadeEpoch,undefined);
-  h.advance(3);assert.equal(w.lastBullet,1,'holding after detonation never fires');arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,2);assert.equal(w.bullets.at(-1).kind,'');h.infinity.close();
+  arena.emit('keydown',{code:key});h.advance();const grenade=w.bullets[0];assert.equal(t.grenadeEpoch,epoch);assert.equal(w.lastBullet,1);
+  h.advance();assert.equal(w.lastBullet,2);assert.ok(!grenade.dead);
+  arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.ok(grenade.dead);assert.equal(w.lastBullet,2,'pop never also fires');assert.equal(t.grenadeEpoch,undefined);
+  t.cooldown=0;h.advance();assert.equal(w.lastBullet,3,'same hold resumes next tick');h.infinity.close();
  }
 });
-test('offline Infinity every weapon ending stops held standard follow-up for both local pilots',()=>{
+test('offline Infinity every weapon ending automatically resumes held standard fire',()=>{
  for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const expiry of [false,true])for(const local of [false,true]){
   const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
   for(const tank of w.tanks)Object.assign(tank,{x:100+tank.colorIndex*200,y:100,angle:-Math.PI/2,invulnerable:1000,spawnProtected:false});
   h.window.leqraInfinityArt.grantPower(t,power,15,8);const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');
-  if(expiry){t.fireHeld=true;t.powerTime=.001;arena.emit('keydown',{code:key});seat.fireTap=false;}
-  else{t.charges=t.machineRounds=1;arena.emit('keydown',{code:key});}
-  h.advance();const shots=w.lastBullet,label=[power,expiry?'timer':'ammo',local?'P2':'P1'].join('/');assert.equal(t.power,'',label);assert.equal(t.fireBlocked,true,label);assert.equal(t.cooldown,0,label);
-  h.advance(5);assert.equal(w.lastBullet,shots,label+' no automatic standard');h.window.leqraInfinityArt.grantPower(t,'shield',.001,8);h.advance(2);assert.equal(w.lastBullet,shots,label+' passive refill retains hold');
-  arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,shots+1,label+' fresh standard press');h.infinity.close();
+  if(expiry){t.fireHeld=true;t.powerTime=.001;arena.emit('keydown',{code:key});seat.fireTap=false;}else{t.charges=t.machineRounds=1;arena.emit('keydown',{code:key});}
+  h.advance();const shots=w.lastBullet,label=[power,expiry,local].join('/');assert.equal(t.power,'',label);
+  t.cooldown=0;h.advance();assert.equal(w.lastBullet,shots+1,label+' held retry');
+  h.window.leqraInfinityArt.grantPower(t,'shield',.001,8);h.advance(2);assert.ok(w.lastBullet>shots+1,label+' passive refill');h.infinity.close();
  }
 });
 test('offline Infinity empty slots sound only on fresh presses, never while holding or when ammo is available',()=>{

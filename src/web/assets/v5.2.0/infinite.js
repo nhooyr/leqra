@@ -340,8 +340,8 @@ function effect(world, kind, x, y, owner, points) {
  else if(world.impactFlight!==undefined&&world.flights?.pending(world.impactFlight))world.flights.defer(world.impactFlight,present);else present();
 }
 
-function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false,ownerColor='',projectile=null) {
- if (world.result || !target.hp || target.invulnerable > 0 && !(starmanContact && target.spawnProtected) || !canDamage(world, ownerID, ownerTeam, target)) return;
+function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = false,ownerColor='',projectile=null,mutualStarman=false) {
+ if (world.result || !target.hp || target.invulnerable > 0 && !(starmanContact && (target.spawnProtected || target.starmanTime>0)) || !canDamage(world, ownerID, ownerTeam, target)) return;
  const contact=(world.flights||=new net.ProjectileFlights()).recordContact(projectile||{id:world.impactFlight,owner:ownerID,kind:starmanContact?'starman':'laser'},target,world.time/STEP,performance.now());
  if (target.shield > 0 && !starmanContact) {
   target.shieldCharges = Math.max(0, (target.shieldCharges || 1) - 1);
@@ -364,7 +364,9 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
  if (ownerTeam) world.teamScores[ownerTeam - 1]++;
  world.impactContact=contact;effect(world, 'hit', target.x, target.y, ownerID);delete world.impactContact;
  const targetScore = world.rules?.infinityTarget;
- if (targetScore > 0) {
+ // Mutual Starman contact commits both deaths together. Each participant gets
+ // one kill and one death, so neither transient +1 may end a target-score game.
+ if (targetScore > 0 && !mutualStarman) {
   const score = ownerTeam ? world.teamScores[ownerTeam - 1] : owner?.score;
   if (score >= targetScore) world.result = {id:ownerID, team:ownerTeam, name:ownerTeam ? teamName(world,ownerTeam) : owner.name, score};
  }
@@ -385,7 +387,7 @@ function detonate(world, bullet) {
 
 function weaponControl(world, tank, held, pressed) {
  tank.fireHeld = held;
- if (!held || pressed) tank.fireBlocked = false;
+ tank.fireBlocked = false;
  if (tank.spawnProtected && tank.invulnerable > 1e-9) return;
  if (pressed) {
   let detonated = false;
@@ -395,15 +397,14 @@ function weaponControl(world, tank, held, pressed) {
     detonated = true;
    }
   }
-  if (detonated || tank.power === 'grenade') {
+  if (detonated) {
    tank.fireBlocked = held;
-   if(detonated)delete tank.grenadeEpoch;
-   if (!detonated) fireShot(world, tank);
+   delete tank.grenadeEpoch;
    return;
   }
  }
- if(pressed&&!tank.bot&&!tank.fireBlocked&&!(tank.cooldown>1e-9)&&net.ammoUnavailable(tank,art.projectileState(tank,false,world.bullets).ammo)&&world.time-(tank.dryFireAt??-Infinity)+1e-9>=net.firePressInterval(tank)){tank.dryFireAt=world.time;art.dryFire();}
- if (!tank.fireBlocked && tank.power !== 'grenade' && (held || pressed)) fireShot(world, tank);
+ if(pressed&&!tank.bot&&!(tank.cooldown>1e-9)&&net.ammoUnavailable(tank,art.projectileState(tank,false,world.bullets).ammo)&&world.time-(tank.dryFireAt??-Infinity)+1e-9>=net.firePressInterval(tank)){tank.dryFireAt=world.time;art.dryFire();}
+ if (held || pressed) {tank.fireBlocked=tank.power==='grenade'&&held;fireShot(world, tank);}
 }
 
 function spendWeapon(tank) {
@@ -797,11 +798,14 @@ function offlineStep(world, dt) {
   const attacker = actors[(tick + i) % actors.length];
   if (!attacker.hp || !(attacker.starmanTime > 0)) continue;
   for (const target of actors) {
-   if (!target.hp || target.invulnerable > 0 && !target.spawnProtected || target.starmanTime > 0 ||
+   const mutual=target.starmanTime>0;
+   if (!target.hp || target.invulnerable > 0 && !target.spawnProtected && !mutual ||
        !canDamage(world,attacker.id,attacker.team,target)) continue;
+   if(mutual&&!canDamage(world,target.id,target.team,attacker))continue;
    const dx = target.x - attacker.x, dy = target.y - attacker.y;
    if (dx * dx + dy * dy <= 4 * RADIUS * RADIUS && !wallHit(world.maze, attacker.x, attacker.y, dx, dy, 0, true)) {
-    hurt(world,target,attacker.id,attacker.team,attacker.name,true);
+    hurt(world,target,attacker.id,attacker.team,attacker.name,true,'',null,mutual);
+    if(mutual){hurt(world,attacker,target.id,target.team,target.name,true,'',null,true);break;}
     if (world.result) return;
    }
   }

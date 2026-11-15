@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.1.5';
+const GAME_VERSION='5.2.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -304,7 +304,7 @@ function trackAudioSource(source,cleanup){
  source.onended=()=>{audioSources.delete(source);cleanup();};
 }
 function createAudioGraph(){
- if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;if(audio)cancelPendingAudio();audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;starmanBuffer=null;prepareStarmanBuffer();audioMaster=audio.createGain();audioMix=audio.createGain();audioMix.gain.value=SOUND_EFFECT_GAIN;
+ if(audio&&audio.state!=='closed')return true;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;if(audio)cancelPendingAudio();audio=new AC();audioResume=null;audioLevel=null;noiseBuffer=null;starmanBuffer=null;ensureNoiseBuffer();prepareStarmanBuffer();audioMaster=audio.createGain();audioMix=audio.createGain();audioMix.gain.value=SOUND_EFFECT_GAIN;
  // Protect the combined mix when deaths and shots overlap. Allocate this graph
  // once per context; individual effect shapes and their relative gains stay intact.
  const peak=audio.createDynamicsCompressor(),trim=audio.createGain(),limit=audio.createWaveShaper(),threshold=-3,ratio=4;
@@ -823,15 +823,14 @@ function detonateOwned(t){
 }
 function weaponControl(t,held,pressed){
  if(!t.alive)return;
- if((!held||pressed)&&t.fireBlocked)t.fireBlocked=false;
  if(t.spawnProtected&&t.invulnerable>0)return;
+ t.fireBlocked=false;
  t.fireHeld=held;
  if(pressed){
   if(detonateOwned(t)){t.fireBlocked=held;return;}
-  if(t.power==='grenade'){t.fireBlocked=held;fire(t);return;}
  }
- if(pressed&&t.human&&!t.fireBlocked&&phase==='playing'&&!survivalBreak()&&t.cooldown<=1e-9&&Net.ammoUnavailable(t,activeAmmo(t))&&time-(t.dryFireAt??-Infinity)+1e-9>=Net.firePressInterval(t)){t.dryFireAt=time;dryFireSound();}
- if(!t.fireBlocked&&t.power!=='grenade'&&(held||pressed))fire(t);
+ if(pressed&&t.human&&phase==='playing'&&!survivalBreak()&&t.cooldown<=1e-9&&Net.ammoUnavailable(t,activeAmmo(t))&&time-(t.dryFireAt??-Infinity)+1e-9>=Net.firePressInterval(t)){t.dryFireAt=time;dryFireSound();}
+ if(held||pressed){const grenade=t.power==='grenade';if(fire(t)&&grenade)t.fireBlocked=held;}
 }
 
 function impactEffect(x,y,color,radius=25){burst(x,y,color,10,95);addRing(x,y,color,radius);tone(170,95,.095,SOUND_LEVELS.impact,'sine');}
@@ -907,7 +906,7 @@ function showStartingControls(){
  updateHUD(true);
 }
 function hurt(t,b){
- if(!t.alive||t.invulnerable>0&&!(b.kind==='starman'&&t.spawnProtected)||!canDamage(b.owner,t))return false;
+ if(!t.alive||t.invulnerable>0&&!(b.kind==='starman'&&(t.spawnProtected||t.starmanTime>0))||!canDamage(b.owner,t))return false;
  const flights=typeof Net!=='undefined'&&typeof fire!=='undefined'?(fire.flights||=new Net.ProjectileFlights()):null;
  const contact=flights?.recordContact(b,t,time/(1/60),typeof performance==='undefined'?0:performance.now()),effectX=t.x,effectY=t.y,effectColor=t.color;
  if(t.shield>0&&b.kind!=='starman'){t.shieldCharges=shieldCount(t)-1;if(!t.shieldCharges){t.shield=0;Net.refillAmmo(t);}t.invulnerable=.35;t.spawnProtected=false;const present=()=>{burst(effectX,effectY,POWER.shield.color,20,125);addRing(effectX,effectY,POWER.shield.color,58);shieldSound();};if(contact!==undefined)flights.deferContact(contact,present);else present();if(t.id===0)toast('SHIELD HELD',1.7);return false;}
@@ -1574,6 +1573,7 @@ function update(dt){
   const starA=a.starmanTime>0,starB=b.starmanTime>0;
   if(over<0||over===0&&!starA&&!starB)continue;
   if((starA||starB||a.ghostTime>0||b.ghostTime>0)&&wallBetweenCenters(a.x,a.y,dx,dy))continue;
+  if(starA&&starB&&canDamage(a.id,b)&&canDamage(b.id,a)){hurt(a,{owner:b.id,kind:'starman'});hurt(b,{owner:a.id,kind:'starman'});continue;}
   if(starA&&!starB&&hurt(b,{owner:a.id,kind:'starman'}))continue;
   if(starB&&!starA&&hurt(a,{owner:b.id,kind:'starman'}))continue;
   if(over>0){if(dist<.001){dx=1;dy=0;dist=1;}moveTank(a,-dx/dist*over*.5,-dy/dist*over*.5);moveTank(b,dx/dist*over*.5,dy/dist*over*.5);}
@@ -4570,8 +4570,9 @@ function renderPilotReadiness(t,num,projectiles,inWallBlocked,unavailable,id=key
   const button=$(id('fireBtn'));setStyle(button,'--ready',ready.toFixed(3));button.classList.toggle('detonate-ready',detonate);
   const label=unavailable?.label||(detonate?'BOOM':inWallBlocked?'MOVE':cooldown>.001?delay:free<need?'WAIT':'FIRE');
   setText(id('fireLabel'),label);
-  if($(id('fireHint')))setText(id('fireHint'),unavailable?.hint||(detonate?'TAP TO DETONATE':t.power==='grenade'?'TAP TO THROW':'HOLD TO FIRE'));
-  setAttr(button,'aria-label',detonate?'Press to detonate your grenade':text==='READY'?(t.power==='grenade'?'Press to throw a grenade':'Hold to fire'):text);
+  const hint=detonate?(t.power==='grenade'?'HOLD TO THROW, TAP TO DETONATE':'TAP TO DETONATE, HOLD TO FIRE'):t.power==='grenade'?'HOLD TO THROW':'HOLD TO FIRE';
+  if($(id('fireHint')))setText(id('fireHint'),unavailable?.hint||hint);
+  setAttr(button,'aria-label',detonate?hint.toLowerCase():text==='READY'?(t.power==='grenade'?'Hold to throw grenades':'Hold to fire'):text);
  }
 }
 function updateHomingAlert(alert,locked,clock){

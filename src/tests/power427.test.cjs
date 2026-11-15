@@ -173,11 +173,11 @@ test('last charged or machine-gun shot restores ordinary ammo without deleting t
   assert.equal(s.fire(t),true,power+' can immediately fire standard ammo');assert.equal(s.bullets.at(-1).ammoEpoch,2);
  }
 });
-test('a refill cannot bypass the rapid60Hz guard or release a held grenade trigger',()=>{
+test('a refill keeps the rapid60Hz guard while held grenade fire retries',()=>{
  const s=boot(),t=s.tanks[0];s.grantPower(t,'rapid');s.time=1;assert.equal(s.fire(t),true);s.grantPower(t,'speed');assert.equal(s.fire(t),false);assert.equal(t.machineRounds,180);
  const p=new N.ShotPresentation(),a=onlineTank(0);a.power='grenade';a.charges=3;p.sync(a,'playing',0);
  const options={...previewOptions,free:3,charged:true};assert.ok(p.tryFire(a,true,1,options));N.refillAmmo(a);p.sync(a,'playing',2);
- assert.equal(p.tryFire(a,true,20,options),null);p.tryFire(a,false,21,options);assert.ok(p.tryFire(a,true,22,options));
+ assert.ok(p.tryFire(a,true,20,options));
 });
 test('online ammo reset discards only old predicted costs and preserves already-shown flights and movement',()=>{
  const shots=new N.ShotPresentation(),a=onlineTank(0),b=onlineTank(7);a.machineRounds=1;
@@ -198,29 +198,23 @@ test('machine tuple decoding keeps the12-number format and associates optional e
  const t={ammoEpoch:Number.MAX_SAFE_INTEGER,power:'rapid',rapidTick:5};N.refillAmmo(t);assert.equal(t.ammoEpoch,1);assert.equal(t.machineRounds,180);assert.equal(t.rapidTick,5);
 });
 
-test('last grenade consumes the entire hold through refills; only a new press fires standard ammo',()=>{
- for(const sampledRelease of [false,true]){
-  const s=boot(),t=s.tanks[0];s.detonateOwned=()=>false;vm.runInContext(declaration('weaponControl'),s);
+test('last grenade fires alone, then a held trigger resumes regular fire on the next sample',()=>{
+ for(const id of [0,1]){
+  const s=boot(),t=s.tanks[id];s.detonateOwned=()=>false;vm.runInContext(declaration('weaponControl'),s);
   s.grantPower(t,'grenade');t.charges=1;s.weaponControl(t,true,true);
-  assert.equal(t.power,null);assert.equal(t.cooldown,0);assert.equal(t.fireBlocked,true);assert.equal(s.bullets.length,1);assert.equal(s.bullets[0].kind,'grenade');
-  s.weaponControl(t,true,false);assert.equal(s.bullets.length,1);
-  s.grantPower(t,'shield',.001);s.update(1/120);s.weaponControl(t,true,false);assert.equal(s.bullets.length,1,'pickup/expiry cannot release a consumed hold');
-  if(sampledRelease)s.weaponControl(t,false,false);
-  s.weaponControl(t,true,true);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
+  assert.equal(t.power,null);assert.equal(s.bullets.length,1);assert.equal(s.bullets[0].kind,'grenade');
+  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
  }
 });
-test('the final grenade stays remotely controlled after its standard-ammo refill',()=>{
+test('the final grenade remains remotely controlled while held standard fire resumes',()=>{
  for(const id of [0,1])for(const epoch of [0,42]){
   const s=boot(),t=s.tanks[id];Object.assign(t,{power:'grenade',powerTime:15,charges:1,ammoEpoch:epoch});
   s.detonate=b=>{b.dead=true;};for(const name of ['ownedGrenades','detonateOwned','weaponControl','pilotProjectileState'])vm.runInContext(declaration(name),s);
-  s.weaponControl(t,true,true);const grenade=s.bullets[0];
-  assert.equal(t.power,null);assert.equal(N.ammoEpoch(t),epoch+1);assert.equal(t.grenadeEpoch,epoch);assert.equal(s.activeAmmo(t),0);
-  const hud=s.pilotProjectileState(t);assert.equal(hud.ammo,0);assert.equal(hud.grenades,1,'detonate remains ready with a full standard magazine');
-  s.weaponControl(t,true,false);assert.equal(s.bullets.length,1);assert.ok(!grenade.dead);
+  s.weaponControl(t,true,true);const grenade=s.bullets[0];assert.equal(t.grenadeEpoch,epoch);assert.equal(N.ammoEpoch(t),epoch+1);
+  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2);assert.ok(!grenade.dead);
   s.weaponControl(t,false,false);s.weaponControl(t,true,true);
-  assert.ok(grenade.dead,'the next press pops the final grenade');assert.equal(s.bullets.length,1,'detonation never launches a regular shot');assert.equal(t.grenadeEpoch,undefined);
-  s.weaponControl(t,true,false);assert.equal(s.bullets.length,1,'the detonation consumes its whole hold');
-  s.weaponControl(t,false,false);s.weaponControl(t,true,true);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
+  assert.ok(grenade.dead);assert.equal(s.bullets.length,2,'detonation emits no regular shell');assert.equal(t.grenadeEpoch,undefined);
+  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,3,'holding retries after pop');
  }
 });
 test('a genuine refill starts a new grenade-control cycle without deleting the old final grenade',()=>{
@@ -239,20 +233,16 @@ test('all Ghost exits resolve before either rotated actor can attack, and surviv
   s.update(dt);assert.equal(t.ghostTime,Math.max(0,remaining-dt));
  }
 });
-test('every depleted or expired weapon consumes held Fire until a fresh press',()=>{
- for(const power of weapons)for(const expiry of [false,true])for(const sampledRelease of [false,true]){
-  const s=boot(),t=s.tanks[0],noop=()=>{};Object.assign(s,{detonateOwned:()=>false,LASER_COOLDOWN:.85/3,laserTrace:()=>({x:0,y:0,endX:1,endY:0,target:null}),laserEffect:noop});
+test('every depleted or expired weapon retries held Fire and passive refills never require release',()=>{
+ for(const power of weapons)for(const expiry of [false,true])for(const id of [0,1]){
+  const s=boot(),t=s.tanks[id],noop=()=>{};Object.assign(s,{detonateOwned:()=>false,LASER_COOLDOWN:.85/3,laserTrace:()=>({x:0,y:0,endX:1,endY:0,target:null}),laserEffect:noop});
   vm.runInContext(declaration('weaponControl')+'\n'+declaration('fireLaser'),s);s.grantPower(t,power);
-  if(expiry){t.fireHeld=true;t.powerTime=.001;s.humanControl=pilot=>{if(pilot===t)s.weaponControl(t,true,false);};s.update(1/120);}
-  else{t.charges=t.machineRounds=1;s.weaponControl(t,true,true);}
-  const label=[power,expiry?'timer':'ammo',sampledRelease?'sampled':'coalesced'].join('/'),fired=s.bullets.length;
-  assert.equal(t.power,null,label);assert.equal(t.cooldown,0,label);assert.equal(t.fireBlocked,true,label);
-  for(let i=0;i<5;i++){s.time+=(1/60);s.weaponControl(t,true,false);}assert.equal(s.bullets.length,fired,label+' no standard follow-up');
-  s.grantPower(t,'shield',.001);s.update(1/120);s.weaponControl(t,true,false);assert.equal(s.bullets.length,fired,label+' passive refill preserves latch');
-  if(sampledRelease)s.weaponControl(t,false,false);s.weaponControl(t,true,true);assert.equal(s.bullets.length,fired+1,label+' fresh press fires standard');
+  if(expiry){t.fireHeld=true;t.powerTime=.001;s.update(1/120);}else{t.charges=t.machineRounds=1;s.weaponControl(t,true,true);}
+  const fired=s.bullets.length,label=[power,expiry,id].join('/');assert.equal(t.power,null,label);
+  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,fired+1,label+' regular fire resumes');
+  s.grantPower(t,'shield',.001);s.update(1/120);s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,fired+2,label+' refill retries');
  }
 });
-
 test('fixed local empty-ammo presses play one dry cue per fresh eligible press for either pilot',()=>{
  for(const id of [0,1])for(const power of ['', 'rapid','scatter','homing','laser','cannon']){
   const s=boot(),t=s.tanks[id],sounds=[];Object.assign(s,{dryFireSound:()=>sounds.push('dry'),detonateOwned:()=>false});
@@ -260,5 +250,15 @@ test('fixed local empty-ammo presses play one dry cue per fresh eligible press f
   s.bullets=Array.from({length:s.powerCapacity(t)},()=>({owner:id,ammoEpoch:t.ammoEpoch}));const before=s.bullets.length;
   s.weaponControl(t,true,true);assert.deepEqual(sounds,['dry'],power);assert.equal(s.bullets.length,before,power);
   s.time=1;s.weaponControl(t,true,false);assert.equal(sounds.length,1,'held input is silent');s.weaponControl(t,false,false);s.weaponControl(t,true,true);assert.equal(sounds.length,2);
+ }
+});
+
+
+test('fixed-maze Starman pairs mutually die while friendly and wall-separated pairs survive',()=>{
+ for(const [friendly,wall,dead] of [[false,false,true],[true,false,false],[false,true,false]]){
+  const s=boot(),[a,b]=s.tanks;Object.assign(a,{x:100,y:100,starmanTime:2,invulnerable:2});Object.assign(b,{x:134,y:100,starmanTime:2,invulnerable:2});
+  s.wallBetweenCenters=()=>wall;s.canDamage=(id,target)=>id!==target.id&&!friendly;s.moveTank=()=>{};
+  s.hurt=(target,shot)=>{assert.equal(shot.kind,'starman');target.alive=false;target.killedBy=shot.owner;return true;};
+  s.update(1/120);assert.equal(a.alive,!dead);assert.equal(b.alive,!dead);if(dead){assert.equal(a.killedBy,b.id);assert.equal(b.killedBy,a.id);}
  }
 });

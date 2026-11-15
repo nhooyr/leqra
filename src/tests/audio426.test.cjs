@@ -18,7 +18,7 @@ function boot(options={}){
   createOscillator(){const n=node('oscillator');n.frequency=param();return n;}
   createBiquadFilter(){const n=node('filter');n.frequency=param();n.Q=param();return n;}
   createBufferSource(){return node('buffer');}
-  createBuffer(channels,length,rate){const data=new Float32Array(length);return{length,sampleRate:rate,getChannelData:()=>data};}
+  createBuffer(channels,length,rate){this.bufferAllocations=(this.bufferAllocations||0)+1;const data=new Float32Array(length);return{length,sampleRate:rate,getChannelData:()=>data};}
   resume(){this.resumeCount++;if(options.deferResume)return new Promise(resolve=>this.pending.push(resolve));this.state='running';return Promise.resolve();}
   finishResume(){this.state='running';for(const resolve of this.pending.splice(0))resolve();}
  }
@@ -37,6 +37,14 @@ function boot(options={}){
  vm.createContext(s);vm.runInContext(audioCode+'\nsetArenaAudio(true);this.audioInspection=()=>({audioLevel,audioMix,audioEpoch,pendingAudioEffects,delayed:nativeAudioTimers.size,voices:nativeVoices.size,bounces:typeof onlineBounceCounts!=="undefined"?onlineBounceCounts.size:0});',s);
  return{s,contexts,native,plays,playEvents,nodes,blobs,listeners,timers,advance(ms){clock+=ms;for(const a of native){if(a.playingEvent&&!a.paused&&clock>=a.playingEvent.until){a.playingEvent.stopAt=Math.min(a.playingEvent.stopAt,a.playingEvent.until);a.ended=a.paused=true;a.onended?.();}}for(const [id,timer]of [...timers])if(timer.time<=clock){timers.delete(id);timer.fn();}},fire(event,extra={}){listeners.get(event)?.({isTrusted:true,...extra});},focus(value){focused=value;listeners.get(value?'focus':'blur')();}};
 }
+
+test('first and repeated deaths reuse PCM prepared during audio setup',async()=>{
+ const b=boot({safari:false});await b.s.initAudio();
+ const buffer=b.s.noiseBuffer,context=b.contexts[0],allocations=context.bufferAllocations;
+ assert.equal(buffer.length,14400);assert.equal(buffer.sampleRate,48000);
+ for(let i=0;i<4;i++){b.advance(80);b.s.boom(i%2===1);assert.equal(b.s.noiseBuffer,buffer);assert.equal(context.bufferAllocations,allocations);}
+ const muted=boot();muted.s.muted=true;await muted.s.initAudio();assert.equal(muted.contexts.length,0);
+});
 
 test('dry fire has the shared soft triangle voice and respects mute, zero volume and inactive scenes',async()=>{
  const {declaration}=require('./godlike426-harness.cjs');

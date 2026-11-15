@@ -170,11 +170,5 @@ func BenchmarkDoubledLaserNarrowCorridorCompressedSnapshot(b *testing.B) {
 	if !ok {
 		b.Fatal("snapshot encoding failed")
 	}
-	var frame snapshotFrame
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		frame = compressSnapshot(data)
-	}
-	b.ReportMetric(float64(len(frame.data)), "wire-bytes")
+	benchmarkSocketCompression(b, [][]byte{data})
 }

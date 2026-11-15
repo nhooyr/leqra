@@ -82,7 +82,7 @@ class VersionGenerationTests(unittest.TestCase):
         before = {str(path): path.stat().st_mtime_ns for path in self.root.rglob("*")}
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Already synced", result.stdout)
+        self.assertIn("Already generated", result.stdout)
         self.assertEqual(before, {str(path): path.stat().st_mtime_ns for path in self.root.rglob("*")})
 
     def test_existing_destination_fails_before_changing_any_file(self):

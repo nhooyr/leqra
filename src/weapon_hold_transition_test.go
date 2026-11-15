@@ -8,13 +8,14 @@ import (
 
 var finiteHoldWeapons = []string{"rapid", "scatter", "homing", "grenade", "laser", "cannon"}
 
-func assertNoStandardShot(t *testing.T, events []Event) {
-	t.Helper()
-	for _, event := range events {
-		if event.Type == "shot" && event.Text == "" {
-			t.Fatal("consumed finite-weapon hold emitted a standard shot/sound")
-		}
+func (h machineSynergyArena) stepHeld(held, pressed bool) {
+	if h.game != nil {
+		h.game.step(tickDT, [maxTanks]Input{{Fire: held, FirePressed: pressed}}, testPlayers(2))
+		return
 	}
+	now := time.Unix(1_800_000_000, 0).Add(time.Duration(h.arena.tick) * time.Second / 60)
+	h.pilot.input, h.pilot.inputAt, h.pilot.firePending = Input{Fire: held}, now, pressed
+	h.arena.step(now)
 }
 
 func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
@@ -55,14 +56,12 @@ func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
 					tank.Charges, tank.MachineRounds = 1, 1
 					send(1, true)
 					step()
-					if tank.Power != "" || tank.ShotSerial != 1 || !tank.fireBlocked || pending() {
-						t.Fatal("final finite shot did not consume the first input edge")
+					if tank.Power != "" || tank.ShotSerial != 1 || pending() {
+						t.Fatal("final finite shot did not consume exactly one input edge")
 					}
 					if kind == "grenade" && tank.GrenadeEpoch == nil {
 						t.Fatal("last grenade lost its pending detonation bank")
 					}
-					// Both edges arrive before the next simulation sample. The optional
-					// final release also covers a complete tap between samples.
 					send(2, false)
 					send(3, true)
 					if released {
@@ -75,24 +74,18 @@ func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
 					step()
 					wantSerial := uint64(2)
 					if kind == "grenade" {
-						wantSerial = 1 // The next press pops the last grenade before standard fire.
+						wantSerial = 1
 					}
-					if tank.ShotSerial != wantSerial || kind != "grenade" && tank.Cooldown <= 0 || kind == "grenade" && (tank.Cooldown != 0 || tank.GrenadeEpoch != nil) || pending() {
-						t.Fatal("coalesced press did not fire exactly one ready standard shot")
+					if tank.ShotSerial != wantSerial || pending() {
+						t.Fatal("coalesced press did not perform exactly one shot or grenade pop")
 					}
 					now = now.Add(time.Second / 60)
 					step()
-					if tank.ShotSerial != wantSerial || pending() {
-						t.Fatal("consumed edge replayed on the next simulation sample")
+					if kind == "grenade" && !released {
+						wantSerial++
 					}
-					if kind == "grenade" {
-						send(5, false)
-						send(6, true)
-						now = now.Add(time.Second / 60)
-						step()
-						if tank.ShotSerial != 2 || tank.Cooldown <= 0 || pending() {
-							t.Fatal("fresh press after the final pop did not fire standard ammo")
-						}
+					if tank.ShotSerial != wantSerial || pending() {
+						t.Fatal("held fire failed to continue, or a released edge replayed")
 					}
 				})
 			}
@@ -100,105 +93,84 @@ func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
 	}
 }
 
-func TestEveryFiniteWeaponEndConsumesHeldFire(t *testing.T) {
+func TestEveryFiniteWeaponEndKeepsTryingWhileHeld(t *testing.T) {
 	for _, kind := range finiteHoldWeapons {
 		for _, timer := range []bool{false, true} {
 			for _, infinity := range []bool{false, true} {
-				for _, coalesced := range []bool{false, true} {
-					t.Run(fmt.Sprintf("%s/timer=%v/infinity=%v/coalesced=%v", kind, timer, infinity, coalesced), func(t *testing.T) {
-						if infinity {
-							a := newSeededInfiniteArena(512)
-							p := a.addPilot("Pilot", false, 0, 0, 0, 0)
-							p.X, p.Y, p.Angle = 42, 42, 0
-							p.kit = Tank{}
-							applyPower(&p.kit, kind, 15, 8)
-							epoch := p.kit.AmmoEpoch
-							if timer {
-								p.kit.fireHeld = true
-								p.kit.PowerTime = tickDT / 2
-								a.advanceEquipment(p)
-							} else {
-								p.kit.Charges, p.kit.MachineRounds = 1, 1
-								a.weaponControl(p, true, true)
-							}
-							if p.kit.Power != "" || p.kit.MachineRounds != 0 || p.kit.Charges != 0 || p.kit.Cooldown != 0 || p.kit.CooldownTotal != 0 || p.kit.AmmoEpoch != epoch+1 || !p.kit.fireBlocked {
-								t.Fatal("weapon end did not provide fresh standard ammo with consumed hold", p.kit.Power, p.kit.fireBlocked)
-							}
-							serial, shots := p.kit.ShotSerial, len(a.bullets)
-							for range 10 {
-								a.weaponControl(p, true, false)
-							}
-							applyPower(&p.kit, "shield", 15, 8)
-							p.kit.Shield = tickDT / 2
-							a.advanceEquipment(p)
-							a.weaponControl(p, true, false)
-							if p.kit.ShotSerial != serial || len(a.bullets) != shots || p.kit.Cooldown != 0 || !p.kit.fireBlocked {
-								t.Fatal("held Fire leaked a standard shot after end/refill")
-							}
-							for _, effect := range a.effects {
-								if effect.Kind == "shot:" {
-									t.Fatal("held finite weapon emitted standard shot sound")
-								}
-							}
-							if !coalesced {
-								a.weaponControl(p, false, false)
-							}
-							a.weaponControl(p, true, true)
-							if p.kit.ShotSerial != serial+1 || len(a.bullets) != shots+1 || a.bullets[len(a.bullets)-1].Kind != "" {
-								t.Fatal("new standard press did not fire exactly once")
-							}
-							if !timer && kind != "laser" {
-								for _, b := range a.bullets[:shots] {
-									if b.dead || b.AmmoEpoch == p.kit.AmmoEpoch {
-										t.Fatal("transition retired or retagged final finite shot")
-									}
-								}
-							}
-						} else {
-							g := battle(2)
-							p := g.Tanks[0]
-							g.Tanks[1].Alive = false
-							g.grantPower(p, kind)
-							epoch := p.AmmoEpoch
-							if timer {
-								p.fireHeld = true
-								p.PowerTime = tickDT / 2
-								g.step(tickDT, [maxTanks]Input{{Fire: true}}, testPlayers(2))
-							} else {
-								p.Charges, p.MachineRounds = 1, 1
-								g.weaponControl(p, true, true)
-							}
-							if p.Power != "" || p.MachineRounds != 0 || p.Charges != 0 || p.Cooldown != 0 || p.CooldownTotal != 0 || p.AmmoEpoch != epoch+1 || !p.fireBlocked {
-								t.Fatal("weapon end did not provide fresh standard ammo with consumed hold", p.Power, p.fireBlocked)
-							}
-							serial, shots := p.ShotSerial, len(g.Bullets)
-							for range 10 {
-								g.weaponControl(p, true, false)
-							}
-							g.grantPower(p, "shield")
-							p.Shield = tickDT / 2
-							g.step(tickDT, [maxTanks]Input{{Fire: true}}, testPlayers(2))
-							if p.ShotSerial != serial || len(g.Bullets) != shots || p.Cooldown != 0 || !p.fireBlocked {
-								t.Fatal("held Fire leaked a standard shot after end/refill")
-							}
-							assertNoStandardShot(t, g.events)
-							if !coalesced {
-								g.weaponControl(p, false, false)
-							}
-							g.weaponControl(p, true, true)
-							if p.ShotSerial != serial+1 || len(g.Bullets) != shots+1 || g.Bullets[len(g.Bullets)-1].Kind != "" {
-								t.Fatal("new standard press did not fire exactly once")
-							}
-							if !timer && kind != "laser" {
-								for _, b := range g.Bullets[:shots] {
-									if b.Dead || b.AmmoEpoch == p.AmmoEpoch {
-										t.Fatal("transition retired or retagged final finite shot")
-									}
-								}
+				t.Run(fmt.Sprintf("%s/timer=%v/infinity=%v", kind, timer, infinity), func(t *testing.T) {
+					h := newMachineSynergyArena(infinity)
+					h.grant(kind)
+					epoch := h.tank.AmmoEpoch
+					h.tank.fireHeld = true
+					if timer {
+						h.tank.PowerTime = tickDT / 2
+					} else {
+						h.tank.Charges, h.tank.MachineRounds = 1, 1
+					}
+					h.stepHeld(true, !timer)
+					if h.tank.Power != "" || h.tank.AmmoEpoch != epoch+1 || h.tank.ShotSerial != 1 {
+						t.Fatal("weapon end did not produce one action with fresh standard ammo")
+					}
+					if !timer {
+						for _, shot := range h.shots() {
+							if shot.epoch != epoch {
+								t.Fatal("depletion fired a second standard projectile in the same tick")
 							}
 						}
-					})
-				}
+						h.stepHeld(true, false)
+						if h.tank.ShotSerial != 2 {
+							t.Fatal("held fire did not use standard ammo on the following tick")
+						}
+					}
+					serial := h.tank.ShotSerial
+					for range 21 {
+						h.stepHeld(true, false)
+					}
+					if h.tank.ShotSerial != serial+1 {
+						t.Fatal("held fire did not keep retrying through ordinary reload")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestEveryPickupKeepsHeldFireAndRetiresOldCapacity(t *testing.T) {
+	for _, current := range append([]string{""}, finiteHoldWeapons...) {
+		for _, pickup := range pickupTypes {
+			for _, infinity := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/infinity=%v", current, pickup, infinity), func(t *testing.T) {
+					h := newMachineSynergyArena(infinity)
+					if current != "" {
+						h.grant(current)
+					}
+					h.tank.Cooldown = .5
+					h.tank.fireHeld, h.tank.fireBlocked = true, true
+					epoch := h.tank.AmmoEpoch
+					if infinity {
+						for id := range capacity(h.tank) {
+							h.arena.bullets = append(h.arena.bullets, infiniteBullet{ID: 1000 + id, Owner: h.pilot.ID, AmmoEpoch: epoch, X: 1008, Y: 1008, Life: 10, radius: regularRadius})
+						}
+					} else {
+						for id := range capacity(h.tank) {
+							h.game.Bullets = append(h.game.Bullets, &Bullet{ID: 1000 + id, Owner: h.tank.ID, AmmoEpoch: epoch, X: 1008, Y: 1008, Life: 10, R: regularRadius})
+						}
+					}
+					h.stepHeld(true, false)
+					if h.tank.ShotSerial != 0 {
+						t.Fatal("fixture did not begin with a denied held attempt")
+					}
+					h.grant(pickup)
+					h.stepHeld(true, false)
+					if h.tank.ShotSerial != 1 || h.tank.AmmoEpoch != epoch+1 || !h.tank.fireHeld {
+						t.Fatal("pickup required release, lost the hold or failed to retire old capacity")
+					}
+					for _, shot := range h.shots() {
+						if shot.id >= 1000 && shot.id < 1000+capacity(&Tank{Power: current}) && shot.epoch != epoch {
+							t.Fatal("fresh held fire retagged a pre-pickup projectile")
+						}
+					}
+				})
 			}
 		}
 	}
@@ -209,60 +181,24 @@ func TestPassiveExpiryPreservesSameWeaponHeldFire(t *testing.T) {
 		for _, buff := range []string{"shield", "speed", "ghost", "starman"} {
 			for _, infinity := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/infinity=%v", kind, buff, infinity), func(t *testing.T) {
-					expire := func(tank *Tank) {
-						switch buff {
-						case "shield":
-							tank.Shield = tickDT / 2
-						case "speed":
-							tank.SpeedTime = tickDT / 2
-						case "ghost":
-							tank.GhostTime = tickDT / 2
-						case "starman":
-							tank.StarmanTime = tickDT / 2
-						}
+					h := newMachineSynergyArena(infinity)
+					h.grant(kind)
+					h.stepHeld(true, true)
+					h.grant(buff)
+					switch buff {
+					case "shield":
+						h.tank.Shield = tickDT / 2
+					case "speed":
+						h.tank.SpeedTime = tickDT / 2
+					case "ghost":
+						h.tank.GhostTime = tickDT / 2
+					case "starman":
+						h.tank.StarmanTime = tickDT / 2
 					}
-					if infinity {
-						a := newSeededInfiniteArena(512)
-						p := a.addPilot("Pilot", false, 0, 0, 0, 0)
-						p.X, p.Y, p.Angle = 42, 42, 0
-						p.kit = Tank{}
-						applyPower(&p.kit, kind, 15, 8)
-						a.weaponControl(p, true, true)
-						applyPower(&p.kit, buff, 15, 8)
-						expire(&p.kit)
-						serial := p.kit.ShotSerial
-						a.advanceEquipment(p)
-						a.weaponControl(p, true, false)
-						if p.kit.Power != kind {
-							t.Fatal("passive expiry changed selected weapon")
-						}
-						if kind == "grenade" {
-							if p.kit.ShotSerial != serial || !p.kit.fireBlocked {
-								t.Fatal("passive expiry restarted held grenade action")
-							}
-						} else if p.kit.ShotSerial != serial+1 || p.kit.fireBlocked {
-							t.Fatal("passive expiry interrupted normal same-weapon held fire")
-						}
-					} else {
-						g := battle(2)
-						p := g.Tanks[0]
-						g.Tanks[1].Alive = false
-						g.grantPower(p, kind)
-						g.weaponControl(p, true, true)
-						g.grantPower(p, buff)
-						expire(p)
-						serial := p.ShotSerial
-						g.step(tickDT, [maxTanks]Input{{Fire: true}}, testPlayers(2))
-						if p.Power != kind {
-							t.Fatal("passive expiry changed selected weapon")
-						}
-						if kind == "grenade" {
-							if p.ShotSerial != serial || !p.fireBlocked {
-								t.Fatal("passive expiry restarted held grenade action")
-							}
-						} else if p.ShotSerial != serial+1 || p.fireBlocked {
-							t.Fatal("passive expiry interrupted normal same-weapon held fire")
-						}
+					serial := h.tank.ShotSerial
+					h.stepHeld(true, false)
+					if h.tank.Power != kind || h.tank.ShotSerial != serial+1 {
+						t.Fatal("passive expiry interrupted held fire or changed the selected weapon")
 					}
 				})
 			}
@@ -270,30 +206,103 @@ func TestPassiveExpiryPreservesSameWeaponHeldFire(t *testing.T) {
 	}
 }
 
+func TestGrenadesAutoThrowWhileHeldAndFreshPressOnlyPopsOneTick(t *testing.T) {
+	for _, infinity := range []bool{false, true} {
+		for _, pop := range []bool{false, true} {
+			t.Run(fmt.Sprintf("infinity%v/pop%v", infinity, pop), func(t *testing.T) {
+				h := newMachineSynergyArena(infinity)
+				h.grant("grenade")
+				for tick := 1; tick <= 97; tick++ {
+					h.stepHeld(true, tick == 1)
+					want := uint64(1 + (tick-1)/48)
+					if h.tank.ShotSerial != want {
+						t.Fatal("grenade hold did not obey its 48-tick reload", tick, h.tank.ShotSerial, want)
+					}
+				}
+				if h.tank.Power != "" || len(h.shots()) != 3 || h.tank.GrenadeEpoch == nil {
+					t.Fatal("last automatic throw fired an ordinary projectile in the same tick")
+				}
+				h.stepHeld(true, pop)
+				if pop {
+					if h.tank.ShotSerial != 3 || len(h.shots()) != 0 || h.tank.GrenadeEpoch != nil {
+						t.Fatal("fresh press did not exclusively pop the final grenade bank")
+					}
+					h.stepHeld(true, false)
+				}
+				if h.tank.ShotSerial != 4 {
+					t.Fatal("continued hold did not use ordinary ammo on its next eligible tick")
+				}
+			})
+		}
+	}
+}
+
+func TestStarmanGrenadeHoldRetainsItsOneThrowPerTickBoost(t *testing.T) {
+	for _, infinity := range []bool{false, true} {
+		for _, count := range []int{4, 49, machineCapacity} {
+			t.Run(fmt.Sprintf("infinity%v/count%d", infinity, count), func(t *testing.T) {
+				h := newMachineSynergyArena(infinity)
+				h.grant("grenade")
+				h.grant("starman")
+				for tick := 1; tick <= count; tick++ {
+					h.stepHeld(true, tick == 1)
+					if h.tank.ShotSerial != uint64(tick) || h.tank.Charges != 3 {
+						t.Fatal("boosted grenade hold skipped or doubled a simulation tick")
+					}
+				}
+				h.stepHeld(true, true)
+				if h.tank.ShotSerial != uint64(count) || len(h.shots()) != 0 {
+					t.Fatal("boosted pop also threw another grenade")
+				}
+				h.stepHeld(true, false)
+				if h.tank.ShotSerial != uint64(count+1) || len(h.shots()) != 1 {
+					t.Fatal("boosted hold did not resume after the pop tick")
+				}
+			})
+		}
+	}
+}
+
+func TestHeldFireRetriesWhenReloadOrActiveCapacityBecomesReady(t *testing.T) {
+	for _, infinity := range []bool{false, true} {
+		for _, capacityBound := range []bool{false, true} {
+			t.Run(fmt.Sprintf("infinity%v/capacity%v", infinity, capacityBound), func(t *testing.T) {
+				h := newMachineSynergyArena(infinity)
+				if capacityBound {
+					if infinity {
+						for id := range 5 {
+							h.arena.bullets = append(h.arena.bullets, infiniteBullet{ID: 1000 + id, Owner: h.pilot.ID, X: 1008, Y: 1008, Life: tickDT / 2, radius: regularRadius})
+						}
+					} else {
+						for id := range 5 {
+							h.game.Bullets = append(h.game.Bullets, &Bullet{ID: 1000 + id, Owner: h.tank.ID, X: 1008, Y: 1008, Life: tickDT / 2, R: regularRadius})
+						}
+					}
+				} else {
+					h.tank.Cooldown = 2 * tickDT
+				}
+				h.stepHeld(true, true)
+				if h.tank.ShotSerial != 0 {
+					t.Fatal("initial denied fire attempt unexpectedly succeeded")
+				}
+				h.stepHeld(true, false)
+				if h.tank.ShotSerial != 1 {
+					t.Fatal("held trigger needed a new press after readiness returned")
+				}
+			})
+		}
+	}
+}
+
 func TestFreshPressAtWeaponExpiryIsNotMistakenForOldHold(t *testing.T) {
 	for _, kind := range finiteHoldWeapons {
-		for _, previousHeld := range []bool{false, true} {
-			g := battle(2)
-			p := g.Tanks[0]
-			g.Tanks[1].Alive = false
-			g.grantPower(p, kind)
-			p.PowerTime = tickDT / 2
-			p.fireHeld = previousHeld
-			g.step(tickDT, [maxTanks]Input{{Fire: true, FirePressed: true}}, testPlayers(2))
-			if p.Power != "" || p.ShotSerial != 1 || len(g.Bullets) != 1 || g.Bullets[0].Kind != "" {
-				t.Fatal("fresh press at expiry was suppressed", kind, previousHeld)
-			}
-			a := newSeededInfiniteArena(512)
-			q := a.addPilot("Pilot", false, 0, 0, 0, 0)
-			q.X, q.Y, q.Angle = 42, 42, 0
-			q.kit = Tank{}
-			applyPower(&q.kit, kind, 15, 8)
-			q.kit.PowerTime = tickDT / 2
-			q.kit.fireHeld = previousHeld
-			a.advanceEquipment(q)
-			a.weaponControl(q, true, true)
-			if q.kit.Power != "" || q.kit.ShotSerial != 1 || len(a.bullets) != 1 || a.bullets[0].Kind != "" {
-				t.Fatal("Infinity fresh press at expiry was suppressed", kind, previousHeld)
+		for _, infinity := range []bool{false, true} {
+			h := newMachineSynergyArena(infinity)
+			h.grant(kind)
+			h.tank.PowerTime, h.tank.fireHeld = tickDT/2, true
+			h.stepHeld(true, true)
+			if h.tank.Power != "" || h.tank.ShotSerial != 1 || len(h.shots()) != 1 {
+				t.Fatal("fresh press at expiry was suppressed or doubled", kind, infinity)
 			}
 		}
 	}

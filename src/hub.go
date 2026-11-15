@@ -144,14 +144,7 @@ func (c *Client) enqueueState(v any, reliable bool) bool {
 	if !ok {
 		return false
 	}
-	frame := snapshotFrame{data: data}
-	if !reliable && c.supportsSnapshotDeflate() {
-		frame = compressSnapshot(data)
-	}
-	return c.enqueueStateFrame(frame, reliable)
-}
-func (c *Client) supportsSnapshotDeflate() bool {
-	return c.updates != nil && c.ws != nil && c.ws.deflate
+	return c.enqueueStateFrame(snapshotFrame{data: data}, reliable)
 }
 func (c *Client) enqueueStateFrame(frame snapshotFrame, reliable bool) bool {
 	if c.updates == nil {
@@ -190,7 +183,7 @@ func (c *Client) writeLoop() {
 		case <-c.done:
 			return
 		case msg := <-c.send:
-			if err := c.ws.writeFrame(1, msg); err != nil {
+			if err := c.ws.writeText(msg); err != nil {
 				return
 			}
 			continue
@@ -200,19 +193,15 @@ func (c *Client) writeLoop() {
 		case <-c.done:
 			return
 		case msg := <-c.updates:
-			flags := byte(1)
-			if msg.compressed {
-				flags |= wsCompressed
-			}
-			if err := c.ws.writeFrame(flags, msg.data); err != nil {
+			if err := c.ws.writeText(msg.data); err != nil {
 				return
 			}
 		case msg := <-c.send:
-			if err := c.ws.writeFrame(1, msg); err != nil {
+			if err := c.ws.writeText(msg); err != nil {
 				return
 			}
 		case <-heartbeat.C:
-			if err := c.ws.writeFrame(9, []byte("leqra")); err != nil {
+			if err := c.ws.ping(); err != nil {
 				return
 			}
 		}
@@ -1266,7 +1255,7 @@ func (h *Hub) broadcastState(r *Room) {
 	if !ok {
 		return
 	}
-	var full, compressed snapshotFrame
+	var full snapshotFrame
 	send := func(c *Client) bool {
 		if c == nil {
 			return true
@@ -1282,11 +1271,6 @@ func (h *Hub) broadcastState(r *Room) {
 				}
 			}
 			payload = full
-		} else if !reliable && c.supportsSnapshotDeflate() {
-			if compressed.data == nil {
-				compressed = compressSnapshot(data)
-			}
-			payload = compressed
 		}
 		if c.enqueueStateFrame(payload, reliable) {
 			c.mapGeneration = r.Game.Generation

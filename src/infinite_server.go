@@ -285,7 +285,7 @@ func rejectInfinite(c *Client, message string) {
 		packet["code"] = "arena_full"
 	}
 	data, _ := encodePacket(packet)
-	_ = c.ws.writeFrame(1, data)
+	_ = c.ws.writeText(data)
 	c.ws.writeClose(1008, "Infinity join rejected")
 }
 

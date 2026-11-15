@@ -89,11 +89,14 @@ public struct PilotReadout: Equatable, Sendable {
         }
         if unavailable == nil && tank.spawnProtected && tank.invulnerable > 0 { unavailable = ("SPAWN PROTECTION", "WAIT", 0, "WAIT TO FIRE") }
         locked = unavailable == nil && projectileLocked
-        fireHint = tank.power == "grenade" ? "TAP TO THROW" : "HOLD TO FIRE"
+        fireHint = tank.power == "grenade" ? "HOLD TO THROW" : "HOLD TO FIRE"
         if let unavailable {
             readiness = unavailable.text; fireLabel = unavailable.label; progress = unavailable.progress
             fireHint = unavailable.hint ?? fireHint
-        } else if grenades > 0 { readiness = "DETONATE READY"; fireLabel = "BOOM"; fireHint = "TAP TO DETONATE" }
+        } else if grenades > 0 {
+            readiness = "DETONATE READY"; fireLabel = "BOOM"
+            fireHint = tank.power == "grenade" ? "HOLD TO THROW, TAP TO DETONATE" : "TAP TO DETONATE, HOLD TO FIRE"
+        }
         else {
             let cooldown = unlimited ? 0 : tank.cooldown
             let free = unlimited ? Int.max : tank.power == "laser" ? tank.charges : available
@@ -104,7 +107,7 @@ public struct PilotReadout: Equatable, Sendable {
             progress = cooldown > 0 ? max(0, min(1, 1 - cooldown / max(0.001, total))) : free < need ? 0 : 1
             if cooldown > 0 { let time = String(format: "%.1f", max(0.1, (cooldown * 10).rounded(.toNearestOrAwayFromZero) / 10)); readiness = "COOLDOWN \(time)s"; fireLabel = time + "s" }
             else if free < need { readiness = "WAITING FOR AMMO"; fireLabel = "WAIT" }
-            if tank.power == "grenade" { fireHint = "TAP TO THROW" }
+            if tank.power == "grenade" { fireHint = "HOLD TO THROW" }
         }
     }
 }

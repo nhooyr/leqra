@@ -36,7 +36,7 @@ public struct LocalFireFeedback {
     @discardableResult public mutating func setFire(_ down: Bool, tank: ArenaTank?, generation: Int,
         now: Double, stateAge: Double = 0, active: Bool = true, muzzleBlocked: Bool = false) -> Bool {
         let pressed = down && !held
-        held = down // A blocked press is consumed, never deferred until readiness returns.
+        held = down // This fresh-press cosmetic cue never gates held simulation input.
         reconcile(tank: tank, generation: generation, active: active)
         guard pressed, active, now.isFinite, stateAge.isFinite, let tank, tank.hp > 0 else { return false }
         let age = max(0, stateAge), boosted = tank.starmanTime > age

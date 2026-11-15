@@ -46,7 +46,6 @@
   t.charges=t.power==='scatter'?5:['homing','grenade','laser','cannon'].includes(t.power)?3:0;
  }
  function clearWeapon(t,empty=null){
-  if(t.power&&t.fireHeld)t.fireBlocked=true;
   t.power=empty;t.powerTime=t.charges=t.machineRounds=0;
  }
  function refillDepletedWeapon(t,empty=null){
@@ -639,23 +638,13 @@
   sync(t,phase,now){
    let p=this.pilots.get(t.id);const life=t.spawnSerial||0,serial=t.shotSerial||0;
    if(!p||p.life!==life){
-    this.remove(t.id);p={life,serial,next:serial,ammoEpoch:ammoEpoch(t),grenadeEpoch:grenadeEpoch(t),power:t.power||'',powerUntil:Infinity,depletedAt:Infinity,depletedShot:Infinity,depletedSequence:0,holdSequence:0,releasedAt:-Infinity,until:now+(t.cooldown||0)*1000,total:t.cooldownTotal||.34,held:false,blocked:false};
+    this.remove(t.id);p={life,serial,next:serial,ammoEpoch:ammoEpoch(t),grenadeEpoch:grenadeEpoch(t),power:t.power||'',powerUntil:Infinity,until:now+(t.cooldown||0)*1000,total:t.cooldownTotal||.34,held:false};
     this.pilots.set(t.id,p);
    }
    if(phase!=='playing'||!t.alive){
     for(const [k,v]of this.previews)if(v.owner===t.id)this.previews.delete(k);
-    p.until=now;p.held=false;p.blocked=false;p.serial=p.next=serial;return p;
+    p.until=now;p.held=false;p.serial=p.next=serial;return p;
    }
-   // Delayed authority may end the previous hold after a real release/repress.
-   // Only consume the current hold if it was already down when that weapon ended.
-   if(p.power&&!(t.power||'')){
-    const acknowledged=Number.isSafeInteger(t.ack)&&t.ack>=0&&p.holdSequence>0,beforeHold=acknowledged&&t.ack<p.holdSequence;
-    // A rejected preview's serial can later be used by the new hold's final
-    // finite shot. Only reuse the old timestamp if that hold did not consume it.
-    const depleted=serial>=p.depletedShot&&(!acknowledged||beforeHold||p.holdSequence<=p.depletedSequence||serial>p.depletedShot);
-    p.blocked=p.held&&!beforeHold&&p.releasedAt<Math.min(now,p.powerUntil,depleted?p.depletedAt:Infinity);
-   }
-   if(p.power!==(t.power||'')||p.ammoEpoch!==ammoEpoch(t))p.depletedAt=p.depletedShot=Infinity;
    p.power=t.power||'';
    p.grenadeEpoch=grenadeEpoch(t);
    p.powerUntil=p.power&&Number.isFinite(t.powerTime)&&t.powerTime>0?now+1000*(t.powerTime+Math.max(0,t.starmanTime||0)):Infinity;
@@ -683,14 +672,12 @@
   }
   tryFire(t,held,now,options){
    const p=this.pilots.get(t.id);if(!p)return null;
-   const pressed=held&&!p.held;if(pressed)p.holdSequence=Number.isSafeInteger(options.sequence)&&options.sequence>0?options.sequence:0;if(!held&&p.held)p.releasedAt=now;p.held=held;if(!held)p.blocked=false;
+   const pressed=held&&!p.held;p.held=held;
    if(!options.active||!t.alive||!held)return null;
    if(p.power&&now>=p.powerUntil)return null;
-   if(pressed&&options.grenade){p.blocked=true;return null;}
-   if(p.blocked)return null;
-   // Grenade is a press action, not an automatic weapon. A blocked throw consumes
-   // the hold just as it does on Go; it must not fire later by itself.
-   if(t.power==='grenade'){if(!pressed)return null;p.blocked=true;}
+   // A fresh press pops active grenades instead of firing on that sample.
+   // Holding afterward retries normally, including auto-throws on cooldown.
+   if(pressed&&options.grenade)return null;
    // A single pass avoids three temporary arrays on the 60 Hz rapid-fire path.
    const boosted=t.starmanTime>0,fast=boosted||t.power==='rapid';
    let pending=0,normalPending=0,slots=0,chargeUse=0;
@@ -708,7 +695,6 @@
    }
    if(fast){const tick=Math.floor(now/STEP_MS);if(p.rapidTick===tick)return null;p.rapidTick=tick;}
    const shot=++p.next,key=this.key(t.id,p.life,shot),total=boosted?0:options.cooldown;
-   if(!boosted&&t.power&&(t.power==='rapid'?t.machineRounds-chargeUse<=1:options.charged&&t.charges-chargeUse<=1)){p.depletedAt=now;p.depletedShot=shot;p.depletedSequence=p.holdSequence;}
    const v={key,owner:t.id,life:p.life,shot,ammoEpoch:ammoEpoch(t),power:t.power||'',boosted,at:now,until:now+1000*total,
     expires:now+clamp(options.ttl||600,250,900),shells:[],accepted:false,confirmed:new Set()};
    p.until=v.until;p.total=total;this.previews.set(key,v);this.soundKeys.set(key,now+2000);

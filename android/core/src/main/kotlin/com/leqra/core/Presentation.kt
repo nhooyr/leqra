@@ -186,7 +186,7 @@ class PilotReadout(
         if (unavailable == null && tank.spawnProtected && tank.invulnerable > 0)
             unavailable = Unavailable("SPAWN PROTECTION", "WAIT", 0.0, "WAIT TO FIRE")
         locked = unavailable == null && projectileLocked
-        fireHint = if (tank.power == "grenade") "TAP TO THROW" else "HOLD TO FIRE"
+        fireHint = if (tank.power == "grenade") "HOLD TO THROW" else "HOLD TO FIRE"
         if (unavailable != null) {
             readiness = unavailable.text
             fireLabel = unavailable.label
@@ -195,7 +195,7 @@ class PilotReadout(
         } else if (grenades > 0) {
             readiness = "DETONATE READY"
             fireLabel = "BOOM"
-            fireHint = "TAP TO DETONATE"
+            fireHint = if (tank.power == "grenade") "HOLD TO THROW, TAP TO DETONATE" else "TAP TO DETONATE, HOLD TO FIRE"
         } else {
             val cooldown = if (unlimited) 0.0 else tank.cooldown
             val free =

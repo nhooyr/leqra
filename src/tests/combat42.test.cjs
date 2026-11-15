@@ -71,93 +71,43 @@ test('pending Starman shells leave ordinary projectile slots available after exp
  shot.shells=[{}];
  assert.equal(p.tryFire(expired,true,500,options({free:1})),null);
 });
-test('grenade hold cannot repeatedly throw or accidentally predict a blast',()=>{
- const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:3});p.sync(t,'playing',0);assert.ok(p.tryFire(t,true,0,options({charged:true,cooldown:.8})));
- assert.equal(p.tryFire(t,true,1000,options({charged:true,cooldown:.8})),null);
- p.tryFire(t,false,1100,options());assert.equal(p.tryFire(t,true,1200,options({grenade:true})),null);
- assert.equal(p.tryFire(t,true,2400,options()),null);assert.equal(p.previews.size,1);
+test('grenade hold auto-throws on cooldown and a fresh press pops only that sample',()=>{
+ const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:3});p.sync(t,'playing',0);
+ const o=options({charged:true,cooldown:.8});assert.ok(p.tryFire(t,true,0,o));
+ assert.equal(p.tryFire(t,true,798,o),null);assert.ok(p.tryFire(t,true,800,o));
+ p.tryFire(t,false,810,o);assert.equal(p.tryFire(t,true,1600,{...o,grenade:true}),null,'detonation never predicts a shot');
+ assert.ok(p.tryFire(t,true,1617,o),'hold resumes without another release');
+ assert.equal(p.previews.size,3);
 });
-test('last-grenade authority refill cannot turn the consumed hold into a standard preview',()=>{
- const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:1});p.sync(t,'playing',0);
- assert.ok(p.tryFire(t,true,0,options({charged:true,cooldown:.8})));
- Object.assign(t,{power:'',ammoEpoch:1,charges:0,cooldown:0,shotSerial:1});p.sync(t,'playing',30);
- assert.equal(p.tryFire(t,true,31,options()),null);p.tryFire(t,false,32,options());assert.ok(p.tryFire(t,true,33,options()));
-});
-test('every weapon ending in authority suppresses held standard previews without suppressing a new press',()=>{
- for(const power of ['rapid','scatter','homing','grenade','laser','cannon']){
-  const p=new N.ShotPresentation(),t=tank({power,charges:1,machineRounds:1});p.sync(t,'playing',0);
+test('every authoritative weapon ending lets the same hold resume on a refilled magazine',()=>{
+ for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const expiry of [false,true])for(const id of [0,7]){
+  const p=new N.ShotPresentation(),t=tank({id,power,powerTime:expiry?.01:15,charges:1,machineRounds:1});p.sync(t,'playing',0);
   assert.ok(p.tryFire(t,true,0,options({charged:power!=='rapid',cooldown:power==='rapid'?0:.5})),power);
   Object.assign(t,{power:'',ammoEpoch:1,charges:0,machineRounds:0,cooldown:0,shotSerial:1});p.sync(t,'playing',30);
-  assert.equal(p.tryFire(t,true,31,options()),null,power);p.tryFire(t,false,32,options());assert.ok(p.tryFire(t,true,33,options()),power);
+  const v=p.tryFire(t,true,31,options());assert.ok(v,[power,expiry,id].join('/'));assert.equal(v.power,'');assert.equal(v.ammoEpoch,1);assert.equal(v.shot,2);
  }
 });
-test('an early real release and repress belongs to a new hold before delayed weapon-end authority arrives',()=>{
- for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const timer of [false,true])for(const star of timer?[0,.02]:[0]){
-  const p=new N.ShotPresentation(),tanks=[0,7].map(id=>tank({id,power,powerTime:timer?.01:15,starmanTime:star,charges:timer?3:1,machineRounds:timer?180:1}));
+test('delayed or rejected weapon-end previews never latch a held trigger',()=>{
+ for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const ack of [1,3])for(const serial of [0,1]){
+  const p=new N.ShotPresentation(),t=tank({power,powerTime:.05,charges:1,machineRounds:1});
   const finite=options({charged:power!=='rapid',cooldown:power==='rapid'?0:.5});
-  for(const t of tanks){p.sync(t,'playing',0);const v=p.tryFire(t,true,0,finite);assert.ok(v,power);v.shells=[{}];}
-  const [held,repressed]=tanks;
-  const release=15+star*1000,arrival=30+star*1000;
-  p.tryFire(repressed,false,release,options({active:false}));
-  p.tryFire(repressed,true,release+5,finite);
-  for(const t of tanks){Object.assign(t,{power:'',ammoEpoch:1,charges:0,machineRounds:0,starmanTime:0,cooldown:0,shotSerial:1});p.sync(t,'playing',arrival);}
-  assert.equal(p.tryFire(held,true,arrival+1,options()),null,`${power} ${timer?'expiry':'depletion'} still consumes its original P1 hold`);
-  const v=p.tryFire(repressed,true,arrival+1,options());
-  assert.ok(v,`${power} ${timer?'expiry':'depletion'} must preserve P2's early new hold`);
-  assert.equal(v.power,'');assert.equal(v.ammoEpoch,1);assert.equal(v.shot,2,'stale finite authority cannot reserve an extra volley after its known expiry');
+  p.sync(t,'playing',0);p.tryFire(t,true,0,{...finite,sequence:1}).shells=[{}];
+  p.tryFire(t,false,10,options({active:false,sequence:2}));p.tryFire(t,true,20,{...finite,sequence:3});
+  Object.assign(t,{power:'',ammoEpoch:1,charges:0,machineRounds:0,cooldown:0,shotSerial:serial,ack});p.sync(t,'playing',60);
+  const v=p.tryFire(t,true,61,options({sequence:3}));assert.ok(v,[power,ack,serial].join('/'));assert.equal(v.power,'');assert.equal(v.ammoEpoch,1);
  }
 });
-test('a repress before the weapon actually expires is still consumed and Starman freezes that deadline',()=>{
- for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const star of [0,.02]){
-  const p=new N.ShotPresentation(),t=tank({power,powerTime:.03,starmanTime:star,charges:3,machineRounds:180});
-  const finite=options({charged:power!=='rapid',cooldown:power==='rapid'?0:.5});
-  p.sync(t,'playing',0);assert.ok(p.tryFire(t,true,0,finite));
-  p.tryFire(t,false,10,options({active:false}));p.tryFire(t,true,20,finite);
-  Object.assign(t,{power:'',ammoEpoch:1,charges:0,machineRounds:0,starmanTime:0,cooldown:0,shotSerial:1});p.sync(t,'playing',60);
-  assert.equal(p.tryFire(t,true,61,options()),null,`${power}, Star ${star}: this hold began before expiry`);
-  p.tryFire(t,false,62,options({active:false}));assert.ok(p.tryFire(t,true,63,options()));
- }
+test('empty slots and cooldowns retry automatically when capacity becomes available',()=>{
+ const p=new N.ShotPresentation(),t=tank({cooldown:.2}),dry=[];p.sync(t,'playing',0);
+ assert.equal(p.tryFire(t,true,0,options({onDryFire:()=>dry.push(1)})),null);
+ assert.equal(p.tryFire(t,true,201,options({free:0,onDryFire:()=>dry.push(1)})),null);
+ assert.ok(p.tryFire(t,true,220,options()),'same held input fires after ammo returns');assert.equal(dry.length,0);
 });
-test('an unconfirmed final preview cannot replace the actual later expiry with speculative depletion',()=>{
- for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const star of [0,.02]){
-  const p=new N.ShotPresentation(),t=tank({power,powerTime:.05,starmanTime:star,charges:1,machineRounds:1});
-  const finite=options({charged:power!=='rapid',cooldown:power==='rapid'?0:.5});
-  p.sync(t,'playing',0);const elapsed=star*1000,view={...t,starmanTime:0};
-  const preview=p.tryFire(view,true,elapsed,finite);assert.ok(preview);preview.shells=[{}];
-  p.tryFire(view,false,elapsed+10,options({active:false}));p.tryFire(view,true,elapsed+20,finite);
-  // Authority rejected that volley. Its timer resumes after Star's frozen
-  // interval and still ends after the new hold has begun.
-  Object.assign(t,{powerTime:.02,starmanTime:0,cooldown:.2});p.sync(t,'playing',elapsed+30);
-  Object.assign(t,{power:'',ammoEpoch:1,charges:0,machineRounds:0,powerTime:0,starmanTime:0,cooldown:0});
-  const arrival=60+star*1000;p.sync(t,'playing',arrival);
-  const before=p.previews.size;
-  assert.equal(p.tryFire(t,true,arrival+1,options()),null,`${power}, Star ${star}: rejected final preview cannot rearm the consumed hold`);
-  assert.equal(p.previews.size,before);
-  p.tryFire(t,false,arrival+2,options({active:false}));assert.ok(p.tryFire(t,true,arrival+3,options()));
- }
-});
-test('input acknowledgements distinguish a delayed old end from the new hold consuming that same volley serial',()=>{
- for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const timer of [false,true])for(const acknowledgedNewHold of [false,true]){
-  const p=new N.ShotPresentation(),t=tank({power,powerTime:.05,charges:timer?3:1,machineRounds:timer?180:1});
-  const finite=options({charged:power!=='rapid',cooldown:power==='rapid'?0:.5});
-  p.sync(t,'playing',0);const preview=p.tryFire(t,true,0,{...finite,sequence:1});assert.ok(preview);preview.shells=[{}];
-  p.tryFire(t,false,10,options({active:false,sequence:2}));
-  p.tryFire(t,true,20,{...finite,sequence:3});
-  Object.assign(t,{power:'',ammoEpoch:1,charges:0,machineRounds:0,cooldown:0,shotSerial:1,ack:acknowledgedNewHold?3:1});
-  p.sync(t,'playing',60);
-  const standard=p.tryFire(t,true,61,options({sequence:3}));
-  if(acknowledgedNewHold){
-   assert.equal(standard,null,`${power} ${timer?'expiry':'last shot'} consumed the new acknowledged hold`);
-   p.tryFire(t,false,62,options({active:false,sequence:4}));assert.ok(p.tryFire(t,true,63,options({sequence:5})));
-  }else assert.ok(standard,`${power} authority predates the fresh press, which must remain usable`);
- }
-});
-test('an accepted standard volley proves that an early new hold was rearmed',()=>{
- const p=new N.ShotPresentation(),t=tank({power:'homing',powerTime:15,charges:1});
- p.sync(t,'playing',0);const finite=options({charged:true,cooldown:.36});p.tryFire(t,true,0,{...finite,sequence:1}).shells=[{}];
- p.tryFire(t,false,10,options({active:false,sequence:2}));p.tryFire(t,true,20,{...finite,sequence:3});
- Object.assign(t,{power:'',ammoEpoch:1,charges:0,cooldown:0,shotSerial:2,ack:3});p.sync(t,'playing',400);
- assert.ok(p.tryFire(t,true,401,options({sequence:3})));assert.equal(p.pilots.get(t.id).blocked,false);
+test('Starman grenade previews retain the60Hz ceiling and do not spend saved charges',()=>{
+ const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:1,starmanTime:2});p.sync(t,'playing',0);
+ const o=options({charged:true,cooldown:.8});let count=0;
+ for(let ms=0;ms<500;ms+=4)if(p.tryFire(t,true,ms,o))count++;
+ assert.equal(count,30);assert.equal(t.charges,1);
 });
 test('dry feedback reserves no preview, sound-deduplication key or shot serial and never doubles a real shot',()=>{
  const p=new N.ShotPresentation(),t=tank(),dry=[];p.sync(t,'playing',0);

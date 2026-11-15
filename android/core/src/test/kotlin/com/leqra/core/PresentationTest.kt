@@ -110,7 +110,10 @@ class PresentationTest {
         assertEquals("GRENADE, 7.2s", r.weapon)
         assertEquals("DETONATE READY", r.readiness)
         assertEquals("BOOM", r.fireLabel)
-        assertEquals("TAP TO DETONATE", r.fireHint)
+        assertEquals("HOLD TO THROW, TAP TO DETONATE", r.fireHint)
+        t.power = ""
+        assertEquals("TAP TO DETONATE, HOLD TO FIRE", read(t, state).fireHint)
+        assertEquals("HOLD TO THROW", read(ArenaTank(id=1, power="grenade", charges=3)).fireHint)
     }
 
     @Test

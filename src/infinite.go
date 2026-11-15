@@ -1185,7 +1185,7 @@ func (a *infiniteArena) broadcast() {
 	}
 	// Pilots with the same visible entities can share the encoded snapshot.
 	// The mask represents exact membership, including at the edge of sight.
-	type encodedView struct{ plain, deflated snapshotFrame }
+	type encodedView struct{ plain snapshotFrame }
 	type viewKey struct {
 		mask        string
 		party       infiniteRoom
@@ -1285,15 +1285,8 @@ func (a *infiniteArena) broadcast() {
 			}
 			view.plain.data = data
 		}
-		frame := view.plain
-		if viewer.client.supportsSnapshotDeflate() {
-			if view.deflated.data == nil {
-				view.deflated = compressSnapshot(view.plain.data)
-			}
-			frame = view.deflated
-		}
 		views[key] = view
-		viewer.client.enqueueStateFrame(frame, false)
+		viewer.client.enqueueStateFrame(view.plain, false)
 	}
 }
 

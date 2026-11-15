@@ -107,7 +107,7 @@ func TestStarmanContactRespectsWallsProtectionAndTeams(t *testing.T) {
 		{"inside wall", func(_ *Game, a, b *Tank) { a.X, b.X = 252, 273 }, true},
 		{"spawn protected", func(_ *Game, a, b *Tank) { b.Invulnerable, b.SpawnProtected = 1, true }, false},
 		{"shield hit protection", func(_ *Game, a, b *Tank) { b.Invulnerable = .35 }, true},
-		{"other Starman", func(g *Game, a, b *Tank) { g.grantPower(b, "starman") }, true},
+		{"other Starman", func(g *Game, a, b *Tank) { g.grantPower(b, "starman") }, false},
 		{"friendly fire off", func(g *Game, a, b *Tank) { a.Team, b.Team = 1, 1; g.Rules.FriendlyFire = false }, true},
 		{"friendly fire on", func(g *Game, a, b *Tank) { a.Team, b.Team = 1, 1; g.Rules.FriendlyFire = true }, false},
 		{"expired boost", func(_ *Game, a, b *Tank) { a.StarmanTime = tickDT }, true},
@@ -122,8 +122,9 @@ func TestStarmanContactRespectsWallsProtectionAndTeams(t *testing.T) {
 			g.grantPower(attacker, "starman")
 			tc.setup(g, attacker, target)
 			g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
-			if !attacker.Alive || target.Alive != tc.targetAlive {
-				t.Fatalf("attacker alive = %t, target alive = %t, want true and %t", attacker.Alive, target.Alive, tc.targetAlive)
+			wantAttacker := tc.name != "other Starman"
+			if attacker.Alive != wantAttacker || target.Alive != tc.targetAlive {
+				t.Fatalf("attacker alive = %t, target alive = %t, want %t and %t", attacker.Alive, target.Alive, wantAttacker, tc.targetAlive)
 			}
 		})
 	}

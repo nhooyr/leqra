@@ -219,7 +219,7 @@ final class PowerupMatrixTests: XCTestCase {
                 let arena = makeArena(map), duration = durations(arena)
                 equip(&arena.snapshot.tanks[0], weapon: "grenade", profile: boosted ? "starman" : "ghost", power: duration.power, star: duration.star)
                 advance(arena, input: GameInput(fire: true), ticks: 30)
-                XCTAssertEqual(arena.snapshot.bullets.filter { $0.owner == 1 && $0.kind == "grenade" }.count, 1)
+                XCTAssertEqual(arena.snapshot.bullets.filter { $0.owner == 1 && $0.kind == "grenade" }.count, boosted ? 30 : 1)
                 XCTAssertFalse(arena.snapshot.effects.contains { $0.kind == "blast" })
                 advance(arena)
                 advance(arena, input: GameInput(fire: true))
