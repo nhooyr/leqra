@@ -91,13 +91,145 @@ final class AmmoMagazineTests: XCTestCase {
             XCTAssertEqual(tank.ammoUsed, 0, weapon); XCTAssertEqual(tank.grenades, 0, weapon)
             XCTAssertEqual(PilotReadout(tank: tank, snapshot: arena.snapshot, infinity: !finite).available, 5, weapon)
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
-            if weapon == "grenade" {
-                XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 })
-                arena.step(input: GameInput(), dt: 1 / 60)
-                arena.step(input: GameInput(fire: true), dt: 1 / 60)
-            }
+            XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, weapon)
+            arena.step(input: GameInput(), dt: 1 / 60)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
             XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, weapon)
         } }
+    }
+
+    func testEveryWeaponConsumesItsHoldOnDepletionOrExpiryEvenAcrossPassiveRefills() {
+        for finite in [false, true] { for weapon in ["rapid", "scatter", "homing", "grenade", "laser", "cannon"] {
+            for expires in [false, true] {
+                let arena = arena(finite: finite)
+                arena.snapshot.tanks[0] = ArenaTank(id: 1, x: 42, y: 42,
+                    cooldown: expires ? 999 : 0, powerTime: expires ? 0.025 : 15,
+                    power: weapon, charges: expires ? 3 : 1,
+                    machineRounds: weapon == "rapid" ? (expires ? 100 : 1) : 0, ammoEpoch: 4)
+                var feedback = LocalFireFeedback()
+                _ = feedback.setFire(true, tank: arena.snapshot.tanks[0], generation: 1, now: 1)
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                let restored = arena.snapshot.tanks[0]
+                let label = "\(weapon), finite=\(finite), expires=\(expires)"
+                XCTAssertEqual(restored.power, "", label)
+                XCTAssertEqual(restored.ammoEpoch, 5, label)
+                XCTAssertEqual(restored.cooldown, 0, label)
+                XCTAssertEqual(restored.ammoUsed, 0, label)
+                XCTAssertFalse(LocalFireFeedback.ammoUnavailable(for: restored), label)
+                XCTAssertFalse(feedback.setFire(true, tank: restored, generation: 1, now: 2), label)
+                let tank = arena.snapshot.tanks[0]
+                arena.snapshot.pickups = [ArenaPickup(id: 9999, x: tank.x, y: tank.y, type: "shield")]
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                arena.snapshot.tanks[0].shield = 0.001
+                for _ in 0..<5 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+                XCTAssertEqual(arena.snapshot.tanks[0].ammoEpoch, 7, label)
+                XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty }, label)
+                XCTAssertFalse(arena.snapshot.effects.contains { $0.kind == "shot:" }, label)
+                arena.step(input: GameInput(), dt: 1 / 60)
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 7 }, label)
+                XCTAssertEqual(arena.snapshot.tanks[0].ammoUsed, 1, label)
+            }
+        } }
+    }
+
+    func testPassiveBuffExpiryKeepsTheCurrentWeaponFiringWhileHeld() {
+        for finite in [false, true] { for weapon in ["rapid", "scatter", "homing", "grenade", "laser", "cannon"] {
+            for buff in ["shield", "speed", "ghost", "starman"] {
+                let arena = arena(finite: finite)
+                arena.snapshot.tanks[0] = ArenaTank(id: 1, x: 42, y: 42, powerTime: 15,
+                    power: weapon, charges: 3, machineRounds: weapon == "rapid" ? 100 : 0, ammoEpoch: 4)
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                switch buff {
+                case "shield": arena.snapshot.tanks[0].shield = 0.001; arena.snapshot.tanks[0].shieldCharges = 1
+                case "speed": arena.snapshot.tanks[0].speedTime = 0.001; arena.snapshot.tanks[0].speedStacks = 1
+                case "ghost": arena.snapshot.tanks[0].ghostTime = 0.001
+                default: arena.snapshot.tanks[0].starmanTime = 0.001
+                }
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                XCTAssertEqual(arena.snapshot.tanks[0].power, weapon)
+                XCTAssertEqual(arena.snapshot.tanks[0].ammoEpoch, 5)
+                if weapon == "grenade" {
+                    XCTAssertEqual(arena.snapshot.tanks[0].grenades, 0)
+                    XCTAssertFalse(arena.snapshot.bullets.contains { $0.ammoEpoch == 5 })
+                } else {
+                    XCTAssertGreaterThan(arena.snapshot.tanks[0].recoil, 0.99)
+                    XCTAssertEqual(arena.snapshot.tanks[0].ammoUsed, weapon == "laser" ? 0 : weapon == "scatter" ? 3 : 1)
+                }
+        } } }
+    }
+
+    func testFreshPressOnTheWeaponExpiryTickStillFiresStandardAmmo() {
+        for finite in [false, true] { for weapon in ["rapid", "scatter", "homing", "grenade", "laser", "cannon"] {
+            let arena = arena(finite: finite)
+            arena.snapshot.tanks[0] = ArenaTank(id: 1, x: 42, y: 42,
+                powerTime: 0.001, power: weapon, charges: 3, ammoEpoch: 4)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.tanks[0].power, "")
+            XCTAssertEqual(arena.snapshot.tanks[0].ammoEpoch, 5)
+            XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, weapon)
+        } }
+    }
+
+    func testCapturedReleaseAndRepressBetweenTicksUnlocksEveryDepletedWeapon() {
+        for finite in [false, true] { for weapon in ["rapid", "scatter", "homing", "grenade", "laser", "cannon"] {
+            for endsReleased in [false, true] {
+                let arena = arena(finite: finite)
+                arena.snapshot.tanks[0] = ArenaTank(id: 1, x: 42, y: 42, powerTime: 15,
+                    power: weapon, charges: 1, machineRounds: weapon == "rapid" ? 1 : 0, ammoEpoch: 4)
+                arena.captureFire(true, player: 1)
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                XCTAssertEqual(arena.snapshot.tanks[0].power, "")
+                arena.captureFire(false, player: 1)
+                arena.captureFire(true, player: 1)
+                if endsReleased { arena.captureFire(false, player: 1) }
+                arena.step(input: GameInput(fire: !endsReleased), dt: 1 / 60)
+                XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty && $0.ammoEpoch == 5 }.count, 1, weapon)
+                for _ in 0..<5 { arena.step(input: GameInput(fire: !endsReleased), dt: 1 / 60) }
+                XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty && $0.ammoEpoch == 5 }.count, 1, weapon)
+            }
+        } }
+    }
+
+    func testCapturedQuickTapIsConsumedOnceAndResetDoesNotDeferIt() {
+        for finite in [false, true] {
+            let arena = arena(finite: finite)
+            arena.snapshot.tanks[0].power = "grenade"; arena.snapshot.tanks[0].powerTime = 15; arena.snapshot.tanks[0].charges = 3
+            arena.captureFire(true, player: 1); arena.captureFire(false, player: 1)
+            arena.step(input: GameInput(), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
+            arena.step(input: GameInput(), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
+            arena.captureFire(true, player: 1)
+            arena.resetFireInput(player: 1)
+            arena.step(input: GameInput(), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
+            arena.snapshot.tanks[0].hp = 0
+            arena.captureFire(true, player: 1)
+            arena.snapshot.tanks[0].hp = 1
+            arena.step(input: GameInput(), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
+        }
+    }
+
+    func testFixedArenaForwardsRealPressEdgesOnlyDuringGameplay() {
+        var rules = RoomRules(); rules.pickupRate = "off"
+        let fixed = FixedArena(rules: rules, name: "EDGE", colorIndex: 0, botCount: 1, seed: 42)
+        fixed.captureFire(true, player: 1)
+        fixed.captureFire(false, player: 1)
+        for _ in 0..<180 { fixed.step(input: GameInput(), dt: 1 / 60) }
+        XCTAssertTrue(fixed.snapshot.bullets.isEmpty)
+        fixed.combat.snapshot.tanks[0] = ArenaTank(id: 1, x: 42, y: 42, powerTime: 15, power: "grenade", charges: 3)
+        fixed.combat.snapshot.tanks[1].cooldown = 999
+        fixed.captureFire(true, player: 1)
+        fixed.captureFire(false, player: 1)
+        fixed.step(input: GameInput(), dt: 1 / 60)
+        XCTAssertEqual(fixed.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
+        fixed.captureFire(true, player: 1)
+        fixed.resetFireInput(player: 1)
+        fixed.step(input: GameInput(), dt: 1 / 60)
+        XCTAssertEqual(fixed.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
     }
 
     func testLastGrenadeConsumesTheHoldAcrossRefillsUntilRelease() throws {

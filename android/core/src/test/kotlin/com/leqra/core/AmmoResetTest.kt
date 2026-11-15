@@ -58,9 +58,9 @@ class AmmoResetTest {
         full(tank, "", 1)
     }
 
-    @Test fun automaticWeaponDepletionMakesTheNextHeldShotAReadyStandardShot() {
-        for (kind in weapons.filter { it != "grenade" }) {
-            val arena = arena()
+    @Test fun everyWeaponDepletionRequiresAFreshPressForTheReadyStandardBank() {
+        for (fixed in listOf(false, true)) for (kind in weapons) {
+            val arena = arena(fixed)
             val tank = arena.snapshot.tanks.first()
             PracticeArena.applyPower(tank, kind)
             if (kind == "rapid") tank.machineRounds = 1 else tank.charges = 1
@@ -70,9 +70,91 @@ class AmmoResetTest {
             val ready = PilotReadout(tank, arena.snapshot, false)
             assertEquals(5, ready.available); assertEquals("READY", ready.readiness)
             if (kind != "laser") assertTrue(arena.snapshot.bullets.any { it.ammoEpoch == oldEpoch })
+            repeat(8) { arena.step(GameInput(fire = true), dt) }
+            assertFalse("Held $kind cannot fire the restored standard bank", arena.snapshot.bullets.any { it.kind.isEmpty() })
+            assertFalse(arena.snapshot.effects.any { it.kind == "shot:" })
+            arena.step(GameInput(), dt)
             arena.step(GameInput(fire = true), dt)
-            assertTrue("Standard fires immediately after $kind", arena.snapshot.bullets.any { it.kind.isEmpty() && it.ammoEpoch == tank.ammoEpoch })
+            assertEquals("Fresh standard shot after $kind", 1, arena.snapshot.bullets.count { it.kind.isEmpty() && it.ammoEpoch == tank.ammoEpoch })
         }
+    }
+
+    @Test fun everyHeldWeaponExpiryRequiresReleaseButAFreshExpiryTickPressDoesNot() {
+        for (fixed in listOf(false, true)) for (kind in weapons) {
+            val arena = arena(fixed)
+            val tank = arena.snapshot.tanks.first()
+            PracticeArena.applyPower(tank, kind)
+            arena.step(GameInput(fire = true), dt)
+            tank.powerTime = .001
+            val epoch = tank.ammoEpoch
+            arena.step(GameInput(fire = true), dt)
+            full(tank, "", epoch + 1)
+            repeat(8) { arena.step(GameInput(fire = true), dt) }
+            assertFalse("Held $kind expiry cannot fire standard", arena.snapshot.bullets.any { it.kind.isEmpty() })
+            assertFalse(arena.snapshot.effects.any { it.kind == "shot:" })
+            arena.step(GameInput(), dt)
+            arena.step(GameInput(fire = true), dt)
+            assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+
+            val fresh = arena(fixed)
+            val pilot = fresh.snapshot.tanks.first()
+            PracticeArena.applyPower(pilot, kind, duration = .001)
+            fresh.step(GameInput(fire = true), dt)
+            assertEquals("Fresh press at $kind expiry is usable", 1, fresh.snapshot.bullets.count { it.kind.isEmpty() })
+        }
+    }
+
+    @Test fun passiveExpiryKeepsCurrentWeaponAutofireAndNeverReleasesAConsumedHold() {
+        for (fixed in listOf(false, true)) for (buff in listOf("shield", "speed", "ghost", "starman")) {
+            val arena = arena(fixed)
+            val tank = arena.snapshot.tanks.first()
+            PracticeArena.applyPower(tank, "homing")
+            arena.step(GameInput(fire = true), dt)
+            PracticeArena.applyPower(tank, buff, duration = .001, starDuration = .001)
+            arena.step(GameInput(fire = true), dt)
+            assertEquals("Passive $buff expiry retains homing", "homing", tank.power)
+            assertEquals("Passive $buff expiry keeps held weapon firing", 2, tank.charges)
+            assertEquals(2, arena.snapshot.bullets.count { it.kind == "homing" })
+
+            tank.charges = 1
+            tank.cooldown = 0.0
+            arena.step(GameInput(fire = true), dt)
+            PracticeArena.applyPower(tank, buff, duration = .001, starDuration = .001)
+            repeat(8) { arena.step(GameInput(fire = true), dt) }
+            assertFalse("Passive $buff expiry cannot release consumed hold", arena.snapshot.bullets.any { it.kind.isEmpty() })
+            assertEquals(5, PilotReadout(tank, arena.snapshot, !fixed).available)
+        }
+    }
+
+    @Test fun capturedSubphysicsPressesWorkOnceAndReleaseRearmsEveryDepletedWeapon() {
+        for (fixed in listOf(false, true)) for (kind in weapons) {
+            val arena = arena(fixed)
+            val tank = arena.snapshot.tanks.first()
+            PracticeArena.applyPower(tank, kind)
+            if (kind == "rapid") tank.machineRounds = 1 else tank.charges = 1
+            arena.captureFire(tank.id, true)
+            arena.step(GameInput(fire = true), dt)
+            assertEquals("", tank.power)
+            arena.captureFire(tank.id, false)
+            arena.captureFire(tank.id, true)
+            arena.captureFire(tank.id, false)
+            arena.step(GameInput(), dt)
+            assertEquals("A real quick $kind release/repress fires once", 1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+            repeat(8) { arena.step(GameInput(), dt) }
+            assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+        }
+        val arena = arena()
+        val tank = arena.snapshot.tanks.first()
+        tank.spawnProtected = true; tank.invulnerable = 1.0
+        arena.captureFire(tank.id, true); arena.captureFire(tank.id, false)
+        arena.step(GameInput(), dt)
+        tank.spawnProtected = false; tank.invulnerable = 0.0
+        arena.step(GameInput(), dt)
+        assertTrue("A blocked quick press cannot fire later", arena.snapshot.bullets.isEmpty())
+        arena.captureFire(tank.id, true)
+        arena.resetFire(tank.id)
+        arena.step(GameInput(), dt)
+        assertTrue("Reset discards queued press edges", arena.snapshot.bullets.isEmpty())
     }
 
     @Test fun finalGrenadeConsumesItsHoldAcrossRefillsAndExpiryUntilRelease() {

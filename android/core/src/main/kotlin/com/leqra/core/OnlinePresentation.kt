@@ -178,6 +178,12 @@ class OnlinePresentation(
             return GameInput(seq = sequence)
         }
 
+        fun inputEdgePacket(input: GameInput): GameInput {
+            sequence++
+            rememberSent(step + 1)
+            return input.copy(seq = sequence)
+        }
+
         fun accept(snapshot: ArenaSnapshot, recovering: Boolean) {
             val authoritative = snapshot.tanks.firstOrNull { it.id == id }?.copy()
             val old = predicted
@@ -484,6 +490,10 @@ class OnlinePresentation(
     }
 
     fun neutralLocalPacket(): GameInput? = secondary?.neutralPacket()
+
+    /** Button edges share normal packet chronology without adding a movement step. */
+    fun inputEdgePacket(input: GameInput, local: Boolean = false): GameInput? =
+        if (local) secondary?.inputEdgePacket(input) else primary.inputEdgePacket(input)
 
     private fun interpolated(dt: Double, secondaryID: Int?): ArenaSnapshot {
         val newest = samples.lastOrNull() ?: return ArenaSnapshot()

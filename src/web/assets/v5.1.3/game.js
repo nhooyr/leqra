@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.1.2';
+const GAME_VERSION='5.1.3';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -475,7 +475,7 @@ function pathScratch(a){
 }
 function tracePath(from,to,prev,a){const path=a?.pathScratch||[];path.length=0;for(let at=to;at!==from;at=prev[at]){if(at<0||path.length>grid.length){path.length=0;return path;}path.push(at);}path.reverse();return path;}
 function bfs(from,to,a=null){if(from===to){if(a?.pathScratch)a.pathScratch.length=0;return a?.pathScratch||[];}const scratch=pathScratch(a),prev=scratch?.pathPrev||new Int16Array(grid.length),q=scratch?.pathQueue||[];prev.fill(-1);prev[from]=from;q.length=0;q.push(from);for(let p=0;p<q.length;p++){const i=q[p];for(const n of grid[i].neighbors){if(prev[n]!==-1)continue;prev[n]=i;if(n===to)return tracePath(from,to,prev,scratch);q.push(n);}}if(scratch?.pathScratch)scratch.pathScratch.length=0;return scratch?.pathScratch||[];}
-function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRoom.players.find(p=>p.id===i):null;return{id:i,name:member?member.name||(member.kind==='bot'?'BOT':member.kind==='local'?savedLocalCallsign():'Player 1'):mode==='duel'||mode==='solo'&&i===0?localPilotIdentity(i).name:NAMES[i],color:member?teamColor(i,member.team,member.colorIndex):COLORS[i],x:p.x,y:p.y,angle:i===0?-Math.PI/2:Math.PI/2,r:RADIUS,alive:true,human:member?member.kind!=='bot':i===0||mode==='duel',difficulty:member?.difficulty||difficulty,localIndex:member?.kind==='local'?1:0,team:member?member.team:mode==='duel'?'p'+i:i===0?'player':'bots',cooldown:0,ammoEpoch:0,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,starmanTime:0,invulnerable:.75,spawnProtected:true,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,vx:0,vy:0,track:0,ai:{think:rnd(.15,.5),path:[],pathClock:0,target:-1,aim:null,shotClock:(member?.difficulty||difficulty)==='dumb'?1.8:rnd(.6,1.6),bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,dodgeAngle:0,dodgeDrive:1,recoverTime:0,recoverAngle:0,recoverDrive:0,stuck:0,lastX:p.x,lastY:p.y}};}
+function newTank(i,cell){const p=center(cell);const member=mode==='room'?localRoom.players.find(p=>p.id===i):null;return{id:i,name:member?member.name||(member.kind==='bot'?'BOT':member.kind==='local'?savedLocalCallsign():'Player 1'):mode==='duel'||mode==='solo'&&i===0?localPilotIdentity(i).name:NAMES[i],color:member?teamColor(i,member.team,member.colorIndex):COLORS[i],x:p.x,y:p.y,angle:i===0?-Math.PI/2:Math.PI/2,r:RADIUS,alive:true,human:member?member.kind!=='bot':i===0||mode==='duel',difficulty:member?.difficulty||difficulty,localIndex:member?.kind==='local'?1:0,team:member?member.team:mode==='duel'?'p'+i:i===0?'player':'bots',cooldown:0,ammoEpoch:0,fireHeld:false,shield:0,shieldCharges:0,speedTime:0,speedStacks:0,ghostTime:0,starmanTime:0,invulnerable:.75,spawnProtected:true,power:null,powerTime:0,machineRounds:0,charges:0,recoil:0,vx:0,vy:0,track:0,ai:{think:rnd(.15,.5),path:[],pathClock:0,target:-1,aim:null,shotClock:(member?.difficulty||difficulty)==='dumb'?1.8:rnd(.6,1.6),bankClock:0,bankAim:null,goal:-1,dodgeClock:0,dodgeTime:0,dodgeAngle:0,dodgeDrive:1,recoverTime:0,recoverAngle:0,recoverDrive:0,stuck:0,lastX:p.x,lastY:p.y}};}
 function spawnCells(){return [(rows-1)*cols,cols-1,rows*cols-1,0,Math.floor(cols/2),Math.floor(rows/2)*cols+cols-1,(rows-1)*cols+Math.floor(cols/2),Math.floor(rows/2)*cols];}
 function resetTanks(){const spawn=spawnCells();if(mode==='room'){tanks=localRoom.players.filter(p=>!p.spectating).map(p=>newTank(p.id,spawn[p.id]));return;}if(mode==='solo'&&Math.random()<.5)spawn[2]=0;tanks=spawn.slice(0,mode==='duel'?2:3).map((s,i)=>newTank(i,s));}
 function resetPreview(){localSurvivalCheckpoint=null;localObjectives=null;makeMaze();resetTanks();bullets=[];particles=[];rings=[];traces=[];pickups=[];seedPickups();if(!gameStarted)scores=Array(MAX_TANKS).fill(0);updateHUD(true);}
@@ -715,8 +715,8 @@ function fire(t){
  recycleStarmanProjectiles(bullets,t.id,boosted,Net.ammoEpoch(t));
  shotSound(spec.kind,t.human,undefined,boosted);
  if(boosted)return true;
- if(spec.kind==='rapid'&&--t.machineRounds===0){t.power=null;t.powerTime=0;Net.refillAmmo(t);}
- if(['scatter','homing','grenade','cannon'].includes(t.power)){t.charges--;if(t.charges<=0){t.power=null;t.powerTime=0;Net.refillAmmo(t);}}
+ if(spec.kind==='rapid'&&--t.machineRounds===0){Net.clearWeapon(t);Net.refillAmmo(t);}
+ if(['scatter','homing','grenade','cannon'].includes(t.power)){t.charges--;if(t.charges<=0){Net.clearWeapon(t);Net.refillAmmo(t);}}
  return true;
 }
 // The same bounded multi-segment trace as Go. Bot beams pass through bots;
@@ -761,7 +761,7 @@ function fireLaser(t){
  if(!boosted||beam.target||time+1e-9>=(t.nextBoostEffect||0)){if(boosted)t.nextBoostEffect=time+4/60;laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);}
  shotSound('laser',t.human,undefined,boosted);
  if(beam.target)hurt(beam.target,{owner:t.id,kind:'laser'});
- if(!boosted&&--t.charges<=0){t.power=null;t.powerTime=0;Net.refillAmmo(t);}return true;
+ if(!boosted&&--t.charges<=0){Net.clearWeapon(t);Net.refillAmmo(t);}return true;
 }
 function compactLife(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(item.life>0)list[write++]=item;}list.length=write;return list;}
 function compactNotDead(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(!item.dead)list[write++]=item;}list.length=write;return list;}
@@ -811,6 +811,7 @@ function weaponControl(t,held,pressed){
  if(!t.alive)return;
  if((!held||pressed)&&t.fireBlocked)t.fireBlocked=false;
  if(t.spawnProtected&&t.invulnerable>0)return;
+ t.fireHeld=held;
  if(pressed){
   if(detonateOwned(t)){t.fireBlocked=held;return;}
   if(t.power==='grenade'){t.fireBlocked=held;fire(t);return;}
@@ -1550,7 +1551,7 @@ function update(dt){
  // Every tank's defenses advance before any attacks, regardless of seat order.
  for(const t of tanks)if(t.alive){localTankActors[t.id]=t;t.invulnerable=Math.max(0,t.invulnerable-dt);if(t.invulnerable===0)t.spawnProtected=false;t.ammoRefillPending=t.starmanTime>0&&t.starmanTime<=dt||t.shield>0&&t.shield<=dt;t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;}
  let actorCount=0;for(const t of localTankActors)if(t)localTankActors[actorCount++]=t;
- for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);let refill=t.ammoRefillPending||t.speedTime>0&&t.speedTime<=dt||t.ghostTime>0&&t.ghostTime<=dt;t.ammoRefillPending=false;t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power&&!(t.starmanTime>0)){t.powerTime-=dt;if(t.powerTime<=0){t.power=null;t.powerTime=0;t.machineRounds=0;refill=true;}}if(refill)Net.refillAmmo(t);
+ for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);let refill=t.ammoRefillPending||t.speedTime>0&&t.speedTime<=dt||t.ghostTime>0&&t.ghostTime<=dt;t.ammoRefillPending=false;t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;advanceGhost(t,dt);t.recoil=Math.max(0,t.recoil-dt*9);if(t.power&&!(t.starmanTime>0)){t.powerTime-=dt;if(t.powerTime<=0){Net.clearWeapon(t);refill=true;}}if(refill)Net.refillAmmo(t);
   const x=t.x,y=t.y,angle=t.angle;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.renderTurn=Math.atan2(Math.sin(t.angle-angle),Math.cos(t.angle-angle))/dt;t.track+=Math.hypot(t.x-x,t.y-y);
  }
  for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){
@@ -2613,7 +2614,7 @@ function connectOnline(request,reconnecting=false){
   case 'welcome':
    if(msg.localPublicToken&&msg.localPublicToken!==request.localPublicToken&&window.leqraIdentity?.prepareLocal&&!(request.token&&msg.resumed===true&&request.localNewAccount===true)){clearTimeout(timeout);leaveOnline();$('roomStatus').textContent='This room uses a different P2 account. Your P2 key was kept. Leave and rejoin with the intended P2 account.';break;}
    if(request.roster?.some(player=>player.kind==='local')&&window.leqraIdentity?.prepareLocal&&msg.localPublicToken!==request.localPublicToken){clearTimeout(timeout);leaveOnline();$('roomStatus').textContent='The server did not confirm the separate P2 account key. Update the server before using P2 online.';break;}
-   window.leqraIdentity?.remember?.(msg.publicToken,request.publicToken||'');online.ownerKey=msg.publicToken||request.publicToken||'';window.leqraIdentity?.remember?.(msg.localPublicToken,request.localPublicToken||'',1);online.localOwnerKey=msg.localPublicToken||request.localPublicToken||'';
+   window.leqraIdentity?.remember?.(msg.publicToken,request.publicToken||'');online.ownerKey=msg.publicToken||request.publicToken||'';if(msg.localPublicToken)window.leqraIdentity?.remember?.(msg.localPublicToken,request.localPublicToken||'',1);online.localOwnerKey=msg.localPublicToken||request.localPublicToken||'';
    matchmakingWelcome(msg);matchmaking.rematchPending=false;online.lastMatch=-1;online.roomData=null;clearInput();closeVictory();
    const inviteName=online.inviteName;watchInvite=false;watchResume=null;online.inviteWatch=false;resetWatchDialog();
    if($('joinDialog').open)$('joinDialog').close();
@@ -2976,11 +2977,11 @@ function previewOnlineFire(second,controls,now){
  const auth=online.snapshots.at(-1)?.tankMap.get(id),pose=channel?.predictor?.state;
  if(!online.shots||!auth||!pose)return;
  const active=phase==='playing'&&online.connected&&controls.fire&&!online.menu&&now-(online.snapshots.at(-1)?.received||0)<450;
- if(!active||!auth.alive||auth.spawnProtected&&auth.invulnerable>(now-online.snapshots.at(-1).received)/1000){online.shots.tryFire(auth,!!controls.fire,now,{active:false});return;}
+ if(!active||!auth.alive||auth.spawnProtected&&auth.invulnerable>(now-online.snapshots.at(-1).received)/1000){online.shots.tryFire(auth,!!controls.fire,now,{active:false,sequence:channel.seq});return;}
  const age=(now-online.snapshots.at(-1).received)/1000;
  let t={...auth,x:pose.x,y:pose.y,angle:pose.angle,ghostTime:pose.ghostTime,starmanTime:Math.max(0,(auth.starmanTime||0)-age)};
  const grenade=ownedGrenades(t).length>0||online.shots.pendingGrenade(id),power=t.power||'';
- const v=online.shots.tryFire(t,!!controls.fire,now,{active,grenade,
+ const v=online.shots.tryFire(t,!!controls.fire,now,{active,grenade,sequence:channel.seq,
   blocked:muzzleBlocked(t),
   // Lasers bypass the projectile-slot cap, matching authoritative fireLaser.
   free:power==='laser'?Infinity:powerCapacity(t)-activeAmmo(t),need:power==='laser'?0:power==='scatter'?3:1,

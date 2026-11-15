@@ -403,7 +403,7 @@ function weaponControl(world, tank, held, pressed) {
 function spendWeapon(tank) {
  if (!tank.power || tank.starmanTime > 0) return;
  if (tank.power === 'rapid' ? --tank.machineRounds > 0 : --tank.charges > 0) return;
- Object.assign(tank, {power: '', powerTime: 0, charges: 0});net.refillAmmo(tank);
+ net.clearWeapon(tank,'');net.refillAmmo(tank);
 }
 
 function traceLaser(world, tank, preview = false) {
@@ -754,7 +754,7 @@ function offlineStep(world, dt) {
   if (tank.shield === 0) tank.shieldCharges = 0;
   if (!(tank.starmanTime > 0)) {
    tank.powerTime = Math.max(0, (tank.powerTime || 0) - dt);
-   if (tank.power&&tank.powerTime <= 1e-9) {Object.assign(tank, {power: '', powerTime: 0, charges: 0, machineRounds: 0});tank.ammoRefillPending=true;}
+   if (tank.power&&tank.powerTime <= 1e-9) {net.clearWeapon(tank,'');tank.ammoRefillPending=true;}
   }
   tank.recoil = Math.max(0, tank.recoil - 9 * dt);
  }

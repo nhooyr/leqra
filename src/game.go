@@ -757,6 +757,7 @@ func (g *Game) weaponControl(t *Tank, held, pressed bool) {
 	if !t.Alive || (g.survivalState() != nil && g.survivalState().Status != "wave") {
 		return
 	}
+	t.fireHeld = held
 	if !held || pressed {
 		t.fireBlocked = false
 	}

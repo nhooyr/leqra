@@ -11,6 +11,17 @@ case "$device" in
     ''|*placeholder*|*Placeholder*) exit 0 ;;
 esac
 
+# Scheme actions can omit DEVELOPER_DIR while xcode-select points at the
+# standalone Command Line Tools, which do not include simctl or devicectl.
+if [ -z "${DEVELOPER_DIR:-}" ]; then
+    developer_bin=${DEVELOPER_BIN_DIR:-}
+    case "$developer_bin" in
+        */Contents/Developer/usr/bin) DEVELOPER_DIR=${developer_bin%/usr/bin} ;;
+        *) DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ;;
+    esac
+    export DEVELOPER_DIR
+fi
+
 case "$platform" in
     iphonesimulator|com.apple.platform.iphonesimulator|'iOS Simulator')
         if xcrun simctl uninstall "$device" "$runner" >/dev/null; then exit 0; fi

@@ -32,6 +32,8 @@ public final class PracticeArena {
     private var nextEffect = 0
     private var effectTimes: [Int: Double] = [:]
     private var held: [Int: Bool] = [:]
+    private var capturedFireDown: Set<Int> = []
+    private var pendingFirePresses: Set<Int> = []
     private var movementInputs: [Int: GameInput] = [:]
     private var fireBlocked: Set<Int> = []
     private var botCourses: [Int: (x: Double, y: Double)] = [:]
@@ -136,6 +138,21 @@ public final class PracticeArena {
 
     func clearProjectiles() { projectiles.removeAll(); snapshot.bullets.removeAll() }
     func refreshStandings() { updateStandings() }
+
+    /// Real input edges can occur entirely between two simulation ticks.
+    public func captureFire(_ down: Bool, player: Int) {
+        if down {
+            guard snapshot.tanks.contains(where: { $0.id == player && $0.hp > 0 }) else { return }
+            if capturedFireDown.insert(player).inserted { pendingFirePresses.insert(player) }
+        } else {
+            capturedFireDown.remove(player); held[player] = false; fireBlocked.remove(player)
+        }
+    }
+
+    public func resetFireInput(player: Int) {
+        capturedFireDown.remove(player); pendingFirePresses.remove(player)
+        held.removeValue(forKey: player); fireBlocked.remove(player)
+    }
 
     public func step(input: GameInput, dt: Double) {
         guard dt.isFinite, dt > 0, dt <= 0.1 else { return }
@@ -335,9 +352,9 @@ public final class PracticeArena {
         snapshot.tanks.removeAll { ids.contains($0.id) }
         // A shot already in flight still belongs to this permanent identity.
         for id in ids {
-            roamingIDs.remove(id); held.removeValue(forKey: id); movementInputs.removeValue(forKey: id)
+            roamingIDs.remove(id); resetFireInput(player: id); movementInputs.removeValue(forKey: id)
             botCourses.removeValue(forKey: id); botDecisions.removeValue(forKey: id)
-            dumbBots.removeValue(forKey: id); fireBlocked.remove(id); nextBoostEffects.removeValue(forKey: id)
+            dumbBots.removeValue(forKey: id); nextBoostEffects.removeValue(forKey: id)
         }
     }
 
@@ -425,7 +442,7 @@ public final class PracticeArena {
                                          spawnSerial: old.spawnSerial + 1, invulnerable: maze.world == nil ? 1 : 1.2,
                                          survivalEnemy: old.survivalEnemy, survivalBoss: old.survivalBoss, difficulty: difficulty,
                                          ammoEpoch: ArenaTank.nextAmmoEpoch(old.ammoEpoch))
-        fireBlocked.remove(old.id)
+        resetFireInput(player: old.id)
         botCourses.removeValue(forKey: old.id)
         dumbBots.removeValue(forKey: old.id)
         if difficulty == "dumb" { dumbBots[old.id] = (old.spawnSerial + 1, DumbBotBrain(spawnedAt: time)) }
@@ -442,7 +459,10 @@ public final class PracticeArena {
         tank.starmanTime = max(0, tank.starmanTime - dt)
         if tank.starmanTime <= 0 {
             tank.powerTime = max(0, tank.powerTime - dt)
-            if tank.powerTime < 1e-9 { tank.powerTime = 0; tank.power = ""; tank.charges = 0; tank.machineRounds = 0 }
+            if tank.powerTime < 1e-9 {
+                if !tank.power.isEmpty && held[tank.id] == true { fireBlocked.insert(tank.id) }
+                tank.powerTime = 0; tank.power = ""; tank.charges = 0; tank.machineRounds = 0
+            }
         }
         tank.cooldown = max(0, tank.cooldown - dt)
         tank.recoil = max(0, tank.recoil - 9 * dt)
@@ -529,8 +549,8 @@ public final class PracticeArena {
 
     private func refillAmmo(_ index: Int) {
         snapshot.tanks[index].refillAmmo()
-        // A grenade action consumes the hold, even if its last charge or a
-        // later refill restores standard ammunition before Fire is released.
+        // Ending a weapon consumes the hold, even if a later refill restores
+        // standard ammunition before Fire is released.
     }
 
     private func effect(_ kind: String, x: Double, y: Double, owner: Int, points: [BeamPoint] = [], flight: CannonFlight? = nil, contact: ImpactContact? = nil) {
@@ -644,9 +664,11 @@ public final class PracticeArena {
     }
 
     private func weaponControl(_ index: Int, fire: Bool) {
-        let tank = snapshot.tanks[index], pressed = fire && held[tank.id] != true
+        let tank = snapshot.tanks[index]
+        let captured = pendingFirePresses.remove(tank.id) != nil
+        let pressed = captured || fire && held[tank.id] != true
         held[tank.id] = fire
-        if !fire { fireBlocked.remove(tank.id) }
+        if !fire || pressed { fireBlocked.remove(tank.id) }
         guard tank.hp > 0, !(tank.spawnProtected && tank.invulnerable > 1e-9) else { return }
         if pressed {
             let grenades = projectiles.filter { $0.wire.owner == tank.id && $0.wire.ammoEpoch == tank.ammoEpoch && $0.wire.kind == "grenade" }
@@ -658,7 +680,7 @@ public final class PracticeArena {
             }
             if tank.power == "grenade" { fireBlocked.insert(tank.id); fireShot(index); return }
         }
-        if fire && !fireBlocked.contains(tank.id) && tank.power != "grenade" { fireShot(index) }
+        if (fire || pressed) && !fireBlocked.contains(tank.id) && tank.power != "grenade" { fireShot(index) }
     }
 
     private func fireShot(_ index: Int) {
@@ -714,6 +736,7 @@ public final class PracticeArena {
         if tank.power == "rapid" { snapshot.tanks[index].machineRounds -= 1 }
         else { snapshot.tanks[index].charges -= 1 }
         if tank.power == "rapid" ? snapshot.tanks[index].machineRounds <= 0 : snapshot.tanks[index].charges <= 0 {
+            fireBlocked.insert(tank.id)
             snapshot.tanks[index].power = ""; snapshot.tanks[index].powerTime = 0; snapshot.tanks[index].charges = 0
             refillAmmo(index)
         }
@@ -900,6 +923,7 @@ public final class PracticeArena {
             return
         }
         snapshot.tanks[index].hp = 0
+        resetFireInput(player: tank.id)
         if killScoring { snapshot.tanks[index].score -= 1 }
         snapshot.tanks[index].respawnTime = respawnsEnabled ? respawnDelay : 0
         if let shooter = snapshot.tanks.firstIndex(where: { $0.id == owner }) {

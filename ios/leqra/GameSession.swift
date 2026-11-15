@@ -187,7 +187,12 @@ final class GameSession: ObservableObject {
         scene.scaleMode = .resizeFill
         scene.onFrame = { [weak self] dt in self?.frame(dt) }
         scene.onFireChanged = { [weak self] down in self?.fireInputChanged(down) }
-        scene.onControlsReset = { [weak self] in self?.fireFeedback.reset() }
+        scene.onControlsReset = { [weak self] in
+            guard let self else { return }
+            self.fireFeedback.reset()
+            self.practice?.resetFireInput(player: self.localID)
+            self.fixedArena?.resetFireInput(player: self.localID)
+        }
         scene.localFireRecoil = { [weak self] tank in self?.localFireRecoil(real: tank.recoil) ?? tank.recoil }
         roomClient.onEvent = { [weak self] event in self?.receive(event, arena: false) }
         arenaClient.onEvent = { [weak self] event in self?.receive(event, arena: true) }
@@ -1649,6 +1654,13 @@ final class GameSession: ObservableObject {
 
     private func fireInputChanged(_ down: Bool) {
         let now = ProcessInfo.processInfo.systemUptime
+        if !down || fireFeedbackActive {
+            practice?.captureFire(down, player: localID)
+            fixedArena?.captureFire(down, player: localID)
+        }
+        if !offline, fireFeedbackActive, let packet = timeline?.inputEdgePacket(scene.input, now: now) {
+            (arenaActive ? arenaClient : roomClient).sendInput(packet, paused: false)
+        }
         let age = offline ? 0 : max(0, now - fireArrival)
         let accepted = fireFeedback.setFire(down, tank: fireAuthority, generation: fireGeneration, now: now,
             stateAge: age, active: fireFeedbackActive)
