@@ -214,7 +214,7 @@ internal class NativeHudView(context: Context) : View(context) {
                         "cannon",
                         "laser" -> .85 * 2 / 3
                         "scatter" -> .27
-                        "homing" -> .72
+                        "homing" -> .36
                         "grenade" -> .8
                         else -> .34
                     }

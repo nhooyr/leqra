@@ -1427,7 +1427,7 @@ class PracticeArena(
 
         private val rapidSpec = WeaponSpec(846.0, 3.5 / 3, 18 * 84.0 / 846, 0.0, 115)
         private val scatterSpec = WeaponSpec(846.0, 3.5, 3.9, .27, 12)
-        private val homingSpec = WeaponSpec(235.0, 5.0, 18 * 84.0 / 235, .72, 3)
+        private val homingSpec = WeaponSpec(235.0, 5.0, 18 * 84.0 / 235, .36, 3)
         private val grenadeSpec = WeaponSpec(205.0, 6.0, 10.0, .8, 3)
         private val cannonSpec = WeaponSpec(1128.0, 14.0, 5.3, .85 * 2 / 3, 3)
         private val laserSpec = WeaponSpec(0.0, 3.0, 0.0, .85 * 2 / 3, 3)
