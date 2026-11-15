@@ -51,7 +51,6 @@ class PracticeArena(
     private val held = mutableMapOf<Int, Boolean>()
     private val movementInputs = mutableMapOf<Int, GameInput>()
     private val fireBlocked = mutableSetOf<Int>()
-    private val fireAmmoEpochs = mutableMapOf<Int, Long>()
     private val rapidShotTicks = mutableMapOf<Int, Long>()
     private val expiredAmmo = mutableSetOf<Int>()
     private val botCourses = mutableMapOf<Int, BeamPoint>()
@@ -170,7 +169,6 @@ class PracticeArena(
                 held.remove(2)?.let { held[replacement] = it }
                 movementInputs.remove(2)?.let { movementInputs[replacement] = it }
                 if (fireBlocked.remove(2)) fireBlocked.add(replacement)
-                fireAmmoEpochs.remove(2)?.let { fireAmmoEpochs[replacement] = it }
                 rapidShotTicks.remove(2)?.let { rapidShotTicks[replacement] = it }
                 botCourses.remove(2)?.let { botCourses[replacement] = it }
                 botDecisions.remove(2)?.let { botDecisions[replacement] = it }
@@ -428,7 +426,7 @@ class PracticeArena(
             inactiveRoamingReadyAt[tank.id] = time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
             roamingIDs.remove(tank.id); roamingHomes.remove(tank.id); held.remove(tank.id); movementInputs.remove(tank.id)
             fireBlocked.remove(tank.id); botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
-            fireAmmoEpochs.remove(tank.id); rapidShotTicks.remove(tank.id); expiredAmmo.remove(tank.id)
+            rapidShotTicks.remove(tank.id); expiredAmmo.remove(tank.id)
             nextBoostEffects.remove(tank.id); motionPresenters.remove(tank.id)
         }
         snapshot.tanks = snapshot.tanks.filter { it.id !in ids }
@@ -637,7 +635,6 @@ class PracticeArena(
 
     private fun refillAmmo(tank: ArenaTank) {
         AmmoEpoch.refill(tank)
-        fireBlocked.remove(tank.id)
     }
 
     private fun populatePickups(dt: Double) {
@@ -729,7 +726,6 @@ class PracticeArena(
             if (p.life <= 0 || hypot(p.x - t.x, p.y - t.y) >= 30) continue
             p.life = 0.0
             applyPower(t, p.type, powerDuration, starDuration)
-            fireBlocked.remove(t.id)
             if (t.bot && p.type == "grenade") held[t.id] = false
             effect("pickup", t.x, t.y, t.id)
         }
@@ -922,10 +918,6 @@ class PracticeArena(
 
     private fun weaponControl(index: Int, fire: Boolean) {
         val t = snapshot.tanks[index]
-        if (fireAmmoEpochs[t.id] != t.ammoEpoch) {
-            fireBlocked.remove(t.id)
-            fireAmmoEpochs[t.id] = t.ammoEpoch
-        }
         val pressed = fire && held[t.id] != true
         held[t.id] = fire
         if (!fire) fireBlocked.remove(t.id)

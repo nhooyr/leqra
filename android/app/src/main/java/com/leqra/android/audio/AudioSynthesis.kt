@@ -26,6 +26,7 @@ enum class AudioCue {
     ROUND_DRAW,
     ONLINE_ROUND_END,
     HOMING_WARNING,
+    DRY_FIRE,
 }
 
 enum class AudioWaveform {
@@ -83,6 +84,7 @@ object AudioSynthesis {
         val triangle = AudioWaveform.TRIANGLE
         val tones =
             when (cue) {
+                AudioCue.DRY_FIRE -> listOf(tone(240.0, 100.0, .045, .016, wave = triangle))
                 AudioCue.REGULAR -> listOf(tone(200.0, 90.0, .09, .048, .029, triangle))
                 AudioCue.RAPID -> listOf(tone(210.0, 120.0, .06, .023, .014, triangle))
                 AudioCue.SCATTER ->

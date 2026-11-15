@@ -6,6 +6,32 @@ import org.junit.Test
 class PressFireFeedbackTest {
     private fun tank(power: String = "") = ArenaTank(id = 1, spawnSerial = 1, power = power, ammoUsed = 115, charges = 0, machineRounds = 0)
 
+    @Test fun dryAmmoClassificationUsesCurrentBanksWeaponNeedsAndUnlimitedStar() {
+        fun empty(tank: ArenaTank, bullets: List<ArenaBullet> = emptyList(), boosted: List<Int> = emptyList()) =
+            PressFireFeedback.ammoUnavailable(tank, ArenaSnapshot(tanks = listOf(tank), bullets = bullets, boostedBulletIds = boosted))
+        assertTrue(empty(tank().copy(ammoUsed = 5)))
+        assertFalse(empty(tank().copy(ammoUsed = 4)))
+        assertTrue(empty(tank("scatter").copy(charges = 5, ammoUsed = 10)))
+        assertFalse(empty(tank("scatter").copy(charges = 5, ammoUsed = 9)))
+        assertTrue(empty(tank("rapid").copy(machineRounds = 0, ammoUsed = 0)))
+        assertTrue(empty(tank("rapid").copy(machineRounds = 180, ammoUsed = 115)))
+        assertFalse(empty(tank("rapid").copy(machineRounds = 180, ammoUsed = 114)))
+        for (power in listOf("scatter", "homing", "laser", "cannon")) {
+            assertTrue(empty(tank(power).copy(ammoUsed = 0)))
+            assertFalse(empty(tank(power).copy(charges = 1, ammoUsed = 0)))
+        }
+        val pilot = tank().copy(ammoUsed = 0, ammoEpoch = 7)
+        val old = List(5) { ArenaBullet(id = it + 1, owner = 1, ammoEpoch = 6) }
+        assertFalse(empty(pilot, old))
+        val current = old.map { it.copy(ammoEpoch = 7) }
+        assertTrue(empty(pilot, current))
+        assertFalse(empty(pilot, current, boosted = current.map { it.id }))
+        assertFalse(empty(tank("rapid").copy(starmanTime = 1.0)))
+        val feedback = PressFireFeedback()
+        assertTrue(feedback.controls(true, pilot, 0, true, 0.0))
+        assertFalse(feedback.controls(true, pilot, 0, true, .5))
+    }
+
     @Test fun anEmptyFreshPressHasOneHundredMillisecondLinearRecoilWithoutChangingAuthority() {
         val feedback = PressFireFeedback()
         val tank = tank()
@@ -23,7 +49,7 @@ class PressFireFeedbackTest {
         for ((power, cadence) in listOf("" to .34, "rapid" to .15, "scatter" to .27, "homing" to .36, "laser" to .85 * 2 / 3, "cannon" to .85 * 2 / 3)) {
             val feedback = PressFireFeedback()
             val tank = tank(power)
-            feedback.controls(true, tank, 0, true, 0.0)
+            assertTrue(feedback.controls(true, tank, 0, true, 0.0))
             feedback.controls(false, tank, 0, true, .01)
             feedback.controls(true, tank, 0, true, cadence - .001)
             feedback.controls(true, tank, 0, true, cadence + .2)
@@ -52,9 +78,9 @@ class PressFireFeedbackTest {
             tank().apply { cooldown = .2 }, tank("grenade"), tank().apply { grenades = 1 })
         for (tank in tanks) {
             val feedback = PressFireFeedback()
-            feedback.controls(true, tank, 0, true, 0.0)
+            assertFalse(feedback.controls(true, tank, 0, true, 0.0))
             tank.hp = 1; tank.spawnProtected = false; tank.invulnerable = 0.0; tank.cooldown = 0.0; tank.power = ""; tank.grenades = 0
-            feedback.controls(true, tank, 0, true, .5)
+            assertFalse(feedback.controls(true, tank, 0, true, .5))
             assertEquals(0.0, feedback.pulse(tank, 0, true, .5), 1e-12)
         }
         val feedback = PressFireFeedback(); val tank = tank()

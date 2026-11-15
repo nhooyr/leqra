@@ -1,7 +1,7 @@
 import Foundation
 
 public enum AudioCue: String, CaseIterable, Sendable {
-    case regular, rapid, scatter, laser, homing, grenade, cannon
+    case regular, rapid, scatter, laser, homing, grenade, cannon, dryFire
     case explosion, grenadeExplosion, ricochet, impact, shield, pickup, chat, volumePreview, unmute
     case countdown, go, roundWin, roundLoss, roundDraw, onlineRoundEnd, homingWarning
 }
@@ -85,6 +85,7 @@ public enum AudioSynthesis {
         case .homing: layers = [tone(150, 300, 0.21, 0.027, 0.016), tone(260, 390, 0.13, 0.009, 0.005, .triangle)]
         case .grenade: layers = [tone(180, 85, 0.14, 0.032, 0.019, .triangle)]
         case .cannon: layers = [tone(105, 55, 0.24, 0.055, 0.033), tone(240, 110, 0.13, 0.022, 0.013, .triangle)]
+        case .dryFire: layers = [tone(240, 100, 0.045, 0.016, 0.016, .triangle)]
         case .explosion:
             return AudioRecipe(tones: [tone(90, 45, 0.26, 0.055, 0.055)],
                                noise: AudioNoise(gain: 0.10, cutoff: 320))

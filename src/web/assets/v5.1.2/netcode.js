@@ -39,9 +39,17 @@
  const ammoEpoch=t=>Number.isSafeInteger(t?.ammoEpoch)&&t.ammoEpoch>=0?t.ammoEpoch:0;
  function refillAmmo(t){
   t.ammoEpoch=ammoEpoch(t)>=Number.MAX_SAFE_INTEGER?1:ammoEpoch(t)+1;
-  t.cooldown=t.cooldownTotal=t.ammoUsed=t.grenades=t.grenadeLife=0;t.fireBlocked=false;
+  t.cooldown=t.cooldownTotal=t.ammoUsed=t.grenades=t.grenadeLife=0;
   t.machineRounds=t.power==='rapid'?180:0;
   t.charges=t.power==='scatter'?5:['homing','grenade','laser','cannon'].includes(t.power)?3:0;
+ }
+ function firePressInterval(t){return t.starmanTime>0?.065:t.power==='rapid'?.15:t.power==='scatter'?.27:t.power==='homing'?.36:t.power==='laser'||t.power==='cannon'?.85*2/3:.34;}
+ function ammoUnavailable(t,used=t.ammoUsed||0){
+  if(t.starmanTime>0)return false;
+  if(t.power==='laser')return !(t.charges>0);
+  if(t.power==='rapid'&&!(t.machineRounds>0)||['scatter','homing','grenade','cannon'].includes(t.power)&&!(t.charges>0))return true;
+  const capacity=t.power==='rapid'?MACHINE_CAPACITY:t.power==='scatter'?12:['homing','grenade','cannon'].includes(t.power)?3:5;
+  return used+(t.power==='scatter'?3:1)>capacity;
  }
  // Wire-only expansion: physics and replay consume the unchanged bullet shape.
  // Bounding and finite checks keep malformed frames from creating NaN renders.
@@ -628,7 +636,7 @@
     for(const [k,v]of this.previews)if(v.owner===t.id)this.previews.delete(k);
     p.until=now;p.held=false;p.blocked=false;p.serial=p.next=serial;return p;
    }
-   if(p.ammoEpoch!==ammoEpoch(t)){p.ammoEpoch=ammoEpoch(t);p.until=now+Math.max(0,t.cooldown||0)*1000;p.total=t.cooldownTotal||.34;p.blocked=false;}
+   if(p.ammoEpoch!==ammoEpoch(t)){p.ammoEpoch=ammoEpoch(t);p.until=now+Math.max(0,t.cooldown||0)*1000;p.total=t.cooldownTotal||.34;}
    if(serial!==p.serial){
     const key=this.key(t.id,life,serial),pred=this.previews.get(key);
     // Keep the already-shown countdown when the same shot is acknowledged.
@@ -667,8 +675,13 @@
     if(!v.boosted){normalPending++;slots+=v.shells.length;if(v.power===t.power)chargeUse++;}
    }
    if(options.blocked||pending>=48||!fast&&normalPending>=4)return null;
-   if(!boosted&&(this.cooldown(t,now)>.001||options.free-slots<options.need||
-      options.charged&&t.charges-chargeUse<=0||t.power==='rapid'&&!(t.machineRounds-chargeUse>0)))return null;
+   if(!boosted){
+    if(this.cooldown(t,now)>.001)return null;
+    if(options.free-slots<options.need||options.charged&&t.charges-chargeUse<=0||t.power==='rapid'&&!(t.machineRounds-chargeUse>0)){
+     if(pressed&&t.power!=='grenade'&&now-(p.lastDryFire??-Infinity)+1e-7>=firePressInterval(t)*1000){p.lastDryFire=now;options.onDryFire?.();}
+     return null;
+    }
+   }
    if(fast){const tick=Math.floor(now/STEP_MS);if(p.rapidTick===tick)return null;p.rapidTick=tick;}
    const shot=++p.next,key=this.key(t.id,p.life,shot),total=boosted?0:options.cooldown;
    const v={key,owner:t.id,life:p.life,shot,ammoEpoch:ammoEpoch(t),power:t.power||'',boosted,at:now,until:now+1000*total,
@@ -685,5 +698,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({wallLaunch,expandMachineBullets,ammoEpoch,refillAmmo,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,movementStacks,presentation,visualMove,RicochetPath,ProjectileFlights,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({wallLaunch,expandMachineBullets,ammoEpoch,refillAmmo,firePressInterval,ammoUnavailable,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,movementStacks,presentation,visualMove,RicochetPath,ProjectileFlights,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
 });

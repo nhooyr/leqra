@@ -58,8 +58,8 @@ class AmmoResetTest {
         full(tank, "", 1)
     }
 
-    @Test fun everyWeaponDepletionMakesTheNextHeldShotAReadyStandardShot() {
-        for (kind in weapons) {
+    @Test fun automaticWeaponDepletionMakesTheNextHeldShotAReadyStandardShot() {
+        for (kind in weapons.filter { it != "grenade" }) {
             val arena = arena()
             val tank = arena.snapshot.tanks.first()
             PracticeArena.applyPower(tank, kind)
@@ -72,6 +72,31 @@ class AmmoResetTest {
             if (kind != "laser") assertTrue(arena.snapshot.bullets.any { it.ammoEpoch == oldEpoch })
             arena.step(GameInput(fire = true), dt)
             assertTrue("Standard fires immediately after $kind", arena.snapshot.bullets.any { it.kind.isEmpty() && it.ammoEpoch == tank.ammoEpoch })
+        }
+    }
+
+    @Test fun finalGrenadeConsumesItsHoldAcrossRefillsAndExpiryUntilRelease() {
+        for (fixed in listOf(false, true)) {
+            val arena = arena(fixed)
+            val tank = arena.snapshot.tanks.first()
+            PracticeArena.applyPower(tank, "grenade")
+            tank.charges = 1
+            arena.step(GameInput(fire = true), dt)
+            assertEquals("", tank.power)
+            val grenade = arena.snapshot.bullets.single().id
+            repeat(8) { arena.step(GameInput(fire = true), dt) }
+            assertEquals(listOf(grenade), arena.snapshot.bullets.map { it.id })
+            arena.snapshot.pickups = listOf(ArenaPickup(id = 999, x = tank.x, y = tank.y, type = "speed"))
+            arena.step(GameInput(fire = true), dt)
+            assertTrue(tank.speedTime > 0)
+            PracticeArena.applyPower(tank, "shield", duration = .001)
+            repeat(8) { arena.step(GameInput(fire = true), dt) }
+            assertEquals(listOf(grenade), arena.snapshot.bullets.map { it.id })
+            assertEquals(5, PilotReadout(tank, arena.snapshot, !fixed).available)
+            arena.step(GameInput(), dt)
+            arena.step(GameInput(fire = true), dt)
+            assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+            assertTrue(arena.snapshot.bullets.any { it.id == grenade })
         }
     }
 

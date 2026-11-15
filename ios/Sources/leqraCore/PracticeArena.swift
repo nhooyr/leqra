@@ -505,7 +505,6 @@ public final class PracticeArena {
             guard pickup.life > 0, hypot(pickup.x - tank.x, pickup.y - tank.y) < 30 else { continue }
             snapshot.pickups[pickupIndex].life = 0
             Self.applyPower(tank: &snapshot.tanks[index], kind: pickup.type, duration: powerDuration, starDuration: starDuration)
-            fireBlocked.remove(tank.id)
             // Bots may collect a grenade while holding ordinary Fire. Create
             // a fresh throw edge, as in the Go and browser offline simulation.
             if tank.bot && pickup.type == "grenade" { held[tank.id] = false }
@@ -530,7 +529,8 @@ public final class PracticeArena {
 
     private func refillAmmo(_ index: Int) {
         snapshot.tanks[index].refillAmmo()
-        fireBlocked.remove(snapshot.tanks[index].id)
+        // A grenade action consumes the hold, even if its last charge or a
+        // later refill restores standard ammunition before Fire is released.
     }
 
     private func effect(_ kind: String, x: Double, y: Double, owner: Int, points: [BeamPoint] = [], flight: CannonFlight? = nil, contact: ImpactContact? = nil) {

@@ -11,6 +11,18 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NativeAudioIntegrationTest {
+    @Test
+    fun dryFireUsesPreparedNativeOutputAndRespectsMuteAndZeroVolume() {
+        lateinit var audio: NativeAudio
+        main { audio = NativeAudio(instrumentation.targetContext); audio.enabled = false }
+        try {
+            main { audio.play(AudioCue.DRY_FIRE); assertEquals(0, audio.pendingCueCount); assertEquals(0, audio.outputStarts) }
+            waitUntil("Dry-fire PCM did not prepare") { audio.preparedVoiceCount == AudioCue.entries.size * 2 }
+            main { audio.enabled = true; audio.volume = 0f; audio.play(AudioCue.DRY_FIRE); assertEquals(0, audio.pendingCueCount); assertEquals(0, audio.outputStarts) }
+            main { audio.volume = .5f; audio.play(AudioCue.DRY_FIRE) }
+            waitUntil("The cached dry-fire click did not reach native output") { audio.framesWritten > 0 && audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 }
+        } finally { main { audio.release() } }
+    }
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
     private fun main(block: () -> Unit) = instrumentation.runOnMainSync(block)

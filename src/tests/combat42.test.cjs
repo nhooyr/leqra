@@ -77,6 +77,19 @@ test('grenade hold cannot repeatedly throw or accidentally predict a blast',()=>
  p.tryFire(t,false,1100,options());assert.equal(p.tryFire(t,true,1200,options({grenade:true})),null);
  assert.equal(p.tryFire(t,true,2400,options()),null);assert.equal(p.previews.size,1);
 });
+test('last-grenade authority refill cannot turn the consumed hold into a standard preview',()=>{
+ const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:1});p.sync(t,'playing',0);
+ assert.ok(p.tryFire(t,true,0,options({charged:true,cooldown:.8})));
+ Object.assign(t,{power:'',ammoEpoch:1,charges:0,cooldown:0,shotSerial:1});p.sync(t,'playing',30);
+ assert.equal(p.tryFire(t,true,31,options()),null);p.tryFire(t,false,32,options());assert.ok(p.tryFire(t,true,33,options()));
+});
+test('dry feedback reserves no preview, sound-deduplication key or shot serial and never doubles a real shot',()=>{
+ const p=new N.ShotPresentation(),t=tank(),dry=[];p.sync(t,'playing',0);
+ const empty=options({free:0,onDryFire:()=>dry.push('dry')});assert.equal(p.tryFire(t,true,0,empty),null);assert.deepEqual(dry,['dry']);
+ assert.equal(p.previews.size,0);assert.equal(p.soundKeys.size,0);assert.equal(p.pilots.get(t.id).next,0);
+ p.tryFire(t,true,500,empty);assert.equal(dry.length,1);p.tryFire(t,false,501,empty);p.tryFire(t,true,502,empty);assert.equal(dry.length,2);
+ p.tryFire(t,false,503,empty);const real=p.tryFire(t,true,504,options({onDryFire:()=>dry.push('dry')}));assert.ok(real);assert.equal(dry.length,2);assert.equal(real.shot,1);
+});
 test('rejected previews expire and cannot hide a later valid server shot forever',()=>{
  const p=new N.ShotPresentation(),t=tank();p.sync(t,'playing',0);p.tryFire(t,true,0,options());
  p.prune(901,new Set([0]));assert.equal(p.previews.size,0);assert.equal(p.pilots.get(0).next,0);

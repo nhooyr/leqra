@@ -1,10 +1,10 @@
-# leqra v5.1.1 — current game protocol (protocol 1)
+# leqra v5.1.2 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.1.1**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.1.2**.
 
 ```json
-{"type":"server_hello","version":"5.1.1","protocol":1}
-{"type":"client_hello","version":"5.1.1","protocol":1}
+{"type":"server_hello","version":"5.1.2","protocol":1}
+{"type":"client_hello","version":"5.1.2","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -1092,8 +1092,9 @@ timer expiries in one simulation step reset once. Consuming the last Shield
 charge also refills the surviving tank. The shot that consumes a weapon's final
 round/charge remains live; the tank immediately returns to full standard ammo
 with no leftover cooldown. Surviving weapon timers are not extended. Held Fire
-is retained, the consumed grenade-hold block is cleared, and the existing limit
-of one rapid projectile per 60 Hz simulation tick is retained.
+is retained. A grenade action consumes its whole hold until release, including
+when its final charge starts a fresh standard magazine or another refill occurs.
+The existing limit of one rapid projectile per 60 Hz simulation tick is retained.
 
 Tank and ordinary bullet snapshots carry optional `ammoEpoch` (missing means `0`).
 Initial fresh actors start at `0`. Each refill or true respawn increments the
@@ -1124,8 +1125,10 @@ epoch grenades keep their natural fuse/contact behavior but are no longer
 selected by this detonator or its HUD readout. This includes the final charge
 throw, which becomes old-epoch when the tank immediately returns to standard.
 These actions consume the whole hold, preventing same-press follow-up shots and
-preventing repeated grenade throws while a grenade remains selected. A weapon
-ending clears the hold block so held standard Fire can resume immediately.
+preventing repeated grenade throws and standard follow-up shots during the same
+hold. The final throw replenishes standard ammo and clears its cooldown, but
+another shot still requires release followed by a fresh Fire press. A fresh
+press latched between simulation ticks also releases the consumed hold.
 Other weapon types retain hold-to-fire. The next explicit release/press permits
 another throw. Only the authenticated socket's own tank can trigger this action;
 a supplied owner, target, or forged damage field has no authority.

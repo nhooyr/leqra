@@ -8,7 +8,7 @@ function boot(){
  const s=combatBoot(),noop=()=>{};
  Object.assign(s,{mode:'online',phase:'playing',now:1000,Net,traces:[],bursts:[],sounds:[],COLORS:['#fff','#f00'],POWER:{laser:{color:'#f57cff'}},
   secondLocal:()=>null,secondaryID:()=>undefined,clearTankAt:()=>true,updateCombatFeedback:noop,
-  burst:(...args)=>s.bursts.push(args),shotSound:(...args)=>s.sounds.push(args),
+  burst:(...args)=>s.bursts.push(args),dryFireSound(){},shotSound:(...args)=>s.sounds.push(args),
   online:{id:0,connected:true,menu:false,latency:100,shots:new Net.ShotPresentation(),snapshots:[],effectQueue:[],presentationMetrics:{previews:0,suppressedSounds:0}}
  });
  const own=tank(0,84,168,{human:true,power:'laser',powerTime:10,charges:3,spawnSerial:1,shotSerial:0,color:'#fff'}),enemy=tank(1,300,168,{spawnSerial:1,shotSerial:0,color:'#f00'});

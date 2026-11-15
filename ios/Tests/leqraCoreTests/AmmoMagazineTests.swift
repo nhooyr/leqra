@@ -91,8 +91,41 @@ final class AmmoMagazineTests: XCTestCase {
             XCTAssertEqual(tank.ammoUsed, 0, weapon); XCTAssertEqual(tank.grenades, 0, weapon)
             XCTAssertEqual(PilotReadout(tank: tank, snapshot: arena.snapshot, infinity: !finite).available, 5, weapon)
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            if weapon == "grenade" {
+                XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 })
+                arena.step(input: GameInput(), dt: 1 / 60)
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            }
             XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, weapon)
         } }
+    }
+
+    func testLastGrenadeConsumesTheHoldAcrossRefillsUntilRelease() throws {
+        for finite in [false, true] {
+            let arena = arena(finite: finite)
+            arena.snapshot.tanks[0] = ArenaTank(id: 1, x: 42, y: 42,
+                powerTime: 15, power: "grenade", charges: 1, ammoEpoch: 4)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            let grenade = try XCTUnwrap(arena.snapshot.bullets.first { $0.kind == "grenade" })
+            XCTAssertEqual(grenade.ammoEpoch, 4)
+            XCTAssertEqual(arena.snapshot.tanks[0].power, "")
+            XCTAssertEqual(arena.snapshot.tanks[0].ammoEpoch, 5)
+            for _ in 0..<5 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+            XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty })
+            let tank = arena.snapshot.tanks[0]
+            arena.snapshot.pickups = [ArenaPickup(id: 9999, x: tank.x, y: tank.y, type: "shield")]
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.tanks[0].ammoEpoch, 6)
+            arena.snapshot.tanks[0].shield = 0.001
+            for _ in 0..<5 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+            XCTAssertEqual(arena.snapshot.tanks[0].ammoEpoch, 7)
+            XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty })
+            XCTAssertTrue(arena.snapshot.bullets.contains { $0.id == grenade.id && $0.life > 0 })
+            arena.step(input: GameInput(), dt: 1 / 60)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 7 })
+            XCTAssertEqual(arena.snapshot.tanks[0].ammoUsed, 1)
+        }
     }
 
     func testOldProjectileStillHitsAfterRefillAndRespawnAdvancesTheEpoch() throws {

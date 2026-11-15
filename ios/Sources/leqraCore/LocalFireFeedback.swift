@@ -11,6 +11,20 @@ public struct LocalFireFeedback {
     public init() {}
     public mutating func reset() { identity = nil; held = false; lastPress = -.infinity; until = -.infinity }
 
+    /// Use current authoritative magazine counts, without aging shots out of
+    /// their quota or counting projectiles retained for visual presentation.
+    public static func ammoUnavailable(for tank: ArenaTank, stateAge: Double = 0) -> Bool {
+        guard stateAge.isFinite, tank.starmanTime <= max(0, stateAge) else { return false }
+        let used = max(0, tank.ammoUsed)
+        switch tank.power {
+        case "rapid": return tank.machineRounds <= 0 || used >= 115
+        case "scatter": return tank.charges <= 0 || used > 9
+        case "laser": return tank.charges <= 0
+        case "homing", "grenade", "cannon": return tank.charges <= 0 || used >= 3
+        default: return used >= 5
+        }
+    }
+
     private mutating func reconcile(tank: ArenaTank?, generation: Int, active: Bool) {
         let next = tank.map { Identity(id: $0.id, spawn: $0.spawnSerial, generation: generation) }
         if identity != next || !active || (tank?.hp ?? 0) <= 0 {

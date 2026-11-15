@@ -119,7 +119,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   isTouchUI: () => false,
   toggleFullscreen: () => sounds.push('fullscreen'),
   toggleSound: () => sounds.push('mute'),
-  shot: kind => sounds.push('shot:' + kind),
+  shot: kind => sounds.push('shot:' + kind),dryFire:()=>sounds.push('dryFire'),
   ricochet: () => sounds.push('ricochet'), collect: () => sounds.push('pickup'), shield: () => sounds.push('shield'),
   blast: () => sounds.push('blast'), grenade: () => sounds.push('grenadeblast'), impact: () => sounds.push('impact'),
  };
@@ -1244,7 +1244,7 @@ test('online Infinity previews Cannon shots from inside a wall', () => {
  infinity.start('online');
  const [socket] = sockets;
  socket.receive({type:'welcome',id:4,seed:0});
- socket.receive({type:'state',tick:2,tanks:[{id:4,x:100,y:100,angle:0,hp:1,power:'cannon',ghostTime:2}],bullets:[],players:1,leaderboard:[]});
+ socket.receive({type:'state',tick:2,tanks:[{id:4,x:100,y:100,angle:0,hp:1,power:'cannon',charges:3,ghostTime:2}],bullets:[],players:1,leaderboard:[]});
  state().maze.wallsNear = () => [{x:96,y:78,w:8,h:48}];
  byID('infiniteArena').emit('keydown',{code:'KeyQ'});
  assert.ok(sounds.includes('shot:cannon'));
@@ -1433,6 +1433,23 @@ test('ordinary Infinity shells can fire immediately after Starman with boosted s
  infinity.close();
 });
 
+test('offline Infinity last grenade consumes the hold through refills for both local pilots',()=>{
+ for(const local of [false,true])for(const sampledRelease of [false,true]){
+  const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
+  for(const tank of w.tanks)Object.assign(tank,{invulnerable:1000,spawnProtected:false});
+  h.window.leqraInfinityArt.grantPower(t,'grenade',15,8);t.charges=1;const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');arena.emit('keydown',{code:key});h.advance();
+  assert.equal(t.power,'');assert.equal(t.charges,0);assert.equal(w.lastBullet,1);assert.equal(w.bullets[0].kind,'grenade');h.advance(3);assert.equal(w.lastBullet,1);
+  h.window.leqraInfinityArt.grantPower(t,'shield',.001,8);h.advance(2);assert.equal(w.lastBullet,1,'pickup and expiry retain the consumed hold');
+  arena.emit('keyup',{code:key});if(sampledRelease)h.advance();arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,2);assert.equal(w.bullets.at(-1).kind,'');h.infinity.close();
+ }
+});
+test('offline Infinity empty slots sound only on fresh presses, never while holding or when ammo is available',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[0],arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;Object.assign(t,{invulnerable:1000,spawnProtected:false});
+ w.bullets=Array.from({length:5},(_,i)=>({id:i+1,owner:t.id,kind:'',ammoEpoch:t.ammoEpoch,x:10000,y:10000,vx:0,vy:0,r:3.5,life:5,age:0,bounces:0,trail:[]}));w.lastBullet=5;
+ arena.emit('keydown',{code:'KeyQ'});h.advance();assert.deepEqual(h.sounds,['dryFire']);h.advance(25);assert.equal(h.sounds.length,1);assert.equal(w.lastBullet,5);
+ arena.emit('keyup',{code:'KeyQ'});arena.emit('keydown',{code:'KeyQ'});h.advance();assert.equal(h.sounds.filter(s=>s==='dryFire').length,2);
+ arena.emit('keyup',{code:'KeyQ'});w.bullets=[];arena.emit('keydown',{code:'KeyQ'});h.advance();assert.equal(w.lastBullet,6);assert.ok(h.sounds.includes('shot:'));assert.equal(h.sounds.filter(s=>s==='dryFire').length,2);h.infinity.close();
+});
 test('online Infinity empty-ammo presses retain the100ms cosmetic recoil used by native clients',()=>{
  const h=harness(undefined,true);h.infinity.start('online');const ws=h.sockets[0],arena=h.byID('infiniteArena');
  ws.receive({type:'welcome',id:4,seed:0});h.elapse(1000);
@@ -1445,7 +1462,14 @@ test('online Infinity empty-ammo presses retain the100ms cosmetic recoil used by
  arena.emit('keydown',{code:'KeyQ',repeat:true});assert.equal(w.previewRecoilUntil,1100,'held/repeat input does not restart dry recoil');
  arena.emit('keyup',{code:'KeyQ'});arena.emit('keydown',{code:'KeyQ'});assert.equal(w.previewRecoilUntil,1100,'too-early re-press obeys normal weapon cadence');
  arena.emit('keyup',{code:'KeyQ'});h.elapse(240);arena.emit('keydown',{code:'KeyQ'});assert.equal(w.previewRecoilUntil,1440);
+ assert.equal(h.sounds.filter(s=>s==='dryFire').length,2);assert.ok(!h.sounds.includes('shot:'));assert.equal(w.pendingShotAt,-Infinity,'dry cues cannot suppress a later real shot');
  assert.equal(JSON.stringify(w.tanks),authority,'dry feedback never changes authority');assert.equal(w.bullets.length,0);h.infinity.close();
+});
+test('online Infinity ages authoritative Starman only once before choosing an empty-ammo sound',()=>{
+ const h=harness(undefined,true);h.infinity.start('online');const ws=h.sockets[0];ws.receive({type:'welcome',id:4,seed:0});
+ ws.receive({type:'state',tick:1,tanks:[{id:4,x:42,y:42,angle:0,hp:1,ammoUsed:5,starmanTime:1}],bullets:[],players:1,leaderboard:[]});
+ h.advance(36);assert.ok(h.state().predictor.state.starmanTime<.5);h.byID('infiniteArena').emit('keydown',{code:'KeyQ'});
+ assert.ok(h.sounds.includes('shot:'));assert.ok(!h.sounds.includes('dryFire'));h.infinity.close();
 });
 
 test('offline Infinity equips maze pickups and sounds a weapon before another frame arrives online', () => {

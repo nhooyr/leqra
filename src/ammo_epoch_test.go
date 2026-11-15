@@ -10,7 +10,7 @@ import (
 
 func assertFullReadyAmmo(t *testing.T, tank *Tank, epoch uint64) {
 	t.Helper()
-	if tank.AmmoEpoch != epoch || tank.Cooldown != 0 || tank.CooldownTotal != 0 || tank.fireBlocked {
+	if tank.AmmoEpoch != epoch || tank.Cooldown != 0 || tank.CooldownTotal != 0 {
 		t.Fatalf("magazine is not fresh/ready: epoch%d want%d power%s cooldown%v/%v blocked%v", tank.AmmoEpoch, epoch, tank.Power, tank.Cooldown, tank.CooldownTotal, tank.fireBlocked)
 	}
 	want := 0
@@ -42,7 +42,7 @@ func TestEveryPickupRefillsSelectedAmmoWithoutRemovingLiveShots(t *testing.T) {
 				g.Bullets = []*Bullet{old}
 				g.grantPower(p, pickup)
 				assertFullReadyAmmo(t, p, epoch+1)
-				if !p.fireHeld || old.Dead || len(g.Bullets) != 1 || g.Bullets[0] != old {
+				if !p.fireHeld || !p.fireBlocked || old.Dead || len(g.Bullets) != 1 || g.Bullets[0] != old {
 					t.Fatal("refill changed held input or removed an old shot")
 				}
 				if !g.fire(p) {
@@ -317,9 +317,9 @@ func TestAmmoEpochTransportAndWrapPreserveLegacyRapidTuple(t *testing.T) {
 	if len(wire.MachineAmmoEpochs) != 0 || bytes.Contains(encoded, []byte("machineAmmoEpochs")) {
 		t.Fatal("zero legacy epoch vector was not omitted")
 	}
-	p := &Tank{AmmoEpoch: maxAmmoEpoch, fireHeld: true, rapidTick: 10, rapidFired: true}
+	p := &Tank{AmmoEpoch: maxAmmoEpoch, fireHeld: true, fireBlocked: true, rapidTick: 10, rapidFired: true}
 	refillAmmo(p)
-	if p.AmmoEpoch != 1 || !p.fireHeld || !p.rapidFired || p.rapidTick != 10 {
+	if p.AmmoEpoch != 1 || !p.fireHeld || !p.fireBlocked || !p.rapidFired || p.rapidTick != 10 {
 		t.Fatal("wrap/reset changed held input or rapid cadence")
 	}
 	a := newSeededInfiniteArena(503)

@@ -145,7 +145,7 @@ test('every pickup refills the selected weapon and leaves older shells alive for
   const label=[id,equipped,pickup].join('/'),power=weapons.includes(pickup)?pickup:equipped;
   assert.equal(t.power,power,label);assert.equal(t.ammoEpoch,1,label);assert.equal(t.cooldown,0,label);assert.equal(t.cooldownTotal,0,label);
   assert.equal(t.machineRounds,power==='rapid'?180:0,label);assert.equal(t.charges,power==='scatter'?5:weapons.includes(power)&&power!=='rapid'?3:0,label);
-  assert.equal(t.fireBlocked,false,label);assert.equal(t.rapidTick,42,label);assert.equal(s.bullets[0],old,label);assert.equal(old.life,7,label);assert.ok(!old.dead,label);assert.equal(s.activeAmmo(t),0,label);
+  assert.equal(t.fireBlocked,true,label);assert.equal(t.rapidTick,42,label);assert.equal(s.bullets[0],old,label);assert.equal(old.life,7,label);assert.ok(!old.dead,label);assert.equal(s.activeAmmo(t),0,label);
  }
 });
 test('each power ending and simultaneous expiries refill once before the next local firing action',()=>{
@@ -196,4 +196,26 @@ test('machine tuple decoding keeps the12-number format and associates optional e
  assert.equal(N.expandMachineBullets([[],tuple],colors,[12,43])[0].ammoEpoch,43);
  for(const invalid of [-1,Infinity,NaN,1.5,Number.MAX_SAFE_INTEGER+1])assert.equal(N.ammoEpoch(N.expandMachineBullets([tuple],colors,[invalid])[0]),0);
  const t={ammoEpoch:Number.MAX_SAFE_INTEGER,power:'rapid',rapidTick:5};N.refillAmmo(t);assert.equal(t.ammoEpoch,1);assert.equal(t.machineRounds,180);assert.equal(t.rapidTick,5);
+});
+
+test('last grenade consumes the entire hold through refills; only a new press fires standard ammo',()=>{
+ for(const sampledRelease of [false,true]){
+  const s=boot(),t=s.tanks[0];s.detonateOwned=()=>false;vm.runInContext(declaration('weaponControl'),s);
+  s.grantPower(t,'grenade');t.charges=1;s.weaponControl(t,true,true);
+  assert.equal(t.power,null);assert.equal(t.cooldown,0);assert.equal(t.fireBlocked,true);assert.equal(s.bullets.length,1);assert.equal(s.bullets[0].kind,'grenade');
+  s.weaponControl(t,true,false);assert.equal(s.bullets.length,1);
+  s.grantPower(t,'shield',.001);s.update(1/120);s.weaponControl(t,true,false);assert.equal(s.bullets.length,1,'pickup/expiry cannot release a consumed hold');
+  if(sampledRelease)s.weaponControl(t,false,false);
+  s.weaponControl(t,true,true);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
+ }
+});
+
+test('fixed local empty-ammo presses play one dry cue per fresh eligible press for either pilot',()=>{
+ for(const id of [0,1])for(const power of ['', 'rapid','scatter','homing','laser','cannon']){
+  const s=boot(),t=s.tanks[id],sounds=[];Object.assign(s,{dryFireSound:()=>sounds.push('dry'),detonateOwned:()=>false});
+  vm.runInContext(declaration('weaponControl')+'\n'+declaration('fireLaser'),s);s.grantPower(t,power||'shield');t.power=power;t.cooldown=0;t.charges=0;t.machineRounds=0;
+  s.bullets=Array.from({length:s.powerCapacity(t)},()=>({owner:id,ammoEpoch:t.ammoEpoch}));const before=s.bullets.length;
+  s.weaponControl(t,true,true);assert.deepEqual(sounds,['dry'],power);assert.equal(s.bullets.length,before,power);
+  s.time=1;s.weaponControl(t,true,false);assert.equal(sounds.length,1,'held input is silent');s.weaponControl(t,false,false);s.weaponControl(t,true,true);assert.equal(sounds.length,2);
+ }
 });

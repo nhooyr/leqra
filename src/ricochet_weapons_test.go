@@ -274,8 +274,8 @@ func TestRemoteGrenadeHoldThroughFuseDoesNotRepeat(t *testing.T) {
 				t.Fatal("holding repeated a grenade throw")
 			}
 		} else {
-			if p.Power != "" || p.Charges != 0 {
-				t.Fatal("last grenade failed to ready standard ammo")
+			if p.Power != "" || p.Charges != 0 || p.ShotSerial != 1 || !p.fireBlocked || len(g.Bullets) != 0 {
+				t.Fatal("last grenade hold leaked a standard shot or lost fresh ammo")
 			}
 			for _, b := range g.Bullets {
 				if b.Kind == "grenade" {
