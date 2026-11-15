@@ -208,7 +208,7 @@ class PilotReadout(
                     "laser" -> .85 * 2 / 3
                     "rapid" -> 0.0
                     "scatter" -> .27
-                    "homing" -> .72
+                    "homing" -> .36
                     "grenade" -> .8
                     else -> .34
                 }

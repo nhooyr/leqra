@@ -98,6 +98,19 @@ test('machine-gun pickup refreshes its firing budget; other buffs refill it',()=
  s.grantPower(t,'cannon');assert.equal(t.machineRounds,0);assert.equal(t.charges,3);
 });
 const previewOptions={active:true,free:96,need:1,cooldown:0,ttl:600};
+test('fixed missiles held Fire reloads after360ms with matching prediction and HUD timing',()=>{
+ const s=boot(),t=s.tanks[0];Object.assign(s,{MISSILE_SPEED:235,W:1008,H:672});
+ for(const name of ['projectileSpec','cooldownDuration'])vm.runInContext(declaration(name),s);
+ s.grantPower(t,'homing');assert.equal(s.fire(t),true);assert.equal(t.cooldown,.36);assert.equal(t.cooldownTotal,.36);assert.equal(t.charges,2);
+ assert.equal(s.cooldownDuration('homing'),.36);assert.equal(s.projectileSpec('homing').speed,235);assert.equal(s.projectileSpec('homing').r,5);
+ s.humanControl=pilot=>{if(pilot===t)s.fire(pilot);};
+ for(let i=0;i<21;i++)s.update(1/60);
+ assert.equal(t.charges,2,'held Fire must wait for360ms');assert.equal(s.bullets.length,1);
+ s.update(1/60);assert.equal(t.charges,1);assert.equal(s.bullets.length,2);
+ const shots=new N.ShotPresentation();t.cooldown=0;t.shotSerial=0;t.charges=3;shots.sync(t,'playing',0);
+ const options={...previewOptions,free:3,charged:true,cooldown:s.cooldownDuration('homing')};
+ assert.ok(shots.tryFire(t,true,0,options));assert.equal(shots.tryFire(t,true,350,options),null);assert.ok(shots.tryFire(t,true,360,options));
+});
 const onlineTank=id=>({...tank(id),spawnSerial:1,shotSerial:0,power:'rapid',machineRounds:180});
 test('online predicted fire reserves remaining rounds and never shows a 181st machine-gun shot',()=>{
  const p=new N.ShotPresentation(),t=onlineTank(0);p.sync(t,'playing',0);

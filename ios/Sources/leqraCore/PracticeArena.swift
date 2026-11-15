@@ -627,7 +627,7 @@ public final class PracticeArena {
         switch kind {
         case "rapid": return (846, 3.5 / 3, 18 * 84 / 846, 0, 115)
         case "scatter": return (846, 3.5, 3.9, 0.27, 12)
-        case "homing": return (235, 5, 18 * 84 / 235, 0.72, 3)
+        case "homing": return (235, 5, 18 * 84 / 235, 0.36, 3)
         case "grenade": return (205, 6, 10, 0.8, 3)
         case "cannon": return (1128, 14, 5.3, 0.85 * 2 / 3, 3)
         case "laser": return (0, 3, 0, 0.85 * 2 / 3, 3)

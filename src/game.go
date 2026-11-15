@@ -864,7 +864,7 @@ func (g *Game) fire(t *Tank) bool {
 		kind, radius = "rapid", machineRadius
 	}
 	if t.Power == "homing" {
-		kind, radius, speed, life, cooldown = "homing", 5, missileSpeed, g.missileTravelRange()/missileSpeed+.5, .72
+		kind, radius, speed, life, cooldown = "homing", 5, missileSpeed, g.missileTravelRange()/missileSpeed+.5, .36
 	}
 	if t.Power == "grenade" {
 		kind, radius, speed, life, cooldown = "grenade", 6, grenadeSpeed, grenadeFuse, .8

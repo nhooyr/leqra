@@ -225,7 +225,7 @@ func infiniteSpec(kind string) infiniteProjectileSpec {
 	case "scatter":
 		return infiniteProjectileSpec{shotgunSpeed, regularRadius, 3.9, .27}
 	case "homing":
-		return infiniteProjectileSpec{missileSpeed, 5, infiniteShotRange / missileSpeed, .72}
+		return infiniteProjectileSpec{missileSpeed, 5, infiniteShotRange / missileSpeed, .36}
 	case "grenade":
 		return infiniteProjectileSpec{grenadeSpeed, 6, grenadeFuse, .8}
 	case "cannon":

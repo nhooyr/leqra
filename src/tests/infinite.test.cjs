@@ -2293,6 +2293,14 @@ test('spectators retain a parked bot identity and wait for the same tank to retu
  assert.equal(h.state().following,64);assert.equal(h.byID('infiniteKills').textContent,'Following Bot 64 - Godlike');h.infinity.close();
 });
 
+test('offline Infinity missiles reload on the first tick after360ms while Fire stays held',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
+ const w=h.state(),p=w.tanks[0];w.nextBot=w.nextPickup=Infinity;
+ Object.assign(p,{x:100,y:100,angle:0,invulnerable:1000,spawnProtected:false,power:'homing',powerTime:15,charges:3});
+ h.window.testFire(w,p);assert.equal(p.cooldown,.36);assert.equal(p.cooldownTotal,.36);assert.equal(p.charges,2);assert.equal(w.lastBullet,1);
+ h.byID('infiniteArena').emit('keydown',{code:'KeyQ'});h.advance(21);assert.equal(p.charges,2,'360ms has not elapsed');h.advance();assert.equal(p.charges,1);assert.equal(w.lastBullet,2);h.infinity.close();
+});
+
 test('offline Infinity shotgun reloads on the first tick after270ms',()=>{
  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
  const w=h.state(),p=w.tanks[0];w.nextBot=w.nextPickup=Infinity;

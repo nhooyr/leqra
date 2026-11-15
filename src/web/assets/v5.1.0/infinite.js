@@ -39,7 +39,7 @@ const PROJECTILES = Object.freeze({
  regular: {speed: 282, r: BULLET_RADIUS, life: 5.3, cooldown: .34, ammo: 5},
  rapid: {speed: 846, r: BULLET_RADIUS / 3, life: SHOT_RANGE / 846, cooldown: 0, ammo: 115},
  scatter: {speed: 846, r: BULLET_RADIUS, life: 3.9, cooldown: .27, ammo: 12},
- homing: {speed: 235, r: 5, life: SHOT_RANGE / 235, cooldown: .72, ammo: 3},
+ homing: {speed: 235, r: 5, life: SHOT_RANGE / 235, cooldown: .36, ammo: 3},
  grenade: {speed: 205, r: 6, life: 10, cooldown: .8, ammo: 3},
  cannon: {speed: 1128, r: 14, life: 5.3, cooldown: .85*2/3, ammo: 3},
  laser: {r: 3, cooldown: .85*2/3},
