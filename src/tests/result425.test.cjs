@@ -68,7 +68,8 @@ test('FFA results keep frozen colored callsigns and local suffixes after live id
 });
 
 test('match statistics use frozen colored callsigns without rewriting report names or counters',()=>{
- const {s,$}=boot(),report=Object.freeze({mode:'elimination',duration:10,rounds:2,players:Object.freeze([
+ const {s,$,players}=boot();players[0].member=11;Object.assign(players[1],{member:12,kind:'local',owner:0});
+ const report=Object.freeze({mode:'elimination',duration:10,rounds:2,players:Object.freeze([
   Object.freeze({id:100,seat:0,member:11,name:'YOU',kind:'human',color:'#abcdef',team:0,eliminations:2,deaths:1,active:true,winner:true}),
   Object.freeze({id:101,seat:3,member:12,name:'WING',kind:'local',color:'#fedcba',team:0,eliminations:1,deaths:2,active:false}),
   Object.freeze({id:102,seat:2,member:13,name:'RUST',kind:'bot',color:'#123456',team:0,eliminations:0,deaths:1,active:true}),

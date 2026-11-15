@@ -61,13 +61,13 @@ const (
 	blastRadius        = 220.0
 	laserMaxSegments   = 256
 	laserRadius        = 3.0
-	laserCooldown      = .85 * 2 / 3
+	laserCooldown      = .85 / 3
 	ghostDuration      = powerEffectDuration
 	// Cannon scales normal round radius (and diameter) and speed, not damage.
 	cannonRadius   = 3.5 * 4
 	cannonSpeed    = 282.0 * 4
 	cannonLifetime = 5.3
-	cannonCooldown = .85 * 2 / 3
+	cannonCooldown = .85 / 3
 )
 
 var tankColors = [maxTanks]string{"#d2f65a", "#ff9679", "#73cee4", "#c5a2ff", "#ffc46b", "#ff83bd", "#75f0cb", "#b7c6ee"}
@@ -106,6 +106,7 @@ type Input struct {
 }
 type Tank struct {
 	AmmoEpoch      uint64            `json:"ammoEpoch,omitempty"`
+	GrenadeEpoch   *uint64           `json:"grenadeEpoch,omitempty"`
 	expiryRefilled bool              // Coalesce timer expiries in one simulation step.
 	ShotSerial     uint64            `json:"shotSerial"` // Accepted volleys in this life; cosmetic reconciliation only.
 	stats          *PlayerMatchStats // Participant ledger; intentionally absent from movement snapshots.
@@ -787,13 +788,16 @@ func (g *Game) detonateOwned(t *Tank) bool {
 	var owned [3]*Bullet
 	count := 0
 	for _, b := range g.Bullets {
-		if !b.Dead && b.Owner == t.ID && b.AmmoEpoch == t.AmmoEpoch && b.Kind == "grenade" && count < len(owned) {
+		if !b.Dead && b.Owner == t.ID && b.AmmoEpoch == grenadeControlEpoch(t) && b.Kind == "grenade" && count < len(owned) {
 			owned[count] = b
 			count++
 		}
 	}
 	for i := 0; i < count; i++ {
 		g.detonate(owned[i])
+	}
+	if count > 0 {
+		t.GrenadeEpoch = nil
 	}
 	return count > 0
 }
@@ -814,7 +818,7 @@ func (g *Game) fire(t *Tank) bool {
 		return false
 	}
 	starman := t.StarmanTime > 0
-	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || !starman && t.Cooldown > 0 {
+	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || !starman && t.Cooldown > 1e-9 {
 		return false
 	}
 	if t.Power == "rapid" && (!starman && t.MachineRounds <= 0 || t.rapidFired && t.rapidTick == g.Tick) {
@@ -977,15 +981,13 @@ func (g *Game) fire(t *Tank) bool {
 	if kind == "rapid" {
 		t.MachineRounds--
 		if t.MachineRounds == 0 {
-			clearWeapon(t)
-			refillAmmo(t)
+			refillDepletedWeapon(t)
 		}
 	}
 	if t.Power == "scatter" || t.Power == "homing" || t.Power == "grenade" || t.Power == "cannon" {
 		t.Charges--
 		if t.Charges <= 0 {
-			clearWeapon(t)
-			refillAmmo(t)
+			refillDepletedWeapon(t)
 		}
 	}
 	return true
@@ -1057,7 +1059,7 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 }
 func (g *Game) fireLaser(t *Tank) bool {
 	starman := t.StarmanTime > 0
-	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || t.Power != "laser" || !starman && (t.Cooldown > 0 || t.Charges <= 0) {
+	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || t.Power != "laser" || !starman && (t.Cooldown > 1e-9 || t.Charges <= 0) {
 		return false
 	}
 	points, target := g.traceLaser(t)
@@ -1128,6 +1130,7 @@ func (g *Game) starmanRam(attacker, target *Tank) bool {
 func (g *Game) eliminateTank(t *Tank, attacker int, contacts ...*projectileContact) {
 	g.recordDeath(t, attacker)
 	t.Alive = false
+	t.GrenadeEpoch = nil
 	t.KilledBy = ""
 	t.KilledByColor = ""
 	if g.objectiveMode() && !g.suddenDeath() {
@@ -1597,6 +1600,11 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 			if wasStar && t.StarmanTime <= 0 || wasShield && t.Shield <= 0 {
 				refillExpiredAmmo(t)
 			}
+			// Expired phasing changes the hitbox position before any tank can
+			// attack it, independent of the rotating actor order.
+			if t.GhostTime > 0 && t.GhostTime <= dt {
+				g.advanceGhost(t, dt)
+			}
 		}
 	}
 	for i := 0; i < count; i++ {
@@ -1613,11 +1621,6 @@ func (g *Game) step(dt float64, inputs [maxTanks]Input, players [maxTanks]*Playe
 				clearWeapon(t)
 				refillExpiredAmmo(t)
 			}
-		}
-		// Resolve the expiry snap before measuring movement. Extrapolation
-		// should only use the distance this tank actually drove this tick.
-		if t.GhostTime > 0 && t.GhostTime <= dt {
-			g.advanceGhost(t, dt)
 		}
 		x, y := t.X, t.Y
 		if t.Bot {

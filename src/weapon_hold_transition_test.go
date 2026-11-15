@@ -58,6 +58,9 @@ func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
 					if tank.Power != "" || tank.ShotSerial != 1 || !tank.fireBlocked || pending() {
 						t.Fatal("final finite shot did not consume the first input edge")
 					}
+					if kind == "grenade" && tank.GrenadeEpoch == nil {
+						t.Fatal("last grenade lost its pending detonation bank")
+					}
 					// Both edges arrive before the next simulation sample. The optional
 					// final release also covers a complete tap between samples.
 					send(2, false)
@@ -70,13 +73,26 @@ func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
 					}
 					now = now.Add(time.Second / 60)
 					step()
-					if tank.ShotSerial != 2 || tank.Cooldown <= 0 || pending() {
+					wantSerial := uint64(2)
+					if kind == "grenade" {
+						wantSerial = 1 // The next press pops the last grenade before standard fire.
+					}
+					if tank.ShotSerial != wantSerial || kind != "grenade" && tank.Cooldown <= 0 || kind == "grenade" && (tank.Cooldown != 0 || tank.GrenadeEpoch != nil) || pending() {
 						t.Fatal("coalesced press did not fire exactly one ready standard shot")
 					}
 					now = now.Add(time.Second / 60)
 					step()
-					if tank.ShotSerial != 2 || pending() {
+					if tank.ShotSerial != wantSerial || pending() {
 						t.Fatal("consumed edge replayed on the next simulation sample")
+					}
+					if kind == "grenade" {
+						send(5, false)
+						send(6, true)
+						now = now.Add(time.Second / 60)
+						step()
+						if tank.ShotSerial != 2 || tank.Cooldown <= 0 || pending() {
+							t.Fatal("fresh press after the final pop did not fire standard ammo")
+						}
 					}
 				})
 			}

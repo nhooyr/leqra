@@ -166,6 +166,18 @@ object TankMovement {
         tank.track += hypot(tank.x - x, tank.y - y)
     }
 
+    /** Resolve a Ghost ending this tick before any actor is allowed to attack. */
+    fun expireGhost(tank: ArenaTank, maze: InfiniteMaze) {
+        tank.ghostTime = 0.0
+        val world = maze.world
+        if (world != null) finishGhost(tank, world.walls, world.width, world.height)
+        else {
+            val point = maze.phaseExit(tank.x, tank.y)
+            tank.x = point.x
+            tank.y = point.y
+        }
+    }
+
     private fun finishGhost(t: ArenaTank, walls: List<MazeWall>, width: Double, height: Double) {
         fun clear(x: Double, y: Double) =
             x >= 21 &&

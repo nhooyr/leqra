@@ -628,6 +628,8 @@ class PracticeArena(
         val hadShield = t.shield > 0
         val hadStar = t.starmanTime > 0
         val hadWeapon = t.power.isNotEmpty() && t.powerTime > 0
+        val ghostEnds = t.ghostTime > 0 && t.ghostTime <= dt
+        if (ghostEnds) TankMovement.expireGhost(t, maze)
         t.invulnerable = max(0.0, t.invulnerable - dt)
         if (t.invulnerable < 1e-9) {
             t.invulnerable = 0.0
@@ -652,7 +654,7 @@ class PracticeArena(
         t.cooldown = max(0.0, t.cooldown - dt)
         t.recoil = max(0.0, t.recoil - 9 * dt)
         if (hadWeapon && t.powerTime <= 0 && held[t.id] == true) fireBlocked += t.id
-        if (hadShield && t.shield <= 0 || hadStar && t.starmanTime <= 0 || hadWeapon && t.powerTime <= 0) expiredAmmo += t.id
+        if (ghostEnds || hadShield && t.shield <= 0 || hadStar && t.starmanTime <= 0 || hadWeapon && t.powerTime <= 0) expiredAmmo += t.id
     }
 
     private fun refillAmmo(tank: ArenaTank) {
@@ -680,25 +682,27 @@ class PracticeArena(
         }
         if (pickupRate == "off" || enabledPickups.isEmpty() || time < nextPickup) return
         nextPickup = time + 1.25 + unitRandom() * 1.25
-        val pilot = snapshot.tanks[0]
-        if (pilot.hp <= 0) return
+        val humans = snapshot.tanks.filter { !it.bot }
         snapshot.pickups =
-            snapshot.pickups.filter { hypot(it.x - pilot.x, it.y - pilot.y) <= 11 * 84 }
-        var nearby = snapshot.pickups.count { hypot(it.x - pilot.x, it.y - pilot.y) < 5 * 84 }
-        repeat(90) {
-            if (nearby >= 3 || snapshot.pickups.size >= 6) return
-            val dx = random(7) - 3
-            val dy = random(7) - 3
-            if (dx * dx + dy * dy > 12) return@repeat
-            val x = (floor(pilot.x / 84) + dx + .5) * 84
-            val y = (floor(pilot.y / 84) + dy + .5) * 84
-            if (
-                snapshot.tanks.any { it.hp > 0 && hypot(it.x - x, it.y - y) < .85 * 84 } ||
-                    snapshot.pickups.any { hypot(it.x - x, it.y - y) < 1.1 * 84 }
-            )
-                return@repeat
-            snapshot.pickups += ArenaPickup(id = ++nextID, x = x, y = y, type = weightedPickup())
-            nearby++
+            snapshot.pickups.filter { pickup -> humans.any { hypot(pickup.x - it.x, pickup.y - it.y) < 11 * 84 } }
+        for (pilot in humans) {
+            if (pilot.hp <= 0) continue
+            var nearby = snapshot.pickups.count { hypot(it.x - pilot.x, it.y - pilot.y) < 5 * 84 }
+            for (attempt in 0 until 90) {
+                if (nearby >= 3 || snapshot.pickups.size >= humans.size * 6) break
+                val dx = random(7) - 3
+                val dy = random(7) - 3
+                if (dx * dx + dy * dy > 12) continue
+                val x = (floor(pilot.x / 84) + dx + .5) * 84
+                val y = (floor(pilot.y / 84) + dy + .5) * 84
+                if (
+                    snapshot.tanks.any { it.hp > 0 && hypot(it.x - x, it.y - y) < .85 * 84 } ||
+                        snapshot.pickups.any { hypot(it.x - x, it.y - y) < 1.1 * 84 }
+                )
+                    continue
+                snapshot.pickups += ArenaPickup(id = ++nextID, x = x, y = y, type = weightedPickup())
+                nearby++
+            }
         }
     }
 
@@ -945,10 +949,12 @@ class PracticeArena(
         if (!fire || pressed) fireBlocked.remove(t.id)
         if (t.hp <= 0 || t.spawnProtected && t.invulnerable > 1e-9) return
         if (pressed) {
-            val grenades = projectiles.filter { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == t.ammoEpoch }
+            val grenadeEpoch = t.grenadeEpoch ?: t.ammoEpoch
+            val grenades = projectiles.filter { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == grenadeEpoch }
             if (grenades.isNotEmpty()) {
                 grenades.forEach { detonate(it.wire, completedFlight(it)) }
-                projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == t.ammoEpoch }
+                projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == grenadeEpoch }
+                t.grenadeEpoch = null
                 if (fire) fireBlocked.add(t.id)
                 return
             }
@@ -1041,12 +1047,14 @@ class PracticeArena(
         if (boosted || kind.isEmpty()) return
         if (kind == "rapid") t.machineRounds-- else t.charges--
         if (if (kind == "rapid") t.machineRounds <= 0 else t.charges <= 0) {
+            val grenadeEpoch = t.ammoEpoch.takeIf { kind == "grenade" }
             if (held[t.id] == true) fireBlocked += t.id
             t.power = ""
             t.powerTime = 0.0
             t.charges = 0
             t.machineRounds = 0
             refillAmmo(t)
+            t.grenadeEpoch = grenadeEpoch
         }
     }
 
@@ -1312,6 +1320,7 @@ class PracticeArena(
             return
         }
         t.hp = 0
+        t.grenadeEpoch = null
         if (killScoring) t.score--
         t.respawnTime = if (respawnsEnabled) respawnDelay else 0.0
         identity(owner)
@@ -1361,7 +1370,7 @@ class PracticeArena(
             if (p.boosted) boosted.add(b.id)
             indices[b.owner]?.let { i ->
                 if (!p.boosted && b.ammoEpoch == snapshot.tanks[i].ammoEpoch) owned[i].ammo++
-                if (b.kind == "grenade" && b.ammoEpoch == snapshot.tanks[i].ammoEpoch) {
+                if (b.kind == "grenade" && b.ammoEpoch == (snapshot.tanks[i].grenadeEpoch ?: snapshot.tanks[i].ammoEpoch)) {
                     owned[i].grenades++
                     owned[i].grenadeLife = max(owned[i].grenadeLife, b.life)
                 }
@@ -1444,8 +1453,8 @@ class PracticeArena(
         private val scatterSpec = WeaponSpec(846.0, 3.5, 3.9, .27, 12)
         private val homingSpec = WeaponSpec(235.0, 5.0, 18 * 84.0 / 235, .36, 3)
         private val grenadeSpec = WeaponSpec(205.0, 6.0, 10.0, .8, 3)
-        private val cannonSpec = WeaponSpec(1128.0, 14.0, 5.3, .85 * 2 / 3, 3)
-        private val laserSpec = WeaponSpec(0.0, 3.0, 0.0, .85 * 2 / 3, 3)
+        private val cannonSpec = WeaponSpec(1128.0, 14.0, 5.3, .85 / 3, 3)
+        private val laserSpec = WeaponSpec(0.0, 3.0, 0.0, .85 / 3, 3)
         private val standardSpec = WeaponSpec(282.0, 3.5, 5.3, .34, 5)
 
         fun spec(kind: String) =

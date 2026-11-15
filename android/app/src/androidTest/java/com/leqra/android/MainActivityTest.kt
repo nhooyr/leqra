@@ -13,6 +13,12 @@ import androidx.test.uiautomator.UiSelector
 import com.leqra.core.ArenaSnapshot
 import com.leqra.core.ArenaTank
 import com.leqra.core.GameInput
+import com.leqra.core.ArenaResult
+import com.leqra.core.RoomRules
+import android.widget.TextView
+import android.view.ViewGroup
+import android.app.AlertDialog
+import com.leqra.android.render.NativeArenaView
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Test
@@ -36,7 +42,14 @@ class MainActivityTest {
         val intent =
             Intent(instrumentation.targetContext, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        val activity = instrumentation.startActivitySync(intent) as MainActivity
+        // A continuously animated arena need not make the global main queue idle.
+        // Observe this Activity's creation, then wait for its real input focus below.
+        val monitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false)
+        val activity = try {
+            instrumentation.targetContext.startActivity(intent)
+            monitor.waitForActivityWithTimeout(10000) as? MainActivity
+                ?: throw AssertionError("MainActivity did not launch")
+        } finally { instrumentation.removeMonitor(monitor) }
         val education =
             UiDevice.getInstance(instrumentation).findObject(UiSelector().text("Got it"))
         if (education.waitForExists(500)) education.click()
@@ -155,6 +168,114 @@ class MainActivityTest {
     }
 
     @Test
+    fun hardwareKeyboardMatchesWebAndSeatChangesNeverTransferAHeldShortcut() {
+        val activity = launch()
+        try {
+            main {
+                val session = state(activity)
+                session.publicSelected = false
+                session.botCount = 0
+                session.localSelected = false
+                session.selectMode("infinity")
+                session.play()
+                fun key(code: Int, down: Boolean, repeat: Int = 0) {
+                    val now = SystemClock.uptimeMillis()
+                    activity.dispatchKeyEvent(KeyEvent(now, now,
+                        if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code, repeat))
+                }
+                fun seat(id: Int?) = GameSession::class.java.getDeclaredField("localID2").run {
+                    isAccessible = true; set(session, id)
+                }
+                for (code in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_ENTER)) {
+                    key(code, true); assertTrue("Solo $code fires P1", session.input.fire)
+                    key(code, false); assertFalse(session.input.fire)
+                }
+                key(KeyEvent.KEYCODE_SPACE, true)
+                seat(2)
+                key(KeyEvent.KEYCODE_W, true)
+                assertTrue(session.input.forward)
+                assertFalse("Old solo Space cannot transfer to P2", session.input2.fire)
+                assertFalse(session.input.fire)
+                key(KeyEvent.KEYCODE_SPACE, true, repeat = 1)
+                assertFalse("A held key repeat cannot rearm after a seat change", session.input2.fire)
+                key(KeyEvent.KEYCODE_SPACE, false)
+                for (code in listOf(KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_ENTER)) {
+                    key(code, true); assertTrue("Paired $code belongs to P2", session.input2.fire)
+                    assertFalse(session.input.fire)
+                    key(code, false); assertFalse(session.input2.fire)
+                }
+                for (code in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_C)) {
+                    key(code, true); assertTrue(session.input.fire); assertFalse(session.input2.fire)
+                    key(code, false)
+                }
+                key(KeyEvent.KEYCODE_DPAD_UP, true)
+                assertTrue(session.input2.forward)
+                assertTrue(session.input.forward)
+                key(KeyEvent.KEYCODE_DPAD_UP, false)
+                key(KeyEvent.KEYCODE_SPACE, true)
+                seat(null)
+                key(KeyEvent.KEYCODE_A, true)
+                assertFalse("Removing P2 cannot turn its Space hold into P1 fire", session.input.fire)
+                key(KeyEvent.KEYCODE_SPACE, true, repeat = 1)
+                assertFalse(session.input.fire)
+                key(KeyEvent.KEYCODE_SPACE, false)
+                key(KeyEvent.KEYCODE_SPACE, true)
+                assertTrue(session.input.fire)
+                activity.onWindowFocusChanged(false)
+                assertFalse(session.input.fire)
+                activity.onWindowFocusChanged(true)
+                key(KeyEvent.KEYCODE_SPACE, true, repeat = 1)
+                assertFalse("Focus restoration requires a new down edge", session.input.fire)
+                key(KeyEvent.KEYCODE_SPACE, false)
+                key(KeyEvent.KEYCODE_ENTER, true)
+                assertTrue(session.input.fire)
+                key(KeyEvent.KEYCODE_ENTER, false)
+            }
+        } finally { main { activity.finish() } }
+    }
+
+    @Test
+    fun touchAndKeyboardFireRemainHeldUntilBothSourcesRelease() {
+        val activity = launch()
+        try {
+            main {
+                val session = state(activity)
+                session.publicSelected = false; session.botCount = 0; session.selectMode("infinity"); session.play()
+            }
+            SystemClock.sleep(200)
+            main {
+                val session = state(activity)
+                val view = MainActivity::class.java.getDeclaredField("arena").run { isAccessible = true; get(activity) as NativeArenaView }
+                val density = view.resources.displayMetrics.density
+                val x = NativeArenaView::class.java.getDeclaredField("fireX").apply { isAccessible = true }.getFloat(view) * density
+                val y = NativeArenaView::class.java.getDeclaredField("fireY").apply { isAccessible = true }.getFloat(view) * density
+                fun touch(action: Int) {
+                    val now = SystemClock.uptimeMillis()
+                    android.view.MotionEvent.obtain(now, now, action, x, y, 0).let { view.onTouchEvent(it); it.recycle() }
+                }
+                fun key(down: Boolean) { activity.dispatchKeyEvent(KeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Q)) }
+                key(true); touch(android.view.MotionEvent.ACTION_DOWN)
+                assertTrue(session.input.fire)
+                touch(android.view.MotionEvent.ACTION_UP)
+                assertTrue("Releasing touch cannot release the held keyboard Fire", session.input.fire)
+                key(false); assertFalse(session.input.fire)
+                touch(android.view.MotionEvent.ACTION_DOWN); key(true); key(false)
+                assertTrue("Releasing keyboard cannot release held touch Fire", session.input.fire)
+                touch(android.view.MotionEvent.ACTION_UP); assertFalse(session.input.fire)
+                // An independent touch joystick must also survive keyboard button changes.
+                view.input.stickX = .8; view.input.stickY = -.4
+                view.onInput?.invoke(view.input.copy())
+                key(true)
+                assertEquals(.8, session.input.stickX, 0.0); assertEquals(-.4, session.input.stickY, 0.0)
+                assertTrue(session.input.touchAim)
+                key(false)
+                view.resetControls()
+                assertFalse(session.input.fire)
+            }
+        } finally { main { activity.finish() } }
+    }
+
+    @Test
     fun readyRoomShowsNativeAccountControlsAndSupportsMenu() {
         val activity = launch()
         val device = UiDevice.getInstance(instrumentation)
@@ -176,6 +297,76 @@ class MainActivityTest {
         } finally {
             main { activity.finish() }
         }
+    }
+
+    @Test
+    fun rejectedSurvivalModeKeepsReadyRoomGeometryAndShowsTheReservedNotice() {
+        val activity = launch()
+        try {
+            main {
+                val session = state(activity)
+                session.publicSelected = false
+                session.selectMode("elimination")
+                session.botCount = 6
+                session.changed(true)
+            }
+            SystemClock.sleep(150)
+            val before = main {
+                val play = MainActivity::class.java.getDeclaredField("readyPlay").run { isAccessible = true; get(activity) as View }
+                val error = MainActivity::class.java.getDeclaredField("readyStartError").run { isAccessible = true; get(activity) as TextView }
+                val location = IntArray(2); play.getLocationOnScreen(location)
+                listOf(location[0], location[1], play.width, play.height, error.height)
+            }
+            main { state(activity).selectMode("survival") }
+            SystemClock.sleep(150)
+            main {
+                val session = state(activity)
+                assertEquals("elimination", session.mode)
+                assertEquals(6, session.botCount)
+                val play = MainActivity::class.java.getDeclaredField("readyPlay").run { isAccessible = true; get(activity) as View }
+                val error = MainActivity::class.java.getDeclaredField("readyStartError").run { isAccessible = true; get(activity) as TextView }
+                val location = IntArray(2); play.getLocationOnScreen(location)
+                assertEquals(before, listOf(location[0], location[1], play.width, play.height, error.height))
+                assertEquals(View.VISIBLE, error.visibility)
+                assertTrue(error.text.contains("four squad tanks"))
+                assertTrue(play.isEnabled)
+            }
+        } finally { main { activity.finish() } }
+    }
+
+    @Test
+    fun resultDialogKeepsLocalSeatBotIdentityAndCustomTeamNames() {
+        val activity = launch()
+        fun texts(view: View): List<TextView> =
+            (if (view is TextView) listOf(view) else emptyList()) +
+                if (view is ViewGroup) (0 until view.childCount).flatMap { texts(view.getChildAt(it)) } else emptyList()
+        try {
+            main {
+                val session = state(activity)
+                session.publicSelected = false; session.botCount = 0
+                session.localSelected = true; session.selectMode("infinity"); session.play()
+                (MainActivity::class.java.getDeclaredField("arena").run { isAccessible = true; get(activity) } as NativeArenaView).onFrame = null
+                val show = MainActivity::class.java.getDeclaredMethod("showResult").apply { isAccessible = true }
+                val dismiss = MainActivity::class.java.getDeclaredMethod("dismissDialog").apply { isAccessible = true }
+                for (kind in listOf("local", "bot", "team")) {
+                    session.rules = RoomRules.localDefaults().copy(teamMode = if (kind == "team") "teams" else "ffa",
+                        teamNames = listOf("Blue Comets", "Jade Squad", "Third", "Fourth"), teamColors = listOf(4, 5, 6, 7))
+                    val tank = ArenaTank(id = 2, name = if (kind == "bot") "RUST" else "Wing", bot = kind == "bot", colorIndex = 1,
+                        score = 5, team = if (kind == "team") 2 else 0)
+                    val snapshot = ArenaSnapshot(tanks = listOf(tank), winner = if (kind == "local") -1 else 2,
+                        result = if (kind == "local") ArenaResult(id = 2, name = "Wing", score = 5) else null)
+                    GameSession::class.java.getDeclaredField("snapshot").run { isAccessible = true; set(session, snapshot) }
+                    show.invoke(activity)
+                    val dialog = MainActivity::class.java.getDeclaredField("dialog").run { isAccessible = true; get(activity) as AlertDialog }
+                    val label = texts(dialog.window!!.decorView).single { it.text.endsWith("5 points") }
+                    val expected = when (kind) { "local" -> "Wing (P2)"; "bot" -> "Bot Rust"; else -> "Jade Squad" }
+                    assertEquals("$expected · 5 points", label.text.toString())
+                    assertEquals(NativeStyle.paint(if (kind == "team") 5 else 1), label.currentTextColor)
+                    assertEquals(kind != "bot", label.typeface.isBold)
+                    dismiss.invoke(activity)
+                }
+            }
+        } finally { main { activity.finish() } }
     }
 
     @Test

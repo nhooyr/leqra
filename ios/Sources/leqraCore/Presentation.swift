@@ -45,7 +45,7 @@ public struct PilotReadout: Equatable, Sendable {
         available = alive ? max(0, capacity - used) : 0
         // Boosted grenades still detonate; only ammunition-slot accounting
         // excludes Starman shots.
-        let ownedGrenades = allOwned.filter { $0.kind == "grenade" }
+        let ownedGrenades = snapshot.bullets.filter { $0.owner == tank.id && $0.kind == "grenade" && $0.ammoEpoch == (tank.grenadeEpoch ?? tank.ammoEpoch) }
         let grenadeLife = infinity ? tank.grenadeLife : max(tank.grenadeLife, ownedGrenades.map(\.life).max() ?? 0)
         let grenades = infinity ? (grenadeLife > 0 ? tank.grenades : 0) : max(tank.grenades, ownedGrenades.count)
         let projectileLocked = tank.locked || snapshot.bullets.contains { bullet in
@@ -98,7 +98,7 @@ public struct PilotReadout: Equatable, Sendable {
             let cooldown = unlimited ? 0 : tank.cooldown
             let free = unlimited ? Int.max : tank.power == "laser" ? tank.charges : available
             let need = tank.power == "scatter" ? 3 : 1
-            let cooldowns: [String: Double] = ["cannon": 0.85 * 2 / 3, "laser": 0.85 * 2 / 3, "rapid": 0, "scatter": 0.27, "homing": 0.36, "grenade": 0.8]
+            let cooldowns: [String: Double] = ["cannon": 0.85 / 3, "laser": 0.85 / 3, "rapid": 0, "scatter": 0.27, "homing": 0.36, "grenade": 0.8]
             let fallback = cooldowns[tank.power] ?? 0.34
             let total = tank.cooldownTotal > 0 ? tank.cooldownTotal : fallback
             progress = cooldown > 0 ? max(0, min(1, 1 - cooldown / max(0.001, total))) : free < need ? 0 : 1

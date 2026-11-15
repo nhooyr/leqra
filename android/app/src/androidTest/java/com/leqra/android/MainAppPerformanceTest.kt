@@ -74,11 +74,12 @@ class MainAppPerformanceTest {
                     ?: "http://10.0.2.2:8080",
             )
             .commit()
-        val activity =
-            instrumentation.startActivitySync(
-                Intent(context, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
-            ) as MainActivity
+        val monitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false)
+        val activity = try {
+            context.startActivity(Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+            monitor.waitForActivityWithTimeout(10000) as? MainActivity ?: error("Activity did not launch")
+        } finally { instrumentation.removeMonitor(monitor) }
         val device = UiDevice.getInstance(instrumentation)
         val education = device.findObject(UiSelector().text("Got it"))
         if (education.waitForExists(500)) education.click()
@@ -130,11 +131,12 @@ class MainAppPerformanceTest {
                 set(session, "localID", 1)
             }
             for (landscape in listOf(false, true)) for (fixed in
-                listOf(false, true)) for (standings in listOf(false, true)) {
+                listOf(false, true)) for (standings in listOf(false, true)) for (paired in if (fixed) listOf(false) else listOf(false, true)) {
                 main {
                     fixture = RenderStressScene(fixed)
                     start = 0
                     set(session, "infinity", !fixed)
+                    set(session, "localID2", if (paired) 2 else null)
                     session.mode = if (fixed) "elimination" else "infinity"
                     session.rules = RoomRules.localDefaults(session.mode)
                     set(session, "maze", fixture.maze)
@@ -194,7 +196,7 @@ class MainAppPerformanceTest {
                     (if (fixed) "fixed" else "infinity") +
                         "-" +
                         (if (landscape) "landscape" else "portrait") +
-                        if (standings) "-scores" else ""
+                        (if (standings) "-scores" else "") + (if (paired) "-paired" else "")
                 val report =
                     "$title fps=${"%.1f".format(frames/elapsed)} missedDeadlines=${misses.get()} totalMs=${percentiles(totals)} drawMs=${percentiles(draws)} callbackMs=${percentiles(callbacks)} allocatedMBps=${"%.2f".format((runtimeStat("art.gc.bytes-allocated")-allocated)/1e6/elapsed)} blockingGCs=${runtimeStat("art.gc.blocking-gc-count")-gcCount} scoreBuilds=$scoreBuilds hudTextUpdates=$textUpdates statusTextUpdates=$statusUpdates"
                 reports.add(report)

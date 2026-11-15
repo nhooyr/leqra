@@ -38,8 +38,13 @@ class PickupFirePerformanceTest {
             for (fixed in listOf(false, true)) for (audible in listOf(false, true)) for (kind in listOf("") + PracticeArena.pickupKinds) {
                 preferences.edit().clear().putBoolean("muted", !audible).putBoolean("publicSelected", false)
                     .putString("callsign", "pilot#ABC234").putString("server", "http://127.0.0.1:1").commit()
-                val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
+                val monitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false)
+                val activity = try {
+                    context.startActivity(Intent(context, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                    monitor.waitForActivityWithTimeout(10000) as? MainActivity
+                        ?: error("Activity did not launch")
+                } finally { instrumentation.removeMonitor(monitor) }
                 val recording = AtomicBoolean(false)
                 val callbacks = Collections.synchronizedList(ArrayList<Long>())
                 val draws = Collections.synchronizedList(ArrayList<Long>())

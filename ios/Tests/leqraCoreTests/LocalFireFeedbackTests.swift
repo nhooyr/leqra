@@ -131,7 +131,7 @@ final class LocalFireFeedbackTests: XCTestCase {
     }
 
     func testCadenceMatchesEveryWeaponAndStarmanWithoutCheckingAmmo() {
-        for (power, cadence) in [("", 0.34), ("rapid", 0.15), ("scatter", 0.27), ("homing", 0.36), ("cannon", 0.85 * 2 / 3), ("laser", 0.85 * 2 / 3)] {
+        for (power, cadence) in [("", 0.34), ("rapid", 0.15), ("scatter", 0.27), ("homing", 0.36), ("cannon", 0.85 / 3), ("laser", 0.85 / 3)] {
             for boosted in [false, true] {
                 var cue = LocalFireFeedback()
                 let tank = ArenaTank(id: 1, starmanTime: boosted ? 8 : 0, power: power, charges: 0, machineRounds: 0, ammoUsed: 999)

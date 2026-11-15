@@ -91,17 +91,19 @@ test('lobby bot editing retains name, team and difficulty events',()=>{
  assert.deepEqual(JSON.parse(JSON.stringify(b.changes.map(change=>change.patch))),[{name:'BOUNCE'},{team:3},{difficulty:'dumb'},{difficulty:'godlike'}]);
 });
 
-test('room labels keep raw callsigns, tank colors and local suffixes for every viewer',()=>{
+test('room labels keep raw callsigns and tank colors while suffixing only this device pilots',()=>{
  const b=boot({teamMode:'ffa'}),primary={id:0,member:1,name:'YOU',kind:'human',color:'#10aeef',connected:true},local={id:1,member:2,name:'WING',kind:'local',owner:0,color:'#ffaa00',connected:true},remote={id:3,member:4,name:'VISITOR',kind:'human',color:'#ff00ee',connected:true};
  b.room.players=[primary,local,remote,bot];const raw=JSON.stringify(b.room.players);
- for(const [player,want]of [[primary,'YOU (P1)'],[local,'WING (P2)'],[remote,'VISITOR (P1)'],[bot,'RICOCHET']]){
+ for(const [player,want]of [[primary,'YOU (P1)'],[local,'WING (P2)'],[remote,'VISITOR'],[bot,'RICOCHET']]){
   const name=b.row(player).querySelector('.pilot-name');assert.equal(name.textContent,want);assert.equal(name.style.color,player.color);
  }
  b.s.localPlayerID=()=>3;
- assert.equal(b.s.roomPlayerIdentity(primary,b.room).label,'YOU (P1)','remote controllers retain their role suffix');
- assert.equal(b.s.roomPlayerIdentity(local,b.room).label,'WING (P2)');
+ assert.equal(b.s.roomPlayerIdentity(primary,b.room).label,'YOU','a different viewer sees the remote callsign without a local control slot');
+ assert.equal(b.s.roomPlayerIdentity(local,b.room).label,'WING');
+ assert.equal(b.s.roomPlayerIdentity(remote,b.room).label,'VISITOR (P1)');
  b.room.players.splice(1,1);
- assert.equal(b.s.roomPlayerIdentity(primary,b.room).label,'YOU (P1)','a solo primary still advertises the first local slot');
+ assert.equal(b.s.roomPlayerIdentity(primary,b.room).label,'YOU');
+ assert.equal(b.s.roomPlayerIdentity(remote,b.room).label,'VISITOR (P1)','a solo primary still advertises this device first local slot');
  b.room.players.splice(1,0,local);assert.equal(JSON.stringify(b.room.players),raw,'presentation must never rewrite saved or wire names');
 });
 
@@ -110,7 +112,7 @@ test('room identity HTML escapes names and resolves missing colors from room pai
  assert.equal(b.s.pilotIdentity(0,null).name,'Player 1');assert.equal(b.s.pilotIdentity(1,null,true).name,'CO-PILOT');assert.equal(b.s.pilotIdentity(0,{name:'PILOT'}).name,'PILOT');
  let requested;b.s.teamColor=(...args)=>{requested=args;return '#bada55';};
  const html=b.s.roomPlayerIdentityHTML(player,b.room);
- assert.ok(html.includes('&lt;YOU &amp; WING&gt; (P1)'));assert.ok(html.includes('color:#bada55'));assert.equal(html.includes('<YOU'),false);
+ assert.ok(html.includes('&lt;YOU &amp; WING&gt;'));assert.ok(!html.includes('(P1)'));assert.ok(html.includes('color:#bada55'));assert.equal(html.includes('<YOU'),false);
  assert.equal(requested[0],3);assert.equal(requested[2],6);assert.equal(requested[3],b.room.rules);
  assert.equal(player.name,'<YOU & WING>');
  for(const flags of [{kind:'bot'},{bot:true},{survivalEnemy:true},{human:false}])assert.equal(b.s.roomPlayerIdentity({...player,...flags},b.room).label,player.name,'AI bodies never acquire a local pilot suffix');
@@ -124,6 +126,7 @@ test('identity spans and menu rows bold only the device pilots across room and f
   assert.equal(/class="pilot-identity local-pilot"/.test(b.s.roomPlayerIdentityHTML(player,b.room)),owned);
   assert.equal(b.row(player).querySelector('.pilot-name')?.className.includes('local-pilot')||false,owned);
   assert.equal(/class="pilot-identity local-pilot"/.test(b.s.resultPilotIdentityHTML({...player,id:999,seat:player.id})),owned);
+  if(player!==bot)assert.equal(b.s.resultPilotIdentity({...player,id:999,seat:player.id}).label,player.name+(owned?(player===local?' (P2)':' (P1)'):''));
  }
  assert.equal(b.s.isDeviceLocalPilot({...primary,member:99},b.room),false,'a reused combat seat does not own an earlier participant identity');
  assert.match(b.s.localPilotIdentityHTML(0),/class="pilot-identity local-pilot"/,'Controls and pause labels use the same local marker');

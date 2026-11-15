@@ -224,9 +224,12 @@ func TestRoomInfinitySpectatorRoleChangesBeforeNextSimulationTick(t *testing.T) 
 				s.disconnect(c, now)
 			}
 			action(t, s.hub, viewer, map[string]any{"type": "spectate", "spectating": false})
-			player, _, rejection := tryInfinityReconnect(t, s, infiniteMessage{Code: room.Code, Token: viewer.player.Token}, now)
+			player, controller, rejection := tryInfinityReconnect(t, s, infiniteMessage{Code: room.Code, Token: viewer.player.Token}, now)
 			if rejection != "" || player.pilot == nil || player.observer != nil || player.arena != pair.arena || len(pair.arena.observers) != 0 || pair.arena.players != 2 {
 				t.Fatal("promotion resumed a nonexistent body or left observer authority", rejection)
+			}
+			if !player.arena.setConnectionInput(controller, player.pilot, player.pilot, Input{Seq: 1, Forward: true}, false, now) {
+				t.Fatal("promoted spectator's fresh controller sequence was rejected")
 			}
 		})
 	}
@@ -237,12 +240,19 @@ func TestRoomInfinitySpectatorRoleChangesBeforeNextSimulationTick(t *testing.T) 
 		if rejection != "" {
 			t.Fatal(rejection)
 		}
-		pair.arena.setConnectionInput(old, pair.pilot, pair.pilot, Input{Forward: true, Fire: true}, false, now)
+		if !pair.arena.setConnectionInput(old, pair.pilot, pair.pilot, Input{Seq: 47, Forward: true, Fire: true}, false, now) {
+			t.Fatal("initial controller input was rejected")
+		}
 		action(t, s.hub, members[0], map[string]any{"type": "spectate", "spectating": true})
 		observer, _ := joinRoomObserver(t, s, room, members[0], now)
-		pair.arena.setConnectionInput(old, pair.pilot, pair.pilot, Input{Forward: true, Fire: true}, false, now)
+		pair.arena.setConnectionInput(old, pair.pilot, pair.pilot, Input{Seq: 48, Forward: true, Fire: true}, false, now)
 		if pair.pilot.client != nil || pair.arena.players != 0 || len(pair.arena.pilots) != 0 || observer.arena != pair.arena || !hasError(old, "room_access_changed") {
 			t.Fatal("demotion left the previous body controllable or changed the observed maze")
+		}
+		action(t, s.hub, members[0], map[string]any{"type": "spectate", "spectating": false})
+		rejoined, controller, rejection := tryInfinityReconnect(t, s, infiniteMessage{Code: room.Code, Token: members[0].player.Token}, now)
+		if rejection != "" || rejoined.pilot == nil || !rejoined.arena.setConnectionInput(controller, rejoined.pilot, rejoined.pilot, Input{Seq: 1, Forward: true}, false, now) {
+			t.Fatal("returning from spectator mode retained the departed controller's sequence", rejection)
 		}
 	})
 }

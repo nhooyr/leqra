@@ -8,7 +8,7 @@ function boot(){
  const nodes=new Map(),noop=()=>{},timers=new Map();let serial=0;
  const $=id=>{if(!nodes.has(id))nodes.set(id,{id,value:'',open:false,hidden:false,disabled:false,textContent:'',dataset:{},style:{setProperty:noop,removeProperty:noop},classList:{add:noop,remove:noop},firstElementChild:{},querySelector:()=>({}),close(){this.open=false;}});return nodes.get(id);};
  const room={code:'ROOM',host:0,phase:'lobby',players:[{id:0,member:1,name:'HOST',kind:'human'}]};
- const s={URL,mode:'room',phase:'menu',MAX_TANKS:8,COLORS:Array(8).fill('#fff'),GAME_VERSION:'test',infinityOffline:false,localMatchStats:null,localRoom:{players:[],self:0},
+ const s={URL,mode:'room',phase:'menu',MAX_TANKS:8,COLORS:Array(8).fill('#fff'),GAME_VERSION:'test',infinityOffline:false,infinityOnline:false,save:noop,localMatchStats:null,localRoom:{players:[],self:0},
   online:{connected:false,connecting:false,roomData:room,code:'',token:'',id:0,member:1,generation:1,snapshots:[]},matchmaking:{},roomChat:{code:'ROOM'},$,performance:{now:()=>1000},
   document:{body:$('body'),documentElement:$('root'),querySelectorAll:()=>[]},window:{},location:{protocol:'https:',href:'https://leqra.test/'},history:{replaceState:noop},sessionStorage:{removeItem:noop},
   setTimeout(fn){timers.set(++serial,fn);return serial;},clearTimeout:id=>timers.delete(id),
@@ -19,7 +19,7 @@ function boot(){
   roomData:()=>s.online.roomData,localPlayerID:()=>s.online.id,confirmGameAction:async()=>true,
   localSnapshotFromOnline:()=>({code:s.online.code,attempt:s.sent.length,preview:{walls:[1,2,3]}}),sent:[],sendOnline(message){s.sent.push(message);return !s.sendFails;}};
  vm.createContext(s);
- for(const name of ['captureActionScope','unshareOnlineRoom','completeUnshare','connectOnline','showReconnecting','leaveOnline'])vm.runInContext(declaration(name),s);
+ for(const name of ['captureActionScope','selectLocalInfinity','unshareOnlineRoom','completeUnshare','connectOnline','showReconnecting','leaveOnline'])vm.runInContext(declaration(name),s);
  s.connectOnline({type:'join',code:'ROOM'});Object.assign(s.online,{connecting:false,connected:true,code:'ROOM',token:'token'});s.phase='onlineLobby';
  return {s,$,room,receive:packet=>s.socket.onmessage({data:JSON.stringify(packet)})};
 }
@@ -58,6 +58,15 @@ test('unsharing advances the offline viewer allocator past the preserved seconda
  assert.equal(s.mode,'room');
  assert.deepEqual(s.localRoom.players,players);
  assert.equal(s.localRoom.nextViewer,9);
+});
+test('taking a room offline cannot silently select Public Infinity over the retained rules',()=>{
+ for(const infinity of [false,true]){
+  const {s,receive}=boot(),players=[{id:0,member:1,kind:'human',name:'HOST'},{id:1,member:2,kind:'bot',name:'Rust',difficulty:'hard'}];
+  s.infinityOnline=true;s.infinityOffline=false;s.online.unshareSnapshot={code:'ROOM',self:0,players,nextMember:2,rules:{mode:'koth',infinity},preview:{}};
+  receive({type:'unshared'});
+  assert.equal(s.mode,'room');assert.equal(s.infinityOnline,false);assert.equal(s.infinityOffline,infinity);
+  assert.equal(s.localRoom.rules.mode,'koth');assert.equal(s.localRoom.rules.infinity,infinity);assert.deepEqual(s.localRoom.players,players);
+ }
 });
 
 

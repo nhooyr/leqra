@@ -49,7 +49,7 @@ public struct LocalFireFeedback {
             case "": cadence = 0.34
             case "scatter": cadence = 0.27
             case "homing": cadence = 0.36
-            case "laser", "cannon": cadence = 0.85 * 2 / 3
+            case "laser", "cannon": cadence = 0.85 / 3
             default: cadence = 0.15 // Rapid's zero cooldown uses the web press-feedback fallback.
             }
         }

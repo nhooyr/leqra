@@ -66,6 +66,11 @@ internal class GameSession(context: Context) {
     var colorIndex = prefs.getInt("color", 0)
     var localColorIndex = prefs.getInt("localColor", 1)
     var localSelected = prefs.getBoolean("localSelected", false)
+        set(value) {
+            if (rejectSurvivalRosterChange(mode, rules.infinity, value)) return
+            if (field != value) configurationError = null
+            field = value
+        }
     var publicSelected = prefs.getBoolean("publicSelected", true)
     var mode = prefs.getString("mode", "infinity")!!.takeIf { it in modes } ?: "infinity"
     var rules =
@@ -76,6 +81,7 @@ internal class GameSession(context: Context) {
     private var savedLocalRules = rules.copy()
     private var savedLocalMode = mode
     private var savedLocalPublic = publicSelected
+    private var savedLocalSelected = localSelected
     private val modeProfiles = mutableMapOf<String, RoomRules>()
     private val mutableLocalBots = mutableListOf<LocalBot>()
     val localBots: List<LocalBot>
@@ -89,7 +95,9 @@ internal class GameSession(context: Context) {
     var botCount: Int
         get() = mutableLocalBots.size
         set(value) {
-            resizeBots(value.coerceIn(0, maxLocalBots))
+            val count = value.coerceIn(0, maxLocalBots)
+            if (count != mutableLocalBots.size) configurationError = null
+            resizeBots(count)
         }
 
     var localTeam = prefs.getInt("localTeam", 1).coerceIn(1, 4)
@@ -121,6 +129,8 @@ internal class GameSession(context: Context) {
         private set
 
     var status = "Local play is ready. Share to invite online friends."
+        private set
+    var configurationError: String? = null
         private set
 
     var latency = 0.0
@@ -407,6 +417,7 @@ internal class GameSession(context: Context) {
             savedLocalRules = rules.copy()
             savedLocalMode = mode
             savedLocalPublic = publicSelected
+            savedLocalSelected = localSelected
             modeProfiles["local:${if(rules.infinity) "infinity" else rules.mode}"] = rules.copy()
         }
         val profiles = JSONObject()
@@ -426,7 +437,7 @@ internal class GameSession(context: Context) {
             .putString("rules", rulesJson(savedLocalRules).toString())
             .putString("modeProfiles", profiles.toString())
             .putBoolean("publicSelected", savedLocalPublic)
-            .putBoolean("localSelected", localSelected)
+            .putBoolean("localSelected", savedLocalSelected)
             .putInt("bots", botCount)
             .putString(
                 "localBots",
@@ -478,18 +489,22 @@ internal class GameSession(context: Context) {
 
     fun selectMode(value: String) {
         if (value !in modes) return
+        if (rejectSurvivalRosterChange(value, value == "infinity", localSelected)) return
+        if (value != mode) configurationError = null
         modeProfiles["$profileContext:${if(rules.infinity) "infinity" else rules.mode}"] =
             rules.copy()
         rules = rules.selectingMode(value, modeProfiles["$profileContext:$value"])
         mode = value
         if (!online) normalizeLocalTeams()
-        if (value != "infinity") publicSelected = false
+        if (!online || value != "infinity") publicSelected = false
         if (online) command("rules", "rules" to rulesJson(rules))
         save()
         changed(true)
     }
 
     fun changeRules(value: RoomRules) {
+        if (rejectSurvivalRosterChange(value.mode, value.infinity, localSelected)) return
+        if (value != rules) configurationError = null
         rules =
             value.copy(
                 teamMode =
@@ -497,6 +512,7 @@ internal class GameSession(context: Context) {
                     else value.teamMode,
             )
         mode = if (rules.infinity) "infinity" else rules.mode
+        if (!online) publicSelected = false
         if (!online) normalizeLocalTeams()
         modeProfiles["$profileContext:$mode"] = rules.copy()
         if (online) command("rules", "rules" to rulesJson(rules))
@@ -504,7 +520,15 @@ internal class GameSession(context: Context) {
         changed(true)
     }
 
+    private fun rejectSurvivalRosterChange(mode: String, infinity: Boolean, paired: Boolean): Boolean {
+        if (online || infinity || mode != "survival" || localBots.size + (if (paired) 2 else 1) <= 4) return false
+        configurationError = "Survival supports up to four squad tanks. Remove a bot or a local pilot first."
+        changed(true)
+        return true
+    }
+
     fun togglePublic(enabled: Boolean) {
+        configurationError = null
         publicSelected = enabled
         if (enabled) {
             modeProfiles["$profileContext:${if(rules.infinity) "infinity" else rules.mode}"] =
@@ -565,6 +589,7 @@ internal class GameSession(context: Context) {
     }
 
     fun removeLocalBot(id: Int) {
+        configurationError = null
         mutableLocalBots.removeAll { it.id == id }
         save()
         changed(true)
@@ -847,6 +872,8 @@ internal class GameSession(context: Context) {
         rules = savedLocalRules.copy()
         mode = savedLocalMode
         publicSelected = savedLocalPublic
+        localSelected = savedLocalSelected
+        configurationError = null
         preparePreview()
         status = "Local play is ready. Share to invite online friends."
         changed(true)

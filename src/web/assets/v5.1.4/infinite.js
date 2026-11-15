@@ -41,8 +41,8 @@ const PROJECTILES = Object.freeze({
  scatter: {speed: 846, r: BULLET_RADIUS, life: 3.9, cooldown: .27, ammo: 12},
  homing: {speed: 235, r: 5, life: SHOT_RANGE / 235, cooldown: .36, ammo: 3},
  grenade: {speed: 205, r: 6, life: 10, cooldown: .8, ammo: 3},
- cannon: {speed: 1128, r: 14, life: 5.3, cooldown: .85*2/3, ammo: 3},
- laser: {r: 3, cooldown: .85*2/3},
+ cannon: {speed: 1128, r: 14, life: 5.3, cooldown: .85/3, ammo: 3},
+ laser: {r: 3, cooldown: .85/3},
 });
 const TAU = Math.PI * 2;
 const MAX_BOTS = 128, BOTS_PER_PLAYER = 16;
@@ -349,6 +349,7 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
  }
  target.hp = 0;
  target.alive = false;
+ delete target.grenadeEpoch;
  target.respawn = RESPAWN_DELAY;
  target.score--;
  const owner = world.tanks.find(tank => tank.id === ownerID) || world.botPool?.find(tank => tank.id === ownerID);
@@ -385,13 +386,14 @@ function weaponControl(world, tank, held, pressed) {
  if (pressed) {
   let detonated = false;
   for (const bullet of world.bullets) {
-   if (!bullet.dead && bullet.kind === 'grenade' && bullet.owner === tank.id && net.ammoEpoch(bullet) === net.ammoEpoch(tank)) {
+   if (!bullet.dead && bullet.kind === 'grenade' && bullet.owner === tank.id && net.ammoEpoch(bullet) === net.grenadeEpoch(tank)) {
     detonate(world, bullet);
     detonated = true;
    }
   }
   if (detonated || tank.power === 'grenade') {
    tank.fireBlocked = held;
+   if(detonated)delete tank.grenadeEpoch;
    if (!detonated) fireShot(world, tank);
    return;
   }
@@ -403,7 +405,7 @@ function weaponControl(world, tank, held, pressed) {
 function spendWeapon(tank) {
  if (!tank.power || tank.starmanTime > 0) return;
  if (tank.power === 'rapid' ? --tank.machineRounds > 0 : --tank.charges > 0) return;
- net.clearWeapon(tank,'');net.refillAmmo(tank);
+ net.refillDepletedWeapon(tank,'');
 }
 
 function traceLaser(world, tank, preview = false) {
@@ -651,20 +653,23 @@ function populatePickups(world, locals, dt) {
  world.pickups = world.pickups.filter(pickup => pickup.life > 0);
  if (world.time < world.nextPickup) return;
  world.nextPickup = world.time + between(1.25, 2.5);
- const pilot = locals[world.pickupPilot++ % locals.length];
- if (!pilot.hp) return;
  world.pickups = world.pickups.filter(pickup => locals.some(tank=>Math.hypot(pickup.x-tank.x,pickup.y-tank.y)<CELL*11));
- let nearby = world.pickups.filter(pickup => Math.hypot(pickup.x - pilot.x, pickup.y - pilot.y) < CELL * 5).length;
- if (nearby >= 3 || world.pickups.length >= locals.length * 6) return;
- const cx = cellCenter(pilot.x), cy = cellCenter(pilot.y);
- for (let i = 0; i < 90 && nearby < 3 && world.pickups.length < locals.length * 6; i++) {
-  const dx = Math.floor(between(-3, 4)), dy = Math.floor(between(-3, 4));
-  if (dx * dx + dy * dy > 12) continue;
-  const x = cx + dx * CELL, y = cy + dy * CELL;
-  if (world.tanks.some(tank => tank.hp && Math.hypot(tank.x-x, tank.y-y) < .85*CELL) ||
-      world.pickups.some(pickup => Math.hypot(pickup.x-x, pickup.y-y) < 1.1*CELL)) continue;
-  world.pickups.push({x, y, life: PICKUP_LIFETIME, type: art.choosePickup(powerTypes)});
-  nearby++;
+ if(!locals.length)return;
+ const first=world.pickupPilot++ % locals.length;
+ for(let seat=0;seat<locals.length;seat++){
+  const pilot=locals[(first+seat)%locals.length];if(!pilot.hp)continue;
+  let nearby = world.pickups.filter(pickup => Math.hypot(pickup.x - pilot.x, pickup.y - pilot.y) < CELL * 5).length;
+  if (nearby >= 3 || world.pickups.length >= locals.length * 6) continue;
+  const cx = cellCenter(pilot.x), cy = cellCenter(pilot.y);
+  for (let i = 0; i < 90 && nearby < 3 && world.pickups.length < locals.length * 6; i++) {
+   const dx = Math.floor(between(-3, 4)), dy = Math.floor(between(-3, 4));
+   if (dx * dx + dy * dy > 12) continue;
+   const x = cx + dx * CELL, y = cy + dy * CELL;
+   if (world.tanks.some(tank => tank.hp && Math.hypot(tank.x-x, tank.y-y) < .85*CELL) ||
+       world.pickups.some(pickup => Math.hypot(pickup.x-x, pickup.y-y) < 1.1*CELL)) continue;
+   world.pickups.push({x, y, life: PICKUP_LIFETIME, type: art.choosePickup(powerTypes)});
+   nearby++;
+  }
  }
 }
 
@@ -745,13 +750,15 @@ function offlineStep(world, dt) {
    }
    continue;
   }
-  tank.ammoRefillPending=tank.shield>0&&tank.shield<=dt+1e-9||tank.starmanTime>0&&tank.starmanTime<=dt+1e-9;
+  tank.ammoRefillPending=tank.shield>0&&tank.shield<=dt+1e-9||tank.starmanTime>0&&tank.starmanTime<=dt+1e-9||tank.ghostTime>0&&tank.ghostTime<=dt+1e-9;
   for (const key of ['invulnerable', 'shield', 'starmanTime', 'cooldown']) {
    const value = (tank[key] || 0) - dt;
    tank[key] = value > 1e-9 ? value : 0;
   }
   if (!tank.invulnerable) tank.spawnProtected = false;
   if (tank.shield === 0) tank.shieldCharges = 0;
+  const wasGhost=tank.ghostTime>0;tank.ghostTime=Math.max(0,(tank.ghostTime||0)-dt);
+  if(wasGhost&&tank.ghostTime<=1e-9){tank.ghostTime=0;world.moveTank(tank,0,0,true);}
   if (!(tank.starmanTime > 0)) {
    tank.powerTime = Math.max(0, (tank.powerTime || 0) - dt);
    if (tank.power&&tank.powerTime <= 1e-9) {net.clearWeapon(tank,'');tank.ammoRefillPending=true;}
@@ -766,8 +773,8 @@ function offlineStep(world, dt) {
   const controls = tank.bot ? botInput(world,tank,locals) : inputState(tank.id === world.local?.id ? world.local : world);
   if (tank.bot && tank.fireBlocked) controls.fire = false;
   (world.movementInputs ||= new Map()).set(tank.id,controls);
-  const refill=tank.ammoRefillPending||tank.speedTime>0&&tank.speedTime<=dt||tank.ghostTime>0&&tank.ghostTime<=dt;tank.ammoRefillPending=false;
-  net.move(tank, controls, dt, world.moveTank,false);
+  const refill=tank.ammoRefillPending||tank.speedTime>0&&tank.speedTime<=dt;tank.ammoRefillPending=false;
+  net.move(tank, controls, dt, world.moveTank,false,false);
   if(refill){net.refillAmmo(tank);world.nextHUD=0;}
   for (const pickup of world.pickups) {
    if (pickup.life <= 0 || Math.hypot(pickup.x - tank.x, pickup.y - tank.y) >= RADIUS + 13) continue;

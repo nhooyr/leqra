@@ -227,7 +227,7 @@ func TestRemoteGrenadeOnlyOwnerAndOnlyGrenades(t *testing.T) {
 		}
 	}
 }
-func TestRemoteGrenadeLastChargeWeaponSwitchAndExpiryStartFresh(t *testing.T) {
+func TestRemoteGrenadeLastChargeKeepsControlWhileWeaponSwitchAndExpiryStartFresh(t *testing.T) {
 	for _, next := range []string{"last", "expired", "laser", "rapid"} {
 		t.Run(next, func(t *testing.T) {
 			g, p := grenadeGame()
@@ -246,6 +246,12 @@ func TestRemoteGrenadeLastChargeWeaponSwitchAndExpiryStartFresh(t *testing.T) {
 			serial := p.ShotSerial
 			g.weaponControl(p, false, false)
 			g.weaponControl(p, true, true)
+			if next == "last" {
+				if !b.Dead || p.ShotSerial != serial || p.GrenadeEpoch != nil {
+					t.Fatal("last grenade lost its next detonation press")
+				}
+				return
+			}
 			if b.Dead || p.ShotSerial != serial+1 || b.AmmoEpoch == p.AmmoEpoch {
 				t.Fatal("old grenade consumed the new magazine's trigger")
 			}

@@ -42,6 +42,7 @@ import com.leqra.android.audio.NativeAudio
 import com.leqra.android.render.NativeArenaView
 import com.leqra.core.*
 import kotlin.math.max
+import kotlin.math.hypot
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -104,6 +105,8 @@ class MainActivity : Activity() {
     private var safeTop = 0
     private var safeBottom = 0
     private val pressed = mutableSetOf<Int>()
+    private var controlOwner: Int? = null
+    private var controlLocalOwner: Int? = null
 
     private data class ControllerState(
         var x: Double = 0.0,
@@ -129,6 +132,7 @@ class MainActivity : Activity() {
     private var soundState: Boolean? = null
     private var readyPlay: Button? = null
     private var readyStatus: TextView? = null
+    private var readyStartError: TextView? = null
     private val callsignFields = arrayOfNulls<EditText>(2)
     internal var scorePanelBuilds = 0L
         private set
@@ -359,7 +363,7 @@ class MainActivity : Activity() {
                 fpsStarted = nanos
             }
         }
-        arena.onInput = { session.input = it }
+        arena.onInput = { keyboardInput() }
         arena.onControlsReset = { session.cancelFireFeedback() }
         session.fireFeedbackAllowed = { dialog == null && currentFocus !is EditText }
         session.present = { snapshot, maze, localID, localID2, online ->
@@ -411,6 +415,7 @@ class MainActivity : Activity() {
 
     private fun refresh(structural: Boolean) {
         if (!::root.isInitialized) return
+        syncControlSeats()
         if (soundState != session.muted) {
             soundState = session.muted
             soundButton.text = ""
@@ -557,10 +562,27 @@ class MainActivity : Activity() {
         loadout.invalidate()
     }
 
-    private fun clearHeldControls() {
+    private fun clearHeldControls(resetPrediction: Boolean = true) {
         pressed.clear()
         controllers.clear()
-        session.neutral()
+        if (::arena.isInitialized) arena.resetControls()
+        if (resetPrediction) session.neutral()
+        else {
+            session.input = GameInput()
+            session.input2 = GameInput()
+            session.cancelFireFeedback()
+        }
+    }
+
+    private fun syncControlSeats() {
+        val owner = session.localID.takeIf { session.screen == Screen.PLAYING }
+        val local = session.localID2.takeIf { owner != null }
+        if (owner != controlOwner || local != controlLocalOwner) {
+            val samePrimary = owner != null && owner == controlOwner
+            controlOwner = owner
+            controlLocalOwner = local
+            clearHeldControls(resetPrediction = !samePrimary)
+        }
     }
 
     private fun TextView.value(value: CharSequence) {
@@ -774,12 +796,11 @@ class MainActivity : Activity() {
                 if (session.publicSelected) "startPublicInfinityError" else "startError",
             ) ?: session.localStartError
         // All room modes keep the same readiness space, including a valid solo Infinity room.
-        panel.add(
-            label(this, startError.orEmpty(), 11f, danger).apply {
+        readyStartError = label(this, (startError ?: session.configurationError).orEmpty(), 11f, danger).apply {
                 minLines = 2
-                visibility = if (startError.isNullOrBlank()) View.INVISIBLE else View.VISIBLE
-            },
-        )
+                visibility = if ((startError ?: session.configurationError).isNullOrBlank()) View.INVISIBLE else View.VISIBLE
+            }
+        panel.add(readyStartError!!)
         val configurationStart = panel.childCount
         panel.add(
             label(
@@ -888,6 +909,10 @@ class MainActivity : Activity() {
             alpha = if (allowed) 1f else .45f
         }
         readyStatus?.value(session.status)
+        val startError = session.room?.optString(if (session.publicSelected) "startPublicInfinityError" else "startError") ?: session.localStartError
+        val notice = startError ?: session.configurationError
+        readyStartError?.value(notice.orEmpty())
+        readyStartError?.visibility = if (notice.isNullOrBlank()) View.INVISIBLE else View.VISIBLE
     }
 
     private fun callsignRow(panel: LinearLayout, seat: Int) {
@@ -1632,7 +1657,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the left joystick to steer and drive. Hold FIRE on the right to shoot. Lift your thumb to stop.\n\nKeyboard: P1 W/S or ↑/↓ to drive, A/D or ←/→ to turn, Space/Q/C to fire. With P2 enabled, use W/A/S/D and Q for P1, arrow keys and Enter for P2.\n\nGamepad: left stick to drive, A/R1/R2 to fire. A second connected gamepad controls P2.\n\nBack/Escape pauses. Swipe from an edge for Android system controls.\n\nShots ricochet off walls. Cannon pierces them. Power-ups can stack, and Starman gives rapid fire.",
+                "Drag the left joystick to steer and drive. Hold FIRE on the right to shoot. Lift your thumb to stop.\n\nKeyboard: P1 W/S/↑/↓ to drive, A/D/←/→ to turn, Q/C/Space/Enter to fire. With P2 enabled, use W/A/S/D and Q/C for P1, arrow keys and Space/Enter for P2.\n\nGamepad: left stick to drive, A/R1/R2 to fire. A second connected gamepad controls P2.\n\nBack/Escape pauses. Swipe from an edge for Android system controls.\n\nShots ricochet off walls. Cannon pierces them. Power-ups can stack, and Starman gives rapid fire.",
                 13f,
                 soft,
             ),
@@ -1953,15 +1978,21 @@ class MainActivity : Activity() {
 
     private fun showResult() {
         val result = session.snapshot.result
-        val winner = session.snapshot.tanks.firstOrNull { it.id == session.snapshot.winner }
+        val winnerID = result?.takeIf { it.team == 0 }?.id ?: session.snapshot.winner
+        val winner = session.snapshot.tanks.firstOrNull { it.id == winnerID }
+        val team = result?.team?.takeIf { it > 0 }
+            ?: winner?.team?.takeIf { session.rules.teamMode == "teams" && it > 0 }
+        val seat = if (winner?.bot == true) 0 else if (winnerID == session.localID) 1 else if (winnerID == session.localID2) 2 else 0
         val winnerName =
-            result?.name?.takeIf(String::isNotBlank)
-                ?: if (session.rules.teamMode == "teams" && winner != null) "Team ${winner.team}"
-                else winner?.name ?: "Match complete"
+            if (team != null) session.rules.teamNames.getOrNull(team - 1) ?: "Team $team"
+            else winner?.let { PilotIdentity.label(it.name, it.bot, seat) }
+                ?: result?.name?.takeIf(String::isNotBlank) ?: "Match complete"
+        val color = if (team != null) session.rules.teamColors.getOrNull(team - 1)?.let(::paint) ?: text
+            else winner?.colorIndex?.let(::paint) ?: text
         val winnerScore = result?.score ?: winner?.score ?: session.snapshot.scores.maxOrNull() ?: 0
         val panel = column(this, 16)
         panel.add(label(this, "MATCH COMPLETE.", 24f, accent, true))
-        panel.add(label(this, "${winnerName} · ${winnerScore} points", 16f, text, true))
+        panel.add(label(this, "${winnerName} · ${winnerScore} points", 16f, color, seat > 0 || team != null))
         panel.add(
             button(
                 this,
@@ -2659,15 +2690,19 @@ class MainActivity : Activity() {
             showMenu()
             return true
         }
+        syncControlSeats()
         if (
             keyCode in gamepadFireKeys &&
                 event.device?.sources?.and(InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
         ) {
-            controllers.getOrPut(event.deviceId) { ControllerState() }.buttons.add(keyCode)
+            val buttons = controllers.getOrPut(event.deviceId) { ControllerState() }.buttons
+            if (event.repeatCount > 0 && keyCode !in buttons) return true
+            buttons.add(keyCode)
             controllerInput(event.deviceId)
             return true
         }
         if (keyCode in gameKeys) {
+            if (event.repeatCount > 0 && keyCode !in pressed) return true
             pressed.add(keyCode)
             keyboardInput()
             return true
@@ -2676,6 +2711,7 @@ class MainActivity : Activity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (::session.isInitialized) syncControlSeats()
         if (controllers[event.deviceId]?.buttons?.remove(keyCode) == true) {
             controllerInput(event.deviceId)
             return true
@@ -2688,16 +2724,20 @@ class MainActivity : Activity() {
     }
 
     private fun keyboardInput() {
+        session.input = combinedInput(false)
+        if (session.localID2 != null) session.input2 = combinedInput(true)
+    }
+
+    private fun combinedInput(local: Boolean): GameInput {
         fun key(code: Int) = code in pressed
         val paired = session.localID2 != null
-        session.input =
-            GameInput(
-                forward = key(KeyEvent.KEYCODE_W) || (!paired && key(KeyEvent.KEYCODE_DPAD_UP)),
-                reverse = key(KeyEvent.KEYCODE_S) || (!paired && key(KeyEvent.KEYCODE_DPAD_DOWN)),
-                left = key(KeyEvent.KEYCODE_A) || (!paired && key(KeyEvent.KEYCODE_DPAD_LEFT)),
-                right = key(KeyEvent.KEYCODE_D) || (!paired && key(KeyEvent.KEYCODE_DPAD_RIGHT)),
-                fire =
-                    key(KeyEvent.KEYCODE_SPACE) ||
+        val controls = GameInput(
+                forward = if (local) key(KeyEvent.KEYCODE_DPAD_UP) else key(KeyEvent.KEYCODE_W) || (!paired && key(KeyEvent.KEYCODE_DPAD_UP)),
+                reverse = if (local) key(KeyEvent.KEYCODE_DPAD_DOWN) else key(KeyEvent.KEYCODE_S) || (!paired && key(KeyEvent.KEYCODE_DPAD_DOWN)),
+                left = if (local) key(KeyEvent.KEYCODE_DPAD_LEFT) else key(KeyEvent.KEYCODE_A) || (!paired && key(KeyEvent.KEYCODE_DPAD_LEFT)),
+                right = if (local) key(KeyEvent.KEYCODE_DPAD_RIGHT) else key(KeyEvent.KEYCODE_D) || (!paired && key(KeyEvent.KEYCODE_DPAD_RIGHT)),
+                fire = if (local) key(KeyEvent.KEYCODE_SPACE) || key(KeyEvent.KEYCODE_ENTER) else
+                    (!paired && (key(KeyEvent.KEYCODE_SPACE) || key(KeyEvent.KEYCODE_ENTER))) ||
                         key(KeyEvent.KEYCODE_Q) ||
                         key(KeyEvent.KEYCODE_C) ||
                         key(KeyEvent.KEYCODE_BUTTON_A) ||
@@ -2705,16 +2745,24 @@ class MainActivity : Activity() {
                         key(KeyEvent.KEYCODE_BUTTON_R2),
                 touchAim = false,
             )
-        if (paired)
-            session.input2 =
-                GameInput(
-                    forward = key(KeyEvent.KEYCODE_DPAD_UP),
-                    reverse = key(KeyEvent.KEYCODE_DPAD_DOWN),
-                    left = key(KeyEvent.KEYCODE_DPAD_LEFT),
-                    right = key(KeyEvent.KEYCODE_DPAD_RIGHT),
-                    fire = key(KeyEvent.KEYCODE_ENTER),
-                    touchAim = false,
-                )
+        var analog: ControllerState? = null
+        if (controllers.isNotEmpty()) {
+            val devices = InputDevice.getDeviceIds().filter {
+                InputDevice.getDevice(it)?.sources?.and(InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+            }
+            for ((id, state) in controllers) if (id in devices && (paired && devices.indexOf(id) > 0) == local) {
+                controls.fire = controls.fire || state.trigger || state.buttons.isNotEmpty()
+                if (analog == null || hypot(state.x, state.y) > hypot(analog.x, analog.y)) analog = state
+            }
+        }
+        val touch = if (local) null else arena.input
+        if (touch != null) controls.fire = controls.fire || touch.fire
+        if (touch != null && hypot(touch.stickX, touch.stickY) > .1) {
+            controls.stickX = touch.stickX; controls.stickY = touch.stickY; controls.touchAim = true
+        } else if (analog != null) {
+            controls.stickX = analog.x; controls.stickY = analog.y; controls.touchAim = true
+        }
+        return controls
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
@@ -2734,21 +2782,7 @@ class MainActivity : Activity() {
     }
 
     private fun controllerInput(deviceId: Int) {
-        val devices =
-            InputDevice.getDeviceIds().filter {
-                InputDevice.getDevice(it)?.sources?.and(InputDevice.SOURCE_GAMEPAD) ==
-                    InputDevice.SOURCE_GAMEPAD
-            }
-        val state = controllers[deviceId] ?: return
-        val input =
-            GameInput(
-                stickX = state.x,
-                stickY = state.y,
-                fire = state.trigger || state.buttons.isNotEmpty(),
-                touchAim = true,
-            )
-        if (session.localID2 != null && devices.indexOf(deviceId) > 0) session.input2 = input
-        else session.input = input
+        if (deviceId in controllers) keyboardInput()
     }
 
     companion object {

@@ -115,6 +115,11 @@ struct ReadyRoomView: View {
                         .disabled(!session.isHost)
                     Text("CHOOSE YOUR BATTLE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                     modeChoices
+                    ZStack(alignment: .topLeading) {
+                        Text("Survival supports up to four squad tanks. Remove a bot before changing modes.").hidden().accessibilityHidden(true)
+                        Text(session.roomSetupError).accessibilityIdentifier("roomSetupError")
+                    }.font(.system(size: 11)).foregroundStyle(WebStyle.danger)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                     // Measure every mode's wrapped copy at the current width.
                     // Selecting a mode changes ink, never the settings footprint.
                     ZStack(alignment: .topLeading) {

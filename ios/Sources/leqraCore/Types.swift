@@ -164,6 +164,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
     public var speedStacks: Int = 0
     public var ammoUsed: Int = 0
     public var ammoEpoch: UInt64 = 0
+    public var grenadeEpoch: UInt64?
     public var grenades: Int = 0
     public var locked: Bool = false
     public var killedBy: String = ""
@@ -213,7 +214,8 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         difficulty: String = "normal",
         vx: Double = 0,
         vy: Double = 0,
-        ammoEpoch: UInt64 = 0
+        ammoEpoch: UInt64 = 0,
+        grenadeEpoch: UInt64? = nil
     ) {
         self.id = id
         self.name = name
@@ -250,6 +252,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         self.speedStacks = speedStacks
         self.ammoUsed = ammoUsed
         self.ammoEpoch = ammoEpoch
+        self.grenadeEpoch = grenadeEpoch
         self.grenades = grenades
         self.locked = locked
         self.killedBy = killedBy
@@ -261,7 +264,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, x, y, vx, vy, angle, hp, colorIndex, score, rank, team, bot, protected, spawnProtected, ack, ackSteps, spawnSerial, track, recoil, cooldown, cooldownTotal, invulnerable, powerTime, shield, speedTime, ghostTime, starmanTime, respawnTime, grenadeLife, power, charges, machineRounds, shieldCharges, speedStacks, ammoUsed, ammoEpoch, grenades, locked, killedBy, killedByColor, survivalEnemy, survivalBoss, difficulty
+        case id, name, x, y, vx, vy, angle, hp, colorIndex, score, rank, team, bot, protected, spawnProtected, ack, ackSteps, spawnSerial, track, recoil, cooldown, cooldownTotal, invulnerable, powerTime, shield, speedTime, ghostTime, starmanTime, respawnTime, grenadeLife, power, charges, machineRounds, shieldCharges, speedStacks, ammoUsed, ammoEpoch, grenadeEpoch, grenades, locked, killedBy, killedByColor, survivalEnemy, survivalBoss, difficulty
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -302,6 +305,7 @@ public struct ArenaTank: Codable, Equatable, Sendable {
         speedStacks = try c.decodeIfPresent(Int.self, forKey: .speedStacks) ?? 0
         ammoUsed = try c.decodeIfPresent(Int.self, forKey: .ammoUsed) ?? 0
         ammoEpoch = try c.decodeIfPresent(UInt64.self, forKey: .ammoEpoch) ?? 0
+        grenadeEpoch = try c.decodeIfPresent(UInt64.self, forKey: .grenadeEpoch)
         grenades = try c.decodeIfPresent(Int.self, forKey: .grenades) ?? 0
         locked = try c.decodeIfPresent(Bool.self, forKey: .locked) ?? false
         killedBy = try c.decodeIfPresent(String.self, forKey: .killedBy) ?? ""

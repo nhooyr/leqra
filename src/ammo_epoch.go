@@ -5,6 +5,7 @@ package main
 const maxAmmoEpoch = uint64(1<<53 - 1)
 
 func refillAmmo(t *Tank) {
+	t.GrenadeEpoch = nil
 	if t.AmmoEpoch >= maxAmmoEpoch {
 		t.AmmoEpoch = 1
 	} else {
@@ -21,6 +22,24 @@ func refillAmmo(t *Tank) {
 		t.Charges = 3
 	default:
 		t.Charges = 0
+	}
+}
+
+func grenadeControlEpoch(t *Tank) uint64 {
+	if t.GrenadeEpoch != nil {
+		return *t.GrenadeEpoch
+	}
+	return t.AmmoEpoch
+}
+
+// A final grenade still owns its next remote-detonation press even though its
+// automatic return to standard ammo starts a fresh capacity epoch.
+func refillDepletedWeapon(t *Tank) {
+	grenade, bank := t.Power == "grenade", grenadeControlEpoch(t)
+	clearWeapon(t)
+	refillAmmo(t)
+	if grenade {
+		t.GrenadeEpoch = &bank
 	}
 }
 

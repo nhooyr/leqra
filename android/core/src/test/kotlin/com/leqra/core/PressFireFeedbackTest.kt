@@ -63,7 +63,7 @@ class PressFireFeedbackTest {
     }
 
     @Test fun blockedPressesAreConsumedAndWeaponCadencesMatchTheWeb() {
-        for ((power, cadence) in listOf("" to .34, "rapid" to .15, "scatter" to .27, "homing" to .36, "laser" to .85 * 2 / 3, "cannon" to .85 * 2 / 3)) {
+        for ((power, cadence) in listOf("" to .34, "rapid" to .15, "scatter" to .27, "homing" to .36, "laser" to .85 / 3, "cannon" to .85 / 3)) {
             val feedback = PressFireFeedback()
             val tank = tank(power)
             assertTrue(feedback.controls(true, tank, 0, true, 0.0))

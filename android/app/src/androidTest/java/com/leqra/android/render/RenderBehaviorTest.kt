@@ -22,6 +22,133 @@ class RenderBehaviorTest {
     }
 
     @Test
+    fun separatedInfinityPilotsKeepTheirOwnViewportThroughDeathRespawnAndRotation() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            val first = ArenaTank(id = 1, name = "First", x = 33_600_042.125, y = -33_600_042.125)
+            val second = ArenaTank(id = 2, name = "Second", x = -33_600_070.875, y = 33_600_070.875, colorIndex = 1)
+            val state = ArenaSnapshot(tick = 1, tanks = listOf(first, second), bullets = listOf(
+                ArenaBullet(id = 10, x = first.x + 35, y = first.y, vx = 100.0, vy = 0.0),
+                ArenaBullet(id = 11, x = second.x + 35, y = second.y, vx = 100.0, vy = 0.0, colorIndex = 1),
+            ))
+            try {
+                for ((w, h) in listOf(1000 to 1600, 1600 to 1000)) {
+                    val landscape = w > h
+                    second.x = -33_600_070.875; second.y = 33_600_070.875
+                    val image = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    try {
+                        view.layout(0, 0, w, h)
+                        view.showControls = false
+                        fun draw() { image.eraseColor(0); view.submit(state, 1, InfiniteMaze(137), 2); view.draw(Canvas(image)) }
+                        fun ink(pilot: Int): Int {
+                            val cx = if (landscape) if (pilot == 1) w / 4 else w * 3 / 4 else w / 2
+                            val cy = if (!landscape) if (pilot == 1) h / 4 else h * 3 / 4 else h / 2
+                            val color = ArenaPalette.tank(pilot - 1)
+                            var count = 0
+                            for (y in cy-35..cy+35) for (x in cx-35..cx+35) if (image.getPixel(x, y) == color) count++
+                            return count
+                        }
+                        second.hp = 1
+                        draw()
+                        assertTrue("P1 is centered in its own pane", ink(1) > 30)
+                        assertTrue("P2 is centered in its distant own pane", ink(2) > 30)
+                        val history = NativeArenaView::class.java.getDeclaredField("projectileHistory").apply { isAccessible = true }.get(view) as android.util.SparseArray<*>
+                        assertEquals("The second pane must not prune the first pane's projectile history", 2, history.size())
+                        second.hp = 0
+                        draw()
+                        assertTrue(ink(1) > 30)
+                        assertEquals("Dead P2 keeps its pane without drawing a living hull", 0, ink(2))
+                        second.hp = 1; second.spawnSerial++; second.x += 12345; second.y -= 12345
+                        draw()
+                        assertTrue("Respawn follows P2's new pose", ink(2) > 30)
+                        view.showControls = true
+                        view.draw(Canvas(image))
+                        val density = view.resources.displayMetrics.density
+                        fun touch(action: Int, x: Float, y: Float) {
+                            val now = SystemClock.uptimeMillis()
+                            MotionEvent.obtain(now, now, action, x, y, 0).let { view.onTouchEvent(it); it.recycle() }
+                        }
+                        touch(MotionEvent.ACTION_DOWN, w * .8f, h * .8f)
+                        assertFalse("P2 pane touches cannot fire P1", view.input.fire)
+                        touch(MotionEvent.ACTION_UP, w * .8f, h * .8f)
+                        val fireX = NativeArenaView::class.java.getDeclaredField("fireX").apply { isAccessible = true }.getFloat(view) * density
+                        val fireY = NativeArenaView::class.java.getDeclaredField("fireY").apply { isAccessible = true }.getFloat(view) * density
+                        touch(MotionEvent.ACTION_DOWN, fireX, fireY)
+                        assertTrue("P1's visible Fire button works after rotation", view.input.fire)
+                        touch(MotionEvent.ACTION_UP, fireX, fireY)
+                        assertFalse(view.input.fire)
+                        view.submit(state, 1, InfiniteMaze(137))
+                        view.showControls = false
+                        view.draw(Canvas(image))
+                        assertTrue("Removing P2 returns P1 to one full viewport", image.getPixel(w / 2, h / 2) != 0)
+                    } finally { image.recycle() }
+                }
+            } finally { view.release() }
+        }
+    }
+
+    @Test
+    fun offscreenEffectSourcesStillRenderLasersAndBlastRingsCrossingTheViewportEdge() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            val image = Bitmap.createBitmap(1000, 1600, Bitmap.Config.ARGB_8888)
+            val clock = NativeArenaView::class.java.getDeclaredField("frameTime").apply { isAccessible = true }
+            fun coordinate(name: String) = NativeArenaView::class.java.getDeclaredField(name).apply { isAccessible = true }.getDouble(view)
+            try {
+                view.layout(0, 0, 1000, 1600); view.showControls = false
+                clock.setDouble(view, 100.0)
+                val state = ArenaSnapshot(tick = 1, tanks = listOf(ArenaTank(id = 1, x = 0.0, y = 0.0)))
+                view.submit(state, 1, null); view.draw(Canvas(image))
+                val left = coordinate("worldLeft")
+                val baseline = IntArray(image.width * image.height)
+                image.getPixels(baseline, 0, image.width, 0, 0, image.width, image.height)
+                state.effects = listOf(
+                    ArenaEffect(id = 10, kind = "laser", x = left - 100, y = 0.0, points = listOf(BeamPoint(left - 100, 0.0), BeamPoint(left + 150, 0.0))),
+                    ArenaEffect(id = 11, kind = "blast", x = left - 50, y = 150.0),
+                )
+                view.submit(state, 1, null)
+                clock.setDouble(view, 100.12)
+                image.eraseColor(0); view.draw(Canvas(image))
+                var laser = 0; var blast = 0
+                val density = view.resources.displayMetrics.density
+                val zoom = NativeArenaView::class.java.getDeclaredField("zoom").apply { isAccessible = true }.getFloat(view)
+                val blastCenterY = image.height / 2 + 150 * zoom * density
+                for (x in 0..30) for (y in 0 until image.height) if (image.getPixel(x, y) != baseline[y * image.width + x]) {
+                    if (kotlin.math.abs(y - image.height / 2) < 30) laser++
+                    if (kotlin.math.abs(y - blastCenterY) < 150) blast++
+                }
+                assertTrue("A laser with an offscreen source crosses the clipped edge", laser > 20)
+                assertTrue("A blast with an offscreen center retains its visible expanding ring", blast > 20)
+            } finally { view.release(); image.recycle() }
+        }
+    }
+
+    @Test
+    fun pairedInfinityDrawingReportsItsMeasuredCostWithoutDoubleCountingFrames() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            val image = Bitmap.createBitmap(1000, 1600, Bitmap.Config.ARGB_8888)
+            val state = ArenaSnapshot(tick = 1, tanks = (0..25).map { i ->
+                ArenaTank(id = i + 1, name = "Tank$i", x = if (i % 2 == 0) (i % 5) * 44.0 else 10000 + (i % 5) * 44.0,
+                    y = (i % 6) * 44.0, colorIndex = i % 8, power = "rapid", powerTime = 10.0, machineRounds = 180)
+            }, bullets = (0..150).map { i -> ArenaBullet(id = i + 100, x = if (i % 2 == 0) i % 300.0 else 10000 + i % 300.0, y = i % 200.0, vx = 500.0, vy = 0.0, kind = "rapid") })
+            try {
+                view.layout(0, 0, 1000, 1600); view.showControls = false
+                val report = ArrayList<String>()
+                for (paired in listOf(false, true)) {
+                    view.submit(state, 1, InfiniteMaze(137), if (paired) 2 else null)
+                    repeat(15) { view.draw(Canvas(image)) }
+                    val before = view.renderedFrames
+                    val costs = (0 until 80).map { view.draw(Canvas(image)); view.lastRenderNanos }.sorted()
+                    assertEquals(80, view.renderedFrames - before)
+                    report += "paired=$paired softwareCanvasMs p50=${costs[40] / 1e6} p95=${costs[76] / 1e6} max=${costs.last() / 1e6}"
+                }
+                java.io.File(instrumentation.targetContext.cacheDir, "paired-viewport-benchmark.txt").writeText(report.joinToString("\n"))
+            } finally { view.release(); image.recycle() }
+        }
+    }
+
+    @Test
     fun powerCountsKeepTheirBackingWidthAndHaveABlackOutlineAtEveryZoom() {
         main {
             val view = NativeArenaView(instrumentation.targetContext)

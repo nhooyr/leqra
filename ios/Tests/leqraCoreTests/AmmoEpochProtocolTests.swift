@@ -39,6 +39,23 @@ final class AmmoEpochProtocolTests: XCTestCase {
         for bad: [Any] in [[-1], [1.5], [true], ["7"]] { XCTAssertThrowsError(try fixed(epochs: bad)) }
     }
 
+    func testFixedPacketsRetainFinalGrenadeControlWithoutChargingTheFreshMagazine() throws {
+        for retained: UInt64 in [0, 7, ArenaTank.maximumAmmoEpoch] {
+            let fresh = ArenaTank.nextAmmoEpoch(retained)
+            let object: [String: Any] = ["phase": "playing", "tick": 2,
+                "tanks": [["id": 0, "alive": true, "power": "", "ammoEpoch": fresh, "grenadeEpoch": retained]],
+                "bullets": [["id": 9, "owner": 0, "kind": "grenade", "ammoEpoch": retained, "life": 1.8]]]
+            let result = try SnapshotDecoder.normalized(data: JSONSerialization.data(withJSONObject: object), previousWorld: nil)
+            let state = try JSONDecoder().decode(ArenaSnapshot.self, from: result.data)
+            let tank = try XCTUnwrap(state.tanks.first)
+            XCTAssertEqual(tank.grenadeEpoch, retained); XCTAssertEqual(tank.grenades, 1)
+            XCTAssertEqual(tank.grenadeLife, 1.8); XCTAssertEqual(tank.ammoUsed, 0)
+            var delayed = state; delayed.bullets = []
+            let readout = PilotReadout(tank: tank, snapshot: delayed, infinity: false)
+            XCTAssertEqual(readout.available, 5); XCTAssertEqual(readout.fireLabel, "BOOM")
+        }
+    }
+
     func testAuthoritativeEpochAdoptsFreshAmmoWithoutDroppingUnacknowledgedMovement() throws {
         var sent: [GameInput] = []
         let timeline = RenderTimeline(localID: 1) { tank, input, dt in if input.forward { tank.x += 120 * dt } }

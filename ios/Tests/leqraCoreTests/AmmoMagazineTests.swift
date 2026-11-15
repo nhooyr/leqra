@@ -88,12 +88,17 @@ final class AmmoMagazineTests: XCTestCase {
             let tank = arena.snapshot.tanks[0]
             XCTAssertEqual(tank.power, "", weapon); XCTAssertEqual(tank.ammoEpoch, 5, weapon)
             XCTAssertEqual(tank.cooldown, 0, weapon); XCTAssertEqual(tank.cooldownTotal, 0, weapon)
-            XCTAssertEqual(tank.ammoUsed, 0, weapon); XCTAssertEqual(tank.grenades, 0, weapon)
+            XCTAssertEqual(tank.ammoUsed, 0, weapon); XCTAssertEqual(tank.grenades, weapon == "grenade" ? 1 : 0, weapon)
             XCTAssertEqual(PilotReadout(tank: tank, snapshot: arena.snapshot, infinity: !finite).available, 5, weapon)
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
             XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, weapon)
             arena.step(input: GameInput(), dt: 1 / 60)
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            if weapon == "grenade" {
+                XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty }, "The first new press pops the final grenade")
+                arena.step(input: GameInput(), dt: 1 / 60)
+                arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            }
             XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, weapon)
         } }
     }
@@ -185,6 +190,13 @@ final class AmmoMagazineTests: XCTestCase {
                 arena.captureFire(true, player: 1)
                 if endsReleased { arena.captureFire(false, player: 1) }
                 arena.step(input: GameInput(fire: !endsReleased), dt: 1 / 60)
+                if weapon == "grenade" {
+                    XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty }, "A quick press pops the final grenade instead")
+                    arena.captureFire(false, player: 1)
+                    arena.captureFire(true, player: 1)
+                    if endsReleased { arena.captureFire(false, player: 1) }
+                    arena.step(input: GameInput(fire: !endsReleased), dt: 1 / 60)
+                }
                 XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty && $0.ammoEpoch == 5 }.count, 1, weapon)
                 for _ in 0..<5 { arena.step(input: GameInput(fire: !endsReleased), dt: 1 / 60) }
                 XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty && $0.ammoEpoch == 5 }.count, 1, weapon)

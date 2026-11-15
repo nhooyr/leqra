@@ -66,6 +66,7 @@ object ProtocolJson {
             killedBy = json.optString("killedBy", ""),
             killedByColor = json.optString("killedByColor", ""),
             ammoEpoch = json.ammoEpoch(),
+            grenadeEpoch = if (json.has("grenadeEpoch") && !json.isNull("grenadeEpoch")) json.ammoEpoch("grenadeEpoch") else null,
         )
 
     fun arenaBullet(json: JSONObject) =
@@ -284,7 +285,7 @@ internal fun JSONObject.number(key: String, fallback: Double = 0.0): Double {
     return value.toDouble().also { require(it.isFinite()) }
 }
 
-internal fun JSONObject.ammoEpoch(): Long = if (isNull("ammoEpoch")) 0 else number("ammoEpoch").let {
+internal fun JSONObject.ammoEpoch(name: String = "ammoEpoch"): Long = if (isNull(name)) 0 else number(name).let {
     require(it >= 0 && it <= AmmoEpoch.maximum && it == it.toLong().toDouble()) { "Invalid ammunition epoch." }
     it.toLong()
 }

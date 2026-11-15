@@ -60,7 +60,7 @@ class BotStandingsUiTest {
                         activity.requestedOrientation = orientation
                         set(session, "screen", screen)
                         set(session, "localID", 1)
-                        set(session, "localID2", null)
+                        set(session, "localID2", if (screen == Screen.PLAYING) 6 else null)
                         set(session, "publicStatus", PublicStatus(2, leaders.size, 32, leaders.mapIndexed { index, p -> PublicLeader(p.id, p.name, p.score, p.colorIndex, index + 1, p.bot, p.difficulty) }, 4.0))
                         set(session, "snapshot", ArenaSnapshot(leaderboard = leaders))
                         set(activity, "showScores", true)
@@ -82,7 +82,9 @@ class BotStandingsUiTest {
                             assertTrue(badge.textSize / badge.resources.displayMetrics.scaledDensity >= 10)
                         }
                         assertTrue(labels.any { it.text.toString() == "5. Bot Rust" })
-                        assertTrue(labels.any { it.text.toString() == "6. Godlike Bot 99" })
+                        val secondary = labels.single { it.text.toString().startsWith("6. Godlike Bot 99") }
+                        assertEquals(screen == Screen.PLAYING, secondary.typeface.isBold)
+                        assertEquals("6. Godlike Bot 99" + if (screen == Screen.PLAYING) " (P2)" else "", secondary.text.toString())
                         assertFalse(labels.any { it.text.toString() == "BOT" || it.text.contains(" - Dumb") || it.text.contains(" - Normal") || it.text.contains(" - Medium") || it.text.contains(" - Godlike") })
                         assertTrue(labels.all { it.ellipsize == null })
                         val identity = labels.single { it.text.toString().startsWith("1. pilot#ABC234") }

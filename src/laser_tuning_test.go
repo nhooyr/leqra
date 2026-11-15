@@ -41,10 +41,10 @@ func TestDoubledUltrawideLaserBudgetSurvivesMoreThan128NarrowCorridorReflections
 	}
 }
 
-func TestLaserAndCannonReloadAreReducedByOneThird(t *testing.T) {
-	want := .85 * 2 / 3
+func TestLaserAndCannonReloadAreTwiceAsFast(t *testing.T) {
+	want := .85 / 3
 	if math.Abs(laserCooldown-want) > 1e-12 || math.Abs(cannonCooldown-want) > 1e-12 {
-		t.Fatal("weapon reloads were not reduced by one third")
+		t.Fatal("weapon reloads were not halved")
 	}
 	for _, kind := range []string{"laser", "cannon"} {
 		g := battle(1)
@@ -60,6 +60,47 @@ func TestLaserAndCannonReloadAreReducedByOneThird(t *testing.T) {
 		a.fire(p)
 		if p.kit.Cooldown != want || p.kit.CooldownTotal != want || p.kit.Charges != 2 {
 			t.Fatal("Infinity weapon did not use the shared reload", kind, p.kit.Cooldown, p.kit.Charges)
+		}
+	}
+}
+
+func TestLaserAndCannonHeldFireUsesSeventeenTickReload(t *testing.T) {
+	for _, kind := range []string{"laser", "cannon"} {
+		g := battle(2)
+		for _, tank := range g.Tanks {
+			if tank != nil {
+				tank.Invulnerable = 1000
+			}
+		}
+		pilot := g.Tanks[0]
+		g.grantPower(pilot, kind)
+		g.weaponControl(pilot, true, true)
+		for range 16 {
+			g.step(tickDT, [maxTanks]Input{{Fire: true}}, testPlayers(2))
+		}
+		if pilot.ShotSerial != 1 {
+			t.Fatal("weapon fired before its seventeenth reload tick", kind, pilot.ShotSerial)
+		}
+		g.step(tickDT, [maxTanks]Input{{Fire: true}}, testPlayers(2))
+		if pilot.ShotSerial != 2 {
+			t.Fatal("weapon missed its seventeenth reload tick", kind, pilot.ShotSerial, pilot.Cooldown)
+		}
+		a := newSeededInfiniteArena(37)
+		p := a.join(fakeClient(), "Pilot", time.Unix(0, 0))
+		p.kit.Invulnerable, p.kit.SpawnProtected = 0, false
+		applyPower(&p.kit, kind, 15, 8)
+		a.weaponControl(p, true, true)
+		for range 16 {
+			a.advanceEquipment(p)
+			a.weaponControl(p, true, false)
+		}
+		if p.kit.ShotSerial != 1 {
+			t.Fatal("Infinity fired before its seventeenth reload tick", kind, p.kit.ShotSerial)
+		}
+		a.advanceEquipment(p)
+		a.weaponControl(p, true, false)
+		if p.kit.ShotSerial != 2 {
+			t.Fatal("Infinity missed its seventeenth reload tick", kind, p.kit.ShotSerial, p.kit.Cooldown)
 		}
 	}
 }

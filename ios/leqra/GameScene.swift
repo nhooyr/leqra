@@ -45,6 +45,7 @@ final class GameScene: SKScene {
     enum LayoutMode { case infinity, fixed }
     var onFrame: ((TimeInterval) -> Void)?
     var input = GameInput() { didSet { if oldValue.fire != input.fire { onFireChanged?(input.fire) } } }
+    private var fireInputSources = FireInputSources()
     var onFireChanged: ((Bool) -> Void)?
     var onControlsReset: (() -> Void)?
     var localFireRecoil: ((ArenaTank) -> Double)?
@@ -345,7 +346,7 @@ final class GameScene: SKScene {
         path.addArc(center: .zero, radius: 53.5, startAngle: .pi / 2,
                     endAngle: .pi / 2 - CGFloat(fireProgress) * .pi * 2, clockwise: true)
         fireReadyRing.path = path
-        fireButton.fillTexture = NativeArt.fireButton(held: fireTouch != nil, detonate: detonate)
+        fireButton.fillTexture = NativeArt.fireButton(held: input.fire, detonate: detonate)
         fireButton.fillColor = .white
     }
 
@@ -370,7 +371,7 @@ final class GameScene: SKScene {
         stickKnob.fillTexture = NativeArt.stickKnob()
         stickKnob.strokeColor = UIColor(hex: 0x506d80)
         fireButton.fillColor = .white
-        fireButton.fillTexture = NativeArt.fireButton(held: false, detonate: fireTitle == "BOOM")
+        fireButton.fillTexture = NativeArt.fireButton(held: input.fire, detonate: fireTitle == "BOOM")
         fireButton.strokeColor = UIColor(hex: 0x40d5ff).withAlphaComponent(0.63)
         stickBase.position = stickOrigin
         if stickTouch == nil { stickKnob.position = stickOrigin }
@@ -408,6 +409,7 @@ final class GameScene: SKScene {
         input.reverse = false
         input.left = false
         input.right = false
+        fireInputSources.reset()
         input.fire = false
         input.stickX = 0
         input.stickY = 0
@@ -931,8 +933,7 @@ final class GameScene: SKScene {
                 updateStick(location)
             } else if fireTouch == nil && location.x >= size.width / 2 && location.y < max(210, size.height * 0.38) {
                 fireTouch = touch
-                input.fire = true
-                fireButton.fillTexture = NativeArt.fireButton(held: true, detonate: fireTitle == "BOOM")
+                setFireSource(.touch, down: true)
                 impact.prepare()
             }
         }
@@ -955,8 +956,7 @@ final class GameScene: SKScene {
             }
             if touch === fireTouch {
                 fireTouch = nil
-                input.fire = false
-                fireButton.fillTexture = NativeArt.fireButton(held: false, detonate: fireTitle == "BOOM")
+                setFireSource(.touch, down: false)
             }
         }
     }
@@ -973,6 +973,13 @@ final class GameScene: SKScene {
         input.aimOnly = false
         stickKnob.position = CGPoint(x: stickOrigin.x + dx * reach / divisor,
                                     y: stickOrigin.y + dy * reach / divisor)
+    }
+
+    func setKeyboardFire(_ down: Bool) { setFireSource(.keyboard, down: down) }
+
+    private func setFireSource(_ source: FireInputSources.Source, down: Bool) {
+        input.fire = fireInputSources.set(source, down: down)
+        fireButton.fillTexture = NativeArt.fireButton(held: input.fire, detonate: fireTitle == "BOOM")
     }
 }
 

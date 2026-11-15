@@ -26,7 +26,7 @@ test('only the device primary and owned co-pilot are bold in FFA and team lineup
   assert.deepEqual(Array.from(rows,p=>[p.id,p.local]),[[0,true],[1,false],[2,true],[3,false],[4,false]]);
   const names=Array.from(html.matchAll(ffa?/<div class="player-name([^"]*)">([^<]*)<\/div>/g:/<div class="lineup-member([^"]*)">([^<]*)<\/div>/g),match=>({local:match[1].includes('local-pilot'),name:match[2]}));
   assert.deepEqual(names.map(p=>p.local),[true,false,true,false,false]);
-  assert.equal(names[2].name,'OWN &lt;WING&gt; (P2)');assert.equal(names[4].name,'REMOTE WING (P2)');
+  assert.equal(names[2].name,'OWN &lt;WING&gt; (P2)');assert.equal(names[4].name,'REMOTE WING');
   assert.equal(JSON.stringify(players),original,'ownership styling never annotates raw room members');
   const writes=$('roster').writes;s.localPlayerID=()=>3;s.renderLineup();
   assert.equal($('roster').writes,writes+1,'identity ownership participates in the presentation cache');
@@ -125,7 +125,7 @@ test('public Infinity lineup excludes configured bots and presents room friends 
  players.push({id:2,name:'FRIEND',kind:'human',team:1,color:'#00ff00'});
  s.renderLineup();const html=$('roster').innerHTML;
  assert.doesNotMatch(html,/RUST|SQUAD|score-pips/);
- assert.match(html,/>PILOT \(P1\)<\/div>/);assert.match(html,/>FRIEND \(P1\)<\/div>/);
+ assert.match(html,/>PILOT \(P1\)<\/div>/);assert.match(html,/>FRIEND<\/div>/);
  assert.equal((html.match(/class="roster-row /g)||[]).length,2);
  assert.equal(rules.teamMode,'teams');assert.equal(players[0].team,1);
 });

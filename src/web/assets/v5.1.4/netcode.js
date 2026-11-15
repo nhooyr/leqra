@@ -37,7 +37,9 @@
  const delta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
  const neutral=()=>({forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0,aimOnly:false});
  const ammoEpoch=t=>Number.isSafeInteger(t?.ammoEpoch)&&t.ammoEpoch>=0?t.ammoEpoch:0;
+ const grenadeEpoch=t=>Number.isSafeInteger(t?.grenadeEpoch)&&t.grenadeEpoch>=0?t.grenadeEpoch:ammoEpoch(t);
  function refillAmmo(t){
+  delete t.grenadeEpoch;
   t.ammoEpoch=ammoEpoch(t)>=Number.MAX_SAFE_INTEGER?1:ammoEpoch(t)+1;
   t.cooldown=t.cooldownTotal=t.ammoUsed=t.grenades=t.grenadeLife=0;
   t.machineRounds=t.power==='rapid'?180:0;
@@ -47,7 +49,12 @@
   if(t.power&&t.fireHeld)t.fireBlocked=true;
   t.power=empty;t.powerTime=t.charges=t.machineRounds=0;
  }
- function firePressInterval(t){return t.starmanTime>0?.065:t.power==='rapid'?.15:t.power==='scatter'?.27:t.power==='homing'?.36:t.power==='laser'||t.power==='cannon'?.85*2/3:.34;}
+ function refillDepletedWeapon(t,empty=null){
+  const retained=t.power==='grenade'?grenadeEpoch(t):null;
+  clearWeapon(t,empty);refillAmmo(t);
+  if(retained!==null)t.grenadeEpoch=retained;
+ }
+ function firePressInterval(t){return t.starmanTime>0?.065:t.power==='rapid'?.15:t.power==='scatter'?.27:t.power==='homing'?.36:t.power==='laser'||t.power==='cannon'?.85/3:.34;}
  function ammoUnavailable(t,used=t.ammoUsed||0){
   if(t.starmanTime>0)return false;
   if(t.power==='laser')return !(t.charges>0);
@@ -81,12 +88,11 @@
  // Identical movement order, rates, angle normalization and wall collision to Go.
  // No fire, damage or scoring is performed here.
  function movementStacks(t){return Math.max(t.speedTime>0?clamp(t.speedStacks||1,1,5):0,t.starmanTime>0?2:0);}
- function move(t,input,dt,moveTank,ageStarman=true){
+ function move(t,input,dt,moveTank,ageStarman=true,ageGhost=true){
   if(ageStarman)t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);
   t.speedTime=Math.max(0,(t.speedTime||0)-dt);
   if(t.speedTime<=0)t.speedStacks=0;
-  const wasGhost=t.ghostTime>0;t.ghostTime=Math.max(0,(t.ghostTime||0)-dt);
-  if(wasGhost&&t.ghostTime===0)moveTank(t,0,0,true);
+  if(ageGhost){const wasGhost=t.ghostTime>0;t.ghostTime=Math.max(0,(t.ghostTime||0)-dt);if(wasGhost&&t.ghostTime===0)moveTank(t,0,0,true);}
   const x=t.x,y=t.y;
   const stacks=movementStacks(t);
   const speedScale=1+.65*stacks,turnScale=1+.25*stacks;
@@ -633,7 +639,7 @@
   sync(t,phase,now){
    let p=this.pilots.get(t.id);const life=t.spawnSerial||0,serial=t.shotSerial||0;
    if(!p||p.life!==life){
-    this.remove(t.id);p={life,serial,next:serial,ammoEpoch:ammoEpoch(t),power:t.power||'',powerUntil:Infinity,depletedAt:Infinity,depletedShot:Infinity,depletedSequence:0,holdSequence:0,releasedAt:-Infinity,until:now+(t.cooldown||0)*1000,total:t.cooldownTotal||.34,held:false,blocked:false};
+    this.remove(t.id);p={life,serial,next:serial,ammoEpoch:ammoEpoch(t),grenadeEpoch:grenadeEpoch(t),power:t.power||'',powerUntil:Infinity,depletedAt:Infinity,depletedShot:Infinity,depletedSequence:0,holdSequence:0,releasedAt:-Infinity,until:now+(t.cooldown||0)*1000,total:t.cooldownTotal||.34,held:false,blocked:false};
     this.pilots.set(t.id,p);
    }
    if(phase!=='playing'||!t.alive){
@@ -651,6 +657,7 @@
    }
    if(p.power!==(t.power||'')||p.ammoEpoch!==ammoEpoch(t))p.depletedAt=p.depletedShot=Infinity;
    p.power=t.power||'';
+   p.grenadeEpoch=grenadeEpoch(t);
    p.powerUntil=p.power&&Number.isFinite(t.powerTime)&&t.powerTime>0?now+1000*(t.powerTime+Math.max(0,t.starmanTime||0)):Infinity;
    if(p.ammoEpoch!==ammoEpoch(t)){p.ammoEpoch=ammoEpoch(t);p.until=now+Math.max(0,t.cooldown||0)*1000;p.total=t.cooldownTotal||.34;}
    if(serial!==p.serial){
@@ -708,7 +715,7 @@
    return v;
   }
   heard(id,life,shot){return this.soundKeys.has(this.key(id,life,shot));}
-  pendingGrenade(id){const p=this.pilots.get(id);for(const v of this.previews.values())if(v.owner===id&&ammoEpoch(v)===(p?.ammoEpoch||0)&&v.power==='grenade'&&!v.accepted)return true;return false;}
+  pendingGrenade(id){const p=this.pilots.get(id);for(const v of this.previews.values())if(v.owner===id&&ammoEpoch(v)===(p?.grenadeEpoch||0)&&v.power==='grenade'&&!v.accepted)return true;return false;}
   prune(now,activeIDs){
    for(const [k,v]of this.previews)if(now>v.expires||!activeIDs.has(v.owner))this.previews.delete(k);
    for(const [k,until]of this.soundKeys)if(now>until)this.soundKeys.delete(k);
@@ -716,5 +723,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({wallLaunch,expandMachineBullets,ammoEpoch,refillAmmo,clearWeapon,firePressInterval,ammoUnavailable,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,movementStacks,presentation,visualMove,RicochetPath,ProjectileFlights,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({wallLaunch,expandMachineBullets,ammoEpoch,grenadeEpoch,refillAmmo,clearWeapon,refillDepletedWeapon,firePressInterval,ammoUnavailable,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,movementStacks,presentation,visualMove,RicochetPath,ProjectileFlights,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
 });

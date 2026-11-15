@@ -133,21 +133,16 @@ public enum TankMovement {
         return (atan2(sin(angle), cos(angle)), throttle)
     }
 
-    public static func step(tank: inout ArenaTank, input: GameInput, dt: Double, maze: InfiniteMaze, ageStarman: Bool = true) {
+    public static func step(tank: inout ArenaTank, input: GameInput, dt: Double, maze: InfiniteMaze, ageStarman: Bool = true, ageGhost: Bool = true) {
         if let world = maze.world {
-            step(tank: &tank, input: input, dt: dt, walls: world.walls, width: world.width, height: world.height, ageStarman: ageStarman)
+            step(tank: &tank, input: input, dt: dt, walls: world.walls, width: world.width, height: world.height, ageStarman: ageStarman, ageGhost: ageGhost)
             return
         }
         guard dt > 0, dt <= 0.1, tank.hp > 0 else { return }
         if ageStarman { tank.starmanTime = max(0, tank.starmanTime - dt) }
         tank.speedTime = max(0, tank.speedTime - dt)
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
-        let wasGhost = tank.ghostTime > 0
-        tank.ghostTime = max(0, tank.ghostTime - dt)
-        if wasGhost && tank.ghostTime == 0 {
-            let point = maze.phaseExit(x: tank.x, y: tank.y)
-            tank.x = point.x; tank.y = point.y
-        }
+        if ageGhost { advanceGhost(tank: &tank, dt: dt, maze: maze) }
         let stacks = effectiveSpeedStacks(tank)
         let steering = steer(angle: tank.angle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
         tank.angle = steering.angle
@@ -162,14 +157,12 @@ public enum TankMovement {
     /// Prediction for fixed mazes uses the server's circle separation and map
     /// bounds, rather than Infinity's endpoint rejection.
     public static func step(tank: inout ArenaTank, input: GameInput, dt: Double,
-                            walls: [MazeWall], width: Double, height: Double, ageStarman: Bool = true) {
+                            walls: [MazeWall], width: Double, height: Double, ageStarman: Bool = true, ageGhost: Bool = true) {
         guard dt > 0, dt <= 0.1, tank.hp > 0, width >= 42, height >= 42 else { return }
         if ageStarman { tank.starmanTime = max(0, tank.starmanTime - dt) }
         tank.speedTime = max(0, tank.speedTime - dt)
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
-        let wasGhost = tank.ghostTime > 0
-        tank.ghostTime = max(0, tank.ghostTime - dt)
-        if wasGhost && tank.ghostTime == 0 { finishGhost(tank: &tank, walls: walls, width: width, height: height) }
+        if ageGhost { advanceGhost(tank: &tank, dt: dt, walls: walls, width: width, height: height) }
         let stacks = effectiveSpeedStacks(tank)
         let steering = steer(angle: tank.angle, input: input, turnScale: 1 + 0.25 * Double(stacks), dt: dt)
         tank.angle = steering.angle
@@ -218,14 +211,12 @@ public enum TankMovement {
         tank.y = min(max(tank.y, 21), world.height - 21)
     }
 
-    static func stepBot(tank: inout ArenaTank, input: GameInput, dt: Double, world: ArenaWorld, ageStarman: Bool = true) {
+    static func stepBot(tank: inout ArenaTank, input: GameInput, dt: Double, world: ArenaWorld, ageStarman: Bool = true, ageGhost: Bool = true) {
         guard dt > 0, dt <= 0.1, tank.hp > 0 else { return }
         if ageStarman { tank.starmanTime = max(0, tank.starmanTime - dt) }
         tank.speedTime = max(0, tank.speedTime - dt)
         if tank.speedTime <= 0 { tank.speedStacks = 0 }
-        let wasGhost = tank.ghostTime > 0
-        tank.ghostTime = max(0, tank.ghostTime - dt)
-        if wasGhost && tank.ghostTime == 0 { finishGhost(tank: &tank, walls: world.walls, width: world.width, height: world.height) }
+        if ageGhost { advanceGhost(tank: &tank, dt: dt, walls: world.walls, width: world.width, height: world.height) }
         let tuning = BotDifficulty(rawValue: tank.difficulty) ?? .normal
         let stacks = effectiveSpeedStacks(tank)
         var throttle = 0.0
@@ -242,6 +233,25 @@ public enum TankMovement {
         displace(tank: &tank, dx: cos(tank.angle) * speed * throttle * dt,
                  dy: sin(tank.angle) * speed * throttle * dt, world: world)
         tank.track += hypot(tank.x - x, tank.y - y)
+    }
+
+    static func advanceGhost(tank: inout ArenaTank, dt: Double, maze: InfiniteMaze) {
+        if let world = maze.world {
+            advanceGhost(tank: &tank, dt: dt, walls: world.walls, width: world.width, height: world.height)
+            return
+        }
+        let wasGhost = tank.ghostTime > 0
+        tank.ghostTime = max(0, tank.ghostTime - dt)
+        if wasGhost && tank.ghostTime == 0 {
+            let point = maze.phaseExit(x: tank.x, y: tank.y)
+            tank.x = point.x; tank.y = point.y
+        }
+    }
+
+    private static func advanceGhost(tank: inout ArenaTank, dt: Double, walls: [MazeWall], width: Double, height: Double) {
+        let wasGhost = tank.ghostTime > 0
+        tank.ghostTime = max(0, tank.ghostTime - dt)
+        if wasGhost && tank.ghostTime == 0 { finishGhost(tank: &tank, walls: walls, width: width, height: height) }
     }
 
     private static func finishGhost(tank: inout ArenaTank, walls: [MazeWall], width: Double, height: Double) {

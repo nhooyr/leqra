@@ -111,7 +111,9 @@ struct ContentView: View {
                 Text("WAVE \(survival.wave)"); Spacer(); Text("\(survival.enemiesRemaining) ENEMIES")
             } else if objective.mode == "ctf" {
                 ForEach(Array(objective.flags.enumerated()), id: \.offset) { _, flag in
-                    Text("TEAM \(flag.team): \(flag.home ? "FLAG HOME" : flag.carrier >= 0 ? "FLAG CARRIED" : "FLAG DROPPED")").foregroundStyle(WebStyle.paint(flag.team - 1))
+                    let colors = session.effectiveRules.teamColors
+                    let paint = colors.indices.contains(flag.team - 1) ? colors[flag.team - 1] : flag.team - 1
+                    Text("TEAM \(flag.team): \(flag.home ? "FLAG HOME" : flag.carrier >= 0 ? "FLAG CARRIED" : "FLAG DROPPED")").foregroundStyle(WebStyle.paint(paint))
                 }
             } else {
                 Text(objective.contested ? "HILL CONTESTED" : objective.owner == 0 ? "HILL NEUTRAL" : "HILL CONTROLLED"); Spacer()
@@ -134,8 +136,8 @@ struct ContentView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false)
         } else if session.snapshot.phase == "roundOver", !session.presentingFinalShot {
             VStack(spacing: 8) {
-                Text(session.snapshot.winner < 0 ? "ROUND DRAW" : (session.snapshot.tanks.first { $0.id == session.snapshot.winner }.map { CallsignPolicy.displayName($0.name, bot: $0.bot) } ?? "TANK") + " WINS")
-                    .font(.system(size: 28, weight: .black)).foregroundStyle(WebStyle.accent)
+                Text(session.snapshot.winner < 0 ? "ROUND DRAW" : (session.winnerIdentity?.label ?? "TANK") + " WINS")
+                    .font(.system(size: 28, weight: .black)).foregroundStyle(winnerColor)
                 Text("NEW MAZE IN \(Int(ceil(session.snapshot.phaseTime)))").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
             }.padding(18).background(WebStyle.surface.opacity(0.95), in: RoundedRectangle(cornerRadius: 6))
                 .frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false)
@@ -147,10 +149,11 @@ struct ContentView: View {
             WebPanel(accent: true) {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("MATCH COMPLETE").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
-                    Text(resultTitle).font(.system(size: 32, weight: .black)).foregroundStyle(WebStyle.accent)
-                    if !resultSubtitle.isEmpty { Text(resultSubtitle).font(.system(size: 12)).foregroundStyle(WebStyle.soft) }
+                    Text(resultTitle).font(.system(size: 32, weight: .black)).foregroundStyle(resultTitle == "DEFEAT" ? WebStyle.danger : winnerColor)
+                    if !resultSubtitle.isEmpty { Text(resultSubtitle).font(.system(size: 12)).foregroundStyle(winnerColor) }
                     ForEach(session.standings.prefix(8)) { entry in
-                        HStack { Text(entry.id == session.localID ? session.identity : CallsignPolicy.displayName(entry.name, bot: entry.bot)).fontWeight(entry.id == session.localID ? .bold : .regular); Spacer(); Text("\(entry.score)").font(WebStyle.mono(20)) }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
+                        let seat = session.localPilotSeat(entry.id)
+                        HStack { Text(CallsignPolicy.displayName(entry.name, bot: entry.bot) + (seat.map { " (P\($0))" } ?? "")).fontWeight(seat != nil ? .bold : .regular); Spacer(); Text("\(entry.score)").font(WebStyle.mono(20)) }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
                     }
                     if session.isInfinity {
                         Button("BACK TO ROOM") { session.exitArenaToRoom() }.buttonStyle(WebButtonStyle(kind: .primary))
@@ -168,7 +171,7 @@ struct ContentView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(hex: "#091218").opacity(0.7))
     }
     private var resultTitle: String {
-        if let result = session.snapshot.result { return CallsignPolicy.displayName(result.name, bot: result.team == 0 && session.snapshot.tanks.first(where: { $0.id == result.id })?.bot == true) + " WINS" }
+        if session.snapshot.result != nil { return (session.winnerIdentity?.label ?? "TANK") + " WINS" }
         if let survival = session.snapshot.objectives?.survival { return survival.status == "won" ? "SURVIVAL COMPLETE" : "SQUAD DOWN." }
         if session.snapshot.winner < 0 && session.snapshot.matchStats?.players.contains(where: \.winner) != true { return "MATCH DRAW" }
         let locals = session.snapshot.matchStats?.players.filter { $0.member == session.roomMemberID || $0.controllerMember == session.roomMemberID } ?? []
@@ -181,11 +184,7 @@ struct ContentView: View {
         return resultTitle == "DEFEAT" ? winningSide + " WINS" : ""
     }
     private var winningSide: String {
-        let reportWinner = session.snapshot.matchStats?.players.first(where: \.winner)
-        let tankWinner = session.snapshot.tanks.first { $0.id == session.snapshot.winner }
-        let team = reportWinner?.team ?? tankWinner?.team ?? 0
-        if team > 0 && session.effectiveRules.teamNames.indices.contains(team - 1) { return session.effectiveRules.teamNames[team - 1] }
-        if let reportWinner { return CallsignPolicy.displayName(reportWinner.name, bot: reportWinner.kind == "bot") }
-        return tankWinner.map { CallsignPolicy.displayName($0.name, bot: $0.bot) } ?? "TANK"
+        session.winnerIdentity?.label ?? "TANK"
     }
+    private var winnerColor: Color { session.winnerIdentity.map { WebStyle.mapped($0.color) } ?? WebStyle.accent }
 }

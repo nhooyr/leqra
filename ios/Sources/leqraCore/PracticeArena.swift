@@ -180,7 +180,7 @@ public final class PracticeArena {
             advanceEquipment(index, dt: dt)
             let after = snapshot.tanks[index]
             if before.shield > 0 && after.shield == 0 || before.starmanTime > 0 && after.starmanTime == 0
-                || before.powerTime > 0 && after.powerTime == 0 { expiredEquipment.insert(before.id) }
+                || before.powerTime > 0 && after.powerTime == 0 || before.ghostTime > 0 && after.ghostTime == 0 { expiredEquipment.insert(before.id) }
         }
         parkRoamingBots(finishedLives)
         populateRoamingBots()
@@ -191,10 +191,9 @@ public final class PracticeArena {
             var controls = snapshot.tanks[index].bot ? botInput(index, dt: dt) : input
             movementInputs[snapshot.tanks[index].id] = controls
             let before = snapshot.tanks[index]
-            move(tank: &snapshot.tanks[index], input: controls, dt: dt, ageStarman: false)
+            move(tank: &snapshot.tanks[index], input: controls, dt: dt, ageStarman: false, ageGhost: false)
             let after = snapshot.tanks[index]
-            if expiredEquipment.contains(before.id) || before.speedTime > 0 && after.speedTime == 0
-                || before.ghostTime > 0 && after.ghostTime == 0 { refillAmmo(index) }
+            if expiredEquipment.contains(before.id) || before.speedTime > 0 && after.speedTime == 0 { refillAmmo(index) }
             collectPickups(index)
             if snapshot.tanks[index].bot && fireBlocked.contains(snapshot.tanks[index].id) { controls.fire = false }
             weaponControl(index, fire: controls.fire)
@@ -324,9 +323,9 @@ public final class PracticeArena {
                                          move: movement, canInterpolate: clear)
     }
 
-    private func move(tank: inout ArenaTank, input: GameInput, dt: Double, ageStarman: Bool = true) {
-        if tank.bot, let world = maze.world { TankMovement.stepBot(tank: &tank, input: input, dt: dt, world: world, ageStarman: ageStarman) }
-        else { TankMovement.step(tank: &tank, input: input, dt: dt, maze: maze, ageStarman: ageStarman) }
+    private func move(tank: inout ArenaTank, input: GameInput, dt: Double, ageStarman: Bool = true, ageGhost: Bool = true) {
+        if tank.bot, let world = maze.world { TankMovement.stepBot(tank: &tank, input: input, dt: dt, world: world, ageStarman: ageStarman, ageGhost: ageGhost) }
+        else { TankMovement.step(tank: &tank, input: input, dt: dt, maze: maze, ageStarman: ageStarman, ageGhost: ageGhost) }
     }
 
     private func retireDistantRoamingBots() {
@@ -457,6 +456,7 @@ public final class PracticeArena {
         tank.shield = max(0, tank.shield - dt)
         if tank.shield < 1e-9 { tank.shield = 0; tank.shieldCharges = 0 }
         tank.starmanTime = max(0, tank.starmanTime - dt)
+        TankMovement.advanceGhost(tank: &tank, dt: dt, maze: maze)
         if tank.starmanTime <= 0 {
             tank.powerTime = max(0, tank.powerTime - dt)
             if tank.powerTime < 1e-9 {
@@ -482,22 +482,25 @@ public final class PracticeArena {
         guard pickupRate != "off", !enabledPickups.isEmpty else { return }
         guard time >= nextPickup else { return }
         nextPickup = time + 1.25 + unitRandom() * 1.25
-        let pilot = snapshot.tanks[0]
-        guard pilot.hp > 0 else { return }
-        snapshot.pickups.removeAll { hypot($0.x - pilot.x, $0.y - pilot.y) > 11 * 84 }
-        var nearby = snapshot.pickups.filter { hypot($0.x - pilot.x, $0.y - pilot.y) < 5 * 84 }.count
-        for _ in 0..<90 {
-            guard nearby < 3, snapshot.pickups.count < 6 else { break }
-            let dx = random(7) - 3, dy = random(7) - 3
-            guard dx * dx + dy * dy <= 12 else { continue }
-            let x = (floor(pilot.x / 84) + Double(dx) + 0.5) * 84
-            let y = (floor(pilot.y / 84) + Double(dy) + 0.5) * 84
-            guard !snapshot.tanks.contains(where: { $0.hp > 0 && hypot($0.x - x, $0.y - y) < 0.85 * 84 }),
-                  !snapshot.pickups.contains(where: { hypot($0.x - x, $0.y - y) < 1.1 * 84 }) else { continue }
-            let weighted = enabledPickups.flatMap { kind in Array(repeating: kind, count: kind == "shield" || kind == "speed" ? 6 : kind == "starman" ? 1 : 2) }
-            nextID += 1
-            snapshot.pickups.append(ArenaPickup(id: nextID, x: x, y: y, type: weighted[random(weighted.count)]))
-            nearby += 1
+        let humans = snapshot.tanks.filter { !$0.bot }
+        snapshot.pickups.removeAll { pickup in
+            !humans.contains { hypot(pickup.x - $0.x, pickup.y - $0.y) < 11 * 84 }
+        }
+        let weighted = enabledPickups.flatMap { kind in Array(repeating: kind, count: kind == "shield" || kind == "speed" ? 6 : kind == "starman" ? 1 : 2) }
+        for pilot in humans where pilot.hp > 0 {
+            var nearby = snapshot.pickups.filter { hypot($0.x - pilot.x, $0.y - pilot.y) < 5 * 84 }.count
+            for _ in 0..<90 {
+                guard nearby < 3, snapshot.pickups.count < humans.count * 6 else { break }
+                let dx = random(7) - 3, dy = random(7) - 3
+                guard dx * dx + dy * dy <= 12 else { continue }
+                let x = (floor(pilot.x / 84) + Double(dx) + 0.5) * 84
+                let y = (floor(pilot.y / 84) + Double(dy) + 0.5) * 84
+                guard !snapshot.tanks.contains(where: { $0.hp > 0 && hypot($0.x - x, $0.y - y) < 0.85 * 84 }),
+                      !snapshot.pickups.contains(where: { hypot($0.x - x, $0.y - y) < 1.1 * 84 }) else { continue }
+                nextID += 1
+                snapshot.pickups.append(ArenaPickup(id: nextID, x: x, y: y, type: weighted[random(weighted.count)]))
+                nearby += 1
+            }
         }
     }
 
@@ -649,8 +652,8 @@ public final class PracticeArena {
         case "scatter": return (846, 3.5, 3.9, 0.27, 12)
         case "homing": return (235, 5, 18 * 84 / 235, 0.36, 3)
         case "grenade": return (205, 6, 10, 0.8, 3)
-        case "cannon": return (1128, 14, 5.3, 0.85 * 2 / 3, 3)
-        case "laser": return (0, 3, 0, 0.85 * 2 / 3, 3)
+        case "cannon": return (1128, 14, 5.3, 0.85 / 3, 3)
+        case "laser": return (0, 3, 0, 0.85 / 3, 3)
         default: return (282, 3.5, 5.3, 0.34, 5)
         }
     }
@@ -671,10 +674,12 @@ public final class PracticeArena {
         if !fire || pressed { fireBlocked.remove(tank.id) }
         guard tank.hp > 0, !(tank.spawnProtected && tank.invulnerable > 1e-9) else { return }
         if pressed {
-            let grenades = projectiles.filter { $0.wire.owner == tank.id && $0.wire.ammoEpoch == tank.ammoEpoch && $0.wire.kind == "grenade" }
+            let grenadeEpoch = tank.grenadeEpoch ?? tank.ammoEpoch
+            let grenades = projectiles.filter { $0.wire.owner == tank.id && $0.wire.ammoEpoch == grenadeEpoch && $0.wire.kind == "grenade" }
             if !grenades.isEmpty {
+                snapshot.tanks[index].grenadeEpoch = nil
                 for grenade in grenades { detonate(grenade.wire, flight: terminalFlight(grenade)) }
-                projectiles.removeAll { $0.wire.owner == tank.id && $0.wire.ammoEpoch == tank.ammoEpoch && $0.wire.kind == "grenade" }
+                projectiles.removeAll { $0.wire.owner == tank.id && $0.wire.ammoEpoch == grenadeEpoch && $0.wire.kind == "grenade" }
                 fireBlocked.insert(tank.id)
                 return
             }
@@ -739,6 +744,7 @@ public final class PracticeArena {
             fireBlocked.insert(tank.id)
             snapshot.tanks[index].power = ""; snapshot.tanks[index].powerTime = 0; snapshot.tanks[index].charges = 0
             refillAmmo(index)
+            if tank.power == "grenade" { snapshot.tanks[index].grenadeEpoch = tank.ammoEpoch }
         }
     }
 
@@ -923,6 +929,7 @@ public final class PracticeArena {
             return
         }
         snapshot.tanks[index].hp = 0
+        snapshot.tanks[index].grenadeEpoch = nil
         resetFireInput(player: tank.id)
         if killScoring { snapshot.tanks[index].score -= 1 }
         snapshot.tanks[index].respawnTime = respawnsEnabled ? respawnDelay : 0
@@ -976,9 +983,10 @@ public final class PracticeArena {
         for index in projectiles.indices {
             let owner = projectiles[index].wire.owner
             if projectiles[index].boosted { boosted.append(projectiles[index].wire.id) }
-            if let ownerIndex = tankIndices[owner], projectiles[index].wire.ammoEpoch == snapshot.tanks[ownerIndex].ammoEpoch {
-                if !projectiles[index].boosted { owned[ownerIndex].ammo += 1 }
-                if projectiles[index].wire.kind == "grenade" {
+            if let ownerIndex = tankIndices[owner] {
+                let tank = snapshot.tanks[ownerIndex]
+                if !projectiles[index].boosted && projectiles[index].wire.ammoEpoch == tank.ammoEpoch { owned[ownerIndex].ammo += 1 }
+                if projectiles[index].wire.kind == "grenade" && projectiles[index].wire.ammoEpoch == (tank.grenadeEpoch ?? tank.ammoEpoch) {
                     owned[ownerIndex].grenades += 1
                     owned[ownerIndex].grenadeLife = max(owned[ownerIndex].grenadeLife, projectiles[index].wire.life)
                 }
