@@ -695,6 +695,9 @@ public final class PracticeArena {
             if tank.power == "rapid" { spec.life = max(0, (world.width + world.height) / 2 - 28) / spec.speed }
             if tank.power == "homing" { spec.life = (world.width + world.height) / spec.speed + 0.5 }
         }
+        let rapidCombo = boosted && tank.power == "rapid"
+        let ordinaryRapidDistance = spec.life * spec.speed
+        if rapidCombo { spec.speed *= 2 }
         guard tank.hp > 0, !(tank.spawnProtected && tank.invulnerable > 1e-9),
               boosted || tank.cooldown <= 1e-9 && (tank.power != "rapid" || tank.machineRounds > 0) else { return }
         let offsets: [Double] = tank.power == "scatter" ? [-0.21, 0, 0.21] : [0]
@@ -712,9 +715,16 @@ public final class PracticeArena {
                     continue
                 }
                 nextID += 1
+                let muzzle = max(0, (tank.power == "cannon" ? 32 : 28) - launch.distance)
+                let hiddenPath = launch.distance + muzzle
+                let life: Double
+                if rapidCombo {
+                    if let world = maze.world { life = max(0, world.width + world.height - hiddenPath) / spec.speed }
+                    else { life = (2 * ordinaryRapidDistance + hiddenPath) / spec.speed }
+                } else { life = spec.life }
                 var projectile = Projectile(wire: ArenaBullet(id: nextID, x: launch.x, y: launch.y,
                                                              vx: launch.ux * spec.speed, vy: launch.uy * spec.speed,
-                                                             owner: tank.id, kind: tank.power, colorIndex: tank.colorIndex, life: spec.life,
+                                                             owner: tank.id, kind: tank.power, colorIndex: tank.colorIndex, life: life,
                                                              ammoEpoch: tank.ammoEpoch), boosted: boosted)
                 projectile.flightTick = Double(snapshot.tick) - 1
                 projectile.flightBirth = CannonFlightPoint(x: launch.x, y: launch.y, tick: projectile.flightTick)
@@ -724,10 +734,9 @@ public final class PracticeArena {
                     projectile.seekDelay = 0.04
                     if projectile.rangeLeft != nil { projectile.rangeLeft! -= launch.distance }
                 }
-                let muzzle = max(0, (tank.power == "cannon" ? 32 : 28) - launch.distance)
                 if advance(&projectile, dt: muzzle / spec.speed) { projectiles.append(projectile) }
             }
-            if !boosted || tank.power == "grenade" || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) {
+            if !boosted || tank.power == "rapid" || tank.power == "grenade" || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) {
                 nextBoostEffects[tank.id] = time + 4 / 60
                 effect("shot:" + tank.power, x: tank.x, y: tank.y, owner: tank.id)
             }

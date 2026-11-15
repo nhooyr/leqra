@@ -853,8 +853,8 @@ func (g *Game) fire(t *Tank) bool {
 	speed, life := 282.0, 5.3
 	if t.Power == "rapid" {
 		cooldown = 0
-		speed = machineSpeed
-		life = g.machineTravelRange() / machineSpeed
+		speed = machineProjectileSpeed(t)
+		life = machineProjectileRange(t, g.machineTravelRange()) / speed
 	}
 	if t.Power == "scatter" {
 		cooldown = .27
@@ -935,7 +935,7 @@ func (g *Game) fire(t *Tank) bool {
 				b.RangeLeft = math.Max(0, g.missileTravelRange()-launchDistance)
 				b.rangeSet = true
 			} else {
-				b.Life = math.Max(0, (g.machineTravelRange()-launchDistance)/machineSpeed)
+				b.Life = math.Max(0, (machineProjectileRange(t, g.machineTravelRange())-launchDistance)/speed)
 			}
 		}
 		{

@@ -231,8 +231,11 @@ func (g *Game) botLead(t, e *Tank, d botTuning) (float64, float64) {
 	if t.Power == "homing" {
 		speed = missileSpeed
 	}
-	if t.Power == "rapid" || t.Power == "scatter" {
-		speed = machineSpeed
+	if t.Power == "rapid" {
+		speed = machineProjectileSpeed(t)
+	}
+	if t.Power == "scatter" {
+		speed = shotgunSpeed
 	}
 	if t.Power == "cannon" {
 		speed = cannonSpeed
@@ -259,7 +262,7 @@ func (g *Game) botShot(t, e *Tank, angle, ex, ey float64, banks int) bool {
 	left := cellSize * 7
 	radius, targetRadius := 3.5, e.R+2
 	if t.Power == "rapid" {
-		left = g.machineTravelRange()
+		left = machineProjectileRange(t, g.machineTravelRange())
 		radius, targetRadius = machineRadius, e.R+machineRadius
 	}
 	if t.Power == "cannon" {

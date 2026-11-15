@@ -22,6 +22,90 @@ class RenderBehaviorTest {
     }
 
     @Test
+    fun fastRapidTracersKeepTheirTemporalLengthAndHeadSizeAcrossViewportEdges() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            val image = Bitmap.createBitmap(1000, 1600, Bitmap.Config.ARGB_8888)
+            val tank = ArenaTank(id = 1, x = 0.0, y = 0.0)
+            val bullet = ArenaBullet(id = 10, x = 90.0, y = 42.0, vx = 846.0, vy = 0.0, kind = "rapid", colorIndex = 1)
+            val state = ArenaSnapshot(tick = 1, tanks = listOf(tank), bullets = listOf(bullet))
+            fun field(name: String) = NativeArenaView::class.java.getDeclaredField(name).apply { isAccessible = true }
+            try {
+                view.layout(0, 0, image.width, image.height); view.showControls = false
+                fun draw() { image.eraseColor(0); view.submit(state, 1, null); view.draw(Canvas(image)) }
+                draw()
+                val batch = (field("rapidBatches").get(view) as Array<*>)[1]!!
+                fun batchField(name: String) = batch.javaClass.getDeclaredField(name).apply { isAccessible = true }
+                val heads = batchField("heads").get(batch) as FloatArray
+                val tails = batchField("tails").get(batch) as FloatArray
+                val head = heads.copyOf(2)
+                assertEquals(8.0, kotlin.math.hypot((tails[2] - tails[0]).toDouble(), (tails[3] - tails[1]).toDouble()), 1e-6)
+                val scale = field("zoom").getFloat(view) * view.resources.displayMetrics.density
+                val centerX = (image.width / 2 + bullet.x * scale).toInt()
+                val centerY = (image.height / 2 + bullet.y * scale).toInt()
+                fun headPixels() = (centerY-3..centerY+3).flatMap { y -> (centerX-1..centerX+4).map { x -> image.getPixel(x, y) == ArenaPalette.tank(1) } }
+                val ordinaryHead = headPixels()
+                bullet.vx = 1692.0
+                // Tail appearance follows the projectile's birth velocity even after Star ends.
+                assertEquals(0.0, tank.starmanTime, 0.0)
+                draw()
+                assertSame("Steady batching reuses its head buffer", heads, batchField("heads").get(batch))
+                assertSame("Steady batching reuses its tail buffer", tails, batchField("tails").get(batch))
+                assertArrayEquals(head, heads.copyOf(2), 0f)
+                assertEquals(16.0, kotlin.math.hypot((tails[2] - tails[0]).toDouble(), (tails[3] - tails[1]).toDouble()), 1e-6)
+                assertEquals("The solid rapid head does not grow when its anti-aliased tail length changes", ordinaryHead, headPixels())
+                val right = field("worldRight").getDouble(view)
+                bullet.x = right + 8
+                fun edgeInk(speed: Double): Int {
+                    bullet.vx = speed; draw()
+                    var ink = 0
+                    for (x in image.width-25 until image.width) for (y in centerY-8..centerY+8) {
+                        val color = image.getPixel(x, y)
+                        if (android.graphics.Color.red(color) > 100 && android.graphics.Color.red(color) > android.graphics.Color.green(color) * 1.4 && android.graphics.Color.blue(color) > 60) ink++
+                    }
+                    return ink
+                }
+                val ordinaryEdge = edgeInk(846.0)
+                assertTrue("A fast tracer whose head is outside the pane remains visible across the edge", edgeInk(1692.0) > ordinaryEdge + 10)
+            } finally { view.release(); image.recycle() }
+        }
+    }
+
+    @Test
+    fun fastRapidTracersStopAtRicochetWallsWithoutDrawingInTheNextRoom() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            val image = Bitmap.createBitmap(1000, 1600, Bitmap.Config.ARGB_8888)
+            val world = ArenaWorld(336.0, 336.0, 4, 4, listOf(MazeWall(160.0, 0.0, 8.0, 336.0, "v", 164.0)))
+            val bullet = ArenaBullet(id = 10, x = 154.0, y = 200.0, vx = -846.0, vy = 0.0, kind = "rapid", colorIndex = 1, bounces = 1)
+            val state = ArenaSnapshot(tick = 1, world = world, tanks = listOf(ArenaTank(id = 1, x = 80.0, y = 84.0)), bullets = listOf(bullet))
+            fun field(name: String) = NativeArenaView::class.java.getDeclaredField(name).apply { isAccessible = true }
+            try {
+                view.layout(0, 0, image.width, image.height); view.showControls = false
+                fun otherRoomInk(speed: Double): Int {
+                    bullet.vx = -speed
+                    image.eraseColor(0); view.submit(state, 1, InfiniteMaze(world)); view.draw(Canvas(image))
+                    val viewport = field("viewport").get(view) as android.graphics.RectF
+                    val scale = field("zoom").getFloat(view) * view.resources.displayMetrics.density
+                    val density = view.resources.displayMetrics.density
+                    val cameraX = field("cameraX").getDouble(view)
+                    val cameraY = field("cameraY").getDouble(view)
+                    fun screenX(x: Double) = (viewport.centerX() * density + (x - cameraX) * scale).toInt()
+                    fun screenY(y: Double) = (viewport.centerY() * density + (y - cameraY) * scale).toInt()
+                    var ink = 0
+                    for (x in screenX(169.0)..screenX(172.0)) for (y in screenY(196.0)..screenY(204.0)) {
+                        val color = image.getPixel(x, y)
+                        if (android.graphics.Color.red(color) > 100 && android.graphics.Color.red(color) > android.graphics.Color.green(color) * 1.4 && android.graphics.Color.blue(color) > 60) ink++
+                    }
+                    return ink
+                }
+                assertEquals("The existing8px rapid streak does not cross the8px wall", 0, otherRoomInk(846.0))
+                assertEquals("The16px fast streak must stop before the ricochet wall", 0, otherRoomInk(1692.0))
+            } finally { view.release(); image.recycle() }
+        }
+    }
+
+    @Test
     fun separatedInfinityPilotsKeepTheirOwnViewportThroughDeathRespawnAndRotation() {
         main {
             val view = NativeArenaView(instrumentation.targetContext)

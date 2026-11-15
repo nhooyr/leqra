@@ -1,10 +1,10 @@
-# leqra v5.1.4 — current game protocol (protocol 1)
+# leqra v5.1.5 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.1.4**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.1.5**.
 
 ```json
-{"type":"server_hello","version":"5.1.4","protocol":1}
-{"type":"client_hello","version":"5.1.4","protocol":1}
+{"type":"server_hello","version":"5.1.5","protocol":1}
+{"type":"client_hello","version":"5.1.5","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -147,6 +147,8 @@ Fixed-maze and Infinity tank snapshots report the attacker's callsign in `killed
 Grenades use the same server-owned line-of-sight seeker, turn rate, and reacquisition delays as homing missiles. They retain their own speed, drag, and ten-second fuse. Snapshots continue to use `kind: "grenade"`, with `target` and `seekDelay` describing guidance. Grenades can still detonate on contact or a new Fire press.
 
 While `starmanTime` is positive, firing has no cooldown and preserves the equipped weapon's ammo and remaining lifetime. Movement and turning use at least two speed-pickup stacks; stronger actual speed pickups still win. This is a movement floor, so actual speed-stack counts and timers stay independent and resume naturally after Starman expires. Starman shots stay live after the boost ends and leave ordinary projectile slots free. At the safety limit, boosted fire replaces only the oldest boosted shots in its current ammo epoch. Starting a fresh epoch never deletes or retags older shots, and old bonus rounds cannot block fresh ordinary ammo. Fixed-maze snapshots include optional `boostedBulletIds` for active shots fired during Starman, covering both `bullets` and `machineBullets`.
+
+An equipped Machine gun (`power:"rapid"`) combines with Starman by doubling newly fired projectile speed from 846 to 1692 units/second and doubling its complete travel range. It keeps one straight shot per 60 Hz simulation tick, the same radius and collision checks. Fixed mazes double the ordinary full path budget before subtracting hidden muzzle travel. Infinity preserves its existing post-muzzle allowance: with ordinary range `R = 18 * cellSize` and hidden launch path `P` (wall projection plus remaining muzzle travel), boosted lifetime is `(2*R + P) / 1692`; the full straight-shot range doubles from 1540 to 3080 units. Ricochets spend the same total budget. Picking up or ending Starman changes future shots only: rounds already in flight retain their original velocity and remaining lifetime. Bare Starman and other weapons keep their existing projectile speeds and ranges. The 115-shot safety limit and four-volley cosmetic cadence are unchanged.
 
 An authoritative projectile can be born and hit before any snapshot contains it. Fixed-mode events and Infinity effects can therefore carry an optional cosmetic `flight` descriptor:
 
@@ -1255,7 +1257,7 @@ row additionally records canonical `color` to retain the played appearance.
 
 Weapon IDs remain `rapid` and `scatter` for compatibility with saved selections;
 UI labels are Machine gun and Shotgun. Their projectile `kind` is now explicit.
-`rapid`: radius 3.5/3, speed 846, quarter-perimeter range, no cooldown, at most one shot per
+`rapid`: radius 3.5/3, speed 846 (1692 when fired during Starman), quarter-perimeter range (doubled during Starman), no cooldown, at most one shot per
 60 Hz simulation tick, 115 active slots. `scatter`: radius 3.5, speed 846, three
 pellets per volley, .27 cooldown, 3.9-second life; its owner is excluded from hits
 and shield consumption even after a weapon swap. Other damage rules are unchanged.

@@ -83,7 +83,7 @@ final class PracticeTests: XCTestCase {
         XCTAssertEqual(arena.snapshot.tanks[0].ammoUsed, 0)
     }
 
-    func testStarmanCosmeticsUseFifteenHzWhileEveryWeaponKeepsSixtyHzFire() {
+    func testStarmanCosmeticsKeepFifteenHzExceptRapidFeedbackWhileWeaponsKeepSixtyHzFire() {
         for power in ["", "rapid", "scatter", "homing", "laser", "cannon"] {
             let arena = solitary(power)
             PracticeArena.applyPower(tank: &arena.snapshot.tanks[0], kind: "starman", starDuration: 20)
@@ -98,7 +98,7 @@ final class PracticeTests: XCTestCase {
                 XCTAssertEqual(arena.snapshot.tanks[0].machineRounds, rounds, power)
                 XCTAssertLessThanOrEqual(arena.snapshot.bullets.count, 115, power)
             }
-            XCTAssertEqual(cosmetics, 15, power)
+            XCTAssertEqual(cosmetics, power == "rapid" ? 60 : 15, power)
             if ["", "cannon"].contains(power) { XCTAssertEqual(arena.snapshot.bullets.count, 60, power) }
             if power == "scatter" { XCTAssertEqual(arena.snapshot.bullets.count, 115) }
         }

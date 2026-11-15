@@ -2379,3 +2379,44 @@ test('offline Infinity shotgun reloads on the first tick after270ms',()=>{
  h.window.testFire(w,p);assert.equal(p.cooldown,.27);assert.equal(p.cooldownTotal,.27);assert.equal(p.charges,4);assert.equal(w.lastBullet,3);
  h.byID('infiniteArena').emit('keydown',{code:'KeyQ'});h.advance(16);assert.equal(p.charges,4,'270ms has not elapsed');h.advance();assert.equal(p.charges,3);assert.equal(w.lastBullet,6);h.infinity.close();
 });
+
+test('Infinity Starman machine-gun velocity and full range double while existing projectiles stay intact',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
+ const w=h.state(),p=w.tanks[0];w.nextBot=w.nextPickup=Infinity;
+ Object.assign(p,{x:100,y:100,angle:0,spawnProtected:false,invulnerable:1000,power:'rapid',powerTime:100,machineRounds:180});
+ h.window.testFire(w,p);const normal=w.bullets.at(-1);assert.equal(normal.vx,846);assert.equal(p.machineRounds,179);
+ p.starmanTime=100;h.window.testFire(w,p);const boosted=w.bullets.at(-1);
+ assert.equal(boosted.vx,1692);assert.equal(boosted.vy,0);assert.equal(boosted.r,normal.r);assert.equal(p.machineRounds,179);
+ assert.ok(Math.abs(boosted.life*1692+28-2*(normal.life*846+28))<1e-7,'doubled full path budget includes the muzzle');
+ assert.equal(boosted.x,normal.x,'same muzzle geometry');assert.equal(normal.vx,846,'pickup does not retune old bullets');
+ p.starmanTime=1/60;h.advance();assert.equal(p.starmanTime,0);h.window.testFire(w,p);
+ assert.equal(w.bullets.at(-1).vx,846);assert.equal(boosted.vx,1692,'expiry does not slow an in-flight round');h.infinity.close();
+});
+
+test('Infinity machine-gun feedback stays dense through Starman with the doubled range safely bounded',()=>{
+ const results=[];
+ for(const star of [false,true]){
+  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
+  const w=h.state(),p=w.tanks[0];w.nextBot=w.nextPickup=Infinity;
+  Object.assign(p,{x:100,y:100,angle:0,spawnProtected:false,invulnerable:1000,power:'rapid',powerTime:100,machineRounds:180,starmanTime:star?100:0});
+  h.byID('infiniteArena').emit('keydown',{code:'KeyQ'});h.advance(90);
+  results.push({shots:w.lastBullet,cues:h.sounds.filter(s=>s==='shot:rapid').length,live:w.bullets.filter(b=>!b.dead).length,rounds:p.machineRounds});h.infinity.close();
+ }
+ assert.equal(results[0].shots,90);assert.equal(results[1].shots,90);assert.equal(results[0].cues,90);assert.equal(results[1].cues,90);
+ assert.equal(results[0].rounds,90);assert.equal(results[1].rounds,180);assert.ok(results[1].live<=115);assert.ok(results[1].live>=results[0].live,'the safety cap does not shorten boosted range');
+});
+
+test('Infinity doubled rapid range includes each phased muzzle path, including embedded wall launches',()=>{
+ for(const [x,y,angle]of [[100,100,0],[105,100,0],[100,79.9,Math.PI/4]]){
+  const ranges=[];
+  for(const star of [false,true]){
+   const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
+   const w=h.state(),p=w.tanks[0],walls=[{x:101,y:80,w:8,h:50}];w.nextBot=w.nextPickup=Infinity;w.maze.wallsNear=()=>walls;
+   Object.assign(p,{x,y,angle,spawnProtected:false,invulnerable:1000,power:'rapid',powerTime:100,machineRounds:180,ghostTime:100,starmanTime:star?100:0});
+   const launch=h.window.leqraNet.wallLaunch(x,y,Math.cos(angle),Math.sin(angle),3.5/3,28,walls);
+   assert.equal(launch.valid,true);h.window.testFire(w,p);const b=w.bullets[0];assert.ok(b);
+   ranges.push(b.life*Math.hypot(b.vx,b.vy)+launch.distance+launch.muzzle);h.infinity.close();
+  }
+  assert.ok(Math.abs(ranges[1]-2*ranges[0])<1e-7,`${x}/${y}: ${ranges}`);
+ }
+});

@@ -292,6 +292,10 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 	}
 	kind := k.Power
 	spec := infiniteSpec(kind)
+	if kind == "rapid" {
+		spec.speed = machineProjectileSpeed(k)
+		spec.life = infiniteShotRange / spec.speed
+	}
 	if kind == "laser" {
 		spec.radius = laserRadius
 	}
@@ -334,9 +338,16 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 			a.effect("impact", p.X, p.Y, p.ID, nil)
 			continue
 		}
+		life := spec.life
+		if kind == "rapid" && starman {
+			// Normal Infinity rapid shots keep their hidden launch path outside
+			// the TTL. Double that complete budget, then spend this launch once.
+			hidden := launch.distance + launch.muzzle
+			life = (2*infiniteShotRange + hidden) / spec.speed
+		}
 		a.nextBullet++
 		b := infiniteBullet{AmmoEpoch: k.AmmoEpoch, ID: a.nextBullet, Owner: p.ID, ownerTeam: p.Team, ownerName: p.Name, X: launch.x, Y: launch.y, Kind: kind, Color: p.ColorIndex,
-			VX: launch.ux * spec.speed, VY: launch.uy * spec.speed, Life: spec.life, radius: spec.radius, boosted: starman}
+			VX: launch.ux * spec.speed, VY: launch.uy * spec.speed, Life: life, radius: spec.radius, boosted: starman}
 		if launch.bounced {
 			b.Bounces = 1
 			b.seekDelay = missileWallDelay

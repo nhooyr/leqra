@@ -21,7 +21,11 @@ class AudioEventRouter {
     private var lastExplosion = Double.NEGATIVE_INFINITY
     private var lastGrenade = Double.NEGATIVE_INFINITY
     private var lastRicochet = Double.NEGATIVE_INFINITY
+    private var nextMachineShot = Double.NEGATIVE_INFINITY
     private var lastMachineShot = Double.NEGATIVE_INFINITY
+    private var seenMachineSourceTick = Int.MIN_VALUE
+    private var playedMachineSourceTick = Int.MIN_VALUE
+    private var lastClock = Double.NEGATIVE_INFINITY
     private var homingLocked = false
     private var lastHomingWarning = Double.NEGATIVE_INFINITY
 
@@ -40,7 +44,11 @@ class AudioEventRouter {
         lastExplosion = Double.NEGATIVE_INFINITY
         lastGrenade = lastExplosion
         lastRicochet = lastExplosion
+        nextMachineShot = lastExplosion
         lastMachineShot = lastExplosion
+        seenMachineSourceTick = Int.MIN_VALUE
+        playedMachineSourceTick = Int.MIN_VALUE
+        lastClock = lastExplosion
         homingLocked = false
         lastHomingWarning = lastExplosion
     }
@@ -53,6 +61,11 @@ class AudioEventRouter {
         now: Double,
     ): List<AudioCueRequest> {
         if (!now.isFinite()) return emptyList()
+        if (now < lastClock) {
+            nextMachineShot = Double.NEGATIVE_INFINITY
+            lastMachineShot = Double.NEGATIVE_INFINITY
+        }
+        lastClock = now
         val requests = mutableListOf<AudioCueRequest>()
         val localTank = snapshot.tanks.firstOrNull { it.id == localID }
         val focusTank = if (snapshot.spectating) snapshot.tanks.firstOrNull { it.id == snapshot.following } else localTank
@@ -137,8 +150,7 @@ class AudioEventRouter {
                     shot == AudioCue.RAPID ||
                         (shooter?.starmanTime ?: 0.0) > 0 && shot != AudioCue.GRENADE
                 ) {
-                    if (now - lastMachineShot < AudioSynthesis.repeatedShotInterval) continue
-                    lastMachineShot = now
+                    if (!machineShotAllowed(now, effect.tick)) continue
                 }
                 requests += AudioCueRequest(shot, own)
                 continue
@@ -168,6 +180,28 @@ class AudioEventRouter {
             }
         }
         return requests
+    }
+
+    private fun machineShotAllowed(now: Double, sourceTick: Int?): Boolean {
+        val interval = AudioSynthesis.repeatedShotInterval
+        val early = 1.0 / 60
+        if (sourceTick != null && sourceTick >= 0) {
+            // The source clock survives packet/display jitter; stale coalesced cues stay consumed.
+            if (sourceTick <= seenMachineSourceTick) return false
+            seenMachineSourceTick = sourceTick
+            if (playedMachineSourceTick != Int.MIN_VALUE &&
+                (sourceTick - playedMachineSourceTick) / 60.0 + 1e-9 < interval) return false
+            // Permit quantized 20Hz arrivals without stacking a rapid burst on one display frame.
+            if (now - lastMachineShot + 1e-9 < interval / 2) return false
+            playedMachineSourceTick = sourceTick
+            nextMachineShot = now + interval
+        } else {
+            // Legacy events retain phase while admitting at most one cue from an arrival batch.
+            if (now + early + 1e-9 < nextMachineShot || now - lastMachineShot + 1e-9 < interval - early) return false
+            nextMachineShot = max(now, nextMachineShot) + interval
+        }
+        lastMachineShot = now
+        return true
     }
 
     private fun appendPhase(

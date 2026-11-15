@@ -44,6 +44,10 @@ const PROJECTILES = Object.freeze({
  cannon: {speed: 1128, r: 14, life: 5.3, cooldown: .85/3, ammo: 3},
  laser: {r: 3, cooldown: .85/3},
 });
+function projectileSpec(tank) {
+ const spec=PROJECTILES[tank.power||'regular'];
+ return tank.power==='rapid'&&tank.starmanTime>0?{...spec,speed:spec.speed*2}:spec;
+}
 const TAU = Math.PI * 2;
 const MAX_BOTS = 128, BOTS_PER_PLAYER = 16;
 const RECONNECT_WINDOW = 18000, SNAPSHOT_TIMEOUT = 2500;
@@ -449,10 +453,10 @@ function fireShot(world, tank) {
  const boosted = tank.starmanTime > 0;
  if (!tank.hp || tank.spawnProtected && tank.invulnerable > 1e-9) return;
  if (!boosted && (tank.cooldown > 1e-9 || tank.power === 'rapid' && !tank.machineRounds)) return;
- const kind = tank.power || '', spec = PROJECTILES[kind || 'regular'];
+ const kind = tank.power || '', spec = projectileSpec(tank);
  if (muzzleBlocked(world.maze, tank, spec.r)) return;
  const cooldown = boosted ? 0 : spec.cooldown;
- const showShot = !boosted || kind === 'grenade' || world.time + 1e-9 >= (tank.nextBoostEffect || 0);
+ const showShot = kind === 'rapid' || !boosted || kind === 'grenade' || world.time + 1e-9 >= (tank.nextBoostEffect || 0);
  if (kind === 'laser') {
   const {points, target} = traceLaser(world, tank);
   Object.assign(tank, {cooldown, cooldownTotal:cooldown, recoil:1});
@@ -478,11 +482,12 @@ function fireShot(world, tank) {
    ...spec, id: ++world.lastBullet, owner: tank.id, ownerName: tank.name, team:tank.team, kind, boosted, ammoEpoch: net.ammoEpoch(tank), x: launch.x, y: launch.y, color: COLORS[tank.colorIndex] || COLORS[0],
    vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: launch.bounced?1:0, seekDelay: launch.bounced?.04:0, target: null, trail: [],
   };
+  if(kind==='rapid'&&boosted)bullet.life=(2*SHOT_RANGE+launch.distance+launch.muzzle)/spec.speed;
   (world.flights||=new net.ProjectileFlights()).begin(bullet,world.time/STEP);
   if (advanceBullet(world, bullet, launch.muzzle / spec.speed)) world.bullets.push(bullet);
  }
  art.recycleStarmanProjectiles(world.bullets, tank.id, boosted, net.ammoEpoch(tank));
- if (showShot && (boosted || kind !== 'rapid' || tank.machineRounds % 4 === 0)) {
+ if (showShot) {
   tank.nextBoostEffect = world.time + 4 * STEP;
   effect(world, 'shot:' + kind, tank.x, tank.y, tank.id);
  }
@@ -1057,7 +1062,7 @@ function presentEffect(world, effect, now) {
  if (kind.startsWith('shot:') || kind === 'laser') {
   const weaponKind = kind === 'laser' ? kind : kind.slice(5);
   // Suppress the authoritative copy of a predicted local press sound.
-  if (!seat || !world.online || now - seat.pendingShotAt > 300) art.shot(weaponKind, !!seat, now / 1000);
+  if (!seat || !world.online || now - seat.pendingShotAt > 300) art.shot(weaponKind, !!seat, now / 1000,false,effect.tick,world.shotAudioEpoch||world);
   else seat.pendingShotAt = -Infinity;
   if (kind !== 'laser') return;
  } else if (kind === 'pickup') art.collect();
@@ -1385,7 +1390,8 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
  }
  world.flights?.observe(bullets,world.flightTick);
  for(const item of world.flightBullets)if(visible(item))bullets.push({...item,color:COLORS[item.colorIndex]});
- art.bullets(bullets, ctx, now / 1000);
+ world.rapidTracerWall||=(_kind,x,y,dx,dy,r)=>wallHit(world.maze,x,y,dx,dy,r);
+ art.bullets(bullets, ctx, now / 1000,world.rapidTracerWall);
  if (!world.spectating && !world.result && !world.failed && !pauseMenu.open) {
   art.drawHomingWarnings(ctx,pilot,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
  }
@@ -1598,7 +1604,7 @@ function receive(ws, event) {
   session.spectating=message.spectating===true;
   if(session.spectating){session.following=Number.isSafeInteger(message.following)?message.following:0;session.preferredFollowing=session.following;session.local=null;session.controllers=[session];refreshBindings(session);leaderboardPanel.open=true;syncScoreboardButton();}
   if(session.independentAccounts&&message.localId!=null&&message.localPublicToken!==session.localPublicToken){connectionFailed('The server did not confirm the separate P2 account key. Update the server before using P2 online.');return;}
-  session.welcomed=true;
+  session.welcomed=true;session.shotAudioEpoch={};
   if(message.publicToken){art.rememberPublicIdentity?.(message.publicToken,session.publicToken||'');session.publicToken=message.publicToken;}
   if(message.localPublicToken){art.rememberPublicIdentity?.(message.localPublicToken,session.localPublicToken||'',1);session.localPublicToken=message.localPublicToken;session.localNewAccount=undefined;}
   if(message.localId==null){session.localPublicToken='';session.localNewAccount=undefined;}
@@ -1974,7 +1980,7 @@ function pressFire(event,seat=session,mouse=false) {
  const pilot = world.authorityTanks?.get(seat.id) || seat.predictor.state;
  const age = now - world.arrived, boosted = pilot?.starmanTime > age / 1000;
  const canDetonate = pilot?.grenades > 0;
- if (world.online && age<2500 && pilot?.alive && !(pilot.spawnProtected && pilot.invulnerable > age / 1000) && now - seat.previewShotAt >= (boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
+ if (world.online && age<2500 && pilot?.alive && !(pilot.spawnProtected && pilot.invulnerable > age / 1000) && now - seat.previewShotAt >= (pilot.power==='rapid'?STEP:boosted ? .065 : PROJECTILES[pilot.power || 'regular']?.cooldown || .15) * 1000 &&
      (boosted || age >= (pilot.cooldown || 0) * 1000) &&
      pilot.power !== 'grenade' && !canDetonate && !muzzleBlocked(world.maze, pilot, PROJECTILES[pilot.power || 'regular'].r)) {
   seat.previewShotAt = now;
