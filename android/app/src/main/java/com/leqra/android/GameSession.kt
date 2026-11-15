@@ -158,8 +158,17 @@ internal class GameSession(context: Context) {
     private val spawnNotices = GodlikeSpawnNotices()
     val encounterNotice: String?
         get() = if (online && activeNetwork.isPublic) spawnNotices.current(System.nanoTime() / 1e9) else null
+    private val fireFeedback = PressFireFeedback()
+    private val localFireFeedback = PressFireFeedback()
+    var previewRecoil = 0.0
+        private set
+    var localPreviewRecoil = 0.0
+        private set
+    var fireFeedbackAllowed: () -> Boolean = { true }
     var input = GameInput()
+        set(value) { field = value; observeFire(false, value.fire, System.nanoTime()) }
     var input2 = GameInput()
+        set(value) { field = value; observeFire(true, value.fire, System.nanoTime()) }
     private var practice: PracticeArena? = null
     private var fixed: FixedArena? = null
     private var previousFrame = 0L
@@ -904,6 +913,7 @@ internal class GameSession(context: Context) {
     fun neutral() {
         input = GameInput()
         input2 = GameInput()
+        cancelFireFeedback()
         if (online && !spectating) {
             val client = activeNetwork
             client.sendInput(
@@ -1071,6 +1081,12 @@ internal class GameSession(context: Context) {
             else if (finishingProjectilePresentation) practice?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9)
                 ?: fixed?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9) ?: snapshot else snapshot
         }
+        observeFire(false, input.fire, nanos)
+        observeFire(true, input2.fire, nanos)
+        val authority = authoritativeSnapshot
+        val feedbackPlaying = fireFeedbackPlaying(authority)
+        previewRecoil = fireFeedback.pulse(authority.tanks.firstOrNull { it.id == localID }, authority.generation, feedbackPlaying, nanos / 1e9)
+        localPreviewRecoil = localFireFeedback.pulse(localID2?.let { id -> authority.tanks.firstOrNull { it.id == id } }, authority.generation, feedbackPlaying, nanos / 1e9)
         present(snapshot, maze, localID, localID2, online)
         if (screen == Screen.PLAYING) {
             uiElapsed += dt
@@ -1089,6 +1105,24 @@ internal class GameSession(context: Context) {
 
     private var hudAmmoEpoch = Long.MIN_VALUE
     private var hudLocalAmmoEpoch = Long.MIN_VALUE
+
+    fun cancelFireFeedback() {
+        fireFeedback.reset(input.fire)
+        localFireFeedback.reset(input2.fire)
+        previewRecoil = 0.0
+        localPreviewRecoil = 0.0
+    }
+
+    private fun fireFeedbackPlaying(state: ArenaSnapshot) =
+        audioGameplayActive && fireFeedbackAllowed() && state.phase == "playing" && state.result == null && state.objectives?.survival?.status != "break"
+
+    private fun observeFire(local: Boolean, fire: Boolean, nanos: Long) {
+        val state = authoritativeSnapshot
+        val id = if (local) localID2 else localID
+        val tank = id?.let { target -> state.tanks.firstOrNull { it.id == target } }
+        val age = if (online) max(0.0, nanos / 1e9 - timeline.authoritativeArrivalTime) else 0.0
+        (if (local) localFireFeedback else fireFeedback).controls(fire, tank, state.generation, fireFeedbackPlaying(state), nanos / 1e9, age)
+    }
 
     val finishingProjectilePresentation: Boolean
         get() = if (online) timeline.hasPendingProjectileFlights else practice?.hasPendingProjectileFlights ?: fixed?.hasPendingProjectileFlights ?: false

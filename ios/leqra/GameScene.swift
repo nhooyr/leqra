@@ -44,7 +44,12 @@ final class GameScene: SKScene {
     private var frameMapInstallSeconds = 0.0
     enum LayoutMode { case infinity, fixed }
     var onFrame: ((TimeInterval) -> Void)?
-    var input = GameInput()
+    var input = GameInput() { didSet { if oldValue.fire != input.fire { onFireChanged?(input.fire) } } }
+    var onFireChanged: ((Bool) -> Void)?
+    var onControlsReset: (() -> Void)?
+    var localFireRecoil: ((ArenaTank) -> Double)?
+    private(set) var minimumProbeBarrelX: CGFloat = 0
+    private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private(set) var layoutMode: LayoutMode = .infinity
     private var landscape = false
     private var fixedLoadoutHeight: CGFloat = 97
@@ -396,6 +401,7 @@ final class GameScene: SKScene {
     }
 
     func resetControls() {
+        onControlsReset?()
         stickTouch = nil
         fireTouch = nil
         input.forward = false
@@ -703,7 +709,11 @@ final class GameScene: SKScene {
                 labelLayer.addChild(node.identity)
             }
             node.position = CGPoint(x: tank.x, y: -tank.y)
-            node.update(tank, local: tank.id == localID, zoom: zoom, infinity: layoutMode == .infinity)
+            let recoil = tank.id == localID ? localFireRecoil?(tank) ?? tank.recoil : tank.recoil
+            node.update(tank, local: tank.id == localID, zoom: zoom, infinity: layoutMode == .infinity, recoil: recoil)
+            if tank.id == localID, emptyFireProbe {
+                minimumProbeBarrelX = min(minimumProbeBarrelX, node.barrelOffset)
+            }
             let screen = CGPoint(x: world.position.x + CGFloat(tank.x) * zoom,
                                  y: world.position.y - CGFloat(tank.y) * zoom)
             node.identity.isHidden = tank.hp <= 0 || !visible.contains(CGPoint(x: tank.x, y: tank.y))
@@ -992,6 +1002,7 @@ private final class TankNode: SKNode {
     private(set) var paint = Palette.accent
     private(set) var identityWidth: CGFloat = 120
     private(set) var identityHeight: CGFloat = 20
+    var barrelOffset: CGFloat { barrel.position.x }
 
     override init() {
         super.init()
@@ -1057,7 +1068,7 @@ private final class TankNode: SKNode {
 
     required init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func update(_ tank: ArenaTank, local: Bool, zoom: CGFloat, infinity: Bool) {
+    func update(_ tank: ArenaTank, local: Bool, zoom: CGFloat, infinity: Bool, recoil: Double? = nil) {
         isHidden = infinity && tank.hp <= 0
         paint = Palette.tank(tank.colorIndex)
         hull.zRotation = -tank.angle
@@ -1072,7 +1083,7 @@ private final class TankNode: SKNode {
         }
         barrel.isHidden = tank.hp <= 0
         turret.isHidden = tank.hp <= 0
-        barrel.position.x = -tank.recoil * 4
+        barrel.position.x = -(recoil ?? tank.recoil) * 4
         let shields = tank.hp > 0 && tank.shield > 0 ? max(1, min(5, tank.shieldCharges)) : 0
         for (index, ring) in shieldRings.enumerated() { ring.isHidden = index >= shields }
         protectionRing.isHidden = tank.hp <= 0 || shields > 0 || tank.invulnerable <= 0

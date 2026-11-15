@@ -52,6 +52,7 @@ public final class RenderTimeline {
     public private(set) var stale = false
     public var hasPendingProjectileFlights: Bool { cannonFlights.hasPending }
     public var authoritativeSnapshot: ArenaSnapshot? { latest }
+    public var authoritativeSnapshotTime: Double? { latest == nil ? nil : lastArrival }
     var bufferedAcknowledgementCount: Int { sent.count }
 
     public init(localID: Int, initialSequence: UInt64 = 0, maze: InfiniteMaze? = nil, move: @escaping Move) {

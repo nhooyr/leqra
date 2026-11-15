@@ -129,6 +129,12 @@ final class GameSession: ObservableObject {
     private var welcome: NetworkWelcome?
     private var arenaActive = false
     private var lastSnapshot = ArenaSnapshot()
+    private var fireFeedback = LocalFireFeedback()
+    private var fireAuthority: ArenaTank?
+    private var fireGeneration = 0
+    private var firePhaseActive = false
+    private var fireArrival = 0.0
+    private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private var hudElapsed = 0.0
     private var frameElapsed = 0.0
     private var frameCount = 0
@@ -180,6 +186,9 @@ final class GameSession: ObservableObject {
         if !savedPresets.isEmpty { UserDefaults.standard.set(try? JSONEncoder().encode(savedPresets), forKey: "nativePresets") }
         scene.scaleMode = .resizeFill
         scene.onFrame = { [weak self] dt in self?.frame(dt) }
+        scene.onFireChanged = { [weak self] down in self?.fireInputChanged(down) }
+        scene.onControlsReset = { [weak self] in self?.fireFeedback.reset() }
+        scene.localFireRecoil = { [weak self] tank in self?.localFireRecoil(real: tank.recoil) ?? tank.recoil }
         roomClient.onEvent = { [weak self] event in self?.receive(event, arena: false) }
         arenaClient.onEvent = { [weak self] event in self?.receive(event, arena: true) }
         if ProcessInfo.processInfo.arguments.contains("--native-performance-probe") {
@@ -223,7 +232,7 @@ final class GameSession: ObservableObject {
     }
     var isHost: Bool { room == nil || room?.host == welcome?.id }
     var offline: Bool { practice != nil || fixedArena != nil }
-    var isInfinity: Bool { practice != nil || arenaActive }
+    var isInfinity: Bool { if let frameProfiler { return frameProfiler.world == nil }; return practice != nil || arenaActive }
     var effectiveRules: RoomRules { room?.rules ?? localRules }
     var selectedMode: BattleMode { effectiveRules.infinity ? .infinity : BattleMode(rawValue: effectiveRules.mode) ?? .elimination }
     var gameTitle: String { isInfinity ? (arenaActive && (room == nil || room?.infinityPublic == true) ? "Public Infinity" : "Infinity") : selectedMode.title }
@@ -1339,6 +1348,9 @@ final class GameSession: ObservableObject {
             if let fixed = snapshot.world { world = fixed }
             if timeline == nil { timeline = makeTimeline() }
             timeline?.accept(snapshot, at: ProcessInfo.processInfo.systemUptime)
+            if let timeline, let accepted = timeline.authoritativeSnapshot {
+                cacheFireAuthority(accepted, at: timeline.authoritativeSnapshotTime ?? ProcessInfo.processInfo.systemUptime)
+            }
             lastSnapshot = snapshot
             if publicIdentityActive, publicRecoveryPending, let tank = snapshot.tanks.first(where: { $0.id == localID }) {
                 if callsign != tank.name { callsign = tank.name }
@@ -1548,6 +1560,7 @@ final class GameSession: ObservableObject {
             if timeline.stale { status = "Waiting for server…" }
         }
         guard let snapshot else { return }
+        if offline { cacheFireAuthority(frameProfiler != nil ? snapshot : practice?.snapshot ?? fixedArena?.snapshot ?? snapshot) }
         let finalShot = (snapshot.result != nil || snapshot.phase == "matchOver" || snapshot.phase == "roundOver")
             && (timeline?.hasPendingProjectileFlights == true || practice?.hasPendingProjectileFlights == true || fixedArena?.hasPendingProjectileFlights == true)
         if presentingFinalShot != finalShot { presentingFinalShot = finalShot }
@@ -1569,6 +1582,9 @@ final class GameSession: ObservableObject {
                       secondaryLocalID: secondaryAudioPilotID, gameplayActive: gameplayAudioActive)
         if profiling { audioSeconds = CACurrentMediaTime() - audioStart }
         scene.display(snapshot: snapshot, localID: localID, maze: maze, fixedWalls: world?.walls ?? [])
+        if emptyFireProbe {
+            scene.view?.superview?.accessibilityValue = "minBarrelX=\(scene.minimumProbeBarrelX), bullets=\(snapshot.bullets.count), ammoUsed=\(fireAuthority?.ammoUsed ?? -1), infinity=\(isInfinity)"
+        }
         hudElapsed += dt
         if hudElapsed >= 0.1 {
             let hudStart = profiling ? CACurrentMediaTime() : 0
@@ -1617,5 +1633,28 @@ final class GameSession: ObservableObject {
                     : "Wave \(survival.wave), \(survival.enemiesRemaining) enemies"
             }
         }
+    }
+
+    private func cacheFireAuthority(_ state: ArenaSnapshot, at arrival: Double = ProcessInfo.processInfo.systemUptime) {
+        fireAuthority = state.tanks.first { $0.id == localID }
+        fireGeneration = state.generation
+        firePhaseActive = state.phase == "playing" && state.result == nil && state.objectives?.survival?.status != "break"
+        fireArrival = arrival
+    }
+
+    private var fireFeedbackActive: Bool {
+        screen == .playing && !paused && !hasModal && !lifecycleInactive && !disconnected && !spectating
+            && firePhaseActive && (offline || (arenaActive ? arenaClient.connected : roomClient.connected) && timeline?.stale != true)
+    }
+
+    private func fireInputChanged(_ down: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        fireFeedback.setFire(down, tank: fireAuthority, generation: fireGeneration, now: now,
+            stateAge: offline ? 0 : max(0, now - fireArrival), active: fireFeedbackActive)
+    }
+
+    private func localFireRecoil(real: Double) -> Double {
+        fireFeedback.recoil(real: real, tank: fireAuthority, generation: fireGeneration,
+            now: ProcessInfo.processInfo.systemUptime, active: fireFeedbackActive)
     }
 }

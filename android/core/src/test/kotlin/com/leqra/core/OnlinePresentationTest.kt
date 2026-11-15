@@ -5,6 +5,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OnlinePresentationTest {
+    @Test
+    fun rejectedPacketsCannotRestartTheAcceptedEquipmentAgingClock() {
+        val timeline = OnlinePresentation()
+        fun state(tick: Long, generation: Int = 7) = ArenaSnapshot(tick = tick, generation = generation, tanks = listOf(ArenaTank(id = 1, cooldown = .2)))
+        timeline.accept(state(100), 1.0)
+        assertEquals(1.0, timeline.authoritativeArrivalTime, 0.0)
+        for (old in listOf(state(99), state(100), state(200, generation = 6))) {
+            timeline.accept(old, 1.19)
+            assertEquals(100L, timeline.authoritativeSnapshot!!.tick)
+            assertEquals(1.0, timeline.authoritativeArrivalTime, 0.0)
+            val feedback = PressFireFeedback()
+            val tank = timeline.authoritativeSnapshot!!.tanks.single()
+            feedback.controls(true, tank, 7, true, 1.21, 1.21 - timeline.authoritativeArrivalTime)
+            assertEquals(1.0, feedback.pulse(tank, 7, true, 1.21), 1e-12)
+        }
+        timeline.accept(state(101), 1.3)
+        assertEquals(1.3, timeline.authoritativeArrivalTime, 0.0)
+    }
     private val tick = 1.0 / 60
 
     @Test fun pausingRejoiningAndChangingSpectatorViewConsumePendingCombatHistory() {

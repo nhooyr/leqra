@@ -9,6 +9,36 @@ final class GameUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
+    func testEmptyAmmoPressReachesTheActualBarrelWithoutCreatingAShot() {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--native-performance-probe", "--probe-empty-fire-feedback", "--probe-audio-off"]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            let stage = arena(in: app)
+            XCTAssertTrue(stage.waitForExistence(timeout: 15))
+            let ready = NSPredicate { _, _ in (stage.value as? String)?.contains("ammoUsed=5") == true }
+            expectation(for: ready, evaluatedWith: nil)
+            waitForExpectations(timeout: 5)
+            let frame = stage.frame
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: frame.maxX - 65, dy: frame.maxY - 65)).press(forDuration: 0.03)
+            let kicked = NSPredicate { _, _ in
+                guard let value = stage.value as? String, let raw = value.split(separator: ",").first?.split(separator: "=").last,
+                      let position = Double(raw) else { return false }
+                return position < -0.25
+            }
+            expectation(for: kicked, evaluatedWith: nil)
+            waitForExpectations(timeout: 5)
+            let value = stage.value as? String ?? ""
+            XCTAssertTrue(value.contains("bullets=0")); XCTAssertTrue(value.contains("ammoUsed=5"))
+            XCTAssertTrue(value.contains("infinity=\(!fixed)"))
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testRoamingSpawnRateIsConditionalAndPersistsInNativeRoomRules() async throws {
         let app = launch(callsign: "RATE " + UUID().uuidString.prefix(8))
         selectPublic(false, in: app); selectMode("infinity", in: app)

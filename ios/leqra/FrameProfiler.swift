@@ -19,6 +19,7 @@ final class FrameProfiler {
     private let hitMatrixProbe: Bool
     private let pickupMatrixProbe: Bool
     private let ammoRefillProbe: Bool
+    private let emptyFireProbe: Bool
     private var ammoArena: PracticeArena?
     private var ammoEpisode = -1
     private var ammoAccumulator = 0.0
@@ -75,6 +76,7 @@ final class FrameProfiler {
         hitMatrixProbe = arguments.contains("--probe-hit-matrix")
         pickupMatrixProbe = arguments.contains("--probe-pickup-matrix")
         ammoRefillProbe = arguments.contains("--probe-ammo-refill")
+        emptyFireProbe = arguments.contains("--probe-empty-fire-feedback")
         if arguments.contains("--probe-fixed") {
             world = FixedArena(rules: RoomRules(), name: "PROBE", colorIndex: 0, botCount: 0, seed: 42).world
         } else { world = nil }
@@ -103,6 +105,9 @@ final class FrameProfiler {
 
     func snapshot(dt: Double) -> ArenaSnapshot {
         elapsed += dt
+        if emptyFireProbe {
+            return ArenaSnapshot(tick: UInt64(elapsed * 60), tanks: [ArenaTank(id: 1, name: "EMPTY", x: 420, y: 420, ammoUsed: 5)])
+        }
         if hitMatrixProbe { return hitSnapshot(dt: dt) }
         if ammoRefillProbe { return ammoSnapshot(dt: dt) }
         if pickupMatrixProbe { return pickupSnapshot() }

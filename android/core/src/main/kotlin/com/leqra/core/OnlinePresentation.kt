@@ -95,6 +95,8 @@ class OnlinePresentation(
         private set
     val hasPendingProjectileFlights: Boolean get() = completedFlights.hasPending || contacts.hasPending
     val authoritativeSnapshot: ArenaSnapshot? get() = latest
+    /** Arrival clock of the accepted authority; rejected packets cannot re-age equipment. */
+    val authoritativeArrivalTime: Double get() = lastArrival
 
     internal val bufferedAcknowledgementCount
         get() = primary.sent.size

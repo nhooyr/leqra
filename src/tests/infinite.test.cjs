@@ -1433,6 +1433,21 @@ test('ordinary Infinity shells can fire immediately after Starman with boosted s
  infinity.close();
 });
 
+test('online Infinity empty-ammo presses retain the100ms cosmetic recoil used by native clients',()=>{
+ const h=harness(undefined,true);h.infinity.start('online');const ws=h.sockets[0],arena=h.byID('infiniteArena');
+ ws.receive({type:'welcome',id:4,seed:0});h.elapse(1000);
+ ws.receive({type:'state',tick:1,tanks:[{id:4,x:42,y:42,angle:0,hp:1,ammoUsed:5,cooldown:0}],bullets:[],players:1,leaderboard:[]});
+ const w=h.state(),authority=JSON.stringify(w.tanks),painted=[];h.window.leqraInfinityArt.hull=skin=>painted.push(skin.recoil);
+ arena.emit('keydown',{code:'KeyQ'});assert.equal(w.previewRecoilUntil,1100);
+ h.window.testDraw(w,1000,0);assert.equal(painted.at(-1),1);
+ h.elapse(50);h.window.testDraw(w,1050,0);assert.ok(Math.abs(painted.at(-1)-.5)<1e-9);
+ h.elapse(50);h.window.testDraw(w,1100,0);assert.equal(painted.at(-1),0);
+ arena.emit('keydown',{code:'KeyQ',repeat:true});assert.equal(w.previewRecoilUntil,1100,'held/repeat input does not restart dry recoil');
+ arena.emit('keyup',{code:'KeyQ'});arena.emit('keydown',{code:'KeyQ'});assert.equal(w.previewRecoilUntil,1100,'too-early re-press obeys normal weapon cadence');
+ arena.emit('keyup',{code:'KeyQ'});h.elapse(240);arena.emit('keydown',{code:'KeyQ'});assert.equal(w.previewRecoilUntil,1440);
+ assert.equal(JSON.stringify(w.tanks),authority,'dry feedback never changes authority');assert.equal(w.bullets.length,0);h.infinity.close();
+});
+
 test('offline Infinity equips maze pickups and sounds a weapon before another frame arrives online', () => {
  const {infinity, byID, sockets, advance, state, sounds, loadouts} = harness(undefined, true);
  infinity.start('offline');

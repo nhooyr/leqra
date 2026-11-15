@@ -24,6 +24,63 @@ class SessionParityTest {
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
     @Test
+    fun emptyQuickPressesAnimateBothSeatsInEveryModeWithoutInventingShotsOrMutatingAuthority() {
+        for (online in listOf(false, true)) for (finite in listOf(false, true)) {
+            val context = context()
+            val session = main { GameSession(context) }
+            try {
+                main {
+                    val arena = PracticeArena(42, "P1", 0, 0, world = if (finite) ArenaWorld(10000.0, 10000.0, 120, 120) else null)
+                    arena.configureLocal("P2", 1)
+                    arena.snapshot.tanks[1].apply { x = 9000.0; y = 9000.0 }
+                    arena.snapshot.tanks.forEach { it.invulnerable = 0.0; it.spawnProtected = false }
+                    for (id in 1..2) repeat(5) {
+                        arena.snapshot.tanks[id - 1].cooldown = 0.0
+                        arena.step(mapOf(id to GameInput(fire = true)), 1.0 / 60)
+                    }
+                    arena.snapshot.tanks.forEach { it.cooldown = 0.0; it.cooldownTotal = 0.0; it.recoil = 0.0 }
+                    assertTrue(arena.snapshot.tanks.all { it.ammoUsed == 5 && it.hp > 0 })
+                    set(session, "online", online)
+                    set(session, "screen", Screen.PLAYING)
+                    set(session, "infinity", !finite)
+                    set(session, "localID", 1); set(session, "localID2", 2)
+                    if (online) {
+                        set(session.network, "connected", true)
+                        event(session, NetworkEvent.Welcome(welcome(local = true)))
+                        event(session, NetworkEvent.State(arena.snapshot))
+                    } else {
+                        set(session, "practice", arena); set(session, "fixed", null)
+                        set(session, "snapshot", arena.snapshot)
+                    }
+                    assertTrue(session.audioGameplayActive)
+                    val before = session.authoritativeSnapshot.tanks.map { it.copy() }
+                    val bullets = session.authoritativeSnapshot.bullets.map { it.copy() }
+                    session.input = GameInput(fire = true)
+                    session.input = GameInput()
+                    session.input2 = GameInput(fire = true)
+                    session.input2 = GameInput()
+                    val now = System.nanoTime()
+                    session.frame(now)
+                    assertTrue("P1 quick tap survives until draw", session.previewRecoil > .8)
+                    assertTrue("P2 quick tap survives until draw", session.localPreviewRecoil > .8)
+                    assertEquals(before, session.authoritativeSnapshot.tanks)
+                    assertEquals(bullets, session.authoritativeSnapshot.bullets)
+                    assertTrue(session.snapshot.tanks.all { it.recoil == 0.0 })
+                    session.cancelFireFeedback()
+                    session.fireFeedbackAllowed = { false }
+                    session.input = GameInput(fire = true)
+                    session.input = GameInput()
+                    session.frame(System.nanoTime())
+                    assertEquals(0.0, session.previewRecoil, 0.0)
+                    session.fireFeedbackAllowed = { true }
+                    session.neutral()
+                    assertEquals(0.0, session.localPreviewRecoil, 0.0)
+                }
+            } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+        }
+    }
+
+    @Test
     fun eitherAmmoEpochRefreshesHudImmediatelyWithoutWaitingForTheTenHzTicker() {
         val context = context()
         val session = main { GameSession(context) }
