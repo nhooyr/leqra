@@ -82,7 +82,7 @@ class SnapshotDecoder {
                 val shooter = byId[bullet.owner]
                 if (shooter != null) {
                     if (shooter.power != "laser" && bullet.id !in boostedSet && bullet.ammoEpoch == shooter.ammoEpoch) shooter.ammoUsed++
-                    if (bullet.kind == "grenade" && bullet.ammoEpoch == shooter.ammoEpoch) {
+                    if (bullet.kind == "grenade" && bullet.ammoEpoch == (shooter.grenadeEpoch ?: shooter.ammoEpoch)) {
                         shooter.grenades++
                         shooter.grenadeLife = maxOf(shooter.grenadeLife, bullet.life)
                     }

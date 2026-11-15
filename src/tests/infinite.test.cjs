@@ -1443,6 +1443,17 @@ test('offline Infinity last grenade consumes the hold through refills for both l
   arena.emit('keyup',{code:key});if(sampledRelease)h.advance();arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,2);assert.equal(w.bullets.at(-1).kind,'');h.infinity.close();
  }
 });
+test('offline Infinity pops the last grenade before allowing standard fire for either pilot',()=>{
+ for(const local of [false,true])for(const epoch of [0,42]){
+  const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
+  for(const tank of w.tanks)Object.assign(tank,{x:100+tank.colorIndex*300,y:100,angle:-Math.PI/2,invulnerable:1000,spawnProtected:false});
+  h.window.leqraInfinityArt.grantPower(t,'grenade',15,8);Object.assign(t,{charges:1,ammoEpoch:epoch});const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');
+  arena.emit('keydown',{code:key});h.advance();const grenade=w.bullets[0];assert.equal(t.grenadeEpoch,epoch);assert.equal(t.ammoEpoch,epoch+1);assert.equal(w.lastBullet,1);
+  h.advance(3);assert.equal(w.lastBullet,1);assert.ok(!grenade.dead);
+  arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.ok(grenade.dead,'next fresh press detonates');assert.equal(w.lastBullet,1,'no regular shell accompanies the pop');assert.equal(t.grenadeEpoch,undefined);
+  h.advance(3);assert.equal(w.lastBullet,1,'holding after detonation never fires');arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,2);assert.equal(w.bullets.at(-1).kind,'');h.infinity.close();
+ }
+});
 test('offline Infinity every weapon ending stops held standard follow-up for both local pilots',()=>{
  for(const power of ['rapid','scatter','homing','grenade','laser','cannon'])for(const expiry of [false,true])for(const local of [false,true]){
   const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
@@ -1905,8 +1916,17 @@ test('split-screen offline Infinity budgets pickups per local pilot', () => {
  world.pickupPilot = 1;
  world.nextPickup = 0;
  h.advance(2);
+ assert.equal(world.pickups.filter(p=>Math.hypot(p.x-first.x,p.y-first.y)<5*84).length,3,'every living pilot is seeded in the same interval');
  assert.equal(world.pickups.filter(p=>Math.hypot(p.x-second.x,p.y-second.y)<5*84).length,3);
- assert.equal(world.pickups.length,9);
+ assert.equal(world.pickups.length,12);
+});
+test('a dead P1 cannot delay Infinity pickups around a separated living P2',()=>{
+ const h=harness();h.infinity.start('offline',{localName:'P2',roomRules:{infinityRandomBots:false}});const world=h.state(),[first,second]=world.tanks;
+ Object.assign(first,{x:42,y:42,hp:0,alive:false,respawn:1e6});Object.assign(second,{x:1722,y:42});world.pickups=[];world.pickupPilot=0;world.nextPickup=0;
+ h.advance(2);
+ assert.equal(world.pickups.filter(p=>Math.hypot(p.x-second.x,p.y-second.y)<5*84).length,3);
+ assert.equal(world.pickups.filter(p=>Math.hypot(p.x-first.x,p.y-first.y)<5*84).length,0);
+ assert.ok(world.pickups.length<=12,'both enrolled human seats retain the shared budget');h.infinity.close();
 });
 
 

@@ -78,9 +78,9 @@ class PilotReadout(
         var ownedGrenadeLife = 0.0
         var projectileLocked = tank.locked
         if (!infinity || !projectileLocked) for (bullet in snapshot.bullets) {
-            if (!infinity && bullet.owner == tank.id && bullet.ammoEpoch == tank.ammoEpoch) {
-                if (bullet.id !in boosted) ordinary++
-                if (bullet.kind == "grenade") {
+            if (!infinity && bullet.owner == tank.id) {
+                if (bullet.ammoEpoch == tank.ammoEpoch && bullet.id !in boosted) ordinary++
+                if (bullet.kind == "grenade" && bullet.ammoEpoch == (tank.grenadeEpoch ?: tank.ammoEpoch)) {
                     ownedGrenades++
                     ownedGrenadeLife = max(ownedGrenadeLife, bullet.life)
                 }
@@ -204,8 +204,8 @@ class PilotReadout(
             val need = if (tank.power == "scatter") 3 else 1
             val fallback =
                 when (tank.power) {
-                    "cannon",
-                    "laser" -> .85 * 2 / 3
+                    "cannon" -> .85 / 3
+                    "laser" -> .85 / 3
                     "rapid" -> 0.0
                     "scatter" -> .27
                     "homing" -> .36

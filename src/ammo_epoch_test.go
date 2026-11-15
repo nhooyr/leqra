@@ -256,6 +256,7 @@ func TestOldEpochProjectileStillHitsAndOldGrenadeFinishesNaturally(t *testing.T)
 				if len(a.bullets) != 1 {
 					t.Fatal("grenade did not launch")
 				}
+				applyPower(&p.kit, "shield", 15, 8)
 				b := &a.bullets[0]
 				a.weaponControl(p, false, false)
 				a.weaponControl(p, true, true)
@@ -279,6 +280,7 @@ func TestOldEpochProjectileStillHitsAndOldGrenadeFinishesNaturally(t *testing.T)
 				p.Charges = 1
 				g.weaponControl(p, true, true)
 				b := g.Bullets[0]
+				g.grantPower(p, "shield")
 				g.weaponControl(p, false, false)
 				g.weaponControl(p, true, true)
 				if b.Dead || len(g.Bullets) < 2 || g.Bullets[1].Kind != "" {

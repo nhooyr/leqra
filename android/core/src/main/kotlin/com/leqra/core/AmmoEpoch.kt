@@ -8,6 +8,7 @@ object AmmoEpoch {
 
     fun refill(tank: ArenaTank) {
         tank.ammoEpoch = next(tank.ammoEpoch)
+        tank.grenadeEpoch = null
         tank.cooldown = 0.0
         tank.cooldownTotal = 0.0
         tank.ammoUsed = 0

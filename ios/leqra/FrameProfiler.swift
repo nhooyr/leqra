@@ -34,9 +34,12 @@ final class FrameProfiler {
     private var hitEpisode = -1
     private var hitAccumulator = 0.0
     private var hitFired = false
-    private var hitFrame = 0
-    private var endpointFrame: Int?
-    private var hitResolved = false
+    private var hitCase = ContactProbeCase()
+    private var hitCaseStarted = 0.0
+    private var hitCaseTrace: [[String: Any]] = []
+    private var completedHitCombinations = Set<String>()
+    private var hitCreditedGap = 0.0
+    private var startupMaxFrame = 0.0
     private var hitChecks = 0
     private var hitFailures: [String] = []
     private var hitLabel = ""
@@ -262,7 +265,8 @@ final class FrameProfiler {
         let arena = ammoArena!
         ammoAccumulator += min(dt, 0.1)
         while ammoAccumulator + 1e-9 >= 1 / 60 {
-            arena.step(input: GameInput(fire: !expiry || ammoSteps > 0), dt: 1 / 60)
+            let fire = expiry ? ammoSteps > 0 : ammoSteps != 2 && ammoSteps != 5
+            arena.step(input: GameInput(fire: fire), dt: 1 / 60)
             ammoSteps += 1; ammoAccumulator = max(0, ammoAccumulator - 1 / 60)
             let tank = arena.snapshot.tanks[0]
             if ammoSteps == 1 {
@@ -274,8 +278,20 @@ final class FrameProfiler {
                 }
             } else if ammoSteps == 2 {
                 ammoChecks += 1
-                if !arena.snapshot.bullets.contains(where: { $0.ammoEpoch == 42 }) {
-                    ammoFailures.append(scenario + ": held fire did not use the new magazine")
+                let fired = arena.snapshot.bullets.contains { $0.ammoEpoch == 42 }
+                if fired != expiry {
+                    ammoFailures.append(scenario + ": weapon end did not consume its hold or expiry refill blocked a fresh press")
+                }
+            } else if !expiry && ammoSteps == 4 {
+                ammoChecks += 1
+                let fired = arena.snapshot.bullets.contains { $0.ammoEpoch == 42 }
+                if scenario == "grenade" ? fired || arena.snapshot.tanks[0].grenades != 0 : !fired {
+                    ammoFailures.append(scenario + ": fresh press did not pop the final grenade or fire standard ammo")
+                }
+            } else if scenario == "grenade" && ammoSteps == 7 {
+                ammoChecks += 1
+                if !arena.snapshot.bullets.contains(where: { $0.ammoEpoch == 42 && $0.kind.isEmpty }) {
+                    ammoFailures.append("grenade: the next press after popping did not fire standard ammo")
                 }
             }
         }
@@ -290,10 +306,17 @@ final class FrameProfiler {
     private func hitSnapshot(dt: Double) -> ArenaSnapshot {
         let weapons = ["regular", "rapid", "scatter", "homing", "grenade", "cannon", "laser", "starman"]
         let profiles = ["plain", "starman", "speed", "ghost", "shield"]
-        let episode = Int(elapsed / 0.3)
-        if episode != hitEpisode {
-            if hitEpisode >= 0, !hitResolved { hitFailures.append(hitLabel + ": no completed contact") }
-            hitEpisode = episode; hitAccumulator = 0; hitFired = false; hitFrame = 0; endpointFrame = nil; hitResolved = false
+        if hitEpisode < 0 || hitCase.canAdvance {
+            if hitEpisode >= 0 {
+                if hitCase.result == nil { hitFailures.append(hitLabel + ": no completed contact after credited simulation timeout") }
+                if hitCaseTrace.count < 256 {
+                    hitCaseTrace.append(["episode": hitEpisode, "case": hitLabel, "frames": hitCase.frames,
+                        "simulationSeconds": hitCase.creditedSeconds, "wallSeconds": elapsed - hitCaseStarted,
+                        "result": hitCase.result?.rawValue ?? "timeout"])
+                }
+            }
+            hitEpisode += 1; hitAccumulator = 0; hitFired = false; hitCase = ContactProbeCase(); hitCaseStarted = elapsed
+            let episode = hitEpisode
             let kind = weapons[episode % weapons.count], profile = profiles[(episode / weapons.count) % profiles.count]
             hitLabel = kind + "/" + profile
             var shooter = ArenaTank(id: 1, name: "CONTACT", x: 42, y: 42, spawnSerial: 1, powerTime: 30,
@@ -307,34 +330,27 @@ final class FrameProfiler {
             hitArena = PracticeArena(seed: 42, name: "CONTACT", colorIndex: 0, botCount: 0, initialTanks: [shooter, victim])
         }
         let arena = hitArena!
-        hitAccumulator += min(dt, 0.1)
+        let credited = min(dt, 0.1)
+        hitCreditedGap += max(0, dt - credited)
+        hitAccumulator += credited
         while hitAccumulator + 1e-9 >= 1 / 60 {
-            arena.step(input: GameInput(fire: !hitFired && weapons[episode % weapons.count] != "starman"), dt: 1 / 60)
+            arena.step(input: GameInput(fire: !hitFired && weapons[hitEpisode % weapons.count] != "starman"), dt: 1 / 60)
             hitFired = true; hitAccumulator = max(0, hitAccumulator - 1 / 60)
         }
-        hitFrame += 1
         let visible = arena.presentationSnapshot(fraction: hitAccumulator * 60, now: elapsed)
-        if !hitResolved, let effect = arena.snapshot.effects.first(where: { $0.contact != nil }), let contact = effect.contact,
-           let body = visible.tanks.first(where: { $0.id == contact.target }) {
-            if contact.projectileId > 0, let flight = arena.snapshot.effects.first(where: { $0.flight?.id == contact.projectileId })?.flight,
-               let end = flight.points.last, let bullet = visible.bullets.first(where: { $0.id == flight.id }),
-               hypot(bullet.x - end.x, bullet.y - end.y) < 1e-7, body.hp > 0,
-               hypot(bullet.x - body.x, bullet.y - body.y) <= 17 + (flight.radius ?? 0) + 1e-7 { endpointFrame = endpointFrame ?? hitFrame }
-            if contact.projectileId == 0, body.hp > 0 {
-                let beam = visible.effects.contains { $0.kind == "laser" }
-                let touching = contact.kind == "starman" && visible.tanks.contains { $0.id == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 34.0000001 }
-                if beam || touching { endpointFrame = endpointFrame ?? hitFrame }
-            }
-            if visible.effects.contains(where: { $0.id == effect.id }) || body.hp <= 0 {
-                if endpointFrame == nil || endpointFrame! >= hitFrame { hitFailures.append(hitLabel + ": damage before displayed contact") }
-                hitChecks += 1; hitResolved = true
-            }
+        let wasPending = hitCase.result == nil
+        hitCase.observe(authoritative: arena.snapshot, visible: visible, dt: dt)
+        if wasPending, let result = hitCase.result {
+            hitChecks += 1
+            if result == .passed { completedHitCombinations.insert(hitLabel) }
+            else { hitFailures.append(hitLabel + ": damage before displayed contact") }
         }
-        return visible
+        return ContactProbeCase.renderSnapshot(visible, episode: hitEpisode)
     }
 
     func record(dt: Double, cpu: Double, simulation: Double, audio: Double, hud: Double,
                 rendering: GameScene.RenderMetrics) {
+        if elapsed <= 3 { startupMaxFrame = max(startupMaxFrame, dt) }
         var motion = [0.0, 0.0, 0.0]
         if let pose = motionPose, let previous = previousMotionPose, dt > 0 {
             let velocity = (x: (pose.x - previous.x) / dt, y: (pose.y - previous.y) / dt)
@@ -419,7 +435,15 @@ final class FrameProfiler {
             report["jerkWorldPerSecondCubed"] = distribution(15, multiplier: 1)
         }
         if firstShotProbe { report["firstShots"] = firstShots }
-        if hitMatrixProbe { report["contactChecks"] = hitChecks; report["contactFailures"] = hitFailures }
+        if hitMatrixProbe {
+            if completedHitCombinations.count < 40 { hitFailures.append("Incomplete matrix: \(completedHitCombinations.count) of 40 combinations completed") }
+            report["contactChecks"] = hitChecks; report["contactFailures"] = hitFailures
+            report["contactCombinationCount"] = completedHitCombinations.count
+            report["contactCombinations"] = completedHitCombinations.sorted()
+            report["contactCaseTrace"] = hitCaseTrace
+            report["contactCreditedGapMS"] = hitCreditedGap * 1000
+            report["startupMaxFrameMS"] = startupMaxFrame * 1000
+        }
         if pickupMatrixProbe { report["pickupEvents"] = pickupEvents; report["fixed"] = world != nil }
         if ammoRefillProbe { report["ammoRefillChecks"] = ammoChecks; report["ammoRefillFailures"] = ammoFailures; report["fixed"] = world != nil }
         do {

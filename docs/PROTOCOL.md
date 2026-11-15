@@ -1,10 +1,10 @@
-# leqra v5.1.3 — current game protocol (protocol 1)
+# leqra v5.1.4 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.1.3**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.1.4**.
 
 ```json
-{"type":"server_hello","version":"5.1.3","protocol":1}
-{"type":"client_hello","version":"5.1.3","protocol":1}
+{"type":"server_hello","version":"5.1.4","protocol":1}
+{"type":"client_hello","version":"5.1.4","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -23,7 +23,7 @@ The server negotiates no context takeover in either direction. Compressed client
 
 `GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The ready-room preview reads these standings immediately, then every second, without allocating a tank or joining a room. The same request supplies the menu's server round-trip measurement, refreshing ping and the online count together. Private arenas are not included. Public roaming bots use mostly Dumb difficulty, with Medium and rare Godlike encounters on the schedule below; private rooms retain their configured bot settings.
 
-`/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
+`/ws/infinite` accepts a JSON `join` with the current application `version` and a `name`. Its `welcome` gives the pilot's `id` and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Duplicate and older sequences are ignored before changing controls, pause state, fire edges or activity time. Each local seat has its own sequence, beginning at 1 after an authenticated controller binding; an ordinary tank respawn retains that connection's chronology. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
 Public joins may send `localName` for a second tank, with optional `colorIndex` and `localColorIndex` palette selections from 0 to 7. Private joins derive Player 2 and both tanks' paint from the authenticated room roster. A two-seat `welcome` includes `localId`. Send Player 2 inputs with `local: true` and an independent sequence. The server sends one snapshot covering both tanks' views.
 
@@ -37,7 +37,7 @@ The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, 
 
 Human tanks also carry a one-based `rank` in the full arena standings, including tanks outside the top ten. Rankings use score descending, then tank ID ascending, across the same distant, respawning, and reserved pilots included in `tankCount`. Bots omit `rank`.
 
-Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts current-ammo-epoch live projectiles even outside the pilot's view; old-epoch and boosted Starman shots do not occupy the fresh magazine's slots. Grenade counts/lifetime and remote detonation select only current-epoch grenades; older grenades remain visible and damaging until natural fuse/contact. Visible homing missiles and grenades include `target` when locked onto a pilot ID. Fixed-maze and Infinity tanks also report `spawnProtected` to distinguish spawn invulnerability from Starman and Shield hit protection. While `spawnProtected` and `invulnerable` are both active, the tank cannot fire or remotely detonate grenades.
+Tank HUD fields include `cooldownTotal`, `respawnTime`, `ammoUsed`, `grenades`, `grenadeLife`, and `locked`. Missing fields mean zero or false. The server counts current-ammo-epoch live projectiles even outside the pilot's view; old-epoch and boosted Starman shots do not occupy the fresh magazine's slots. Grenade counts/lifetime and remote detonation use the grenade control epoch described below, retaining the final charge after its automatic standard-ammo refill. Other retired grenades remain visible and damaging until natural fuse/contact. Visible homing missiles and grenades include `target` when locked onto a pilot ID. Fixed-maze and Infinity tanks also report `spawnProtected` to distinguish spawn invulnerability from Starman and Shield hit protection. While `spawnProtected` and `invulnerable` are both active, the tank cannot fire or remotely detonate grenades.
 
 For private play, the host sets `rules.infinity` to true on the ordinary room socket. The usual start and readiness flow launches the arena and sends `infinity_start` to connected combat pilots and room spectators. Room packets include `infinityActive` so members can rejoin a running arena. The Infinity socket join includes the room `code` and the member's existing room `token`. The host's `lobby` command ends the private run.
 
@@ -166,7 +166,7 @@ Victim `hit` and `shield` events/effects carry optional `contact` metadata:
 
 `target` and `spawnSerial` identify the victim's exact life. `before` captures its pose, living state, and protection immediately before damage, including shields that the hit consumes. Name, color, and other equipment can come from a same-life tank snapshot. `projectileId` references the shared terminal path; all eligible victims of one grenade blast reference that grenade without duplicating its flight. Laser and Starman contact use zero projectile ID with `kind:"laser"` or `kind:"starman"`, on the instantaneous beam/body-contact tick. Infinity effects now expose integer `tick` as well; contact ticks can be fractional. Clients can keep a separate pre-contact visual tank and defer its explosion while HP, scores, input eligibility, and respawn remain immediately authoritative. Contact metadata is ignored for a different target life, room/generation, or resumed baseline. Hit/shield contact records share the bounded 600ms path history so unrelated cosmetics cannot discard the causal link.
 
-Current Laser range is `4 * (world.width + world.height)` in fixed mazes and 36 cells in Infinity, twice the previous budgets. Its defensive trace limit is 256 segments. Laser and Cannon reload in `0.85 * 2 / 3` seconds (about 0.567s), a one-third reduction. Charges, damage, Starman's unlimited fire, other weapons, and Cannon's 5.3s lifetime remain unchanged.
+Current Laser range is `4 * (world.width + world.height)` in fixed mazes and 36 cells in Infinity, twice the previous budgets. Its defensive trace limit is 256 segments. Laser and Cannon reload in `0.85 / 3` seconds (about 0.283s), half their previous reload time. Charges, damage, Starman's unlimited fire, other weapons, and Cannon's 5.3s lifetime remain unchanged.
 
 Terminal flights, victim contacts and existing Laser paths have a separate 600ms history, bounded at 128 records per actual actor and merged into snapshots in event-ID order without duplicates. This covers Starman Shotgun's 108 possible terminal pellets per actor in that window, with room for victim transitions. It keeps a nearby short shot visible when many distant shooters fill the ordinary cosmetic queue or a replaceable snapshot waits through 50–400ms of jitter. Infinity still filters these records to the recipient's view. This bounded history does not attempt to replay arbitrarily long connection outages.
 
@@ -312,7 +312,8 @@ validation apply as before.
 Ghost bypasses internal tank/wall collisions, not the rim or tank collisions.
 The timer is advanced before movement, in the same step order on Go and in local
 prediction/replay. Expiry while embedded resolves to the nearest safe cell
-interior, without a new life or invulnerability. The renderer avoids interpolating
+interior before any tank attacks that tick, without a new life or invulnerability.
+The correction does not count as driving velocity or track distance. The renderer avoids interpolating
 across an expiry correction as if it were ordinary wall-crossing movement.
 Speed and Ghost have independent timers. Bot, respawn and sudden-death paths
 advance or reset Ghost consistently.
@@ -1044,13 +1045,14 @@ ignoring same-numbered teammates for missile targeting and damage. Grenade
 physical-contact triggers are separate, as described below. Bots on opposing
 sides can engage one another.
 
-`grenade` has radius 6, initial speed 205, exponential drag 0.45/second and a
-5-second fuse. It reflects off walls and detonates on first swept contact with a
+`grenade` has radius 6, initial speed 205 and a 10-second fuse. It cruises with
+light drag until seven seconds, then brakes progressively during its final
+three seconds. It reflects off walls and detonates on first swept contact with a
 living tank (stationary overlap also counts). Teammates and invulnerable tanks
-can trigger contact, but existing damage immunity is retained. Its owner has
-a 0.2-second launch grace. A contact produces only a blast, not an additional
+can trigger contact, but existing damage immunity is retained. Its owner is
+immune throughout flight and blast. A contact produces only a blast, not an additional
 contact hit; shields therefore absorb one hit. At detonation
-it damages eligible tank circles within radius 110 only where a ray to the
+it damages eligible tank circles within radius 220 only where a ray to the
 tank center is unobstructed. Shield/invulnerability rules still apply. All
 victims are resolved before round scoring. The complete blast is one event.
 
@@ -1069,12 +1071,12 @@ hits), with one total path budget of `4 * (world.width + world.height)`. Each
 segment consumes the remaining range. A tiny post-bounce step is deducted from
 the same budget; the trace has a defensive 256-segment cap. The first vulnerable
 opponent/shield stops it; the shooter is skipped throughout. Damage occurs once.
-Cooldown is `0.85 * 2 / 3` seconds and charges remain three, independent of active
+Cooldown is `0.85 / 3` seconds and charges remain three, independent of active
 projectile slots. The first up-to-28 units of barrel travel are hidden visually
 but count toward range, preventing barrel-overlap wall bypasses.
 
 One `laser` event includes the complete `points: [{x,y}, ...]` polyline, bounded
-to 129 points. `x`, `y`, `endX` and `endY` remain its first/last visible positions
+to 257 points. `x`, `y`, `endX` and `endY` remain its first/last visible positions
 for compatibility. The client draws the connected segments, never a straight
 chord across cover. The event includes the normal `id`, `generation`, `owner`,
 `player` and `color`; an accompanying `shot` event has `text:"laser"`. Normal tank
@@ -1115,6 +1117,13 @@ they are never removed merely to refill. Existing firing cadence and finite
 lifetimes bound retained physical shots. These fields are server output and
 local prediction metadata, never client-authoritative ammo, damage or score.
 
+An optional tank `grenadeEpoch` retains remote control of the last grenade charge
+after its automatic return to standard ammo. Missing/null means the current
+`ammoEpoch`; an explicit `0` is a valid retained bank. It does not occupy fresh
+standard ammo. Actual pickups, buff/weapon expiry refills, death and respawn clear
+the override. Successful remote detonation clears it too. Older projectiles keep
+their original epochs and natural fuse/contact behavior throughout.
+
 ### Remote grenade button semantics (v2.7)
 
 No new client damage/detonation command is accepted. The hub derives a rising
@@ -1134,13 +1143,15 @@ latches a pending press until one simulation step; leaving active gameplay clear
 that pending input so it cannot fire later on resume.
 
 On a fresh press, a living tank detonates its owned live `grenade` projectiles
-from the current ammo epoch first. This does not consume a weapon charge and
-bypasses throw cooldowns. If no current-epoch grenade is active, a grenade-equipped
-tank launches one
-subject to normal charges/cooldowns. A refill starts a fresh throw cycle: old
-epoch grenades keep their natural fuse/contact behavior but are no longer
-selected by this detonator or its HUD readout. This includes the final charge
-throw, which becomes old-epoch when the tank immediately returns to standard.
+from its grenade control epoch first. This does not consume a weapon charge and
+bypasses throw cooldowns. If no controlled grenade is active, a grenade-equipped
+tank launches one subject to normal charges/cooldowns. Actual pickups and expiry
+refills start a fresh throw cycle: old grenades keep their natural fuse/contact
+behavior but are no longer selected by this detonator or its HUD readout. The
+final-charge automatic return to standard is the exception: `grenadeEpoch`
+retains that grenade bank, so the next fresh press detonates it, and a further
+fresh press fires standard ammo. Infinity's `grenades`/`grenadeLife` aggregates
+use this control epoch separately from the magazine's `ammoUsed` epoch.
 These actions consume the whole hold, preventing same-press follow-up shots and
 preventing repeated grenade throws and standard follow-up shots during the same
 hold. The final throw replenishes standard ammo and clears its cooldown, but

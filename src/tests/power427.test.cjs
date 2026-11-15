@@ -209,9 +209,39 @@ test('last grenade consumes the entire hold through refills; only a new press fi
   s.weaponControl(t,true,true);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
  }
 });
+test('the final grenade stays remotely controlled after its standard-ammo refill',()=>{
+ for(const id of [0,1])for(const epoch of [0,42]){
+  const s=boot(),t=s.tanks[id];Object.assign(t,{power:'grenade',powerTime:15,charges:1,ammoEpoch:epoch});
+  s.detonate=b=>{b.dead=true;};for(const name of ['ownedGrenades','detonateOwned','weaponControl','pilotProjectileState'])vm.runInContext(declaration(name),s);
+  s.weaponControl(t,true,true);const grenade=s.bullets[0];
+  assert.equal(t.power,null);assert.equal(N.ammoEpoch(t),epoch+1);assert.equal(t.grenadeEpoch,epoch);assert.equal(s.activeAmmo(t),0);
+  const hud=s.pilotProjectileState(t);assert.equal(hud.ammo,0);assert.equal(hud.grenades,1,'detonate remains ready with a full standard magazine');
+  s.weaponControl(t,true,false);assert.equal(s.bullets.length,1);assert.ok(!grenade.dead);
+  s.weaponControl(t,false,false);s.weaponControl(t,true,true);
+  assert.ok(grenade.dead,'the next press pops the final grenade');assert.equal(s.bullets.length,1,'detonation never launches a regular shot');assert.equal(t.grenadeEpoch,undefined);
+  s.weaponControl(t,true,false);assert.equal(s.bullets.length,1,'the detonation consumes its whole hold');
+  s.weaponControl(t,false,false);s.weaponControl(t,true,true);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
+ }
+});
+test('a genuine refill starts a new grenade-control cycle without deleting the old final grenade',()=>{
+ for(const kind of kinds){
+  const s=boot(),t=s.tanks[0];Object.assign(t,{power:'grenade',powerTime:15,charges:1,ammoEpoch:0});
+  s.detonate=b=>{b.dead=true;};for(const name of ['ownedGrenades','detonateOwned','weaponControl'])vm.runInContext(declaration(name),s);
+  s.weaponControl(t,true,true);const old=s.bullets[0];s.grantPower(t,kind);
+  assert.equal(t.grenadeEpoch,undefined,kind);assert.equal(s.ownedGrenades(t).length,0,kind);assert.ok(s.bullets.includes(old)&&!old.dead,kind+' old grenade keeps its fuse');
+ }
+});
+test('all Ghost exits resolve before either rotated actor can attack, and surviving timers age once',()=>{
+ for(const localTick of [0,1])for(const remaining of [.001,.1]){
+  const s=boot(),t=s.tanks[1],dt=1/120;Object.assign(t,{x:253,ghostTime:remaining});s.localTick=localTick;
+  s.advanceGhost=(tank,dt)=>{const was=tank.ghostTime>0;tank.ghostTime=Math.max(0,tank.ghostTime-dt);if(was&&!tank.ghostTime)tank.x=273.01;};
+  s.humanControl=shooter=>{if(shooter.id===0){assert.equal(t.ghostTime,Math.max(0,remaining-dt));assert.equal(t.x,remaining<=dt?273.01:253);}};
+  s.update(dt);assert.equal(t.ghostTime,Math.max(0,remaining-dt));
+ }
+});
 test('every depleted or expired weapon consumes held Fire until a fresh press',()=>{
  for(const power of weapons)for(const expiry of [false,true])for(const sampledRelease of [false,true]){
-  const s=boot(),t=s.tanks[0],noop=()=>{};Object.assign(s,{detonateOwned:()=>false,LASER_COOLDOWN:.85*2/3,laserTrace:()=>({x:0,y:0,endX:1,endY:0,target:null}),laserEffect:noop});
+  const s=boot(),t=s.tanks[0],noop=()=>{};Object.assign(s,{detonateOwned:()=>false,LASER_COOLDOWN:.85/3,laserTrace:()=>({x:0,y:0,endX:1,endY:0,target:null}),laserEffect:noop});
   vm.runInContext(declaration('weaponControl')+'\n'+declaration('fireLaser'),s);s.grantPower(t,power);
   if(expiry){t.fireHeld=true;t.powerTime=.001;s.humanControl=pilot=>{if(pilot===t)s.weaponControl(t,true,false);};s.update(1/120);}
   else{t.charges=t.machineRounds=1;s.weaponControl(t,true,true);}

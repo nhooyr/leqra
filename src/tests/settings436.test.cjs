@@ -104,6 +104,18 @@ test('a fixed solo preset adds fallback only when it actually exits room Infinit
   assert.equal(s.localRoom.players.length,exitingInfinity?4:1);assert.equal(!!s.localRoom.rules.infinity,false);
  }
 });
+test('an explicit preset selects its own mode instead of leaving Public Infinity active',()=>{
+ for(const mode of ['elimination','ctf','koth','survival','infinity']){
+  const {s,storage}=boot();s.localRoom.players=[pilot()];s.infinityOnline=true;s.infinityOffline=false;
+  Object.assign(s,{mapSetupChanged:()=>false,rememberCallsign(){},rememberLocalCallsign(){},clearInput(){},setScreen(){}});
+  vm.runInContext(declaration('validatePreset')+'\n'+declaration('applyLocalPreset'),s);
+  const rules=mode==='infinity'?{...s.defaultModeRules(),infinity:true}:s.defaultModeRules(mode);
+  s.applyLocalPreset({rules,roster:[{kind:'human',name:'P1',team:1},{kind:'bot',name:'Rust',team:2,difficulty:'easy'}]});
+  assert.equal(s.infinityOnline,false,mode);assert.equal(s.infinityPlayMode(),mode==='infinity'?'offline':'',mode);
+  assert.equal(storage.get('leqra.infinityOnline'),'0',mode);assert.equal(storage.get('leqra.infinityOffline'),mode==='infinity'?'1':'0',mode);
+  assert.deepEqual(Array.from(s.localRoom.players,p=>p.name),['P1','Rust'],mode+' preserves the selected roster');
+ }
+});
 
 test('online Infinity exit presets acknowledge the exact normalized fallback roster',()=>{
  for(const mode of ['elimination','ctf','koth','survival']){

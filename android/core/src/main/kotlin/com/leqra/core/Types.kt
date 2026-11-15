@@ -100,6 +100,7 @@ data class ArenaTank(
     var killedBy: String = "",
     var killedByColor: String = "",
     var ammoEpoch: Long = 0,
+    var grenadeEpoch: Long? = null,
 ) {
     /** The server supplies the actual tier; a callsign cannot create a warning. */
     val isGodlikeBot: Boolean

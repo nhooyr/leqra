@@ -914,7 +914,8 @@ enum SnapshotDecoder {
             let id = mappedTanks[index]["id"] as? Int ?? -1
             let epoch = mappedTanks[index]["ammoEpoch"] as? UInt64 ?? 0
             let owned = mappedBullets.filter { ($0["owner"] as? Int) == id && ($0["ammoEpoch"] as? UInt64 ?? 0) == epoch }
-            let grenades = owned.filter { ($0["kind"] as? String) == "grenade" }
+            let grenadeEpoch = mappedTanks[index]["grenadeEpoch"] as? UInt64 ?? epoch
+            let grenades = mappedBullets.filter { ($0["owner"] as? Int) == id && ($0["kind"] as? String) == "grenade" && ($0["ammoEpoch"] as? UInt64 ?? 0) == grenadeEpoch }
             let power = mappedTanks[index]["power"] as? String ?? ""
             mappedTanks[index]["ammoUsed"] = power == "laser" ? max(0, 3 - (mappedTanks[index]["charges"] as? Int ?? 0))
                 : owned.filter { !boosted.contains($0["id"] as? Int ?? -1) }.count

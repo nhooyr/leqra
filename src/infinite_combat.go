@@ -42,6 +42,7 @@ func (a *infiniteArena) effect(kind string, x, y float64, owner int, points []Be
 func (p *infinitePilot) wireTank(tick uint64) infiniteTank {
 	t, k := p.infiniteTank, &p.kit
 	t.AmmoEpoch = k.AmmoEpoch
+	t.GrenadeEpoch = k.GrenadeEpoch
 	if p.Bot {
 		t.Difficulty = infiniteBotTunings[p.botLevel].name
 	} else {
@@ -248,12 +249,13 @@ func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 		detonated := false
 		for i := range a.bullets {
 			b := &a.bullets[i]
-			if b.Owner == p.ID && b.AmmoEpoch == k.AmmoEpoch && b.Kind == "grenade" && !b.dead {
+			if b.Owner == p.ID && b.AmmoEpoch == grenadeControlEpoch(k) && b.Kind == "grenade" && !b.dead {
 				a.detonate(b)
 				detonated = true
 			}
 		}
 		if detonated {
+			k.GrenadeEpoch = nil
 			k.fireBlocked = held
 			return
 		}
@@ -391,8 +393,7 @@ func (a *infiniteArena) spendWeapon(k *Tank) {
 			return
 		}
 	}
-	clearWeapon(k)
-	refillAmmo(k)
+	refillDepletedWeapon(k)
 }
 
 func (a *infiniteArena) fireLaser(p *infinitePilot) {
@@ -542,6 +543,7 @@ func (a *infiniteArena) eliminatePilot(target *infinitePilot, owner, ownerTeam i
 
 func (a *infiniteArena) eliminatePilotWithContact(target *infinitePilot, owner, ownerTeam int, ownerName string, contact *projectileContact, ownerColor ...int) {
 	target.HP = 0
+	target.kit.GrenadeEpoch = nil
 	target.VX, target.VY = 0, 0
 	target.Score--
 	target.respawn = a.tick + infiniteRespawnTicks

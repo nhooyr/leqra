@@ -91,12 +91,12 @@ class SpectatorUiTest {
                 set(session, "screen", Screen.PLAYING)
                 set(session, "localID", 0)
                 set(session, "localID2", null)
-                set(session, "followingID", 24)
+                set(session, "followingID", 72)
                 set(
                     session.arenaNetwork,
                     "welcome",
                     NetworkWelcome.parse(
-                        JSONObject().put("id", 0).put("spectating", true).put("following", 24)
+                        JSONObject().put("id", 0).put("spectating", true).put("following", 72)
                     ),
                 )
                 set(
@@ -104,15 +104,15 @@ class SpectatorUiTest {
                     "snapshot",
                     ArenaSnapshot(
                         spectating = true,
-                        following = 24,
+                        following = 72,
                         tanks =
-                            listOf(ArenaTank(id = 24, name = "Bot 1234567890 - Godlike", hp = 0)),
+                            listOf(ArenaTank(id = 72, name = "Bot 1234567890 - Godlike", hp = 0)),
                         leaderboard =
-                            (1..24).map {
+                            (1..72).map {
                                 LeaderboardEntry(
                                     it,
-                                    if (it == 24) "Bot 1234567890 - Godlike" else "Tank $it",
-                                    25 - it,
+                                    if (it == 72) "Bot 1234567890 - Godlike" else "Tank $it",
+                                    73 - it,
                                     bot = it > 2,
                                 )
                             },
@@ -130,7 +130,7 @@ class SpectatorUiTest {
                     descendants(scroll).filter {
                         it.contentDescription?.startsWith("Follow ") == true
                     }
-                assertEquals(24, rows.size)
+                assertEquals(72, rows.size)
                 assertTrue(rows.all { it.isClickable })
                 val last = descendants(rows.last()).filterIsInstance<TextView>()
                 assertTrue(last.any { it.text.toString().contains("Bot 1234567890") })
@@ -270,11 +270,9 @@ class SpectatorUiTest {
                     )
                     assertTrue(scroll.height <= (get(shown, "stage") as View).height)
                     scroll.scrollTo(0, scroll.getChildAt(0).height)
-                    if (label == "landscape")
-                        assertTrue(
-                            "Landscape list scrolls to all tanks",
-                            scroll.canScrollVertically(-1),
-                        )
+                    // A large tablet can show the complete room roster without scrolling.
+                    val maximumScroll = (scroll.getChildAt(0).height - scroll.height).coerceAtLeast(0)
+                    assertEquals("Every row is reachable whether it overflows or fits", maximumScroll, scroll.scrollY)
                     val target = viewer.snapshot.leaderboard.last()
                     selected = target.id
                     rows.first { it.contentDescription == "Follow ${target.name}" }.performClick()
@@ -308,7 +306,7 @@ class SpectatorUiTest {
                 viewer.foreground()
             }
             eventually("Viewer did not resume the selected target") {
-                viewer.arenaNetwork.connected && viewer.snapshot.following == selected
+                viewer.arenaNetwork.connected && viewer.network.connected && viewer.network.welcome != null && viewer.snapshot.following == selected
             }
             main {
                 viewer.command(

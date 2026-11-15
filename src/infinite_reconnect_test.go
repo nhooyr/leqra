@@ -168,12 +168,12 @@ func TestPrivateInfinityRevokingOnlyLocalPlayerPreservesPrimary(t *testing.T) {
 			if got := drain(replacement); len(got) != 1 || got[0]["resumed"] != true || got[0]["id"] != float64(primary.ID) || got[0]["localId"] != nil {
 				t.Fatalf("replacement socket did not receive a solo resumed welcome: %v", got)
 			}
-			a.setConnectionInput(original, primary, primary, Input{Fire: true}, false, now)
-			a.setConnectionInput(replacement, primary, local, Input{Fire: true}, false, now)
+			a.setConnectionInput(original, primary, primary, Input{Seq: 1, Fire: true}, false, now)
+			a.setConnectionInput(replacement, primary, local, Input{Seq: 1, Fire: true}, false, now)
 			if primary.firePending || local.firePending {
 				t.Fatal("revoked transport or seat can still control a tank")
 			}
-			a.setConnectionInput(replacement, primary, primary, Input{Fire: true}, false, now)
+			a.setConnectionInput(replacement, primary, primary, Input{Seq: 1, Fire: true}, false, now)
 			if !primary.firePending {
 				t.Fatal("replacement socket cannot control the surviving primary pilot")
 			}

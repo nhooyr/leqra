@@ -5,19 +5,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LaserTuningTest {
-    @Test fun chargedLaserAndCannonReloadInTwoThirdsOfTheirPreviousTime() {
+    @Test fun chargedLaserAndCannonShareTheFasterReloadCadence() {
         for (kind in listOf("laser", "cannon")) {
-            assertEquals(.85 * 2 / 3, PracticeArena.spec(kind).cooldown, 1e-12)
+            assertEquals(.85 / 3, PracticeArena.spec(kind).cooldown, 1e-12)
             val arena = PracticeArena(123, "Pilot", 0, 0, world = ArenaWorld(1000.0, 1000.0))
             arena.snapshot.tanks.first().apply { x = 500.0; y = 500.0; invulnerable = 0.0; spawnProtected = false }
             val tank = arena.snapshot.tanks.first()
             PracticeArena.applyPower(tank, kind)
             arena.step(GameInput(fire = true), 1.0 / 60)
-            assertEquals(.85 * 2 / 3, tank.cooldownTotal, 1e-12)
+            assertEquals(.85 / 3, tank.cooldownTotal, 1e-12)
             assertEquals(2, tank.charges)
-            repeat(34) { arena.step(GameInput(fire = true), 1.0 / 60) }
-            assertEquals("$kind fires its next charge after34ticks", 1, tank.charges)
-            val hud = PilotReadout(tank.copy(cooldown = .85 / 3, cooldownTotal = 0.0), arena.snapshot, false)
+            repeat(16) { arena.step(GameInput(fire = true), 1.0 / 60) }
+            assertEquals("$kind cannot fire before its17tick reload", 2, tank.charges)
+            arena.step(GameInput(fire = true), 1.0 / 60)
+            assertEquals("$kind fires its next charge after17ticks", 1, tank.charges)
+            val hud = PilotReadout(tank.copy(cooldown = .85 / 6, cooldownTotal = 0.0), arena.snapshot, false)
             assertEquals(.5, hud.progress, 1e-12)
         }
         assertEquals(5.3, PracticeArena.spec("cannon").life, 0.0)

@@ -44,10 +44,11 @@ struct PauseCard: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("LEADERBOARD").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
                                 ForEach(Array(session.standings.prefix(10).enumerated()), id: \.element.id) { index, entry in
+                                    let seat = session.localPilotSeat(entry.id)
                                     HStack(alignment: .top) {
-                                        Text("\(index + 1). " + (entry.id == session.localID ? session.identity : CallsignPolicy.displayName(entry.name, bot: entry.bot)))
-                                            .fontWeight(entry.id == session.localID ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
-                                        if entry.bot { Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
+                                        Text("\(index + 1). " + entry.displayName + (seat.map { " (P\($0))" } ?? ""))
+                                            .fontWeight(seat != nil ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
+                                        if let difficulty = entry.difficultyLabel { Text(difficulty).font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
                                         Spacer(); Text("\(entry.score)").bold()
                                     }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
                                 }
@@ -152,7 +153,8 @@ struct RulesEditor: View {
                         }
                     }
                 }
-                Button("APPLY RULES") { session.updateRules(rules); session.showRules = false }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(!session.isHost)
+                if !session.roomSetupError.isEmpty { Text(session.roomSetupError).font(.system(size: 11)).foregroundStyle(WebStyle.danger) }
+                Button("APPLY RULES") { if session.updateRules(rules) { session.showRules = false } }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(!session.isHost)
                 Button("Restore defaults") {
                     rules = session.effectiveRules.restoringModeDefaults()
                 }.buttonStyle(WebButtonStyle())
@@ -345,7 +347,7 @@ struct ControlsPanel: View {
         WebModal(title: "Controls", close: { session.showControls = false }) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(session.identity).font(.system(size: 13, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex))
-                Text("WASD/arrow keys to drive, Q/C/Space to fire.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                Text("WASD/arrow keys to drive, Q/C/Space/Enter to fire.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
                 Text("Drag the left stick to drive and aim. Hold the right Fire button to shoot. Pickups equip automatically.").font(.system(size: 13)).lineSpacing(5)
                 Text("Grenades: tap to throw. Release, then tap again to detonate. Projectiles pass through the tank that fired them.").font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
                 Text("Ricochet around corners. Collect Shield, Ghost, Super speed, or Starman to stay in the battle.").font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
@@ -364,9 +366,10 @@ struct SidebarPanel: View {
                     Text("MATCH REPORT").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
                     Text("\(report.rounds) rounds, \(Int(report.duration)) seconds").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                     ForEach(report.players) { player in
+                        let seat = player.localSeat(controllerMember: session.roomMemberID)
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
-                                Text(CallsignPolicy.displayName(player.name, bot: player.kind == "bot") + ((player.member == session.roomMemberID || player.controllerMember == session.roomMemberID) ? " (P1)" : "")).fontWeight(player.member == session.roomMemberID || player.controllerMember == session.roomMemberID ? .bold : .regular)
+                                Text(CallsignPolicy.displayName(player.name, bot: player.kind == "bot") + (seat.map { " (P\($0))" } ?? "")).fontWeight(seat != nil ? .bold : .regular)
                                 Text(player.kind == "bot" ? "BOT" : "HUMAN PILOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                                 Spacer(); Text("\(player.score)").bold()
                             }.foregroundStyle(WebStyle.mapped(player.color))

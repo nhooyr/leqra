@@ -25,39 +25,40 @@ const (
 )
 
 type infiniteTank struct {
-	AmmoEpoch  uint64  `json:"ammoEpoch,omitempty"`
-	ID         int     `json:"id"`
-	X          float64 `json:"x"`
-	Y          float64 `json:"y"`
-	VX         float64 `json:"vx"`
-	VY         float64 `json:"vy"`
-	Angle      float64 `json:"angle"`
-	HP         int     `json:"hp"`
-	Bot        bool    `json:"bot"`
-	Difficulty string  `json:"difficulty,omitempty"`
-	ColorIndex int     `json:"colorIndex"`
-	Team       int     `json:"team,omitempty"`
-	Score      int     `json:"score"`
-	Rank       int     `json:"rank,omitempty"`
-	Name       string  `json:"name"`
-	Protected  bool    `json:"protected,omitempty"`
-	Ack        uint64  `json:"ack,omitempty"`
-	AckSteps   uint32  `json:"ackSteps,omitempty"`
-	Spawn      int     `json:"spawnSerial,omitempty"`
-	Track      float64 `json:"track,omitempty"`
-	Recoil     float64 `json:"recoil,omitempty"`
-	Cooldown   float64 `json:"cooldown,omitempty"`
-	Invuln     float64 `json:"invulnerable,omitempty"`
-	Power      string  `json:"power,omitempty"`
-	PowerTime  float64 `json:"powerTime,omitempty"`
-	Charges    int     `json:"charges,omitempty"`
-	Machine    int     `json:"machineRounds,omitempty"`
-	Shield     float64 `json:"shield,omitempty"`
-	Shields    int     `json:"shieldCharges,omitempty"`
-	SpeedTime  float64 `json:"speedTime,omitempty"`
-	Speed      int     `json:"speedStacks,omitempty"`
-	Ghost      float64 `json:"ghostTime,omitempty"`
-	Starman    float64 `json:"starmanTime,omitempty"`
+	AmmoEpoch    uint64  `json:"ammoEpoch,omitempty"`
+	GrenadeEpoch *uint64 `json:"grenadeEpoch,omitempty"`
+	ID           int     `json:"id"`
+	X            float64 `json:"x"`
+	Y            float64 `json:"y"`
+	VX           float64 `json:"vx"`
+	VY           float64 `json:"vy"`
+	Angle        float64 `json:"angle"`
+	HP           int     `json:"hp"`
+	Bot          bool    `json:"bot"`
+	Difficulty   string  `json:"difficulty,omitempty"`
+	ColorIndex   int     `json:"colorIndex"`
+	Team         int     `json:"team,omitempty"`
+	Score        int     `json:"score"`
+	Rank         int     `json:"rank,omitempty"`
+	Name         string  `json:"name"`
+	Protected    bool    `json:"protected,omitempty"`
+	Ack          uint64  `json:"ack,omitempty"`
+	AckSteps     uint32  `json:"ackSteps,omitempty"`
+	Spawn        int     `json:"spawnSerial,omitempty"`
+	Track        float64 `json:"track,omitempty"`
+	Recoil       float64 `json:"recoil,omitempty"`
+	Cooldown     float64 `json:"cooldown,omitempty"`
+	Invuln       float64 `json:"invulnerable,omitempty"`
+	Power        string  `json:"power,omitempty"`
+	PowerTime    float64 `json:"powerTime,omitempty"`
+	Charges      int     `json:"charges,omitempty"`
+	Machine      int     `json:"machineRounds,omitempty"`
+	Shield       float64 `json:"shield,omitempty"`
+	Shields      int     `json:"shieldCharges,omitempty"`
+	SpeedTime    float64 `json:"speedTime,omitempty"`
+	Speed        int     `json:"speedStacks,omitempty"`
+	Ghost        float64 `json:"ghostTime,omitempty"`
+	Starman      float64 `json:"starmanTime,omitempty"`
 
 	CooldownTotal float64 `json:"cooldownTotal,omitempty"`
 	RespawnTime   float64 `json:"respawnTime,omitempty"`
@@ -542,12 +543,14 @@ func (a *infiniteArena) setInput(p *infinitePilot, input Input, paused bool, now
 	p.input, p.inputAt = input, now
 }
 
-func (a *infiniteArena) setConnectionInput(c *Client, controller, seat *infinitePilot, input Input, paused bool, now time.Time) {
+func (a *infiniteArena) setConnectionInput(c *Client, controller, seat *infinitePilot, input Input, paused bool, now time.Time) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if controller.client == c && (seat == controller || seat == controller.local) {
+	if controller.client == c && (seat == controller || seat == controller.local) && input.Seq > seat.input.Seq {
 		a.setInput(seat, input, paused, now)
+		return true
 	}
+	return false
 }
 
 func (a *infiniteArena) idle(p *infinitePilot, now time.Time) bool {
@@ -1169,7 +1172,7 @@ func (a *infiniteArena) broadcast() {
 			if !b.boosted && b.AmmoEpoch == a.pilots[i].kit.AmmoEpoch {
 				tanks[i].AmmoUsed++
 			}
-			if b.Kind == "grenade" && b.AmmoEpoch == a.pilots[i].kit.AmmoEpoch {
+			if b.Kind == "grenade" && b.AmmoEpoch == grenadeControlEpoch(&a.pilots[i].kit) {
 				tanks[i].Grenades++
 				tanks[i].GrenadeLife = max(tanks[i].GrenadeLife, infinitePrecision(b.Life))
 			}

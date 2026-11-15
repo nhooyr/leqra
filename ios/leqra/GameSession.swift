@@ -60,6 +60,7 @@ final class GameSession: ObservableObject {
     @Published var localTeam = 0
     @Published var localBots: [LocalBot] = []
     @Published var roomName = ""
+    @Published var roomSetupError = ""
     @Published var localTank: ArenaTank?
     @Published var snapshot = ArenaSnapshot()
     @Published var chatMessages: [NativeChatMessage] = []
@@ -256,6 +257,10 @@ final class GameSession: ObservableObject {
         if id == localID { return 1 }
         if id == secondaryAudioPilotID { return 2 }
         return nil
+    }
+    var winnerIdentity: WinnerIdentity? {
+        WinnerIdentity(snapshot: snapshot, rules: effectiveRules, primaryID: localID,
+                       secondaryID: secondaryAudioPilotID, controllerMember: roomMemberID)
     }
     func followTank(_ id: Int) {
         guard canFollowTanks, id > 0, standings.contains(where: { $0.id == id }) else { return }
@@ -797,24 +802,42 @@ final class GameSession: ObservableObject {
         else { roomClient.send(.ready(true)); screen = .lobby; paused = false }
     }
 
-    func updateRules(_ rules: RoomRules) {
-        if room != nil { roomClient.send(.rules(rules)) }
+    private func canUseLocalRules(_ rules: RoomRules, bots: [LocalBot]) -> Bool {
+        guard rules.infinity || rules.mode != "survival" || bots.count <= 3 else {
+            roomSetupError = "Survival supports up to four squad tanks. Remove a bot before changing modes."
+            return false
+        }
+        roomSetupError = ""
+        return true
+    }
+
+    @discardableResult func updateRules(_ rules: RoomRules) -> Bool {
+        if room != nil { roomSetupError = ""; roomClient.send(.rules(rules)) }
         else {
+            guard canUseLocalRules(rules, bots: localBots) else { return false }
             localRules = rules
             if rules.mode == "survival" && !rules.infinity {
-                localTeam = 1; localBots = Array(localBots.prefix(3)).map { var bot = $0; bot.team = 1; return bot }
+                localTeam = 1; localBots = localBots.map { var bot = $0; bot.team = 1; return bot }
             } else if rules.mode == "ctf" && !rules.infinity {
                 localTeam = 1
                 for i in localBots.indices { localBots[i].team = i % 2 == 0 ? 2 : 1 }
             }
         }
+        return true
     }
 
     func selectMode(_ mode: BattleMode) {
         let rules = effectiveRules
         let context = room?.code ?? "local"
+        let enteringLocal = room == nil && publicInfinitySelected
+        let selected = rules.selectingMode(mode.rawValue, remembered: modeProfiles[context + ":" + mode.rawValue])
+        if room == nil, !canUseLocalRules(selected, bots: localBots) { return }
         modeProfiles[context + ":" + (rules.infinity ? "infinity" : rules.mode)] = rules
-        updateRules(rules.selectingMode(mode.rawValue, remembered: modeProfiles[context + ":" + mode.rawValue]))
+        guard updateRules(selected) else { return }
+        if room == nil {
+            publicInfinitySelected = false
+            if enteringLocal && localBots.isEmpty { for _ in 0..<3 { addBot() } }
+        }
     }
 
     func togglePublic(_ value: Bool) {
@@ -832,7 +855,15 @@ final class GameSession: ObservableObject {
         let capacity = !localRules.infinity && localRules.mode == "survival" ? 3 : 7
         guard localBots.count < capacity else { return }
         let id = (localBots.map(\.id).max() ?? 1) + 1
-        localBots.append(LocalBot(id: id, name: name, colorIndex: (id - 1) % 8, team: localRules.teamMode == "teams" ? max(1, localTeam) : 0))
+        let team: Int
+        if !localRules.infinity && localRules.mode == "survival" { team = 1 }
+        else if localRules.teamMode == "teams" {
+            let primaryTeam = max(1, localTeam)
+            let first = localBots.filter { $0.team == 1 }.count + (primaryTeam == 1 ? 1 : 0)
+            let second = localBots.filter { $0.team == 2 }.count + (primaryTeam == 2 ? 1 : 0)
+            team = first <= second ? 1 : 2
+        } else { team = 0 }
+        localBots.append(LocalBot(id: id, name: name, colorIndex: (id - 1) % 8, team: team))
     }
 
     func shareRoom() {
@@ -993,7 +1024,10 @@ final class GameSession: ObservableObject {
                 for index in seats.indices where seats[index].kind == "local" { seats[index].name = localCallsign }
             }
             send(.preset(rules: preset.rules, roster: seats))
-        } else { localRules = preset.rules; localBots = preset.bots; localTeam = preset.team; publicInfinitySelected = false }
+        } else {
+            guard canUseLocalRules(preset.rules, bots: preset.bots) else { return }
+            localRules = preset.rules; localBots = preset.bots; localTeam = preset.team; publicInfinitySelected = false
+        }
     }
 
     private func updateGeneratedPresets(seat: Int, previous: String, claimed: String) {

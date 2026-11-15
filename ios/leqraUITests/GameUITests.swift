@@ -9,6 +9,117 @@ final class GameUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor
+    func testPublicBackgroundRecoveryPreservesActiveAndManualPauseIntent() async throws {
+        let name = "WARM " + UUID().uuidString.prefix(8)
+        let app = launch(callsign: name)
+        selectPublic(true, in: app); play(in: app)
+        for wasPaused in [false, true] {
+            if wasPaused { pause(in: app) }
+            XCUIDevice.shared.press(.home)
+            try await Task.sleep(nanoseconds: 600_000_000)
+            app.activate()
+            if wasPaused {
+                XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 20), "An authenticated paused session must remain paused after recovery")
+                app.buttons["Resume"].tap()
+            } else {
+                XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 20))
+                XCTAssertFalse(app.buttons["Resume"].exists, "An active session resumes automatically")
+            }
+            XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains(name))
+            XCTAssertEqual(app.alerts.count, 0)
+        }
+        leaveGame(in: app)
+        app.terminate()
+    }
+
+    @MainActor
+    func testSelectingLocalModeKeepsAnIntentionallyEmptyRoster() {
+        let app = launch()
+        selectPublic(false, in: app)
+        openPlayers(in: app)
+        let removal = NSPredicate(format: "label BEGINSWITH 'Remove '")
+        for _ in 0..<3 {
+            let button = app.buttons.matching(removal).firstMatch
+            reveal(button, in: app); button.tap()
+        }
+        XCTAssertEqual(app.buttons.matching(removal).count, 0)
+        selectMode("survival", in: app)
+        XCTAssertEqual(app.buttons.matching(removal).count, 0, "An explicit local mode change must preserve an empty custom roster")
+        app.terminate()
+    }
+
+    @MainActor
+    func testBackgroundAndRotationPreserveActiveAndPausedStackedPowerGames() async throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--native-performance-probe", "--probe-weapon", "starman", "--probe-bullets", "115",
+                               "--probe-buffs", "shield,speed,ghost", "--probe-pan", "--probe-seconds", "60"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15))
+        XCUIDevice.shared.press(.home)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        app.activate()
+        XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Resume"].exists, "A previously active game resumes after activation")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.frame.contains(arena(in: app).frame))
+        pause(in: app)
+        XCUIDevice.shared.press(.home)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        app.activate()
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10), "A manually paused game must stay paused")
+        app.buttons["Resume"].tap()
+        XCTAssertTrue(app.buttons["pauseGame"].isHittable)
+        XCTAssertEqual(app.alerts.count, 0)
+        capture(app, name: "Stacked Starman lifecycle and rotation")
+        app.terminate()
+    }
+
+    @MainActor
+    func testIncompatibleSurvivalSelectionKeepsEveryBotAndTheCurrentMode() {
+        let app = launch()
+        selectPublic(false, in: app); selectMode("elimination", in: app)
+        openPlayers(in: app)
+        for _ in 0..<3 { let add = app.buttons["Add bot"]; reveal(add, in: app); add.tap() }
+        let before = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).allElementsBoundByIndex.map(\.label).sorted()
+        XCTAssertEqual(before.count, 6)
+        selectMode("survival", in: app)
+        let notice = app.staticTexts["roomSetupError"]
+        XCTAssertTrue(notice.label.contains("four squad tanks"))
+        XCTAssertTrue(app.staticTexts["roomRuleSummary"].label.contains("WINS"), "A rejected mode cannot change its active rules")
+        let after = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).allElementsBoundByIndex.map(\.label).sorted()
+        XCTAssertEqual(after, before, "Changing modes cannot discard configured bots")
+        capture(app, name: "Survival preserves six-bot roster and reports incompatibility")
+        app.terminate()
+    }
+
+    @MainActor
+    func testExplicitModeSelectionLeavesPublicInfinityAndStartsTheChosenLocalMode() {
+        let app = launch()
+        selectPublic(true, in: app)
+        selectMode("ctf", in: app)
+        XCTAssertEqual(app.switches["publicInfinityToggle"].value as? String, "0")
+        play(in: app)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'TEAM 1: FLAG'")).firstMatch.waitForExistence(timeout: 5))
+        capture(app, name: "Explicit CTF selection starts native local CTF")
+        app.terminate()
+    }
+
+    @MainActor
+    func testInfinityPauseUsesDifficultyLabelsAndLocalIdentity() {
+        let name = String(repeating: "界", count: 16)
+        let app = launch(callsign: name)
+        selectPublic(false, in: app); selectMode("infinity", in: app); play(in: app); pause(in: app)
+        let scroll = app.scrollViews["pauseMenuScroll"]
+        for _ in 0..<5 where !app.staticTexts["LEADERBOARD"].isHittable { scroll.swipeUp() }
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", name + " (P1)")).firstMatch.exists)
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == 'BOT'")).count, 0)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label IN {'DUMB', 'EASY', 'MEDIUM', 'HARD', 'GODLIKE'}")).firstMatch.exists)
+        capture(app, name: "Pause leaderboard uses difficulty and full CJK local name")
+        app.terminate()
+    }
+
+    @MainActor
     func testEmptyAmmoPressReachesTheActualBarrelWithoutCreatingAShot() {
         for fixed in [false, true] {
             let app = XCUIApplication()
@@ -114,16 +225,22 @@ final class GameUITests: XCTestCase {
         joinWatching()
         XCTAssertFalse(app.staticTexts["gameScore"].exists)
         XCTAssertFalse(app.staticTexts["pilotIdentity"].exists)
-        for (landscape, rank) in [(false, 12), (true, 13)] {
+        for landscape in [false, true] {
             XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
             try await Task.sleep(nanoseconds: 700_000_000)
             let arenaBounds = app.otherElements["arenaStage"].frame
             if !app.buttons["closeStandings"].exists { app.buttons["toggleStandings"].tap() }
             let scroll = app.scrollViews["standingsScroll"]
-            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'followTank_' AND label BEGINSWITH %@", "\(rank)." )).firstMatch
-            for _ in 0..<15 where !row.isHittable { scroll.swipeUp() }
-            XCTAssertTrue(row.isHittable, "The complete room leaderboard must scroll beyond row ten")
-            let selectedRow = app.buttons[row.identifier]
+            var selectedID: String?
+            // Scores keep changing while the real host plays. Choose a
+            // currently visible row beyond ten, then follow its stable ID.
+            for _ in 0..<15 {
+                let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'followTank_' AND label MATCHES %@", "^(1[1-9]|[2-9][0-9]+)\\..*" )).allElementsBoundByIndex
+                if let row = rows.first(where: \.isHittable) { selectedID = row.identifier; break }
+                scroll.swipeUp()
+            }
+            let target = try XCTUnwrap(selectedID, "The complete room leaderboard must scroll beyond row ten")
+            let selectedRow = app.buttons[target]
             selectedRow.tap()
             let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'Following'"), object: selectedRow)
             await fulfillment(of: [selected], timeout: 8)
@@ -366,7 +483,9 @@ final class GameUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["maskedAccountKey"].label.contains("p_"))
         let draft = app.secureTextFields["importAccountKey"]
         XCTAssertTrue(draft.exists)
-        draft.tap(); draft.typeText("invalid-key")
+        XCTAssertTrue(draft.isEnabled)
+        draft.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+        draft.typeText("invalid-key")
         let check = app.buttons["checkAccountKey"]
         app.scrollViews["modalScroll"].swipeUp()
         XCTAssertTrue(check.isEnabled); check.tap()
@@ -592,7 +711,7 @@ final class GameUITests: XCTestCase {
         leaveGame(in: app)
         selectPublic(true, in: app)
         app.buttons["playRoom"].tap()
-        let rejected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS '(P1)'"), object: feedback)
+        let rejected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Used online'"), object: feedback)
         await fulfillment(of: [rejected], timeout: 15)
         XCTAssertTrue(app.buttons["playRoom"].exists)
         XCTAssertFalse(app.buttons["pauseGame"].exists)

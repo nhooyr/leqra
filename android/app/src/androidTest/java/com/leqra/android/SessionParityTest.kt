@@ -24,6 +24,72 @@ class SessionParityTest {
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
     @Test
+    fun incompatibleSurvivalChangesNeverDeleteTheRosterOrChangePublicSelection() {
+        val context = context()
+        context.getSharedPreferences("leqra-settings", 0).edit().putString("server", "http://127.0.0.1:1")
+            .putString("callsign", "Audit Pilot").putString("localCallsign", "Audit Wing")
+            .putBoolean("autoPending0", false).putBoolean("autoPending1", false).putBoolean("publicSelected", false).commit()
+        var session = main { GameSession(context) }
+        try {
+            main {
+                session.localSelected = false
+                session.selectMode("elimination")
+                session.botCount = 6
+                session.localBots.forEachIndexed { i, bot -> session.updateLocalBot(bot.id,
+                    name = "Custom $i", colorIndex = i + 1, difficulty = if (i % 2 == 0) "hard" else "easy", team = i % 2 + 1) }
+                session.togglePublic(true)
+                val roster = session.localBots.toList()
+                val rules = session.rules.copy()
+                session.selectMode("survival")
+                assertEquals("infinity", session.mode)
+                assertTrue(session.publicSelected)
+                assertEquals(rules, session.rules)
+                assertEquals(roster, session.localBots)
+                assertTrue(session.configurationError?.contains("four squad tanks") == true)
+                session.changeRules(RoomRules.localDefaults("survival"))
+                assertEquals(rules, session.rules)
+                assertEquals(roster, session.localBots)
+                session.save()
+                session.release()
+                session = GameSession(context)
+                assertEquals(roster, session.localBots)
+                assertTrue(session.publicSelected)
+                session.selectMode("elimination")
+                assertEquals(roster, session.localBots)
+                assertFalse(session.publicSelected)
+                session.botCount = 3
+                session.selectMode("survival")
+                val squad = session.localBots.toList()
+                session.localSelected = true
+                session.save()
+                assertFalse("P2 cannot silently replace a configured squad bot", session.localSelected)
+                assertEquals(squad, session.localBots)
+                assertNotNull(session.configurationError)
+                set(session, "online", true)
+                session.localSelected = true
+                session.save()
+                assertTrue("Online P2 stays enabled until an actual Leave", session.localSelected)
+                session.leave()
+                assertFalse("Leave restores the earlier personal P2 preference", session.localSelected)
+                assertEquals(squad, session.localBots)
+                session.save()
+                assertEquals("Saving after Leave cannot delete a squad bot", squad, session.localBots)
+                session.removeLocalBot(squad.last().id)
+                session.localSelected = true
+                assertTrue(session.localSelected)
+                assertNull(session.configurationError)
+                session.togglePublic(true)
+                session.selectMode("infinity")
+                assertFalse("Explicit room Infinity is local", session.publicSelected)
+                session.togglePublic(true)
+                session.changeRules(RoomRules.localDefaults("elimination"))
+                assertFalse("Applying a local preset is local", session.publicSelected)
+                session.save()
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
     fun subphysicsFireEdgesRearmBothSeatsAndReachOnlineSequenceChronology() {
         for (finite in listOf(false, true)) for (power in listOf("rapid", "scatter", "homing", "grenade", "laser", "cannon")) {
             val context = context()
@@ -55,6 +121,12 @@ class SessionParityTest {
                         }
                     }
                     arena.step(mapOf(1 to session.input, 2 to session.input2), 1.0 / 60)
+                    if (power == "grenade") {
+                        assertTrue(arena.snapshot.bullets.isEmpty())
+                        session.input = GameInput(fire = true); session.input = GameInput()
+                        session.input2 = GameInput(fire = true); session.input2 = GameInput()
+                        arena.step(mapOf(1 to session.input, 2 to session.input2), 1.0 / 60)
+                    }
                     for (id in 1..2) assertEquals("A captured $power repress fires one standard shot for P$id", 1, arena.snapshot.bullets.count { it.owner == id && it.kind.isEmpty() })
                     repeat(8) { arena.step(GameInput(), 1.0 / 60) }
                     assertEquals(2, arena.snapshot.bullets.count { it.kind.isEmpty() })

@@ -100,7 +100,7 @@ private final class KeyboardGameContainer: UIView {
             guard let key = press.key?.keyCode,
                   [.keyboardW, .keyboardUpArrow, .keyboardS, .keyboardDownArrow,
                    .keyboardA, .keyboardLeftArrow, .keyboardD, .keyboardRightArrow,
-                   .keyboardQ, .keyboardC, .keyboardSpacebar].contains(key) else { continue }
+                   .keyboardQ, .keyboardC, .keyboardSpacebar, .keyboardReturnOrEnter, .keypadEnter].contains(key) else { continue }
             handled = true
             if down && scene.isUserInteractionEnabled { pressedKeys.insert(key) }
             else { pressedKeys.remove(key) }
@@ -109,7 +109,7 @@ private final class KeyboardGameContainer: UIView {
         scene.input.reverse = !pressedKeys.isDisjoint(with: [.keyboardS, .keyboardDownArrow])
         scene.input.left = !pressedKeys.isDisjoint(with: [.keyboardA, .keyboardLeftArrow])
         scene.input.right = !pressedKeys.isDisjoint(with: [.keyboardD, .keyboardRightArrow])
-        if handled { scene.input.fire = !pressedKeys.isDisjoint(with: [.keyboardQ, .keyboardC, .keyboardSpacebar]) }
+        if handled { scene.setKeyboardFire(!pressedKeys.isDisjoint(with: [.keyboardQ, .keyboardC, .keyboardSpacebar, .keyboardReturnOrEnter, .keypadEnter])) }
         return handled
     }
 

@@ -211,8 +211,8 @@ internal class NativeHudView(context: Context) : View(context) {
             slot.cooldownTotal =
                 tank.cooldownTotal.takeIf { it > 0 }
                     ?: when (tank.power) {
-                        "cannon",
-                        "laser" -> .85 * 2 / 3
+                        "cannon" -> .85 / 3
+                        "laser" -> .85 / 3
                         "scatter" -> .27
                         "homing" -> .36
                         "grenade" -> .8

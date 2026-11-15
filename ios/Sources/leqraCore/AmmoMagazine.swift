@@ -8,6 +8,7 @@ extension ArenaTank {
     /// their complete collision, damage and natural lifetime.
     mutating func refillAmmo() {
         ammoEpoch = Self.nextAmmoEpoch(ammoEpoch)
+        grenadeEpoch = nil
         cooldown = 0; cooldownTotal = 0; ammoUsed = 0; grenades = 0; grenadeLife = 0
         machineRounds = power == "rapid" ? 180 : 0
         switch power {

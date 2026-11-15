@@ -97,6 +97,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private val path = Path()
     private val destination = RectF()
     private val viewport = RectF()
+    private val fullViewport = RectF()
+    private val primaryViewport = RectF()
+    private val controlViewport = RectF()
+    private var drawingPilotID = 1
+    private val pilotCamera = HashMap<Int, DoubleArray>()
     private val safe = RectF()
     private var snapshot: ArenaSnapshot? = null
     private var geometry: InfiniteMaze? = null
@@ -213,7 +218,15 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var knobY = 0f
     private var fireHeld = false
 
-    private data class VisualEffect(val effect: ArenaEffect, val began: Double, val shape: Path?)
+    private data class VisualEffect(
+        val effect: ArenaEffect,
+        val began: Double,
+        val shape: Path?,
+        val left: Double,
+        val top: Double,
+        val right: Double,
+        val bottom: Double,
+    )
 
     private val effects = ArrayList<VisualEffect>(64)
 
@@ -300,6 +313,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         safeInsets(left, top, right, bottom)
 
     fun resetWorld() {
+        pilotCamera.clear()
         generation = null
         effects.clear()
         labels.clear()
@@ -342,6 +356,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 lastSnapshotTick?.let { snapshot.tick < it } == true ||
                 geometry?.seed != maze?.seed
         if (changedWorld) {
+            pilotCamera.clear()
             effects.clear()
             labels.clear()
             seenEffectIDs.clear()
@@ -406,7 +421,16 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                             }
                         else -> null
                     }
-                effects += VisualEffect(effect, now, shape)
+                // Cache conservative world bounds once. A laser can cross a pane even when
+                // its source is offscreen; blast bounds include the entire expanding ring.
+                val beam = effect.kind == "laser" && effect.points.size >= 2
+                val margin = if (beam) 10.0 else if (effect.kind == "blast") 224.0 else if (effect.kind == "hit") 72.0 else 51.0
+                effects += VisualEffect(effect, now, shape,
+                    (if (beam) effect.points.minOf { it.x } else effect.x) - margin,
+                    (if (beam) effect.points.minOf { it.y } else effect.y) - margin,
+                    (if (beam) effect.points.maxOf { it.x } else effect.x) + margin,
+                    (if (beam) effect.points.maxOf { it.y } else effect.y) + margin,
+                )
             }
         }
         invalidate()
@@ -459,93 +483,38 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             canvas.restore()
             return
         }
+        fullViewport.set(viewport)
+        val paired = infinity && localID2 != null && followingID == null
+        primaryViewport.set(fullViewport)
+        if (paired) {
+            if (landscape) primaryViewport.right = fullViewport.centerX()
+            else primaryViewport.bottom = fullViewport.centerY()
+        }
+        // Virtual controls always belong to P1, including after rotating a paired arena.
+        if (paired) controlViewport.set(primaryViewport)
+        else controlViewport.set(0f, safe.top + hudHeightDp, width, height - safe.bottom)
         val fixedPortrait = !infinity && !landscape
-        stickX = safe.left + if (fixedPortrait) 93f else 84f
-        stickY = height - safe.bottom - if (fixedPortrait) 59.5f else 67.5f
-        fireX = width - safe.right - if (fixedPortrait) 85.5f else 63.5f
+        stickX = max(controlViewport.left, safe.left) + if (fixedPortrait) 93f else 84f
+        stickY = controlViewport.bottom - if (fixedPortrait) 59.5f else 67.5f
+        fireX = min(controlViewport.right, width - safe.right) - if (fixedPortrait) 85.5f else 63.5f
         fireY = stickY
         val state = snapshot
         if (state != null) {
-            updateCamera(state, landscape)
-            canvas.save()
-            canvas.clipRect(viewport)
-            canvas.translate(
-                viewport.centerX() - ((cameraX - originX) * zoom).toFloat(),
-                viewport.centerY() - ((cameraY - originY) * zoom).toFloat(),
-            )
-            canvas.scale(zoom, zoom)
-            val fixedWorld = state.world
-            if (fixedWorld != null) {
-                fill(0x9902080b.toInt())
-                canvas.drawRect(
-                    2f,
-                    5f,
-                    fixedWorld.width.toFloat() + 2,
-                    fixedWorld.height.toFloat() + 5,
-                    paint,
-                )
-                canvas.save()
-                canvas.clipRect(0f, 0f, fixedWorld.width.toFloat(), fixedWorld.height.toFloat())
-                terrain.draw(
-                    canvas,
-                    max(0.0, worldLeft),
-                    max(0.0, worldTop),
-                    min(fixedWorld.width - .01, worldRight),
-                    min(fixedWorld.height - .01, worldBottom),
-                    originX,
-                    originY,
-                )
-                canvas.restore()
-                stroke(0xff829285.toInt(), 2f)
-                canvas.drawRect(
-                    1f,
-                    1f,
-                    fixedWorld.width.toFloat() - 1,
-                    fixedWorld.height.toFloat() - 1,
-                    paint,
-                )
-            } else
-                terrain.draw(canvas, worldLeft, worldTop, worldRight, worldBottom, originX, originY)
-            drawObjectives(canvas, state)
-            for (pickup in state.pickups) if (isVisible(pickup.x, pickup.y, 30.0)) {
-                val alpha = if (pickup.life < 3) (.5 + .4 * sin(frameTime * 12)).toFloat() else 1f
-                val pulse = (sin(frameTime * 3 + pickup.x) * .5 + .5).toFloat()
-                val half = 18 * (1 + pulse / 18)
-                stroke(ArenaPalette.alpha(ArenaPalette.power(pickup.type), .2f * alpha), 1.5f)
-                canvas.drawRoundRect(
-                    rx(pickup.x) - half,
-                    ry(pickup.y) - half,
-                    rx(pickup.x) + half,
-                    ry(pickup.y) + half,
-                    9f,
-                    9f,
-                    paint,
-                )
-                paint.style = Paint.Style.FILL
-                paint.alpha = (alpha * 255).toInt()
-                destination.set(
-                    rx(pickup.x) - 21,
-                    ry(pickup.y) - 21,
-                    rx(pickup.x) + 21,
-                    ry(pickup.y) + 21,
-                )
-                canvas.drawBitmap(art.pickup(pickup.type), null, destination, paint)
+            projectileFrame++
+            viewport.set(primaryViewport)
+            drawWorldScene(canvas, state, landscape, followingID ?: localID)
+            if (paired) {
+                viewport.set(fullViewport)
+                if (landscape) viewport.left = primaryViewport.right else viewport.top = primaryViewport.bottom
+                drawWorldScene(canvas, state, landscape, localID2!!)
             }
-            paint.alpha = 255
-            drawGuide(canvas, state)
-            for (tank in state.tanks) if (
-                isVisible(tank.x, tank.y, 100.0) && (!infinity || tank.hp > 0)
-            )
-                drawTank(canvas, tank)
-            drawBullets(canvas, state)
-            drawMissileWarnings(canvas, state)
-            drawEffects(canvas)
-            // Stable overlay passes keep firing shells and neighboring icons below every count.
-            for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, false)
-            for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, true)
-            canvas.restore()
-            for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && tank.hp > 0)
-                drawIdentity(canvas, tank)
+            pruneProjectileHistory()
+            viewport.set(fullViewport)
+            if (paired) {
+                stroke(0xff506d80.toInt(), 1f)
+                if (landscape) canvas.drawLine(primaryViewport.right, viewport.top, primaryViewport.right, viewport.bottom, paint)
+                else canvas.drawLine(viewport.left, primaryViewport.bottom, viewport.right, primaryViewport.bottom, paint)
+            }
             drawPhase(canvas, state)
             drawEncounterNotice(canvas)
         }
@@ -560,7 +529,96 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
     }
 
-    private fun updateCamera(state: ArenaSnapshot, landscape: Boolean) {
+    private fun drawWorldScene(canvas: Canvas, state: ArenaSnapshot, landscape: Boolean, pilotID: Int) {
+        drawingPilotID = pilotID
+        updateCamera(state, landscape, pilotID)
+        canvas.save()
+        canvas.clipRect(viewport)
+        canvas.translate(
+            viewport.centerX() - ((cameraX - originX) * zoom).toFloat(),
+            viewport.centerY() - ((cameraY - originY) * zoom).toFloat(),
+        )
+        canvas.scale(zoom, zoom)
+        val fixedWorld = state.world
+        if (fixedWorld != null) {
+            fill(0x9902080b.toInt())
+            canvas.drawRect(
+                2f,
+                5f,
+                fixedWorld.width.toFloat() + 2,
+                fixedWorld.height.toFloat() + 5,
+                paint,
+            )
+            canvas.save()
+            canvas.clipRect(0f, 0f, fixedWorld.width.toFloat(), fixedWorld.height.toFloat())
+            terrain.draw(
+                canvas,
+                max(0.0, worldLeft),
+                max(0.0, worldTop),
+                min(fixedWorld.width - .01, worldRight),
+                min(fixedWorld.height - .01, worldBottom),
+                originX,
+                originY,
+            )
+            canvas.restore()
+            stroke(0xff829285.toInt(), 2f)
+            canvas.drawRect(
+                1f,
+                1f,
+                fixedWorld.width.toFloat() - 1,
+                fixedWorld.height.toFloat() - 1,
+                paint,
+            )
+        } else
+            terrain.draw(canvas, worldLeft, worldTop, worldRight, worldBottom, originX, originY)
+        drawObjectives(canvas, state)
+        for (pickup in state.pickups) if (isVisible(pickup.x, pickup.y, 30.0)) {
+            val alpha = if (pickup.life < 3) (.5 + .4 * sin(frameTime * 12)).toFloat() else 1f
+            val pulse = (sin(frameTime * 3 + pickup.x) * .5 + .5).toFloat()
+            val half = 18 * (1 + pulse / 18)
+            stroke(ArenaPalette.alpha(ArenaPalette.power(pickup.type), .2f * alpha), 1.5f)
+            canvas.drawRoundRect(
+                rx(pickup.x) - half,
+                ry(pickup.y) - half,
+                rx(pickup.x) + half,
+                ry(pickup.y) + half,
+                9f,
+                9f,
+                paint,
+            )
+            paint.style = Paint.Style.FILL
+            paint.alpha = (alpha * 255).toInt()
+            destination.set(
+                rx(pickup.x) - 21,
+                ry(pickup.y) - 21,
+                rx(pickup.x) + 21,
+                ry(pickup.y) + 21,
+            )
+            canvas.drawBitmap(art.pickup(pickup.type), null, destination, paint)
+        }
+        paint.alpha = 255
+        drawGuide(canvas, state, drawingPilotID)
+        if (!infinity && localID2 != null) drawGuide(canvas, state, localID2!!)
+        for (tank in state.tanks) if (
+            isVisible(tank.x, tank.y, 100.0) && (!infinity || tank.hp > 0)
+        )
+            drawTank(canvas, tank)
+        drawBullets(canvas, state)
+        drawMissileWarnings(canvas, state, drawingPilotID)
+        if (!infinity && localID2 != null) drawMissileWarnings(canvas, state, localID2!!)
+        drawEffects(canvas)
+        // Stable overlay passes keep firing shells and neighboring icons below every count.
+        for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, false)
+        for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, true)
+        canvas.restore()
+        canvas.save()
+        canvas.clipRect(viewport)
+        for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && tank.hp > 0)
+            drawIdentity(canvas, tank)
+        canvas.restore()
+    }
+
+    private fun updateCamera(state: ArenaSnapshot, landscape: Boolean, pilotID: Int) {
         val world = state.world
         if (world != null) {
             cameraX = world.width / 2
@@ -573,11 +631,17 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     )
                     .coerceAtLeast(.05f)
         } else {
-            val focus = state.tanks.firstOrNull { it.id == (followingID ?: localID) } ?: if (followingID == null) state.tanks.firstOrNull() else null
+            val focus = state.tanks.firstOrNull { it.id == pilotID } ?: if (followingID == null && localID2 == null) state.tanks.firstOrNull() else null
             if (focus != null) {
                 cameraX = focus.x
                 cameraY = focus.y
-            } else if (followingID == 0) {
+                val last = pilotCamera.getOrPut(pilotID) { DoubleArray(2) }
+                last[0] = cameraX
+                last[1] = cameraY
+            } else if (pilotCamera[pilotID] != null) {
+                cameraX = pilotCamera[pilotID]!![0]
+                cameraY = pilotCamera[pilotID]!![1]
+            } else {
                 cameraX = 0.0
                 cameraY = 0.0
             }
@@ -854,7 +918,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     private fun drawBullets(canvas: Canvas, state: ArenaSnapshot) {
-        projectileFrame++
         rapidBatches.forEach { it.count = 0 }
         trails.forEach(Path::rewind)
         for (bullet in state.bullets) {
@@ -886,12 +949,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 trail.lineTo(rx(bullet.x), ry(bullet.y))
             }
         }
-        var removed = 0
-        val size = projectileHistory.size()
-        if (removals.size < size) removals = IntArray(max(size, removals.size * 2))
-        for (index in 0 until size) if (projectileHistory.valueAt(index).seen != projectileFrame)
-            removals[removed++] = projectileHistory.keyAt(index)
-        repeat(removed) { projectileHistory.delete(removals[it]) }
         paint.strokeCap = Paint.Cap.ROUND
         for (index in trails.indices) if (!trails[index].isEmpty) {
             stroke(
@@ -919,6 +976,15 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             bullet.kind != "rapid" && isVisible(bullet.x, bullet.y, 128.0)
         )
             drawBullet(canvas, bullet)
+    }
+
+    private fun pruneProjectileHistory() {
+        var removed = 0
+        val size = projectileHistory.size()
+        if (removals.size < size) removals = IntArray(max(size, removals.size * 2))
+        for (index in 0 until size) if (projectileHistory.valueAt(index).seen != projectileFrame)
+            removals[removed++] = projectileHistory.keyAt(index)
+        repeat(removed) { projectileHistory.delete(removals[it]) }
     }
 
     private fun drawBullet(canvas: Canvas, bullet: ArenaBullet) {
@@ -978,8 +1044,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         canvas.restore()
     }
 
-    private fun drawGuide(canvas: Canvas, state: ArenaSnapshot) {
-        val tank = state.tanks.firstOrNull { it.id == localID && it.hp > 0 } ?: return
+    private fun drawGuide(canvas: Canvas, state: ArenaSnapshot, pilotID: Int) {
+        val tank = state.tanks.firstOrNull { it.id == pilotID && it.hp > 0 } ?: return
         val maze = geometry ?: return
         if (infinity && tank.power != "laser") return
         var signature = tank.x.toBits()
@@ -1094,8 +1160,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         paint.pathEffect = null
     }
 
-    private fun drawMissileWarnings(canvas: Canvas, state: ArenaSnapshot) {
-        val tank = state.tanks.firstOrNull { it.id == localID && it.hp > 0 } ?: return
+    private fun drawMissileWarnings(canvas: Canvas, state: ArenaSnapshot, pilotID: Int) {
+        val tank = state.tanks.firstOrNull { it.id == pilotID && it.hp > 0 } ?: return
         if (state.phase != "playing" || state.result != null) return
         var count = 0
         for (bullet in state.bullets) {
@@ -1131,6 +1197,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 continue
             }
             index++
+            if (visual.right < worldLeft || visual.left > worldRight || visual.bottom < worldTop || visual.top > worldBottom) continue
             if (effect.kind == "laser" && visual.shape != null) {
                 canvas.save()
                 canvas.translate(rx(effect.points[0].x), ry(effect.points[0].y))
@@ -1374,7 +1441,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         textPaint.typeface = Typeface.MONOSPACE
         textPaint.textSize = 10f * textScale
         textPaint.color = 0xff9babbb.toInt()
-        canvas.drawText("STEER", stickX, height - safe.bottom - 8, textPaint)
+        canvas.drawText("STEER", stickX, controlViewport.bottom - 8, textPaint)
         textPaint.color = color
         canvas.drawText(fireLabel, fireX, fireY + 18, textPaint)
         if (fixedPortrait) {
@@ -1434,16 +1501,16 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 val x = event.getX(index) / density
                 val y = event.getY(index) / density
                 if (
-                    x < width / density / 2 &&
+                    controlViewport.contains(x, y) && x < controlViewport.centerX() &&
                         stickPointer < 0 &&
-                        y > max(safe.top + hudHeightDp, height / density * .25f)
+                        y > controlViewport.top + controlViewport.height() * .25f
                 ) {
                     stickPointer = pointer
                     update(index)
                 } else if (
-                    x >= width / density / 2 &&
+                    controlViewport.contains(x, y) && x >= controlViewport.centerX() &&
                         firePointer < 0 &&
-                        y > height / density - max(210f, height / density * .38f)
+                        y > controlViewport.bottom - max(210f, controlViewport.height() * .38f)
                 ) {
                     firePointer = pointer
                     input.fire = true

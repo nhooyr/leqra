@@ -38,17 +38,18 @@ final class LaserTuningTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ArenaSnapshot.self, from: encoded).effects.count, 64)
     }
 
-    func testLaserAndCannonReloadInThirtyFourTicksWithMatchingHUDFallback() {
-        for weapon in ["laser", "cannon"] {
+    func testLaserAndCannonReloadAtTheirOwnCadenceWithMatchingHUDFallback() {
+        for (weapon, ticks) in [("laser", 17), ("cannon", 17)] {
+            let cooldown = Double(ticks) / 60
             let arena = PracticeArena(seed: 42, name: "RELOAD", colorIndex: 0, botCount: 0)
             arena.snapshot.tanks = [ArenaTank(id: 1, x: 42, y: 42, powerTime: 10, power: weapon, charges: 3)]
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
-            XCTAssertEqual(arena.snapshot.tanks[0].cooldownTotal, 0.85 * 2 / 3, accuracy: 1e-12, weapon)
-            for _ in 0..<33 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+            XCTAssertEqual(arena.snapshot.tanks[0].cooldownTotal, cooldown, accuracy: 1e-12, weapon)
+            for _ in 0..<(ticks - 1) { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
             XCTAssertEqual(arena.snapshot.tanks[0].charges, 2, weapon)
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
             XCTAssertEqual(arena.snapshot.tanks[0].charges, 1, weapon)
-            let tank = ArenaTank(id: 1, cooldown: 0.85 / 3, powerTime: 10, power: weapon, charges: 3)
+            let tank = ArenaTank(id: 1, cooldown: cooldown / 2, powerTime: 10, power: weapon, charges: 3)
             XCTAssertEqual(PilotReadout(tank: tank, snapshot: ArenaSnapshot(tanks: [tank]), infinity: true).progress, 0.5, accuracy: 1e-12, weapon)
         }
     }
