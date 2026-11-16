@@ -100,7 +100,7 @@ func TestFixedSoloPresetAddsFallbackOnlyWhenExitingInfinity(t *testing.T) {
 	for _, infinity := range []bool{false, true} {
 		h, clients, r := makeRoom(t, 1)
 		r.Game.Rules.Infinity = infinity
-		action(t, h, clients[0], map[string]any{"type": "preset", "rules": defaultRules(), "roster": []SeatSpec{{Name: "P1", Kind: "human"}}})
+		action(t, h, clients[0], map[string]any{"type": "preset", "rules": defaultRules(), "roster": []SeatSpec{{Name: r.Players[0].Name, Kind: "human"}}})
 		want := 1
 		if infinity {
 			want = 4

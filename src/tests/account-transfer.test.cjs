@@ -16,8 +16,8 @@ function boot(){
  const s={$,URL,AbortController,Set,Uint8Array,btoa,crypto:webcrypto,confirmGameAction:async()=>true,mode:'room',phase:'menu',online:{connected:false,connecting:false},localRoom:{self:0,players:[primary,local]},document:{createElement:()=>new Node()},location:{href:'https://leqra.test/'},navigator:{clipboard:{writeText:async()=>{}}},
   localStorage:{get length(){return storage.size;},key:index=>[...storage.keys()][index],getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
   setTimeout(fn){timers.set(++serial,fn);return serial;},clearTimeout:id=>timers.delete(id),fetch(url,request){return new Promise((resolve,reject)=>requests.push({url,request,resolve,reject}));},
-  secondaryMember:()=>local,rememberCallsign:name=>{$('pilotName').value=name;},rememberLocalCallsign:name=>{s.localName=name;},persistLocalRoomRules(){s.persisted=true;},syncCallsignEditors(){s.synced=true;},renderOnlineRoom(){s.rendered=true;},updateHUD(){},callsignForms:()=>[],scheduleCallsignAvailability(){},openFeature(){}};
- vm.createContext(s);for(const name of ['publicIdentityToken','rememberPublicIdentity','cleanPilotName','prepareLocalAccount','localAccountRegistrationPending','accountSeat','accountStorageKey','accountImportAllowed','accountNotice','accountKeyValid','fetchAccountInfo','renderAccountInfo','clearAccountImport','syncAccountImport','openAccount','copyAccountKey','checkImportedAccount','showAccountImportReview','pendingAccountKeys','savePendingAccountKey','clearPendingAccountKeys','completeAccountReset','resolvePendingAccountKeys','rotateAccountKey','forgetRevokedAccount','useImportedAccount'])vm.runInContext(declaration(name),s);
+  generatedCallsign:seat=>seat?local.name:primary.name,secondaryMember:()=>local,rememberCallsign:name=>{$('pilotName').value=name;},rememberLocalCallsign:name=>{s.localName=name;},persistLocalRoomRules(){s.persisted=true;},syncCallsignEditors(){s.synced=true;},renderOnlineRoom(){s.rendered=true;},updateHUD(){},callsignForms:()=>[],scheduleCallsignAvailability(){},openFeature(){}};
+ vm.createContext(s);for(const name of ['publicIdentityToken','rememberPublicIdentity','cleanPilotName','prepareLocalAccount','localAccountRegistrationPending','accountNameKey','savedCallsignAccounts','saveCallsignAccount','forgetSavedCallsignAccount','boundCallsignName','rememberCurrentCallsignAccount','renderSavedCallsignAccounts','accountSeat','accountStorageKey','accountImportAllowed','accountNotice','accountKeyValid','fetchAccountInfo','renderAccountInfo','clearAccountImport','syncAccountImport','openAccount','copyAccountKey','checkImportedAccount','showAccountImportReview','pendingAccountKeys','savePendingAccountKey','clearPendingAccountKeys','completeAccountReset','resolvePendingAccountKeys','rotateAccountKey','forgetRevokedAccount','useImportedAccount'])vm.runInContext(declaration(name),s);
  return{s,$,requests,storage,primary,local};
 }
 const info={names:['SAVED','WING'],totalNames:2,publicProfile:{name:'SAVED',score:17,localName:'WING',localScore:9}};
@@ -53,8 +53,8 @@ test('checking a key only previews; explicit offline import restores chosen call
  const {s,$,requests,primary,local}=boot();$('accountImportKey').value=key;const pending=s.checkImportedAccount();
  const request=requests[0];assert.equal(new URL(request.url).pathname,'/api/account');assert.deepEqual(JSON.parse(request.request.body),{publicToken:key});assert.ok(!String(request.url).includes(key));
  request.resolve({ok:true,status:200,json:async()=>info});await pending;
- assert.equal(s.publicIdentityToken(),oldKey);assert.equal(primary.name,'OLD');assert.equal(local.name,'OLD WING');assert.equal($('accountImportReview').hidden,false);assert.equal($('accountImportName').value,'SAVED');
- s.openAccount=()=>{};s.useImportedAccount();assert.equal(s.publicIdentityToken(),key);assert.equal(primary.name,'SAVED');assert.equal(local.name,'OLD WING','importing P1 never changes P2');assert.equal(s.persisted,true);assert.equal(s.synced,true);assert.equal(s.rendered,true);assert.equal(primary.score,undefined,'scores remain server-owned');
+ assert.equal(s.publicIdentityToken(),oldKey);assert.equal(primary.name,'OLD');assert.equal(local.name,'OLD WING');assert.equal($('accountImportReview').hidden,false);assert.equal($('accountImportName').value,'SAVED');assert.equal($('accountImportName').disabled,true);assert.equal($('accountImportName').children.length,1,'legacy aliases are not selectable');
+ s.openAccount=()=>{};const use=s.useImportedAccount();requests.at(-1).resolve(response({names:[$('accountImportName').value]}));await use;assert.equal(s.publicIdentityToken(),key);assert.equal(primary.name,'SAVED');assert.equal(local.name,'OLD WING','importing P1 never changes P2');assert.equal(s.persisted,true);assert.equal(s.synced,true);assert.equal(s.rendered,true);assert.equal(primary.score,undefined,'scores remain server-owned');
 });
 
 test('joining online or changing identity while a key check runs prevents replacement',async()=>{
@@ -155,7 +155,7 @@ test('queued old welcomes and fallback clears cannot overwrite a newly imported 
 
 test('P2 copy and import select only the independent P2 credential and callsign',async()=>{
  const {s,$,requests,primary,local}=boot();$('accountDialog').dataset.accountSeat='1';$('accountImportKey').value=key;
- const pending=s.checkImportedAccount();requests[0].resolve(response({names:['WING'],publicProfile:{name:'WING',score:9}}));await pending;s.openAccount=()=>{};s.useImportedAccount();
+ const pending=s.checkImportedAccount();requests[0].resolve(response({names:['WING'],publicProfile:{name:'WING',score:9}}));await pending;s.openAccount=()=>{};const use=s.useImportedAccount();requests.at(-1).resolve(response({names:[$('accountImportName').value]}));await use;
  assert.equal(s.publicIdentityToken(),oldKey);assert.equal(s.publicIdentityToken(1),key);assert.equal(primary.name,'OLD');assert.equal(local.name,'WING');
  const copied=[];s.navigator.clipboard.writeText=async token=>copied.push(token);await s.copyAccountKey();assert.deepEqual(copied,[key]);
 });
@@ -206,10 +206,14 @@ test('malformed P2 registration data fails closed without leaking its contents',
 test('importing another P2 key keeps an in-flight activation candidate recoverable',async()=>{
  const {s,$,requests,storage}=boot(),candidate=s.prepareLocalAccount().localPublicToken;s.rememberPublicIdentity(key,undefined,1);assert.equal(JSON.parse(storage.get('leqra.localAccountRegistration')).token,candidate);assert.equal(s.publicIdentityToken(1),key);
  $('accountDialog').dataset.accountSeat='1';const resolve=s.resolvePendingAccountKeys();requests[0].resolve(response({names:['LEGACY WING'],publicProfile:{name:'LEGACY WING',score:17}}));await resolve;assert.equal(s.publicIdentityToken(1),key,'a late registration never silently replaces the imported account');assert.equal($('accountImportKey').value,candidate);assert.equal($('accountImportReview').hidden,false);
- s.openAccount=()=>{};s.useImportedAccount();assert.equal(s.publicIdentityToken(1),candidate);assert.equal(storage.has('leqra.localAccountRegistration'),false);assert.equal(s.publicIdentityToken(),oldKey);
+ s.openAccount=()=>{};const use=s.useImportedAccount();requests.at(-1).resolve(response({names:[$('accountImportName').value]}));await use;assert.equal(s.publicIdentityToken(1),candidate);assert.equal(storage.has('leqra.localAccountRegistration'),false);assert.equal(s.publicIdentityToken(),oldKey);
 });
 
 test('an unconfirmed previous P2 activation is retained while another P2 account is selected',async()=>{
  const {s,$,requests,storage}=boot(),candidate=s.prepareLocalAccount().localPublicToken;s.rememberPublicIdentity(key,undefined,1);$('accountDialog').dataset.accountSeat='1';const task=s.resolvePendingAccountKeys();requests[0].resolve(response({code:'account_key_invalid'},401));await task;
  assert.equal(s.publicIdentityToken(1),key);assert.equal(JSON.parse(storage.get('leqra.localAccountRegistration')).token,candidate);assert.equal(requests.length,1);
+});
+
+test('joining a match while explicit import sign-in is pending preserves the active account',async()=>{
+ const {s,$,requests}=boot();$('accountImportKey').value=key;const check=s.checkImportedAccount();requests[0].resolve(response(info));await check;s.openAccount=()=>{};const use=s.useImportedAccount();assert.equal(JSON.parse(requests[1].request.body).signIn,true);s.online.connected=true;requests[1].resolve(response(info));await use;assert.equal(s.publicIdentityToken(),oldKey);assert.match($('accountImportNotice').textContent,/joined online play/);
 });

@@ -215,6 +215,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var worldTop = 0.0
     private var worldRight = 0.0
     private var worldBottom = 0.0
+    private var aimPointer = -1
+    private var aimTankX = Float.NaN
+    private var aimTankY = Float.NaN
+    private var aimTankZoom = 1f
     private var stickPointer = -1
     private var firePointer = -1
     private var stickX = 82f
@@ -332,6 +336,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     fun resetControls() {
+        aimPointer = -1
         stickPointer = -1
         firePointer = -1
         knobX = 0f
@@ -344,6 +349,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         input.fire = false
         input.stickX = 0.0
         input.stickY = 0.0
+        input.aimOnly = false
+        input.snapAim = false
         onInput?.invoke(input.copy())
         previewRecoil = 0.0
         localPreviewRecoil = 0.0
@@ -539,6 +546,12 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private fun drawWorldScene(canvas: Canvas, state: ArenaSnapshot, landscape: Boolean, pilotID: Int) {
         drawingPilotID = pilotID
         updateCamera(state, landscape, pilotID)
+        if (pilotID == localID) {
+            val tank = state.tanks.firstOrNull { it.id == localID && it.hp > 0 }
+            aimTankX = tank?.let { viewport.centerX() + ((it.x - cameraX) * zoom).toFloat() } ?: Float.NaN
+            aimTankY = tank?.let { viewport.centerY() + ((it.y - cameraY) * zoom).toFloat() } ?: Float.NaN
+            aimTankZoom = zoom
+        }
         canvas.save()
         canvas.clipRect(viewport)
         canvas.translate(
@@ -1481,6 +1494,14 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
     }
 
+    fun clearDirectAim() {
+        aimPointer = -1
+        if (input.snapAim) {
+            input.stickX = 0.0; input.stickY = 0.0
+            input.snapAim = false; input.aimOnly = false
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!showControls) {
             if (event.actionMasked == MotionEvent.ACTION_CANCEL) resetControls()
@@ -1499,6 +1520,23 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             input.stickY = (dy / divisor).toDouble()
             input.touchAim = true
             input.aimOnly = false
+            input.snapAim = false
+            aimPointer = -1
+        }
+        fun aim(index: Int, nearOnly: Boolean = false): Boolean {
+            val x = event.getX(index) / density
+            val y = event.getY(index) / density
+            val dx = x - aimTankX
+            val dy = y - aimTankY
+            val distance = hypot(dx, dy)
+            if (!distance.isFinite() || distance < 2 || !primaryViewport.contains(x, y) ||
+                nearOnly && distance > max(64f, 51 * aimTankZoom)) return false
+            input.stickX = (dx / distance).toDouble()
+            input.stickY = (dy / distance).toDouble()
+            input.aimOnly = true
+            input.snapAim = true
+            knobX = 0f; knobY = 0f
+            return true
         }
         when (action) {
             MotionEvent.ACTION_DOWN,
@@ -1507,7 +1545,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 requestFocus()
                 val x = event.getX(index) / density
                 val y = event.getY(index) / density
-                if (
+                if (aimPointer < 0 && aim(index, nearOnly = true)) {
+                    aimPointer = pointer
+                } else if (
                     controlViewport.contains(x, y) && x < controlViewport.centerX() &&
                         stickPointer < 0 &&
                         y > controlViewport.top + controlViewport.height() * .25f
@@ -1525,17 +1565,19 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 }
             }
             MotionEvent.ACTION_MOVE -> {
+                val target = event.findPointerIndex(aimPointer)
                 val stick = event.findPointerIndex(stickPointer)
-                if (stick >= 0) update(stick)
+                if (target >= 0) aim(target)
+                else if (stick >= 0) update(stick)
             }
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_POINTER_UP -> {
+                if (pointer == aimPointer) aimPointer = -1
                 if (pointer == stickPointer) {
                     stickPointer = -1
                     knobX = 0f
                     knobY = 0f
-                    input.stickX = 0.0
-                    input.stickY = 0.0
+                    if (!input.snapAim) { input.stickX = 0.0; input.stickY = 0.0 }
                 }
                 if (pointer == firePointer) {
                     firePointer = -1

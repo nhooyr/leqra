@@ -5,6 +5,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LaserTuningTest {
+    @Test fun laserPiercesEveryOpponentOnceAndKeepsDefenses() {
+        val world = ArenaWorld(672.0, 420.0, 8, 5, listOf(
+            MazeWall(-4.0, -4.0, 680.0, 8.0, "h", 0.0),
+            MazeWall(-4.0, 416.0, 680.0, 8.0, "h", 420.0),
+            MazeWall(-4.0, -4.0, 8.0, 428.0, "v", 0.0),
+            MazeWall(668.0, -4.0, 8.0, 428.0, "v", 672.0)))
+        val arena = PracticeArena(42, "LASER", 0, 0, world = world)
+        arena.configure(RoomRules(pickupRate = "off"))
+        arena.snapshot.tanks = listOf(
+            ArenaTank(id = 1, x = 90.0, y = 210.0, powerTime = 10.0, power = "laser", charges = 3, team = 1),
+            ArenaTank(id = 2, x = 190.0, y = 210.0, shield = 10.0, shieldCharges = 3, team = 2),
+            ArenaTank(id = 3, x = 290.0, y = 210.0, team = 2),
+            ArenaTank(id = 4, x = 390.0, y = 210.0, invulnerable = 1.0, spawnProtected = true, team = 2),
+            ArenaTank(id = 5, x = 490.0, y = 210.0, team = 1),
+            ArenaTank(id = 6, x = 590.0, y = 210.0, team = 2))
+        arena.step(GameInput(fire = true), 1.0 / 60)
+        assertEquals(listOf(1, 1, 0, 1, 1, 0), arena.snapshot.tanks.map { it.hp })
+        assertEquals(2, arena.snapshot.tanks[1].shieldCharges)
+        assertEquals(2, arena.snapshot.tanks[0].charges)
+        val points = arena.snapshot.effects.first { it.kind == "laser" }.points
+        assertEquals(4 * (world.width + world.height) - 28, points.zipWithNext().sumOf { (a, b) -> hypot(b.x-a.x, b.y-a.y) }, .1)
+    }
+
     @Test fun chargedLaserAndCannonShareTheFasterReloadCadence() {
         for (kind in listOf("laser", "cannon")) {
             assertEquals(.85 / 3, PracticeArena.spec(kind).cooldown, 1e-12)

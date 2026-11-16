@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+ <!-- Upright in-game hull and tracks, without a turret. -->
+ <g id="tank" transform="translate(30.65 32) rotate(-90) scale(1.2)">
+  <rect x="-20" y="-11" width="40" height="31" rx="6" fill="#02080b" fill-opacity=".6588"/>
+  <!-- Outline the tank itself; its offset shadow must not change the silhouette. -->
+  <path d="M -16 -17 C -17.662 -17 -19 -15.662 -19 -14 L -19 -11 C -19 -9.6419972 -18.106484 -8.5011263 -16.873047 -8.1289062 C -16.955985 -7.7665826 -17 -7.3881848 -17 -7 L -17 7 C -17 7.7322884 -16.844931 8.4271498 -16.564453 9.0527344 C -17.955172 9.3150637 -19 10.530777 -19 12 L -19 15 C -19 16.662 -17.662 18 -16 18 L 15 18 C 16.662 18 18 16.662 18 15 L 18 12 C 18 10.851061 17.359868 9.857786 16.416016 9.3535156 C 16.788493 8.6530751 17 7.851647 17 7 L 17 -7 C 17 -7.5460052 16.914251 -8.0714 16.753906 -8.5625 C 17.510155 -9.1061342 18 -9.9934647 18 -11 L 18 -14 C 18 -15.662 16.662 -17 15 -17 L -16 -17 z" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+  <g fill="#0b1116">
+   <rect x="-19" y="-17" width="37" height="9" rx="3"/>
+   <rect x="-19" y="9" width="37" height="9" rx="3"/>
+  </g>
+  <path d="M-16-16v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6M-16 10v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6" fill="none" stroke="#849392" stroke-opacity=".65" stroke-width="1"/>
+  <rect x="-17" y="-12" width="34" height="24" rx="5" fill="#32c5ff"/>
+  <rect x="-15" y="-10" width="7" height="20" rx="2" fill="#000000" fill-opacity=".1882"/>
+  <path d="M-12-10h24" fill="none" stroke="#ffffff" stroke-opacity=".3451" stroke-width="1"/>
+  <rect x="-12" y="-6" width="3" height="12" fill="#0c1518" fill-opacity=".4"/>
+ </g>
+</svg>

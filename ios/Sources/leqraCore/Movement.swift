@@ -118,6 +118,7 @@ public enum TankMovement {
         let magnitude = hypot(input.stickX, input.stickY)
         if magnitude > 0.1 {
             let desired = atan2(input.stickY, input.stickX)
+            if input.snapAim && input.aimOnly { return (desired, 0) }
             let difference = atan2(sin(desired - angle), cos(desired - angle))
             var rate = 5.8
             if input.touchAim && !input.aimOnly {

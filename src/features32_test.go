@@ -574,7 +574,7 @@ func TestPreset32AtomicAndPreservesHost(t *testing.T) {
 	token, member := r.Players[0].Token, r.Players[0].Member
 	rules := legacyTeamRules36()
 	rules.Mode = "ctf"
-	roster := []SeatSpec{{Name: "Captain", Kind: "human", Difficulty: "", Team: 1}, {Name: "NOVA", Kind: "local", Difficulty: "", Team: 1}, {Name: "RUST", Kind: "bot", Difficulty: "hard", Team: 2}}
+	roster := []SeatSpec{{Name: r.Players[0].Name, Kind: "human", Difficulty: "", Team: 1}, {Name: "NOVA", Kind: "local", Difficulty: "", Team: 1}, {Name: "RUST", Kind: "bot", Difficulty: "hard", Team: 2}}
 	action(t, h, cs[0], map[string]any{"type": "preset", "rules": rules, "roster": roster})
 	if r.Players[0].Token != token || r.Players[0].Member != member || r.Players[1].Owner != 0 || r.Players[2].Difficulty != "hard" || r.Game.Rules.Mode != "ctf" {
 		t.Fatal("preset failed or reset host identity")

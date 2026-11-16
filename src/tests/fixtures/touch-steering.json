@@ -70,5 +70,21 @@
     "turnScale": 1,
     "angleAfter": -0.06083333333333333,
     "throttle": -0.72
+  },
+  {
+    "name": "direct touch snaps exactly without driving",
+    "angle": 0,
+    "input": {"stickX": -1, "stickY": -1, "aimOnly": true, "snapAim": true, "forward": true},
+    "turnScale": 1.5,
+    "angleAfter": -2.356194490192345,
+    "throttle": 0
+  },
+  {
+    "name": "direct touch must be aim only",
+    "angle": 0,
+    "input": {"stickX": 0, "stickY": 1, "snapAim": true},
+    "turnScale": 1,
+    "angleAfter": 0.09666666666666666,
+    "throttle": 0
   }
 ]

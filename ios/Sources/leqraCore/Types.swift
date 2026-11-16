@@ -20,6 +20,7 @@ public struct GameInput: Codable, Equatable, Sendable {
     public var stickY: Double = 0
     public var touchAim: Bool = true
     public var aimOnly: Bool = false
+    public var snapAim: Bool = false
 
     public init(
         seq: UInt64 = 0,
@@ -31,7 +32,8 @@ public struct GameInput: Codable, Equatable, Sendable {
         stickX: Double = 0,
         stickY: Double = 0,
         touchAim: Bool = true,
-        aimOnly: Bool = false
+        aimOnly: Bool = false,
+        snapAim: Bool = false
     ) {
         self.seq = seq
         self.forward = forward
@@ -43,10 +45,11 @@ public struct GameInput: Codable, Equatable, Sendable {
         self.stickY = stickY
         self.touchAim = touchAim
         self.aimOnly = aimOnly
+        self.snapAim = snapAim
     }
 
     private enum CodingKeys: String, CodingKey {
-        case seq, forward, reverse, left, right, fire, stickX, stickY, touchAim, aimOnly
+        case seq, forward, reverse, left, right, fire, stickX, stickY, touchAim, aimOnly, snapAim
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -60,6 +63,7 @@ public struct GameInput: Codable, Equatable, Sendable {
         stickY = try c.decodeIfPresent(Double.self, forKey: .stickY) ?? 0
         touchAim = try c.decodeIfPresent(Bool.self, forKey: .touchAim) ?? false
         aimOnly = try c.decodeIfPresent(Bool.self, forKey: .aimOnly) ?? false
+        snapAim = try c.decodeIfPresent(Bool.self, forKey: .snapAim) ?? false
     }
 }
 

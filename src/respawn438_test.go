@@ -14,7 +14,7 @@ func TestRespawn438ReleasedDeadLifePressDoesNotFireOnRevival(t *testing.T) {
 				g.Rules.Mode, g.Rules.PickupRate = mode, "off"
 				player := r.Players[0]
 				if kind == "local2" {
-					h.configureRoom(clients[0], clientMessage{Type: "add", Kind: "local"}, time.Now())
+					action(t, h, clients[0], map[string]any{"type": "add", "kind": "local"})
 					player = r.Players[2]
 				}
 				g.startMatch(r.Players)

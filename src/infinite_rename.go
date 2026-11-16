@@ -8,6 +8,7 @@ import (
 // Only the authenticated connection's two seats can be renamed. The server
 // mutex also excludes reconnect replacement and room-seat retirement.
 func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Time) {
+	defer s.hub.syncAccountCallsigns()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fail := func(message string) {
@@ -78,6 +79,8 @@ func (s *infiniteServer) renamePilot(c *Client, msg infiniteMessage, now time.Ti
 		} else if errors.As(err, &conflict) {
 			packet["code"] = "callsign_taken"
 			packet["conflicts"] = conflict.Conflicts
+		} else if errors.Is(err, errCallsignImmutable) {
+			packet["code"] = "callsign_immutable"
 		} else if errors.Is(err, errOnlineOwnerRevoked) {
 			packet["code"] = "account_key_revoked"
 		} else {

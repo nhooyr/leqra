@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"path/filepath"
@@ -67,8 +68,8 @@ func TestCallsignGenerationAtomicallyClaimsIndependentSeatsAndRetriesAcrossResta
 		t.Fatal("P2-only retry changed its batch-generated name")
 	}
 	fresh := generateNames(t, a, generationID(2), accounts)
-	if fresh[0].Name == names[0].Name || fresh[1].Name == names[1].Name || len(a.hub.callsigns.claims) != 4 {
-		t.Fatal("manual new request did not generate new aliases")
+	if fresh[0].Name != names[0].Name || fresh[1].Name != names[1].Name || len(a.hub.callsigns.claims) != 2 {
+		t.Fatal("existing key changed its immutable callsign")
 	}
 }
 
@@ -99,11 +100,11 @@ func TestCallsignGenerationRetainsLegacyOwnedCollisionRetryAcrossRestart(t *test
 		}
 	}
 	fresh := generateNames(t, a, generationID(21), []callsignGenerationAccount{{Seat: 0, PublicToken: key}})
-	if len(fresh) != 1 || !strings.HasPrefix(fresh[0].Name, "pilot#") || len(a.hub.callsigns.claims) != 3 {
-		t.Fatal("fresh UUID did not use the new generated format", fresh)
+	if len(fresh) != 1 || fresh[0].Name != legacy || len(a.hub.callsigns.claims) != 2 {
+		t.Fatal("fresh UUID renamed an existing key", fresh)
 	}
-	if !a.hub.callsigns.availability(key, []string{legacy, fresh[0].Name})[0].Available {
-		t.Fatal("new generation lost the legacy alias")
+	if a.hub.callsigns.availability("", []string{legacy})[0].Available {
+		t.Fatal("new generation did not protect the legacy name")
 	}
 }
 
@@ -244,7 +245,9 @@ func TestCallsignGenerationHonorsOriginLimitsAndDoesNotTakeOverScores(t *testing
 			t.Fatal("generation weakened HTTP/origin restrictions", w.Code)
 		}
 	}
-	generateNames(t, a, generationID(8), []callsignGenerationAccount{{Seat: 0, PublicToken: key}})
+	if _, err := a.hub.callsigns.generateCallsigns(generationID(8), []callsignGenerationAccount{{Seat: 0, PublicToken: key}}); !errors.Is(err, errCallsignImmutable) {
+		t.Fatal("generation renamed a scored account", err)
+	}
 	if pair.pilot.client != active || pair.pilot.Score != 19 || len(drain(active)) != 0 || len(a.infinite.publicProfiles) != 1 {
 		t.Fatal("alias generation mutated a live account")
 	}

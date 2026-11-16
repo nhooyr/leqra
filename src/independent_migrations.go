@@ -20,7 +20,6 @@ func (s *infiniteServer) applySeatMigrations() error {
 	}
 	profiles := make(map[string]infinitePublicProfile)
 	entries := make(map[int]infinitePublicEntry)
-	aliases := make(map[string]string)
 	claimedIDs := make(map[int]string)
 	s.public.mu.Lock()
 	for hash, migration := range r.seatMigrations {
@@ -35,10 +34,7 @@ func (s *infiniteServer) applySeatMigrations() error {
 		if !exists {
 			continue
 		}
-		oldName := canonicalCallsign(entry.Name)
-		if r.claims[oldName] == migration.previous {
-			aliases[oldName] = hash
-		}
+
 		entry.Name = r.names[hash][migration.name]
 		if entry.Name == "" {
 			entry.Name = migration.name
@@ -60,11 +56,7 @@ func (s *infiniteServer) applySeatMigrations() error {
 			return err
 		}
 		defer tx.Rollback()
-		for name, hash := range aliases {
-			if _, err = tx.Exec("UPDATE online_callsigns SET owner_hash=? WHERE canonical_name=?", hash, name); err != nil {
-				return err
-			}
-		}
+
 		if err = writePublicRows(tx, entries, profiles, seed, next); err != nil {
 			return err
 		}
@@ -75,13 +67,7 @@ func (s *infiniteServer) applySeatMigrations() error {
 			return err
 		}
 	}
-	for name, hash := range aliases {
-		old := r.claims[name]
-		display := r.names[old][name]
-		delete(r.names[old], name)
-		r.names[hash][name] = display
-		r.claims[name] = hash
-	}
+
 	clear(r.seatMigrations)
 	s.public.mu.Lock()
 	for id, entry := range entries {

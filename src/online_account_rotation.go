@@ -21,9 +21,7 @@ func accountRevokedPacket() map[string]any {
 // A lost HTTP response can therefore be recovered by validating that candidate.
 // Ownership, scores, and revocation become durable in a single transaction.
 func (s *infiniteServer) rotateAccount(oldToken, newToken string) (onlineAccountRotation, error) {
-	rotation, err := s.rotateAccountState(oldToken, newToken)
-	rotation.onlineAccountInfo = accountPreview(rotation.onlineAccountInfo)
-	return rotation, err
+	return s.rotateAccountState(oldToken, newToken)
 }
 
 func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAccountRotation, error) {
@@ -39,6 +37,9 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 	defer s.mu.Unlock()
 	if s.closed {
 		return onlineAccountRotation{}, errAccountServerClosed
+	}
+	if err := s.expireAccounts(); err != nil {
+		return onlineAccountRotation{}, err
 	}
 	if err := s.applySeatMigrations(); err != nil {
 		return onlineAccountRotation{}, err
@@ -56,7 +57,7 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 		unlock()
 		return onlineAccountRotation{}, errOnlineOwnerInvalid
 	}
-	if r.owners[newHash] || r.revoked[newHash] {
+	if r.owners[newHash] || r.revoked[newHash] || r.expired[newHash] {
 		unlock()
 		return onlineAccountRotation{}, errNewAccountKeyInvalid
 	}
@@ -78,6 +79,7 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 		}{
 			{"INSERT INTO online_owners(token_hash) VALUES(?)", []any{newHash}},
 			{"UPDATE online_callsigns SET owner_hash=? WHERE owner_hash=?", []any{newHash, oldHash}},
+			{"UPDATE online_account_activity SET token_hash=? WHERE token_hash=?", []any{newHash, oldHash}},
 			{"UPDATE infinity_profiles SET token_hash=? WHERE token_hash=?", []any{newHash, oldHash}},
 			{"UPDATE online_seat_migrations SET previous_hash=? WHERE previous_hash=?", []any{newHash, oldHash}},
 			{"UPDATE online_seat_migrations SET new_hash=? WHERE new_hash=?", []any{newHash, oldHash}},
@@ -115,6 +117,8 @@ func (s *infiniteServer) rotateAccountState(oldToken, newToken string) (onlineAc
 	}
 	r.owners[newHash] = true
 	r.revoked[oldHash] = true
+	r.lastUsed[newHash] = r.lastUsed[oldHash]
+	delete(r.lastUsed, oldHash)
 	r.names[newHash] = r.names[oldHash]
 	delete(r.names, oldHash)
 	for key := range r.names[newHash] {

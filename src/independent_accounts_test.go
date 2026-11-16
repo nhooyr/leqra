@@ -57,16 +57,16 @@ func TestIndependentPendingSplitUniquenessMatchesSQLite(t *testing.T) {
 			}
 			a := accountAppFixture(t, path)
 			r := a.hub.callsigns
-			primary, _ := r.claim("", []string{"Primary", "Wing"})
+			primary, _ := seedLegacyAccountFixture(t, r, "", []string{"Primary", "Wing"})
 			first, second := freshAccountKey(t), freshAccountKey(t)
 			if _, err := r.claimSeatAccounts([]accountSeatClaim{{token: primary, name: "Primary"}, {token: first, name: "Wing", newAccount: true, transferFrom: primary}}, nil); err != nil {
 				t.Fatal(err)
 			}
-			requests := []accountSeatClaim{{token: primary, name: "New Primary"}, {token: second, name: "New Wing", newAccount: true, transferFrom: primary}}
+			requests := []accountSeatClaim{{token: primary, name: "Primary"}, {token: second, name: "New Wing", newAccount: true, transferFrom: primary}}
 			if _, err := r.claimSeatAccounts(requests, nil); !errors.Is(err, errSeatMigrationPending) {
 				t.Fatal("second pending candidate was not rejected", err)
 			}
-			if len(r.owners) != 2 || len(r.seatMigrations) != 1 || !r.availability("", []string{"New Primary"})[0].Available || !r.availability("", []string{"New Wing"})[0].Available {
+			if len(r.owners) != 2 || len(r.seatMigrations) != 1 || !r.availability("", []string{"New Wing"})[0].Available {
 				t.Fatal("rejected pending split partially allocated an owner or alias")
 			}
 			a.infinite.mu.Lock()
@@ -91,22 +91,22 @@ func TestIndependentPublicP2CanBecomeP1WithoutChangingItsIdentity(t *testing.T) 
 	pair.local.kit.Power, pair.local.kit.PowerTime = "laser", 3
 	pair.local.HP = 1
 	commitPublicFixture(t, a.infinite)
-	a.infinite.renamePilot(old, infiniteMessage{Seat: 1, Name: "New Wing", RequestID: 1}, time.Now())
-	if pair.local.Name != "New Wing" {
+	a.infinite.renamePilot(old, infiniteMessage{Seat: 1, Name: "WING", RequestID: 1}, time.Now())
+	if pair.local.Name != "WING" {
 		t.Fatal("independent P2 could not rename its own callsign", drain(old))
 	}
 	drain(old)
-	a.infinite.renamePilot(old, infiniteMessage{Seat: 0, Name: "New Primary", RequestID: 2}, time.Now())
-	if pair.pilot.Name != "New Primary" {
+	a.infinite.renamePilot(old, infiniteMessage{Seat: 0, Name: "PRIMARY", RequestID: 2}, time.Now())
+	if pair.pilot.Name != "PRIMARY" {
 		t.Fatal("P1 rename tried to claim P2's callsign")
 	}
 	drain(old)
 	for _, identity := range []struct {
 		key, name string
 		score     int
-	}{{primary, "New Primary", 17}, {local, "New Wing", 29}} {
+	}{{primary, "Primary", 17}, {local, "Wing", 29}} {
 		info, err := a.infinite.accountInfo(identity.key)
-		if err != nil || info.PublicProfile == nil || info.PublicProfile.Name != identity.name || info.PublicProfile.Score != identity.score || info.PublicProfile.LocalScore != nil || info.TotalNames != 2 {
+		if err != nil || info.PublicProfile == nil || info.PublicProfile.Name != identity.name || info.PublicProfile.Score != identity.score || info.PublicProfile.LocalScore != nil || info.TotalNames != 1 {
 			t.Fatalf("account exposed another seat's profile or aliases: %+v %v", info, err)
 		}
 	}
@@ -212,7 +212,7 @@ func TestIndependentLegacyP2MigrationPreservesScoreAfterOfflineRename(t *testing
 		t.Fatal("legacy P2 was not split into its own primary profile")
 	}
 	info, _ := a.infinite.accountInfo(local)
-	if strings.Join(info.Names, ",") != "Old Wing,Renamed Wing" || info.PublicProfile.Score != 42 {
+	if strings.Join(info.Names, ",") != "Renamed Wing" || info.PublicProfile.Score != 42 {
 		t.Fatal("legacy proven alias and score were not moved together", info)
 	}
 	if notices := drain(old); len(notices) != 1 || notices[0]["seat"] != float64(1) {

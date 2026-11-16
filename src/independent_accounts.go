@@ -23,7 +23,6 @@ type claimedSeatAccount struct {
 	fresh             bool
 	migration         *seatAccountMigration
 	consumed          bool
-	extraAliases      map[string]string
 }
 
 type seatAccountMigration struct{ next, previous, name string }
@@ -37,6 +36,9 @@ var errSeatMigrationPending = errors.New("an independent P2 account migration is
 func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, commit func(*sql.Tx, []claimedSeatAccount) error) ([]claimedSeatAccount, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.expireAccountsLocked(); err != nil {
+		return nil, err
+	}
 	accounts := make([]claimedSeatAccount, len(requests))
 	seenNames, seenOwners := make(map[string]bool), make(map[string]bool)
 	var conflicts []callsignConflict
@@ -57,10 +59,13 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 		if !valid {
 			return nil, &seatAccountError{seat, errOnlineOwnerInvalid}
 		}
+		if r.expired[hash] {
+			return nil, &seatAccountError{seat, errOnlineOwnerInvalid}
+		}
 		if r.revoked[hash] {
 			return nil, &seatAccountError{seat, errOnlineOwnerRevoked}
 		}
-		known := r.owners[hash]
+		known := r.activeOwnerLocked(hash)
 		fresh := !known || request.newAccount && r.generatedFresh[hash]
 		if request.token != "" && !known && !request.newAccount {
 			return nil, &seatAccountError{seat, errOnlineOwnerInvalid}
@@ -73,7 +78,12 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 		if reservedCallsign(name) {
 			reserved = append(reserved, callsignConflict{Seat: seat, Name: name})
 		}
-		owner, claimed := r.claims[key]
+		if !reservedCallsign(name) {
+			if err := r.immutableNamesLocked(hash, []string{request.name}); err != nil {
+				return nil, &seatAccountError{seat, err}
+			}
+		}
+		owner, claimed := r.callsignOwnerLocked(key)
 		transferHash, transferValid := publicTokenHash(request.transferFrom)
 		authorizedSplit := fresh && transferValid && r.owners[transferHash] && !r.revoked[transferHash]
 		if authorizedSplit {
@@ -114,16 +124,25 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 			if _, err = tx.Exec("INSERT OR IGNORE INTO online_owners(token_hash) VALUES(?)", account.hash); err != nil {
 				return nil, err
 			}
+			if err = r.writeAccountUseLocked(tx, account.hash); err != nil {
+				return nil, err
+			}
 			if r.generatedFresh[account.hash] {
 				if _, err = tx.Exec("DELETE FROM online_generated_fresh WHERE token_hash=?", account.hash); err != nil {
 					return nil, err
 				}
 			}
 		}
+		// Replace each current name in the same transaction as any legacy split.
+		for _, account := range accounts {
+			if _, err = tx.Exec("DELETE FROM online_callsigns WHERE owner_hash=? AND canonical_name<>?", account.hash, canonicalCallsign(account.name)); err != nil {
+				return nil, err
+			}
+		}
 		for _, account := range accounts {
 			key := canonicalCallsign(account.name)
 			if owner, claimed := r.claims[key]; claimed && owner != account.hash {
-				if _, err = tx.Exec("UPDATE online_callsigns SET owner_hash=? WHERE canonical_name=? AND owner_hash=?", account.hash, key, owner); err != nil {
+				if _, err = tx.Exec("INSERT INTO online_callsigns(canonical_name,display_name,owner_hash) VALUES(?,?,?) ON CONFLICT(canonical_name) DO UPDATE SET owner_hash=excluded.owner_hash,display_name=excluded.display_name", key, account.name, account.hash); err != nil {
 					return nil, err
 				}
 			} else if _, err = tx.Exec("INSERT OR IGNORE INTO online_callsigns(canonical_name,display_name,owner_hash) VALUES(?,?,?)", key, account.name, account.hash); err != nil {
@@ -152,10 +171,8 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 	}
 	for _, account := range accounts {
 		r.owners[account.hash] = true
+		r.lastUsed[account.hash] = r.now().Unix()
 		delete(r.generatedFresh, account.hash)
-		if r.names[account.hash] == nil {
-			r.names[account.hash] = make(map[string]string)
-		}
 		key := canonicalCallsign(account.name)
 		display := account.name
 		if owner, claimed := r.claims[key]; claimed {
@@ -164,19 +181,12 @@ func (r *onlineCallsignRegistry) claimSeatAccounts(requests []accountSeatClaim, 
 				delete(r.names[owner], key)
 			}
 		}
-		r.claims[key] = account.hash
-		r.names[account.hash][key] = display
+		if display == "" {
+			display = account.name
+		}
+		r.replaceNamesLocked(account.hash, []string{display})
 		if account.migration != nil && !account.consumed {
 			r.seatMigrations[account.hash] = *account.migration
-		}
-	}
-	for _, account := range accounts {
-		for key, display := range account.extraAliases {
-			if old := r.claims[key]; old != "" && old != account.hash {
-				delete(r.names[old], key)
-			}
-			r.claims[key] = account.hash
-			r.names[account.hash][key] = display
 		}
 	}
 	return accounts, nil

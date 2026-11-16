@@ -34,7 +34,7 @@ function boot(){
   document:doc,window:{},$,setTimeout(fn){const id=++serial;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
   roomData:()=>s.online.roomData,roomMember:id=>s.online.roomData?.players.find(p=>p.id===id),localPlayerID:()=>s.online.id,secondaryMember:()=>s.online.roomData?.players.find(p=>p.kind==='local'),cleanPilotName:n=>String(n).trim().replace(/[^\w -]/g,'').slice(0,16),
   rememberCallsign(name){$('pilotName').value=name;},rememberLocalCallsign(name){s.savedLocalName=name;},persistLocalRoomRules(){s.persistedNames=players.map(p=>p.name);},initAudio(){},updateHUD(){},syncPauseButton(){},renderOnlineRoom(){s.syncCallsignEditors();s.syncEndMatchAction();},
-  openAccount(){s.accountOpened=true;},clearInput(){},sendOnlineInput(){},toast(message){s.notice=message;},performance:{now:()=>1000},closeVictory(){s.pendingMatchPresentation=null;},setScreen(){},
+  accountNameKey:name=>name.toLowerCase(),selectCallsignAccount:async()=>{throw Error('Select handler missing');},openAccount(){s.accountOpened=true;},clearInput(){},sendOnlineInput(){},toast(message){s.notice=message;},performance:{now:()=>1000},closeVictory(){s.pendingMatchPresentation=null;},setScreen(){},
   clearRestartWavePending(){},resetMatchmaking(){},closeChat(){},clearRoomChat(){},cancelSwap(){},resetWatchDialog(){},cancelKick(){},resetOnlineMotion(){},forgetOnlineSession(){},createLocalRoom(){s.createdLocal=(s.createdLocal||0)+1;},
   readyRoom(){s.ready=true;},leaveOnline(){s.left=(s.left||0)+1;s.mode='room';}
  };
@@ -70,46 +70,26 @@ test('callsign editors show colored names and local suffixes without modifying f
  b.players.splice(1,1);b.s.syncCallsignEditors();assert.equal(b.$('roomP2CallsignForm').hidden,true);assert.ok(primary.label.innerHTML.includes('YOU (P1)'));assert.equal(b.players[0].name,'YOU');
 });
 
-test('Infinity pause editors use both active tanks and preserve newer drafts through confirmed saves',async()=>{
- const {s,$,players,wire,load}=boot(),calls=[],pilots=[{id:71,member:'infinity-1-0',name:'STAR',color:'#123456'},{id:72,member:'infinity-1-1',name:'WING',color:'#abcdef'}];let confirm;
- s.mode='room';s.online.connected=false;load('persistInfinityPilotName');
- s.window.leqraInfinity={localPilots:()=>pilots,renamePilot(index,name){calls.push([index,name]);return new Promise(resolve=>{confirm=canonical=>{pilots[index].name=canonical;s.persistInfinityPilotName(index,canonical);s.syncCallsignEditors();resolve(canonical);};});}};
- $('infiniteArena').open=true;s.syncCallsignEditors();
- for(const [id,name,color]of [['infiniteCallsignForm','STAR (P1)','#123456'],['infiniteP2CallsignForm','WING (P2)','#abcdef']]){
-  const form=$(id);assert.equal(form.hidden,false);assert.equal(form.elements.callsign.disabled,false);assert.ok(form.label.innerHTML.includes(name));assert.ok(form.label.innerHTML.includes('local-pilot'));assert.equal(form.elements.callsign.style.color,color);
- }
- const form=$('infiniteP2CallsignForm'),field=form.elements.callsign;field.focus();field.value='NEW WING';form.dispatch('submit');
- assert.equal(form.status.textContent,'Saving…');form.dispatch('submit');await Promise.resolve();assert.deepEqual(calls,[[1,'NEW WING']]);
- field.value='NEXT DRAFT';confirm('NEW WING');await new Promise(setImmediate);
- assert.equal(field.value,'NEXT DRAFT');assert.equal(form.dataset.currentName,'NEW WING');assert.equal(form.status.textContent,'Saved.');assert.equal(s.document.activeElement,field);
- assert.equal(players[1].name,'NEW WING','source room follows the local role, not arena id 72');assert.equal(players[0].name,'HOST');assert.equal(wire.length,0,'Infinity owns its transport');assert.equal(s.savedLocalName,'NEW WING');assert.deepEqual(s.persistedNames,['HOST','NEW WING']);
- pilots.splice(1,1);s.syncCallsignEditors();assert.equal(form.hidden,true);assert.equal($('infiniteCallsignForm').hidden,false);
+test('Infinity callsign save selects a new account only after successful confirmation',async()=>{
+ const {s,$}=boot();let pilots=[{id:71,member:'infinity-1-0',name:'STAR',color:'#123456'}],resolve;
+ s.window.leqraInfinity={localPilots:()=>pilots,renamePilot(){}};s.selectCallsignAccount=(seat,name,previous,isCurrent)=>new Promise(done=>{resolve=()=>{assert.equal(isCurrent(),true);pilots[0].name=name;done(name);};});
+ $('infiniteArena').open=true;s.syncCallsignEditors();const form=$('infiniteCallsignForm');form.elements.callsign.value='NEW STAR';const save=s.submitCallsign(form);
+ assert.equal(form.status.textContent,'Selecting account…');resolve();await save;assert.equal(form.status.textContent,'Account selected.');
 });
 
-test('Infinity callsign errors and stale sessions cannot overwrite another session or its draft',async()=>{
- const {s,$}=boot();let pilots=[{id:71,member:'infinity-1-0',name:'STAR',color:'#123456'}],reject;
- s.window.leqraInfinity={localPilots:()=>pilots,renamePilot(){return new Promise((resolve,no)=>{reject=no;});}};
- $('infiniteArena').open=true;s.syncCallsignEditors();const form=$('infiniteCallsignForm'),field=form.elements.callsign;
- field.value='DRAFT';s.submitCallsign(form);await Promise.resolve();reject(Error('Reconnect before changing the callsign.'));await new Promise(setImmediate);
- assert.equal(field.value,'DRAFT');assert.match(form.status.textContent,/Reconnect/);assert.equal(form.infinityRenamePending,undefined);
- s.submitCallsign(form);await Promise.resolve();pilots=[{id:71,member:'infinity-2-0',name:'NEW SESSION',color:'#abcdef'}];s.syncCallsignEditors();reject(Error('Old connection closed.'));await new Promise(setImmediate);
- assert.equal(field.value,'NEW SESSION');assert.equal(form.dataset.currentName,'NEW SESSION');assert.equal(form.status.textContent,'');
- $('infiniteArena').open=false;s.syncCallsignEditors();assert.equal(form.hidden,true);assert.equal($('menuCallsignForm').elements.callsign.value,'HOST');
+test('callsign errors and superseded drafts preserve the current account',async()=>{
+ const {s,$}=boot();let reject;
+ s.selectCallsignAccount=()=>new Promise((resolve,no)=>{reject=no;});
+ const form=$('menuCallsignForm');form.elements.callsign.value='DRAFT';const save=s.submitCallsign(form);reject(Error('Callsign unavailable'));await save;
+ assert.equal(form.elements.callsign.value,'DRAFT');assert.match(form.status.textContent,/unavailable/);assert.equal(form.infinityRenamePending,undefined);assert.equal(s.left,undefined);
 });
 
-test('first End/Leave click survives callsign blur, save acknowledgement and a round transition',async()=>{
- for(const action of ['returnToRoom','leaveOnlineMatch'])for(const secondary of [false,true]){
-  const b=boot(),{s,$,wire,begin,accept,players}=b,form=$(secondary?'menuP2CallsignForm':'menuCallsignForm'),player=players[secondary?1:0];
-  form.elements.callsign.focus();form.elements.callsign.value='RENAMED PILOT';
-  const pending=begin(action);
-  assert.equal(wire.length,1);assert.equal(wire[0].type,secondary?'rename_local':'rename');assert.equal(form.status.textContent,'Saving…');assert.equal($('actionConfirmDialog').shows,1);
-  s.acceptCallsign({id:player.id,member:player.member,name:'RENAMED PILOT'});
-  s.online.roomData={...s.online.roomData,players:players.map(p=>({...p}))};s.renderOnlineRoom();
-  assert.equal(form.status.textContent,'Saved.');assert.equal($('actionConfirmDialog').open,true);
-  s.phase='roundOver';s.phase='countdown';s.online.generation++;s.online.roomData.phase='countdown';
-  accept();await pending;
-  if(action==='returnToRoom'){assert.equal(wire.filter(p=>p.type==='lobby').length,1);assert.ok(s.online.endMatchPending);assert.equal($('returnRoomBtn').disabled,true);}
-  else assert.equal(s.left,1);
+test('End and Leave keep the current action when a callsign switch fails',async()=>{
+ for(const action of ['returnToRoom','leaveOnlineMatch']){
+  const b=boot(),{s,$,begin,accept}=b;s.selectCallsignAccount=async()=>{throw Error('Callsign unavailable');};
+  const form=$('menuCallsignForm');form.elements.callsign.focus();form.elements.callsign.value='NEW PILOT';
+  const pending=begin(action);await new Promise(setImmediate);assert.equal($('actionConfirmDialog').open,true);accept();await pending;
+  if(action==='returnToRoom')assert.equal(b.wire.filter(p=>p.type==='lobby').length,1);else assert.equal(s.left,1);
  }
 });
 

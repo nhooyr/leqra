@@ -37,6 +37,8 @@ func (h *Hub) accountClaimError(c *Client, action string, err error) {
 	case errors.As(err, &conflict):
 		message = roomError("callsign_taken", conflict.Error())
 		message["conflicts"] = conflict.Conflicts
+	case errors.Is(err, errCallsignImmutable):
+		message = roomError("callsign_immutable", err.Error())
 	case errors.Is(err, errOnlineOwnerInvalid):
 		message = roomError("public_resume_invalid", "The saved online identity is no longer available. Choose another callsign or restore its owner identity.")
 	case errors.Is(err, errOnlineOwnerRevoked):

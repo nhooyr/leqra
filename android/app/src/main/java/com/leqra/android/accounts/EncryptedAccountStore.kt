@@ -176,6 +176,16 @@ class EncryptedAccountStore(context: Context) : AccountStore {
             AccountCredential(token, true)
         }
 
+    override fun forgetAccount(origin: String, key: String) = mutate { next ->
+        val root = origin(next, origin)
+        for (seat in 0..1) if (root.optJSONObject("seat$seat")?.optString("key") == key) root.remove("seat$seat")
+        val rows = root.optJSONArray("pending") ?: JSONArray()
+        root.put("pending", JSONArray((0 until rows.length()).map { rows.getJSONObject(it) }
+            .filter { it.optString("key") != key }
+            .map { if (it.optString("previous") == key) it.remove("previous"); it }))
+        Unit
+    }
+
     @Synchronized
     override fun activeIntent(): PublicIntent? =
         state.optJSONObject("active")?.let {

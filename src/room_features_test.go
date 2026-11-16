@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
 
 func TestRenameBroadcastsWithoutChangingIdentity(t *testing.T) {
@@ -17,8 +16,8 @@ func TestRenameBroadcastsWithoutChangingIdentity(t *testing.T) {
 	for _, c := range cs {
 		drain(c)
 	}
-	action(t, h, cs[1], map[string]any{"type": "rename", "name": "  Snow   Fox  "})
-	if p.Name != "Snow Fox" || p.Token != token || p.ID != 1 || !p.Ready || r.Game.Scores[1] != 3 || r.Host != 0 || cs[1].room != r {
+	action(t, h, cs[1], map[string]any{"type": "rename", "name": "  guest  "})
+	if p.Name != "guest" || p.Token != token || p.ID != 1 || !p.Ready || r.Game.Scores[1] != 3 || r.Host != 0 || cs[1].room != r {
 		t.Fatal("rename modified identity, readiness, host, score or room")
 	}
 	for i, c := range cs {
@@ -27,14 +26,14 @@ func TestRenameBroadcastsWithoutChangingIdentity(t *testing.T) {
 			if m["type"] == "room" {
 				for _, v := range m["players"].([]any) {
 					p := v.(map[string]any)
-					if p["id"] == float64(1) && p["name"] == "Snow Fox" {
+					if p["id"] == float64(1) && p["name"] == "guest" {
 						found = true
 					}
 				}
 			}
 			if m["type"] == "renamed" {
 				ack = true
-				if m["id"] != float64(1) || m["name"] != "Snow Fox" {
+				if m["id"] != float64(1) || m["name"] != "guest" {
 					t.Fatal("wrong rename ack")
 				}
 			}
@@ -57,12 +56,12 @@ func TestRenameUpdatesTankInEveryMatchPhase(t *testing.T) {
 			r.Game.Phase = phase
 			before := *r.Game.Tanks[1]
 			g, round, clock := r.Game.Generation, r.Game.Round, r.Game.Clock
-			action(t, h, cs[1], map[string]any{"type": "rename", "name": "NEW NAME"})
+			action(t, h, cs[1], map[string]any{"type": "rename", "name": "guest"})
 			after := *r.Game.Tanks[1]
 			after.Name = before.Name
 			b, _ := json.Marshal(before)
 			a, _ := json.Marshal(after)
-			if string(a) != string(b) || r.Game.Tanks[1].Name != "NEW NAME" || r.Game.Phase != phase || r.Game.Generation != g || r.Game.Round != round || r.Game.Clock != clock {
+			if string(a) != string(b) || r.Game.Tanks[1].Name != "guest" || r.Game.Phase != phase || r.Game.Generation != g || r.Game.Round != round || r.Game.Clock != clock {
 				t.Fatal("rename changed simulation state or lost tank name")
 			}
 		})
@@ -71,8 +70,8 @@ func TestRenameUpdatesTankInEveryMatchPhase(t *testing.T) {
 
 func TestRenameCannotChooseAnotherPlayer(t *testing.T) {
 	h, cs, r := makeRoom(t, 2)
-	action(t, h, cs[1], map[string]any{"type": "rename", "name": "GUEST NEW", "id": 0, "player": 0, "token": cs[0].player.Token})
-	if r.Players[0].Name != "HOST" || r.Players[1].Name != "GUEST NEW" {
+	action(t, h, cs[1], map[string]any{"type": "rename", "name": "guest", "id": 0, "player": 0, "token": cs[0].player.Token})
+	if r.Players[0].Name != "HOST" || r.Players[1].Name != "guest" {
 		t.Fatal("client-selected identity trusted")
 	}
 }
@@ -109,16 +108,17 @@ func TestRenameRejectsEmptyOrInvalidNames(t *testing.T) {
 	}
 }
 
-func TestRenameUsesBoundedUnicodeCallsigns(t *testing.T) {
-	h, cs, _ := makeRoom(t, 1)
-	action(t, h, cs[0], map[string]any{"type": "rename", "name": strings.Repeat("Å", 30) + "<script>"})
-	name := cs[0].player.Name
-	if utf8.RuneCountInString(name) != 16 || name != strings.Repeat("Å", 16) {
-		t.Fatalf("unexpected sanitized name %q", name)
-	}
-	action(t, h, cs[0], map[string]any{"type": "rename", "name": "雪-FOX_42"})
-	if cs[0].player.Name != "雪-FOX_42" {
-		t.Fatal("supported Unicode name rejected")
+func TestDifferentCallsignRequiresSeparateAccount(t *testing.T) {
+	h, cs, r := makeRoom(t, 1)
+	old := cs[0].player.Name
+	for _, name := range []string{strings.Repeat("Å", 30) + "<script>", "雪-FOX_42"} {
+		action(t, h, cs[0], map[string]any{"type": "rename", "name": name})
+		if cs[0].player.Name != old || cs[0].room != r {
+			t.Fatal("different callsign changed the existing account")
+		}
+		if !hasError(cs[0], "callsign_immutable") {
+			t.Fatal("different callsign needs a separate-account rejection")
+		}
 	}
 }
 
@@ -126,17 +126,17 @@ func TestRenameCanBeRepeatedAndSurvivesReconnect(t *testing.T) {
 	h, cs, r := makeRoom(t, 2)
 	c := cs[1]
 	p := c.player
-	action(t, h, c, map[string]any{"type": "rename", "name": "FIRST"})
-	action(t, h, c, map[string]any{"type": "rename", "name": "SECOND"})
-	action(t, h, c, map[string]any{"type": "rename", "name": "SECOND"})
+	action(t, h, c, map[string]any{"type": "rename", "name": "guest"})
+	action(t, h, c, map[string]any{"type": "rename", "name": "GuEsT"})
+	action(t, h, c, map[string]any{"type": "rename", "name": "GuEsT"})
 	h.removeClient(c)
 	resumed := fakeClient()
 	action(t, h, resumed, map[string]any{"type": "join", "code": r.Code, "token": p.Token, "name": "OLD NAME"})
-	if resumed.player != p || p.Name != "SECOND" {
+	if resumed.player != p || p.Name != "GuEsT" {
 		t.Fatal("rename lost on resume")
 	}
 	r.Game.startMatch(r.Players)
-	if r.Game.Tanks[p.ID].Name != "SECOND" {
+	if r.Game.Tanks[p.ID].Name != "GuEsT" {
 		t.Fatal("next match lost name")
 	}
 }
@@ -152,7 +152,7 @@ func TestRenameKeepsSmoothingAcknowledgementsAndInput(t *testing.T) {
 	tank.Ack = 123
 	tank.AckSteps = 7
 	before, at := p.Input, p.InputAt
-	action(t, h, cs[1], map[string]any{"type": "rename", "name": "SMOOTH"})
+	action(t, h, cs[1], map[string]any{"type": "rename", "name": "guest"})
 	if p.Input != before || p.InputAt != at || tank.Ack != 123 || tank.AckSteps != 7 {
 		t.Fatal("rename disturbed input chronology")
 	}
@@ -163,7 +163,7 @@ func TestRenameDoesNotLeakToOtherRooms(t *testing.T) {
 	other := fakeClient()
 	action(t, h, other, map[string]any{"type": "create", "name": "OTHER"})
 	drain(other)
-	action(t, h, cs[0], map[string]any{"type": "rename", "name": "PRIVATE"})
+	action(t, h, cs[0], map[string]any{"type": "rename", "name": "host"})
 	if len(drain(other)) != 0 {
 		t.Fatal("rename broadcast to another room")
 	}

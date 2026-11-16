@@ -58,8 +58,8 @@ func TestReservedLegacyAliasStaysOwnedButCannotBypassReservation(t *testing.T) {
 	if row := r.availability(key, []string{"bOt 9"})[0]; row.Available || row.Reason != "reserved" {
 		t.Fatal("owned reserved alias appeared usable")
 	}
-	if info, err := a.infinite.accountInfo(key); err != nil || info.TotalNames != 2 {
-		t.Fatal("reservation deleted historical ownership", info, err)
+	if info, err := a.infinite.accountInfo(key); err != nil || info.TotalNames != 1 {
+		t.Fatal("preview exposed historical aliases", info, err)
 	}
 	local := freshAccountKey(t)
 	if _, err := r.claimSeatAccounts([]accountSeatClaim{{token: key, name: "New Alias"}, {token: local, name: "Bot 9", newAccount: true, transferFrom: key}}, nil); err == nil {
@@ -69,6 +69,7 @@ func TestReservedLegacyAliasStaysOwnedButCannotBypassReservation(t *testing.T) {
 		t.Fatal("rejected migration partially changed claims")
 	}
 	pair, active, _ := savedPublicJoin(t, a.infinite, infiniteMessage{PublicToken: key, Name: "Allowed"})
+	commitPublicFixture(t, a.infinite)
 	id := pair.pilot.ID
 	pair.pilot.Name, pair.pilot.Score = "Bot 9", 23
 	commitPublicFixture(t, a.infinite)

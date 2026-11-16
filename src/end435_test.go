@@ -12,9 +12,9 @@ func TestEnd435CallsignAutosaveThenEndCompletesWithOneLobbyAction(t *testing.T) 
 			for _, c := range clients {
 				drain(c)
 			}
-			action(t, h, clients[0], map[string]any{"type": "rename", "name": "NEW CALLSIGN"})
+			action(t, h, clients[0], map[string]any{"type": "rename", "name": clients[0].player.Name})
 			action(t, h, clients[0], map[string]any{"type": "lobby"})
-			if r.Game.Phase != "lobby" || r.Game.Scores[0] != 0 || len(r.Game.Bullets) != 0 || len(r.Game.Pickups) != 0 || r.Players[0].Name != "NEW CALLSIGN" {
+			if r.Game.Phase != "lobby" || r.Game.Scores[0] != 0 || len(r.Game.Bullets) != 0 || len(r.Game.Pickups) != 0 || r.Players[0].Name != clients[0].player.Name {
 				t.Fatal("autosave prevented the first End match action from returning the room")
 			}
 			for _, c := range clients {

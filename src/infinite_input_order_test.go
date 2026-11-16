@@ -119,6 +119,13 @@ func TestInfinitySocketOrdersBothSeatsAndOnlyAcceptedInputTouchesRoom(t *testing
 			app := newApp(8, nil)
 			join := map[string]any{"type": "join", "version": version, "name": "Primary", "localName": "Secondary"}
 			var room *Room
+			if !private {
+				key, ok := seedLegacyAccountFixture(t, app.hub.callsigns, "", []string{"Primary", "Secondary"})
+				if !ok {
+					t.Fatal("legacy fixture")
+				}
+				join["publicToken"] = key
+			}
 			if private {
 				s, members, r := startInfinityReconnectRoom(t, 1, true)
 				app.hub, app.infinite, room = s.hub, s, r

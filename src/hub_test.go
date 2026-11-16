@@ -14,6 +14,7 @@ func fakeClient() *Client {
 }
 func action(t *testing.T, h *Hub, c *Client, v any) {
 	t.Helper()
+	seedLegacyRoomAction(t, h, c, v)
 	b, _ := json.Marshal(v)
 	if err := h.handle(c, b, time.Now()); err != nil {
 		t.Fatal(err)

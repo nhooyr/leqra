@@ -4,7 +4,7 @@
 
 - **Primary tank (P1)** uses W/S to drive forward and back, A/D to steer, and Q/C to fire.
 - **Second local tank (P2)** uses the arrow keys and Space/Enter. These keys also control the primary tank when the second tank is inactive.
-- **Touch** uses the joystick to drive and steer, and Fire to shoot. Push the stick further for a faster wide turn. Press Fire again to detonate an active grenade.
+- **Touch** uses the joystick to drive and steer, and Fire to shoot. Push the stick further for a faster wide turn. Touch near your tank to point it exactly toward your finger without moving, and drag there to adjust aim. Press Fire again to detonate an active grenade.
 - **P or Esc** opens the in-game menu. **M** toggles sound and **F** toggles fullscreen.
 - **Mouse** aims the primary tank; left-click or hold to fire. A/D switch back to keyboard aiming until the pointer moves again. Mouse Aim and Mouse Fire have separate checkboxes in Controls.
 

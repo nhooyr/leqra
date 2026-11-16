@@ -70,3 +70,8 @@ test('identity handover and clearing override readable stale storage when writes
  s.rememberPublicIdentity('p_new_owner');assert.equal(s.publicIdentityToken(),'p_new_owner');
  s.rememberPublicIdentity('');assert.equal(s.publicIdentityToken(),'');
 });
+
+test('entering a saved callsign checks availability with its saved account without signing in',async()=>{
+ const {context:s,field,form,pending}=boot();s.savedCallsignToken=(name,fallback)=>name==='Taken'?'p_saved':fallback;field.callsignCheckRevision=1;
+ const p=s.checkCallsignAvailability(field,form,1,'Taken');assert.equal(JSON.parse(pending[0].request.body).publicToken,'p_saved');assert.equal(JSON.parse(pending[0].request.body).signIn,undefined);pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Taken',available:true}]})});await p;assert.equal(field.callsignUnavailable,false);
+});

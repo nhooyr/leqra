@@ -16,7 +16,11 @@ func TestOnlineCallsignClaimsAreAtomicDurableAndOwnerBound(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.sqlite")
 	s := publicStoreFixture(t, path)
 	registry := s.hub.callsigns
-	owner, err := registry.claim("", []string{"Snow", "Wing"})
+	owner, seeded := seedLegacyAccountFixture(t, registry, "", []string{"Snow", "Wing"})
+	var err error
+	if !seeded {
+		t.Fatal("legacy fixture failed")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +51,11 @@ func TestOnlineCallsignClaimsAreAtomicDurableAndOwnerBound(t *testing.T) {
 	if _, err = registry.claim("", []string{"snow"}); err == nil {
 		t.Fatal("reset/restart released permanent callsign claim")
 	}
-	if _, err = registry.claim(owner, []string{"Snow", "Wing"}); err != nil {
+	if _, err = registry.claim(owner, []string{"Snow"}); err != nil {
 		t.Fatal("restart lost owner proof")
+	}
+	if _, ok := seedLegacyAccountFixture(t, registry, owner, []string{"Snow", "Wing"}); !ok {
+		t.Fatal("legacy restart fixture")
 	}
 	if got := registry.availability(owner, []string{"sNoW", "Other"}); !got[0].Available || !got[1].Available {
 		t.Fatal("read-only availability did not recognize owner")
@@ -133,20 +140,18 @@ func TestPublicCallsignRenameClaimsBeforeMutatingScoreIdentity(t *testing.T) {
 	savedPublicJoin(t, s, infiniteMessage{Name: "Taken"})
 	s.renamePilot(c, infiniteMessage{RequestID: 1, Name: "taken"}, time.Now())
 	messages := drain(c)
-	if len(messages) != 1 || messages[0]["code"] != "callsign_taken" || first.pilot.Name != "First" {
+	if len(messages) != 1 || messages[0]["code"] != "callsign_immutable" || first.pilot.Name != "First" {
 		t.Fatal("conflicting rename mutated name or omitted seat conflict")
 	}
 	s.renamePilot(c, infiniteMessage{RequestID: 2, Name: "New"}, time.Now())
-	drain(c)
-	if first.pilot.Name != "New" {
-		t.Fatal("available rename failed")
+	messages = drain(c)
+	if first.pilot.Name != "First" || len(messages) != 1 || messages[0]["code"] != "callsign_immutable" {
+		t.Fatal("new callsign reused old score")
 	}
-	if got := s.hub.callsigns.availability("", []string{"First", "new", "Wing"}); got[0].Available || got[1].Available || got[2].Available {
-		t.Fatal("rename released historical aliases")
+	if got := s.hub.callsigns.availability(token, []string{"First"}); !got[0].Available {
+		t.Fatal("original name unavailable")
 	}
-	if got := s.hub.callsigns.availability(token, []string{"First", "New"}); !got[0].Available || !got[1].Available {
-		t.Fatal("owner lost renamed alias")
-	}
+
 }
 
 func TestCallsignAvailabilityRejectsSpoofingAndMalformedBodies(t *testing.T) {

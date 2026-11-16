@@ -60,11 +60,11 @@ with sync_playwright() as pw:
   const length=ps=>ps.reduce((v,p,i)=>v+(i?Math.hypot(p.x-ps[i-1].x,p.y-ps[i-1].y):0),0);
   let ts=setup(),w=leqra.getState().world;ts[1].x=220;ts[1].y=300;ts[0].angle=Math.atan2(200,2*(w.width-7)-220-120);
   T.grantPower(ts[0],'laser');let beam=T.laserTrace(ts[0]);
-  ok(beam.points.length===3&&beam.target===ts[1]&&beam.bounces===1,'Offline laser acquires tank after reflection');
+  ok(beam.points.length>=3&&beam.targets.includes(ts[1])&&beam.bounces>=1,'Offline laser acquires tank after reflection');
   T.fire(ts[0]);ok(!ts[1].alive&&ts[0].alive,'Banked laser kills opponent and retains shooter immunity');
   ok(T.traces.at(-1).points.length===3,'Offline rendered beam preserves complete ricochet polyline');
   ts=setup();for(const t of ts.slice(1))t.alive=false;
-  for(const angle of [0,.17,Math.PI/4,Math.PI/2,2.9]){ts[0].angle=angle;beam=T.laserTrace(ts[0]);ok(Math.abs(length(beam.points)-(2*(w.width+w.height)-28))<.00001,'Whole laser path uses one perimeter budget: '+angle);}
+  for(const angle of [0,.17,Math.PI/4,Math.PI/2,2.9]){ts[0].angle=angle;beam=T.laserTrace(ts[0]);ok(Math.abs(length(beam.points)-(4*(w.width+w.height)-28))<.00001,'Whole laser path uses one perimeter budget: '+angle);}
   ts=setup();ts[0].x=129;T.walls.push({x:150,y:0,w:8,h:w.height});beam=T.laserTrace(ts[0]);
   ok(beam.points[1].x===147&&beam.points.slice(1).every(p=>p.x<=147.00001),'Barrel against wall reflects without clipping through it');
   ts=setup();ts[0].x=220;ts[0].y=300;ts[1].x=120;ts[1].y=100;ts[1].angle=Math.atan2(200,2*(w.width-7)-220-120);

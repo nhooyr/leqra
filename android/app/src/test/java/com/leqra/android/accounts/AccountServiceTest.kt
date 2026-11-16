@@ -36,6 +36,14 @@ class AccountServiceTest {
             backups.removeAll { it.id == id }
         }
 
+        override fun forgetAccount(origin: String, key: String) {
+            for (seat in 0..1) clearIfMatching(origin, seat, key)
+            for (seat in 0..1) pending(origin, seat).filter { it.key == key || it.previousKey == key }.forEach {
+                removePending(origin, it.id)
+                if (it.key != key) savePending(origin, PendingAccount(it.id,it.seat,it.key,null,it.purpose))
+            }
+        }
+
         override fun activeIntent() = intent
 
         override fun setActiveIntent(intent: PublicIntent?) {
@@ -59,6 +67,131 @@ class AccountServiceTest {
         }
         assertTrue("No API callback", latch.await(10, TimeUnit.SECONDS))
         return value!!
+    }
+
+    @Test
+    fun newCallsignPersistsCandidateBeforeCreateAndKeepsOldAccountOnFailure() {
+        MockWebServer().use { server ->
+            server.start()
+            val store = Store(); val old = AccountKeys.create(); store.select("",0,old)
+            val service = AccountService(store) { it() }
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    assertEquals("/api/account/create", request.path)
+                    val body = org.json.JSONObject(request.body.readUtf8())
+                    assertEquals("NEW", body.getString("name")); assertFalse(body.has("score"))
+                    assertNotEquals(old, body.getString("publicToken"))
+                    assertEquals(old, store.selected[0]!!.key)
+                    assertTrue(store.backups.any { it.key == body.getString("publicToken") })
+                    return MockResponse().setResponseCode(409).setBody("""{"code":"callsign_taken","message":"Taken"}""")
+                }
+            }
+            val result = awaitOperation<CheckedAccount> { service.switchCallsign(server.url("/").toString(),0,"NEW","OLD",callback=it) }
+            assertTrue(result.isFailure); assertEquals(old,store.selected[0]!!.key)
+            assertTrue(service.savedCallsigns(server.url("/").toString()).any { it.name == "OLD" && it.key == old })
+        }
+    }
+
+    @Test
+    fun failedCreateRetriesTheSameDurablySavedCandidate() {
+        MockWebServer().use { server ->
+            server.start(); val store=Store(); val old=AccountKeys.create(); store.select("",0,old)
+            val service=AccountService(store) { it() }; val origin=server.url("/").toString()
+            server.enqueue(MockResponse().setResponseCode(503).setBody("""{"code":"server_busy"}"""))
+            server.enqueue(MockResponse().setBody("""{"names":["NEW"],"totalNames":1}"""))
+            assertTrue(awaitOperation<CheckedAccount> { service.switchCallsign(origin,0,"NEW","OLD",callback=it) }.isFailure)
+            val first=org.json.JSONObject(server.takeRequest().body.readUtf8()).getString("publicToken")
+            val next=awaitOperation<CheckedAccount> { service.switchCallsign(origin,0,"NEW","OLD",callback=it) }.getOrThrow()
+            val second=org.json.JSONObject(server.takeRequest().body.readUtf8()).getString("publicToken")
+            assertEquals(first,second); assertEquals(first,next.key)
+            assertTrue(store.backups.none { it.purpose.startsWith("callsign:") })
+        }
+    }
+
+    @Test
+    fun expiredSelectedAccountUsesNewKeyEvenForSameSpelling() {
+        MockWebServer().use { server ->
+            server.start(); val store=Store(); val old=AccountKeys.create(); store.select("",0,old)
+            val service=AccountService(store) { it() }; val origin=server.url("/").toString()
+            server.enqueue(MockResponse().setResponseCode(401).setBody("""{"code":"invalid_account_key"}"""))
+            server.enqueue(MockResponse().setBody("""{"names":["SAME"],"totalNames":1}"""))
+            val result=awaitOperation<CheckedAccount> { service.switchCallsign(origin,0,"SAME","SAME",callback=it) }.getOrThrow()
+            server.takeRequest()
+            val create=org.json.JSONObject(server.takeRequest().body.readUtf8())
+            assertNotEquals(old,create.getString("publicToken")); assertEquals(result.key,store.selected[0]!!.key)
+        }
+    }
+
+    @Test
+    fun savedCallsignSwitchSignsInWithItsOwnKeyAndScore() {
+        MockWebServer().use { server ->
+            server.start()
+            val store=Store(); val old=AccountKeys.create(); val saved=AccountKeys.create(); store.select("",0,old)
+            val service=AccountService(store) { it() }; val origin=server.url("/").toString()
+            service.rememberCallsign(origin,0,"SAVED",saved)
+            server.enqueue(MockResponse().setBody("""{"names":["SAVED"],"totalNames":1,"publicProfile":{"name":"SAVED","score":37}}"""))
+            val checked=awaitOperation<CheckedAccount> { service.switchCallsign(origin,0,"SAVED","OLD",callback=it) }.getOrThrow()
+            val request=server.takeRequest(); assertEquals("/api/account",request.path)
+            val body=org.json.JSONObject(request.body.readUtf8()); assertTrue(body.getBoolean("signIn")); assertEquals(saved,body.getString("publicToken"))
+            assertEquals(37,checked.info.publicProfile!!.score); assertEquals(saved,store.selected[0]!!.key)
+            assertEquals(setOf("OLD","SAVED"),service.savedCallsigns(origin).map { it.name }.toSet())
+        }
+    }
+
+    @Test
+    fun expiredSavedCallsignCreatesNewKeyWithoutResurrectingItsScore() {
+        MockWebServer().use { server ->
+            server.start()
+            val store=Store(); val old=AccountKeys.create(); val expired=AccountKeys.create(); store.select("",0,old)
+            val service=AccountService(store) { it() }; val origin=server.url("/").toString()
+            service.rememberCallsign(origin,0,"EXPIRED",expired)
+            server.enqueue(MockResponse().setResponseCode(401).setBody("""{"code":"invalid_account_key"}"""))
+            server.enqueue(MockResponse().setBody("""{"names":["EXPIRED"],"totalNames":1,"publicProfile":{"name":"EXPIRED","score":0}}"""))
+            val checked=awaitOperation<CheckedAccount> { service.switchCallsign(origin,0,"EXPIRED","OLD",callback=it) }.getOrThrow()
+            server.takeRequest(); val create=org.json.JSONObject(server.takeRequest().body.readUtf8())
+            assertNotEquals(expired,create.getString("publicToken")); assertEquals(0,checked.info.publicProfile!!.score)
+            assertEquals(checked.key,store.selected[0]!!.key)
+        }
+    }
+
+    @Test
+    fun releaseDeletesOnlyTheConfirmedAccountAndItsPendingReferences() {
+        MockWebServer().use { server ->
+            server.start(); val store=Store(); val old=AccountKeys.create(); val other=AccountKeys.create()
+            store.select("",0,old); store.select("",1,other)
+            val service=AccountService(store) { it() }; val origin=server.url("/").toString()
+            service.rememberCallsign(origin,0,"OLD",old); service.rememberCallsign(origin,1,"OTHER",other)
+            store.savePending(origin,AccountKeys.pending(0,AccountKeys.create(),old,"rotation"))
+            server.enqueue(MockResponse().setResponseCode(503).setBody("""{"code":"server_busy"}"""))
+            assertTrue(awaitOperation<Unit> { service.release(origin,old,it) }.isFailure)
+            assertEquals(old,store.selected[0]!!.key); assertEquals(3,store.backups.size)
+            server.enqueue(MockResponse().setBody("""{"released":true}"""))
+            awaitOperation<Unit> { service.release(origin,old,it) }.getOrThrow()
+            val request=server.takeRequest(); assertEquals("/api/account/release",request.path)
+            val body=org.json.JSONObject(request.body.readUtf8()); assertEquals(setOf("publicToken"),body.keys().asSequence().toSet())
+            assertEquals(old,body.getString("publicToken")); assertNull(store.selected[0]); assertEquals(other,store.selected[1]!!.key)
+            assertTrue(store.backups.all { it.key != old && it.previousKey != old })
+            assertTrue(store.backups.any { it.purpose == "rotation" })
+            assertEquals(listOf("OTHER"),service.savedCallsigns(origin).map { it.name })
+        }
+    }
+
+    @Test
+    fun releasedSelectedAccountCanRegisterItsNewLocalNameOnNextPlay() {
+        MockWebServer().use { server ->
+            server.start(); val store=Store(); val old=AccountKeys.create(); store.select("",0,old)
+            val service=AccountService(store) { it() }; val origin=server.url("/").toString()
+            server.enqueue(MockResponse().setBody("""{"released":true}"""))
+            awaitOperation<Unit> { service.release(origin,old,it) }.getOrThrow()
+            val replacement=AccountKeys.create(); store.select(origin,0,replacement,true)
+            server.enqueue(MockResponse().setBody("""{"names":["pilot#ABCDEF"],"totalNames":1}"""))
+            val registered=awaitOperation<CheckedAccount> { service.switchCallsign(origin,0,"pilot#ABCDEF","pilot#ABCDEF",callback=it) }.getOrThrow()
+            server.takeRequest(); val request=server.takeRequest()
+            assertEquals("/api/account/create",request.path)
+            val body=org.json.JSONObject(request.body.readUtf8())
+            assertEquals(replacement,body.getString("publicToken")); assertEquals("pilot#ABCDEF",body.getString("name"))
+            assertEquals(replacement,registered.key); assertFalse(store.selected[0]!!.registrationPending)
+        }
     }
 
     @Test
@@ -303,7 +436,7 @@ class AccountServiceTest {
             assertNotEquals(first[0].name, fresh.name)
             assertEquals(first[0].key, fresh.key)
             val info = awaitOperation<CheckedAccount> { service.inspect(origin, fresh.key, it) }.getOrThrow().info
-            assertTrue(info.names.containsAll(listOf(first[0].name, fresh.name)))
+            assertEquals(listOf(fresh.name), info.names)
             assertFalse(store.selected[0]!!.registrationPending)
             assertTrue(store.selected[1]!!.registrationPending)
             val reserved = awaitOperation<List<CallsignAvailability>> { service.availability(origin, listOf("Bot RUST"), it) }.getOrThrow().single()

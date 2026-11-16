@@ -874,19 +874,26 @@ public final class PracticeArena {
         var x = launch.x, y = launch.y, ux = launch.ux, uy = launch.uy
         var remaining = max(0, (maze.world.map { 4 * ($0.width + $0.height) } ?? 36 * 84) - launch.distance)
         var points: [BeamPoint] = []
-        var hitTarget: Int?
+        var targets: [Int] = []
+        var hitIDs: Set<Int> = []
         for index in 0..<256 {
             let dx = ux * remaining, dy = uy * remaining
             let wall = maze.rayHit(x: x, y: y, dx: dx, dy: dy, radius: 3)
-            let target = targetHit(owner: tank.id, x: x, y: y, dx: dx, dy: dy, radius: 3, limit: wall?.fraction ?? 1.00000001)
-            let length = remaining * (target?.fraction ?? wall?.fraction ?? 1)
+            let limit = wall?.fraction ?? 1
+            let hits = snapshot.tanks.indices.compactMap { targetIndex -> (Int, Double)? in
+                let target = snapshot.tanks[targetIndex]
+                guard target.hp > 0, target.invulnerable <= 0, canDamage(owner: tank.id, target: target), !hitIDs.contains(target.id),
+                      let at = Self.circleHit(x: x, y: y, dx: dx, dy: dy, tx: target.x, ty: target.y, radius: 20), at < limit else { return nil }
+                return (targetIndex, at)
+            }.sorted { $0.1 < $1.1 }
+            for (targetIndex, _) in hits { targets.append(targetIndex); hitIDs.insert(snapshot.tanks[targetIndex].id) }
+            let length = remaining * limit
             if index == 0 {
-                let crop = launch.bounced ? 0 : 28.0
+                let crop = launch.bounced ? 0 : min(28.0, hits.first.map { remaining * $0.1 } ?? .infinity)
                 points.append(BeamPoint(x: x + ux * min(crop, length), y: y + uy * min(crop, length)))
             }
             x += ux * length; y += uy * length; remaining -= length
             points.append(BeamPoint(x: x, y: y))
-            if let target { hitTarget = target.index; break }
             guard let wall, remaining > 1e-7 else { break }
             if wall.nx != 0 { ux = -ux }; if wall.ny != 0 { uy = -uy }
             let nudge = min(0.001, remaining)
@@ -895,11 +902,11 @@ public final class PracticeArena {
         // Damage remains at the physics rate. Sustained misses share the web
         // and server's cosmetic cadence; finite hits still show their beam
         // immediately, before the resulting shield or death effect.
-        if tank.starmanTime <= 0 || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) || hitTarget != nil {
+        if tank.starmanTime <= 0 || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) || !targets.isEmpty {
             nextBoostEffects[tank.id] = time + 4 / 60
             effect("laser", x: tank.x, y: tank.y, owner: tank.id, points: points)
         }
-        if let hitTarget { hurt(hitTarget, owner: tank.id) }
+        for targetIndex in targets { hurt(targetIndex, owner: tank.id) }
     }
 
     private func detonate(_ bullet: ArenaBullet, flight: CannonFlight? = nil) {

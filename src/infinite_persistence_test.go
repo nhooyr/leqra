@@ -495,38 +495,17 @@ func TestPublicInfinityRoomPartyScoreSurvivesRestart(t *testing.T) {
 	}
 }
 
-func TestPublicInfinityManualNamesPreserveScoresAndP2Selection(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "data.sqlite")
-	s := publicStoreFixture(t, path)
-	first, _, token := savedPublicJoin(t, s, infiniteMessage{Name: "Original", LocalName: "Wing"})
-	savedPublicJoin(t, s, infiniteMessage{Name: "Taken"})
+func TestPublicInfinityManualNamesCannotMoveScoresToAnotherCallsign(t *testing.T) {
+	s := publicStoreFixture(t, filepath.Join(t.TempDir(), "data.sqlite"))
+	first, _, key := savedPublicJoin(t, s, infiniteMessage{Name: "Original", LocalName: "Wing"})
 	first.pilot.Score = 7
 	first.local.Score = 3
 	commitPublicFixture(t, s)
-	id, localID := first.pilot.ID, first.local.ID
-	if _, _, reject := tryInfinityReconnect(t, s, infiniteMessage{PublicToken: token, UpdateNames: true, Name: "taken", LocalName: "Not Claimed"}, time.Now()); !strings.Contains(reject, "unused online callsign") {
-		t.Fatal("manual Play silently ignored conflicting callsign")
+	if _, _, reject := tryInfinityReconnect(t, s, infiniteMessage{PublicToken: key, UpdateNames: true, Name: "Renamed", LocalName: "New Wing"}, time.Now()); reject != errCallsignImmutable.Error() {
+		t.Fatal("rename moved existing score", reject)
 	}
-	if first.pilot.Name != "Original" || !s.hub.callsigns.availability("", []string{"Not Claimed"})[0].Available {
-		t.Fatal("failed manual rename partially consumed batch")
-	}
-	renamed, _, _ := savedPublicJoin(t, s, infiniteMessage{PublicToken: token, UpdateNames: true, Name: "Renamed", LocalName: "New Wing"})
-	if renamed.pilot != first.pilot || renamed.pilot.ID != id || renamed.local.ID != localID || renamed.pilot.Name != "Renamed" || renamed.local.Name != "New Wing" || renamed.pilot.Score != 7 || renamed.local.Score != 3 {
-		t.Fatal("manual name update changed authoritative score identity")
-	}
-	solo, _, _ := savedPublicJoin(t, s, infiniteMessage{PublicToken: token, UpdateNames: true, Name: "Renamed"})
-	if solo.local != nil || s.publicProfiles[solo.pilot.publicKey].localEnabled || s.public.publicEntries[localID].Score != 3 {
-		t.Fatal("manual P2 removal discarded saved score or stayed enabled")
-	}
-	s.close()
-	s = publicStoreFixture(t, path)
-	recovered, _, _ := savedPublicJoin(t, s, infiniteMessage{PublicToken: token, Resume: true, Name: "FORGED", LocalName: "FORGED"})
-	if recovered.local != nil || recovered.pilot.Name != "Renamed" || recovered.pilot.Score != 7 {
-		t.Fatal("cold recovery restored removed P2 or trusted draft names")
-	}
-	pair, _, _ := savedPublicJoin(t, s, infiniteMessage{PublicToken: token, UpdateNames: true, Name: "Renamed", LocalName: "New Wing"})
-	if pair.local == nil || pair.local.ID != localID || pair.local.Score != 3 || pair.pilot.ID != id {
-		t.Fatal("deliberate P2 selection lost archived owned score")
+	if first.pilot.Name != "Original" || first.pilot.Score != 7 || first.local.Name != "Wing" || first.local.Score != 3 {
+		t.Fatal("rejected rename changed identity")
 	}
 }
 

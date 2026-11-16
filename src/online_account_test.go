@@ -36,16 +36,13 @@ func TestOnlineAccountPreviewAuthenticatesWithoutAllocatingOrReplacing(t *testin
 	pair, active, token := savedPublicJoin(t, a.infinite, infiniteMessage{Name: "Snow Fox", LocalName: "Wing"})
 	pair.pilot.Score, pair.local.Score = 21, -2
 	commitPublicFixture(t, a.infinite)
-	if _, err := a.hub.callsigns.claim(token, []string{"Previous", "SNOW FOX"}); err != nil {
-		t.Fatal(err)
-	}
 	before := a.infinite.publicProfiles[pair.pilot.publicKey]
 	response := accountRequest(a, "/api/account", fmt.Sprintf(`{"publicToken":%q}`, token))
 	var info onlineAccountInfo
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &info) != nil {
 		t.Fatalf("preview failed: %d %s", response.Code, response.Body.String())
 	}
-	if strings.Join(info.Names, ",") != "Previous,Snow Fox,Wing" || info.TotalNames != 3 || info.PublicProfile == nil || info.PublicProfile.Name != "Snow Fox" || info.PublicProfile.Score != 21 || info.PublicProfile.LocalName != "Wing" || info.PublicProfile.LocalScore == nil || *info.PublicProfile.LocalScore != -2 {
+	if strings.Join(info.Names, ",") != "Snow Fox" || info.TotalNames != 1 || info.PublicProfile == nil || info.PublicProfile.Name != "Snow Fox" || info.PublicProfile.Score != 21 || info.PublicProfile.LocalName != "" || info.PublicProfile.LocalScore != nil {
 		t.Fatalf("incorrect authorized preview: %+v", info)
 	}
 	if response.Header().Get("Cache-Control") != "no-store" {
@@ -92,21 +89,14 @@ func TestOnlineAccountPrivateOnlyAndResetOwnerRemainImportableAcrossRestart(t *t
 func TestOnlineAccountPreviewBoundsHistoricalNamesAndOmitsDisabledLocalSeat(t *testing.T) {
 	a := accountAppFixture(t, "")
 	pair, _, token := savedPublicJoin(t, a.infinite, infiniteMessage{Name: "Primary", LocalName: "Local"})
-	var aliases []string
-	for i := 0; i < 180; i++ {
-		aliases = append(aliases, fmt.Sprintf("Alias %03d", i))
-	}
-	if _, err := a.hub.callsigns.claim(token, aliases); err != nil {
-		t.Fatal(err)
-	}
 	profile := a.infinite.publicProfiles[pair.pilot.publicKey]
 	profile.localEnabled = false
 	a.infinite.publicProfiles[profile.hash] = profile
 	info, err := a.infinite.accountInfo(token)
-	if err != nil || info.TotalNames != 182 || len(info.Names) != 128 || info.Names[0] != "Alias 000" || info.Names[127] != "Alias 127" || info.PublicProfile.LocalName != "" || info.PublicProfile.LocalScore != nil {
+	if err != nil || info.TotalNames != 1 || len(info.Names) != 1 || info.Names[0] != "Primary" || info.PublicProfile.LocalName != "" || info.PublicProfile.LocalScore != nil {
 		t.Fatal("account preview unbounded, unstable, or restored disabled local seat")
 	}
-	if len(a.hub.callsigns.claims) != 182 {
+	if len(a.hub.callsigns.claims) != 2 {
 		t.Fatal("preview cap released historical aliases")
 	}
 }

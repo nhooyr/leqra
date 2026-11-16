@@ -149,6 +149,7 @@ class CoreParityTest {
                     right = i.bool("right"),
                     touchAim = i.bool("touchAim"),
                     aimOnly = i.bool("aimOnly"),
+                    snapAim = i.bool("snapAim"),
                 )
             val result = TankMovement.steer(f.number("angle"), input, f.number("turnScale"), tick)
             assertEquals(f["name"].toString(), f.number("angleAfter"), result.angle, 1e-12)

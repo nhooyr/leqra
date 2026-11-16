@@ -39,6 +39,7 @@ test('changing the same direction vector between mouse, ordinary analog and touc
  assert.equal(Net.controlsEqual(aim,{...aim}),true);
  assert.equal(Net.controlsEqual(stick,{...stick,aimOnly:undefined}),true);
  assert.equal(Net.controlsEqual(stick,touch),false);
+ assert.equal(Net.controlsEqual(aim,{...aim,snapAim:true}),false);
  assert.equal(Net.controlsEqual(stick,{...stick,touchAim:false}),true);
 });
 test('client touch prediction follows the shared authoritative steering and throttle cases',()=>{

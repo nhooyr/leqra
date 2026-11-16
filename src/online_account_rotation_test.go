@@ -27,7 +27,7 @@ func TestOnlineAccountRotationPreservesScoresAliasesAndRevocationAcrossRestart(t
 	pair, old, token := savedPublicJoin(t, a.infinite, infiniteMessage{Name: "Primary", LocalName: "Wing"})
 	primaryID, localID := pair.pilot.ID, pair.local.ID
 	pair.pilot.Score, pair.local.Score = 31, -7
-	if _, err := a.hub.callsigns.claim(token, []string{"Old Alias"}); err != nil {
+	if _, err := a.hub.callsigns.claim(token, []string{"Primary", "Wing"}); err != nil {
 		t.Fatal(err)
 	}
 	commitPublicFixture(t, a.infinite)
@@ -37,7 +37,7 @@ func TestOnlineAccountRotationPreservesScoresAliasesAndRevocationAcrossRestart(t
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &rotation) != nil || rotation.PublicToken != candidate {
 		t.Fatalf("rotation failed: %d %s", response.Code, response.Body.String())
 	}
-	if rotation.PublicProfile == nil || rotation.PublicProfile.Score != 31 || rotation.PublicProfile.LocalScore == nil || *rotation.PublicProfile.LocalScore != -7 || rotation.TotalNames != 3 {
+	if rotation.PublicProfile == nil || rotation.PublicProfile.Score != 31 || rotation.PublicProfile.LocalScore != nil || rotation.TotalNames != 1 {
 		t.Fatal("rotation changed authoritative score or aliases")
 	}
 	if _, err := a.infinite.accountInfo(token); !errors.Is(err, errOnlineOwnerRevoked) {
@@ -76,13 +76,13 @@ func TestOnlineAccountRotationPreservesScoresAliasesAndRevocationAcrossRestart(t
 	if restored.pilot.ID != primaryID || restored.local.ID != localID || restored.pilot.Score != 31 || restored.local.Score != -7 {
 		t.Fatal("restart changed rotated account score identities")
 	}
-	if _, err := a.hub.callsigns.claim("", []string{"Old Alias"}); err == nil {
+	if _, err := a.hub.callsigns.claim("", []string{"Primary", "Wing"}); err == nil {
 		t.Fatal("rotation released permanent aliases")
 	}
 	if _, err := a.hub.callsigns.claim(token, []string{"Unused"}); !errors.Is(err, errOnlineOwnerRevoked) {
 		t.Fatal("revoked key created fresh claims")
 	}
-	if _, err := a.hub.callsigns.claim(candidate, []string{"Old Alias"}); err != nil {
+	if _, err := a.hub.callsigns.claim(candidate, []string{"Primary", "Wing"}); err != nil {
 		t.Fatal("new key lost historical alias ownership")
 	}
 }
@@ -93,7 +93,7 @@ func TestOnlineAccountRotationRevokesPrivateRoomsTokensAndReservations(t *testin
 	h := a.hub
 	roomClient := fakeClient()
 	h.addClient(roomClient)
-	action(t, h, roomClient, map[string]any{"type": "create", "name": "Private", "publicToken": token})
+	action(t, h, roomClient, map[string]any{"type": "create", "name": "Public", "publicToken": token})
 	action(t, h, roomClient, map[string]any{"type": "add", "kind": "local", "name": "Private Wing"})
 	room, member, roomToken := roomClient.room, roomClient.player, roomClient.player.Token
 	room.Game.Rules.Infinity = true

@@ -8,7 +8,7 @@ In fixed mazes, weapons and most buffs last **10 seconds** on Compact, Standard,
 | --- | --- | --- |
 | Cannon | Fires large, fast rounds through internal walls. They bounce off the arena rim. | 3 shots or 10/15 seconds |
 | Ghost | Lets you drive through internal walls. The rim stays solid. | 10/15 seconds |
-| Laser | Fires an instant ricocheting beam with a dotted guide that previews its path. Range is one maze perimeter. | 3 shots or 10/15 seconds |
+| Laser | Fires an instant ricocheting beam through every opponent in its path, with a dotted aim guide. Range is twice the maze perimeter. | 3 shots or 10/15 seconds |
 | Homing missile | Tracks visible opponents and bounces off walls. Range is half the maze perimeter. | 3 missiles or 10/15 seconds |
 | Grenade | Homes in on visible opponents like a missile and slows near the end of its 10-second fuse. Explodes on contact with another tank, when you press Fire again, or when the fuse expires. Walls block the 220-unit blast. | 3 throws or 10/15 seconds |
 | Super Speed | Adds 65% movement speed and 25% turn speed per stack. | Up to 5 stacks with a shared 10/15-second timer |

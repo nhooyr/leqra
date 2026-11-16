@@ -22,12 +22,12 @@ function boot(){
 test('late authoritative laser replaces an expired prediction even while its sound is deduplicated',()=>{
  for(const delay of [.24,.6])for(const phase of ['playing','roundOver']){
   const s=boot(),snapshot=s.online.snapshots[0],before=JSON.stringify(snapshot.tanks);s.preview();
-  assert.equal(s.traces.length,1);assert.equal(s.traces[0].endX,280,'the rendered opponent stops the cosmetic prediction');
+  assert.equal(s.traces.length,1);assert.equal(s.traces[0].endX,84+4*(s.W+s.H),'the cosmetic prediction pierces the rendered opponent');
   s.updateTraces(delay);assert.equal(s.traces.length,0);s.now+=delay*1000;s.phase=phase;
   s.online.shots.sync({...snapshot.tankMap.get(0),shotSerial:1,charges:2,cooldown:.5},phase,s.now);
   const e=s.authority();s.onlineEffect(e,snapshot);
   assert.equal(s.traces.length,1,'the actual beam cannot disappear with its older prediction');
-  assert.equal(s.traces[0].endX,500,'the server endpoint replaces the guessed hit position');
+  assert.equal(s.traces[0].endX,500,'the server endpoint replaces the predicted full path');
   assert.deepEqual(JSON.parse(JSON.stringify(s.traces[0].points)),e.points);
   s.onlineEffect({...e,type:'shot',text:'laser'},snapshot);
   assert.equal(s.sounds.length,1,'authoritative correction does not replay the local shot sound');

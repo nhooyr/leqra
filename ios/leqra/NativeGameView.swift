@@ -105,6 +105,7 @@ private final class KeyboardGameContainer: UIView {
             if down && scene.isUserInteractionEnabled { pressedKeys.insert(key) }
             else { pressedKeys.remove(key) }
         }
+        if down && !pressedKeys.isDisjoint(with: [.keyboardW, .keyboardUpArrow, .keyboardS, .keyboardDownArrow, .keyboardA, .keyboardLeftArrow, .keyboardD, .keyboardRightArrow]) { scene.clearDirectAim() }
         scene.input.forward = !pressedKeys.isDisjoint(with: [.keyboardW, .keyboardUpArrow])
         scene.input.reverse = !pressedKeys.isDisjoint(with: [.keyboardS, .keyboardDownArrow])
         scene.input.left = !pressedKeys.isDisjoint(with: [.keyboardA, .keyboardLeftArrow])
