@@ -64,6 +64,7 @@ type infiniteServer struct {
 	publicSavedSeed        uint32
 	publicStoreInitialized bool
 	nextProfilePrune       time.Time
+	nextAccountSweep       int64
 }
 
 type infiniteMessage struct {
@@ -290,6 +291,7 @@ func rejectInfinite(c *Client, message string) {
 }
 
 func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (infiniteConnection, string) {
+	defer s.hub.syncAccountCallsigns()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -299,6 +301,9 @@ func (s *infiniteServer) join(c *Client, msg infiniteMessage, now time.Time) (in
 		return infiniteConnection{}, "Could not join Infinity."
 	}
 	s.pruneObservers(now)
+	if err := s.expireAccounts(); err != nil {
+		return infiniteConnection{}, infinitePublicStoreBusy
+	}
 	if err := s.applySeatMigrations(); err != nil {
 		return infiniteConnection{}, infinitePublicStoreBusy
 	}
@@ -561,6 +566,13 @@ func (s *infiniteServer) step(now time.Time) {
 	defer s.mu.Unlock()
 	if s.closed {
 		return
+	}
+	if s.hub.callsigns.now().Unix() >= s.nextAccountSweep {
+		if err := s.expireAccounts(); err != nil {
+			s.publicStoreError(err)
+			return
+		}
+		s.nextAccountSweep = s.hub.callsigns.now().Unix() + 60
 	}
 	if err := s.applySeatMigrations(); err != nil {
 		s.publicStoreError(err)

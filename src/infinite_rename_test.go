@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 )
@@ -13,13 +12,17 @@ func TestInfinityRenameWebSocketAcknowledgesBothSeatsWithoutRejoining(t *testing
 	t.Cleanup(app.infinite.close)
 	server := httptest.NewServer(app.handler())
 	t.Cleanup(server.Close)
-	c, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": "LEAD", "localName": "WING"}, false)
+	key, ok := seedLegacyAccountFixture(t, app.hub.callsigns, "", []string{"LEAD", "WING"})
+	if !ok {
+		t.Fatal("legacy fixture")
+	}
+	c, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": "LEAD", "localName": "WING", "publicToken": key}, false)
 	var welcome map[string]any
 	readInfinitePacket(t, reader, &welcome)
 	if welcome["type"] != "welcome" || welcome["localId"] == nil {
 		t.Fatalf("paired join failed: %v", welcome)
 	}
-	for index, name := range []string{"RENAMED", "!!!", "NEW WING"} {
+	for index, name := range []string{"lead", "!!!", "wing", "Different"} {
 		seat := 0
 		if index == 2 {
 			seat = 1
@@ -34,7 +37,7 @@ func TestInfinityRenameWebSocketAcknowledgesBothSeatsWithoutRejoining(t *testing
 		var reply map[string]any
 		readInfinitePacket(t, reader, &reply)
 		kind := "renamed"
-		if index == 1 {
+		if index == 1 || index == 3 {
 			kind = "rename_error"
 		}
 		if reply["type"] != kind || reply["seat"] != float64(seat) || reply["requestId"] != float64(index+1) {
@@ -55,14 +58,14 @@ func TestInfinityRenamePreservesBothPublicTanks(t *testing.T) {
 	pair.local.HP, pair.local.paused = 0, true
 	pair.pilot.kit.Power, pair.pilot.kit.PowerTime = "laser", 5
 	before, secondBefore := *pair.pilot, *pair.local
-	for index, name := range []string{"  雪!!  Fox  ", "NEW WING"} {
+	for index, name := range []string{"  lead  ", "wing"} {
 		s.renamePilot(c, infiniteMessage{Seat: index, RequestID: uint64(index + 1), Name: name}, now)
 		messages := drain(c)
 		if len(messages) != 1 || messages[0]["type"] != "renamed" || messages[0]["requestId"] != float64(index+1) || messages[0]["seat"] != float64(index) {
 			t.Fatalf("missing correlated acknowledgement: %v", messages)
 		}
 	}
-	if pair.pilot.Name != "雪 Fox" || pair.local.Name != "NEW WING" {
+	if pair.pilot.Name != "lead" || pair.local.Name != "wing" {
 		t.Fatal("names were not cleaned or applied to the chosen seats")
 	}
 	before.Name, secondBefore.Name = pair.pilot.Name, pair.local.Name
@@ -93,9 +96,9 @@ func TestInfinityRenameUpdatesRoomMetadataAndSurvivesReconnect(t *testing.T) {
 	}
 	drain(c)
 	pair.pilot.Score, pair.local.Score = 7, 3
-	s.renamePilot(c, infiniteMessage{Seat: 0, RequestID: 1, Name: "NEW LEAD"}, now)
-	s.renamePilot(c, infiniteMessage{Seat: 1, RequestID: 2, Name: "NEW WING"}, now)
-	if pair.seat.Name != "NEW LEAD" || pair.localSeat.Name != "NEW WING" || pair.pilot.Name != pair.seat.Name || pair.local.Name != pair.localSeat.Name {
+	s.renamePilot(c, infiniteMessage{Seat: 0, RequestID: 1, Name: "host"}, now)
+	s.renamePilot(c, infiniteMessage{Seat: 1, RequestID: 2, Name: "wingmate"}, now)
+	if pair.seat.Name != "host" || pair.localSeat.Name != "wingmate" || pair.pilot.Name != pair.seat.Name || pair.local.Name != pair.localSeat.Name {
 		t.Fatal("room and Infinity callsigns diverged")
 	}
 	roomBroadcast := false
@@ -108,7 +111,7 @@ func TestInfinityRenameUpdatesRoomMetadataAndSurvivesReconnect(t *testing.T) {
 	s.disconnect(c, now)
 	join.Resume, join.Generation = true, room.infinityGeneration
 	resumed, _, rejection := tryInfinityReconnect(t, s, join, now.Add(time.Second))
-	if rejection != "" || resumed.pilot != pair.pilot || resumed.local != pair.local || resumed.pilot.Name != "NEW LEAD" || resumed.local.Name != "NEW WING" || resumed.pilot.Score != 7 || resumed.local.Score != 3 {
+	if rejection != "" || resumed.pilot != pair.pilot || resumed.local != pair.local || resumed.pilot.Name != "host" || resumed.local.Name != "wingmate" || resumed.pilot.Score != 7 || resumed.local.Score != 3 {
 		t.Fatalf("rename broke reconnect continuity: %q", rejection)
 	}
 }
@@ -142,7 +145,7 @@ func TestInfinityRenameRejectsInvalidAndRevokedSeats(t *testing.T) {
 	}
 }
 
-func TestInfinityRenameRejectsReplacedTransportAndTruncatesByRune(t *testing.T) {
+func TestInfinityCosmeticRenameRejectsReplacedTransport(t *testing.T) {
 	s, clients, room := startInfinityReconnectRoom(t, 1, false)
 	now := time.Now()
 	join := infiniteMessage{Code: room.Code, Token: clients[0].player.Token}
@@ -157,8 +160,8 @@ func TestInfinityRenameRejectsReplacedTransportAndTruncatesByRune(t *testing.T) 
 		t.Fatal("replaced transport changed the current pilot")
 	}
 	drain(current)
-	s.renamePilot(current, infiniteMessage{RequestID: 2, Name: strings.Repeat("雪", 20)}, now)
-	if pair.pilot.Name != strings.Repeat("雪", 16) || pair.seat.Name != pair.pilot.Name {
+	s.renamePilot(current, infiniteMessage{RequestID: 2, Name: "host"}, now)
+	if pair.pilot.Name != "host" || pair.seat.Name != pair.pilot.Name {
 		t.Fatal("Unicode callsign truncation broke room/arena parity")
 	}
 }

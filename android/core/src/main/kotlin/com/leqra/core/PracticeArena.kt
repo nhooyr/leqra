@@ -1236,25 +1236,28 @@ class PracticeArena(
                 (maze.world?.let { 4 * (it.width + it.height) } ?: 36 * 84.0) - launch.distance,
             )
         val points = mutableListOf<BeamPoint>()
-        var hit: Int? = null
+        val targets = mutableListOf<Int>()
+        val hitIDs = mutableSetOf<Int>()
         for (i in 0 until 256) {
             val dx = ux * remaining
             val dy = uy * remaining
             val wall = maze.rayHit(x, y, dx, dy, 3.0)
-            val target = targetHit(t.id, x, y, dx, dy, 3.0, wall?.fraction ?: 1.00000001)
-            val length = remaining * (target?.fraction ?: wall?.fraction ?: 1.0)
+            val limit = wall?.fraction ?: 1.0
+            val hits = snapshot.tanks.indices.mapNotNull { index ->
+                val target = snapshot.tanks[index]
+                if (target.hp <= 0 || target.invulnerable > 0 || (target.id == t.id || !friendlyFire && !opposes(t.id, target)) || target.id in hitIDs) null
+                else circleHit(x, y, dx, dy, target.x, target.y, 20.0)?.takeIf { it < limit }?.let { index to it }
+            }.sortedBy { it.second }
+            for ((index, _) in hits) { targets += index; hitIDs += snapshot.tanks[index].id }
+            val length = remaining * limit
             if (i == 0) {
-                val crop = if (launch.bounced) 0.0 else 28.0
+                val crop = if (launch.bounced) 0.0 else min(28.0, hits.firstOrNull()?.let { remaining * it.second } ?: Double.POSITIVE_INFINITY)
                 points.add(BeamPoint(x + ux * min(crop, length), y + uy * min(crop, length)))
             }
             x += ux * length
             y += uy * length
             remaining -= length
             points.add(BeamPoint(x, y))
-            if (target != null) {
-                hit = target.index
-                break
-            }
             if (wall == null || remaining <= 1e-7) break
             if (wall.nx != 0.0) ux = -ux
             if (wall.ny != 0.0) uy = -uy
@@ -1266,12 +1269,12 @@ class PracticeArena(
         if (
             t.starmanTime <= 0 ||
                 time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0) ||
-                hit != null
+                targets.isNotEmpty()
         ) {
             nextBoostEffects[t.id] = time + 4.0 / 60
             effect("laser", t.x, t.y, t.id, points)
         }
-        hit?.let { hurt(it, t.id, kind = "laser") }
+        for (index in targets) hurt(index, t.id, kind = "laser")
     }
 
     private fun detonate(b: ArenaBullet, flight: ProjectileFlight? = null) {

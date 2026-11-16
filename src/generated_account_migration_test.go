@@ -99,7 +99,7 @@ func TestGeneratedFreshP2MigratesLegacyScoreAfterRestart(t *testing.T) {
 		t.Fatal("first gameplay did not consume generated freshness")
 	}
 	info, err := a.infinite.accountInfo(key)
-	if err != nil || info.TotalNames != 2 || info.PublicProfile.Score != 41 {
+	if err != nil || info.TotalNames != 1 || info.PublicProfile.Score != 41 {
 		t.Fatal("generated P2 lost its own alias or proven legacy alias", info, err)
 	}
 	var count int

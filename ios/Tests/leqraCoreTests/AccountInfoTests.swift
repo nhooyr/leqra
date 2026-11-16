@@ -42,6 +42,37 @@ final class AccountInfoTests: XCTestCase {
         XCTAssertEqual(info.publicProfile?.score, 37)
     }
 
+    @MainActor func testExplicitSignInAndNewAccountSendOnlyIdentityFields() async throws {
+        let client = transport { request in
+            let body = try self.body(request)
+            if request.url?.path == "/api/account/create" {
+                XCTAssertEqual(Set(body.keys), ["publicToken", "name"])
+                XCTAssertEqual(body["name"] as? String, "NEW")
+                return (200, ["names": ["NEW"], "totalNames": 1, "publicProfile": ["name": "NEW", "score": 0]])
+            }
+            XCTAssertEqual(Set(body.keys), ["publicToken", "signIn"])
+            XCTAssertEqual(body["signIn"] as? Bool, true)
+            return (200, ["names": ["OLD"], "totalNames": 1, "publicProfile": ["name": "OLD", "score": 37]])
+        }
+        let url = URL(string: "https://account.test")!
+        let created = try await client.createAccount(baseURL: url, publicToken: replacement, name: "NEW")
+        let signedIn = try await client.fetchAccountInfo(baseURL: url, publicToken: key, signIn: true)
+        XCTAssertEqual(created.publicProfile?.score, 0)
+        XCTAssertEqual(signedIn.publicProfile?.score, 37)
+    }
+
+    @MainActor func testReleasePostsOnlyTheKeyAndRequiresConfirmation() async throws {
+        let client = transport { request in
+            XCTAssertEqual(request.url?.path, "/api/account/release")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try self.body(request)
+            XCTAssertEqual(Set(body.keys), ["publicToken"])
+            XCTAssertEqual(body["publicToken"] as? String, self.key)
+            return (200, ["released": true])
+        }
+        try await client.releaseAccount(baseURL: URL(string: "https://account.test")!, publicToken: key)
+    }
+
     @MainActor func testInvalidAndRevokedAccountKeysHaveExplicitErrors() async throws {
         for code in ["account_key_invalid", "account_key_revoked"] {
             let client = transport { _ in (401, ["code": code, "message": "Do not display a server-supplied secret."]) }

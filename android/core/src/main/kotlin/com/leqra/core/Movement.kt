@@ -25,6 +25,7 @@ object TankMovement {
         val magnitude = hypot(input.stickX, input.stickY)
         if (magnitude > .1) {
             val desired = atan2(input.stickY, input.stickX)
+            if (input.snapAim && input.aimOnly) return Steering(desired, 0.0)
             val difference = angleDelta(desired, a)
             var rate = 5.8
             if (input.touchAim && !input.aimOnly)

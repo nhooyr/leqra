@@ -832,6 +832,8 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.syncAccountCallsignsLocked()
+	defer h.syncAccountCallsignsLocked()
 	select {
 	case <-c.done:
 		return nil // A replaced socket can still have an already-read packet.
@@ -1294,6 +1296,7 @@ func (h *Hub) broadcastState(r *Room) {
 func (h *Hub) tick(now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.syncAccountCallsignsLocked()
 	for c := range h.clients {
 		if c.room == nil && now.Sub(c.born) > 15*time.Second {
 			c.stop()

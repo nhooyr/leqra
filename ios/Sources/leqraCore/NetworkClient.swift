@@ -419,8 +419,21 @@ struct NetworkLatencySampler {
 
     /// Account keys travel only in the request body, never URLs or logs.
     /// This read-only check must succeed before an imported key replaces one.
-    public func fetchAccountInfo(baseURL: URL, publicToken: String) async throws -> AccountInfo {
-        try JSONDecoder().decode(AccountInfo.self, from: await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account"))
+    public func fetchAccountInfo(baseURL: URL, publicToken: String, signIn: Bool = false) async throws -> AccountInfo {
+        try JSONDecoder().decode(AccountInfo.self, from: await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account", signIn: signIn))
+    }
+
+    public func releaseAccount(baseURL: URL, publicToken: String) async throws {
+        let data = try await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account/release")
+        struct ReleaseResult: Decodable { let released: Bool }
+        guard try JSONDecoder().decode(ReleaseResult.self, from: data).released else { throw GameNetworkError.invalidResponse }
+    }
+
+    public func createAccount(baseURL: URL, publicToken: String, name: String) async throws -> AccountInfo {
+        let data = try await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account/create", name: name)
+        let info = try JSONDecoder().decode(AccountInfo.self, from: data)
+        guard info.preferredCallsign.map({ CallsignPolicy.clean($0).lowercased() }) == CallsignPolicy.clean(name).lowercased() else { throw GameNetworkError.invalidResponse }
+        return info
     }
 
     public func rotateAccountKey(baseURL: URL, publicToken: String, newPublicToken: String) async throws -> AccountKeyRotation {
@@ -432,7 +445,7 @@ struct NetworkLatencySampler {
         return result
     }
 
-    private func accountRequest(baseURL: URL, publicToken: String, path: String, replacement: String? = nil) async throws -> Data {
+    private func accountRequest(baseURL: URL, publicToken: String, path: String, replacement: String? = nil, signIn: Bool = false, name: String? = nil) async throws -> Data {
         let credential = try PublicInfinitySession(baseURL: baseURL, publicToken: publicToken)
         var request = URLRequest(url: try ServerAddress.endpoint(credential.baseURL, path: path))
         request.httpMethod = "POST"
@@ -440,8 +453,10 @@ struct NetworkLatencySampler {
         request.setValue(credential.origin, forHTTPHeaderField: "Origin")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 6
-        var body = ["publicToken": credential.publicToken]
-        body["newPublicToken"] = replacement
+        var body: [String: Any] = ["publicToken": credential.publicToken]
+        if let replacement { body["newPublicToken"] = replacement }
+        if signIn { body["signIn"] = true }
+        if let name { body["name"] = name }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: request, delegate: AccountRequestRedirectGuard())
         try Task.checkCancellation()
@@ -610,7 +625,7 @@ struct NetworkLatencySampler {
             "forward": !paused && input.forward, "reverse": !paused && input.reverse,
             "left": !paused && input.left, "right": !paused && input.right,
             "fire": !paused && input.fire, "stickX": paused ? 0 : input.stickX,
-            "stickY": paused ? 0 : input.stickY, "touchAim": input.touchAim, "aimOnly": input.aimOnly]
+            "stickY": paused ? 0 : input.stickY, "touchAim": input.touchAim, "aimOnly": input.aimOnly, "snapAim": input.snapAim]
         if isInfinity { command["paused"] = paused; if local { command["local"] = true } }
         else { command["player"] = player; command["member"] = member }
         sendCommand(command)

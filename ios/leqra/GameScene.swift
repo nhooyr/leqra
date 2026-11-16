@@ -100,6 +100,8 @@ final class GameScene: SKScene {
     private var liveEffects: [TransientEffectNode] = []
     private var effectPool: [TransientEffectNode] = []
     private var effectOrder: [Int] = []
+    private var aimTouch: UITouch?
+    private var aimTankPosition: CGPoint?
     private var stickTouch: UITouch?
     private var fireTouch: UITouch?
     private var stickOrigin = CGPoint.zero
@@ -443,6 +445,7 @@ final class GameScene: SKScene {
 
     func resetControls() {
         onControlsReset?()
+        aimTouch = nil
         stickTouch = nil
         fireTouch = nil
         input.forward = false
@@ -455,6 +458,7 @@ final class GameScene: SKScene {
         input.stickY = 0
         input.touchAim = true
         input.aimOnly = false
+        input.snapAim = false
         stickKnob.position = stickOrigin
         fireButton.fillTexture = NativeArt.fireButton(held: false, detonate: fireTitle == "BOOM")
         fireButton.fillColor = .white
@@ -572,6 +576,7 @@ final class GameScene: SKScene {
         }
         world.position = CGPoint(x: worldViewport.midX - cameraPoint.x * zoom,
                                  y: worldViewport.midY + cameraPoint.y * zoom)
+        aimTankPosition = focus.flatMap { $0.id == localID && $0.hp > 0 ? CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom) : nil }
         renderGeometry = maze ?? fixedGeometry
         let visible = visibleWorldBounds
         updateMap(maze: maze, fixedWalls: fixedWalls, visible: visible)
@@ -972,7 +977,9 @@ final class GameScene: SKScene {
         guard !spectating else { return }
         for touch in touches {
             let location = touch.location(in: self)
-            if stickTouch == nil && location.x < size.width / 2 && location.y < size.height * 0.75 {
+            if aimTouch == nil && updateDirectAim(location, nearOnly: true) {
+                aimTouch = touch
+            } else if stickTouch == nil && location.x < size.width / 2 && location.y < size.height * 0.75 {
                 stickTouch = touch
                 updateStick(location)
             } else if fireTouch == nil && location.x >= size.width / 2 && location.y < max(210, size.height * 0.38) {
@@ -984,18 +991,24 @@ final class GameScene: SKScene {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches where touch === stickTouch { updateStick(touch.location(in: self)) }
+        for touch in touches {
+            if touch === aimTouch { _ = updateDirectAim(touch.location(in: self)) }
+            else if touch === stickTouch { updateStick(touch.location(in: self)) }
+        }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { endTouches(touches) }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { endTouches(touches) }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if touches.contains(where: { $0 === aimTouch }) { clearDirectAim() }
+        endTouches(touches)
+    }
 
     private func endTouches(_ touches: Set<UITouch>) {
         for touch in touches {
+            if touch === aimTouch { aimTouch = nil }
             if touch === stickTouch {
                 stickTouch = nil
-                input.stickX = 0
-                input.stickY = 0
+                if !input.snapAim { input.stickX = 0; input.stickY = 0 }
                 stickKnob.position = stickOrigin
             }
             if touch === fireTouch {
@@ -1005,7 +1018,26 @@ final class GameScene: SKScene {
         }
     }
 
+    func clearDirectAim() {
+        aimTouch = nil
+        if input.snapAim { input.stickX = 0; input.stickY = 0; input.aimOnly = false; input.snapAim = false }
+    }
+
+    private func updateDirectAim(_ point: CGPoint, nearOnly: Bool = false) -> Bool {
+        guard let tank = aimTankPosition, worldViewport.contains(point) else { return false }
+        let dx = Double(point.x - tank.x), dy = Double(tank.y - point.y), distance = hypot(dx, dy)
+        guard distance >= 2, !nearOnly || distance <= max(64, 51 * Double(zoom)) else { return false }
+        input.stickX = dx / distance
+        input.stickY = dy / distance
+        input.aimOnly = true
+        input.snapAim = true
+        stickKnob.position = stickOrigin
+        return true
+    }
+
     private func updateStick(_ point: CGPoint) {
+        aimTouch = nil
+        input.snapAim = false
         let dx = point.x - stickOrigin.x
         let dy = point.y - stickOrigin.y
         let length = hypot(dx, dy)

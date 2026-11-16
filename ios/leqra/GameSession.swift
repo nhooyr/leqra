@@ -117,6 +117,9 @@ final class GameSession: ObservableObject {
     private let publicSessions: PublicInfinitySessionStoring
     private let callsignDrafts: CallsignDraftStore
     private var applyingGeneratedCallsign = false
+    private var committedCallsigns = ["", ""]
+    @Published private(set) var switchingCallsign = false
+    private var onlineIdentityReady = false
     private var nextAutomaticGeneration = 0.0
     private var pendingOnlineAction: UUID?
     private var spawnNotices = GodlikeSpawnNotices()
@@ -177,6 +180,13 @@ final class GameSession: ObservableObject {
         drafts.migrateLegacyDefaults { !unowned.contains($0) }
         callsignDrafts = drafts
         callsign = drafts.name(seat: 0); localCallsign = drafts.name(seat: 1)
+        committedCallsigns = [callsign, localCallsign]
+        if let server {
+            for seat in 0...1 {
+                if let credential = sessions.session(for: server, seat: seat),
+                   let saved = sessions.savedCallsigns(for: server).first(where: { $0.credential == credential }) { committedCallsigns[seat] = saved.name }
+            }
+        }
         localRules.infinity = false
         if let data = UserDefaults.standard.data(forKey: "nativePresets"), let presets = try? JSONDecoder().decode([LocalPreset].self, from: data) { savedPresets = presets }
         for index in savedPresets.indices {
@@ -336,8 +346,6 @@ final class GameSession: ObservableObject {
         let address = serverAddress
         callsignGenerating = true
         defer { callsignGenerating = false }
-        var pendingAttempt: CallsignGenerationAttempt?
-        var pendingCredentials: [(seat: Int, credential: PublicInfinitySession)] = []
         do {
             var requested = seats
             // Preferences may be fresh after reinstall while Keychain still
@@ -353,35 +361,52 @@ final class GameSession: ObservableObject {
                         applyingGeneratedCallsign = true
                         if seat == 1 { localCallsign = name } else { callsign = name }
                         applyingGeneratedCallsign = false
+                        committedCallsigns[seat] = name
+                        _ = publicSessions.saveCallsign(name, credential: credential)
                     }
                 }
                 requested = requested.filter { callsignDrafts.automaticPending(seat: $0) }
                 if requested.isEmpty { callsignDrafts.complete(draft); return }
             }
+            let attempt = try callsignDrafts.begin(server: server, seats: requested)
             var credentials: [(seat: Int, credential: PublicInfinitySession)] = []
+            var previous: [Int: PublicInfinitySession] = [:]
+            for seat in requested { if let saved = accountSession(for: server, seat: seat) { previous[seat] = saved } }
             for seat in requested {
                 let credential: PublicInfinitySession
-                if let saved = accountSession(for: server, seat: seat) { credential = saved }
+                if automatic, let saved = accountSession(for: server, seat: seat) { credential = saved }
                 else {
-                    guard !publicSessions.hasStoredCredential(for: server, seat: seat) else { throw GameNetworkError.invalidAccountKey }
-                    credential = try KeychainPublicInfinitySessions.newCredential(for: server)
-                    guard publicSessions.rememberNew(credential, seat: seat) else { throw AccountActionError.keychain }
+                    if automatic { guard !publicSessions.hasStoredCredential(for: server, seat: seat) else { throw GameNetworkError.invalidAccountKey } }
+                    let pending = publicSessions.pendingCallsign(for: server, seat: seat)
+                    let retryName = "random:" + attempt.requestId.uuidString
+                    if !automatic, let pending, pending.name == retryName, pending.previous == previous[seat] { credential = pending.credential }
+                    else { credential = try KeychainPublicInfinitySessions.newCredential(for: server) }
+                    if automatic {
+                        guard publicSessions.rememberNew(credential, seat: seat) else { throw AccountActionError.keychain }
+                    } else {
+                        guard publicSessions.savePendingCallsign(.init(name: retryName, credential: credential, previous: previous[seat]), seat: seat) else { throw AccountActionError.keychain }
+                    }
                 }
                 guard credential.publicToken != accountSession(for: server, seat: seat == 1 ? 0 : 1)?.publicToken else { throw AccountActionError.duplicateAccount }
                 credentials.append((seat, credential))
+                if automatic { previous[seat] = credential }
             }
             // Persist the UUID and both independent keys before contacting the
             // atomic endpoint; ambiguous failures retry this exact request.
-            let attempt = try callsignDrafts.begin(server: server, seats: requested)
-            pendingAttempt = attempt; pendingCredentials = credentials
             let names = try await arenaClient.generateCallsigns(baseURL: server, requestId: attempt.requestId,
                 accounts: credentials.map { ($0.seat, $0.credential.publicToken) })
             guard serverAddress == address else { return }
             if automatic, !readyRoom || room != nil { return }
             for generated in names {
                 guard let saved = credentials.first(where: { $0.seat == generated.seat }),
-                      accountSession(for: server, seat: generated.seat) == saved.credential else { continue }
-                if generated.seat == 0, !publicSessions.confirm(saved.credential, requested: saved.credential.publicToken, seat: 0) { throw AccountActionError.keychain }
+                      accountSession(for: server, seat: generated.seat) == previous[generated.seat] else { continue }
+                guard let draft = attempt.drafts.first(where: { $0.seat == generated.seat }), callsignDrafts.matches(draft) else { continue }
+                if let old = previous[generated.seat], old != saved.credential {
+                    guard publicSessions.saveCallsign(committedCallsigns[generated.seat], credential: old) else { throw AccountActionError.keychain }
+                }
+                guard publicSessions.backup(saved.credential, seat: generated.seat), publicSessions.saveCallsign(generated.name, credential: saved.credential) else { throw AccountActionError.keychain }
+                guard publicSessions.remember(saved.credential, seat: generated.seat) else { throw AccountActionError.keychain }
+                _ = publicSessions.clearPendingCallsign(for: server, seat: generated.seat)
                 guard callsignDrafts.apply(generated.name, seat: generated.seat, attempt: attempt) else { continue }
                 if automatic, let previous = attempt.drafts.first(where: { $0.seat == generated.seat })?.name {
                     updateGeneratedPresets(seat: generated.seat, previous: previous, claimed: generated.name)
@@ -389,31 +414,15 @@ final class GameSession: ObservableObject {
                 applyingGeneratedCallsign = true
                 if generated.seat == 1 { localCallsign = generated.name } else { callsign = generated.name }
                 applyingGeneratedCallsign = false
-                if !automatic {
-                    if generated.seat == 0 { callsignTaken = false; saveCallsign() }
-                    else if let local = accountLocalPlayer { send(.renameLocal(target: local.id, member: local.member, name: generated.name)) }
-                }
+                committedCallsigns[generated.seat] = generated.name
+                if !automatic { leave(); preparePreview() }
             }
             callsignDrafts.complete(attempt)
             scheduleCallsignAvailability(localName: localCallsign)
         } catch {
             if !automatic, serverAddress == address {
-                let unavailable = (error as? URLError).map { [.notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost, .timedOut].contains($0.code) } ?? false
-                if offlineRepair, unavailable, let attempt = pendingAttempt {
-                    for saved in pendingCredentials where accountSession(for: server, seat: saved.seat) == saved.credential {
-                        if let name = try? callsignDrafts.provisionalName(seat: saved.seat, attempt: attempt) {
-                            applyingGeneratedCallsign = true
-                            if saved.seat == 1 { localCallsign = name } else { callsign = name }
-                            applyingGeneratedCallsign = false
-                            if saved.seat == 0, offline { saveCallsign() }
-                        }
-                    }
-                    scheduleCallsignAvailability(localName: localCallsign)
-                    status = "Random callsign ready offline. Connect to reserve it before going online."
-                } else {
-                    let message = error.localizedDescription
-                    if seats.contains(0) { callsignFeedback = message } else { localCallsignFeedback = message }
-                }
+                let message = error.localizedDescription
+                if seats.contains(0) { callsignFeedback = message } else { localCallsignFeedback = message }
             }
         }
     }
@@ -496,6 +505,10 @@ final class GameSession: ObservableObject {
                     self.publicSessions.remember(credential, seat: slot)
                 }
                 self.accountInfo = info; self.accountBusy = false
+                if let name = info.preferredCallsign {
+                    _ = self.publicSessions.saveCallsign(name, credential: credential)
+                    self.committedCallsigns[slot] = name
+                }
                 if self.accountRecoveryKeyPending { self.accountStatus = "A key reset is pending. Retry reset to finish it safely." }
             } catch {
                 guard !Task.isCancelled, self.accountOperation == operation, self.showAccount else { return }
@@ -555,16 +568,24 @@ final class GameSession: ObservableObject {
         }
         let info: AccountInfo
         do {
-            info = try await arenaClient.fetchAccountInfo(baseURL: server, publicToken: checked.credential.publicToken)
+            info = try await arenaClient.fetchAccountInfo(baseURL: server, publicToken: checked.credential.publicToken, signIn: true)
             try Task.checkCancellation()
             guard slot == accountSeatContext, canImportAccount, let current = accountServer, checked.credential.matches(current) else { throw AccountActionError.serverChanged }
         } catch { accountStatus = error.localizedDescription; return false }
+        if let previous = accountSession(for: server, seat: slot) {
+            guard publicSessions.saveCallsign(committedCallsigns[slot], credential: previous) else {
+                accountStatus = "The previous account could not be saved."; return false
+            }
+        }
         guard publicSessions.remember(checked.credential, seat: slot) else {
             accountStatus = "The account key could not be saved in Keychain. Your previous key is unchanged."; return false
         }
         clearAccountIntent(for: checked.credential, seat: slot)
         accountInfo = info
-        if let name = info.preferredCallsign { installAuthoritativeCallsign(name, seat: slot) }
+        if let name = info.preferredCallsign {
+            _ = publicSessions.saveCallsign(name, credential: checked.credential)
+            committedCallsigns[slot] = name; installAuthoritativeCallsign(name, seat: slot)
+        }
         accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
         scheduleCallsignAvailability()
         accountStatus = "Account imported. PLAY will use its callsign and server score."
@@ -627,6 +648,7 @@ final class GameSession: ObservableObject {
         accountPendingKeyVerified = false
         if let current = accountServer, pending.replacement.matches(current) {
             accountInfo = info
+            if let name = info.preferredCallsign { _ = publicSessions.saveCallsign(name, credential: pending.replacement); committedCallsigns[slot] = name }
             if let name = info.preferredCallsign { installAuthoritativeCallsign(name, seat: slot) }
             scheduleCallsignAvailability()
         }
@@ -739,6 +761,7 @@ final class GameSession: ObservableObject {
     }
 
     func play() {
+        if room != nil, prepareIdentityForOnline(seats: accountLocalPlayer == nil ? [0] : [0,1], { [weak self] in self?.play() }) { return }
         guard validPlayerCallsign(cleanName, seat: 0) else { return }
         if let local = accountLocalPlayer, !validPlayerCallsign(local.name, seat: 1) { return }
         if let room {
@@ -867,6 +890,7 @@ final class GameSession: ObservableObject {
     }
 
     func shareRoom() {
+        if prepareIdentityForOnline({ [weak self] in self?.shareRoom() }) { return }
         guard validPlayerCallsign(cleanName, seat: 0) else { return }
         if finishPendingCallsigns(seats: [0], action: { [weak self] in self?.shareRoom() }) { return }
         guard room == nil else { return }
@@ -884,18 +908,132 @@ final class GameSession: ObservableObject {
                                         publicToken: primary?.publicToken)
     }
 
+    var savedCallsignNames: [String] {
+        guard let server = accountServer else { return [] }
+        let other = accountSession(for: server, seat: 1 - accountSeatContext)
+        return publicSessions.savedCallsigns(for: server).filter { $0.credential != other }.map(\.name)
+    }
+
+    func releaseCallsign(_ name: String? = nil) async {
+        guard canImportAccount, !accountBusy, !switchingCallsign, let server = accountServer else { return }
+        let slot = accountSeatContext
+        let credential = name.flatMap { selected in publicSessions.savedCallsigns(for: server).first { canonicalCallsign($0.name) == canonicalCallsign(selected) }?.credential }
+            ?? (name == nil ? accountSession(for: server, seat: slot) : nil)
+        guard let credential else { return }
+        let selected = accountSession(for: server, seat: slot) == credential
+        accountBusy = true
+        defer { accountBusy = false }
+        do {
+            let replacement = selected ? try KeychainPublicInfinitySessions.newCredential(for: server) : nil
+            if let replacement, !publicSessions.backup(replacement, seat: slot) { throw AccountActionError.keychain }
+            try await arenaClient.releaseAccount(baseURL: server, publicToken: credential.publicToken)
+            let stillSelected = accountSession(for: server, seat: slot) == credential
+            guard publicSessions.forgetAccount(credential) else { throw AccountActionError.keychain }
+            if let replacement, stillSelected, accountServer == server {
+                guard publicSessions.rememberNew(replacement, seat: slot) else { throw AccountActionError.keychain }
+                let newName = CallsignPolicy.bootstrap()
+                if publicSessions.pendingCallsign(for: server, seat: slot) == nil {
+                    guard publicSessions.savePendingCallsign(.init(name: newName, credential: replacement, previous: replacement), seat: slot) else { throw AccountActionError.keychain }
+                }
+                committedCallsigns[slot] = newName
+                installAuthoritativeCallsign(newName, seat: slot)
+                accountInfo = nil
+                preparePreview()
+            }
+            accountStatus = "Callsign released. Its score was deleted and the name is available."
+            accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
+        } catch { accountStatus = error.localizedDescription }
+    }
+
+    func useSavedCallsign(_ name: String) {
+        if accountSeatContext == 0 { callsign = name } else { localCallsign = name }
+        switchCallsign(name, seat: accountSeatContext, validate: true)
+    }
+    private func canonicalCallsign(_ name: String) -> String { CallsignPolicy.clean(name).lowercased() }
+
     func saveCallsign() {
         guard !(arenaActive && spectating) else { return }
-        guard validPlayerCallsign(cleanName, seat: 0) else { return }
-        if !offline, (arenaActive || room != nil), callsignDrafts.automaticPending(seat: 0) { return }
-        if !offline, (arenaActive || room != nil), callsignTaken { return }
-        callsign = cleanName
-        if let practice { practice.configurePilot(id: localID, name: callsign, colorIndex: colorIndex, team: localTeam, difficulty: "normal") }
-        else if let fixedArena { fixedArena.configurePilot(id: localID, name: callsign, colorIndex: colorIndex, team: localTeam, difficulty: "normal") }
-        else if arenaActive {
-            requestID += 1
-            arenaClient.sendCommand(["type": "rename", "seat": 0, "name": callsign, "requestId": requestID])
-        } else if room != nil { roomClient.send(.rename(callsign)) }
+        switchCallsign(cleanName, seat: 0, localOnly: offline)
+    }
+
+    func switchCallsign(_ requested: String, seat: Int, localOnly: Bool = false, validate: Bool = false, completed: (() -> Void)? = nil) {
+        let name = CallsignPolicy.clean(requested)
+        guard !name.isEmpty, validPlayerCallsign(name, seat: seat), !switchingCallsign, let server = accountServer else { return }
+        if seat == 1 { localCallsign = name }
+        let previousName = committedCallsigns[seat], previous = accountSession(for: server, seat: seat)
+        let same = canonicalCallsign(name) == canonicalCallsign(previousName)
+        if same, !validate, previous != nil, !publicSessions.registrationPending(for: server, seat: seat) {
+            installAuthoritativeCallsign(name, seat: seat); completed?(); return
+        }
+        switchingCallsign = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.switchingCallsign = false }
+            do {
+                if let previous, !previousName.isEmpty {
+                    guard self.publicSessions.saveCallsign(previousName, credential: previous) else { throw AccountActionError.keychain }
+                }
+                let pendingSwitch = self.publicSessions.pendingCallsign(for: server, seat: seat)
+                let retry = pendingSwitch.flatMap { self.canonicalCallsign($0.name) == self.canonicalCallsign(name) && $0.previous == previous ? $0 : nil }
+                var candidate = retry?.credential ?? self.publicSessions.savedCallsigns(for: server).first { self.canonicalCallsign($0.name) == self.canonicalCallsign(name) }?.credential
+                if same, retry == nil, let previous { candidate = previous }
+                if let candidate, candidate.publicToken == self.accountSession(for: server, seat: 1 - seat)?.publicToken { throw AccountActionError.duplicateAccount }
+                var pending = retry != nil || same && self.publicSessions.registrationPending(for: server, seat: seat)
+                if let candidate, self.publicSessions.registrationCandidates(for: server, seat: seat).contains(candidate) { pending = true }
+                if candidate == nil {
+                    candidate = try KeychainPublicInfinitySessions.newCredential(for: server); pending = true
+                }
+                var credential = candidate!
+                guard self.publicSessions.backup(credential, seat: seat) else { throw AccountActionError.keychain }
+                if pending { guard self.publicSessions.savePendingCallsign(.init(name: name, credential: credential, previous: previous), seat: seat) else { throw AccountActionError.keychain } }
+                var info: AccountInfo?
+                if !localOnly {
+                    if !pending {
+                        do {
+                            info = try await self.arenaClient.fetchAccountInfo(baseURL: server, publicToken: credential.publicToken, signIn: true)
+                            guard info?.preferredCallsign.map(self.canonicalCallsign) == self.canonicalCallsign(name) else { throw GameNetworkError.invalidResponse }
+                        } catch GameNetworkError.invalidAccountKey {
+                            credential = try KeychainPublicInfinitySessions.newCredential(for: server)
+                            guard self.publicSessions.savePendingCallsign(.init(name: name, credential: credential, previous: previous), seat: seat) else { throw AccountActionError.keychain }
+                            pending = true
+                        }
+                    }
+                    if pending { info = try await self.arenaClient.createAccount(baseURL: server, publicToken: credential.publicToken, name: name) }
+                }
+                guard self.accountServer == server, self.accountSession(for: server, seat: seat) == previous,
+                      self.canonicalCallsign(seat == 0 ? self.callsign : self.localCallsign) == self.canonicalCallsign(name) else { throw AccountActionError.serverChanged }
+                guard self.publicSessions.saveCallsign(name, credential: credential) else { throw AccountActionError.keychain }
+                let saved = localOnly && pending ? self.publicSessions.rememberNew(credential, seat: seat) : self.publicSessions.remember(credential, seat: seat)
+                guard saved else { throw AccountActionError.keychain }
+                _ = self.publicSessions.clearPendingCallsign(for: server, seat: seat)
+                let changedAccount = !same || credential != previous
+                if changedAccount { self.leave() }
+                self.installAuthoritativeCallsign(info?.preferredCallsign ?? name, seat: seat)
+                self.committedCallsigns[seat] = info?.preferredCallsign ?? name
+                self.accountInfo = info
+                self.status = localOnly ? "New local account selected. Its score starts at zero." : "Account selected. PLAY uses this callsign's own score."
+                if changedAccount || self.room == nil { self.preparePreview() }
+                self.switchingCallsign = false
+                completed?()
+            } catch {
+                let draft = seat == 0 ? self.callsign : self.localCallsign
+                if self.canonicalCallsign(draft) == self.canonicalCallsign(name) { self.installAuthoritativeCallsign(previousName, seat: seat) }
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func prepareIdentityForOnline(seats: [Int] = [0], _ action: @escaping @MainActor () -> Void) -> Bool {
+        guard accountServer != nil else { return false }
+        if switchingCallsign { return true }
+        if onlineIdentityReady { onlineIdentityReady = false; return false }
+        func prepare(_ index: Int) {
+            if index == seats.count { onlineIdentityReady = true; action(); return }
+            let seat = seats[index]
+            switchCallsign(seat == 0 ? cleanName : localCallsign, seat: seat, validate: true) { prepare(index + 1) }
+        }
+        prepare(0)
+        return true
     }
 
     /// Used names remain available offline; the bot namespace is reserved. The advisory is useful before a
@@ -911,8 +1049,9 @@ final class GameSession: ObservableObject {
         let name = cleanName
         let local = localName ?? room?.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id })?.name
         let names = [name] + (local.map { [String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(16))] } ?? [])
-        let token = accountSession(for: server)?.publicToken
-        let localToken = accountSession(for: server, seat: 1)?.publicToken
+        let history = publicSessions.savedCallsigns(for: server)
+        let token = history.first { canonicalCallsign($0.name) == canonicalCallsign(name) }?.credential.publicToken ?? accountSession(for: server)?.publicToken
+        let localToken = local.flatMap { target in history.first { canonicalCallsign($0.name) == canonicalCallsign(target) }?.credential.publicToken } ?? accountSession(for: server, seat: 1)?.publicToken
         let localFresh = publicSessions.registrationPending(for: server, seat: 1)
         let address = serverAddress
         callsignChecking = true
@@ -966,6 +1105,17 @@ final class GameSession: ObservableObject {
             || type == "preset" && roster?.contains(where: { $0["kind"] as? String == "local" }) == true
         if type == "add", payload["kind"] as? String == "local", payload["name"] == nil { payload["name"] = localCallsign }
         let editsLocal = ["configure", "rename_local"].contains(type ?? "") && payload["target"] as? Int == accountLocalPlayer?.id
+        if editsLocal, let name = payload["name"] as? String, canonicalCallsign(name) != canonicalCallsign(committedCallsigns[1]) {
+            switchCallsign(name, seat: 1); return
+        }
+        if addsLocal, let name = roster?.first(where: { $0["kind"] as? String == "local" })?["name"] as? String,
+           canonicalCallsign(name) != canonicalCallsign(committedCallsigns[1]) {
+            switchCallsign(name, seat: 1); return
+        }
+        if addsLocal, let server = baseURL ?? accountServer,
+           accountSession(for: server, seat: 1) == nil || canonicalCallsign(localCallsign) != canonicalCallsign(committedCallsigns[1]) || publicSessions.registrationPending(for: server, seat: 1) {
+            switchCallsign(localCallsign, seat: 1); return
+        }
         if addsLocal || editsLocal, finishPendingCallsigns(seats: [1], action: { [weak self] in self?.send(action) }) { return }
         if addsLocal || editsLocal {
             let name = payload["name"] as? String ?? localCallsign
@@ -1041,6 +1191,7 @@ final class GameSession: ObservableObject {
     }
 
     func connect(code: String? = nil, publicArena: Bool = false, restoringPublicSession: Bool = false, spectating: Bool = false) {
+        if !restoringPublicSession, prepareIdentityForOnline(seats: accountLocalPlayer == nil ? [0] : [0,1], { [weak self] in self?.connect(code: code, publicArena: publicArena, spectating: spectating) }) { return }
         guard validPlayerCallsign(cleanName, seat: 0) else { return }
         if !restoringPublicSession, finishPendingCallsigns(seats: [0], action: { [weak self] in self?.connect(code: code, publicArena: publicArena, spectating: spectating) }) { return }
         guard let url = URL(string: serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -1346,10 +1497,14 @@ final class GameSession: ObservableObject {
                 UIApplication.shared.isIdleTimerDisabled = false
             }
             if let own = value.players.first(where: { $0.id == welcome?.id }) {
-                callsign = own.name
+                callsign = own.name; committedCallsigns[0] = own.name
+                if let server = baseURL, let credential = accountSession(for: server) { _ = publicSessions.saveCallsign(own.name, credential: credential) }
                 if let index = GamePalette.colors.firstIndex(of: own.color.lowercased()) { colorIndex = index }
             }
-            if let local = value.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id }) { localCallsign = local.name }
+            if let local = value.players.first(where: { $0.kind == "local" && $0.owner == welcome?.id }) {
+                localCallsign = local.name; committedCallsigns[1] = local.name
+                if let server = baseURL, let credential = accountSession(for: server, seat: 1) { _ = publicSessions.saveCallsign(local.name, credential: credential) }
+            }
             reconcileRoomArenaAccess()
         case .infinityStarted:
             guard let url = baseURL, let welcome, let code = welcome.room, let token = welcome.token else { return }
@@ -1393,6 +1548,8 @@ final class GameSession: ObservableObject {
             lastSnapshot = snapshot
             if publicIdentityActive, publicRecoveryPending, let tank = snapshot.tanks.first(where: { $0.id == localID }) {
                 if callsign != tank.name { callsign = tank.name }
+                committedCallsigns[0] = tank.name
+                if let server = baseURL, let credential = accountSession(for: server) { _ = publicSessions.saveCallsign(tank.name, credential: credential) }
                 if colorIndex != tank.colorIndex { colorIndex = GamePalette.index(tank.colorIndex) }
             }
             if publicIdentityActive, publicRecoveryPending || publicScoreResetPending {

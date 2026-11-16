@@ -62,9 +62,9 @@ function isPending(seat){return !!record(seat);}
 async function request(seat,value,context){
  const old=requests.get(seat);if(old&&old.id===value.requestId)return old.promise;
  const selected=hooks.token(seat);
- if(value.owner&&value.owner!==selected){if(record(seat)?.requestId===value.requestId)remove(pending[seat]);return null;}
- const token=prepare(seat),origin=location.origin,controller=new AbortController();
- value={...value,owner:token};const saved=JSON.stringify(value);write(pending[seat],saved);
+ if(value.owner&&(value.previous??value.owner)!==selected){if(record(seat)?.requestId===value.requestId)remove(pending[seat]);return null;}
+ const token=value.owner||(!value.auto&&hooks.stageGeneration?hooks.stageGeneration(seat,value.requestId):prepare(seat)),previous=value.previous??(selected||hooks.token(seat)),origin=location.origin,controller=new AbortController();
+ value={...value,owner:token,previous};const saved=JSON.stringify(value);write(pending[seat],saved);
  if(localStorage.getItem(pending[seat])!==saved)throw Error('The name request could not be saved. Enable browser storage before going online.');
  const timeout=setTimeout(()=>controller.abort(),6000);
  const promise=(async()=>{
@@ -77,13 +77,13 @@ async function request(seat,value,context){
   const rows=data.names,name=rows?.[0]?.name;
   if(!Array.isArray(rows)||rows.length!==1||rows[0].seat!==seat||typeof name!=='string'||!/^pilot#[A-HJ-NP-Z2-9]{6}$/.test(name)&&!/^pilot-[a-z2-7]{10}$/.test(name))throw Error('Unexpected generated callsign. Try again.');
   const current=record(seat);
-  if(location.origin!==origin||hooks.token(seat)!==token||current?.requestId!==value.requestId)return null;
+  if(location.origin!==origin||hooks.token(seat)!==previous&&hooks.token(seat)!==token||current?.requestId!==value.requestId)return null;
   // P2 keeps its durable first-game migration intent until a welcome confirms it.
-  if(seat===0)hooks.remember(token,token,seat);
-  remove(pending[seat]);
   if(!current.suppressed&&hooks.canApply(seat,value.name,context)){
-   write(names[seat],name);hooks.apply(seat,name,context);
+   if(hooks.selectGenerated)await hooks.selectGenerated(seat,name,token,previous,context);
+   else{if(seat===0)hooks.remember(token,previous,seat);write(names[seat],name);hooks.apply(seat,name,context);}
   }
+  remove(pending[seat]);
   return name;
  })();
  requests.set(seat,{id:value.requestId,promise});
@@ -97,18 +97,18 @@ function cancelAuto(seat){editRevision++;const value=record(seat);if(value?.auto
 async function generate(field,form){
  editRevision++;
  const seat=form?.dataset.pilot==='secondary'?1:0;
- const previous=record(seat),value=previous&&!previous.auto&&previous.name===field.value&&(!previous.owner||previous.owner===hooks.token(seat))?previous:{name:field.value,requestId:uuid(),auto:false};write(pending[seat],JSON.stringify(value));
+ const previous=record(seat),value=previous&&!previous.auto&&previous.name===field.value&&(!previous.owner||(previous.previous??previous.owner)===hooks.token(seat))?previous:{name:field.value,requestId:uuid(),auto:false};write(pending[seat],JSON.stringify(value));
  const context={field,form,draft:field.value,member:form?.dataset.member};status(field,form,'Generating a random callsign…');
  if(!['http:','https:'].includes(location.protocol)||typeof navigator!=='undefined'&&navigator.onLine===false){
   const name=randomName(seat);write(names[seat],name);write(pending[seat],JSON.stringify({name,requestId:value.requestId,auto:true}));
-  if(hooks.canApply(seat,value.name,context))hooks.apply(seat,name,context);
+  if(hooks.canApply(seat,value.name,context))await hooks.apply(seat,name,context);
   status(field,form,'Generated locally; checked when online.');return;
  }
  try{await request(seat,value,context);}catch(error){
   if(record(seat)?.requestId!==value.requestId||field.value!==context.draft)return;
   if(hooks.offline?.()&&(error.generationNetworkFailure||error.status>=500)){
    const name=randomName(seat);write(names[seat],name);write(pending[seat],JSON.stringify({...record(seat),name,auto:true}));
-   if(hooks.canApply(seat,value.name,context))hooks.apply(seat,name,context);
+   if(hooks.canApply(seat,value.name,context))await hooks.apply(seat,name,context);
    status(field,form,'Generated locally; checked when online.');
   }else status(field,form,error.name==='AbortError'?'Generation timed out. Try again.':error.message,true,'generate');
  }

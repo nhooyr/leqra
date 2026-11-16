@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -204,12 +205,12 @@ func TestLocalRenameDuringAllPhasesPreservesGameplay(t *testing.T) {
 			for _, c := range cs {
 				drain(c)
 			}
-			action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p.ID, "member": p.Member, "name": "  Snow   Fox  "})
-			if p.Name != "Snow Fox" || !p.Ready || p.Input != input || p.Member != member || r.Game.Scores[p.ID] != 3 || r.Game.Phase != phase {
+			action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p.ID, "member": p.Member, "name": strings.ToLower(p.Name)})
+			if p.Name != strings.ToLower(before.Name) || !p.Ready || p.Input != input || p.Member != member || r.Game.Scores[p.ID] != 3 || r.Game.Phase != phase {
 				t.Fatal("rename changed seat/round state")
 			}
 			after := *r.Game.Tanks[p.ID]
-			if after.Name != "Snow Fox" {
+			if after.Name != strings.ToLower(before.Name) {
 				t.Fatal("tank name not updated")
 			}
 			after.Name = before.Name
@@ -295,26 +296,26 @@ func TestLocalRenameAfterHostHandoff(t *testing.T) {
 	h, cs, r := makeRoom(t, 2)
 	p := addSeat(t, h, cs[0], "local", "", 1)
 	r.Host = 1
-	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p.ID, "member": p.Member, "name": "OWNED"})
-	if p.Name != "OWNED" || r.Host != 1 {
+	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p.ID, "member": p.Member, "name": strings.ToLower(p.Name)})
+	if p.Name != strings.ToLower(p.Name) || r.Host != 1 {
 		t.Fatal("handoff changed ownership")
 	}
 	action(t, h, cs[1], map[string]any{"type": "rename_local", "target": p.ID, "member": p.Member, "name": "STOLEN"})
-	if p.Name != "OWNED" || !hasError(cs[1], "not_owner") {
+	if p.Name != strings.ToLower(p.Name) || !hasError(cs[1], "not_owner") {
 		t.Fatal("new host stole control of other local pilot")
 	}
 }
 func TestLocalRenameSurvivesReconnect(t *testing.T) {
 	h, cs, r := makeRoom(t, 1)
 	p := addSeat(t, h, cs[0], "local", "", 1)
-	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p.ID, "member": p.Member, "name": "雪 FOX"})
+	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p.ID, "member": p.Member, "name": strings.ToLower(p.Name)})
 	owner := cs[0].player
 	code, token := r.Code, owner.Token
 	h.removeClient(cs[0])
 	c := fakeClient()
 	h.addClient(c)
 	action(t, h, c, map[string]any{"type": "join", "code": code, "token": token})
-	if c.room != r || r.Players[p.ID].Name != "雪 FOX" {
+	if c.room != r || r.Players[p.ID].Name != strings.ToLower(p.Name) {
 		t.Fatal("secondary rename lost on reconnect")
 	}
 }

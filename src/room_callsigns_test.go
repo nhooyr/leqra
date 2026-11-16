@@ -10,9 +10,12 @@ import (
 func callsignRoomError(t *testing.T, c *Client, action string, seat int) {
 	t.Helper()
 	for _, m := range drain(c) {
-		if m["type"] == "error" && m["code"] == "callsign_taken" {
+		if m["type"] == "error" && (m["code"] == "callsign_taken" || m["code"] == "callsign_immutable") {
 			if m["action"] != action {
 				t.Fatal("wrong conflict action", m)
+			}
+			if m["code"] == "callsign_immutable" {
+				return
 			}
 			conflicts, ok := m["conflicts"].([]any)
 			if !ok || len(conflicts) != 1 || conflicts[0].(map[string]any)["seat"] != float64(seat) {
@@ -39,21 +42,19 @@ func TestPrivateOnlineCallsignClaimsAreCaseInsensitiveDurableAndOwnerScoped(t *t
 		}
 	}
 	action(t, h, first, map[string]any{"type": "rename", "name": "Polar Fox"})
-	action(t, h, first, map[string]any{"type": "leave"})
-	for _, name := range []string{"SNOW FOX", "polar fox"} {
-		stranger := fakeClient()
-		action(t, h, stranger, map[string]any{"type": "create", "name": name})
-		callsignRoomError(t, stranger, "create", 0)
-		if stranger.room != nil {
-			t.Fatal("conflicting admission created membership")
-		}
+	if !hasError(first, "callsign_immutable") || p.Name != "Snow Fox" {
+		t.Fatal("same key changed callsign")
 	}
+	action(t, h, first, map[string]any{"type": "leave"})
+	stranger := fakeClient()
+	action(t, h, stranger, map[string]any{"type": "create", "name": "SNOW FOX"})
+	callsignRoomError(t, stranger, "create", 0)
 	second := fakeClient()
 	action(t, h, second, map[string]any{"type": "create", "name": "SNOW FOX", "publicToken": owner})
 	if second.player == nil || second.player.PublicToken != owner || second.player.Token == roomToken {
-		t.Fatal("owner could not reuse its callsign with a fresh room credential")
+		t.Fatal("same callsign resume failed")
 	}
-	stranger := fakeClient()
+	stranger = fakeClient()
 	action(t, h, stranger, map[string]any{"type": "create", "name": "Unclaimed", "publicToken": roomToken})
 	if stranger.room != nil || !hasError(stranger, "public_resume_invalid") {
 		t.Fatal("room token impersonated durable owner")
@@ -103,11 +104,11 @@ func TestPrivateLocalCallsignClaimsAreAtomicAcrossAddRenameConfigureAndPreset(t 
 	}
 	host.msgWindow = time.Time{}
 	action(t, h, host, map[string]any{"type": "rename_local", "target": local.ID, "member": local.Member, "name": "New Wing"})
-	if local.Name != "New Wing" {
+	if local.Name != "Wing" || !hasError(host, "callsign_immutable") {
 		t.Fatal("available local rename failed")
 	}
 	if h.callsigns.availability("", []string{"Wing", "New Wing"})[0].Available {
-		t.Fatal("renaming released a previous local alias")
+		t.Fatal("renaming did not protect a previous local name")
 	}
 }
 
@@ -152,8 +153,8 @@ func TestPrivateOnlineCallsignResumeKeepsOwnerAndRejectsSpectatorRenameCollision
 	if resumed.player != nil || p.Name != "HOST" || p.PublicToken != owner {
 		t.Fatal("rejected resume changed reserved identity")
 	}
-	action(t, h, resumed, map[string]any{"type": "join", "code": r.Code, "token": token, "name": "Watch Fox", "spectating": true})
-	if resumed.player != p || p.PublicToken != owner || p.Name != "Watch Fox" {
+	action(t, h, resumed, map[string]any{"type": "join", "code": r.Code, "token": token, "name": "HOST", "spectating": true})
+	if resumed.player != p || p.PublicToken != owner || p.Name != "HOST" {
 		t.Fatal("authenticated resume lost durable owner")
 	}
 }

@@ -23,6 +23,7 @@ func startInfinityReconnectRoom(t *testing.T, pilots int, local bool) (*infinite
 
 func tryInfinityReconnect(t *testing.T, s *infiniteServer, msg infiniteMessage, now time.Time) (infiniteConnection, *Client, string) {
 	t.Helper()
+	seedLegacyInfinityFixture(t, s, &msg)
 	c := fakeClient()
 	if !s.admit(c) {
 		t.Fatal("could not admit Infinity socket")

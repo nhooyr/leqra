@@ -25,11 +25,53 @@ func TestIconOutlineFollowsBothTracks(t *testing.T) {
 	// Sample just outside each track's long edge. The offset shadow extends
 	// beyond the lower track, so outlining the shadow misses that track edge.
 	for _, y := range []float64{-17.3, 18.3} {
-		xPixel := int((32 + y/math.Sqrt2) * 16)
-		yPixel := int((32 + y/math.Sqrt2) * 16)
+		xPixel := int((30.65 + y*1.2) * 16)
+		yPixel := 32 * 16
 		r, g, b, a := im.At(xPixel, yPixel).RGBA()
 		if a < 60000 || r < 60000 || g < 60000 || b < 60000 {
 			t.Fatalf("track edge y=%g is not outlined in white: %d,%d,%d,%d", y, r, g, b, a)
+		}
+	}
+}
+
+func TestIconHullIsUprightCenteredAndHasNoTurret(t *testing.T) {
+	data, err := embeddedWeb.ReadFile("web/" + assetPath + "favicon.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `id="tank" transform="translate(30.65 32) rotate(-90) scale(1.2)"`) || strings.Contains(string(data), "<circle") || strings.Contains(string(data), `width="26"`) {
+		t.Fatal("vector icon must show an upright, centered hull without a turret")
+	}
+	for _, name := range []string{"icon-192.png", "icon-512.png", "icon-1024.png", "favicon-256.png"} {
+		data, err := embeddedWeb.ReadFile("web/" + assetPath + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		im, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		size := im.Bounds().Dx()
+		_, _, _, hull := im.At(size/2, size/2).RGBA()
+		_, _, _, right := im.At(size*60/64, size/2).RGBA()
+		if hull < 60000 || right != 0 {
+			t.Fatalf("%s must have a solid central hull: hull alpha %d, right alpha %d", name, hull, right)
+		}
+		left, top, rightEdge, bottom := size, size, -1, -1
+		for y := range size {
+			for x := range size {
+				_, _, _, alpha := im.At(x, y).RGBA()
+				if alpha > 32767 {
+					left, top = min(left, x), min(top, y)
+					rightEdge, bottom = max(rightEdge, x), max(bottom, y)
+				}
+			}
+		}
+		if math.Abs(float64(left-(size-1-rightEdge))) > 2 || math.Abs(float64(top-(size-1-bottom))) > 2 {
+			t.Fatalf("%s artwork is not centered: bounds (%d,%d)-(%d,%d)", name, left, top, rightEdge, bottom)
+		}
+		if top < size/10 || size-1-bottom < size/10 {
+			t.Fatalf("%s hull and tracks need balanced padding: top %d, bottom %d", name, top, size-1-bottom)
 		}
 	}
 }

@@ -628,7 +628,7 @@ test('Infinity control groups preserve aliases through remapping and touch layou
  h.infinity.start('offline',{localName:'Wingmate',bindings:()=>bindings});
  const hint=h.byID('infiniteControlsHint');
  assert.equal((hint.innerHTML.match(/class="control-player"/g)||[]).length,2);
- assert.match(hint.textContent,/Saved pilot \(P1\) Drag the stick to move and aim. Tap or hold Fire./);
+ assert.match(hint.textContent,/Saved pilot \(P1\) Drag the stick to move and aim. Touch near the tank to aim in place. Tap or hold Fire./);
  assert.match(hint.textContent,/Wingmate \(P2\) Forward ↑ Reverse ↓ Left ← Right → Fire SPACE \/ ENTER/);
  bindings[1].fireAlt='KeyV';
  h.byID('infiniteArena').emit('keydown',{code:'Escape'});
@@ -1039,6 +1039,20 @@ test('offline room Infinity passes allied tanks and freezes on the first team sc
  assert.equal(world.time,finish);
  byID('infiniteResultExit').emit('click');
  assert.equal(arena.open,false);
+});
+
+test('Infinity laser pierces the whole lane before resolving a target score win', () => {
+ const {infinity,state,window}=harness(undefined,true);
+ infinity.start('offline',{roomRules:{infinityTarget:1}});
+ const world=state(),pilot=world.tanks[0];world.nextPickup=world.nextBot=Infinity;
+ Object.assign(pilot,{x:100,y:100,angle:0,power:'laser',charges:3,powerTime:4,invulnerable:0,spawnProtected:false});
+ const targets=[400,200,300].map((x,i)=>({...pilot,id:10+i,name:'TARGET '+i,x,power:'',team:0,score:0}));
+ const shield={...pilot,id:20,name:'SHIELD',x:150,power:'',shield:10,shieldCharges:3,team:0,score:0};
+ const protectedTank={...pilot,id:21,name:'PROTECTED',x:250,power:'',invulnerable:1,team:0,score:0};
+ world.tanks.push(...targets,shield,protectedTank);
+ window.testFire(world,pilot);
+ assert.ok(targets.every(t=>t.hp===0));assert.equal(shield.hp,1);assert.equal(shield.shieldCharges,2);assert.equal(protectedTank.hp,1);assert.equal(pilot.score,3);assert.equal(world.result.score,3);assert.equal(pilot.charges,2);
+ infinity.close();
 });
 
 test('offline Infinity spawns every pickup and equips a collected grenade', () => {
@@ -2429,4 +2443,18 @@ test('Infinity doubled rapid range includes each phased muzzle path, including e
   }
   assert.ok(Math.abs(ranges[1]-2*ranges[0])<1e-7,`${x}/${y}: ${ranges}`);
  }
+});
+
+
+test('Infinity direct touch snaps in place, supports fire independently, and resets on joystick input',()=>{
+ const h=harness(undefined,true);h.infinity.start('online');const socket=h.sockets[0];socket.receive({type:'welcome',id:1,seed:0});
+ socket.receive({type:'state',tanks:[{id:1,x:42,y:42,angle:0,hp:1}],bullets:[],leaderboard:[],players:1});
+ const canvas=h.byID('infiniteCanvas');canvas.getBoundingClientRect=()=>({left:10,top:20,width:390,height:740});
+ canvas.emit('pointerdown',{pointerType:'touch',button:0,pointerId:30,clientX:245,clientY:360});
+ let packet=socket.sent.at(-1);assert.equal(packet.aimOnly,true);assert.equal(packet.snapAim,true);assert.equal(packet.stickX,.8);assert.equal(packet.stickY,-.6);assert.equal(packet.fire,false);
+ h.elapse(35);h.window.emit('pointermove',{pointerId:30,clientX:205,clientY:430});packet=socket.sent.at(-1);assert.equal(packet.stickX,0);assert.equal(packet.stickY,1);
+ h.byID('infiniteFire').emit('pointerdown',{button:0,pointerType:'touch',pointerId:31});packet=socket.sent.at(-1);assert.equal(packet.fire,true);assert.equal(packet.snapAim,true);
+ h.window.emit('pointerup',{pointerId:30});assert.equal(socket.sent.at(-1).snapAim,true,'the exact chosen heading survives a quick tap');
+ h.byID('infiniteStick').emit('pointerdown',{button:0,pointerType:'touch',pointerId:32,clientX:48,clientY:84});packet=socket.sent.at(-1);assert.equal(packet.snapAim,undefined);assert.equal(packet.aimOnly,false);assert.equal(packet.stickY,1);
+ h.infinity.close();
 });

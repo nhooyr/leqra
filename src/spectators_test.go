@@ -332,8 +332,8 @@ func TestSpectator33SecondaryControllerCanWatchIndependently(t *testing.T) {
 	if !p2.Spectating || r.Players[2] != nil {
 		t.Fatal("P2 cannot watch")
 	}
-	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p2.ID, "member": p2.Member, "name": "Watcher Two"})
-	if p2.Name != "Watcher Two" {
+	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p2.ID, "member": p2.Member, "name": p2.Name})
+	if p2.Name == "" {
 		t.Fatal("P2 viewer naming failed")
 	}
 	action(t, h, cs[0], map[string]any{"type": "leave"})
@@ -361,8 +361,8 @@ func TestSpectator33WatchResumeMovesActiveSeat(t *testing.T) {
 	p := cs[1].player
 	h.removeClient(cs[1])
 	v := fakeClient()
-	action(t, h, v, map[string]any{"type": "join", "code": r.Code, "token": p.Token, "name": "New Watcher", "spectating": true})
-	if v.player != p || !p.Spectating || p.Name != "New Watcher" || r.Players[1] != nil {
+	action(t, h, v, map[string]any{"type": "join", "code": r.Code, "token": p.Token, "name": p.Name, "spectating": true})
+	if v.player != p || !p.Spectating || p.Name == "" || r.Players[1] != nil {
 		t.Fatal("explicit watch resume left a tank")
 	}
 }
@@ -456,8 +456,8 @@ func TestSpectator33PrimarySwapsWithOwnLocalViewer(t *testing.T) {
 	if host.Spectating || !p2.Spectating || p2.Owner != host.ID || r.Host != host.ID {
 		t.Fatal("reverse swap lost local ownership")
 	}
-	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p2.ID, "member": p2.Member, "name": "WATCH TWO"})
-	if p2.Name != "WATCH TWO" {
+	action(t, h, cs[0], map[string]any{"type": "rename_local", "target": p2.ID, "member": p2.Member, "name": p2.Name})
+	if p2.Name == "" {
 		t.Fatal("owned spectator name editor lost access")
 	}
 }

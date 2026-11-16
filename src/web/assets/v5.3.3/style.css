@@ -1087,3 +1087,5 @@ body .callsign-account-button.secondary{min-height:var(--callsign-input-height);
 @media(max-width:350px){
  body.touch-ui:not(.touch-landscape) #touchControls>.touch-center svg,body.touch-ui:not(.touch-landscape) #touchControls>.touch-center .alive-status,body.touch-ui:not(.touch-landscape) #touchControls>.touch-center br{display:none}
 }
+
+.account-saved-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-block:8px}.account-saved-row>button:first-child{flex:1;overflow-wrap:anywhere}

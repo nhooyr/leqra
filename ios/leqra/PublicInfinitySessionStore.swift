@@ -3,6 +3,17 @@ import CryptoKit
 import Security
 import leqraCore
 
+struct SavedCallsignAccount: Codable, Equatable {
+    let name: String
+    let credential: PublicInfinitySession
+}
+
+struct PendingCallsignAccount: Codable, Equatable {
+    let name: String
+    let credential: PublicInfinitySession
+    let previous: PublicInfinitySession?
+}
+
 struct PendingAccountKey: Codable, Equatable {
     let previous: PublicInfinitySession
     let replacement: PublicInfinitySession
@@ -26,6 +37,13 @@ protocol PublicInfinitySessionStoring: AnyObject {
     @discardableResult func remember(_ session: PublicInfinitySession, seat: Int) -> Bool
     @discardableResult func confirm(_ session: PublicInfinitySession, requested: String?, seat: Int) -> Bool
     @discardableResult func rememberNew(_ session: PublicInfinitySession, seat: Int) -> Bool
+    func pendingCallsign(for server: URL, seat: Int) -> PendingCallsignAccount?
+    @discardableResult func savePendingCallsign(_ pending: PendingCallsignAccount, seat: Int) -> Bool
+    @discardableResult func clearPendingCallsign(for server: URL, seat: Int) -> Bool
+    @discardableResult func forgetAccount(_ credential: PublicInfinitySession) -> Bool
+    func savedCallsigns(for server: URL) -> [SavedCallsignAccount]
+    @discardableResult func saveCallsign(_ name: String, credential: PublicInfinitySession) -> Bool
+    @discardableResult func backup(_ credential: PublicInfinitySession, seat: Int) -> Bool
     func registrationPending(for server: URL, seat: Int) -> Bool
     func registrationCandidates(for server: URL, seat: Int) -> [PublicInfinitySession]
     @discardableResult func activate(_ server: URL?, local: Bool) -> Bool
@@ -46,8 +64,8 @@ extension PublicInfinitySessionStoring {
     @discardableResult func clearPendingKey(_ server: URL, ifMatching key: String) -> Bool { clearPendingKey(server, ifMatching: key, seat: 0) }
 }
 
-/// Public bearer credentials stay on this device. Callsigns and scores are
-/// deliberately absent from this store; the server owns both identity and score.
+/// Bearer credentials and saved callsign labels stay in device-only Keychain.
+/// Labels aid account selection; identity ownership and scores remain server-owned.
 @MainActor
 final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
     private let service: String
@@ -147,6 +165,77 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
     @discardableResult func clearPendingKey(_ server: URL, ifMatching key: String, seat: Int) -> Bool {
         guard let pending = pendingKey(for: server, seat: seat), pending.replacement.publicToken == key else { return true }
         return delete(account: "pending-" + account(for: pending.replacement.origin, seat: seat))
+    }
+
+    func pendingCallsign(for server: URL, seat: Int) -> PendingCallsignAccount? {
+        guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
+              let data = read(account: "callsign-switch-" + account(for: origin, seat: seat)),
+              let pending = try? JSONDecoder().decode(PendingCallsignAccount.self, from: data), pending.credential.matches(server) else { return nil }
+        return pending
+    }
+
+    @discardableResult func savePendingCallsign(_ pending: PendingCallsignAccount, seat: Int) -> Bool {
+        guard let data = try? JSONEncoder().encode(pending), backup(pending.credential, seat: seat) else { return false }
+        return write(data, account: "callsign-switch-" + account(for: pending.credential.origin, seat: seat))
+    }
+
+    @discardableResult func clearPendingCallsign(for server: URL, seat: Int) -> Bool {
+        guard let origin = try? PublicInfinitySession.normalizedOrigin(server) else { return false }
+        return delete(account: "callsign-switch-" + account(for: origin, seat: seat))
+    }
+
+    @discardableResult func forgetAccount(_ credential: PublicInfinitySession) -> Bool {
+        let server = credential.baseURL
+        let history = savedCallsigns(for: server).filter { $0.credential != credential }
+        guard let data = try? JSONEncoder().encode(history),
+              write(data, account: "callsigns-" + account(for: credential.origin, seat: 0)) else { return false }
+        for seat in 0...1 {
+            if session(for: server, seat: seat) == credential,
+               !delete(account: account(for: credential.origin, seat: seat)) { return false }
+            if let pending = pendingKey(for: server, seat: seat), pending.previous == credential || pending.replacement == credential {
+                if pending.replacement != credential, !backup(pending.replacement, seat: seat) { return false }
+                guard delete(account: "pending-" + account(for: credential.origin, seat: seat)) else { return false }
+            }
+            if let pending = pendingCallsign(for: server, seat: seat) {
+                if pending.credential == credential {
+                    guard clearPendingCallsign(for: server, seat: seat) else { return false }
+                } else if pending.previous == credential {
+                    guard savePendingCallsign(.init(name: pending.name, credential: pending.credential, previous: nil), seat: seat) else { return false }
+                }
+            }
+            let backupKey = "registrations-" + account(for: credential.origin, seat: seat)
+            let backups = registrationCandidates(for: server, seat: seat).filter { $0 != credential }
+            guard let backupData = try? JSONEncoder().encode(backups), write(backupData, account: backupKey) else { return false }
+        }
+        return true
+    }
+
+    func savedCallsigns(for server: URL) -> [SavedCallsignAccount] {
+        guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
+              let data = read(account: "callsigns-" + account(for: origin, seat: 0)),
+              let rows = try? JSONDecoder().decode([SavedCallsignAccount].self, from: data) else { return [] }
+        return rows.filter { $0.credential.matches(server) }
+    }
+
+    @discardableResult func saveCallsign(_ name: String, credential: PublicInfinitySession) -> Bool {
+        var rows = savedCallsigns(for: credential.baseURL)
+        if rows.contains(where: { $0.name == name && $0.credential == credential }) { return true }
+        rows.removeAll { $0.name.lowercased() == name.lowercased() || $0.credential == credential }
+        rows.append(SavedCallsignAccount(name: name, credential: credential))
+        guard let data = try? JSONEncoder().encode(rows) else { return false }
+        return write(data, account: "callsigns-" + account(for: credential.origin, seat: 0))
+    }
+
+    @discardableResult func backup(_ credential: PublicInfinitySession, seat: Int) -> Bool {
+        let key = "registrations-" + account(for: credential.origin, seat: seat)
+        var rows: [PublicInfinitySession] = []
+        if let data = read(account: key) {
+            guard let saved = try? JSONDecoder().decode([PublicInfinitySession].self, from: data) else { return false }
+            rows = saved
+        }
+        if !rows.contains(credential) { rows.append(credential) }
+        guard let data = try? JSONEncoder().encode(rows) else { return false }
+        return write(data, account: key)
     }
 
     @discardableResult func rememberNew(_ session: PublicInfinitySession, seat: Int) -> Bool {

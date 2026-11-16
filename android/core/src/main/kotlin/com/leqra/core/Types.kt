@@ -41,6 +41,7 @@ data class GameInput(
     var stickY: Double = 0.0,
     var touchAim: Boolean = true,
     var aimOnly: Boolean = false,
+    var snapAim: Boolean = false,
 )
 
 data class MazeWall(

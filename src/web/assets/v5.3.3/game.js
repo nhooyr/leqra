@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.3.2';
+const GAME_VERSION='5.3.3';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -491,7 +491,7 @@ function syncPauseButton(){
  const title=label+' (P/Esc)';if(button.title!==title)button.title=title;
 }
 function setScreen(which){if($('inviteDialog')?.open)$('inviteDialog').close();if(which)pendingMatchPresentation=null;syncPauseButton();syncRestartWaveActions();if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=mode!=='online';document.body.classList.toggle('room-setup',which==='room');if(which==='online'){which='room';if(!$('joinDialog').open)$('joinDialog').showModal();}document.body.classList.toggle('overlay-open',!!which);$('overlay').hidden=!which;for(const id of ['lobby','pause','match','online','room','onlineMenu'])$(id+'Screen').hidden=id!==which;syncArenaAudio();stabilizeArenaLayout();}
-function clearInput(){keys.clear();firePointers.clear();firePresses.clear();mouseAim.firePointers?.clear();mouseAim.firePressed=false;clearMouseAim();for(const t of tanks)t.fireBlocked=false;stick.id=null;stick.assisted=false;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
+function clearInput(){keys.clear();firePointers.clear();firePresses.clear();mouseAim.firePointers?.clear();mouseAim.firePressed=false;clearMouseAim();clearDirectAim();for(const t of tanks)t.fireBlocked=false;stick.id=null;stick.assisted=false;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
 function setMode(value){delete $('manualContent').dataset.content;if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS, ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').innerHTML=mode==='duel'?pilotControlHint(0,'mouse',false,true)+pilotControlHint(1,'',false,true):'FIRST TO 5, BOT SQUAD, FRESH MAZES';$('manualContent').innerHTML=fieldManualHTML();
  if(phase==='menu'){resetPreview();setLayout();}}
 function setDifficulty(value){if(!Object.prototype.hasOwnProperty.call(DIFFICULTY,value))return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
@@ -733,29 +733,31 @@ function fire(t){
  if(['scatter','homing','grenade','cannon'].includes(t.power)){t.charges--;if(t.charges<=0)Net.refillDepletedWeapon(t);}
  return true;
 }
-// The same bounded multi-segment trace as Go. Bot beams pass through bots;
-// the shooter remains immune, including after a wall reflection.
+// The same bounded, piercing multi-segment trace as Go. Each opponent is hit
+// once; the shooter remains immune, including after a wall reflection.
 function laserTrace(t,angle=t.angle){
  const launch=projectileLaunch(t,angle,LASER_RADIUS,28);
- if(!launch.valid)return{x:t.x,y:t.y,endX:t.x,endY:t.y,points:[{x:t.x,y:t.y},{x:t.x,y:t.y}],target:null,bounces:1};
- let {x,y,ux,uy}=launch,remaining=4*(W+H)-launch.distance,target=null;
- const points=[];let bounces=launch.bounced?1:0;
+ if(!launch.valid)return{x:t.x,y:t.y,endX:t.x,endY:t.y,points:[{x:t.x,y:t.y},{x:t.x,y:t.y}],target:null,targets:[],bounces:1};
+ let {x,y,ux,uy}=launch,remaining=4*(W+H)-launch.distance;
+ const points=[],targets=[],hit=new Set();let bounces=launch.bounced?1:0;
  for(let segment=0;segment<LASER_MAX_SEGMENTS&&remaining>1e-7;segment++){
   const dx=ux*remaining,dy=uy*remaining,wall=rayWalls(x,y,dx,dy,LASER_RADIUS);
   let stop=wall?wall.t:1;
-  for(const other of tanks){if(!other.alive||other.invulnerable>0||!canDamage(t.id,other))continue;
+  const segmentTargets=[];
+  for(const other of tanks){if(!other.alive||other.invulnerable>0||!canDamage(t.id,other)||hit.has(other.id))continue;
    const at=circleHit(x,y,dx,dy,other.x,other.y,other.r+LASER_RADIUS);
-   if(at!==null&&at<stop){stop=at;target=other;}
+   if(at!==null&&at<stop)segmentTargets.push({target:other,at});
   }
+  segmentTargets.sort((a,b)=>a.at-b.at);for(const {target} of segmentTargets){targets.push(target);hit.add(target.id);}
   const length=remaining*stop;
-  if(segment===0){const start=launch.bounced?0:Math.min(28,length);points.push({x:x+ux*start,y:y+uy*start});}
+  if(segment===0){const start=launch.bounced?0:Math.min(28,length,segmentTargets.length?remaining*segmentTargets[0].at:Infinity);points.push({x:x+ux*start,y:y+uy*start});}
   x+=ux*length;y+=uy*length;points.push({x,y});remaining-=length;
-  if(target||!wall||remaining<=1e-7)break;
+  if(!wall||remaining<=1e-7)break;
   if(wall.nx)ux=-ux;if(wall.ny)uy=-uy;bounces++;
   const nudge=Math.min(.001,remaining);x+=ux*nudge;y+=uy*nudge;remaining-=nudge;
  }
  const start=points[0]||{x:t.x,y:t.y},end=points.at(-1)||start;
- return{x:start.x,y:start.y,endX:end.x,endY:end.y,points,target,bounces};
+ return{x:start.x,y:start.y,endX:end.x,endY:end.y,points,target:targets[0]||null,targets,bounces};
 }
 function laserEffect(x,y,endX,endY,color=POWER.laser.color,path=null){
  if(![x,y,endX,endY].every(Number.isFinite))return;
@@ -774,7 +776,7 @@ function fireLaser(t){
  // Keep every hit check; sustained misses share Infinity's cosmetic cadence.
  if(!boosted||beam.target||time+1e-9>=(t.nextBoostEffect||0)){if(boosted)t.nextBoostEffect=time+4/60;laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);}
  shotSound('laser',t.human,undefined,boosted);
- if(beam.target)hurt(beam.target,{owner:t.id,kind:'laser'});
+ for(const target of beam.targets||[beam.target].filter(Boolean))hurt(target,{owner:t.id,kind:'laser'});
  if(!boosted&&--t.charges<=0)Net.refillDepletedWeapon(t);return true;
 }
 function compactLife(list){let write=0;for(let i=0;i<list.length;i++){const item=list[i];if(item.life>0)list[write++]=item;}list.length=write;return list;}
@@ -978,11 +980,13 @@ function humanControl(t,dt,moveOnly=false,controls){
  const left=controls?controls.left:heldAction(p1?0:1,'left');
  const right=controls?controls.right:heldAction(p1?0:1,'right');
  let throttle=(forward?1:0)-(reverse?.72:0);
+ const snap=controls?controls.snapAim&&controls.aimOnly:p1&&directAim.active;
  const magnitude=controls?Math.hypot(controls.stickX,controls.stickY):stick.mag;
- const joystick=controls?magnitude>.10&&!controls.aimOnly:p1&&stick.mag>.10;
- const desired=controls?magnitude>.10?Math.atan2(controls.stickY,controls.stickX):null:joystick?Math.atan2(stick.y,stick.x):p1&&!left&&!right?mouseAimHeading(t):null;
+ const joystick=controls?magnitude>.10&&!controls.aimOnly:p1&&!snap&&stick.mag>.10;
+ const desired=controls?magnitude>.10?Math.atan2(controls.stickY,controls.stickX):null:snap?directAim.angle:joystick?Math.atan2(stick.y,stick.x):p1&&!left&&!right?mouseAimHeading(t):null;
  if(desired!==null){
-  const diff=angleDelta(t.angle,desired);t.angle+=Net.steeringTurn(diff,magnitude,joystick&&(controls?controls.touchAim:stick.assisted),turnScale*dt);
+  const diff=angleDelta(t.angle,desired);t.angle+=snap?diff:Net.steeringTurn(diff,magnitude,joystick&&(controls?controls.touchAim:stick.assisted),turnScale*dt);
+  if(snap)throttle=0;
   if(joystick)throttle=magnitude*Math.max(0,Math.cos(diff));
  }else t.angle+=((right?1:0)-(left?1:0))*3.65*turnScale*dt;
  const speed=128*speedScale;moveTank(t,Math.cos(t.angle)*speed*throttle*dt,Math.sin(t.angle)*speed*throttle*dt);
@@ -1011,7 +1015,7 @@ function leadPoint(t,enemy,d,travel=null){
 function evaluateBotShot(t,angle,enemy,d,maxBounces=1){
  if(!enemy||!enemy.alive||!isEnemy(t,enemy))return null;
  if((t.difficulty||difficulty)==='godlike'&&t.power==='grenade')return godlikeGrenadeShot(t,angle,enemy,d);
- if(t.power==='laser'){const beam=laserTrace(t,angle);return beam.target?.id===enemy.id?{angle,target:enemy.id,flight:0,bounces:beam.bounces}:null;}
+ if(t.power==='laser'){const beam=laserTrace(t,angle);return beam.targets.some(target=>target.id===enemy.id)?{angle,target:enemy.id,flight:0,bounces:beam.bounces}:null;}
  if(t.power==='homing'){
   const b=muzzleProjectile(t,angle),direct=Math.atan2(enemy.y-t.y,enemy.x-t.x);
   return !b.bounces&&distance(t,enemy)<CELL*6&&Math.abs(angleDelta(angle,direct))<.4&&!rayWalls(t.x,t.y,enemy.x-t.x,enemy.y-t.y,b.r)?{angle,target:enemy.id,flight:distance(t,enemy)/MISSILE_SPEED,bounces:0}:null;
@@ -1935,10 +1939,10 @@ function drawBullets(items,c=ctx,clock,wallQuery=null){
 function localMovementInput(t){
  const primary=mode==='room'?t.localIndex!==1:t.id===0,index=primary?0:1;
  const left=heldAction(index,'left'),right=heldAction(index,'right');
- const aim=primary&&stick.mag<=.10&&!left&&!right?mouseAimHeading(t):null;
+ const snap=primary&&directAim.active,aim=snap?directAim.angle:primary&&stick.mag<=.10&&!left&&!right?mouseAimHeading(t):null;
  return {forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:false,
   stickX:aim!==null?Math.cos(aim):primary?stick.x:0,stickY:aim!==null?Math.sin(aim):primary?stick.y:0,
-  aimOnly:aim!==null,touchAim:primary&&stick.mag>.10&&stick.assisted};
+  aimOnly:aim!==null,snapAim:snap,touchAim:primary&&stick.mag>.10&&stick.assisted};
 }
 function advanceLocalRenderTank(pose,span,input){
  pose.starmanTime=Math.max(0,(pose.starmanTime||0)-span);
@@ -2210,13 +2214,131 @@ function prepareLocalAccount(){
  return{localPublicToken:token,localNewAccount:localAccountRegistrationPending(token)?true:undefined};
 }
 function localAccountRegistrationPending(token){try{return !!token&&JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===token;}catch(_){return false;}}
+function accountNameKey(name){return cleanPilotName(name).toLowerCase();}
+function savedCallsignToken(name,fallback=''){return savedCallsignAccounts().findLast(item=>accountNameKey(item.name)===accountNameKey(name))?.token||fallback;}
+function savedCallsignAccounts(){
+ try{const list=JSON.parse(localStorage.getItem('leqra.accounts.v1')||'[]');return Array.isArray(list)?list.filter(item=>item&&accountKeyValid(item.token)&&typeof item.name==='string'&&item.name):[];}catch(_){throw Error('Saved accounts could not be read. Keep your current account key before trying again.');}
+}
+function saveCallsignAccount(name,token,pending=false){
+ if(!accountKeyValid(token)||!name)return;
+ const list=savedCallsignAccounts().filter(item=>item.token!==token);list.push({name:cleanPilotName(name),token,pending});
+ const value=JSON.stringify(list);localStorage.setItem('leqra.accounts.v1',value);
+ if(localStorage.getItem('leqra.accounts.v1')!==value)throw Error('Account keys could not be saved. Enable browser storage before switching accounts.');
+}
+function forgetSavedCallsignAccount(token){const list=savedCallsignAccounts().filter(item=>item.token!==token);localStorage.setItem('leqra.accounts.v1',JSON.stringify(list));}
+function boundCallsignName(seat=0){const token=publicIdentityToken(seat);return savedCallsignAccounts().find(item=>item.token===token)?.name||localStorage.getItem(seat?'leqra.local2Name':'leqra.name')||generatedCallsign(seat);}
+function rememberCurrentCallsignAccount(seat=0,name=boundCallsignName(seat)){
+ const token=publicIdentityToken(seat);if(accountKeyValid(token)&&name)saveCallsignAccount(name,token,localAccountRegistrationPending(token)||!!savedCallsignAccounts().find(item=>item.token===token)?.pending);
+}
+function newCallsignAccount(seat,name,previousName){
+ const previous=publicIdentityToken(seat);rememberCurrentCallsignAccount(seat,previousName||boundCallsignName(seat));
+ const key='leqra.accountSwitch.'+seat;let pending;try{pending=JSON.parse(localStorage.getItem(key)||'null');}catch(_){}
+ if(!pending||pending.previous!==previous||accountNameKey(pending.name)!==accountNameKey(name)||!accountKeyValid(pending.token)){
+  if(pending?.name&&accountKeyValid(pending.token)&&!pending.name.startsWith('random '))saveCallsignAccount(pending.name,pending.token,true);
+  const bytes=crypto.getRandomValues(new Uint8Array(32)),token='p_'+btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  pending={name,token,previous};const value=JSON.stringify(pending);localStorage.setItem(key,value);if(localStorage.getItem(key)!==value)throw Error('The new account key could not be saved. Enable browser storage before switching accounts.');
+ }
+ return pending;
+}
+async function claimCallsignAccount(token,name){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
+ try{const response=await fetch(new URL('/api/account/create',location.href),{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',redirect:'error',signal:controller.signal,body:JSON.stringify({publicToken:token,name})});
+  const data=await response.json();if(!response.ok){const error=Error(data.message||'That callsign is unavailable.');error.status=response.status;error.code=data.code;throw error;}
+  if(!Array.isArray(data.names)||data.names.length!==1||accountNameKey(data.names[0])!==accountNameKey(name))throw Error('Unexpected account confirmation. Try again.');
+  return data;
+ }finally{clearTimeout(timer);}
+}
+function adoptCallsignAccount(seat,name,token,previous,pending=false){
+ if(publicIdentityToken(seat)!==previous&&publicIdentityToken(seat)!==token)throw Error('This device changed accounts. Try again.');
+ saveCallsignAccount(name,token,pending);
+ if(mode==='online')leaveOnline();else window.leqraInfinity?.close();
+ rememberPublicIdentity(token,previous,seat);
+ if(publicIdentityToken(seat)!==token)throw Error('The account key could not be selected. Try again.');
+ localStorage.removeItem('leqra.accountSwitch.'+seat);
+ if(seat){rememberLocalCallsign(name);const player=secondaryMember();if(player)player.name=name;}else{rememberCallsign(name);const player=localRoom.players.find(p=>p.id===localRoom.self);if(player)player.name=name;}
+ gameStarted=false;scores=Array(MAX_TANKS).fill(0);phase='menu';
+ persistLocalRoomRules();readyRoom();syncCallsignEditors(true);renderOnlineRoom();updateHUD(true);
+ return name;
+}
+async function selectCallsignAccount(seat,name,previousName=boundCallsignName(seat),isCurrent=()=>true){
+ name=cleanPilotName(name);const previous=publicIdentityToken(seat);
+ const current=()=>isCurrent()&&publicIdentityToken(seat)===previous;
+ if(accountNameKey(name)===accountNameKey(previousName))return previousName;
+ rememberCurrentCallsignAccount(seat,previousName);
+ const onlineReady=['http:','https:'].includes(location.protocol)&&navigator.onLine!==false;
+ let saved=savedCallsignAccounts().findLast(item=>accountNameKey(item.name)===accountNameKey(name));
+ if(saved&&saved.token===publicIdentityToken(seat===1?0:1))throw Error('P1 and P2 need separate accounts.');
+ if(saved&&onlineReady){try{const data=saved.pending?await claimCallsignAccount(saved.token,saved.name):await fetchAccountInfo(saved.token,undefined,undefined,true);name=data.names[0];saveCallsignAccount(name,saved.token);if(!current())throw Error('The callsign edit changed. Try again.');return adoptCallsignAccount(seat,name,saved.token,previous);}catch(error){if(error.status!==401)throw error;forgetSavedCallsignAccount(saved.token);saved=null;}}
+ if(saved){if(!current())throw Error('The callsign edit changed. Try again.');return adoptCallsignAccount(seat,saved.name,saved.token,previous,!!saved.pending);}
+ const candidate=newCallsignAccount(seat,name,previousName);
+ if(onlineReady){const data=await claimCallsignAccount(candidate.token,name);saveCallsignAccount(data.names[0],candidate.token);if(!current())throw Error('The callsign edit changed. Try again.');return adoptCallsignAccount(seat,data.names[0],candidate.token,previous);}
+ return adoptCallsignAccount(seat,name,candidate.token,previous,true);
+}
+async function ensureSelectedCallsignAccounts(seats=[0,1]){
+ for(const seat of seats){
+  const token=publicIdentityToken(seat),entry=savedCallsignAccounts().find(item=>item.token===token);if(!entry){if(!token){const name=generatedCallsign(seat),candidate=newCallsignAccount(seat,name,name),data=await claimCallsignAccount(candidate.token,name);saveCallsignAccount(data.names[0],candidate.token);rememberPublicIdentity(candidate.token,'',seat);localStorage.removeItem('leqra.accountSwitch.'+seat);}continue;}
+  try{if(entry.pending)await claimCallsignAccount(token,entry.name);else await fetchAccountInfo(token,undefined,undefined,true);saveCallsignAccount(entry.name,token);}
+  catch(error){
+   if(error.status!==401)throw error;
+   forgetSavedCallsignAccount(token);const candidate=newCallsignAccount(seat,entry.name,entry.name);forgetSavedCallsignAccount(token);const data=await claimCallsignAccount(candidate.token,entry.name);
+   adoptCallsignAccount(seat,data.names[0],candidate.token,token);
+  }
+ }
+}
+function clearReleasedAccountReferences(token){
+ forgetSavedCallsignAccount(token);
+ for(const seat of [0,1]){
+  for(const key of ['leqra.accountSwitch.'+seat,'leqra.autoCallsign.'+seat]){
+   try{const value=JSON.parse(localStorage.getItem(key)||'null');if(value?.previous===token&&value.token!==token&&accountKeyValid(value.token)&&value.name&&!value.name.startsWith('random '))saveCallsignAccount(value.name,value.token,true);if(value&&(value.token===token||value.previous===token||value.owner===token))localStorage.removeItem(key);}catch(_){}
+  }
+  try{if(JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null')?.token===token)localStorage.removeItem('leqra.localAccountRegistration');}catch(_){}
+ }
+ for(const record of pendingAccountKeys())if(record.replacement===token)localStorage.removeItem(record.storageKey);
+}
+function freshReleasedSeat(seat){
+ const bytes=crypto.getRandomValues(new Uint8Array(6)),alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let name='pilot#'+Array.from(bytes,n=>alphabet[n&31]).join('');
+ if(accountNameKey(name)===accountNameKey(generatedCallsign(seat===1?0:1)))name=name.slice(0,-1)+(name.endsWith('A')?'B':'A');
+ rememberPublicIdentity('',undefined,seat);
+ if(seat){rememberLocalCallsign(name);const player=secondaryMember();if(player)player.name=name;}else{rememberCallsign(name);const player=localRoom.players.find(p=>p.id===localRoom.self);if(player)player.name=name;}
+}
+async function releaseCallsignAccount(token,name,seat=accountSeat()){
+ if(!accountImportAllowed())throw Error('Return to the ready room before releasing a callsign.');
+ if($('accountDialog').accountRotateRequest||$('accountDialog').accountRecoveryRequest||$('accountDialog').accountReleaseRequest)throw Error('Finish the current account action first.');
+ if(!accountKeyValid(token))throw Error('This account key is unavailable.');
+ const selected=[publicIdentityToken(0),publicIdentityToken(1)],isCurrent=()=>accountImportAllowed()&&selected.every((value,index)=>publicIdentityToken(index)===value);
+ if(!await confirmGameAction({title:'Release '+name+'?',message:'This permanently deletes '+name+'’s score, frees the callsign for anyone, and signs this account out on every device. Saved keys will stop working.',accept:'RELEASE CALLSIGN',isCurrent})||!isCurrent())return false;
+ const dialog=$('accountDialog');if(dialog.accountReleaseRequest)return false;
+ const controller=new AbortController();dialog.accountReleaseRequest=controller;syncAccountImport();accountNotice('accountCurrentNotice','Releasing callsign…');const timer=setTimeout(()=>controller.abort(),6000);
+ try{
+  const response=await fetch(new URL('/api/account/release',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:token}),cache:'no-store',redirect:'error',signal:controller.signal});
+  const data=await response.json();if(!response.ok||data.released!==true)throw Error(response.status===401?'This key could not release the account. Its saved copy was kept.':'Could not release the callsign. Try again.');
+  const releasedSeats=selected.flatMap((value,index)=>value===token&&publicIdentityToken(index)===token?[index]:[]);
+  if(releasedSeats.length){if(mode==='online')leaveOnline();else window.leqraInfinity?.close();}
+  for(const index of releasedSeats)freshReleasedSeat(index);
+  clearReleasedAccountReferences(token);
+  if(releasedSeats.length){gameStarted=false;scores=Array(MAX_TANKS).fill(0);persistLocalRoomRules();readyRoom();syncCallsignEditors(true);renderOnlineRoom();updateHUD(true);}
+  renderSavedCallsignAccounts();if(accountSeat()===seat){$('accountKey').value=publicIdentityToken(seat);$('accountCopyBtn').disabled=!publicIdentityToken(seat);$('accountRotateBtn').disabled=!publicIdentityToken(seat);$('accountReleaseBtn').disabled=!publicIdentityToken(seat);$('accountCurrentInfo').replaceChildren();}
+  accountNotice('accountCurrentNotice','Callsign released. Its score and saved key were removed.');return true;
+ }catch(error){accountNotice('accountCurrentNotice',error.name==='AbortError'?'Release not confirmed. Your saved key was kept; retry to check safely.':error.message,true);return false;}
+ finally{clearTimeout(timer);if(dialog.accountReleaseRequest===controller)delete dialog.accountReleaseRequest;syncAccountImport();renderSavedCallsignAccounts();}
+}
+function renderSavedCallsignAccounts(){
+ const host=$('accountSavedAccounts');if(!host)return;host.replaceChildren();
+ for(const entry of savedCallsignAccounts()){
+  if(entry.token===publicIdentityToken(accountSeat()))continue;
+  const row=document.createElement('div'),button=document.createElement('button'),release=document.createElement('button');row.className='account-saved-row';button.type=release.type='button';button.className=release.className='secondary';button.textContent=entry.name;release.textContent='Release';release.setAttribute('aria-label','Release '+entry.name);button.disabled=release.disabled=!accountImportAllowed()||!!$('accountDialog').accountReleaseRequest;
+  button.onclick=async()=>{const seat=accountSeat(),selected=publicIdentityToken(seat);button.disabled=true;try{await selectCallsignAccount(seat,entry.name,boundCallsignName(seat),()=>accountImportAllowed()&&accountSeat()===seat&&publicIdentityToken(seat)===selected);openAccount(seat);accountNotice('accountCurrentNotice','Saved account selected.');}catch(error){accountNotice('accountCurrentNotice',error.message,true);button.disabled=false;}};
+  release.onclick=()=>releaseCallsignAccount(entry.token,entry.name).catch(error=>accountNotice('accountCurrentNotice',error.message,true));row.append(button,release);host.append(row);
+ }
+}
+
 function accountSeat(){return $('accountDialog')?.dataset?.accountSeat==='1'?1:0;}
 function accountStorageKey(seat){return seat===1?'leqra.localPublicToken':'leqra.publicToken';}
 function accountImportAllowed(){const offline=mode==='room'||mode==='online'&&!online.code,noSocket=!online.socket||online.socket.readyState>=2;return offline&&['menu','matchOver'].includes(phase)&&!online.connected&&!online.connecting&&noSocket&&!$('infiniteArena')?.open&&!online.renamePending;}
 function accountNotice(id,text,error=false){const node=$(id);node.textContent=text;node.classList.toggle('error',error);}
 function accountKeyValid(token){return typeof token==='string'&&/^p_[A-Za-z0-9_-]{43}$/.test(token);}
-async function fetchAccountInfo(token,signal,newPublicToken){
- const response=await fetch(new URL(newPublicToken?'/api/account/rotate':'/api/account',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:token,...(newPublicToken?{newPublicToken}:{})}),cache:'no-store',redirect:'error',signal});
+async function fetchAccountInfo(token,signal,newPublicToken,signIn=false){
+ const response=await fetch(new URL(newPublicToken?'/api/account/rotate':'/api/account',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:token,...(newPublicToken?{newPublicToken}:{}),...(signIn?{signIn:true}:{})}),cache:'no-store',redirect:'error',signal});
  let data;try{data=await response.json();}catch(_){throw Error('Account details unavailable. Try again.');}
  if(!response.ok){const error=Error(response.status===401?(data?.code==='account_key_revoked'?'This account key was reset. Import the latest key to continue.':'That account key is invalid or unavailable.'):'Account details unavailable. Try again.');error.status=response.status;error.code=data?.code;throw error;}
  if(!data||!Array.isArray(data.names)||data.names.length>128||data.names.some(name=>typeof name!=='string'||cleanPilotName(name)!==name||!name))throw Error('Invalid account response.');
@@ -2226,8 +2348,7 @@ async function fetchAccountInfo(token,signal,newPublicToken){
 }
 function renderAccountInfo(target,data,seat=accountSeat()){
  target.replaceChildren();
- const names=document.createElement('p');names.className='mode-help';names.textContent=data.names.length?'Reserved callsigns: '+data.names.join(', '):'This account has no reserved callsigns yet.';target.append(names);
- if(Number.isSafeInteger(data.totalNames)&&data.totalNames>data.names.length){const more=document.createElement('p');more.className='mode-help';more.textContent='Showing '+data.names.length+' of '+data.totalNames+' reserved callsigns.';target.append(more);}
+ const name=data.publicProfile?.name||data.names[0],names=document.createElement('p');names.className='mode-help';names.textContent=name?'Callsign: '+name:'This account has no callsign yet.';target.append(names);
  if(data.publicProfile){const profile=data.publicProfile,p=document.createElement('p');p.className='mode-help';p.textContent='Public Infinity: '+profile.name+' (P'+(seat+1)+'), score '+profile.score+'.';target.append(p);}
 }
 function clearAccountImport(){
@@ -2235,14 +2356,14 @@ function clearAccountImport(){
  $('accountImportReview').hidden=true;$('accountImportInfo').replaceChildren();$('accountImportName').replaceChildren();$('accountUseBtn').disabled=true;
 }
 function syncAccountImport(){
- const dialog=$('accountDialog'),seat=accountSeat(),allowed=accountImportAllowed(),busy=!!dialog.accountRotateRequest||!!dialog.accountRecoveryRequest,unregistered=seat===1&&localAccountRegistrationPending(publicIdentityToken(1))&&dialog.accountRegisteredKey!==publicIdentityToken(1);
+ const dialog=$('accountDialog'),seat=accountSeat(),allowed=accountImportAllowed(),busy=!!dialog.accountRotateRequest||!!dialog.accountRecoveryRequest||!!dialog.accountReleaseRequest,unregistered=seat===1&&localAccountRegistrationPending(publicIdentityToken(1))&&dialog.accountRegisteredKey!==publicIdentityToken(1);
  $('accountImportKey').disabled=!allowed||busy;$('accountCheckBtn').disabled=!allowed||busy||!$('accountImportKey').value.trim()||!!dialog.accountImportRequest;
- $('accountRotateBtn').disabled=!allowed||busy||unregistered||!publicIdentityToken(seat);$('accountCopyBtn').disabled=!publicIdentityToken(seat)||unregistered||!!dialog.accountRotateRequest;
+ $('accountReleaseBtn').disabled=!allowed||busy||unregistered||!publicIdentityToken(seat);$('accountRotateBtn').disabled=!allowed||busy||unregistered||!publicIdentityToken(seat);$('accountCopyBtn').disabled=!publicIdentityToken(seat)||unregistered||!!dialog.accountRotateRequest;
  $('accountImportHelp').textContent=allowed?'Importing replaces only P'+(seat+1)+'’s account key on this device. Copy its current key first if you want to keep both accounts.':'Return to the ready room and leave online play before importing another account.';
 }
 function openAccount(seat=0){
  seat=seat===1?1:0;
- const dialog=$('accountDialog'),token=publicIdentityToken(seat);dialog.dataset.accountSeat=String(seat);delete dialog.accountRegisteredKey;$('accountTitle').textContent=(seat?'P2':'P1')+' account key.';clearAccountImport();$('accountImportKey').value='';$('accountKey').type='password';$('accountKey').value=token;$('accountCopyBtn').disabled=!token;$('accountCurrentInfo').replaceChildren();
+ const dialog=$('accountDialog'),token=publicIdentityToken(seat);dialog.dataset.accountSeat=String(seat);try{renderSavedCallsignAccounts();}catch(error){accountNotice('accountCurrentNotice',error.message,true);}delete dialog.accountRegisteredKey;$('accountTitle').textContent=(seat?'P2':'P1')+' account key.';clearAccountImport();$('accountImportKey').value='';$('accountKey').type='password';$('accountKey').value=token;$('accountCopyBtn').disabled=!token;$('accountCurrentInfo').replaceChildren();
  accountNotice('accountCurrentNotice',token?'Loading account details…':'Go online once to create an account key, or import an existing one.');accountNotice('accountImportNotice','');syncAccountImport();openFeature('account');
  dialog.accountCurrentRequest?.abort();const controller=new AbortController();dialog.accountCurrentRequest=controller;
  resolvePendingAccountKeys();
@@ -2250,7 +2371,7 @@ function openAccount(seat=0){
  const timeout=setTimeout(()=>controller.abort(),6000);
  fetchAccountInfo(token,controller.signal).then(data=>{
   if(!dialog.open||dialog.accountCurrentRequest!==controller||publicIdentityToken(seat)!==token||accountSeat()!==seat)return;
-  dialog.accountRegisteredKey=token;if(seat===1&&data.publicProfile&&localAccountRegistrationPending(token))rememberPublicIdentity(token,token,1);renderAccountInfo($('accountCurrentInfo'),data);accountNotice('accountCurrentNotice','');syncAccountImport();
+  dialog.accountRegisteredKey=token;if(seat===1&&data.publicProfile&&localAccountRegistrationPending(token))rememberPublicIdentity(token,token,1);renderAccountInfo($('accountCurrentInfo'),data);saveCallsignAccount(data.names[0],token);accountNotice('accountCurrentNotice','');syncAccountImport();
  },error=>{if(dialog.open&&dialog.accountCurrentRequest===controller&&error.name!=='AbortError')accountNotice('accountCurrentNotice',seat===1&&error.status===401&&error.code!=='account_key_revoked'&&localAccountRegistrationPending(token)?'P2’s key is saved on this device. Go online with P2 to activate it, then copy the key.':error.message,true);}).finally(()=>{clearTimeout(timeout);if(dialog.accountCurrentRequest===controller)delete dialog.accountCurrentRequest;});
 }
 async function copyAccountKey(){
@@ -2275,7 +2396,7 @@ async function checkImportedAccount(){
 }
 function showAccountImportReview(token,data,oldToken,recoveryPrevious,seat=accountSeat()){
  const dialog=$('accountDialog');dialog.accountPending={token,data,oldToken,roster:localRoom.players,recoveryPrevious,seat};$('accountImportNameLabel').textContent='P'+(seat+1)+' CALLSIGN ON THIS DEVICE';renderAccountInfo($('accountImportInfo'),data);
- const names=[...new Set([data.publicProfile?.name,...data.names].filter(Boolean))],select=$('accountImportName');select.replaceChildren();
+ const names=[data.publicProfile?.name||data.names[0]].filter(Boolean),select=$('accountImportName');select.replaceChildren();select.disabled=true;
  if(!names.length){const option=document.createElement('option');option.value='';option.textContent='Keep current callsign';select.append(option);}
  for(const name of names){const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option);}
  $('accountImportReview').hidden=false;$('accountUseBtn').disabled=false;accountNotice('accountImportNotice','Review the account, then choose Use this account.');
@@ -2306,6 +2427,7 @@ function completeAccountReset(record,data){
   if(dialog.open&&accountSeat()===seat&&accountImportAllowed()){$('accountImportKey').value=record.replacement;showAccountImportReview(record.replacement,data,current,record.previous,seat);accountNotice('accountCurrentNotice','A previous key reset completed. Review the recovered account below to use it.');}
   return;
  }
+ try{forgetSavedCallsignAccount(record.previous);saveCallsignAccount(data.names[0],record.replacement);}catch(_){}
  rememberPublicIdentity(record.replacement,undefined,seat);
  if(firstGamePending)localStorage.setItem('leqra.localAccountRegistration',JSON.stringify({token:record.replacement}));
  let saved=false;try{saved=localStorage.getItem(accountStorageKey(seat))===record.replacement;if(saved)clearPendingAccountKeys(record.previous,seat);}catch(_){}
@@ -2314,7 +2436,7 @@ function completeAccountReset(record,data){
  accountNotice('accountCurrentNotice',saved?(record.registration?'P2 account activated. Copy its key to your other devices.':'Account key reset. Copy the new key to your other devices.'):'Account key reset. Copy the new key now; this tab could not save it permanently.',!saved);
 }
 async function resolvePendingAccountKeys(){
- const dialog=$('accountDialog');if(dialog.accountRecoveryRequest||dialog.accountRotateRequest)return;
+ const dialog=$('accountDialog');if(dialog.accountRecoveryRequest||dialog.accountRotateRequest||dialog.accountReleaseRequest)return;
  const seat=accountSeat();let records;try{records=pendingAccountKeys().filter(record=>record.seat===seat);const registration=seat===1?JSON.parse(localStorage.getItem('leqra.localAccountRegistration')||'null'):null;if(registration?.token&&registration.token!==publicIdentityToken(1))records.push({previous:'',replacement:registration.token,seat:1,storageKey:'leqra.localAccountRegistration',registration:true});}catch(error){accountNotice('accountCurrentNotice',error.message,true);return;}
  if(!records.length)return;
  const controller=new AbortController();dialog.accountRecoveryRequest=controller;syncAccountImport();accountNotice('accountCurrentNotice','Checking a saved account key reset…');const timeout=setTimeout(()=>controller.abort(),6000);
@@ -2343,22 +2465,24 @@ async function resolvePendingAccountKeys(){
  finally{clearTimeout(timeout);if(dialog.accountRecoveryRequest===controller)delete dialog.accountRecoveryRequest;syncAccountImport();}
 }
 async function rotateAccountKey(){
- const dialog=$('accountDialog'),seat=accountSeat(),previous=publicIdentityToken(seat);if(!dialog.open||!previous||!accountImportAllowed()||dialog.accountRotateRequest||dialog.accountRecoveryRequest)return;
- const isCurrent=()=>dialog.open&&accountImportAllowed()&&accountSeat()===seat&&publicIdentityToken(seat)===previous&&!dialog.accountRotateRequest&&!dialog.accountRecoveryRequest;
- if(!await confirmGameAction({title:'Reset this account key?',message:'Other devices will be signed out. Callsigns and Public Infinity scores are kept. Copy the new key to use those devices again.',accept:'RESET KEY',isCurrent})||!isCurrent())return;
+ const dialog=$('accountDialog'),seat=accountSeat(),previous=publicIdentityToken(seat);if(!dialog.open||!previous||!accountImportAllowed()||dialog.accountRotateRequest||dialog.accountRecoveryRequest||dialog.accountReleaseRequest)return;
+ const isCurrent=()=>dialog.open&&accountImportAllowed()&&accountSeat()===seat&&publicIdentityToken(seat)===previous&&!dialog.accountRotateRequest&&!dialog.accountRecoveryRequest&&!dialog.accountReleaseRequest;
+ if(!await confirmGameAction({title:'Reset this account key?',message:'Other devices will be signed out. Your callsign and Public Infinity score are kept. Copy the new key to use those devices again.',accept:'RESET KEY',isCurrent})||!isCurrent())return;
  let record;try{const pending=pendingAccountKeys().filter(record=>record.seat===seat);record=pending.find(item=>item.previous===previous);if(!record&&pending.length){await resolvePendingAccountKeys();return;}record??=savePendingAccountKey(previous,seat);}catch(_){accountNotice('accountCurrentNotice','This browser cannot save a replacement key. Enable storage before resetting the key.',true);return;}
  clearAccountImport();$('accountImportKey').value='';const controller=new AbortController();dialog.accountRotateRequest=controller;syncAccountImport();accountNotice('accountCurrentNotice','Resetting account key…');const timeout=setTimeout(()=>controller.abort(),6000);
  try{const data=await fetchAccountInfo(previous,controller.signal,record.replacement);if(data.publicToken!==record.replacement)throw Error('The key reset was not confirmed.');completeAccountReset(record,data);}
  catch(_){delete dialog.accountRotateRequest;await resolvePendingAccountKeys();}
  finally{clearTimeout(timeout);if(dialog.accountRotateRequest===controller)delete dialog.accountRotateRequest;syncAccountImport();}
 }
-function forgetRevokedAccount(token,seat=0){if(token&&publicIdentityToken(seat)===token)rememberPublicIdentity('',token,seat);}
-function useImportedAccount(){
+function forgetRevokedAccount(token,seat=0){if(token){try{forgetSavedCallsignAccount(token);}catch(_){}}if(token&&publicIdentityToken(seat)===token)rememberPublicIdentity('',token,seat);}
+async function useImportedAccount(){
  const dialog=$('accountDialog'),pending=dialog.accountPending;
  if(!dialog.open||!pending)return;
  if(!accountImportAllowed()||accountSeat()!==pending.seat||publicIdentityToken(pending.seat)!==pending.oldToken||localRoom.players!==pending.roster||$('accountImportKey').value.trim()!==pending.token){clearAccountImport();syncAccountImport();accountNotice('accountImportNotice','This device changed accounts or joined online play. Check the key again.',true);return;}
  if(pending.token===publicIdentityToken(pending.seat===1?0:1)){accountNotice('accountImportNotice','P1 and P2 need separate account keys.',true);return;}
- const name=$('accountImportName').value,allowedNames=[pending.data.publicProfile?.name,...pending.data.names];if(name&&!allowedNames.includes(name)){accountNotice('accountImportNotice','Choose one of this account’s callsigns.',true);return;}
+ const name=$('accountImportName').value,allowedNames=[pending.data.publicProfile?.name||pending.data.names[0]];if(name&&!allowedNames.includes(name)){accountNotice('accountImportNotice','Use this account’s callsign.',true);return;}
+ try{await fetchAccountInfo(pending.token,undefined,undefined,true);rememberCurrentCallsignAccount(pending.seat);saveCallsignAccount(name,pending.token);}catch(error){accountNotice('accountImportNotice',error.message,true);return;}
+ if(!accountImportAllowed()||accountSeat()!==pending.seat||publicIdentityToken(pending.seat)!==pending.oldToken||localRoom.players!==pending.roster||$('accountImportKey').value.trim()!==pending.token){accountNotice('accountImportNotice','This device changed accounts or joined online play. Check the key again.',true);return;}
  rememberPublicIdentity(pending.token,undefined,pending.seat);
  if(pending.recoveryPrevious){try{if(localStorage.getItem(accountStorageKey(pending.seat))===pending.token)clearPendingAccountKeys(pending.recoveryPrevious,pending.seat);}catch(_){}}
  if(name){if(pending.seat===1){const secondary=secondaryMember(),player=secondary&&localRoom.players.find(player=>player.id===secondary.id);if(player)player.name=name;rememberLocalCallsign(name);}else{const primary=localRoom.players.find(player=>player.id===localRoom.self);if(primary)primary.name=name;rememberCallsign(name);}}
@@ -2368,9 +2492,10 @@ function useImportedAccount(){
 }
 function exposeAccountError(){for(const id of ['accountDialog','infinitePauseMenu']){const dialog=$(id);if(dialog?.open)dialog.close();}}
 function initAccountTransfer(){
+ for(const seat of [0,1]){try{rememberCurrentCallsignAccount(seat);}catch(_){}}
  for(const button of document.querySelectorAll('.callsign-account-button'))button.onclick=()=>openAccount(Number(button.dataset.accountSeat));
  $('pauseAccountBtn').onclick=()=>openAccount(0);
- $('accountCopyBtn').onclick=copyAccountKey;$('accountRotateBtn').onclick=rotateAccountKey;$('accountImportForm').addEventListener('submit',event=>{event.preventDefault();checkImportedAccount();});$('accountUseBtn').onclick=useImportedAccount;
+ $('accountCopyBtn').onclick=copyAccountKey;$('accountRotateBtn').onclick=rotateAccountKey;$('accountReleaseBtn').onclick=()=>releaseCallsignAccount(publicIdentityToken(accountSeat()),boundCallsignName(accountSeat())).catch(error=>accountNotice('accountCurrentNotice',error.message,true));$('accountImportForm').addEventListener('submit',event=>{event.preventDefault();checkImportedAccount();});$('accountUseBtn').onclick=useImportedAccount;
  $('accountImportKey').addEventListener('input',()=>{clearAccountImport();accountNotice('accountImportNotice','');syncAccountImport();});
  $('accountDialog').addEventListener('close',()=>{const dialog=$('accountDialog');dialog.accountCurrentRequest?.abort();delete dialog.accountCurrentRequest;clearAccountImport();$('accountKey').value='';$('accountKey').type='password';$('accountImportKey').value='';});
 }
@@ -2394,7 +2519,7 @@ async function checkCallsignAvailability(field,form,revision,draft){
  const controller=new AbortController(),ownerToken=publicIdentityToken(),localToken=publicIdentityToken(1);field.callsignCheckController=controller;
  const timeout=setTimeout(()=>controller.abort(),4000);
  try{
-  const names=callsignAvailabilityNames(field,form),response=await fetch(new URL('/api/callsigns',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:ownerToken||undefined,localPublicToken:localToken||undefined,localNewAccount:localAccountRegistrationPending(localToken)||undefined,independentAccounts:true,names}),cache:'no-store',signal:controller.signal});
+  const names=callsignAvailabilityNames(field,form),primaryProof=typeof savedCallsignToken==='function'?savedCallsignToken(names[0],ownerToken):ownerToken,secondaryProof=typeof savedCallsignToken==='function'?savedCallsignToken(names[1]||'',localToken):localToken,response=await fetch(new URL('/api/callsigns',location.href),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({publicToken:primaryProof||undefined,localPublicToken:secondaryProof||undefined,localNewAccount:localAccountRegistrationPending(localToken)||undefined,independentAccounts:true,names}),cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('Availability unavailable');const data=await response.json();
   if(field.callsignCheckRevision!==revision||field.value!==draft||form?.infinityRenamePending||online.renamePending?.form===form)return;
   if(publicIdentityToken()!==ownerToken||publicIdentityToken(1)!==localToken||JSON.stringify(callsignAvailabilityNames(field,form))!==JSON.stringify(names)){scheduleCallsignAvailability(field,form,0);return;}
@@ -2428,22 +2553,24 @@ function generatedEntryScope(){
  return()=>!settingsResetActive&&active()&&window.leqraCallsigns.revision()===revision&&keys.every((key,seat)=>publicIdentityToken(seat)===key)&&JSON.stringify(currentRules())===rules&&roster()===initialRoster;
 }
 function initGeneratedCallsigns(){
- window.leqraCallsigns?.init({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,openAccount,offline:()=>mode==='room'&&(!$('infiniteArena').open||$('infiniteArena').dataset.mode==='offline'),
+ window.leqraCallsigns?.init({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,openAccount,
+  stageGeneration:(seat,requestId)=>newCallsignAccount(seat,'random '+requestId,boundCallsignName(seat)).token,
+  async selectGenerated(seat,name,token,previous,context){
+   if(token!==previous){rememberCurrentCallsignAccount(seat);adoptCallsignAccount(seat,name,token,previous);}
+   else{saveCallsignAccount(name,token);if(seat===0)rememberPublicIdentity(token,previous,seat);if(seat)rememberLocalCallsign(name);else rememberCallsign(name);const player=seat?secondaryMember():localRoom.players.find(p=>p.id===localRoom.self);if(player)player.name=name;persistLocalRoomRules();syncCallsignEditors(true);renderOnlineRoom();updateHUD(true);}
+   if(context)context.field.value=name;
+  },
+  offline:()=>mode==='room'&&(!$('infiniteArena').open||$('infiniteArena').dataset.mode==='offline'),
   canApply(seat,draft,context){
    if(settingsResetActive)return false;
    if(context)return context.field.isConnected!==false&&context.field.value===context.draft&&context.form?.dataset.member===context.member;
    if(generatedCallsign(seat)!==draft)return false;
    return !callsignForms().some(form=>!form.hidden&&(form.dataset.pilot==='secondary'?1:0)===seat&&form.elements.callsign.value.trim()!==draft);
   },
-  apply(seat,name,context){
-   if(context){context.field.value=name;context.field.callsignUnavailable=false;if(context.form)submitCallsign(context.form);else{rememberCallsign(name);$('pilotName').value=name;}return;}
-   if(seat)rememberLocalCallsign(name);else{rememberCallsign(name);$('pilotName').value=name;}
-   if($('infiniteArena').open&&$('infiniteArena').dataset.mode==='offline')window.leqraInfinity.renamePilot(seat,name).catch(()=>{});
-   if(mode==='room'){
-    const player=seat?secondaryMember():roomMember(localRoom.self);if(player)player.name=name;
-    const tank=player&&tanks.find(t=>t.id===player.id);if(tank)tank.name=name;
-    persistLocalRoomRules();renderOnlineRoom();updateHUD(true);
-   }
+  async apply(seat,name,context){
+   await selectCallsignAccount(seat,name,context?.draft||generatedCallsign(seat));
+   if(context)context.field.value=name;
+
   }
  });
 }
@@ -2475,41 +2602,18 @@ function cancelCallsignSave(message=''){
  clearTimeout(pending.timer);online.renamePending=null;
  callsignStatus(pending.form,message,!!message);syncCallsignEditors();
 }
-function submitCallsign(form){
+async function submitCallsign(form){
  if(online.renamePending||form.infinityRenamePending)return;
  const player=editorPilot(form);if(!player){callsignStatus(form,'That local player is no longer in this room.',true);return;}
- const secondary=form.dataset.pilot==='secondary',name=cleanPilotName(form.elements.callsign.value);
+ const seat=form.dataset.pilot==='secondary'?1:0,name=cleanPilotName(form.elements.callsign.value);
  if(window.leqraCallsigns?.reserved(name)){callsignStatus(form,'The Bot prefix is reserved for bots.',true);return;}
- if(!name){callsignStatus(form,'Enter letters or numbers for the callsign.',true);return;}if(name===player.name){form.elements.callsign.value=player.name;callsignStatus(form,'');syncCallsignEditors();return;}
- if(form.dataset.arena==='infinity'){
-  const api=window.leqraInfinity,field=form.elements.callsign,pending={member:player.member,draft:field.value};form.infinityRenamePending=pending;
-  callsignStatus(form,'Saving…');syncCallsignEditors();
-  Promise.resolve().then(()=>api.renamePilot(secondary?1:0,name)).then(confirmed=>{
-   if(form.infinityRenamePending!==pending)return;delete form.infinityRenamePending;
-   if(editorPilot(form)?.member!==pending.member)return;
-   if(field.value===pending.draft)field.value=confirmed;
-   syncCallsignEditors();callsignStatus(form,'Saved.');
-  },error=>{
-   if(form.infinityRenamePending!==pending)return;delete form.infinityRenamePending;
-   if(editorPilot(form)?.member!==pending.member)return;
-   syncCallsignEditors();callsignStatus(form,error?.message||'Could not save the callsign. Please try again.',true);
-  });return;
- }
- if(mode==='room'){
-  player.name=name;if(secondary)rememberLocalCallsign(name);else rememberCallsign(name);
-  // Update the source room participant, not the temporary display copy.
-  const p=localRoom.players.find(p=>p.id===player.id);if(p)p.name=name;
-  const t=tanks.find(t=>t.id===player.id);if(t)t.name=name;
-  syncCallsignEditors();form.elements.callsign.value=name;callsignStatus(form,'Saved.');renderOnlineRoom();updateHUD(true);return;
- }
- if(!online.connected){callsignStatus(form,'Reconnect before changing the callsign.',true);return;}
- callsignStatus(form,'');
- const message=secondary?{type:'rename_local',target:player.id,member:player.member,name}:{type:'rename',name};
- if(!sendOnline(message)){callsignStatus(form,'Could not send. Please try again.',true);return;}
- const pending={form,id:player.id,member:player.member,timer:0};online.renamePending=pending;
- pending.timer=setTimeout(()=>{if(online.renamePending===pending)cancelCallsignSave('Not confirmed yet. Check the connection and try again.');},6000);
- callsignStatus(form,'Saving…');syncCallsignEditors();
+ if(!name){callsignStatus(form,'Enter letters or numbers for the callsign.',true);return;}
+ if(accountNameKey(name)===accountNameKey(player.name)){form.elements.callsign.value=player.name;callsignStatus(form,'');return;}
+ const pending={member:player.member,draft:form.elements.callsign.value};form.infinityRenamePending=pending;callsignStatus(form,'Selecting account…');
+ try{await selectCallsignAccount(seat,name,player.name,()=>form.infinityRenamePending===pending&&form.elements.callsign.value===pending.draft&&editorPilot(form)?.member===pending.member);delete form.infinityRenamePending;callsignStatus(form,'Account selected.');}
+ catch(error){if(form.infinityRenamePending!==pending)return;delete form.infinityRenamePending;callsignStatus(form,error.message||'Could not select the account. Try again.',true);}
 }
+
 function persistInfinityPilotName(index,name){
  if(index)rememberLocalCallsign(name);else rememberCallsign(name);
  if(mode!=='room')return;
@@ -2545,9 +2649,10 @@ function onlineControls(second=false){
  const active=online.connected&&!online.menu&&!chatHasFocus()&&!document.querySelector('dialog[open]')&&!document.hidden&&phase==='playing'&&!survivalBreak()&&performance.now()-(online.snapshots.at(-1)?.received||0)<450&&tank?.alive;
  if(!active)return Net.neutral();
  const index=second?1:0,left=heldAction(index,'left'),right=heldAction(index,'right');
- const aim=!second&&!left&&!right&&stick.mag<=.10?mouseAimHeading(online.predictor?.state||tank):null;
+ const snap=!second&&directAim.active,aim=snap?directAim.angle:!second&&!left&&!right&&stick.mag<=.10?mouseAimHeading(online.predictor?.state||tank):null;
  const input={forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:second?heldAction(1,'fire'):primaryFireHeld(),
   stickX:aim!==null?Math.cos(aim):second?0:stick.x,stickY:aim!==null?Math.sin(aim):second?0:stick.y,aimOnly:aim!==null};
+ if(snap)input.snapAim=true;
  if(!second&&stick.assisted&&stick.mag>.10)input.touchAim=true;
  return input;
 }
@@ -2594,6 +2699,8 @@ function showVersionMismatch(message){
  $('versionMismatchMessage').textContent=message;if(!dialog.open)dialog.showModal();$('versionReloadBtn').focus({preventScroll:true});
 }
 function connectOnline(request,reconnecting=false){
+ if(typeof settingsResetActive!=='undefined'&&settingsResetActive)return;
+ if(!reconnecting&&!request.accountsReady&&typeof ensureSelectedCallsignAccounts==='function'){const names=[request.name,...(request.roster||[]).filter(p=>p.kind==='local').map(p=>p.name)];let scope;Promise.resolve().then(async()=>{for(let seat=0;seat<Math.min(2,names.length);seat++)if(names[seat]&&accountNameKey(names[seat])!==accountNameKey(boundCallsignName(seat)))await selectCallsignAccount(seat,names[seat]);scope=captureActionScope();await ensureSelectedCallsignAccounts(names.length>1?[0,1]:[0]);}).then(()=>{if(scope()&&!online.connecting&&!online.connected)connectOnline({...request,accountsReady:true},false);}).catch(error=>{online.publishing=false;$('roomStatus').textContent=error.message;setNetStatus(error.message,true);});return;}
  if(typeof settingsResetActive!=='undefined'&&settingsResetActive)return;
  if(!reconnecting&&window.leqraCallsigns&&[0,1].some(window.leqraCallsigns.isPending)){
   const prior=[generatedCallsign(0),generatedCallsign(1)];
@@ -4009,7 +4116,7 @@ function controlHintHTML(keys,label='',device='',color=''){
   const caps=action==='mouse'||action==='mouseFire'?controlKeycapsHTML([controlMouseKeyHTML(action==='mouseFire')]):controlKeyHTML(Object.keys(keys).filter(code=>keys[code]===action));
   return caps?'<span class="control-key-group"><span class="control-action">'+title+'</span> '+caps+'</span>':'';
  }).join(' ');
- const help=device==='touch'?'Drag the stick to move and aim. Tap or hold Fire.':'';
+ const help=device==='touch'?'Drag the stick to move and aim. Touch near the tank to aim in place. Tap or hold Fire.':'';
  return '<span class="control-player">'+(label?'<strong class="control-pilot"'+(color?' style="color:'+escapeHTML(paintColor(color))+'"':'')+'>'+escapeHTML(label)+'</strong> ':'')+(groups?'<span class="control-groups">'+groups+'</span>':'')+(help?'<span class="control-device">'+help+'</span>':'')+'</span>';
 }
 function fieldManualHTML(){
@@ -4017,7 +4124,7 @@ function fieldManualHTML(){
  const publicPreview=!infinity&&['menu','onlineLobby','matchOver'].includes(phase)&&infinityPlayMode()==='online';
  const aliases=infinity?!infinity.twoPilots:aliasesActive(),paired=!aliases&&!!(infinity?.twoPilots||hasLocalP2());
  const fireTip='<p class="manual-fire-tip">Hold any fire key to rapid fire.</p>';
- let html='<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Tap or hold Fire to shoot.</span></div>';
+ let html='<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.</span></div>';
  html+='<div class="manual-controls">'+pilotControlHint(0,'mouse',aliases,!aliases);
  if(paired)html+=pilotControlHint(1,'',false,true);else html+=fireTip;
  html+='</div><div class="manual-shared-controls">'+(paired?fireTip:'')+[['Menu',['P','ESC']],['Mute',['M']],['Fullscreen',['F']]].map(([label,keys])=>'<span class="control-key-group"><span class="control-action">'+label+'</span><span class="control-keycaps">'+keys.map((key,index)=>'<span class="control-key-option">'+(index?'<span class="control-alias">/</span>':'')+'<kbd>'+key+'</kbd></span>').join('')+'</span></span>').join(' ')+'</div>';
@@ -4928,6 +5035,8 @@ function arenaKeyBlocked(e){
   ['Enter','NumpadEnter','Space'].includes(e.code)&&['A','BUTTON','INPUT','SUMMARY'].includes(tagName);
 }
 // All input paths (keyboard, mouse, multi-touch, focus loss) share the same cleanup.
+const directAim={active:false,id:null,angle:0};
+function clearDirectAim(){directAim.active=false;directAim.id=null;}
 window.addEventListener('keydown',e=>{
  if(arenaKeyBlocked(e))return;
  // Fullscreen and sound work throughout menus; text entry and binding capture retain their keys.
@@ -4940,6 +5049,7 @@ window.addEventListener('keydown',e=>{
  if(isControlKey(e.code)){
   e.preventDefault();if(e.repeat&&!keys.has(e.code)&&isWeaponKey(e.code))return;
   const fresh=!keys.has(e.code),wasFire=primaryFireHeld(),wasSecond=heldAction(1,'fire');keys.add(e.code);
+  if(fresh&&['forward','reverse','left','right'].some(action=>keyForAction(0,action,e.code)))clearDirectAim();
   if(fresh&&(keyForAction(0,'left',e.code)||keyForAction(0,'right',e.code)))clearMouseAim();
   if(fresh&&isWeaponKey(e.code)){
    if(primaryFireKey(e.code)&&!wasFire)firePresses.add(localPlayerID());
@@ -4950,9 +5060,9 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{if(keys.delete(e.code)&&isWeaponKey(e.code)&&mode==='online')sendOnlineInput(true);});
 function cacheStickGeometry(){const r=$('stickBase').getBoundingClientRect();stick.cx=r.left+r.width/2;stick.cy=r.top+r.height/2;stick.max=Math.max(24,Math.min(r.width,r.height)*.375);}
-function stickMove(e){if(!stick.cx&&!stick.cy)cacheStickGeometry();const dx=e.clientX-stick.cx,dy=e.clientY-stick.cy,length=Math.hypot(dx,dy),max=stick.max||36,factor=length>max?max/length:1;stick.x=dx*factor/max;stick.y=dy*factor/max;stick.mag=Math.min(1,length/max);$('stickKnob').style.transform=`translate(${dx*factor}px,${dy*factor}px)`;}
+function stickMove(e){clearDirectAim();if(!stick.cx&&!stick.cy)cacheStickGeometry();const dx=e.clientX-stick.cx,dy=e.clientY-stick.cy,length=Math.hypot(dx,dy),max=stick.max||36,factor=length>max?max/length:1;stick.x=dx*factor/max;stick.y=dy*factor/max;stick.mag=Math.min(1,length/max);$('stickKnob').style.transform=`translate(${dx*factor}px,${dy*factor}px)`;}
 function capturePointer(el,id){try{el.setPointerCapture?.(id);return el.hasPointerCapture?.(id)!==false;}catch(_){return false;}}
-$('stickZone').addEventListener('pointerdown',e=>{if(e.button!==0||stick.id!==null)return;e.preventDefault();initAudio();stick.id=e.pointerId;stick.assisted=e.pointerType==='touch'||e.pointerType==='pen';cacheStickGeometry();capturePointer($('stickZone'),e.pointerId);stickMove(e);});
+$('stickZone').addEventListener('pointerdown',e=>{if(e.button!==0||stick.id!==null)return;e.preventDefault();initAudio();clearDirectAim();stick.id=e.pointerId;stick.assisted=e.pointerType==='touch'||e.pointerType==='pen';cacheStickGeometry();capturePointer($('stickZone'),e.pointerId);stickMove(e);});
 window.addEventListener('pointermove',e=>{if(e.pointerId===stick.id){e.preventDefault();stickMove(e);}},true);
 function endStick(e){if(e.pointerId!==stick.id)return;stick.id=null;stick.assisted=false;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';if(e.type==='pointerup')primeAudioUnlock(e);if(mode==='online')sendOnlineInput(true);}
 $('stickZone').addEventListener('pointerup',endStick);$('stickZone').addEventListener('pointercancel',endStick);$('stickZone').addEventListener('lostpointercapture',endStick);
@@ -4974,6 +5084,32 @@ $('fireBtn').addEventListener('click',e=>{
 // joystick + fire gesture. Window-level release handlers prevent stuck inputs.
 window.addEventListener('pointerup',e=>{endStick(e);endFire(e);},true);window.addEventListener('pointercancel',e=>{endStick(e);endFire(e);},true);
 $('touchControls').addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('contextmenu',e=>e.preventDefault());
+function directAimPoint(e,nearOnly=false){
+ if(phase!=='playing'||survivalBreak()||mode==='online'&&(!online.connected||online.menu))return null;
+ const t=controlledTank();if(!t?.alive)return null;
+ const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+ const dx=x-offsetX-t.x*scale,dy=y-offsetY-t.y*scale,length=Math.hypot(dx,dy);
+ if(!Number.isFinite(length)||x<0||y<0||x>=cssW||y>=cssH||length<2||nearOnly&&length>Math.max(64,3*(t.r||17)*scale))return null;
+ return Math.atan2(dy,dx);
+}
+function updateDirectAim(e,nearOnly=false){
+ const angle=directAimPoint(e,nearOnly);if(angle===null)return false;
+ directAim.active=true;directAim.angle=angle;clearMouseAim();
+ if(mode==='online')sendOnlineInput(nearOnly);
+ return true;
+}
+canvas.addEventListener('pointerdown',e=>{
+ if(!['touch','pen'].includes(e.pointerType)||e.button!==0||directAim.id!==null||!updateDirectAim(e,true))return;
+ e.preventDefault();initAudio();directAim.id=e.pointerId;capturePointer(canvas,e.pointerId);
+});
+window.addEventListener('pointermove',e=>{if(e.pointerId!==directAim.id)return;e.preventDefault();updateDirectAim(e);},true);
+function endDirectAim(e){
+ if(e.pointerId!==directAim.id)return;
+ directAim.id=null;
+ if(e.type==='pointercancel'){clearDirectAim();if(mode==='online')sendOnlineInput(true);}
+ else if(e.type==='pointerup'){primeAudioUnlock(e);if(mode==='online')sendOnlineInput(true);}
+}
+for(const type of ['pointerup','pointercancel','lostpointercapture'])window.addEventListener(type,endDirectAim,true);
 function clearMouseAim(){if(mouseAim.active){mouseAim.active=false;canvas.classList.remove('mouse-aiming');}}
 function resetFixedMouseControls(kind){
  let changed=false;
@@ -4984,6 +5120,7 @@ function resetFixedMouseControls(kind){
 function mousePointerActive(e){return phase==='playing'&&!survivalBreak()&&(mode!=='online'||online.connected&&!online.menu)&&controlledTank()?.alive&&e.offsetX>=0&&e.offsetY>=0&&e.offsetX<cssW&&e.offsetY<cssH;}
 function updateMouseAim(e){
  if(combatPrefs.mouseAim===false||!mousePointerActive(e)){clearMouseAim();return false;}
+ clearDirectAim();
  // The offsets are CSS pixels on the canvas, before its world transform.
  mouseAim.x=e.offsetX;mouseAim.y=e.offsetY;
  if(!mouseAim.active){mouseAim.active=true;canvas.classList.add('mouse-aiming');}
@@ -5689,7 +5826,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 window.leqraIdentity=Object.freeze({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,revoke:forgetRevokedAccount,exposeError:exposeAccountError,schedule:scheduleCallsignAvailability});
 window.leqraInfinityArt=Object.freeze({
  toggleFullscreen,sampleFrame:(now,work,latency=null)=>sampleFrame(now,work,'infiniteFPSIndicator',latency),
- publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,infinityBotSpawnRates,botName:(name,bot)=>window.leqraCallsigns?.botName(name,bot)||name,leaderboardBot:(name,bot,difficulty)=>window.leqraCallsigns?.leaderboardBot?.(name,bot,difficulty)||{name,difficulty:''},
+ ensureSelectedCallsignAccounts,selectCallsignAccount,publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,infinityBotSpawnRates,botName:(name,bot)=>window.leqraCallsigns?.botName(name,bot)||name,leaderboardBot:(name,bot,difficulty)=>window.leqraCallsigns?.leaderboardBot?.(name,bot,difficulty)||{name,difficulty:''},
  theme,colors:Theme.colors,canonicalColor:index=>COLORS[index]||'',colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},
  openControls:()=>openFeature('controls'),mouseAimEnabled:()=>combatPrefs.mouseAim!==false,mouseFireEnabled:()=>combatPrefs.mouseFire!==false,setMouseControlEnabled,cleanPilotName,persistPilotName:persistInfinityPilotName,syncCallsignEditors,syncSidebarContext,mountSidebar,restoreSidebar,mountHeader,restoreHeader,chatOpen:()=>roomChat.open,arenaKeyBlocked,keyLabel,controlHintHTML,pilotIdentity,pilotIdentityHTML,isTouchUI:()=>touchUI,roomSessionReady:syncOnlineRoomInfinity,
  renderLoadout:renderInfinityLoadout,projectileState:pilotProjectileState,drawHomingWarnings,updateHomingAlert,

@@ -139,15 +139,15 @@ func laserEvent(t *testing.T, g *Game) Event {
 	t.Fatal("beam event missing")
 	return Event{}
 }
-func TestLaserInstantHitFirstTankAndNoSelfDamage(t *testing.T) {
+func TestLaserInstantlyHitsEveryTankAndNoSelfDamage(t *testing.T) {
 	g := battle(3)
 	p := g.Tanks[0]
 	g.grantPower(p, "laser")
-	if !g.fire(p) || g.Tanks[1].Alive || !g.Tanks[2].Alive || !p.Alive || len(g.Bullets) != 0 {
-		t.Fatal("laser must instantly hit first tank only")
+	if !g.fire(p) || g.Tanks[1].Alive || g.Tanks[2].Alive || !p.Alive || len(g.Bullets) != 0 {
+		t.Fatal("laser must instantly hit every tank along the beam")
 	}
 	e := laserEvent(t, g)
-	if e.Owner != 0 || math.Abs(e.EndX-(g.Tanks[1].X-g.Tanks[1].R-laserRadius)) > 1e-6 || e.EndY != p.Y || e.X != p.X+28 {
+	if e.Owner != 0 || math.Abs(beamLength(e.Points)-(g.laserRange()-28)) > 1e-6 || e.EndY != p.Y || e.X != p.X+28 {
 		t.Fatalf("beam endpoints %+v", e)
 	}
 }
@@ -167,13 +167,13 @@ func TestLaserWallCoverAndBarrelCannotTunnel(t *testing.T) {
 		})
 	}
 }
-func TestLaserShieldStopsBeamAndInvulnerability(t *testing.T) {
+func TestLaserPiercesShieldsAndRespectsInvulnerability(t *testing.T) {
 	g := battle(3)
 	g.Tanks[1].Shield = 10
 	g.grantPower(g.Tanks[0], "laser")
 	g.fire(g.Tanks[0])
-	if !g.Tanks[1].Alive || g.Tanks[1].Shield != 0 || g.Tanks[1].Invulnerable <= 0 || !g.Tanks[2].Alive {
-		t.Fatal("shield did not absorb entire beam")
+	if !g.Tanks[1].Alive || g.Tanks[1].Shield != 0 || g.Tanks[1].Invulnerable <= 0 || g.Tanks[2].Alive {
+		t.Fatal("shield must absorb one hit without stopping the beam")
 	}
 	g = battle(3)
 	g.Tanks[1].Invulnerable = 1

@@ -1,10 +1,10 @@
-# leqra v5.3.2 — current game protocol (protocol 1)
+# leqra v5.3.3 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.3.2**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.3.3**.
 
 ```json
-{"type":"server_hello","version":"5.3.2","protocol":1}
-{"type":"client_hello","version":"5.3.2","protocol":1}
+{"type":"server_hello","version":"5.3.3","protocol":1}
+{"type":"client_hello","version":"5.3.3","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -31,7 +31,7 @@ Infinity inputs can set `paused: true` to neutralize the pilot's controls and ho
 
 After joining Infinity, `{"type":"ping","t":1234.5}` echoes as `{"type":"pong","t":1234.5}`. The timestamp must be a finite number. The client probes immediately after joining and every second, measuring round-trip time against its own matching outstanding timestamp; replies from older connections and stale measurements are discarded. More than eight ping messages in one second closes the connection.
 
-An authenticated Infinity socket can change either of its own callsigns with `{"type":"rename","seat":0,"name":"SNOW FOX","requestId":1}`. Seat 0 is the primary tank and seat 1 is its local co-pilot. Request IDs must be positive JavaScript safe integers. The server replies with `{"type":"renamed","seat":0,"name":"SNOW FOX","requestId":1}` or `{"type":"rename_error","seat":0,"requestId":1,"message":"..."}`. Names follow the room's 16-character Unicode callsign rules. Public, private, and room-party arenas use the same command; room-backed changes also update and broadcast the room metadata. Renaming preserves tank IDs, scores, equipment and respawn state. Replaced connections and revoked seats cannot rename tanks. More than eight rename requests in one second closes the connection.
+An authenticated Infinity socket can update the display spelling of its same canonical callsign with `{"type":"rename","seat":0,"name":"SNOW FOX","requestId":1}`. Seat 0 is the primary tank and seat 1 is its local co-pilot. Request IDs must be positive JavaScript safe integers. The server replies with `{"type":"renamed","seat":0,"name":"SNOW FOX","requestId":1}` or `{"type":"rename_error","seat":0,"requestId":1,"message":"..."}`. A different canonical callsign is rejected as `callsign_immutable`. Changing to a different callsign uses `/api/account/create` with a new key, or explicitly signs into a saved account, then returns to the ready room. No score or tank body transfers between accounts. Names follow the room's 16-character Unicode rules. Replaced connections and revoked seats cannot change spelling. More than eight rename requests in one second closes the connection.
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's connected human `players` count, total `tankCount`, and up to ten `leaderboard` entries with `id`, `name`, `score`, `bot`, `colorIndex`, and optional `team`. The total `tankCount` covers the complete leaderboard pool, including bots and distant, respawning, or disconnected reserved pilots, parked roaming identities, and listed public archives. Each leaderboard color matches that tank. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
@@ -94,15 +94,35 @@ warning over the arena without changing layout or connection/error status. Notic
 are absent from private arenas. Infinity tank `vx`/`vy` report actual server movement
 after wall resolution, allowing bounded visual extrapolation during packet gaps.
 
+## Account selection
+
+`POST /api/account/create` accepts `{"publicToken":"<fresh saved key>","name":"FALCON"}`
+and returns ordinary account metadata. Retrying the same key/name is idempotent;
+a different canonical name for an existing key is rejected. The client keeps its
+current key until successful creation, then leaves the old match and selects the
+new account with zero score. Previously used name/key pairs remain saved locally;
+selecting one validates its key through `POST /api/account` with `signIn:true`.
+Ordinary account previews omit `signIn` and do not renew expiry. Accounts expire
+after seven days without an explicit sign-in or gameplay. An expired name may be
+claimed with a new key; its former score does not transfer.
+
+`POST /api/account/release` accepts `{"publicToken":"<saved key>"}` after an
+explicit confirmation. Success returns `{"released":true}` and permanently
+invalidates the account key, frees its callsign, removes its score, and signs out
+its live sessions. Retrying an already released key is idempotent. The client
+retains the local key until success is confirmed, then removes its history and
+pending references; releasing a selected account leaves a fresh local callsign.
+
 ## Generated callsigns
 
 `POST /api/callsigns/generate` accepts
 `{"requestId":"<persisted UUID>","accounts":[{"seat":0,"publicToken":"<saved key>"}]}`.
 One or two distinct seats and independent valid keys are allowed. The response is
 `{"names":[{"seat":0,"name":"pilot#BDF3XZ"}]}`. Registration and all requested
-name claims commit atomically. A key/UUID pair is idempotent across retries and
-restarts; a new UUID requests a new alias. Existing names, profiles, scores and
-active transports are unchanged. No tank is allocated. Revoked keys fail rather
+name claims commit atomically. The client saves a fresh key before requesting a
+new generated callsign. A key/UUID pair retries its existing name; an established
+account cannot change its canonical callsign. New names use new keys and start
+with zero score. No tank is allocated. Revoked keys fail rather
 than being replaced. Origin, request-size and rate limits match account APIs.
 
 Clients save independent keys and retry IDs before requesting names, retain P2's
@@ -122,7 +142,7 @@ and `godlike-n` are ordinary player callsigns, subject to normal account ownersh
 
 ## Mouse and touch steering
 
-Desktop Player 1 sends the cursor direction using the existing bounded `stickX` and `stickY` controls with `aimOnly:true`. The server and client prediction turn toward this direction at the usual 5.8 radians per second before speed boosts. Forward and reverse inputs supply the throttle. When `aimOnly` is omitted or false, a joystick direction also supplies its own throttle as before. A mouse click uses the existing Fire input and server-latched press edge.
+Desktop Player 1 sends the cursor direction using the existing bounded `stickX` and `stickY` controls with `aimOnly:true`. The server and client prediction turn toward this direction at the usual 5.8 radians per second before speed boosts. Forward and reverse inputs supply the throttle. When `aimOnly` is omitted or false, a joystick direction also supplies its own throttle as before. A mouse click uses the existing Fire input and server-latched press edge. Direct touch aiming sends `aimOnly:true` with `snapAim:true`: the server and prediction set the exact heading immediately and force zero throttle, even if drive input is held. The direction uses the same bounded `stickX` and `stickY` vector. Other steering keeps its usual turn rate.
 
 The touch joystick sends `touchAim:true` with its direction. Its turn cap eases from 5.8 to 9 radians per second before speed boosts as stick deflection rises from 35% to full and the angle to the desired heading rises from 15° to 90°. Small adjustments retain the standard turn rate. The same curve runs in fixed mazes and Infinity. Keyboard steering, mouse aiming, and bot steering use their existing rates.
 
@@ -1073,8 +1093,11 @@ position; capped extrapolation respects missile ricochets, remaining range and g
 radius 3 from the tank centre, reflecting on wall normals (both axes on corner
 hits), with one total path budget of `4 * (world.width + world.height)`. Each
 segment consumes the remaining range. A tiny post-bounce step is deducted from
-the same budget; the trace has a defensive 256-segment cap. The first vulnerable
-opponent/shield stops it; the shooter is skipped throughout. Damage occurs once.
+the same budget; the trace has a defensive 256-segment cap. The beam continues
+through every tank and hits each eligible opponent at most once per volley,
+including across reflected segments. The shooter is skipped throughout. Shields
+absorb one hit without stopping the beam; invulnerability and friendly-fire rules
+still apply. Infinity resolves every hit before checking the volley's final score.
 Cooldown is `0.85 / 3` seconds and charges remain three, independent of active
 projectile slots. The first up-to-28 units of barrel travel are hidden visually
 but count toward range, preventing barrel-overlap wall bypasses.

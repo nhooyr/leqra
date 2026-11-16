@@ -324,6 +324,9 @@ func (s *infiniteServer) openPublicStore(path string) error {
 	if err = s.applySeatMigrations(); err != nil {
 		return fail(err)
 	}
+	if err = s.normalizeCallsigns(); err != nil {
+		return fail(err)
+	}
 	if err = s.persistPublicLocked(nil, nil); err != nil {
 		s.publicDB = nil
 		return fail(err)
@@ -357,6 +360,9 @@ func publicJoinClaimError(c *Client, err error) string {
 	var seat *seatAccountError
 	if errors.As(err, &seat) {
 		c.accountFailureSeat = &seat.seat
+	}
+	if errors.Is(err, errCallsignImmutable) {
+		return err.Error()
 	}
 	if errors.Is(err, errSameSeatAccount) || errors.Is(err, errNewAccountKeyInvalid) {
 		return err.Error()
@@ -745,6 +751,49 @@ func infiniteEntry(p *infinitePilot) infinitePublicEntry {
 // Capture only live/pending changes. The durable identity table is never scanned
 // for a normal simulation tick, and no database operation holds arena.mu.
 func (s *infiniteServer) persistPublicLocked(extra map[int]infinitePublicEntry, profiles map[string]infinitePublicProfile) error {
+	r := s.hub.callsigns
+	r.expiryMu.Lock()
+	expiredIDs := map[int]bool{}
+	for hash := range r.expirationPending {
+		if p, ok := s.publicProfiles[hash]; ok {
+			expiredIDs[p.primary] = true
+			expiredIDs[p.local] = true
+		}
+	}
+	r.expiryMu.Unlock()
+	r.renameMu.Lock()
+	renamed := make(map[string]string, len(r.renamed))
+	for hash, name := range r.renamed {
+		renamed[hash] = name
+	}
+	r.renameMu.Unlock()
+	// Old clients could attach a second score to one key. A single-name
+	// replacement retires that body but preserves its score for a later P2 split.
+	hiddenLocal := make(map[int]bool)
+	for hash := range renamed {
+		profile, exists := s.publicProfiles[hash]
+		if update, ok := profiles[hash]; ok {
+			profile = update
+		}
+		if !exists || profile.local == 0 {
+			continue
+		}
+		hiddenLocal[profile.local] = true
+		profile.localEnabled = false
+		if profiles == nil {
+			profiles = make(map[string]infinitePublicProfile)
+		}
+		profiles[hash] = profile
+	}
+	for _, arena := range s.private {
+		arena.mu.Lock()
+		for _, pilot := range arena.pilots {
+			if name := renamed[pilot.publicKey]; name != "" && pilot.publicToken != "" {
+				pilot.Name = name
+			}
+		}
+		arena.mu.Unlock()
+	}
 	a := s.public
 	a.mu.Lock()
 	if a.publicEntries == nil {
@@ -754,10 +803,19 @@ func (s *infiniteServer) persistPublicLocked(extra map[int]infinitePublicEntry, 
 	a.commitBeforeBroadcast = true
 	changes := make(map[int]infinitePublicEntry, len(a.publicPending)+len(extra))
 	for id, e := range a.publicPending {
+		if expiredIDs[id] {
+			continue
+		}
 		changes[id] = e
 	}
 	for i, list := range [][]*infinitePilot{a.pilots, a.inactiveBots} {
 		for _, p := range list {
+			if expiredIDs[p.ID] {
+				continue
+			}
+			if name := renamed[p.publicKey]; !p.Bot && name != "" && s.publicProfiles[p.publicKey].primary == p.ID {
+				p.Name = name
+			}
 			e := infiniteEntry(p)
 			old, ok := a.publicEntries[e.ID]
 			if i == 1 && ok {
@@ -769,7 +827,32 @@ func (s *infiniteServer) persistPublicLocked(extra map[int]infinitePublicEntry, 
 		}
 	}
 	for id, e := range extra {
+		if expiredIDs[id] {
+			continue
+		}
 		changes[id] = e
+	}
+	for hash, name := range renamed {
+		if profile, exists := s.publicProfiles[hash]; exists {
+			entry, ok := changes[profile.primary]
+			if !ok {
+				entry, ok = a.publicEntries[profile.primary]
+			}
+			if ok {
+				entry.Name = name
+				changes[entry.ID] = entry
+			}
+		}
+	}
+	for id := range hiddenLocal {
+		entry, ok := changes[id]
+		if !ok {
+			entry, ok = a.publicEntries[id]
+		}
+		if ok {
+			entry.listed = false
+			changes[id] = entry
+		}
 	}
 	seed, nextID, botLives := a.seed, a.nextID, a.publicBotLives
 	a.mu.Unlock()
@@ -811,6 +894,34 @@ func (s *infiniteServer) persistPublicLocked(extra map[int]infinitePublicEntry, 
 	s.publicSavedSeed = seed
 	s.publicSavedNextID = nextID
 	s.publicSavedBotLives = botLives
+	for client, connection := range s.connections {
+		if connection.arena != a || connection.local == nil || !hiddenLocal[connection.local.ID] {
+			continue
+		}
+		delete(s.connections, client)
+		s.retire(connection)
+		stopAccountTransport(client, map[string]any{"type": "error", "code": "session_replaced", "message": "This account now has one callsign. Reconnect and use a separate account key for P2."})
+	}
+	for key, reservation := range s.reservations {
+		connection := reservation.connection
+		if connection.arena == a && connection.local != nil && hiddenLocal[connection.local.ID] {
+			s.expireReservation(key, reservation)
+		}
+	}
+	if len(hiddenLocal) != 0 {
+		a.mu.Lock()
+		for id := range hiddenLocal {
+			delete(a.publicPending, id)
+		}
+		a.mu.Unlock()
+	}
+	r.renameMu.Lock()
+	for hash, name := range renamed {
+		if r.renamed[hash] == name {
+			delete(r.renamed, hash)
+		}
+	}
+	r.renameMu.Unlock()
 	return nil
 }
 
@@ -969,7 +1080,7 @@ func (s *infiniteServer) publicStoreError(err error) {
 	}
 }
 
-// Reclaim only old zero-score credentials. Meaningful saved scores never expire.
+// Bound the zero-score cache; account ownership and all scores separately expire after seven inactive days.
 func (s *infiniteServer) prunePublicProfiles(now time.Time) error {
 	if len(s.publicZeroProfiles) <= infiniteZeroProfiles {
 		return nil

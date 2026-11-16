@@ -267,7 +267,7 @@ func TestNamedHostHasNormalRoomControls(t *testing.T) {
 	host, guest := fakeClient(), fakeClient()
 	action(t, h, host, map[string]any{"type": "join", "code": "ABC234"})
 	r := host.room
-	action(t, h, host, map[string]any{"type": "rename", "name": "CAPTAIN"})
+	action(t, h, host, map[string]any{"type": "rename", "name": host.player.Name})
 	action(t, h, host, map[string]any{"type": "ready", "ready": true})
 	action(t, h, host, map[string]any{"type": "start"})
 	if !hasError(host, "not_ready") {
@@ -280,7 +280,7 @@ func TestNamedHostHasNormalRoomControls(t *testing.T) {
 		t.Fatal("guest can start")
 	}
 	action(t, h, host, map[string]any{"type": "start"})
-	if r.Game.Phase != "countdown" || host.player.Name != "CAPTAIN" {
+	if r.Game.Phase != "countdown" || host.player.Name != "Player 1" {
 		t.Fatal("host start/rename failed")
 	}
 	action(t, h, host, map[string]any{"type": "kick", "target": guest.player.ID, "member": guest.player.Member})

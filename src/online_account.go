@@ -7,11 +7,10 @@ import (
 	"mime"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 )
 
-const accountAliasPreviewLimit = 128
+var errAccountNameInvalid = errors.New("Use a valid callsign when creating an account.")
 
 var errAccountServerClosed = errors.New("account server is shutting down")
 
@@ -28,7 +27,7 @@ type onlineAccountInfo struct {
 	PublicProfile *onlineAccountProfile `json:"publicProfile,omitempty"`
 }
 
-// Copy only this owner's aliases. Authentication never uses a callsign, and
+// Copy only this owner's names. Authentication never uses a callsign, and
 // the caller cannot enumerate another account by its public names or actor IDs.
 func (r *onlineCallsignRegistry) ownerNames(token string) (string, []string, error) {
 	hash, valid := publicTokenHash(token)
@@ -40,7 +39,7 @@ func (r *onlineCallsignRegistry) ownerNames(token string) (string, []string, err
 	if r.revoked[hash] {
 		return "", nil, errOnlineOwnerRevoked
 	}
-	if !r.owners[hash] {
+	if !r.activeOwnerLocked(hash) {
 		return "", nil, errOnlineOwnerInvalid
 	}
 	names := make([]string, 0, len(r.names[hash]))
@@ -54,13 +53,16 @@ func (s *infiniteServer) accountInfo(token string) (onlineAccountInfo, error) {
 	s.mu.Lock()
 	info, err := s.accountInfoLocked(token)
 	s.mu.Unlock()
-	return accountPreview(info), err
+	return info, err
 }
 
 // The server mutex serializes profile capture with authoritative score commits.
 func (s *infiniteServer) accountInfoLocked(token string) (onlineAccountInfo, error) {
 	if s.closed {
 		return onlineAccountInfo{}, errAccountServerClosed
+	}
+	if err := s.expireAccounts(); err != nil {
+		return onlineAccountInfo{}, err
 	}
 	hash, names, err := s.hub.callsigns.ownerNames(token)
 	if err != nil {
@@ -71,31 +73,21 @@ func (s *infiniteServer) accountInfoLocked(token string) (onlineAccountInfo, err
 		s.public.mu.Lock()
 		if primary, exists := s.public.publicEntries[profile.primary]; exists {
 			info.PublicProfile = &onlineAccountProfile{Name: primary.Name, Score: primary.Score}
-			if profile.localEnabled {
-				if local, exists := s.public.publicEntries[profile.local]; exists {
-					info.PublicProfile.LocalName = local.Name
-					score := local.Score
-					info.PublicProfile.LocalScore = &score
-				}
-			}
 		}
 		s.public.mu.Unlock()
 	}
-	return info, nil
-}
-
-func accountPreview(info onlineAccountInfo) onlineAccountInfo {
-	// Sorting and preview truncation happen after simulation locks are released.
-	slices.SortFunc(info.Names, func(a, b string) int {
-		if n := strings.Compare(canonicalCallsign(a), canonicalCallsign(b)); n != 0 {
-			return n
+	if len(names) == 1 {
+		if info.PublicProfile != nil {
+			info.PublicProfile.Name = names[0]
 		}
-		return strings.Compare(a, b)
-	})
-	if len(info.Names) > accountAliasPreviewLimit {
-		info.Names = info.Names[:accountAliasPreviewLimit]
+	} else if info.PublicProfile != nil {
+		info.Names = []string{info.PublicProfile.Name}
+	} else if len(names) > 1 {
+		slices.Sort(names)
+		info.Names = names[:1]
 	}
-	return info
+	info.TotalNames = len(info.Names)
+	return info, nil
 }
 
 // Account-key import validates ownership without joining, allocating a pilot,
@@ -128,18 +120,51 @@ func (a *App) onlineAccount(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		PublicToken    string `json:"publicToken"`
 		NewPublicToken string `json:"newPublicToken"`
+		Name           string `json:"name"`
+		SignIn         bool   `json:"signIn"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF || len(request.PublicToken) > 128 || len(request.NewPublicToken) > 128 || r.URL.Path != "/api/account/rotate" && request.NewPublicToken != "" {
+	if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF || len(request.PublicToken) > 128 || len(request.NewPublicToken) > 128 || len(request.Name) > 256 || r.URL.Path != "/api/account/create" && request.Name != "" || (r.URL.Path == "/api/account/rotate" || r.URL.Path == "/api/account/release") && request.SignIn || r.URL.Path != "/api/account/rotate" && request.NewPublicToken != "" {
 		accountError(w, http.StatusBadRequest, "bad_request", "Invalid account-key request.")
 		return
 	}
 	var info any
 	if r.URL.Path == "/api/account/rotate" {
 		info, err = a.infinite.rotateAccount(request.PublicToken, request.NewPublicToken)
+	} else if r.URL.Path == "/api/account/release" {
+		err = a.infinite.releaseAccount(request.PublicToken)
+		info = map[string]bool{"released": true}
+	} else if r.URL.Path == "/api/account/create" {
+		info, err = a.infinite.createAccount(request.PublicToken, request.Name)
 	} else {
-		info, err = a.infinite.accountInfo(request.PublicToken)
+		if request.Name != "" {
+			accountError(w, 400, "bad_request", "Name is only accepted when creating an account.")
+			return
+		}
+		if request.SignIn {
+			info, err = a.infinite.signInAccount(request.PublicToken)
+		} else {
+			info, err = a.infinite.accountInfo(request.PublicToken)
+		}
+	}
+	var conflict *callsignConflictError
+	var reserved *callsignReservedError
+	if errors.Is(err, errAccountNameInvalid) {
+		accountError(w, 400, "bad_request", err.Error())
+		return
+	}
+	if errors.Is(err, errCallsignImmutable) {
+		accountError(w, 409, "callsign_immutable", err.Error())
+		return
+	}
+	if errors.As(err, &conflict) {
+		accountError(w, 409, "callsign_taken", err.Error())
+		return
+	}
+	if errors.As(err, &reserved) {
+		accountError(w, 409, "callsign_reserved", err.Error())
+		return
 	}
 	if errors.Is(err, errOnlineOwnerRevoked) {
 		accountError(w, http.StatusUnauthorized, "account_key_revoked", infiniteAccountKeyRevoked)
@@ -165,4 +190,44 @@ func accountError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": message})
+}
+
+func (s *infiniteServer) createAccount(token, name string) (onlineAccountInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return onlineAccountInfo{}, errAccountServerClosed
+	}
+	if err := s.expireAccounts(); err != nil {
+		return onlineAccountInfo{}, err
+	}
+	if _, valid := publicTokenHash(token); !valid {
+		return onlineAccountInfo{}, errNewAccountKeyInvalid
+	}
+	if name == "" || name != cleanCallsign(name) {
+		return onlineAccountInfo{}, errAccountNameInvalid
+	}
+	if _, err := s.hub.callsigns.claimSeatAccounts([]accountSeatClaim{{token: token, name: name, newAccount: true}}, nil); err != nil {
+		return onlineAccountInfo{}, err
+	}
+	return s.accountInfoLocked(token)
+}
+func (s *infiniteServer) signInAccount(token string) (onlineAccountInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.expireAccounts(); err != nil {
+		return onlineAccountInfo{}, err
+	}
+	r := s.hub.callsigns
+	hash, valid := publicTokenHash(token)
+	if !valid {
+		return onlineAccountInfo{}, errOnlineOwnerInvalid
+	}
+	r.mu.Lock()
+	err := r.touchAccountLocked(hash)
+	r.mu.Unlock()
+	if err != nil {
+		return onlineAccountInfo{}, err
+	}
+	return s.accountInfoLocked(token)
 }

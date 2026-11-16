@@ -127,7 +127,7 @@ test('Ghost plus max Speed cannot bow outside any fixed-map edge while sliding',
 test('fixed rendering projects fractional tank and projectile poses and restores simulation state',()=>{
  const controls=input({forward:true,right:true}),state=tank({human:true,localIndex:0});let draws=0;
  const s={Net,Math,tanks:[state],bullets:[{x:0,y:0}],mode:'room',phase:'playing',localTick:0,accumulator:1/240,
-  stick:{x:0,y:0,mag:0,assisted:false},BOOST_SPEED_PER_STACK:.65,BOOST_TURN_PER_STACK:.25,
+  directAim:{active:false},stick:{x:0,y:0,mag:0,assisted:false},BOOST_SPEED_PER_STACK:.65,BOOST_TURN_PER_STACK:.25,
   speedCount:t=>t.speedTime>0?t.speedStacks||1:0,heldAction:(_,key)=>controls[key],mouseAimHeading:()=>null,
   angleDelta:Net.delta,moveTank:free,advanceGhost(t,dt){t.ghostTime=Math.max(0,t.ghostTime-dt);},survivalBreak:()=>false,
   projectOnlineBullet:b=>({...b,x:1}),weaponControl(){throw Error('rendering fired a weapon');},

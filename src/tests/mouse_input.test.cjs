@@ -14,9 +14,9 @@ function eventTarget(){
  const handlers=new Map(),classes=new Set();
  return{
   addEventListener(type,fn){const list=handlers.get(type)||[];list.push(fn);handlers.set(type,list);},
-  emit(type,values){const event={pointerType:'mouse',pointerId:4,offsetX:60,offsetY:150,button:0,buttons:0,target:{tagName:'CANVAS'},preventDefault(){this.prevented=true;},...values};for(const fn of handlers.get(type)||[])fn(event);return event;},
+  emit(type,values){const event={type,pointerType:'mouse',pointerId:4,offsetX:60,offsetY:150,button:0,buttons:0,target:{tagName:'CANVAS'},preventDefault(){this.prevented=true;},...values};for(const fn of handlers.get(type)||[])fn(event);return event;},
   classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),contains:c=>classes.has(c)},style:{},
-  setPointerCapture(id){this.captured=id;},focus(){this.focused=true;}
+  getBoundingClientRect(){return {left:0,top:0,width:500,height:500};},setPointerCapture(id){this.captured=id;},focus(){this.focused=true;}
  };
 }
 function boot(mode='room'){
@@ -30,7 +30,7 @@ function boot(mode='room'){
   $(id){if(!elements.has(id))elements.set(id,eventTarget());return elements.get(id);},
   secondLocal:()=>p2,secondaryID:()=>p2.id,localPlayerID:()=>p1.id,controlledTank:()=>p1,chatHasFocus:()=>s.chat,survivalBreak:()=>s.intermission,
   keyForAction:(player,action,code)=>bindings[player][action]===code,heldAction:(player,action)=>s.keys.has(bindings[player][action]),isControlKey:code=>bindings.some(b=>Object.values(b).includes(code)),isWeaponKey:code=>bindings.some(b=>b.fire===code),
-  primaryFireHeld:()=>s.firePointers.size>0||s.keys.has('KeyQ'),primaryFireKey:code=>code==='KeyQ',initAudio(){},sendOnlineInput(){packets.push(s.onlineControls());},
+  primaryFireHeld:()=>s.firePointers.size>0||s.keys.has('KeyQ'),primaryFireKey:code=>code==='KeyQ',initAudio(){},primeAudioUnlock(){},sendOnlineInput(){packets.push(s.onlineControls());},
   speedCount:()=>0,moveTank(t,dx,dy){t.x+=dx;t.y+=dy;},weaponControl(t,held,pressed){if(pressed)shots.push(t.id);},featureNotice(id,text,error){s.preferenceNotice={id,text,error};},syncFeatureSummary(){s.summaryRefreshes=(s.summaryRefreshes||0)+1;},syncSidebarContext(){s.sidebarRefreshes=(s.sidebarRefreshes||0)+1;}
  };
  vm.createContext(s);
@@ -188,4 +188,28 @@ test('online mouse direction is aim-only and the existing fire edge sends an imm
  s.modal=false;s.chat=true;assert.deepEqual(s.onlineControls(),Net.neutral());
  s.chat=false;s.online.menu=true;assert.equal(canvas.emit('pointerdown',{buttons:1}).prevented,undefined);
  s.online.menu=false;p1.alive=false;assert.equal(canvas.emit('pointerdown',{buttons:1}).prevented,undefined);
+});
+
+
+test('touching near the fixed arena tank snaps to the exact heading without moving or firing',()=>{
+ for(const mode of ['room','online'])for(const [dx,dy] of [[40,0],[0,-40],[-40,0],[30,30]]){
+  const {s,p1,p2,canvas,window,shots}=boot(mode),x=p1.x,y=p1.y;
+  s.combatPrefs.mouseAim=false;s.keys.add('KeyW');
+  const e=canvas.emit('pointerdown',{pointerType:'touch',pointerId:20,clientX:60+dx,clientY:70+dy});
+  assert.equal(e.prevented,true);
+  s.humanControl(p1,Net.STEP,false,mode==='online'?s.onlineControls():undefined);
+  close(p1.angle,Math.atan2(dy,dx));close(p1.x,x);close(p1.y,y);assert.equal(p2.angle,0);assert.equal(shots.length,0);
+  const packet=s.onlineControls();assert.equal(packet.snapAim,true);assert.equal(packet.aimOnly,true);
+  window.emit('pointermove',{pointerId:20,clientX:60,clientY:100});s.humanControl(p1,Net.STEP,false,mode==='online'?s.onlineControls():undefined);close(p1.angle,Math.PI/2);close(p1.x,x);close(p1.y,y);
+  window.emit('pointerup',{pointerId:20});s.humanControl(p1,Net.STEP,false,mode==='online'?s.onlineControls():undefined);close(p1.angle,Math.PI/2);close(p1.x,x);close(p1.y,y);
+  s.clearInput();assert.equal(s.onlineControls().snapAim,undefined);
+ }
+});
+
+test('fixed direct touch ignores the tank center and distant taps and clears canceled gestures',()=>{
+ const {s,p1,canvas,window}=boot();
+ for(const [x,y] of [[60,70],[200,200]])assert.equal(canvas.emit('pointerdown',{pointerType:'touch',clientX:x,clientY:y}).prevented,undefined);
+ canvas.emit('pointerdown',{pointerType:'touch',pointerId:21,clientX:20,clientY:70});
+ window.emit('pointercancel',{pointerId:21});assert.equal(s.onlineControls().snapAim,undefined);
+ s.humanControl(p1,Net.STEP);close(p1.angle,0);
 });

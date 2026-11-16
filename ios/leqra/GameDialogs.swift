@@ -219,6 +219,8 @@ struct AccountPanel: View {
     @State private var checking = false
     @State private var message = ""
     @State private var confirmReset = false
+    @State private var confirmRelease = false
+    @State private var releaseName: String?
     @State private var checkTask: Task<Void, Never>?
 
     var body: some View {
@@ -230,13 +232,23 @@ struct AccountPanel: View {
                 Text("Each local player has a separate account key. Copying, importing, or resetting this key affects only this player's account.")
                     .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
                 Text(session.accountOrigin).font(WebStyle.mono()).foregroundStyle(WebStyle.muted).fixedSize(horizontal: false, vertical: true)
-                Text("Your key controls your reserved callsigns and public Infinity score. Copy it to another trusted device to use the same account. Keep it private.")
+                Text("Your key controls your callsign and public Infinity score. Copy it to another trusted device to use the same account. Keep it private.")
+                    .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+                Text("Each callsign has its own account and score. New callsigns start at zero. Saved callsigns let you switch back without pasting a key. Accounts expire after 7 days without signing in.")
                     .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
                 Text(session.accountHasKey ? "••••••••••••••••" : "No account key saved on this device.")
                     .font(WebStyle.mono()).accessibilityIdentifier("maskedAccountKey")
                 Button(session.accountPendingKeyVerified ? "COPY NEW ACCOUNT KEY" : "COPY ACCOUNT KEY") { session.copyAccountKey() }.buttonStyle(WebButtonStyle())
                     .disabled(!session.accountCanCopyKey || session.accountBusy).accessibilityIdentifier("copyAccountKey")
                 if let info = session.accountInfo { accountPreview(info) }
+                ForEach(session.savedCallsignNames, id: \.self) { name in
+                    HStack {
+                        Button("USE " + name) { session.useSavedCallsign(name) }
+                            .buttonStyle(WebButtonStyle()).disabled(session.switchingCallsign)
+                        Button("RELEASE") { releaseName = name; confirmRelease = true }
+                            .buttonStyle(WebButtonStyle(kind: .danger)).disabled(!session.canImportAccount || session.accountBusy || session.switchingCallsign)
+                    }
+                }
                 Text(session.accountStatus).font(.system(size: 11)).foregroundStyle(WebStyle.soft)
                     .frame(minHeight: 30, alignment: .topLeading).accessibilityIdentifier("accountStatus")
                 if session.accountSavedActivationCount > 0 {
@@ -273,7 +285,7 @@ struct AccountPanel: View {
                         .accessibilityIdentifier("checkAccountKey")
                     if let checked {
                         accountPreview(checked.info)
-                        Text("This replaces the account key saved on this device for this server. Copy your current key first if you want to keep it.")
+                        Text("This selects the imported account. Your current callsign and key stay saved on this device for switching back.")
                             .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
                         Button("USE THIS ACCOUNT") {
                             checking = true
@@ -297,30 +309,33 @@ struct AccountPanel: View {
                     .buttonStyle(WebButtonStyle(kind: .danger))
                     .disabled(!session.canImportAccount || !session.accountCanResetKey || session.accountBusy || checking)
                     .accessibilityIdentifier("resetAccountKey")
-                Text("Reset signs out every other device and invalidates the old key. Your names and scores stay with the new key.")
+                Button("RELEASE CURRENT CALLSIGN") { releaseName = nil; confirmRelease = true }
+                    .buttonStyle(WebButtonStyle(kind: .danger))
+                    .disabled(!session.canImportAccount || !session.accountHasKey || session.accountBusy || session.switchingCallsign)
+                    .accessibilityIdentifier("releaseAccount")
+                Text("Reset signs out every other device and invalidates the old key. Your callsign and score stay with the new key.")
                     .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
-                Text("Lost your key? Copy it from a signed-in device. If none remain, there is no automatic recovery and your callsigns stay reserved. You can ask for manual help on GitHub.")
+                Text("Lost your key? Copy it from a signed-in device. If none remain, there is no automatic recovery; an inactive account expires after 7 days. You can ask for manual help on GitHub.")
                     .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
                 Link("Open a GitHub issue", destination: URL(string: "https://github.com/nhooyr/leqra/issues/new")!)
                     .font(.system(size: 12)).foregroundStyle(WebStyle.accent)
                 Button("DONE") { session.closeAccount() }.buttonStyle(WebButtonStyle(kind: .primary))
             }.font(.system(size: 13))
         }
+        .confirmationDialog("Release callsign?", isPresented: $confirmRelease, titleVisibility: .visible) {
+            Button("Release callsign and delete score", role: .destructive) { Task { await session.releaseCallsign(releaseName) } }
+        } message: { Text("This permanently deletes this account's score, makes the callsign available to others, and signs out its devices. Other saved accounts are kept.") }
         .confirmationDialog("Reset account key?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset key and sign out other devices", role: .destructive) { Task { await session.resetAccountKey() } }
-        } message: { Text("Every other device will need the new key to sign in again. Callsigns and scores are preserved.") }
+        } message: { Text("Every other device will need the new key to sign in again. Your callsign and score are preserved.") }
         .onDisappear { checkTask?.cancel(); draft = ""; checked = nil }
     }
 
     @ViewBuilder private func accountPreview(_ info: AccountInfo) -> some View {
         VStack(alignment: .leading, spacing: 7) {
+            if let name = info.preferredCallsign { Text("Callsign: " + name) }
             if let profile = info.publicProfile {
-                Text("\(profile.name), score: \(profile.score)").fontWeight(.semibold)
-                if let local = profile.localName { Text("\(local), score: \(profile.localScore ?? 0)") }
-            }
-            if !info.names.isEmpty {
-                Text("Reserved callsigns: " + info.names.joined(separator: ", "))
-                if info.totalNames > info.names.count { Text("Showing \(info.names.count) of \(info.totalNames) reserved callsigns.") }
+                Text("Public Infinity score: \(profile.score)").fontWeight(.semibold)
             }
         }.font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
     }
@@ -411,7 +426,7 @@ struct FieldManualContent: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("FIELD MANUAL").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
             Text("Touch").font(.system(size: 13, weight: .semibold))
-            Text("Drag the joystick to drive and aim. Tap or hold Fire to shoot.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+            Text("Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
             Text(infinity ? "INFINITY" : session.selectedMode.title.uppercased()).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
             Text(infinity ? "Gain a point for each kill and lose a point each time the tank is destroyed. Respawn after one second. Keep growing the score without a time limit." : session.selectedMode.help)
                 .font(.system(size: 12)).foregroundStyle(WebStyle.soft)

@@ -25,6 +25,14 @@ class ReconnectExpiryTest {
 
         override fun removePending(origin: String, id: String) = Unit
 
+        override fun forgetAccount(origin: String, key: String) {
+            for (seat in 0..1) clearIfMatching(origin, seat, key)
+            for (seat in 0..1) pending(origin, seat).filter { it.key == key || it.previousKey == key }.forEach {
+                removePending(origin, it.id)
+                if (it.key != key) savePending(origin, PendingAccount(it.id,it.seat,it.key,null,it.purpose))
+            }
+        }
+
         override fun activeIntent() = intent
 
         override fun setActiveIntent(intent: PublicIntent?) {

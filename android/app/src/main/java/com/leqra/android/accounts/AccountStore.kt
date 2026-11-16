@@ -37,6 +37,8 @@ interface AccountStore {
 
     fun removePending(origin: String, id: String)
 
+    fun forgetAccount(origin: String, key: String)
+
     fun activeIntent(): PublicIntent?
 
     fun setActiveIntent(intent: PublicIntent?)

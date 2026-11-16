@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"slices"
+	"sort"
 )
 
 // Infinity uses a local encounter radius where finite modes use map dimensions.
@@ -409,7 +410,7 @@ func (a *infiniteArena) spendWeapon(k *Tank) {
 
 func (a *infiniteArena) fireLaser(p *infinitePilot) {
 	k := &p.kit
-	if p.HP == 0 || k.SpawnProtected && k.Invulnerable > 1e-9 {
+	if a.result != nil || p.HP == 0 || k.SpawnProtected && k.Invulnerable > 1e-9 {
 		return
 	}
 	k.ShotSerial++
@@ -419,23 +420,33 @@ func (a *infiniteArena) fireLaser(p *infinitePilot) {
 		cooldown = 0
 	}
 	k.Cooldown, k.CooldownTotal, k.Recoil = cooldown, cooldown, 1
-	points, target := a.traceLaser(p)
-	if !starman || k.ShotSerial%4 == 1 || target != nil {
+	points, targets := a.traceLaser(p)
+	if !starman || k.ShotSerial%4 == 1 || len(targets) > 0 {
 		a.effect("laser", p.X, p.Y, p.ID, points)
 	}
-	if target != nil {
+	// Resolve the complete volley before a target-score win can stop combat.
+	var result *infiniteResult
+	for _, target := range targets {
 		a.hurtWithContact(target, p.ID, p.Team, p.Name, a.instantContact(target, "laser"))
+		if a.result != nil {
+			result, a.result = a.result, nil
+		}
+	}
+	if result != nil {
+		a.result = result
 	}
 	a.spendWeapon(k)
 }
 
-func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilot) {
+func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, []*infinitePilot) {
 	launch := a.projectileLaunch(p, p.Angle, laserRadius, 28)
 	if !launch.valid {
 		return []BeamPoint{{p.X, p.Y}, {p.X, p.Y}}, nil
 	}
 	x, y, ux, uy := launch.x, launch.y, launch.ux, launch.uy
 	points := make([]BeamPoint, 0, 12)
+	var targets []*infinitePilot
+	hit := map[int]bool{}
 	remaining := infiniteLaserRange - launch.distance
 	for i := 0; i < laserMaxSegments && remaining > 1e-7; i++ {
 		dx, dy := ux*remaining, uy*remaining
@@ -444,10 +455,35 @@ func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilo
 		if hasWall {
 			stop = wall.T
 		}
-		target, stop := a.hitTarget(p.ID, p.Team, x, y, dx, dy, laserRadius, stop, false)
+		var segmentTargets []struct {
+			pilot *infinitePilot
+			at    float64
+		}
+		radius := tankRadius + laserRadius
+		minX, maxX := min(x, x+dx*stop)-radius, max(x, x+dx*stop)+radius
+		minY, maxY := min(y, y+dy*stop)-radius, max(y, y+dy*stop)+radius
+		for _, other := range a.pilots {
+			if other.X < minX || other.X > maxX || other.Y < minY || other.Y > maxY || other.HP == 0 || other.Protected || !a.canDamage(p.ID, p.Team, other) || hit[other.ID] {
+				continue
+			}
+			if at, ok := circleHit(x, y, dx, dy, other.X, other.Y, tankRadius+laserRadius); ok && at < stop {
+				segmentTargets = append(segmentTargets, struct {
+					pilot *infinitePilot
+					at    float64
+				}{other, at})
+			}
+		}
+		sort.Slice(segmentTargets, func(i, j int) bool { return segmentTargets[i].at < segmentTargets[j].at })
+		for _, target := range segmentTargets {
+			targets = append(targets, target.pilot)
+			hit[target.pilot.ID] = true
+		}
 		length := remaining * stop
 		if i == 0 {
 			muzzle := min(28, length)
+			if len(segmentTargets) > 0 {
+				muzzle = min(muzzle, remaining*segmentTargets[0].at)
+			}
 			if launch.bounced {
 				muzzle = 0
 			}
@@ -456,8 +492,8 @@ func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilo
 		x, y = x+ux*length, y+uy*length
 		points = append(points, BeamPoint{x, y})
 		remaining -= length
-		if target != nil || !hasWall || remaining <= 1e-7 {
-			return points, target
+		if !hasWall || remaining <= 1e-7 {
+			return points, targets
 		}
 		if wall.NX != 0 {
 			ux = -ux
@@ -469,7 +505,7 @@ func (a *infiniteArena) traceLaser(p *infinitePilot) ([]BeamPoint, *infinitePilo
 		x, y = x+ux*nudge, y+uy*nudge
 		remaining -= nudge
 	}
-	return points, nil
+	return points, targets
 }
 
 func infiniteOpposes(owner, team int, target *infinitePilot) bool {

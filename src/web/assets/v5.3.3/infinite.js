@@ -62,6 +62,7 @@ const BOT_TUNING = {
 const PRIMARY_KEYS = {KeyW:'forward', KeyS:'reverse', KeyA:'left', KeyD:'right', KeyQ:'fire', KeyC:'fire'};
 const LOCAL_KEYS = {ArrowUp:'forward', ArrowDown:'reverse', ArrowLeft:'left', ArrowRight:'right', Space:'fire', Enter:'fire'};
 const pressed = new Set();
+const directAim = {active:false,id:null,x:0,y:0};
 const touchAim = {x: 0, y: 0, cx: 0, cy: 0, reach: 0, assisted: false};
 let session = null, frame = 0, socket = null, mouseAim = null, sessionSerial = 0, renameSerial = 0;
 let stickPointer = null, firePointer = null, mousePointer = null, mouseTap = false;
@@ -150,6 +151,7 @@ function renamePilot(index,value) {
  const name=art.cleanPilotName(value);
  if(!name)return Promise.reject(Error('Enter letters or numbers for the callsign.'));
  if(world.renames.has(index))return Promise.reject(Error('A callsign change is already waiting for confirmation.'));
+ if(art.selectCallsignAccount)return art.selectCallsignAccount(index,name,localPilots(world)[index].name);
  if(!world.online){applyPilotName(world,index,name);return Promise.resolve(name);}
  if(!world.joined||world.failed||socket?.readyState!==WebSocket.OPEN||socket.bufferedAmount>4096)return Promise.reject(Error('Reconnect before changing the callsign.'));
  const requestId=++renameSerial;
@@ -249,7 +251,9 @@ function inputState(seat) {
   input.stickY = touchAim.y;
   if (touchAim.assisted) input.touchAim = true;
   input.fire ||= mouseFireEnabled()&&(mousePointer !== null||mouseTap)||firePointer !== null;
-  if (mouseAimEnabled()&&stickPointer === null && mouseAim && !input.left && !input.right) {
+  if (directAim.active) {
+   input.stickX=directAim.x;input.stickY=directAim.y;input.aimOnly=true;input.snapAim=true;
+  } else if (mouseAimEnabled()&&stickPointer === null && mouseAim && !input.left && !input.right) {
    input.stickX = mouseAim.x;
    input.stickY = mouseAim.y;
    input.aimOnly = true;
@@ -415,21 +419,31 @@ function spendWeapon(tank) {
 
 function traceLaser(world, tank, preview = false) {
  const launch=projectileLaunch(world,tank,tank.angle,3,28);
- if(!launch.valid)return{points:[{x:tank.x,y:tank.y},{x:tank.x,y:tank.y}],target:null};
+ if(!launch.valid)return{points:[{x:tank.x,y:tank.y},{x:tank.x,y:tank.y}],target:null,targets:[]};
  let {x,y,ux,uy}=launch,length=2*SHOT_RANGE-launch.distance;
- const points = [];
+ const points = [], targets = [], seen = new Set();
  for (let i = 0; i < 256 && length > 1e-7; i++) {
   const dx = ux * length, dy = uy * length;
   const wall = wallHit(world.maze, x, y, dx, dy, 3);
   const limit = wall?.fraction ?? 1;
-  const hit = preview ? {fraction:limit} : tankHit(world, {x, y, owner:tank.id, team:tank.team, r:3}, dx, dy, limit);
-  const distance = length * hit.fraction;
-  if (!i) {const crop=launch.bounced?0:Math.min(distance,28);points.push({x:x+ux*crop,y:y+uy*crop});}
+  const hits=[];
+  if (!preview) {
+   for(const target of world.tanks){
+    if(!target.hp||target.invulnerable>0||!canDamage(world,tank.id,tank.team,target)||seen.has(target.id))continue;
+    const px=x-target.x,py=y-target.y,dot=px*dx+py*dy,c=px*px+py*py-(RADIUS+3)**2,speed2=dx*dx+dy*dy,discriminant=dot*dot-speed2*c;
+    if(c>0&&(dot>=0||discriminant<0))continue;
+    const at=c<=0?0:(-dot-Math.sqrt(discriminant))/speed2;
+    if(at>=0&&at<limit)hits.push({target,at});
+   }
+   hits.sort((a,b)=>a.at-b.at);for(const {target} of hits){targets.push(target);seen.add(target.id);}
+  }
+  const distance = length * limit;
+  if (!i) {const crop=launch.bounced?0:Math.min(distance,28,hits.length?length*hits[0].at:Infinity);points.push({x:x+ux*crop,y:y+uy*crop});}
   x += ux * distance;
   y += uy * distance;
   points.push({x, y});
   length -= distance;
-  if (hit.tank || !wall || length <= 1e-7) return {points, target: hit.tank};
+  if (!wall || length <= 1e-7) return {points, target: targets[0], targets};
   if (wall.nx) ux = -ux;
   if (wall.ny) uy = -uy;
   const nudge = Math.min(.001, length);
@@ -437,7 +451,7 @@ function traceLaser(world, tank, preview = false) {
   y += uy * nudge;
   length -= nudge;
  }
- return {points};
+ return {points, target: targets[0], targets};
 }
 
 function muzzleBlocked(maze, tank, radius) {
@@ -452,20 +466,22 @@ function projectileLaunch(world,tank,angle,radius,muzzle){
 
 function fireShot(world, tank) {
  const boosted = tank.starmanTime > 0;
- if (!tank.hp || tank.spawnProtected && tank.invulnerable > 1e-9) return;
+ if (world.result || !tank.hp || tank.spawnProtected && tank.invulnerable > 1e-9) return;
  if (!boosted && (tank.cooldown > 1e-9 || tank.power === 'rapid' && !tank.machineRounds)) return;
  const kind = tank.power || '', spec = projectileSpec(tank);
  if (muzzleBlocked(world.maze, tank, spec.r)) return;
  const cooldown = boosted ? 0 : spec.cooldown;
  const showShot = kind === 'rapid' || !boosted || kind === 'grenade' || world.time + 1e-9 >= (tank.nextBoostEffect || 0);
  if (kind === 'laser') {
-  const {points, target} = traceLaser(world, tank);
+  const {points, targets} = traceLaser(world, tank);
   Object.assign(tank, {cooldown, cooldownTotal:cooldown, recoil:1});
-  if (showShot || target) {
+  if (showShot || targets.length) {
    tank.nextBoostEffect = world.time + 4 * STEP;
    effect(world, 'laser', tank.x, tank.y, tank.id, points);
   }
-  if (target) hurt(world, target, tank.id, tank.team, tank.name);
+  let result;
+  for(const target of targets){hurt(world,target,tank.id,tank.team,tank.name);if(world.result){result=world.result;world.result=null;}}
+  if(result)world.result=result;
   spendWeapon(tank);
   return;
  }
@@ -1784,6 +1800,7 @@ function connect() {
 }
 
 function resetControls() {
+ directAim.active=false;directAim.id=null;
  pressed.clear();
  mouseAim = null;
  mouseTap=false;canvas.style.cursor=mouseEnabled()?'':'auto';
@@ -1886,6 +1903,7 @@ function addController(world,seat) {
 }
 
 function start(mode, options = {}) {
+ if(mode==='online'&&!options.accountsReady&&art.ensureSelectedCallsignAccounts){Promise.resolve(art.ensureSelectedCallsignAccounts(options.localName?[0,1]:[0])).then(()=>start(mode,{...options,accountsReady:true})).catch(error=>{setStatus(error.message);options.onError?.(error);});return;}
  if ((mode !== 'offline' && mode !== 'online') || arena.open) return;
  stop();
  const online = mode === 'online', name = options.name?.trim() || pilotName();
@@ -1996,6 +2014,7 @@ function pressFire(event,seat=session,mouse=false) {
 }
 
 function updateStick(event) {
+ directAim.active=false;directAim.id=null;
  const {cx,cy,reach} = touchAim;
  if (!reach) return;
  const x = event.clientX - cx, y = event.clientY - cy;
@@ -2012,7 +2031,9 @@ function capturePointer(element, event) {
 }
 
 function endPointer(event) {
- if (event.pointerId === stickPointer) {
+ if(event.pointerId===directAim.id){
+  directAim.id=null;if(event.type==='pointercancel')directAim.active=false;
+ } else if (event.pointerId === stickPointer) {
   stickPointer = null;
   touchAim.x = touchAim.y = 0;
   touchAim.assisted = false;
@@ -2061,6 +2082,7 @@ arena.addEventListener('keydown', event => {
  event.preventDefault();
  if (event.repeat || pressed.has(event.code)) return;
  pressed.add(event.code);
+ if (seat===session&&['forward','reverse','left','right'].includes(action)){directAim.active=false;directAim.id=null;}
  if (seat===session&&(action==='left'||action==='right')) mouseAim = null;
  if (action === 'fire') pressFire(event,seat);
  else sendInput(seat,performance.now(),true);
@@ -2071,6 +2093,23 @@ arena.addEventListener('keyup', event => {
  const seat=session?.controllers.find(controller=>controller.keys[event.code]);
  if (seat) sendInput(seat,performance.now(),true);
 });
+function updateDirectAim(event,nearOnly=false){
+ if(!session||session.result||pauseMenu.open||session.online&&!session.joined)return false;
+ const position=mousePosition(event),pilot=session.predictor?.state||session.tanks.find(t=>t.id===session.id);
+ if(!position||!pilot?.alive)return false;
+ const distance=Math.hypot(position.x,position.y);
+ if(!Number.isFinite(distance)||distance<2||nearOnly&&distance>64)return false;
+ directAim.x=position.x/distance;directAim.y=position.y/distance;directAim.active=true;mouseAim=null;
+ sendInput(session,performance.now(),nearOnly);return true;
+}
+canvas.addEventListener('pointerdown',event=>{
+ if(!['touch','pen'].includes(event.pointerType)||event.button!==0||directAim.id!==null||!updateDirectAim(event,true))return;
+ directAim.id=event.pointerId;capturePointer(canvas,event);art.primeAudioUnlock(event);
+});
+window.addEventListener('pointermove',event=>{
+ if(event.pointerId!==directAim.id)return;
+ event.preventDefault();updateDirectAim(event);
+},true);
 canvas.addEventListener('pointermove', event => {
  if (event.pointerType !== 'mouse') return;
  updateMouse(event);

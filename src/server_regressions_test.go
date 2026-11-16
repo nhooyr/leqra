@@ -225,7 +225,7 @@ func TestLobbyActionBudgetExcludesHandshakeAndRecovers(t *testing.T) {
 		}
 	}
 	drain(c)
-	rename := map[string]any{"type": "rename", "name": "NEW NAME"}
+	rename := map[string]any{"type": "rename", "name": "host"}
 	send(rename, now)
 	packets := drain(c)
 	if len(packets) != 1 || packets[0]["type"] != "error" || packets[0]["code"] != "action_rate" || packets[0]["action"] != "rename" || c.player.Name != "HOST" {
@@ -237,7 +237,7 @@ func TestLobbyActionBudgetExcludesHandshakeAndRecovers(t *testing.T) {
 		t.Fatalf("rate-limited chat lost its channel: %#v", packets)
 	}
 	send(rename, now.Add(time.Second))
-	if c.player.Name != "NEW NAME" {
+	if c.player.Name != "host" {
 		t.Fatal("rate-limited action could not be retried in the next window")
 	}
 }

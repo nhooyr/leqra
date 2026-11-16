@@ -1657,7 +1657,7 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the left joystick to steer and drive. Hold FIRE on the right to shoot. Lift your thumb to stop.\n\nKeyboard: P1 W/S/↑/↓ to drive, A/D/←/→ to turn, Q/C/Space/Enter to fire. With P2 enabled, use W/A/S/D and Q/C for P1, arrow keys and Space/Enter for P2.\n\nGamepad: left stick to drive, A/R1/R2 to fire. A second connected gamepad controls P2.\n\nBack/Escape pauses. Swipe from an edge for Android system controls.\n\nShots ricochet off walls. Cannon pierces them. Power-ups can stack, and Starman gives rapid fire.",
+                "Drag the left joystick to steer and drive. Touch near the tank to aim in place. Hold FIRE on the right to shoot. Lift your thumb to stop.\n\nKeyboard: P1 W/S/↑/↓ to drive, A/D/←/→ to turn, Q/C/Space/Enter to fire. With P2 enabled, use W/A/S/D and Q/C for P1, arrow keys and Space/Enter for P2.\n\nGamepad: left stick to drive, A/R1/R2 to fire. A second connected gamepad controls P2.\n\nBack/Escape pauses. Swipe from an edge for Android system controls.\n\nShots ricochet off walls. Cannon pierces them. Power-ups can stack, and Starman gives rapid fire.",
                 13f,
                 soft,
             ),
@@ -2017,6 +2017,20 @@ class MainActivity : Activity() {
         showPanel(panel, "Match complete")
     }
 
+    private fun confirmReleaseCallsign(name: String, key: String) {
+        if (!session.canImportAccount) { alert("Release callsign", "Return to the offline ready room first."); return }
+        AlertDialog.Builder(this)
+            .setTitle("Release $name?")
+            .setMessage("This permanently deletes this account's score, makes its callsign available to others, and signs out its devices. Other saved accounts are kept.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Release callsign") { _, _ ->
+                session.releaseCallsign(key) { result ->
+                    result.onSuccess { dismissDialog(); readySignature = ""; refresh(true) }
+                        .onFailure { alert("Release callsign", it.message ?: "Could not release the callsign.") }
+                }
+            }.show()
+    }
+
     private fun showAccount(seat: Int) {
         val origin = session.server
         val panel = column(this, 16)
@@ -2035,9 +2049,18 @@ class MainActivity : Activity() {
             if (selected == null)
                 "Play online to create an account. Offline callsigns are always available."
             else
-                "This key owns your online callsigns and scores. Copy it to sign in on another device. Keep it private."
+                "This key owns your callsign and public Infinity score. Copy it to sign in on another device. Keep it private."
         panel.add(details)
+        panel.add(label(this, "Each callsign has its own account and score. New callsigns start at zero. Saved callsigns let you switch back without pasting a key. Accounts expire after 7 days without signing in.", 12f, soft))
+        session.accounts.savedCallsigns(origin).filter { it.key != session.store.selected(origin, 1-seat)?.key }.forEach { saved ->
+            panel.add(button(this, "USE " + saved.name, {
+                session.renameCallsign(saved.name, seat, validate = true)
+                dismissDialog()
+            }))
+            panel.add(button(this, "RELEASE " + saved.name, { confirmReleaseCallsign(saved.name, saved.key) }, danger = true))
+        }
         if (selected != null) {
+            panel.add(button(this, "RELEASE CURRENT CALLSIGN", { confirmReleaseCallsign(if (seat == 0) session.callsign else session.localCallsign, selected.key) }, danger = true))
             panel.add(
                 button(
                     this,
@@ -2053,7 +2076,7 @@ class MainActivity : Activity() {
                 ) {
                     result.onSuccess { checked ->
                         details.text =
-                            "${checked.info.names.joinToString(", ")}\n${checked.info.publicProfile?.let { "${it.name}: ${it.score} points\n" } ?: ""}Keep your key private. The newest device takes over your tank."
+                            "${checked.info.preferredCallsign.orEmpty()}\n${checked.info.publicProfile?.let { "${it.name}: ${it.score} points\n" } ?: ""}Keep your key private. The newest device takes over your tank."
                     }
                 }
             }
@@ -2069,7 +2092,7 @@ class MainActivity : Activity() {
                         AlertDialog.Builder(this)
                             .setTitle("Reset P${seat+1} key?")
                             .setMessage(
-                                "The old key will stop working on every device. Your callsigns and scores stay with the new key. Copy the new key to your other devices afterwards.",
+                                "The old key will stop working on every device. Your callsign and score stay with the new key. Copy the new key to your other devices afterwards.",
                             )
                             .setNegativeButton("Cancel", null)
                             .setPositiveButton("Reset key") { _, _ ->
@@ -2132,23 +2155,16 @@ class MainActivity : Activity() {
                     "USE THIS KEY",
                     {
                         checked?.let { verified ->
-                            runCatching {
-                                session.accounts.useChecked(verified, seat)
-                                session.accountImported(seat)
-                                val name = verified.info.preferredCallsign
-                                if (name != null) {
-                                    if (seat == 0) session.callsign = name
-                                    else session.localCallsign = name
-                                }
-                                session.save()
-                                session.leave()
-                                dismissDialog()
-                                readySignature = ""
-                                refresh(true)
+                            session.accounts.signInChecked(verified, seat, if (seat == 0) session.callsign else session.localCallsign) { result ->
+                                result.onSuccess { signedIn ->
+                                    signedIn.info.preferredCallsign?.let { name ->
+                                        if (seat == 0) session.callsign = name else session.localCallsign = name
+                                    }
+                                    session.accountImported(seat)
+                                    session.save(); session.leave(); dismissDialog()
+                                    readySignature = ""; refresh(true)
+                                }.onFailure { alert("Account key", it.message ?: "Unable to import key") }
                             }
-                                .onFailure {
-                                    alert("Account key", it.message ?: "Unable to import key")
-                                }
                         }
                     },
                 )
@@ -2179,7 +2195,7 @@ class MainActivity : Activity() {
                             .onSuccess { verified ->
                                 checked = verified
                                 preview.text =
-                                    "${verified.info.names.joinToString(", ")}\n${verified.info.publicProfile?.let { "${it.name}: ${it.score} points" } ?: "${verified.info.totalNames} callsigns"}"
+                                    "${verified.info.preferredCallsign.orEmpty()}\n${verified.info.publicProfile?.let { "${it.name}: ${it.score} points" } ?: "No public score yet"}"
                                 use.isEnabled = session.canImportAccount
                             }
                             .onFailure { preview.text = it.message ?: "That key is unavailable." }
@@ -2189,7 +2205,7 @@ class MainActivity : Activity() {
         )
         use.isEnabled = false
         panel.add(use)
-        session.store.pending(origin, seat).forEachIndexed { index, pending ->
+        session.store.pending(origin, seat).filter { !it.purpose.startsWith("saved:") }.forEachIndexed { index, pending ->
             panel.add(
                 button(
                     this,
@@ -2204,7 +2220,7 @@ class MainActivity : Activity() {
                                     } else {
                                         checked = recovered.checked
                                         preview.text =
-                                            "Recovered account: ${recovered.checked.info.names.joinToString(", ")}. Review it, then use this key to switch accounts."
+                                            "Recovered account: ${recovered.checked.info.preferredCallsign.orEmpty()}. Review it, then use this key to switch accounts."
                                         use.isEnabled = session.canImportAccount
                                     }
                                 }
@@ -2755,10 +2771,12 @@ class MainActivity : Activity() {
                 if (analog == null || hypot(state.x, state.y) > hypot(analog.x, analog.y)) analog = state
             }
         }
+        if (!local && (controls.forward || controls.reverse || controls.left || controls.right || analog?.let { hypot(it.x, it.y) > .1 } == true)) arena.clearDirectAim()
         val touch = if (local) null else arena.input
         if (touch != null) controls.fire = controls.fire || touch.fire
         if (touch != null && hypot(touch.stickX, touch.stickY) > .1) {
             controls.stickX = touch.stickX; controls.stickY = touch.stickY; controls.touchAim = true
+            controls.aimOnly = touch.aimOnly; controls.snapAim = touch.snapAim
         } else if (analog != null) {
             controls.stickX = analog.x; controls.stickY = analog.y; controls.touchAim = true
         }

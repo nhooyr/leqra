@@ -109,16 +109,6 @@ func (s *infiniteServer) joinIndependentPublic(c *Client, msg infiniteMessage, n
 			main.local = 0
 			main.localEnabled = false
 			profiles[main.hash] = main
-			key := canonicalCallsign(oldEntries[migratedLocal].Name)
-			r := s.hub.callsigns
-			if r.claims[key] == accounts[0].hash {
-				if tx != nil {
-					if _, err := tx.Exec("UPDATE online_callsigns SET owner_hash=? WHERE canonical_name=?", accounts[1].hash, key); err != nil {
-						return err
-					}
-				}
-				accounts[1].extraAliases = map[string]string{key: r.names[accounts[0].hash][key]}
-			}
 		}
 		return writePublicRows(tx, entries, profiles, seed, next)
 	})

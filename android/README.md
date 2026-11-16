@@ -45,9 +45,14 @@ with native physics, bots and all ten power-ups. Public Infinity, private rooms,
 room rules, bots, teams, paint, matchmaking, chat and leaderboards use the same
 authoritative server as the web and iOS apps. Account-key buttons beside the
 callsigns manage independent P1 and P2 accounts. Import a key to move an account
-between platforms; the newest Public Infinity device takes over its tank.
+between platforms; the newest Public Infinity device takes over its tank. Every
+callsign has its own account and score. Changing callsigns starts a new account
+at zero; earlier names and keys stay in encrypted storage for switching back.
+Successful changes return to the ready room; failures keep the current account.
+Accounts expire after seven days without signing in.
 
-Touch controls steer on the left and fire on the right. Keyboard and gamepad
+Touch controls steer on the left and fire on the right. Touch near your tank to
+point it exactly toward your finger without moving; drag there to adjust aim. Keyboard and gamepad
 controls are listed in the app's Controls panel. P2 uses a keyboard or another
 gamepad. Local bot names, paint, difficulty and teams are editable and retained
 when publishing the same roster online. Sound effects mix with music from other
@@ -113,3 +118,5 @@ Keystore key and atomic, synced writes outside backups. New P2 credentials and
 replacement-key candidates are persisted before registration or rotation. Secret
 HTTP requests reject redirects. Public scores, hits and ownership are always
 decided by the server; clients send controls, never scores.
+
+Account controls can also release the current or a saved callsign from the offline ready room. After confirmation, Release permanently deletes that account's score, frees its callsign for reuse, invalidates its key on every device, and removes its saved credentials from this device. Other accounts stay saved.

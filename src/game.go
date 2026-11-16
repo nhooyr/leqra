@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"math/rand"
+	"sort"
 )
 
 const maxTanks = 8
@@ -103,6 +104,7 @@ type Input struct {
 	StickY      float64 `json:"stickY"`
 	AimOnly     bool    `json:"aimOnly,omitempty"`  // The direction turns the tank; keyboard drive still sets throttle.
 	TouchAim    bool    `json:"touchAim,omitempty"` // Touch joystick steering uses the faster turn curve.
+	SnapAim     bool    `json:"snapAim,omitempty"`  // Direct touch aiming rotates in place immediately.
 }
 type Tank struct {
 	AmmoEpoch      uint64            `json:"ammoEpoch,omitempty"`
@@ -720,6 +722,9 @@ func steerTank(angle float64, in Input, turnScale, dt float64) (float64, float64
 	mag := math.Hypot(in.StickX, in.StickY)
 	if mag > .1 {
 		desired := math.Atan2(in.StickY, in.StickX)
+		if in.SnapAim && in.AimOnly {
+			return desired, 0
+		}
 		diff := delta(angle, desired)
 		rate := 5.8
 		if in.TouchAim && !in.AimOnly {
@@ -995,8 +1000,8 @@ func (g *Game) laserRange() float64         { return 4 * (g.World.Width + g.Worl
 
 // Trace from the tank centre to avoid tunneling with a barrel against a wall.
 // Only the first hidden barrel segment is cropped for rendering. The shooter
-// stays immune as before; the first vulnerable opponent/shield ends the shot.
-func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
+// stays immune; each vulnerable opponent is hit once along the complete path.
+func (g *Game) traceLaser(t *Tank) ([]BeamPoint, []*Tank) {
 	launch := g.projectileLaunch(t, t.Angle, laserRadius, 28)
 	if !launch.valid {
 		return []BeamPoint{{t.X, t.Y}, {t.X, t.Y}}, nil
@@ -1004,6 +1009,8 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 	x, y, ux, uy := launch.x, launch.y, launch.ux, launch.uy
 	remaining := g.laserRange() - launch.distance
 	points := make([]BeamPoint, 0, 16)
+	var targets []*Tank
+	hit := map[int]bool{}
 	for segment := 0; segment < laserMaxSegments && remaining > 1e-7; segment++ {
 		dx, dy := ux*remaining, uy*remaining
 		wall, wallOK := g.rayWallsHit(x, y, dx, dy, laserRadius)
@@ -1011,18 +1018,32 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 		if wallOK {
 			stop = wall.T
 		}
-		var target *Tank
+		var segmentTargets []struct {
+			tank *Tank
+			at   float64
+		}
 		for _, other := range g.Tanks {
-			if !g.canDamage(t.ID, other) || !other.Alive || other.Invulnerable > 0 {
+			if !g.canDamage(t.ID, other) || !other.Alive || other.Invulnerable > 0 || hit[other.ID] {
 				continue
 			}
 			if at, ok := circleHit(x, y, dx, dy, other.X, other.Y, other.R+laserRadius); ok && at < stop {
-				stop, target = at, other
+				segmentTargets = append(segmentTargets, struct {
+					tank *Tank
+					at   float64
+				}{other, at})
 			}
+		}
+		sort.Slice(segmentTargets, func(i, j int) bool { return segmentTargets[i].at < segmentTargets[j].at })
+		for _, target := range segmentTargets {
+			targets = append(targets, target.tank)
+			hit[target.tank.ID] = true
 		}
 		length := remaining * stop
 		if segment == 0 {
 			start := math.Min(28, length)
+			if len(segmentTargets) > 0 {
+				start = math.Min(start, remaining*segmentTargets[0].at)
+			}
 			if launch.bounced {
 				start = 0
 			}
@@ -1032,9 +1053,6 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 		y += uy * length
 		points = append(points, BeamPoint{x, y})
 		remaining -= length
-		if target != nil {
-			return points, target
-		}
 		if !wallOK || remaining <= 1e-7 {
 			break
 		}
@@ -1051,14 +1069,14 @@ func (g *Game) traceLaser(t *Tank) ([]BeamPoint, *Tank) {
 		y += uy * nudge
 		remaining -= nudge
 	}
-	return points, nil
+	return points, targets
 }
 func (g *Game) fireLaser(t *Tank) bool {
 	starman := t.StarmanTime > 0
 	if !t.Alive || t.SpawnProtected && t.Invulnerable > 0 || t.Power != "laser" || !starman && (t.Cooldown > 1e-9 || t.Charges <= 0) {
 		return false
 	}
-	points, target := g.traceLaser(t)
+	points, targets := g.traceLaser(t)
 	if len(points) < 2 {
 		return false
 	}
@@ -1066,7 +1084,7 @@ func (g *Game) fireLaser(t *Tank) bool {
 	t.ShotSerial++
 	// Trace and resolve every volley. Sustained misses share Infinity's cosmetic
 	// cadence; a hit always publishes its exact beam before the damage event.
-	if !starman || t.ShotSerial%4 == 1 || target != nil {
+	if !starman || t.ShotSerial%4 == 1 || len(targets) > 0 {
 		g.nextEvent++
 		g.events = append(g.events, Event{Tick: g.Tick, ShotSerial: t.ShotSerial, SpawnSerial: t.SpawnSerial, Angle: t.Angle, Generation: g.Generation, ID: g.nextEvent, Type: "laser", X: start.X, Y: start.Y, EndX: end.X, EndY: end.Y, Points: points, Color: "#f57cff", Player: t.ID, Owner: t.ID})
 		g.retainProjectileEvent(g.events[len(g.events)-1])
@@ -1083,7 +1101,7 @@ func (g *Game) fireLaser(t *Tank) bool {
 	if !starman || t.ShotSerial%4 == 1 {
 		g.emit("shot", t, t.ID, "laser")
 	}
-	if target != nil {
+	for _, target := range targets {
 		g.hurt(target, &Bullet{Owner: t.ID, Kind: "laser"})
 	}
 	if !starman {

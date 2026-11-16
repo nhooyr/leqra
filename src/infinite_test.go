@@ -880,7 +880,11 @@ func TestInfinitySocketControlsTwoPilotsAndUnionsTheirViews(t *testing.T) {
 	t.Cleanup(app.infinite.close)
 	server := httptest.NewServer(app.handler())
 	t.Cleanup(server.Close)
-	conn, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": "FIRST", "localName": "SECOND"}, false)
+	key, ok := seedLegacyAccountFixture(t, app.hub.callsigns, "", []string{"FIRST", "SECOND"})
+	if !ok {
+		t.Fatal("legacy fixture")
+	}
+	conn, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": "FIRST", "localName": "SECOND", "publicToken": key}, false)
 	var welcome struct {
 		Type  string `json:"type"`
 		ID    int    `json:"id"`

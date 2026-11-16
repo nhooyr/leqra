@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -42,18 +43,27 @@ func (e *callsignConflictError) Error() string {
 }
 
 type onlineCallsignRegistry struct {
-	mu             sync.Mutex
-	db             *sql.DB
-	owners         map[string]bool
-	claims         map[string]string
-	names          map[string]map[string]string // Owner hash -> canonical name -> first display spelling.
-	revoked        map[string]bool
-	seatMigrations map[string]seatAccountMigration
-	generatedFresh map[string]bool // Registered by generation, never admitted to gameplay.
+	now               func() time.Time
+	lastUsed          map[string]int64
+	expired           map[string]bool
+	expiryMu          sync.Mutex
+	expirationPending map[string]bool
+	nextActiveTouch   int64
+	mu                sync.Mutex
+	db                *sql.DB
+	owners            map[string]bool
+	claims            map[string]string
+	names             map[string]map[string]string // Owner hash -> canonical name -> first display spelling.
+	revoked           map[string]bool
+	seatMigrations    map[string]seatAccountMigration
+	renameMu          sync.Mutex
+	renamed           map[string]string // Single current callsign awaiting score presentation sync.
+	roomRenamed       map[string]string // Independent queue consumed while Hub.mu is held.
+	generatedFresh    map[string]bool   // Registered by generation, never admitted to gameplay.
 }
 
 func newOnlineCallsignRegistry() *onlineCallsignRegistry {
-	return &onlineCallsignRegistry{owners: make(map[string]bool), claims: make(map[string]string), names: make(map[string]map[string]string), revoked: make(map[string]bool), seatMigrations: make(map[string]seatAccountMigration), generatedFresh: make(map[string]bool)}
+	return &onlineCallsignRegistry{now: time.Now, lastUsed: make(map[string]int64), expired: make(map[string]bool), expirationPending: make(map[string]bool), owners: make(map[string]bool), claims: make(map[string]string), names: make(map[string]map[string]string), revoked: make(map[string]bool), seatMigrations: make(map[string]seatAccountMigration), generatedFresh: make(map[string]bool), renamed: make(map[string]string), roomRenamed: make(map[string]string)}
 }
 func canonicalCallsign(name string) string {
 	var key strings.Builder
@@ -74,6 +84,8 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 	defer r.mu.Unlock()
 	for _, query := range []string{
 		`CREATE TABLE IF NOT EXISTS online_owners (token_hash TEXT PRIMARY KEY) WITHOUT ROWID`,
+		`CREATE TABLE IF NOT EXISTS online_account_activity (token_hash TEXT PRIMARY KEY REFERENCES online_owners(token_hash), last_used INTEGER NOT NULL) WITHOUT ROWID`,
+		`CREATE TABLE IF NOT EXISTS online_expired_accounts (token_hash TEXT PRIMARY KEY) WITHOUT ROWID`,
 		`CREATE TABLE IF NOT EXISTS online_callsigns (canonical_name TEXT PRIMARY KEY, display_name TEXT NOT NULL, owner_hash TEXT NOT NULL REFERENCES online_owners(token_hash)) WITHOUT ROWID`,
 		`CREATE INDEX IF NOT EXISTS online_callsigns_owner ON online_callsigns(owner_hash)`,
 		`CREATE TABLE IF NOT EXISTS online_revoked (token_hash TEXT PRIMARY KEY) WITHOUT ROWID`,
@@ -213,7 +225,7 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 		return err
 	}
 	r.generatedFresh = generatedFresh
-	return nil
+	return r.openAccountActivityLocked(db)
 }
 func (r *onlineCallsignRegistry) owner(token string) (string, bool) {
 	hash, valid := publicTokenHash(token)
@@ -222,7 +234,7 @@ func (r *onlineCallsignRegistry) owner(token string) (string, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return hash, r.owners[hash]
+	return hash, r.activeOwnerLocked(hash)
 }
 func (r *onlineCallsignRegistry) revokedOwner(token string) bool {
 	hash, valid := publicTokenHash(token)
@@ -237,13 +249,13 @@ func (r *onlineCallsignRegistry) availability(token string, names []string) []ca
 	hash, valid := publicTokenHash(token)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	valid = valid && r.owners[hash]
+	valid = valid && r.activeOwnerLocked(hash)
 	rows := make([]callsignAvailability, len(names))
 	seen := make(map[string]bool, len(names))
 	for i, name := range names {
 		clean := cleanCallsign(name)
 		key := canonicalCallsign(clean)
-		owner, claimed := r.claims[key]
+		owner, claimed := r.callsignOwnerLocked(key)
 		available := key != "" && !seen[key] && (!claimed || valid && owner == hash)
 		rows[i] = callsignAvailability{Seat: i, Name: clean, Available: available}
 		if reservedCallsign(clean) {
@@ -255,6 +267,34 @@ func (r *onlineCallsignRegistry) availability(token string, names []string) []ca
 }
 func (r *onlineCallsignRegistry) claim(token string, names []string) (string, error) {
 	return r.claimWithCommit(token, names, nil)
+}
+
+// replaceNamesLocked releases names omitted by a successful rename. The caller
+// holds mu and has already committed the matching database replacement.
+func (r *onlineCallsignRegistry) replaceNamesLocked(hash string, names []string) {
+	changed := len(r.names[hash]) > 0 && (len(names) != 1 || len(r.names[hash]) != 1 || r.names[hash][canonicalCallsign(names[0])] != cleanCallsign(names[0]))
+	keep := make(map[string]string, len(names))
+	for _, name := range names {
+		keep[canonicalCallsign(name)] = cleanCallsign(name)
+	}
+	for key := range r.names[hash] {
+		if _, retained := keep[key]; !retained && r.claims[key] == hash {
+			delete(r.claims, key)
+		}
+	}
+	r.names[hash] = keep
+	r.renameMu.Lock()
+	if len(names) == 1 && changed {
+		r.renamed[hash] = cleanCallsign(names[0])
+		r.roomRenamed[hash] = cleanCallsign(names[0])
+	} else if len(names) != 1 {
+		delete(r.renamed, hash)
+		delete(r.roomRenamed, hash)
+	}
+	r.renameMu.Unlock()
+	for key := range keep {
+		r.claims[key] = hash
+	}
 }
 
 // A batch either claims all names or none. The optional transaction callback
@@ -276,18 +316,24 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 		if valid && r.revoked[hash] {
 			return "", errOnlineOwnerRevoked
 		}
-		if !valid || !r.owners[hash] {
+		if !valid || !r.activeOwnerLocked(hash) {
 			return "", errOnlineOwnerInvalid
 		}
+	}
+	if err := r.expireAccountsLocked(); err != nil {
+		return "", err
 	}
 	seen := make(map[string]bool, len(names))
 	if err := reservedCallsigns(names); err != nil {
 		return "", err
 	}
+	if err := r.immutableNamesLocked(hash, names); err != nil {
+		return "", err
+	}
 	var conflicts []callsignConflict
 	for i, name := range names {
 		key := canonicalCallsign(name)
-		owner, claimed := r.claims[key]
+		owner, claimed := r.callsignOwnerLocked(key)
 		if key == "" || seen[key] || claimed && owner != hash {
 			conflicts = append(conflicts, callsignConflict{i, cleanCallsign(name)})
 		}
@@ -305,6 +351,12 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 		}
 		defer tx.Rollback()
 		if _, err = tx.Exec("INSERT OR IGNORE INTO online_owners(token_hash) VALUES(?)", hash); err != nil {
+			return "", err
+		}
+		if err = r.writeAccountUseLocked(tx, hash); err != nil {
+			return "", err
+		}
+		if _, err = tx.Exec("DELETE FROM online_callsigns WHERE owner_hash=?", hash); err != nil {
 			return "", err
 		}
 		for _, name := range names {
@@ -329,17 +381,9 @@ func (r *onlineCallsignRegistry) claimWithCommit(token string, names []string, c
 		}
 	}
 	r.owners[hash] = true
+	r.lastUsed[hash] = r.now().Unix()
 	delete(r.generatedFresh, hash)
-	if r.names[hash] == nil {
-		r.names[hash] = make(map[string]string)
-	}
-	for _, name := range names {
-		key := canonicalCallsign(name)
-		if _, claimed := r.claims[key]; !claimed {
-			r.names[hash][key] = cleanCallsign(name)
-		}
-		r.claims[key] = hash
-	}
+	r.replaceNamesLocked(hash, names)
 	return token, nil
 }
 
@@ -393,7 +437,7 @@ func (a *App) callsignAvailability(w http.ResponseWriter, r *http.Request) {
 			hash, valid := r.owner(request.PublicToken)
 			localHash, localValid := publicTokenHash(request.LocalPublicToken)
 			r.mu.Lock()
-			if valid && localValid && rows[1].Reason != "reserved" && (!r.owners[localHash] || r.generatedFresh[localHash]) && !r.revoked[localHash] && r.claims[canonicalCallsign(rows[1].Name)] == hash {
+			if valid && localValid && rows[1].Reason != "reserved" && (!r.owners[localHash] || r.generatedFresh[localHash]) && !r.revoked[localHash] && func() bool { owner, _ := r.callsignOwnerLocked(canonicalCallsign(rows[1].Name)); return owner == hash }() {
 				rows[1].Available = true
 			}
 			r.mu.Unlock()

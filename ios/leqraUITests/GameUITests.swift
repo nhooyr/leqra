@@ -322,7 +322,7 @@ final class GameUITests: XCTestCase {
         let field = app.textFields["callsignField"]
         XCTAssertTrue(field.waitForExistence(timeout: 15))
         app.buttons["openAccount"].tap()
-        let reserved = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Reserved callsigns:'")).firstMatch
+        let reserved = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Callsign:'")).firstMatch
         XCTAssertTrue(reserved.waitForExistence(timeout: 10), "First-open names must be claimed under a durably saved account key")
         app.buttons["Close Account key"].tap()
         let primary = try XCTUnwrap(field.value as? String)
