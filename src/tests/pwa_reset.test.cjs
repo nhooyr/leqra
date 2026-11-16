@@ -63,7 +63,7 @@ test('reset includes a registration already in flight and blocks its later updat
  const h=boot();h.state.registerGate=deferred();await h.load();assert.equal(h.calls.register,1);
  const reset=h.window.leqraPWA.reset();h.state.registerGate.resolve();await reset;await h.flush();
  assert.ok(h.calls.unregister.length>=1);assert.equal(h.calls.update,0);assert.equal(h.calls.reload,0);assert.equal(h.timers.size,0);
- const updating=boot();updating.state.updateGate=deferred();await updating.load();assert.equal(updating.calls.update,1);await updating.window.leqraPWA.reset();updating.state.updateGate.resolve();await updating.flush();assert.equal(updating.calls.reload,0);assert.equal(updating.timers.size,0);
+ const updating=boot();await updating.load();updating.state.updateGate=deferred();updating.window.emit('online');await updating.flush();assert.equal(updating.calls.update,1);await updating.window.leqraPWA.reset();updating.state.updateGate.resolve();await updating.flush();assert.equal(updating.calls.reload,0);assert.equal(updating.timers.size,0);
 });
 
 test('reset cancels controller probes and pending reload retries without leaving timers behind',async()=>{

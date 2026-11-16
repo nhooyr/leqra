@@ -105,7 +105,7 @@ function boot({pageBuild = buildA, controllerBuild = buildA, latestBuild = build
     sw.controller = build ? worker(build, options) : null;
     await fire(sw, 'controllerchange');
   }
-  return {state, calls, window, document, navigator, sw, worker, timers, flush, advance, fire, changeController,
+  return {state, calls, window, document, navigator, sw, registration, worker, timers, flush, advance, fire, changeController,
     load: () => fire(window, 'load')};
 }
 
@@ -118,8 +118,22 @@ test('PWA discovers its build without HTTP caching and registers the stable work
   assert.equal(h.calls.fetch[0].options.cache, 'no-store');
   assert.ok(h.calls.fetch[0].options.signal instanceof AbortSignal);
   assert.deepEqual(JSON.parse(JSON.stringify(h.calls.register)), [{path: '/sw.js', options: {scope: '/', updateViaCache: 'none'}}]);
-  assert.equal(h.calls.update, 1);
+  assert.equal(h.calls.update, 0);
   assert.equal(h.calls.reload, 0);
+});
+
+test('a fresh stable registration is not updated again while replacing a legacy worker', async () => {
+  const h = boot();
+  h.sw.controller.scriptURL = 'https://leqra.test/assets/v0.0.1/sw.js';
+  h.registration.installing = h.worker(buildA);
+  h.registration.installing.scriptURL = 'https://leqra.test/sw.js';
+  await h.load();
+  assert.equal(h.calls.register.length, 1);
+  assert.equal(h.calls.update, 0, 'registration already fetched the installing replacement');
+  assert.equal(h.calls.reload, 0);
+  h.registration.installing = null;
+  await h.fire(h.window, 'online');
+  assert.equal(h.calls.update, 1, 'later checks must still update an existing registration');
 });
 
 test('PWA also starts when loaded after the window load event', async () => {
@@ -195,7 +209,7 @@ test('retained pages discover a new same-version build and reload only after its
   h.state.latestBuild = buildB;
   await h.advance(30000);
   await h.fire(h.window, 'pageshow');
-  assert.equal(h.calls.update, 2, 'a retained document checks the stable registration again');
+  assert.equal(h.calls.update, 1, 'a retained document checks the stable registration again');
   assert.equal(h.calls.register.length, 1);
   assert.equal(h.calls.reload, 0, 'server metadata alone cannot replace an incomplete worker');
   await h.changeController(buildB);
@@ -298,18 +312,27 @@ test('unavailable metadata and invalid build data cannot trigger an unsafe reloa
   }
 });
 
-test('failed worker registration, update and build probes leave the game usable', async () => {
-  for (const failure of ['register', 'update', 'probe', 'timeout']) {
+test('failed worker registration and build probes leave the game usable', async () => {
+  for (const failure of ['register', 'probe', 'timeout']) {
     const h = boot({controllerBuild: buildB, latestBuild: buildB});
     if (failure === 'register') h.state.registerError = Error('registration denied');
-    if (failure === 'update') h.state.updateError = Error('update network unavailable');
     if (failure === 'probe') h.sw.controller = h.worker(buildB, {error: true});
     if (failure === 'timeout') h.sw.controller = h.worker(buildB, {silent: true});
     await h.load();
     await h.advance(4000);
-    if (failure === 'update') assert.equal(h.calls.reload, 1, 'an already complete latest worker remains usable after an update-network error');
-    else assert.equal(h.calls.reload, 0, failure);
+    assert.equal(h.calls.reload, 0, failure);
   }
+});
+
+test('an existing complete worker remains usable after an update-network error', async () => {
+  const h = boot();
+  await h.load();
+  h.state.latestBuild = buildB;
+  h.sw.controller = h.worker(buildB);
+  h.state.updateError = Error('update network unavailable');
+  await h.fire(h.window, 'online');
+  assert.equal(h.calls.update, 1);
+  assert.equal(h.calls.reload, 1);
 });
 
 test('overlapping foreground events coalesce discovery rather than flooding registration', async () => {
@@ -321,7 +344,7 @@ test('overlapping foreground events coalesce discovery rather than flooding regi
   await h.flush();
   assert.equal(h.calls.fetch.length, 1);
   assert.equal(h.calls.register.length, 1);
-  assert.equal(h.calls.update, 1);
+  assert.equal(h.calls.update, 0);
 });
 
 

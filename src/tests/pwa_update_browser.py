@@ -22,7 +22,7 @@ from playwright.sync_api import expect, sync_playwright
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 SHELL_FILES = (
-    "theme.js", "theme.css", "style.css", "favicon.svg", "netcode.js", "game.js",
+    "theme.js", "theme.css", "style.css", "favicon.svg", "netcode.js", "game.js", "callsigns.js",
     "infinite-maze.js", "infinite.js", "pwa.js", "manifest.webmanifest", "sw.js",
 )
 ICON_FILES = (
