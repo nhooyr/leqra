@@ -4,59 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"image"
 	"image/png"
 	"maps"
-	"math"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
-
-// The tile is a linear gradient. Corner samples reconstruct its background
-// without coupling the artwork/safe-area regression to a particular palette.
-func checkMaskableArtwork(t *testing.T, im image.Image, size int) {
-	t.Helper()
-	var corners [4][3]float64
-	for i, point := range [][2]int{{0, 0}, {size - 1, 0}, {0, size - 1}, {size - 1, size - 1}} {
-		r, g, b, _ := im.At(point[0], point[1]).RGBA()
-		corners[i] = [3]float64{float64(r) / 257, float64(g) / 257, float64(b) / 257}
-	}
-	ink := 0
-	for y := 0; y < size; y++ {
-		v := float64(y) / float64(size-1)
-		for x := 0; x < size; x++ {
-			r, g, b, a := im.At(x, y).RGBA()
-			if a != 65535 {
-				t.Fatalf("transparent maskable pixel at %d,%d", x, y)
-			}
-			u := float64(x) / float64(size-1)
-			foreground := false
-			for channel, value := range [3]uint32{r, g, b} {
-				top := corners[0][channel]*(1-u) + corners[1][channel]*u
-				bottom := corners[2][channel]*(1-u) + corners[3][channel]*u
-				background := top*(1-v) + bottom*v
-				// Allow gradient rounding/antialiasing; meaningful foreground
-				// differs by more than ten 8-bit levels in at least one channel.
-				if math.Abs(float64(value)/257-background) > 10 {
-					foreground = true
-					break
-				}
-			}
-			if foreground {
-				ink++
-				dx, dy := (float64(x)+.5)/float64(size)-.5, (float64(y)+.5)/float64(size)-.5
-				if dx*dx+dy*dy > .4*.4 {
-					t.Fatalf("tank artwork outside maskable safe circle at %d,%d", x, y)
-				}
-			}
-		}
-	}
-	if ink < size*size/10 {
-		t.Fatal("maskable tank artwork is missing or unexpectedly small")
-	}
-}
 
 func TestCheckAppIconsRejectsInvalidExports(t *testing.T) {
 	if err := checkAppIcons(embeddedWeb); err != nil {
@@ -72,7 +26,7 @@ func TestCheckAppIconsRejectsInvalidExports(t *testing.T) {
 		web[dir+name] = &fstest.MapFile{Data: data}
 	}
 	for _, tc := range []struct{ name, icon, contents, want string }{
-		{"missing PNG", "icon-maskable-512.png", "", "required app icon"},
+		{"missing PNG", "icon-512.png", "", "required app icon"},
 		{"truncated PNG", "favicon-256.png", "\x89PNG\r\n\x1a\n", "invalid app icon"},
 		{"Git LFS pointer", "apple-touch-icon.png", "version https://git-lfs.github.com/spec/v1\n", "git lfs pull"},
 		{"legacy Git LFS pointer", "icon-192.png", "version https://hawser.github.com/spec/v1\n", "git lfs pull"},
@@ -180,7 +134,6 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 	sw := get(t, "sw.js").Body.String()
 	exports := map[string]int{
 		"icon-192.png": 192, "icon-512.png": 512, "icon-1024.png": 1024,
-		"icon-maskable-512.png": 512, "icon-maskable-1024.png": 1024,
 		"favicon-256.png": 256, "apple-touch-icon.png": 180, "apple-touch-icon-512.png": 512,
 	}
 	for name, size := range exports {
@@ -202,14 +155,28 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 			if !strings.Contains(sw, "BASE + '"+name+"'") {
 				t.Fatal("icon is missing from offline precache")
 			}
-			maskable := strings.Contains(name, "maskable")
-			opaque := maskable || strings.HasPrefix(name, "apple-touch")
+			opaque := strings.HasPrefix(name, "apple-touch")
 			_, _, _, alpha := im.At(0, 0).RGBA()
 			if opaque && alpha != 65535 || !opaque && alpha != 0 {
 				t.Fatalf("corner alpha = %d; opaque export = %v", alpha, opaque)
 			}
-			if maskable {
-				checkMaskableArtwork(t, im, size)
+			ink := 0
+			for y := 0; y < size; y++ {
+				for x := 0; x < size; x++ {
+					_, _, _, alpha := im.At(x, y).RGBA()
+					if opaque && alpha != 65535 {
+						t.Fatalf("transparent Apple icon pixel at %d,%d", x, y)
+					}
+					if !opaque && (x == 0 || y == 0 || x == size-1 || y == size-1) && alpha != 0 {
+						t.Fatalf("tank-only icon has a background at %d,%d", x, y)
+					}
+					if alpha > 0 {
+						ink++
+					}
+				}
+			}
+			if ink < size*size/10 {
+				t.Fatal("tank artwork is missing or unexpectedly small")
 			}
 		})
 	}
@@ -236,13 +203,17 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 			highResolution[icon.Purpose] = true
 		}
 	}
-	if !highResolution["any"] || !highResolution["maskable"] {
-		t.Fatal("manifest must offer high-resolution regular and maskable icons")
+	if !highResolution["any"] || highResolution["maskable"] {
+		t.Fatal("manifest must offer transparent artwork without a maskable background")
 	}
 
 	index := httptest.NewRecorder()
 	h.ServeHTTP(index, httptest.NewRequest("GET", "/", nil))
 	markup := strings.ReplaceAll(index.Body.String(), "?build="+index.Header().Get("X-Leqra-Build"), "")
+	brand := fmt.Sprintf(`<div class="brand-mark" aria-hidden="true"><img src="assets/v%s/favicon.svg" width="48" height="48" alt=""></div>`, version)
+	if !strings.Contains(markup, brand) {
+		t.Fatal("header must use the shared app icon rather than a separate tank drawing")
+	}
 	for _, link := range []string{
 		`favicon-256.png" type="image/png" sizes="256x256"`,
 		`favicon.svg" type="image/svg+xml" sizes="any"`,

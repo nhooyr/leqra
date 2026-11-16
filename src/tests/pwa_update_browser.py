@@ -27,7 +27,7 @@ SHELL_FILES = (
 )
 ICON_FILES = (
     "apple-touch-icon-512.png", "apple-touch-icon.png", "favicon-256.png",
-    "icon-1024.png", "icon-192.png", "icon-512.png", "icon-maskable-1024.png", "icon-maskable-512.png",
+    "icon-1024.png", "icon-192.png", "icon-512.png",
 )
 
 

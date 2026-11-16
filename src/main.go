@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version         = "5.3.0"
+	version         = "5.3.1"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -41,7 +41,7 @@ var embeddedWeb embed.FS
 
 var appIconPNGs = [...]string{
 	"apple-touch-icon-512.png", "apple-touch-icon.png", "favicon-256.png",
-	"icon-1024.png", "icon-192.png", "icon-512.png", "icon-maskable-1024.png", "icon-maskable-512.png",
+	"icon-1024.png", "icon-192.png", "icon-512.png",
 }
 
 var appShellFiles = [...]string{

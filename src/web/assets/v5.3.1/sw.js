@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v5.3.0';
+const VERSION = 'v5.3.1';
 const BUILD = self.LEQRA_BUILD || VERSION;
 const CACHE = 'leqra-app-' + BUILD;
 let resetting=false;
@@ -22,8 +22,6 @@ const SHELL = [
   BASE + 'icon-192.png',
   BASE + 'icon-512.png',
   BASE + 'icon-1024.png',
-  BASE + 'icon-maskable-512.png',
-  BASE + 'icon-maskable-1024.png',
   BASE + 'apple-touch-icon.png',
   BASE + 'apple-touch-icon-512.png'
 ];
