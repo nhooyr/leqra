@@ -1,6 +1,6 @@
 (() => {
 'use strict';
-const VERSION = 'v5.2.0';
+const VERSION = 'v5.2.1';
 const webOrigin=['http:', 'https:'].includes(location.protocol);
 let serviceWorker=null;
 try{if(webOrigin&&window.isSecureContext!==false)serviceWorker=navigator.serviceWorker;}catch(_){}
@@ -197,9 +197,11 @@ function checkUpdate(force=false) {
    const pending=serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'});registering=pending;
    try{registration=await pending;}finally{if(registering===pending)registering=null;}
    if(resetting){await Promise.allSettled([registration.active,registration.waiting,registration.installing].filter(Boolean).map(pauseWorkerWrites));await registration.unregister().catch(()=>{});return;}
+  }else{
+   // register() already fetched the new worker. Poll existing registrations
+   // without starting a second update while that replacement installs.
+   await registration.update().catch(() => {});
   }
-  if(resetting)return;
-  await registration.update().catch(() => {});
   if(resetting)return;
   await inspectController();
  })().catch(() => {}).finally(() => {checking = null;});
