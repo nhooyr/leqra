@@ -6,11 +6,33 @@ import (
 	"fmt"
 	"image/png"
 	"maps"
+	"math"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
+
+func TestIconOutlineFollowsBothTracks(t *testing.T) {
+	data, err := embeddedWeb.ReadFile("web/" + assetPath + "icon-1024.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	im, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sample just outside each track's long edge. The offset shadow extends
+	// beyond the lower track, so outlining the shadow misses that track edge.
+	for _, y := range []float64{-17.3, 18.3} {
+		xPixel := int((32 + y/math.Sqrt2) * 16)
+		yPixel := int((32 + y/math.Sqrt2) * 16)
+		r, g, b, a := im.At(xPixel, yPixel).RGBA()
+		if a < 60000 || r < 60000 || g < 60000 || b < 60000 {
+			t.Fatalf("track edge y=%g is not outlined in white: %d,%d,%d,%d", y, r, g, b, a)
+		}
+	}
+}
 
 func TestCheckAppIconsRejectsInvalidExports(t *testing.T) {
 	if err := checkAppIcons(embeddedWeb); err != nil {
@@ -160,23 +182,29 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 			if opaque && alpha != 65535 || !opaque && alpha != 0 {
 				t.Fatalf("corner alpha = %d; opaque export = %v", alpha, opaque)
 			}
-			ink := 0
+			ink, white := 0, 0
 			for y := 0; y < size; y++ {
 				for x := 0; x < size; x++ {
-					_, _, _, alpha := im.At(x, y).RGBA()
+					r, g, b, alpha := im.At(x, y).RGBA()
 					if opaque && alpha != 65535 {
 						t.Fatalf("transparent Apple icon pixel at %d,%d", x, y)
 					}
 					if !opaque && (x == 0 || y == 0 || x == size-1 || y == size-1) && alpha != 0 {
-						t.Fatalf("tank-only icon has a background at %d,%d", x, y)
+						t.Fatalf("outlined tank must have a transparent background at %d,%d", x, y)
 					}
 					if alpha > 0 {
 						ink++
+					}
+					if alpha > 45000 && r*65535/alpha > 55000 && g*65535/alpha > 55000 && b*65535/alpha > 55000 {
+						white++
 					}
 				}
 			}
 			if ink < size*size/10 {
 				t.Fatal("tank artwork is missing or unexpectedly small")
+			}
+			if white < size*size/1000 {
+				t.Fatal("tank must have a visible white outline")
 			}
 		})
 	}
