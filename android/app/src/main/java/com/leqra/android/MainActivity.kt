@@ -284,9 +284,9 @@ class MainActivity : Activity() {
         setContentView(root)
         header = row(this).apply { setPadding(dp(12), dp(5), dp(8), dp(5)) }
         val brand = row(this).apply { setPadding(0, 0, dp(8), 0) }
-        brandMark = NativeStyle.tankMark(this)
-        brand.add(brandMark, 32, 32, gap = 0)
-        val names = column(this).apply { setPadding(dp(7), 0, 0, 0) }
+        brandMark = NativeStyle.brandIcon(this)
+        brand.add(brandMark, 36, 36, gap = 0)
+        val names = column(this).apply { setPadding(dp(4), 0, 0, 0) }
         names.add(
             label(this, "leqra", 17f, text, true).apply { contentDescription = "leqra" },
             gap = 3,

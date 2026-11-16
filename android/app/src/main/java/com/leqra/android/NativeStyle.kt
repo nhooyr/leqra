@@ -314,6 +314,13 @@ internal object NativeStyle {
             override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
         }
 
+    fun brandIcon(context: Context): ImageView =
+        ImageView(context).apply {
+            setImageResource(R.drawable.brand_icon)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+
     fun tankMark(context: Context): View =
         object : View(context) {
                 private val ink = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)

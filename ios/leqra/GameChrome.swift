@@ -9,14 +9,16 @@ struct GameHeader: View {
     var body: some View {
         HStack(spacing: compact ? 4 : 8) {
             HStack(spacing: compact ? 4 : 8) {
-                if !compact {
-                    TankMark().padding(4).background(WebStyle.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(WebStyle.accent.opacity(0.3), lineWidth: 1).allowsHitTesting(false)).rotationEffect(.degrees(-4))
+                HStack(spacing: 4) {
+                    if !compact {
+                        Image("BrandIcon").renderingMode(.original).resizable().scaledToFit()
+                            .frame(width: 36, height: 36).accessibilityHidden(true)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("leqra").font(.system(size: 17, weight: .black)).foregroundStyle(WebStyle.text)
+                        if !landscape { Text("TANK ARENA").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
+                    }.fixedSize(horizontal: true, vertical: false)
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("leqra").font(.system(size: 17, weight: .black)).foregroundStyle(WebStyle.text)
-                    if !landscape { Text("TANK ARENA").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
-                }.fixedSize(horizontal: true, vertical: false)
                 Link(destination: URL(string: "https://github.com/nhooyr/leqra")!) {
                     HStack(spacing: 4) {
                         GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
