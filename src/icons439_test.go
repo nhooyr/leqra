@@ -4,13 +4,59 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
 	"image/png"
 	"maps"
+	"math"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
+
+// The tile is a linear gradient. Corner samples reconstruct its background
+// without coupling the artwork/safe-area regression to a particular palette.
+func checkMaskableArtwork(t *testing.T, im image.Image, size int) {
+	t.Helper()
+	var corners [4][3]float64
+	for i, point := range [][2]int{{0, 0}, {size - 1, 0}, {0, size - 1}, {size - 1, size - 1}} {
+		r, g, b, _ := im.At(point[0], point[1]).RGBA()
+		corners[i] = [3]float64{float64(r) / 257, float64(g) / 257, float64(b) / 257}
+	}
+	ink := 0
+	for y := 0; y < size; y++ {
+		v := float64(y) / float64(size-1)
+		for x := 0; x < size; x++ {
+			r, g, b, a := im.At(x, y).RGBA()
+			if a != 65535 {
+				t.Fatalf("transparent maskable pixel at %d,%d", x, y)
+			}
+			u := float64(x) / float64(size-1)
+			foreground := false
+			for channel, value := range [3]uint32{r, g, b} {
+				top := corners[0][channel]*(1-u) + corners[1][channel]*u
+				bottom := corners[2][channel]*(1-u) + corners[3][channel]*u
+				background := top*(1-v) + bottom*v
+				// Allow gradient rounding/antialiasing; meaningful foreground
+				// differs by more than ten 8-bit levels in at least one channel.
+				if math.Abs(float64(value)/257-background) > 10 {
+					foreground = true
+					break
+				}
+			}
+			if foreground {
+				ink++
+				dx, dy := (float64(x)+.5)/float64(size)-.5, (float64(y)+.5)/float64(size)-.5
+				if dx*dx+dy*dy > .4*.4 {
+					t.Fatalf("tank artwork outside maskable safe circle at %d,%d", x, y)
+				}
+			}
+		}
+	}
+	if ink < size*size/10 {
+		t.Fatal("maskable tank artwork is missing or unexpectedly small")
+	}
+}
 
 func TestCheckAppIconsRejectsInvalidExports(t *testing.T) {
 	if err := checkAppIcons(embeddedWeb); err != nil {
@@ -163,28 +209,7 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 				t.Fatalf("corner alpha = %d; opaque export = %v", alpha, opaque)
 			}
 			if maskable {
-				ink := 0
-				for y := 0; y < size; y++ {
-					for x := 0; x < size; x++ {
-						r, g, b, a := im.At(x, y).RGBA()
-						if a != 65535 {
-							t.Fatalf("transparent maskable pixel at %d,%d", x, y)
-						}
-						if r > 18*257 {
-							t.Fatalf("unexpected light/white raster artifact at %d,%d", x, y)
-						}
-						if g > 80*257 || b > 80*257 {
-							ink++
-							dx, dy := (float64(x)+.5)/float64(size)-.5, (float64(y)+.5)/float64(size)-.5
-							if dx*dx+dy*dy > .4*.4 {
-								t.Fatalf("tank artwork outside maskable safe circle at %d,%d", x, y)
-							}
-						}
-					}
-				}
-				if ink < size*size/10 {
-					t.Fatal("maskable tank artwork is missing or unexpectedly small")
-				}
+				checkMaskableArtwork(t, im, size)
 			}
 		})
 	}
