@@ -3,8 +3,9 @@
 
 From the repository root: ./scripts/gen-icons.sh
 Requires the Inkscape command-line renderer; no source PNG is resized. Outputs
-default to the server's current versioned asset directory. The maskable version
-keeps the established 70% artwork scale on an opaque, full-bleed background.
+default to the server's current versioned asset directory and synchronize the
+native app icons. --output-dir exports only web previews. Maskable artwork keeps
+its established 70% scale over the unscaled, opaque background.
 """
 
 import argparse
@@ -15,6 +16,41 @@ import shutil
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
+
+
+NS = "{http://www.w3.org/2000/svg}"
+
+
+def opaque_icon(svg, maskable=False):
+    icon = copy.deepcopy(svg)
+    background = icon.find(".//*[@id='icon-background']")
+    tank = icon.find(".//*[@id='tank']")
+    if background is None or tank is None:
+        raise ValueError("favicon.svg requires icon-background and tank elements")
+    # The operating system supplies its own corner mask. Keep the gradient
+    # full-bleed rather than compositing rounded corners onto a flat color.
+    background.attrib.pop("rx", None)
+    background.attrib.pop("ry", None)
+    if maskable:
+        left, top, width, height = map(float, icon.attrib["viewBox"].split())
+        cx, cy = left + width / 2, top + height / 2
+        parent = next(node for node in icon.iter() if tank in list(node))
+        wrapper = ET.Element(NS + "g", {
+            "transform": f"translate({cx:g} {cy:g}) scale(.7) translate({-cx:g} {-cy:g})",
+        })
+        index = list(parent).index(tank)
+        parent.remove(tank)
+        parent.insert(index, wrapper)
+        wrapper.append(tank)
+    return icon
+
+
+def render(inkscape, source, output, size, rgb=False):
+    subprocess.run([inkscape, str(source), "--export-area-page", "--export-type=png",
+                    f"--export-filename={output}", f"--export-width={size}",
+                    f"--export-height={size}", "--export-background-opacity=0",
+                    f"--export-png-color-mode={'RGB_8' if rgb else 'RGBA_8'}"], check=True)
+    print(f"{output.name}: {size}x{size} directly from SVG")
 
 
 def main():
@@ -30,38 +66,30 @@ def main():
     assets = root / "src/web/assets" / ("v" + version)
     source = assets / "favicon.svg"
     svg = ET.fromstring(source.read_text())
-    ns = "{http://www.w3.org/2000/svg}"
-    styles = " ".join(node.text or "" for node in svg.iter(ns + "style"))
-    background = re.search(r"\.bg\s*\{\s*fill:\s*(#[0-9a-fA-F]+)", styles).group(1)
     output = (args.output_dir or assets).resolve()
     output.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="leqra-icons-") as temporary:
-        # Embed the original SVG unchanged at the same 70% scale as the existing
-        # maskable icon. Render its transparent corners onto the dark background.
-        mask = ET.Element(ns + "svg", {"viewBox": svg.attrib["viewBox"]})
-        left, top, width, height = map(float, svg.attrib["viewBox"].split())
-        ET.SubElement(mask, ns + "rect", {"x": str(left), "y": str(top),
-                     "width": str(width), "height": str(height), "fill": background})
-        artwork = copy.deepcopy(svg)
-        artwork.attrib.update(x=str(left + width * .15), y=str(top + height * .15),
-                              width=str(width * .7), height=str(height * .7))
-        mask.append(artwork)
+        opaque_source = Path(temporary) / "opaque.svg"
         mask_source = Path(temporary) / "maskable.svg"
         ET.register_namespace("", "http://www.w3.org/2000/svg")
-        ET.ElementTree(mask).write(mask_source, encoding="utf-8", xml_declaration=True)
+        ET.ElementTree(opaque_icon(svg)).write(opaque_source, encoding="utf-8", xml_declaration=True)
+        ET.ElementTree(opaque_icon(svg, maskable=True)).write(mask_source, encoding="utf-8", xml_declaration=True)
 
-        exports = [(f"icon-{size}.png", source, size, False) for size in (192, 512, 1024)]
-        exports += [(f"icon-maskable-{size}.png", mask_source, size, True) for size in (512, 1024)]
-        exports += [("favicon-256.png", source, 256, False),
-                    ("apple-touch-icon.png", source, 180, True),
-                    ("apple-touch-icon-512.png", source, 512, True)]
-        for name, vector, size, opaque in exports:
-            subprocess.run([inkscape, str(vector), "--export-area-page", "--export-type=png",
-                            f"--export-filename={output / name}", f"--export-width={size}",
-                            f"--export-height={size}", f"--export-background={background}",
-                            f"--export-background-opacity={1 if opaque else 0}"], check=True)
-            print(f"{name}: {size}x{size} directly from SVG")
+        exports = [(f"icon-{size}.png", source, size) for size in (192, 512, 1024)]
+        exports += [(f"icon-maskable-{size}.png", mask_source, size) for size in (512, 1024)]
+        exports += [("favicon-256.png", source, 256),
+                    ("apple-touch-icon.png", opaque_source, 180),
+                    ("apple-touch-icon-512.png", opaque_source, 512)]
+        for name, vector, size in exports:
+            render(inkscape, vector, output / name, size)
+
+        if args.output_dir is None:
+            ios = root / "ios/leqra/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+            android = root / "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
+            render(inkscape, opaque_source, ios, 1024, rgb=True)
+            shutil.copyfile(output / "icon-maskable-1024.png", android)
+            print("Native iOS and Android icons synchronized")
 
 
 if __name__ == "__main__":

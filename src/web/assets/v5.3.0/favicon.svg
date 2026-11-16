@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+ <defs>
+  <linearGradient id="tile" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+   <stop stop-color="#bdc4ff"/>
+   <stop offset="1" stop-color="#8295ee"/>
+  </linearGradient>
+ </defs>
+ <style>.bg{fill:url(#tile)}</style>
+ <rect id="icon-background" class="bg" width="64" height="64" rx="14"/>
+ <!-- In-game paintTankHull / paintTankTurret geometry, track frame 0. -->
+ <g id="tank" transform="translate(32 32) rotate(-45)">
+  <rect x="-20" y="-11" width="40" height="31" rx="6" fill="#02080b" fill-opacity=".6588"/>
+  <g fill="#0b1116">
+   <rect x="-19" y="-17" width="37" height="9" rx="3"/>
+   <rect x="-19" y="9" width="37" height="9" rx="3"/>
+  </g>
+  <path d="M-16-16v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6M-16 10v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6m5-6v6" fill="none" stroke="#849392" stroke-opacity=".65" stroke-width="1"/>
+  <rect x="-17" y="-12" width="34" height="24" rx="5" fill="#32c5ff"/>
+  <rect x="-15" y="-10" width="7" height="20" rx="2" fill="#000000" fill-opacity=".1882"/>
+  <path d="M-12-10h24" fill="none" stroke="#ffffff" stroke-opacity=".3451" stroke-width="1"/>
+  <rect x="-12" y="-6" width="3" height="12" fill="#0c1518" fill-opacity=".4"/>
+  <rect x="4" y="-4.5" width="26" height="9" rx="2" fill="#0a121a"/>
+  <rect x="5" y="-3" width="23" height="6" fill="#32c5ff"/>
+  <rect x="26" y="-3.5" width="3" height="7" fill="#e4f0d9" fill-opacity=".5412"/>
+  <circle cx="0" cy="2" r="9.5" fill="#000000" fill-opacity=".2588"/>
+  <circle cx="0" cy="0" r="9" fill="#32c5ff" stroke="#091219" stroke-opacity=".4392" stroke-width="2"/>
+  <circle cx="-1" cy="0" r="3.2" fill="#172124"/>
+ </g>
+</svg>
