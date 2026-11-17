@@ -51,7 +51,7 @@ It's also a sequel to my high school computer science capstone from 2017:
 - Quick tour on first startup.
 - A second local player.
 - Mobile & PWA support.
-- wip [iOS](./ios) & [android](./android) ports.
+- [iOS](./ios) & [android](./android) ports. Both will be published on their respective app stores soon.
 - Managed deployments to minimize downtime.
 
 ## Getting Started
