@@ -2604,12 +2604,11 @@ class MainActivity : Activity() {
 
     private fun showQuickTour() {
         if (quickTourDialog != null) return
-        val paired = if (session.online) session.localID2 != null else session.localSelected
         val mode =
             if (session.screen == Screen.READY && (session.room?.optBoolean("infinityPublic") ?: session.publicSelected))
                 "infinity"
             else session.mode
-        val shown = QuickTour(this, paired, modeHelp(mode))
+        val shown = QuickTour(this, modeHelp(mode))
         quickTourDialog = shown
         shown.setOnCancelListener {
             getSharedPreferences("leqra-settings", MODE_PRIVATE).edit().putBoolean(QUICK_TOUR_SEEN, true).apply()

@@ -11,9 +11,9 @@ function declaration(name){
 function boot(p2=false,stored=null){
  const storage=new Map(stored?[['leqra.bindings.v1',JSON.stringify(stored)]]:[]);
  const pilots=[{name:'Lead',color:'#32c5ff'},{name:'Wing',color:'#ff83bd'}];
- const sandbox={phase:'playing',mode:'room',combatPrefs:{mouseAim:true,mouseFire:true},window:{},pilots,COLORS:pilots.map(p=>p.color),tanks:[],paintColor:c=>c,roomMember:id=>pilots[id],secondaryMember:()=>p2?pilots[1]:null,localPlayerID:()=>0,secondaryID:()=>1,savedLocalCallsign:()=>pilots[1].name,teamColor:id=>pilots[id].color,infinityPlayMode:()=>'',keys:new Set(),hasLocalP2:()=>p2,modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
+ const sandbox={phase:'playing',mode:'room',combatPrefs:{mouseAim:true,mouseFire:true},navigator:{},UA:'',IOS_WEBKIT:false,touchUI:false,window:{},pilots,COLORS:pilots.map(p=>p.color),tanks:[],paintColor:c=>c,roomMember:id=>pilots[id],secondaryMember:()=>p2?pilots[1]:null,localPlayerID:()=>0,secondaryID:()=>1,savedLocalCallsign:()=>pilots[1].name,teamColor:id=>pilots[id].color,infinityPlayMode:()=>'',keys:new Set(),hasLocalP2:()=>p2,modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
  vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],sandbox);
- for(const name of ['hardwareUsesP2','pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['hardwareUsesP2','pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','introTourUsesTouchOnly','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
  sandbox.bindings=sandbox.loadBindings();sandbox.storage=storage;return sandbox;
 }
 function assign(s,player,action,code){s.bindings[player][action]=code;assert.ok(s.validateBindings(s.bindings),'the controls editor accepts this remap');}
@@ -24,25 +24,47 @@ function owner(s,action,code,expected){
   assert.equal(s.heldAction(player,action),player===expected,code+' held owner');
  }
 }
+const pointers=(...supported)=>query=>({matches:supported.includes(query)});
 function tour(s){
  const nodes=new Map();s.$=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,previousElementSibling:{hidden:false},setAttribute(k,v){this[k]=v;}});return nodes.get(id);};
- s.$('bindingGrid').querySelectorAll=()=>[];s.window.matchMedia=()=>({matches:true});s.syncControlIdentities();s.syncIntroTourControls();return s.$;
+ s.$('bindingGrid').querySelectorAll=()=>[];s.window.matchMedia??=pointers('(any-pointer: fine)');s.syncControlIdentities();s.syncIntroTourControls();return s.$;
 }
 const keycaps=html=>[...html.matchAll(/<kbd(?:\s[^>]*)?>(.*?)<\/kbd>/g)].map(match=>match[1]);
 
-test('paired touch-device help identifies P1 touch and P2 keyboard/mouse with both layouts',()=>{
- const s=boot(true);s.navigator={maxTouchPoints:5};
+test('paired touchscreen desktop tour uses the active hardware bindings',()=>{
+ const s=boot(true);s.navigator={maxTouchPoints:5};s.touchUI=true;
  for(const code of ['KeyW','ArrowUp'])owner(s,'forward',code,1);
  for(const code of ['KeyQ','KeyC','Space','Enter'])owner(s,'fire',code,1);
  assert.deepEqual(Object.keys(s.controlKeyMap(0)),[]);
  assert.match(s.pilotControlHint(0),/Lead \(P1\).*Drag the stick/);
  assert.match(s.pilotControlHint(1),/Wing \(P2\).*Mouse Aim/);
  const $=tour(s);assert.deepEqual(keycaps($('introTourMoveKeys').innerHTML),['W','↑','A','←','S','↓','D','→']);
- assert.equal($('introTourKeyboard')['aria-label'],'Keyboard controls for Wing (P2)');
- assert.equal($('introTourTouch')['aria-label'],'Touch controls for Lead (P1)');
+ assert.equal($('introTourTouch').hidden,true);
  assert.equal($('p1MouseFireEnabled')['aria-label'],'Mouse fire for Wing (P2)');
  const solo=boot();solo.navigator={maxTouchPoints:5};owner(solo,'forward','KeyW',0);owner(solo,'forward','ArrowUp',0);
  assert.match(solo.pilotControlHint(1,'',false,true),/Mouse Aim/,'Infinity can supply its own paired roster');
+});
+
+test('mobile tour shows touch only even with paired pilots and a fine pointer',()=>{
+ for(const device of ['iPad in desktop mode','Android browser','Android desktop site','coarse primary pointer']){
+  const s=boot(true);s.navigator.maxTouchPoints=5;
+  s.window.matchMedia=pointers('(any-pointer: fine)');
+  if(device==='iPad in desktop mode')s.IOS_WEBKIT=true;
+  if(device==='Android browser')s.UA='Mozilla/5.0 (Linux; Android 15)';
+  if(device==='Android desktop site')s.navigator.userAgentData={mobile:false,platform:'Android'};
+  if(device==='coarse primary pointer')s.window.matchMedia=pointers('(pointer: coarse)','(any-pointer: fine)');
+  const $=tour(s);
+  assert.equal($('introTourTouch').hidden,false,device);
+  assert.equal($('introTourKeyboard').hidden,true,device);
+  assert.equal($('introTourDesktop').hidden,true,device);
+ }
+});
+
+test('narrow fine-pointer desktop shows only keyboard and mouse tour help',()=>{
+ const s=boot();s.touchUI=true;const $=tour(s);
+ assert.equal($('introTourTouch').hidden,true);
+ assert.equal($('introTourKeyboard').hidden,false);
+ assert.equal($('introTourDesktop').hidden,false);
 });
 
 test('tour keyboard hints use themed keycaps and current aliases without advertising the active co-pilot keys',()=>{
@@ -60,9 +82,22 @@ test('tour keyboard hints use themed keycaps and current aliases without adverti
  for(const key of ['W','A','S','D','Q','C','↑','←','↓','→'])assert.equal([...keycaps($('introTourMoveKeys').innerHTML),...keycaps($('introTourFireKeys').innerHTML)].includes(key),false,'retired binding '+key+' is absent');
 });
 
-test('tour names and key labels escape HTML while sharing the control keycap renderer',()=>{
- const s=boot();s.pilots[0].name='<Lead & co>';const $=tour(s);
- assert.ok($('introTourPilot').innerHTML.includes('&lt;Lead &amp; co&gt; (P1)'));assert.equal($('introTourPilot').innerHTML.includes('<Lead'),false);
+test('tour omits player identities and names its sections by input device',()=>{
+ const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
+ const dialog=html.match(/<dialog id="introTourDialog"[\s\S]*?<\/dialog>/)?.[0];
+ assert.ok(dialog);
+ assert.doesNotMatch(dialog,/introTourPilot|\bP[12]\b/i);
+ const s=boot(true);s.navigator.maxTouchPoints=5;const $=tour(s);
+ for(const [section,title]of [['Touch','Touch'],['Keyboard','Keyboard'],['Desktop','Mouse']]){
+  const id='introTour'+section;
+  assert.ok(dialog.includes(`<section id="${id}" aria-labelledby="introTour${title}Title">`));
+  assert.ok(dialog.includes(`<h3 id="introTour${title}Title">${title}</h3>`));
+  assert.equal($(id)['aria-label'],undefined);
+ }
+});
+
+test('tour keycaps escape their labels and use the shared control keycap renderer',()=>{
+ const s=boot();
  const key=s.controlKeyHTML(['Key<script>','Key&']);assert.deepEqual(keycaps(key),['&lt;SCRIPT&gt;','&amp;']);assert.equal(key.includes('<SCRIPT>'),false);assert.ok(key.includes('class="control-alias">/</span>'));
  assert.equal(s.controlKeyHTML(['KeyQ','KeyC']),s.controlKeycapsHTML(['<kbd>Q</kbd>','<kbd>C</kbd>']));
 });
@@ -265,7 +300,7 @@ test('mouse hints come after keyboard Fire and disappear without changing keyboa
   assert.ok(hint.includes('<kbd>Q</kbd>'));assert.ok(hint.includes('<kbd>C</kbd>'));
  }
 });
-test('open controls and tour identities refresh without replacing an active binding capture',()=>{
+test('open controls refresh identities without replacing an active binding capture',()=>{
  const s=boot(),nodes=new Map(),headings=[{},{}],buttons=[0,1].map(()=>({dataset:{actionLabel:'Forward'},textContent:'PRESS KEY',setAttribute(k,v){this[k]=v;}}));
  const sections=headings.map((heading,index)=>({querySelector:()=>heading,querySelectorAll:()=>[buttons[index]]}));
  s.$=id=>{if(!nodes.has(id))nodes.set(id,{setAttribute(k,v){this[k]=v;}});return nodes.get(id);};
@@ -277,9 +312,8 @@ test('open controls and tour identities refresh without replacing an active bind
  s.syncControlIdentities();
  assert.ok(headings[0].innerHTML.includes('color:#ffc46b'));assert.ok(headings[0].innerHTML.includes('Renamed (P1)'));
  assert.ok(headings[1].innerHTML.includes('Wing (P2)'));assert.equal(buttons[1]['aria-label'],'Rebind Wing (P2) Forward');
- assert.equal(buttons[0].textContent,'PRESS KEY');assert.equal(s.$('introTourKeyboard')['aria-label'],'Keyboard controls for Renamed (P1)');
- assert.ok(s.$('introTourPilot').innerHTML.includes('Renamed (P1)'));
- s.window.matchMedia=()=>({matches:true});s.syncControlIdentities();
+ assert.equal(buttons[0].textContent,'PRESS KEY');
+ s.window.matchMedia=pointers('(any-pointer: fine)');s.syncControlIdentities();
  assert.equal(s.$('p1MouseAimEnabled').checked,true);assert.equal(s.$('p1MouseFireEnabled').checked,true);assert.equal(s.$('introTourDesktop').hidden,false);
  assert.equal(s.$('p1MouseAimEnabled')['aria-label'],'Mouse aim for Renamed (P1)');
  s.combatPrefs.mouseAim=false;s.combatPrefs.mouseFire=false;s.syncControlIdentities();

@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.6.0';
+const GAME_VERSION='5.6.1';
 const GAME_PROTOCOL=1;
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
@@ -4244,6 +4244,9 @@ function fieldManualHTML(){
  html+='<div class="warning"><b>'+escapeHTML(infinity?(infinity.title||'Infinity').toUpperCase():publicPreview?'PUBLIC INFINITY':modeLabel())+'</b><br>'+escapeHTML(infinity?infinity.instructions:publicPreview?'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after 1 second. Keep playing and growing your score without a time limit. All pilots compete individually.':modeInstructions())+'<br>Use Controls menu to change keys.</div>';
  return html;
 }
+function introTourUsesTouchOnly(){
+ return IOS_WEBKIT||/Android|Mobile/i.test(UA)||navigator.userAgentData?.mobile===true||navigator.userAgentData?.platform==='Android'||window.matchMedia?.('(pointer: coarse)').matches;
+}
 function syncControlIdentities(){
  const paired=controlPairActive(),hardwareP2=hardwareUsesP2(paired);
  if($('pauseInstructions'))$('pauseInstructions').innerHTML=pilotControlHint(0,'mouse')+(paired?pilotControlHint(1):'')+'<span class="control-device">'+escapeHTML(modeInstructions())+'</span>';
@@ -4252,12 +4255,13 @@ function syncControlIdentities(){
   section.querySelector('h3').innerHTML=alternate?'Alternate keyboard'+(hardwareP2?' for '+localPilotIdentityHTML(owner,null,paired):''):localPilotIdentityHTML(owner,null,paired);
   for(const button of section.querySelectorAll('[data-bind]'))button.setAttribute('aria-label','Rebind '+(alternate?'alternate keyboard':identity.label)+' '+button.dataset.actionLabel);
  }
- if($('introTourPilot'))$('introTourPilot').innerHTML=hardwareP2?'Touch: '+localPilotIdentityHTML(0,null,paired)+', keyboard and mouse: '+localPilotIdentityHTML(1,null,paired):localPilotIdentityHTML(0,null,paired);
  const identity=localPilotIdentity(hardwareP2?1:0,null,paired);
  for(const [id,key,label]of [['p1MouseAimEnabled','mouseAim','Mouse aim'],['p1MouseFireEnabled','mouseFire','Mouse fire']])if($(id)){$(id).checked=combatPrefs[key]!==false;$(id).setAttribute('aria-label',label+' for '+identity.label);}
- if($('introTourDesktop'))$('introTourDesktop').hidden=combatPrefs.mouseAim===false&&combatPrefs.mouseFire===false||!window.matchMedia?.('(any-pointer: fine)').matches;
+ const touchOnly=introTourUsesTouchOnly();
+ if($('introTourTouch'))$('introTourTouch').hidden=!touchOnly;
+ if($('introTourKeyboard'))$('introTourKeyboard').hidden=touchOnly;
+ if($('introTourDesktop'))$('introTourDesktop').hidden=touchOnly||combatPrefs.mouseAim===false&&combatPrefs.mouseFire===false||!window.matchMedia?.('(any-pointer: fine)').matches;
  for(const [id,disabled]of [['introTourMouseAim',combatPrefs.mouseAim===false],['introTourMouseFire',combatPrefs.mouseFire===false]])if($(id)){$(id).hidden=disabled;if($(id).previousElementSibling)$(id).previousElementSibling.hidden=disabled;}
- for(const [id,device]of [['introTourDesktop','Mouse'],['introTourTouch','Touch'],['introTourKeyboard','Keyboard']])$(id)?.setAttribute('aria-label',device+' controls for '+(id==='introTourTouch'?localPilotIdentity(0,null,paired).label:identity.label));
 }
 function renderBindings(){
  const grid=$('bindingGrid');grid.replaceChildren();
@@ -4929,8 +4933,6 @@ function initIntroTour(){
   $('introTourTitle').focus({preventScroll:true});dialog.scrollTop=0;
  }
  function open(){
-  $('introTourDesktop').hidden=combatPrefs.mouseAim===false&&combatPrefs.mouseFire===false||!window.matchMedia('(any-pointer: fine)').matches;
-  $('introTourTouch').hidden=!touchUI;
   syncIntroTourControls();
   syncControlIdentities();
   openFeature('introTour');showStep(0);
