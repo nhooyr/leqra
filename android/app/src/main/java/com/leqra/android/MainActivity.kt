@@ -1534,7 +1534,7 @@ class MainActivity : Activity() {
             })
         })
         panel.add(label(this, "Display rate adapts to the screen, power, temperature, and Android settings.", 11f, soft))
-        panel.add(label(this, "Native protocol ${BuildConfig.VERSION_NAME}", 11f, muted, mono = true))
+        panel.add(label(this, "App version ${BuildConfig.VERSION_NAME}", 11f, muted, mono = true))
         val reopenControls = { showControls(returnToPause) }
         panel.add(button(this, "ACCOUNT KEY", { showAccount(0, returnToPause = false, onClose = reopenControls) }))
         panel.add(button(this, "P2 ACCOUNT KEY", { showAccount(1, returnToPause = false, onClose = reopenControls) }))

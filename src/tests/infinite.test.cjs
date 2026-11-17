@@ -90,7 +90,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  document.createElement = tag => Object.assign(new Element(),{tagName:tag.toUpperCase()});
  document.querySelector = selector => selector === 'dialog[open]' && [...elements.values()].find(element => element.open);
  const window = new Element();
- window.leqra = {version: '9.1.0'};
+ window.leqra = {version: '9.1.0', protocol: 1};
  window.matchMedia = () => ({matches: false});
  const sounds = [], loadouts = [], markers = [], labels = [], strokes = [], rings = [], frameSamples = [], bulletDraws = [], combatPrefs = {visual:true,audio:true,fps:false};
  let chatOpen = false;
@@ -1772,6 +1772,27 @@ test('Infinity ignores round endings and separates tank destruction from grenade
  infinity.close();
 });
 
+test('Infinity refuses a breaking protocol without retrying or accepting a welcome', () => {
+ for (const code of [undefined, 'version_mismatch']) {
+  const {infinity, byID, sockets, state, elapse} = harness();
+  const notices = [];
+  infinity.start('online', {name:'Explorer', code:'forest', token:'test-token', onProtocolMismatch:message=>notices.push(message)});
+  const [socket] = sockets;
+  socket.emit('open');
+  assert.equal(socket.sent[0].protocol, 1);
+  socket.receive(code ? {type:'error', action:'version', code, message:'Reload required', protocol:2}
+    : {type:'welcome', version:'9.1.0', protocol:2, id:7, seed:0});
+  assert.equal(state().welcomed, undefined);
+  assert.equal(state().failed, true);
+  assert.equal(socket.readyState, 3);
+  assert.equal(byID('infiniteRetry').hidden, true);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /Reload/);
+  elapse(20000);
+  assert.equal(sockets.length, 1);
+ }
+});
+
 test('private Infinity sends room credentials, honors keyboard remaps, and uses the authoritative leaderboard', () => {
  const {infinity, byID, sockets, advance} = harness();
  infinity.start('online', {
@@ -1782,8 +1803,8 @@ test('private Infinity sends room credentials, honors keyboard remaps, and uses 
  const arena = byID('infiniteArena');
  assert.equal(socket.url, 'wss://example.test/ws/infinite');
  socket.emit('open');
- assert.deepEqual(socket.sent[0], {type: 'join', version: '9.1.0', name: 'Explorer', code: 'forest', token: 'test-token', updateNames:true});
- socket.receive({type: 'welcome', id: 7, seed: 0});
+ assert.deepEqual(socket.sent[0], {type: 'join', version: '9.1.0', protocol: 1, name: 'Explorer', code: 'forest', token: 'test-token', updateNames:true});
+ socket.receive({type: 'welcome', version: '9.2.0', protocol: 1, id: 7, seed: 0});
  advance();
  assert.equal(socket.sent.length, 1);
  const pilot = {id: 7, name: 'Explorer', score: -1, hp: 0, x: 42, y: 42, angle: 0, colorIndex:0};
@@ -1843,7 +1864,7 @@ test('private Infinity automatically resumes both paused seats and ignores old i
  const [,duplicate]=sockets;
  duplicate.emit('open');
  assert.deepEqual(duplicate.sent[0],{
-  type:'join',version:'9.1.0',name:'Saved pilot',code:'forest',token:'secret',resume:true,generation:3,
+  type:'join',version:'9.1.0',protocol:1,name:'Saved pilot',code:'forest',token:'secret',resume:true,generation:3,
  });
  duplicate.receive({type:'error',code:'session_active',message:'Duplicate connection'});
  elapse(900);

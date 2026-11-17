@@ -8,7 +8,7 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 function target(properties={}){const listeners=new Map();return Object.assign(properties,{addEventListener(type,listener){const all=listeners.get(type)||[];all.push(listener);listeners.set(type,all);},removeEventListener(type,listener){listeners.set(type,(listeners.get(type)||[]).filter(value=>value!==listener));},emit(type,properties={}){for(const listener of [...listeners.get(type)||[]])listener({type,...properties});}});}
 function boot({protocol='https:',supported=true,cacheSupport=true,controllerBuild=buildA,legacyWorker=false}={}){
  let now=0,nextTimer=0;const timers=new Map(),ports=[],calls={fetch:[],register:0,update:0,unregister:[],reset:[],deleted:[],keys:0,discovery:0,reload:0,prepare:0};
- const state={latestBuild:buildA,fetchGate:null,registerGate:null,updateGate:null,unregisterError:false,cacheError:'',discoveryError:false,silentBuild:false};
+ const state={latestBuild:buildA,serverProtocol:1,fetchGate:null,registerGate:null,updateGate:null,unregisterError:false,cacheError:'',discoveryError:false,silentBuild:false};
  const schedule=(callback,delay,interval=0)=>{const id=++nextTimer;timers.set(id,{callback,at:now+delay,interval});return id;};
  class Channel{constructor(){this.port1={closed:false,onmessage:null,close(){this.closed=true;}};this.port2={closed:false,close(){this.closed=true;},postMessage:data=>{if(!this.port1.closed)this.port1.onmessage?.({data});}};ports.push(this.port1,this.port2);}}
  const worker=scriptURL=>({scriptURL,postMessage(message,reply){if(message.type==='LEQRA_BUILD_INFO'){if(!state.silentBuild)queueMicrotask(()=>reply[0].postMessage({build:controllerBuild}));}else if(message.type==='LEQRA_RESET'){calls.reset.push(scriptURL);if(!legacyWorker)queueMicrotask(()=>reply[0].postMessage({type:'LEQRA_RESET_DONE'}));}}});
@@ -17,11 +17,11 @@ function boot({protocol='https:',supported=true,cacheSupport=true,controllerBuil
  const sw=target({controller:own.active,async getRegistrations(){calls.discovery++;if(state.discoveryError)throw Error('denied');return registrations;},async register(){calls.register++;if(state.registerGate)await state.registerGate.promise;return own;}});
  const storage={async keys(){calls.keys++;if(state.cacheError==='keys')throw Error('denied');return[...cacheNames];},delete(name){calls.deleted.push(name);if(state.cacheError===name)throw Error('denied');cacheNames.delete(name);return Promise.resolve(true);}};
  const navigator={onLine:true,userAgent:'Desktop'};if(supported)navigator.serviceWorker=sw;
- const window=target({isSecureContext:true,leqra:{prepareUpdate(){calls.prepare++;return false;}}});if(cacheSupport)window.caches=storage;
+ const window=target({isSecureContext:true,leqra:{protocol:1,prepareUpdate(){calls.prepare++;return false;}}});if(cacheSupport)window.caches=storage;
  const document=target({hidden:false,readyState:'loading',querySelector:()=>({content:buildA})});
  vm.runInNewContext(source,{window,document,navigator,location:{protocol,href:protocol==='file:'?'file:///game/index.html':origin+'/',reload(){calls.reload++;}},URL,MessageChannel:Channel,AbortController,
   performance:{now:()=>now},setTimeout:(callback,delay)=>schedule(callback,delay),clearTimeout:id=>timers.delete(id),setInterval:(callback,delay)=>schedule(callback,delay,delay),clearInterval:id=>timers.delete(id),
-  fetch:async(_url,options)=>{calls.fetch.push(options);if(state.fetchGate)await state.fetchGate.promise;return{ok:true,json:async()=>({build:state.latestBuild})};},
+  fetch:async(_url,options)=>{calls.fetch.push(options);if(state.fetchGate)await state.fetchGate.promise;return{ok:true,json:async()=>({build:state.latestBuild,protocol:state.serverProtocol})};},
  });
  const flush=async()=>{for(let n=0;n<40;n++)await Promise.resolve();};
  async function advance(ms){const until=now+ms;for(let n=0;n<1000;n++){const next=[...timers].filter(([,timer])=>timer.at<=until).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;const[id,timer]=next;now=timer.at;if(timer.interval)timer.at+=timer.interval;else timers.delete(id);timer.callback();await flush();}now=until;await flush();}
@@ -67,8 +67,8 @@ test('reset includes a registration already in flight and blocks its later updat
 });
 
 test('reset cancels controller probes and pending reload retries without leaving timers behind',async()=>{
- const probe=boot();probe.state.latestBuild=buildB;probe.state.silentBuild=true;await probe.load();assert.ok(probe.ports.length>0);await probe.window.leqraPWA.reset();assert.equal(probe.timers.size,0);assert.ok(probe.ports.every(port=>port.closed));assert.equal(probe.calls.reload,0);
- const retry=boot({controllerBuild:buildB});retry.state.latestBuild=buildB;await retry.load();assert.ok(retry.calls.prepare>0);await retry.window.leqraPWA.reset();await retry.advance(120000);assert.equal(retry.calls.reload,0);assert.equal(retry.timers.size,0);
+ const probe=boot();probe.state.latestBuild=buildB;probe.state.serverProtocol=2;probe.state.silentBuild=true;await probe.load();assert.ok(probe.ports.length>0);await probe.window.leqraPWA.reset();assert.equal(probe.timers.size,0);assert.ok(probe.ports.every(port=>port.closed));assert.equal(probe.calls.reload,0);
+ const retry=boot({controllerBuild:buildB});retry.state.latestBuild=buildB;retry.state.serverProtocol=2;await retry.load();assert.ok(retry.calls.prepare>0);await retry.window.leqraPWA.reset();await retry.advance(120000);assert.equal(retry.calls.reload,0);assert.equal(retry.timers.size,0);
 });
 
 test('legacy worker reset acknowledgements have a bounded wait while cleanup still completes',async()=>{

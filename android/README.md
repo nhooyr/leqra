@@ -34,9 +34,9 @@ The debug APK is signed with the local Android debug key. `local.properties`
 and build output are ignored. No personal signing configuration, device
 identifiers or SDK paths belong in version control.
 
-The package version and online protocol handshake read `../scripts/version.sh`,
-which derives the version from `../src/main.go`. Build the Android app and server
-from the same release.
+The package version comes from `../scripts/version.sh`, which reads the release
+version in `../src/main.go`. Android and an updated server can use different
+releases while both support the same game protocol epoch.
 
 The build uses Gradle 9.9.1 and Android Gradle Plugin 9.5.1. The app uses the
 Android plugin's built-in Kotlin support; the shared JVM core uses Kotlin 2.4.21.
@@ -144,7 +144,7 @@ Use your development server's address on a physical phone. Release builds use
   -Pandroid.testInstrumentationRunnerArguments.server=http://10.0.2.2:8080
 ```
 
-The connected tests need a fresh local server of the same version. Use an
+Run the connected tests with a fresh local server built from this checkout. Use an
 isolated temporary `LEQRA_DATA` database, not a live leaderboard. Core regressions
 consume the shared Go/browser maze, steering and wall-launch fixtures. Tests
 cover all game modes, power combinations, high-speed motion, Starman load,

@@ -21,11 +21,11 @@ function target(properties = {}) {
   });
 }
 
-function boot({pageBuild = buildA, controllerBuild = buildA, latestBuild = buildA,
+function boot({pageBuild = buildA, controllerBuild = buildA, latestBuild = buildA, serverProtocol = 1,
   readyState = 'loading', protocol = 'https:', supported = true, secure = true, safe = true} = {}) {
   let now = 0, nextTimer = 0;
   const timers = new Map(), calls = {register: [], update: 0, fetch: [], probes: [], reload: 0, prepare: 0};
-  const state = {safe, latestBuild, fetchError: null, updateError: null, registerError: null, responseOK: true};
+  const state = {safe, latestBuild, serverProtocol, fetchError: null, updateError: null, registerError: null, responseOK: true};
   const schedule = (callback, delay, interval) => {
     const id = ++nextTimer;
     timers.set(id, {callback, at: now + delay, interval});
@@ -64,7 +64,7 @@ function boot({pageBuild = buildA, controllerBuild = buildA, latestBuild = build
   const document = target({hidden: false, readyState,
     querySelector: selector => selector === 'meta[name="leqra-build"]' && pageBuild ? {content: pageBuild} : null
   });
-  const window = target({isSecureContext: secure, leqra: {prepareUpdate() {
+  const window = target({isSecureContext: secure, leqra: {protocol: 1, prepareUpdate() {
     calls.prepare++;
     if (state.prepareError) throw state.prepareError;
     return state.safe;
@@ -79,7 +79,7 @@ function boot({pageBuild = buildA, controllerBuild = buildA, latestBuild = build
       calls.fetch.push({url, options});
       await state.onFetch?.(options);
       if (state.fetchError) throw state.fetchError;
-      return {ok: state.responseOK, json: async () => ({version: assetVersion.slice(1), build: state.latestBuild})};
+      return {ok: state.responseOK, json: async () => ({version: assetVersion.slice(1), build: state.latestBuild, protocol: state.serverProtocol})};
     }
   });
   const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
@@ -151,9 +151,9 @@ test('direct file launches do not start update work', async () => {
   assert.equal(h.timers.size, 0);
 });
 
-test('LAN HTTP and browsers without service workers refresh safely from fresh build metadata', async () => {
+test('LAN HTTP and browsers without service workers refresh safely after a protocol break', async () => {
   for (const options of [{protocol: 'http:', secure: false}, {supported: false}]) {
-    const h = boot({...options, latestBuild: buildB, safe: false});
+    const h = boot({...options, latestBuild: buildB, serverProtocol: 2, safe: false});
     await h.load();
     assert.equal(h.calls.fetch.length, 1);
     assert.equal(h.calls.register.length, 0);
@@ -175,6 +175,7 @@ test('LAN HTTP never refreshes a current build or an offline retained game', asy
   assert.equal(h.calls.reload, 0);
   h.navigator.onLine = false;
   h.state.latestBuild = buildB;
+  h.state.serverProtocol = 2;
   await h.advance(60000);
   await h.fire(h.document, 'visibilitychange');
   assert.equal(h.calls.fetch.length, 1);
@@ -203,10 +204,11 @@ test('fresh HTML does not downgrade to an old controller while the new worker in
   assert.equal(h.calls.reload, 0);
 });
 
-test('retained pages discover a new same-version build and reload only after its worker activates', async () => {
+test('retained pages reload for a breaking protocol only after its worker activates', async () => {
   const h = boot();
   await h.load();
   h.state.latestBuild = buildB;
+  h.state.serverProtocol = 2;
   await h.advance(30000);
   await h.fire(h.window, 'pageshow');
   assert.equal(h.calls.update, 1, 'a retained document checks the stable registration again');
@@ -220,14 +222,53 @@ test('retained pages discover a new same-version build and reload only after its
   assert.equal(h.calls.reload, 1, 'controller and foreground events cannot reload twice');
 });
 
+test('compatible builds update the worker without reloading the open game', async () => {
+  for (const latestBuild of [buildB, 'v99.1.0-2222222222222222']) {
+    for (const supported of [true, false]) {
+      const h = boot({supported});
+      await h.load();
+      h.state.latestBuild = latestBuild;
+      await h.changeController(latestBuild);
+      await h.fire(h.window, 'online');
+      await h.advance(60000);
+      assert.equal(h.calls.prepare, 0);
+      assert.equal(h.calls.reload, 0);
+      if (supported) assert.ok(h.calls.update > 0);
+    }
+  }
+});
+
+test('unavailable or malformed protocol metadata cannot force an update', async () => {
+  for (const protocol of [undefined, null, '2', 0, 2.5]) {
+    const h = boot({controllerBuild: buildB, latestBuild: buildB});
+    h.state.serverProtocol = protocol;
+    await h.load();
+    await h.advance(10000);
+    assert.equal(h.calls.prepare, 0);
+    assert.equal(h.calls.reload, 0);
+  }
+});
+
+test('a compatible deployment cancels a pending breaking update', async () => {
+  const h = boot({controllerBuild: buildB, latestBuild: buildB, serverProtocol: 2, safe: false});
+  await h.load();
+  assert.ok(h.calls.prepare > 0);
+  h.state.latestBuild = buildA;
+  h.state.serverProtocol = 1;
+  h.state.safe = true;
+  await h.fire(h.window, 'online');
+  await h.advance(2000);
+  assert.equal(h.calls.reload, 0);
+});
+
 test('a restored old document recognizes a controller already updated while it was suspended', async () => {
-  const h = boot({pageBuild: buildA, controllerBuild: buildB, latestBuild: buildB});
+  const h = boot({pageBuild: buildA, controllerBuild: buildB, latestBuild: buildB, serverProtocol: 2});
   await h.load();
   assert.equal(h.calls.reload, 1);
 });
 
 test('live gameplay defers an available update until the safe-update hook allows it', async () => {
-  const h = boot({controllerBuild: buildB, latestBuild: buildB, safe: false});
+  const h = boot({controllerBuild: buildB, latestBuild: buildB, serverProtocol: 2, safe: false});
   await h.load();
   await h.advance(3000);
   assert.ok(h.calls.prepare >= 2);
@@ -241,7 +282,7 @@ test('live gameplay defers an available update until the safe-update hook allows
 
 test('offline and hidden retained games defer pending reloads until usable in the foreground', async () => {
   for (const blocked of ['offline', 'hidden']) {
-    const h = boot({controllerBuild: buildB, latestBuild: buildB, safe: false});
+    const h = boot({controllerBuild: buildB, latestBuild: buildB, serverProtocol: 2, safe: false});
     await h.load();
     h.state.safe = true;
     if (blocked === 'offline') h.navigator.onLine = false;
@@ -259,7 +300,7 @@ test('offline and hidden retained games defer pending reloads until usable in th
 
 test('missing and throwing safe-update hooks leave the current game running', async () => {
   for (const missing of [false, true]) {
-    const h = boot({controllerBuild: buildB, latestBuild: buildB});
+    const h = boot({controllerBuild: buildB, latestBuild: buildB, serverProtocol: 2});
     if (missing) delete h.window.leqra;
     else h.state.prepareError = Error('storage denied');
     await h.load();
@@ -289,6 +330,7 @@ test('BFCache restoration checks a release even inside the ordinary pageshow thr
   const h = boot();
   await h.load();
   h.state.latestBuild = buildB;
+  h.state.serverProtocol = 2;
   h.sw.controller = h.worker(buildB);
   await h.fire(h.window, 'pageshow', {persisted: true});
   assert.equal(h.calls.fetch.length, 2);
@@ -297,7 +339,7 @@ test('BFCache restoration checks a release even inside the ordinary pageshow thr
 
 test('unavailable metadata and invalid build data cannot trigger an unsafe reload', async () => {
   for (const failure of ['network', 'http', 'invalid']) {
-    const h = boot({controllerBuild: buildB});
+    const h = boot({controllerBuild: buildB, serverProtocol: 2});
     if (failure === 'network') h.state.fetchError = Error('offline');
     if (failure === 'http') h.state.responseOK = false;
     if (failure === 'invalid') h.state.latestBuild = 'untrusted-build';
@@ -314,7 +356,7 @@ test('unavailable metadata and invalid build data cannot trigger an unsafe reloa
 
 test('failed worker registration and build probes leave the game usable', async () => {
   for (const failure of ['register', 'probe', 'timeout']) {
-    const h = boot({controllerBuild: buildB, latestBuild: buildB});
+    const h = boot({controllerBuild: buildB, latestBuild: buildB, serverProtocol: 2});
     if (failure === 'register') h.state.registerError = Error('registration denied');
     if (failure === 'probe') h.sw.controller = h.worker(buildB, {error: true});
     if (failure === 'timeout') h.sw.controller = h.worker(buildB, {silent: true});
@@ -328,6 +370,7 @@ test('an existing complete worker remains usable after an update-network error',
   const h = boot();
   await h.load();
   h.state.latestBuild = buildB;
+  h.state.serverProtocol = 2;
   h.sw.controller = h.worker(buildB);
   h.state.updateError = Error('update network unavailable');
   await h.fire(h.window, 'online');
@@ -349,7 +392,7 @@ test('overlapping foreground events coalesce discovery rather than flooding regi
 
 
 test('a stalled build lookup times out so network recovery can discover an update', async () => {
-  const h = boot({supported: false});
+  const h = boot({supported: false, serverProtocol: 2});
   let signal;
   h.state.onFetch = options => new Promise((resolve, reject) => {
     signal = options.signal;

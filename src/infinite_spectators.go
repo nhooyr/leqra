@@ -98,7 +98,7 @@ func (a *infiniteArena) addObserver(c *Client, observer *infiniteObserver, gener
 		}
 	}
 	a.observerTarget(observer, a.rankedLeaders(nil))
-	if !c.enqueue(map[string]any{"type": "welcome", "id": 0, "seed": a.seed, "generation": generation, "resumed": resumed, "spectating": true, "following": observer.following}) {
+	if !c.enqueue(map[string]any{"type": "welcome", "protocol": protocolVersion, "id": 0, "seed": a.seed, "generation": generation, "resumed": resumed, "spectating": true, "following": observer.following}) {
 		return false
 	}
 	if a.observers == nil {

@@ -1,10 +1,10 @@
 (() => {
 'use strict';
-const VERSION = 'v5.5.3';
+const VERSION = 'v5.6.0';
 const webOrigin=['http:', 'https:'].includes(location.protocol);
 let serviceWorker=null;
 try{if(webOrigin&&window.isSecureContext!==false)serviceWorker=navigator.serviceWorker;}catch(_){}
-let registration,registering,checking,latestBuild,pendingBuild,retry,pollTimer,buildController,buildTimeout,resetTask;
+let registration,registering,checking,requiredBuild,pendingBuild,retry,pollTimer,buildController,buildTimeout,resetTask;
 let reloading=false,resetting=false,lastCheck=-Infinity,stopInstallHint=()=>{};
 const workerProbes=new Set();
 
@@ -49,7 +49,7 @@ async function clearAppCaches(){
 }
 function resetPWA(){
  if(resetTask)return resetTask;
- resetting=true;pendingBuild=latestBuild=null;clearTimeout(retry);clearTimeout(buildTimeout);clearInterval(pollTimer);buildController?.abort();
+ resetting=true;pendingBuild=requiredBuild=null;clearTimeout(retry);clearTimeout(buildTimeout);clearInterval(pollTimer);buildController?.abort();
  for(const cancel of [...workerProbes])cancel();stopInstallHint();
  resetTask=(async()=>{
   // Stop current workers before deleting their caches. A failed unregister
@@ -132,7 +132,7 @@ function initInstallHint() {
 const loadedBuild = document.querySelector('meta[name="leqra-build"]')?.content || VERSION;
 
 function applyUpdate() {
- if (resetting||!pendingBuild || reloading || document.hidden || navigator.onLine === false) return;
+ if (resetting||!pendingBuild || pendingBuild!==requiredBuild || reloading || document.hidden || navigator.onLine === false) return;
  let ready = false;
  try { ready = window.leqra?.prepareUpdate?.() === true; } catch (_) {}
  if (ready) {
@@ -161,18 +161,17 @@ function workerBuild(worker) {
 
 async function inspectController() {
  const worker = serviceWorker?.controller;
- if (resetting||!worker || !latestBuild) return;
+ if (resetting||!worker || !requiredBuild) return;
  const build = await workerBuild(worker);
  // A fresh page can still have the previous controller until installation
  // finishes. Only adopt the complete worker that matches the current server.
- if (resetting||worker !== serviceWorker.controller || build !== latestBuild || build === loadedBuild) return;
+ if (resetting||worker !== serviceWorker.controller || build !== requiredBuild) return;
  pendingBuild = build;
  applyUpdate();
 }
 
 function checkUpdate(force=false) {
  if (resetting||document.hidden || navigator.onLine === false) return;
- applyUpdate();
  if (checking || !force && performance.now()-lastCheck<30000) return;
  lastCheck = performance.now();
  checking = (async () => {
@@ -185,12 +184,16 @@ function checkUpdate(force=false) {
    info = await response.json();
   } finally {clearTimeout(timeout);if(buildController===controller)buildController=null;}
   if(resetting)return;
-  if (typeof info.build !== 'string' || !/^v\d+\.\d+\.\d+-[0-9a-f]{16}$/.test(info.build)) return;
-  latestBuild = info.build;
-  // LAN HTTP web clips cannot install a worker, but can still refresh safely
-  // while online using the fingerprinted asset URLs in the new shell.
+  if (typeof info?.build !== 'string' || !/^v\d+\.\d+\.\d+-[0-9a-f]{16}$/.test(info.build)) return;
+  const loadedProtocol = window.leqra?.protocol;
+  const breaking = Number.isSafeInteger(info.protocol) && info.protocol > 0 &&
+   Number.isSafeInteger(loadedProtocol) && info.protocol !== loadedProtocol;
+  requiredBuild = breaking && info.build !== loadedBuild ? info.build : null;
+  if (pendingBuild !== requiredBuild) {pendingBuild = null;clearTimeout(retry);}
+  // Compatible builds still install a fresh worker for the next navigation.
+  // LAN HTTP web clips can refresh after a break without a worker.
   if (!serviceWorker) {
-   if (latestBuild !== loadedBuild) {pendingBuild = latestBuild;applyUpdate();}
+   if (requiredBuild) {pendingBuild = requiredBuild;applyUpdate();}
    return;
   }
   if(!registration){

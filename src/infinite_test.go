@@ -812,24 +812,25 @@ func TestInfiniteWebSocketSharesAnAuthoritativeArena(t *testing.T) {
 	server := httptest.NewServer(app.handler())
 	t.Cleanup(server.Close)
 
-	_, bad := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": "outdated"}, false)
-	var refusal infiniteMessage
+	_, bad := dialInfinite(t, server.URL, map[string]any{"type": "join", "version": version, "protocol": protocolVersion + 1}, false)
+	var refusal map[string]any
 	readInfinitePacket(t, bad, &refusal)
-	if refusal.Type != "error" {
-		t.Fatalf("outdated client accepted: %+v", refusal)
+	if refusal["type"] != "error" || refusal["code"] != "version_mismatch" || refusal["protocol"] != float64(protocolVersion) {
+		t.Fatalf("incompatible protocol did not receive a structured error: %+v", refusal)
 	}
 
 	type welcome struct {
-		Type string `json:"type"`
-		ID   int    `json:"id"`
-		Seed uint32 `json:"seed"`
+		Type     string `json:"type"`
+		ID       int    `json:"id"`
+		Seed     uint32 `json:"seed"`
+		Protocol int    `json:"protocol"`
 	}
 	var clients [2]welcome
 	for i, name := range []string{"First", "Second"} {
-		_, reader := dialInfinite(t, server.URL, map[string]string{"type": "join", "version": version, "name": name}, false)
+		_, reader := dialInfinite(t, server.URL, map[string]any{"type": "join", "version": "999.0.0", "protocol": protocolVersion, "name": name}, false)
 		w := &clients[i]
 		readInfinitePacket(t, reader, w)
-		if w.Type != "welcome" || w.Seed != 99 || w.ID == 0 {
+		if w.Type != "welcome" || w.Seed != 99 || w.ID == 0 || w.Protocol != protocolVersion {
 			t.Fatalf("invalid welcome: %+v", w)
 		}
 		var state infiniteSnapshot

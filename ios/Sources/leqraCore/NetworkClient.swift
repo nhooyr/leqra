@@ -166,7 +166,6 @@ public enum GameNetworkError: LocalizedError {
     case invalidURL
     case invalidResponse
     case unsupportedProtocol
-    case unsupportedVersion(String)
     case timeout
     case temporarilyUnavailable
     case invalidAccountKey
@@ -198,7 +197,6 @@ public enum GameNetworkError: LocalizedError {
         case .invalidURL: return "Enter an HTTP or HTTPS server address."
         case .invalidResponse: return "The server sent an invalid response."
         case .unsupportedProtocol: return "This server uses an unsupported game protocol."
-        case .unsupportedVersion(let version): return "This server is running leqra \(version). Update the native app before joining."
         case .timeout: return "The server stopped responding. Rejoin to play again."
         case .temporarilyUnavailable: return "The server is temporarily unavailable. Reconnecting…"
         case .invalidAccountKey: return "That account key is invalid or unavailable."
@@ -262,11 +260,26 @@ struct NetworkLatencySampler {
     }
 }
 
+private struct ServerProtocolMetadata: Decodable {
+    let epoch: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case epoch = "protocol"
+    }
+
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        // Servers that predate the protocol field can only use the first epoch.
+        epoch = fields.contains(.epoch) ? try fields.decode(Int.self, forKey: .epoch) : 1
+    }
+}
+
 /// Native transport. All callbacks and mutations are serialized on the main actor.
 /// Public identities use their own server-issued bearer credential; private
 /// room reconnects retain their existing bounded reservation window.
 @MainActor public final class NetworkClient {
     public static let supportedVersion = GeneratedVersion.value
+    public static let protocolVersion = 1
     public var onEvent: ((NetworkEvent) -> Void)?
     public private(set) var connected = false
     public private(set) var welcome: NetworkWelcome?
@@ -590,11 +603,8 @@ struct NetworkLatencySampler {
                 guard self.epoch == current, !Task.isCancelled else { return }
                 guard let response = response as? HTTPURLResponse else { throw GameNetworkError.invalidResponse }
                 if response.statusCode == 429 || response.statusCode >= 500 { throw GameNetworkError.temporarilyUnavailable }
-                guard response.statusCode == 200,
-                      data.count <= 8192,
-                      let build = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                      let version = build["version"] as? String, !version.isEmpty, version.count <= 64 else { throw GameNetworkError.invalidResponse }
-                guard version == Self.supportedVersion else { throw GameNetworkError.unsupportedVersion(version) }
+                guard response.statusCode == 200, data.count <= 8192 else { throw GameNetworkError.invalidResponse }
+                try Self.validateServerProtocol(data)
                 let url = try ServerAddress.endpoint(baseURL, path: infinity ? "/ws/infinite" : "/ws", webSocket: true)
                 var socketRequest = URLRequest(url: url)
                 // The existing server validates same-origin upgrades even for
@@ -609,7 +619,8 @@ struct NetworkLatencySampler {
                 socket.resume()
                 if infinity {
                     var command = join
-                    command["version"] = version
+                    command["version"] = Self.supportedVersion
+                    command["protocol"] = Self.protocolVersion
                     self.sendCommand(command)
                 }
                 self.startHeartbeat(epoch: current)
@@ -636,6 +647,13 @@ struct NetworkLatencySampler {
                 self.fail(error.localizedDescription, terminal: terminal)
             }
         }
+    }
+
+    static func validateServerProtocol(_ data: Data) throws {
+        guard let metadata = try? JSONDecoder().decode(ServerProtocolMetadata.self, from: data) else {
+            throw GameNetworkError.invalidResponse
+        }
+        guard metadata.epoch == protocolVersion else { throw GameNetworkError.unsupportedProtocol }
     }
 
     /// A fixed-room spectator can still own an active secondary tank. Infinity
@@ -784,12 +802,12 @@ struct NetworkLatencySampler {
               let type = object["type"] as? String else { throw GameNetworkError.invalidResponse }
         switch type {
         case "server_hello":
-            guard !isInfinity, let version = object["version"] as? String,
-                  (object["protocol"] as? Int) == 1 else { throw GameNetworkError.unsupportedProtocol }
-            guard version == Self.supportedVersion else { throw GameNetworkError.unsupportedVersion(version) }
-            sendCommand(["type": "client_hello", "version": version, "protocol": 1])
+            guard !isInfinity else { throw GameNetworkError.invalidResponse }
+            try Self.validateServerProtocol(data)
+            sendCommand(["type": "client_hello", "version": Self.supportedVersion, "protocol": Self.protocolVersion])
             sendCommand(pendingJoin)
         case "welcome":
+            try Self.validateServerProtocol(data)
             let info = try JSONDecoder().decode(NetworkWelcome.self, from: data)
             if let expected = pendingLocalAccountKey, info.localPublicToken != expected {
                 guard info.localPublicToken != nil else { throw GameNetworkError.localAccountUnconfirmed }

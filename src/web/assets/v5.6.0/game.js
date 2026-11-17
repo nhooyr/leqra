@@ -15,7 +15,8 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.5.3';
+const GAME_VERSION='5.6.0';
+const GAME_PROTOCOL=1;
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -2817,6 +2818,10 @@ function connectOnline(request,reconnecting=false){
  let ws;try{ws=new WebSocket(wsURL.href);}catch(_){online.connecting=false;netBusy(false);if(online.publishing){online.publishing=false;mode='room';phase='menu';document.body.classList.remove('online-mode');setScreen('room');renderOnlineRoom();$('roomStatus').textContent='Could not connect to the Go server. Your local room is unchanged.';}else setNetStatus('Could not open a connection to the Go server.',true);return;}
  const old=online.socket;online.socket=ws;if(old&&old.readyState<2)old.close();
  const timeout=setTimeout(()=>{if(online.socket===ws&&online.connecting)ws.close();},8000);
+ const rejectProtocol=(notice,serverVersion=online.serverVersion)=>{
+  clearTimeout(timeout);closeRoomInfinity();online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.serverVersion=serverVersion;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);
+ };
+ const incompatibleProtocol='This server uses an incompatible leqra protocol. Reload the game before playing online.';
  ws.onopen=()=>{if(online.socket!==ws)return;};
  ws.onmessage=e=>{
   if(online.socket!==ws||mode!=='online')return;
@@ -2824,11 +2829,10 @@ function connectOnline(request,reconnecting=false){
   online.lastMessage=performance.now();
   switch(msg.type){
   case 'server_hello':
-   if(msg.version!==GAME_VERSION||msg.protocol!==1){
-    clearTimeout(timeout);const serverVersion=typeof msg.version==='string'?msg.version:'unknown',notice='This page is leqra v'+GAME_VERSION+', but the server is v'+serverVersion+'. Reload the page to update before playing online.';
-    closeRoomInfinity();online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.serverVersion=serverVersion;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;
+   if((msg.protocol===undefined?1:msg.protocol)!==GAME_PROTOCOL){
+    rejectProtocol(incompatibleProtocol,typeof msg.version==='string'?msg.version:'unknown');break;
    }
-   online.serverVersion=msg.version;sendOnline({type:'client_hello',version:GAME_VERSION,protocol:1});sendOnline(request);break;
+   online.serverVersion=msg.version;sendOnline({type:'client_hello',version:GAME_VERSION,protocol:GAME_PROTOCOL});sendOnline(request);break;
   case 'client_ready':break;
   case 'leaderboard_reset':toast(msg.selected===true?'Selected Public Infinity scores were reset.':'The Public Infinity leaderboard was reset.',5);break;
   case 'server_shutdown':
@@ -2836,6 +2840,7 @@ function connectOnline(request,reconnecting=false){
   case 'queue_catalog':case 'queue_status':case 'queue_cancelled':matchmakingPacket(msg);break;
   case 'chat':case 'chat_history':chatPacket(msg);break;
   case 'welcome':
+   if((msg.protocol===undefined?1:msg.protocol)!==GAME_PROTOCOL){rejectProtocol(incompatibleProtocol);break;}
    if(msg.localPublicToken&&msg.localPublicToken!==request.localPublicToken&&window.leqraIdentity?.prepareLocal&&!(request.token&&msg.resumed===true&&request.localNewAccount===true)){clearTimeout(timeout);leaveOnline();$('roomStatus').textContent='This room uses a different P2 account. Your P2 key was kept. Leave and rejoin with the intended P2 account.';break;}
    if(request.roster?.some(player=>player.kind==='local')&&window.leqraIdentity?.prepareLocal&&msg.localPublicToken!==request.localPublicToken){clearTimeout(timeout);leaveOnline();$('roomStatus').textContent='The server did not confirm the separate P2 account key. Update the server before using P2 online.';break;}
    window.leqraIdentity?.remember?.(msg.publicToken,request.publicToken||'');online.ownerKey=msg.publicToken||request.publicToken||'';if(msg.localPublicToken)window.leqraIdentity?.remember?.(msg.localPublicToken,request.localPublicToken||'',1);online.localOwnerKey=msg.localPublicToken||request.localPublicToken||'';
@@ -2875,7 +2880,7 @@ function connectOnline(request,reconnecting=false){
    if(msg.action==='select_public_infinity'){online.publicInfinityPending?.cancel?.();syncFeatureSummary();$('roomStatus').textContent=msg.message;toast(msg.message,3);break;}
    if(msg.action==='lobby'){clearEndMatchPending(msg.message);break;}
    if(msg.action==='restart_wave'){clearRestartWavePending(msg.message);break;}
-   if(msg.action==='version'){clearTimeout(timeout);const notice=msg.message||'This leqra page does not match the server. Reload the page before playing online.';closeRoomInfinity();online.manual=true;online.publishing=false;online.socket=null;online.connected=online.connecting=false;online.code='';online.id=-1;online.token='';online.roomData=null;netBusy(false);ws.close(1000,'Version mismatch');document.body.classList.remove('online-mode');mode='room';phase='menu';setScreen('room');renderOnlineRoom();$('roomStatus').textContent=notice;showVersionMismatch(notice);break;}
+   if(msg.action==='version'){rejectProtocol(msg.message||incompatibleProtocol,msg.serverVersion);break;}
    if(msg.action==='rematch'){matchmaking.rematchPending=false;syncResultActions();toast(msg.message,3);break;}
    if(msg.action?.startsWith('queue_')||msg.action==='return_party'){matchmakingError(msg.message);break;}
    if(msg.action==='chat'){const channel=msg.channel==='opponent'?'opponent':'room',st=chatState(channel),pending=st.pending;st.pending=null;if(pending?.text&&!roomChat.draft)roomChat.draft=pending.text;st.error=msg.message;if(roomChat.open&&roomChat.sendTarget===channel){$('chatInput').value=roomChat.draft;$('chatError').textContent=st.error;}syncChatStatus();break;}
@@ -3352,7 +3357,7 @@ function startInfinity(kind,credentials={}){
  const primaryId=localPlayerID(),primary=roomMember(primaryId),secondary=secondLocal(),room=roomData();
  const roomRules=!credentials.public&&(kind==='offline'||credentials.code)?currentRules():null;
  closeVictory();clearInput();cancelPendingAudio();
- window.leqraInfinity.start(kind,{name:primary?.name,onError:error=>{$('roomStatus').textContent=error.message;},onConflict:message=>{window.leqraInfinity.close();renderOnlineRoom();showCallsignConflicts(message);$('roomStatus').textContent='Change the marked callsigns to go online.';},bindings:()=>bindings,roomRules,onJoined,
+ window.leqraInfinity.start(kind,{name:primary?.name,onError:error=>{$('roomStatus').textContent=error.message;},onProtocolMismatch:message=>{window.leqraInfinity.close();$('roomStatus').textContent=message;showVersionMismatch(message);},onConflict:message=>{window.leqraInfinity.close();renderOnlineRoom();showCallsignConflicts(message);$('roomStatus').textContent='Change the marked callsigns to go online.';},bindings:()=>bindings,roomRules,onJoined,
   colorIndex:colorIndex(primaryId,primary?.team,primary?.colorIndex),
   localColorIndex:secondary?colorIndex(secondary.id,secondary.team,secondary.colorIndex):undefined,
   roster:roomRules?room?.players||[]:[],primaryId,localId:secondary?.id,localName:secondary?.name,
@@ -5954,7 +5959,7 @@ window.leqraInfinityArt=Object.freeze({
  impact:()=>tone(170,95,.095,SOUND_LEVELS.impact,'sine')
 });
 
-window.leqra=Object.freeze({version:GAME_VERSION,prepareUpdate,canShowInstallHint,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,survivalEnemy:!!t.survivalEnemy,survivalBoss:!!t.survivalBoss,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,machineRounds:t.machineRounds||0,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),ghostTime:t.ghostTime||0,starmanTime:t.starmanTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
+window.leqra=Object.freeze({version:GAME_VERSION,protocol:GAME_PROTOCOL,prepareUpdate,canShowInstallHint,getState:()=>({appearance:{resolved:'dark'},matchStats:mode==='online'?online.snapshots.at(-1)?.matchStats||null:localMatchReport,phase,mode,difficulty,round,scores:[...scores],roundClock,rules:currentRules(),objectives:objectiveState(),room:roomData(),teamScores:mode==='solo'?{player:scores[0],bots:scores[1]}:null,world:{width:W,height:H,cols,rows},tanks:tanks.map(t=>({id:t.id,name:t.name,x:t.x,y:t.y,angle:t.angle,alive:t.alive,survivalEnemy:!!t.survivalEnemy,survivalBoss:!!t.survivalBoss,respawnTime:t.respawnTime||0,spawnSerial:t.spawnSerial||0,team:t.team,target:t.ai?.target??-1,power:t.power,powerTime:t.powerTime,machineRounds:t.machineRounds||0,charges:t.charges,shield:t.shield,shieldCharges:shieldCount(t),speedTime:t.speedTime||0,speedStacks:speedCount(t),ghostTime:t.ghostTime||0,starmanTime:t.starmanTime||0})),bulletCount:bullets.length,pickupCount:pickups.length,touchUI,touchLandscape,online:mode==='online'?{connected:online.connected,code:online.code,id:online.id,spectating:!!online.spectating,spectators:online.roomData?.spectators||[],latency:online.latency,serverTick:online.snapshots.at(-1)?.tick||0,players:online.roomData?.players||[],smoothing:{bufferMs:Math.round(online.buffer?.delay||0),jitterMs:Math.round(online.buffer?.jitter||0),playbackTick:(online.buffer?.time||0)/Net.STEP_MS,pendingFrames:online.predictor?.metrics.replayed||0,correction:online.predictor?.metrics.lastError||0,underruns:online.buffer?.underruns||0}}:null})});
 function canShowInstallHint(){return !document.hidden&&['menu','onlineLobby'].includes(phase)&&!$('infiniteArena')?.open&&!document.querySelector('dialog[open]');}
 function freezeForSettingsReset(){
  if(!settingsResetActive){

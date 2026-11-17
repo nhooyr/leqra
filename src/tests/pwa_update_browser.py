@@ -1,4 +1,4 @@
-"""Exercise real same-version PWA upgrades against disposable HTTP fixtures.
+"""Exercise compatible and breaking PWA upgrades against disposable HTTP fixtures.
 
 Install Playwright plus the requested browsers, then run this from the repo root:
     python3 src/tests/pwa_update_browser.py --browser chromium --browser webkit
@@ -17,13 +17,11 @@ from time import monotonic
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
-from playwright.sync_api import expect, sync_playwright
-
-
 WEB = Path(__file__).resolve().parents[1] / "web"
 SHELL_FILES = (
     "theme.js", "theme.css", "style.css", "favicon.svg", "netcode.js", "game.js", "callsigns.js",
-    "infinite-maze.js", "infinite.js", "pwa.js", "manifest.webmanifest", "sw.js",
+    "infinite-maze.js", "infinite.js", "showcase-scene.js", "showcase.js", "pwa.js",
+    "manifest.webmanifest", "sw.js",
 )
 ICON_FILES = (
     "apple-touch-icon-512.png", "apple-touch-icon.png", "favicon-256.png",
@@ -32,12 +30,19 @@ ICON_FILES = (
 
 
 class Release:
-    def __init__(self, stale_header=False):
+    def __init__(self, stale_header=False, breaking=False):
         self.files = {"index.html": (WEB / "index.html").read_bytes()}
         self.version = re.search(rb'src="assets/(v\d+\.\d+\.\d+)/game\.js"', self.files["index.html"]).group(1).decode()
         self.base = "assets/" + self.version + "/"
         for name in SHELL_FILES + ICON_FILES:
             self.files[self.base + name] = (WEB / self.base / name).read_bytes()
+        game = self.base + "game.js"
+        protocol_marker = re.search(rb"const GAME_PROTOCOL=(\d+);", self.files[game])
+        self.protocol = int(protocol_marker.group(1))
+        if breaking:
+            self.protocol += 1
+            marker = f"const GAME_PROTOCOL={self.protocol};".encode()
+            self.files[game] = self.files[game].replace(protocol_marker.group(0), marker, 1)
         if stale_header:
             self.files[self.base + "style.css"] += b"\n#gameHeader{transform:translateY(-20px)!important}\n"
         # Match appBuildID's path/length separators, order and 64-bit hash prefix.
@@ -54,8 +59,8 @@ class Release:
 
 
 class Fixture:
-    def __init__(self):
-        self.old, self.new = Release(stale_header=True), Release()
+    def __init__(self, breaking=False):
+        self.old, self.new = Release(stale_header=True), Release(breaking=breaking)
         assert self.old.build != self.new.build
         self.release = self.old
         self.requests = []
@@ -71,7 +76,11 @@ class Fixture:
                 fixture.requests.append((self.path, release.build))
                 headers = {"X-Leqra-Build": release.build}
                 if path == "/api/build":
-                    body = json.dumps({"version": release.version[1:], "build": release.build}).encode()
+                    body = json.dumps({
+                        "version": release.version[1:],
+                        "build": release.build,
+                        "protocol": release.protocol,
+                    }).encode()
                     mime, cache = "application/json", "no-store"
                 elif path == "/sw.js" or re.fullmatch(r"/assets/v\d+\.\d+\.\d+/sw\.js", path):
                     body, mime, cache = release.worker, "text/javascript", "no-store"
@@ -161,21 +170,24 @@ def setup_state(page):
 def check_coherence(page, release):
     assert page.locator('meta[name="leqra-build"]').get_attribute("content") == release.build
     assert page.evaluate("leqra.version") == release.version[1:]
+    assert page.evaluate("leqra.protocol") == release.protocol
     assert page.evaluate("getComputedStyle(document.getElementById('gameHeader')).transform") == "none"
     refs = page.locator('[src^="assets/"], [href^="assets/"]').evaluate_all("nodes => nodes.map(node => node.getAttribute('src') || node.getAttribute('href'))")
     assert refs and all(ref.startswith(release.base) and ref.endswith("?build=" + release.build) for ref in refs), refs
     assert page.evaluate(PROBE)["build"] == release.build
 
 
-def check_same_version_upgrade(browser, screenshots):
+def check_upgrade(browser, screenshots, breaking=False):
     errors = []
-    with Fixture() as fixture, browser.new_context(viewport={"width": 1440, "height": 1000}, service_workers="allow") as context:
+    scenario = "breaking" if breaking else "compatible"
+    with Fixture(breaking) as fixture, browser.new_context(viewport={"width": 1440, "height": 1000}, service_workers="allow") as context:
         context.add_init_script(INIT)
         page = context.new_page()
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(fixture.url + "/?test")
         page.wait_for_function("() => !!window.__test && !!window.leqra")
         wait_for_worker(page, fixture.old.build)
+        assert page.evaluate("leqra.protocol") == fixture.old.protocol
         assert page.evaluate("getComputedStyle(document.getElementById('gameHeader')).transform") == "matrix(1, 0, 0, 1, 0, -20)"
         assert page.evaluate("Number(sessionStorage.pwaLoads)") == 1, 'the initial controller claim reloaded the page'
 
@@ -211,11 +223,18 @@ def check_same_version_upgrade(browser, screenshots):
         keys = page.evaluate("caches.keys()")
         assert "leqra-app-" + fixture.new.build in keys, keys
         if screenshots:
-            page.screenshot(path=str(screenshots / (browser.browser_type.name + "-pwa-busy-old-header.png")))
+            page.screenshot(path=str(screenshots / f"{browser.browser_type.name}-pwa-{scenario}-busy.png"))
 
-        # Returning to the room enables the production save-before-reload hook.
-        with page.expect_navigation(wait_until="load", timeout=15000):
+        if breaking:
+            # Returning to the room enables the production save-before-reload hook.
+            with page.expect_navigation(wait_until="load", timeout=15000):
+                page.evaluate("__test.returnToRoom()")
+        else:
             page.evaluate("__test.returnToRoom()")
+            page.wait_for_timeout(1400)
+            assert page.evaluate("pwaDocument") == document_id, 'a compatible build reloaded the ready room'
+            assert page.evaluate("Number(sessionStorage.pwaLoads)") == 1
+            page.reload(wait_until="load")
         page.wait_for_function("() => !!window.__test && !!window.leqra")
         wait_for_worker(page, fixture.new.build)
         assert page.evaluate("Number(sessionStorage.pwaLoads)") == 2
@@ -225,7 +244,7 @@ def check_same_version_upgrade(browser, screenshots):
         page.wait_for_timeout(1400)
         assert page.evaluate("Number(sessionStorage.pwaLoads)") == 2, 'the update reloaded more than once'
         if screenshots:
-            page.screenshot(path=str(screenshots / (browser.browser_type.name + "-pwa-updated-header.png")))
+            page.screenshot(path=str(screenshots / f"{browser.browser_type.name}-pwa-{scenario}-updated.png"))
 
         # Disable the actual network and reload the completed build B cache.
         context.set_offline(True)
@@ -236,7 +255,8 @@ def check_same_version_upgrade(browser, screenshots):
         assert page.evaluate("Number(sessionStorage.pwaLoads)") == 3
         assert not errors, errors
         context.set_offline(False)
-        print("PASS", browser.browser_type.name, "same-version upgrade, busy deferral, one safe reload, paint/roster persistence and offline build coherence", flush=True)
+        expected_reload = "one safe automatic reload" if breaking else "adoption on manual reload"
+        print("PASS", browser.browser_type.name, scenario, "upgrade,", expected_reload, "and coherent offline assets", flush=True)
 
 
 def check_legacy_alias(browser):
@@ -258,6 +278,8 @@ def check_legacy_alias(browser):
 
 
 def main():
+    from playwright.sync_api import sync_playwright
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", action="append", choices=("chromium", "webkit"), help="defaults to Chromium")
     parser.add_argument("--screenshots", type=Path, help="optional existing directory outside the repository")
@@ -266,7 +288,10 @@ def main():
     if args.server:
         with urlopen(args.server.rstrip("/") + "/api/build", timeout=10) as response:
             info = json.load(response)
-        assert info["build"] == Release().build, ("fixture and compiled server fingerprints differ", info)
+        release = Release()
+        assert (info["build"], info["protocol"]) == (release.build, release.protocol), (
+            "fixture and compiled server metadata differ", info,
+        )
     if args.screenshots:
         args.screenshots = args.screenshots.resolve()
         assert args.screenshots.is_dir(), "screenshot directory must already exist"
@@ -275,7 +300,8 @@ def main():
         for name in args.browser or ["chromium"]:
             browser = getattr(playwright, name).launch(headless=True)
             try:
-                check_same_version_upgrade(browser, args.screenshots)
+                check_upgrade(browser, args.screenshots)
+                check_upgrade(browser, args.screenshots, breaking=True)
                 check_legacy_alias(browser)
             finally:
                 browser.close()

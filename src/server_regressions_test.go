@@ -213,7 +213,7 @@ func TestLobbyActionBudgetExcludesHandshakeAndRecovers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	send(map[string]any{"type": "client_hello", "version": version, "protocol": protocolVersion}, now)
+	send(map[string]any{"type": "client_hello", "version": "999.0.0", "protocol": protocolVersion}, now)
 	send(map[string]any{"type": "publish", "roster": []SeatSpec{{Kind: "human", Name: "HOST"}}}, now)
 	if c.room == nil || !c.versionOK {
 		t.Fatal("host could not publish after the version handshake")

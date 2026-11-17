@@ -42,11 +42,14 @@ func TestPWAShellAndMetadataPinEveryAssetToOneBuild(t *testing.T) {
 	h := newApp(4, nil).handler()
 	metadata := httptest.NewRecorder()
 	h.ServeHTTP(metadata, httptest.NewRequest("GET", "/api/build", nil))
-	var info struct{ Version, Build string }
+	var info struct {
+		Version, Build string
+		Protocol       int
+	}
 	if err := json.Unmarshal(metadata.Body.Bytes(), &info); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.Code != 200 || metadata.Header().Get("Cache-Control") != "no-store" || info.Version != version || !strings.HasPrefix(info.Build, "v"+version+"-") {
+	if metadata.Code != 200 || metadata.Header().Get("Cache-Control") != "no-store" || info.Version != version || info.Protocol != protocolVersion || !strings.HasPrefix(info.Build, "v"+version+"-") {
 		t.Fatalf("invalid build metadata: %s", metadata.Body.String())
 	}
 	index := httptest.NewRecorder()
