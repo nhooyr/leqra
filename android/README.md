@@ -109,6 +109,11 @@ Local bot names, paint, difficulty and teams are editable and retained
 when publishing the same roster online. Sound effects mix with music from other
 apps, including when launching muted. The default sound volume is 50%.
 
+Quick Tour opens on the first visit to the ready room and can be replayed from
+Controls. The same panel holds the input, display, audio and account settings.
+Show FPS and ping is enabled by default. During local battles the status bar
+shows FPS, and online battles also show the measured ping.
+
 Controls also opens the frozen Showcase battle using the native arena renderer.
 It includes the normal header, touch controls, and loadout bar. Portrait uses a
 closer arrangement of tanks and pickups; landscape keeps the wide scene.
@@ -120,10 +125,16 @@ allow pickup-rate and type changes; Infinity always includes all ten types.
 With Public Infinity selected, room settings keep the room name and sharing;
 turn it off to choose a room mode or edit its rules and presets.
 
-For local server development, run `./dev.sh` at the repository root. In a debug
-build, open Settings and use `http://10.0.2.2:8080` from the Android emulator, or
-your development server's address from a physical phone. Release builds require
-HTTPS. Account keys are scoped to each server origin.
+For local server development, run `./dev.sh` at the repository root. Launch a
+debug build with a development server address using the `server` intent extra:
+
+```sh
+adb shell am force-stop com.leqra
+adb shell am start -n com.leqra/com.leqra.android.MainActivity --es server http://10.0.2.2:8080
+```
+
+Use your development server's address on a physical phone. Release builds use
+`https://leqra.com`. Account keys are scoped to each server origin.
 
 ## Validation
 

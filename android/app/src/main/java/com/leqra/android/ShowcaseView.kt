@@ -2,21 +2,18 @@ package com.leqra.android
 
 import android.content.Context
 import android.content.res.Configuration
-import android.os.Build
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import com.leqra.android.NativeStyle.add
 import com.leqra.android.NativeStyle.dp
 import com.leqra.android.render.NativeArenaView
-import kotlin.math.max
 
 /** The real native gameplay chrome around an immutable scene. */
-internal class ShowcaseView(context: Context, private val muted: Boolean) : LinearLayout(context) {
+internal class ShowcaseView(context: Context, private val muted: Boolean, private val showFPS: Boolean = true) : LinearLayout(context) {
     val header = NativeGameHeader(context, {}, {}, {})
-    val status = NativeStatusView(context) {}
+    val status = NativeStatusView(context, openScores = {})
     val loadout = NativeHudView(context)
     private val field = FrameLayout(context)
     lateinit var arena: NativeArenaView
@@ -40,19 +37,11 @@ internal class ShowcaseView(context: Context, private val muted: Boolean) : Line
         add(loadout, gap = 0)
         rebuild()
         setOnApplyWindowInsetsListener { _, insets ->
-            var top = 0
-            if (Build.VERSION.SDK_INT >= 30) {
-                val cutout = insets.getInsets(WindowInsets.Type.displayCutout())
-                val gestures = insets.getInsets(WindowInsets.Type.systemGestures())
-                safeLeft = cutout.left; safeRight = cutout.right; top = cutout.top
-                safeBottom = max(cutout.bottom, gestures.bottom)
-            } else if (Build.VERSION.SDK_INT >= 28) {
-                safeLeft = insets.displayCutout?.safeInsetLeft ?: 0
-                safeRight = insets.displayCutout?.safeInsetRight ?: 0
-                top = insets.displayCutout?.safeInsetTop ?: 0
-                safeBottom = insets.displayCutout?.safeInsetBottom ?: 0
-            }
-            setPadding(0, top, 0, 0)
+            val safe = insets.immersiveInsets()
+            safeLeft = safe.left
+            safeRight = safe.right
+            safeBottom = safe.bottom
+            setPadding(0, safe.top, 0, 0)
             updateLayout()
             insets
         }
@@ -72,13 +61,14 @@ internal class ShowcaseView(context: Context, private val muted: Boolean) : Line
         arena.fireLabel = loadout.fireLabel
         arena.fireAvailable = loadout.fireAvailable
         arena.fireProgress = loadout.advance(0L)
-        status.showShowcase(scene.snapshot, scene.localID, scene.fps, scene.ping)
+        status.showShowcase(scene.snapshot, scene.localID, scene.fps, scene.ping, showFPS)
         updateLayout()
     }
 
     private fun updateLayout() {
         header.display(!portrait, (width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / resources.displayMetrics.density, muted, true)
         header.setPadding(context.dp(12) + safeLeft, context.dp(5), context.dp(8) + safeRight, context.dp(5))
+        status.setPadding(context.dp(12) + safeLeft, context.dp(6), context.dp(12) + safeRight, context.dp(6))
         loadout.compact = !portrait
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight

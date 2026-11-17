@@ -16,6 +16,31 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PairedHudTest {
+    @Test
+    fun splitReadoutsKeepEachSeatWithItsOwnLoadout() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val state = ArenaSnapshot(phase = "playing", tanks = listOf(
+                ArenaTank(id = 1, name = "Rust", power = "cannon", powerTime = 15.0, charges = 3),
+                ArenaTank(id = 2, name = "Vapor", power = "rapid", powerTime = 15.0, machineRounds = 125),
+            ))
+            for (seat in 0..1) {
+                val hud = NativeHudView(instrumentation.targetContext)
+                hud.update(state, 1, 2, true, false, false, onlySeat = seat)
+                val description = hud.contentDescription.toString()
+                if (seat == 0) {
+                    assertTrue(description.contains("Rust (P1)"))
+                    assertTrue(description.contains("CANNON"))
+                    assertFalse(description.contains("Vapor"))
+                } else {
+                    assertTrue(description.contains("Vapor (P2)"))
+                    assertTrue(description.contains("MACHINE GUN"))
+                    assertFalse(description.contains("Rust"))
+                }
+            }
+        }
+    }
+
     @Test fun bothPilotsKeepWrappedNamesEquipmentAndReadableType() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {

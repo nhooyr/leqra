@@ -8,6 +8,30 @@ import org.junit.Test
 
 class SnapshotDecoderTest {
     @Test
+    fun matchReportUsesRoomMemberAcrossSeatChangesAndKeepsModeStatistics() {
+        val packet = JSONObject("""{
+            "type":"state","tick":9,"phase":"matchOver","tanks":[],"bullets":[],
+            "matchStats":{"mode":"ctf","duration":62.5,"rounds":3,"players":[
+                {"id":1,"member":23,"controllerMember":17,"seat":7,"name":"Wing","kind":"local","color":"#ec4899","team":2,"score":3,
+                "eliminations":8,"deaths":2,"selfDestructs":1,"captures":3,"flagReturns":4,"hillSeconds":6.5,"winner":true},
+                {"id":2,"member":18,"seat":0,"name":"Remote","kind":"human","score":1}
+            ]}
+        }""")
+        val report = SnapshotDecoder().decode(packet).matchStats!!
+        assertEquals("ctf", report.mode)
+        assertEquals(62.5, report.duration, 0.0)
+        assertEquals(3, report.rounds)
+        val (wing, remote) = report.players
+        assertEquals(2, wing.localSeat(17))
+        assertEquals(0, remote.localSeat(17))
+        assertEquals(1, remote.localSeat(18))
+        assertEquals(listOf(8, 2, 1, 3, 4), listOf(wing.eliminations, wing.deaths, wing.selfDestructs, wing.captures, wing.flagReturns))
+        assertEquals(6.5, wing.hillSeconds, 0.0)
+        assertTrue(wing.winner)
+        assertNull(SnapshotDecoder().decode(packet.apply { remove("matchStats") }).matchStats)
+    }
+
+    @Test
     fun perTierRatesRoundTripAndLegacyRandomPresetsMigrateExactly() {
         val legacy = JSONObject().put("infinityBotDifficulty", "normal").put("infinityBotSpawnRate", 2.0).put("infinityRandomDifficulty", true)
         val rules = ProtocolJson.roomRules(legacy)

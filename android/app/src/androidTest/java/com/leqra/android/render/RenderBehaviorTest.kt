@@ -50,6 +50,34 @@ class RenderBehaviorTest {
     }
 
     @Test
+    fun pairedPortraitArenaReservesTheLoadoutGapAboveP2() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            val image = Bitmap.createBitmap(1000, 1600, Bitmap.Config.ARGB_8888)
+            try {
+                view.layout(0, 0, 1000, 1600)
+                val density = view.resources.displayMetrics.density
+                val middle = image.height / density / 2
+                view.pairedHudHeightDp = 60f
+                view.submit(
+                    ArenaSnapshot(tanks = listOf(ArenaTank(id = 1, x = 42.0, y = 42.0),
+                        ArenaTank(id = 2, x = 500.0, y = 500.0))),
+                    1, InfiniteMaze(137), 2,
+                )
+                view.draw(Canvas(image))
+                fun field(name: String) = NativeArenaView::class.java.getDeclaredField(name).apply { isAccessible = true }
+                val controls = field("controlViewport").get(view) as android.graphics.RectF
+                assertEquals(middle - 30f, controls.bottom, .01f)
+                val mouseTankY = field("mouseTankY").getFloat(view)
+                assertEquals((middle + 30f + image.height / density) / 2, mouseTankY, .01f)
+            } finally {
+                image.recycle()
+                view.release()
+            }
+        }
+    }
+
+    @Test
     fun controlCaptionsAreAbsentAndTargetIsCentered() {
         main {
             val view = NativeArenaView(instrumentation.targetContext)

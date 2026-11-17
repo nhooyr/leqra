@@ -8,7 +8,7 @@ import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CheckBox
+import android.widget.Switch
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -53,6 +53,7 @@ class RoamingRuleUiTest {
             .edit()
             .putBoolean("muted", true)
             .putBoolean("publicSelected", false)
+            .putBoolean(QUICK_TOUR_SEEN, true)
             .putString("callsign", "Rule Pilot")
             .putBoolean("autoPending0", false)
             .putBoolean("autoPending1", false)
@@ -106,7 +107,7 @@ class RoamingRuleUiTest {
                     val root = dialog.window!!.decorView
                     val all = descendants(root)
                     val rates = all.filterIsInstance<Spinner>().filter { it.tag?.toString()?.startsWith("roamingRate:") == true }.associateBy { it.tag.toString().substringAfter(":") }
-                    val fill = all.filterIsInstance<CheckBox>().single { it.text.toString() == "Fill Infinity with random bots" }
+                    val fill = all.filterIsInstance<Switch>().single { it.text.toString() == "Random roaming bots" }
                     assertEquals(5, rates.size)
                     assertTrue(rates.values.all { !it.isEnabled })
                     assertFalse(all.filterIsInstance<TextView>().any { it.text.toString() == "Random bot difficulty" })

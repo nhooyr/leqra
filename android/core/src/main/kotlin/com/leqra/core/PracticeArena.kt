@@ -10,9 +10,12 @@ class PracticeArena(
     botCount: Int = 8,
     difficulty: String = "normal",
     world: ArenaWorld? = null,
+    secondaryPlayer: LocalPilot? = null,
 ) {
     val maze = if (world == null) InfiniteMaze(seed) else InfiniteMaze(world)
     val localID = 1
+    var secondaryLocalID: Int? = null
+        private set
     var snapshot = ArenaSnapshot()
         internal set
 
@@ -104,12 +107,17 @@ class PracticeArena(
                     invulnerable = 1.0,
                 ),
             )
-        repeat(botCount.coerceIn(0, if (world == null) 24 else 7)) { offset ->
+        snapshot.players = 1
+        if (secondaryPlayer != null) addSecondaryPilot(secondaryPlayer, maxCells = 2)
+        val lastHuman = secondaryLocalID ?: localID
+        val maxBots = if (secondaryPlayer != null) 6 else if (world == null) 24 else 7
+        repeat(botCount.coerceIn(0, maxBots)) { offset ->
             val n = offset + 1
+            val id = lastHuman + n
             val p = spawnPoint(snapshot.tanks[0], 2, 5)
             snapshot.tanks +=
                 ArenaTank(
-                    id = n + 1,
+                    id = id,
                     name = "ROVER %02d".format(n),
                     x = p.x,
                     y = p.y,
@@ -121,9 +129,8 @@ class PracticeArena(
                     invulnerable = 1.0,
                     difficulty = difficulty,
                 )
-            roamingIDs.add(n + 1)
+            roamingIDs.add(id)
         }
-        snapshot.players = 1
         updateStandings()
     }
 
@@ -199,22 +206,27 @@ class PracticeArena(
                 if (inactiveRoamingBots.remove(2) != null) inactiveRoamingBots[replacement] = bot
                 inactiveRoamingReadyAt.remove(2)?.let { inactiveRoamingReadyAt[replacement] = it }
             }
-        val p = spawnPoint(snapshot.tanks[0], 1, 3)
+        addSecondaryPilot(LocalPilot(name, colorIndex, team), maxCells = 3)
+        configurePilot(2, name, colorIndex, team)
+        return 2
+    }
+
+    private fun addSecondaryPilot(pilot: LocalPilot, maxCells: Int) {
+        val p = spawnPoint(snapshot.tanks[0], 1, maxCells)
         snapshot.tanks +=
             ArenaTank(
                 id = 2,
-                name = Callsigns.limit(name),
+                name = Callsigns.limit(pilot.name),
                 x = p.x,
                 y = p.y,
-                colorIndex = GamePalette.index(colorIndex),
-                team = team,
+                colorIndex = GamePalette.index(pilot.colorIndex),
+                team = pilot.team.coerceIn(0, 4),
                 spawnProtected = true,
                 spawnSerial = 1,
                 invulnerable = 1.0,
             )
+        secondaryLocalID = 2
         snapshot.players = 2
-        configurePilot(2, name, colorIndex, team)
-        return 2
     }
 
     fun configure(rules: RoomRules) {

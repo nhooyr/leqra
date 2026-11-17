@@ -74,6 +74,7 @@ class SpectatorUiTest {
             .clear()
             .putString("server", server)
             .putBoolean("publicSelected", false)
+            .putBoolean(QUICK_TOUR_SEEN, true)
             .putBoolean("muted", true)
             .commit()
         val activity =
@@ -196,6 +197,7 @@ class SpectatorUiTest {
                 .clear()
                 .putString("server", server)
                 .putBoolean("publicSelected", false)
+                .putBoolean(QUICK_TOUR_SEEN, true)
                 .putBoolean("muted", true)
                 .commit()
             activity =
@@ -350,6 +352,17 @@ class SpectatorUiTest {
             }
             eventually("Watch Infinity did not reenter the running arena") {
                 viewer.arenaNetwork.connected && viewer.screen == Screen.PLAYING
+            }
+            val beforeHostExit = main {
+                host!!.lobby(endMatch = false)
+                assertEquals(Screen.READY, host!!.screen)
+                assertTrue(host!!.network.connected)
+                assertFalse(host!!.arenaNetwork.connected)
+                viewer.snapshot.tick
+            }
+            eventually("The host's own Exit Infinity must leave the room's arena running") {
+                viewer.room?.optBoolean("infinityActive") == true &&
+                    viewer.arenaNetwork.connected && viewer.snapshot.tick > beforeHostExit
             }
             main { host!!.lobby() }
             eventually("Host returning to lobby did not close the observer arena") {

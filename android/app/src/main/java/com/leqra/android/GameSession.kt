@@ -18,6 +18,8 @@ internal enum class Screen {
     PLAYING,
 }
 
+private data class PendingOnlineAction(val includeLocal: Boolean, val run: () -> Unit)
+
 /**
  * Main-thread owner of simulation, transport and presentation. Scores never leave via client
  * commands.
@@ -45,8 +47,14 @@ internal class GameSession(context: Context) {
     var present: (ArenaSnapshot, InfiniteMaze?, Int, Int?, Boolean) -> Unit = { _, _, _, _, _ -> }
     var notifyError: (String) -> Unit = {}
     var emitAudioCue: (AudioCue) -> Unit = {}
-    var server = prefs.getString("server", "https://leqra.com")!!
+    var server = if (BuildConfig.DEBUG) prefs.getString("server", productionServer) ?: productionServer else productionServer
         private set
+
+    init {
+        // Old releases allowed a custom origin. Keep its saved account keys, but never auto-resume there in production.
+        if (!BuildConfig.DEBUG && store.activeIntent()?.origin?.let { it != productionServer } == true)
+            store.setActiveIntent(null)
+    }
 
     private val bootstrapOrigin = store.activeIntent()?.origin ?: server
     private val bootstrapNames = listOf(prefs.getString("callsign", null), prefs.getString("localCallsign", null)).mapIndexed { seat, name ->
@@ -83,7 +91,7 @@ internal class GameSession(context: Context) {
             field = value
         }
     var publicSelected = prefs.getBoolean("publicSelected", true)
-    var mode = prefs.getString("mode", "infinity")!!.takeIf { it in modes } ?: "infinity"
+    var mode = prefs.getString("mode", "elimination")!!.takeIf { it in modes } ?: "elimination"
     var rules =
         runCatching {
             prefs.getString("rules", null)?.let { SnapshotDecoder.rules(JSONObject(it)) }
@@ -97,6 +105,10 @@ internal class GameSession(context: Context) {
     private val mutableLocalBots = mutableListOf<LocalBot>()
     val localBots: List<LocalBot>
         get() = mutableLocalBots
+
+    private val mutablePresets = readPresets()
+    val presets: List<RoomPreset>
+        get() = mutablePresets
 
     val localStartError: String?
         get() = if (online || publicSelected) null else rules.infinityStartError(
@@ -118,7 +130,10 @@ internal class GameSession(context: Context) {
     var muted = prefs.getBoolean("muted", false)
     var volume = prefs.getFloat("volume", .5f)
     var highRefresh = prefs.getBoolean("highRefresh", true)
-    var showFPS = prefs.getBoolean("showFPS", false)
+    var keyboardBindings = NativeControlBindings.decode(prefs.getString(NativeControlBindings.storageKey, null))
+    var mouseAim = prefs.getBoolean("mouseAim", true)
+    var mouseFire = prefs.getBoolean("mouseFire", true)
+    var showFPS = prefs.getBoolean("showPerformanceReadout", true)
     var screen = Screen.READY
         private set
 
@@ -144,7 +159,7 @@ internal class GameSession(context: Context) {
     var configurationError: String? = null
         private set
 
-    var latency = 0.0
+    var latency: Double? = null
         private set
 
     var publicStatus: PublicStatus? = null
@@ -208,19 +223,20 @@ internal class GameSession(context: Context) {
     private val renameNames = arrayOfNulls<String>(2)
     private val renameRequests = LongArray(2)
     private var active = true
-    private var previewSeed = 137
     private var timeline = OnlinePresentation()
     private var timelineOwner: NativeNetworkClient? = null
     private var timelineConnection = -1L
     private var audioStateOwner: NativeNetworkClient? = null
     private var audioStateConnection = -1L
-    private var pendingAutoStart = false
+    private var pendingQueue = false
+    private var pendingPublicSelection = false
+    private var pendingLocalJoin = false
     private var spectatorAutoEnter = true
     private val main = Handler(Looper.getMainLooper())
     private var nameRequest: CancelRequest? = null
     private var nameRequestEpoch = 0L
     private var nextNameAttempt = 0L
-    private var pendingOnlineAction: (() -> Unit)? = null
+    private var pendingOnlineAction: PendingOnlineAction? = null
     private var statusRequest: CancelRequest? = null
     private var statusInFlight = false
     private var statusEpoch = 0L
@@ -235,6 +251,26 @@ internal class GameSession(context: Context) {
         }
     val isHost: Boolean
         get() = room == null || room?.optInt("host") == network.welcome?.id
+
+    val roomSetupOpen: Boolean
+        get() = room?.let {
+            screen == Screen.READY && !it.optBoolean("infinityActive") &&
+                it.optString("phase") in setOf("lobby", "matchOver") &&
+                it.isNull("queue") && it.isNull("matchmaking") && it.optString("awayMatch").isEmpty()
+        } == true
+
+    val roomLocalPilot: JSONObject?
+        get() {
+            val controller = network.welcome?.id ?: return null
+            return room?.roomRosterMembers()?.firstOrNull { it.optString("kind") == "local" && it.optInt("owner", -1) == controller }
+        }
+
+    val canAddRoomLocalPilot: Boolean
+        get() = room?.let { current ->
+            isHost && roomSetupOpen && !releasingCallsign &&
+                (current.optJSONArray("players")?.length() ?: 0) < current.optInt("maxPlayers", 8) &&
+                current.roomRosterMembers().none { it.optString("kind") == "local" }
+        } == true
 
     val roomCode: String?
         get() = room?.optString("code")?.takeIf { it.isNotBlank() } ?: network.welcome?.room
@@ -278,7 +314,7 @@ internal class GameSession(context: Context) {
                         ),
                     )
                 }
-            } ?: resizeBots(prefs.getInt("bots", 3).coerceIn(0, maxLocalBots))
+            } ?: resizeBots(prefs.getInt("bots", if (publicSelected) 0 else 3).coerceIn(0, maxLocalBots))
         }
             .onFailure {
                 mutableLocalBots.clear()
@@ -401,9 +437,9 @@ internal class GameSession(context: Context) {
         }
     }
 
-    private fun validHumanNames(): Boolean {
+    private fun validHumanNames(includeLocal: Boolean = localSelected): Boolean {
         if (
-            Callsigns.botReserved(callsign) || localSelected && Callsigns.botReserved(localCallsign)
+            Callsigns.botReserved(callsign) || includeLocal && Callsigns.botReserved(localCallsign)
         ) {
             error(Callsigns.botNamespaceMessage)
             return false
@@ -411,10 +447,13 @@ internal class GameSession(context: Context) {
         return true
     }
 
-    private fun awaitDefaultNames(action: () -> Unit): Boolean {
-        if (online || !(nameDrafts.pending(0) || localSelected && nameDrafts.pending(1)))
+    private fun pendingHumanNames(includeLocal: Boolean): Boolean =
+        nameDrafts.pending(0) || includeLocal && nameDrafts.pending(1)
+
+    private fun awaitDefaultNames(includeLocal: Boolean = localSelected, action: () -> Unit): Boolean {
+        if (online || !pendingHumanNames(includeLocal))
             return false
-        pendingOnlineAction = action
+        pendingOnlineAction = PendingOnlineAction(includeLocal, action)
         screen = Screen.CONNECTING
         status = "Choosing available callsigns…"
         nextNameAttempt = 0
@@ -425,12 +464,10 @@ internal class GameSession(context: Context) {
 
     private fun ensureDefaultNames() {
         if (!active || releasingCallsign || nameRequest != null || System.nanoTime() < nextNameAttempt) return
-        if (!(nameDrafts.pending(0) || localSelected && nameDrafts.pending(1))) {
-            pendingOnlineAction?.let {
-                pendingOnlineAction = null
-                screen = Screen.READY
-                it()
-            }
+        pendingOnlineAction?.takeUnless { pendingHumanNames(it.includeLocal) }?.let {
+            pendingOnlineAction = null
+            screen = Screen.READY
+            it.run()
         }
         val requested = (0..1).filter { nameDrafts.pending(it) }
         if (requested.isEmpty()) return
@@ -546,15 +583,16 @@ internal class GameSession(context: Context) {
             .putBoolean("muted", muted)
             .putFloat("volume", volume)
             .putBoolean("highRefresh", highRefresh)
-            .putBoolean("showFPS", showFPS)
+            .putString(NativeControlBindings.storageKey, keyboardBindings.encode())
+            .putBoolean("mouseAim", mouseAim)
+            .putBoolean("mouseFire", mouseFire)
+            .putBoolean("showPerformanceReadout", showFPS)
             .apply()
     }
 
     fun setServer(address: String) {
+        check(BuildConfig.DEBUG) { "Server overrides are only available in debug builds." }
         val normalized = ServerAddress.origin(address)
-        require(BuildConfig.DEBUG || normalized.startsWith("https://")) {
-            "A secure HTTPS server is required."
-        }
         if (normalized == server) return
         leave()
         server = normalized
@@ -575,32 +613,39 @@ internal class GameSession(context: Context) {
     fun selectMode(value: String) {
         if (value !in modes) return
         if (rejectSurvivalRosterChange(value, value == "infinity", localSelected)) return
-        if (value != mode) configurationError = null
         modeProfiles["$profileContext:${if(rules.infinity) "infinity" else rules.mode}"] =
             rules.copy()
-        rules = rules.selectingMode(value, modeProfiles["$profileContext:$value"])
+        val selected = rules.selectingMode(value, modeProfiles["$profileContext:$value"])
+        if (online) {
+            command("rules", "rules" to rulesJson(selected))
+            return
+        }
+        val enteringLocal = publicSelected
+        if (value != mode) configurationError = null
+        rules = selected
         mode = value
-        if (!online) normalizeLocalTeams()
-        if (!online || value != "infinity") publicSelected = false
-        if (online) command("rules", "rules" to rulesJson(rules))
+        normalizeLocalTeams()
+        if (enteringLocal && localBots.isEmpty()) resizeBots(3.coerceAtMost(maxLocalBots))
+        publicSelected = false
         save()
         changed(true)
     }
 
     fun changeRules(value: RoomRules) {
         if (rejectSurvivalRosterChange(value.mode, value.infinity, localSelected)) return
+        val updated = value.copy(
+            teamMode = if (!value.infinity && value.mode in listOf("ctf", "survival")) "teams" else value.teamMode,
+        )
+        if (online) {
+            command("rules", "rules" to rulesJson(updated))
+            return
+        }
         if (value != rules) configurationError = null
-        rules =
-            value.copy(
-                teamMode =
-                    if (!value.infinity && value.mode in listOf("ctf", "survival")) "teams"
-                    else value.teamMode,
-            )
+        rules = updated
         mode = if (rules.infinity) "infinity" else rules.mode
-        if (!online) publicSelected = false
-        if (!online) normalizeLocalTeams()
+        publicSelected = false
+        normalizeLocalTeams()
         modeProfiles["$profileContext:$mode"] = rules.copy()
-        if (online) command("rules", "rules" to rulesJson(rules))
         save()
         changed(true)
     }
@@ -615,13 +660,8 @@ internal class GameSession(context: Context) {
     fun togglePublic(enabled: Boolean) {
         configurationError = null
         publicSelected = enabled
-        if (enabled) {
-            modeProfiles["$profileContext:${if(rules.infinity) "infinity" else rules.mode}"] =
-                rules.copy()
-            rules = rules.selectingMode("infinity", modeProfiles["$profileContext:infinity"])
-            mode = "infinity"
-        }
         if (online) command("select_public_infinity", "enabled" to enabled)
+        else if (!enabled && !rules.infinity && localBots.isEmpty()) resizeBots(3.coerceAtMost(maxLocalBots))
         save()
         changed(true)
     }
@@ -637,10 +677,18 @@ internal class GameSession(context: Context) {
                     name,
                     GamePalette.index(id - 1),
                     difficulty,
-                    if (rules.teamMode == "teams") localTeam else 0,
+                    nextLocalBotTeam(),
                 ),
             )
         }
+    }
+
+    private fun nextLocalBotTeam(): Int {
+        if (!rules.infinity && rules.mode == "survival") return 1
+        if (rules.teamMode != "teams") return 0
+        val first = localBots.count { it.team == 1 } + (if (localTeam == 1) 1 else 0)
+        val second = localBots.count { it.team == 2 } + (if (localTeam == 2) 1 else 0)
+        return if (first <= second) 1 else 2
     }
 
     private fun normalizeLocalTeams(resetCTF: Boolean = true) {
@@ -708,27 +756,27 @@ internal class GameSession(context: Context) {
 
     private fun preparePreview() {
         fixed = null
+        practice = null
         localID = 1
         localID2 = null
         accumulator = 0.0
         previousFrame = 0
-        practice =
-            PracticeArena(
-                seed = previewSeed,
-                name = callsign,
-                colorIndex = colorIndex,
-                botCount = 2,
-            )
-        maze = practice!!.maze
-        snapshot = practice!!.snapshot
+        maze = InfiniteMaze(7319)
+        snapshot = ArenaSnapshot(
+            tanks = listOf(ArenaTank(id = localID, name = callsign, x = 126.0, y = 126.0, angle = -.6, colorIndex = colorIndex)),
+            pickups = listOf(
+                ArenaPickup(id = 1, x = 210.0, y = 210.0, type = "cannon"),
+                ArenaPickup(id = 2, x = 42.0, y = 210.0, type = "shield"),
+            ),
+        )
     }
 
     fun play() {
         if (releasingCallsign) return
-        if (!online && publicSelected && !nameDrafts.pending(0) && prepareIdentityForOnline(::play)) return
+        if (!online && publicSelected && !nameDrafts.pending(0) && prepareIdentityForOnline { play() }) return
         if (!validHumanNames()) return
         localStartError?.let { error(it); return }
-        if (!online && publicSelected && awaitDefaultNames(::play)) return
+        if (!online && publicSelected && awaitDefaultNames { play() }) return
         save()
         neutral()
         if (online) {
@@ -782,6 +830,7 @@ internal class GameSession(context: Context) {
         }
         infinity = rules.infinity
         val seed = SecureRandom().nextInt()
+        val secondaryPlayer = if (localSelected) LocalPilot(localCallsign, localColorIndex, secondLocalTeam) else null
         if (infinity) {
             practice =
                 PracticeArena(
@@ -790,6 +839,7 @@ internal class GameSession(context: Context) {
                     colorIndex = colorIndex,
                     botCount = botCount,
                     difficulty = difficulty,
+                    secondaryPlayer = secondaryPlayer,
                 )
             practice!!.configure(rules)
             practice!!.configurePilot(
@@ -798,9 +848,14 @@ internal class GameSession(context: Context) {
                 colorIndex,
                 if (rules.teamMode == "teams") localTeam else 0,
             )
+            practice!!.secondaryLocalID?.let {
+                practice!!.configurePilot(it, localCallsign, localColorIndex,
+                    if (rules.teamMode == "teams") secondLocalTeam else 0)
+            }
+            val firstBotID = (practice!!.secondaryLocalID ?: practice!!.localID) + 1
             localBots.forEachIndexed { index, bot ->
                 practice!!.configurePilot(
-                    index + 2,
+                    index + firstBotID,
                     bot.name,
                     bot.colorIndex,
                     if (rules.teamMode == "teams") bot.team.coerceAtLeast(1) else 0,
@@ -824,25 +879,14 @@ internal class GameSession(context: Context) {
                     botDifficulties = localBots.map { it.difficulty },
                     botTeams = localBots.map { it.team },
                     localTeam = localTeam,
+                    secondaryPlayer = secondaryPlayer,
                 )
             practice = null
             maze = fixed!!.maze
             snapshot = fixed!!.snapshot
         }
         localID = practice?.localID ?: fixed!!.localID
-        localID2 =
-            if (localSelected)
-                practice?.configureLocal(
-                    localCallsign,
-                    localColorIndex,
-                    if (rules.teamMode == "teams") secondLocalTeam else 0,
-                )
-                    ?: fixed?.configureLocal(
-                        localCallsign,
-                        localColorIndex,
-                        if (rules.teamMode == "teams") secondLocalTeam else 0,
-                    )
-            else null
+        localID2 = practice?.secondaryLocalID ?: fixed?.secondaryLocalID
         snapshot = practice?.snapshot ?: fixed!!.snapshot
         accumulator = 0.0
         previousFrame = 0
@@ -851,55 +895,147 @@ internal class GameSession(context: Context) {
         changed(true)
     }
 
-    fun share() {
-        if (releasingCallsign) return
-        if (!nameDrafts.pending(0) && prepareIdentityForOnline(::share)) return
-        if (!validHumanNames() || awaitDefaultNames(::share)) return
+    private fun localRoster(): List<PresetSeat> = buildList {
+        add(PresetSeat("human", callsign, colorIndex, localTeam))
+        if (localSelected)
+            add(PresetSeat("local", localCallsign, localColorIndex, secondLocalTeam))
+        localBots.forEach { bot ->
+            add(PresetSeat("bot", bot.name, bot.colorIndex, bot.team, bot.difficulty))
+        }
+    }
+
+    private fun onlineRoster(current: JSONObject): List<PresetSeat> {
+        val host = current.optInt("host")
+        return current.optJSONArray("players")?.objects().orEmpty()
+            .filter { player ->
+                val kind = player.optString("kind")
+                player.optInt("id") == host || kind == "bot" || kind == "local" && player.optInt("owner") == host
+            }
+            .sortedBy { it.optInt("id") != host }
+            .map { player ->
+                val seat = PresetSeat.fromJson(player)
+                if (player.optInt("id") == host) seat.copy(kind = "human") else seat
+            }
+    }
+
+    private fun readPresets(): MutableList<RoomPreset> {
+        val presets = runCatching { JSONArray(prefs.getString("roomPresets", "[]")!!).objects() }
+            .getOrDefault(emptyList())
+            .mapNotNull { runCatching { RoomPreset.fromJson(it) }.getOrNull() }
+            .takeLast(RoomPreset.maxCount)
+            .toMutableList()
+        if (presets.isEmpty()) prefs.getString("preset", null)?.let { encoded ->
+            runCatching { RoomPreset("Saved preset", SnapshotDecoder.rules(JSONObject(encoded)), null) }
+                .onSuccess { presets += it }
+        }
+        return presets
+    }
+
+    val canLoadPreset: Boolean
+        get() {
+            if (screen != Screen.READY || releasingCallsign) return false
+            if (!online) return true
+            val current = room ?: return false
+            return isHost && roomSetupOpen &&
+                (current.optJSONArray("spectators")?.length() ?: 0) == 0 &&
+                current.optJSONArray("players")?.objects().orEmpty().none {
+                    it.optInt("id") != current.optInt("host") && it.optString("kind") !in setOf("bot", "local")
+                }
+        }
+
+    fun savePreset(value: String): Boolean {
+        val name = Callsigns.limit(value.trim(), RoomPreset.maxNameLength)
+        if (name.isEmpty() || !isHost || releasingCallsign || screen != Screen.READY) return false
+        val roster = if (online) room?.let(::onlineRoster)?.takeIf { it.isNotEmpty() } ?: return false else localRoster()
+        mutablePresets.removeAll { it.name == name }
+        mutablePresets.add(RoomPreset(name, rules.copy(), roster))
+        if (mutablePresets.size > RoomPreset.maxCount) mutablePresets.removeAt(0)
+        prefs.edit()
+            .putString("roomPresets", JSONArray(mutablePresets.map(RoomPreset::toJson)).toString())
+            .remove("preset")
+            .apply()
+        return true
+    }
+
+    fun loadPreset(preset: RoomPreset): Boolean {
+        if (!canLoadPreset) {
+            error("Presets require a host-only lobby without online guests or spectators.")
+            return false
+        }
+        val roster = preset.roster
+        if (roster == null) {
+            if (rejectSurvivalRosterChange(preset.rules.mode, preset.rules.infinity, localSelected)) return false
+            changeRules(preset.rules)
+            return true
+        }
+        if (online) {
+            val current = onlineRoster(room ?: return false)
+            val primary = current.firstOrNull() ?: return false
+            val selectedSecondary = store.selected(server, 1)?.let { credential ->
+                accounts.savedCallsigns(server).firstOrNull { it.key == credential.key }?.name
+            }
+            val localName = current.firstOrNull { it.kind == "local" }?.name ?: selectedSecondary ?: localCallsign
+            val seats = roster.map { seat ->
+                when (seat.kind) {
+                    "human" -> seat.copy(name = primary.name)
+                    "local" -> seat.copy(name = localName)
+                    else -> seat
+                }
+            }
+            command("preset", "rules" to rulesJson(preset.rules), "roster" to seats.toRosterJson())
+            return true
+        }
+        val primary = roster.firstOrNull()?.takeIf { it.kind == "human" } ?: return false
+        val secondary = roster.firstOrNull { it.kind == "local" }
+        val bots = roster.filter { it.kind == "bot" }
+        if (bots.size > preset.rules.botCapacity(if (secondary == null) 1 else 2)) {
+            error("The saved roster exceeds this mode's tank limit.")
+            return false
+        }
+        rules = preset.rules.copy()
+        mode = if (rules.infinity) "infinity" else rules.mode
+        mutableLocalBots.clear()
+        bots.forEachIndexed { index, bot ->
+            mutableLocalBots.add(LocalBot(index + 2, bot.name, bot.color, bot.difficulty, bot.team))
+        }
+        configurationError = null
+        localTeam = primary.team.coerceIn(1, 4)
+        localSelected = secondary != null
+        secondLocalTeam = secondary?.team?.coerceIn(1, 4) ?: 1
+        localColorIndex = secondary?.color ?: 1
+        publicSelected = false
+        normalizeLocalTeams(resetCTF = false)
+        save()
+        changed(true)
+        return true
+    }
+
+    fun share(forQueue: Boolean = false) {
+        if (releasingCallsign || online) return
+        if (!nameDrafts.pending(0) && prepareIdentityForOnline { share(forQueue) }) return
+        if (!validHumanNames() || awaitDefaultNames { share(forQueue) }) return
         save()
         arenaNetwork.disconnect(false)
         arenaActive = false
         online = true
         infinity = rules.infinity
         screen = Screen.CONNECTING
-        pendingAutoStart = false
+        pendingQueue = forQueue
+        pendingPublicSelection = publicSelected
+        queuePacket = null
         spectatorAutoEnter = true
-        val roster =
-            JSONArray()
-                .put(
-                    JSONObject()
-                        .put("kind", "human")
-                        .put("name", callsign)
-                        .put("colorIndex", colorIndex)
-                        .put("team", if (rules.teamMode == "teams") localTeam else 0),
-                )
-        if (localSelected)
-            roster.put(
-                JSONObject()
-                    .put("kind", "local")
-                    .put("name", localCallsign)
-                    .put("colorIndex", localColorIndex)
-                    .put("team", if (rules.teamMode == "teams") secondLocalTeam else 0),
-            )
-        localBots.forEach { bot ->
-            roster.put(
-                JSONObject()
-                    .put("kind", "bot")
-                    .put("name", bot.name)
-                    .put("colorIndex", bot.colorIndex)
-                    .put("difficulty", bot.difficulty)
-                    .put("team", if (rules.teamMode == "teams") bot.team.coerceAtLeast(1) else 0),
-            )
-        }
         runCatching {
             network.connectPublishedRoom(
                 server,
                 callsign,
                 rulesJson(rules),
-                roster,
+                localRoster().toRosterJson(),
                 roomName.takeIf { it.isNotBlank() },
             )
         }
             .onFailure {
+                pendingQueue = false
+                pendingPublicSelection = false
                 online = false
                 screen = Screen.READY
                 error(it.message)
@@ -908,19 +1044,28 @@ internal class GameSession(context: Context) {
     }
 
     fun join(code: String, spectator: Boolean = false) {
+        val includeLocal = !spectator && (if (room != null) roomLocalPilot != null else localSelected)
+        join(code, spectator, includeLocal)
+    }
+
+    private fun join(code: String, spectator: Boolean, includeLocal: Boolean) {
         if (releasingCallsign) return
-        if (!nameDrafts.pending(0) && prepareIdentityForOnline { join(code, spectator) }) return
-        if (!validHumanNames() || awaitDefaultNames { join(code, spectator) }) return
+        if (!validHumanNames(includeLocal)) return
+        if (awaitDefaultNames(includeLocal) { join(code, spectator, includeLocal) }) return
+        if (prepareIdentityForOnline(includeLocal) { join(code, spectator, includeLocal) }) return
         save()
-        arenaNetwork.disconnect(false)
-        arenaActive = false
+        if (online) leave()
         online = true
         screen = Screen.CONNECTING
         infinity = false
-        pendingAutoStart = false
+        pendingQueue = false
+        pendingPublicSelection = false
+        pendingLocalJoin = includeLocal
+        queuePacket = null
         spectatorAutoEnter = true
         runCatching { network.connectRoom(server, callsign, code.trim(), spectator) }
             .onFailure {
+                pendingLocalJoin = false
                 online = false
                 screen = Screen.READY
                 error(it.message)
@@ -930,19 +1075,16 @@ internal class GameSession(context: Context) {
 
     fun findMatch() {
         if (releasingCallsign) return
-        if (!validHumanNames() || !online && awaitDefaultNames(::findMatch)) return
         if (online) command("queue_info")
-        else {
-            pendingAutoStart = true
-            online = true
-            screen = Screen.CONNECTING
-            network.connectRoom(server, callsign)
-        }
-        changed(true)
+        else share(forQueue = true)
     }
 
     fun leave() {
         pendingOnlineAction = null
+        pendingQueue = false
+        pendingPublicSelection = false
+        pendingLocalJoin = false
+        queuePacket = null
         spawnNotices.clear()
         neutral()
         arenaNetwork.disconnect()
@@ -956,6 +1098,7 @@ internal class GameSession(context: Context) {
         localID = 1
         localID2 = null
         followingID = 0
+        latency = null
         timeline.reset()
         timelineOwner = null
         timelineConnection = -1
@@ -971,18 +1114,17 @@ internal class GameSession(context: Context) {
         changed(true)
     }
 
-    fun lobby() {
+    fun lobby(endMatch: Boolean = true) {
         neutral()
         paused = false
         if (online && room != null) {
-            val viewer = spectating
             arenaNetwork.disconnect()
             arenaActive = false
             spectatorAutoEnter = false
             followingID = 0
             localID = network.welcome?.id ?: localID
             localID2 = network.welcome?.localId
-            if (!viewer) command("lobby")
+            if (endMatch && isHost) command("lobby")
             screen = Screen.READY
             changed(true)
         } else if (online) leave()
@@ -992,6 +1134,9 @@ internal class GameSession(context: Context) {
             changed(true)
         }
     }
+
+    val canResume: Boolean
+        get() = (!online || activeNetwork.connected) && (spectating || !Callsigns.botReserved(callsign))
 
     val canRestartWave: Boolean
         get() =
@@ -1135,7 +1280,7 @@ internal class GameSession(context: Context) {
 
     fun refreshStatus() {
         ensureDefaultNames()
-        if (!active || statusInFlight) return
+        if (!active || statusInFlight || screen != Screen.READY || (!publicSelected && (!showFPS || network.connected))) return
         statusInFlight = true
         val requestedServer = server
         val requestEpoch = ++statusEpoch
@@ -1144,10 +1289,10 @@ internal class GameSession(context: Context) {
                 if (requestEpoch == statusEpoch) {
                     statusInFlight = false
                     statusRequest = null
-                    if (active && requestedServer == server)
+                    if (active && requestedServer == server && screen == Screen.READY)
                         result.onSuccess {
                             publicStatus = it
-                            if (!online) latency = it.latencyMilliseconds
+                            if (!network.connected) latency = it.latencyMilliseconds
                             changed(false)
                         }
                 }
@@ -1323,10 +1468,10 @@ internal class GameSession(context: Context) {
         }.onFailure { switchingCallsign = false; error(it.message) }
     }
 
-    private fun prepareIdentityForOnline(action: () -> Unit): Boolean {
+    private fun prepareIdentityForOnline(includeLocal: Boolean = localSelected, action: () -> Unit): Boolean {
         if (switchingCallsign) return true
         if (onlineIdentityReady) { onlineIdentityReady = false; return false }
-        val seats = if (localSelected) listOf(0,1) else listOf(0)
+        val seats = if (includeLocal) listOf(0, 1) else listOf(0)
         fun prepare(index: Int) {
             if (index == seats.size) { onlineIdentityReady = true; action(); return }
             val seat = seats[index]
@@ -1336,6 +1481,15 @@ internal class GameSession(context: Context) {
         return true
     }
 
+    fun addRoomLocalPilot() {
+        if (!canAddRoomLocalPilot) return
+        // An existing credential stays paired with its committed callsign. The room add
+        // claims a new durable P2 credential atomically when the seat has no account yet.
+        val name = if (store.selected(server, 1) == null) localCallsign else committedCallsigns[1]
+        if (Callsigns.botReserved(name)) { error(Callsigns.botNamespaceMessage); return }
+        command("add", "kind" to "local", "name" to name)
+    }
+
     fun command(type: String, vararg fields: Pair<String, Any?>) {
         val json = JSONObject().put("type", type)
         fields.forEach { (key, value) -> json.put(key, value) }
@@ -1343,10 +1497,6 @@ internal class GameSession(context: Context) {
         if (type == "rename" && json.has("name")) { renameCallsign(json.getString("name"), 0); return }
         if (type in setOf("rename_local", "configure") && json.has("name") && target == network.welcome?.localId) {
             renameCallsign(json.getString("name"), 1); return
-        }
-        if (type == "add" && json.optString("kind") == "local") {
-            val name = json.optString("name", localCallsign)
-            if (store.selected(server,1) == null || canonicalCallsign(name) != canonicalCallsign(committedCallsigns[1])) { renameCallsign(name,1); return }
         }
         runCatching { (if (room != null) network else activeNetwork).send(json) }
             .onFailure { error(it.message) }
@@ -1430,10 +1580,6 @@ internal class GameSession(context: Context) {
                     } else if (!fromArena && previousScreen == Screen.PLAYING)
                         screen = previousScreen
                 }
-                if (!fromArena && pendingAutoStart) {
-                    pendingAutoStart = false
-                    command("queue_info")
-                }
             }
             is NetworkEvent.State ->
                 if (isPlayingClient) {
@@ -1492,6 +1638,9 @@ internal class GameSession(context: Context) {
                     neutral()
                     paused = false
                     if (event.terminal) {
+                        pendingQueue = false
+                        pendingPublicSelection = false
+                        pendingLocalJoin = false
                         screen = Screen.READY
                         online = false
                         room = null
@@ -1514,6 +1663,9 @@ internal class GameSession(context: Context) {
     private fun packet(packet: JSONObject, fromArena: Boolean) {
         when (packet.optString("type")) {
             "room" -> {
+                if (fromArena) return
+                if (room?.optString("code")?.let { it != packet.optString("code") } == true)
+                    queuePacket = null
                 room = packet
                 packet.optJSONArray("players")?.let { rows ->
                     for (seat in 0..1) {
@@ -1529,8 +1681,15 @@ internal class GameSession(context: Context) {
                     rules = SnapshotDecoder.rules(it)
                     mode = if (rules.infinity) "infinity" else rules.mode
                 }
-                publicSelected = packet.optBoolean("infinityPublic")
-                infinity = rules.infinity
+                val publishedPublic = pendingPublicSelection && isHost
+                pendingPublicSelection = false
+                publicSelected = publishedPublic || packet.optBoolean("infinityPublic")
+                if (publishedPublic && !packet.optBoolean("infinityPublic"))
+                    command("select_public_infinity", "enabled" to true)
+                if (pendingQueue) {
+                    pendingQueue = false
+                    command("queue_info")
+                }
                 if (packet.optString("phase") == "lobby" && !packet.optBoolean("infinityActive")) {
                     if (arenaActive) {
                         arenaNetwork.disconnect()
@@ -1549,6 +1708,11 @@ internal class GameSession(context: Context) {
                         arenaActive = false
                     }
                     if (!arenaActive && (roomSpectating && spectatorAutoEnter || changedRole)) attachRoomArena(false)
+                }
+                infinity = arenaActive || rules.infinity
+                if (pendingLocalJoin) {
+                    pendingLocalJoin = false
+                    if (!roomSpectating) addRoomLocalPilot()
                 }
             }
             "followed" -> if (fromArena && spectating) followingID = packet.optInt("following")
@@ -1585,12 +1749,20 @@ internal class GameSession(context: Context) {
                     }
                 }
             }
+            "error" -> {
+                if (!fromArena && packet.optString("action") == "select_public_infinity")
+                    publicSelected = room?.optBoolean("infinityPublic") == true
+            }
             "queue_catalog",
             "queue_status",
-            "queue_cancelled" -> queuePacket = packet
-            "kicked",
-            "room_offline" ->
-                if (!arenaActive || !arenaNetwork.isPublic) {
+            "queue_cancelled" -> {
+                if (fromArena) return
+                if (!packet.has("queues"))
+                    queuePacket?.optJSONArray("queues")?.let { packet.put("queues", it) }
+                queuePacket = packet
+            }
+            "unshared" ->
+                if (!fromArena) {
                     leave()
                     error(packet.optString("message", "The room is no longer available."))
                 }
@@ -1599,6 +1771,8 @@ internal class GameSession(context: Context) {
     }
 
     companion object {
+        private const val productionServer = "https://leqra.com"
+
         val modes =
             linkedMapOf(
                 "infinity" to "Infinity",

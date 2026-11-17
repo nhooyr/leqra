@@ -67,6 +67,62 @@ class AccountServiceTest {
     }
 
     @Test
+    fun savedActivationReviewExcludesSelectedKnownAndResetKeys() {
+        val store = Store()
+        val service = AccountService(store) { it() }
+        val origin = "https://leqra.com"
+        val active = AccountKeys.create()
+        val next = AccountKeys.create()
+        val reset = AccountKeys.create()
+        val saved = AccountKeys.create()
+        val secondary = AccountKeys.create()
+        store.select(origin, 0, active)
+        store.select(origin, 1, secondary)
+        store.savePending(origin, AccountKeys.pending(0, reset, active, "rotation"))
+        store.savePending(origin, AccountKeys.pending(0, active, purpose = "generate:active"))
+        store.savePending(origin, AccountKeys.pending(0, secondary, purpose = "generate:secondary"))
+        store.savePending(origin, AccountKeys.pending(0, next, purpose = "generate:next"))
+        store.savePending(origin, AccountKeys.pending(0, next, purpose = "callsign:next"))
+        store.savePending(origin, AccountKeys.pending(0, saved, purpose = "generate:saved"))
+        service.rememberCallsign(origin, 0, "SAVED", saved)
+        assertEquals(listOf(next), service.savedActivations(origin, 0).map { it.key })
+        assertEquals(reset, service.pendingRotation(origin, 0)?.key)
+        val result = awaitOperation<CheckedAccount> { service.inspectForSeat(origin, secondary, 0, it) }
+        assertEquals("P1 and P2 need independent account keys.", result.exceptionOrNull()?.message)
+        assertEquals(active, store.selected[0]?.key)
+        service.close()
+    }
+
+    @Test
+    fun reviewingAnActivationOnlyChangesSelectionAfterExplicitUse() {
+        MockWebServer().use { server ->
+            server.start()
+            val origin = server.url("/").toString()
+            val store = Store()
+            val service = AccountService(store) { it() }
+            val previous = AccountKeys.create()
+            val candidate = AccountKeys.create()
+            store.select(origin, 0, previous)
+            store.savePending(origin, AccountKeys.pending(0, candidate, previous, "generate:preview"))
+            val response = """{"names":["NEXT"],"totalNames":1,"publicProfile":{"name":"NEXT","score":12}}"""
+            server.enqueue(MockResponse().setBody(response))
+            val pending = service.savedActivations(origin, 0).single()
+            val checked = awaitOperation<CheckedAccount> { service.inspectForSeat(origin, pending.key, 0, it) }.getOrThrow()
+            val previewRequest = org.json.JSONObject(server.takeRequest().body.readUtf8())
+            assertFalse(previewRequest.has("signIn"))
+            assertEquals(previous, store.selected[0]?.key)
+            assertEquals(12, checked.info.scoreForCallsign("NEXT"))
+
+            server.enqueue(MockResponse().setBody(response))
+            awaitOperation<CheckedAccount> { service.signInChecked(checked, 0, "PREVIOUS", callback = it) }.getOrThrow()
+            assertTrue(org.json.JSONObject(server.takeRequest().body.readUtf8()).getBoolean("signIn"))
+            assertEquals(candidate, store.selected[0]?.key)
+            assertTrue(service.savedCallsigns(origin).any { it.key == previous })
+            service.close()
+        }
+    }
+
+    @Test
     fun delayedImportSignInCannotReplaceANewerSelectedAccount() {
         MockWebServer().use { server ->
             server.start()

@@ -163,9 +163,10 @@ internal class NativeHudView(context: Context) : View(context) {
         paused: Boolean,
         online: Boolean,
         frozen: Boolean = false,
+        onlySeat: Int? = null,
     ) {
-        val first = snapshot.tanks.firstOrNull { it.id == localID }
-        val second = localID2?.let { id -> snapshot.tanks.firstOrNull { it.id == id } }
+        val first = if (onlySeat == 1) null else snapshot.tanks.firstOrNull { it.id == localID }
+        val second = if (onlySeat == 0) null else localID2?.let { id -> snapshot.tanks.firstOrNull { it.id == id } }
         val count = (if (first != null) 1 else 0) + (if (second != null) 1 else 0)
         val previousCount = slots.size
         while (slots.size < count) slots.add(Slot())

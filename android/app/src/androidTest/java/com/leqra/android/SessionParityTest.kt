@@ -12,6 +12,7 @@ import com.leqra.core.*
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -295,6 +296,154 @@ class SessionParityTest {
     }
 
     @Test
+    fun publicInfinityRoomUpdatesKeepArenaModeUntilItEnds() {
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                set(session, "online", true)
+                set(session, "arenaActive", true)
+                val arenaWelcome = NetworkWelcome.parse(JSONObject().put("id", 9).put("localId", 10).put("seed", 42))
+                event(session, NetworkEvent.Welcome(arenaWelcome), arena = true)
+                val room = JSONObject().put("type", "room").put("code", "ROOM").put("phase", "lobby")
+                    .put("infinityPublic", true).put("infinityActive", true)
+                    .put("rules", GameSession.rulesJson(RoomRules.localDefaults("koth")))
+
+                event(session, NetworkEvent.Packet(room))
+                assertEquals("koth", session.mode)
+                assertFalse(session.rules.infinity)
+                assertEquals(Screen.PLAYING, session.screen)
+                assertTrue("The retained room cannot put a running Infinity arena into fixed match mode", session.infinity)
+                assertEquals(10, session.localID2)
+
+                event(session, NetworkEvent.Packet(room.put("infinityActive", false)))
+                assertEquals(Screen.READY, session.screen)
+                assertFalse("Returning to the retained room restores its finite mode", session.infinity)
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun onlineModeAndRulesWaitForTheServerToAcceptThem() {
+        val server = InstrumentationRegistry.getArguments().getString("server")
+        assumeTrue("A disposable current Go backend is required", server != null)
+        val context = context()
+        val suffix = UUID.randomUUID().toString().take(8)
+        context.getSharedPreferences("leqra-settings", 0).edit()
+            .putString("server", server).putString("callsign", "Rules $suffix").putBoolean("autoPending0", false)
+            .putBoolean("publicSelected", false).commit()
+        val session = main { GameSession(context) }
+        val errors = mutableListOf<String>()
+        try {
+            main {
+                session.notifyError = { errors += it }
+                session.botCount = 4
+                session.share()
+            }
+            eventually("Five pilots did not enter the Elimination room") {
+                session.room?.optJSONArray("players")?.length() == 5 && session.mode == "elimination"
+            }
+            main {
+                session.selectMode("survival")
+                assertEquals("elimination", session.mode)
+            }
+            eventually("The server did not reject a five-tank Survival squad") {
+                errors.any { it.contains("Survival supports up to four allied tanks") }
+            }
+            main {
+                assertEquals("elimination", session.mode)
+                assertEquals("elimination", session.rules.mode)
+                session.selectMode("koth")
+                assertEquals("elimination", session.mode)
+            }
+            eventually("The accepted King of the Hill mode did not update the lobby") { session.mode == "koth" }
+            main {
+                val previous = session.rules
+                session.changeRules(previous.copy(scoreTarget = 17, friendlyFire = true))
+                assertEquals(previous, session.rules)
+            }
+            eventually("The accepted rules did not update the lobby") {
+                session.rules.scoreTarget == 17 && session.rules.friendlyFire
+            }
+        } finally { main { session.leave(); session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun publicInfinityLeavesPrivateRulesAndRosterIntact() {
+        val context = context()
+        var session = main { GameSession(context) }
+        try {
+            main {
+                assertTrue(session.publicSelected)
+                assertEquals("elimination", session.mode)
+                assertTrue(session.localBots.isEmpty())
+                assertEquals(7319, session.maze?.seed)
+                assertEquals(listOf(session.callsign), session.snapshot.tanks.map { it.name })
+                assertEquals(listOf("cannon", "shield"), session.snapshot.pickups.map { it.type })
+                session.togglePublic(false)
+                assertEquals(listOf("Rust", "Vapor", "Ember"), session.localBots.map { it.name })
+                session.selectMode("koth")
+                session.changeRules(session.rules.copy(teamMode = "teams", scoreTarget = 18))
+                session.botCount = 0
+                repeat(3) { session.addLocalBot() }
+                val bots = session.localBots.toList()
+                assertEquals(listOf(2, 1, 2), bots.map { it.team })
+                session.togglePublic(true)
+                assertEquals("koth", session.mode)
+                assertEquals(18, session.rules.scoreTarget)
+                session.release()
+                session = GameSession(context)
+                assertTrue(session.publicSelected)
+                session.togglePublic(false)
+                assertEquals("koth", session.mode)
+                assertEquals(18, session.rules.scoreTarget)
+                assertEquals(bots, session.localBots)
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun namedPresetsRestoreAPairedSquadWhileKeepingLegacyRulesPresets() {
+        val context = context()
+        val prefs = context.getSharedPreferences("leqra-settings", 0)
+        prefs.edit().putBoolean("publicSelected", false).putString(
+            "preset", GameSession.rulesJson(RoomRules.localDefaults("koth")).toString(),
+        ).commit()
+        var session = main { GameSession(context) }
+        try {
+            main {
+                assertEquals("Saved preset", session.presets.single().name)
+                session.botCount = 2
+                session.localSelected = true
+                session.localColorIndex = 5
+                session.selectMode("survival")
+                session.changeRules(session.rules.copy(scoreTarget = 7))
+                val guard = session.localBots.first()
+                session.updateLocalBot(guard.id, name = "Veteran", difficulty = "hard")
+                val squad = session.localBots.toList()
+                assertTrue(session.savePreset("A-team"))
+                session.selectMode("elimination")
+                session.localSelected = false
+                session.botCount = 7
+                session.save()
+                session.release()
+                session = GameSession(context)
+                assertEquals(listOf("Saved preset", "A-team"), session.presets.map { it.name })
+                assertTrue(session.loadPreset(session.presets.last()))
+                assertEquals("survival", session.mode)
+                assertEquals(7, session.rules.scoreTarget)
+                assertEquals(squad, session.localBots)
+                assertTrue(session.localSelected)
+                assertEquals(5, session.localColorIndex)
+                assertTrue(session.loadPreset(session.presets.first()))
+                assertEquals("koth", session.mode)
+                assertEquals(squad, session.localBots)
+                assertTrue(session.localSelected)
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
     fun incompatibleSurvivalChangesNeverDeleteTheRosterOrChangePublicSelection() {
         val context = context()
         context.getSharedPreferences("leqra-settings", 0).edit().putString("server", "http://127.0.0.1:1")
@@ -312,7 +461,7 @@ class SessionParityTest {
                 val roster = session.localBots.toList()
                 val rules = session.rules.copy()
                 session.selectMode("survival")
-                assertEquals("infinity", session.mode)
+                assertEquals("elimination", session.mode)
                 assertTrue(session.publicSelected)
                 assertEquals(rules, session.rules)
                 assertEquals(roster, session.localBots)
@@ -586,6 +735,162 @@ class SessionParityTest {
             }
             eventually("An authored opposing bot did not make the target room playable") { session.room?.optBoolean("canStart") == true }
         } finally { main { session.leave(); session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun onlineHostAddsRemovesAndRestoresIndependentSecondPilot() {
+        val server = InstrumentationRegistry.getArguments().getString("server")
+        assumeTrue("A disposable current Go backend is required", server != null)
+        val context = context()
+        val suffix = UUID.randomUUID().toString().take(8)
+        val secondary = "Wing $suffix"
+        context.getSharedPreferences("leqra-settings", 0).edit()
+            .putString("server", server).putString("callsign", "One $suffix").putString("localCallsign", secondary)
+            .putBoolean("autoPending0", false).putBoolean("autoPending1", false)
+            .putBoolean("publicSelected", false).putBoolean("localSelected", false).commit()
+        val session = main { GameSession(context) }
+        try {
+            main { session.share() }
+            eventually("Room did not accept a second pilot") { session.canAddRoomLocalPilot }
+            main {
+                assertNull(session.store.selected(session.server, 1))
+                session.addRoomLocalPilot()
+            }
+            eventually("Separate P2 credential was not acknowledged") {
+                session.roomLocalPilot?.optString("name") == secondary &&
+                    session.store.selected(session.server, 1)?.registrationPending == false
+            }
+            val key = main {
+                val credential = session.store.selected(session.server, 1)!!
+                assertNotEquals(session.store.selected(session.server, 0)?.key, credential.key)
+                assertFalse("Online roster changes should leave offline P2 preference alone", session.localSelected)
+                val pilot = session.roomLocalPilot!!
+                session.command("kick", "target" to pilot.getInt("id"), "member" to pilot.getLong("member"))
+                credential.key
+            }
+            eventually("P2 remove did not clear the roster seat") { session.roomLocalPilot == null && session.canAddRoomLocalPilot }
+            main { session.addRoomLocalPilot() }
+            eventually("Saved P2 account did not rejoin the roster") { session.roomLocalPilot?.optString("name") == secondary }
+            main { assertEquals(key, session.store.selected(session.server, 1)?.key) }
+        } finally { main { session.leave(); session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun privateRoomJoinCarriesP2WhenHostingAndIgnoresP2WhenWatching() {
+        val server = InstrumentationRegistry.getArguments().getString("server")
+        assumeTrue("A disposable current Go backend is required", server != null)
+        val playerContext = context()
+        val spectatorContext = context()
+        val suffix = UUID.randomUUID().toString().take(8)
+        val firstRoom = "First $suffix"
+        val secondRoom = "Second $suffix"
+        val secondary = "Wing $suffix"
+        playerContext.getSharedPreferences("leqra-settings", 0).edit()
+            .putString("server", server).putString("callsign", "One $suffix").putString("localCallsign", secondary)
+            .putBoolean("autoPending0", false).putBoolean("autoPending1", false)
+            .putBoolean("publicSelected", false).putBoolean("localSelected", true).commit()
+        spectatorContext.getSharedPreferences("leqra-settings", 0).edit()
+            .putString("server", server).putString("callsign", "View $suffix").putString("localCallsign", "Bot Reserved")
+            .putBoolean("autoPending0", false).putBoolean("autoPending1", false)
+            .putBoolean("publicSelected", false).putBoolean("localSelected", true).commit()
+        val player = main { GameSession(playerContext) }
+        val spectator = main { GameSession(spectatorContext) }
+        try {
+            main { player.join(firstRoom) }
+            eventually("P2 was not added after joining as host") {
+                player.roomCode == firstRoom && player.roomLocalPilot?.optString("name") == secondary
+            }
+            val secondaryKey = main {
+                val key = player.store.selected(player.server, 1)!!.key
+                assertNotEquals(player.store.selected(player.server, 0)?.key, key)
+                // The current online party, not the offline roster, determines who joins the next room.
+                player.localSelected = false
+                player.join(secondRoom)
+                key
+            }
+            eventually("P2 did not move to the next room with P1") {
+                player.roomCode == secondRoom && player.roomLocalPilot?.optString("name") == secondary
+            }
+            main {
+                assertEquals(secondaryKey, player.store.selected(player.server, 1)?.key)
+                spectator.join(secondRoom, spectator = true)
+            }
+            eventually("Spectating incorrectly required the configured P2 callsign") {
+                spectator.roomCode == secondRoom && spectator.roomSpectating
+            }
+            main {
+                assertNull(spectator.roomLocalPilot)
+                assertNull(spectator.store.selected(spectator.server, 1))
+            }
+        } finally {
+            main { spectator.leave(); spectator.release(); player.leave(); player.release() }
+            playerContext.noBackupFilesDir.deleteRecursively()
+            spectatorContext.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun pairedRoomJoinOnlyRegistersP2OnceAfterTheInitialLobbyPacket() {
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                session.localCallsign = "Second pilot"
+                set(session, "online", true)
+                set(session, "pendingLocalJoin", true)
+                set(session.network, "origin", session.server)
+                val joined = NetworkWelcome.parse(JSONObject().put("id", 1).put("member", 20))
+                set(session.network, "welcome", joined)
+                event(session, NetworkEvent.Welcome(joined))
+                assertNull(session.store.selected(session.server, 1))
+                val room = NetworkEvent.Packet(JSONObject().put("type", "room").put("phase", "lobby")
+                    .put("code", "Test room").put("host", 1).put("players", JSONArray().put(JSONObject().put("id", 1))))
+                event(session, room)
+                val registration = session.store.selected(session.server, 1)!!
+                assertTrue(registration.registrationPending)
+
+                session.store.forgetAccount(session.server, registration.key)
+                event(session, room)
+                assertNull("Roster refreshes must not re-register P2", session.store.selected(session.server, 1))
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun unsharedRoomDropsTheStaleLobbyAndRestoresTheLocalRules() {
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                for (publicArena in listOf(false, true)) {
+                    session.selectMode("survival")
+                    val joined = NetworkWelcome.parse(JSONObject().put("id", 1).put("member", 20))
+                    set(session, "online", true)
+                    set(session.network, "welcome", joined)
+                    event(session, NetworkEvent.Welcome(joined))
+                    event(session, NetworkEvent.Packet(JSONObject().put("type", "room").put("phase", "lobby")
+                        .put("code", "Test room").put("host", 2).put("rules", GameSession.rulesJson(RoomRules.localDefaults("ctf")))))
+                    assertEquals("ctf", session.mode)
+                    if (publicArena) {
+                        set(session, "arenaActive", true)
+                        set(session.arenaNetwork, "infinity", true)
+                        event(session, NetworkEvent.Welcome(NetworkWelcome.parse(
+                            JSONObject().put("id", 9).put("seed", 42).put("public", true),
+                        )), arena = true)
+                        assertEquals(Screen.PLAYING, session.screen)
+                    }
+
+                    var notice: String? = null
+                    session.notifyError = { notice = it }
+                    event(session, NetworkEvent.Packet(JSONObject().put("type", "unshared").put("message", "Room unshared.")))
+                    assertEquals("Room unshared.", notice)
+                    assertFalse(session.online)
+                    assertNull(session.roomCode)
+                    assertEquals(Screen.READY, session.screen)
+                    assertEquals("survival", session.mode)
+                }
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
     }
 
     @Test
@@ -974,12 +1279,18 @@ class SessionParityTest {
                     it.name to Identity(it.bot, it.colorIndex, it.team, it.difficulty)
                 }
                 session!!.lobby()
-                session!!.share()
+                session!!.roomName = "Parity $tag"
+                session!!.togglePublic(true)
+                session!!.findMatch()
             }
-            eventually("Custom roster did not publish", { session!!.status }) {
-                session!!.room?.optJSONArray("players")?.length() == 4
+            eventually("Matchmaking did not publish the current room and load its queues", { session!!.status }) {
+                session!!.room?.optJSONArray("players")?.length() == 4 &&
+                    session!!.room?.optBoolean("infinityPublic") == true &&
+                    session!!.queuePacket?.optString("type") == "queue_catalog"
             }
             main {
+                assertEquals("Parity $tag", session!!.roomCode)
+                assertEquals("koth", session!!.rules.mode)
                 val rows = session!!.room!!.getJSONArray("players")
                 assertEquals(
                     expected.keys,

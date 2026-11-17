@@ -27,6 +27,12 @@ constructor(context: Context, attributes: AttributeSet? = null) :
 
     var hudHeightDp = 0f
     var overlayHudHeightDp = 0f
+    var pairedHudHeightDp = 0f
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
     var controlsLayout = true
     var fireLabel = "FIRE"
     var fireProgress = 1.0
@@ -232,6 +238,11 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var mouseFiring = false
     var mouseInputEnabled = false
         set(value) { field = value; if (!value) clearMouseControls() }
+    var mouseAimEnabled = true
+        set(value) { field = value; if (!value) clearMouseAim() }
+    var mouseFireEnabled = true
+        set(value) { field = value; if (!value) mouseFiring = false }
+    var keyboardInputEnabled = true
     private val mouseControls = GameInput(touchAim = false, aimOnly = true)
     val hasMouseInput: Boolean get() = mouseAiming || mouseFiring
 
@@ -563,10 +574,12 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
         fullViewport.set(viewport)
         val paired = infinity && localID2 != null && followingID == null
+        val pairedHudHeight = if (paired) min(pairedHudHeightDp, max(0f, fullViewport.height() - 2f)) else 0f
+        val sideBySide = landscape && pairedHudHeight == 0f
         primaryViewport.set(fullViewport)
         if (paired) {
-            if (landscape) primaryViewport.right = fullViewport.centerX()
-            else primaryViewport.bottom = fullViewport.centerY()
+            if (sideBySide) primaryViewport.right = fullViewport.centerX()
+            else primaryViewport.bottom = fullViewport.centerY() - pairedHudHeight / 2
         }
         // Virtual controls always belong to P1, including after rotating a paired arena.
         if (paired) controlViewport.set(primaryViewport)
@@ -583,17 +596,17 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             drawWorldScene(canvas, state, landscape, followingID ?: localID)
             if (paired) {
                 viewport.set(fullViewport)
-                if (landscape) viewport.left = primaryViewport.right else viewport.top = primaryViewport.bottom
+                if (sideBySide) viewport.left = primaryViewport.right
+                else viewport.top = primaryViewport.bottom + pairedHudHeight
                 drawWorldScene(canvas, state, landscape, localID2!!)
             }
             pruneProjectileHistory()
             viewport.set(fullViewport)
             if (paired) {
                 stroke(0xff506d80.toInt(), 1f)
-                if (landscape) canvas.drawLine(primaryViewport.right, viewport.top, primaryViewport.right, viewport.bottom, paint)
+                if (sideBySide) canvas.drawLine(primaryViewport.right, viewport.top, primaryViewport.right, viewport.bottom, paint)
                 else canvas.drawLine(viewport.left, primaryViewport.bottom, viewport.right, primaryViewport.bottom, paint)
             }
-            drawPhase(canvas, state)
             drawEncounterNotice(canvas)
         }
         if (showControls) drawControls(canvas, width, height)
@@ -1483,31 +1496,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
     }
 
-    private fun drawPhase(canvas: Canvas, state: ArenaSnapshot) {
-        val text =
-            when (state.phase) {
-                "countdown" -> ceil(state.phaseTime).toInt().coerceAtLeast(1).toString()
-                "roundOver" -> if (state.winner < 0) "DRAW" else "ROUND COMPLETE"
-                else -> ""
-            }
-        if (text.isEmpty()) return
-        textPaint.textSize = 28f * textScale
-        textPaint.typeface = boldTypeface
-        textPaint.color = 0xffe5edf2.toInt()
-        val w = textPaint.measureText(text) + 32
-        fill(0xe610181e.toInt())
-        canvas.drawRoundRect(
-            viewport.centerX() - w / 2,
-            viewport.centerY() - 28,
-            viewport.centerX() + w / 2,
-            viewport.centerY() + 20,
-            8f,
-            8f,
-            paint,
-        )
-        canvas.drawText(text, viewport.centerX(), viewport.centerY() + 8, textPaint)
-    }
-
     private fun drawControls(canvas: Canvas, width: Float, height: Float) {
         val fixedPortrait = !infinity && width < height
         if (fixedPortrait) {
@@ -1686,7 +1674,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         key(keyCode, false) || super.onKeyUp(keyCode, event)
 
     private fun key(code: Int, down: Boolean): Boolean {
-        if (frozenTime != null) return false
+        if (frozenTime != null || !keyboardInputEnabled) return false
         when (code) {
             KeyEvent.KEYCODE_W,
             KeyEvent.KEYCODE_DPAD_UP -> input.forward = down
@@ -1740,8 +1728,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE,
             MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
                 mouseX = event.x / density; mouseY = event.y / density
-                mouseAiming = true
-                mouseFiring = event.actionMasked != MotionEvent.ACTION_UP &&
+                mouseAiming = mouseAimEnabled
+                mouseFiring = mouseFireEnabled && event.actionMasked != MotionEvent.ACTION_UP &&
                     (event.buttonState and MotionEvent.BUTTON_PRIMARY != 0 ||
                         event.actionMasked == MotionEvent.ACTION_DOWN && event.buttonState == 0)
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) requestFocus()

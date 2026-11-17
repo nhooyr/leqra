@@ -124,6 +124,22 @@ class AccountService(
 
     fun inspect(origin: String, key: String, callback: (Result<CheckedAccount>) -> Unit): CancelRequest = inspect(origin, key, false, callback)
 
+    fun inspectForSeat(origin: String, key: String, seat: Int, callback: (Result<CheckedAccount>) -> Unit): CancelRequest {
+        require(seat in 0..1)
+        fun duplicate() = store.selected(origin, 1 - seat)?.key == key
+        val duplicateMessage = "P1 and P2 need independent account keys."
+        if (duplicate()) {
+            dispatch { callback(Result.failure(IllegalArgumentException(duplicateMessage))) }
+            return CancelRequest {}
+        }
+        return inspect(origin, key) { result ->
+            callback(result.mapCatching { checked ->
+                require(!duplicate()) { duplicateMessage }
+                checked
+            })
+        }
+    }
+
     /**
      * Called only after the user has reviewed the authenticated preview and explicitly chosen Use
      * key.
@@ -171,10 +187,24 @@ class AccountService(
 
     class SavedCallsign(val name: String, val key: String)
 
+    fun pendingRotation(origin: String, seat: Int): PendingAccount? {
+        val current = store.selected(origin, seat)?.key ?: return null
+        return store.pending(origin, seat).lastOrNull { it.purpose == "rotation" && it.previousKey == current }
+    }
+
     fun savedCallsigns(origin: String): List<SavedCallsign> = (0..1)
         .flatMap { store.pending(origin, it) }.filter { it.purpose.startsWith("saved:") }
         .map { SavedCallsign(it.purpose.removePrefix("saved:"), it.key) }
         .distinctBy { canonical(it.name) }
+
+    fun savedActivations(origin: String, seat: Int): List<PendingAccount> {
+        val confirmedKeys = savedCallsigns(origin).mapTo(mutableSetOf()) { it.key }
+        (0..1).mapNotNullTo(confirmedKeys) { store.selected(origin, it)?.key }
+        val rotation = pendingRotation(origin, seat)
+        return store.pending(origin, seat).filter {
+            !it.purpose.startsWith("saved:") && it.key !in confirmedKeys && it.key != rotation?.key
+        }.distinctBy { it.key }
+    }
 
     private fun canonical(name: String) = com.leqra.core.Callsigns.canonical(name)
 
@@ -388,13 +418,10 @@ class AccountService(
         require(!selected.registrationPending) {
             "Finish creating this account before resetting its key."
         }
-        val pending =
-            store.pending(origin, seat).lastOrNull {
-                it.purpose == "rotation" && it.previousKey == selected.key
+        val pending = pendingRotation(origin, seat)
+            ?: AccountKeys.pending(seat, AccountKeys.create(), selected.key, "rotation").also {
+                store.savePending(origin, it)
             }
-                ?: AccountKeys.pending(seat, AccountKeys.create(), selected.key, "rotation").also {
-                    store.savePending(origin, it)
-                }
         val epoch = next(origin, seat)
         return request(
             origin,

@@ -45,6 +45,7 @@ import com.leqra.android.render.NativeArenaView
 import com.leqra.core.*
 import kotlin.math.max
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -80,32 +81,35 @@ class MainActivity : Activity() {
     private lateinit var arena: NativeArenaView
     private lateinit var root: LinearLayout
     private lateinit var stage: FrameLayout
-    private lateinit var header: LinearLayout
+    private lateinit var header: NativeGameHeader
     private lateinit var statusLine: NativeStatusView
-    private lateinit var objectiveLine: TextView
+    private lateinit var objectiveLine: NativeObjectiveView
+    private lateinit var roundAnnouncement: NativeRoundAnnouncement
     private lateinit var loadout: NativeHudView
-    private lateinit var soundButton: Button
-    private lateinit var menuButton: Button
-    private lateinit var brandSubtitle: TextView
-    private lateinit var brandMark: View
+    private lateinit var primaryPairedLoadout: NativeHudView
     private var readyScroll: ScrollView? = null
     private var connecting: LinearLayout? = null
-    private var scores: View? = null
+    private var connectingStatus: TextView? = null
+    private var scores: ScrollView? = null
+    private var scorePanel: View? = null
     private var dialog: AlertDialog? = null
+    private var keyCaptureDialog: AlertDialog? = null
+    private var quickTourDialog: QuickTour? = null
     private var showcaseDialog: Dialog? = null
     private var showcaseReturnOnResume = false
+    private var pendingRoomInvite: RoomJoinRequest? = null
     private var readySignature = ""
     private var settingsOpen = false
     private var playersOpen = false
     private var showScores = false
     private var foreground = false
+    private var fullscreen = false
     private var feedback = arrayOfNulls<TextView>(2)
     private var availability: CancelRequest? = null
     private var availabilityEpoch = 0L
     private val main = Handler(Looper.getMainLooper())
     private var safeLeft = 0
     private var safeRight = 0
-    private var safeTop = 0
     private var safeBottom = 0
     private val pressed = mutableSetOf<Int>()
     private var controlOwner: Int? = null
@@ -148,6 +152,8 @@ class MainActivity : Activity() {
     private var soundState: Boolean? = null
     private var readyPlay: Button? = null
     private val readyOnlineActions = mutableListOf<Button>()
+    private val inviteButtons = arrayOfNulls<Button>(2)
+    private val copiedInvites = arrayOfNulls<Pair<android.net.Uri, Long>>(2)
     private var readyStatus: TextView? = null
     private var readyStartError: TextView? = null
     private val callsignFields = arrayOfNulls<EditText>(2)
@@ -157,7 +163,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        immersive()
+        window.enableImmersiveEdgeToEdge(immersive = fullscreen)
         try {
             session = GameSession(applicationContext)
         } catch (_: Exception) {
@@ -173,6 +179,11 @@ class MainActivity : Activity() {
                 ),
             )
             recovery.add(button(this, "RETRY", { recreate() }))
+            recovery.setOnApplyWindowInsetsListener { _, insets ->
+                val safe = insets.immersiveInsets()
+                recovery.setPadding(dp(24) + safe.left, dp(24) + safe.top, dp(24) + safe.right, dp(24) + safe.bottom)
+                insets
+            }
             setContentView(recovery)
             return
         }
@@ -183,10 +194,12 @@ class MainActivity : Activity() {
         audio.volume = session.volume
         session.changed = ::refresh
         session.notifyError = { message ->
-            dialog?.dismiss()
-            dialog = null
-            queueDialog = false
-            alert("leqra", message)
+            if (!openPendingRoomInvite()) {
+                dialog?.dismiss()
+                dialog = null
+                queueDialog = false
+                alert("leqra", message)
+            }
         }
         session.emitAudioCue = { audio.play(it) }
         buildShell()
@@ -197,37 +210,23 @@ class MainActivity : Activity() {
             ) {
                 handleBack()
             }
-        intent.data?.getQueryParameter("room")?.takeIf { it.length <= 32 }?.let {
-            session.join(it, intent.data?.getQueryParameter("spectate") == "1")
-        }
+        pendingRoomInvite = intent.data?.let { RoomJoinRequest.fromInvite(it) }
     }
 
-    private fun immersive() {
-        val decor =
-            window
-                .decorView // Create DecorView before asking PhoneWindow for its insets controller.
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
-            decor.windowInsetsController?.apply {
-                hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        }
-        if (Build.VERSION.SDK_INT >= 28)
-            window.attributes =
-                window.attributes.apply {
-                    layoutInDisplayCutoutMode =
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingRoomInvite = intent.data?.let { RoomJoinRequest.fromInvite(it) }
+    }
+
+    private fun openPendingRoomInvite(): Boolean {
+        val request = pendingRoomInvite ?: return false
+        if (!foreground || session.network.hasRoomReservation(request.code)) return false
+        pendingRoomInvite = null
+        quickTourDialog?.dismiss()
+        showcaseDialog?.dismiss()
+        showJoin(RoomJoinDraft(request.code, request.spectate))
+        return true
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -243,7 +242,7 @@ class MainActivity : Activity() {
                 )
                     session.pause(false)
             }
-            immersive()
+            window.setImmersiveSystemBars(fullscreen)
         } else if (::session.isInitialized) {
             clearHeldControls()
             if (session.screen == Screen.PLAYING && !session.paused) {
@@ -255,6 +254,7 @@ class MainActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        quickTourDialog?.resize()
         readySignature = ""
         scoreSignature = ""
         refreshRateKey = ""
@@ -271,6 +271,12 @@ class MainActivity : Activity() {
             session.foreground()
             arena.start()
             refresh(true)
+            openPendingRoomInvite()
+            if (
+                session.screen == Screen.READY && !session.online && dialog == null &&
+                    intent.data?.let { RoomJoinRequest.fromInvite(it) } == null &&
+                    !getSharedPreferences("leqra-settings", MODE_PRIVATE).getBoolean(QUICK_TOUR_SEEN, false)
+            ) showQuickTour()
         }
     }
 
@@ -289,6 +295,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        keyCaptureDialog?.dismiss()
+        quickTourDialog?.dismiss()
         showcaseDialog?.dismiss()
         getSystemService(InputManager::class.java).unregisterInputDeviceListener(controllerDevices)
         main.removeCallbacksAndMessages(null)
@@ -303,38 +311,43 @@ class MainActivity : Activity() {
     private fun buildShell() {
         root = column(this).apply { setBackgroundColor(page) }
         setContentView(root)
-        val gameHeader = NativeGameHeader(this, {
-            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/nhooyr/leqra")))
-        }, { toggleSound() }, { showMenu() })
-        header = gameHeader
-        brandMark = gameHeader.brandMark
-        brandSubtitle = gameHeader.brandSubtitle
-        soundButton = gameHeader.soundButton
-        menuButton = gameHeader.menuButton
+        header = NativeGameHeader(
+            this,
+            openVersion = {
+                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/nhooyr/leqra")))
+            },
+            toggleSound = { toggleSound() },
+            openMenu = { if (session.screen == Screen.PLAYING) showMenu() else showControls() },
+            toggleFullscreen = {
+                fullscreen = !fullscreen
+                applyFullscreen()
+            },
+            openRoom = { if (session.screen == Screen.PLAYING) showMenu() },
+        )
         root.add(header, gap = 0)
         statusLine =
-            NativeStatusView(this) {
+            NativeStatusView(this, openScores = {
                 showScores = !showScores
                 updateScores()
-            }
+            }, openSidebar = { showSidebar() })
         root.add(statusLine, gap = 0)
-        objectiveLine =
-            label(this, "", 10f, soft, mono = true).apply {
-                setPadding(dp(12), dp(5), dp(12), dp(5))
-                setBackgroundColor(surface)
-                visibility = View.GONE
-            }
+        objectiveLine = NativeObjectiveView(this)
         root.add(objectiveLine, gap = 0)
         stage = FrameLayout(this).apply { setBackgroundColor(sunken) }
         root.addView(stage, LinearLayout.LayoutParams(-1, 0, 1f))
-        arena = NativeArenaView(this)
+        arena = NativeArenaView(this).apply { keyboardInputEnabled = false }
         arena.contentDescription = "Tank arena, joystick on the left and fire on the right"
         stage.addView(arena, FrameLayout.LayoutParams(-1, -1))
+        roundAnnouncement = NativeRoundAnnouncement(this)
+        stage.addView(roundAnnouncement, FrameLayout.LayoutParams(-1, -1))
         arena.onFrame = { nanos ->
             if (session.screen == Screen.PLAYING && !session.paused && arena.hasMouseInput) keyboardInput()
             session.frame(nanos)
-            if (::loadout.isInitialized && session.screen == Screen.PLAYING)
-                arena.fireProgress = loadout.advance(nanos)
+            if (::loadout.isInitialized && session.screen == Screen.PLAYING) {
+                val progress = loadout.advance(nanos)
+                arena.fireProgress = if (primaryPairedLoadout.visibility == View.VISIBLE)
+                    primaryPairedLoadout.advance(nanos) else progress
+            }
             if (fpsStarted == 0L) fpsStarted = nanos
             frameCount++
             if (nanos - fpsStarted >= 1_000_000_000) {
@@ -352,38 +365,40 @@ class MainActivity : Activity() {
             arena.encounterNotice = session.encounterNotice
             arena.followingID = session.followingID.takeIf { session.spectating }
             arena.submit(snapshot, localID, maze, localID2, online)
+            roundAnnouncement.update(session, snapshot)
             if (session.audioSceneActive)
                 audio.consume(snapshot, if (session.spectating) -1 else localID, session.infinity, online)
             audio.updateStarman(snapshot, localID, localID2, session.audioGameplayActive, session.audioSceneActive)
         }
         loadout = NativeHudView(this)
         loadout.onHeightChanged = { height ->
-            if (loadout.parent === stage) arena.overlayHudHeightDp = height
+            if (loadout.parent === stage) {
+                arena.overlayHudHeightDp = height
+                updateRoundAnnouncementInsets(embedded = true)
+            }
         }
         root.add(loadout, gap = 0)
+        primaryPairedLoadout = NativeHudView(this).apply {
+            visibility = View.GONE
+            compact = true
+            onHeightChanged = { height -> arena.pairedHudHeightDp = height }
+        }
+        stage.addView(primaryPairedLoadout, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL))
         root.setOnApplyWindowInsetsListener { _, insets ->
-            val oldLeft = safeLeft
-            val oldRight = safeRight
-            val oldTop = safeTop
-            val oldBottom = safeBottom
-            if (Build.VERSION.SDK_INT >= 30) {
-                val cuts = insets.getInsets(WindowInsets.Type.displayCutout())
-                val gestures = insets.getInsets(WindowInsets.Type.systemGestures())
-                safeLeft = cuts.left
-                safeRight = cuts.right
-                safeTop = cuts.top
-                safeBottom = max(cuts.bottom, gestures.bottom)
-            } else if (Build.VERSION.SDK_INT >= 28) {
-                safeLeft = insets.displayCutout?.safeInsetLeft ?: 0
-                safeRight = insets.displayCutout?.safeInsetRight ?: 0
-                safeTop = insets.displayCutout?.safeInsetTop ?: 0
-                safeBottom = insets.displayCutout?.safeInsetBottom ?: 0
+            val safe = insets.immersiveInsets()
+            root.setPadding(0, safe.top, 0, safe.keyboard)
+            val sidesChanged = safeLeft != safe.left || safeRight != safe.right
+            if (sidesChanged || safeBottom != safe.contentBottom) {
+                safeLeft = safe.left
+                safeRight = safe.right
+                safeBottom = safe.contentBottom
+                readyScroll?.apply { setPadding(paddingLeft, paddingTop, paddingRight, dp(16) + safeBottom) }
+                configureLoadoutLayout()
             }
-            root.setPadding(0, safeTop, 0, 0)
-            header.setPadding(dp(12) + safeLeft, dp(5), dp(8) + safeRight, dp(5))
-            loadoutLayoutKey = ""
-            configureLoadoutLayout()
-            if (oldLeft != safeLeft || oldRight != safeRight || oldTop != safeTop || oldBottom != safeBottom) {
+            if (sidesChanged) {
+                header.setPadding(dp(12) + safeLeft, dp(5), dp(8) + safeRight, dp(5))
+                statusLine.setPadding(dp(12) + safeLeft, dp(6), dp(12) + safeRight, dp(6))
+                objectiveLine.setPadding(dp(12) + safeLeft, dp(5), dp(12) + safeRight, dp(5))
                 readySignature = ""
                 scoreSignature = ""
                 if (foreground) main.post { refresh(true) }
@@ -395,32 +410,34 @@ class MainActivity : Activity() {
 
     private fun refresh(structural: Boolean) {
         if (!::root.isInitialized) return
+        if (session.network.connected && pendingRoomInvite?.let { session.network.hasRoomReservation(it.code) } == true)
+            pendingRoomInvite = null
         syncControlSeats()
         if (soundState != session.muted) {
             soundState = session.muted
-            soundButton.text = ""
-            soundButton.setCompoundDrawablesWithIntrinsicBounds(
-                NativeStyle.icon(this, if (session.muted) "muted" else "sound"),
-                null,
-                null,
-                null,
-            )
-            soundButton.contentDescription = if (session.muted) "Unmute sound" else "Mute sound"
             audio.enabled = !session.muted
         }
         audio.volume = session.volume
         audio.updateStarman(session.snapshot, session.localID, session.localID2, session.audioGameplayActive, session.audioSceneActive)
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        brandSubtitle.visibility = if (landscape) View.GONE else View.VISIBLE
-        brandMark.visibility =
-            if (resources.configuration.screenWidthDp < 375) View.GONE else View.VISIBLE
         val playing = session.screen == Screen.PLAYING
-        if (!playing && previousPlaying) showScores = false
-        menuButton.value(if (playing) "Ⅱ" else "☰")
+        if (playing && queueDialog) {
+            queueDialog = false
+            dialog?.setOnDismissListener(null)
+            dialog?.dismiss()
+            dialog = null
+        }
+        val availableWidthDp = resources.configuration.screenWidthDp -
+            (safeLeft + safeRight) / resources.displayMetrics.density
+        header.display(landscape, availableWidthDp, session.muted, playing, fullscreen, session.roomCode)
+        val loading = session.screen == Screen.CONNECTING
+        if (loading || (!playing && previousPlaying)) showScores = false
         val awake = playing && !session.paused
         arena.controlsLayout = playing && !session.spectating
         arena.showControls = awake && dialog == null && !session.spectating
         arena.mouseInputEnabled = awake && dialog == null && session.hasLocalPlayer
+        arena.mouseAimEnabled = session.mouseAim
+        arena.mouseFireEnabled = session.mouseFire
         arena.keepScreenOn = awake
         if (keepAwake != awake) {
             keepAwake = awake
@@ -429,10 +446,10 @@ class MainActivity : Activity() {
         }
         configureLoadoutLayout()
         loadout.visibility = if (playing && session.hasLocalPlayer) View.VISIBLE else View.GONE
-        statusLine.update(session, fps)
-        val objective = if (playing) objectiveText().removePrefix("\n") else ""
-        objectiveLine.value(objective)
-        objectiveLine.visibility = if (objective.isEmpty()) View.GONE else View.VISIBLE
+        statusLine.visibility = if (loading) View.GONE else View.VISIBLE
+        arena.visibility = if (loading) View.INVISIBLE else View.VISIBLE
+        if (!loading) statusLine.update(session, fps)
+        objectiveLine.update(session.snapshot.objectives.takeIf { playing }, session.rules)
         if (playing) {
             val entering = !previousPlaying
             if (entering && !session.hasLocalPlayer) showScores = true
@@ -442,28 +459,37 @@ class MainActivity : Activity() {
             readySignature = ""
             connecting?.let(stage::removeView)
             connecting = null
+            connectingStatus = null
             if (entering && dialog == null) arena.requestFocus()
+            val state = session.authoritativeSnapshot.copy(phase = session.snapshot.phase, result = session.snapshot.result)
+            val splitLoadout = primaryPairedLoadout.visibility == View.VISIBLE
             loadout.update(
-                session.authoritativeSnapshot.copy(phase = session.snapshot.phase, result = session.snapshot.result),
+                state,
                 session.localID,
                 session.localID2,
                 session.infinity,
                 session.paused,
                 session.online,
+                onlySeat = if (splitLoadout) 1 else null,
             )
-            arena.fireLabel = loadout.fireLabel
-            arena.fireAvailable = loadout.fireAvailable
+            if (splitLoadout)
+                primaryPairedLoadout.update(
+                    state, session.localID, session.localID2, session.infinity, session.paused, session.online, onlySeat = 0,
+                )
+            val fireLoadout = if (splitLoadout) primaryPairedLoadout else loadout
+            arena.fireLabel = fireLoadout.fireLabel
+            arena.fireAvailable = fireLoadout.fireAvailable
             val ended = session.snapshot.phase == "matchOver" || session.snapshot.result != null
             if (!ended) lastResultKey = null
             else {
                 val resultKey =
                     "${session.snapshot.generation}:${session.snapshot.round}:${session.snapshot.winner}:${session.snapshot.result}:${session.snapshot.scores}"
-                if (dialog == null && lastResultKey != resultKey && !session.finishingProjectilePresentation) {
+                if (session.hasLocalPlayer && dialog == null && lastResultKey != resultKey && !session.finishingProjectilePresentation) {
                     lastResultKey = resultKey
                     showResult()
                 }
             }
-        } else if (session.screen == Screen.CONNECTING) {
+        } else if (loading) {
             readyScroll?.let(stage::removeView)
             readyScroll = null
             readySignature = ""
@@ -472,17 +498,22 @@ class MainActivity : Activity() {
                     column(this, 24).apply {
                         gravity = Gravity.CENTER
                         add(label(this@MainActivity, "CONNECTING.", 28f, accent, true))
-                        add(ProgressBar(this@MainActivity), 56, 56)
+                        add(ProgressBar(this@MainActivity), 32, 32)
+                        connectingStatus = label(this@MainActivity, session.status, 12f, soft).apply { gravity = Gravity.CENTER }
+                        add(connectingStatus!!)
                         add(button(this@MainActivity, "← BACK TO THE ROOM", { session.leave() }))
                     }
-                stage.addView(connecting, FrameLayout.LayoutParams(-1, -1))
+                stage.addView(connecting, FrameLayout.LayoutParams(minOf(stage.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels, dp(420)), -1, Gravity.CENTER))
             }
+            connectingStatus?.value(session.status)
         } else {
             connecting?.let(stage::removeView)
             connecting = null
+            connectingStatus = null
             if (structural || readyScroll == null) {
                 val signature =
-                    "${session.server}|${resources.configuration.orientation}|${session.online}|${session.room?.toString()}|${session.mode}|${session.publicSelected}|$settingsOpen|$playersOpen|${session.localSelected}|${session.localBots}|${session.localTeam}:${session.secondLocalTeam}"
+                    "${session.server}|${resources.configuration.orientation}|${session.online}|${session.room}|${session.mode}|${session.rules}|" +
+                        "${session.publicSelected}|$settingsOpen|$playersOpen|${session.localSelected}|${session.localBots}|${session.localTeam}:${session.secondLocalTeam}"
                 if (signature != readySignature || readyScroll == null) {
                     readySignature = signature
                     buildReadyRoom()
@@ -491,7 +522,7 @@ class MainActivity : Activity() {
         }
         if (!playing) updateReadyActions()
         previousPlaying = playing
-        if (showScores) updateScores()
+        if (showScores || scorePanel != null) updateScores()
         if (queueDialog) updateQueueDialog()
         applyRefreshRate()
     }
@@ -500,10 +531,19 @@ class MainActivity : Activity() {
         if (!::loadout.isInitialized) return
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val embedded = session.screen == Screen.PLAYING && !session.infinity && !landscape
-        val key = "$embedded:$landscape:$safeLeft:$safeRight:$safeBottom"
+        val splitLoadout = session.screen == Screen.PLAYING && session.infinity && session.localID2 != null &&
+            !session.spectating && !landscape
+        val key = "$embedded:$landscape:$splitLoadout:$safeLeft:$safeRight:$safeBottom"
         if (key == loadoutLayoutKey) return
         loadoutLayoutKey = key
-        loadout.compact = landscape
+        loadout.compact = landscape || splitLoadout
+        primaryPairedLoadout.visibility = if (splitLoadout) View.VISIBLE else View.GONE
+        primaryPairedLoadout.safeLeft = safeLeft
+        primaryPairedLoadout.safeRight = safeRight
+        arena.pairedHudHeightDp = if (splitLoadout)
+            primaryPairedLoadout.height / resources.displayMetrics.density else 0f
+        primaryPairedLoadout.requestLayout()
+        primaryPairedLoadout.invalidate()
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
         loadout.safeBottom = if (embedded) 0 else safeBottom
@@ -530,8 +570,14 @@ class MainActivity : Activity() {
                     ?: 97f)
             else 0f
         arena.safeInsets(safeLeft, 0, safeRight, if (embedded) safeBottom else 0)
+        updateRoundAnnouncementInsets(embedded)
         loadout.requestLayout()
         loadout.invalidate()
+    }
+
+    private fun updateRoundAnnouncementInsets(embedded: Boolean) {
+        val reserved = if (embedded && !session.spectating) dp(119 + arena.overlayHudHeightDp.roundToInt()) + safeBottom else 0
+        roundAnnouncement.setSafeArea(safeLeft, safeRight, reserved)
     }
 
     private fun clearHeldControls(resetPrediction: Boolean = true) {
@@ -559,27 +605,6 @@ class MainActivity : Activity() {
 
     private fun TextView.value(value: CharSequence) {
         if (!android.text.TextUtils.equals(text, value)) text = value
-    }
-
-    private fun objectiveText(): String {
-        val o = session.snapshot.objectives ?: return ""
-        return when (o.mode) {
-            "survival" ->
-                o.survival?.let { "\nWAVE ${it.wave} · ${it.enemiesRemaining} ENEMIES" } ?: ""
-            "ctf" ->
-                "\n" +
-                    o.flags.joinToString(" · ") {
-                        "TEAM ${it.team}: ${if(it.home) "FLAG HOME" else if(it.carrier>=0) "CARRIED" else "DROPPED"}"
-                    }
-            "koth" ->
-                "\n" +
-                    if (o.contested) "HILL CONTESTED"
-                    else if (o.owner > 0) "TEAM ${o.owner} HOLDS THE HILL"
-                    else if (o.owner < 0)
-                        "${session.snapshot.tanks.firstOrNull { it.id == -o.owner - 1 }?.name ?: "Tank"} HOLDS THE HILL"
-                    else "CAPTURE THE HILL"
-            else -> ""
-        }
     }
 
     private fun applyRefreshRate() {
@@ -618,6 +643,7 @@ class MainActivity : Activity() {
 
     private fun buildReadyRoom() {
         readyOnlineActions.clear()
+        inviteButtons.fill(null)
         val editing = (currentFocus as? EditText)?.takeIf { it.tag is Int }
         val editingSeat = editing?.tag as? Int
         val selectionStart = editing?.selectionStart ?: 0
@@ -651,22 +677,9 @@ class MainActivity : Activity() {
         )
         if (session.isHost) {
             val public =
-                Switch(this).apply {
+                NativeStyle.toggle(this).apply {
                     contentDescription = "Public Infinity"
                     isChecked = session.publicSelected
-                    showText = false
-                    scaleX = .75f
-                    scaleY = .75f
-                    thumbTintList =
-                        android.content.res.ColorStateList(
-                            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                            intArrayOf(0xff002536.toInt(), muted),
-                        )
-                    trackTintList =
-                        android.content.res.ColorStateList(
-                            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                            intArrayOf(0xff00c8ff.toInt(), 0xff324249.toInt()),
-                        )
                     setOnCheckedChangeListener { _, checked ->
                         if (checked != session.publicSelected) session.togglePublic(checked)
                     }
@@ -677,6 +690,8 @@ class MainActivity : Activity() {
                 label(this, "Public Infinity", 13f, text, true).apply {
                     minHeight = dp(44)
                     gravity = Gravity.CENTER_VERTICAL
+                    setPaddingRelative(dp(8), 0, 0, 0)
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                     isClickable = true
                     setOnClickListener { public.isChecked = !public.isChecked }
                 },
@@ -687,7 +702,7 @@ class MainActivity : Activity() {
         readyPlay =
             button(
                 this,
-                "PLAY  →",
+                "PLAY",
                 {
                     hideKeyboard()
                     session.play()
@@ -717,25 +732,14 @@ class MainActivity : Activity() {
                 },
             ).also { readyOnlineActions += it },
         )
-        panel.add(
-            button(
-                this,
-                if (session.online) "COPY INVITE LINK ↗" else "SHARE ROOM ONLINE ↗",
-                {
-                    if (session.online)
-                        copy(
-                            "Room invite",
-                            "${session.server}/?room=${android.net.Uri.encode(session.roomCode ?: "")}",
-                        )
-                    else session.share()
-                },
-                role = if (session.online) null else "share",
-            ).also { readyOnlineActions += it },
-        )
-        if (session.online)
-            panel.add(button(this, "COPY SPECTATOR LINK ↗", {
-                copy("Room spectator link", "${session.server}/?room=${android.net.Uri.encode(session.roomCode ?: "")}&spectate=1")
-            }))
+        if (session.room == null) {
+            panel.add(button(this, "SHARE ROOM ONLINE ↗", { session.share() }, role = "share")
+                .also { readyOnlineActions += it })
+        } else {
+            panel.add(inviteButton(spectator = false).also { readyOnlineActions += it })
+            if (!session.publicSelected)
+                panel.add(inviteButton(spectator = true).also { readyOnlineActions += it })
+        }
         panel.add(button(this, "Join another room ↗", { showJoin() }, role = "text").also { readyOnlineActions += it })
         if (session.online) {
             panel.add(button(this, "LEAVE ROOM", { session.leave() }, danger = true))
@@ -768,13 +772,14 @@ class MainActivity : Activity() {
             ),
         )
         callsignRow(panel, 0)
-        if (session.localSelected) {
+        val localRoomPilot = session.roomLocalPilot
+        if (localRoomPilot != null && session.roomSetupOpen) {
             panel.add(
                 label(
                     this,
-                    "${session.localCallsign} (P2)  callsign",
+                    "${localRoomPilot.optString("name")} (P2)  callsign",
                     11f,
-                    paint(session.localColorIndex),
+                    localRoomPilot.optString("color").takeIf(String::isNotBlank)?.let(NativeStyle::mappedPaint) ?: paint(session.localColorIndex),
                     true,
                     mono = true,
                 ),
@@ -807,6 +812,12 @@ class MainActivity : Activity() {
         )
         if (playersOpen) playerSettings(panel)
         panel.add(button(this, "CONTROLS", { showControls() }))
+        if (session.online) {
+            panel.add(button(this, "FIND A MATCH", {
+                session.findMatch()
+                showQueues()
+            }).also { readyOnlineActions += it })
+        }
         if (landscape) {
             val children = List(panel.childCount) { panel.getChildAt(it) }
             panel.removeAllViews()
@@ -835,6 +846,30 @@ class MainActivity : Activity() {
         checkAvailability()
     }
 
+    private fun inviteButton(spectator: Boolean): Button {
+        val seat = if (spectator) 1 else 0
+        val url = android.net.Uri.parse(session.server).buildUpon()
+            .appendQueryParameter("room", session.roomCode.orEmpty())
+            .apply { if (spectator) appendQueryParameter("spectate", "1") }
+            .build()
+        val link = if (spectator) "SPECTATOR LINK" else "INVITE LINK"
+        val normal = "COPY $link ↗"
+        val copied = "$link COPIED ✓"
+        val recent = copiedInvites[seat]?.let { it.first == url && it.second > android.os.SystemClock.uptimeMillis() } == true
+        return button(this, if (recent) copied else normal, {
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newRawUri(link, url))
+            val expiration = url to (android.os.SystemClock.uptimeMillis() + 2_000)
+            copiedInvites[seat] = expiration
+            inviteButtons[seat]?.value(copied)
+            main.postAtTime({
+                if (copiedInvites[seat] === expiration) {
+                    copiedInvites[seat] = null
+                    inviteButtons[seat]?.value(normal)
+                }
+            }, expiration.second)
+        }).also { inviteButtons[seat] = it }
+    }
+
     private fun updateReadyActions() {
         val room = session.room
         val localID = session.network.welcome?.id ?: session.localID
@@ -845,11 +880,13 @@ class MainActivity : Activity() {
                 .firstOrNull { it.optInt("id") == localID }
         }
         val active = room?.optBoolean("infinityActive") == true
+        val guestWaiting = session.online && !session.isHost
+        val showArrow = active || !guestWaiting
         val label =
-            if (active) if (session.roomSpectating) "WATCH INFINITY  →" else "REJOIN INFINITY  →"
-            else if (session.online && !session.isHost)
+            if (active) if (session.roomSpectating) "WATCH INFINITY" else "REJOIN INFINITY"
+            else if (guestWaiting)
                 if (session.roomSpectating) "WAITING FOR HOST" else if (own?.optBoolean("ready") == true) "READY ✓" else "READY"
-            else "PLAY  →"
+            else "PLAY"
         readyPlay?.value(label)
         val allowed =
             if (room == null) session.localStartError == null
@@ -860,6 +897,10 @@ class MainActivity : Activity() {
                     room.optBoolean("canStart") ||
                     session.publicSelected && room.optBoolean("canStartPublicInfinity")
         readyPlay?.apply {
+            if (showArrow != (compoundDrawablesRelative[2] != null)) {
+                setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, if (showArrow) R.drawable.ic_play_arrow else 0, 0)
+                setPaddingRelative(dp(if (showArrow) 26 else 10), dp(8), dp(10), dp(8))
+            }
             isEnabled = allowed && !session.releasingCallsign
             alpha = if (isEnabled) 1f else .45f
         }
@@ -1008,7 +1049,7 @@ class MainActivity : Activity() {
     }
 
     private fun roomSettings(panel: LinearLayout) {
-        val code = field(this, session.roomCode ?: session.roomName, "Room name or code", 32)
+        val code = field(this, session.roomCode ?: session.roomName, "Room name or code", roomNameLimit)
         code.isEnabled = session.isHost
         code.addTextChangedListener(watcher { if (!session.online) session.roomName = it })
         panel.add(code)
@@ -1055,136 +1096,99 @@ class MainActivity : Activity() {
             )
         }
         panel.add(choices)
-        panel.add(label(this, modeHelp(session.mode), 11f, soft))
-        panel.add(button(this, "RULES, TEAMS & POWER-UPS", { showRules() }))
-        panel.add(button(this, "PRESETS", { showPresets() }))
+        panel.add(label(this, modeHelp(session.mode), 11f, soft).apply { minLines = 2 })
+        panel.add(row(this).apply {
+            weighted(button(this@MainActivity, "Rules", { showRules() }), gap = 6)
+            weighted(button(this@MainActivity, "Teams", { showRules() }), gap = 6)
+            weighted(button(this@MainActivity, "Presets", { showPresets() }), gap = 0)
+        })
+        val rules = session.rules
+        val summary = if (rules.infinity) {
+            if (rules.infinityTarget == 0) "ENDLESS, UP TO 8 TANKS" else "FIRST TO ${rules.infinityTarget}, UP TO 8 TANKS"
+        } else {
+            val scoreUnit = when (rules.mode) {
+                "survival" -> "WAVES"
+                "ctf" -> "CAPTURES"
+                "koth" -> "POINTS"
+                else -> "WINS"
+            }
+            val limit = if (rules.mode == "survival") 4 else 8
+            val friendlyFire = if (rules.friendlyFire) "on" else "off"
+            "FIRST TO ${rules.scoreTarget} $scoreUnit, UP TO $limit TANKS\nFriendly fire is $friendlyFire."
+        }
+        panel.add(label(this, summary, 10f, soft, mono = true), gap = 0)
     }
 
     private fun playerSettings(panel: LinearLayout) {
-        if (session.room != null) {
-            val players = session.room!!.optJSONArray("players") ?: JSONArray()
-            repeat(players.length()) { index ->
-                val player = players.getJSONObject(index)
-                val own =
-                    player.optInt("id") == session.network.welcome?.id ||
-                        player.optInt("id") == session.network.welcome?.localId
-                val bot = player.optString("kind") == "bot" || player.optBoolean("bot")
-                val seat = if (own) if (player.optInt("id") == session.network.welcome?.id) 1 else 2 else 0
-                panel.add(
-                    label(
-                        this,
-                        PilotIdentity.label(player.optString("name"), bot, seat),
-                        12f,
-                        paint(player.optInt("colorIndex")),
-                        own,
-                    ),
-                )
-                if (!bot) panel.add(label(this, "HUMAN PILOT", 10f, muted, mono = true))
-                if (session.isHost || own)
-                    panel.add(button(this, "PLAYER OPTIONS", { playerOptions(player) }))
-            }
-            val spectators = session.room!!.optJSONArray("spectators") ?: JSONArray()
-            if (spectators.length() > 0)
-                panel.add(label(this, "SPECTATORS", 10f, muted, mono = true))
-            repeat(spectators.length()) { index ->
-                val member = spectators.getJSONObject(index)
-                val own =
-                    member.optInt("id") == session.network.welcome?.id ||
-                        member.optInt("id") == session.network.welcome?.localId
-                panel.add(
-                    label(
-                        this,
-                        member.optString("name") +
-                            if (own)
-                                if (member.optInt("id") == session.network.welcome?.id) " (P1)"
-                                else " (P2)"
-                            else "",
-                        12f,
-                        paint(member.optInt("colorIndex")),
-                        own,
-                    ),
-                )
-                if (session.isHost || own)
-                    panel.add(
-                        button(
-                            this,
-                            "PLAYER OPTIONS",
-                            { playerOptions(member, true) },
-                        ),
-                    )
-            }
-            if (session.isHost)
-                panel.add(
-                    button(
-                        this,
-                        "＋ ADD BOT",
-                        {
-                            session.command(
-                                "add",
-                                "kind" to "bot",
-                                "name" to BotNames.next((0 until players.length()).map { players.getJSONObject(it).optString("name") }, players.length() + 1),
-                                "difficulty" to session.difficulty,
-                            )
-                        },
-                    ),
-                )
-            if (session.network.welcome?.localId == null)
-                panel.add(
-                    button(
-                        this,
-                        "＋ ADD P2",
-                        {
-                            session.localSelected = true
-                            session.command(
-                                "add",
-                                "kind" to "local",
-                                "name" to session.localCallsign,
-                                "colorIndex" to session.localColorIndex,
-                            )
-                            session.save()
-                            refresh(true)
-                        },
-                    ),
-                )
-        } else {
-            val local =
-                CheckBox(this).apply {
-                    text = "Add a local tank (P2 keyboard/mouse/gamepad)"
-                    textSize = 12f
-                    setTextColor(NativeStyle.text)
-                    isChecked = session.localSelected
-                    setOnCheckedChangeListener { _, checked ->
-                        session.localSelected = checked
-                        session.save()
-                        readySignature = ""
-                        refresh(true)
-                    }
+        session.room?.let { room ->
+            val players = room.optJSONArray("players")?.objects().orEmpty()
+            if (session.isHost && session.roomSetupOpen) {
+                if (room.roomRosterMembers().none { it.optString("kind") == "local" }) {
+                    panel.add(button(this, "＋ ADD LOCAL P2", { session.addRoomLocalPilot() }).apply {
+                        isEnabled = session.canAddRoomLocalPilot
+                    })
                 }
-            panel.add(local)
-            panel.add(
-                button(this, "＋ ADD BOT", { session.addLocalBot() }).apply {
-                    isEnabled = session.localBots.size < session.maxLocalBots
-                    contentDescription = "Add bot"
-                },
-            )
-            for (bot in session.localBots) localBotRow(panel, bot)
-            panel.add(label(this, "NEW BOT DIFFICULTY", 10f, muted, mono = true))
-            val difficulties = BotDifficulty.names
-            panel.add(
-                choice(BotDifficulty.titles, BotDifficulty.index(session.difficulty)) {
-                    session.difficulty = difficulties[it]
-                    session.save()
-                },
-            )
+                panel.add(button(this, "＋ ADD BOT", {
+                    session.command(
+                        "add",
+                        "kind" to "bot",
+                        "name" to BotNames.next(players.map { it.optString("name") }, players.size + 1),
+                    )
+                }).apply { isEnabled = players.size < room.optInt("maxPlayers", 8) })
+            }
+            for (member in players) panel.add(roomPilotCard(room, member))
+            val spectators = room.optJSONArray("spectators")?.objects().orEmpty()
+            if (spectators.isNotEmpty()) panel.add(label(this, "SPECTATORS", 10f, muted, mono = true))
+            for (member in spectators) panel.add(roomPilotCard(room, member))
+            return
         }
-        panel.add(label(this, "P1 TANK PAINT", 10f, muted, mono = true))
-        paintChoices(panel, 0)
-        if (session.room == null && session.rules.teamMode == "teams") localTeamChoice(panel, 0)
+        fun setLocalPilot(enabled: Boolean) {
+            session.localSelected = enabled
+            session.save()
+            readySignature = ""
+            refresh(true)
+        }
+        if (!session.localSelected)
+            panel.add(button(this, "＋ ADD LOCAL P2", { setLocalPilot(true) }).apply {
+                isEnabled = !session.releasingCallsign && session.localBots.size < session.maxLocalBots
+            })
+        panel.add(button(this, "＋ ADD BOT", { session.addLocalBot() }).apply {
+            isEnabled = session.localBots.size < session.maxLocalBots
+            contentDescription = "Add bot"
+        })
+        val primary = column(this, 10).apply { background = background(this@MainActivity, sunken, 7) }
+        primary.add(label(this, session.identity, 12f, paint(session.colorIndex), true))
+        paintChoices(primary, session.colorIndex) { index ->
+            session.colorIndex = index
+            session.save()
+            readySignature = ""
+            refresh(true)
+        }
+        if (session.rules.teamMode == "teams") localTeamChoice(primary, 0)
+        panel.add(primary)
         if (session.localSelected) {
-            panel.add(label(this, "P2 TANK PAINT", 10f, muted, mono = true))
-            paintChoices(panel, 1)
-            if (session.room == null && session.rules.teamMode == "teams") localTeamChoice(panel, 1)
+            val secondary = column(this, 10).apply { background = background(this@MainActivity, sunken, 7) }
+            secondary.add(row(this).apply {
+                weighted(label(this@MainActivity, "${session.localCallsign} (P2)", 12f, paint(session.localColorIndex), true))
+                add(button(this@MainActivity, "REMOVE P2", { setLocalPilot(false) }, danger = true), width = -2, gap = 0)
+            })
+            callsignRow(secondary, 1)
+            paintChoices(secondary, session.localColorIndex) { index ->
+                session.localColorIndex = index
+                session.save()
+                readySignature = ""
+                refresh(true)
+            }
+            if (session.rules.teamMode == "teams") localTeamChoice(secondary, 1)
+            secondary.add(label(this, "Touch controls P1. Keyboard/mouse controls P2. Gamepads control their assigned player.", 11f, soft), gap = 0)
+            panel.add(secondary)
         }
+        for (bot in session.localBots) localBotRow(panel, bot)
+        panel.add(label(this, "NEW BOT DIFFICULTY", 10f, muted, mono = true))
+        panel.add(choice(BotDifficulty.titles, BotDifficulty.index(session.difficulty)) {
+            session.difficulty = BotDifficulty.names[it]
+            session.save()
+        })
     }
 
     private fun localTeamChoice(panel: LinearLayout, seat: Int) {
@@ -1270,361 +1274,421 @@ class MainActivity : Activity() {
         panel.add(card)
     }
 
-    private fun paintChoices(panel: LinearLayout, seat: Int) {
-        val row = row(this)
+    private fun paintChoices(panel: LinearLayout, selected: Int, onSelect: (Int) -> Unit) {
+        val paints = row(this)
         GamePalette.names.forEachIndexed { index, name ->
-            row.weighted(
-                button(
-                        this,
-                        "",
-                        {
-                            if (seat == 0) session.colorIndex = index
-                            else session.localColorIndex = index
-                            session.save()
-                            if (session.online)
-                                session.command(
-                                    "paint",
-                                    "colorIndex" to index,
-                                    "target" to
-                                        if (seat == 0) session.network.welcome?.id
-                                        else session.network.welcome?.localId,
-                                    "member" to
-                                        if (seat == 0) session.network.welcome?.member
-                                        else session.network.welcome?.localMember,
-                                )
-                            readySignature = ""
-                            refresh(true)
-                        },
-                    )
-                    .apply {
-                        val selected =
-                            index == if (seat == 0) session.colorIndex else session.localColorIndex
-                        background =
-                            android.graphics.drawable.RippleDrawable(
-                                android.content.res.ColorStateList.valueOf(0x3340d5ff),
-                                NativeStyle.paintChip(this@MainActivity, paint(index), selected),
-                                null,
-                            )
-                        isSelected = selected
-                        isEnabled =
-                            !session.online ||
-                                if (seat == 0) session.network.welcome?.member != null
-                                else
-                                    session.network.welcome?.localId != null &&
-                                        session.network.welcome?.localMember != null
-                        contentDescription = name
-                        minimumWidth = 0
-                        minWidth = 0
-                        setPadding(0, dp(8), 0, dp(8))
-                    },
-                gap = 2,
-            )
+            paints.weighted(button(this, "", { onSelect(index) }).apply {
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(0x3340d5ff),
+                    NativeStyle.paintChip(this@MainActivity, paint(index), selected == index),
+                    null,
+                )
+                isSelected = selected == index
+                contentDescription = name
+                minimumWidth = 0
+                minWidth = 0
+                setPadding(0, dp(8), 0, dp(8))
+            }, gap = 2)
         }
-        panel.add(row)
+        panel.add(paints, gap = 0)
     }
 
-    private fun playerOptions(
-        player: JSONObject,
-        spectating: Boolean = player.optBoolean("spectating"),
-    ) {
-        val target = player.optInt("id")
-        val member = player.optLong("member")
-        val options = mutableListOf("Change team", "Rename")
-        if (session.isHost && player.optString("kind") == "bot") options.add("Bot difficulty")
-        if (session.isHost && target != session.localID) options.add("Remove tank")
-        options.add(if (spectating) "Join battle" else "Spectate")
-        AlertDialog.Builder(this)
-            .setTitle(player.optString("name"))
-            .setItems(options.toTypedArray()) { _, index ->
-                when (options[index]) {
-                    "Change team" ->
-                        AlertDialog.Builder(this)
-                            .setTitle("Team")
-                            .setItems(arrayOf("No team", "Team 1", "Team 2", "Team 3", "Team 4")) {
-                                _,
-                                team ->
-                                session.command(
-                                    "configure",
-                                    "target" to target,
-                                    "member" to member,
-                                    "team" to team,
-                                )
-                            }
-                            .show()
-                    "Rename" ->
-                        prompt("Callsign", player.optString("name"), 16) {
-                            session.command(
-                                "configure",
-                                "target" to target,
-                                "member" to member,
-                                "name" to it,
-                            )
-                        }
-                    "Remove tank" -> session.command("kick", "target" to target, "member" to member)
-                    "Bot difficulty" ->
-                        AlertDialog.Builder(this)
-                            .setTitle("Bot difficulty")
-                            .setItems(BotDifficulty.titles.toTypedArray()) { _, difficulty
-                                ->
-                                session.command(
-                                    "configure",
-                                    "target" to target,
-                                    "member" to member,
-                                    "difficulty" to
-                                        BotDifficulty.names[difficulty],
-                                )
-                            }
-                            .show()
-                    "Join battle",
-                    "Spectate" ->
-                        session.command(
-                            "spectate",
-                            "target" to target,
-                            "member" to member,
-                            "spectating" to !spectating,
-                        )
+    private fun roomPilotCard(room: JSONObject, member: JSONObject): LinearLayout {
+        val target = member.optInt("id")
+        val memberID = member.optLong("member")
+        val rawName = member.optString("name")
+        val watching = member.optBoolean("spectating")
+        val access = roomPilotAccess(member, session.network.welcome?.id, session.isHost,
+            session.roomSetupOpen, !room.isNull("matchmaking"), session.rules)
+        val name = PilotIdentity.label(rawName, access.bot, access.localSeat)
+        val colorIndex = member.optInt("colorIndex", GamePalette.colors.indexOf(member.optString("color")).coerceAtLeast(0))
+        val color = member.optString("color").takeIf(String::isNotBlank)?.let(NativeStyle::mappedPaint) ?: paint(colorIndex)
+        val card = column(this, 10).apply { background = background(this@MainActivity, sunken, 7) }
+        val options = mutableListOf<Pair<String, () -> Unit>>()
+        if (access.teamCount > 1)
+            options += "Change team" to {
+                val teamNames = (1..access.teamCount).map { session.rules.teamNames.getOrElse(it - 1) { "Team $it" } }
+                AlertDialog.Builder(this).setTitle("Team").setItems(teamNames.toTypedArray()) { _, index ->
+                    session.command("configure", "target" to target, "member" to memberID, "team" to index + 1)
+                }.show()
+            }
+        if (access.canRenameBot) {
+            options += "Rename" to {
+                prompt("Bot callsign", PilotIdentity.botName(rawName), 16) {
+                    if (it.isNotEmpty()) session.command("configure", "target" to target, "member" to memberID, "name" to it)
                 }
             }
-            .show()
+            options += "Bot difficulty" to {
+                AlertDialog.Builder(this).setTitle("Bot difficulty").setItems(BotDifficulty.titles.toTypedArray()) { _, index ->
+                    session.command("configure", "target" to target, "member" to memberID, "difficulty" to BotDifficulty.names[index])
+                }.show()
+            }
+        }
+        if (access.canToggleSpectating)
+            options += (if (watching) "Return to play" else "Spectate") to {
+                session.command("spectate", "target" to target, "member" to memberID, "spectating" to !watching)
+            }
+        if (access.canRemove)
+            options += "Remove" to { session.command("kick", "target" to target, "member" to memberID) }
+        card.add(row(this).apply {
+            val marker = View(this@MainActivity).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(color)
+                }
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            add(marker, width = 10, height = 10, gap = 6)
+            weighted(label(this@MainActivity, name, 12f, color, access.localSeat > 0), gap = 5)
+            val status = if (watching) "WATCHING" else if (member.optBoolean("ready")) "READY" else "WAITING"
+            val identity = if (access.bot) "BOT" else "HUMAN PILOT\n" + (if (room.optInt("host") == target) "HOST, " else "") + status
+            add(label(this@MainActivity, identity, 10f, muted, mono = true).apply { gravity = Gravity.END }, width = -2, gap = 4)
+            if (options.isNotEmpty()) add(button(this@MainActivity, "…", {
+                AlertDialog.Builder(this@MainActivity).setTitle(name)
+                    .setItems(options.map { it.first }.toTypedArray()) { _, index -> options[index].second() }
+                    .show()
+            }).apply {
+                contentDescription = "Player options for $name"
+                minimumWidth = 0
+                minWidth = 0
+                setPadding(0, 0, 0, 0)
+            }, width = 36, gap = 0)
+        }, gap = 8)
+        if (access.canPaint) paintChoices(card, colorIndex) { index ->
+            session.command("paint", "target" to target, "member" to memberID, "colorIndex" to index)
+        }
+        return card
     }
 
     private fun showMenu() {
-        focusSuspendedPlay = false
-        if (session.screen == Screen.PLAYING) session.pause(true)
+        if (session.screen != Screen.PLAYING) {
+            showControls()
+            return
+        }
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val panel = column(this, 16)
-        panel.add(
-            label(
-                this,
-                if (session.screen == Screen.PLAYING) "PAUSED." else "leqra",
-                28f,
-                accent,
-                true,
-            ),
-        )
-        if (session.screen == Screen.PLAYING)
-            panel.add(
-                button(
-                    this,
-                    "RESUME →",
-                    {
-                        dismissDialog()
-                        session.pause(false)
-                    },
-                    play = true,
-                ),
-            )
-        panel.add(
-            button(
-                this,
-                "SETTINGS",
-                {
-                    dismissDialog()
-                    showSettings()
-                },
-            ),
-        )
-        panel.add(
-            button(
-                this,
-                "CONTROLS",
-                {
-                    dismissDialog()
-                    showControls()
-                },
-            ),
-        )
-        if (!session.publicSelected) panel.add(
-            button(
-                this,
-                "RULES",
-                {
-                    dismissDialog()
-                    showRules()
-                },
-            ),
-        )
-        if (session.canRestartWave)
-            panel.add(
-                button(
-                    this,
-                    "RESTART CURRENT WAVE",
-                    {
-                        dismissDialog()
-                        session.restartMatch(true)
-                    },
-                ),
-            )
-        panel.add(
-            button(
-                this,
-                "P1 ACCOUNT KEY",
-                {
-                    dismissDialog()
-                    showAccount(0)
-                },
-            ),
-        )
-        panel.add(
-            button(
-                this,
-                "P2 ACCOUNT KEY",
-                {
-                    dismissDialog()
-                    showAccount(1)
-                },
-            ),
-        )
-        if (session.screen == Screen.PLAYING)
-            panel.add(
-                button(
-                    this,
-                    "BACK TO THE ROOM",
-                    {
-                        dismissDialog()
-                        session.lobby()
-                    },
-                ),
-            )
-        if (session.online || session.screen == Screen.PLAYING)
-            panel.add(
-                button(
-                    this,
-                    "LEAVE ARENA",
-                    {
-                        dismissDialog()
-                        session.leave()
-                    },
-                    danger = true,
-                ),
-            )
-        showPanel(panel, "Menu")
+        val intro = column(this)
+        val actions = column(this)
+        val card = if (landscape) row(this).apply {
+            gravity = Gravity.TOP
+            weighted(intro, gap = 24)
+            weighted(actions, gap = 0)
+        } else column(this).apply {
+            add(intro, gap = 12)
+            add(actions, gap = 0)
+        }
+        intro.add(label(this, if (session.online) "ONLINE MATCH" else "TAKE A BREATHER", 10f, soft, mono = true))
+        val lead = if (session.online) "STAY" else if (session.infinity) "HOLD YOUR" else "TAKE A"
+        val tail = if (session.online) "CONNECTED." else if (session.infinity) "FIRE." else "BREATHER."
+        val heading = android.text.SpannableString("$lead\n$tail").apply {
+            setSpan(android.text.style.ForegroundColorSpan(accent), lead.length + 1, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        intro.add(label(this, "", if (landscape) 26f else 34f, text, true).apply { this.text = heading })
+        val description = when {
+            session.spectating -> "The arena keeps running while you browse the menu."
+            !session.online -> "The battle is paused. Tanks are safe."
+            session.infinity -> "The match keeps running. Tanks remain vulnerable. Respawning waits until the menu closes."
+            else -> "The match keeps running. Tanks remain vulnerable."
+        }
+        intro.add(label(this, description, 12f, soft))
+        if (session.showFPS) {
+            intro.add(label(this, performanceReadout(false, session.online, fps, session.latency), 10f, muted, mono = true))
+        }
+        val notice = label(this, "", 12f, danger).apply { visibility = View.GONE }
+        fun showNotice(message: String) {
+            notice.text = message
+            notice.visibility = View.VISIBLE
+        }
+        if (!session.canResume) showNotice(session.status)
+        intro.add(notice)
+
+        val originalName = session.callsign.trim()
+        val callsign = if (session.spectating) null else field(this, originalName, "Callsign").apply {
+            contentDescription = "P1 callsign"
+            setTextColor(paint(session.colorIndex))
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+        }
+        fun resumeBattle() {
+            val newName = callsign?.text?.toString()?.trim().orEmpty()
+            if (Callsigns.botReserved(newName)) {
+                showNotice(Callsigns.botNamespaceMessage)
+                return
+            }
+            if (!session.canResume) {
+                showNotice(session.status)
+                return
+            }
+            dismissDialog()
+            session.pause(false)
+            if (newName.isNotBlank() && newName != originalName) session.renameCallsign(newName)
+        }
+        if (callsign != null) {
+            actions.add(label(this, "CALLSIGN", 10f, muted, mono = true))
+            actions.add(row(this).apply {
+                weighted(callsign)
+                add(button(this@MainActivity, "Account", { showAccount(0, returnToPause = true) }).apply {
+                    textSize = 10f
+                    contentDescription = "P1 account key"
+                }, width = 76, gap = 0)
+            })
+            callsign.setOnEditorActionListener { _, action, _ ->
+                if (action != android.view.inputmethod.EditorInfo.IME_ACTION_DONE) false
+                else {
+                    resumeBattle()
+                    true
+                }
+            }
+        }
+        actions.add(button(this, if (session.online) "← BACK TO THE ARENA" else "← BACK TO THE BATTLE", ::resumeBattle, role = "primary"))
+        if (!session.spectating || session.canControlSecondary)
+            actions.add(button(this, "Controls", { showControls(returnToPause = true) }))
+        if (session.room != null && session.isHost)
+            actions.add(button(this, "End match", {
+                dismissDialog()
+                session.lobby()
+            }))
+        if (session.canRestartWave && (!session.online || session.isHost))
+            actions.add(button(this, "Restart wave", {
+                dismissDialog()
+                session.restartMatch(true)
+            }))
+        actions.add(button(this, if (session.infinity) "Exit Infinity" else "Return to ready room", {
+            dismissDialog()
+            if (session.infinity) session.lobby(endMatch = false) else session.leave()
+        }), gap = 0)
+        panel.add(card, gap = 12)
+        if (session.infinity) {
+            panel.add(label(this, "LEADERBOARD", 10f, accent, mono = true))
+            currentLeaders().take(10).forEachIndexed { index, entry ->
+                panel.add(standingsRow(entry, index + 1, localSeat(entry)))
+            }
+            panel.add(label(this, "+1 per kill, −1 per death", 11f, soft), gap = 16)
+            appendFieldManual(panel)
+        }
+        showPanel(panel, "Paused")
     }
 
-    private fun showSettings() {
+    private fun showControls() = showControls(false)
+
+    private fun showControls(returnToPause: Boolean) {
         val panel = column(this, 16)
-        panel.add(label(this, "SETTINGS.", 24f, accent, true))
-        val sound =
-            Switch(this).apply {
-                text = "Sound effects"
-                textSize = 13f
-                setTextColor(NativeStyle.text)
-                isChecked = !session.muted
-                setOnCheckedChangeListener { _, enabled ->
-                    session.muted = !enabled
+        val paired = if (session.online) session.localID2 != null else session.localSelected
+        panel.add(label(this, session.identity, 13f, paint(session.colorIndex), true))
+        panel.add(label(this, "Keyboard defaults are WASD/arrow keys to drive and Q/C/Space/Enter to fire.", 12f, soft))
+        val seatHelp =
+            if (paired) "Touch controls P1. Keyboard/mouse controls P2. The first gamepad controls P1 and the second controls P2."
+            else "Keyboard/mouse or touch controls P1. Add local P2 in Players and bots to assign keyboard/mouse to P2."
+        panel.add(label(this, seatHelp, 12f, soft))
+        panel.add(label(this, "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Hold the right Fire button to shoot. Pickups equip automatically.", 13f))
+        panel.add(label(this, "Grenades can be thrown with a tap or hold. Release, then tap again to detonate. Release again before throwing another grenade. Projectiles pass through the tank that fired them.", 12f, soft))
+        panel.add(label(this, "On a gamepad, use the left stick to drive and A/R1/R2 to fire. Back/Escape pauses. Swipe from an edge for Android system controls.", 12f, soft))
+        panel.add(button(this, "QUICK TOUR", { showQuickTour() }))
+        hardwareControls(panel, paired)
+        panel.add(View(this).apply { setBackgroundColor(NativeStyle.edge) }, height = 1)
+        panel.add(settingsToggle("Request high refresh rate", session.highRefresh) {
+            session.highRefresh = it
+            session.save()
+            applyRefreshRate()
+        })
+        panel.add(settingsToggle("Show FPS and ping", session.showFPS) {
+            session.showFPS = it
+            session.save()
+            refresh(false)
+        })
+        panel.add(settingsToggle("Sound and haptics", !session.muted) {
+            if (it == session.muted) toggleSound()
+        })
+        val volume = (session.volume * 100).roundToInt()
+        val volumeValue = label(this, "$volume%", 13f, mono = true)
+        panel.add(row(this).apply {
+            weighted(label(this@MainActivity, "Sound volume", 13f), gap = 8)
+            add(volumeValue, width = -2, gap = 0)
+        })
+        panel.add(SeekBar(this).apply {
+            contentDescription = "Sound volume"
+            max = 100
+            keyProgressIncrement = 5
+            progress = volume
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                private var dragging = false
+
+                override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                    if (!fromUser) return
+                    val effective = if (value in 46..54) 50 else value
+                    if (!dragging && value != effective) bar?.progress = effective
+                    val normalized = effective / 100f
+                    if (session.volume == normalized) return
+                    session.volume = normalized
+                    volumeValue.text = "$effective%"
                     session.save()
                     refresh(false)
                 }
-            }
-        panel.add(sound)
-        panel.add(label(this, "VOLUME", 10f, muted, mono = true))
-        panel.add(
-            SeekBar(this).apply {
-                max = 100
-                progress = (session.volume * 100).toInt()
-                setOnSeekBarChangeListener(
-                    object : SeekBar.OnSeekBarChangeListener {
-                        override fun onProgressChanged(
-                            bar: SeekBar?,
-                            value: Int,
-                            fromUser: Boolean,
-                        ) {
-                            if (fromUser) {
-                                session.volume = value / 100f
-                                session.save()
-                                refresh(false)
-                            }
-                        }
 
-                        override fun onStartTrackingTouch(bar: SeekBar?) {}
+                override fun onStartTrackingTouch(bar: SeekBar?) { dragging = true }
 
-                        override fun onStopTrackingTouch(bar: SeekBar?) {
-                            if (!session.muted) previewAudio(AudioCue.VOLUME_PREVIEW)
-                        }
-                    },
-                )
-            },
-        )
-        panel.add(
-            Switch(this).apply {
-                text = "High refresh rate"
-                textSize = 13f
-                setTextColor(NativeStyle.text)
-                isChecked = session.highRefresh
-                setOnCheckedChangeListener { _, enabled ->
-                    session.highRefresh = enabled
-                    session.save()
-                    applyRefreshRate()
+                override fun onStopTrackingTouch(bar: SeekBar?) {
+                    dragging = false
+                    bar?.progress = (session.volume * 100).roundToInt()
+                    if (!session.muted) previewAudio(AudioCue.VOLUME_PREVIEW)
                 }
-            },
-        )
-        panel.add(
-            Switch(this).apply {
-                text = "Show frame rate"
-                textSize = 13f
-                setTextColor(NativeStyle.text)
-                isChecked = session.showFPS
-                setOnCheckedChangeListener { _, enabled ->
-                    session.showFPS = enabled
-                    session.save()
-                }
-            },
-        )
-        panel.add(label(this, "SERVER ADDRESS", 10f, muted, mono = true))
-        val server =
-            field(this, session.server, "https://leqra.com", 256).apply {
-                inputType =
-                    android.text.InputType.TYPE_CLASS_TEXT or
-                        android.text.InputType.TYPE_TEXT_VARIATION_URI
-            }
-        panel.add(server)
-        panel.add(
-            button(
-                this,
-                "SAVE SERVER",
-                {
-                    runCatching {
-                        session.setServer(server.text.toString())
-                        dismissDialog()
-                    }
-                        .onFailure { alert("Server", it.message ?: "Invalid address") }
-                },
-            ),
-        )
-        panel.add(
-            label(
-                this,
-                "Native Android · v${BuildConfig.VERSION_NAME}\nBackground music keeps playing with sound on or off.",
-                11f,
-                soft,
-            ),
-        )
-        showPanel(panel, "Settings")
+            })
+        })
+        panel.add(label(this, "Display rate adapts to the screen, power, temperature, and Android settings.", 11f, soft))
+        panel.add(label(this, "Native protocol ${BuildConfig.VERSION_NAME}", 11f, muted, mono = true))
+        val reopenControls = { showControls(returnToPause) }
+        panel.add(button(this, "ACCOUNT KEY", { showAccount(0, returnToPause = false, onClose = reopenControls) }))
+        panel.add(button(this, "P2 ACCOUNT KEY", { showAccount(1, returnToPause = false, onClose = reopenControls) }))
+        panel.add(button(this, "SHOWCASE", { showShowcase() }))
+        panel.add(label(this, "Exit Showcase with Escape, or switch away from the app and return.", 11f, soft))
+        panel.add(button(this, "RESET ALL SETTINGS", { confirmResetSettings() }, danger = true))
+        panel.add(button(this, "BACK", ::dismissDialog, role = "primary"), gap = 0)
+        val header = row(this).apply {
+            setPadding(dp(16), dp(10), dp(10), dp(4))
+            weighted(label(this@MainActivity, "Controls", 23f, bold = true).apply {
+                if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+            })
+            add(button(this@MainActivity, "×", ::dismissDialog, role = "text").apply {
+                textSize = 22f
+                contentDescription = "Close Controls"
+            }, width = 44, height = 44, gap = 0)
+        }
+        showPanel(panel, "Controls", afterClose = if (returnToPause) ::showMenu else null, header = header)
     }
 
-    private fun showControls() {
+    private fun settingsToggle(title: String, value: Boolean, change: (Boolean) -> Unit): Switch =
+        NativeStyle.toggle(this).apply {
+            text = title
+            textSize = 13f
+            setTextColor(NativeStyle.text)
+            isChecked = value
+            setOnCheckedChangeListener { _, enabled -> change(enabled) }
+        }
+
+    private fun hardwareControls(panel: LinearLayout, paired: Boolean) {
+        val hardware = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().filterNot { it.isVirtual }
+        val keyboard = hardware.any { it.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC }
+        val mouse = hardware.any { it.supportsSource(InputDevice.SOURCE_MOUSE) }
+        if (!keyboard && !mouse) return
+        val pilot = if (paired) "${session.localCallsign} (P2)" else session.identity
+        val color = paint(if (paired) session.localColorIndex else session.colorIndex)
+        panel.add(label(this, "KEYBOARD/MOUSE, $pilot", 11f, color, true, mono = true))
+        if (keyboard) {
+            val bindingRows = column(this)
+            buildKeyBindings(bindingRows)
+            panel.add(bindingRows)
+        }
+        if (mouse) {
+            panel.add(settingsToggle("Mouse aim", session.mouseAim) {
+                session.mouseAim = it
+                session.save()
+                arena.mouseAimEnabled = it
+            })
+            panel.add(settingsToggle("Mouse fire", session.mouseFire) {
+                session.mouseFire = it
+                session.save()
+                arena.mouseFireEnabled = it
+            })
+        }
+    }
+
+    private fun buildKeyBindings(panel: LinearLayout) {
+        panel.removeAllViews()
+        repeat(NativeControlBindings.layoutCount) { layout ->
+            panel.add(label(this, "KEYBOARD LAYOUT ${layout + 1}", 11f, soft, mono = true))
+            for (action in NativeControlAction.entries) {
+                val keyLabel = NativeControlBindings.label(session.keyboardBindings[layout, action])
+                val assign = button(this, keyLabel, { captureKey(layout, action) { buildKeyBindings(panel) } }).apply {
+                    contentDescription = "Layout ${layout + 1}, ${action.label}, $keyLabel"
+                }
+                panel.add(row(this).apply {
+                    weighted(label(this@MainActivity, action.label, 13f), gap = 12)
+                    add(assign, width = 115, gap = 0)
+                })
+            }
+        }
+        panel.add(button(this, "RESET DEFAULT KEYS", {
+            session.keyboardBindings = NativeControlBindings.defaults
+            session.save()
+            buildKeyBindings(panel)
+        }))
+    }
+
+    private fun captureKey(layout: Int, action: NativeControlAction, applied: () -> Unit) {
         val panel = column(this, 16)
-        panel.add(label(this, "CONTROLS.", 24f, accent, true))
-        panel.add(
-            label(
-                this,
-                "Drag the left joystick to steer and drive. Touch near the tank to aim in place. Hold the right control to shoot. Lift your thumb to stop.\n\nKeyboard: W/S/↑/↓ to drive, A/D/←/→ to turn, Q/C/Space/Enter to fire. Mouse: move to aim, hold the left button to fire. With P2 enabled, keyboard and mouse control P2 while touch controls P1.\n\nGamepad: left stick to drive, A/R1/R2 to fire. A second connected gamepad controls P2.\n\nBack/Escape pauses. Swipe from an edge for Android system controls.",
-                13f,
-                soft,
-            ),
-        )
-        panel.add(button(this, "SHOWCASE", { showShowcase() }))
-        showPanel(panel, "Controls")
+        panel.add(label(this, "Layout ${layout + 1}, ${action.label}", 14f, bold = true))
+        panel.add(label(this, "Press a keyboard key. Escape cancels.", 13f, soft))
+        val error = label(this, "", 12f, danger)
+        panel.add(error)
+        val shown = AlertDialog.Builder(this)
+            .setTitle("Press a key")
+            .setView(panel)
+            .setNegativeButton("CANCEL", null)
+            .create()
+        keyCaptureDialog = shown
+        shown.setOnDismissListener { keyCaptureDialog = null }
+        shown.setOnKeyListener { _, key, event ->
+            if (event.isSystem) return@setOnKeyListener false
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                when {
+                    key == KeyEvent.KEYCODE_ESCAPE -> shown.dismiss()
+                    event.isCtrlPressed || event.isAltPressed || event.isMetaPressed ->
+                        error.text = "System shortcuts cannot be assigned."
+                    else -> runCatching { session.keyboardBindings.assign(layout, action, key) }
+                        .onSuccess {
+                            session.keyboardBindings = it
+                            session.save()
+                            shown.dismiss()
+                            applied()
+                        }
+                        .onFailure { error.text = it.message }
+                }
+            }
+            true
+        }
+        shown.show()
+    }
+
+    private fun confirmResetSettings() {
+        AlertDialog.Builder(this)
+            .setTitle("Reset all settings?")
+            .setMessage("Restore defaults and return to the ready room. Room, display, audio, and control settings will reset. Saved account keys and callsigns stay on this device.")
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("RESET ALL SETTINGS") { _, _ -> resetSettings() }
+            .show()
+    }
+
+    private fun resetSettings() {
+        val settings = getSharedPreferences("leqra-settings", MODE_PRIVATE)
+        val preserve = mutableSetOf("callsign", "localCallsign", "autoPending0", "autoPending1",
+            "autoRequest0", "autoRequest1", QUICK_TOUR_SEEN)
+        if (BuildConfig.DEBUG) preserve.add("server")
+        dialog?.apply {
+            setOnDismissListener(null)
+            dismiss()
+        }
+        dialog = null
+        session.leave()
+        settings.edit().apply { (settings.all.keys - preserve).forEach(::remove) }.apply()
+        setIntent(Intent(intent).setData(null))
+        fullscreen = false
+        applyFullscreen()
+        recreate()
     }
 
     @android.annotation.SuppressLint("GestureBackNavigation") // Legacy Back is consumed; API33+ registers a no-op preview callback below.
     private fun showShowcase() {
         if (showcaseDialog != null) return
         hideKeyboard()
-        val preview = runCatching { ShowcaseView(this, session.muted) }.getOrElse {
+        val preview = runCatching { ShowcaseView(this, session.muted, session.showFPS) }.getOrElse {
             alert("Showcase", "The showcase could not be loaded.")
             return
         }
-        val shown = Dialog(this, android.R.style.Theme_Material_NoActionBar_Fullscreen)
+        val shown = Dialog(this, R.style.AppTheme)
+        shown.window?.apply {
+            addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0xff10181e.toInt()))
+            enableImmersiveEdgeToEdge()
+        }
         showcaseDialog = shown
         showcaseReturnOnResume = false
         shown.setCancelable(false)
@@ -1641,45 +1705,38 @@ class MainActivity : Activity() {
             if (showcaseDialog === shown) showcaseDialog = null
             showcaseReturnOnResume = false
             preview.release()
-            immersive()
+            window.setImmersiveSystemBars(fullscreen)
         }
         shown.show()
         preview.requestFocus()
-        shown.window?.apply {
-            setLayout(-1, -1)
-            addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0xff10181e.toInt()))
-            if (Build.VERSION.SDK_INT >= 30) {
-                setDecorFitsSystemWindows(false)
-                decorView.windowInsetsController?.apply {
-                    hide(WindowInsets.Type.systemBars())
-                    systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            }
-        }
+        shown.window?.setLayout(-1, -1)
         if (Build.VERSION.SDK_INT >= 33)
             shown.onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY) {}
     }
 
-    private fun showJoin() {
-        prompt("JOIN ROOM", "", 160) { value ->
-            val uri = runCatching { android.net.Uri.parse(value) }.getOrNull()
-            val code =
-                runCatching { uri?.getQueryParameter("room") }.getOrNull()
-                    ?: value
-            session.join(code, runCatching { uri?.getQueryParameter("spectate") == "1" }.getOrDefault(false))
+    private fun showJoin(draft: RoomJoinDraft = RoomJoinDraft()) {
+        val panel = roomJoinPanel(
+            this,
+            session.callsign,
+            draft,
+            canJoin = { !session.releasingCallsign },
+            openAccount = { current -> showAccount(0, returnToPause = false, onClose = { showJoin(current) }) },
+        ) { callsign, request ->
+            hideKeyboard()
+            dismissDialog()
+            if (callsign != session.callsign) session.callsign = callsign
+            session.join(request.code, request.spectate)
         }
+        showPanel(panel, "Find a room")
     }
 
-    private fun showRules() {
+    private fun showRules() = showRules(session.rules)
+
+    private fun showRules(source: RoomRules) {
         val panel = column(this, 16)
         panel.add(label(this, "ROOM RULES.", 24f, accent, true))
-        val draft = RuleEditorLimits.draft(session.rules)
+        panel.add(label(this, GameSession.modes.getValue(session.mode).uppercase(), 12f, accent, mono = true))
+        val draft = RuleEditorLimits.draft(source)
         var teamSection: LinearLayout? = null
         var powerSummary: TextView? = null
         val powerDescriptions = mutableMapOf<String, TextView>()
@@ -1704,6 +1761,7 @@ class MainActivity : Activity() {
             "MAP SIZE",
             listOf("compact", "standard", "large", "huge", "giant", "ultrawide"),
             draft.mapSize,
+            enabled = !draft.infinity,
         ) {
             draft.mapSize = it
             refreshPowerHelp()
@@ -1717,16 +1775,15 @@ class MainActivity : Activity() {
             draft.teamMode = it
             teamSection?.visibility = if (it == "teams") View.VISIBLE else View.GONE
         }
-        select(
-            "PICKUP RATE",
-            listOf("off", "slow", "normal", "fast", "superfast"),
-            draft.pickupRate,
-            enabled = !draft.infinity,
-        ) {
-            draft.pickupRate = it
-            refreshPowerHelp()
-        }
         if (!draft.infinity) {
+            select(
+                "POWER-UP FREQUENCY",
+                listOf("off", "slow", "normal", "fast", "superfast"),
+                draft.pickupRate,
+            ) {
+                draft.pickupRate = it
+                refreshPowerHelp()
+            }
             ruleStepper(
                 panel,
                 if (draft.mode == "survival") "Wave target" else "Score target",
@@ -1744,7 +1801,7 @@ class MainActivity : Activity() {
             }
         }
         panel.add(
-            CheckBox(this).apply {
+            NativeStyle.toggle(this).apply {
                 text = "Friendly fire"
                 textSize = 13f
                 setTextColor(NativeStyle.text)
@@ -1753,11 +1810,12 @@ class MainActivity : Activity() {
             },
         )
         panel.add(
-            CheckBox(this).apply {
+            NativeStyle.toggle(this).apply {
                 text = "Portrait maze"
                 textSize = 13f
                 setTextColor(NativeStyle.text)
                 isChecked = draft.portraitMaze
+                isEnabled = !draft.infinity
                 setOnCheckedChangeListener { _, v -> draft.portraitMaze = v }
             },
         )
@@ -1812,8 +1870,8 @@ class MainActivity : Activity() {
                 roamingControls.forEach { enableRoaming(it, draft.infinityRandomBots); it.alpha = if (draft.infinityRandomBots) 1f else .45f }
             }
             panel.add(
-                CheckBox(this).apply {
-                    text = "Fill Infinity with random bots"
+                NativeStyle.toggle(this).apply {
+                    text = "Random roaming bots"
                     textSize = 13f
                     setTextColor(NativeStyle.text)
                     isChecked = draft.infinityRandomBots
@@ -1837,16 +1895,17 @@ class MainActivity : Activity() {
             panel.add(label(this, "1× averages one bot every 1.5 seconds per living human while the room has capacity. Shared limit: 16 roaming bots per human, 128 per room. Roster bots always play.", 11f, muted))
             syncRoaming()
         }
-        panel.add(label(this, "POWER-UPS", 10f, muted, mono = true))
+        panel.add(label(this, if (draft.infinity) "INFINITY POWER-UPS" else "AVAILABLE POWER-UPS", 10f, muted, mono = true))
         powerSummary = label(this, PowerupHelp.summary(draft), 11f, soft).also { panel.add(it) }
         PowerupHelp.kinds.forEach { power ->
-                panel.add(
-                    CheckBox(this).apply {
+                if (draft.infinity) {
+                    panel.add(label(this, PowerupHelp.title(power), 13f, accent, true), gap = 0)
+                } else panel.add(
+                    NativeStyle.checkBox(this).apply {
                         text = PowerupHelp.title(power)
                         textSize = 13f
                         setTextColor(NativeStyle.text)
-                        isChecked = draft.infinity || power in draft.weapons
-                        isEnabled = !draft.infinity
+                        isChecked = power in draft.weapons
                         setOnCheckedChangeListener { _, v ->
                             draft.weapons =
                                 if (v) (draft.weapons + power).distinct() else draft.weapons - power
@@ -1865,10 +1924,11 @@ class MainActivity : Activity() {
                         session.changeRules(RuleEditorLimits.draft(draft))
                         dismissDialog()
                     },
-                    play = true,
+                    role = "primary",
                 )
                 .apply { isEnabled = session.isHost && session.screen != Screen.PLAYING },
         )
+        panel.add(button(this, "Restore defaults", { showRules(session.rules.restoringModeDefaults()) }), gap = 0)
         showPanel(panel, "Rules")
     }
 
@@ -1949,74 +2009,58 @@ class MainActivity : Activity() {
     }
 
     private fun showPresets() {
-        val options =
-            (GameSession.modes.values + "Save current preset" + "Load saved preset").toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("PRESETS")
-            .setItems(options) { _, index ->
-                when (index) {
-                    in 0..4 -> session.selectMode(GameSession.modes.keys.elementAt(index))
-                    5 ->
-                        getSharedPreferences("leqra-settings", MODE_PRIVATE)
-                            .edit()
-                            .putString("preset", GameSession.rulesJson(session.rules).toString())
-                            .apply()
-                    6 ->
-                        getSharedPreferences("leqra-settings", MODE_PRIVATE)
-                            .getString("preset", null)
-                            ?.let {
-                                runCatching {
-                                    session.changeRules(
-                                        com.leqra.android.network.ProtocolJson.roomRules(
-                                            JSONObject(it),
-                                        ),
-                                    )
-                                }
-                            }
-                }
-            }
-            .show()
+        showPanel(roomPresetPanel(this, session, ::dismissDialog), "Room presets")
     }
 
     private fun showResult() {
-        val result = session.snapshot.result
-        val winnerID = result?.takeIf { it.team == 0 }?.id ?: session.snapshot.winner
-        val winner = session.snapshot.tanks.firstOrNull { it.id == winnerID }
-        val team = result?.team?.takeIf { it > 0 }
-            ?: winner?.team?.takeIf { session.rules.teamMode == "teams" && it > 0 }
-        val seat = if (winner?.bot == true) 0 else if (winnerID == session.localID) 1 else if (winnerID == session.localID2) 2 else 0
-        val winnerName =
-            if (team != null) session.rules.teamNames.getOrNull(team - 1) ?: "Team $team"
-            else winner?.let { PilotIdentity.label(it.name, it.bot, seat) }
-                ?: result?.name?.takeIf(String::isNotBlank) ?: "Match complete"
-        val color = if (team != null) session.rules.teamColors.getOrNull(team - 1)?.let(::paint) ?: text
-            else winner?.colorIndex?.let(::paint) ?: text
-        val winnerScore = result?.score ?: winner?.score ?: session.snapshot.scores.maxOrNull() ?: 0
+        val outcome = matchOutcome(session.snapshot, session.rules, session.localID, session.localID2,
+            session.network.welcome?.member, session.online)
+        val winnerColor = outcome.winnerColor?.let(NativeStyle::mappedPaint) ?: accent
         val panel = column(this, 16)
-        panel.add(label(this, "MATCH COMPLETE.", 24f, accent, true))
-        panel.add(label(this, "${winnerName} · ${winnerScore} points", 16f, color, seat > 0 || team != null))
-        panel.add(
-            button(
-                this,
-                "PLAY AGAIN",
-                {
-                    dismissDialog()
-                    session.restartMatch()
-                },
-                play = true,
-            ),
-        )
-        panel.add(
-            button(
-                this,
-                "BACK TO THE ROOM",
-                {
-                    dismissDialog()
-                    session.lobby()
-                },
-            ),
-        )
+        panel.add(label(this, "MATCH COMPLETE", 10f, soft, mono = true))
+        panel.add(label(this, outcome.title, 28f, if (outcome.title == "DEFEAT") danger else winnerColor, outcome.boldTitle))
+        if (outcome.detail.isNotEmpty()) panel.add(label(this, outcome.detail, 12f, winnerColor))
+        currentLeaders().take(8).forEachIndexed { index, player ->
+            panel.add(standingsRow(player, index + 1, localSeat(player)))
+        }
+
+        val room = session.room
+        if (session.infinity) {
+            panel.add(button(this, "← BACK TO ROOM", { dismissDialog(); session.lobby(endMatch = false) }, role = "primary"))
+        } else {
+            val canRunBack = !session.online || session.isHost || room?.optJSONObject("matchmaking") != null
+            panel.add(button(this, if (canRunBack) "RUN IT BACK ↻" else "READY FOR REMATCH", {
+                dismissDialog()
+                session.restartMatch()
+            }, play = true))
+            if (session.canRestartWave) panel.add(button(this, "RESTART CURRENT WAVE", {
+                dismissDialog()
+                session.restartMatch(true)
+            }))
+        }
+        if (!session.infinity || session.online) {
+            if (!session.online || session.isHost && !session.infinity) {
+                panel.add(button(this, "Change mode or difficulty", { dismissDialog(); session.lobby() }))
+            } else if (ownRoomMemberHasParty()) {
+                panel.add(button(this, "Return to party", { dismissDialog(); session.command("return_party") }))
+            } else if (!session.isHost) {
+                panel.add(button(this, "Leave room", { dismissDialog(); session.leave() }, danger = true))
+            }
+        }
+        if (room != null) panel.add(button(this, "MATCH REPORT", { showSidebar(returnToResults = true) }))
         showPanel(panel, "Match complete")
+    }
+
+    private fun ownRoomMemberHasParty(): Boolean {
+        val room = session.room ?: return false
+        val id = session.network.welcome?.id ?: return false
+        return listOfNotNull(room.optJSONArray("players"), room.optJSONArray("spectators")).any { members ->
+            (0 until members.length()).any {
+                members.optJSONObject(it)?.let { member ->
+                    member.optInt("id", -1) == id && member.optBoolean("hasParty")
+                } == true
+            }
+        }
     }
 
     private fun confirmReleaseCallsign(name: String, key: String) {
@@ -2034,29 +2078,34 @@ class MainActivity : Activity() {
             }.show()
     }
 
-    private fun showAccount(seat: Int) {
+    private fun showAccount(seat: Int) = showAccount(seat, false)
+
+    private fun showAccount(seat: Int, returnToPause: Boolean, onClose: (() -> Unit)? = null) {
         val origin = session.server
         val panel = column(this, 16)
-        panel.add(
-            label(
-                this,
-                "${if(seat==0) session.callsign else session.localCallsign} (P${seat+1}) ACCOUNT KEY",
-                20f,
-                accent,
-                true,
-            ),
-        )
-        val details = label(this, "", 12f, soft)
         val selected = session.store.selected(origin, seat)
-        details.text =
+        val resetPending = session.accounts.pendingRotation(origin, seat) != null
+        var accountDialog: AlertDialog? = null
+        fun stillOpen() = accountDialog?.isShowing == true && dialog === accountDialog &&
+            session.server == origin && session.store.selected(origin, seat)?.key == selected?.key
+        val pilot = if (seat == 0) session.identity else "${session.localCallsign} (P2)"
+        val pilotColor = paint(if (seat == 0) session.colorIndex else session.localColorIndex)
+        panel.add(label(this, "Account key", 24f, accent, true))
+        panel.add(label(this, pilot, 12f, pilotColor, true, mono = true))
+        panel.add(label(this, "Each local player has a separate account key. Copying, importing, or resetting this key affects only this player's account.", 12f, soft))
+        val details =
             if (selected == null)
                 "Play online to create an account. Offline callsigns are always available."
             else if (selected.registrationPending)
                 "This key and callsign are saved on this device for offline play. Going online checks availability and registers them before joining."
             else
-                "This key owns your callsign and public Infinity score. Copy it to sign in on another device. Keep it private."
-        panel.add(details)
+                "This key controls your callsign and public Infinity score. Copy it to another trusted device to use the same account. Keep it private."
+        panel.add(label(this, details, 12f, soft))
         panel.add(label(this, "Each callsign has its own account and score. New callsigns start at zero. Saved callsigns let you switch back without pasting a key. Accounts expire after one month without signing in.", 12f, soft))
+        panel.add(label(this, if (selected == null) "No account key saved on this device." else "••••••••••••••••", 12f, mono = true))
+        panel.add(button(this, "COPY ACCOUNT KEY", {
+            selected?.let { copy("leqra account key", it.key, sensitive = true) }
+        }).apply { isEnabled = selected?.registrationPending == false && !resetPending })
         val savedCallsigns = session.accounts.savedCallsigns(origin).toMutableList()
         if (selected != null && savedCallsigns.none { it.key == selected.key }) {
             savedCallsigns.add(0, AccountService.SavedCallsign(if (seat == 0) session.callsign else session.localCallsign, selected.key))
@@ -2070,28 +2119,25 @@ class MainActivity : Activity() {
                 session.renameCallsign(saved.name, seat, validate = true)
                 dismissDialog()
             }).apply {
-                isEnabled = saved.key != selected?.key && !session.releasingCallsign
+                isEnabled = session.canImportAccount && !resetPending && saved.key != selected?.key
                 if (!isEnabled) {
                     setTextColor(android.graphics.Color.parseColor("#9b9b9b"))
                     background = background(this@MainActivity, android.graphics.Color.parseColor("#292929"), 6, android.graphics.Color.parseColor("#505050"))
                     alpha = .45f
                 }
             })
-            panel.add(button(this, "RELEASE " + saved.name, { confirmReleaseCallsign(saved.name, saved.key) }, danger = true))
+            panel.add(button(this, "RELEASE " + saved.name, { confirmReleaseCallsign(saved.name, saved.key) }, danger = true).apply {
+                isEnabled = session.canImportAccount && !resetPending
+            })
         }
         if (selected != null) {
-            panel.add(button(this, "RELEASE CURRENT CALLSIGN", { confirmReleaseCallsign(if (seat == 0) session.callsign else session.localCallsign, selected.key) }, danger = true))
+            panel.add(button(this, "RELEASE CURRENT CALLSIGN", { confirmReleaseCallsign(if (seat == 0) session.callsign else session.localCallsign, selected.key) }, danger = true).apply {
+                isEnabled = session.canImportAccount && !resetPending
+            })
             panel.add(
                 button(
                     this,
-                    "COPY ACCOUNT KEY",
-                    { copy("leqra account key", selected.key, sensitive = true) },
-                ),
-            )
-            panel.add(
-                button(
-                    this,
-                    "RESET ACCOUNT KEY",
+                    if (resetPending) "RETRY KEY RESET" else "RESET ACCOUNT KEY",
                     {
                         if (!session.canImportAccount) {
                             alert("Account key", "Leave the online room before resetting the key.")
@@ -2107,12 +2153,13 @@ class MainActivity : Activity() {
                                 if (!session.canImportAccount) return@setPositiveButton
                                 runCatching {
                                     session.accounts.rotate(origin, seat) { result ->
+                                        if (accountDialog?.isShowing != true || dialog !== accountDialog || session.server != origin) return@rotate
                                         result
                                             .onSuccess { recovered ->
                                                 if (recovered.promoted) {
                                                     dismissDialog()
                                                     session.leave()
-                                                    showAccount(seat)
+                                                    showAccount(seat, returnToPause, onClose)
                                                 } else
                                                     alert(
                                                         "Replacement saved",
@@ -2120,6 +2167,7 @@ class MainActivity : Activity() {
                                                     )
                                             }
                                             .onFailure {
+                                                showAccount(seat, returnToPause, onClose)
                                                 alert(
                                                     "Key reset",
                                                     it.message
@@ -2133,120 +2181,112 @@ class MainActivity : Activity() {
                             .show()
                     },
                     danger = true,
-                ),
+                ).apply { isEnabled = session.canImportAccount && !selected.registrationPending },
             )
         }
+        val activations = session.accounts.savedActivations(origin, seat)
+        if (activations.isNotEmpty())
+            panel.add(label(this, "A previous activation may have finished after its connection closed. You can review its saved key before choosing which account to use.", 11f, soft))
+        val activationButtons = mutableListOf<Button>()
         panel.add(label(this, "IMPORT FROM ANOTHER DEVICE", 10f, muted, mono = true))
-        val key =
-            field(this, "", "Paste account key", 45).apply {
-                inputType =
-                    android.text.InputType.TYPE_CLASS_TEXT or
-                        android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-                contentDescription = "Account key to import"
-            }
-        key.isEnabled = session.canImportAccount
-        panel.add(key)
-        if (!session.canImportAccount)
-            panel.add(
-                label(
-                    this,
-                    "Leave the online room before importing or resetting an account key.",
-                    11f,
-                    muted,
-                ),
-            )
-        val preview = label(this, "", 12f, soft)
-        panel.add(preview)
-        var checked: CheckedAccount? = null
-        val use =
-            button(
-                    this,
-                    "USE THIS KEY",
-                    {
-                        checked?.let { verified ->
-                            val importingDialog = dialog
-                            fun currentImport() = dialog === importingDialog && importingDialog?.isShowing == true && checked === verified && session.canImportAccount && session.server == origin
-                            session.accounts.signInChecked(verified, seat, if (seat == 0) session.callsign else session.localCallsign,
-                                canCommit = ::currentImport) { result ->
-                                if (!currentImport()) return@signInChecked
-                                result.onSuccess { signedIn ->
-                                    signedIn.info.preferredCallsign?.let { name ->
-                                        if (seat == 0) session.callsign = name else session.localCallsign = name
-                                    }
-                                    session.accountImported(seat)
-                                    session.save(); session.leave(); dismissDialog()
-                                    readySignature = ""; refresh(true)
-                                }.onFailure { alert("Account key", it.message ?: "Unable to import key") }
-                            }
-                        }
-                    },
-                )
-                .apply { isEnabled = false }
-        key.addTextChangedListener(
-            watcher {
-                checked = null
-                use.isEnabled = false
-                preview.text = ""
-            },
-        )
-        panel.add(
-            button(
-                this,
-                "PREVIEW ACCOUNT",
-                {
-                    val candidate = key.text.toString().trim()
-                    use.isEnabled = false
-                    checked = null
-                    session.accounts.inspect(origin, candidate) { result ->
-                        if (
-                            origin != session.server ||
-                                key.text.toString().trim() != candidate ||
-                                dialog?.isShowing != true
-                        )
-                            return@inspect
-                        result
-                            .onSuccess { verified ->
-                                checked = verified
-                                preview.text =
-                                    "${verified.info.preferredCallsign.orEmpty()}\n${verified.info.publicProfile?.let { "${it.name}: ${it.score} points" } ?: "No public score yet"}"
-                                use.isEnabled = session.canImportAccount
-                            }
-                            .onFailure { preview.text = it.message ?: "That key is unavailable." }
-                    }
-                },
-            ),
-        )
-        use.isEnabled = false
-        panel.add(use)
-        session.store.pending(origin, seat).filter { !it.purpose.startsWith("saved:") }.forEachIndexed { index, pending ->
-            panel.add(
-                button(
-                    this,
-                    "REVIEW SAVED KEY ${index+1}",
-                    {
-                        if (!session.canImportAccount) return@button
-                        session.accounts.recover(origin, pending) { result ->
-                            result
-                                .onSuccess { recovered ->
-                                    if (recovered.promoted) {
-                                        dismissDialog()
-                                        showAccount(seat)
-                                    } else {
-                                        checked = recovered.checked
-                                        preview.text =
-                                            "Recovered account: ${recovered.checked.info.preferredCallsign.orEmpty()}. Review it, then use this key to switch accounts."
-                                        use.isEnabled = session.canImportAccount
-                                    }
-                                }
-                                .onFailure {
-                                    preview.text =
-                                        it.message ?: "Not yet confirmed. The key remains saved."
-                                }
-                        }
-                    },
-                ),
-            )
+        val key = field(this, "", "Paste account key", 45).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            contentDescription = "Account key to import"
         }
+        val canReview = session.canImportAccount && !resetPending
+        key.isEnabled = canReview
+        if (!canReview) {
+            val reason =
+                if (resetPending) "A key reset is pending. Retry reset to finish it safely."
+                else "Return to the offline ready room to import or reset a key."
+            panel.add(label(this, reason, 11f, muted))
+        }
+        var checked: CheckedAccount? = null
+        var checking = false
+        var committing = false
+        var previewRequest: CancelRequest? = null
+        var previewRevision = 0
+        val preview = label(this, "", 12f, soft)
+        val checkButton = button(this, "CHECK KEY", {})
+        val use = button(this, "USE THIS ACCOUNT", {}, play = true)
+        fun refreshActions() {
+            key.isEnabled = canReview && !committing
+            checkButton.isEnabled = canReview && !checking && !committing && key.text.isNotBlank()
+            use.visibility = if (checked != null) View.VISIBLE else View.GONE
+            use.isEnabled = canReview && !committing
+            activationButtons.forEach { it.isEnabled = canReview && !checking && !committing }
+        }
+        fun checkCandidate(candidate: String, saved: Boolean) {
+            if (!stillOpen() || !canReview || !session.canImportAccount || checking || committing) return
+            val revision = ++previewRevision
+            checked = null
+            checking = true
+            preview.text = "Checking key…"
+            refreshActions()
+            previewRequest = session.accounts.inspectForSeat(origin, candidate, seat) { result ->
+                if (!stillOpen() || revision != previewRevision) return@inspectForSeat
+                checking = false
+                previewRequest = null
+                result.onSuccess { verified ->
+                    checked = verified
+                    val name = verified.info.preferredCallsign.orEmpty()
+                    val points = verified.info.publicProfile?.let { "Public Infinity score: ${it.score}" } ?: "No public score yet"
+                    preview.text = "$name\n$points\nYour current callsign and key stay saved when you select this account."
+                }.onFailure {
+                    preview.text =
+                        if (saved) "That activation is not confirmed yet. Its key remains saved."
+                        else it.message ?: "That key is unavailable."
+                }
+                refreshActions()
+            }
+        }
+        activations.forEachIndexed { index, activation ->
+            val review = button(this, "REVIEW SAVED ACTIVATION ${index + 1}", { checkCandidate(activation.key, saved = true) })
+            activationButtons.add(review)
+            panel.add(review)
+        }
+        panel.add(key)
+        key.addTextChangedListener(watcher {
+            previewRevision++
+            previewRequest?.cancel()
+            previewRequest = null
+            checking = false
+            checked = null
+            preview.text = ""
+            refreshActions()
+        })
+        panel.add(preview)
+        checkButton.setOnClickListener { checkCandidate(key.text.toString().trim(), saved = false) }
+        panel.add(checkButton)
+        use.setOnClickListener {
+            val verified = checked ?: return@setOnClickListener
+            if (!stillOpen() || !canReview || !session.canImportAccount || committing) return@setOnClickListener
+            committing = true
+            refreshActions()
+            fun currentImport() = stillOpen() && checked === verified && session.canImportAccount
+            session.accounts.signInChecked(verified, seat, if (seat == 0) session.callsign else session.localCallsign,
+                canCommit = ::currentImport) { result ->
+                committing = false
+                // A successful import changes the selected key, so stillOpen() no longer matches.
+                if (accountDialog?.isShowing != true || dialog !== accountDialog || session.server != origin) return@signInChecked
+                result.onSuccess { signedIn ->
+                    signedIn.info.preferredCallsign?.let { name ->
+                        if (seat == 0) session.callsign = name else session.localCallsign = name
+                    }
+                    session.accountImported(seat)
+                    session.save()
+                    session.leave()
+                    showAccount(seat, returnToPause, onClose)
+                    readySignature = ""
+                    refresh(true)
+                }.onFailure {
+                    preview.text = it.message ?: "Unable to import the account."
+                    refreshActions()
+                }
+            }
+        }
+        panel.add(use)
+        refreshActions()
         panel.add(
             label(
                 this,
@@ -2269,8 +2309,9 @@ class MainActivity : Activity() {
                 },
             ),
         )
-        showPanel(panel, "P${seat+1} account key", secure = true)
+        showPanel(panel, "P${seat+1} account key", secure = true, afterClose = if (returnToPause) ::showMenu else onClose)
         val shown = dialog ?: return
+        accountDialog = shown
         val pendingScores = mutableSetOf<CancelRequest>()
         val remainingScores = scoreRows.distinctBy { it.first }.iterator()
         fun accountStillOpen() = dialog === shown && shown.isShowing && session.server == origin &&
@@ -2296,6 +2337,9 @@ class MainActivity : Activity() {
         panel.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) {}
             override fun onViewDetachedFromWindow(view: View) {
+                previewRevision++
+                previewRequest?.cancel()
+                previewRequest = null
                 pendingScores.toList().forEach { it.cancel() }
                 pendingScores.clear()
                 view.removeOnAttachStateChangeListener(this)
@@ -2304,94 +2348,161 @@ class MainActivity : Activity() {
         repeat(minOf(3, scoreRows.size)) { loadNextScore() }
     }
 
+    private fun currentLeaders(): List<LeaderboardEntry> {
+        val snapshot = session.snapshot
+        if (snapshot.leaderboard.isNotEmpty()) return snapshot.leaderboard
+        return snapshot.tanks.filterNot { it.survivalEnemy }.sortedByDescending { it.score }.map {
+            LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team, it.difficulty)
+        }
+    }
+
+    private fun localSeat(entry: LeaderboardEntry): Int =
+        when {
+            entry.bot -> 0
+            entry.id == session.localID2 && session.canControlSecondary -> 2
+            entry.id == session.localID && !session.spectating -> 1
+            else -> 0
+        }
+
+    private fun showSidebar(returnToResults: Boolean = false) {
+        val panel = column(this, 16)
+        panel.add(label(this, "Sidebar", 24f, accent, true))
+        session.snapshot.matchStats?.let { report ->
+            panel.add(label(this, "MATCH REPORT", 10f, accent, mono = true))
+            panel.add(label(this, "${report.rounds} rounds, ${report.duration.toInt()} seconds", 10f, muted, mono = true))
+            report.players.forEach { player ->
+                val seat = player.localSeat(session.network.welcome?.member)
+                val color = NativeStyle.mappedPaint(player.color)
+                val playerPanel = column(this)
+                playerPanel.add(row(this).apply {
+                    weighted(label(this@MainActivity, PilotIdentity.label(player.name, player.bot, seat), 12f, color, seat > 0), gap = 6)
+                    add(label(this@MainActivity, if (player.bot) "BOT" else "HUMAN PILOT", 10f, muted, mono = true), width = -2, gap = 6)
+                    add(label(this@MainActivity, player.score.toString(), 12f, color, true), width = -2, gap = 0)
+                }, gap = 4)
+                playerPanel.add(label(this, "${player.eliminations} eliminations, ${player.deaths} deaths, ${player.selfDestructs} self-destructs", 11f, soft), gap = 3)
+                when (report.mode) {
+                    "ctf" -> playerPanel.add(label(this, "${player.captures} captures, ${player.flagReturns} returns", 11f, muted), gap = 0)
+                    "koth" -> playerPanel.add(label(this, "${player.hillSeconds.toInt()}s on hill", 11f, muted), gap = 0)
+                }
+                panel.add(playerPanel)
+            }
+        }
+        panel.add(label(this, "LEADERBOARD", 10f, accent, mono = true))
+        currentLeaders().forEachIndexed { index, player ->
+            panel.add(standingsRow(player, index + 1, localSeat(player)))
+        }
+        appendFieldManual(panel)
+        panel.add(button(this, "CONTROLS", { showControls() }))
+        showPanel(panel, "Sidebar", afterClose = if (returnToResults) ({
+            main.post {
+                if (isFinishing || isDestroyed || dialog != null || session.screen != Screen.PLAYING) return@post
+                if (session.snapshot.phase == "matchOver" || session.snapshot.result != null) showResult()
+                else {
+                    session.pause(false)
+                    window.setImmersiveSystemBars(fullscreen)
+                    arena.requestFocus()
+                    refresh(false)
+                }
+            }
+        }) else null)
+    }
+
+    private fun appendFieldManual(panel: LinearLayout) {
+        val infinity = if (session.screen == Screen.PLAYING) session.infinity else session.rules.infinity || session.publicSelected
+        val rules = session.rules.copy(infinity = infinity)
+        val world = session.snapshot.world.takeIf { session.screen == Screen.PLAYING }
+        panel.add(label(this, "FIELD MANUAL", 10f, accent, mono = true))
+        panel.add(label(this, "Touch", 13f, text, true))
+        panel.add(label(this, "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.", 12f, soft))
+        panel.add(label(this, if (infinity) "INFINITY" else session.modeTitle.uppercase(java.util.Locale.ROOT), 10f, accent, mono = true))
+        panel.add(label(this, if (infinity) "Gain a point for each kill and lose a point each time the tank is destroyed. Respawn after one second. Keep growing the score without a time limit."
+            else modeHelp(session.mode), 12f, soft))
+        panel.add(label(this, "POWER-UPS", 10f, accent, mono = true))
+        panel.add(label(this, PowerupHelp.summary(rules, world), 12f, soft))
+        for (kind in PowerupHelp.kinds) {
+            val entry = column(this)
+            entry.add(label(this, PowerupHelp.title(kind), 12f, text, true), gap = 3)
+            entry.add(label(this, PowerupHelp.description(kind, rules, world), 12f, soft), gap = 0)
+            panel.add(entry)
+        }
+    }
+
     private fun updateScores() {
         if (!showScores) {
-            scores?.let(stage::removeView)
+            scorePanel?.let(stage::removeView)
+            scorePanel = null
             scores = null
             scoreSignature = ""
             return
         }
-        val signature =
-            if (session.screen == Screen.PLAYING)
-                "${stage.width}:${stage.height}:${resources.configuration.orientation}:${session.localID}:${session.localID2}:${session.spectating}:${session.followingID}:${session.snapshot.leaderboard}:" + if (session.snapshot.leaderboard.isEmpty()) session.snapshot.tanks.map { listOf(it.id,it.name,it.score,it.colorIndex,it.bot,it.difficulty) }.toString() else ""
-            else session.publicStatus?.leaders.toString()
+        val preview = session.screen != Screen.PLAYING
+        val selecting = !preview && session.spectating && session.infinity
+        val leaders = if (!preview) currentLeaders() else session.publicStatus?.leaders.orEmpty().map {
+            LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, difficulty = it.difficulty)
+        }
+        val signature = "${stage.width}:${stage.height}:$safeLeft:$safeRight:$preview:$selecting:${session.localID}:${session.localID2}:${session.followingID}:$leaders"
         if (scores != null && signature == scoreSignature) return
         scoreSignature = signature
-        val previousScroll = (scores as? ScrollView)?.scrollY ?: 0
-        scores?.let(stage::removeView)
-        scores = null
+        val previousScroll = scores?.scrollY ?: 0
+        scorePanel?.let(stage::removeView)
         scorePanelBuilds++
-        val panel =
-            column(this, 12).apply { background = background(this@MainActivity, surface, 9) }
-        panel.add(label(this, "LEADERBOARD", 10f, accent, true, mono = true))
-        if (session.spectating) panel.add(label(this, "Tap a tank to follow. Dead tanks stay selectable through respawn.", 10f, soft))
-        val leaders =
-            if (session.screen == Screen.PLAYING)
-                session.snapshot.leaderboard.takeIf { it.isNotEmpty() }
-                    ?: session.snapshot.tanks
-                        .sortedByDescending { it.score }
-                        .map {
-                            LeaderboardEntry(
-                                it.id,
-                                it.name,
-                                it.score,
-                                it.colorIndex,
-                                it.bot,
-                                it.team,
-                                it.difficulty,
-                            )
+        val panel = object : LinearLayout(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val maxHeight = minOf(MeasureSpec.getSize(heightMeasureSpec), dp(330))
+                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST))
+            }
+        }.apply {
+            orientation = LinearLayout.VERTICAL
+            background = background(this@MainActivity, surface, 8)
+        }
+        panel.add(button(this, "LEADERBOARD  ⌃", {
+            showScores = false
+            updateScores()
+        }, role = "text").apply {
+            contentDescription = "Close leaderboard"
+            setTextColor(accent)
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        }, gap = 0)
+        val list = column(this, 6)
+        if (leaders.isEmpty()) list.add(label(this, "No tanks yet", 12f, soft), gap = 0)
+        (if (selecting) leaders else leaders.take(10)).forEachIndexed { index, player ->
+            val following = selecting && player.id == session.followingID
+            list.add(standingsRow(player, index + 1, if (preview) 0 else localSeat(player), following).apply {
+                if (selecting) {
+                    minimumHeight = dp(44)
+                    setPadding(dp(6), dp(6), dp(6), dp(6))
+                    contentDescription = "Follow ${player.name}"
+                    isClickable = true
+                    setOnClickListener {
+                        session.followTank(player.id)
+                        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+                            showScores = false
+                            updateScores()
                         }
-            else null
-        if (leaders != null)
-            (if (session.spectating) leaders else leaders.take(10)).forEachIndexed { index, p ->
-                val seat = if (session.spectating || p.bot) 0 else if (p.id == session.localID) 1 else if (p.id == session.localID2) 2 else 0
-                val following = session.spectating && p.id == session.followingID
-                panel.add(standingsRow(p, index + 1, seat, following).apply {
-                    if (session.spectating) {
-                        minimumHeight = dp(44)
-                        setPadding(dp(6), dp(6), dp(6), dp(6))
-                        contentDescription = "Follow ${p.name}"
-                        isClickable = true
-                        setOnClickListener {
-                            session.followTank(p.id)
-                            if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
-                                showScores = false
-                                updateScores()
-                            }
-                        }
-                        if (following) setBackgroundColor(raised)
                     }
-                })
-            }
-        else
-            session.publicStatus?.leaders?.take(10)?.forEachIndexed { index, p ->
-                panel.add(standingsRow(LeaderboardEntry(p.id, p.name, p.score, p.colorIndex, p.bot, difficulty = p.difficulty), index + 1))
-            }
-        panel.add(
-            button(
-                this,
-                "CLOSE",
-                {
-                    showScores = false
-                    updateScores()
-                },
-            ),
-        )
+                    if (following) setBackgroundColor(raised)
+                }
+            }, gap = 3)
+        }
         val scroll = ScrollView(this).apply {
             contentDescription = "Leaderboard list"
-            addView(panel)
+            addView(list)
             post { scrollTo(0, previousScroll) }
         }
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, -2, 1f))
+        if (selecting) panel.add(label(this, "Tap a tank to follow", 11f, soft).apply {
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }, gap = 0)
+        panel.add(label(this, "+1 per kill, -1 per death", 11f, soft).apply {
+            setPadding(dp(10), dp(4), dp(10), dp(8))
+        }, gap = 0)
         scores = scroll
-        stage.addView(
-            scroll,
-            FrameLayout.LayoutParams(
-                    minOf(dp(if (session.spectating) 280 else 205), resources.displayMetrics.widthPixels - dp(24)),
-                    if (session.spectating) (stage.height - dp(24)).coerceAtLeast(dp(120)) else -2,
-                    Gravity.TOP or Gravity.END,
-                )
-                .apply { setMargins(dp(12) + safeLeft, dp(12), dp(12) + safeRight, dp(12)) },
-        )
+        scorePanel = panel
+        val margin = dp(10)
+        val width = (stage.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) - safeLeft - safeRight - 2 * margin
+        stage.addView(panel, FrameLayout.LayoutParams(
+            minOf(dp(if (selecting) 245 else 205), width.coerceAtLeast(0)), -2, Gravity.TOP or Gravity.END,
+        ).apply { setMargins(margin + safeLeft, margin, margin + safeRight, margin) })
     }
 
     private fun standingsRow(entry: LeaderboardEntry, rank: Int, seat: Int = 0, following: Boolean = false): LinearLayout {
@@ -2417,62 +2528,59 @@ class MainActivity : Activity() {
         panel.add(label(this, "Loading queues…", 12f, soft))
         showPanel(panel, "Matchmaking")
         queueDialog = true
-        session.command("queue_info")
     }
 
     private var shownQueuePacket: String? = null
 
     private fun updateQueueDialog() {
-        val packet = session.queuePacket ?: return
-        val signature = packet.toString()
+        val packet = session.queuePacket
+        val room = session.room
+        val queue = room?.optJSONObject("queue").takeUnless { packet?.optString("type") == "queue_cancelled" }
+        if (packet == null && queue == null) return
+        val signature = "$packet:$queue:${session.isHost}:${room?.optString("phase")}:${room?.optBoolean("infinityActive")}"
         if (signature == shownQueuePacket) return
         shownQueuePacket = signature
         val panel = column(this, 16)
         panel.add(label(this, "FIND A MATCH.", 24f, accent, true))
-        packet.optJSONObject("queue")?.let { queue ->
-            panel.add(
-                label(
-                    this,
-                    "${queue.optString("name")} · ${queue.optInt("players")} / ${queue.optInt("required")}\n${queue.optString("stage")}",
-                    13f,
-                    soft,
-                ),
-            )
-            panel.add(
-                button(
-                    this,
-                    "ACCEPT MATCH",
-                    {
-                        session.command(
-                            "queue_accept",
-                            "queueId" to queue.optLong("id"),
-                            "ready" to true,
-                        )
-                    },
-                    play = true,
-                ),
-            )
-            panel.add(
-                button(
-                    this,
-                    "CANCEL QUEUE",
-                    { session.command("queue_cancel", "queueId" to queue.optLong("id")) },
-                ),
-            )
+        if (queue != null) {
+            panel.add(label(this, queue.optString("name"), 18f, accent, true))
+            panel.add(label(this, "${queue.optInt("players")} / ${queue.optInt("required")} players, ${queue.optString("stage")}", 12f, soft))
+            val member = session.network.welcome?.member
+            val members = queue.optJSONArray("members")?.objects().orEmpty()
+            var participating = false
+            var waiting = false
+            members.forEach { entry ->
+                val local = entry.optLong("controller") == member
+                val accepted = entry.optBoolean("accepted")
+                val seat = if (!local) 0 else if (entry.optString("kind") == "local") 2 else 1
+                val name = PilotIdentity.label(entry.optString("name"), entry.optString("kind") == "bot", seat)
+                panel.add(row(this).apply {
+                    weighted(label(this@MainActivity, name, 12f, bold = local))
+                    addView(label(this@MainActivity, if (accepted) "READY" else "WAITING", 12f, soft))
+                })
+                participating = participating || local
+                waiting = waiting || local && !accepted
+            }
+            val id = queue.optLong("id")
+            if (queue.optString("stage") == "confirming" && waiting)
+                panel.add(button(this, "READY", { session.command("queue_accept", "queueId" to id, "ready" to true) }, play = true))
+            if (session.isHost || participating)
+                panel.add(button(this, "CANCEL SEARCH", { session.command("queue_cancel", "queueId" to id) }))
+        } else {
+            val canQueue = room != null && session.isHost && room.optString("phase") in setOf("lobby", "matchOver") &&
+                !room.optBoolean("infinityActive") && room.isNull("matchmaking") && room.optString("awayMatch").isEmpty()
+            packet?.optJSONArray("queues")?.objects().orEmpty().forEach { listing ->
+                val definition = listing.optJSONObject("definition") ?: return@forEach
+                val details = "${listing.optInt("waitingPlayers")} waiting, ${definition.optInt("cols")} × ${definition.optInt("rows")} maze"
+                panel.add(button(this, "${definition.optString("name")}\n$details", {
+                    session.command("queue_join", "queue" to definition.optString("key"))
+                }).apply {
+                    isEnabled = canQueue
+                    alpha = if (isEnabled) 1f else .45f
+                })
+            }
         }
-        val rows = packet.optJSONArray("queues") ?: JSONArray()
-        repeat(rows.length()) {
-            val row = rows.getJSONObject(it)
-            val definition = row.optJSONObject("definition") ?: return@repeat
-            panel.add(
-                button(
-                    this,
-                    "${definition.optString("name")} · ${row.optInt("waitingPlayers")} waiting",
-                    { session.command("queue_join", "queue" to definition.optString("key")) },
-                ),
-            )
-        }
-        packet.optString("message").takeIf(String::isNotBlank)?.let {
+        packet?.optString("message")?.takeIf(String::isNotBlank)?.let {
             panel.add(label(this, it, 12f, soft))
         }
         dialog?.setOnDismissListener(null)
@@ -2494,7 +2602,31 @@ class MainActivity : Activity() {
         else audio.preview(cue)
     }
 
-    private fun showPanel(panel: LinearLayout, title: String, secure: Boolean = false) {
+    private fun showQuickTour() {
+        if (quickTourDialog != null) return
+        val paired = if (session.online) session.localID2 != null else session.localSelected
+        val mode =
+            if (session.screen == Screen.READY && (session.room?.optBoolean("infinityPublic") ?: session.publicSelected))
+                "infinity"
+            else session.mode
+        val shown = QuickTour(this, paired, modeHelp(mode))
+        quickTourDialog = shown
+        shown.setOnCancelListener {
+            getSharedPreferences("leqra-settings", MODE_PRIVATE).edit().putBoolean(QUICK_TOUR_SEEN, true).apply()
+        }
+        shown.setOnDismissListener { quickTourDialog = null }
+        shown.show()
+        shown.resize()
+    }
+
+    private fun showPanel(
+        panel: LinearLayout,
+        title: String,
+        secure: Boolean = false,
+        afterClose: (() -> Unit)? = null,
+        header: View? = null,
+    ) {
+        val openingScreen = session.screen
         focusSuspendedPlay = false
         dialog?.dismiss()
         clearHeldControls()
@@ -2504,18 +2636,28 @@ class MainActivity : Activity() {
                 addView(panel)
                 setBackgroundColor(surface)
             }
+        val content = if (header == null) scroll else column(this).apply {
+            add(header, gap = 0)
+            add(View(this@MainActivity).apply { setBackgroundColor(NativeStyle.edge) }, height = 1, gap = 0)
+            addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
         dialog =
             AlertDialog.Builder(this)
-                .setView(scroll)
-                .setNegativeButton("CLOSE", null)
+                .setView(content)
+                .apply { if (header == null) setNegativeButton("CLOSE", null) }
                 .create()
                 .also { shown ->
                     shown.setOnDismissListener {
                         if (dialog !== shown) return@setOnDismissListener
                         dialog = null
                         queueDialog = false
+                        if (isFinishing || isDestroyed) return@setOnDismissListener
+                        if (afterClose != null && session.screen == openingScreen) {
+                            afterClose()
+                            return@setOnDismissListener
+                        }
                         if (session.screen == Screen.PLAYING && session.paused) session.pause(false)
-                        immersive()
+                        window.setImmersiveSystemBars(fullscreen)
                         if (session.screen == Screen.PLAYING) arena.requestFocus()
                         refresh(false)
                     }
@@ -2535,6 +2677,12 @@ class MainActivity : Activity() {
         dialog?.dismiss()
         queueDialog = false
         session.neutral()
+        refresh(false)
+    }
+
+    private fun applyFullscreen() {
+        window.setImmersiveSystemBars(fullscreen)
+        root.requestApplyInsets()
         refresh(false)
     }
 
@@ -2693,14 +2841,14 @@ class MainActivity : Activity() {
                 if (event.action == KeyEvent.ACTION_UP) shown.dismiss()
                 return true
             }
-            if (event.keyCode in gameKeys || event.keyCode == KeyEvent.KEYCODE_BUTTON_START) return true
+            if (isGameKey(event.keyCode) || event.keyCode == KeyEvent.KEYCODE_BUTTON_START) return true
         }
         // Route paired controls before the focused arena's single-seat fallback.
         if (
             ::session.isInitialized &&
                 session.screen == Screen.PLAYING &&
                 dialog == null &&
-                (event.keyCode in gameKeys ||
+                (isGameKey(event.keyCode) ||
                     event.keyCode == KeyEvent.KEYCODE_ESCAPE ||
                     event.keyCode == KeyEvent.KEYCODE_BUTTON_START)
         )
@@ -2738,9 +2886,10 @@ class MainActivity : Activity() {
             controllerInput(event.deviceId)
             return true
         }
-        if (keyCode in gameKeys) {
+        if (isGameKey(keyCode)) {
             if (event.repeatCount > 0 && keyCode !in pressed) return true
-            if (keyCode in setOf(KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT)) arena.clearMouseAim()
+            if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) return super.onKeyDown(keyCode, event)
+            if (session.keyboardBindings.isTurn(keyCode)) arena.clearMouseAim()
             pressed.add(keyCode)
             keyboardInput()
             return true
@@ -2761,27 +2910,18 @@ class MainActivity : Activity() {
         return super.onKeyUp(keyCode, event)
     }
 
+    private fun isGameKey(code: Int) = code in gamepadFireKeys || code in session.keyboardBindings
+
     private fun keyboardInput() {
         session.input = combinedInput(false)
         if (session.localID2 != null) session.input2 = combinedInput(true)
     }
 
     private fun combinedInput(local: Boolean): GameInput {
-        fun key(code: Int) = code in pressed
         val paired = session.localID2 != null
         val keyboardSeat = local == paired
-        val controls = GameInput(
-                forward = keyboardSeat && (key(KeyEvent.KEYCODE_W) || key(KeyEvent.KEYCODE_DPAD_UP)),
-                reverse = keyboardSeat && (key(KeyEvent.KEYCODE_S) || key(KeyEvent.KEYCODE_DPAD_DOWN)),
-                left = keyboardSeat && (key(KeyEvent.KEYCODE_A) || key(KeyEvent.KEYCODE_DPAD_LEFT)),
-                right = keyboardSeat && (key(KeyEvent.KEYCODE_D) || key(KeyEvent.KEYCODE_DPAD_RIGHT)),
-                fire = keyboardSeat && (key(KeyEvent.KEYCODE_SPACE) || key(KeyEvent.KEYCODE_ENTER) || key(KeyEvent.KEYCODE_Q) ||
-                        key(KeyEvent.KEYCODE_C) ||
-                        key(KeyEvent.KEYCODE_BUTTON_A) ||
-                        key(KeyEvent.KEYCODE_BUTTON_R1) ||
-                        key(KeyEvent.KEYCODE_BUTTON_R2)),
-                touchAim = false,
-            )
+        val controls = if (keyboardSeat) session.keyboardBindings.input(pressed) else GameInput(touchAim = false)
+        if (keyboardSeat && gamepadFireKeys.any(pressed::contains)) controls.fire = true
         var analog: ControllerState? = null
         if (controllers.isNotEmpty()) {
             val devices = InputDevice.getDeviceIds().filter {
@@ -2835,23 +2975,6 @@ class MainActivity : Activity() {
             "Used online; offline is OK.\nYours? Import account key\nGenerate random?"
         private val gamepadFireKeys =
             setOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_BUTTON_R2)
-        private val gameKeys =
-            setOf(
-                KeyEvent.KEYCODE_W,
-                KeyEvent.KEYCODE_A,
-                KeyEvent.KEYCODE_S,
-                KeyEvent.KEYCODE_D,
-                KeyEvent.KEYCODE_DPAD_UP,
-                KeyEvent.KEYCODE_DPAD_DOWN,
-                KeyEvent.KEYCODE_DPAD_LEFT,
-                KeyEvent.KEYCODE_DPAD_RIGHT,
-                KeyEvent.KEYCODE_SPACE,
-                KeyEvent.KEYCODE_Q,
-                KeyEvent.KEYCODE_C,
-                KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_BUTTON_A,
-                KeyEvent.KEYCODE_BUTTON_R1,
-                KeyEvent.KEYCODE_BUTTON_R2,
-            )
+
     }
 }

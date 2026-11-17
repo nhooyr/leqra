@@ -44,6 +44,8 @@ data class GameInput(
     var snapAim: Boolean = false,
 )
 
+data class LocalPilot(val name: String, val colorIndex: Int, val team: Int = 0)
+
 data class MazeWall(
     var x: Double = 0.0,
     var y: Double = 0.0,
@@ -218,6 +220,7 @@ data class ArenaSnapshot(
     var winner: Int = -1,
     var spectating: Boolean = false,
     var following: Int = 0,
+    var matchStats: MatchReport? = null,
 )
 
 data class ArenaFlag(
