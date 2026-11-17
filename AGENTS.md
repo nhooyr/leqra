@@ -15,7 +15,7 @@ Run from the repository root. Use Go 1.23+, Node.js for JavaScript tests, and Py
 - `go test -race -count=1 ./...`: run Go tests with race detection.
 - `node --test src/tests/*.test.cjs`: run Node's built-in test suite.
 - `python3 -m unittest discover -s tests -p 'test_deploy.py' -v`: run deployment tests without contacting a host.
-- `go vet ./...`, `node --check src/web/assets/v*/game.js`, and `sh -n deploy/ensure.sh`: run static checks.
+- `go vet ./...`, `node --check src/web/assets/v*/game.js`, and `sh -n deploy/server.sh`: run static checks.
 
 ## Coding Style & Naming Conventions
 
@@ -41,7 +41,7 @@ Keep generated test results out of version control, including logs, benchmark ou
 
 ## Assets & Configuration
 
-Keep `index.html` at the web root and all other browser files in the current versioned asset directory. Align server/client versions, HTML references, and PWA cache paths. Rebuild after asset changes. Configure locally through `PORT`, `ADDR`, `MAX_ROOMS`, and `ALLOWED_ORIGINS`. `deploy/ensure.sh` performs real remote deployment and restarts the service.
+Keep `index.html` at the web root and all other browser files in the current versioned asset directory. Align server/client versions, HTML references, and PWA cache paths. Rebuild after asset changes. Configure locally through `PORT`, `ADDR`, `MAX_ROOMS`, and `ALLOWED_ORIGINS`. `deploy/server.sh` performs real remote deployment and restarts the service.
 
 ## Commit & Pull Request Guidelines
 

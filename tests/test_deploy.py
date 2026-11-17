@@ -60,7 +60,7 @@ class DeployTests(unittest.TestCase):
         self.root = Path(scratch.name).resolve()
         self.deploy = self.root / "project with spaces" / "deploy"
         self.deploy.mkdir(parents=True)
-        original = Path(__file__).resolve().parents[1] / "deploy" / "ensure.sh"
+        original = Path(__file__).resolve().parents[1] / "deploy" / "server.sh"
         self.script = self.deploy / original.name
         shutil.copy2(original, self.script)
         (self.deploy / "leqra.service").write_text("[Service]\n")

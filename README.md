@@ -70,4 +70,4 @@ You can deploy the binary anywhere as all assets are embedded.
 go build -trimpath -o ./bin/leqra ./src
 ```
 
-See [./deploy/ensure.sh](./deploy/ensure.sh) for how I deploy it to [leqra.com](https://leqra.com).
+See [./deploy/server.sh](./deploy/server.sh) for how I deploy it to [leqra.com](https://leqra.com).
