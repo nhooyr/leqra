@@ -6,7 +6,12 @@ import (
 	"time"
 )
 
-const accountInactivityLimit = 7 * 24 * time.Hour
+// Use the same UTC day and time next month, clamping to its final day when needed.
+func accountExpiry(lastUsed time.Time) time.Time {
+	used := lastUsed.UTC()
+	lastDay := time.Date(used.Year(), used.Month()+2, 0, 0, 0, 0, 0, time.UTC).Day()
+	return time.Date(used.Year(), used.Month()+1, min(used.Day(), lastDay), used.Hour(), used.Minute(), used.Second(), used.Nanosecond(), time.UTC)
+}
 
 func (r *onlineCallsignRegistry) callsignOwnerLocked(key string) (string, bool) {
 	owner, exists := r.claims[key]
@@ -16,7 +21,7 @@ func (r *onlineCallsignRegistry) callsignOwnerLocked(key string) (string, bool) 
 var errCallsignImmutable = errors.New("Changing callsign creates a separate account. Choose or create that callsign's account key.")
 
 func (r *onlineCallsignRegistry) activeOwnerLocked(hash string) bool {
-	return r.owners[hash] && !r.expired[hash] && (r.lastUsed[hash] == 0 || r.lastUsed[hash]+int64(accountInactivityLimit/time.Second) > r.now().Unix())
+	return r.owners[hash] && !r.expired[hash] && (r.lastUsed[hash] == 0 || r.now().Before(accountExpiry(time.Unix(r.lastUsed[hash], 0))))
 }
 func (r *onlineCallsignRegistry) immutableNamesLocked(hash string, names []string) error {
 	existing := r.names[hash]

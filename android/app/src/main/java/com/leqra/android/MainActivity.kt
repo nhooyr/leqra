@@ -286,7 +286,7 @@ class MainActivity : Activity() {
         val brand = row(this).apply { setPadding(0, 0, dp(8), 0) }
         brandMark = NativeStyle.brandIcon(this)
         brand.add(brandMark, 36, 36, gap = 0)
-        val names = column(this).apply { setPadding(dp(4), 0, 0, 0) }
+        val names = column(this)
         names.add(
             label(this, "leqra", 17f, text, true).apply { contentDescription = "leqra" },
             gap = 3,
@@ -2051,12 +2051,27 @@ class MainActivity : Activity() {
             else
                 "This key owns your callsign and public Infinity score. Copy it to sign in on another device. Keep it private."
         panel.add(details)
-        panel.add(label(this, "Each callsign has its own account and score. New callsigns start at zero. Saved callsigns let you switch back without pasting a key. Accounts expire after 7 days without signing in.", 12f, soft))
-        session.accounts.savedCallsigns(origin).filter { it.key != session.store.selected(origin, 1-seat)?.key }.forEach { saved ->
+        panel.add(label(this, "Each callsign has its own account and score. New callsigns start at zero. Saved callsigns let you switch back without pasting a key. Accounts expire after one month without signing in.", 12f, soft))
+        val savedCallsigns = session.accounts.savedCallsigns(origin).toMutableList()
+        if (selected != null && savedCallsigns.none { it.key == selected.key }) {
+            savedCallsigns.add(0, AccountService.SavedCallsign(if (seat == 0) session.callsign else session.localCallsign, selected.key))
+        }
+        val scoreRows = mutableListOf<Triple<String, String, TextView>>()
+        savedCallsigns.filter { it.key != session.store.selected(origin, 1-seat)?.key }.forEach { saved ->
+            val score = label(this, "${saved.name}: Loading score…", 12f, soft)
+            panel.add(score)
+            scoreRows.add(Triple(saved.key, saved.name, score))
             panel.add(button(this, "USE " + saved.name, {
                 session.renameCallsign(saved.name, seat, validate = true)
                 dismissDialog()
-            }))
+            }).apply {
+                isEnabled = saved.key != selected?.key
+                if (!isEnabled) {
+                    setTextColor(android.graphics.Color.parseColor("#9b9b9b"))
+                    background = background(this@MainActivity, android.graphics.Color.parseColor("#292929"), 6, android.graphics.Color.parseColor("#505050"))
+                    alpha = .45f
+                }
+            })
             panel.add(button(this, "RELEASE " + saved.name, { confirmReleaseCallsign(saved.name, saved.key) }, danger = true))
         }
         if (selected != null) {
@@ -2068,18 +2083,6 @@ class MainActivity : Activity() {
                     { copy("leqra account key", selected.key, sensitive = true) },
                 ),
             )
-            session.accounts.inspect(origin, selected.key) { result ->
-                if (
-                    dialog?.isShowing == true &&
-                        session.server == origin &&
-                        session.store.selected(origin, seat)?.key == selected.key
-                ) {
-                    result.onSuccess { checked ->
-                        details.text =
-                            "${checked.info.preferredCallsign.orEmpty()}\n${checked.info.publicProfile?.let { "${it.name}: ${it.score} points\n" } ?: ""}Keep your key private. The newest device takes over your tank."
-                    }
-                }
-            }
             panel.add(
                 button(
                     this,
@@ -2256,6 +2259,38 @@ class MainActivity : Activity() {
             ),
         )
         showPanel(panel, "P${seat+1} account key", secure = true)
+        val shown = dialog ?: return
+        val pendingScores = mutableSetOf<CancelRequest>()
+        val remainingScores = scoreRows.distinctBy { it.first }.iterator()
+        fun accountStillOpen() = dialog === shown && shown.isShowing && session.server == origin &&
+            session.store.selected(origin, seat)?.key == selected?.key
+        fun loadNextScore() {
+            if (!accountStillOpen() || !remainingScores.hasNext()) return
+            val (accountKey, name, score) = remainingScores.next()
+            var request: CancelRequest? = null
+            request = session.accounts.inspect(origin, accountKey) { result ->
+                request?.let { pendingScores.remove(it) }
+                if (!accountStillOpen()) return@inspect
+                score.text = result.fold(
+                    { checked ->
+                        checked.info.scoreForCallsign(name)?.let { "$name: $it points" }
+                            ?: "$name: Score unavailable"
+                    },
+                    { "$name: Score unavailable" },
+                )
+                loadNextScore()
+            }
+            request?.let { pendingScores.add(it) }
+        }
+        panel.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) {}
+            override fun onViewDetachedFromWindow(view: View) {
+                pendingScores.toList().forEach { it.cancel() }
+                pendingScores.clear()
+                view.removeOnAttachStateChangeListener(this)
+            }
+        })
+        repeat(minOf(3, scoreRows.size)) { loadNextScore() }
     }
 
     private fun updateScores() {

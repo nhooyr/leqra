@@ -234,7 +234,7 @@ struct AccountPanel: View {
                 Text(session.accountOrigin).font(WebStyle.mono()).foregroundStyle(WebStyle.muted).fixedSize(horizontal: false, vertical: true)
                 Text("Your key controls your callsign and public Infinity score. Copy it to another trusted device to use the same account. Keep it private.")
                     .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
-                Text("Each callsign has its own account and score. New callsigns start at zero. Saved callsigns let you switch back without pasting a key. Accounts expire after 7 days without signing in.")
+                Text("Each callsign has its own account and score. New callsigns start at zero. Saved callsigns let you switch back without pasting a key. Accounts expire after one month without signing in.")
                     .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
                 Text(session.accountHasKey ? "••••••••••••••••" : "No account key saved on this device.")
                     .font(WebStyle.mono()).accessibilityIdentifier("maskedAccountKey")
@@ -242,11 +242,17 @@ struct AccountPanel: View {
                     .disabled(!session.accountCanCopyKey || session.accountBusy).accessibilityIdentifier("copyAccountKey")
                 if let info = session.accountInfo { accountPreview(info) }
                 ForEach(session.savedCallsignNames, id: \.self) { name in
-                    HStack {
-                        Button("USE " + name) { session.useSavedCallsign(name) }
-                            .buttonStyle(WebButtonStyle()).disabled(session.switchingCallsign)
-                        Button("RELEASE") { releaseName = name; confirmRelease = true }
-                            .buttonStyle(WebButtonStyle(kind: .danger)).disabled(!session.canImportAccount || session.accountBusy || session.switchingCallsign)
+                    let useDisabled = session.switchingCallsign || session.isCurrentSavedCallsign(name)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Button("USE " + name) { session.useSavedCallsign(name) }
+                                .buttonStyle(WebButtonStyle()).disabled(useDisabled)
+                                .saturation(useDisabled ? 0 : 1).opacity(useDisabled ? 0.45 : 1)
+                            Button("RELEASE") { releaseName = name; confirmRelease = true }
+                                .buttonStyle(WebButtonStyle(kind: .danger)).disabled(!session.canImportAccount || session.accountBusy || session.switchingCallsign)
+                        }
+                        Text(session.savedCallsignScoreText(name)).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                            .accessibilityIdentifier("savedCallsignScore-" + name)
                     }
                 }
                 Text(session.accountStatus).font(.system(size: 11)).foregroundStyle(WebStyle.soft)
@@ -315,7 +321,7 @@ struct AccountPanel: View {
                     .accessibilityIdentifier("releaseAccount")
                 Text("Reset signs out every other device and invalidates the old key. Your callsign and score stay with the new key.")
                     .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
-                Text("Lost your key? Copy it from a signed-in device. If none remain, there is no automatic recovery; an inactive account expires after 7 days. You can ask for manual help on GitHub.")
+                Text("Lost your key? Copy it from a signed-in device. If none remain, there is no automatic recovery; an inactive account expires after one month. You can ask for manual help on GitHub.")
                     .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
                 Link("Open a GitHub issue", destination: URL(string: "https://github.com/nhooyr/leqra/issues/new")!)
                     .font(.system(size: 12)).foregroundStyle(WebStyle.accent)

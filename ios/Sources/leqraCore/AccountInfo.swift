@@ -14,6 +14,12 @@ public struct AccountInfo: Decodable, Equatable, Sendable {
     public let publicProfile: PublicProfile?
     public var preferredCallsign: String? { publicProfile?.name ?? names.first }
 
+    public func score(for callsign: String) -> Int? {
+        guard let profile = publicProfile,
+              CallsignPolicy.clean(profile.name).lowercased() == CallsignPolicy.clean(callsign).lowercased() else { return nil }
+        return profile.score
+    }
+
     private enum CodingKeys: String, CodingKey { case names, totalNames, publicProfile }
 
     public init(from decoder: Decoder) throws {

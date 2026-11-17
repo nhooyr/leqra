@@ -19,8 +19,11 @@ Account, signs into that account without asking for its key again. Its own score
 is restored. Saved accounts can be used by either P1 or P2, but both seats cannot
 use the same account simultaneously. Import a key to use it on another device.
 
-Accounts and their callsigns expire after **7 days without signing in**. Gameplay
-and explicit account selection renew this period; merely viewing account details
+Accounts and their callsigns expire after **one calendar month without signing in**.
+The deadline is the same UTC day and time in the next month, clamped to that
+month's last day when needed. For example, a January 31 sign-in expires on
+February 28, or February 29 in a leap year, at the same UTC time. Gameplay and
+explicit account selection renew this period; merely viewing account details
 does not. After expiry, the name can be claimed by a fresh account, starting from
 zero. A saved expired key cannot recover its former score. Clients check a saved
 key before switching and preserve the current account if the old name is now

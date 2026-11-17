@@ -1080,7 +1080,7 @@ func (s *infiniteServer) publicStoreError(err error) {
 	}
 }
 
-// Bound the zero-score cache; account ownership and all scores separately expire after seven inactive days.
+// Bound the zero-score cache; account ownership and all scores separately expire after one inactive calendar month.
 func (s *infiniteServer) prunePublicProfiles(now time.Time) error {
 	if len(s.publicZeroProfiles) <= infiniteZeroProfiles {
 		return nil

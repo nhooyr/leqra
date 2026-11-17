@@ -1,10 +1,10 @@
-# leqra v5.3.3 — current game protocol (protocol 1)
+# leqra v5.4.0 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.3.3**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.4.0**.
 
 ```json
-{"type":"server_hello","version":"5.3.3","protocol":1}
-{"type":"client_hello","version":"5.3.3","protocol":1}
+{"type":"server_hello","version":"5.4.0","protocol":1}
+{"type":"client_hello","version":"5.4.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -103,7 +103,8 @@ current key until successful creation, then leaves the old match and selects the
 new account with zero score. Previously used name/key pairs remain saved locally;
 selecting one validates its key through `POST /api/account` with `signIn:true`.
 Ordinary account previews omit `signIn` and do not renew expiry. Accounts expire
-after seven days without an explicit sign-in or gameplay. An expired name may be
+one calendar month after the last explicit sign-in or gameplay: the same UTC
+day and time next month, clamped to that month's last day. An expired name may be
 claimed with a new key; its former score does not transfer.
 
 `POST /api/account/release` accepts `{"publicToken":"<saved key>"}` after an

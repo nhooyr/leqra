@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.3.3';
+const GAME_VERSION='5.4.0';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -2323,13 +2323,21 @@ async function releaseCallsignAccount(token,name,seat=accountSeat()){
  finally{clearTimeout(timer);if(dialog.accountReleaseRequest===controller)delete dialog.accountReleaseRequest;syncAccountImport();renderSavedCallsignAccounts();}
 }
 function renderSavedCallsignAccounts(){
- const host=$('accountSavedAccounts');if(!host)return;host.replaceChildren();
+ const host=$('accountSavedAccounts');if(!host)return;host.replaceChildren();$('accountDialog').accountSavedScoreNodes=new Map();
  for(const entry of savedCallsignAccounts()){
-  if(entry.token===publicIdentityToken(accountSeat()))continue;
-  const row=document.createElement('div'),button=document.createElement('button'),release=document.createElement('button');row.className='account-saved-row';button.type=release.type='button';button.className=release.className='secondary';button.textContent=entry.name;release.textContent='Release';release.setAttribute('aria-label','Release '+entry.name);button.disabled=release.disabled=!accountImportAllowed()||!!$('accountDialog').accountReleaseRequest;
+  const inUse=[publicIdentityToken(0),publicIdentityToken(1)].includes(entry.token);
+  const row=document.createElement('div'),button=document.createElement('button'),release=document.createElement('button'),score=document.createElement('span');row.className='account-saved-row';button.type=release.type='button';button.className=release.className='secondary';button.textContent=entry.name;release.textContent='Release';release.setAttribute('aria-label','Release '+entry.name);release.disabled=!accountImportAllowed()||!!$('accountDialog').accountReleaseRequest;button.disabled=release.disabled||inUse;score.className='account-saved-score';score.textContent=$('accountDialog').accountSavedScores?.get(entry.token)||'Loading score…';
   button.onclick=async()=>{const seat=accountSeat(),selected=publicIdentityToken(seat);button.disabled=true;try{await selectCallsignAccount(seat,entry.name,boundCallsignName(seat),()=>accountImportAllowed()&&accountSeat()===seat&&publicIdentityToken(seat)===selected);openAccount(seat);accountNotice('accountCurrentNotice','Saved account selected.');}catch(error){accountNotice('accountCurrentNotice',error.message,true);button.disabled=false;}};
-  release.onclick=()=>releaseCallsignAccount(entry.token,entry.name).catch(error=>accountNotice('accountCurrentNotice',error.message,true));row.append(button,release);host.append(row);
+  release.onclick=()=>releaseCallsignAccount(entry.token,entry.name).catch(error=>accountNotice('accountCurrentNotice',error.message,true));row.append(button,release,score);host.append(row);$('accountDialog').accountSavedScoreNodes.set(entry.token,score);
  }
+}
+function accountScoreLabel(data,name){const profile=data.publicProfile;return profile&&Number.isSafeInteger(profile.score)&&(!name||accountNameKey(profile.name)===accountNameKey(name))?'Score: '+profile.score:'Score unavailable';}
+function loadSavedCallsignScores(currentToken){
+ const dialog=$('accountDialog');dialog.accountSavedRequest?.abort();const controller=new AbortController();dialog.accountSavedRequest=controller;
+ const pending=savedCallsignAccounts().filter(entry=>entry.token!==currentToken),current=()=>dialog.open&&dialog.accountSavedRequest===controller;
+ const timeout=setTimeout(()=>controller.abort(),10000);let next=0;
+ const worker=async()=>{while(next<pending.length){const entry=pending[next++];let label='Score unavailable';try{if(!controller.signal.aborted)label=accountScoreLabel(await fetchAccountInfo(entry.token,controller.signal),entry.name);}catch(_){}if(!current())return;dialog.accountSavedScores.set(entry.token,label);const node=dialog.accountSavedScoreNodes?.get(entry.token);if(node)node.textContent=label;}};
+ Promise.all([worker(),worker()]).finally(()=>{clearTimeout(timeout);if(dialog.accountSavedRequest===controller)delete dialog.accountSavedRequest;});
 }
 
 function accountSeat(){return $('accountDialog')?.dataset?.accountSeat==='1'?1:0;}
@@ -2363,16 +2371,16 @@ function syncAccountImport(){
 }
 function openAccount(seat=0){
  seat=seat===1?1:0;
- const dialog=$('accountDialog'),token=publicIdentityToken(seat);dialog.dataset.accountSeat=String(seat);try{renderSavedCallsignAccounts();}catch(error){accountNotice('accountCurrentNotice',error.message,true);}delete dialog.accountRegisteredKey;$('accountTitle').textContent=(seat?'P2':'P1')+' account key.';clearAccountImport();$('accountImportKey').value='';$('accountKey').type='password';$('accountKey').value=token;$('accountCopyBtn').disabled=!token;$('accountCurrentInfo').replaceChildren();
+ const dialog=$('accountDialog'),token=publicIdentityToken(seat);dialog.dataset.accountSeat=String(seat);dialog.accountSavedScores=new Map();try{renderSavedCallsignAccounts();}catch(error){accountNotice('accountCurrentNotice',error.message,true);}delete dialog.accountRegisteredKey;$('accountTitle').textContent=(seat?'P2':'P1')+' account key.';clearAccountImport();$('accountImportKey').value='';$('accountKey').type='password';$('accountKey').value=token;$('accountCopyBtn').disabled=!token;$('accountCurrentInfo').replaceChildren();
  accountNotice('accountCurrentNotice',token?'Loading account details…':'Go online once to create an account key, or import an existing one.');accountNotice('accountImportNotice','');syncAccountImport();openFeature('account');
  dialog.accountCurrentRequest?.abort();const controller=new AbortController();dialog.accountCurrentRequest=controller;
- resolvePendingAccountKeys();
+ resolvePendingAccountKeys();loadSavedCallsignScores(token);
  if(!token)return;
  const timeout=setTimeout(()=>controller.abort(),6000);
  fetchAccountInfo(token,controller.signal).then(data=>{
   if(!dialog.open||dialog.accountCurrentRequest!==controller||publicIdentityToken(seat)!==token||accountSeat()!==seat)return;
-  dialog.accountRegisteredKey=token;if(seat===1&&data.publicProfile&&localAccountRegistrationPending(token))rememberPublicIdentity(token,token,1);renderAccountInfo($('accountCurrentInfo'),data);saveCallsignAccount(data.names[0],token);accountNotice('accountCurrentNotice','');syncAccountImport();
- },error=>{if(dialog.open&&dialog.accountCurrentRequest===controller&&error.name!=='AbortError')accountNotice('accountCurrentNotice',seat===1&&error.status===401&&error.code!=='account_key_revoked'&&localAccountRegistrationPending(token)?'P2’s key is saved on this device. Go online with P2 to activate it, then copy the key.':error.message,true);}).finally(()=>{clearTimeout(timeout);if(dialog.accountCurrentRequest===controller)delete dialog.accountCurrentRequest;});
+  dialog.accountRegisteredKey=token;if(seat===1&&data.publicProfile&&localAccountRegistrationPending(token))rememberPublicIdentity(token,token,1);renderAccountInfo($('accountCurrentInfo'),data);saveCallsignAccount(data.names[0],token);dialog.accountSavedScores.set(token,accountScoreLabel(data));renderSavedCallsignAccounts();accountNotice('accountCurrentNotice','');syncAccountImport();
+ },error=>{if(dialog.open&&dialog.accountCurrentRequest===controller){dialog.accountSavedScores.set(token,'Score unavailable');renderSavedCallsignAccounts();if(error.name!=='AbortError')accountNotice('accountCurrentNotice',seat===1&&error.status===401&&error.code!=='account_key_revoked'&&localAccountRegistrationPending(token)?'P2’s key is saved on this device. Go online with P2 to activate it, then copy the key.':error.message,true);}}).finally(()=>{clearTimeout(timeout);if(dialog.accountCurrentRequest===controller)delete dialog.accountCurrentRequest;});
 }
 async function copyAccountKey(){
  const dialog=$('accountDialog'),seat=accountSeat(),token=publicIdentityToken(seat);if(!dialog.open||!token)return;
@@ -2497,7 +2505,7 @@ function initAccountTransfer(){
  $('pauseAccountBtn').onclick=()=>openAccount(0);
  $('accountCopyBtn').onclick=copyAccountKey;$('accountRotateBtn').onclick=rotateAccountKey;$('accountReleaseBtn').onclick=()=>releaseCallsignAccount(publicIdentityToken(accountSeat()),boundCallsignName(accountSeat())).catch(error=>accountNotice('accountCurrentNotice',error.message,true));$('accountImportForm').addEventListener('submit',event=>{event.preventDefault();checkImportedAccount();});$('accountUseBtn').onclick=useImportedAccount;
  $('accountImportKey').addEventListener('input',()=>{clearAccountImport();accountNotice('accountImportNotice','');syncAccountImport();});
- $('accountDialog').addEventListener('close',()=>{const dialog=$('accountDialog');dialog.accountCurrentRequest?.abort();delete dialog.accountCurrentRequest;clearAccountImport();$('accountKey').value='';$('accountKey').type='password';$('accountImportKey').value='';});
+ $('accountDialog').addEventListener('close',()=>{const dialog=$('accountDialog');dialog.accountCurrentRequest?.abort();delete dialog.accountCurrentRequest;dialog.accountSavedRequest?.abort();delete dialog.accountSavedRequest;delete dialog.accountSavedScores;delete dialog.accountSavedScoreNodes;clearAccountImport();$('accountKey').value='';$('accountKey').type='password';$('accountImportKey').value='';});
 }
 function callsignAvailabilityNames(field,form){
  if(!form)return [cleanPilotName(field.value)];

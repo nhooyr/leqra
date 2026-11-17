@@ -31,6 +31,9 @@ data class AccountInfo(
 ) {
     val preferredCallsign: String?
         get() = publicProfile?.name ?: names.firstOrNull()
+
+    fun scoreForCallsign(name: String): Int? = publicProfile
+        ?.takeIf { it.name.equals(name, ignoreCase = true) }?.score
 }
 
 class CheckedAccount(val origin: String, val key: String, val info: AccountInfo)
