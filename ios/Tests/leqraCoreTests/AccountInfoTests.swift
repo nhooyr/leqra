@@ -26,6 +26,13 @@ final class AccountInfoTests: XCTestCase {
         ] { XCTAssertThrowsError(try decode(value)) }
     }
 
+    func testSavedCallsignScoreUsesOnlyItsMatchingAuthoritativeProfile() throws {
+        let info = try decode(["names": ["OLD FOX", "WING"], "publicProfile": ["name": "CURRENT FOX", "score": -3]])
+        XCTAssertEqual(info.score(for: "current fox"), -3)
+        XCTAssertNil(info.score(for: "OLD FOX"), "A legacy alias must not inherit another callsign's score")
+        XCTAssertNil(try decode(["names": ["NEW FOX"]]).score(for: "NEW FOX"), "Missing score data is unavailable, not zero")
+    }
+
     @MainActor func testAuthenticatedAccountRequestKeepsKeyOutOfURLAndScoresOutOfBody() async throws {
         let client = transport { request in
             XCTAssertEqual(request.httpMethod, "POST")

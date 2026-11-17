@@ -17,6 +17,7 @@ private enum AccountActionError: LocalizedError {
 
 @MainActor
 final class GameSession: ObservableObject {
+    private enum SavedAccountScore { case loading, value(Int), unavailable }
     enum Screen { case menu, connecting, lobby, playing }
     @Published var screen: Screen = .menu
     @Published var room: RoomInfo?
@@ -44,6 +45,7 @@ final class GameSession: ObservableObject {
     @Published var accountRecoveryKeyPending = false
     @Published var accountPendingKeyVerified = false
     @Published var accountSavedActivationCount = 0
+    @Published private var accountScores: [String: SavedAccountScore] = [:]
     @Published var showRules = false { didSet { refreshStarmanActivity() } }
     @Published var showControls = false { didSet { refreshStarmanActivity() } }
     @Published var showSidebar = false { didSet { refreshStarmanActivity() } }
@@ -169,6 +171,7 @@ final class GameSession: ObservableObject {
     private var callsignTaken = false
     private var rejectedCallsignMessage: String?
     private var accountTask: Task<Void, Never>?
+    private var accountScoreTask: Task<Void, Never>?
     private var accountOperation = UUID()
 
     init(publicSessions: PublicInfinitySessionStoring? = nil) {
@@ -475,6 +478,7 @@ final class GameSession: ObservableObject {
         showSettings = false; showAccount = true
         let operation = UUID(); accountOperation = operation
         accountTask?.cancel(); accountInfo = nil; accountStatus = ""
+        refreshSavedCallsignScores(currentLoading: true)
         guard let server = accountServer else { accountStatus = "Enter a valid online server address in Settings."; return }
         accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
         accountRecoveryKeyPending = publicSessions.pendingKey(for: server, seat: slot) != nil
@@ -500,7 +504,8 @@ final class GameSession: ObservableObject {
                     }
                 }
                 let info = try await self.arenaClient.fetchAccountInfo(baseURL: server, publicToken: credential.publicToken)
-                guard !Task.isCancelled, self.accountOperation == operation, let current = self.accountServer, credential.matches(current), self.showAccount else { return }
+                guard !Task.isCancelled, self.accountOperation == operation, let current = self.accountServer, credential.matches(current),
+                      self.accountSeatContext == slot, self.accountSession(for: server, seat: slot) == credential, self.showAccount else { return }
                 if slot == 0, self.publicSessions.registrationPending(for: server, seat: slot), self.publicSessions.session(for: server, seat: slot) == credential {
                     self.publicSessions.remember(credential, seat: slot)
                 }
@@ -512,6 +517,7 @@ final class GameSession: ObservableObject {
                 if self.accountRecoveryKeyPending { self.accountStatus = "A key reset is pending. Retry reset to finish it safely." }
             } catch {
                 guard !Task.isCancelled, self.accountOperation == operation, self.showAccount else { return }
+                self.accountScores[credential.publicToken] = .unavailable
                 if case GameNetworkError.accountKeyRevoked = error {
                     await self.resolveRevokedAccount(credential, seat: slot, operation: operation)
                     if self.accountOperation == operation { self.accountBusy = false }
@@ -527,7 +533,7 @@ final class GameSession: ObservableObject {
 
     func closeAccount() {
         accountOperation = UUID()
-        accountTask?.cancel(); accountBusy = false; showAccount = false
+        accountTask?.cancel(); accountScoreTask?.cancel(); accountBusy = false; showAccount = false
     }
 
     func copyAccountKey() {
@@ -587,6 +593,7 @@ final class GameSession: ObservableObject {
             committedCallsigns[slot] = name; installAuthoritativeCallsign(name, seat: slot)
         }
         accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
+        refreshSavedCallsignScores()
         scheduleCallsignAvailability()
         accountStatus = "Account imported. PLAY will use its callsign and server score."
         return true
@@ -651,6 +658,7 @@ final class GameSession: ObservableObject {
             if let name = info.preferredCallsign { _ = publicSessions.saveCallsign(name, credential: pending.replacement); committedCallsigns[slot] = name }
             if let name = info.preferredCallsign { installAuthoritativeCallsign(name, seat: slot) }
             scheduleCallsignAvailability()
+            refreshSavedCallsignScores()
         }
         accountStatus = "New account key saved for \(pending.replacement.origin). All other devices are signed out; names and scores are unchanged."
     }
@@ -914,6 +922,55 @@ final class GameSession: ObservableObject {
         return publicSessions.savedCallsigns(for: server).filter { $0.credential != other }.map(\.name)
     }
 
+    func isCurrentSavedCallsign(_ name: String) -> Bool {
+        guard let server = accountServer, let current = accountSession(for: server, seat: accountSeatContext) else { return false }
+        return publicSessions.savedCallsigns(for: server).contains { canonicalCallsign($0.name) == canonicalCallsign(name) && $0.credential == current }
+    }
+
+    func savedCallsignScoreText(_ name: String) -> String {
+        guard let server = accountServer,
+              let saved = publicSessions.savedCallsigns(for: server).first(where: { canonicalCallsign($0.name) == canonicalCallsign(name) }) else { return "Score unavailable" }
+        if saved.credential == accountSession(for: server, seat: accountSeatContext), let info = accountInfo {
+            return info.score(for: name).map { "Score: \($0)" } ?? "Score unavailable"
+        }
+        switch accountScores[saved.credential.publicToken] {
+        case .value(let score): return "Score: \(score)"
+        case .unavailable: return "Score unavailable"
+        case .loading, nil: return "Loading score…"
+        }
+    }
+
+    private func refreshSavedCallsignScores(currentLoading: Bool = false) {
+        accountScoreTask?.cancel(); accountScores = [:]
+        guard showAccount, let server = accountServer else { return }
+        let slot = accountSeatContext, operation = accountOperation
+        let current = accountSession(for: server, seat: slot)
+        let other = accountSession(for: server, seat: 1 - slot)
+        let saved = publicSessions.savedCallsigns(for: server).filter { $0.credential != other }
+        for entry in saved {
+            if entry.credential == current {
+                accountScores[entry.credential.publicToken] = accountInfo?.score(for: entry.name).map(SavedAccountScore.value) ?? (currentLoading ? .loading : .unavailable)
+            } else { accountScores[entry.credential.publicToken] = .loading }
+        }
+        accountScoreTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // A single bounded read at a time avoids flooding the server for a long history.
+            for entry in saved where entry.credential != current {
+                guard !Task.isCancelled, self.showAccount, self.accountOperation == operation,
+                      self.accountSeatContext == slot, self.accountServer == server else { return }
+                let score: Int?
+                do {
+                    let info = try await self.arenaClient.fetchAccountInfo(baseURL: server, publicToken: entry.credential.publicToken)
+                    score = info.score(for: entry.name)
+                } catch { score = nil }
+                guard !Task.isCancelled, self.showAccount, self.accountOperation == operation,
+                      self.accountSeatContext == slot, self.accountServer == server,
+                      self.publicSessions.savedCallsigns(for: server).contains(where: { $0.credential == entry.credential && $0.name == entry.name }) else { return }
+                self.accountScores[entry.credential.publicToken] = score.map(SavedAccountScore.value) ?? .unavailable
+            }
+        }
+    }
+
     func releaseCallsign(_ name: String? = nil) async {
         guard canImportAccount, !accountBusy, !switchingCallsign, let server = accountServer else { return }
         let slot = accountSeatContext
@@ -942,10 +999,12 @@ final class GameSession: ObservableObject {
             }
             accountStatus = "Callsign released. Its score was deleted and the name is available."
             accountSavedActivationCount = savedAccountActivations(for: server, seat: slot).count
+            refreshSavedCallsignScores()
         } catch { accountStatus = error.localizedDescription }
     }
 
     func useSavedCallsign(_ name: String) {
+        guard !isCurrentSavedCallsign(name) else { return }
         if accountSeatContext == 0 { callsign = name } else { localCallsign = name }
         switchCallsign(name, seat: accountSeatContext, validate: true)
     }
@@ -1011,6 +1070,7 @@ final class GameSession: ObservableObject {
                 self.installAuthoritativeCallsign(info?.preferredCallsign ?? name, seat: seat)
                 self.committedCallsigns[seat] = info?.preferredCallsign ?? name
                 self.accountInfo = info
+                self.refreshSavedCallsignScores()
                 self.status = localOnly ? "New local account selected. Its score starts at zero." : "Account selected. PLAY uses this callsign's own score."
                 if changedAccount || self.room == nil { self.preparePreview() }
                 self.switchingCallsign = false

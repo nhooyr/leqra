@@ -49,7 +49,7 @@ between platforms; the newest Public Infinity device takes over its tank. Every
 callsign has its own account and score. Changing callsigns starts a new account
 at zero; earlier names and keys stay in encrypted storage for switching back.
 Successful changes return to the ready room; failures keep the current account.
-Accounts expire after seven days without signing in.
+Accounts expire after one month without signing in.
 
 Touch controls steer on the left and fire on the right. Touch near your tank to
 point it exactly toward your finger without moving; drag there to adjust aim. Keyboard and gamepad

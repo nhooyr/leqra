@@ -9,7 +9,7 @@ struct GameHeader: View {
     var body: some View {
         HStack(spacing: compact ? 4 : 8) {
             HStack(spacing: compact ? 4 : 8) {
-                HStack(spacing: 4) {
+                HStack(spacing: 0) {
                     if !compact {
                         Image("BrandIcon").renderingMode(.original).resizable().scaledToFit()
                             .frame(width: 36, height: 36).accessibilityHidden(true)

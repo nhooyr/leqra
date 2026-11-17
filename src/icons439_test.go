@@ -22,11 +22,10 @@ func TestIconOutlineFollowsBothTracks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Sample just outside each track's long edge. The offset shadow extends
-	// beyond the lower track, so outlining the shadow misses that track edge.
+	// Sample just outside each track's long edge.
 	for _, y := range []float64{-17.3, 18.3} {
-		xPixel := int((30.65 + y*1.2) * 16)
-		yPixel := 32 * 16
+		xPixel := int((32.425 + .85*(31.5+y-32)) * 16)
+		yPixel := int(math.Round((31.7 + .85*(42.5-32)) * 16))
 		r, g, b, a := im.At(xPixel, yPixel).RGBA()
 		if a < 60000 || r < 60000 || g < 60000 || b < 60000 {
 			t.Fatalf("track edge y=%g is not outlined in white: %d,%d,%d,%d", y, r, g, b, a)
@@ -34,13 +33,13 @@ func TestIconOutlineFollowsBothTracks(t *testing.T) {
 	}
 }
 
-func TestIconHullIsUprightCenteredAndHasNoTurret(t *testing.T) {
+func TestIconTankIsUprightCenteredAndHasTurret(t *testing.T) {
 	data, err := embeddedWeb.ReadFile("web/" + assetPath + "favicon.svg")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `id="tank" transform="translate(30.65 32) rotate(-90) scale(1.2)"`) || strings.Contains(string(data), "<circle") || strings.Contains(string(data), `width="26"`) {
-		t.Fatal("vector icon must show an upright, centered hull without a turret")
+	if !strings.Contains(string(data), `id="tank" transform="translate(31.5 42.5) rotate(-90)"`) || !strings.Contains(string(data), "<circle") || !strings.Contains(string(data), `width="26"`) {
+		t.Fatal("vector icon must show an upright, centered tank with its turret")
 	}
 	for _, name := range []string{"icon-192.png", "icon-512.png", "icon-1024.png", "favicon-256.png"} {
 		data, err := embeddedWeb.ReadFile("web/" + assetPath + name)
@@ -52,26 +51,40 @@ func TestIconHullIsUprightCenteredAndHasNoTurret(t *testing.T) {
 			t.Fatal(err)
 		}
 		size := im.Bounds().Dx()
-		_, _, _, hull := im.At(size/2, size/2).RGBA()
+		_, _, _, tip := im.At(size*31/64, size*17/64).RGBA()
 		_, _, _, right := im.At(size*60/64, size/2).RGBA()
-		if hull < 60000 || right != 0 {
-			t.Fatalf("%s must have a solid central hull: hull alpha %d, right alpha %d", name, hull, right)
+		_, _, _, shadow := im.At(size*51/64, size*44/64).RGBA()
+		if shadow != 0 {
+			t.Fatalf("%s must not have a shadow protruding beyond the tracks", name)
+		}
+		if tip < 60000 || right != 0 {
+			t.Fatalf("%s must have its turret facing up: tip alpha %d, right alpha %d", name, tip, right)
 		}
 		left, top, rightEdge, bottom := size, size, -1, -1
 		for y := range size {
+			laserLeft, laserRight := size, -1
 			for x := range size {
-				_, _, _, alpha := im.At(x, y).RGBA()
+				r, g, b, alpha := im.At(x, y).RGBA()
+				if alpha > 32767 && r > g+8192 && b > g+8192 {
+					if y >= size*2/5 {
+						t.Fatalf("%s laser extends below the top of the tracks at (%d,%d)", name, x, y)
+					}
+					laserLeft, laserRight = min(laserLeft, x), max(laserRight, x)
+				}
 				if alpha > 32767 {
 					left, top = min(left, x), min(top, y)
 					rightEdge, bottom = max(rightEdge, x), max(bottom, y)
 				}
+			}
+			if laserRight >= 0 && math.Abs(float64(laserLeft-(size-1-laserRight))) > 2 {
+				t.Fatalf("%s laser is not mirrored at row %d: bounds %d-%d", name, y, laserLeft, laserRight)
 			}
 		}
 		if math.Abs(float64(left-(size-1-rightEdge))) > 2 || math.Abs(float64(top-(size-1-bottom))) > 2 {
 			t.Fatalf("%s artwork is not centered: bounds (%d,%d)-(%d,%d)", name, left, top, rightEdge, bottom)
 		}
 		if top < size/10 || size-1-bottom < size/10 {
-			t.Fatalf("%s hull and tracks need balanced padding: top %d, bottom %d", name, top, size-1-bottom)
+			t.Fatalf("%s barrel and tracks need balanced padding: top %d, bottom %d", name, top, size-1-bottom)
 		}
 	}
 }

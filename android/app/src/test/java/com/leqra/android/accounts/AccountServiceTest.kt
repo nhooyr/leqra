@@ -11,6 +11,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AccountServiceTest {
+    @Test
+    fun scoreForCallsignUsesOnlyThatAccountsAuthoritativeProfile() {
+        val info = AccountInfo(listOf("CURRENT"), 1, PublicProfile("CURRENT", -7))
+        assertEquals(-7, info.scoreForCallsign("current"))
+        assertNull(info.scoreForCallsign("OTHER"))
+        assertNull(AccountInfo(listOf("NEW"), 1, null).scoreForCallsign("NEW"))
+    }
+
+    @Test
+    fun scorePreviewDoesNotSignInOrSelectTheSavedAccount() {
+        MockWebServer().use { server ->
+            server.start()
+            val store = Store(); val selected = AccountKeys.create(); val saved = AccountKeys.create()
+            store.select("", 0, selected)
+            val service = AccountService(store) { it() }; val origin = server.url("/").toString()
+            server.enqueue(MockResponse().setBody("""{"names":["SAVED"],"totalNames":1,"publicProfile":{"name":"SAVED","score":42}}"""))
+            val checked = awaitOperation<CheckedAccount> { service.inspect(origin, saved, it) }.getOrThrow()
+            val request = server.takeRequest()
+            assertEquals("/api/account", request.path)
+            val body = org.json.JSONObject(request.body.readUtf8())
+            assertEquals(setOf("publicToken"), body.keys().asSequence().toSet())
+            assertEquals(saved, body.getString("publicToken"))
+            assertEquals(42, checked.info.scoreForCallsign("SAVED"))
+            assertEquals(selected, store.selected[0]!!.key)
+        }
+    }
+
     private class Store : AccountStore {
         val selected = mutableMapOf<Int, AccountCredential>()
         val backups = mutableListOf<PendingAccount>()

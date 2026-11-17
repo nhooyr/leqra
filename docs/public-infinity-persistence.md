@@ -8,10 +8,11 @@ is `data.sqlite` in the current directory. Production uses
 those files while keeping the server executable read-only.
 
 Scores change only in the authoritative server simulation. Neither a join nor an
-input packet can supply a score, ranking ID, or leaderboard. Online callsigns
-are permanent case-insensitive claims belonging to a durable
-owner credential. Another owner must choose a different callsign; knowing a name
-cannot recover its score. Offline practice may use any callsign.
+input packet can supply a score, ranking ID, or leaderboard. Each account owns
+one case-insensitive callsign and one public Infinity score. Its name stays
+reserved until the account expires after one month without signing in or is
+explicitly released. Another owner must choose a different reserved callsign;
+knowing a name cannot recover its score. Offline practice may use any callsign.
 Private-room reconnect behavior is unchanged.
 
 Every first online join receives a private `publicToken` in its welcome. It
@@ -32,10 +33,12 @@ proof does not change their route or make private matches durable.
 
 Recovery never looks up a player by callsign. Unknown or malformed owner
 credentials produce `public_resume_invalid`; the client may then deliberately
-create a fresh identity with an available callsign. An owner whose old score
-profile was reset or pruned retains its callsign claims and may create a new
-zero-score public profile using the same credential. The Account controls can
-copy/import that key between the owner's trusted devices. Anyone with a key
+create a fresh identity with an available callsign. An unexpired account whose
+score profile was administratively reset or removed, or whose zero-score profile
+was pruned, retains its callsign claim and may create a new zero-score public
+profile using the same credential. Account expiry instead deletes the score and
+claim and invalidates the old key. The Account controls can copy/import a valid
+key between the owner's trusted devices. Anyone with a key
 controls its account; do not print it, put it in URLs, or share it with others.
 Use HTTPS/WSS in production. See [account keys](accounts.md) for transfer,
 reset, and recovery behavior.
@@ -72,19 +75,29 @@ across restarts so a later Godlike life receives a fresh warning identity.
 Human profiles, scores, the maze seed, the identity counter and the public
 encounter cadence are preserved.
 
-Meaningful nonzero scores never expire automatically. To bound anonymous
-zero-score churn, the server periodically prunes inactive zero-score credential
-groups above 8,192, oldest first. When that limit is exceeded it also reclaims
-zero-score credentials unused for 30 days. An active credential is retained.
+Human accounts, their callsign claims, and their scores expire one calendar month
+after the last explicit sign-in or connected gameplay, even when the score is
+nonzero. The deadline uses the same UTC day and time in the next month, clamped
+to that month's last day.
+Viewing account details or scores does not renew this period. Expired names can
+be claimed by new accounts, but their former keys cannot restore the old scores.
+
+A separate cache limit bounds zero-score profile churn. When more than 8,192
+zero-score profiles remain, the server prunes inactive profiles oldest first and
+also removes profiles unused for 30 days. Active profiles are retained. This
+profile-only pruning does not extend the one-month account lifetime or release an
+unexpired account's callsign.
 
 ## Online callsign ownership
 
-The same private `publicToken` identifies an owner in public Infinity and private
-rooms. SQLite stores all claimed online callsigns, including unused aliases,
-zero-score pilots, and offline owners, independently from leaderboard rows.
-Names are cleaned and Unicode case folded before comparison. Renaming keeps the
-old alias reserved to its owner. Leaderboard resets, removals, and zero-score
-profile pruning do not release names.
+The same private `publicToken` identifies an account in public Infinity and private
+rooms. SQLite stores its single claimed callsign independently from leaderboard
+rows. Names are cleaned and Unicode case folded before comparison. Choosing a
+different callsign creates or selects a separate account with its own score;
+previously used keys stay saved on the device for switching back. Historical
+aliases are removed on upgrade, preserving the current scored callsign.
+Leaderboard resets, removals, and zero-score profile pruning do not release an
+unexpired account's name. Account expiry and explicit release do.
 
 `POST /api/callsigns` accepts `application/json` with
 `{publicToken?, localPublicToken?, independentAccounts?, localNewAccount?, names:[]}`
@@ -96,17 +109,18 @@ return `callsign_taken` with `conflicts:[{seat,name}]`, identifying which local
 seat needs a new name. No public response includes bearer hashes.
 
 `POST /api/account` authenticates `{publicToken}` and returns a read-only
-preview `{names, totalNames, publicProfile?}`. The names list contains up to 128
-sorted reserved aliases; `totalNames` includes all historical aliases. A saved
-public profile supplies `{name, score}` for that key's pilot. Legacy profiles may
-also supply `{localName, localScore}` before independent migration. This lookup never joins or replaces a
-device, allocates a name, or accepts a score. It uses the normal same-origin
-check and bounded source budget, and responses are not cached.
+preview `{names, totalNames, publicProfile?}`. The names list contains the account's
+callsign and `totalNames` reflects that single entry. Legacy shared P2 profiles
+remain stored only for their independent-key migration. A saved public profile
+supplies `{name, score}` for that key's pilot. This lookup never joins or replaces
+a device, allocates a name, or accepts a score. It uses the normal same-origin
+check and bounded source budget, and responses are not cached. Explicit account
+selection sends `signIn:true` to renew activity; ordinary previews omit it.
 
 `POST /api/account/rotate` accepts `{publicToken, newPublicToken}`. Clients
 generate a fresh 32-byte CSPRNG candidate and durably save it before sending the
-request. The server validates that it is unused and atomically transfers all
-alias claims and the saved public score profile to that new key. A successful
+request. The server validates that it is unused and atomically transfers the
+callsign claim and saved public score profile to that new key. A successful
 response includes the new key and the same account preview. An ambiguous/lost
 response can be recovered by checking the saved candidate with `/api/account`.
 

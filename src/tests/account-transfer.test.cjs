@@ -8,7 +8,8 @@ function boot(){
  class Node {
   value='';textContent='';dataset={};hidden=false;disabled=false;open=false;type='password';checked=false;children=[];lastChild={textContent:''};classList={toggle(name,on){this[name]=on;}};
   replaceChildren(...children){this.children=[...children];this.value='';}
-  append(child){this.children.push(child);if(this.children.length===1)this.value=child.value||'';}
+  append(...children){this.children.push(...children);if(this.children.length===children.length)this.value=children[0]?.value||'';}
+  setAttribute(name,value){this[name]=value;}
   focus(){this.focused=true;}select(){this.selected=true;}
  }
  const $=id=>{if(!nodes.has(id))nodes.set(id,new Node());return nodes.get(id);};$('accountDialog').open=true;
@@ -17,10 +18,52 @@ function boot(){
   localStorage:{get length(){return storage.size;},key:index=>[...storage.keys()][index],getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
   setTimeout(fn){timers.set(++serial,fn);return serial;},clearTimeout:id=>timers.delete(id),fetch(url,request){return new Promise((resolve,reject)=>requests.push({url,request,resolve,reject}));},
   generatedCallsign:seat=>seat?local.name:primary.name,secondaryMember:()=>local,rememberCallsign:name=>{$('pilotName').value=name;},rememberLocalCallsign:name=>{s.localName=name;},persistLocalRoomRules(){s.persisted=true;},syncCallsignEditors(){s.synced=true;},renderOnlineRoom(){s.rendered=true;},updateHUD(){},callsignForms:()=>[],scheduleCallsignAvailability(){},openFeature(){}};
- vm.createContext(s);for(const name of ['publicIdentityToken','rememberPublicIdentity','cleanPilotName','prepareLocalAccount','localAccountRegistrationPending','accountNameKey','savedCallsignAccounts','saveCallsignAccount','forgetSavedCallsignAccount','boundCallsignName','rememberCurrentCallsignAccount','renderSavedCallsignAccounts','accountSeat','accountStorageKey','accountImportAllowed','accountNotice','accountKeyValid','fetchAccountInfo','renderAccountInfo','clearAccountImport','syncAccountImport','openAccount','copyAccountKey','checkImportedAccount','showAccountImportReview','pendingAccountKeys','savePendingAccountKey','clearPendingAccountKeys','completeAccountReset','resolvePendingAccountKeys','rotateAccountKey','forgetRevokedAccount','useImportedAccount'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);for(const name of ['publicIdentityToken','rememberPublicIdentity','cleanPilotName','prepareLocalAccount','localAccountRegistrationPending','accountNameKey','savedCallsignAccounts','saveCallsignAccount','forgetSavedCallsignAccount','boundCallsignName','rememberCurrentCallsignAccount','renderSavedCallsignAccounts','accountScoreLabel','loadSavedCallsignScores','accountSeat','accountStorageKey','accountImportAllowed','accountNotice','accountKeyValid','fetchAccountInfo','renderAccountInfo','clearAccountImport','syncAccountImport','openAccount','copyAccountKey','checkImportedAccount','showAccountImportReview','pendingAccountKeys','savePendingAccountKey','clearPendingAccountKeys','completeAccountReset','resolvePendingAccountKeys','rotateAccountKey','forgetRevokedAccount','useImportedAccount'])vm.runInContext(declaration(name),s);
  return{s,$,requests,storage,primary,local};
 }
 const info={names:['SAVED','WING'],totalNames:2,publicProfile:{name:'SAVED',score:17,localName:'WING',localScore:9}};
+
+test('saved callsign selection disables both in-use keys and follows the selected account',()=>{
+ const {s,$,storage}=boot(),unusedKey='p_'+'C'.repeat(43);
+ storage.set('leqra.localPublicToken',key);
+ s.saveCallsignAccount('OLD',oldKey);s.saveCallsignAccount('WING',key);s.saveCallsignAccount('SAVED',unusedKey);
+ const actions=()=>Object.fromEntries($('accountSavedAccounts').children.map(row=>[row.children[0].textContent,row.children]));
+ for(const seat of [0,1]){
+  $('accountDialog').dataset.accountSeat=String(seat);s.renderSavedCallsignAccounts();const rows=actions();
+  assert.equal(rows.OLD[0].disabled,true,'P1 in-use key cannot be selected again');
+  assert.equal(rows.WING[0].disabled,true,'P2 in-use key cannot be selected again');
+  assert.equal(rows.SAVED[0].disabled,false,'unused saved key remains selectable');
+  assert.equal(rows.OLD[1].disabled,false,'disabling selection preserves explicit release');
+ }
+ s.rememberPublicIdentity(unusedKey,undefined,1);s.renderSavedCallsignAccounts();
+ assert.equal(actions().WING[0].disabled,false,'previous account becomes selectable');
+ assert.equal(actions().SAVED[0].disabled,true,'newly active account becomes disabled');
+ $('accountDialog').accountReleaseRequest={};s.renderSavedCallsignAccounts();
+ assert.ok(Object.values(actions()).every(([use,release])=>use.disabled&&release.disabled),'release in progress disables all account actions');
+});
+
+test('saved callsign scores load independently without signing in and failures never display zero',async()=>{
+ const {s,$,requests}=boot(),third='p_'+'C'.repeat(43),fourth='p_'+'D'.repeat(43),fifth='p_'+'E'.repeat(43);
+ s.saveCallsignAccount('OLD',oldKey);s.saveCallsignAccount('SAVED',key);s.saveCallsignAccount('THIRD',third);s.saveCallsignAccount('FOURTH',fourth);s.saveCallsignAccount('STALE',fifth);
+ $('accountDialog').accountSavedScores=new Map();s.loadSavedCallsignScores(oldKey);s.renderSavedCallsignAccounts();
+ assert.equal(requests.length,2,'score lookups are bounded');
+ assert.deepEqual(requests.map(r=>JSON.parse(r.request.body)),[{publicToken:key},{publicToken:third}]);
+ requests[1].resolve(response({names:['THIRD'],publicProfile:{name:'THIRD',score:0}}));await flush();
+ assert.equal(requests.length,3);requests[0].resolve(response({names:['SAVED'],publicProfile:{name:'SAVED',score:42}}));requests[2].resolve(response({},401));await flush();
+ requests[3].resolve(response({names:['RENAMED'],publicProfile:{name:'RENAMED',score:99}}));await flush();
+ const rows=Object.fromEntries($('accountSavedAccounts').children.map(row=>[row.children[0].textContent,row.children[2].textContent]));
+ assert.equal(rows.SAVED,'Score: 42');assert.equal(rows.THIRD,'Score: 0');assert.equal(rows.FOURTH,'Score unavailable');assert.equal(rows.STALE,'Score unavailable','a stale label must not show another callsign’s score');
+ assert.equal(rows.OLD,'Loading score…','current score uses the existing current-account request');
+ assert.equal(s.publicIdentityToken(),oldKey);
+});
+
+test('stale saved-score replies cannot overwrite a reopened account menu',async()=>{
+ const {s,$,requests}=boot();s.saveCallsignAccount('SAVED',key);const dialog=$('accountDialog');
+ dialog.accountSavedScores=new Map();s.loadSavedCallsignScores(oldKey);const old=requests[0];
+ dialog.accountSavedScores=new Map();s.loadSavedCallsignScores(oldKey);assert.equal(old.request.signal.aborted,true);
+ old.resolve(response({names:['SAVED'],publicProfile:{name:'SAVED',score:99}}));await flush();assert.equal(dialog.accountSavedScores.has(key),false);
+ requests[1].resolve(response({names:['SAVED'],publicProfile:{name:'SAVED',score:7}}));await flush();assert.equal(dialog.accountSavedScores.get(key),'Score: 7');
+});
 
 test('P1-only room welcomes preserve the pending P2 key until P2 is acknowledged',()=>{
  for(const localPublicToken of [undefined,'']){
