@@ -17,11 +17,12 @@ class HttpDiscoveryRecoveryTest {
     @Test fun truncatedBuildAndAccountBodiesKeepRetrying() = verify("truncated", true)
     @Test fun malformedBuildAndAccountBodiesAreTerminal() = verify("malformed", false)
     @Test fun oversizedBuildAndAccountBodiesAreTerminal() = verify("oversized", false)
-    @Test fun unavailableAccountResponseRetriesWithoutRequiringJson() = verify("unavailable", true, accountOnly = true)
+    @Test fun unavailableAccountResponseRetriesWithoutRequiringJson() = verify("unavailable", true, accounts = listOf(true))
+    @Test fun incompatibleBuildProtocolIsTerminalDespiteMatchingRelease() = verify("incompatible", false, accounts = listOf(false))
 
-    private fun verify(kind: String, retries: Boolean, accountOnly: Boolean = false) {
+    private fun verify(kind: String, retries: Boolean, accounts: List<Boolean> = listOf(false, true)) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        for (account in if (accountOnly) listOf(true) else listOf(false, true)) {
+        for (account in accounts) {
             val context = isolatedAccountContext()
             val store = EncryptedAccountStore(context)
             val events = LinkedBlockingQueue<NetworkEvent>()
@@ -40,9 +41,12 @@ class HttpDiscoveryRecoveryTest {
                         }
                         repeat(contentLength) { reader.read() }
                         val discovery = account && request == 0
-                        val body = if (discovery) """{"version":"${BuildConfig.VERSION_NAME}"}""" else when (kind) {
-                            "oversized" -> " ".repeat(if (account) 65537 else 8193)
-                            "unavailable" -> "<html>Unavailable</html>"
+                        val body = when {
+                            discovery && kind == "unavailable" -> """{"version":"0.0.0","protocol":${GameWireProtocol.epoch}}"""
+                            discovery -> """{"version":"0.0.0"}"""
+                            kind == "incompatible" -> """{"version":"${BuildConfig.VERSION_NAME}","protocol":${GameWireProtocol.epoch + 1}}"""
+                            kind == "oversized" -> " ".repeat(if (account) 65537 else 8193)
+                            kind == "unavailable" -> "<html>Unavailable</html>"
                             else -> "{broken"
                         }
                         val declared = body.length + if (!discovery && kind == "truncated") 100 else 0
@@ -62,6 +66,7 @@ class HttpDiscoveryRecoveryTest {
                 }
                 if (retries) assertTrue("$kind account=$account retries: $outcome", outcome is NetworkEvent.Reconnecting)
                 else assertTrue("$kind account=$account is rejected: $outcome", outcome is NetworkEvent.Error && outcome.terminal)
+                if (kind == "incompatible") assertEquals("version_mismatch", (outcome as NetworkEvent.Error).code)
             } finally {
                 instrumentation.runOnMainSync { client?.close() }
                 server.close(); worker.join(1000); context.noBackupFilesDir.deleteRecursively()

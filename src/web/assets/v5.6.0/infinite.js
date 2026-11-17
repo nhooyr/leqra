@@ -1602,6 +1602,12 @@ function connectionFailed(message) {
  socket?.close();
 }
 
+function rejectProtocol(message) {
+ connectionFailed(message);
+ if (retry) retry.hidden = true;
+ session.onProtocolMismatch?.(message);
+}
+
 function retryConnection(message) {
  if (!session.room&&!session.publicToken&&!session.publicFallback) {connectionFailed(message);return;}
  const world = session, now = performance.now(), durable=(!session.room||session.public)&&(!!session.publicToken||!!session.publicFallback);
@@ -1681,6 +1687,7 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'error') {
+  if(message.action==='version'||message.code==='version_mismatch'){rejectProtocol(message.message||'This server uses an incompatible leqra protocol. Reload the game before playing online.');return;}
   if(message.action==='follow'&&session.spectating){session.followError=message.message||'That tank is no longer available. Choose another.';session.followErrorUntil=performance.now()+4000;setStatus(session.followError);return;}
   if(message.code==='session_replaced'){art.exposeAccountError?.();connectionFailed((message.seat===1?'P2’s tank':'Your tank')+' was taken over by another device using this account.');return;}
   if(message.code==='account_key_revoked'||message.code==='account_key_invalid'){art.exposeAccountError?.();const seat=message.seat===1?1:0;art.forgetRevokedAccount?.(seat?session.localPublicToken:session.publicToken,seat);connectionFailed((seat?'P2’s':'P1’s')+(message.code==='account_key_revoked'?' account key was reset. Import the latest key in Account to continue.':' account expired or was released. Choose a callsign in Account to continue.'));return;}
@@ -1693,6 +1700,7 @@ function receive(ws, event) {
   return;
  }
  if (message.type === 'welcome') {
+  if((message.protocol===undefined?1:message.protocol)!==window.leqra.protocol){rejectProtocol('This server uses an incompatible leqra protocol. Reload the game before playing online.');return;}
   if(session.spectating&&message.spectating!==true){connectionFailed('The server did not confirm spectator access. Update the server.');return;}
   session.spectating=message.spectating===true;
   if(session.spectating){session.following=Number.isSafeInteger(message.following)?message.following:0;session.preferredFollowing=session.following;session.local=null;session.controllers=[session];refreshBindings(session);leaderboardPanel.open=true;syncScoreboardButton();}
@@ -1854,7 +1862,7 @@ function connect() {
  }
  ws.addEventListener('open', () => {
   if (ws === socket && session === world) {
-   ws.send(JSON.stringify({type:'join',version:window.leqra.version,name:world.name,spectating:world.spectating||undefined,target:world.spectating&&world.preferredFollowing>0?world.preferredFollowing:undefined,
+   ws.send(JSON.stringify({type:'join',version:window.leqra.version,protocol:window.leqra.protocol,name:world.name,spectating:world.spectating||undefined,target:world.spectating&&world.preferredFollowing>0?world.preferredFollowing:undefined,
     localName:world.room?undefined:world.localName,
     colorIndex:world.room?undefined:world.colorIndex,
     localColorIndex:world.room||!world.localName?undefined:world.localColorIndex,...world.room,
@@ -1986,7 +1994,7 @@ function start(mode, options = {}) {
  const spawnRate=Object.values(art.infinityBotSpawnRates(options.roomRules||{})).reduce((sum,rate)=>sum+rate,0);
  session = {
   online, name, spectating:online&&!!options.code&&options.spectating===true,following:0,preferredFollowing:options.following||0,localName:options.spectating?undefined:options.localName, serial:++sessionSerial,renames:new Map(),confirmedNames:new Map(),readBindings, launcher:options.launcher, onJoined:options.onJoined, id:'pilot', tanks:[], bullets:[], pickups:[], leaderboard:[], controllers:[],
-  public:!!options.public,party:[],publicToken:art.publicIdentityToken?.()||'',localPublicToken:options.localName?art.publicIdentityToken?.(1)||'':'',independentAccounts:typeof art.prepareLocalAccount==='function',onConflict:options.onConflict,
+  public:!!options.public,party:[],publicToken:art.publicIdentityToken?.()||'',localPublicToken:options.localName?art.publicIdentityToken?.(1)||'':'',independentAccounts:typeof art.prepareLocalAccount==='function',onConflict:options.onConflict,onProtocolMismatch:options.onProtocolMismatch,
   colorIndex:selectedColor(options.colorIndex),localColorIndex:selectedColor(options.localColorIndex),
   room: online && options.code && options.token ? {code: options.code, token: options.token} : null,
   resumeGeneration:options.resumeGeneration,retries:0,latency:null,pendingPing:null,nextPing:0,latencyAt:0,

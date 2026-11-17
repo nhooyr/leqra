@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	legacyInfinityProtocol  = 1 // Older joins omitted the protocol field.
 	infinitePrivateCapacity = 128
 	infinitePublicIdle      = 5 * time.Minute
 	infiniteResumeIdle      = 3 * time.Second
@@ -70,6 +71,7 @@ type infiniteServer struct {
 type infiniteMessage struct {
 	Type                string `json:"type"`
 	Version             string `json:"version"`
+	Protocol            *int   `json:"protocol,omitempty"`
 	Name                string `json:"name"`
 	LocalName           string `json:"localName"`
 	ColorIndex          *int   `json:"colorIndex"`
@@ -138,9 +140,9 @@ func (s *infiniteServer) readLoop(c *Client) {
 	if !joinTimeout.Stop() {
 		return
 	}
-	var join infiniteMessage
-	if json.Unmarshal(data, &join) != nil || join.Type != "join" || join.Version != version {
-		rejectInfinite(c, "Reload leqra to play Infinity.")
+	join, joinRejection := decodeInfiniteJoin(data)
+	if joinRejection != nil {
+		writeInfiniteJoinRejection(c, joinRejection)
 		return
 	}
 	connection, rejection := s.join(c, join, time.Now())
@@ -240,6 +242,18 @@ func (s *infiniteServer) readLoop(c *Client) {
 	}
 }
 
+func decodeInfiniteJoin(data []byte) (infiniteMessage, map[string]any) {
+	defaultProtocol := legacyInfinityProtocol
+	join := infiniteMessage{Protocol: &defaultProtocol}
+	if json.Unmarshal(data, &join) != nil || join.Type != "join" {
+		return infiniteMessage{}, map[string]any{"type": "error", "message": "Send a valid Infinity join request before playing."}
+	}
+	if join.Protocol == nil || *join.Protocol != protocolVersion {
+		return infiniteMessage{}, versionError()
+	}
+	return join, nil
+}
+
 func infiniteActiveInput(in Input) bool {
 	return infiniteButtonsDown(in) || math.Hypot(in.StickX, in.StickY) > .1
 }
@@ -287,6 +301,10 @@ func rejectInfinite(c *Client, message string) {
 	case "Public Infinity is full. Try again when enough pilots leave.":
 		packet["code"] = "arena_full"
 	}
+	writeInfiniteJoinRejection(c, packet)
+}
+
+func writeInfiniteJoinRejection(c *Client, packet map[string]any) {
 	data, _ := encodePacket(packet)
 	_ = c.ws.writeText(data)
 	c.ws.writeClose(1008, "Infinity join rejected")

@@ -9,6 +9,10 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+HISTORICAL_PROTOCOL = ('# Historical v1.2.3 protocol notes\n'
+                       'Historical v1.2.3 content stays unchanged.\n'
+                       '```json\n{"type":"server_hello","version":"1.2.3","protocol":7}\n'
+                       '{"type":"join","version":"1.2.3","protocol":7}\n```\n')
 
 
 class VersionGenerationTests(unittest.TestCase):
@@ -19,21 +23,24 @@ class VersionGenerationTests(unittest.TestCase):
         self.caller = Path(self.temporary.name) / "another directory"
         self.caller.mkdir()
         files = {
-            "src/main.go": 'const (\n version = "1.2.4"\n)\n',
+            "src/main.go": 'const (\n version = "1.2.4"\n protocolVersion = 7\n)\n',
             "src/web/index.html": '<meta name="leqra-version" content="v1.2.3">\n'
                                   '<script src="assets/v1.2.3/game.js"></script>\n'
                                   '<link href="assets/v1.2.3/style.css">\n',
-            "src/web/assets/v1.2.3/game.js": "const GAME_VERSION='1.2.3';\n// Keep this game code.\n",
+            "src/web/assets/v1.2.3/game.js": "const GAME_VERSION='1.2.3';\nconst GAME_PROTOCOL=7;\n",
             "src/web/assets/v1.2.3/pwa.js": "const VERSION = 'v1.2.3';\n",
             "src/web/assets/v1.2.3/sw.js": "const VERSION = 'v1.2.3';\n",
             "src/web/assets/v1.2.3/style.css": "body{color:white}\n",
             "src/polish49_test.go": 'if version != "1.2.3" {\n}\n',
             "src/polish410_test.go": 'if version != "1.2.3" {\n}\n',
-            "docs/PROTOCOL.md": '# leqra v1.2.3 — current game protocol (protocol 1)\n\n'
-                                'The application-version handshake requires **1.2.3**.\n\n'
-                                '```json\n{"type":"server_hello","version":"1.2.3"}\n'
-                                '{"type":"client_hello","version":"1.2.3"}\n```\n\n\n'
-                                'Historical v1.2.3 content stays unchanged.\n',
+            "docs/PROTOCOL.md": ('# leqra v1.2.3 — current game protocol (protocol 7)\n\n'
+                                 'The network protocol epoch is **7**.\n\n'
+                                 '```json\n{"type":"server_hello","version":"1.2.3","protocol":7}\n'
+                                 '{"type":"client_hello","version":"1.2.3","protocol":7}\n```\n\n'
+                                 'Release v1.2.3 introduced this behavior.\n\n'
+                                 '## Infinity\n\n'
+                                 '```json\n{"type":"join","version":"1.2.3","protocol":7,"code":"FRIENDS"}\n'
+                                 '```\n\n' + HISTORICAL_PROTOCOL),
             "README.md": "Do not edit this v1.2.3 README.\n",
             "docs/releases/old.md": "Historical v1.2.3 release.\n",
         }
@@ -67,13 +74,16 @@ class VersionGenerationTests(unittest.TestCase):
         self.assertEqual((destination / "icon.png").read_bytes(), self.icon)
         self.assertEqual((destination / "game.js").stat().st_mode & 0o777, 0o640)
         self.assertEqual((destination / "game.js").read_text(),
-                         "const GAME_VERSION='1.2.4';\n// Keep this game code.\n")
+                         "const GAME_VERSION='1.2.4';\nconst GAME_PROTOCOL=7;\n")
         for name, data in untouched.items():
             self.assertEqual((self.root / name).read_bytes(), data)
         self.assertNotIn("1.2.3", (self.root / "src/web/index.html").read_text())
         protocol = (self.root / "docs/PROTOCOL.md").read_text()
-        self.assertEqual(protocol.count("1.2.4"), 4)
-        self.assertTrue(protocol.endswith("Historical v1.2.3 content stays unchanged.\n"))
+        self.assertTrue(protocol.startswith("# leqra v1.2.4 — current game protocol (protocol 7)\n"))
+        for packet_type in ("server_hello", "client_hello", "join"):
+            self.assertIn(f'"type":"{packet_type}","version":"1.2.4","protocol":7', protocol)
+        self.assertIn("Release v1.2.3 introduced this behavior.", protocol)
+        self.assertTrue(protocol.endswith(HISTORICAL_PROTOCOL))
         for name in ("polish49_test.go", "polish410_test.go"):
             self.assertIn('version != "1.2.4"', (self.root / "src" / name).read_text())
 
@@ -97,12 +107,12 @@ class VersionGenerationTests(unittest.TestCase):
 
     def test_missing_final_marker_fails_before_moving_or_writing(self):
         protocol = self.root / "docs/PROTOCOL.md"
-        protocol.write_text(protocol.read_text().replace('"client_hello","version":"1.2.3"',
-                                                         '"client_hello","version":"missing"'))
+        protocol.write_text(protocol.read_text().replace('"join","version":"1.2.3","protocol":7,"code"',
+                                                         '"join","version":"missing","protocol":7,"code"'))
         before = self.snapshot()
         result = self.run_script()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("PROTOCOL.md header", result.stderr)
+        self.assertIn("PROTOCOL.md current join example", result.stderr)
         self.assertEqual(self.snapshot(), before)
 
     def test_duplicate_asset_marker_fails_before_any_change(self):

@@ -231,7 +231,7 @@ struct NativePreferencesPanel: View {
                 if !session.frameRateDetails.isEmpty { Text(session.frameRateDetails).font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
                 Text("ONLINE SERVER").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("https://leqra.com", text: $session.serverAddress).modifier(WebField()).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Text("Native protocol \(NetworkClient.supportedVersion)").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                Text("Release \(NetworkClient.supportedVersion), protocol \(NetworkClient.protocolVersion)").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 Button("ACCOUNT KEY") { session.openAccount() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsAccount")
                 Button("P2 ACCOUNT KEY") { session.openAccount(seat: 1) }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsLocalAccount")
                 Button("SHOWCASE") { session.presentShowcase() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("openShowcase")

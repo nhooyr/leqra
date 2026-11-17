@@ -1,6 +1,6 @@
 plugins { id("com.android.application") }
 
-// Keep the native client handshake and package version tied to the server.
+// Keep Android package versioning aligned with leqra releases.
 val releaseVersion = providers.exec {
     workingDir(rootDir.parentFile)
     commandLine("sh", "scripts/version.sh")

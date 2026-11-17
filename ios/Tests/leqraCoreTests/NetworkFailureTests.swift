@@ -3,8 +3,38 @@ import XCTest
 @testable import leqraCore
 
 final class NetworkFailureTests: XCTestCase {
+    @MainActor func testBuildDiscoveryAcceptsDifferentOrMissingReleasesOnTheSameProtocol() {
+        for build in [
+            #"{"version":"99.0.0","protocol":\#(NetworkClient.protocolVersion)}"#,
+            #"{"version":"0.1.0"}"#,
+            #"{"protocol":\#(NetworkClient.protocolVersion)}"#,
+        ] {
+            XCTAssertNoThrow(try NetworkClient.validateServerProtocol(Data(build.utf8)))
+        }
+    }
+
+    @MainActor func testIncompatibleBuildStopsPublicReconnectsEvenWithTheSameRelease() async {
+        let body = """
+        {"version":"\(NetworkClient.supportedVersion)","protocol":\(NetworkClient.protocolVersion + 1)}
+        """
+        let client = transport(status: 200, body: body)
+        defer { client.disconnect() }
+        let stopped = expectation(description: "Incompatible protocol stops discovery")
+        var errors: [String] = []
+        client.onEvent = { event in
+            if case .error(let message) = event { errors.append(message) }
+            if case .roomEvent(.reconnecting) = event { XCTFail("An incompatible protocol cannot be retried.") }
+            if case .disconnected = event { stopped.fulfill() }
+        }
+        client.connectPublic(baseURL: URL(string: "https://discovery.test")!, name: "PILOT", colorIndex: 0)
+        await fulfillment(of: [stopped], timeout: 2)
+        XCTAssertEqual(errors, [GameNetworkError.unsupportedProtocol.localizedDescription])
+        XCTAssertFalse(client.reconnect())
+    }
+
     @MainActor func testMalformedBuildDiscoveryStopsPublicReconnects() async {
-        for body in ["<html>Proxy error</html>", "{broken", "", "[]", String(repeating: "x", count: 8193)] {
+        for body in ["<html>Proxy error</html>", "{broken", "", "[]", String(repeating: "x", count: 8193),
+                     #"{"version":"1.0.0","protocol":true}"#, #"{"version":"1.0.0","protocol":null}"#] {
             let client = transport(status: 200, body: body)
             let stopped = expectation(description: "Malformed discovery stops")
             var retries = 0
@@ -42,6 +72,40 @@ final class NetworkFailureTests: XCTestCase {
                 }
             }
         }
+    }
+
+    @MainActor func testRoomHelloChecksProtocolIndependentlyOfRelease() throws {
+        let client = NetworkClient()
+        let compatible = """
+        {"type":"server_hello","version":"99.0.0","protocol":\(NetworkClient.protocolVersion)}
+        """
+        XCTAssertNoThrow(try client.receive(Data(compatible.utf8)))
+        let incompatible = """
+        {"type":"server_hello","version":"\(NetworkClient.supportedVersion)","protocol":\(NetworkClient.protocolVersion + 1)}
+        """
+        XCTAssertThrowsError(try client.receive(Data(incompatible.utf8))) { error in
+            guard case GameNetworkError.unsupportedProtocol = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+    }
+
+    @MainActor func testInfinityWelcomeValidatesEpochBeforeAcceptingThePilot() throws {
+        let client = NetworkClient()
+        defer { client.disconnect() }
+        client.connectPublic(baseURL: URL(string: "http://127.0.0.1:9")!, name: "PILOT", colorIndex: 0)
+        let incompatible = """
+        {"type":"welcome","id":1,"public":true,"protocol":\(NetworkClient.protocolVersion + 1)}
+        """
+        XCTAssertThrowsError(try client.receive(Data(incompatible.utf8))) { error in
+            guard case GameNetworkError.unsupportedProtocol = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        XCTAssertFalse(client.connected)
+        XCTAssertNil(client.welcome)
+
+        let compatible = """
+        {"type":"welcome","id":1,"public":true,"protocol":\(NetworkClient.protocolVersion)}
+        """
+        try client.receive(Data(compatible.utf8))
+        XCTAssertTrue(client.connected)
     }
 
     @MainActor private func transport(status: Int, body: String) -> NetworkClient {

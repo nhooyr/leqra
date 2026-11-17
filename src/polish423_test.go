@@ -90,17 +90,20 @@ func Test423RealClientsMustCompleteVersionHandshake(t *testing.T) {
 	if !hasError(c, "version_mismatch") || c.room != nil {
 		t.Fatal("unversioned client was allowed to create a room")
 	}
-	action(t, h, c, map[string]any{"type": "client_hello", "version": "4.22.0", "protocol": protocolVersion})
+	action(t, h, c, map[string]any{"type": "client_hello", "version": version, "protocol": protocolVersion + 1})
 	if !hasError(c, "version_mismatch") || c.versionOK {
-		t.Fatal("stale client version was accepted")
+		t.Fatal("incompatible protocol was accepted")
 	}
-	action(t, h, c, map[string]any{"type": "client_hello", "version": version, "protocol": protocolVersion})
+	action(t, h, c, map[string]any{"type": "client_hello", "version": "999.0.0", "protocol": protocolVersion})
 	if !c.versionOK {
-		t.Fatal("matching client version was not accepted")
+		t.Fatal("a different release with the same protocol was rejected")
+	}
+	if packets := drain(c); len(packets) != 1 || packets[0]["type"] != "client_ready" || packets[0]["version"] != version || packets[0]["protocol"] != float64(protocolVersion) {
+		t.Fatal("client_ready did not advertise the server's release and protocol", packets)
 	}
 	action(t, h, c, map[string]any{"type": "create", "name": "CURRENT"})
 	if c.room == nil {
-		t.Fatal("version-matched client could not create a room")
+		t.Fatal("compatible client could not create a room")
 	}
 }
 

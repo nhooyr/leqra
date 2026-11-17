@@ -73,10 +73,16 @@ def synchronize(root):
     for name in ("polish49_test.go", "polish410_test.go"):
         stage(root / "src" / name, r'if version != "' + VERSION + '"', 'if version != "' + version + '"')
     protocol = root / "docs/PROTOCOL.md"
-    lines = protocol.read_text().splitlines(keepends=True)
-    header = replace("".join(lines[:10]), VERSION, version, 4, "docs/PROTOCOL.md header")
-    updated = header + "".join(lines[10:])
-    if updated != "".join(lines):
+    original = protocol.read_text()
+    current, separator, history = original.partition("\n# ")
+    current = replace(current, r"^(# leqra v)" + VERSION + r"(?= — current game protocol)",
+                      lambda match: match[1] + version, 1, "docs/PROTOCOL.md title")
+    for packet_type in ("server_hello", "client_hello", "join"):
+        pattern = r'^(\{"type":"' + packet_type + r'","version":")' + VERSION + r'(?=")'
+        current = replace(current, pattern, lambda match: match[1] + version, 1,
+                          f"docs/PROTOCOL.md current {packet_type} example")
+    updated = current + separator + history
+    if updated != original:
         updates.append((protocol, updated))
 
     # Validate every file before changing any of them or moving the bundle.

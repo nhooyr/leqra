@@ -14,7 +14,7 @@ function boot(){
  }
  const $=id=>elements.get(id);for(const id of ['roomStatus','joinDialog','queueDialog']){const e=new Element();e.id=id;e.open=id!=='roomStatus';}
  const players=[{id:0,name:'PILOT'},{id:1,name:'BOT'}];
- s={URL,window:{},GAME_VERSION:'test-client',mode:'room',phase:'menu',localRoom:{players},online:{connected:false,connecting:false,code:'',token:'',roomData:null},$,
+ s={URL,window:{},GAME_VERSION:'test-client',GAME_PROTOCOL:1,mode:'room',phase:'menu',localRoom:{players},online:{connected:false,connecting:false,code:'',token:'',roomData:null},$,
   document:{body:new Element(),createElement:()=>new Element()},location:{protocol:'https:',href:'https://leqra.test/',reload(){s.reloads++;}},reloads:0,
   performance:{now:()=>1000},setTimeout:()=>1,clearTimeout(){},netBusy(){},setNetStatus(){},setScreen(screen){s.screen=screen;},renderOnlineRoom(){s.rendered=true;},
   sendOnline(message){s.sent.push(message);},sent:[],WebSocket:class{constructor(){s.socket=this;}close(code,reason){this.closed={code,reason};this.onclose?.();}}};
@@ -23,7 +23,7 @@ function boot(){
  return{s,$,players,receive:message=>s.socket.onmessage({data:JSON.stringify(message)})};
 }
 test('both mismatch responses refuse online play and expose reload while preserving the local roster',()=>{
- for(const message of [{type:'server_hello',version:'older-server',protocol:1},{type:'server_hello',version:'test-client',protocol:99},{type:'error',action:'version',message:'<b>Reload required</b>'}]){
+ for(const message of [{type:'server_hello',version:'test-client',protocol:99},{type:'welcome',protocol:99},{type:'error',action:'version',message:'<b>Reload required</b>'}]){
   const b=boot(),{s,$}=b;b.receive(message);
   assert.equal(s.mode,'room');assert.equal(s.phase,'menu');assert.equal(s.online.connected,false);assert.equal(s.online.connecting,false);assert.equal(s.online.manual,true);assert.equal(s.online.socket,null);assert.equal(s.socket.closed.reason,'Version mismatch');assert.equal(s.sent.length,0);
   assert.equal(s.localRoom.players,b.players);assert.equal(s.localRoom.players.length,2);assert.equal($('joinDialog').open,false);assert.equal($('queueDialog').open,false);
@@ -34,9 +34,12 @@ test('both mismatch responses refuse online play and expose reload while preserv
  }
 });
 test('compatible handshake proceeds without an update dialog',()=>{
- const b=boot();b.receive({type:'server_hello',version:'test-client',protocol:1});
- assert.equal(b.$('versionMismatchDialog'),undefined);assert.equal(b.s.mode,'online');assert.equal(b.s.socket.closed,undefined);
- assert.deepEqual(JSON.parse(JSON.stringify(b.s.sent)),[{type:'client_hello',version:'test-client',protocol:1},{type:'join',code:'ROOM',independentAccounts:true}]);
+ for(const protocol of [1,undefined]){
+  const b=boot();b.receive({type:'server_hello',version:'other-release',protocol});
+  assert.equal(b.$('versionMismatchDialog'),undefined);assert.equal(b.s.mode,'online');assert.equal(b.s.socket.closed,undefined);
+  assert.equal(b.s.online.serverVersion,'other-release');
+  assert.deepEqual(JSON.parse(JSON.stringify(b.s.sent)),[{type:'client_hello',version:'test-client',protocol:1},{type:'join',code:'ROOM',independentAccounts:true}]);
+ }
 });
 
 test('room account expiry and release forget only the named account and end the connection',()=>{

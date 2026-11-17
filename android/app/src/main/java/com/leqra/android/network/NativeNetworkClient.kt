@@ -408,19 +408,13 @@ class NativeNetworkClient(
                             val source = it.body?.source() ?: throw NetworkFailure("invalid_response", "The server sent an invalid response.")
                             if (source.request(8193) && source.buffer.size > 8192)
                                 throw NetworkFailure("invalid_response", "The server sent an invalid response.")
-                            val version = JSONObject(source.readUtf8()).getString("version")
-                            if (version != BuildConfig.VERSION_NAME)
-                                throw NetworkFailure(
-                                    "version",
-                                    "This server is running leqra $version. Update the app before joining.",
-                                )
-                            version
+                            GameWireProtocol.check(JSONObject(source.readUtf8()))
                         }
                     }
                     main.post {
                         if (epoch != current || call.isCanceled()) return@post
                         build.fold(
-                            { version -> resolvePendingPrimary(current, version) },
+                            { resolvePendingPrimary(current) },
                             { error ->
                                 fail(
                                     error.message ?: "The server sent an invalid response.",
@@ -436,10 +430,10 @@ class NativeNetworkClient(
     }
 
     /** A lost registration response must not strand an already registered owner key. */
-    private fun resolvePendingPrimary(current: Long, version: String) {
+    private fun resolvePendingPrimary(current: Long) {
         val address = origin ?: return
         val candidate = store.selected(address, 0)?.takeIf { it.registrationPending && !pendingJoin.has("token") }
-        if (candidate == null) { openSocket(current, version); return }
+        if (candidate == null) { openSocket(current); return }
         val call = http.newCall(Request.Builder().url(ServerAddress.endpoint(address, "/api/account"))
             .header("Origin", address)
             .post(JSONObject().put("publicToken", candidate.key).toString().toRequestBody("application/json".toMediaType())).build())
@@ -477,14 +471,14 @@ class NativeNetworkClient(
                             if (infinity && !pendingJoin.has("code")) pendingJoin.put("resume", true)
                         }
                         if (infinity && !pendingJoin.has("code")) resumeJoin = JSONObject(pendingJoin.toString())
-                        openSocket(current, version)
+                        openSocket(current)
                     }, { error -> fail(error.message ?: "The account could not be checked.", (error as? NetworkFailure)?.terminal ?: (error !is IOException), (error as? NetworkFailure)?.code) })
                 }
             }
         })
     }
 
-    private fun openSocket(current: Long, version: String) {
+    private fun openSocket(current: Long) {
         val address = origin ?: return
         val decoder = SnapshotDecoder()
         val request =
@@ -503,7 +497,9 @@ class NativeNetworkClient(
                                 return@post
                             }
                             if (infinity)
-                                send(JSONObject(pendingJoin.toString()).put("version", version))
+                                send(JSONObject(pendingJoin.toString())
+                                    .put("version", BuildConfig.VERSION_NAME)
+                                    .put("protocol", GameWireProtocol.epoch))
                         }
                     }
 
@@ -582,23 +578,21 @@ class NativeNetworkClient(
     private fun receive(json: JSONObject) {
         when (val type = json.getString("type")) {
             "server_hello" -> {
-                if (infinity || json.optInt("protocol") != 1)
-                    throw NetworkFailure(
-                        "protocol",
-                        "This server uses an unsupported game protocol.",
-                    )
-                if (json.optString("version") != BuildConfig.VERSION_NAME)
-                    throw NetworkFailure("version", "Update leqra before joining this server.")
+                if (infinity) throw NetworkFailure("invalid_response", "The server sent an unexpected room handshake.")
+                GameWireProtocol.check(json)
                 send(
                     JSONObject()
                         .put("type", "client_hello")
                         .put("version", BuildConfig.VERSION_NAME)
-                        .put("protocol", 1),
+                        .put("protocol", GameWireProtocol.epoch),
                 )
                 send(pendingJoin)
             }
-            "welcome",
-            "identity" -> acceptWelcome(json, type == "identity")
+            "welcome" -> {
+                GameWireProtocol.check(json)
+                acceptWelcome(json, identity = false)
+            }
+            "identity" -> acceptWelcome(json, identity = true)
             "room" -> {
                 if (!infinity) {
                     resumeJoin?.put("code", json.optString("code"))

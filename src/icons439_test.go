@@ -159,6 +159,16 @@ func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
 			t.Fatalf("preflight = %v, want empty game.js error", err)
 		}
 	})
+	t.Run("different browser protocol", func(t *testing.T) {
+		files := maps.Clone(web)
+		path := dir + "game.js"
+		current := fmt.Sprintf("const GAME_PROTOCOL=%d;", protocolVersion)
+		other := fmt.Sprintf("const GAME_PROTOCOL=%d;", protocolVersion+1)
+		files[path] = &fstest.MapFile{Data: bytes.Replace(web[path].Data, []byte(current), []byte(other), 1)}
+		if err := checkAppAssets(files); err == nil || !strings.Contains(err.Error(), "does not use leqra protocol") {
+			t.Fatalf("preflight = %v, want browser protocol mismatch", err)
+		}
+	})
 	for _, name := range []string{"game.js", "pwa.js", "sw.js"} {
 		t.Run("stale "+name, func(t *testing.T) {
 			files := maps.Clone(web)

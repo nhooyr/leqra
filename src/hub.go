@@ -307,7 +307,7 @@ func roomError(code, message string) map[string]any {
 }
 
 func versionError() map[string]any {
-	v := roomError("version_mismatch", fmt.Sprintf("This leqra page does not match the server. Reload the page to update to v%s.", version))
+	v := roomError("version_mismatch", fmt.Sprintf("This server requires leqra protocol %d. Update the app or reload the page before joining.", protocolVersion))
 	v["action"] = "version"
 	v["serverVersion"] = version
 	v["protocol"] = protocolVersion
@@ -705,7 +705,7 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 			c.mapGeneration = -1
 			r.LastAction = now
 			h.electHost(r)
-			welcome := map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": p.ID, "token": p.Token, "publicToken": p.PublicToken, "resumed": true, "created": false, "spectating": p.Spectating, "member": p.Member}
+			welcome := map[string]any{"type": "welcome", "protocol": protocolVersion, "room": code, "id": p.ID, "token": p.Token, "publicToken": p.PublicToken, "resumed": true, "created": false, "spectating": p.Spectating, "member": p.Member}
 			if local := roomLocalController(r, p); local != nil && local.PublicToken != "" {
 				welcome["localPublicToken"] = local.PublicToken
 			}
@@ -775,7 +775,7 @@ func (h *Hub) joinRoom(c *Client, create bool, code, name, token string, now tim
 	c.mapGeneration = -1
 	r.LastAction = now
 	h.electHost(r)
-	welcome := map[string]any{"type": "welcome", "protocol": 1, "room": code, "id": id, "token": secret, "publicToken": ownerToken, "resumed": false, "created": created, "spectating": p.Spectating, "member": p.Member, "full": fallback, "busy": busy}
+	welcome := map[string]any{"type": "welcome", "protocol": protocolVersion, "room": code, "id": id, "token": secret, "publicToken": ownerToken, "resumed": false, "created": created, "spectating": p.Spectating, "member": p.Member, "full": fallback, "busy": busy}
 	if c.localOwnerToken != "" {
 		welcome["localPublicToken"] = c.localOwnerToken
 	}
@@ -862,7 +862,7 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 	if *count > clientMessageLimit {
 		return &wsError{1008, "Input rate exceeded"}
 	}
-	firstHandshake := m.Type == "client_hello" && !c.versionOK && m.Version == version && m.Protocol == protocolVersion
+	firstHandshake := m.Type == "client_hello" && !c.versionOK && m.Protocol == protocolVersion
 	if m.Type != "input" && m.Type != "ping" && !firstHandshake {
 		c.actionCount++
 		if c.actionCount > clientActionLimit {
@@ -885,7 +885,7 @@ func (h *Hub) handle(c *Client, data []byte, now time.Time) error {
 		return nil
 	}
 	if m.Type == "client_hello" {
-		if m.Version != version || m.Protocol != protocolVersion {
+		if m.Protocol != protocolVersion {
 			c.enqueue(versionError())
 			return nil
 		}

@@ -54,7 +54,7 @@ node src/tests/showcase_browser.cjs http://localhost:8080
 node src/tests/power_help_browser.cjs http://localhost:8080
 ```
 
-The PWA harness starts disposable local servers and checks same-version upgrades, legacy worker migration, match deferral, saved room setup, and offline reloads in both engines. Browser emulation does not verify an installed iOS Home Screen app on a physical device.
+The PWA harness starts disposable local servers and checks background installation of compatible builds, deferral of breaking updates during matches, saved room setup, coherent offline reloads, and legacy worker migration in both engines. Testing an installed iOS Home Screen app requires a physical device.
 
 The typography harness checks the 10px minimum, full callsigns, and overflow in ready rooms, settings, fixed games, Infinity and pause menus, with one and two local pilots at desktop, phone and landscape sizes.
 

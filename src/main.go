@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	version         = "5.5.3"
+	version = "5.6.0"
+	// Advance the protocol epoch only when existing clients cannot use the wire contract.
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -121,6 +122,9 @@ func checkAppAssets(web fs.FS) error {
 		}
 		if marker := shellVersionMarkers[name]; marker != "" && !bytes.Contains(data, []byte(marker)) {
 			return fmt.Errorf("required app asset %s does not use leqra version v%s", path, version)
+		}
+		if name == "game.js" && !bytes.Contains(data, []byte(fmt.Sprintf("const GAME_PROTOCOL=%d;", protocolVersion))) {
+			return fmt.Errorf("required app asset %s does not use leqra protocol %d", path, protocolVersion)
 		}
 		if name == "manifest.webmanifest" {
 			if err := checkManifest(data); err != nil {
@@ -344,7 +348,7 @@ func (a *App) handler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(map[string]string{"version": version, "build": build})
+		_ = json.NewEncoder(w).Encode(map[string]any{"version": version, "build": build, "protocol": protocolVersion})
 	})
 	mux.HandleFunc("/ws", a.socket)
 	mux.HandleFunc("/api/infinity", a.infinityStatus)

@@ -421,7 +421,7 @@ func TestRealWebSocketHandshake(t *testing.T) {
 	if !bytes.Contains(hello, []byte(`"type":"server_hello"`)) || !bytes.Contains(hello, []byte(`"version":"`+version+`"`)) {
 		t.Fatal(string(hello))
 	}
-	_, _ = c.Write(maskedFrame(1, true, []byte(`{"type":"client_hello","version":"`+version+`","protocol":1}`)))
+	_, _ = c.Write(maskedFrame(1, true, fmt.Appendf(nil, `{"type":"client_hello","version":"999.0.0","protocol":%d}`, protocolVersion)))
 	_, _ = c.Write(maskedFrame(1, true, []byte(`{"type":"create","name":"RAW CLIENT"}`)))
 	foundWelcome := false
 	for i := 0; i < 4; i++ {

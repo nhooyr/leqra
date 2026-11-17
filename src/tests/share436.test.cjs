@@ -12,7 +12,7 @@ function boot({spectating=false,p2=true}={}){
  const rules={mode:'survival',mapSize:'huge',teamMode:'teams',scoreTarget:15};
  const s={URL,Map,Set,window:{},mode:'room',phase:'menu',infinityOffline:false,localRoom:{self:players[0].id,code:'',players,rules},online:{connected:false,connecting:false,code:'',token:'',id:-1,roomData:null,effectQueue:[],snapshots:[],generation:-1,ownedIDs:new Set(),activeIDs:new Set(),shots:{sync:noop,prune:noop},localBullets:new Map()},
   tanks:players.filter(p=>!p.spectating).map(p=>({...p,alive:true,power:null})),pickups:[{id:11,type:'shield',x:42,y:42,life:30}],walls:[{x:0,y:0,w:84,h:8}],cols:14,rows:12,W:1176,H:1008,grid:[],particles:[],rings:[],traces:[],bullets:[],shake:0,goUntil:0,gameStarted:false,
-  GAME_VERSION:'test',MAX_TANKS:8,COLORS:Array(8).fill('#fff'),Net:{...require(assetPath('netcode.js')),expandMachineBullets:()=>[]},$,performance:{now:()=>1000},
+  GAME_VERSION:'test',GAME_PROTOCOL:1,MAX_TANKS:8,COLORS:Array(8).fill('#fff'),Net:{...require(assetPath('netcode.js')),expandMachineBullets:()=>[]},$,performance:{now:()=>1000},
   location:{protocol:'https:',href:'https://leqra.test/'},document:{body:element(),documentElement:element(),querySelectorAll:()=>[],createElement:element},
   sessionStorage:{removeItem:noop},setTimeout:()=>1,clearTimeout:noop,matchmaking:{},roomChat:{code:''},watchInvite:false,watchResume:null,rolePending:false,rulesPending:false,presetsPending:false,
   teamColor:()=> '#fff',paintColor:v=>v,roomCapacity:()=>4,defaultRoomRules:()=>({mode:'elimination',mapSize:'standard'}),cleanRoomCode:v=>v,validRoomCode:()=>true,
@@ -47,7 +47,7 @@ test('failed publish, refused version and unavailable server preserve the local 
  for(const failure of ['conflict','version','unavailable']){
   const {s,rules,players,receive}=boot(),tanks=s.tanks,pickups=s.pickups,walls=s.walls;s.shareLocalRoom();
   if(failure==='conflict')receive({type:'error',action:'publish',code:'room_exists',message:'That name is already in use.'});
-  else if(failure==='version')receive({type:'server_hello',version:'old',protocol:1});
+  else if(failure==='version')receive({type:'server_hello',version:'test',protocol:2});
   else s.socket.close();
   assert.equal(s.mode,'room',failure);assert.equal(s.phase,'menu');assert.equal(s.online.publishing,false);assert.equal(s.localRoom.players,players);assert.equal(s.currentRules(),rules);assert.equal(s.tanks,tanks);assert.equal(s.pickups,pickups);assert.equal(s.walls,walls);
  }
