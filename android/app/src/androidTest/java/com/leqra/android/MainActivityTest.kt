@@ -137,12 +137,15 @@ class MainActivityTest {
             texts(root).single { it.text.toString() == title }.performClick()
         fun verifyTour(activity: MainActivity, objective: String) {
             val root = quickTour(activity)!!.window!!.decorView
+            val hardware = Regex("\\b(keyboard|mouse|gamepad|keys?)\\b", RegexOption.IGNORE_CASE)
+            val instructions = listOf("Touch near your tank to aim without moving.", "tap to detonate", objective)
             for ((index, page) in listOf("Drive and aim", "Fire", "Play the objective").withIndex()) {
                 val labels = texts(root).map { it.text.toString() }
                 assertTrue(labels.contains("Quick tour"))
                 assertTrue(labels.contains(page))
                 assertTrue(labels.contains("${index + 1} / 3"))
-                if (index == 2) assertTrue(labels.any { it.startsWith(objective) })
+                assertTrue(labels.any { it.contains(instructions[index]) })
+                assertFalse("$page is a touch-only tour page", labels.any(hardware::containsMatchIn))
                 assertTrue(click(root, if (index == 2) "DONE" else "NEXT"))
             }
         }
@@ -159,11 +162,13 @@ class MainActivityTest {
             main {
                 assertNull(quickTour(returning))
                 state(returning).selectMode("ctf")
+                state(returning).localSelected = true
                 MainActivity::class.java.getDeclaredMethod("showControls").apply { isAccessible = true }.invoke(returning)
                 val controls = MainActivity::class.java.getDeclaredField("dialog").run {
                     isAccessible = true
                     get(returning) as AlertDialog
                 }
+                assertTrue(texts(controls.window!!.decorView).any { it.text.startsWith("Keyboard defaults") })
                 assertTrue(click(controls.window!!.decorView, "QUICK TOUR"))
                 verifyTour(returning, "Carry the enemy flag home")
                 assertTrue(controls.isShowing)

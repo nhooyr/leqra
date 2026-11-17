@@ -28,6 +28,47 @@ def check_control_rows(section, labels):
     assert all(first < second for first, second in zip(tops, tops[1:])), tops
 
 
+def check_tour_labels(page):
+    dialog = page.locator("#introTourDialog")
+    expect(dialog.locator("#introTourPilot")).to_have_count(0)
+    expect(dialog).not_to_contain_text(re.compile(r"\bP[12]\b", re.I))
+    for section_id, heading_id, label in (
+        ("introTourTouch", "introTourTouchTitle", "Touch"),
+        ("introTourKeyboard", "introTourKeyboardTitle", "Keyboard"),
+        ("introTourDesktop", "introTourMouseTitle", "Mouse"),
+    ):
+        section = dialog.locator(f"#{section_id}")
+        expect(section).to_have_attribute("aria-labelledby", heading_id)
+        expect(section.locator(f"#{heading_id}")).to_have_text(label)
+        assert section.get_attribute("aria-label") is None
+
+
+def check_touch_tour(page):
+    touch = page.locator("#introTourTouch")
+    expect(touch.get_by_role("heading", name="Touch")).to_be_visible()
+    check_control_rows(touch, ["Movement", "Aim", "Fire"])
+    expect(touch.locator("dd")).to_have_text([
+        "Drag the left stick to drive and aim.",
+        "Touch near your tank to aim without moving.",
+        "Tap or hold the Fire button.",
+    ])
+    expect(page.locator("#introTourKeyboard")).to_be_hidden()
+    expect(page.locator("#introTourDesktop")).to_be_hidden()
+    check_tour_labels(page)
+
+
+def check_desktop_tour(page, mouse_enabled=True):
+    expect(page.locator("#introTourTouch")).to_be_hidden()
+    keyboard = page.locator("#introTourKeyboard")
+    expect(keyboard.get_by_role("heading", name="Keyboard")).to_be_visible()
+    mouse = page.locator("#introTourDesktop")
+    if mouse_enabled:
+        expect(mouse.get_by_role("heading", name="Mouse")).to_be_visible()
+    else:
+        expect(mouse).to_be_hidden()
+    check_tour_labels(page)
+
+
 def check_sidebar(page, touch):
     sidebar = page.locator("#gameSidebar")
     toggle = page.get_by_role("button", name="Open sidebar")
@@ -94,16 +135,21 @@ def check_remapped_tour(page, touch, screenshot_dir=None):
     page.locator('#p1MouseAimEnabled').uncheck()
     page.locator('#p1MouseFireEnabled').uncheck()
     page.locator('#openIntroTour').click()
-    check_keycaps(page.locator('#introTourMoveKeys'), ['I','A','S','D','U','←','↓','→'])
-    check_keycaps(page.locator('#introTourFireKeys'), ['Z','C','SPACE','ENTER'])
-    expect(page.locator('#introTourDesktop')).to_be_hidden()
+    if touch:
+        check_touch_tour(page)
+    else:
+        check_desktop_tour(page, mouse_enabled=False)
+        check_keycaps(page.locator('#introTourMoveKeys'), ['I','A','S','D','U','←','↓','→'])
+        check_keycaps(page.locator('#introTourFireKeys'), ['Z','C','SPACE','ENTER'])
     page.locator('#introTourSkip').click()
     page.locator('#p1MouseAimEnabled').check()
     page.locator('#p1MouseFireEnabled').check()
     page.locator('#openIntroTour').click()
-    check_mouse_symbols(page)
-    if not touch:
-        expect(page.locator('#introTourDesktop')).to_be_visible()
+    if touch:
+        check_touch_tour(page)
+    else:
+        check_desktop_tour(page)
+        check_mouse_symbols(page)
     page.locator('#introTourSkip').click()
     page.locator('[data-close-dialog="controlsDialog"]').click()
     page.locator('#roomPlayers').evaluate('node => node.open = true')
@@ -111,9 +157,13 @@ def check_remapped_tour(page, touch, screenshot_dir=None):
     page.locator('#addLocalBtn').click()
     page.locator('#roomControlsBtn').click()
     page.locator('#openIntroTour').click()
-    check_keycaps(page.locator('#introTourMoveKeys'), ['I','A','S','D'])
-    check_keycaps(page.locator('#introTourFireKeys'), ['Z','C'])
-    check_mouse_symbols(page)
+    if touch:
+        check_touch_tour(page)
+    else:
+        check_desktop_tour(page)
+        check_keycaps(page.locator('#introTourMoveKeys'), ['I','A','S','D'])
+        check_keycaps(page.locator('#introTourFireKeys'), ['Z','C'])
+        check_mouse_symbols(page)
     assert page.locator('#introTourDialog').evaluate('node => node.scrollWidth <= node.clientWidth')
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     if screenshot_dir is not None:
@@ -192,7 +242,13 @@ def check_mouse_preferences(browser, url, width, height, touch, screenshot_dir=N
         if screenshot_dir:
             page.screenshot(path=str(screenshot_dir/f'{browser.browser_type.name}-{width}-mouse-checkboxes.png'))
         page.locator('#openIntroTour').click()
-        tip=page.locator('#introTourKeyboard .intro-fire-tip');expect(tip).to_have_text(tip_text)
+        if touch:
+            check_touch_tour(page)
+            tip = page.locator('#introTourTouch').get_by_text("Tap or hold the Fire button.", exact=True)
+        else:
+            check_desktop_tour(page)
+            tip = page.locator('#introTourKeyboard .intro-fire-tip')
+            expect(tip).to_have_text(tip_text)
         page.locator('#introTourDialog').evaluate('node => node.scrollTop=node.scrollHeight')
         expect(tip).to_be_in_viewport(ratio=1)
         next_button=page.locator('#introTourNext');expect(next_button).to_be_in_viewport(ratio=1)
@@ -233,22 +289,16 @@ def check_context(browser, url, width, height, touch, screenshot_dir=None):
         errors=[]
         page.on('pageerror',lambda error:errors.append(str(error)))
         page.goto(url)
-        mouse_help = page.locator("#introTourDesktop")
-        touch_help = page.locator("#introTourTouch")
-        keyboard_help = page.locator("#introTourKeyboard")
         expect(page.locator("#introTourDialog")).to_be_visible()
         assert page.locator('[data-intro-page="0"] > section').evaluate_all("nodes => nodes.map(node => node.id)") == ["introTourTouch", "introTourKeyboard", "introTourDesktop"]
-        expect(keyboard_help.get_by_role("heading", name="Keyboard")).to_be_visible()
-        check_control_rows(keyboard_help, ["Movement", "Fire"])
-        check_keycaps(page.locator("#introTourMoveKeys"), ["W","A","S","D","↑","←","↓","→"])
-        check_keycaps(page.locator("#introTourFireKeys"), ["Q","C","SPACE","ENTER"])
         if touch:
-            expect(mouse_help).to_be_hidden()
-            expect(touch_help.get_by_role("heading", name="Touch")).to_be_visible()
-            check_control_rows(touch_help, ["Movement", "Aim", "Fire"])
-            expect(touch_help).to_contain_text("the same joystick")
+            check_touch_tour(page)
         else:
-            expect(mouse_help).to_be_visible()
+            check_desktop_tour(page)
+            keyboard_help = page.locator("#introTourKeyboard")
+            check_control_rows(keyboard_help, ["Movement", "Fire"])
+            check_keycaps(page.locator("#introTourMoveKeys"), ["W","A","S","D","↑","←","↓","→"])
+            check_keycaps(page.locator("#introTourFireKeys"), ["Q","C","SPACE","ENTER"])
             check_mouse_symbols(page)
         expect(page.locator("#introTourBack")).to_be_disabled()
         check_buttons(page, "Next")
@@ -279,7 +329,8 @@ def check_context(browser, url, width, height, touch, screenshot_dir=None):
         toggle=page.locator('#infinityToggle')
         if toggle.is_enabled() and toggle.is_checked():
             toggle.uncheck()
-        screenshot = screenshot_dir / f'{browser.browser_type.name}-{width}-tour-keycaps.png' if screenshot_dir else None
+        tour_kind = "touch" if touch else "keycaps"
+        screenshot = screenshot_dir / f'{browser.browser_type.name}-{width}-tour-{tour_kind}.png' if screenshot_dir else None
         check_remapped_tour(page, touch, screenshot)
         if width in (320,390) and urlsplit(url).scheme in ('http','https'):
             header_shot=screenshot_dir / f'{browser.browser_type.name}-{width}-public-p2-header.png' if screenshot_dir else None
@@ -325,7 +376,52 @@ def check_context(browser, url, width, height, touch, screenshot_dir=None):
                 page.locator("#onlineReturnBtn").press(key)
                 expect(page.locator("#onlineMenuScreen")).to_be_hidden()
         assert not errors,errors
-        print(f'PASS {browser.browser_type.name} {width}x{height}: themed keycaps, remapped solo/P2 aliases, mouse symbols, and touch/tour layout', flush=True)
+        tour_details = "touch-only Quick Tour for solo and paired play" if touch else "keyboard and mouse Quick Tour with remapped controls"
+        print(f'PASS {browser.browser_type.name} {width}x{height}: {tour_details}', flush=True)
+
+
+def check_mobile_device_identity(browser, url):
+    profiles = (
+        ("Android tablet", "Mozilla/5.0 (Linux; Android 15; Tablet)", ""),
+        ("iPad desktop site", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", """
+            Object.defineProperty(navigator, 'platform', {value: 'MacIntel'});
+            Object.defineProperty(navigator, 'maxTouchPoints', {value: 5});
+        """),
+    )
+    for label, user_agent, setup in profiles:
+        with browser.new_context(viewport={"width": 1200, "height": 800},
+                                 user_agent=user_agent, service_workers="block") as context:
+            page = context.new_page()
+            if setup:
+                page.add_init_script(setup)
+            page.goto(url)
+            assert not page.evaluate("matchMedia('(pointer: coarse)').matches")
+            expect(page.locator("#introTourDialog")).to_be_visible()
+            check_touch_tour(page)
+        print(f"PASS {browser.browser_type.name}: {label} gets a touch-only Quick Tour with a fine pointer", flush=True)
+
+
+def check_desktop_touchscreen_tour(browser, url):
+    with browser.new_context(viewport={"width": 620, "height": 900}, service_workers="block") as context:
+        page = context.new_page()
+        page.add_init_script("""
+            Object.defineProperty(navigator, 'platform', {value: 'Win32'});
+            Object.defineProperty(navigator, 'maxTouchPoints', {value: 5});
+        """)
+        page.goto(url)
+        assert page.evaluate("matchMedia('(pointer: fine)').matches")
+        expect(page.locator("#introTourDialog")).to_be_visible()
+        check_desktop_tour(page)
+        page.locator("#introTourSkip").click()
+        toggle = page.locator("#infinityToggle")
+        if toggle.is_enabled() and toggle.is_checked():
+            toggle.uncheck()
+        page.locator("#roomPlayers > summary").click()
+        page.locator("#addLocalBtn").click()
+        page.locator("#roomControlsBtn").click()
+        page.locator("#openIntroTour").click()
+        check_desktop_tour(page)
+    print(f"PASS {browser.browser_type.name}: narrow touchscreen desktop Quick Tour shows only hardware controls", flush=True)
 
 
 if __name__ == '__main__':
@@ -343,8 +439,10 @@ if __name__ == '__main__':
         for engine in args.browser or ('chromium','webkit'):
             browser=getattr(playwright,engine).launch(**({'chromium_sandbox':True} if engine=='chromium' else {}))
             try:
-                for width,height,touch in ((1280,900,False),(620,900,False),(320,568,True),(390,844,True),(844,390,True)):
+                for width,height,touch in ((1280,900,False),(320,568,True),(390,844,True),(844,390,True)):
                     check_context(browser,target,width,height,touch,args.screenshots)
+                check_mobile_device_identity(browser, target)
+                check_desktop_touchscreen_tour(browser, target)
                 for width,height,touch in ((1280,900,False),(500,800,True),(320,568,True),(390,844,True),(844,390,True)):
                     check_mouse_preferences(browser,target,width,height,touch,args.screenshots)
             finally:

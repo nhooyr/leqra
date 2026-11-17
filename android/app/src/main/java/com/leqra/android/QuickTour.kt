@@ -20,15 +20,13 @@ import com.leqra.android.NativeStyle.weighted
 
 internal const val QUICK_TOUR_SEEN = "quickTourSeen"
 
-internal class QuickTour(context: Context, paired: Boolean, objective: String) : Dialog(context) {
-    private val pilotControls = if (paired) "Touch controls P1 and keyboard/mouse controls P2."
-        else "Touch, keyboard, mouse, and the first gamepad control P1."
+internal class QuickTour(context: Context, objective: String) : Dialog(context) {
     private val pages = listOf(
         "Drive and aim" to
-            "Drag the left stick to drive. Touch near your tank to aim without moving. $pilotControls",
+            "Drag the left stick to drive. Touch near your tank to aim without moving.",
         "Fire" to
-            ("Hold Fire to shoot. Use the Fire keys shown in Controls. Left-click to fire when Mouse fire is enabled. " +
-                "For grenades, release after throwing, press to detonate, then release before throwing again."),
+            ("Hold the right Fire button to shoot. After throwing a grenade, release Fire, then tap to detonate. " +
+                "Release again before throwing another grenade."),
         "Play the objective" to
             ("$objective Open the sidebar for the current room’s weapon and power-up guide. " +
                 "Pause to review controls or return to the ready room."),

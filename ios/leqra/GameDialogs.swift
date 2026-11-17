@@ -468,6 +468,7 @@ struct ControlsPanel: View {
                   VStack(alignment: .leading, spacing: 18) {
                       Text(["Drive and aim", "Fire", "Play the objective"][tourPage]).font(.system(size: 20, weight: .bold))
                       Text(tourText(tourPage)).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+                          .accessibilityIdentifier("tourInstructions")
                       Text("\(tourPage + 1) / 3").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
                       Button(tourPage == 2 ? "DONE" : "NEXT") { self.tourPage = tourPage == 2 ? nil : tourPage + 1 }
                           .buttonStyle(WebButtonStyle(kind: .primary)).accessibilityIdentifier("tourNext")
@@ -481,8 +482,8 @@ struct ControlsPanel: View {
     }
     private func tourText(_ page: Int) -> String {
         switch page {
-        case 0: return "Drag the left stick to drive. Touch near your tank to aim without moving. " + (session.hasLocalP2 ? "Touch controls P1; keyboard/mouse controls P2." : "Touch, keyboard, mouse, and the first gamepad control P1.")
-        case 1: return "Hold Fire to shoot. Use the Fire keys shown in Controls; mouse click fires when Mouse Fire is enabled. For grenades, release after throwing, press to detonate, then release before throwing again."
+        case 0: return "Drag the left stick to drive. Touch near your tank to aim without moving."
+        case 1: return "Hold the right Fire button to shoot. After throwing a grenade, release Fire, then tap to detonate. Release again before throwing another grenade."
         default:
             let mode = session.readyRoom && (session.room?.infinityPublic ?? session.publicInfinitySelected) ? BattleMode.infinity : session.selectedMode
             return mode.help + " Open the sidebar for the current room's weapon and power-up guide. Pause to review controls or return to the ready room."

@@ -328,7 +328,7 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .binding-mouse-toggle:checked+.binding-mouse-state{color:var(--accent-ink)}
 .binding-mouse-toggle:checked+.binding-mouse-state:before{content:'✓'}
 .binding-mouse-toggle:checked+.binding-mouse-state:after{content:'ON'}
-.binding-player{min-width:0}.binding-player h3,.intro-pilot{overflow-wrap:anywhere}.intro-pilot{margin:0;font:700 12px var(--mono)}
+.binding-player{min-width:0}.binding-player h3{overflow-wrap:anywhere}
 .intro-control-groups{display:grid;gap:12px}
 .intro-tour .intro-control-groups h3{font:700 14px var(--sans);color:var(--accent-ink);margin:0 0 4px}
 .intro-control-groups dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 10px;margin:0}

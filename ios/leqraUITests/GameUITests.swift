@@ -304,7 +304,14 @@ final class GameUITests: XCTestCase {
         XCTAssertEqual(binding.label, "W")
         let tour = app.buttons["quickTour"]; reveal(tour, in: app); tour.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Quick tour"].waitForExistence(timeout: 5))
-        for _ in 0..<3 { app.buttons["tourNext"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        let peripherals = ["keyboard", "mouse", "gamepad"]
+        for heading in ["Drive and aim", "Fire", "Play the objective"] {
+            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5))
+            let instructions = app.staticTexts["tourInstructions"]
+            XCTAssertTrue(instructions.exists)
+            XCTAssertFalse(peripherals.contains { instructions.label.localizedCaseInsensitiveContains($0) })
+            app.buttons["tourNext"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         XCTAssertTrue(app.buttons["Close Controls"].waitForExistence(timeout: 5))
         let all = app.buttons["resetAllSettings"]; reveal(all, in: app); all.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["Reset all settings"].waitForExistence(timeout: 5))
