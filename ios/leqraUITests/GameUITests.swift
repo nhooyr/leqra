@@ -1431,6 +1431,8 @@ final class GameUITests: XCTestCase {
         selectPublic(false, in: app)
         for mode in ["elimination", "ctf", "koth", "survival"] {
             selectMode(mode, in: app)
+            XCTAssertFalse(app.staticTexts["READY ROOM."].exists)
+            XCTAssertFalse(app.staticTexts["arenaTitle"].exists)
             play(in: app)
             XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains("SWIFT FOX"))
             exerciseControls(in: app, fixedPortrait: true)

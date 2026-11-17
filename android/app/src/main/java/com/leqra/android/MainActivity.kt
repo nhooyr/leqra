@@ -649,24 +649,6 @@ class MainActivity : Activity() {
                 mono = true,
             ),
         )
-        panel.add(
-            label(this, "READY ROOM.", if (landscape) 25f else 28f, accent, true).apply {
-                typeface =
-                    android.graphics.Typeface.create(
-                        "sans-serif-black",
-                        android.graphics.Typeface.NORMAL,
-                    )
-                text =
-                    android.text.SpannableString("READY ROOM.").apply {
-                        setSpan(
-                            android.text.style.ForegroundColorSpan(NativeStyle.text),
-                            0,
-                            6,
-                            android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-                        )
-                    }
-            },
-        )
         if (session.isHost) {
             val public =
                 Switch(this).apply {

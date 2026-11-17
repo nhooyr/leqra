@@ -55,9 +55,10 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
     }
 
     private fun showTitle(value: String) {
+        title.visibility = if (value.isEmpty()) View.GONE else View.VISIBLE
         if (!TextUtils.equals(title.text, value)) {
             title.text = android.text.SpannableString(value).apply {
-                setSpan(ForegroundColorSpan(NativeStyle.accent), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                if (value.isNotEmpty()) setSpan(ForegroundColorSpan(NativeStyle.accent), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             textUpdates++
         }
@@ -96,7 +97,7 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
         val public = session.room?.optBoolean("infinityPublic") ?: session.publicSelected
         val name =
             if (preview) {
-                if (infinity) if (public) "PUBLIC INFINITY" else "INFINITY" else "READY ROOM"
+                if (infinity) if (public) "PUBLIC INFINITY" else "INFINITY" else ""
             } else if (infinity) {
                 if (session.online && (session.room == null || public)) "PUBLIC INFINITY"
                 else "INFINITY"
@@ -107,7 +108,7 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
                     "roundOver" -> "ROUND COMPLETE"
                     else -> "MATCH COMPLETE"
                 }
-        val titleText = "● ${if (!session.hasLocalPlayer && !preview) "SPECTATING" else name}"
+        val titleText = if (name.isEmpty()) "" else "● ${if (!session.hasLocalPlayer && !preview) "SPECTATING" else name}"
         showTitle(titleText)
         val onlineCount =
             if (preview && public && infinity) session.publicStatus?.players

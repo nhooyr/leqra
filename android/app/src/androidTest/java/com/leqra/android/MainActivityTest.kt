@@ -846,8 +846,10 @@ class MainActivityTest {
         try {
             val education = device.findObject(UiSelector().text("Got it"))
             if (education.waitForExists(500)) education.click()
-            assertTrue(device.findObject(UiSelector().text("READY ROOM.")).waitForExists(5000))
-            assertTrue(device.findObject(UiSelector().description("P1 callsign")).exists())
+            main { state(activity).selectMode("elimination") }
+            assertTrue(device.findObject(UiSelector().description("P1 callsign")).waitForExists(5000))
+            assertFalse(device.findObject(UiSelector().text("READY ROOM.")).exists())
+            assertFalse(device.findObject(UiSelector().text("● READY ROOM")).exists())
             assertTrue(device.findObject(UiSelector().description("P1 account key")).exists())
             device.findObject(UiSelector().description("Open menu")).click()
             assertTrue(device.findObject(UiSelector().text("P2 ACCOUNT KEY")).waitForExists(2000))

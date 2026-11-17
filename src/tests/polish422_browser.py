@@ -15,7 +15,7 @@ with sync_playwright() as pw:
  p.add_script_tag(content=(assets/'theme.js').read_text());p.add_script_tag(content=(assets/'netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function("window.__test&&leqra.version==='4.35.0'")
  # Callsign is save-on-blur and there are no explicit Save buttons.
  check(p.locator('#roomCallsignForm button').count()==0 and p.locator('#menuCallsignForm button').count()==0,'Callsign editors no longer require explicit Save buttons')
- p.locator('#roomCallsign').fill('Blur Pilot');p.locator('#roomTitle').click();p.wait_for_function("leqra.getState().room.players.some(p=>p.name==='Blur Pilot')")
+ p.locator('#roomCallsign').fill('Blur Pilot');p.locator('#roomEyebrow').click();p.wait_for_function("leqra.getState().room.players.some(p=>p.name==='Blur Pilot')")
  check(True,'Local callsign saves automatically when the field loses focus')
  # Join/Create UI is intentionally one action because Join auto-creates missing rooms.
  p.locator('#joinOtherBtn').click();check(p.locator('#joinRoomBtn').count()==1 and p.locator('#createRoomBtn').count()==0,'Join another room exposes one Join action and no redundant Create Room button');p.locator('#onlineBackBtn').click()

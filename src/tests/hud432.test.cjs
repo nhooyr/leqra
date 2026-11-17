@@ -29,7 +29,7 @@ test('Survival wave, break, boss and result transitions keep the final labels wi
   s.round=5;Object.assign(s.objective.survival,{wave:5,status:'wave',breakTime:0,enemiesRemaining:4,boss:true});s.updateHUD();
   assert.equal(s.$('arenaStatus').textContent,'SURVIVAL');assert.equal(s.$('roundLabel').textContent,'WAVE 05');assert.equal(s.$('clock').textContent,'01:15');assert.equal(s.$('objectiveStatus').textContent,'4 ENEMIES LEFT, MEDIUM BOSS');
   s.phase='matchOver';s.updateHUD();assert.equal(s.$('arenaStatus').textContent,'MATCH COMPLETE');assert.equal(s.$('objectiveBar').hidden,true);
-  s.phase=mode==='online'?'onlineLobby':'menu';s.updateHUD();assert.equal(s.$('arenaStatus').textContent,mode==='online'?'ROOM LOBBY':'READY ROOM');
+  s.phase=mode==='online'?'onlineLobby':'menu';s.updateHUD();assert.equal(s.$('arenaStatus').textContent,mode==='online'?'ROOM LOBBY':'');assert.equal(s.$('arenaStatusLabel').hidden,mode!=='online');
  }
 });
 test('objective clock updates once per displayed second and sudden death stays stable',()=>{
