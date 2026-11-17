@@ -73,10 +73,12 @@ struct ArenaStatusBar: View {
     var body: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Circle().fill(WebStyle.accent).frame(width: 6, height: 6)
-                    Text(title.uppercased()).font(WebStyle.mono()).fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier(showcase == nil ? "arenaTitle" : "showcaseTitle")
+                if !title.isEmpty {
+                    HStack(spacing: 6) {
+                        Circle().fill(WebStyle.accent).frame(width: 6, height: 6)
+                        Text(title.uppercased()).font(WebStyle.mono()).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier(showcase == nil ? "arenaTitle" : "showcaseTitle")
+                    }
                 }
                 if let count = onlineCount {
                     Text("\(count) online").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
@@ -120,7 +122,7 @@ struct ArenaStatusBar: View {
     }
     private var title: String {
         if let showcase { return showcase.title }
-        if preview { return infinity ? ((session.room?.infinityPublic ?? session.publicInfinitySelected) ? "Public Infinity" : "Infinity") : "Ready room" }
+        if preview { return infinity ? ((session.room?.infinityPublic ?? session.publicInfinitySelected) ? "Public Infinity" : "Infinity") : "" }
         if infinity { return session.spectating ? "Spectating" : session.gameTitle }
         return session.snapshot.phase == "playing" ? "Live arena" : session.snapshot.phase == "countdown" ? "Get ready" : session.snapshot.phase == "roundOver" ? "Round complete" : "Match complete"
     }

@@ -39,8 +39,6 @@ struct ReadyRoomView: View {
     private var intro: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(session.room == nil ? "LOCAL ROOM" : "ONLINE ROOM").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
-            (Text("READY ").foregroundColor(WebStyle.text) + Text("ROOM.").foregroundColor(WebStyle.accent))
-                .font(.system(size: landscape ? 25 : 28, weight: .black)).lineSpacing(-2)
             if session.isHost {
                 HStack(spacing: 9) {
                     WebSwitch(isOn: Binding(get: { publicSelected }, set: session.togglePublic)).frame(width: 51, height: 31).scaleEffect(0.7).frame(width: 35, height: 20).accessibilityIdentifier("publicInfinityToggle")

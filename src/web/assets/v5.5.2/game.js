@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.5.1';
+const GAME_VERSION='5.5.2';
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
 let theme=Theme.palette; // Cached palette, never read CSS/layout during rendering.
@@ -3032,7 +3032,7 @@ function renderOnlineRoom(){
  $('startRoomBtn').hidden=isOnline&&!host;$('startRoomBtn').disabled=!host||!canStart||isOnline&&!online.connected;
  $('startRoomBtn').firstElementChild.textContent='PLAY';
  const complete=r.phase==='matchOver';$('roomEyebrow').textContent=complete?'MATCH COMPLETE':isOnline?'ONLINE ROOM, '+(host?'HOST':'CONNECTED'):'LOCAL ROOM';
- $('roomTitle').innerHTML=complete?'GOOD<br><em>GAME.</em>':'READY<br><em>ROOM.</em>';
+ $('roomTitle').hidden=!complete;$('roomTitle').innerHTML=complete?'GOOD<br><em>GAME.</em>':'';
  $('roomStatus').textContent=r.rules.infinity?(isOnline?'Share the invite link to bring friends into the Infinity arena.':'Play with the room roster, or share the room to invite friends.'):complete&&survivalResultState()?survivalResultText()+' Adjust the squad or play again.':complete?(roundWinner<0?'Draw — scores tied.':'Match complete.')+' Adjust the room or play again.':survivalMode(r.rules)?'One to four squad tanks, including all-bot squads. Bosses arrive every fifth wave and grow stronger through the run.':isOnline?(count===capacity?'Eight tanks are assigned. New visitors can still join as spectators.':'Room is online. Share the invite link to bring in friends.'):'Local play is ready. Sharing keeps this roster and these teams.';
  $('leaveRoomBtn').hidden=!isOnline;$('leaveRoomBtn').textContent='Leave room';$('unshareRoomBtn').hidden=!(isOnline&&host&&editable);$('unshareRoomBtn').disabled=!!online.unsharePending;
  $('roomBtn').hidden=false;$('roomBtn').textContent=isOnline?online.code:'ROOM';
@@ -4709,7 +4709,7 @@ function updateObjectiveHUD(){
  document.body.classList.toggle('has-objective-bar',hasObjective);
  // Compute the final labels before touching the DOM. Generic and mode-specific
  // HUD passes used to replace each other's text on every refresh.
- let status=mode==='online'?(phase==='onlineLobby'?'ROOM LOBBY':phase==='playing'?'ONLINE ARENA':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'ONLINE'):(phase==='menu'?'READY ROOM':phase==='paused'?'PAUSED':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'LIVE ARENA');
+ let status=mode==='online'?(phase==='onlineLobby'?'ROOM LOBBY':phase==='playing'?'ONLINE ARENA':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'ONLINE'):(phase==='menu'?'':phase==='paused'?'PAUSED':phase==='countdown'?'GET READY':phase==='roundOver'?'ROUND COMPLETE':phase==='matchOver'?'MATCH COMPLETE':'LIVE ARENA');
  let label='ROUND '+String(round).padStart(2,'0'),clock=String(Math.floor(secs/60)).padStart(2,'0')+':'+String(secs%60).padStart(2,'0'),urgent=secs<=15;
  if($('objectiveBar').hidden===on)$('objectiveBar').hidden=!on;
  if(on&&o?.suddenDeath){setText('objectiveModeLabel','SUDDEN DEATH');setText('objectiveStatus','LAST SIDE STANDING, NO RESPAWNS');clock='SD';urgent=true;$('announcer').hidden=true;}
@@ -4718,7 +4718,7 @@ function updateObjectiveHUD(){
  $('objectiveBar').classList.toggle('sudden-death',!!o?.suddenDeath);
  if(mode!=='online')setText('bestInline','');const target=document.querySelector('.sidebar .target'),targetText=String(displayScoreTarget(sidebarRules()));if(target.textContent!==targetText)target.textContent=targetText;
  if(objectiveMode())label=currentRules().mode==='ctf'?'FLAGS':'HILL';
- setText('arenaStatus',status);setText('roundLabel',label);setText('clock',clock);$('clock').classList.toggle('urgent',urgent);
+ setText('arenaStatus',status);$('arenaStatusLabel').hidden=!status;setText('roundLabel',label);setText('clock',clock);$('clock').classList.toggle('urgent',urgent);
 }
 // Read the same authoritative/local source as the gameplay queries, once per
 // pilot HUD pass. Keep this ephemeral: local bullets mutate between simulation
@@ -5887,7 +5887,7 @@ function renderMatchmaking(){
   $('readyHint').textContent=matched?'FIXED QUEUE RULES, NO PLAYER HOST':away?'PRIVATE LINEUP RESERVED, WAITING FOR THE PARTY':q.stage==='confirming'?'EACH REMOTE FRIEND MUST CONFIRM THIS QUEUE':'FINDING OPPONENTS, THE PARTY WILL STAY ON ONE TEAM';
   $('roomStatus').textContent=matched?'Return to the original party to change the setup or queue another battle.':away?'The party is playing a matchmaking battle. This private lobby, bots and chat are reserved.':q.stage==='confirming'?'Open the queue panel to accept or decline the party search.':'Searching for real players on this server. Cancelling preserves the lobby.';
   if(away)document.querySelectorAll('[data-spectate-player]').forEach(e=>e.disabled=true);
-  if(matched){$('roomEyebrow').textContent='MATCHMAKING, '+r.matchmaking.name;$('roomTitle').innerHTML='BATTLE<br><em>READY.</em>';}
+  if(matched){$('roomEyebrow').textContent='MATCHMAKING, '+r.matchmaking.name;$('roomTitle').hidden=false;$('roomTitle').innerHTML='BATTLE<br><em>READY.</em>';}
  }
  $('queuePartyText').innerHTML=people.length+' PILOT'+(people.length===1?'':'S')+', '+people.map(p=>roomPlayerIdentityHTML(p,r)).join(', ');
  $('queuePartyHint').textContent='Up to 3 real pilots, including a local co-pilot. Bots stay in the private lobby. Spectators may spectate through its match link.';
