@@ -15,6 +15,7 @@ class FixedArena(
     private val botDifficulties: List<String> = emptyList(),
     private val botTeams: List<Int> = emptyList(),
     private val localTeam: Int = 0,
+    private val secondaryPlayer: LocalPilot? = null,
 ) {
     val localID = 1
     var rules =
@@ -32,6 +33,8 @@ class FixedArena(
 
     val maze
         get() = combat.maze
+    val secondaryLocalID: Int?
+        get() = combat.secondaryLocalID
 
     val snapshot
         get() = compose(combat.snapshot)
@@ -46,7 +49,7 @@ class FixedArena(
 
     private val pilotConfigurations = mutableMapOf<Int, PilotConfiguration>()
     private var randomState = if (seed == 0) 1 else seed
-    private var secondLocal: PilotConfiguration? = null
+    private var secondLocal = secondaryPlayer?.let { PilotConfiguration(it.name, it.colorIndex, it.team, difficulty) }
     private var displacedBotID: Int? = null
     private var tick = 0L
     private var generation = 0
@@ -229,14 +232,17 @@ class FixedArena(
         phaseTime = 3.0
         clock = rules.timeLimit.toDouble()
         if (!preserveWorld) world = makeWorld()
+        val humanCount = if (secondaryPlayer == null) 1 else 2
+        val capacity = if (rules.mode == "survival") 4 else 8
         combat =
             PracticeArena(
                 seed = randomState,
                 name = name,
                 colorIndex = colorIndex,
-                botCount = botCount.coerceIn(0, if (rules.mode == "survival") 3 else 7),
+                botCount = botCount.coerceIn(0, capacity - humanCount),
                 difficulty = difficulty,
                 world = world,
+                secondaryPlayer = secondaryPlayer,
             )
         combat.configure(rules)
         combat.killScoring = false
@@ -265,22 +271,29 @@ class FixedArena(
             }
         }
         combat.snapshot.tanks.forEachIndexed { i, t ->
+            val isSecondary = t.id == secondaryLocalID
+            val botIndex = i - humanCount
+            val configuredTeam = when {
+                i == 0 -> localTeam
+                isSecondary -> secondLocal?.team ?: 0
+                else -> botTeams.getOrNull(botIndex) ?: 0
+            }
             val team =
                 if (rules.mode == "survival") 1
                 else if (rules.teamMode == "teams")
-                    if (i == 0) if (localTeam > 0) localTeam else 1
-                    else botTeams.getOrNull(i - 1)?.takeIf { it > 0 } ?: (i % 2 + 1)
+                    if (configuredTeam > 0) configuredTeam else i % 2 + 1
                 else 0
             val paint =
                 if (team > 0) rules.teamColors.getOrNull(team - 1) ?: team - 1
                 else if (i == 0) colorIndex
-                else botColors.getOrNull(i - 1) ?: GamePalette.index(colorIndex + i)
+                else if (isSecondary) secondLocal?.colorIndex ?: t.colorIndex
+                else botColors.getOrNull(botIndex) ?: GamePalette.index(colorIndex + i)
             combat.configurePilot(
                 t.id,
-                if (i == 0) name else botNames.getOrNull(i - 1) ?: "BOT $i",
+                if (i == 0 || isSecondary) t.name else botNames.getOrNull(botIndex) ?: "BOT ${botIndex + 1}",
                 paint,
                 team,
-                if (i == 0) difficulty else botDifficulties.getOrNull(i - 1) ?: difficulty,
+                if (i == 0 || isSecondary) difficulty else botDifficulties.getOrNull(botIndex) ?: difficulty,
             )
             t.x = (spots[i].first + .5) * 84
             t.y = (spots[i].second + .5) * 84
@@ -288,11 +301,12 @@ class FixedArena(
             t.spawnSerial = generation
             t.invulnerable = .75
         }
-        secondLocal?.let { combat.configureLocal(it.name, it.colorIndex, it.team, displacedBotID) }
+        if (secondaryPlayer == null)
+            secondLocal?.let { combat.configureLocal(it.name, it.colorIndex, it.team, displacedBotID) }
         for (tank in combat.snapshot.tanks) {
             val p = if (tank.id == 2 && !tank.bot) secondLocal else pilotConfigurations[tank.id]
             if (p != null) {
-                val side = if (rules.mode == "survival") 1 else p.team
+                val side = if (rules.mode == "survival") 1 else if (rules.teamMode == "teams" && p.team == 0) tank.team else p.team
                 val color =
                     if (side > 0) rules.teamColors.getOrNull(side - 1) ?: side - 1 else p.colorIndex
                 combat.configurePilot(tank.id, p.name, color, side, p.difficulty)
@@ -581,26 +595,29 @@ class FixedArena(
         combat.respawnsEnabled = false
         combat.clearProjectiles()
         combat.snapshot.pickups = emptyList()
-        combat.snapshot.tanks.forEach { it.hp = 0 }
-        combat.snapshot.tanks =
-            combat.snapshot.tanks.map { old ->
-                val p = respawnPoint(old)
-                ArenaTank(
-                    id = old.id,
-                    name = old.name,
-                    x = p.x,
-                    y = p.y,
-                    angle = -PI / 2,
-                    colorIndex = old.colorIndex,
-                    score = scores[old.id] ?: 0,
-                    team = old.team,
-                    bot = old.bot,
-                    spawnProtected = true,
-                    spawnSerial = old.spawnSerial + 1,
-                    invulnerable = 1.2,
-                    difficulty = old.difficulty,
-                )
-            }
+        val tanks = combat.snapshot.tanks.toMutableList()
+        tanks.forEach { it.hp = 0 }
+        combat.snapshot.tanks = tanks
+        for (index in tanks.indices) {
+            val old = tanks[index]
+            val point = respawnPoint(old)
+            tanks[index] = ArenaTank(
+                id = old.id,
+                name = old.name,
+                x = point.x,
+                y = point.y,
+                angle = -PI / 2,
+                colorIndex = old.colorIndex,
+                score = scores[old.id] ?: 0,
+                team = old.team,
+                bot = old.bot,
+                spawnProtected = true,
+                spawnSerial = old.spawnSerial + 1,
+                invulnerable = 1.2,
+                difficulty = old.difficulty,
+                ammoEpoch = AmmoEpoch.next(old.ammoEpoch),
+            )
+        }
     }
 
     private fun stepSurvival() {

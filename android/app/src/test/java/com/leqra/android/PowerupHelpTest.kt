@@ -1,5 +1,6 @@
 package com.leqra.android
 
+import com.leqra.core.ArenaWorld
 import com.leqra.core.RoomRules
 import org.junit.Assert.*
 import org.junit.Test
@@ -44,5 +45,30 @@ class PowerupHelpTest {
             assertEquals(seconds, PowerupHelp.starDuration(rules))
             assertTrue(PowerupHelp.description("starman", rules).contains("$seconds seconds"))
         }
+    }
+
+    @Test fun manualUsesTheActiveMazeAndListsDisabledWeapons() {
+        val rules = RoomRules.modeDefaults("ctf").apply {
+            mapSize = "compact"
+            pickupRate = "fast"
+            weapons = listOf("laser", "laser")
+        }
+        val world = ArenaWorld(cols = 16, rows = 14)
+        val summary = PowerupHelp.summary(rules, world)
+        assertTrue(summary.contains("1 power-up type enabled"))
+        assertTrue(summary.contains("every 2–3.5 seconds"))
+        assertTrue(summary.contains("Most effects last 15 seconds"))
+        assertTrue(summary.contains("Starman lasts 7 seconds"))
+        assertTrue(summary.contains("expire after 61 seconds"))
+        assertTrue(PowerupHelp.description("laser", rules, world).contains("twice the maze perimeter"))
+        assertFalse(PowerupHelp.description("laser", rules, world).startsWith("Disabled"))
+        assertTrue(PowerupHelp.description("homing", rules, world).startsWith("Disabled"))
+        assertTrue(PowerupHelp.description("laser", rules.copy(pickupRate = "off"), world).startsWith("Disabled"))
+
+        val infinity = rules.copy(infinity = true, pickupRate = "off")
+        assertEquals(30, PowerupHelp.groundLifetime(infinity, world))
+        assertTrue(PowerupHelp.description("laser", infinity, world).contains("36 maze cells"))
+        assertTrue(PowerupHelp.description("homing", infinity, world).contains("18 maze cells"))
+        assertFalse(PowerupHelp.description("homing", infinity, world).startsWith("Disabled"))
     }
 }

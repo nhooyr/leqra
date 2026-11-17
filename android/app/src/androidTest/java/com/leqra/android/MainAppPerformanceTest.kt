@@ -71,6 +71,7 @@ class MainAppPerformanceTest {
             .clear()
             .putBoolean("muted", InstrumentationRegistry.getArguments().getString("audio") != "on")
             .putBoolean("publicSelected", false)
+            .putBoolean(QUICK_TOUR_SEEN, true)
             .putString(
                 "server",
                 InstrumentationRegistry.getArguments().getString("server")

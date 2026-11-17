@@ -207,6 +207,30 @@ object ProtocolJson {
             score = json.optInt("score", 0),
         )
 
+    fun matchReport(json: JSONObject) = MatchReport(
+        mode = json.optString("mode"),
+        duration = json.number("duration"),
+        rounds = json.optInt("rounds"),
+        players = json.optJSONArray("players")?.objects { player ->
+            MatchPlayer(
+                member = player.optLong("member"),
+                controllerMember = player.longOrNull("controllerMember"),
+                name = player.optString("name"),
+                color = player.optString("color"),
+                team = player.optInt("team"),
+                score = player.optInt("score"),
+                kind = player.optString("kind"),
+                eliminations = player.optInt("eliminations"),
+                deaths = player.optInt("deaths"),
+                selfDestructs = player.optInt("selfDestructs"),
+                captures = player.optInt("captures"),
+                flagReturns = player.optInt("flagReturns"),
+                hillSeconds = player.number("hillSeconds"),
+                winner = player.optBoolean("winner"),
+            )
+        }.orEmpty(),
+    )
+
     fun roomRules(json: JSONObject) =
         RoomRules(
             mode = json.optString("mode", "elimination"),

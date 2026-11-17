@@ -3,7 +3,13 @@ package com.leqra.android
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.text.InputFilter
@@ -27,9 +33,33 @@ internal object NativeStyle {
     val green = Color.parseColor("#39ff88")
     val danger = Color.parseColor("#ff4f5f")
 
+    private val checkedStates = arrayOf(
+        intArrayOf(-android.R.attr.state_enabled, android.R.attr.state_checked),
+        intArrayOf(-android.R.attr.state_enabled),
+        intArrayOf(android.R.attr.state_checked),
+        intArrayOf(),
+    )
+    private val toggleTrackColors = ColorStateList(
+        checkedStates,
+        intArrayOf(0xff265968.toInt(), 0xff293238.toInt(), 0xff00c8ff.toInt(), 0xff324249.toInt()),
+    )
+    private val toggleThumbColors = ColorStateList(
+        checkedStates,
+        intArrayOf(0xff193239.toInt(), 0xff697984.toInt(), 0xff002536.toInt(), muted),
+    )
+    private val checkBoxColors = ColorStateList(
+        checkedStates,
+        intArrayOf(0xff548190.toInt(), 0xff697984.toInt(), 0xff00c8ff.toInt(), muted),
+    )
+
     private val tankColors = GamePalette.displayColors.map(Color::parseColor)
 
     fun paint(index: Int) = tankColors[GamePalette.index(index)]
+
+    fun mappedPaint(canonical: String): Int {
+        val index = GamePalette.colors.indexOf(canonical.lowercase(java.util.Locale.ROOT))
+        return if (index >= 0) paint(index) else runCatching { Color.parseColor(canonical) }.getOrDefault(accent)
+    }
 
     fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density + .5f).toInt()
 
@@ -111,7 +141,10 @@ internal object NativeStyle {
                     if (play) Color.parseColor("#72ffaa")
                     else if (danger) NativeStyle.danger else edge,
                 )
-            if (role == "share" || role == "text") {
+            if (role == "primary") {
+                setTextColor(0xff002536.toInt())
+                background = background(context, accent, 6, 0xff95eaff.toInt())
+            } else if (role == "share" || role == "text") {
                 textSize = 10f
                 typeface = Typeface.MONOSPACE
                 setTextColor(if (role == "share") accent else muted)
@@ -132,6 +165,61 @@ internal object NativeStyle {
             stateListAnimator = null
             setOnClickListener { action() }
         }
+
+    fun toggle(context: Context) = Switch(context).apply {
+        showText = false
+        splitTrack = false
+        switchMinWidth = context.dp(36)
+        switchPadding = context.dp(12)
+        minHeight = context.dp(44)
+        minimumHeight = context.dp(44)
+        thumbTintList = null
+        trackTintList = null
+        thumbDrawable = ToggleShape(context, 16, 16, toggleThumbColors)
+        trackDrawable = ToggleShape(context, 36, 22, toggleTrackColors, padding = 2)
+    }
+
+    fun checkBox(context: Context) = CheckBox(context).apply { buttonTintList = checkBoxColors }
+
+    private class ToggleShape(
+        context: Context,
+        width: Int,
+        height: Int,
+        private val colors: ColorStateList,
+        padding: Int = 0,
+    ) : Drawable() {
+        private val shapeWidth = context.dp(width)
+        private val shapeHeight = context.dp(height)
+        private val inset = context.dp(padding)
+        private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors.defaultColor }
+
+        override fun getIntrinsicWidth() = shapeWidth
+        override fun getIntrinsicHeight() = shapeHeight
+        override fun getPadding(padding: Rect): Boolean {
+            padding.set(inset, 0, inset, 0)
+            return inset > 0
+        }
+
+        override fun isStateful() = true
+        override fun onStateChange(state: IntArray): Boolean {
+            val color = colors.getColorForState(state, colors.defaultColor)
+            if (ink.color == color) return false
+            ink.color = color
+            invalidateSelf()
+            return true
+        }
+
+        override fun draw(canvas: Canvas) {
+            val radius = shapeHeight / 2f
+            val y = bounds.exactCenterY()
+            canvas.drawRoundRect(bounds.left.toFloat(), y - radius, bounds.right.toFloat(), y + radius, radius, radius, ink)
+        }
+
+        override fun setAlpha(alpha: Int) { ink.alpha = alpha }
+        override fun setColorFilter(filter: ColorFilter?) { ink.colorFilter = filter }
+        @Deprecated("Drawable opacity is no longer used")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
 
     fun field(context: Context, value: String, hint: String = "", limit: Int = 16): EditText =
         EditText(context).apply {
@@ -257,7 +345,7 @@ internal object NativeStyle {
             override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
         }
 
-    fun icon(context: Context, kind: String): android.graphics.drawable.Drawable =
+    fun icon(context: Context, kind: String, active: Boolean = false): android.graphics.drawable.Drawable =
         object : android.graphics.drawable.Drawable() {
             private val ink = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
             private val shape = android.graphics.Path()
@@ -270,25 +358,49 @@ internal object NativeStyle {
                 canvas.save()
                 canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
                 canvas.scale(bounds.width() / 24f, bounds.height() / 24f)
-                ink.color = if (kind == "muted") muted else accent
+                ink.color = if (active) accent else soft
                 ink.strokeWidth = 1.8f
                 ink.style = android.graphics.Paint.Style.STROKE
-                ink.style = android.graphics.Paint.Style.FILL
-                canvas.drawRect(2f, 8f, 7f, 16f, ink)
-                shape.rewind()
-                shape.moveTo(7f, 8f)
-                shape.lineTo(12f, 4f)
-                shape.lineTo(12f, 20f)
-                shape.lineTo(7f, 16f)
-                shape.close()
-                canvas.drawPath(shape, ink)
-                ink.style = android.graphics.Paint.Style.STROKE
-                if (kind == "muted") {
-                    canvas.drawLine(16f, 8f, 22f, 16f, ink)
-                    canvas.drawLine(16f, 16f, 22f, 8f, ink)
-                } else {
-                    canvas.drawArc(10f, 7f, 20f, 17f, -50f, 100f, false, ink)
-                    canvas.drawArc(8f, 3f, 24f, 21f, -50f, 100f, false, ink)
+                ink.strokeCap = Paint.Cap.ROUND
+                when (kind) {
+                    "pause" -> {
+                        canvas.drawLine(9f, 5f, 9f, 19f, ink)
+                        canvas.drawLine(15f, 5f, 15f, 19f, ink)
+                    }
+                    "fullscreen" -> {
+                        for (i in 0 until 4) {
+                            canvas.drawLine(4f, 4f, 9f, 4f, ink)
+                            canvas.drawLine(4f, 4f, 4f, 9f, ink)
+                            canvas.rotate(90f, 12f, 12f)
+                        }
+                    }
+                    "controls" -> {
+                        for ((y, x) in listOf(5f to 9f, 12f to 15f, 19f to 9f)) {
+                            canvas.drawLine(3f, y, x - 2.5f, y, ink)
+                            canvas.drawLine(x + 2.5f, y, 21f, y, ink)
+                            canvas.drawCircle(x, y, 2.5f, ink)
+                        }
+                    }
+                    else -> {
+                        ink.style = Paint.Style.FILL
+                        shape.rewind()
+                        shape.moveTo(2f, 8f)
+                        shape.lineTo(7f, 8f)
+                        shape.lineTo(12f, 4f)
+                        shape.lineTo(12f, 20f)
+                        shape.lineTo(7f, 16f)
+                        shape.lineTo(2f, 16f)
+                        shape.close()
+                        canvas.drawPath(shape, ink)
+                        ink.style = Paint.Style.STROKE
+                        if (kind == "muted") {
+                            canvas.drawLine(16f, 8f, 22f, 16f, ink)
+                            canvas.drawLine(16f, 16f, 22f, 8f, ink)
+                        } else {
+                            canvas.drawArc(10f, 7f, 20f, 17f, -50f, 100f, false, ink)
+                            canvas.drawArc(8f, 3f, 24f, 21f, -50f, 100f, false, ink)
+                        }
+                    }
                 }
                 canvas.restore()
             }

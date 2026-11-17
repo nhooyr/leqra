@@ -35,7 +35,8 @@ class BotStandingsUiTest {
     @Test
     fun previewAndPlayingRowsSeparateDifficultyAndWrapNamesInBothOrientations() {
         instrumentation.targetContext.getSharedPreferences("leqra-settings", 0).edit().clear()
-            .putString("server", "http://127.0.0.1:1").putBoolean("publicSelected", false).putBoolean("muted", true).commit()
+            .putString("server", "http://127.0.0.1:1").putBoolean("publicSelected", false).putString("mode", "infinity")
+            .putBoolean("muted", true).putBoolean(QUICK_TOUR_SEEN, true).commit()
         val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
         val leaders = listOf(

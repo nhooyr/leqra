@@ -284,6 +284,10 @@ class NativeNetworkClient(
         }
     }
 
+    fun hasRoomReservation(code: String): Boolean =
+        !infinity && resumeJoin?.optString("code") == code &&
+            deadline?.let { SystemClock.elapsedRealtime() < it } != false
+
     fun reconnect(): Boolean {
         suspended = false
         return scheduleReconnect(true)

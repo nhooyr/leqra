@@ -10,6 +10,67 @@ class LocalSeatIdentityTest {
     private fun pilot(arena: FixedArena, id: Int) = arena.snapshot.tanks.first { it.id == id }
 
     @Test
+    fun pairedSurvivalStartsBothPilotsInTheSquadFormationOnEveryWave() {
+        val arena = FixedArena(
+            RoomRules.localDefaults("survival"),
+            "Pilot",
+            0,
+            botCount = 7,
+            seed = 42,
+            botNames = listOf("Guard", "Sentinel"),
+            botDifficulties = listOf("hard", "easy"),
+            secondaryPlayer = LocalPilot("Wing", 7, team = 2),
+        )
+        repeat(3) {
+            val squad = arena.snapshot.tanks.filterNot { it.survivalEnemy }
+            assertEquals(2, arena.secondaryLocalID)
+            assertEquals(listOf(1, 2, 3, 4), squad.map { it.id })
+            assertEquals(listOf("Pilot", "Wing", "Guard", "Sentinel"), squad.map { it.name })
+            assertEquals(listOf("hard", "easy"), squad.filter { it.bot }.map { it.difficulty })
+            assertEquals(4, squad.map { it.x to it.y }.distinct().size)
+            assertTrue(squad.all { it.team == 1 && it.colorIndex == arena.rules.teamColors.first() })
+            assertTrue(squad.all { it.angle == -PI / 2 && it.invulnerable == .75 && it.spawnSerial == arena.snapshot.generation })
+            arena.restartWave()
+        }
+    }
+
+    @Test
+    fun pairedInfinityReservesTheSecondIdBeforeCreatingTheRoster() {
+        val arena = PracticeArena(42, "Pilot", 0, 2, secondaryPlayer = LocalPilot("Wing", 4))
+        arena.configure(RoomRules.localDefaults("infinity"))
+        arena.configurePilot(3, "Guard", 3, difficulty = "hard")
+        arena.configurePilot(4, "Sentinel", 7, difficulty = "easy")
+        assertEquals(2, arena.secondaryLocalID)
+        assertEquals(2, arena.snapshot.players)
+        assertEquals(listOf(1, 2, 3, 4), arena.snapshot.tanks.map { it.id })
+        assertEquals(listOf("Pilot", "Wing", "Guard", "Sentinel"), arena.snapshot.tanks.map { it.name })
+        assertEquals(listOf(0, 4, 3, 7), arena.snapshot.tanks.map { it.colorIndex })
+    }
+
+    @Test
+    fun pairedCaptureTheFlagSuddenDeathSpawnsEachTankSeparatelyAndRefillsAmmo() {
+        val arena = FixedArena(
+            RoomRules.localDefaults("ctf").copy(timeLimit = 1, pickupRate = "off"),
+            "Pilot",
+            0,
+            botCount = 2,
+            seed = 42,
+            botTeams = listOf(2, 2),
+            localTeam = 1,
+            secondaryPlayer = LocalPilot("Wing", 1, team = 1),
+        )
+        val previousAmmo = arena.combat.snapshot.tanks.associate { tank ->
+            tank.ammoEpoch = 40L + tank.id
+            tank.id to tank.ammoEpoch
+        }
+        repeat(240) { arena.step(GameInput(), tick) }
+        assertTrue(arena.snapshot.objectives!!.suddenDeath)
+        val tanks = arena.snapshot.tanks
+        assertEquals(tanks.size, tanks.map { it.x to it.y }.distinct().size)
+        tanks.forEach { assertEquals(AmmoEpoch.next(previousAmmo.getValue(it.id)), it.ammoEpoch) }
+    }
+
+    @Test
     fun renamedP2AndDisplacedBotKeepSeparateProfilesAcrossRounds() {
         val arena =
             FixedArena(

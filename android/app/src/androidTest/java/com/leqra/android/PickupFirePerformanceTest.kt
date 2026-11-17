@@ -37,6 +37,7 @@ class PickupFirePerformanceTest {
         try {
             for (fixed in listOf(false, true)) for (audible in listOf(false, true)) for (kind in listOf("") + PracticeArena.pickupKinds) {
                 preferences.edit().clear().putBoolean("muted", !audible).putBoolean("publicSelected", false)
+                    .putBoolean(QUICK_TOUR_SEEN, true)
                     .putString("callsign", "pilot#ABC234").putString("server", "http://127.0.0.1:1").commit()
                 val monitor = instrumentation.addMonitor(MainActivity::class.java.name, null, false)
                 val activity = try {

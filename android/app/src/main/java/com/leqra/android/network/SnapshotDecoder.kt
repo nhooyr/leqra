@@ -154,6 +154,7 @@ class SnapshotDecoder {
             winner = json.optInt("winner", -1),
             spectating = json.optBoolean("spectating"),
             following = json.optInt("following"),
+            matchStats = json.optJSONObject("matchStats")?.let(ProtocolJson::matchReport),
         )
     }
 
