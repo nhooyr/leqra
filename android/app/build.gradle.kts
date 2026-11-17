@@ -1,4 +1,4 @@
-plugins { id("com.android.application"); kotlin("android") }
+plugins { id("com.android.application") }
 
 // Keep the native client handshake and package version tied to the server.
 val releaseVersion = providers.exec {
@@ -8,6 +8,35 @@ val releaseVersion = providers.exec {
 require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+").matches(releaseVersion)) { "Invalid scripts/version.sh version" }
 val parts = releaseVersion.split('.').map(String::toInt)
 require(parts[1] < 100 && parts[2] < 10000)
+
+// Keep upload credentials in user Gradle properties or the CI environment.
+val uploadSigningFields = mapOf(
+    "leqraUploadStoreFile" to "LEQRA_UPLOAD_STORE_FILE",
+    "leqraUploadStorePassword" to "LEQRA_UPLOAD_STORE_PASSWORD",
+    "leqraUploadKeyAlias" to "LEQRA_UPLOAD_KEY_ALIAS",
+    "leqraUploadKeyPassword" to "LEQRA_UPLOAD_KEY_PASSWORD",
+)
+val uploadSigning = uploadSigningFields.mapValues { (property, environment) ->
+    providers.gradleProperty(property).orElse(providers.environmentVariable(environment)).orNull
+}
+val uploadKeystore = uploadSigning["leqraUploadStoreFile"]?.takeIf { it.isNotEmpty() }?.let { rootProject.file(it) }
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    group = "verification"
+    description = "Check that release upload signing credentials are configured."
+    val missing = uploadSigningFields.filterKeys { uploadSigning[it].isNullOrEmpty() }
+        .map { (property, environment) -> "$property ($environment)" }
+    val keystore = uploadKeystore
+    doLast {
+        check(missing.isEmpty()) {
+            "Missing release signing settings: ${missing.joinToString()}. See android/README.md."
+        }
+        check(keystore?.isFile == true) { "Release upload keystore does not exist: $keystore" }
+    }
+}
+// AGP can otherwise produce an unsigned release when its signing config is incomplete.
+tasks.matching {
+    it.name in setOf("assembleRelease", "bundleRelease", "installRelease", "packageRelease", "packageReleaseBundle", "signReleaseBundle", "validateSigningRelease")
+}.configureEach { dependsOn(validateReleaseSigning) }
 
 android {
     namespace = "com.leqra.android"
@@ -21,8 +50,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { buildConfig = true }
+    signingConfigs {
+        create("release") {
+            storeFile = uploadKeystore
+            storePassword = uploadSigning["leqraUploadStorePassword"]
+            keyAlias = uploadSigning["leqraUploadKeyAlias"]
+            keyPassword = uploadSigning["leqraUploadKeyPassword"]
+        }
+    }
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
