@@ -7,7 +7,12 @@ An online multiplayer tank arena battle game. Inspired by [TankTrouble](https://
 It's also a sequel to my high school computer science capstone from 2017:
 [tmaze-java](https://github.com/nhooyr/tmaze-java).
 
-![showcase screenshot of the game](docs/showcase.png)
+![screenshot of gameplay](docs/showcase.png)
+
+<p>
+  <img width="48%" src="docs/showcase-ios.png" alt="showcase-ios screenshot of the game" />
+  <img align="right" width="48%" src="docs/showcase-ios-menu.png" alt="showcase-ios-menu screenshot of the game" />
+</p>
 
 - 5 fun free-for-all and team based game modes:
     1. Infinity

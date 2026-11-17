@@ -13,7 +13,7 @@ function boot(p2=false,stored=null){
  const pilots=[{name:'Lead',color:'#32c5ff'},{name:'Wing',color:'#ff83bd'}];
  const sandbox={phase:'playing',mode:'room',combatPrefs:{mouseAim:true,mouseFire:true},window:{},pilots,COLORS:pilots.map(p=>p.color),tanks:[],paintColor:c=>c,roomMember:id=>pilots[id],secondaryMember:()=>p2?pilots[1]:null,localPlayerID:()=>0,secondaryID:()=>1,savedLocalCallsign:()=>pilots[1].name,teamColor:id=>pilots[id].color,infinityPlayMode:()=>'',keys:new Set(),hasLocalP2:()=>p2,modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
  vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],sandbox);
- for(const name of ['pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['hardwareUsesP2','pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
  sandbox.bindings=sandbox.loadBindings();sandbox.storage=storage;return sandbox;
 }
 function assign(s,player,action,code){s.bindings[player][action]=code;assert.ok(s.validateBindings(s.bindings),'the controls editor accepts this remap');}
@@ -29,6 +29,21 @@ function tour(s){
  s.$('bindingGrid').querySelectorAll=()=>[];s.window.matchMedia=()=>({matches:true});s.syncControlIdentities();s.syncIntroTourControls();return s.$;
 }
 const keycaps=html=>[...html.matchAll(/<kbd(?:\s[^>]*)?>(.*?)<\/kbd>/g)].map(match=>match[1]);
+
+test('paired touch-device help identifies P1 touch and P2 keyboard/mouse with both layouts',()=>{
+ const s=boot(true);s.navigator={maxTouchPoints:5};
+ for(const code of ['KeyW','ArrowUp'])owner(s,'forward',code,1);
+ for(const code of ['KeyQ','KeyC','Space','Enter'])owner(s,'fire',code,1);
+ assert.deepEqual(Object.keys(s.controlKeyMap(0)),[]);
+ assert.match(s.pilotControlHint(0),/Lead \(P1\).*Drag the stick/);
+ assert.match(s.pilotControlHint(1),/Wing \(P2\).*Mouse Aim/);
+ const $=tour(s);assert.deepEqual(keycaps($('introTourMoveKeys').innerHTML),['W','↑','A','←','S','↓','D','→']);
+ assert.equal($('introTourKeyboard')['aria-label'],'Keyboard controls for Wing (P2)');
+ assert.equal($('introTourTouch')['aria-label'],'Touch controls for Lead (P1)');
+ assert.equal($('p1MouseFireEnabled')['aria-label'],'Mouse fire for Wing (P2)');
+ const solo=boot();solo.navigator={maxTouchPoints:5};owner(solo,'forward','KeyW',0);owner(solo,'forward','ArrowUp',0);
+ assert.match(solo.pilotControlHint(1,'',false,true),/Mouse Aim/,'Infinity can supply its own paired roster');
+});
 
 test('tour keyboard hints use themed keycaps and current aliases without advertising the active co-pilot keys',()=>{
  for(const paired of [false,true]){
@@ -111,6 +126,8 @@ test('hold-fire help follows the solo pilot or both pilots according to the acti
  const ordinary={alive:true,power:'homing'};s.weaponControl(ordinary,true,true);s.weaponControl(ordinary,true,false);s.weaponControl(ordinary,true,false);assert.equal(fired,3,'held fire keeps requesting shots at the weapon cadence');
  const grenade={alive:true,power:'grenade'};s.weaponControl(grenade,true,true);s.weaponControl(grenade,true,false);assert.equal(fired,5,'holding keeps requesting grenade throws at their cooldown');
  activeGrenade=true;s.weaponControl(grenade,false,false);s.weaponControl(grenade,true,true);assert.equal(detonated,1);assert.equal(fired,5,'a separate press detonates without also throwing');
+ s.weaponControl(grenade,true,false);assert.equal(fired,5,'holding the detonation cannot throw again');
+ s.weaponControl(grenade,true,true);assert.equal(fired,6,'a fresh press also handles a release coalesced between simulation ticks');
 });
 
 test('Controls shortcuts share themed keycaps and separate firing help from the shortcut line',()=>{

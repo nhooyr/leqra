@@ -41,7 +41,6 @@ final class GameAudio {
     private var generation: Int?
     private var previousHP: Int?
     private var lastHaptic = 0.0
-    private var lastChat = -Double.infinity
     private var previewTask: Task<Void, Never>?
     private var shutdownTask: Task<Void, Never>?
     private var starmanRequested = false
@@ -246,7 +245,7 @@ final class GameAudio {
     func reset() {
         pause()
         router.reset()
-        generation = nil; previousHP = nil; lastHaptic = 0; lastChat = -.infinity
+        generation = nil; previousHP = nil; lastHaptic = 0
     }
 
     func consume(snapshot: ArenaSnapshot, localID: Int, infinity: Bool, online: Bool,
@@ -287,13 +286,6 @@ final class GameAudio {
     private func clearPlayback() {
         starmanRequested = false
         renderState.clear()
-    }
-
-    func notifyChat() {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard enabled, volume > 0, active, engine?.isRunning == true, now - lastChat >= AudioSynthesis.chatInterval else { return }
-        lastChat = now
-        play(.chat)
     }
 
     func dryFire() {

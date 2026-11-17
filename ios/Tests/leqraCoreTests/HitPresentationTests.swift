@@ -211,6 +211,13 @@ final class HitPresentationTests: XCTestCase {
             XCTAssertEqual(first.tanks[1].hp, 1, kind)
             XCTAssertFalse(first.effects.contains { $0.kind == "hit" }, kind)
             let end = arena.combat.presentationSnapshot(fraction: 0, now: 0.05)
+            if kind == "cannon" {
+                XCTAssertFalse(arena.snapshot.effects.contains { $0.flight != nil }, "Piercing hits are not terminal flights")
+                XCTAssertTrue(end.bullets.isEmpty, "A completed fixed round clears its remaining shells")
+                XCTAssertEqual(end.tanks[1].hp, 0)
+                XCTAssertTrue(end.effects.contains { $0.kind == "hit" })
+                continue
+            }
             let flight = try XCTUnwrap(arena.snapshot.effects.first { $0.flight != nil }?.flight, kind)
             let bullet = try XCTUnwrap(end.bullets.first { $0.id == flight.id }, kind)
             XCTAssertEqual(bullet.x, flight.points.last?.x, kind)
@@ -236,6 +243,27 @@ final class HitPresentationTests: XCTestCase {
         XCTAssertTrue(presenter.effects(events).isEmpty)
         bullets = []; presenter.append(to: &bullets, tick: 66, now: 0.03)
         XCTAssertEqual(Set(presenter.effects([]).map(\.kind)), Set(["impact", "hit", "roundEnd"]), "Round audio survives source event expiry")
+    }
+
+    func testCoalescedPiercingCannonShowsContactFlashWithoutRewindingItsLiveShell() {
+        let target = ArenaTank(id: 2, x: 220, y: 420, spawnSerial: 1)
+        var dead = target; dead.hp = 0
+        let effects = [ArenaEffect(id: 20, kind: "impact", x: 189, y: 420, owner: 1, tick: 61),
+            ArenaEffect(id: 21, kind: "hit", x: 220, y: 420, owner: 1, tick: 61,
+                contact: ImpactContact(projectileId: 0, kind: "cannon", tick: 61, target: 2, spawnSerial: 1, before: ImpactContactPose(target)))]
+        let presenter = CannonFlightPresenter()
+        presenter.accept(effects, throughTick: 80, tanks: [dead])
+        var bullets = [ArenaBullet(id: 9, x: 500, y: 420, vx: 1128, owner: 1, kind: "cannon")]
+        presenter.append(to: &bullets, tick: 80, now: 0)
+        var bodies = [dead]; presenter.applyContacts(to: &bodies)
+        XCTAssertEqual(bullets.first?.x, 500)
+        XCTAssertEqual(bodies[0].hp, 1)
+        XCTAssertEqual(presenter.effects(effects).map(\.kind), ["impact"])
+        presenter.append(to: &bullets, tick: 81, now: 1 / 120)
+        bodies = [dead]; presenter.applyContacts(to: &bodies)
+        XCTAssertEqual(bodies[0].hp, 0)
+        XCTAssertEqual(bullets.first?.x, 500)
+        XCTAssertEqual(presenter.effects(effects).map(\.kind), ["hit"])
     }
 
     func testGrenadeSharedFlightReleasesAllVictimsAfterOneEndpointFrame() {

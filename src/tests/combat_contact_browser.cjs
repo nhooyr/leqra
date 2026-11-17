@@ -64,7 +64,7 @@ __combatProbe.fixedOffline=function(spec){
  if(spec.kind==='starman'){p.x=target.x-34;p.starmanTime=9;hurt(target,{owner:p.id,kind:'starman'});}else fire(p);
  frames.push(this.take(()=>render(),spec.capture));
  for(let i=0;i<180;i++){this.clock+=1000/120;time+=1/120;updateBullets(1/120);frames.push(this.take(()=>render(),spec.capture));if((!target.alive||spec.shield&&target.shieldCharges===1)&&i>10&&!fire.flights.pendingPresentation)break;}
- return{frames,victim,owner:0,end:this.terminal||{x:target.x-17-r,y:target.y},r:this.terminal?.r??r,authorityDead:!target.alive};
+ return{frames,victim,owner:0,end:this.terminal||{x:target.x-17-r,y:target.y},r:this.terminal?.r??r,authorityDead:!target.alive,piercing:spec.kind==='cannon',beamPiercing:spec.kind==='laser'};
 };
 __combatProbe.fixedBatch=function(){
  const initial=this.fixedSetup(),base=initial.map(t=>({...t,alive:true,spawnSerial:7,shield:t.id===1?9:0,shieldCharges:t.id===1?1:0}));mode='online';online.connected=true;online.id=0;online.member=1;online.roomData=null;online.spectating=false;online.generation=-1;online.eventsInitialized=false;online.lastEvent=0;resetOnlineMotion();
@@ -144,7 +144,7 @@ __combatProbe.infinityOffline=function(spec){
  this.begin();if(spec.kind==='starman'){p.x=target.x-34;p.starmanTime=9;hurt(w,target,p.id,p.team,p.name,true);}else fireShot(w,p);
  const frames=[this.take(()=>draw(w,this.clock,0),spec.capture)];
  for(let i=0;i<180;i++){this.clock+=1000/120;offlineStep(w,1/120);frames.push(this.take(()=>draw(w,this.clock,1/120),spec.capture));if((!target.hp||spec.shield&&target.shieldCharges===1)&&i>10&&!w.flights.pendingPresentation)break;}
- const value={frames,victim:target.id,owner:p.id,end:this.terminal||{x:target.x-17-this.radius(spec.kind),y:target.y},r:this.terminal?.r??this.radius(spec.kind),authorityDead:!target.hp};window.leqraInfinity.close();return value;
+ const value={frames,victim:target.id,owner:p.id,end:this.terminal||{x:target.x-17-this.radius(spec.kind),y:target.y},r:this.terminal?.r??this.radius(spec.kind),authorityDead:!target.hp,piercing:spec.kind==='cannon',beamPiercing:spec.kind==='laser'};window.leqraInfinity.close();return value;
 };
 __combatProbe.infinityBadges=function(count){const w=count===180||!this.badgeWorld?this.infinitySetup():this.badgeWorld;this.badgeWorld=w;const t=w.tanks[0];w.tanks=[t];Object.assign(t,{x:175,y:210,power:'rapid',powerTime:9,machineRounds:count,shield:9,shieldCharges:5,speedTime:9,speedStacks:5,ghostTime:9});w.camera.x=175;w.camera.y=210;w.visualEffects=[{kind:'hit',x:200,y:240,end:this.clock+430}];if(count===180)draw(w,this.clock,0);const frame=this.take(()=>draw(w,this.clock,0),true,true);return{frame,icons:frame.ops.filter(o=>o.method==='drawImage'),numbers:frame.ops.filter(o=>['strokeText','fillText'].includes(o.method)&&/^\d+$/.test(o.text))};};
 __combatProbe.infinityTuning=function(){const w=this.infinitySetup(),t=w.tanks[0];w.tanks=[t];art.grantPower(t,'laser',15,8);const guide=traceLaser(w,t,true).points,length=guide.slice(1).reduce((v,p,i)=>v+Math.hypot(p.x-guide[i].x,p.y-guide[i].y),0),frame=this.take(()=>draw(w,this.clock,0),false,true);fireShot(w,t);updatePilotLoadout(w,t,w,1,this.clock);const laser={cooldown:t.cooldown,total:t.cooldownTotal,guide:length,expected:36*CELL-28,readiness:byID('infiniteCooldownText1').textContent,guidePainted:frame.ops.some(o=>o.method==='stroke'&&o.dash.join(',')==='3,7')};art.grantPower(t,'cannon',15,8);t.cooldown=0;fireShot(w,t);updatePilotLoadout(w,t,w,1,this.clock);const value={laser,cannon:{cooldown:t.cooldown,total:t.cooldownTotal,life:w.bullets[0]?.life,readiness:byID('infiniteCooldownText1').textContent}};window.leqraInfinity.close();return value;};
@@ -172,6 +172,15 @@ async function createPage(browser,profile){
 }
 function analyze(spec,result,label){
  const frames=result.frames,targetFrames=frames.map(f=>({f,t:f.tanks.find(t=>t.id===result.victim)}));
+ if(result.piercing){
+  const shells=frames.flatMap(f=>f.bullets.filter(b=>b.kind==='cannon'&&!b.flight)),changed=targetFrames.find(({t})=>spec.shield?t?.shieldCharges===1:!t||!t.alive);
+  check(!!changed,label+' damage occurs during the continuing flight');check(shells.some(b=>b.x>result.end.x+.05),label+' Cannon continues beyond the contact');check(shells.some(b=>b.painted),label+' continuing shell changes actual Canvas pixels');
+  check(!frames.some(f=>f.bullets.some(b=>b.kind==='cannon'&&b.flight)),label+' tank contact does not terminate the Cannon path');return;
+ }
+ if(result.beamPiercing){
+  const crossing=frames.find(f=>f.beams.some(b=>b.points.some((point,i)=>i&&Math.min(point.x,b.points[i-1].x)<=result.end.x&&Math.max(point.x,b.points[i-1].x)>=result.end.x)));
+  check(!!crossing,label+' full laser beam crosses the target');check(targetFrames.some(({t})=>spec.shield?t?.shieldCharges===1:!t||!t.alive),label+' laser applies damage');return;
+ }
  if(spec.baseline){check(!frames.some(f=>f.bullets.length||f.effects.some(e=>['hit','shield','blast'].includes(e.kind))||f.sounds.length),label+' baseline does not replay old contacts');check(!targetFrames.some(({t})=>t?.alive),label+' baseline does not resurrect victim');return;}
  if(spec.lifeGuard){check(targetFrames.every(({t})=>!t||t.life===8&&t.alive),label+' new life is not replaced by old pre-hit state');check(!frames.some(f=>f.effects.some(e=>e.kind==='hit'||e.kind==='shield')),label+' stale-life damage effect is dropped');return;}
  const endpoint=frames.find(f=>spec.kind==='laser'?f.beams.some(b=>Math.hypot(b.points.at(-1).x-result.end.x,b.points.at(-1).y-result.end.y)<.05):spec.kind==='starman'?f.tanks.some(t=>{const target=f.tanks.find(t=>t.id===result.victim);return target&&t.id===result.owner&&Math.hypot(t.x-target.x,t.y-target.y)<=34.01;}):f.bullets.some(b=>Math.hypot(b.x-result.end.x,b.y-result.end.y)<.05));

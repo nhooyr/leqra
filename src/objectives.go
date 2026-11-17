@@ -210,6 +210,7 @@ func (g *Game) respawnTank(t *Tank) {
 	t.AI = nil
 	t.fireHeld = false
 	t.fireBlocked = false
+	t.fireRelease = false
 	g.emit("respawn", t, t.ID, "")
 }
 func (g *Game) respawnPlayers(dt float64, players [maxTanks]*Player) (respawned [maxTanks]bool) {

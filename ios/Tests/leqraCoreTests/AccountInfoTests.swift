@@ -6,6 +6,19 @@ final class AccountInfoTests: XCTestCase {
     private let key = "p_" + String(repeating: "A", count: 43)
     private let replacement = "p_" + String(repeating: "B", count: 43)
 
+    func testOnlyTemporaryNetworkFailuresPermitOfflineCallsignStaging() {
+        for code: URLError.Code in [.timedOut, .cannotConnectToHost, .cannotFindHost, .notConnectedToInternet, .networkConnectionLost] {
+            XCTAssertTrue(GameNetworkError.canStageCallsignOffline(after: URLError(code)))
+        }
+        for code: URLError.Code in [.cancelled, .badURL, .serverCertificateUntrusted, .userAuthenticationRequired] {
+            XCTAssertFalse(GameNetworkError.canStageCallsignOffline(after: URLError(code)))
+        }
+        XCTAssertTrue(GameNetworkError.canStageCallsignOffline(after: GameNetworkError.temporarilyUnavailable))
+        for error: GameNetworkError in [.callsignTaken, .invalidAccountKey, .accountKeyRevoked, .invalidResponse] {
+            XCTAssertFalse(GameNetworkError.canStageCallsignOffline(after: error))
+        }
+    }
+
     func testImportedAccountChoosesSavedPublicCallsignBeforeAliases() throws {
         let info = try decode(["names": ["OLD FOX", "WING"], "totalNames": 200,
                                "publicProfile": ["name": "CURRENT FOX", "score": 37, "localName": "WING", "localScore": -2]])
@@ -30,7 +43,11 @@ final class AccountInfoTests: XCTestCase {
         let info = try decode(["names": ["OLD FOX", "WING"], "publicProfile": ["name": "CURRENT FOX", "score": -3]])
         XCTAssertEqual(info.score(for: "current fox"), -3)
         XCTAssertNil(info.score(for: "OLD FOX"), "A legacy alias must not inherit another callsign's score")
-        XCTAssertNil(try decode(["names": ["NEW FOX"]]).score(for: "NEW FOX"), "Missing score data is unavailable, not zero")
+        let unused = try decode(["names": ["NEW FOX"]])
+        XCTAssertEqual(unused.score(for: "new fox"), 0, "An authenticated account without a public profile starts at zero")
+        XCTAssertNil(unused.score(for: "ANOTHER FOX"), "An absent callsign never borrows a new account's zero score")
+        let sigma = try decode(["names": ["Σnow"], "publicProfile": ["name": "Σnow", "score": 17]])
+        XCTAssertEqual(sigma.score(for: "ςNOW"), 17)
     }
 
     @MainActor func testAuthenticatedAccountRequestKeepsKeyOutOfURLAndScoresOutOfBody() async throws {
@@ -78,6 +95,29 @@ final class AccountInfoTests: XCTestCase {
             return (200, ["released": true])
         }
         try await client.releaseAccount(baseURL: URL(string: "https://account.test")!, publicToken: key)
+    }
+
+    @MainActor func testTakenCallsignCreationHasInlineValidationError() async throws {
+        let client = transport { _ in (409, ["code": "callsign_taken", "message": "Untrusted server text"]) }
+        do {
+            _ = try await client.createAccount(baseURL: URL(string: "https://account.test")!, publicToken: key, name: "TAKEN")
+            XCTFail("A taken callsign was accepted")
+        } catch let error as GameNetworkError {
+            guard case .callsignTaken = error else { return XCTFail("Expected a callsign validation error") }
+            XCTAssertEqual(error.localizedDescription, "Used online; offline is OK.")
+        }
+    }
+
+    @MainActor func testTemporaryAccountServiceFailureCanDeferLocalRegistration() async throws {
+        for status in [408, 429, 500, 502, 503, 504] {
+            let client = transport { _ in (status, ["message": "Temporary outage"]) }
+            do {
+                _ = try await client.createAccount(baseURL: URL(string: "https://account.test")!, publicToken: key, name: "LOCAL")
+                XCTFail("An unavailable account service cannot confirm registration")
+            } catch {
+                XCTAssertTrue(GameNetworkError.canStageCallsignOffline(after: error), "HTTP \(status)")
+            }
+        }
     }
 
     @MainActor func testInvalidAndRevokedAccountKeysHaveExplicitErrors() async throws {
@@ -261,6 +301,40 @@ final class AccountInfoTests: XCTestCase {
         XCTAssertEqual(soloState?.tanks.first { $0.id == soloWelcome?.id }?.name, localName)
     }
 
+    @MainActor func testLiveP2ReleaseStopsPairButPreservesP1Account() async throws {
+        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
+            throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable independent-account server.")
+        }
+        let pair = NetworkClient(), api = NetworkClient(), restored = NetworkClient()
+        defer { pair.disconnect(); api.disconnect(); restored.disconnect() }
+        let suffix = UUID().uuidString.prefix(8), primaryName = "REL " + suffix, localName = "WING " + suffix
+        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max) }
+        let localKey = "p_" + Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        var welcome: NetworkWelcome?, notice: ServerNotice?, restoredWelcome: NetworkWelcome?
+        pair.onEvent = { event in
+            if case .welcome(let value) = event { welcome = value }
+            if case .roomEvent(.notice(let value)) = event, value.code == "account_key_invalid" { notice = value }
+        }
+        pair.connectPublic(baseURL: base, name: primaryName, colorIndex: 0, localName: localName,
+                           localPublicToken: localKey, localNewAccount: true)
+        try await waitFor { welcome != nil }
+        let primaryKey = try XCTUnwrap(welcome?.publicToken)
+        try await api.releaseAccount(baseURL: base, publicToken: localKey)
+        try await waitFor { notice != nil }
+        XCTAssertEqual(notice?.seat, 1)
+        XCTAssertFalse(pair.connected)
+        XCTAssertFalse(pair.reconnect())
+        let primaryInfo = try await api.fetchAccountInfo(baseURL: base, publicToken: primaryKey)
+        XCTAssertEqual(primaryInfo.preferredCallsign, primaryName)
+        restored.onEvent = { if case .welcome(let value) = $0 { restoredWelcome = value } }
+        restored.connectPublic(baseURL: base, name: primaryName, colorIndex: 0, publicToken: primaryKey)
+        try await waitFor { restoredWelcome != nil }
+        XCTAssertEqual(restoredWelcome?.id, welcome?.id)
+        XCTAssertNil(restoredWelcome?.localId)
+        XCTAssertNil(restoredWelcome?.localPublicToken)
+    }
+
     @MainActor func testLiveImportedKeyKeepsSavedPublicIdentityAndCallsign() async throws {
         guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
             throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable account-enabled server.")
@@ -292,6 +366,26 @@ final class AccountInfoTests: XCTestCase {
         XCTAssertEqual(nextWelcome?.id, firstWelcome?.id)
         XCTAssertEqual(nextState?.tanks.first { $0.id == nextWelcome?.id }?.name, name)
         XCTAssertEqual(nextState?.tanks.first { $0.id == nextWelcome?.id }?.score, priorScore)
+    }
+
+    @MainActor func testLiveUnicodeCallsignVariantsUseTheSameOwnedAccount() async throws {
+        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
+            throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable account-enabled server.")
+        }
+        let client = NetworkClient()
+        let suffix = UUID().uuidString.prefix(6), name = "Σ" + suffix, variant = "ς" + suffix.lowercased()
+        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max) }
+        let token = "p_" + Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let created = try await client.createAccount(baseURL: base, publicToken: token, name: name)
+        XCTAssertEqual(created.score(for: variant), 0)
+        let owned = try await client.fetchCallsignAvailability(baseURL: base, names: [variant], publicToken: token)
+        let unowned = try await client.fetchCallsignAvailability(baseURL: base, names: [variant])
+        XCTAssertEqual(owned.first?.available, true)
+        XCTAssertEqual(unowned.first?.available, false)
+        let same = try await client.createAccount(baseURL: base, publicToken: token, name: variant)
+        XCTAssertEqual(CallsignPolicy.canonical(same.preferredCallsign ?? ""), CallsignPolicy.canonical(name))
+        try await client.releaseAccount(baseURL: base, publicToken: token)
     }
 
     private func decode(_ value: [String: Any]) throws -> AccountInfo {

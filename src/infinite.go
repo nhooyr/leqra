@@ -123,6 +123,7 @@ type infiniteBullet struct {
 	flightBirth                             cannonFlightPoint
 	flightAge, flightBaseAge                float64
 	flightTracked, published, flightEmitted bool
+	cannonHits                              *map[int]int // Target ID -> life already hit by this shell.
 }
 
 type infiniteSnapshot struct {
@@ -230,6 +231,7 @@ type infiniteArena struct {
 	roomBots                                []infiniteRoomBot
 	teamScores                              [4]int
 	result                                  *infiniteResult
+	volleyDepth                             int
 	publicEntries                           map[int]infinitePublicEntry
 	publicPending                           map[int]infinitePublicEntry
 	publicArchive                           []infiniteLeader
@@ -434,7 +436,7 @@ func (a *infiniteArena) resume(c *Client, p *infinitePilot, generation uint64, n
 func (p *infinitePilot) clearControls() {
 	p.input, p.fireDown, p.firePending = Input{}, false, false
 	p.VX, p.VY = 0, 0
-	p.kit.fireHeld, p.kit.fireBlocked = false, false
+	p.kit.fireHeld, p.kit.fireBlocked, p.kit.fireRelease = false, false, false
 	p.lastStickX, p.lastStickY = 0, 0
 }
 
@@ -669,7 +671,7 @@ func (a *infiniteArena) step(now time.Time) {
 		if p.Bot {
 			input = a.botInput(p)
 		} else if now.Sub(p.inputAt) > inputTimeout {
-			input = Input{Seq: input.Seq}
+			input = Input{Seq: input.Seq, FireSuppressed: true}
 		} else {
 			input.FirePressed = p.firePending
 		}
@@ -682,7 +684,9 @@ func (a *infiniteArena) step(now time.Time) {
 		}
 		a.drive(p, input)
 		a.collectPickup(p)
-		a.weaponControl(p, input.Fire, input.FirePressed || p.Bot && input.Fire && !p.kit.fireHeld)
+		if !input.FireSuppressed {
+			a.weaponControl(p, input.Fire, input.FirePressed || p.Bot && input.Fire && !p.kit.fireHeld)
+		}
 	}
 	if a.result == nil {
 		a.resolveStarmanContacts(actors[:count])
@@ -1071,6 +1075,9 @@ func (a *infiniteArena) rankedLeaders(entries []infiniteLeader) []infiniteLeader
 		return a.publicRankedLeaders(entries)
 	}
 	entries = entries[:0]
+	if a.players == 0 {
+		return entries // Parked bot identities wait for a real controller to return.
+	}
 	for _, p := range a.pilots {
 		entries = append(entries, p.leader())
 	}

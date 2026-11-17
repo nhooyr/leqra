@@ -32,8 +32,9 @@ data class AccountInfo(
     val preferredCallsign: String?
         get() = publicProfile?.name ?: names.firstOrNull()
 
-    fun scoreForCallsign(name: String): Int? = publicProfile
-        ?.takeIf { it.name.equals(name, ignoreCase = true) }?.score
+    fun scoreForCallsign(name: String): Int? = if (publicProfile != null) {
+        publicProfile.takeIf { com.leqra.core.Callsigns.canonical(it.name) == com.leqra.core.Callsigns.canonical(name) }?.score
+    } else if (names.size == 1 && com.leqra.core.Callsigns.canonical(names[0]) == com.leqra.core.Callsigns.canonical(name)) 0 else null
 }
 
 class CheckedAccount(val origin: String, val key: String, val info: AccountInfo)
@@ -151,9 +152,15 @@ class AccountService(
         }
     }
 
-    fun signInChecked(checked: CheckedAccount, seat: Int, previousName: String, callback: (Result<CheckedAccount>) -> Unit) {
+    fun signInChecked(checked: CheckedAccount, seat: Int, previousName: String, canCommit: () -> Boolean = { true }, callback: (Result<CheckedAccount>) -> Unit) {
+        require(seat in 0..1)
+        val selected = store.selected(checked.origin, seat)?.key
+        val epoch = next(checked.origin, seat)
         inspect(checked.origin, checked.key, signIn = true) { result ->
             callback(result.mapCatching { refreshed ->
+                check(canCommit() && current(checked.origin, seat, epoch) && store.selected(checked.origin, seat)?.key == selected) {
+                    "Account changed while the request was pending."
+                }
                 store.selected(checked.origin,seat)?.let { rememberCallsign(checked.origin,seat,previousName,it.key) }
                 useChecked(refreshed,seat)
                 refreshed.info.preferredCallsign?.let { rememberCallsign(refreshed.origin,seat,it,refreshed.key) }
@@ -169,11 +176,7 @@ class AccountService(
         .map { SavedCallsign(it.purpose.removePrefix("saved:"), it.key) }
         .distinctBy { canonical(it.name) }
 
-    private fun canonical(name: String): String {
-        val clean = StringBuilder()
-        name.codePoints().forEach { if (Character.isLetterOrDigit(it) || it == 32 || it == 35 || it == 95 || it == 45) clean.appendCodePoint(it) }
-        return com.leqra.core.Callsigns.limit(clean.toString().trim()).replace(Regex(" +"), " ").lowercase(java.util.Locale.ROOT)
-    }
+    private fun canonical(name: String) = com.leqra.core.Callsigns.canonical(name)
 
     fun rememberCallsign(origin: String, seat: Int, name: String, key: String) {
         if (savedCallsigns(origin).any { it.name == name && it.key == key }) return
@@ -184,6 +187,7 @@ class AccountService(
 
     /** The candidate is durable before HTTP; the selected credential changes only after success. */
     fun switchCallsign(origin: String, seat: Int, name: String, previousName: String, localOnly: Boolean = false,
+                       canCommit: () -> Boolean = { true },
                        callback: (Result<CheckedAccount>) -> Unit) {
         val previous = store.selected(origin, seat)
         if (previous != null && previousName.isNotBlank()) rememberCallsign(origin, seat, previousName, previous.key)
@@ -200,7 +204,8 @@ class AccountService(
         val epoch = next(origin, seat)
         fun finish(info: AccountInfo, fresh: Boolean) {
             callback(runCatching {
-                check(current(origin, seat, epoch) && store.selected(origin, seat)?.key == previous?.key) { "Account changed while the request was pending." }
+                check(canCommit() && current(origin, seat, epoch) && store.selected(origin, seat)?.key == previous?.key) { "Account changed while the request was pending." }
+                check(store.selected(origin, 1 - seat)?.key != candidate) { "P1 and P2 need independent accounts." }
                 check(info.preferredCallsign?.let(::canonical) == canonical(name)) { "The saved account no longer owns that callsign." }
                 rememberCallsign(origin, seat, info.preferredCallsign!!, candidate)
                 store.select(origin, seat, candidate, fresh)
@@ -269,6 +274,7 @@ class AccountService(
         seats: List<Int>,
         requestID: String,
         freshAccount: Boolean,
+        canCommit: () -> Boolean = { true },
         callback: (Result<List<GeneratedCallsign>>) -> Unit,
     ): CancelRequest {
         require(
@@ -318,7 +324,8 @@ class AccountService(
                     ordered.mapIndexed { index, seat ->
                         val key = credentials.getValue(seat).key
                         val selected =
-                            current(normalized, seat, epochs.getValue(seat)) &&
+                            canCommit() && current(normalized, seat, epochs.getValue(seat)) &&
+                                store.selected(normalized, 1 - seat)?.key != key &&
                                 store.selected(normalized, seat)?.key == (if (freshAccount) previous[seat]?.key else key)
                         // The HTTP response proves P1's candidate is registered. A canceled
                         // request leaves it pending so a later custom-name join can start fresh.
@@ -336,7 +343,7 @@ class AccountService(
     }
 
     fun generate(origin: String, seats: List<Int>, requestID: String, callback: (Result<List<GeneratedCallsign>>) -> Unit): CancelRequest =
-        generate(origin, seats, requestID, false, callback)
+        generate(origin, seats, requestID, false, callback = callback)
 
     fun publicStatus(origin: String, callback: (Result<PublicStatus>) -> Unit): CancelRequest {
         val started = SystemClock.elapsedRealtimeNanos()
@@ -476,6 +483,7 @@ class AccountService(
         val selected = store.selected(origin, pending.seat)?.key
         val promote =
             current(origin, pending.seat, epoch) &&
+                store.selected(origin, 1 - pending.seat)?.key != pending.key &&
                 (selected == pending.previousKey ||
                     selected == pending.key ||
                     selected == null && pending.previousKey == null)

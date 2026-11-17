@@ -63,8 +63,50 @@ final class HeldFireTests: XCTestCase {
             XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind == "grenade" }, "Fresh press only pops, never also throws")
             XCTAssertTrue(arena.snapshot.effects.contains { $0.kind == "blast" })
             if !star { arena.snapshot.tanks[0].cooldown = 0 }
+            let tank = arena.snapshot.tanks[0]
+            arena.snapshot.pickups = [ArenaPickup(id: 9999, x: tank.x, y: tank.y, type: "grenade")]
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
-            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1, "Hold retries on the next ready tick")
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 0, "The detonating press must not throw again while held, even after a pickup")
+            arena.step(input: GameInput(), dt: 1 / 60)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
         } }
+    }
+
+    func testGrenadeReleaseAndFreshPressBetweenTicksUnlocksTheNextThrow() {
+        for fixed in [false, true] {
+            let arena = arena(fixed: fixed)
+            PracticeArena.applyPower(tank: &arena.snapshot.tanks[0], kind: "grenade")
+            arena.captureFire(true, player: 1)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            arena.captureFire(false, player: 1)
+            arena.captureFire(true, player: 1)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertTrue(arena.snapshot.bullets.isEmpty)
+            arena.snapshot.tanks[0].cooldown = 0
+            arena.captureFire(false, player: 1)
+            arena.captureFire(true, player: 1)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.count, 1)
+            XCTAssertEqual(arena.snapshot.tanks[0].charges, 1)
+        }
+    }
+
+    func testGrenadeDetonationLatchDoesNotSurviveRespawn() {
+        for fixed in [false, true] {
+            let arena = arena(fixed: fixed)
+            PracticeArena.applyPower(tank: &arena.snapshot.tanks[0], kind: "grenade")
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            arena.step(input: GameInput(), dt: 1 / 60)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertTrue(arena.snapshot.bullets.isEmpty)
+            arena.snapshot.tanks[0].hp = 0
+            arena.snapshot.tanks[0].respawnTime = 0
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            arena.snapshot.tanks[0].invulnerable = 0
+            arena.snapshot.tanks[0].spawnProtected = false
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertTrue(arena.snapshot.bullets.contains { $0.owner == 1 }, "A new life must retry held fire")
+        }
     }
 }

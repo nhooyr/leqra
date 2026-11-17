@@ -93,18 +93,19 @@ type mazeCell struct {
 	seen       bool
 }
 type Input struct {
-	Seq         uint64  `json:"seq"`
-	Forward     bool    `json:"forward"`
-	Reverse     bool    `json:"reverse"`
-	Left        bool    `json:"left"`
-	Right       bool    `json:"right"`
-	Fire        bool    `json:"fire"`
-	FirePressed bool    `json:"-"` // Server-latched edge; clients cannot forge it.
-	StickX      float64 `json:"stickX"`
-	StickY      float64 `json:"stickY"`
-	AimOnly     bool    `json:"aimOnly,omitempty"`  // The direction turns the tank; keyboard drive still sets throttle.
-	TouchAim    bool    `json:"touchAim,omitempty"` // Touch joystick steering uses the faster turn curve.
-	SnapAim     bool    `json:"snapAim,omitempty"`  // Direct touch aiming rotates in place immediately.
+	Seq            uint64  `json:"seq"`
+	Forward        bool    `json:"forward"`
+	Reverse        bool    `json:"reverse"`
+	Left           bool    `json:"left"`
+	Right          bool    `json:"right"`
+	Fire           bool    `json:"fire"`
+	FirePressed    bool    `json:"-"` // Server-latched edge; clients cannot forge it.
+	FireSuppressed bool    `json:"-"` // Stale controls are neutral, not a physical release.
+	StickX         float64 `json:"stickX"`
+	StickY         float64 `json:"stickY"`
+	AimOnly        bool    `json:"aimOnly,omitempty"`  // The direction turns the tank; keyboard drive still sets throttle.
+	TouchAim       bool    `json:"touchAim,omitempty"` // Touch joystick steering uses the faster turn curve.
+	SnapAim        bool    `json:"snapAim,omitempty"`  // Direct touch aiming rotates in place immediately.
 }
 type Tank struct {
 	AmmoEpoch      uint64            `json:"ammoEpoch,omitempty"`
@@ -123,6 +124,7 @@ type Tank struct {
 	AI             *BotState         `json:"-"`
 	fireHeld       bool              // Last simulated button state.
 	fireBlocked    bool              // A grenade acted last sample; bots release before a fresh detonation press.
+	fireRelease    bool              // A remote detonation consumes this held activation until release.
 	ID             int               `json:"id"`
 	Name           string            `json:"name"`
 	KilledBy       string            `json:"killedBy,omitempty"`
@@ -188,6 +190,7 @@ type Bullet struct {
 	flightBirth                             cannonFlightPoint
 	flightAge, flightBaseAge                float64
 	flightTracked, published, flightEmitted bool
+	cannonHits                              *map[int]int // Target ID -> life already hit by this shell.
 }
 
 func (b *Bullet) reflect(wall RayHit) {
@@ -707,8 +710,9 @@ func (g *Game) control(t *Tank, in Input, dt float64) {
 		t.AckSteps++
 	}
 	pressed := in.FirePressed // Only the hub may create an online press edge.
-	t.fireHeld = in.Fire
-	g.weaponControl(t, in.Fire, pressed)
+	if !in.FireSuppressed {
+		g.weaponControl(t, in.Fire, pressed)
+	}
 }
 
 func steerTank(angle float64, in Input, turnScale, dt float64) (float64, float64) {
@@ -765,12 +769,20 @@ func (g *Game) weaponControl(t *Tank, held, pressed bool) {
 	}
 	t.fireHeld = held
 	t.fireBlocked = false
+	if !held || pressed {
+		t.fireRelease = false
+	}
+	if t.fireRelease {
+		t.fireBlocked = held
+		return
+	}
 	if t.SpawnProtected && t.Invulnerable > 0 {
 		return
 	}
 	if pressed {
 		if g.detonateOwned(t) {
 			t.fireBlocked = held
+			t.fireRelease = held
 			return
 		}
 	}
@@ -908,6 +920,26 @@ func (g *Game) fire(t *Tank) bool {
 			if kind == "homing" || kind == "grenade" {
 				b.SeekDelay = missileWallDelay
 			}
+		}
+		if kind == "cannon" {
+			b.X, b.Y = launch.x, launch.y
+			b.beginFlight(b.X, b.Y, float64(g.Tick-1))
+			hit, hitOK := g.projectileWallHit(kind, b.X, b.Y, cs*travel, sn*travel, b.R)
+			limit := 1.0
+			if hitOK {
+				limit = hit.T
+			}
+			g.cannonSegment(b, cs*travel*limit, sn*travel*limit, 0, 0)
+			b.X += cs * travel * limit
+			b.Y += sn * travel * limit
+			if hitOK {
+				b.X += hit.NX * .12
+				b.Y += hit.NY * .12
+				b.reflect(hit)
+				b.ensureFlight().advance(b.X, b.Y, float64(g.Tick-1), true)
+			}
+			g.Bullets = append(g.Bullets, b)
+			continue
 		}
 		// Cannon ignores internal walls, but even its muzzle respects the arena rim.
 		hit, hitOK := g.projectileWallHit(kind, launch.x, launch.y, cs*travel, sn*travel, b.R)
@@ -1255,7 +1287,7 @@ func (g *Game) guideGrenade(b *Bullet, dt, lifeBefore float64) {
 func (g *Game) projectileEvent(kind string, b *Bullet, radius float64) {
 	g.nextEvent++
 	e := Event{Tick: g.Tick, Generation: g.Generation, ShotSerial: b.ShotSerial, SpawnSerial: b.SpawnSerial, Pellet: b.Pellet, ID: g.nextEvent, Type: kind, X: b.X, Y: b.Y, Color: b.Color, Player: -1, Owner: b.Owner, Radius: radius}
-	if kind == "impact" || kind == "blast" || kind == "projectileFlight" {
+	if kind == "impact" && b.Kind != "cannon" || kind == "blast" || kind == "projectileFlight" {
 		e.Flight = b.finishFlight()
 	}
 	g.events = append(g.events, e)
@@ -1314,6 +1346,11 @@ func (g *Game) projectileTankImpact(b *Bullet, target *Tank) {
 		g.detonate(b) // Contact makes one blast; shields absorb one hit.
 		return
 	}
+	if b.Kind == "cannon" {
+		g.projectileEvent("impact", b, 32)
+		g.hurt(target, b)
+		return
+	}
 	b.Dead = true
 	if b.Kind == "homing" {
 		g.projectileEvent("impact", b, 25)
@@ -1359,7 +1396,17 @@ func (g *Game) updateBullets(dt float64) {
 			}
 			dx, dy := b.VX*remaining, b.VY*remaining
 			wall, wallOK := g.projectileWallHit(b.Kind, b.X, b.Y, dx, dy, b.R)
-			target, first := g.projectileTankHit(b, b.X, b.Y, dx, dy)
+			var target *Tank
+			first := 2.0
+			if b.Kind == "cannon" {
+				limit := 1.0
+				if wallOK {
+					limit = wall.T
+				}
+				g.cannonSegment(b, dx*limit, dy*limit, b.Age-remaining, remaining*limit)
+			} else {
+				target, first = g.projectileTankHit(b, b.X, b.Y, dx, dy)
+			}
 			if target != nil && (!wallOK || first <= wall.T) {
 				b.X += dx * first
 				b.Y += dy * first

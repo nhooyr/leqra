@@ -89,13 +89,23 @@ final class CannonFlightTests: XCTestCase {
             arena.snapshot.tanks.append(ArenaTank(id: 2, x: 456, y: 420, bot: true, cooldown: 999))
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
             XCTAssertEqual(arena.snapshot.tanks[1].hp, 0, kind)
-            XCTAssertTrue(arena.snapshot.bullets.isEmpty || kind == "scatter", kind)
+            XCTAssertTrue(arena.snapshot.bullets.isEmpty || kind == "scatter" || kind == "cannon", kind)
             let presented = arena.presentationSnapshot(fraction: 0, now: 0)
             XCTAssertTrue(presented.bullets.contains { $0.owner == 1 && $0.kind == kind }, kind)
             XCTAssertEqual(presented.tanks[1].hp, 1, kind)
+            if kind == "cannon" {
+                let shell = try XCTUnwrap(presented.bullets.first { $0.kind == "cannon" })
+                XCTAssertLessThanOrEqual(hypot(shell.x - presented.tanks[1].x, shell.y - presented.tanks[1].y), 31.0000001)
+            }
             XCTAssertFalse(presented.effects.contains { $0.flight != nil && ["impact", "blast"].contains($0.kind) }, kind)
             XCTAssertEqual(arena.snapshot.tanks[1].hp, 0)
             let endpoint = arena.presentationSnapshot(fraction: 0, now: 0.05)
+            if kind == "cannon" {
+                XCTAssertTrue(endpoint.bullets.contains { $0.kind == "cannon" })
+                XCTAssertEqual(endpoint.tanks[1].hp, 0)
+                XCTAssertTrue(endpoint.effects.contains { $0.kind == "hit" })
+                continue
+            }
             let terminal = try XCTUnwrap(arena.snapshot.effects.first { $0.flight != nil }?.flight, kind)
             let bullet = try XCTUnwrap(endpoint.bullets.first { $0.id == terminal.id }, kind)
             XCTAssertEqual(bullet.x, terminal.points.last?.x)
@@ -108,7 +118,7 @@ final class CannonFlightTests: XCTestCase {
         }
     }
 
-    func testWinningPracticeCannonFlightFinishesAfterTheSimulationStops() {
+    func testWinningPracticeCannonContactFinishesWhileItsShellRemains() {
         let arena = PracticeArena(seed: 42, name: "Human", colorIndex: 0, botCount: 0)
         var rules = RoomRules(); rules.infinity = true; rules.infinityTarget = 1
         arena.configure(rules: rules)
@@ -122,7 +132,7 @@ final class CannonFlightTests: XCTestCase {
         arena.step(input: GameInput(forward: true, fire: true), dt: 1 / 60)
         XCTAssertEqual(arena.snapshot, authority)
         XCTAssertFalse(arena.presentationSnapshot(fraction: 0, now: 0.1).bullets.isEmpty)
-        XCTAssertTrue(arena.presentationSnapshot(fraction: 0, now: 0.11).bullets.isEmpty)
+        XCTAssertFalse(arena.presentationSnapshot(fraction: 0, now: 0.11).bullets.isEmpty)
         XCTAssertFalse(arena.hasPendingProjectileFlights)
         XCTAssertEqual(arena.snapshot, authority)
     }

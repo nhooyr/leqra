@@ -24,7 +24,7 @@ func TestOwnedProjectilesPassThroughShooter(t *testing.T) {
 			for i := 0; i < 30 && !b.Dead; i++ {
 				g.updateBullets(tickDT)
 			}
-			if !owner.Alive || owner.ShieldCharges != 2 || owner.Invulnerable != 0 || enemy.Alive || !b.Dead {
+			if !owner.Alive || owner.ShieldCharges != 2 || owner.Invulnerable != 0 || enemy.Alive || b.Dead == (weapon.kind == "cannon") {
 				t.Fatalf("%q at age %v: owner must be untouched and enemy must be hit", weapon.kind, age)
 			}
 		}

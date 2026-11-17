@@ -19,27 +19,56 @@ function eventTarget(){
   getBoundingClientRect(){return {left:0,top:0,width:500,height:500};},setPointerCapture(id){this.captured=id;},focus(){this.focused=true;}
  };
 }
-function boot(mode='room'){
+function boot(mode='room',mobile=false){
  const p1={id:3,localIndex:0,alive:true,x:100,y:100,angle:0},p2={id:5,localIndex:1,alive:true,x:100,y:100,angle:0};
  const canvas=eventTarget(),window=eventTarget(),elements=new Map(),shots=[],packets=[],saved=new Map();
  const bindings=[{forward:'KeyW',reverse:'KeyS',left:'KeyA',right:'KeyD',fire:'KeyQ'},{forward:'ArrowUp',reverse:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',fire:'Space'}];
- const s={Net,mode,phase:'playing',now:1000,intermission:false,modal:false,chat:false,bindingCapture:null,canvas,window,tanks:[p1,p2],keys:new Set(),firePresses:new Set(),firePointers:new Set(),
+ const s={Net,mode,bindings,navigator:{maxTouchPoints:mobile?5:0},hasLocalP2:()=>true,phase:'playing',now:1000,intermission:false,modal:false,chat:false,bindingCapture:null,canvas,window,tanks:[p1,p2],keys:new Set(),firePresses:new Set(),firePointers:new Set(),
   online:{id:p1.id,connected:true,menu:false,snapshots:[{received:999}]},performance:{now:()=>s.now},document:{hidden:false,querySelector:()=>s.modal?{}:null,querySelectorAll:()=>s.modal?[{open:true}]:[]},
   mouseAim:{active:false,x:0,y:0},stick:{x:0,y:0,mag:0},combatPrefs:{visual:false,audio:false,fps:true,performance:true},localStorage:{getItem:key=>saved.get(key)||null,setItem:(key,value)=>saved.set(key,value)},cssW:500,cssH:500,offsetX:10,offsetY:20,scale:.5,
   BOOST_SPEED_PER_STACK:.65,BOOST_TURN_PER_STACK:.25,angleDelta:Net.delta,clamp:Net.clamp,
   $(id){if(!elements.has(id))elements.set(id,eventTarget());return elements.get(id);},
   secondLocal:()=>p2,secondaryID:()=>p2.id,localPlayerID:()=>p1.id,controlledTank:()=>p1,chatHasFocus:()=>s.chat,survivalBreak:()=>s.intermission,
   keyForAction:(player,action,code)=>bindings[player][action]===code,heldAction:(player,action)=>s.keys.has(bindings[player][action]),isControlKey:code=>bindings.some(b=>Object.values(b).includes(code)),isWeaponKey:code=>bindings.some(b=>b.fire===code),
-  primaryFireHeld:()=>s.firePointers.size>0||s.keys.has('KeyQ'),primaryFireKey:code=>code==='KeyQ',initAudio(){},primeAudioUnlock(){},sendOnlineInput(){packets.push(s.onlineControls());},
+  primaryFireHeld:()=>s.heldAction(0,'fire')||s.firePointers.size>(s.hardwareUsesP2()?s.mouseAim.firePointers?.size||0:0),primaryFireKey:code=>s.keyForAction(0,'fire',code),initAudio(){},primeAudioUnlock(){},sendOnlineInput(){packets.push(s.onlineControls());},
   speedCount:()=>0,moveTank(t,dx,dy){t.x+=dx;t.y+=dy;},weaponControl(t,held,pressed){if(pressed)shots.push(t.id);},featureNotice(id,text,error){s.preferenceNotice={id,text,error};},syncFeatureSummary(){s.summaryRefreshes=(s.summaryRefreshes||0)+1;},syncSidebarContext(){s.sidebarRefreshes=(s.sidebarRefreshes||0)+1;}
  };
  vm.createContext(s);
- for(const name of ['clearInput','humanControl','onlineControls','composingKey','arenaKeyBlocked','readCombatPrefs','setMouseControlEnabled','storePerformancePrefs'])vm.runInContext(declaration(name),s);
+ for(const name of ['hardwareUsesP2','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','secondaryFireHeld','mouseControlledTank','clearInput','humanControl','onlineControls','composingKey','arenaKeyBlocked','readCombatPrefs','setMouseControlEnabled','storePerformancePrefs'])vm.runInContext(declaration(name),s);
  const start=source.indexOf('// All input paths');
  vm.runInContext(source.slice(start,source.indexOf('// Dialogs and the sidebar',start)),s);
  return{s,p1,p2,canvas,window,shots,packets,saved};
 }
 function close(a,b){assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);}
+
+test('paired touch devices route both keyboard layouts and mouse to P2 while touch remains P1',()=>{
+ for(const mode of ['room','online']){
+  const {s,p1,p2,canvas,window,shots}=boot(mode,true);
+  for(const code of ['KeyW','ArrowUp']){window.emit('keydown',{code});assert.equal(s.heldAction(0,'forward'),false);assert.equal(s.heldAction(1,'forward'),true);window.emit('keyup',{code});}
+  canvas.emit('pointermove');canvas.emit('pointerdown',{buttons:1});
+  assert.equal(s.primaryFireHeld(),false);assert.equal(s.secondaryFireHeld(),true);
+  assert.equal(s.onlineControls().aimOnly,false);assert.equal(s.onlineControls(true).aimOnly,true);
+  assert.equal(s.onlineControls().fire,false);assert.equal(s.onlineControls(true).fire,true);
+  if(mode==='room'){s.humanControl(p1,Net.STEP);s.humanControl(p2,Net.STEP);
+   assert.equal(p1.angle,0);assert.ok(p2.angle>0);assert.deepEqual(shots,[p2.id]);}
+  s.$('fireBtn').emit('pointerdown',{pointerType:'touch',pointerId:88,buttons:1});
+  assert.equal(s.primaryFireHeld(),true);assert.equal(s.secondaryFireHeld(),true);
+  window.emit('pointerup');assert.equal(s.primaryFireHeld(),true);assert.equal(s.secondaryFireHeld(),false);
+  s.$('fireBtn').emit('pointerup',{pointerType:'touch',pointerId:88});assert.equal(s.primaryFireHeld(),false);
+ }
+});
+
+test('a living P2 can use the mouse while P1 is respawning on a paired touch device',()=>{
+ const {s,p1,p2,canvas,shots}=boot('room',true);p1.alive=false;
+ canvas.emit('pointermove');canvas.emit('pointerdown',{buttons:1});s.humanControl(p2,Net.STEP);
+ assert.ok(s.mouseAim.active);assert.deepEqual(shots,[p2.id]);
+ s.clearInput();assert.equal(s.secondaryFireHeld(),false);assert.equal(s.mouseAim.active,false);
+});
+
+test('pausing or clearing controls also releases a consumed grenade detonation hold',()=>{
+ const {s,p1,p2}=boot();p1.detonationHeld=p2.detonationHeld=true;s.keys.add('KeyQ');s.clearInput();
+ assert.equal(p1.detonationHeld,false);assert.equal(p2.detonationHeld,false);assert.equal(s.keys.size,0);
+});
 
 test('all four mouse aim and fire combinations are independent offline and online',()=>{
  for(const mode of ['room','online'])for(const aim of [false,true])for(const fire of [false,true]){

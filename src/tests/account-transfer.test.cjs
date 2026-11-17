@@ -57,6 +57,15 @@ test('saved callsign scores load independently without signing in and failures n
  assert.equal(s.publicIdentityToken(),oldKey);
 });
 
+test('a server-confirmed new callsign starts at zero before its first public game',()=>{
+ const {s}=boot();
+ assert.equal(s.accountScoreLabel({names:['Fresh']},'fresh'),'Score: 0');
+ assert.equal(s.accountScoreLabel({names:['Fresh']}),'Score: 0');
+ assert.equal(s.accountScoreLabel({names:['Fresh']},'Other'),'Score unavailable');
+ assert.equal(s.accountScoreLabel({names:[]},'Fresh'),'Score unavailable');
+ assert.equal(s.accountScoreLabel({names:['Fresh'],publicProfile:{name:'Other',score:15}},'Fresh'),'Score unavailable');
+});
+
 test('stale saved-score replies cannot overwrite a reopened account menu',async()=>{
  const {s,$,requests}=boot();s.saveCallsignAccount('SAVED',key);const dialog=$('accountDialog');
  dialog.accountSavedScores=new Map();s.loadSavedCallsignScores(oldKey);const old=requests[0];

@@ -24,7 +24,7 @@ __projectileProbe.fixedOffline=function(kind,ending=false){
  const p=this.fixedSetup(kind),a=this.realNow();const fired=fire(p),fireMs=this.realNow()-a;if(ending)finishRound(0);
  const b=this.realNow();render();const renderMs=this.realNow()-b;
  const result={fired,dead:!tanks[1].alive,draws:[...this.draws],lasers:this.lasers,fireMs,renderMs};
- this.draws=[];this.clock+=70;render();result.expired=!this.draws.some(b=>b.flight);return result;
+ this.draws=[];this.clock+=70;render();this.draws=[];this.clock+=1000/60;render();result.expired=!this.draws.some(b=>b.flight);return result;
 };
 __projectileProbe.fixedNetwork=function(kind,ping,ending=false,published=false){
  this.fixedSetup('regular');const base=tanks.map(t=>({...t,alive:true,shotSerial:0,spawnSerial:1}));
@@ -58,7 +58,7 @@ __projectileProbe.infinitySetup=function(kind){
 __projectileProbe.infinityOffline=function(kind,ending=false){
  const w=this.infinitySetup(kind);if(ending)w.rules.infinityTarget=1;
  const a=this.realNow();fireShot(w,w.tanks[0]);const fireMs=this.realNow()-a,b=this.realNow();draw(w,this.clock,0);const renderMs=this.realNow()-b;
- const result={dead:w.tanks[1].hp===0,draws:[...this.draws],lasers:this.lasers,fireMs,renderMs};this.draws=[];this.clock+=70;draw(w,this.clock,.07);result.expired=!this.draws.some(b=>b.flight);window.leqraInfinity.close();return result;
+ const result={dead:w.tanks[1].hp===0,draws:[...this.draws],lasers:this.lasers,fireMs,renderMs};this.draws=[];this.clock+=70;draw(w,this.clock,.07);this.draws=[];this.clock+=1000/60;draw(w,this.clock,1/60);result.expired=!this.draws.some(b=>b.flight);window.leqraInfinity.close();return result;
 };
 __projectileProbe.infinityNetwork=function(kind,ping,ending=false,published=false){
  const w=this.infinitySetup('regular');w.online=true;w.joined=false;w.room={code:'PROBE',token:'synthetic'};socket={readyState:WebSocket.OPEN,send(){},close(){}};const ws=socket;
@@ -116,17 +116,17 @@ const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg'
    const ui=await make(profile,profile.name[0]+'U');await ui.evaluate(()=>__test.setLocalRules({...__test.defaultRoomRules(),infinity:true,infinityRandomBots:true}));
    let rectangle;
    for(const rate of [.5,1,2,4]){
-    await ui.evaluate(()=>document.getElementById('roomRulesBtn').click());await ui.locator('#rule-infinityBotSpawnRate').selectOption(String(rate));
-    const rect=await ui.locator('#rule-infinityBotSpawnRate').boundingBox();if(rectangle)check(Math.abs(rect.height-rectangle.height)<.2&&Math.abs(rect.width-rectangle.width)<.2,profile.name+' '+rate+'x rate retains field size');rectangle=rect;
-    await ui.locator('#applyRulesBtn').click();check(await ui.evaluate(rate=>__test.currentRules().infinityBotSpawnRate===rate&&__test.snapshotPreset().rules.infinityBotSpawnRate===rate,rate),profile.name+' '+rate+'x rate saves to room and preset');
+    await ui.evaluate(()=>document.getElementById('roomRulesBtn').click());await ui.locator('#rule-infinityBotSpawnRate-normal').selectOption(String(rate));
+    const rect=await ui.locator('#rule-infinityBotSpawnRate-normal').boundingBox();if(rectangle)check(Math.abs(rect.height-rectangle.height)<.2&&Math.abs(rect.width-rectangle.width)<.2,profile.name+' '+rate+'x rate retains field size');rectangle=rect;
+    await ui.locator('#applyRulesBtn').click();check(await ui.evaluate(rate=>__test.currentRules().infinityBotSpawnRates.normal===rate&&__test.snapshotPreset().rules.infinityBotSpawnRates.normal===rate,rate),profile.name+' '+rate+'x rate saves to room and preset');
    }
-   await ui.reload();await ui.waitForFunction(()=>window.__test,null,{polling:20});check(await ui.evaluate(()=>__test.currentRules().infinityBotSpawnRate===4),profile.name+' local spawn rate survives reload');
+   await ui.reload();await ui.waitForFunction(()=>window.__test,null,{polling:20});check(await ui.evaluate(()=>__test.currentRules().infinityBotSpawnRates.normal===4),profile.name+' local spawn rate survives reload');
    await ui.locator('#copyInviteBtn').click();await ui.waitForFunction(()=>__test.online.connected&&__test.phase==='onlineLobby',null,{polling:20});
-   for(const rate of [.5,1,2,4]){await ui.evaluate(()=>document.getElementById('roomRulesBtn').click());await ui.locator('#rule-infinityBotSpawnRate').selectOption(String(rate));await ui.locator('#applyRulesBtn').click();await ui.waitForFunction(rate=>__test.online.roomData?.rules.infinityBotSpawnRate===rate,rate,{polling:20});check(true,profile.name+' '+rate+'x rate roundtrips through Go host-owned rules');}
-   await ui.evaluate(()=>{document.getElementById('roomRulesBtn').click();document.getElementById('rule-infinityBotSpawnRate').scrollIntoView({block:'center'});});
-   const visibleRate=await ui.locator('#rule-infinityBotSpawnRate').evaluate(node=>{const c=document.createElement('canvas').getContext('2d'),s=getComputedStyle(node),r=node.getBoundingClientRect();c.font=s.font;return{fits:c.measureText(node.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=r.width,y:r.y,bottom:r.bottom};});
+   for(const rate of [.5,1,2,4]){await ui.evaluate(()=>document.getElementById('roomRulesBtn').click());await ui.locator('#rule-infinityBotSpawnRate-normal').selectOption(String(rate));await ui.locator('#applyRulesBtn').click();await ui.waitForFunction(rate=>__test.online.roomData?.rules.infinityBotSpawnRates.normal===rate,rate,{polling:20});check(true,profile.name+' '+rate+'x rate roundtrips through Go host-owned rules');}
+   await ui.evaluate(()=>{document.getElementById('roomRulesBtn').click();document.getElementById('rule-infinityBotSpawnRate-normal').scrollIntoView({block:'center'});});
+   const visibleRate=await ui.locator('#rule-infinityBotSpawnRate-normal').evaluate(node=>{const c=document.createElement('canvas').getContext('2d'),s=getComputedStyle(node),r=node.getBoundingClientRect();c.font=s.font;return{fits:c.measureText(node.selectedOptions[0].textContent).width+parseFloat(s.paddingLeft)+parseFloat(s.paddingRight)<=r.width,y:r.y,bottom:r.bottom};});
    check(visibleRate.fits&&visibleRate.y>=0&&visibleRate.bottom<=profile.height,profile.name+' full selected rate and interval fit visibly');
-   await ui.screenshot({path:path.join(out,profile.name+'-spawn-rate.png'),fullPage:true});await ui.locator('#defaultRulesBtn').click();check(await ui.locator('#rule-infinityBotSpawnRate').inputValue()==='2',profile.name+' Defaults restores doubled cadence');await ui.screenshot({path:path.join(out,profile.name+'-spawn-defaults.png'),fullPage:true});await ui.locator('#applyRulesBtn').click();await ui.waitForFunction(()=>__test.online.roomData?.rules.infinityBotSpawnRate===2,null,{polling:20});await ui.context().close();
+   await ui.screenshot({path:path.join(out,profile.name+'-spawn-rate.png'),fullPage:true});await ui.locator('#defaultRulesBtn').click();check(await ui.locator('#rule-infinityBotSpawnRate-normal').inputValue()==='2',profile.name+' Defaults restores doubled cadence');await ui.screenshot({path:path.join(out,profile.name+'-spawn-defaults.png'),fullPage:true});await ui.locator('#applyRulesBtn').click();await ui.waitForFunction(()=>__test.online.roomData?.rules.infinityBotSpawnRates.normal===2,null,{polling:20});await ui.context().close();
   }
   check(errors.length===0,'No browser JavaScript errors');
  }catch(error){errors.push(error.message);process.exitCode=1;}

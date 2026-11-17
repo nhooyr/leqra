@@ -39,7 +39,7 @@ class HeldFireTest {
             assertTrue("Held $power retries as capacity returns",a.snapshot.bullets.any {it.id !in old})
         }
     }
-    @Test fun boostedGrenadePopRemovesTheWholeBankThenHeldThrowResumesNextTick() {
+    @Test fun boostedGrenadePopRequiresReleaseBeforeHeldThrowResumes() {
         for(fixed in listOf(false,true)) {
             val a=arena(fixed);val t=a.snapshot.tanks.first()
             PracticeArena.applyPower(t,"grenade");PracticeArena.applyPower(t,"starman")
@@ -49,8 +49,41 @@ class HeldFireTest {
             assertEquals(0,t.grenades)
             assertFalse("Pop tick cannot throw a new grenade",a.snapshot.bullets.any {it.kind=="grenade"})
             a.step(GameInput(fire=true),dt)
+            assertEquals(0,t.grenades)
+            a.step(GameInput(),dt);a.step(GameInput(fire=true),dt)
             assertEquals(1,t.grenades)
             assertEquals(1,a.snapshot.bullets.count {it.kind=="grenade"})
+        }
+    }
+
+    @Test fun pickupDuringDetonationHoldCannotThrowUntilANewPress() {
+        val a=arena(true);val t=a.snapshot.tanks.first()
+        PracticeArena.applyPower(t,"grenade")
+        a.step(GameInput(fire=true),dt)
+        a.step(GameInput(),dt);a.step(GameInput(fire=true),dt)
+        a.snapshot.pickups=listOf(ArenaPickup(id=900,x=t.x,y=t.y,type="grenade"))
+        a.step(GameInput(fire=true),dt)
+        assertTrue(a.snapshot.effects.any {it.kind=="pickup"})
+        assertFalse(a.snapshot.bullets.any {it.kind=="grenade"})
+        a.captureFire(t.id,false);a.captureFire(t.id,true)
+        a.step(GameInput(fire=true),dt)
+        assertEquals(1,a.snapshot.bullets.count {it.kind=="grenade"})
+    }
+
+    @Test fun aNewLifeDoesNotRetainThePreviousGrenadeDetonationHold() {
+        for (fixed in listOf(false, true)) {
+            val a = arena(fixed); val t = a.snapshot.tanks.first()
+            PracticeArena.applyPower(t, "grenade")
+            a.step(GameInput(fire = true), dt)
+            a.step(GameInput(), dt); a.step(GameInput(fire = true), dt)
+            assertFalse(a.snapshot.bullets.any { it.kind == "grenade" })
+            t.hp = 0; t.respawnTime = 0.0
+            a.step(GameInput(fire = true), dt)
+            val respawned = a.snapshot.tanks.first()
+            assertTrue(respawned.hp > 0); assertTrue(respawned.spawnSerial > t.spawnSerial)
+            respawned.spawnProtected = false; respawned.invulnerable = 0.0
+            a.step(GameInput(fire = true), dt)
+            assertTrue("A new life can fire while holding", a.snapshot.bullets.any { it.kind.isEmpty() })
         }
     }
 }

@@ -36,3 +36,17 @@ test('unsupported or oversized Cannon strips retain the original rendering path'
  c.getTransform=()=>({a:1,b:0,c:.6,d:.8});assert.equal(s.drawCannonTrail(bullet,c),false,'equal-scale shear retains vector rendering');
  assert.equal(s.drawCannonTrail(bullet,{}),false);assert.equal(images.length,0);
 });
+test('Showcase can brighten Cannon trails without altering ordinary trails or using the default cache',()=>{
+ let cached=0;const alphas=[];
+ const s={paintColor:color=>color,combatPrefs:{performance:true},WEBKIT_ENGINE:false,TAU:Math.PI*2,fxTime:0,drawCannonTrail(){cached++;return true;}};
+ vm.createContext(s);
+ for(const name of ['drawBullet','drawBullets']){const start=source.indexOf('function '+name+'(');vm.runInContext(source.slice(start,source.indexOf('\n}',start)+2),s);}
+ const c=new Proxy({stroke(){alphas.push(this.globalAlpha);}},{get:(target,key)=>target[key]??(()=>{})});
+ const bullet={kind:'cannon',color:'#ff9679',r:14,x:20,y:0,trail:[{x:0,y:0},{x:10,y:0},{x:20,y:0}]};
+ const expectAlphas=expected=>{assert.equal(alphas.length,expected.length);for(let i=0;i<expected.length;i++)assert.ok(Math.abs(alphas[i]-expected[i])<1e-12);};
+ s.drawBullets([bullet],c,0);expectAlphas([.23/3,.23*2/3]);
+ alphas.length=0;s.drawBullets([bullet],c,0,null,.4);expectAlphas([.4/3,.4*2/3]);
+ alphas.length=0;s.drawBullets([{...bullet,kind:'scatter'}],c,0,null,.4);expectAlphas([.23/3,.23*2/3]);
+ alphas.length=0;s.drawBullets(Array(32).fill(bullet),c,0,null,.4);assert.equal(cached,0);assert.equal(alphas.length,64);
+ alphas.length=0;s.drawBullets(Array(32).fill(bullet),c,0);assert.equal(cached,32);assert.equal(alphas.length,0);
+});

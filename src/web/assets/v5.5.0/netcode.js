@@ -674,11 +674,12 @@
   tryFire(t,held,now,options){
    const p=this.pilots.get(t.id);if(!p)return null;
    const pressed=held&&!p.held;p.held=held;
+   if(!held||pressed)p.detonationHeld=false;
    if(!options.active||!t.alive||!held)return null;
+   if(p.detonationHeld)return null;
    if(p.power&&now>=p.powerUntil)return null;
-   // A fresh press pops active grenades instead of firing on that sample.
-   // Holding afterward retries normally, including auto-throws on cooldown.
-   if(pressed&&options.grenade)return null;
+   // A detonation consumes the complete press; the next throw needs a release.
+   if(pressed&&options.grenade){p.detonationHeld=true;return null;}
    // A single pass avoids three temporary arrays on the 60 Hz rapid-fire path.
    const boosted=t.starmanTime>0,fast=boosted||t.power==='rapid';
    let pending=0,normalPending=0,slots=0,chargeUse=0;

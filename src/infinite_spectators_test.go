@@ -286,6 +286,57 @@ func TestRoomInfinitySpectatorKeepsEmptyArenaForNextRealController(t *testing.T)
 	}
 }
 
+func TestRoomInfinitySpectatorHidesParkedBotsUntilAControllerReturns(t *testing.T) {
+	s, members, room := startInfinityReconnectRoom(t, 1, false)
+	now := time.Now()
+	pair, old, rejection := tryInfinityReconnect(t, s, infiniteMessage{Code: room.Code, Token: members[0].player.Token}, now)
+	if rejection != "" {
+		t.Fatal(rejection)
+	}
+	a := pair.arena
+	room.Game.Rules.InfinityRandomBots = true
+	room.Game.Rules.InfinityBotSpawnRate = 2
+	room.Game.Rules.InfinityBotSpawnRates = spawnRateMap(map[string]float64{"dumb": 2})
+	a.rules.RandomBots = true
+	a.rules.BotSpawnRate = 2
+	a.rules.BotSpawnRates = map[string]float64{"dumb": 2}
+	fillRoamingBots(a)
+	bots := roamingBots(a)
+	if len(bots) == 0 {
+		t.Fatal("fixture did not populate roaming bots")
+	}
+	bot := bots[0]
+	bot.Score = 17
+	viewer := spectatorRoomClient(t, s, room, "Waiting for players")
+	_, observer := joinRoomObserver(t, s, room, viewer, now)
+	s.follow(observer, bot.ID, now)
+	drain(observer)
+	s.remove(old)
+	s.step(now)
+	if state := readPartySnapshot(t, observer); state.Following != 0 || state.TankCount != 0 || len(state.Tanks) != 0 || len(state.Leaders) != 0 {
+		t.Fatal("parked bot identities leaked into an empty spectator arena", state.Following, state.TankCount, len(state.Leaders))
+	}
+	s.follow(observer, bot.ID, now)
+	if !hasError(observer, "follow_invalid") {
+		t.Fatal("empty arena accepted a parked bot follow target")
+	}
+	if a.pilotByID(bot.ID) != bot || bot.Score != 17 {
+		t.Fatal("hiding the empty arena discarded a parked bot's identity or score")
+	}
+	returning, _, rejection := tryInfinityReconnect(t, s, infiniteMessage{Code: room.Code, Token: members[0].player.Token}, now)
+	if rejection != "" || returning.arena != a {
+		t.Fatal("returning controller changed the observed arena", rejection)
+	}
+	a.mu.Lock()
+	fillRoamingBots(a)
+	a.broadcast()
+	a.mu.Unlock()
+	state := readPartySnapshot(t, observer)
+	if state.Following == 0 || state.TankCount < 2 || len(state.Tanks) == 0 || a.pilotByID(bot.ID) != bot || bot.Score != 17 {
+		t.Fatal("returning controller failed to restore populated spectator view and bot identity", state.Following, state.TankCount, len(state.Tanks), a.pilotByID(bot.ID) == bot, bot.Score)
+	}
+}
+
 func TestRoomInfinitySpectatorAccountRotationRevokesViewImmediately(t *testing.T) {
 	s, _, room := startInfinityReconnectRoom(t, 1, false)
 	viewer := spectatorRoomClient(t, s, room, "Key Viewer")

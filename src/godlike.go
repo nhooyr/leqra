@@ -383,7 +383,13 @@ func (g *Game) godlikeSafeShot(t, e *Tank, angle float64) bool {
 	}
 	ex, ey := g.botLead(t, e, tuneBot("godlike"))
 	x, y, ux, uy := t.X, t.Y, math.Cos(angle), math.Sin(angle)
-	for k := 0; k < 24 && left > 1; k++ {
+	piercing := (t.Power == "cannon" || t.Power == "laser") && g.settings().FriendlyFire
+	segments := 24
+	if piercing && t.Power == "laser" {
+		segments = laserMaxSegments
+	}
+	foundTarget := false
+	for k := 0; k < segments && left > 1; k++ {
 		w, ok := g.projectileWallHit(t.Power, x, y, ux*left, uy*left, radius)
 		span := left
 		if ok {
@@ -397,12 +403,15 @@ func (g *Game) godlikeSafeShot(t, e *Tank, angle float64) bool {
 			if ally == nil || !ally.Alive || g.isOpponent(t.ID, ally) || !g.canDamage(t.ID, ally) {
 				continue
 			}
-			if at, yes := circleHit(x, y, ux*span, uy*span, ally.X, ally.Y, ally.R+radius); yes && at < hit {
+			if at, yes := circleHit(x, y, ux*span, uy*span, ally.X, ally.Y, ally.R+radius); yes && (at < hit || piercing) {
 				return false
 			}
 		}
 		if hit <= 1 {
-			return true
+			if !piercing {
+				return true
+			}
+			foundTarget = true
 		}
 		if !ok {
 			break
@@ -417,7 +426,7 @@ func (g *Game) godlikeSafeShot(t, e *Tank, angle float64) bool {
 			uy = -uy
 		}
 	}
-	return false
+	return foundTarget
 }
 
 // Each ballistic segment is generated once and then reused by every candidate.

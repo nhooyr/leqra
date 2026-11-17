@@ -10,7 +10,7 @@ function boot(){
  const noop=()=>{},ctx=new Proxy({fillRect(){events.push('draw background');}},{get:(t,k)=>t[k]||noop});
  const s={canvas,ctx,wrap:{getBoundingClientRect:()=>bounds},stick:{},cssW:900,cssH:600,dpr:1,W:588,H:588,scale:1,offsetX:0,offsetY:0,touchUI:false,touchLandscape:false,WEBKIT_ENGINE:false,arenaResizeFrame:0,renderPixelRatio:()=>1,isSpectating:()=>false,requestAnimationFrame:fn=>frames.push(fn),theme:{},paintColor:x=>x,shake:0,mapCanvas:null,pickups:[],tanks:[],bullets:[],rings:[],particles:[],drawObjectives:noop,drawAimingGuides:noop,drawFlags:noop,drawMissileWarnings:noop,drawLasers:noop};
  s.mode='room';s.phase='menu';s.accumulator=0;
- s.document={body:{classList:{contains:()=>false}}};vm.createContext(s);for(const name of ['resize','scheduleArenaResize','stabilizeArenaLayout','syncCanvasSize','drawBullets','renderArena','render'])vm.runInContext(declaration(name),s);
+ s.document={body:{classList:{contains:()=>false}}};vm.createContext(s);for(const name of ['resize','scheduleArenaResize','stabilizeArenaLayout','syncCanvasSize','drawBullets','placeTankLabels','renderArena','render'])vm.runInContext(declaration(name),s);
  return{s,events,bounds,frames};
 }
 test('layout and ResizeObserver callbacks leave the last drawn canvas intact until the next render',()=>{

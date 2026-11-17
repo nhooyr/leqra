@@ -2,11 +2,13 @@ package com.leqra.android
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.Configuration
+import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -84,13 +86,14 @@ class MainActivity : Activity() {
     private lateinit var loadout: NativeHudView
     private lateinit var soundButton: Button
     private lateinit var menuButton: Button
-    private lateinit var chatButton: Button
     private lateinit var brandSubtitle: TextView
     private lateinit var brandMark: View
     private var readyScroll: ScrollView? = null
     private var connecting: LinearLayout? = null
     private var scores: View? = null
     private var dialog: AlertDialog? = null
+    private var showcaseDialog: Dialog? = null
+    private var showcaseReturnOnResume = false
     private var readySignature = ""
     private var settingsOpen = false
     private var playersOpen = false
@@ -116,14 +119,27 @@ class MainActivity : Activity() {
     )
 
     private val controllers = mutableMapOf<Int, ControllerState>()
+    private val controllerDevices = object : InputManager.InputDeviceListener {
+        private fun reset() {
+            // Removed hardware emits no final release. Clear hardware inputs
+            // without releasing P1's independent touch controls.
+            controllers.clear()
+            pressed.clear()
+            if (::session.isInitialized && ::arena.isInitialized) {
+                arena.clearMouseControls()
+                keyboardInput()
+            }
+        }
+        override fun onInputDeviceAdded(deviceId: Int) = reset()
+        override fun onInputDeviceRemoved(deviceId: Int) = reset()
+        override fun onInputDeviceChanged(deviceId: Int) = reset()
+    }
     private var frameCount = 0
     private var fpsStarted = 0L
     private var fps = 0
     private var queueDialog = false
     private var lastResultKey: String? = null
-    private var chatHistory: TextView? = null
     private var scoreSignature = ""
-    private var chatSignature = ""
     private var loadoutLayoutKey = ""
     private var refreshRateKey = ""
     private var previousPlaying = false
@@ -131,6 +147,7 @@ class MainActivity : Activity() {
     private var keepAwake: Boolean? = null
     private var soundState: Boolean? = null
     private var readyPlay: Button? = null
+    private val readyOnlineActions = mutableListOf<Button>()
     private var readyStatus: TextView? = null
     private var readyStartError: TextView? = null
     private val callsignFields = arrayOfNulls<EditText>(2)
@@ -171,9 +188,9 @@ class MainActivity : Activity() {
             queueDialog = false
             alert("leqra", message)
         }
-        session.notifyChat = { audio.notifyChat() }
         session.emitAudioCue = { audio.play(it) }
         buildShell()
+        getSystemService(InputManager::class.java).registerInputDeviceListener(controllerDevices, main)
         if (Build.VERSION.SDK_INT >= 33)
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
@@ -248,6 +265,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (showcaseReturnOnResume) showcaseDialog?.dismiss()
         foreground = true
         if (::arena.isInitialized) {
             session.foreground()
@@ -257,6 +275,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        if (showcaseDialog != null) showcaseReturnOnResume = true
         foreground = false
         availability?.cancel()
         if (::arena.isInitialized) {
@@ -270,6 +289,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        showcaseDialog?.dismiss()
+        getSystemService(InputManager::class.java).unregisterInputDeviceListener(controllerDevices)
         main.removeCallbacksAndMessages(null)
         availability?.cancel()
         dialog?.dismiss()
@@ -282,56 +303,14 @@ class MainActivity : Activity() {
     private fun buildShell() {
         root = column(this).apply { setBackgroundColor(page) }
         setContentView(root)
-        header = row(this).apply { setPadding(dp(12), dp(5), dp(8), dp(5)) }
-        val brand = row(this).apply { setPadding(0, 0, dp(8), 0) }
-        brandMark = NativeStyle.brandIcon(this)
-        brand.add(brandMark, 36, 36, gap = 0)
-        val names = column(this)
-        names.add(
-            label(this, "leqra", 17f, text, true).apply { contentDescription = "leqra" },
-            gap = 3,
-        )
-        brandSubtitle = label(this, "TANK ARENA", 10f, muted, mono = true)
-        names.add(brandSubtitle, gap = 0)
-        brand.add(names, width = -2, gap = 0)
-        header.add(brand, width = -2, gap = 0)
-        header.add(
-            label(this, "v${BuildConfig.VERSION_NAME}", 10f, muted, mono = true).apply {
-                contentDescription = "View leqra on GitHub"
-                setPadding(dp(6), dp(7), dp(6), dp(7))
-                background = background(this@MainActivity, surface, 8, 0xff34434a.toInt())
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://github.com/nhooyr/leqra"),
-                        ),
-                    )
-                }
-            },
-            width = -2,
-            gap = 0,
-        )
-        header.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
-        chatButton =
-            compactButton("") { showChat() }
-                .apply {
-                    contentDescription = "Chat"
-                    visibility = View.GONE
-                    setCompoundDrawablesWithIntrinsicBounds(
-                        NativeStyle.icon(this@MainActivity, "chat"),
-                        null,
-                        null,
-                        null,
-                    )
-                }
-        header.add(chatButton, 40, gap = 0)
-        soundButton = compactButton("SFX") { toggleSound() }
-        header.add(soundButton, 44, gap = 0)
-        menuButton = compactButton("☰") { showMenu() }.apply { contentDescription = "Open menu" }
-        header.add(menuButton, 44, gap = 0)
+        val gameHeader = NativeGameHeader(this, {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/nhooyr/leqra")))
+        }, { toggleSound() }, { showMenu() })
+        header = gameHeader
+        brandMark = gameHeader.brandMark
+        brandSubtitle = gameHeader.brandSubtitle
+        soundButton = gameHeader.soundButton
+        menuButton = gameHeader.menuButton
         root.add(header, gap = 0)
         statusLine =
             NativeStatusView(this) {
@@ -352,6 +331,7 @@ class MainActivity : Activity() {
         arena.contentDescription = "Tank arena, joystick on the left and fire on the right"
         stage.addView(arena, FrameLayout.LayoutParams(-1, -1))
         arena.onFrame = { nanos ->
+            if (session.screen == Screen.PLAYING && !session.paused && arena.hasMouseInput) keyboardInput()
             session.frame(nanos)
             if (::loadout.isInitialized && session.screen == Screen.PLAYING)
                 arena.fireProgress = loadout.advance(nanos)
@@ -434,13 +414,13 @@ class MainActivity : Activity() {
         brandSubtitle.visibility = if (landscape) View.GONE else View.VISIBLE
         brandMark.visibility =
             if (resources.configuration.screenWidthDp < 375) View.GONE else View.VISIBLE
-        chatButton.visibility = if (session.room != null) View.VISIBLE else View.GONE
         val playing = session.screen == Screen.PLAYING
         if (!playing && previousPlaying) showScores = false
         menuButton.value(if (playing) "Ⅱ" else "☰")
         val awake = playing && !session.paused
         arena.controlsLayout = playing && !session.spectating
         arena.showControls = awake && dialog == null && !session.spectating
+        arena.mouseInputEnabled = awake && dialog == null && session.hasLocalPlayer
         arena.keepScreenOn = awake
         if (keepAwake != awake) {
             keepAwake = awake
@@ -448,14 +428,14 @@ class MainActivity : Activity() {
             else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         configureLoadoutLayout()
-        loadout.visibility = if (playing && !session.spectating) View.VISIBLE else View.GONE
+        loadout.visibility = if (playing && session.hasLocalPlayer) View.VISIBLE else View.GONE
         statusLine.update(session, fps)
         val objective = if (playing) objectiveText().removePrefix("\n") else ""
         objectiveLine.value(objective)
         objectiveLine.visibility = if (objective.isEmpty()) View.GONE else View.VISIBLE
         if (playing) {
             val entering = !previousPlaying
-            if (entering && session.spectating) showScores = true
+            if (entering && !session.hasLocalPlayer) showScores = true
             if (readyScroll != null || connecting != null) hideKeyboard()
             readyScroll?.let(stage::removeView)
             readyScroll = null
@@ -472,7 +452,6 @@ class MainActivity : Activity() {
                 session.online,
             )
             arena.fireLabel = loadout.fireLabel
-            arena.fireHint = loadout.fireHint
             arena.fireAvailable = loadout.fireAvailable
             val ended = session.snapshot.phase == "matchOver" || session.snapshot.result != null
             if (!ended) lastResultKey = null
@@ -513,13 +492,6 @@ class MainActivity : Activity() {
         if (!playing) updateReadyActions()
         previousPlaying = playing
         if (showScores) updateScores()
-        chatHistory?.let { history ->
-            val key = "${session.chat.size}:${session.chat.lastOrNull()}"
-            if (key != chatSignature) {
-                chatSignature = key
-                history.value(session.chat.joinToString("\n"))
-            }
-        }
         if (queueDialog) updateQueueDialog()
         applyRefreshRate()
     }
@@ -575,8 +547,8 @@ class MainActivity : Activity() {
     }
 
     private fun syncControlSeats() {
-        val owner = session.localID.takeIf { session.screen == Screen.PLAYING }
-        val local = session.localID2.takeIf { owner != null }
+        val owner = session.localID.takeIf { session.screen == Screen.PLAYING && !session.spectating }
+        val local = session.localID2.takeIf { session.screen == Screen.PLAYING }
         if (owner != controlOwner || local != controlLocalOwner) {
             val samePrimary = owner != null && owner == controlOwner
             controlOwner = owner
@@ -645,6 +617,7 @@ class MainActivity : Activity() {
     }
 
     private fun buildReadyRoom() {
+        readyOnlineActions.clear()
         val editing = (currentFocus as? EditText)?.takeIf { it.tag is Int }
         val editingSeat = editing?.tag as? Int
         val selectionStart = editing?.selectionStart ?: 0
@@ -760,7 +733,7 @@ class MainActivity : Activity() {
                     session.findMatch()
                     showQueues()
                 },
-            ),
+            ).also { readyOnlineActions += it },
         )
         panel.add(
             button(
@@ -775,13 +748,13 @@ class MainActivity : Activity() {
                     else session.share()
                 },
                 role = if (session.online) null else "share",
-            ),
+            ).also { readyOnlineActions += it },
         )
         if (session.online)
             panel.add(button(this, "COPY SPECTATOR LINK ↗", {
                 copy("Room spectator link", "${session.server}/?room=${android.net.Uri.encode(session.roomCode ?: "")}&spectate=1")
             }))
-        panel.add(button(this, "Join another room ↗", { showJoin() }, role = "text"))
+        panel.add(button(this, "Join another room ↗", { showJoin() }, role = "text").also { readyOnlineActions += it })
         if (session.online) {
             panel.add(button(this, "LEAVE ROOM", { session.leave() }, danger = true))
             panel.add(
@@ -905,9 +878,11 @@ class MainActivity : Activity() {
                     room.optBoolean("canStart") ||
                     session.publicSelected && room.optBoolean("canStartPublicInfinity")
         readyPlay?.apply {
-            isEnabled = allowed
-            alpha = if (allowed) 1f else .45f
+            isEnabled = allowed && !session.releasingCallsign
+            alpha = if (isEnabled) 1f else .45f
         }
+        readyOnlineActions.forEach { it.isEnabled = !session.releasingCallsign; it.alpha = if (it.isEnabled) 1f else .45f }
+        callsignFields.forEach { it?.isEnabled = !session.releasingCallsign }
         readyStatus?.value(session.status)
         val startError = session.room?.optString(if (session.publicSelected) "startPublicInfinityError" else "startError") ?: session.localStartError
         val notice = startError ?: session.configurationError
@@ -1063,6 +1038,10 @@ class MainActivity : Activity() {
                     { session.command("rename_room", "code" to code.text.toString()) },
                 ),
             )
+        if (session.publicSelected) {
+            panel.add(label(this, "Turn off Public Infinity to play room modes and change their rules.", 11f, soft))
+            return
+        }
         panel.add(label(this, "CHOOSE YOUR BATTLE", 10f, muted, mono = true))
         val choices = row(this)
         GameSession.modes.forEach { (value, title) ->
@@ -1188,7 +1167,7 @@ class MainActivity : Activity() {
         } else {
             val local =
                 CheckBox(this).apply {
-                    text = "Add a local tank (P2 keyboard/gamepad)"
+                    text = "Add a local tank (P2 keyboard/mouse/gamepad)"
                     textSize = 12f
                     setTextColor(NativeStyle.text)
                     isChecked = session.localSelected
@@ -1472,7 +1451,7 @@ class MainActivity : Activity() {
                 },
             ),
         )
-        panel.add(
+        if (!session.publicSelected) panel.add(
             button(
                 this,
                 "RULES",
@@ -1490,17 +1469,6 @@ class MainActivity : Activity() {
                     {
                         dismissDialog()
                         session.restartMatch(true)
-                    },
-                ),
-            )
-        if (session.online)
-            panel.add(
-                button(
-                    this,
-                    "CHAT",
-                    {
-                        dismissDialog()
-                        showChat()
                     },
                 ),
             )
@@ -1657,12 +1625,63 @@ class MainActivity : Activity() {
         panel.add(
             label(
                 this,
-                "Drag the left joystick to steer and drive. Touch near the tank to aim in place. Hold FIRE on the right to shoot. Lift your thumb to stop.\n\nKeyboard: P1 W/S/↑/↓ to drive, A/D/←/→ to turn, Q/C/Space/Enter to fire. With P2 enabled, use W/A/S/D and Q/C for P1, arrow keys and Space/Enter for P2.\n\nGamepad: left stick to drive, A/R1/R2 to fire. A second connected gamepad controls P2.\n\nBack/Escape pauses. Swipe from an edge for Android system controls.\n\nShots ricochet off walls. Cannon pierces them. Power-ups can stack, and Starman gives rapid fire.",
+                "Drag the left joystick to steer and drive. Touch near the tank to aim in place. Hold the right control to shoot. Lift your thumb to stop.\n\nKeyboard: W/S/↑/↓ to drive, A/D/←/→ to turn, Q/C/Space/Enter to fire. Mouse: move to aim, hold the left button to fire. With P2 enabled, keyboard and mouse control P2 while touch controls P1.\n\nGamepad: left stick to drive, A/R1/R2 to fire. A second connected gamepad controls P2.\n\nBack/Escape pauses. Swipe from an edge for Android system controls.",
                 13f,
                 soft,
             ),
         )
+        panel.add(button(this, "SHOWCASE", { showShowcase() }))
         showPanel(panel, "Controls")
+    }
+
+    @android.annotation.SuppressLint("GestureBackNavigation") // Legacy Back is consumed; API33+ registers a no-op preview callback below.
+    private fun showShowcase() {
+        if (showcaseDialog != null) return
+        hideKeyboard()
+        val preview = runCatching { ShowcaseView(this, session.muted) }.getOrElse {
+            alert("Showcase", "The showcase could not be loaded.")
+            return
+        }
+        val shown = Dialog(this, android.R.style.Theme_Material_NoActionBar_Fullscreen)
+        showcaseDialog = shown
+        showcaseReturnOnResume = false
+        shown.setCancelable(false)
+        shown.setCanceledOnTouchOutside(false)
+        shown.setContentView(preview, ViewGroup.LayoutParams(-1, -1))
+        shown.setOnKeyListener { _, key, event ->
+            when (key) {
+                KeyEvent.KEYCODE_ESCAPE -> { if (event.action == KeyEvent.ACTION_UP) shown.dismiss(); true }
+                KeyEvent.KEYCODE_BACK -> true
+                else -> false
+            }
+        }
+        shown.setOnDismissListener {
+            if (showcaseDialog === shown) showcaseDialog = null
+            showcaseReturnOnResume = false
+            preview.release()
+            immersive()
+        }
+        shown.show()
+        preview.requestFocus()
+        shown.window?.apply {
+            setLayout(-1, -1)
+            addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0xff10181e.toInt()))
+            if (Build.VERSION.SDK_INT >= 30) {
+                setDecorFitsSystemWindows(false)
+                decorView.windowInsetsController?.apply {
+                    hide(WindowInsets.Type.systemBars())
+                    systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 33)
+            shown.onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY) {}
     }
 
     private fun showJoin() {
@@ -1680,6 +1699,12 @@ class MainActivity : Activity() {
         panel.add(label(this, "ROOM RULES.", 24f, accent, true))
         val draft = RuleEditorLimits.draft(session.rules)
         var teamSection: LinearLayout? = null
+        var powerSummary: TextView? = null
+        val powerDescriptions = mutableMapOf<String, TextView>()
+        fun refreshPowerHelp() {
+            powerSummary?.text = PowerupHelp.summary(draft)
+            powerDescriptions.forEach { (kind, view) -> view.text = PowerupHelp.description(kind, draft) }
+        }
         fun select(
             title: String,
             values: List<String>,
@@ -1689,7 +1714,7 @@ class MainActivity : Activity() {
         ): View {
             panel.add(label(this, title, 10f, muted, mono = true))
             val options = choice(values, values.indexOf(current).coerceAtLeast(0)) { set(values[it]) }
-                .apply { isEnabled = enabled }
+                .apply { isEnabled = enabled; contentDescription = title }
             panel.add(options)
             return options
         }
@@ -1699,6 +1724,7 @@ class MainActivity : Activity() {
             draft.mapSize,
         ) {
             draft.mapSize = it
+            refreshPowerHelp()
         }
         select(
             "FORMAT",
@@ -1713,8 +1739,10 @@ class MainActivity : Activity() {
             "PICKUP RATE",
             listOf("off", "slow", "normal", "fast", "superfast"),
             draft.pickupRate,
+            enabled = !draft.infinity,
         ) {
             draft.pickupRate = it
+            refreshPowerHelp()
         }
         if (!draft.infinity) {
             ruleStepper(
@@ -1828,32 +1856,24 @@ class MainActivity : Activity() {
             syncRoaming()
         }
         panel.add(label(this, "POWER-UPS", 10f, muted, mono = true))
-        listOf(
-                "rapid",
-                "scatter",
-                "shield",
-                "homing",
-                "grenade",
-                "speed",
-                "laser",
-                "cannon",
-                "ghost",
-                "starman",
-            )
-            .forEach { power ->
+        powerSummary = label(this, PowerupHelp.summary(draft), 11f, soft).also { panel.add(it) }
+        PowerupHelp.kinds.forEach { power ->
                 panel.add(
                     CheckBox(this).apply {
-                        text = power.replaceFirstChar(Char::uppercase)
+                        text = PowerupHelp.title(power)
                         textSize = 13f
                         setTextColor(NativeStyle.text)
-                        isChecked = power in draft.weapons
+                        isChecked = draft.infinity || power in draft.weapons
+                        isEnabled = !draft.infinity
                         setOnCheckedChangeListener { _, v ->
                             draft.weapons =
                                 if (v) (draft.weapons + power).distinct() else draft.weapons - power
+                            refreshPowerHelp()
                         }
                     },
                     gap = 0,
                 )
+                powerDescriptions[power] = label(this, PowerupHelp.description(power, draft), 11f, soft).also { panel.add(it, gap = 3) }
             }
         panel.add(
             button(
@@ -2024,8 +2044,9 @@ class MainActivity : Activity() {
             .setMessage("This permanently deletes this account's score, makes its callsign available to others, and signs out its devices. Other saved accounts are kept.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Release callsign") { _, _ ->
+                val accountDialog = dialog
                 session.releaseCallsign(key) { result ->
-                    result.onSuccess { dismissDialog(); readySignature = ""; refresh(true) }
+                    result.onSuccess { if (dialog === accountDialog) dismissDialog(); readySignature = ""; refresh(true) }
                         .onFailure { alert("Release callsign", it.message ?: "Could not release the callsign.") }
                 }
             }.show()
@@ -2048,6 +2069,8 @@ class MainActivity : Activity() {
         details.text =
             if (selected == null)
                 "Play online to create an account. Offline callsigns are always available."
+            else if (selected.registrationPending)
+                "This key and callsign are saved on this device for offline play. Going online checks availability and registers them before joining."
             else
                 "This key owns your callsign and public Infinity score. Copy it to sign in on another device. Keep it private."
         panel.add(details)
@@ -2065,7 +2088,7 @@ class MainActivity : Activity() {
                 session.renameCallsign(saved.name, seat, validate = true)
                 dismissDialog()
             }).apply {
-                isEnabled = saved.key != selected?.key
+                isEnabled = saved.key != selected?.key && !session.releasingCallsign
                 if (!isEnabled) {
                     setTextColor(android.graphics.Color.parseColor("#9b9b9b"))
                     background = background(this@MainActivity, android.graphics.Color.parseColor("#292929"), 6, android.graphics.Color.parseColor("#505050"))
@@ -2099,6 +2122,7 @@ class MainActivity : Activity() {
                             )
                             .setNegativeButton("Cancel", null)
                             .setPositiveButton("Reset key") { _, _ ->
+                                if (!session.canImportAccount) return@setPositiveButton
                                 runCatching {
                                     session.accounts.rotate(origin, seat) { result ->
                                         result
@@ -2158,7 +2182,11 @@ class MainActivity : Activity() {
                     "USE THIS KEY",
                     {
                         checked?.let { verified ->
-                            session.accounts.signInChecked(verified, seat, if (seat == 0) session.callsign else session.localCallsign) { result ->
+                            val importingDialog = dialog
+                            fun currentImport() = dialog === importingDialog && importingDialog?.isShowing == true && checked === verified && session.canImportAccount && session.server == origin
+                            session.accounts.signInChecked(verified, seat, if (seat == 0) session.callsign else session.localCallsign,
+                                canCommit = ::currentImport) { result ->
+                                if (!currentImport()) return@signInChecked
                                 result.onSuccess { signedIn ->
                                     signedIn.info.preferredCallsign?.let { name ->
                                         if (seat == 0) session.callsign = name else session.localCallsign = name
@@ -2214,6 +2242,7 @@ class MainActivity : Activity() {
                     this,
                     "REVIEW SAVED KEY ${index+1}",
                     {
+                        if (!session.canImportAccount) return@button
                         session.accounts.recover(origin, pending) { result ->
                             result
                                 .onSuccess { recovered ->
@@ -2398,32 +2427,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showChat() {
-        val panel = column(this, 16)
-        panel.add(label(this, "ROOM CHAT", 22f, accent, true))
-        val history = label(this, session.chat.joinToString("\n"), 12f, soft)
-        chatHistory = history
-        chatSignature = ""
-        panel.add(history)
-        val text = field(this, "", "Message", 180)
-        panel.add(text)
-        panel.add(
-            button(
-                this,
-                "SEND",
-                {
-                    val value = text.text.toString().trim()
-                    if (value.isNotBlank()) {
-                        session.command("chat", "channel" to "room", "text" to value)
-                        text.setText("")
-                        history.text = session.chat.joinToString("\n")
-                    }
-                },
-            ),
-        )
-        showPanel(panel, "Chat")
-    }
-
     private fun showQueues() {
         shownQueuePacket = null
         queueDialog = true
@@ -2509,14 +2512,6 @@ class MainActivity : Activity() {
         else audio.preview(cue)
     }
 
-    private fun compactButton(value: String, action: () -> Unit) =
-        button(this, value, action).apply {
-            textSize = 12f
-            minWidth = 0
-            minimumWidth = 0
-            setPadding(0, dp(8), 0, dp(8))
-        }
-
     private fun showPanel(panel: LinearLayout, title: String, secure: Boolean = false) {
         focusSuspendedPlay = false
         dialog?.dismiss()
@@ -2534,7 +2529,7 @@ class MainActivity : Activity() {
                 .create()
                 .also { shown ->
                     shown.setOnDismissListener {
-                        chatHistory = null
+                        if (dialog !== shown) return@setOnDismissListener
                         dialog = null
                         queueDialog = false
                         if (session.screen == Screen.PLAYING && session.paused) session.pause(false)
@@ -2556,7 +2551,6 @@ class MainActivity : Activity() {
 
     private fun dismissDialog() {
         dialog?.dismiss()
-        dialog = null
         queueDialog = false
         session.neutral()
         refresh(false)
@@ -2702,13 +2696,23 @@ class MainActivity : Activity() {
     }
 
     private fun handleBack() {
+        if (showcaseDialog != null) return
         if (dialog != null) dismissDialog()
         else if (session.screen == Screen.PLAYING) showMenu()
         else if (session.screen == Screen.CONNECTING || session.online) session.leave()
         else super.onBackPressed()
     }
 
+    @android.annotation.SuppressLint("GestureBackNavigation") // Preview's API33+ dispatcher consumes Back; this covers older keyboards.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        showcaseDialog?.let { shown ->
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) return true
+            if (event.keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                if (event.action == KeyEvent.ACTION_UP) shown.dismiss()
+                return true
+            }
+            if (event.keyCode in gameKeys || event.keyCode == KeyEvent.KEYCODE_BUTTON_START) return true
+        }
         // Route paired controls before the focused arena's single-seat fallback.
         if (
             ::session.isInitialized &&
@@ -2754,6 +2758,7 @@ class MainActivity : Activity() {
         }
         if (keyCode in gameKeys) {
             if (event.repeatCount > 0 && keyCode !in pressed) return true
+            if (keyCode in setOf(KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT)) arena.clearMouseAim()
             pressed.add(keyCode)
             keyboardInput()
             return true
@@ -2782,18 +2787,17 @@ class MainActivity : Activity() {
     private fun combinedInput(local: Boolean): GameInput {
         fun key(code: Int) = code in pressed
         val paired = session.localID2 != null
+        val keyboardSeat = local == paired
         val controls = GameInput(
-                forward = if (local) key(KeyEvent.KEYCODE_DPAD_UP) else key(KeyEvent.KEYCODE_W) || (!paired && key(KeyEvent.KEYCODE_DPAD_UP)),
-                reverse = if (local) key(KeyEvent.KEYCODE_DPAD_DOWN) else key(KeyEvent.KEYCODE_S) || (!paired && key(KeyEvent.KEYCODE_DPAD_DOWN)),
-                left = if (local) key(KeyEvent.KEYCODE_DPAD_LEFT) else key(KeyEvent.KEYCODE_A) || (!paired && key(KeyEvent.KEYCODE_DPAD_LEFT)),
-                right = if (local) key(KeyEvent.KEYCODE_DPAD_RIGHT) else key(KeyEvent.KEYCODE_D) || (!paired && key(KeyEvent.KEYCODE_DPAD_RIGHT)),
-                fire = if (local) key(KeyEvent.KEYCODE_SPACE) || key(KeyEvent.KEYCODE_ENTER) else
-                    (!paired && (key(KeyEvent.KEYCODE_SPACE) || key(KeyEvent.KEYCODE_ENTER))) ||
-                        key(KeyEvent.KEYCODE_Q) ||
+                forward = keyboardSeat && (key(KeyEvent.KEYCODE_W) || key(KeyEvent.KEYCODE_DPAD_UP)),
+                reverse = keyboardSeat && (key(KeyEvent.KEYCODE_S) || key(KeyEvent.KEYCODE_DPAD_DOWN)),
+                left = keyboardSeat && (key(KeyEvent.KEYCODE_A) || key(KeyEvent.KEYCODE_DPAD_LEFT)),
+                right = keyboardSeat && (key(KeyEvent.KEYCODE_D) || key(KeyEvent.KEYCODE_DPAD_RIGHT)),
+                fire = keyboardSeat && (key(KeyEvent.KEYCODE_SPACE) || key(KeyEvent.KEYCODE_ENTER) || key(KeyEvent.KEYCODE_Q) ||
                         key(KeyEvent.KEYCODE_C) ||
                         key(KeyEvent.KEYCODE_BUTTON_A) ||
                         key(KeyEvent.KEYCODE_BUTTON_R1) ||
-                        key(KeyEvent.KEYCODE_BUTTON_R2),
+                        key(KeyEvent.KEYCODE_BUTTON_R2)),
                 touchAim = false,
             )
         var analog: ControllerState? = null
@@ -2808,12 +2812,18 @@ class MainActivity : Activity() {
         }
         if (!local && (controls.forward || controls.reverse || controls.left || controls.right || analog?.let { hypot(it.x, it.y) > .1 } == true)) arena.clearDirectAim()
         val touch = if (local) null else arena.input
+        val mouse = if (keyboardSeat) arena.mouseInput() else null
         if (touch != null) controls.fire = controls.fire || touch.fire
+        if (mouse != null) controls.fire = controls.fire || mouse.fire
         if (touch != null && hypot(touch.stickX, touch.stickY) > .1) {
             controls.stickX = touch.stickX; controls.stickY = touch.stickY; controls.touchAim = true
             controls.aimOnly = touch.aimOnly; controls.snapAim = touch.snapAim
-        } else if (analog != null) {
+        } else if (analog != null && hypot(analog.x, analog.y) > .1) {
             controls.stickX = analog.x; controls.stickY = analog.y; controls.touchAim = true
+        } else if (mouse != null && hypot(mouse.stickX, mouse.stickY) > .1 && !controls.left && !controls.right) {
+            controls.stickX = mouse.stickX; controls.stickY = mouse.stickY
+            controls.aimOnly = true
+            controls.snapAim = !controls.forward && !controls.reverse
         }
         return controls
     }

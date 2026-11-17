@@ -12,7 +12,7 @@ func TestTerminalAndLaserPathsSurviveUnrelatedFixedCosmeticFlood(t *testing.T) {
 	g.Tick = 1
 	pilot, target := g.Tanks[0], g.Tanks[1]
 	target.X, target.Y = pilot.X+35, pilot.Y
-	g.grantPower(pilot, "cannon")
+	g.grantPower(pilot, "homing")
 	g.fire(pilot)
 	var terminal, contact int
 	for _, event := range g.events {
@@ -69,7 +69,7 @@ func TestNearInfinityTerminalAndLaserPathsSurviveDistantShooters(t *testing.T) {
 	target := a.join(fakeClient(), "Target", time.Unix(0, 0))
 	pilot.X, pilot.Y, pilot.Angle, pilot.kit.Invulnerable, pilot.kit.SpawnProtected = 42, 42, 0, 0, false
 	target.X, target.Y, target.Protected, target.kit.Invulnerable = 77, 42, false, 0
-	applyPower(&pilot.kit, "cannon", infinitePowerDuration, infiniteStarDuration)
+	applyPower(&pilot.kit, "homing", infinitePowerDuration, infiniteStarDuration)
 	a.fire(pilot)
 	var terminal, contact int
 	for _, effect := range a.effects {

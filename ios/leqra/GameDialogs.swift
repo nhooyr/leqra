@@ -20,7 +20,8 @@ struct WebModal<Content: View>: View {
                         ScrollView { content().frame(maxWidth: .infinity, alignment: .leading) }.scrollDismissesKeyboard(.interactively)
                             .accessibilityIdentifier("modalScroll")
                     }
-                }.frame(maxWidth: 650, maxHeight: min(760, max(200, geometry.size.height - 24))).padding(12)
+                }.frame(width: min(650, max(0, geometry.size.width - 24)))
+                    .frame(maxHeight: min(760, max(200, geometry.size.height - 24))).padding(12)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -29,6 +30,7 @@ struct WebModal<Content: View>: View {
 struct PauseCard: View {
     @ObservedObject var session: GameSession
     let landscape: Bool
+    @State private var originalCallsign = ""
     var body: some View {
         GeometryReader { geometry in
           ZStack {
@@ -61,7 +63,7 @@ struct PauseCard: View {
             }.frame(width: geometry.size.width, height: max(0, min(geometry.size.height - 24, landscape ? 320 : 620)))
                 .accessibilityIdentifier("pauseMenuScroll")
           }.frame(width: geometry.size.width, height: geometry.size.height)
-        }
+        }.onAppear { originalCallsign = session.callsign }
     }
     private var intro: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -88,10 +90,12 @@ struct PauseCard: View {
             }
             CallsignFeedback(session: session)
           }
-            Button(session.offline ? "← BACK TO THE BATTLE" : "← BACK TO THE ARENA") { session.saveCallsign(); session.setPaused(false) }
+            Button(session.offline ? "← BACK TO THE BATTLE" : "← BACK TO THE ARENA") {
+                if CallsignPolicy.clean(session.callsign) != CallsignPolicy.clean(originalCallsign) { session.saveCallsign() }
+                session.setPaused(false)
+            }
                 .buttonStyle(WebButtonStyle(kind: .primary)).disabled(!session.canResume).accessibilityIdentifier("Resume")
-            if !session.spectating { Button("Controls") { session.showControls = true }.buttonStyle(WebButtonStyle()) }
-            Button("Settings") { session.showSettings = true }.buttonStyle(WebButtonStyle())
+            if !session.spectating || session.secondaryLocalID != nil { Button("Controls") { session.showControls = true }.buttonStyle(WebButtonStyle()) }
             if session.room != nil, session.isHost {
                 Button("End match") { session.returnToRoom() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("Return to room")
             }
@@ -107,14 +111,20 @@ struct PauseCard: View {
 struct RulesEditor: View {
     @ObservedObject var session: GameSession
     @State private var rules = RoomRules()
+    private var powerHelp: PowerupHelp { PowerupHelp(rules: rules) }
     var body: some View {
         WebModal(title: "Room rules", close: { session.showRules = false }) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(session.selectedMode.title.uppercased()).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
+                if !rules.infinity && (session.room?.infinityPublic ?? session.publicInfinitySelected) {
+                    Text("Public Infinity uses all ten power-ups with 15-second effects, 8-second Starman, and 30-second ground expiry. The room settings below apply when Public Infinity is off.")
+                        .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("publicInfinityRulesNote")
+                }
                 menu("FORMAT", value: $rules.teamMode, choices: [("ffa", "Free-for-all"), ("teams", "Teams")])
                     .disabled(!rules.infinity && ["ctf", "survival"].contains(rules.mode))
-                menu("MAZE SIZE", value: $rules.mapSize, choices: [("compact", "Compact"), ("standard", "Standard"), ("large", "Large"), ("huge", "Huge"), ("giant", "Giant"), ("ultrawide", "Ultrawide")])
-                Toggle("Portrait maze", isOn: $rules.portraitMaze).font(.system(size: 13))
+                menu("MAZE SIZE", value: $rules.mapSize, choices: [("compact", "Compact"), ("standard", "Standard"), ("large", "Large"), ("huge", "Huge"), ("giant", "Giant"), ("ultrawide", "Ultrawide")]).disabled(rules.infinity)
+                Toggle("Portrait maze", isOn: $rules.portraitMaze).font(.system(size: 13)).disabled(rules.infinity)
                 if rules.infinity {
                     Stepper("Score target: \(rules.infinityTarget == 0 ? "Endless" : String(rules.infinityTarget))", value: $rules.infinityTarget, in: 0...999)
                     Toggle("Random roaming bots", isOn: $rules.infinityRandomBots).accessibilityIdentifier("randomRoamingBots")
@@ -131,15 +141,22 @@ struct RulesEditor: View {
                     Stepper("Respawn: \(rules.respawnSeconds)s", value: $rules.respawnSeconds, in: 1...10)
                 }
                 Toggle("Friendly fire", isOn: $rules.friendlyFire)
-                menu("POWER-UP FREQUENCY", value: $rules.pickupRate, choices: [("superfast", "Super fast"), ("fast", "Fast"), ("normal", "Normal"), ("slow", "Slow"), ("off", "Off")])
-                Text("AVAILABLE POWER-UPS").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
+                if !rules.infinity {
+                    menu("POWER-UP FREQUENCY", value: $rules.pickupRate, choices: [("superfast", "Super fast"), ("fast", "Fast"), ("normal", "Normal"), ("slow", "Slow"), ("off", "Off")])
+                }
+                Text(rules.infinity ? "INFINITY POWER-UPS" : "AVAILABLE POWER-UPS").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                Text(powerHelp.summary).font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("rulesPowerupSummary")
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(powerEntries, id: \.0) { kind, name in
-                        Button {
-                            if rules.weapons.contains(kind) { rules.weapons.removeAll { $0 == kind } } else { rules.weapons.append(kind) }
-                        } label: {
-                            HStack { Image(systemName: rules.weapons.contains(kind) ? "checkmark.square.fill" : "square"); Text(name); Spacer() }.font(.system(size: 12)).frame(minHeight: 36)
-                        }.foregroundStyle(rules.weapons.contains(kind) ? WebStyle.accent : WebStyle.muted)
+                        if rules.infinity {
+                            powerRow(kind: kind, name: name)
+                        } else {
+                            Button {
+                                if rules.weapons.contains(kind) { rules.weapons.removeAll { $0 == kind } } else { rules.weapons.append(kind) }
+                            } label: { powerRow(kind: kind, name: name) }
+                            .accessibilityIdentifier("rulePowerup_" + kind)
+                        }
                     }
                 }
                 if rules.teamMode == "teams" {
@@ -160,6 +177,16 @@ struct RulesEditor: View {
                 }.buttonStyle(WebButtonStyle())
             }.font(.system(size: 13)).foregroundStyle(WebStyle.text).tint(WebStyle.accent)
         }.onAppear { rules = session.effectiveRules }
+    }
+    private func powerRow(kind: String, name: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                if !rules.infinity { Image(systemName: rules.weapons.contains(kind) ? "checkmark.square.fill" : "square") }
+                Text(name).fontWeight(.semibold)
+                Spacer(minLength: 0)
+            }.font(.system(size: 12)).foregroundStyle(rules.infinity || rules.weapons.contains(kind) ? WebStyle.accent : WebStyle.muted)
+            Text(powerHelp.description(for: kind)).font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private func roamingRate(_ difficulty: BotDifficulty) -> some View {
         let value = Binding<Double>(get: { rules.effectiveInfinityBotSpawnRates[difficulty.rawValue] ?? 0 },
@@ -185,14 +212,15 @@ struct RulesEditor: View {
 
 let powerEntries = [("cannon", "Cannon"), ("ghost", "Ghost"), ("laser", "Laser"), ("homing", "Homing missile"), ("grenade", "Grenade"), ("speed", "Super speed"), ("rapid", "Machine gun"), ("scatter", "Shotgun"), ("shield", "Shield"), ("starman", "Starman")]
 
-struct NativeSettings: View {
+struct NativePreferencesPanel: View {
     @ObservedObject var session: GameSession
+    @State private var confirmReset = false
     var body: some View {
-        WebModal(title: "Settings", close: { session.showSettings = false }) {
             VStack(alignment: .leading, spacing: 18) {
-                Toggle("Request 120 FPS", isOn: $session.highFrameRate)
-                Toggle("Show FPS and ping", isOn: $session.showFPS)
-                Toggle("Sound and haptics", isOn: $session.soundEnabled).onChange(of: session.soundEnabled) { _ in session.applyAudioSetting(preview: .unmute) }
+                NativeSettingToggle("Request 120 FPS", isOn: $session.highFrameRate, identifier: "settingHighFrameRate")
+                NativeSettingToggle("Show FPS and ping", isOn: $session.showFPS, identifier: "settingShowFPS")
+                NativeSettingToggle("Sound and haptics", isOn: $session.soundEnabled, identifier: "settingSound")
+                    .onChange(of: session.soundEnabled) { _ in session.applyAudioSetting(preview: .unmute) }
                 VStack(alignment: .leading, spacing: 8) {
                     HStack { Text("Sound volume"); Spacer(); Text("\(Int(session.soundVolume))%").font(WebStyle.mono()).accessibilityIdentifier("soundVolumeValue") }
                     Slider(value: Binding(get: { session.soundVolume }, set: session.setSoundVolume), in: 0...100, step: 1) { editing in
@@ -206,9 +234,33 @@ struct NativeSettings: View {
                 Text("Native protocol \(NetworkClient.supportedVersion)").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 Button("ACCOUNT KEY") { session.openAccount() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsAccount")
                 Button("P2 ACCOUNT KEY") { session.openAccount(seat: 1) }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsLocalAccount")
-                Button("DONE") { session.showSettings = false }.buttonStyle(WebButtonStyle(kind: .primary)).accessibilityIdentifier("Done")
+                Button("SHOWCASE") { session.presentShowcase() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("openShowcase")
+                Text("Exit Showcase with Escape, or switch away from the app and return.")
+                    .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                Button("RESET ALL SETTINGS") { confirmReset = true }.buttonStyle(WebButtonStyle(kind: .danger))
+                    .accessibilityIdentifier("resetAllSettings")
             }.font(.system(size: 13)).tint(WebStyle.accent)
-        }
+            .confirmationDialog("Restore defaults and return to the ready room? Room, server, display, audio, and control settings will reset. Saved account keys and callsigns stay on this device.", isPresented: $confirmReset, titleVisibility: .visible) {
+                Button("Reset all settings", role: .destructive) { session.resetAllSettings() }
+                Button("Cancel", role: .cancel) {}
+            }
+    }
+}
+
+struct NativeSettingToggle: View {
+    let title: String
+    @Binding var isOn: Bool
+    let identifier: String
+    init(_ title: String, isOn: Binding<Bool>, identifier: String) {
+        self.title = title; _isOn = isOn; self.identifier = identifier
+    }
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(title).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading).layoutPriority(1)
+            Toggle(title, isOn: $isOn).labelsHidden().frame(width: 70, height: 44)
+                .accessibilityLabel(title).accessibilityIdentifier(identifier)
+        }.frame(maxWidth: .infinity, minHeight: 44)
     }
 }
 
@@ -242,7 +294,7 @@ struct AccountPanel: View {
                     .disabled(!session.accountCanCopyKey || session.accountBusy).accessibilityIdentifier("copyAccountKey")
                 if let info = session.accountInfo { accountPreview(info) }
                 ForEach(session.savedCallsignNames, id: \.self) { name in
-                    let useDisabled = session.switchingCallsign || session.isCurrentSavedCallsign(name)
+                    let useDisabled = !session.canImportAccount || session.accountBusy || session.switchingCallsign || session.isCurrentSavedCallsign(name)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Button("USE " + name) { session.useSavedCallsign(name) }
@@ -364,16 +416,113 @@ struct AccountPanel: View {
 
 struct ControlsPanel: View {
     @ObservedObject var session: GameSession
+    @State private var capture: BindingCapture?
+    @State private var bindingError = ""
+    @State private var tourPage: Int?
+    private struct BindingCapture: Identifiable {
+        let layout: Int
+        let action: NativeControlAction
+        var id: String { "\(layout)-\(action.rawValue)" }
+    }
     var body: some View {
-        WebModal(title: "Controls", close: { session.showControls = false }) {
+        ZStack {
+          WebModal(title: "Controls", close: { session.showControls = false }) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(session.identity).font(.system(size: 13, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex))
-                Text("WASD/arrow keys to drive, Q/C/Space/Enter to fire.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
-                Text("Drag the left stick to drive and aim. Hold the right Fire button to shoot. Pickups equip automatically.").font(.system(size: 13)).lineSpacing(5)
-                Text("Grenades: tap to throw. Release, then tap again to detonate. Projectiles pass through the tank that fired them.").font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
-                Text("Ricochet around corners. Collect Shield, Ghost, Super speed, or Starman to stay in the battle.").font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
+                Text("Keyboard defaults: WASD/arrow keys to drive, Q/C/Space/Enter to fire.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                Text(session.hasLocalP2 ? "Touch controls P1. Keyboard/mouse controls P2. The first gamepad controls P1 and the second controls P2." : "Keyboard/mouse or touch controls P1. Add local P2 in Players and bots to assign keyboard/mouse to P2.")
+                    .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                Text("Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Hold the right Fire button to shoot. Pickups equip automatically.").font(.system(size: 13)).lineSpacing(5)
+                Text("Grenades: tap or hold to throw. Release, then tap again to detonate. Release again before throwing another grenade. Projectiles pass through the tank that fired them.").font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
+                Button("QUICK TOUR") { tourPage = 0 }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("quickTour")
+                HardwareControlsPanel(session: session) { layout, action in
+                    bindingError = ""; capture = BindingCapture(layout: layout, action: action)
+                }
+                Divider().overlay(WebStyle.border)
+                NativePreferencesPanel(session: session)
                 Button("BACK") { session.showControls = false }.buttonStyle(WebButtonStyle(kind: .primary))
             }
+          }.allowsHitTesting(capture == nil && tourPage == nil).accessibilityHidden(capture != nil || tourPage != nil)
+          if let capture {
+              WebModal(title: "Press a key", close: { closeCapture() }) {
+                  VStack(alignment: .leading, spacing: 16) {
+                      Text("Layout \(capture.layout + 1), \(capture.action.label)").font(.system(size: 14, weight: .bold))
+                      Text("Press a keyboard key. Escape cancels.").font(.system(size: 13))
+                      if !bindingError.isEmpty {
+                          Text(bindingError).font(.system(size: 12)).foregroundStyle(WebStyle.danger)
+                              .accessibilityIdentifier("bindingError")
+                      }
+                      NativeKeyCaptureView(onKey: { code in
+                          do {
+                              try NativeInputSettings.shared.assign(keyCode: code, layout: capture.layout, action: capture.action)
+                              self.capture = nil
+                          } catch { bindingError = error.localizedDescription }
+                      }, onCancel: { closeCapture() }, onError: { bindingError = $0 })
+                          .frame(height: 1).accessibilityIdentifier("keyCapture")
+                      Button("CANCEL") { closeCapture() }.buttonStyle(WebButtonStyle())
+                  }
+              }
+          }
+          if let tourPage {
+              WebModal(title: "Quick tour", close: { self.tourPage = nil }) {
+                  VStack(alignment: .leading, spacing: 18) {
+                      Text(["Drive and aim", "Fire", "Play the objective"][tourPage]).font(.system(size: 20, weight: .bold))
+                      Text(tourText(tourPage)).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+                      Text("\(tourPage + 1) / 3").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
+                      Button(tourPage == 2 ? "DONE" : "NEXT") { self.tourPage = tourPage == 2 ? nil : tourPage + 1 }
+                          .buttonStyle(WebButtonStyle(kind: .primary)).accessibilityIdentifier("tourNext")
+                  }
+              }
+          }
+        }
+    }
+    private func closeCapture() {
+        capture = nil
+    }
+    private func tourText(_ page: Int) -> String {
+        switch page {
+        case 0: return "Drag the left stick to drive. Touch near your tank to aim without moving. " + (session.hasLocalP2 ? "Touch controls P1; keyboard/mouse controls P2." : "Touch, keyboard, mouse, and the first gamepad control P1.")
+        case 1: return "Hold Fire to shoot. Use the Fire keys shown in Controls; mouse click fires when Mouse Fire is enabled. For grenades, release after throwing, press to detonate, then release before throwing again."
+        default:
+            let mode = session.readyRoom && (session.room?.infinityPublic ?? session.publicInfinitySelected) ? BattleMode.infinity : session.selectedMode
+            return mode.help + " Open the sidebar for the current room's weapon and power-up guide. Pause to review controls or return to the ready room."
+        }
+    }
+}
+
+struct HardwareControlsPanel: View {
+    @ObservedObject var session: GameSession
+    @ObservedObject private var settings = NativeInputSettings.shared
+    @ObservedObject private var hardware = NativeHardwarePresence.shared
+    var capture: (Int, NativeControlAction) -> Void
+    private var probe: Bool { ProcessInfo.processInfo.arguments.contains("--probe-hardware-controls") }
+    var body: some View {
+        if hardware.keyboardConnected || hardware.mouseConnected || probe {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("KEYBOARD/MOUSE, " + (session.hasLocalP2 ? session.secondaryIdentity : session.identity))
+                    .font(WebStyle.mono(11, weight: .bold)).fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(WebStyle.paint(session.hasLocalP2 ? session.secondaryPaint : session.colorIndex))
+                if hardware.keyboardConnected || probe {
+                    ForEach(0..<2, id: \.self) { index in
+                        Text("KEYBOARD LAYOUT \(index + 1)").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
+                        ForEach(NativeControlAction.allCases, id: \.self) { action in
+                            HStack(spacing: 12) {
+                                Text(action.label).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Button(NativeControlBindings.keyLabel(settings.bindings.layouts[index][action])) { capture(index, action) }
+                                    .buttonStyle(WebButtonStyle(compact: true)).frame(width: 115)
+                                    .accessibilityIdentifier("bind\(index)_\(action.rawValue)")
+                            }
+                        }
+                    }
+                    Button("RESET DEFAULT KEYS") { settings.resetBindings() }.buttonStyle(WebButtonStyle())
+                        .accessibilityIdentifier("resetBindings")
+                }
+                if hardware.mouseConnected || probe {
+                    NativeSettingToggle("Mouse aim", isOn: $settings.mouseAim, identifier: "settingMouseAim")
+                    NativeSettingToggle("Mouse fire", isOn: $settings.mouseFire, identifier: "settingMouseFire")
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -403,11 +552,17 @@ struct SidebarPanel: View {
                 }
                 Text("LEADERBOARD").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
                 ForEach(session.standings) { entry in
-                    HStack { Text(entry.id == session.localID ? session.identity : CallsignPolicy.displayName(entry.name, bot: entry.bot)).fontWeight(entry.id == session.localID ? .bold : .regular); if entry.bot || !session.isInfinity { Text(entry.bot ? "BOT" : "HUMAN PILOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }; Spacer(); Text("\(entry.score)").font(WebStyle.mono(22)) }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
+                    let seat = session.localPilotSeat(entry.id)
+                    HStack(alignment: .top) {
+                        Text(CallsignPolicy.displayName(entry.name, bot: entry.bot) + (seat.map { " (P\($0))" } ?? ""))
+                            .fontWeight(seat != nil ? .bold : .regular).fixedSize(horizontal: false, vertical: true)
+                        if entry.bot || !session.isInfinity { Text(entry.bot ? "BOT" : "HUMAN PILOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
+                        Spacer(); Text("\(entry.score)").font(WebStyle.mono(22))
+                    }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
                 }
                 WebStyle.border.frame(height: 1)
                 FieldManualContent(session: session)
-                Button("SETTINGS") { session.showSidebar = false; session.showSettings = true }.buttonStyle(WebButtonStyle())
+                Button("CONTROLS") { session.showSidebar = false; session.showControls = true }.buttonStyle(WebButtonStyle())
             }
         }
     }
@@ -416,18 +571,9 @@ struct SidebarPanel: View {
 struct FieldManualContent: View {
     @ObservedObject var session: GameSession
     private var infinity: Bool { session.isInfinity || session.effectiveRules.infinity || session.readyRoom && (session.room?.infinityPublic ?? session.publicInfinitySelected) }
-    private let descriptions = [
-        "cannon": "Pierces walls. Four times the size and speed.",
-        "ghost": "Drive through walls. Stacks with Super speed.",
-        "laser": "Instant ricochets with a long dotted aim guide.",
-        "homing": "Guided missiles that ricochet.",
-        "grenade": "Homes in on opponents. Explodes on tank impact, another Fire press, or its 10-second fuse. Walls stop blasts.",
-        "speed": "Stacks to five, adding 65% speed each time.",
-        "rapid": "Three seconds of firing with tiny, fast rounds.",
-        "scatter": "Fast, ricocheting spread.",
-        "shield": "Stack up to five protective rings.",
-        "starman": "Invincibility, lethal contact, movement through walls, unlimited ammunition and no cooldown."
-    ]
+    private var powerHelp: PowerupHelp {
+        PowerupHelp(rules: session.effectiveRules, world: session.readyRoom ? nil : session.snapshot.world, infinity: infinity)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("FIELD MANUAL").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
@@ -437,11 +583,12 @@ struct FieldManualContent: View {
             Text(infinity ? "Gain a point for each kill and lose a point each time the tank is destroyed. Respawn after one second. Keep growing the score without a time limit." : session.selectedMode.help)
                 .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
             Button("CONTROLS") { session.showSidebar = false; session.showControls = true }.buttonStyle(WebButtonStyle())
-            Text("GRAB AN ADVANTAGE, 10 POWER-UPS").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
+            Text("POWER-UPS").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
+            Text(powerHelp.summary).font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("manualPowerupSummary")
             ForEach(powerEntries, id: \.0) { kind, name in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(name).font(.system(size: 12, weight: .bold)).foregroundStyle(WebStyle.text)
-                    Text(descriptions[kind] ?? "").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                    Text(powerHelp.description(for: kind)).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
                 }
             }
         }
@@ -459,6 +606,7 @@ struct JoinRoomPanel: View {
                 Text("CALLSIGN").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 HStack(spacing: 8) {
                     TextField("Callsign", text: $session.callsign).modifier(WebField())
+                        .disabled(session.releasingCallsign)
                         .task { session.scheduleCallsignAvailability() }
                     AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "joinAccount")
                 }
@@ -467,7 +615,7 @@ struct JoinRoomPanel: View {
                 TextField("Friday tanks 💥", text: $code).modifier(WebField()).autocorrectionDisabled().focused($codeFocused)
                     .submitLabel(.done).onSubmit { codeFocused = false }.accessibilityIdentifier("joinRoomCode")
                 Toggle("Spectate", isOn: $spectating).font(.system(size: 12, weight: .bold)).accessibilityIdentifier("joinSpectatingToggle")
-                Button(spectating ? "WATCH →" : "JOIN →") { session.showJoin = false; session.connect(code: code, spectating: spectating) }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("joinRoomButton")
+                Button(spectating ? "WATCH →" : "JOIN →") { session.showJoin = false; session.connect(code: code, spectating: spectating) }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(session.releasingCallsign || code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("joinRoomButton")
                 Text(spectating ? "Join as a spectator without a tank." : "Missing rooms are created with the joining pilot as host.").font(.system(size: 11)).foregroundStyle(WebStyle.soft)
             }
         }
@@ -489,33 +637,6 @@ struct PresetsPanel: View {
             }
         }
     }
-}
-
-struct ChatPanel: View {
-    @ObservedObject var session: GameSession
-    @State private var channel: ChatChannel = .room
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack { Text("CHAT").font(WebStyle.mono()); Spacer(); Picker("Channel", selection: $channel) { if session.roomChatAvailable { Text("Room").tag(ChatChannel.room) }; if session.opponentChatAvailable { Text("Opponent").tag(ChatChannel.opponent) } }.font(.system(size: 11)); Button { session.showChat = false } label: { Image(systemName: "xmark").frame(width: 32, height: 32) } }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(channel == .room ? session.chatMessages : session.opponentMessages) { message in
-                            VStack(alignment: .leading, spacing: 3) { Text(message.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(WebStyle.accent); Text(message.text).font(.system(size: 12)).foregroundStyle(WebStyle.text) }.id(message.id)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }.onChange(of: session.chatMessages.count) { _ in if let last = session.chatMessages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
-            }
-            HStack {
-                TextField("Message", text: $session.chatDraft).modifier(WebField()).onSubmit(submit)
-                Button(action: submit) { Image(systemName: "paperplane.fill").frame(width: 36, height: 40) }.foregroundStyle(WebStyle.accent).disabled(session.chatPending || session.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            if let error = session.chatError { Text(error).font(.system(size: 11)).foregroundStyle(WebStyle.danger) }
-            Text("\(session.chatDraft.unicodeScalars.count) / 280").font(WebStyle.mono()).foregroundStyle(WebStyle.muted).frame(maxWidth: .infinity, alignment: .trailing)
-        }.padding(12).frame(maxWidth: 345).frame(height: 360).background(WebStyle.surface, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(WebStyle.edge, lineWidth: 1).allowsHitTesting(false)).padding(10)
-            .onAppear { if !session.roomChatAvailable && session.opponentChatAvailable { channel = .opponent } }
-    }
-    private func submit() { session.sendChat(session.chatDraft, channel: channel) }
 }
 
 struct QueuePanel: View {

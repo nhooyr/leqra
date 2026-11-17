@@ -1,10 +1,10 @@
-# leqra v5.4.0 — current game protocol (protocol 1)
+# leqra v5.5.0 — current game protocol (protocol 1)
 
-The JSON framing protocol is **1**. The application-version handshake requires **5.4.0**.
+The JSON framing protocol is **1**. The application-version handshake requires **5.5.0**.
 
 ```json
-{"type":"server_hello","version":"5.4.0","protocol":1}
-{"type":"client_hello","version":"5.4.0","protocol":1}
+{"type":"server_hello","version":"5.5.0","protocol":1}
+{"type":"client_hello","version":"5.5.0","protocol":1}
 ```
 
 The sections below this release describe earlier protocol additions and are retained as history. Where their gameplay values differ, the current rules here and the current source take precedence.
@@ -64,6 +64,7 @@ Spectator `state` messages carry `spectating:true`, `following` (zero for an emp
 Only an authenticated spectator can follow a current or parked identity in that arena. Invalid requests return `{"type":"error","code":"follow_invalid","action":"follow","message":"..."}` without changing the selection. More than eight follow requests per second closes the connection. The server retains a selected dead tank through respawn. A selected parked bot keeps its `following` ID and remains in the standings; nearby world arrays are empty while the client waits for its next matching-tier encounter. If an identity is removed from the room entirely, selection falls back to the highest-ranked remaining identity, then zero when empty. A join's optional `target` selects a valid current tank before its welcome; a stale target is ignored. Reconnecting spectators can restore their previous selection with this field, and the server also retains a disconnected observer's selection for its 20-second room reconnect window.
 
 Following does not keep a roaming life active beyond connected human positions, release a human's paused respawn, or increase the bot budget. When no human controller remains connected, the normal zero-roaming-population policy still applies and spectators wait on their selected parked identities.
+Once the last human seat leaves or its reconnect reservation expires, spectators receive an empty arena with `following:0` and no standings. Parked bot identities and scores remain available internally for the next human controller to return to that run.
 
 Following is read-only and does not advance simulation. A frozen result can produce another filtered view with the same simulation `tick`; clients must accept a state whose `following` changed even when that tick did not advance. An empty arena stays empty until a real controller joins. Spectator `input` closes the socket with code 1008; arena `rename` returns `rename_error` with `code:"spectator_read_only"` because the member's callsign is edited through the room socket.
 
@@ -110,7 +111,7 @@ claimed with a new key; its former score does not transfer.
 `POST /api/account/release` accepts `{"publicToken":"<saved key>"}` after an
 explicit confirmation. Success returns `{"released":true}` and permanently
 invalidates the account key, frees its callsign, removes its score, and signs out
-its live sessions. Retrying an already released key is idempotent. The client
+its live sessions. Live release/expiry notices use `account_key_invalid` and identify the affected local `seat` (0 for P1, 1 for P2). Clients stop reconnecting and forget only that credential. Retrying an already released key is idempotent. The client
 retains the local key until success is confirmed, then removes its history and
 pending references; releasing a selected account leaves a fresh local callsign.
 
@@ -177,17 +178,17 @@ An authoritative projectile can be born and hit before any snapshot contains it.
 {"id":12,"owner":0,"colorIndex":2,"kind":"cannon","radius":14,"startTick":40,"endTick":41.35,"points":[{"x":74,"y":42,"tick":40},{"x":99.38,"y":42,"tick":41.35}]}
 ```
 
-The descriptor's `id` is the real projectile ID. `kind` is `regular`, `rapid`, `scatter`, `homing`, `grenade`, or `cannon`. Two to 32 finite, time-ordered points contain actual start/contact positions, including rim ricochets, and stop at the authoritative endpoint. Tick values may be fractional or equal for a muzzle-overlap hit. Every ballistic tank contact has a terminal path, including projectiles already published in live snapshots. For published non-Cannon shots, that path begins at the most recent broadcast position; Cannon retains its bounded full path. Existing `impact`/`blast` effects carry the descriptor when applicable. Otherwise a silent `projectileFlight` event/effect carries it without adding impact sounds or another explosion. Fixed terminal events also retain the projectile's original `shotSerial` and `spawnSerial`, allowing clients to reconcile a local preview without borrowing the shooter's newer life or firing state. Clients deduplicate by projectile ID and render the path on their visual timeline, with bounded minimum visibility for an already-passed or effectively instantaneous path. A published raw projectile remains eligible before its recent terminal segment begins. Clients show the exact terminal endpoint for a frame before releasing dependent hit/shield/blast visuals, sounds, or visible tank destruction. They discard old flights on joins, generations, and room changes. Flight data is server output only: it never grants client collision, damage, ammunition, or score authority. Laser continues to use its existing authoritative beam-point event.
+The descriptor's `id` is the real projectile ID. `kind` is `regular`, `rapid`, `scatter`, `homing`, `grenade`, or `cannon`. Two to 32 finite, time-ordered points contain actual start/contact positions, including rim ricochets, and stop at the authoritative endpoint. Tick values may be fractional or equal for a muzzle-overlap hit. Every terminal ballistic tank contact has a terminal path, including projectiles already published in live snapshots. Cannon passes through tank contacts without ending its flight; its intermediate impacts have no terminal descriptor. For published non-Cannon shots, that path begins at the most recent broadcast position; Cannon retains its bounded full path. Existing `impact`/`blast` effects carry the descriptor when applicable. Otherwise a silent `projectileFlight` event/effect carries it without adding impact sounds or another explosion. Fixed terminal events also retain the projectile's original `shotSerial` and `spawnSerial`, allowing clients to reconcile a local preview without borrowing the shooter's newer life or firing state. Clients deduplicate by projectile ID and render the path on their visual timeline, with bounded minimum visibility for an already-passed or effectively instantaneous path. A published raw projectile remains eligible before its recent terminal segment begins. Clients show the exact terminal endpoint for a frame before releasing dependent hit/shield/blast visuals, sounds, or visible tank destruction. They discard old flights on joins, generations, and room changes. Flight data is server output only: it never grants client collision, damage, ammunition, or score authority. Laser continues to use its existing authoritative beam-point event.
 
 Fixed terminal events also preserve `pellet` for individual Shotgun rounds; omitted means pellet zero. A rendered local preview only deduplicates its own pellet.
 
 Victim `hit` and `shield` events/effects carry optional `contact` metadata:
 
 ```json
-{"projectileId":12,"kind":"cannon","tick":41.35,"target":3,"spawnSerial":4,"before":{"x":130,"y":42,"angle":0,"vx":128,"vy":0,"hp":1,"shield":0,"shieldCharges":0,"invulnerable":0,"spawnProtected":false}}
+{"projectileId":0,"kind":"cannon","tick":41.35,"target":3,"spawnSerial":4,"before":{"x":130,"y":42,"angle":0,"vx":128,"vy":0,"hp":1,"shield":0,"shieldCharges":0,"invulnerable":0,"spawnProtected":false}}
 ```
 
-`target` and `spawnSerial` identify the victim's exact life. `before` captures its pose, living state, and protection immediately before damage, including shields that the hit consumes. Name, color, and other equipment can come from a same-life tank snapshot. `projectileId` references the shared terminal path; all eligible victims of one grenade blast reference that grenade without duplicating its flight. Laser and Starman contact use zero projectile ID with `kind:"laser"` or `kind:"starman"`, on the instantaneous beam/body-contact tick. Infinity effects now expose integer `tick` as well; contact ticks can be fractional. Clients can keep a separate pre-contact visual tank and defer its explosion while HP, scores, input eligibility, and respawn remain immediately authoritative. Contact metadata is ignored for a different target life, room/generation, or resumed baseline. Hit/shield contact records share the bounded 600ms path history so unrelated cosmetics cannot discard the causal link.
+`target` and `spawnSerial` identify the victim's exact life. `before` captures its pose, living state, and protection immediately before damage, including shields that the hit consumes. Name, color, and other equipment can come from a same-life tank snapshot. `projectileId` references the shared terminal path; all eligible victims of one grenade blast reference that grenade without duplicating its flight. Laser, Starman and piercing Cannon contacts use zero projectile ID with `kind:"laser"`, `kind:"starman"` or `kind:"cannon"`, so each victim transition appears at its contact tick without waiting for a continuing shell to expire. Infinity effects now expose integer `tick` as well; contact ticks can be fractional. Clients can keep a separate pre-contact visual tank and defer its explosion while HP, scores, input eligibility, and respawn remain immediately authoritative. Contact metadata is ignored for a different target life, room/generation, or resumed baseline. Hit/shield contact records share the bounded 600ms path history so unrelated cosmetics cannot discard the causal link.
 
 Current Laser range is `4 * (world.width + world.height)` in fixed mazes and 36 cells in Infinity, twice the previous budgets. Its defensive trace limit is 256 segments. Laser and Cannon reload in `0.85 / 3` seconds (about 0.283s), half their previous reload time. Charges, damage, Starman's unlimited fire, other weapons, and Cannon's 5.3s lifetime remain unchanged.
 
@@ -344,7 +345,7 @@ advance or reset Ghost consistently.
 Cannon snapshots retain `kind:"cannon"` with radius **14** and speed **1128**.
 Only the inner faces of the outer rim reflect them; interior walls remain
 transparent to these shots. Reflection, muzzle handling and cosmetic extrapolation
-must agree. Lifetime stays 5.3 seconds and does not reset on a bounce. No client
+must agree. Every damage-eligible tank along each swept segment is hit in travel order, including hidden muzzle travel and a segment after a rim bounce. A shell continues through shields and tanks and hits each victim life at most once; a newly respawned life can be hit again. All contacts in the current segment resolve before an Infinity target win freezes the match. Lifetime stays 5.3 seconds and does not reset on a bounce. No client
 can submit a trusted collision, size, speed or damage report.
 
 Bot removal uses the same existing host-authorized occupant-specific command;
@@ -1132,7 +1133,7 @@ final finite shot remains that simulation tick's only action; the following
 tick can use the fresh standard magazine. Timer expiry happens before weapon
 control, so a held trigger can immediately use its surviving weapon or standard
 ammo. Passive buff expiry refills the surviving weapon without interrupting held
-fire. Manual grenade detonation consumes only its current simulation tick. The
+fire. Manual grenade detonation consumes the current held Fire activation; release and press again to fire or throw afterward. A coalesced fresh press also releases the latch, while pickups and a network input timeout during the same held activation do not. A timeout neutralizes gameplay controls without counting as a physical Fire release. The
 existing limit of one rapid projectile per 60 Hz simulation tick is retained.
 
 Tank and ordinary bullet snapshots carry optional `ammoEpoch` (missing means `0`).
@@ -1183,9 +1184,10 @@ Holding Fire automatically throws another grenade whenever its 0.8-second reload
 is ready. Starman retains its existing zero cooldown and may throw one grenade
 per simulation tick while held. A fresh press with controlled live grenades
 detonates the complete bank, including boosted banks larger than three, and
-returns without firing another projectile in that tick. On the following tick,
-continued held Fire retries the selected weapon or standard ammo, subject to its
-remaining cooldown/capacity. The final throw replenishes standard ammo and clears
+does not fire another projectile while that activation remains held. Release
+and press again to use the selected weapon or standard ammo; an accepted fresh
+press also works when its release and press arrive between simulation ticks.
+The final throw replenishes standard ammo and clears
 its cooldown, so a continued hold can fire standard ammo on the next tick. Other
 finite weapons follow the same next-tick continuation rule. Only the authenticated socket's
 own tank can trigger this action;

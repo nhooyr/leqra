@@ -136,7 +136,7 @@ func TestInfiniteCannonLifetimeAndAmmo(t *testing.T) {
 	}
 }
 
-func TestInfiniteCannonHitsFirstTankThroughWall(t *testing.T) {
+func TestInfiniteCannonPiercesEveryTankThroughWall(t *testing.T) {
 	a := newSeededInfiniteArena(16)
 	now := time.Unix(0, 0)
 	shooter := a.join(fakeClient(), "Shooter", now)
@@ -165,8 +165,8 @@ func TestInfiniteCannonHitsFirstTankThroughWall(t *testing.T) {
 	for range 8 {
 		a.advanceBullets()
 	}
-	if first.HP != 0 || second.HP != infiniteMaxHP || shooter.Score != 1 || len(a.bullets) != 0 {
-		t.Fatalf("Cannon must pass through the wall and stop at the first tank: first HP=%d, second HP=%d, score=%d, bullets=%+v", first.HP, second.HP, shooter.Score, a.bullets)
+	if first.HP != 0 || second.HP != 0 || shooter.Score != 2 || len(a.bullets) != 1 {
+		t.Fatalf("Cannon must pass through the wall and every tank: first HP=%d, second HP=%d, score=%d, bullets=%+v", first.HP, second.HP, shooter.Score, a.bullets)
 	}
 }
 
@@ -344,7 +344,7 @@ func TestInfiniteProjectileReportsRelocatedBotCallsign(t *testing.T) {
 	if a.pilotByID(shooter.ID) != shooter || shooter.Spawn != spawn+1 || shooter.Name != "RUST" {
 		t.Fatal("distant roaming bot did not relocate with its original identity")
 	}
-	if a.advanceBullet(&a.bullets[0], 100, 0) || target.HP != 0 {
+	if !a.advanceBullet(&a.bullets[0], 100, 0) || target.HP != 0 {
 		t.Fatal("expected the surviving projectile to kill the pilot")
 	}
 	a.broadcast()

@@ -121,6 +121,10 @@ func (a *infiniteArena) removeObserver(observer *infiniteObserver) {
 // Call with arena.mu held. Death retains the selected identity for respawn;
 // removal falls back to the highest ranked remaining actor, then its stable ID.
 func (a *infiniteArena) observerTarget(observer *infiniteObserver, leaders []infiniteLeader) *infinitePilot {
+	if a.players == 0 {
+		observer.following = 0
+		return nil
+	}
 	if p := a.observerPilot(observer); p != nil {
 		return p
 	}
@@ -163,7 +167,7 @@ func (s *infiniteServer) follow(c *Client, target int, now time.Time) {
 	a := connection.arena
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.observers[c] != connection.observer || target <= 0 {
+	if a.observers[c] != connection.observer || a.players == 0 || target <= 0 {
 		fail("Choose a tank from this room's leaderboard.")
 		return
 	}

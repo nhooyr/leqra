@@ -102,6 +102,7 @@ final class CannonFlightPresenter {
     private var playbackTick = 0.0
     private var authorityTick = 0.0
     private var localID = -1
+    private var secondaryLocalID: Int?
     private var renderTime = 0.0
     private var lives: [Int: Int] = [:]
     private var knownBodies: [Int: ArenaTank] = [:]
@@ -119,7 +120,7 @@ final class CannonFlightPresenter {
         completed.removeAll(keepingCapacity: true); completedOrder.removeAll(keepingCapacity: true)
         observed.removeAll(keepingCapacity: true); observedOrder.removeAll(keepingCapacity: true)
         contacts.removeAll(keepingCapacity: true); seenContacts.removeAll(keepingCapacity: true); contactOrder.removeAll(keepingCapacity: true)
-        readyEffects.removeAll(keepingCapacity: true); baselineEffectID = 0; frame = 0; playbackTick = 0; authorityTick = 0; localID = -1
+        readyEffects.removeAll(keepingCapacity: true); baselineEffectID = 0; frame = 0; playbackTick = 0; authorityTick = 0; localID = -1; secondaryLocalID = nil
         effectHighWater = 0; presentationLimit = 1_024
         presentedEffects.removeAll(keepingCapacity: true); presentedOrder.removeAll(keepingCapacity: true)
         roundEndEffects.removeAll(keepingCapacity: true)
@@ -167,8 +168,8 @@ final class CannonFlightPresenter {
         }
     }
 
-    func append(to bullets: inout [ArenaBullet], tick: Double, now: Double, authorityTick: Double? = nil, localID: Int = -1) {
-        frame &+= 1; playbackTick = tick; self.authorityTick = authorityTick ?? tick; self.localID = localID; renderTime = now
+    func append(to bullets: inout [ArenaBullet], tick: Double, now: Double, authorityTick: Double? = nil, localID: Int = -1, secondaryLocalID: Int? = nil) {
+        frame &+= 1; playbackTick = tick; self.authorityTick = authorityTick ?? tick; self.localID = localID; self.secondaryLocalID = secondaryLocalID; renderTime = now
         for bullet in bullets where observed.insert(bullet.id).inserted {
             observedOrder.append(bullet.id)
             if observedOrder.count > presentationLimit * 2 { observed.remove(observedOrder.removeFirst()) }
@@ -214,7 +215,7 @@ final class CannonFlightPresenter {
             let contact = pending.contact
             if contact.projectileId > 0, active[contact.projectileId] != nil { continue }
             guard firstContactByTarget[contact.target] == id else { continue }
-            let clock = contact.projectileId == 0 && pending.effect.owner == localID ? self.authorityTick : tick
+            let clock = contact.projectileId == 0 && isLocal(pending.effect.owner) ? self.authorityTick : tick
             guard completed.contains(contact.projectileId) || clock >= contact.tick else { continue }
             if contact.projectileId > 0, completed.contains(contact.projectileId) {
                 contacts.removeValue(forKey: id); readyEffects.append(pending.effect)
@@ -271,7 +272,7 @@ final class CannonFlightPresenter {
             }
             let contact = pending.contact
             var visual = contact.before.applying(to: tanks[index])
-            if tanks[index].id != localID, let old = previous[visual.id], old.hp > 0,
+            if !isLocal(tanks[index].id), let old = previous[visual.id], old.hp > 0,
                old.spawnSerial == visual.spawnSerial, let previousTick, contact.tick > previousTick,
                playbackTick < contact.tick, pathClear?(old, visual) != false {
                 let fraction = min(1, max(0, (playbackTick - previousTick) / (contact.tick - previousTick)))
@@ -284,6 +285,8 @@ final class CannonFlightPresenter {
         let liveIDs = Set(tanks.map(\.id))
         heldBodies = heldBodies.filter { liveIDs.contains($0.key) }; releases = releases.filter { liveIDs.contains($0.key) }
     }
+
+    private func isLocal(_ id: Int) -> Bool { id == localID || id == secondaryLocalID }
 
     func effects(_ source: [ArenaEffect]) -> [ArenaEffect] {
         if hasPending {
@@ -298,7 +301,7 @@ final class CannonFlightPresenter {
                   effect.flight.map({ active[$0.id] == nil }) ?? true else { return false }
             if effect.kind == "roundEnd", hasPending { return false }
             if let contact = effect.contact, lives[contact.target].map({ $0 == contact.spawnSerial }) == false { return false }
-            let ownInstant = effect.owner == localID && (effect.kind == "laser" || effect.kind == "shot:laser" || effect.contact?.projectileId == 0)
+            let ownInstant = isLocal(effect.owner) && (effect.kind == "laser" || effect.kind == "shot:laser" || effect.contact?.projectileId == 0)
             return effect.tick.map { Double($0) <= (ownInstant ? authorityTick : playbackTick) + 1e-7 } ?? true
         }
         let ids = Set(result.map(\.id))

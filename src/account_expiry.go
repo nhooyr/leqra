@@ -305,9 +305,13 @@ func (s *infiniteServer) retireExpiredAccounts(expired map[string]bool, message 
 			}
 		}
 		if c.pilot != nil && (expired[c.pilot.publicKey] || c.local != nil && expired[c.local.publicKey]) {
+			seat := 0
+			if !expired[c.pilot.publicKey] {
+				seat = 1
+			}
 			delete(s.connections, client)
 			s.retire(c)
-			stopAccountTransport(client, map[string]any{"type": "error", "code": "account_key_invalid", "message": message})
+			stopAccountTransport(client, map[string]any{"type": "error", "code": "account_key_invalid", "seat": seat, "message": message})
 		}
 	}
 	for key, c := range s.reservations {

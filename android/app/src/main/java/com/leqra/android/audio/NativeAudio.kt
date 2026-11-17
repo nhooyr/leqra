@@ -85,7 +85,6 @@ class NativeAudio(context: Context) {
     private var previousHP: Int? = null
     private var generation: Int? = null
     private var lastHaptic = Double.NEGATIVE_INFINITY
-    private var lastChat = Double.NEGATIVE_INFINITY
     @Volatile private var playbackEpoch = 0
     private var lastSnapshotTick: Long? = null
     private var lastLocalID: Int? = null
@@ -226,13 +225,6 @@ class NativeAudio(context: Context) {
                     pause()
                 }
                 .also { main.postDelayed(it, 400) }
-    }
-
-    fun notifyChat(now: Double = System.nanoTime() / 1e9) {
-        if (now - lastChat >= .18) {
-            lastChat = now
-            play(AudioCue.CHAT)
-        }
     }
 
     fun consume(

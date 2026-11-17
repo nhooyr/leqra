@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -65,17 +64,6 @@ type onlineCallsignRegistry struct {
 func newOnlineCallsignRegistry() *onlineCallsignRegistry {
 	return &onlineCallsignRegistry{now: time.Now, lastUsed: make(map[string]int64), expired: make(map[string]bool), expirationPending: make(map[string]bool), owners: make(map[string]bool), claims: make(map[string]string), names: make(map[string]map[string]string), revoked: make(map[string]bool), seatMigrations: make(map[string]seatAccountMigration), generatedFresh: make(map[string]bool), renamed: make(map[string]string), roomRenamed: make(map[string]string)}
 }
-func canonicalCallsign(name string) string {
-	var key strings.Builder
-	for _, r := range cleanCallsign(name) {
-		smallest := r
-		for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-			smallest = min(smallest, folded)
-		}
-		key.WriteRune(unicode.ToLower(smallest))
-	}
-	return key.String()
-}
 
 // Call only at startup, before serving Hub or Infinity connections. Registry
 // rows have no foreign key to score profiles: resets never release a callsign.
@@ -123,7 +111,8 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 	}
 	claims := make(map[string]string)
 	names := make(map[string]map[string]string)
-	rows, err = db.Query("SELECT canonical_name,display_name,owner_hash FROM online_callsigns")
+	var foldMigrations []callsignFoldMigration
+	rows, err = db.Query("SELECT canonical_name,display_name,owner_hash FROM online_callsigns ORDER BY canonical_name")
 	if err != nil {
 		return err
 	}
@@ -132,8 +121,17 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 		if err = rows.Scan(&name, &display, &hash); err != nil {
 			break
 		}
-		if name == "" || name != canonicalCallsign(display) || !owners[hash] {
+		canonical := canonicalCallsign(display)
+		if name == "" || !owners[hash] || name != canonical && name != legacyUnicode17Callsign(display) {
 			err = errors.New("invalid online callsign claim")
+			break
+		}
+		if name != canonical {
+			foldMigrations = append(foldMigrations, callsignFoldMigration{old: name, current: canonical, display: display, owner: hash})
+			name = canonical
+		}
+		if _, exists := claims[name]; exists {
+			err = errors.New("conflicting canonical callsign claims")
 			break
 		}
 		claims[name] = hash
@@ -147,6 +145,9 @@ func (r *onlineCallsignRegistry) open(db *sql.DB) error {
 	}
 	rows.Close()
 	if err != nil {
+		return err
+	}
+	if err = migrateCallsignFolds(db, foldMigrations); err != nil {
 		return err
 	}
 	revoked := make(map[string]bool)

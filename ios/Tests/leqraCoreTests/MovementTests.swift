@@ -2,6 +2,22 @@ import XCTest
 @testable import leqraCore
 
 final class MovementTests: XCTestCase {
+    func testDirectAimSnapsExactlyWithoutMovingOnBothArenaTypes() {
+        let world = ArenaWorld(width: 1000, height: 1000, cols: 12, rows: 12)
+        for fixed in [false, true] {
+            for angle in [-Double.pi, -.pi / 2, -0.1, 0, 0.8, .pi / 2, .pi] {
+                var tank = ArenaTank(id: 1, x: 420, y: 420, angle: 1.5, speedTime: 5, speedStacks: 5)
+                let input = GameInput(forward: true, fire: true, stickX: cos(angle), stickY: sin(angle), aimOnly: true, snapAim: true)
+                let maze = fixed ? InfiniteMaze(world: world) : InfiniteMaze(seed: 42)
+                TankMovement.step(tank: &tank, input: input, dt: 1 / 60, maze: maze)
+                XCTAssertEqual(tank.x, 420, accuracy: 1e-10)
+                XCTAssertEqual(tank.y, 420, accuracy: 1e-10)
+                XCTAssertEqual(sin(tank.angle - angle), 0, accuracy: 1e-10)
+                XCTAssertEqual(cos(tank.angle - angle), 1, accuracy: 1e-10)
+            }
+        }
+    }
+
     func testStarmanExpiryIsAgedDuringPredictionAndOnlyOnceInPractice() {
         var tank = ArenaTank(x: 420, y: 420, starmanTime: 1 / 120)
         TankMovement.step(tank: &tank, input: GameInput(forward: true), dt: 1 / 60, walls: [], width: 840, height: 840)

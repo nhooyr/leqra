@@ -16,7 +16,35 @@ class AccountServiceTest {
         val info = AccountInfo(listOf("CURRENT"), 1, PublicProfile("CURRENT", -7))
         assertEquals(-7, info.scoreForCallsign("current"))
         assertNull(info.scoreForCallsign("OTHER"))
-        assertNull(AccountInfo(listOf("NEW"), 1, null).scoreForCallsign("NEW"))
+        assertEquals(0, AccountInfo(listOf("NEW"), 1, null).scoreForCallsign("NEW"))
+        assertNull(AccountInfo(listOf("NEW"), 1, null).scoreForCallsign("OTHER"))
+        assertNull(AccountInfo(emptyList(), 0, null).scoreForCallsign("NEW"))
+        assertEquals(17, AccountInfo(listOf("Σnow"), 1, PublicProfile("Σnow", 17)).scoreForCallsign("ςNOW"))
+        assertNull(AccountInfo(listOf("ı"), 1, PublicProfile("ı", 17)).scoreForCallsign("i"))
+    }
+
+    @Test
+    fun unicodeEquivalentSavedNameReusesItsAuthenticatedKey() {
+        MockWebServer().use { server ->
+            server.start()
+            val store = Store(); val old = AccountKeys.create(); val saved = AccountKeys.create()
+            store.select("", 0, old)
+            val service = AccountService(store) { it() }; val origin = server.url("/").toString()
+            service.rememberCallsign(origin, 0, "Σnow", saved)
+            server.enqueue(MockResponse().setBody("""{"names":["Σnow"],"totalNames":1,"publicProfile":{"name":"Σnow","score":17}}"""))
+            val checked = awaitOperation<CheckedAccount> { service.switchCallsign(origin, 0, "ςNOW", "OLD", callback = it) }.getOrThrow()
+            val request = server.takeRequest()
+            assertEquals("/api/account", request.path)
+            val body = org.json.JSONObject(request.body.readUtf8())
+            assertEquals(saved, body.getString("publicToken")); assertTrue(body.getBoolean("signIn"))
+            assertEquals(saved, checked.key); assertEquals(saved, store.selected[0]!!.key)
+            assertEquals(17, checked.info.scoreForCallsign("ςNOW"))
+            service.rememberCallsign(origin, 0, "i", AccountKeys.create())
+            service.rememberCallsign(origin, 0, "ı", AccountKeys.create())
+            assertTrue(service.savedCallsigns(origin).any { it.name == "i" })
+            assertTrue(service.savedCallsigns(origin).any { it.name == "ı" })
+            service.close()
+        }
     }
 
     @Test
@@ -35,6 +63,89 @@ class AccountServiceTest {
             assertEquals(saved, body.getString("publicToken"))
             assertEquals(42, checked.info.scoreForCallsign("SAVED"))
             assertEquals(selected, store.selected[0]!!.key)
+        }
+    }
+
+    @Test
+    fun delayedImportSignInCannotReplaceANewerSelectedAccount() {
+        MockWebServer().use { server ->
+            server.start()
+            val store = Store()
+            val old = AccountKeys.create()
+            val imported = AccountKeys.create()
+            val newer = AccountKeys.create()
+            store.select("", 0, old)
+            val service = AccountService(store) { it() }
+            val origin = server.url("/").toString()
+            val requested = CountDownLatch(1)
+            val reply = CountDownLatch(1)
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requested.countDown()
+                    check(reply.await(5, TimeUnit.SECONDS))
+                    return MockResponse().setBody("""{"names":["IMPORTED"],"totalNames":1,"publicProfile":{"name":"IMPORTED","score":17}}""")
+                }
+            }
+            val finished = CountDownLatch(1)
+            var result: Result<CheckedAccount>? = null
+            service.signInChecked(CheckedAccount(origin, imported, AccountInfo(listOf("IMPORTED"), 1, null)), 0, "OLD") {
+                result = it; finished.countDown()
+            }
+            assertTrue(requested.await(5, TimeUnit.SECONDS))
+            service.useChecked(CheckedAccount(origin, newer, AccountInfo(listOf("NEWER"), 1, null)), 0)
+            reply.countDown()
+            assertTrue(finished.await(5, TimeUnit.SECONDS))
+            assertTrue("Stale import should fail", result!!.isFailure)
+            assertEquals("Newer account stays selected", newer, store.selected[0]!!.key)
+            assertFalse(service.savedCallsigns(origin).any { it.name == "IMPORTED" })
+            service.close()
+        }
+    }
+
+    @Test
+    fun importSignInDoesNotCommitAfterLeavingTheAccountMenu() {
+        MockWebServer().use { server ->
+            server.start()
+            val store = Store()
+            val old = AccountKeys.create(); val imported = AccountKeys.create()
+            store.select("", 0, old)
+            val service = AccountService(store) { it() }
+            val origin = server.url("/").toString()
+            server.enqueue(MockResponse().setBody("""{"names":["IMPORTED"],"totalNames":1}"""))
+            val result = awaitOperation<CheckedAccount> {
+                service.signInChecked(CheckedAccount(origin, imported, AccountInfo(listOf("IMPORTED"), 1, null)), 0, "OLD", canCommit = { false }, callback = it)
+            }
+            assertTrue(result.isFailure)
+            assertEquals(old, store.selected[0]!!.key)
+            assertTrue(service.savedCallsigns(origin).isEmpty())
+            service.close()
+        }
+    }
+
+    @Test
+    fun savedCallsignCannotBecomeBothSeatsWhileSignInIsPending() {
+        MockWebServer().use { server ->
+            server.start()
+            val store = Store()
+            val oldP1 = AccountKeys.create(); val oldP2 = AccountKeys.create(); val saved = AccountKeys.create()
+            store.select("", 0, oldP1); store.select("", 1, oldP2)
+            val service = AccountService(store) { it() }; val origin = server.url("/").toString()
+            service.rememberCallsign(origin, 0, "SAVED", saved)
+            val requested = CountDownLatch(1); val reply = CountDownLatch(1); val finished = CountDownLatch(1)
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requested.countDown(); check(reply.await(5, TimeUnit.SECONDS))
+                    return MockResponse().setBody("""{"names":["SAVED"],"totalNames":1}""")
+                }
+            }
+            var result: Result<CheckedAccount>? = null
+            service.switchCallsign(origin, 0, "SAVED", "OLD") { result = it; finished.countDown() }
+            assertTrue(requested.await(5, TimeUnit.SECONDS))
+            service.useChecked(CheckedAccount(origin, saved, AccountInfo(listOf("SAVED"), 1, null)), 1)
+            reply.countDown(); assertTrue(finished.await(5, TimeUnit.SECONDS))
+            assertTrue(result!!.isFailure)
+            assertEquals(oldP1, store.selected[0]!!.key); assertEquals(saved, store.selected[1]!!.key)
+            service.close()
         }
     }
 
@@ -302,7 +413,10 @@ class AccountServiceTest {
             assertNotEquals(old, store.selected[0]!!.key)
             assertEquals(other, store.selected[1]!!.key)
             assertEquals(321, result.checked.info.publicProfile!!.score)
-            assertTrue(store.backups.isEmpty())
+            assertTrue(store.backups.none { it.purpose == "rotation" })
+            assertTrue(service.savedCallsigns(server.url("/").toString()).any {
+                it.name == "Pilot" && it.key == result.checked.key
+            })
         }
     }
 
@@ -423,7 +537,10 @@ class AccountServiceTest {
                 assertEquals(store.selected[seat]!!.key, body.getJSONArray("accounts").getJSONObject(seat).getString("publicToken"))
                 assertEquals(seat == 1, store.selected[seat]!!.registrationPending)
             }
-            assertEquals(2, store.backups.size)
+            assertEquals(2, store.backups.count { !it.purpose.startsWith("saved:") })
+            assertTrue(service.savedCallsigns(origin).any {
+                it.name == "pilot#ABC234" && it.key == store.selected[0]!!.key
+            })
             awaitOperation<List<GeneratedCallsign>> { service.generate(origin, listOf(0, 1), id, it) }.getOrThrow()
             assertEquals(id, org.json.JSONObject(server.takeRequest().body.readUtf8()).getString("requestId"))
             service.close()
@@ -439,6 +556,28 @@ class AccountServiceTest {
             val rows = awaitOperation<List<CallsignAvailability>> { service.availability(server.url("/").toString(), listOf("Bot RUST"), it) }.getOrThrow()
             assertEquals("reserved", rows.single().reason)
             assertFalse(rows.single().available)
+            service.close()
+        }
+    }
+
+    @Test
+    fun staleExplicitGenerationRetainsRecoveryWithoutSelectingTheNewAccount() {
+        MockWebServer().use { server ->
+            server.start()
+            val store = Store()
+            val previous = AccountKeys.create()
+            store.select("", 0, previous)
+            val service = AccountService(store) { it() }
+            val origin = server.url("/").toString()
+            val id = java.util.UUID.randomUUID().toString()
+            server.enqueue(MockResponse().setBody("""{"names":[{"seat":0,"name":"pilot#ABC234"}]}"""))
+            val result = awaitOperation<List<GeneratedCallsign>> {
+                service.generate(origin, listOf(0), id, freshAccount = true, canCommit = { false }, callback = it)
+            }.getOrThrow().single()
+            assertFalse(result.selected)
+            assertNotEquals(previous, result.key)
+            assertEquals(previous, store.selected[0]!!.key)
+            assertTrue(store.backups.any { it.key == result.key && it.purpose == "generate:$id" })
             service.close()
         }
     }

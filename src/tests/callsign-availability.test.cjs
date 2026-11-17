@@ -2,13 +2,14 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 const {assetPath}=require('./web_assets.cjs');
 const source=fs.readFileSync(assetPath('game.js'),'utf8');
+const foldSource=fs.readFileSync(assetPath('callsigns.js'),'utf8').split('// BEGIN GENERATED CALLSIGN FOLD\n')[1].split('// END GENERATED CALLSIGN FOLD')[0];
 function declaration(name){const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const end=source.indexOf('\n',start),line=source.slice(start,end);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot(){
  const status={hidden:true,textContent:'',classList:{toggle(name,value){this[name]=value;}}},field={value:'Taken',disabled:false,setAttribute(name,value){this[name]=value;}},form={dataset:{},querySelector:()=>status,elements:{callsign:field}};
  const storage=new Map(),pending=[],timers=new Map();let next=0;
  const context={AbortController,URL,location:{protocol:'https:',href:'https://example.test/'},localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},online:{},mode:'room',window:{},$:()=>status,cleanPilotName:value=>String(value).trim(),secondaryMember:()=>null,roomMember:()=>null,localPlayerID:()=>0,
   setTimeout(fn){timers.set(++next,fn);return next;},clearTimeout(id){timers.delete(id);},fetch(url,request){return new Promise(resolve=>pending.push({url,request,resolve}));}};
- vm.createContext(context);for(const name of ['publicIdentityToken','rememberPublicIdentity','localAccountRegistrationPending','callsignAvailabilityNames','scheduleCallsignAvailability','checkCallsignAvailability'])vm.runInContext((name==='checkCallsignAvailability'?'async ':'')+declaration(name),context);
+ vm.createContext(context);vm.runInContext(foldSource,context);context.accountNameKey=value=>context.canonical(context.cleanPilotName(value));for(const name of ['publicIdentityToken','rememberPublicIdentity','localAccountRegistrationPending','callsignAvailabilityNames','scheduleCallsignAvailability','checkCallsignAvailability'])vm.runInContext((name==='checkCallsignAvailability'?'async ':'')+declaration(name),context);
  return{context,status,field,form,storage,pending,timers};
 }
 test('availability is advisory offline, authenticates ownership, and never sends a score',async()=>{
@@ -74,4 +75,12 @@ test('identity handover and clearing override readable stale storage when writes
 test('entering a saved callsign checks availability with its saved account without signing in',async()=>{
  const {context:s,field,form,pending}=boot();s.savedCallsignToken=(name,fallback)=>name==='Taken'?'p_saved':fallback;field.callsignCheckRevision=1;
  const p=s.checkCallsignAvailability(field,form,1,'Taken');assert.equal(JSON.parse(pending[0].request.body).publicToken,'p_saved');assert.equal(JSON.parse(pending[0].request.body).signIn,undefined);pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Taken',available:true}]})});await p;assert.equal(field.callsignUnavailable,false);
+});
+
+
+test('Unicode-equivalent duplicate local callsigns mark the primary unavailable',async()=>{
+ const {context:s,status,field,form,pending}=boot();field.value='Σnow';s.secondaryMember=()=>({name:'ςNOW'});s.mode='online';field.callsignCheckRevision=1;
+ const check=s.checkCallsignAvailability(field,form,1,field.value);
+ pending[0].resolve({ok:true,json:async()=>({names:[{seat:0,name:'Σnow',available:true},{seat:1,name:'ςNOW',available:false}]})});await check;
+ assert.equal(field.callsignUnavailable,true);assert.equal(field['aria-invalid'],'true');assert.equal(status.textContent,'Taken online. Yours?');
 });

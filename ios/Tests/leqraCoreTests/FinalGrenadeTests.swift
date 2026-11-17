@@ -3,6 +3,25 @@ import XCTest
 @testable import leqraCore
 
 final class FinalGrenadeTests: XCTestCase {
+    func testGrenadeResolvesEveryVictimBeforeInfinityScoreTarget() throws {
+        let arena = PracticeArena(seed: 42, name: "BOMBER", colorIndex: 0, botCount: 0)
+        var rules = RoomRules(); rules.infinity = true; rules.infinityTarget = 1; rules.infinityRandomBots = false
+        arena.configure(rules: rules)
+        arena.snapshot.tanks = [ArenaTank(id: 1, name: "BOMBER", x: 42, y: 42, powerTime: 15, power: "grenade", charges: 3)]
+        arena.step(input: GameInput(fire: true), dt: 1 / 60)
+        arena.step(input: GameInput(), dt: 1 / 60)
+        let grenade = try XCTUnwrap(arena.snapshot.bullets.first { $0.kind == "grenade" })
+        arena.snapshot.tanks[0].invulnerable = 1
+        for index in 2...4 {
+            arena.snapshot.tanks.append(ArenaTank(id: index, name: "TARGET \(index)", x: grenade.x, y: grenade.y + Double(index) * 5, bot: true, cooldown: 999))
+        }
+        arena.step(input: GameInput(fire: true), dt: 1 / 60)
+        XCTAssertTrue(arena.snapshot.tanks.dropFirst().allSatisfy { $0.hp == 0 })
+        XCTAssertEqual(arena.snapshot.tanks[0].score, 3)
+        XCTAssertEqual(arena.snapshot.result?.id, 1)
+        XCTAssertEqual(arena.snapshot.result?.score, 3)
+    }
+
     private func arena(fixed: Bool, epoch: UInt64 = 0) -> PracticeArena {
         let arena = PracticeArena(seed: 42, name: "GRENADE", colorIndex: 0, botCount: 0,
             world: fixed ? ArenaWorld(width: 1000, height: 1000) : nil)
@@ -34,7 +53,10 @@ final class FinalGrenadeTests: XCTestCase {
             XCTAssertNil(arena.snapshot.tanks[0].grenadeEpoch)
             XCTAssertTrue(arena.snapshot.effects.contains { $0.kind == "blast" })
             for _ in 0..<30 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
-            XCTAssertGreaterThan(arena.snapshot.bullets.filter { $0.kind.isEmpty }.count, 1, "Held fire resumes after the existing standard cooldown")
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty }.map(\.id), standardIDs, "Detonation consumes its whole held activation")
+            arena.step(input: GameInput(), dt: 1 / 60)
+            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            XCTAssertGreaterThan(arena.snapshot.bullets.filter { $0.kind.isEmpty }.count, standardIDs.count)
         } }
     }
 

@@ -5,7 +5,8 @@ struct GameHeader: View {
     @ObservedObject var session: GameSession
     var landscape: Bool
     var availableWidth: CGFloat
-    private var compact: Bool { availableWidth < 375 || (availableWidth < 500 && session.room != nil) }
+    var showcase = false
+    private var compact: Bool { availableWidth < 375 || (availableWidth < 500 && session.room != nil && !showcase) }
     var body: some View {
         HStack(spacing: compact ? 4 : 8) {
             HStack(spacing: compact ? 4 : 8) {
@@ -16,71 +17,86 @@ struct GameHeader: View {
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("leqra").font(.system(size: 17, weight: .black)).foregroundStyle(WebStyle.text)
+                            .accessibilityIdentifier(showcase ? "showcaseBrand" : "brand")
                         if !landscape { Text("TANK ARENA").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
                     }.fixedSize(horizontal: true, vertical: false)
                 }
-                Link(destination: URL(string: "https://github.com/nhooyr/leqra")!) {
-                    HStack(spacing: 4) {
-                        GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
-                        if !landscape { Text("v" + NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize() }
-                    }.foregroundStyle(WebStyle.muted).padding(.horizontal, 5).frame(minHeight: 32)
-                        .background(WebStyle.surface, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(WebStyle.border, lineWidth: 1).allowsHitTesting(false))
-                }.accessibilityLabel("View leqra on GitHub")
+                if showcase { versionBadge }
+                else {
+                    Link(destination: URL(string: "https://github.com/nhooyr/leqra")!) { versionBadge }
+                        .accessibilityLabel("View leqra on GitHub")
+                }
             }
             Spacer(minLength: 3)
-            if let room = session.room {
+            if let room = session.room, !showcase {
                 Button("ROOM") { if session.screen == .playing { session.setPaused(true) } }
                     .font(WebStyle.mono(10, weight: .bold)).foregroundStyle(WebStyle.accent).padding(6)
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(WebStyle.accent.opacity(0.35), lineWidth: 1).allowsHitTesting(false))
                     .accessibilityLabel("Room " + room.code)
             }
-            if session.room != nil {
-                WebIconButton(symbol: "bubble.left", label: "Chat") { session.showChat.toggle() }
-            }
             WebIconButton(symbol: session.soundEnabled ? "speaker.wave.2" : "speaker.slash", label: session.soundEnabled ? "Mute sound" : "Unmute sound", active: session.soundEnabled) {
+                guard !showcase else { return }
                 session.soundEnabled.toggle(); session.applyAudioSetting(preview: .unmute)
             }
-            WebIconButton(symbol: "viewfinder", label: session.fullscreen ? "Exit fullscreen" : "Enter fullscreen", active: session.fullscreen) { session.fullscreen.toggle() }
-            if session.screen == .playing {
-                WebIconButton(symbol: "pause", label: "Pause game") { session.setPaused(true) }.accessibilityIdentifier("pauseGame")
+            WebIconButton(symbol: "viewfinder", label: session.fullscreen ? "Exit fullscreen" : "Enter fullscreen", active: session.fullscreen) { if !showcase { session.fullscreen.toggle() } }
+            if showcase || session.screen == .playing {
+                WebIconButton(symbol: "pause", label: "Pause game") { if !showcase { session.setPaused(true) } }.accessibilityIdentifier("pauseGame")
             } else {
-                WebIconButton(symbol: "slider.horizontal.3", label: "Settings") { session.showSettings = true }
+                WebIconButton(symbol: "slider.horizontal.3", label: "Controls") { session.showControls = true }
             }
         }.padding(.horizontal, 4).padding(.bottom, landscape ? 5 : 10)
+    }
+    private var versionBadge: some View {
+        HStack(spacing: 4) {
+            GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
+            Text("v" + NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize()
+        }.foregroundStyle(WebStyle.muted).padding(.horizontal, 5).frame(minHeight: 32)
+            .background(WebStyle.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(WebStyle.border, lineWidth: 1).allowsHitTesting(false))
     }
 }
 
 struct ArenaStatusBar: View {
     @ObservedObject var session: GameSession
     var preview = false
-    private var infinity: Bool { preview ? (session.room?.infinityPublic ?? session.publicInfinitySelected) || session.effectiveRules.infinity : session.isInfinity }
+    var showcase: ShowcaseScene?
+    private var infinity: Bool { showcase != nil || (preview ? (session.room?.infinityPublic ?? session.publicInfinitySelected) || session.effectiveRules.infinity : session.isInfinity) }
+    private var showcasePilot: ArenaTank? { showcase.flatMap { frame in frame.snapshot.tanks.first { $0.id == frame.localID } } }
+    private var showcaseRank: Int? {
+        guard let showcase else { return nil }
+        return showcase.snapshot.leaderboard.firstIndex { $0.id == showcase.localID }.map { $0 + 1 }
+    }
+    private var performance: String {
+        guard let showcase else { return session.performanceReadout(preview: preview) }
+        return "fps: \(showcase.fps ?? 120), ping: \(showcase.ping ?? 8) ms"
+    }
     var body: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Circle().fill(WebStyle.accent).frame(width: 6, height: 6)
                     Text(title.uppercased()).font(WebStyle.mono()).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(showcase == nil ? "arenaTitle" : "showcaseTitle")
                 }
                 if let count = onlineCount {
                     Text("\(count) online").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                } else if preview && !infinity && session.showFPS {
-                    Text(session.performanceReadout(preview: true)).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
+                } else if !infinity && session.showFPS {
+                    Text(performance).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
             if infinity {
                 VStack(spacing: 2) {
-                    if session.showFPS { Text(session.performanceReadout(preview: preview)).foregroundStyle(WebStyle.accent) }
-                    if session.spectating && !preview {
+                    if session.showFPS { Text(performance).foregroundStyle(WebStyle.accent) }
+                    if session.spectating && !preview && showcase == nil {
                         Text(session.spectatorFollowingLabel).foregroundStyle(WebStyle.soft)
                             .fixedSize(horizontal: false, vertical: true).frame(minHeight: 24)
                             .accessibilityIdentifier("spectatorFollowing")
                     } else {
-                        Text("score: \(preview ? 0 : session.score), rank: #\(preview ? 0 : session.localTank?.rank ?? 0)")
-                            .foregroundStyle(WebStyle.paint(session.colorIndex)).accessibilityIdentifier("gameScore")
+                        Text("score: \(showcasePilot?.score ?? (preview ? 0 : session.score)), rank: #\(showcaseRank ?? (preview ? 0 : session.localTank?.rank ?? 0))")
+                            .foregroundStyle(WebStyle.paint(showcasePilot?.colorIndex ?? session.colorIndex)).accessibilityIdentifier("gameScore")
                     }
                 }.font(WebStyle.mono()).frame(maxWidth: .infinity)
-                Button("LEADERBOARD") { session.showScores.toggle() }
+                Button("LEADERBOARD") { if showcase == nil { session.showScores.toggle() } }
                     .font(WebStyle.mono(10, weight: .semibold)).foregroundStyle(WebStyle.accent)
                     .padding(.horizontal, 7).frame(minHeight: 30)
                     .accessibilityIdentifier("toggleStandings")
@@ -103,11 +119,13 @@ struct ArenaStatusBar: View {
             .overlay(alignment: .bottom) { WebStyle.border.frame(height: 1).allowsHitTesting(false) }
     }
     private var title: String {
+        if let showcase { return showcase.title }
         if preview { return infinity ? ((session.room?.infinityPublic ?? session.publicInfinitySelected) ? "Public Infinity" : "Infinity") : "Ready room" }
         if infinity { return session.spectating ? "Spectating" : session.gameTitle }
         return session.snapshot.phase == "playing" ? "Live arena" : session.snapshot.phase == "countdown" ? "Get ready" : session.snapshot.phase == "roundOver" ? "Round complete" : "Match complete"
     }
     private var onlineCount: Int? {
+        if let showcase { return showcase.snapshot.players }
         guard infinity, !session.offline else { return nil }
         if preview { return (session.room?.infinityPublic ?? session.publicInfinitySelected) ? session.publicStatus?.players : nil }
         return session.snapshot.players
@@ -126,12 +144,21 @@ struct ArenaStatusBar: View {
 struct PilotLoadoutView: View {
     @ObservedObject var session: GameSession
     var compact = false
-    private var readout: PilotReadout { session.currentReadout }
+    var seat = 0
+    var paired = false
+    var showcase: ShowcaseScene?
+    private var showcasePilot: ArenaTank? { showcase.flatMap { frame in frame.snapshot.tanks.first { $0.id == frame.localID } } }
+    private var readout: PilotReadout {
+        if let showcase, let tank = showcasePilot { return PilotReadout(tank: tank, snapshot: showcase.snapshot, infinity: true, paused: false, online: false) }
+        return seat == 1 ? session.secondaryReadout : session.currentReadout
+    }
+    private var pilotIdentity: String { showcasePilot.map { $0.name + " (P1)" } ?? (seat == 1 ? session.secondaryIdentity : session.identity) }
+    private var paint: Int { showcasePilot?.colorIndex ?? (seat == 1 ? session.secondaryPaint : session.colorIndex) }
     var body: some View {
         Group {
-            if session.localTank == nil {
+            if seat == 0 && session.localTank == nil && showcase == nil {
                 Text("SPECTATING").font(WebStyle.mono()).foregroundStyle(WebStyle.soft).frame(maxWidth: .infinity, alignment: .leading)
-            } else if compact {
+            } else if compact && !paired {
                 HStack(spacing: 12) {
                     identity.frame(maxWidth: 190, alignment: .leading)
                     VStack(alignment: .leading, spacing: 3) { ammo; weapon; readiness }.frame(maxWidth: .infinity, alignment: .leading)
@@ -140,20 +167,20 @@ struct PilotLoadoutView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     identity
                     HStack(alignment: .top, spacing: 10) {
-                        ammo.frame(width: 60, alignment: .leading)
+                        ammo.fixedSize(horizontal: true, vertical: false)
                         weapon.frame(maxWidth: .infinity, alignment: .leading)
                     }.frame(minHeight: 30)
                     readiness
                 }
             }
         }.padding(.horizontal, 13).padding(.vertical, compact ? 5 : 8)
-            .frame(maxWidth: .infinity, minHeight: compact ? 54 : 97, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: paired ? 75 : compact ? 54 : 97, alignment: .leading)
             .background(WebStyle.surface).overlay(alignment: .top) { WebStyle.border.frame(height: 1).allowsHitTesting(false) }
     }
     private var identity: some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(session.identity).font(compact ? .system(size: 11, weight: .bold) : WebStyle.mono(11, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex))
-                .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("pilotIdentity")
+            Text(pilotIdentity).font(compact ? .system(size: 11, weight: .bold) : WebStyle.mono(11, weight: .bold)).foregroundStyle(WebStyle.paint(paint))
+                .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier(seat == 1 ? "pilotIdentityP2" : "pilotIdentity")
             if readout.locked { Text("⚠ HOMING LOCK").font(WebStyle.mono(10, weight: .bold)).foregroundStyle(WebStyle.danger) }
         }
     }
@@ -168,23 +195,44 @@ struct PilotLoadoutView: View {
             } else {
                 HStack(spacing: 1) {
                     ForEach(0..<min(12, readout.capacity), id: \.self) { index in
-                        RoundedRectangle(cornerRadius: 2).fill(index < Int(ceil(Double(readout.available) / Double(readout.capacity) * Double(min(12, readout.capacity)))) ? WebStyle.paint(session.colorIndex) : WebStyle.hover).frame(width: 4, height: 11)
+                        RoundedRectangle(cornerRadius: 2).fill(index < Int(ceil(Double(readout.available) / Double(readout.capacity) * Double(min(12, readout.capacity)))) ? WebStyle.paint(paint) : WebStyle.hover).frame(width: 4, height: 11)
                     }
                 }.accessibilityLabel("\(readout.available) of \(readout.capacity) ammunition slots")
             }
-        }.frame(minHeight: 15)
+        }.frame(minHeight: 15).accessibilityIdentifier(seat == 1 ? "pilotAmmoP2" : "pilotAmmo")
     }
     private var weapon: some View {
         VStack(alignment: .leading, spacing: 3) {
             if !readout.weapon.isEmpty { Text(readout.weapon).font(WebStyle.mono()).foregroundStyle(WebStyle.accent).fixedSize(horizontal: false, vertical: true) }
             if !readout.buffs.isEmpty { Text(readout.buffs).font(WebStyle.mono()).foregroundStyle(Color(hex: "#75f0cb")).fixedSize(horizontal: false, vertical: true) }
-        }
+        }.accessibilityIdentifier(seat == 1 ? "pilotWeaponP2" : "pilotWeapon")
     }
     private var readiness: some View {
         HStack(spacing: 8) {
             Text(readout.readiness).font(WebStyle.mono()).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
-            GeometryReader { geometry in WebStyle.paint(session.colorIndex).frame(width: geometry.size.width * readout.progress) }.frame(maxWidth: compact ? 100 : .infinity).frame(height: 3).background(WebStyle.hover)
-        }
+            GeometryReader { geometry in WebStyle.paint(paint).frame(width: geometry.size.width * readout.progress) }.frame(maxWidth: compact ? 100 : .infinity).frame(height: 3).background(WebStyle.hover)
+        }.accessibilityIdentifier(seat == 1 ? "pilotReadinessP2" : "pilotReadiness")
+    }
+}
+
+struct LocalPilotLoadouts: View {
+    @ObservedObject var session: GameSession
+    let landscape: Bool
+    var body: some View {
+        if session.secondaryLocalID != nil {
+            if landscape {
+                HStack(alignment: .top, spacing: 0) {
+                    PilotLoadoutView(session: session, compact: true, paired: true)
+                    WebStyle.border.frame(width: 1)
+                    PilotLoadoutView(session: session, compact: true, seat: 1, paired: true)
+                }.fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 0) {
+                    PilotLoadoutView(session: session, compact: true)
+                    PilotLoadoutView(session: session, compact: true, seat: 1)
+                }
+            }
+        } else { PilotLoadoutView(session: session, compact: landscape) }
     }
 }
 

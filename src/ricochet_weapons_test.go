@@ -196,6 +196,11 @@ func TestRemoteGrenadeLaunchHoldThenPress(t *testing.T) {
 	p.Cooldown = 0
 	g.Tick++
 	g.weaponControl(p, true, false)
+	if p.ShotSerial != 2 {
+		t.Fatal("remote detonation hold threw another grenade")
+	}
+	g.weaponControl(p, false, false)
+	g.weaponControl(p, true, true)
 	if p.ShotSerial != 3 || p.Power != "" || len(g.Bullets) != 3 {
 		t.Fatal("continued hold did not make exactly one final throw")
 	}

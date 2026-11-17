@@ -15,7 +15,7 @@ function boot(kind='',speed=282,radius=3.5,extra={},walls=[]){
  vm.createContext(s);
  const constants=source.slice(source.indexOf('const DIFFICULTY='),source.indexOf("let phase='menu'"));
  vm.runInContext(constants,s);
- for(const name of ['canDamage','nearbyWalls','rayWalls','rayBounds','projectileWall','circleHit','tankHit','grenadeDragIntegral','grenadeDragFactor','steerMissile','guideGrenade','spendMissileRange','missileWallNudge','grenadeForecast','updateBullets','compactNotDead','detonate','projectileTankImpact'])vm.runInContext(declaration(name),s);
+ for(const name of ['canDamage','nearbyWalls','rayWalls','rayBounds','projectileWall','circleHit','tankHit','grenadeDragIntegral','grenadeDragFactor','steerMissile','guideGrenade','spendMissileRange','missileWallNudge','grenadeForecast','advanceCannon','updateBullets','compactNotDead','detonate','projectileTankImpact'])vm.runInContext(declaration(name),s);
  return{s,owner,shell};
 }
 
@@ -23,7 +23,7 @@ test('all projectiles pass through the shooter and can still hit an enemy',()=>{
  for(const [kind,speed,radius] of specs)for(const age of [0,1]){
   const {s,owner,shell}=boot(kind,speed,radius,{x:173,y:200,age,life:10-age});s.tanks.push(tank(1,247,200));
   for(let i=0;i<60&&!shell.dead;i++)s.updateBullets(1/120);
-  assert.equal(owner.alive,true,kind+' at age '+age);assert.deepEqual(s.hits,[1]);assert.equal(shell.dead,true);
+  assert.equal(owner.alive,true,kind+' at age '+age);assert.deepEqual(s.hits,[1]);assert.equal(!!shell.dead,kind!=='cannon');
  }
 });
 

@@ -15,9 +15,12 @@ public struct AccountInfo: Decodable, Equatable, Sendable {
     public var preferredCallsign: String? { publicProfile?.name ?? names.first }
 
     public func score(for callsign: String) -> Int? {
-        guard let profile = publicProfile,
-              CallsignPolicy.clean(profile.name).lowercased() == CallsignPolicy.clean(callsign).lowercased() else { return nil }
-        return profile.score
+        let key = CallsignPolicy.canonical(callsign)
+        if let profile = publicProfile {
+            return CallsignPolicy.canonical(profile.name) == key ? profile.score : nil
+        }
+        // An authenticated name without a public profile has not played yet.
+        return names.contains { CallsignPolicy.canonical($0) == key } ? 0 : nil
     }
 
     private enum CodingKeys: String, CodingKey { case names, totalNames, publicProfile }

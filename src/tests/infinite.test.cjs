@@ -191,7 +191,7 @@ function harness(url = 'https://example.test/', openField = false, storage = new
    },
   })};
  }
- vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.testDraw = draw; window.testFire = fireShot; window.testStep = offlineStep; window.testHurt = hurt; window.testBotInput = botInput; window.testRoamingDifficulty = roamingDifficulty; window.leqraInfinity ='), context);
+ vm.runInContext(readFileSync(assetPath('infinite.js'), 'utf8').replace('window.leqraInfinity =', 'window.testArena = () => session; window.testDraw = draw; window.testFire = fireShot; window.testAdvanceBullet = advanceBullet; window.testDetonate = detonate; window.testWeaponControl = weaponControl; window.testStep = offlineStep; window.testHurt = hurt; window.testBotInput = botInput; window.testRoamingDifficulty = roamingDifficulty; window.leqraInfinity ='), context);
  byID('pauseBtn').addEventListener('click',()=>window.leqraInfinity.togglePause());
  const advance = (frames = 1) => {
   for (let i = 0; i < frames; i++) {
@@ -214,6 +214,39 @@ function harness(url = 'https://example.test/', openField = false, storage = new
  };
  return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, botInput:window.testBotInput,setRandom(fn){math.random=fn;},sounds, loadouts, markers, labels, strokes, rings, frameSamples, bulletDraws, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
 }
+
+test('Showcase retains a defeated tank wreck and callsign without changing normal death rendering',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
+ const world=h.state(),hero=world.tanks[0],wreck={...hero,id:'wreck',name:'Fallen target',colorIndex:1,x:hero.x+64,hp:0,alive:false,bot:true};
+ world.tanks=[hero,wreck];world.botPool=[];world.nextBot=world.nextPickup=Infinity;
+ h.labels.length=0;h.window.testDraw(world,0,0);
+ assert.ok(!h.labels.some(label=>label.text==='Fallen target'),'ordinary gameplay still hides defeated tank labels');
+ const hulls=[],badges=[];
+ h.window.leqraInfinityArt.hull=skin=>hulls.push(skin.color);
+ h.window.leqraInfinityArt.drawBadges=tank=>badges.push(tank.id);
+ const scene={seed:1,time:8420,localID:hero.id,tanks:[{...hero},wreck],bullets:[],pickups:[],effects:[]},before=JSON.stringify(scene);
+ h.labels.length=0;const target=h.byID('showcaseCanvas');h.infinity.showcaseRenderer(target,scene)();
+ assert.ok(h.labels.some(label=>label.text==='Fallen target'&&label.color===h.window.leqraInfinityArt.colors[1]),'the destroyed target keeps its colored callsign');
+ assert.equal(hulls.length,1,'only the living hero is painted as an armed tank');
+ assert.ok(!badges.includes(wreck.id),'destroyed target has no live power badges');
+ assert.ok(h.strokes.includes('#46545a'),'the destroyed target is painted with the crossed wreck hull');
+ assert.ok(target.attributes['aria-label'].includes('Fallen target'));
+ assert.equal(JSON.stringify(scene),before,'rendering does not mutate the fixture');
+ assert.equal(world.showcase,undefined,'the live world does not enter Showcase mode');h.infinity.close();
+});
+
+test('Infinity cannot enter while a callsign release begins during account preflight',async()=>{
+ const h=harness();let ready;const errors=[];
+ h.window.leqraInfinityArt.ensureSelectedCallsignAccounts=()=>new Promise(resolve=>{ready=resolve;});
+ h.infinity.start('online',{onError:error=>errors.push(error.message)});
+ assert.equal(h.byID('infiniteArena').open,false);
+ h.byID('accountDialog').accountReleaseRequest={};ready();await new Promise(setImmediate);
+ assert.equal(h.byID('infiniteArena').open,false);assert.equal(h.sockets.length,0);
+ assert.deepEqual(errors,['Finish releasing the callsign before starting a game.']);
+ h.infinity.start('offline');assert.equal(h.byID('infiniteArena').open,false);
+ delete h.byID('accountDialog').accountReleaseRequest;
+ h.infinity.start('offline');assert.equal(h.byID('infiniteArena').open,true);h.infinity.close();
+});
 
 test('offline Infinity refills all ten pickups and endings for P1/P2 while preserving old projectile physics',()=>{
  const kinds=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
@@ -257,15 +290,33 @@ test('all online Infinity projectile kinds survive newest removal until playback
  w.motionBuffer.time=b.netTime;h.window.testDraw(w,w.arrived,0);assert.equal(h.bulletDraws.at(-1).length,0);h.infinity.close();
 });
 
-test('all offline Infinity ballistic muzzle kills present a shell without leaving a damaging projectile',()=>{
+test('offline Infinity ballistic muzzle kills present a shell and only Cannon keeps traveling',()=>{
  for(const kind of ['regular','rapid','scatter','homing','grenade','cannon']){
   const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});const w=h.state(),p=w.tanks[0];
   Object.assign(p,{x:100,y:100,angle:0,hp:1,spawnProtected:false,invulnerable:0,power:kind==='regular'?'':kind,powerTime:10,charges:3,machineRounds:180});
   const target={...p,id:'target',name:'Target',bot:true,x:134,y:100,power:'',charges:0,team:0,score:0};w.tanks.push(target);
   h.window.testFire(w,p);assert.equal(target.hp,0,kind);h.window.testDraw(w,100,0);
   assert.ok(h.bulletDraws.at(-1).some(b=>(b.kind||'regular')===kind),kind+' remains visible');
-  h.window.testDraw(w,151,0);assert.ok(h.bulletDraws.at(-1).some(b=>b.flight));h.window.testDraw(w,159,0);assert.ok(!h.bulletDraws.at(-1).some(b=>b.flight),kind+' visual grace is bounded');h.infinity.close();
+  h.window.testDraw(w,151,0);assert.ok(h.bulletDraws.at(-1).some(b=>kind==='cannon'?!b.flight:b.flight));h.window.testDraw(w,159,0);assert.ok(!h.bulletDraws.at(-1).some(b=>b.flight),kind+' terminal visual grace is bounded');assert.equal(w.bullets.some(b=>!b.dead&&b.kind==='cannon'),kind==='cannon');h.infinity.close();
  }
+});
+
+test('offline Infinity Cannon pierces all current-segment victims before resolving the score target',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false,infinityTarget:1}});const w=h.state(),p=w.tanks[0];
+ Object.assign(p,{x:100,y:100,angle:0,hp:1,team:0,score:0,spawnProtected:false,invulnerable:0,power:'cannon',powerTime:10,charges:3});
+ const victims=[3,2,1].map((id,i)=>({...p,id:'victim'+id,name:'Victim '+id,bot:true,x:125-i*5,power:'',team:0,score:0}));w.tanks.push(...victims);
+ h.window.testFire(w,p);assert.ok(victims.every(t=>t.hp===0));assert.equal(p.score,3);assert.equal(w.result.score,3);assert.equal(w.bullets.length,1);assert.ok(!w.bullets[0].dead);
+ h.infinity.close();
+});
+
+test('offline Infinity Cannon shields once per life while passing through protected bodies',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});const w=h.state(),p=w.tanks[0];
+ Object.assign(p,{x:100,y:100,angle:0,hp:1,team:0,spawnProtected:false,invulnerable:0,power:'cannon',powerTime:10,charges:3});
+ const target={...p,id:'shield',x:148,shield:10,shieldCharges:2,spawnSerial:1,power:''},protectedTank={...p,id:'protected',x:135,invulnerable:1};w.tanks.push(target,protectedTank);
+ h.window.testFire(w,p);const shell=w.bullets[0];h.window.testAdvanceBullet(w,shell,.04);assert.equal(target.shieldCharges,1);assert.equal(protectedTank.hp,1);
+ target.invulnerable=0;shell.x=180;shell.vx=-1128;h.window.testAdvanceBullet(w,shell,.06);assert.equal(target.shieldCharges,1);
+ target.spawnSerial++;shell.x=100;shell.vx=1128;h.window.testAdvanceBullet(w,shell,.06);assert.equal(target.shieldCharges,0);assert.equal(target.hp,1);assert.ok(!shell.dead);
+ h.infinity.close();
 });
 
 test('room Infinity shows a between-snapshot terminal cannon even when that shot ends the run',()=>{
@@ -1055,6 +1106,45 @@ test('Infinity laser pierces the whole lane before resolving a target score win'
  infinity.close();
 });
 
+test('Infinity grenade resolves every winning blast victim before freezing the result',()=>{
+ for(const teams of [false,true]){
+  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{teamMode:teams?'teams':'ffa',infinityTarget:1}});
+  const world=h.state(),pilot=world.tanks[0];world.nextPickup=world.nextBot=Infinity;
+  Object.assign(pilot,{x:100,y:100,team:teams?1:0,invulnerable:0,spawnProtected:false});
+  const victims=[130,140,150].map((x,i)=>({...pilot,id:10+i,name:'Victim '+i,x,team:teams?2:0,score:0}));world.tanks.push(...victims);
+  const bullet={id:1,owner:pilot.id,team:pilot.team,ownerName:pilot.name,x:120,y:100,kind:'grenade',color:pilot.color,r:6,life:1};
+  h.window.testDetonate(world,bullet);
+  assert.ok(victims.every(tank=>tank.hp===0&&tank.score===-1));assert.equal(pilot.score,3);assert.equal(world.result.score,3);assert.equal(bullet.dead,true);assert.equal(world.volleyDepth,0);
+  if(teams)assert.deepEqual(Array.from(world.teamScores),[3,-3,0,0]);
+  h.infinity.close();
+ }
+});
+
+test('Infinity remote grenade trigger resolves its complete bank before winning',()=>{
+ const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityTarget:1}});
+ const world=h.state(),pilot=world.tanks[0];world.nextPickup=world.nextBot=Infinity;
+ Object.assign(pilot,{x:100,y:100,invulnerable:0,spawnProtected:false});
+ const victims=[100,700,1300].map((x,i)=>({...pilot,id:10+i,name:'Victim '+i,x,score:0}));world.tanks.push(...victims);
+ world.bullets=victims.map((tank,i)=>({id:i+1,owner:pilot.id,team:pilot.team,ownerName:pilot.name,x:tank.x,y:100,kind:'grenade',color:pilot.color,r:6,life:1,ammoEpoch:pilot.ammoEpoch}));
+ h.window.testWeaponControl(world,pilot,true,true);
+ assert.ok(victims.every(tank=>tank.hp===0));assert.ok(world.bullets.every(bullet=>bullet.dead));assert.equal(pilot.score,3);assert.equal(world.result.score,3);assert.equal(world.volleyDepth,0);
+ const later={...world.bullets[0],id:99,dead:false};world.bullets.push(later);h.window.testWeaponControl(world,pilot,true,true);assert.equal(later.dead,false,'completed result ignores a later trigger');
+ h.infinity.close();
+});
+
+test('Infinity winning volley retains final friendly-fire team score',()=>{
+ for(const weapon of ['laser','grenade']){
+  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{teamMode:'teams',infinityTarget:1,friendlyFire:true}});
+  const world=h.state(),pilot=world.tanks[0];world.nextPickup=world.nextBot=Infinity;
+  Object.assign(pilot,{x:100,y:100,angle:0,team:1,power:weapon,charges:3,powerTime:10,invulnerable:0,spawnProtected:false});
+  const targets=[2,1].map((team,i)=>({...pilot,id:10+i,name:'Target '+i,x:150+i*20,team,score:0}));world.tanks.push(...targets);
+  if(weapon==='laser')h.window.testFire(world,pilot);
+  else h.window.testDetonate(world,{id:1,owner:pilot.id,team:1,ownerName:pilot.name,x:140,y:100,kind:'grenade',color:pilot.color,r:6,life:1});
+  assert.ok(targets.every(tank=>tank.hp===0));assert.equal(pilot.score,2);assert.equal(world.teamScores[0],1);assert.equal(world.result.score,1);
+  h.infinity.close();
+ }
+});
+
 test('offline Infinity spawns every pickup and equips a collected grenade', () => {
  const {infinity, state, advance, window} = harness('file:///leqra/index.html');
  infinity.start('offline');
@@ -1468,7 +1558,7 @@ test('offline Infinity auto-throws held grenades on cooldown for both local pilo
   assert.equal(w.lastBullet,1);h.advance(46);assert.equal(w.lastBullet,1);h.advance(3);assert.equal(w.lastBullet,2);assert.equal(t.charges,1);h.infinity.close();
  }
 });
-test('offline Infinity last grenade stays poppable without latching held standard fire',()=>{
+test('offline Infinity grenade detonation consumes the hold until release',()=>{
  for(const local of [false,true])for(const epoch of [0,42]){
   const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[local?1:0],seat=local?w.local:w,arena=h.byID('infiniteArena');w.nextBot=w.nextPickup=Infinity;
   for(const tank of w.tanks)Object.assign(tank,{x:100+tank.colorIndex*300,y:100,angle:-Math.PI/2,invulnerable:1000,spawnProtected:false});
@@ -1476,7 +1566,7 @@ test('offline Infinity last grenade stays poppable without latching held standar
   arena.emit('keydown',{code:key});h.advance();const grenade=w.bullets[0];assert.equal(t.grenadeEpoch,epoch);assert.equal(w.lastBullet,1);
   h.advance();assert.equal(w.lastBullet,2);assert.ok(!grenade.dead);
   arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.ok(grenade.dead);assert.equal(w.lastBullet,2,'pop never also fires');assert.equal(t.grenadeEpoch,undefined);
-  t.cooldown=0;h.advance();assert.equal(w.lastBullet,3,'same hold resumes next tick');h.infinity.close();
+  t.cooldown=0;h.advance();assert.equal(w.lastBullet,2,'same detonation hold cannot fire');arena.emit('keyup',{code:key});h.advance();arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,3,'a new press fires normally');h.infinity.close();
  }
 });
 test('offline Infinity every weapon ending automatically resumes held standard fire',()=>{
@@ -2095,6 +2185,32 @@ test('stored mouse OFF blocks Infinity canvas aiming and firing while both keybo
  h.infinity.close();
 });
 
+test('paired touch Infinity gives keyboard/mouse to P2 and independent touch fire to P1 in either split',()=>{
+ for(const [width,height,x,y]of [[390,740,295,555],[801,400,701,200]]){
+  const h=harness(undefined,true);h.window.leqraInfinityArt.hardwareUsesP2=()=>true;
+  h.infinity.start('online',{localName:'Wing'});const socket=h.sockets[0];socket.receive({type:'welcome',id:1,localId:2,seed:0});
+  socket.receive({type:'state',tanks:[{id:1,x:42,y:42,angle:0,hp:1},{id:2,x:210,y:210,angle:0,hp:1}],bullets:[],leaderboard:[],players:2});
+  const w=h.state(),canvas=h.byID('infiniteCanvas'),arena=h.byID('infiniteArena');canvas.getBoundingClientRect=()=>({left:0,top:0,width,height});
+  for(const code of ['KeyW','ArrowUp']){arena.emit('keydown',{code});h.advance(3);assert.equal(w.lastSent.forward,false);assert.equal(w.local.lastSent.forward,true);arena.emit('keyup',{code});h.advance(3);}
+  canvas.emit('pointerdown',{pointerType:'mouse',button:0,pointerId:7,clientX:x,clientY:y});
+  assert.equal(socket.sent.at(-1).local,true);assert.equal(w.local.lastSent.fire,true);assert.equal(w.local.lastSent.aimOnly,true);
+  assert.ok(Math.abs(w.local.lastSent.stickX-1)<1e-9);assert.ok(Math.abs(w.local.lastSent.stickY)<1e-9);
+  h.byID('infiniteFire').emit('pointerdown',{pointerType:'touch',button:0,pointerId:8});
+  assert.equal(w.lastSent.fire,true);assert.equal(w.lastSent.aimOnly,false);assert.equal(w.local.lastSent.fire,true);
+  h.window.emit('pointerup',{pointerId:7});assert.equal(w.local.lastSent.fire,false);assert.equal(w.lastSent.fire,true);
+  h.window.emit('pointerup',{pointerId:8});assert.equal(w.lastSent.fire,false);h.infinity.close();
+ }
+});
+
+test('a quick P2 mouse tap survives the P1 simulation tick on touch Infinity',()=>{
+ const h=harness(undefined,true);h.window.leqraInfinityArt.hardwareUsesP2=()=>true;
+ h.infinity.start('offline',{localName:'Wing',roomRules:{infinityRandomBots:false}});
+ const w=h.state();w.nextBot=w.nextPickup=Infinity;for(const tank of w.tanks)Object.assign(tank,{invulnerable:0,spawnProtected:false});
+ const canvas=h.byID('infiniteCanvas');canvas.getBoundingClientRect=()=>({left:0,top:0,width:390,height:740});
+ canvas.emit('pointerdown',{pointerType:'mouse',button:0,pointerId:7,clientX:295,clientY:555});h.window.emit('pointerup',{pointerId:7});h.advance();
+ assert.deepEqual(Array.from(w.bullets,bullet=>bullet.owner),[w.local.id]);h.infinity.close();
+});
+
 test('disabling Infinity mouse controls cancels only mouse taps and reenable needs a fresh click',()=>{
  const h=harness(undefined,true);let enabled=true;Object.assign(h.window.leqraInfinityArt,{mouseAimEnabled:()=>enabled,mouseFireEnabled:()=>enabled});
  h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});h.state().tanks.forEach(tank=>{tank.invulnerable=0;tank.spawnProtected=false;});const world=h.state(),canvas=h.byID('infiniteCanvas');
@@ -2234,6 +2350,20 @@ test('a revoked account key is terminal and clears only the credential used by t
  socket.receive({type:'state',tick:1,tanks:[{id:14,name:'Chosen',x:100,y:100,angle:0,hp:1,score:27}],bullets:[],players:1,leaderboard:[]});
  socket.receive({type:'error',code:'account_key_revoked'});h.elapse(60000);
  assert.deepEqual(revoked,['p_old_owner']);assert.equal(h.state().failed,true);assert.equal(h.sockets.length,1);assert.match(h.byID('infiniteStatus').textContent,/key was reset.*Import the latest key/);h.infinity.close();
+});
+
+test('released or expired paired Infinity accounts clear only the affected seat and stop reconnecting',()=>{
+ for(const seat of [0,1]){
+  const h=harness(undefined,true),forgotten=[],keys=['p_primary','p_secondary'];
+  h.window.leqraInfinityArt.publicIdentityToken=seat=>keys[seat||0];
+  h.window.leqraInfinityArt.prepareLocalAccount=()=>({localPublicToken:keys[1]});
+  h.window.leqraInfinityArt.forgetRevokedAccount=(token,seat)=>forgotten.push([token,seat]);
+  h.infinity.start('online',{name:'Primary',localName:'Secondary'});const socket=h.sockets[0];socket.emit('open');
+  socket.receive({type:'welcome',id:14,localId:15,seed:0,publicToken:keys[0],localPublicToken:keys[1]});
+  socket.receive({type:'error',code:'account_key_invalid',seat});h.elapse(60000);
+  assert.deepEqual(forgotten,[[keys[seat],seat]]);assert.equal(h.state().failed,true);assert.equal(h.state().joined,false);assert.equal(h.sockets.length,1);
+  assert.match(h.byID('infiniteStatus').textContent,new RegExp('P'+(seat+1)+'’s account expired or was released'));h.infinity.close();
+ }
 });
 
 test('a stored or revoked unselected P2 key never joins or returns during a solo reconnect',()=>{

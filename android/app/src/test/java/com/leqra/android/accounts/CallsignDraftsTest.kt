@@ -84,4 +84,14 @@ class CallsignDraftsTest {
         assertFalse(state.pending(0))
         assertFalse(state.pending(1))
     }
+
+    @Test
+    fun explicitGenerationStampIsInvalidatedEvenWhenAnEditReturnsToTheSameName() {
+        val state = CallsignDrafts(listOf("FIRST", "SECOND"), listOf(false, false), listOf(null, null))
+        val request = state.request(0, "origin", "key")
+        assertTrue(state.isCurrent(request, "origin", "key"))
+        state.edit(0, "EDIT")
+        state.edit(0, "FIRST")
+        assertFalse(state.isCurrent(request, "origin", "key"))
+    }
 }

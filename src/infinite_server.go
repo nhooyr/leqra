@@ -268,6 +268,8 @@ func rejectInfinite(c *Client, message string) {
 		}
 	}
 	switch message {
+	case errCallsignImmutable.Error():
+		packet["code"] = "callsign_immutable"
 	case errSameSeatAccount.Error(), errNewAccountKeyInvalid.Error():
 		packet["code"] = "account_seat_conflict"
 	case infiniteSessionActive:

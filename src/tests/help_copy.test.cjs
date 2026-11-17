@@ -5,11 +5,12 @@ const {assetPath}=require('./web_assets.cjs');
 const source=readFileSync(assetPath('game.js'),'utf8'),infinite=readFileSync(assetPath('infinite.js'),'utf8'),html=readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
 function declaration(name){const start=source.indexOf('function '+name+'('),end=source.indexOf('\n',start),line=source.slice(start,end);assert.ok(start>=0,name);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
 function boot(){
- const nodes=new Map(),rules={mode:'elimination',teamMode:'teams',mapSize:'compact',scoreTarget:15,pickupRate:'superfast',weapons:[]};
+ const nodes=new Map(),rules={mode:'elimination',teamMode:'teams',mapSize:'compact',scoreTarget:15,pickupRate:'superfast',weapons:['laser']};
  const $=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',value:'',checked:false,parentElement:{},replaceChildren(...children){this.textContent=children.map(child=>child.textContent).join('');}});return nodes.get(id);};
- const s={$,rules,CELL:84,window:{},selection:'',currentRules:()=>rules,infinityPlayMode:()=>s.selection,isRoomEditable:()=>true,mapDimensions:()=>[7,7],powerEffectDuration:()=>10,starmanDuration:()=>4,pickupLifetime:()=>30,document:{createTextNode:text=>({textContent:text}),createElement:()=>({textContent:''})}};
+ const s={$,rules,CELL:84,window:{},selection:'',currentRules:()=>rules,infinityPlayMode:()=>s.selection,isRoomEditable:()=>true,POWER_EFFECT_DURATION:10,document:{createTextNode:text=>({textContent:text}),createElement:()=>({textContent:''})}};
  vm.createContext(s);vm.runInContext(infinite.match(/^const POWER_DURATION = .*$/m)[0]+'\n'+infinite.match(/^const pickupHelp = .*$/m)[0]+'\nglobalThis.infinityPickupHelp=pickupHelp;',s);
- s.window.leqraInfinity={pickupHelp:s.infinityPickupHelp};for(const name of ['activeTeamCount','modeLabel','pickupCap','startingPickups','pickupLimitText','syncControlsPickupInfo','updateRuleHelp'])vm.runInContext(declaration(name),s);
+ vm.runInContext(source.match(/^const MAZE_SIZES=.*$/m)[0],s);
+ s.window.leqraInfinity={pickupHelp:s.infinityPickupHelp};for(const name of ['activeTeamCount','modeLabel','mapDimensions','powerEffectDuration','starmanDuration','pickupLifetime','pickupCap','startingPickups','pickupLimitText','pickupHelpText','updateRuleHelp'])vm.runInContext(declaration(name),s);
  return{s,$,rules};
 }
 
@@ -22,22 +23,30 @@ test('shared power cards avoid weapon-specific immunity and finite-map claims in
  assert.match(html,/Grenade<\/strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds\./);
 });
 
-test('tour, sidebar, Controls and Rules consistently call collectible items power-ups',()=>{
- const visibleHTML=html.replace(/<[^>]*>/g,' ');assert.doesNotMatch(visibleHTML,/\bpick[ -]?ups?\b/i);
- assert.match(visibleHTML,/10 POWER-UPS/);assert.match(visibleHTML,/Speed activates when collected/);assert.match(visibleHTML,/glowing power-up/);
- const {s,$}=boot();s.syncControlsPickupInfo();const fixed=$('controlsPickupInfo').textContent;
+test('power-up timing lives in the sidebar and Rules, not Controls',()=>{
+ const controls=source.slice(source.indexOf('<dialog class="feature-dialog" id="controlsDialog"'),source.indexOf('document.body.append(dialogs)'));
+ assert.doesNotMatch(controls,/MAZE POWER-UPS|controlsPickupInfo|Most last/);
+ const {s,$}=boot(),fixed=s.pickupHelpText();
  assert.match(fixed,/2 starting power-ups, 5 maximum/);assert.match(fixed,/10 seconds once collected/);assert.doesNotMatch(fixed,/\bpick[ -]?ups?\b/i);
- s.selection='online';s.syncControlsPickupInfo();assert.match($('controlsPickupInfo').textContent,/15 seconds once collected/);assert.doesNotMatch($('controlsPickupInfo').textContent,/\bpick[ -]?ups?\b/i);
  $('rule-pickupRate').value='off';s.updateRuleHelp();assert.equal($('rule-pickup-density').textContent,'Power-ups disabled.');
  assert.match(source,/<option value="off">Off, no power-ups<\/option>/);
 });
 
-test('Controls shows Infinity timing before entry and restores fixed-map timing when selection changes',()=>{
- const {s,$,rules}=boot();s.syncControlsPickupInfo();assert.match($('controlsPickupInfo').textContent,/Most power-ups last 10 seconds/);assert.match($('controlsPickupInfo').textContent,/Starman: 4 seconds/);
- s.selection='online';s.syncControlsPickupInfo();assert.equal($('controlsPickupInfo').textContent,s.infinityPickupHelp);assert.match(s.infinityPickupHelp,/Most last 15 seconds/);assert.match(s.infinityPickupHelp,/Starman lasts 8 seconds/);
- s.selection='';rules.infinity=true;s.syncControlsPickupInfo();assert.equal($('controlsPickupInfo').textContent,s.infinityPickupHelp);
- rules.infinity=false;$('infiniteArena').open=true;s.syncControlsPickupInfo();assert.equal($('controlsPickupInfo').textContent,s.infinityPickupHelp);
- $('infiniteArena').open=false;s.syncControlsPickupInfo();assert.match($('controlsPickupInfo').textContent,/Most power-ups last 10 seconds/);
+test('sidebar and draft Rules timing match every map and Infinity ignores finite pickup settings',()=>{
+ const {s,$,rules}=boot();
+ for(const [mapSize,duration,star,expiry] of [['compact',10,4,30],['standard',10,4,30],['large',10,5,32],['huge',15,6,45],['giant',15,7,61],['ultrawide',15,8,90]]){
+  rules.mapSize=mapSize;
+  for(const portraitMaze of [false,true]){
+   rules.portraitMaze=portraitMaze;const help=s.pickupHelpText();
+   assert.ok(help.includes('Most last '+duration+' seconds'));assert.ok(help.includes('Starman lasts '+star+' seconds'));assert.ok(help.includes('expire after '+expiry+' seconds'));
+   $('rule-pickupRate').value='slow';s.updateRuleHelp();assert.ok($('rule-pickup-density').textContent.includes('every 7–10 seconds'));
+  }
+ }
+ rules.weapons=[];assert.equal(s.pickupHelpText(),'Power-ups disabled.');
+ s.selection='online';s.updateRuleHelp();assert.match($('rule-pickup-density').textContent,/room settings below apply when Public Infinity is off/);s.selection='';
+ rules.infinity=true;rules.pickupRate='off';const help=s.pickupHelpText();
+ assert.match(help,/All ten power-ups/);assert.match(help,/Most last 15 seconds/);assert.match(help,/Starman lasts 8 seconds/);assert.match(help,/expire after 30 seconds/);
+ s.updateRuleHelp();assert.equal($('rule-pickup-density').textContent,help);assert.equal($('rule-pickup-density').hidden,false);assert.equal($('rule-weapon-options').hidden,true);
 });
 
 test('rules help describes two initial teams and only reachable Survival bosses from the current draft',()=>{

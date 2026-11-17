@@ -1361,6 +1361,7 @@ func (h *Hub) tick(now time.Time) {
 			if p != nil {
 				// Preserve sequence chronology even when stale input becomes neutral.
 				inputs[id].Seq = p.Input.Seq
+				inputs[id].FireSuppressed = true
 				if participantAvailable(r.Players, id) && p.Kind != "bot" && now.Sub(p.InputAt) <= inputTimeout {
 					inputs[id] = p.Input
 					inputs[id].FirePressed = p.FirePending

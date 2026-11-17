@@ -42,6 +42,78 @@ class NativeNetworkIntegrationTest {
     }
 
     @Test
+    fun unicodeEquivalentSavedCallsignReauthenticatesItsOriginalAccount() {
+        val origin = server()
+        val context = isolatedAccountContext()
+        val store = EncryptedAccountStore(context)
+        val suffix = java.util.UUID.randomUUID().toString().replace("-", "").take(10)
+        val firstName = "Σ$suffix"
+        val secondName = "B$suffix"
+        val created = mutableSetOf<String>()
+        lateinit var service: AccountService
+        main { service = AccountService(store) }
+        fun choose(name: String, previous: String): CheckedAccount {
+            val result = LinkedBlockingQueue<Result<CheckedAccount>>()
+            main { service.switchCallsign(origin, 0, name, previous, callback = result::offer) }
+            return (result.poll(10, TimeUnit.SECONDS) ?: error("Callsign switch timed out")).getOrThrow().also { created += it.key }
+        }
+        try {
+            val first = choose(firstName, "")
+            val second = choose(secondName, firstName)
+            assertNotEquals(first.key, second.key)
+            val restored = choose("ς${suffix.uppercase(java.util.Locale.ROOT)}", secondName)
+            assertEquals(first.key, restored.key)
+            assertEquals(firstName, restored.info.preferredCallsign)
+            assertEquals(0, restored.info.scoreForCallsign(firstName))
+            assertEquals(first.key, store.selected(origin, 0)!!.key)
+        } finally {
+            for (key in created) {
+                val released = LinkedBlockingQueue<Result<Unit>>()
+                main { service.release(origin, key, released::offer) }
+                released.poll(10, TimeUnit.SECONDS)
+            }
+            main { service.close() }
+            context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun releasingLiveP2StopsItsSocketAndKeepsP1Authenticated() {
+        val origin = server()
+        val context = isolatedAccountContext()
+        val store = EncryptedAccountStore(context)
+        val events = LinkedBlockingQueue<NetworkEvent>()
+        val suffix = (System.nanoTime() % 1_000_000_000).toString()
+        var client: NativeNetworkClient? = null
+        var service: AccountService? = null
+        try {
+            main {
+                client = NativeNetworkClient(store, events::offer)
+                client!!.connectPublic(origin, "ReleaseP$suffix", 0, "ReleaseW$suffix", 1, true)
+            }
+            val joined = (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
+            val p1 = joined.publicToken!!; val p2 = joined.localPublicToken!!
+            val released = LinkedBlockingQueue<Result<Unit>>()
+            main { service = AccountService(store); service!!.release(origin, p2, released::offer) }
+            (released.poll(10, TimeUnit.SECONDS) ?: error("Release timed out")).getOrThrow()
+            val error = next(events) { it is NetworkEvent.Error && it.code == "account_key_invalid" } as NetworkEvent.Error
+            assertEquals(1, error.seat)
+            assertTrue(error.terminal)
+            assertEquals(p1, store.selected(origin, 0)!!.key)
+            assertNull(store.selected(origin, 1))
+            assertTrue(store.pending(origin, 1).none { it.key == p2 })
+            assertNull(store.activeIntent())
+            val checked = LinkedBlockingQueue<Result<CheckedAccount>>()
+            main { service!!.inspect(origin, p1, checked::offer) }
+            assertTrue((checked.poll(10, TimeUnit.SECONDS) ?: error("P1 check timed out")).isSuccess)
+            main { client!!.connectPublic(origin, "ignored", 0) }
+            val rejoined = (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
+            assertEquals(p1, rejoined.publicToken)
+            assertNull(rejoined.localId)
+        } finally { main { client?.close(); service?.close() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
     fun pendingPrimaryRegistrationRecoversCommittedKeysAndReplacesOnlyUnknownCandidates() {
         val origin = server()
         for (route in listOf("public", "create", "publish")) for (registered in listOf(false,true)) {

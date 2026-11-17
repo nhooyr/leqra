@@ -6,7 +6,7 @@ In fixed mazes, weapons and most buffs last **10 seconds** on Compact, Standard,
 
 | Pickup | Effect | Charges or duration |
 | --- | --- | --- |
-| Cannon | Fires large, fast rounds through internal walls. They bounce off the arena rim. | 3 shots or 10/15 seconds |
+| Cannon | Fires large, fast rounds through internal walls and every opponent in their path. They bounce off the arena rim. | 3 shots or 10/15 seconds |
 | Ghost | Lets you drive through internal walls. The rim stays solid. | 10/15 seconds |
 | Laser | Fires an instant ricocheting beam through every opponent in its path, with a dotted aim guide. Range is twice the maze perimeter. | 3 shots or 10/15 seconds |
 | Homing missile | Tracks visible opponents and bounces off walls. Range is half the maze perimeter. | 3 missiles or 10/15 seconds |
@@ -19,7 +19,9 @@ In fixed mazes, weapons and most buffs last **10 seconds** on Compact, Standard,
 
 ## Combat rules
 
-Your own shots and grenade blasts leave your tank and shields unharmed. Friendly fire is a room rule. The next Fire press detonates an armed grenade even if you changed weapons. Spawn protection blocks firing and remote grenade detonation until it expires. Starman contact kills through spawn protection and Shield charges; another active Starman and Shield hit invulnerability still protect against contact.
+Your own shots and grenade blasts leave your tank and shields unharmed. Friendly fire is a room rule. The next Fire press detonates an armed grenade even if you changed weapons. That detonation consumes the held press; release Fire before throwing or firing again. Holding Fire otherwise keeps firing through reloads and weapon exhaustion. Spawn protection blocks firing and remote grenade detonation until it expires. Starman contact kills through spawn protection and Shield charges; another active Starman and Shield hit invulnerability still protect against contact.
+
+Cannon rounds keep traveling after hitting a tank. Each round can damage a particular tank only once per life; shields absorb that hit without stopping the round.
 
 While either local tank has Starman, a bright arcade loop plays on web, iOS, and Android. It follows the game's volume and mute controls, and stops during menus, pauses, and backgrounding. Remote tanks and bots do not start extra loops.
 

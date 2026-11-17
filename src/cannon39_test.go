@@ -95,17 +95,17 @@ func Test39CannonSweepsTankBehindCoverOnce(t *testing.T) {
 	next.Y = 210
 	b := launchCannon39(g, 0)
 	g.updateBullets(.5)
-	if e.Alive || !next.Alive || !b.Dead || len(g.Bullets) != 0 {
-		t.Fatal("missed tank or pierced extra tank")
+	if e.Alive || next.Alive || b.Dead || len(g.Bullets) != 1 {
+		t.Fatal("Cannon did not pierce both tanks")
 	}
-	if math.Abs(b.X-(e.X-e.R-cannonRadius)) > 1e-7 {
+	if math.Abs(b.X-(2*(g.World.Width-wallSize/2-cannonRadius)-(p.X+32+cannonSpeed*.5)-.08)) > 1e-7 {
 		t.Fatal("wrong swept contact", b.X)
 	}
-	if p.stats.Eliminations != 1 || e.stats.Deaths != 1 || next.stats.Deaths != 0 {
+	if p.stats.Eliminations != 2 || e.stats.Deaths != 1 || next.stats.Deaths != 1 {
 		t.Fatal("statistics mismatch")
 	}
 	g.updateBullets(.5)
-	if p.stats.Eliminations != 1 {
+	if p.stats.Eliminations != 2 {
 		t.Fatal("duplicate kill")
 	}
 }
@@ -128,7 +128,7 @@ func Test39CannonGrazingHitUsesLargerRadius(t *testing.T) {
 		}
 	}
 }
-func Test39CannonShieldStopsWithoutSplash(t *testing.T) {
+func Test39CannonShieldAbsorbsWithoutStoppingOrSplash(t *testing.T) {
 	g := cannonBattle39(3)
 	p, e, near := g.Tanks[0], g.Tanks[1], g.Tanks[2]
 	p.X = 80
@@ -140,7 +140,7 @@ func Test39CannonShieldStopsWithoutSplash(t *testing.T) {
 	near.Y = 245
 	launchCannon39(g, 0)
 	g.updateBullets(.5)
-	if !e.Alive || e.Shield != 0 || !near.Alive || len(g.Bullets) != 0 || p.stats.Eliminations != 0 || e.stats.Deaths != 0 {
+	if !e.Alive || e.Shield != 0 || !near.Alive || len(g.Bullets) != 1 || p.stats.Eliminations != 0 || e.stats.Deaths != 0 {
 		t.Fatal("shield failed or splash/double hit")
 	}
 	impacts := 0
@@ -183,8 +183,8 @@ func Test39CannonFriendlyFireAllSeats(t *testing.T) {
 				launchCannon39(g, seat)
 				g.updateBullets(.6)
 				if friendly {
-					if !enemy.Alive || ally.Shield != 0 || !ally.Alive {
-						t.Fatal("friendly shield/stop")
+					if enemy.Alive || ally.Shield != 0 || !ally.Alive {
+						t.Fatal("friendly shield failed or stopped the shell")
 					}
 				} else {
 					if enemy.Alive || !ally.Alive || ally.Shield != 10 {

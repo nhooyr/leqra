@@ -81,9 +81,7 @@ func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
 					}
 					now = now.Add(time.Second / 60)
 					step()
-					if kind == "grenade" && !released {
-						wantSerial++
-					}
+
 					if tank.ShotSerial != wantSerial || pending() {
 						t.Fatal("held fire failed to continue, or a released edge replayed")
 					}
@@ -206,7 +204,7 @@ func TestPassiveExpiryPreservesSameWeaponHeldFire(t *testing.T) {
 	}
 }
 
-func TestGrenadesAutoThrowWhileHeldAndFreshPressOnlyPopsOneTick(t *testing.T) {
+func TestGrenadesAutoThrowWhileHeldAndDetonationRequiresRelease(t *testing.T) {
 	for _, infinity := range []bool{false, true} {
 		for _, pop := range []bool{false, true} {
 			t.Run(fmt.Sprintf("infinity%v/pop%v", infinity, pop), func(t *testing.T) {
@@ -229,8 +227,15 @@ func TestGrenadesAutoThrowWhileHeldAndFreshPressOnlyPopsOneTick(t *testing.T) {
 					}
 					h.stepHeld(true, false)
 				}
+				if pop {
+					if h.tank.ShotSerial != 3 {
+						t.Fatal("detonation hold fired again")
+					}
+					h.stepHeld(false, false)
+					h.stepHeld(true, true)
+				}
 				if h.tank.ShotSerial != 4 {
-					t.Fatal("continued hold did not use ordinary ammo on its next eligible tick")
+					t.Fatal("ordinary ammo did not resume after release")
 				}
 			})
 		}
@@ -255,6 +260,11 @@ func TestStarmanGrenadeHoldRetainsItsOneThrowPerTickBoost(t *testing.T) {
 					t.Fatal("boosted pop also threw another grenade")
 				}
 				h.stepHeld(true, false)
+				if h.tank.ShotSerial != uint64(count) {
+					t.Fatal("boosted pop hold fired again")
+				}
+				h.stepHeld(false, false)
+				h.stepHeld(true, true)
 				if h.tank.ShotSerial != uint64(count+1) || len(h.shots()) != 1 {
 					t.Fatal("boosted hold did not resume after the pop tick")
 				}

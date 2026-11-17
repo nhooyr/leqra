@@ -173,6 +173,25 @@ public enum GameNetworkError: LocalizedError {
     case accountKeyRevoked
     case localAccountUnconfirmed
     case localAccountMismatch
+    case callsignTaken
+
+    /// Only a transport outage may defer registration for local play. A server
+    /// rejection, malformed response, or cancelled request must remain an error.
+    public static func canStageCallsignOffline(after error: Error) -> Bool {
+        if let error = error as? GameNetworkError {
+            switch error {
+            case .timeout, .temporarilyUnavailable: return true
+            default: return false
+            }
+        }
+        guard let error = error as? URLError else { return false }
+        switch error.code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+             .dnsLookupFailed, .notConnectedToInternet, .internationalRoamingOff,
+             .callIsActive, .dataNotAllowed: return true
+        default: return false
+        }
+    }
 
     public var errorDescription: String? {
         switch self {
@@ -186,6 +205,7 @@ public enum GameNetworkError: LocalizedError {
         case .accountKeyRevoked: return "The account key was reset on another device. Import its new key to sign in again."
         case .localAccountUnconfirmed: return "The server did not confirm P2's independent account. Update the server before adding P2; the saved key is unchanged."
         case .localAccountMismatch: return "This private room still uses a different P2 account. Leave and rejoin P2 to use the imported key; the saved key is unchanged."
+        case .callsignTaken: return "Used online; offline is OK."
         }
     }
 }
@@ -432,7 +452,7 @@ struct NetworkLatencySampler {
     public func createAccount(baseURL: URL, publicToken: String, name: String) async throws -> AccountInfo {
         let data = try await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account/create", name: name)
         let info = try JSONDecoder().decode(AccountInfo.self, from: data)
-        guard info.preferredCallsign.map({ CallsignPolicy.clean($0).lowercased() }) == CallsignPolicy.clean(name).lowercased() else { throw GameNetworkError.invalidResponse }
+        guard info.preferredCallsign.map(CallsignPolicy.canonical) == CallsignPolicy.canonical(name) else { throw GameNetworkError.invalidResponse }
         return info
     }
 
@@ -466,6 +486,12 @@ struct NetworkLatencySampler {
             if error?["code"] as? String == "account_key_revoked" { throw GameNetworkError.accountKeyRevoked }
             throw GameNetworkError.invalidAccountKey
         }
+        if response.statusCode == 409, path == "/api/account/create",
+           let error = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           error["code"] as? String == "callsign_taken" {
+            throw GameNetworkError.callsignTaken
+        }
+        if [408, 429, 500, 502, 503, 504].contains(response.statusCode) { throw GameNetworkError.temporarilyUnavailable }
         guard response.statusCode == 200, data.count <= 16 * 1024 else { throw GameNetworkError.invalidResponse }
         return data
     }
@@ -566,7 +592,7 @@ struct NetworkLatencySampler {
                 if response.statusCode == 429 || response.statusCode >= 500 { throw GameNetworkError.temporarilyUnavailable }
                 guard response.statusCode == 200,
                       data.count <= 8192,
-                      let build = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let build = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                       let version = build["version"] as? String, !version.isEmpty, version.count <= 64 else { throw GameNetworkError.invalidResponse }
                 guard version == Self.supportedVersion else { throw GameNetworkError.unsupportedVersion(version) }
                 let url = try ServerAddress.endpoint(baseURL, path: infinity ? "/ws/infinite" : "/ws", webSocket: true)
@@ -612,9 +638,17 @@ struct NetworkLatencySampler {
         }
     }
 
+    /// A fixed-room spectator can still own an active secondary tank. Infinity
+    /// requires the primary pilot to remain active and retains its stricter gate.
+    static func permitsInput(welcome: NetworkWelcome?, infinity: Bool, local: Bool, player: Int?) -> Bool {
+        guard let welcome else { return false }
+        if !welcome.spectating { return true }
+        return !infinity && local && player != nil && player == welcome.localId
+    }
+
     /// Input sequences belong to this socket; pause always clears held controls.
     public func sendInput(_ input: GameInput, paused: Bool = false, local: Bool = false, player: Int? = nil, member: UInt64? = nil) {
-        guard connected, welcome?.spectating != true else { return }
+        guard connected, Self.permitsInput(welcome: welcome, infinity: isInfinity, local: local, player: player) else { return }
         var sequence = local ? localSentSequence : sentSequence
         if input.seq > 0 {
             guard input.seq > sequence else { return }
@@ -738,6 +772,14 @@ struct NetworkLatencySampler {
     }
 
     func receive(_ data: Data) throws {
+        // JSON and model decoding failures are protocol errors, not transport
+        // outages that an authenticated public session should retry forever.
+        do { try receiveMessage(data) }
+        catch let error as GameNetworkError { throw error }
+        catch { throw GameNetworkError.invalidResponse }
+    }
+
+    private func receiveMessage(_ data: Data) throws {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = object["type"] as? String else { throw GameNetworkError.invalidResponse }
         switch type {
@@ -851,7 +893,7 @@ struct NetworkLatencySampler {
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             guard epoch == noticeEpoch else { return }
             if (object["code"] as? String) == "session_active", reconnectDeadline != nil { fail(message); return }
-            if !connected || code == "kicked" || code == "session_replaced" || code == "account_key_revoked" || (object["action"] as? String) == "version" {
+            if !connected || code == "kicked" || code == "session_replaced" || code == "account_key_revoked" || code == "account_key_invalid" || (object["action"] as? String) == "version" {
                 fail(message, terminal: true)
             } else if (object["action"] as? String) != "follow" { onEvent?(.error(message)) }
         case "server_shutdown", "kicked", "room_offline":

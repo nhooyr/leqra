@@ -37,6 +37,13 @@ test('Godlike throws safe grenades at long and close range',()=>{
  const s=boot(),t=tank(0,100,336,{power:'grenade',charges:3}),enemy=tank(1,480,336);s.tanks=[t,enemy];
  assert.ok(s.evaluateBotShot(t,0,enemy,s.tune.godlike));enemy.x=195;assert.ok(s.evaluateBotShot(t,0,enemy,s.tune.godlike));
 });
+test('Godlike checks the entire piercing path for friendly tanks beyond its target',()=>{
+ for(const power of ['laser','cannon']){
+  const s=boot(),owner=tank(0,100,336,{power}),enemy=tank(1,200,336),ally=tank(2,800,336,{team:owner.team});s.tanks=[owner,enemy,ally];
+  s.friendlyFire=true;assert.equal(s.godlikeSafeShot(owner,enemy,0),false,power+' must not fire through an ally after the enemy');
+  s.friendlyFire=false;assert.equal(s.godlikeSafeShot(owner,enemy,0),true,power+' is safe with friendly fire disabled');
+ }
+});
 test('harmless teammates still trigger grenade contact blasts, so Godlike avoids unsafe throws',()=>{
  const s=boot(),t=tank(0,100,336,{power:'grenade',charges:3}),enemy=tank(1,480,336),ally=tank(2,190,336,{team:1});s.tanks=[t,enemy,ally];
  assert.equal(s.evaluateBotShot(t,0,enemy,s.tune.godlike),null);
