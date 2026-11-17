@@ -49,18 +49,18 @@ test('spawn protection readiness is shared by fixed-maze and Infinity HUDs',()=>
  vm.runInContext(declaration('renderPilotReadiness'),s);
  for(const prefix of ['', 'infinite']){
   s.renderPilotReadiness(tank(),1,{locked:false,grenades:1,ammo:0},false,null,id=>prefix+id);
-  assert.equal($(prefix+'cooldownText1').textContent,'SPAWN PROTECTION');assert.equal($(prefix+'fireLabel').textContent,'WAIT');assert.equal($(prefix+'fireBtn').style['--ready'],'0.000');
+  assert.equal($(prefix+'cooldownText1').textContent,'SPAWN PROTECTION');assert.equal($(prefix+'fireBtn').attributes['aria-label'],'SPAWN PROTECTION');assert.equal($(prefix+'fireBtn').style['--ready'],'0.000');
   s.renderPilotReadiness({...tank(),invulnerable:0},1,{locked:false,grenades:0,ammo:0},false,null,id=>prefix+id);
   assert.equal($(prefix+'cooldownText1').textContent,'READY');
  }
 });
 
-test('grenade hints explain held throws, fresh detonations and the refilled standard magazine',()=>{
+test('accessible fire labels explain held throws, fresh detonations and the refilled standard magazine',()=>{
  const s=boot(),nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,attributes:{},style:{},classList:{toggle(){}},textContent:''});return nodes.get(id);};
  Object.assign(s,{$,combatPrefs:{visual:true},updateMachineBudget(){},setText:(id,v)=>$(id).textContent=v,setStyle:(e,k,v)=>e.style[k]=v,setAttr:(e,k,v)=>e.attributes[k]=v,clamp:(v,lo,hi)=>Math.max(lo,Math.min(v,hi)),cooldownDuration:()=>.8});
  vm.runInContext(declaration('renderPilotReadiness'),s);
  for(const prefix of ['', 'infinite'])for(const [power,grenades,hint]of [['grenade',0,'HOLD TO THROW'],['grenade',1,'HOLD TO THROW, TAP TO DETONATE'],[null,1,'TAP TO DETONATE, HOLD TO FIRE']]){
   s.renderPilotReadiness({...tank(power),spawnProtected:false,invulnerable:0},1,{locked:false,grenades,ammo:0},false,null,id=>prefix+id);
-  assert.equal($(prefix+'fireHint').textContent,hint);
+  assert.equal($(prefix+'fireBtn').attributes['aria-label'],grenades?hint.toLowerCase():power==='grenade'?'Hold to throw grenades':'Hold to fire');
  }
 });

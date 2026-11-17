@@ -29,7 +29,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     var overlayHudHeightDp = 0f
     var controlsLayout = true
     var fireLabel = "FIRE"
-    var fireHint = "HOLD TO FIRE"
     var fireProgress = 1.0
         set(value) {
             field = if (value.isFinite()) value.coerceIn(0.0, 1.0) else 0.0
@@ -63,6 +62,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
 
     val terrainFallbackDraws: Long
         get() = terrain.fallbackDraws
+
+    val terrainPendingRasters: Int
+        get() = terrain.pendingRasters
 
     private var density = resources.displayMetrics.density
     private var textScale = resources.configuration.fontScale.coerceAtLeast(1f)
@@ -206,6 +208,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var running = false
     private var firstFrame = false
     private var frameTime = 0.0
+    private var frozenTime: Double? = null
+    private var frozenPortraitFit = false
+    private var frozenTrails: Map<Int, List<BeamPoint>> = emptyMap()
     private var zoom = 1f
     private var cameraX = 0.0
     private var cameraY = 0.0
@@ -219,6 +224,37 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var aimTankX = Float.NaN
     private var aimTankY = Float.NaN
     private var aimTankZoom = 1f
+    private var mouseTankX = Float.NaN
+    private var mouseTankY = Float.NaN
+    private var mouseX = Float.NaN
+    private var mouseY = Float.NaN
+    private var mouseAiming = false
+    private var mouseFiring = false
+    var mouseInputEnabled = false
+        set(value) { field = value; if (!value) clearMouseControls() }
+    private val mouseControls = GameInput(touchAim = false, aimOnly = true)
+    val hasMouseInput: Boolean get() = mouseAiming || mouseFiring
+
+    fun clearMouseAim() { mouseAiming = false }
+
+    fun clearMouseControls() {
+        mouseAiming = false; mouseFiring = false
+        mouseX = Float.NaN; mouseY = Float.NaN
+    }
+
+    fun mouseInput(): GameInput {
+        mouseControls.fire = mouseFiring
+        val dx = mouseX - mouseTankX
+        val dy = mouseY - mouseTankY
+        val distance = hypot(dx, dy)
+        if (mouseAiming && distance.isFinite() && distance >= 2) {
+            mouseControls.stickX = (dx / distance).toDouble()
+            mouseControls.stickY = (dy / distance).toDouble()
+        } else {
+            mouseControls.stickX = 0.0; mouseControls.stickY = 0.0
+        }
+        return mouseControls
+    }
     private var stickPointer = -1
     private var firePointer = -1
     private var stickX = 82f
@@ -253,6 +289,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     )
 
     private val labels = HashMap<Int, Label>()
+    private val identityBounds = ArrayList<RectF>()
+    private var identityCount = 0
     private val haloDash = DashPathEffect(floatArrayOf(3f, 6f), 0f)
     private val ghostDash = DashPathEffect(floatArrayOf(3f, 4f), 0f)
     private val starColors =
@@ -293,6 +331,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     fun start() {
+        if (frozenTime != null) return
         if (running) return
         running = true
         keepScreenOn = true
@@ -336,6 +375,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     fun resetControls() {
+        clearMouseControls()
         aimPointer = -1
         stickPointer = -1
         firePointer = -1
@@ -450,6 +490,30 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         invalidate()
     }
 
+    /** A static preview uses the normal renderer without advancing a game or presentation clock. */
+    fun showFrozenScene(snapshot: ArenaSnapshot, maze: InfiniteMaze, localID: Int, time: Double,
+                        effectAges: Map<Int, Double>, outlines: Map<Int, List<BeamPoint>>,
+                        trails: Map<Int, List<BeamPoint>>, controls: Boolean = false, fitPortrait: Boolean = false) {
+        pause()
+        frozenTime = time
+        frozenPortraitFit = fitPortrait
+        frameTime = time
+        frozenTrails = trails
+        showControls = controls
+        controlsLayout = controls
+        submit(snapshot, localID, maze)
+        for (index in effects.indices) {
+            val visual = effects[index]
+            val outline = outlines[visual.effect.id]
+            val path = outline?.let { points -> Path().apply {
+                points.forEachIndexed { i, point -> if (i == 0) moveTo(point.x.toFloat(), point.y.toFloat()) else lineTo(point.x.toFloat(), point.y.toFloat()) }
+                close()
+            } }
+            effects[index] = visual.copy(began = time - (effectAges[visual.effect.id] ?: 0.0), shape = path ?: visual.shape)
+        }
+        invalidate()
+    }
+
     override fun doFrame(frameTimeNanos: Long) {
         if (!running) return
         frameTime = frameTimeNanos / 1e9
@@ -509,7 +573,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         else controlViewport.set(0f, safe.top + hudHeightDp, width, height - safe.bottom)
         val fixedPortrait = !infinity && !landscape
         stickX = max(controlViewport.left, safe.left) + if (fixedPortrait) 93f else 84f
-        stickY = controlViewport.bottom - if (fixedPortrait) 59.5f else 67.5f
+        stickY = controlViewport.bottom - 63f
         fireX = min(controlViewport.right, width - safe.right) - if (fixedPortrait) 85.5f else 63.5f
         fireY = stickY
         val state = snapshot
@@ -532,7 +596,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             drawPhase(canvas, state)
             drawEncounterNotice(canvas)
         }
-        if (showControls) drawControls(canvas, width, height, state)
+        if (showControls) drawControls(canvas, width, height)
         canvas.restore()
         renderedFrames++
         lastRenderNanos = System.nanoTime() - start
@@ -551,6 +615,12 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             aimTankX = tank?.let { viewport.centerX() + ((it.x - cameraX) * zoom).toFloat() } ?: Float.NaN
             aimTankY = tank?.let { viewport.centerY() + ((it.y - cameraY) * zoom).toFloat() } ?: Float.NaN
             aimTankZoom = zoom
+        }
+        val mouseID = localID2 ?: localID
+        if (!infinity || pilotID == mouseID) {
+            val tank = state.tanks.firstOrNull { it.id == mouseID && it.hp > 0 }
+            mouseTankX = tank?.let { viewport.centerX() + ((it.x - cameraX) * zoom).toFloat() } ?: Float.NaN
+            mouseTankY = tank?.let { viewport.centerY() + ((it.y - cameraY) * zoom).toFloat() } ?: Float.NaN
         }
         canvas.save()
         canvas.clipRect(viewport)
@@ -620,7 +690,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         drawGuide(canvas, state, drawingPilotID)
         if (!infinity && localID2 != null) drawGuide(canvas, state, localID2!!)
         for (tank in state.tanks) if (
-            isVisible(tank.x, tank.y, 100.0) && (!infinity || tank.hp > 0)
+            isVisible(tank.x, tank.y, 100.0) && (!infinity || tank.hp > 0 || frozenTime != null)
         )
             drawTank(canvas, tank)
         drawBullets(canvas, state)
@@ -633,7 +703,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         canvas.restore()
         canvas.save()
         canvas.clipRect(viewport)
-        for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && tank.hp > 0)
+        identityCount = 0
+        for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && (tank.hp > 0 || frozenTime != null))
             drawIdentity(canvas, tank)
         canvas.restore()
     }
@@ -667,6 +738,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             }
             zoom = (min(viewport.width(), viewport.height()) / 420f).coerceIn(.7f, 1.2f)
         }
+        if (frozenPortraitFit) zoom = min(zoom, (viewport.height() / 632f).coerceAtLeast(.05f))
         originX = if (infinity) floor(cameraX / 336) * 336 else 0.0
         originY = if (infinity) floor(cameraY / 336) * 336 else 0.0
         worldLeft = cameraX - viewport.width() / zoom / 2
@@ -895,12 +967,37 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     min(viewport.right, width / density - safe.right) - identityWidth / 2 - 6,
                 ),
             )
-        val y =
+        var y =
             (viewport.centerY() + ((tank.y - cameraY) * zoom).toFloat() - max(30f, 36f * zoom))
                 .coerceIn(
                     viewport.top + label.height + warningHeight + 6,
                     max(viewport.top + label.height + warningHeight + 6, viewport.bottom - 6),
                 )
+        val identityHeight = label.height + warningHeight
+        val left = x - identityWidth / 2
+        val right = x + identityWidth / 2
+        fun free(bottom: Float): Boolean {
+            val top = bottom - identityHeight
+            if (top < viewport.top + 6 || bottom > viewport.bottom - 6) return false
+            for (index in 0 until identityCount) {
+                val placed = identityBounds[index]
+                if (left < placed.right + 3 && right > placed.left - 3 && top < placed.bottom + 3 && bottom > placed.top - 3) return false
+            }
+            return true
+        }
+        if (!free(y)) {
+            val preferred = y
+            val step = identityHeight + 3
+            val slots = ceil(viewport.height() / step).toInt()
+            for (slot in 1..slots) {
+                val above = preferred - slot * step
+                val below = preferred + slot * step
+                if (free(above)) { y = above; break }
+                if (free(below)) { y = below; break }
+            }
+        }
+        if (identityCount == identityBounds.size) identityBounds.add(RectF())
+        identityBounds[identityCount++].set(left, y - identityHeight, right, y)
         if (tank.isGodlikeBot) {
             textPaint.typeface = boldTypeface
             val top = y - label.height - warningHeight
@@ -948,8 +1045,15 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             else {
                 var history = projectileHistory[bullet.id]
                 if (history == null || history.kind != bullet.kind || history.color != color) {
-                    history = ProjectileHistory(bullet.kind, color)
-                    projectileHistory.put(bullet.id, history)
+                    val created = ProjectileHistory(bullet.kind, color)
+                    frozenTrails[bullet.id]?.takeLast(7)?.let { points ->
+                        points.forEachIndexed { index, point -> created.points[index * 2] = point.x; created.points[index * 2 + 1] = point.y }
+                        created.count = points.size
+                        created.bounce = bullet.bounces
+                        created.lastTime = frameTime
+                    }
+                    history = created
+                    projectileHistory.put(bullet.id, created)
                 }
                 history.update(bullet, frameTime, projectileFrame)
                 val trail =
@@ -960,7 +1064,13 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                                 "homing" -> 1
                                 else -> 0
                             }]
-                for (index in 0 until history.count) {
+                val frozen = if (frozenTime != null) frozenTrails[bullet.id] else null
+                if (!frozen.isNullOrEmpty()) {
+                    frozen.forEachIndexed { index, point ->
+                        if (index == 0) trail.moveTo(rx(point.x), ry(point.y))
+                        else trail.lineTo(rx(point.x), ry(point.y))
+                    }
+                } else for (index in 0 until history.count) {
                     val slot = (history.start + index) % 7
                     val x = rx(history.points[slot * 2])
                     val y = ry(history.points[slot * 2 + 1])
@@ -972,7 +1082,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         paint.strokeCap = Paint.Cap.ROUND
         for (index in trails.indices) if (!trails[index].isEmpty) {
             stroke(
-                ArenaPalette.alpha(ArenaPalette.tank(index / 3), .16f),
+                ArenaPalette.alpha(ArenaPalette.tank(index / 3), if (frozenTime != null && index % 3 == 2) .32f else .16f),
                 when (index % 3) {
                     2 -> 12f
                     1 -> 4f
@@ -1141,7 +1251,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 val dy = last.y - first.y
                 val length = dx * dx + dy * dy
                 var nearest = 1.0
-                if (!infinity && length > 0)
+                if (!infinity && tank.power != "laser" && tank.power != "cannon" && length > 0)
                     for (other in state.tanks) {
                         if (
                             other.id == tank.id ||
@@ -1398,7 +1508,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         canvas.drawText(text, viewport.centerX(), viewport.centerY() + 8, textPaint)
     }
 
-    private fun drawControls(canvas: Canvas, width: Float, height: Float, state: ArenaSnapshot?) {
+    private fun drawControls(canvas: Canvas, width: Float, height: Float) {
         val fixedPortrait = !infinity && width < height
         if (fixedPortrait) {
             fill(0xff192127.toInt())
@@ -1450,7 +1560,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             paint,
         )
         stroke(0xff32c5ff.toInt(), 1.575f)
-        val cy = fireY - 6
+        val cy = fireY
         canvas.drawCircle(fireX, cy, 7f, paint)
         canvas.drawLine(fireX - 11.375f, cy, fireX - 5.25f, cy, paint)
         canvas.drawLine(fireX + 5.25f, cy, fireX + 11.375f, cy, paint)
@@ -1458,40 +1568,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         canvas.drawLine(fireX, cy + 5.25f, fireX, cy + 11.375f, paint)
         fill(0xff32c5ff.toInt())
         canvas.drawCircle(fireX, cy, 1.75f, paint)
-        textPaint.typeface = Typeface.MONOSPACE
-        textPaint.textSize = 10f * textScale
-        textPaint.color = 0xff9babbb.toInt()
-        canvas.drawText("STEER", stickX, controlViewport.bottom - 8, textPaint)
-        textPaint.color = color
-        canvas.drawText(fireLabel, fireX, fireY + 18, textPaint)
-        if (fixedPortrait) {
-            textPaint.color = 0xff9babbb.toInt()
-            canvas.drawText("LET IT RIP", fireX, height - safe.bottom - 8, textPaint)
-            val maximum = max(40f, width - 260)
-            var start = 0
-            var line = 0
-            while (start < fireHint.length) {
-                var count =
-                    textPaint
-                        .breakText(fireHint, start, fireHint.length, true, maximum, null)
-                        .coerceAtLeast(1)
-                if (start + count < fireHint.length) {
-                    val space = fireHint.lastIndexOf(' ', start + count - 1)
-                    if (space > start) count = space - start
-                }
-                canvas.drawText(
-                    fireHint,
-                    start,
-                    start + count,
-                    width / 2,
-                    height - safe.bottom - 59 + line * (textPaint.textSize + 2),
-                    textPaint,
-                )
-                start += count
-                while (start < fireHint.length && fireHint[start] == ' ') start++
-                line++
-            }
-        }
     }
 
     fun clearDirectAim() {
@@ -1503,6 +1579,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (frozenTime != null) return true
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return mouseEvent(event)
         if (!showControls) {
             if (event.actionMasked == MotionEvent.ACTION_CANCEL) resetControls()
             return false
@@ -1608,6 +1686,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         key(keyCode, false) || super.onKeyUp(keyCode, event)
 
     private fun key(code: Int, down: Boolean): Boolean {
+        if (frozenTime != null) return false
         when (code) {
             KeyEvent.KEYCODE_W,
             KeyEvent.KEYCODE_DPAD_UP -> input.forward = down
@@ -1631,6 +1710,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (frozenTime != null) return false
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return mouseEvent(event)
         if (
             event.source and InputDevice.SOURCE_JOYSTICK != 0 &&
                 event.action == MotionEvent.ACTION_MOVE
@@ -1644,5 +1725,31 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             return true
         }
         return super.onGenericMotionEvent(event)
+    }
+
+    override fun onHoverEvent(event: MotionEvent): Boolean =
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) mouseEvent(event) else super.onHoverEvent(event)
+
+    private fun mouseEvent(event: MotionEvent): Boolean {
+        if (frozenTime != null) return false
+        if (!showControls && !mouseInputEnabled) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_CANCEL -> { mouseAiming = false; mouseFiring = false }
+            MotionEvent.ACTION_HOVER_EXIT -> if (!mouseFiring) mouseAiming = false
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP, MotionEvent.ACTION_MOVE,
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE,
+            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                mouseX = event.x / density; mouseY = event.y / density
+                mouseAiming = true
+                mouseFiring = event.actionMasked != MotionEvent.ACTION_UP &&
+                    (event.buttonState and MotionEvent.BUTTON_PRIMARY != 0 ||
+                        event.actionMasked == MotionEvent.ACTION_DOWN && event.buttonState == 0)
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) requestFocus()
+            }
+            else -> return false
+        }
+        onInput?.invoke(input.copy())
+        invalidate()
+        return true
     }
 }

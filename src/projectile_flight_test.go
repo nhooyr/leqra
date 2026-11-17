@@ -30,7 +30,7 @@ func checkProjectileFlight(t *testing.T, flight *cannonFlight, kind string, endp
 }
 
 func TestAllBallisticMuzzleHitsPublishOneAuthoritativeFlightWithoutAnotherProjectile(t *testing.T) {
-	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade", "cannon"} {
+	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade"} {
 		t.Run(kind, func(t *testing.T) {
 			g := battle(2)
 			g.Tick = 2
@@ -62,7 +62,7 @@ func TestAllBallisticMuzzleHitsPublishOneAuthoritativeFlightWithoutAnotherProjec
 	}
 }
 
-func TestCannonBornAndHitBetweenBroadcastsSurvivesRoundEndAsFlight(t *testing.T) {
+func TestCannonBornAndHitBetweenBroadcastsRemainsLiveAtRoundEnd(t *testing.T) {
 	g := battle(2)
 	pilot, target := g.Tanks[0], g.Tanks[1]
 	target.X, target.Y = pilot.X+85, pilot.Y
@@ -71,18 +71,23 @@ func TestCannonBornAndHitBetweenBroadcastsSurvivesRoundEndAsFlight(t *testing.T)
 	input[0].Fire = true
 	g.step(tickDT, input, testPlayers(2))
 	g.step(tickDT, [maxTanks]Input{}, testPlayers(2))
-	if len(g.Bullets) != 0 || target.Alive || g.Phase != "roundOver" {
-		t.Fatal("fixture did not finish its whole flight between state broadcasts")
+	if len(g.Bullets) != 1 || target.Alive || g.Phase != "roundOver" || g.Bullets[0].Dead {
+		t.Fatal("winning cannon hit consumed its still-live shell")
 	}
-	var flight *cannonFlight
+	found := false
 	for _, event := range g.events {
+		if event.Contact != nil && event.Contact.Kind == "cannon" {
+			found = true
+			if event.Contact.ProjectileID != 0 {
+				t.Fatal("cannon damage waits for a terminal flight")
+			}
+		}
 		if event.Flight != nil {
-			flight = event.Flight
-			checkProjectileFlight(t, flight, "cannon", BeamPoint{event.X, event.Y})
+			t.Fatal("live cannon published terminal flight")
 		}
 	}
-	if flight == nil || flight.StartTick != 0 || flight.EndTick <= 0 || flight.EndTick > 2 {
-		t.Fatal("missing fractional tick bounds on a between-broadcast kill", flight)
+	if !found {
+		t.Fatal("winning cannon omitted its immediate contact")
 	}
 }
 
@@ -96,7 +101,7 @@ func TestTerminalFlightKeepsOriginalShotAndLifeIdentity(t *testing.T) {
 	b := g.Bullets[0]
 	shot, life := b.ShotSerial, b.SpawnSerial
 	pilot.ShotSerial, pilot.SpawnSerial = shot+4, life+1
-	for i := 0; i < 3 && target.Alive; i++ {
+	for i := 0; i < 320 && !b.Dead; i++ {
 		g.Tick++
 		g.updateBullets(tickDT)
 	}
@@ -136,7 +141,7 @@ func TestTerminalScatterFlightKeepsItsPelletIdentity(t *testing.T) {
 }
 
 func TestPublishedProjectileContactKeepsRecentFlightAndCannonKeepsRimPath(t *testing.T) {
-	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade", "cannon"} {
+	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade"} {
 		g := battle(2)
 		g.Tick = 2
 		pilot, target := g.Tanks[0], g.Tanks[1]
@@ -174,7 +179,7 @@ func TestPublishedProjectileContactKeepsRecentFlightAndCannonKeepsRimPath(t *tes
 	pilot.X, target.X = 250, 100
 	g.grantPower(pilot, "cannon")
 	g.fire(pilot)
-	for i := 0; i < 60 && target.Alive; i++ {
+	for i := 0; i < 320 && len(g.Bullets) > 0; i++ {
 		g.Tick++
 		g.updateBullets(tickDT)
 	}
@@ -191,7 +196,7 @@ func TestPublishedProjectileContactKeepsRecentFlightAndCannonKeepsRimPath(t *tes
 }
 
 func TestInfiniteAllBallisticMuzzleHitsPublishAuthoritativeFlight(t *testing.T) {
-	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade", "cannon"} {
+	for _, kind := range []string{"regular", "rapid", "scatter", "homing", "grenade"} {
 		a := newSeededInfiniteArena(37)
 		a.tick = 2
 		pilot := a.join(fakeClient(), "Pilot", time.Unix(0, 0))

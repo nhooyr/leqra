@@ -22,6 +22,163 @@ class RenderBehaviorTest {
     }
 
     @Test
+    fun unlabelledControlsFitBothLayoutsAndLargeText() {
+        main {
+            val base = instrumentation.targetContext
+            for (scale in listOf(1f, 1.5f)) {
+                val configuration = android.content.res.Configuration(base.resources.configuration).apply { fontScale = scale }
+                val context = base.createConfigurationContext(configuration)
+                val view = NativeArenaView(context)
+                try {
+                    for ((w,h) in listOf(1000 to 1600,1600 to 1000)) {
+                        val image = Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
+                        try {
+                            view.layout(0,0,w,h)
+                            view.submit(ArenaSnapshot(tanks=listOf(ArenaTank(id=1,x=200.0,y=200.0)),world=ArenaWorld(756.0,588.0)),1,InfiniteMaze(ArenaWorld(756.0,588.0)))
+                            view.draw(Canvas(image))
+                            fun field(name:String)=NativeArenaView::class.java.getDeclaredField(name).apply { isAccessible=true }
+                            val stick=field("stickY").getFloat(view)
+                            val viewport=field("controlViewport").get(view) as android.graphics.RectF
+                            assertEquals("Caption space is reclaimed at every font scale",63f,viewport.bottom-stick,.01f)
+                            assertTrue("Fully lowered knob and outline fit",stick+29+22+.75f<=viewport.bottom-8)
+                            assertTrue("Fire ring and outline fit",stick+53.5f+1.25f<=viewport.bottom-8)
+                        } finally { image.recycle() }
+                    }
+                } finally { view.release() }
+            }
+        }
+    }
+
+    @Test
+    fun controlCaptionsAreAbsentAndTargetIsCentered() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            try {
+                for ((width, height) in listOf(1000 to 1600, 1600 to 1000)) for (label in listOf("FIRE", "WAIT", "BOOM")) {
+                    val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    try {
+                        view.layout(0, 0, width, height)
+                        view.fireLabel = label
+                        view.submit(ArenaSnapshot(tanks = listOf(ArenaTank(id = 1))), 1, InfiniteMaze(137))
+                        view.draw(Canvas(image))
+                        fun coordinate(name: String) = NativeArenaView::class.java.getDeclaredField(name).run { isAccessible = true; getFloat(view) }
+                        val density = view.resources.displayMetrics.density
+                        val stickX = coordinate("stickX"); val fireX = coordinate("fireX"); val fireY = coordinate("fireY")
+                        fun textBottom(x: Float, color: Int): Int {
+                            var bottom = -1
+                            for (py in ((fireY + 56) * density).toInt() until image.height) for (px in ((x - 38) * density).toInt()..((x + 38) * density).toInt()) {
+                                if (px in 0 until image.width && image.getPixel(px, py) == color) bottom = maxOf(bottom, py)
+                            }
+                            return bottom
+                        }
+                        val steering = textBottom(stickX, 0xff9babbb.toInt())
+                        val firing = textBottom(fireX, if (label == "BOOM") 0xffffc46b.toInt() else 0xff40d5ff.toInt())
+                        assertEquals("No STEER caption", -1, steering)
+                        assertEquals("No $label caption", -1, firing)
+                        val crossX = ((fireX + 9f) * density).toInt(); val crossY = (fireY * density).toInt()
+                        assertEquals("Target's horizontal stroke is centered vertically", 0xff32c5ff.toInt(), image.getPixel(crossX, crossY))
+                    } finally { image.recycle() }
+                }
+            } finally { view.release() }
+        }
+    }
+
+    @Test
+    fun finitePiercingGuidesContinuePastTheFirstOpponent() {
+        main {
+            val world=ArenaWorld(756.0,588.0)
+            val maze=InfiniteMaze(world)
+            for(kind in listOf("laser","cannon","")) {
+                val view=NativeArenaView(instrumentation.targetContext)
+                val image=Bitmap.createBitmap(1000,1600,Bitmap.Config.ARGB_8888)
+                try {
+                    view.layout(0,0,1000,1600);view.showControls=false
+                    val state=ArenaSnapshot(tanks=listOf(ArenaTank(id=1,x=200.0,y=200.0,power=kind,powerTime=10.0),ArenaTank(id=2,x=250.0,y=200.0)),world=world)
+                    view.submit(state,1,maze);view.draw(Canvas(image))
+                    val path=NativeArenaView::class.java.getDeclaredField("guidePath").run{isAccessible=true;get(view) as android.graphics.Path}
+                    val bounds=android.graphics.RectF();path.computeBounds(bounds,true)
+                    val zoom=NativeArenaView::class.java.getDeclaredField("zoom").run{isAccessible=true;getFloat(view)}
+                    assertEquals("$kind guide reaches beyond victim",kind.isNotEmpty(),bounds.width()>60*zoom)
+                }finally{view.release();image.recycle()}
+            }
+        }
+    }
+
+    @Test
+    fun nearbyCallsignLabelsStayReadableWithoutOverlapping() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            try {
+                for ((width, height) in listOf(1000 to 1600, 1600 to 1000)) {
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    try {
+                        view.layout(0, 0, width, height)
+                        view.showControls = false
+                        val world = ArenaWorld(504.0, 504.0, 6, 6)
+                        val state = ArenaSnapshot(world = world, tanks = listOf(
+                            ArenaTank(id = 1, name = "ALPHA LONG NAME", x = 250.0, y = 440.0),
+                            ArenaTank(id = 2, name = "BRAVO LONG NAME", x = 290.0, y = 440.0, colorIndex = 1),
+                            ArenaTank(id = 3, name = "CHARLIE LONG", x = 270.0, y = 420.0, colorIndex = 2),
+                        ))
+                        view.submit(state, 1, InfiniteMaze(world), 2)
+                        view.draw(Canvas(bitmap))
+                        val field = NativeArenaView::class.java.getDeclaredField("identityBounds").apply { isAccessible = true }
+                        @Suppress("UNCHECKED_CAST")
+                        val boxes = field.get(view) as List<android.graphics.RectF>
+                        assertEquals(3, boxes.size)
+                        for (first in boxes.indices) for (second in 0 until first) {
+                            assertFalse("Callsign labels overlap at ${width}x$height", android.graphics.RectF.intersects(boxes[first], boxes[second]))
+                        }
+                    } finally { bitmap.recycle() }
+                }
+            } finally { view.release() }
+        }
+    }
+
+    @Test
+    fun nearTankTouchSnapsAimWithoutDrivingInEitherOrientation() {
+        main {
+            val view = NativeArenaView(instrumentation.targetContext)
+            fun field(name: String) = NativeArenaView::class.java.getDeclaredField(name).apply { isAccessible = true }
+            fun touch(action: Int, x: Float, y: Float) {
+                val now = SystemClock.uptimeMillis()
+                MotionEvent.obtain(now, now, action, x, y, 0).let { view.onTouchEvent(it); it.recycle() }
+            }
+            try {
+                for ((width, height) in listOf(1000 to 1600, 1600 to 1000)) {
+                    val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    try {
+                        val tank = ArenaTank(id = 1, x = 42.0, y = 42.0)
+                        view.layout(0, 0, width, height)
+                        view.submit(ArenaSnapshot(tanks = listOf(tank)), 1, InfiniteMaze(137))
+                        view.draw(Canvas(image))
+                        val density = view.resources.displayMetrics.density
+                        val x = field("aimTankX").getFloat(view) * density
+                        val y = field("aimTankY").getFloat(view) * density
+                        touch(MotionEvent.ACTION_DOWN, x + 30 * density, y)
+                        assertTrue(view.input.snapAim)
+                        assertTrue(view.input.aimOnly)
+                        assertEquals(1.0, view.input.stickX, 1e-6)
+                        assertEquals(0.0, view.input.stickY, 1e-6)
+                        touch(MotionEvent.ACTION_MOVE, x, y - 30 * density)
+                        assertEquals(0.0, view.input.stickX, 1e-6)
+                        assertEquals(-1.0, view.input.stickY, 1e-6)
+                        val startX = tank.x; val startY = tank.y
+                        TankMovement.step(tank, view.input, 1.0 / 60, InfiniteMaze(137))
+                        assertEquals(startX, tank.x, 0.0)
+                        assertEquals(startY, tank.y, 0.0)
+                        assertEquals(-kotlin.math.PI / 2, tank.angle, 1e-6)
+                        touch(MotionEvent.ACTION_UP, x, y - 30 * density)
+                        view.clearDirectAim()
+                        assertFalse(view.input.snapAim)
+                        assertFalse(view.input.aimOnly)
+                    } finally { image.recycle() }
+                }
+            } finally { view.release() }
+        }
+    }
+
+    @Test
     fun fastRapidTracersKeepTheirTemporalLengthAndHeadSizeAcrossViewportEdges() {
         main {
             val view = NativeArenaView(instrumentation.targetContext)

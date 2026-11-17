@@ -15,12 +15,21 @@ function boot(){
  const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,MACHINE_FIRING_ROUNDS:180,reduceMotion:true,fxTime:0,shake:0,combatPrefs:{performance:true},WEBKIT_ENGINE:false,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c=ctx)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
  vm.createContext(s);require('./identity_fixture.cjs')(s,source);s.localRoom={players:[]};vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
  vm.runInContext(source.slice(source.indexOf('const tankPowerBadgeCache='),source.indexOf('function activeTankPowerBadges(')),s);
- for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankLabel','tankStatusLayout','tankPowerBadgePositions','powerExpiryAlpha','expiryFadeAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
+ for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankLabel','wrapTankLabel','tankStatusLayout','placeTankLabels','tankPowerBadgePositions','powerExpiryAlpha','expiryFadeAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
 function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,charges:3,machineRounds:180,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,ghostTime:10,...patch};}
 function pictures(ctx){return ctx.events.filter(e=>e.type==='image');}
 function spawnGuides(ctx){return ctx.events.filter(e=>e.type==='arc'&&e.r===34&&e.width>=2.5&&e.color!=='#081015');}
+
+test('canvas identities reserve P1/P2 suffixes and bold text for the device-local tanks',()=>{
+ const {s,ctx}=boot();s.mode='online';
+ s.online={id:0,roomData:{players:[{id:0,member:1,kind:'human',name:'Lead'},{id:1,member:2,kind:'local',owner:0,name:'Wing'},{id:2,member:3,kind:'human',name:'Guest'}]}};
+ for(const [id,name,label,weight]of [[0,'Lead','Lead (P1)','bold'],[1,'Wing','Wing (P2)','bold'],[2,'Guest','Guest','normal']]){
+  ctx.events.length=0;s.drawTank(tank({id,name,human:true}));
+  const text=ctx.events.findLast(e=>e.type==='text');assert.equal(text.text,label);assert.ok(text.font.startsWith(weight+' '));
+ }
+});
 
 test('Godlike bot warnings remain readable above names and cannot be spoofed by a human callsign',()=>{
  for(const scale of [.08,.5,1,2]){
@@ -44,8 +53,8 @@ test('bot and remote power icons proceed clockwise below stable names without co
   const t=tank({shield:charges?10:0,shieldCharges:charges,angle:1.35,human:mode==='online'});s.drawTank(t);
   const text=ctx.events.findLast(e=>e.type==='text'),label=labelRect(ctx),icons=pictures(ctx);
   assert.equal(text.text,s.tankLabel(t));assert.equal(icons.length,charges?4:3);
-  for(const glyph of ctx.events.filter(event=>event.type==='text'))assert.ok(parseFloat(glyph.font.replace('bold ',''))*scale>=10-1e-8,'names and badge counts retain the 10px screen-space minimum');
-  const textDescent=parseFloat(text.font.replace('bold ',''))*.25;
+  for(const glyph of ctx.events.filter(event=>event.type==='text'))assert.ok(parseFloat(glyph.font.replace(/^(bold|normal) /,''))*scale>=10-1e-8,'names and badge counts retain the 10px screen-space minimum');
+  const textDescent=parseFloat(text.font.replace(/^(bold|normal) /,''))*.25;
   for(const icon of icons){
    assert.ok(icon.y+icon.w*(.5-28.5/64)>=label.y+label.h,'name background stays above the lower icon arc');
    assert.ok(icon.y+icon.w*(.5-28.5/64)>text.y+textDescent,'scaled name descenders must stay above icons');
@@ -149,7 +158,7 @@ test('Infinity and fixed tanks use the same badge positions, sprite counts and e
   assert.equal(fixed[0].alpha,.5,'the weapon timer is held until Starman ends');
   assert.equal(fixed[3].alpha,.5,'Starman fades during its final second');
   ctx.events.length=0;s.drawInfinityTank(t,mine,zoom,1);
-  assert.ok(parseFloat(ctx.events.find(event=>event.type==='text').font.replace('bold ',''))*zoom>=10-1e-8,'Infinity names retain the same screen-space font minimum');
+  assert.ok(parseFloat(ctx.events.find(event=>event.type==='text').font.replace(/^(bold|normal) /,''))*zoom>=10-1e-8,'Infinity names retain the same screen-space font minimum');
   assert.deepEqual(pictures(ctx),fixed);
   assert.deepEqual(ctx.events.filter(e=>e.type==='text').slice(1),fixedCounts);
  }
@@ -318,7 +327,33 @@ test('the render pass paints edge labels above tanks after restoring the maze cl
  Object.assign(s,{accumulator:0,localTankPose:t=>t,dpr:1,cssW:2400,cssH:1500,offsetX:0,offsetY:0,shake:0,mapCanvas:null,tanks:[tank({x:1200,y:21,powerTime:0,shield:0,speedTime:0,ghostTime:0})],pickups:[],bullets:[],rings:[],particles:[],drawObjectives:noop,drawAimingGuides:noop,drawFlags:noop,drawMissileWarnings:noop,drawLasers:noop,syncCanvasSize:noop});
  vm.runInContext(declaration('drawBullets'),s);vm.runInContext(declaration('renderArena'),s);vm.runInContext(declaration('render'),s);s.render();
  const labels=ctx.events.filter(e=>e.type==='text');assert.equal(labels.length,1);assert.equal(labels[0].clipped,false,'the maze boundary must not cut off the name');
- const rect=labelRect(ctx);assert.equal(rect.y+rect.h,s.tanks[0].y-32);assert.ok(rect.y<0,'fixed above-tank position can extend into the canvas margin');
+ const rect=labelRect(ctx);assert.equal(rect.y,2,'a top-edge label stays inside the canvas instead of being clipped');
+});
+
+test('nearby tank labels keep local identities readable inside the viewport',()=>{
+ const {s}=boot(),entries=Array.from({length:5},(_,id)=>({id,local:id<2,layout:{x:65+id*8,labelY:4,labelWidth:100,labelHeight:18}}));
+ s.placeTankLabels(entries,{left:0,top:0,right:300,bottom:180},1);
+ for(let i=0;i<entries.length;i++){
+  const a=entries[i].layout;assert.ok(a.x-a.labelWidth/2>=0&&a.x+a.labelWidth/2<=300&&a.labelY>=0&&a.labelY+a.labelHeight<=180);
+  for(let j=0;j<i;j++){const b=entries[j].layout;assert.ok(a.x+a.labelWidth/2<=b.x-b.labelWidth/2||b.x+b.labelWidth/2<=a.x-a.labelWidth/2||a.labelY+a.labelHeight<=b.labelY||b.labelY+b.labelHeight<=a.labelY,'labels do not overlap');}
+ }
+});
+test('wide Unicode callsigns wrap at readable font size without losing characters',()=>{
+ const {s,ctx}=boot(),name='界'.repeat(16),t=tank({id:0,human:true,name});
+ s.scale=.4;ctx.measureText=text=>({width:[...text].reduce((width,letter)=>width+(letter==='界'?40:12),0)});
+ const layout=s.tankStatusLayout(t);
+ assert.ok(layout.lines.length>1);assert.equal(layout.lines.join(''),s.tankLabel(t));assert.ok(layout.font*s.scale>=10);
+ assert.ok(layout.labelWidth*s.scale<=190);
+});
+
+test('dense labels occupy separate rows without shrinking their text',()=>{
+ const {s}=boot(),entries=Array.from({length:128},(_,id)=>({id,local:id<2,layout:{x:600,labelY:2000,labelWidth:150,labelHeight:18}}));
+ s.placeTankLabels(entries,{left:0,top:0,right:1200,bottom:4000},1);
+ for(let i=0;i<entries.length;i++)for(let j=0;j<i;j++){
+  const a=entries[i].layout,b=entries[j].layout;
+  assert.ok(Math.abs(a.x-b.x)>=150||Math.abs(a.labelY-b.labelY)>=18,'each label remains separate');
+ }
+ assert.equal(entries[0].layout.labelY,2000,'local pilot keeps the preferred position');
 });
 
 

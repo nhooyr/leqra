@@ -36,10 +36,8 @@ internal class NativeHudView(context: Context) : View(context) {
     private var frameNanos = 0L
     private var description = ""
     private var primarySlot: Slot? = null
+    private var compactSecondY = 0f
     var fireLabel = "FIRE"
-        private set
-
-    var fireHint = "HOLD TO FIRE"
         private set
 
     var fireAvailable = false
@@ -164,6 +162,7 @@ internal class NativeHudView(context: Context) : View(context) {
         infinity: Boolean,
         paused: Boolean,
         online: Boolean,
+        frozen: Boolean = false,
     ) {
         val first = snapshot.tanks.firstOrNull { it.id == localID }
         val second = localID2?.let { id -> snapshot.tanks.firstOrNull { it.id == id } }
@@ -173,6 +172,7 @@ internal class NativeHudView(context: Context) : View(context) {
         while (slots.size > count) slots.removeAt(slots.lastIndex)
         var changed = previousCount != count
         var namesChanged = false
+        var layoutMayGrow = false
         var index = 0
         primarySlot = null
         fireAvailable = false
@@ -185,7 +185,6 @@ internal class NativeHudView(context: Context) : View(context) {
             if (seat == 0) {
                 primarySlot = slot
                 fireLabel = readout.fireLabel
-                fireHint = readout.fireHint
                 fireAvailable = tank.hp > 0 && readout.progress > 0
             }
             val content =
@@ -203,11 +202,16 @@ internal class NativeHudView(context: Context) : View(context) {
                 )
             if (content != slot.content) {
                 if (content.identity != slot.content?.identity) namesChanged = true
+                val old = slot.content
+                // Readiness and lock messages have a reserved envelope; only new equipment
+                // can require more height, so firing does not trigger a layout every shot.
+                if (old == null || content.weapon.length > old.weapon.length || content.buffs.length > old.buffs.length ||
+                    (content.firingSeconds != null) != (old.firingSeconds != null) || content.unlimited != old.unlimited) layoutMayGrow = true
                 slot.content = content
                 changed = true
             }
             slot.progress = readout.progress
-            slot.animateCooldown = !paused && readout.readiness.startsWith("COOLDOWN ")
+            slot.animateCooldown = !frozen && !paused && readout.readiness.startsWith("COOLDOWN ")
             slot.cooldownTotal =
                 tank.cooldownTotal.takeIf { it > 0 }
                     ?: when (tank.power) {
@@ -220,7 +224,7 @@ internal class NativeHudView(context: Context) : View(context) {
                     }
             slot.sampledNanos = now
         }
-        if (previousCount != count || namesChanged) requestLayout()
+        if (previousCount != count || namesChanged || layoutMayGrow) requestLayout()
         if (changed) {
             contentUpdates++
             val nextDescription =
@@ -262,6 +266,8 @@ internal class NativeHudView(context: Context) : View(context) {
                 fontScale
         val usable = (width - safeLeft - safeRight) / density - 26f
         val cellWidth = (usable - if (slots.size > 1) 16f else 0f) / max(1, slots.size)
+        var compactTop = 0f
+        var compactBottom = 0f
         for (slot in slots) {
             val identity = slot.content?.identity ?: ""
             if (compact) {
@@ -282,7 +288,7 @@ internal class NativeHudView(context: Context) : View(context) {
                     )
                 val textWidth = max(1f, detailsWidth - min(100f, detailsWidth * .2f) - 8f)
                 val readinessWidth = min(150f * fontScale, textWidth * .58f)
-                val bottom =
+                var bottom =
                     max(
                         textHeight("SPAWN PROTECTION", readinessWidth),
                         textHeight(
@@ -290,7 +296,15 @@ internal class NativeHudView(context: Context) : View(context) {
                             max(1f, textWidth - readinessWidth - 12f),
                         ),
                     )
-                height = max(height, max(identityHeight + 12f, top + bottom + 20f))
+                slot.content?.let { content ->
+                    val readyWidth = compactReadinessWidth(textWidth, content)
+                    val buffsWidth = if (content.buffs.isEmpty()) 0f else max(1f, textWidth - readyWidth - 12f)
+                    bottom = max(bottom, textHeight(content.readiness, readyWidth))
+                    if (content.buffs.isNotEmpty()) bottom = max(bottom, textHeight(content.buffs, buffsWidth))
+                }
+                compactTop = max(compactTop, top)
+                compactBottom = max(compactBottom, bottom)
+                height = max(height, identityHeight + 12f)
             } else {
                 val ammoWidth = min(112f, cellWidth * .4f)
                 val equipmentWidth = max(1f, cellWidth - ammoWidth - 10f)
@@ -298,13 +312,18 @@ internal class NativeHudView(context: Context) : View(context) {
                     textHeight(identity, cellWidth, 11f) +
                         3f +
                         textHeight("⚠ HOMING LOCK", cellWidth)
-                val equipment =
+                var equipment =
                     max(
                         textHeight("FIRE LEFT 3.0 / 3s", ammoWidth) + 6f,
                         textHeight("MACHINE GUN, EXPIRES 10s", equipmentWidth) +
                             3f +
                             textHeight("SHD×5 SPD×512 STAR12", equipmentWidth),
                     )
+                slot.content?.let { content ->
+                    equipment = max(equipment, textHeight(content.weapon, equipmentWidth) + 3f + textHeight(content.buffs, equipmentWidth))
+                }
+                val readinessWidth = min(150f * fontScale, cellWidth * .55f)
+                val readinessHeight = max(textHeight("SPAWN PROTECTION", readinessWidth), textHeight(slot.content?.readiness.orEmpty(), readinessWidth))
                 height =
                     max(
                         height,
@@ -313,13 +332,14 @@ internal class NativeHudView(context: Context) : View(context) {
                             5f +
                             equipment +
                             5f +
-                            textHeight(
-                                "SPAWN PROTECTION",
-                                min(150f * fontScale, cellWidth * .55f),
-                            ) +
+                            readinessHeight +
                             8f,
                     )
             }
+        }
+        if (compact) {
+            compactSecondY = 6f + compactTop + 6f
+            height = max(height, compactSecondY + compactBottom + 6f)
         }
         setMeasuredDimension(
             width,
@@ -383,11 +403,10 @@ internal class NativeHudView(context: Context) : View(context) {
                 max(1f, detailsWidth - ammoWidth - 10f),
                 NativeStyle.accent,
             )
-            val secondY = height / 2 + 3f
+            val secondY = compactSecondY
             val barWidth = min(100f, detailsWidth * .2f)
             val textWidth = max(1f, detailsWidth - barWidth - 8f)
-            val readinessWidth =
-                if (content.buffs.isEmpty()) textWidth else min(150f * fontScale, textWidth * .58f)
+            val readinessWidth = compactReadinessWidth(textWidth, content)
             val buffsWidth =
                 if (content.buffs.isEmpty()) 0f else max(1f, textWidth - readinessWidth - 12f)
             if (content.buffs.isNotEmpty())
@@ -471,6 +490,12 @@ internal class NativeHudView(context: Context) : View(context) {
                 content.color,
             )
         }
+    }
+
+    private fun compactReadinessWidth(width: Float, content: Content): Float {
+        if (content.buffs.isEmpty()) return width
+        measurePaint.textSize = 10f * fontScale
+        return min(min(150f * fontScale, width * .58f), max(40f, measurePaint.measureText(content.readiness) + 2f))
     }
 
     private fun drawAmmo(canvas: Canvas, slot: Slot, x: Float, y: Float, width: Float) {

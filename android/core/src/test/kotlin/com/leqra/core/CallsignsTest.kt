@@ -5,6 +5,22 @@ import org.junit.Test
 
 class CallsignsTest {
     @Test
+    fun accountCanonicalNamesMatchServerSimpleFoldingWithoutExpandingLetters() {
+        assertEquals(Callsigns.canonical("Σnow"), Callsigns.canonical("ςNOW"))
+        assertEquals("µµµ", Callsigns.canonical("µΜμ"))
+        assertEquals("i", Callsigns.canonical("İ"))
+        assertNotEquals(Callsigns.canonical("ı"), Callsigns.canonical("i"))
+        assertNotEquals(Callsigns.canonical("ß"), Callsigns.canonical("ss"))
+        assertNotEquals(Callsigns.canonical("ﬃ"), Callsigns.canonical("FFI"))
+        assertNotEquals(Callsigns.canonical("ﬆ"), Callsigns.canonical("ﬅ"))
+        assertNotEquals(Callsigns.canonical("ΐ"), Callsigns.canonical("ΐ"))
+        assertNotEquals(Callsigns.canonical("ΰ"), Callsigns.canonical("ΰ"))
+        assertEquals(Callsigns.canonical("𐐀"), Callsigns.canonical("𐐨"))
+        assertEquals("name test", Callsigns.canonical("  N!AME   TEST  "))
+        assertEquals("lead٣", Callsigns.canonical("Lead²Ⅳ٣"))
+    }
+
+    @Test
     fun sixteenSupplementaryCharactersSurviveImportAndPersistence() {
         val name = "🚀".repeat(16)
         assertEquals(name, Callsigns.limit(name))

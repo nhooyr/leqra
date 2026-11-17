@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version         = "5.4.0"
+	version         = "5.5.0"
 	protocolVersion = 1
 	maxRoomLimit    = 32768
 	assetPath       = "assets/v" + version + "/"
@@ -47,6 +47,7 @@ var appIconPNGs = [...]string{
 var appShellFiles = [...]string{
 	"theme.js", "theme.css", "style.css", "favicon.svg",
 	"netcode.js", "game.js", "callsigns.js", "infinite-maze.js", "infinite.js",
+	"showcase-scene.js", "showcase.js",
 	"pwa.js", "manifest.webmanifest", "sw.js",
 }
 

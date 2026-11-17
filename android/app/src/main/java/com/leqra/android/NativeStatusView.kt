@@ -13,6 +13,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.leqra.android.NativeStyle.dp
 import kotlin.math.ceil
+import com.leqra.core.ArenaSnapshot
 
 /** Stable three-column arena chrome matching the native iOS status bar. */
 internal class NativeStatusView(context: Context, openScores: () -> Unit) : LinearLayout(context) {
@@ -39,6 +40,28 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
         private set
 
     private var scoreKey: String? = null
+
+    fun showShowcase(snapshot: ArenaSnapshot, localID: Int, fps: Int, ping: Int) {
+        showTitle("● PUBLIC INFINITY")
+        count.value("${snapshot.players} online")
+        count.visibility = View.VISIBLE
+        val pilot = snapshot.tanks.firstOrNull { it.id == localID }
+        score.value("score: ${pilot?.score ?: 0}, rank: #${pilot?.rank ?: 0}")
+        score.setTextColor(NativeStyle.paint(pilot?.colorIndex ?: 0))
+        details.value("$fps fps · $ping ms")
+        details.visibility = View.VISIBLE
+        scores.value("LEADERBOARD")
+        scores.contentDescription = "Leaderboard"
+    }
+
+    private fun showTitle(value: String) {
+        if (!TextUtils.equals(title.text, value)) {
+            title.text = android.text.SpannableString(value).apply {
+                setSpan(ForegroundColorSpan(NativeStyle.accent), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            textUpdates++
+        }
+    }
 
     init {
         orientation = HORIZONTAL
@@ -84,19 +107,8 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
                     "roundOver" -> "ROUND COMPLETE"
                     else -> "MATCH COMPLETE"
                 }
-        val titleText = "● ${if (session.spectating && !preview) "SPECTATING" else name}"
-        if (!TextUtils.equals(title.text, titleText)) {
-            title.text =
-                android.text.SpannableString(titleText).apply {
-                    setSpan(
-                        ForegroundColorSpan(NativeStyle.accent),
-                        0,
-                        1,
-                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-                    )
-                }
-            textUpdates++
-        }
+        val titleText = "● ${if (!session.hasLocalPlayer && !preview) "SPECTATING" else name}"
+        showTitle(titleText)
         val onlineCount =
             if (preview && public && infinity) session.publicStatus?.players
             else if (!preview && infinity && session.online) session.snapshot.players else null

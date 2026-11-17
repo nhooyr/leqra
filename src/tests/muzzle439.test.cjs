@@ -5,7 +5,7 @@ function boot(power=null,offset=[27.2,20.49],wallList=[]){
  const s=base({cols:7,rows:7,wallList}),noop=()=>{};
  Object.assign(s,{time:0,bulletId:0,reduceMotion:true,mode:'room',shake:0,burst:noop,addRing:noop,tone:noop,shieldSound:noop,ricochetSound:noop,toast:noop,boom:noop,updateHUD:noop,shotSound:noop,addLog:noop,blastEffect:noop,impactEffect:noop,objectiveMode:()=>false,survivalBreak:()=>false,laserEffect:noop,recordLocalDeath(t,owner){s.deaths.push([t.id,owner]);},deaths:[]});
  s.tanks=[tank(0,100,100,{human:true,power,charges:3,powerTime:10,machineRounds:180}),tank(1,100+offset[0],100+offset[1])];
- vm.createContext(s);for(const name of ['tankHit','powerCapacity','activeAmmo','fire','fireLaser','aimingGuide','shotPrediction','hurt','detonate','updateBullets','compactNotDead'])vm.runInContext(declaration(name),s);
+ vm.createContext(s);for(const name of ['tankHit','powerCapacity','activeAmmo','fire','fireLaser','aimingGuide','shotPrediction','hurt','detonate','advanceCannon','updateBullets','compactNotDead'])vm.runInContext(declaration(name),s);
  if(declaration('fire').includes('projectileTankImpact('))vm.runInContext(declaration('projectileTankImpact'),s);
  return s;
 }
@@ -63,8 +63,36 @@ test('close grazing shots hit before the muzzle can skip nonoverlapping tanks',(
  for(const [power,offset] of [[null,[27.2,20.49]],['homing',[26,21.99]],['grenade',[25.2,22.99]],['cannon',[17,30]]]){
   const s=boot(power,offset),[a,b]=s.tanks;assert.ok(s.distance(a,b)>a.r+b.r);
   assert.equal(s.fire(a),true);s.updateBullets(1/120);assert.equal(b.alive,false,String(power)+' must hit the swept muzzle contact');
-  assert.equal(s.bullets.length,0);assert.ok(s.deaths.some(([id,owner])=>id===1&&owner===0));
+  assert.equal(s.bullets.length,power==='cannon'?1:0);assert.ok(s.deaths.some(([id,owner])=>id===1&&owner===0));
  }
+});
+
+test('Cannon pierces every swept muzzle target and keeps its live shell',()=>{
+ const s=boot('cannon',[50,0]),a=s.tanks[0];
+ s.tanks=[a,tank(3,151,100),tank(2,141,100),tank(1,131,100)];
+ assert.equal(s.fire(a),true);assert.equal(s.bullets.length,1);
+ const shell=s.bullets[0];assert.equal(shell.dead,false);assert.deepEqual(s.deaths.map(([id])=>id),[1,2,3]);
+ assert.ok(shell.x>=132);assert.equal(shell.hitTanks.size,3);
+});
+
+test('Cannon consumes one shield per life and pierces allies and protected tanks',()=>{
+ const s=boot('cannon',[50,0]),a=s.tanks[0],target=s.tanks[1];
+ Object.assign(target,{shield:10,shieldCharges:2,spawnSerial:1});
+ const ally=tank(2,136,100,{team:a.team}),protectedTank=tank(3,141,100,{invulnerable:1});s.tanks.push(ally,protectedTank);
+ s.fire(a);s.updateBullets(.05);const shell=s.bullets[0];
+ assert.equal(target.shieldCharges,1);assert.equal(ally.alive,true);assert.equal(protectedTank.alive,true);
+ target.invulnerable=0;shell.x=180;shell.vx=-1128;s.updateBullets(.06);
+ assert.equal(target.shieldCharges,1,'a returning shell cannot strip the same life twice');
+ target.spawnSerial++;shell.x=100;shell.vx=1128;s.updateBullets(.06);
+ assert.equal(target.shieldCharges,0,'a newly spawned life is a new target');assert.equal(shell.dead,false);
+});
+test('Cannon muzzle reflects at the rim without spending leftover launch travel or damaging a target behind it',()=>{
+ const s=boot('cannon',[200,0]),a=s.tanks[0];Object.assign(a,{x:20,angle:Math.PI});s.tanks.length=1;
+ const predicted=s.muzzleProjectile(a,Math.PI);assert.ok(Math.abs(predicted.x-18.12)<1e-7);assert.ok(predicted.vx>0);
+ s.fire(a);const shell=s.bullets[0];assert.ok(Math.abs(shell.x-predicted.x)<1e-7);assert.ok(shell.vx>0);assert.equal(shell.bounces,1);
+ assert.equal(shell.life,5.3);s.updateBullets(1/120);assert.ok(shell.x>predicted.x);
+ const grazing=boot('cannon',[200,0]),owner=grazing.tanks[0];Object.assign(owner,{x:70,angle:Math.PI});grazing.tanks=[owner,tank(1,110,100)];
+ grazing.fire(owner);assert.equal(grazing.tanks[1].alive,true,'discarded post-rim muzzle distance cannot hit behind the shooter');
 });
 
 test('muzzle hits consume one shield and one charge, with no lingering projectile',()=>{

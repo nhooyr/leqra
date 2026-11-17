@@ -4,9 +4,11 @@ import "math"
 
 const (
 	infiniteChunkCells = 8
-	infiniteCacheSize  = 128
-	infiniteNorth      = 1
-	infiniteWest       = 2
+	// The authoritative arena serves up to 32 separated human views. Keep
+	// enough chunks resident to avoid regenerating each view every tick.
+	infiniteCacheSize = 512
+	infiniteNorth     = 1
+	infiniteWest      = 2
 )
 
 type infiniteChunkCoord struct{ x, y int }

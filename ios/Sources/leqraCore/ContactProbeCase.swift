@@ -33,7 +33,12 @@ public struct ContactProbeCase {
         if contact.projectileId == 0, body.hp > 0 {
             let beam = visible.effects.contains { $0.kind == "laser" }
             let touching = contact.kind == "starman" && visible.tanks.contains { $0.id == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 34.0000001 }
-            if beam || touching { endpointFrame = endpointFrame ?? frames }
+            let cannon = contact.kind == "cannon" && (visible.bullets.contains {
+                $0.kind == "cannon" && $0.owner == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 31.0000001
+            } || visible.effects.contains {
+                $0.kind == "impact" && $0.owner == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 31.0000001
+            })
+            if beam || touching || cannon { endpointFrame = endpointFrame ?? frames }
         }
         if visible.effects.contains(where: { $0.id == effect.id }) || body.hp <= 0 {
             result = endpointFrame.map { $0 < frames } == true ? .passed : .damageBeforeEndpoint

@@ -214,7 +214,8 @@ test('the final grenade remains remotely controlled while held standard fire res
   s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2);assert.ok(!grenade.dead);
   s.weaponControl(t,false,false);s.weaponControl(t,true,true);
   assert.ok(grenade.dead);assert.equal(s.bullets.length,2,'detonation emits no regular shell');assert.equal(t.grenadeEpoch,undefined);
-  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,3,'holding retries after pop');
+  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2,'detonation press stays consumed until release');
+  s.weaponControl(t,false,false);s.weaponControl(t,true,true);assert.equal(s.bullets.length,3,'a new press fires regular ammunition');
  }
 });
 test('a genuine refill starts a new grenade-control cycle without deleting the old final grenade',()=>{

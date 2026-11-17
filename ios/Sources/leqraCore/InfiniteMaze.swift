@@ -188,7 +188,24 @@ public final class InfiniteMaze {
         var remaining = max(0, min(range, 20000) - launch.distance)
         var points: [BeamPoint] = []
         for index in 0..<max(0, min(maxSegments, kind == "laser" ? 256 : 128)) {
-            let wall = projectileHit(kind: kind, x: x, y: y, dx: ux * remaining, dy: uy * remaining, radius: radius)
+            let wall: RayHit?
+            if kind == "laser", world == nil {
+                // Search nearby spans first: most ricochets meet a wall within
+                // a cell, so scanning the whole remaining beam wastes work.
+                var searched = 0.0, nearest: RayHit?
+                while searched < remaining {
+                    let span = min(2 * Self.cellSize, remaining - searched)
+                    if let hit = rayHit(x: x + ux * searched, y: y + uy * searched,
+                                        dx: ux * span, dy: uy * span, radius: radius) {
+                        nearest = RayHit(fraction: (searched + span * hit.fraction) / remaining, nx: hit.nx, ny: hit.ny)
+                        break
+                    }
+                    searched += span
+                }
+                wall = nearest
+            } else {
+                wall = projectileHit(kind: kind, x: x, y: y, dx: ux * remaining, dy: uy * remaining, radius: radius)
+            }
             let length = remaining * (wall?.fraction ?? 1)
             if index == 0 {
                 let crop = launch.bounced ? 0 : 28.0

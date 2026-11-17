@@ -11,7 +11,7 @@ test('Laser and Cannon fire and readiness use the same twice-faster reload',()=>
  for(const power of ['laser','cannon']){
   const s=boot(),p=tank(0,126,126,{human:true,power,powerTime:15,charges:3}),noop=()=>{};
   Object.assign(s,{time:0,bulletId:0,tanks:[p],survivalBreak:()=>false,shotSound:noop,burst:noop,laserEffect:noop,impactEffect:noop});
-  for(const name of ['activeAmmo','powerCapacity','fire','fireLaser','cooldownDuration'])vm.runInContext(declaration(name),s);
+  for(const name of ['activeAmmo','powerCapacity','fire','fireLaser','cooldownDuration','advanceCannon'])vm.runInContext(declaration(name),s);
   assert.equal(s.fire(p),true);assert.equal(p.charges,2);assert.ok(Math.abs(p.cooldown-.85/3)<1e-12);assert.ok(Math.abs(s.cooldownDuration(power)-p.cooldown)<1e-12);
   assert.ok(Math.abs(s.Net.firePressInterval(p)-p.cooldown)<1e-12,'empty-fire feedback cadence matches the weapon');
  }
@@ -20,7 +20,7 @@ test('Laser and Cannon accept the next held shot after exactly seventeen60Hz tic
  for(const power of ['laser','cannon']){
   const s=boot(),p=tank(0,126,126,{human:true,power,powerTime:15,charges:3}),noop=()=>{};
   Object.assign(s,{time:0,bulletId:0,tanks:[p],survivalBreak:()=>false,shotSound:noop,burst:noop,laserEffect:noop,impactEffect:noop});
-  for(const name of ['activeAmmo','powerCapacity','fire','fireLaser'])vm.runInContext(declaration(name),s);
+  for(const name of ['activeAmmo','powerCapacity','fire','fireLaser','advanceCannon'])vm.runInContext(declaration(name),s);
   assert.equal(s.fire(p),true);
   for(let tick=1;tick<=16;tick++){p.cooldown=Math.max(0,p.cooldown-1/60);assert.equal(s.fire(p),false,power+' premature tick '+tick);}
   p.cooldown=Math.max(0,p.cooldown-1/60);assert.ok(p.cooldown<1e-9);assert.equal(s.fire(p),true,power+' tick17');assert.equal(p.charges,1);

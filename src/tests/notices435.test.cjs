@@ -38,3 +38,14 @@ test('compatible handshake proceeds without an update dialog',()=>{
  assert.equal(b.$('versionMismatchDialog'),undefined);assert.equal(b.s.mode,'online');assert.equal(b.s.socket.closed,undefined);
  assert.deepEqual(JSON.parse(JSON.stringify(b.s.sent)),[{type:'client_hello',version:'test-client',protocol:1},{type:'join',code:'ROOM',independentAccounts:true}]);
 });
+
+test('room account expiry and release forget only the named account and end the connection',()=>{
+ for(const seat of [0,1]){
+  const b=boot(),{s,$}=b,revoked=[];s.online.ownerKey='p_primary';s.online.localOwnerKey='p_secondary';
+  s.window.leqraIdentity={exposeError(){},revoke:(token,seat)=>revoked.push([token,seat])};
+  s.leaveOnline=()=>{s.online.connected=s.online.connecting=false;s.left=true;};s.toast=()=>{};
+  b.receive({type:'error',code:'account_key_invalid',seat});
+  assert.deepEqual(revoked,[[seat?'p_secondary':'p_primary',seat]]);assert.equal(s.left,true);assert.equal(s.online.connecting,false);
+  assert.match($('roomStatus').textContent,new RegExp('P'+(seat+1)+'’s account expired or was released'));
+ }
+});

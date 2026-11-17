@@ -169,7 +169,7 @@ final class NativeRoomTests: XCTestCase {
         if !condition() { XCTFail("Timed out waiting for the local server"); throw GameNetworkError.timeout }
     }
 
-    @MainActor func testLiveSpectatorQueueConsentKickAndLocalRename() async throws {
+    @MainActor func testLiveSpectatorQueueConsentKickAndLocalAccountImmutability() async throws {
         guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
             throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable local server.")
         }
@@ -232,7 +232,12 @@ final class NativeRoomTests: XCTestCase {
         rename["independentAccounts"] = true; rename["localPublicToken"] = localKey
         host.sendCommand(rename)
         try await waitFor { room?.players.contains { $0.name == localName } == true || !hostErrors.isEmpty }
-        XCTAssertTrue(hostErrors.isEmpty, hostErrors.joined(separator: ", "))
+        XCTAssertTrue(hostErrors.contains { $0.contains("separate account") }, "Changing a name must require a different account key")
+        XCTAssertEqual(room?.players.first { $0.kind == "local" }?.name, "CO " + suffix)
+        let info = try await host.fetchAccountInfo(baseURL: base, publicToken: localKey)
+        XCTAssertEqual(info.names, ["CO " + suffix])
+        let free = try await host.fetchCallsignAvailability(baseURL: base, names: [localName])
+        XCTAssertEqual(free.first?.available, true, "A rejected rename must not claim its new name")
         XCTAssertEqual(host.localAccountKey, localKey)
         XCTAssertNotEqual(host.accountKey, localKey)
     }

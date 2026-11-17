@@ -9,7 +9,7 @@ function localCombat(tick,fire,wallList=[]){
   heldAction:(_,action)=>fire&&action==='fire',primaryFireHeld:()=>fire,firePresses:new Set(),directAim:{active:false},mouseAim:{firePressed:false},mouseAimHeading:()=>null,stick:{mag:0},detonateOwned:()=>false,finishRound:winner=>s.winner=winner,
   grantPower:t=>s.claimant=t.id,pickupSound:noop,localPilotIndex:()=>-1});
  s.tanks=[tank(0,100,100,{human:true,localIndex:0,track:0}),tank(6,140,100,{human:true,angle:Math.PI,localIndex:1,track:0})];
- for(const name of ['powerCapacity','activeAmmo','fire','hurt','updateBullets','compactNotDead','compactLife','projectileTankImpact','weaponControl','humanControl','wallBetweenCenters','update'])vm.runInContext(declaration(name),s);
+ for(const name of ['hardwareUsesP2','secondaryFireHeld','powerCapacity','activeAmmo','fire','hurt','updateBullets','compactNotDead','compactLife','projectileTankImpact','weaponControl','humanControl','wallBetweenCenters','update'])vm.runInContext(declaration(name),s);
  return s;
 }
 

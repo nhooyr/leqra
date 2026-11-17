@@ -9,8 +9,10 @@ them before entering online play. Existing saved names and imported accounts are
 kept. Each account key owns one callsign and one public Infinity score.
 Entering a new callsign or generating a new one creates a fresh account with
 zero score. It does not rename the old account or transfer its score. The client
-saves the new key before registering it and switches only after the server
-accepts the name. A rejected name leaves the current account and game unchanged.
+saves the new key before registering it and switches after the server
+accepts the name. If the server cannot be reached during offline play or setup,
+the client saves a pending local account and checks it before online play.
+A rejected name leaves the current account and game unchanged.
 A successful account switch returns to the ready room.
 
 Previously used callsigns and their account keys are saved on the device.
@@ -18,6 +20,8 @@ Entering a saved callsign again, or selecting it under **Saved callsigns** in
 Account, signs into that account without asking for its key again. Its own score
 is restored. Saved accounts can be used by either P1 or P2, but both seats cannot
 use the same account simultaneously. Import a key to use it on another device.
+Matching uses the same Unicode case rules on every platform, so case variants
+find the saved account. Different spellings such as `ß` and `SS` stay separate.
 
 Accounts and their callsigns expire after **one calendar month without signing in**.
 The deadline is the same UTC day and time in the next month, clamped to that
@@ -70,6 +74,7 @@ working on every device, and anyone can claim the name. Cancelling changes
 nothing. The device removes the saved key only after the server confirms the
 release; a network failure keeps it so the release can be retried safely. Releasing
 the selected account gives that seat a fresh, unregistered local callsign.
+Game entry and account changes wait until a pending release finishes.
 
 If the key might have been exposed, use **Reset account key** after returning to
 the ready room. This preserves the callsign and public score, invalidates the old

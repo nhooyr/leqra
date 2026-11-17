@@ -4,11 +4,13 @@ import leqraCore
 struct ContentView: View {
     @ObservedObject var session: GameSession
     @Environment(\.scenePhase) private var scenePhase
+    @State private var fixedLoadoutHeight: CGFloat = 97
     var body: some View {
         GeometryReader { geometry in
             let landscape = geometry.size.width > geometry.size.height
             ZStack {
                 WebStyle.page.ignoresSafeArea()
+                Group {
                 VStack(spacing: 0) {
                     GameHeader(session: session, landscape: landscape, availableWidth: geometry.size.width)
                     if session.readyRoom { readyRoom(landscape: landscape) }
@@ -24,9 +26,11 @@ struct ContentView: View {
                 if session.showJoin { JoinRoomPanel(session: session) }
                 if session.showRules { RulesEditor(session: session) }
                 if session.showControls { ControlsPanel(session: session) }
-                if session.showSettings { NativeSettings(session: session) }
                 if session.showAccount { AccountPanel(session: session) }
-                if session.showChat { VStack { Spacer(); HStack { Spacer(); ChatPanel(session: session) } } }
+                }.accessibilityHidden(session.showShowcase).allowsHitTesting(!session.showShowcase)
+                if session.showShowcase {
+                    showcase(landscape: landscape, width: geometry.size.width)
+                }
             }.foregroundStyle(WebStyle.text).tint(WebStyle.accent)
         }
         .alert("leqra", isPresented: Binding(get: { session.error != nil }, set: { if !$0 { session.error = nil } })) {
@@ -43,6 +47,29 @@ struct ContentView: View {
                 try? await Task.sleep(nanoseconds: NetworkRefreshCadence.remainingNanoseconds(startedAt: started, now: ProcessInfo.processInfo.systemUptime))
             }
         }
+    }
+
+    private func showcase(landscape: Bool, width: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            GameHeader(session: session, landscape: landscape, availableWidth: width, showcase: true)
+                .allowsHitTesting(false)
+            if let frame = session.showcaseFrame {
+                VStack(spacing: 0) {
+                    ArenaStatusBar(session: session, showcase: frame)
+                        .allowsHitTesting(false)
+                    NativeGameView(scene: session.showcaseScene, highFrameRate: session.highFrameRate,
+                                   paused: false, infinity: true, landscape: landscape,
+                                   showsTouchControls: true)
+                        .accessibilityIdentifier("showcaseStage")
+                    PilotLoadoutView(session: session, compact: landscape, showcase: frame)
+                        .allowsHitTesting(false)
+                }.background(WebStyle.sunken)
+            }
+        }.padding(.top, landscape ? 5 : 9)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(WebStyle.page.ignoresSafeArea())
+            .onAppear { session.configureShowcase(portrait: !landscape) }
+            .onChange(of: landscape) { session.configureShowcase(portrait: !$0) }
     }
 
     private func readyRoom(landscape: Bool) -> some View {
@@ -70,23 +97,38 @@ struct ContentView: View {
     }
 
     private func game(landscape: Bool) -> some View {
-        VStack(spacing: 0) {
+        let split = session.isInfinity && session.secondaryLocalID != nil
+        let canControl = !session.spectating || session.secondaryLocalID != nil
+        let overlayHeight: CGFloat = !session.isInfinity && !landscape && !session.spectating ? fixedLoadoutHeight + 119 : 0
+        return VStack(spacing: 0) {
             ArenaStatusBar(session: session)
             if let objective = session.snapshot.objectives, ["ctf", "koth", "survival"].contains(objective.mode) { objectiveBar(objective) }
             ZStack(alignment: .topTrailing) {
-                NativeGameView(scene: session.scene, highFrameRate: session.highFrameRate,
-                               paused: session.paused || session.hasModal,
-                               infinity: session.isInfinity, landscape: landscape, loadoutHeight: 97, spectating: session.spectating)
-                    .accessibilityIdentifier("arenaStage")
-                if !session.isInfinity && !landscape && !session.spectating {
-                    VStack { Spacer(); PilotLoadoutView(session: session).frame(height: 97); Color.clear.frame(height: 119) }.allowsHitTesting(false)
-                }
-                if !session.isInfinity && session.showFPS {
-                    Text(session.performanceReadout()).font(WebStyle.mono()).foregroundStyle(WebStyle.accent).padding(7)
-                        .background(WebStyle.sunken.opacity(0.9), in: RoundedRectangle(cornerRadius: 5)).padding(6)
+                if split {
+                    if landscape {
+                        HStack(spacing: 1) { splitArena(seat: 0, landscape: landscape); splitArena(seat: 1, landscape: landscape) }
+                    } else {
+                        VStack(spacing: 1) { splitArena(seat: 0, landscape: landscape); splitArena(seat: 1, landscape: landscape) }
+                    }
+                } else {
+                    NativeGameView(scene: session.scene, highFrameRate: session.highFrameRate,
+                                   paused: session.paused || session.hasModal,
+                                   infinity: session.isInfinity, landscape: landscape,
+                                   loadoutHeight: fixedLoadoutHeight, spectating: !canControl,
+                                   hardwareInputScene: session.secondaryLocalID == nil ? session.scene : session.secondaryScene,
+                                   showsTouchControls: !session.spectating)
+                        .accessibilityIdentifier("arenaStage")
+                    if !session.isInfinity && !landscape && !session.spectating {
+                        VStack {
+                            Spacer(minLength: 0)
+                            LocalPilotLoadouts(session: session, landscape: landscape)
+                                .background(GeometryReader { geometry in Color.clear.preference(key: LoadoutHeightKey.self, value: geometry.size.height) })
+                            Color.clear.frame(height: 119)
+                        }.allowsHitTesting(false)
+                    }
                 }
                 if session.showScores { ArenaStandings(session: session).padding(10) }
-                announcements.padding(.bottom, !session.isInfinity && !landscape ? 216 : 0)
+                announcements.padding(.bottom, overlayHeight)
                 if !session.godlikeNotice.isEmpty {
                     VStack {
                         Text(session.godlikeNotice).font(.system(size: 12, weight: .bold)).foregroundStyle(Color(hex: "#ffc46b"))
@@ -96,13 +138,25 @@ struct ContentView: View {
                         Spacer()
                     }.frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.top, 30).allowsHitTesting(false)
                 }
-                if !session.spectating && !session.presentingFinalShot && (session.snapshot.phase == "matchOver" || session.snapshot.result != nil) {
-                    results.padding(.bottom, !session.isInfinity && !landscape ? 216 : 0)
+                if canControl && !session.presentingFinalShot && (session.snapshot.phase == "matchOver" || session.snapshot.result != nil) {
+                    results.padding(.bottom, overlayHeight)
                 }
             }
-            if !session.spectating && (session.isInfinity || landscape) { PilotLoadoutView(session: session, compact: landscape) }
-        }.background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9))
+            if !split && canControl && (session.isInfinity || landscape || session.spectating) { LocalPilotLoadouts(session: session, landscape: landscape) }
+        }.onPreferenceChange(LoadoutHeightKey.self) { if $0 > 0 { fixedLoadoutHeight = $0 } }
+            .background(WebStyle.sunken).clipShape(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9))
             .overlay(RoundedRectangle(cornerRadius: session.isInfinity ? 0 : 9).stroke(session.isInfinity ? .clear : WebStyle.edge, lineWidth: 1).allowsHitTesting(false))
+    }
+
+    private func splitArena(seat: Int, landscape: Bool) -> some View {
+        VStack(spacing: 0) {
+            NativeGameView(scene: seat == 0 ? session.scene : session.secondaryScene,
+                           highFrameRate: session.highFrameRate, paused: session.paused || session.hasModal,
+                           infinity: true, landscape: landscape, hardwareInputScene: session.secondaryScene,
+                           acceptsHardware: seat == 0, showsTouchControls: seat == 0, mouseTargetScene: session.secondaryScene)
+                .accessibilityIdentifier(seat == 0 ? "arenaStage" : "secondaryArenaStage")
+            PilotLoadoutView(session: session, compact: true, seat: seat, paired: landscape)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func objectiveBar(_ objective: ArenaObjectives) -> some View {
@@ -187,4 +241,9 @@ struct ContentView: View {
         session.winnerIdentity?.label ?? "TANK"
     }
     private var winnerColor: Color { session.winnerIdentity.map { WebStyle.mapped($0.color) } ?? WebStyle.accent }
+}
+
+private struct LoadoutHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 97
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

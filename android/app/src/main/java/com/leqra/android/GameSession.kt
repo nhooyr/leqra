@@ -35,6 +35,7 @@ internal class GameSession(context: Context) {
     val canImportAccount: Boolean
         get() =
             screen == Screen.READY &&
+                !releasingCallsign &&
                 !online &&
                 !network.connected &&
                 !arenaNetwork.connected &&
@@ -43,7 +44,6 @@ internal class GameSession(context: Context) {
     var changed: (Boolean) -> Unit = {}
     var present: (ArenaSnapshot, InfiniteMaze?, Int, Int?, Boolean) -> Unit = { _, _, _, _, _ -> }
     var notifyError: (String) -> Unit = {}
-    var notifyChat: () -> Unit = {}
     var emitAudioCue: (AudioCue) -> Unit = {}
     var server = prefs.getString("server", "https://leqra.com")!!
         private set
@@ -59,12 +59,14 @@ internal class GameSession(context: Context) {
     )
     var callsign: String
         get() = nameDrafts.name(0)
-        set(value) { nameDrafts.edit(0, value) }
+        set(value) { if (!releasingCallsign) nameDrafts.edit(0, value) }
     var localCallsign: String
         get() = nameDrafts.name(1)
-        set(value) { nameDrafts.edit(1, value) }
+        set(value) { if (!releasingCallsign) nameDrafts.edit(1, value) }
     private val committedCallsigns = arrayOf(callsign, localCallsign)
     private var switchingCallsign = false
+    var releasingCallsign = false
+        private set
     private var onlineIdentityReady = false
     init {
         for (seat in 0..1) {
@@ -129,7 +131,7 @@ internal class GameSession(context: Context) {
     val audioSceneActive: Boolean
         get() = active && screen == Screen.PLAYING && !paused && (!online || activeNetwork.connected && !timeline.stale && audioStateOwner === activeNetwork && audioStateConnection == activeNetwork.connectionGeneration)
     val audioGameplayActive: Boolean
-        get() = audioSceneActive && !spectating
+        get() = audioSceneActive && hasLocalPlayer
 
     var infinity = true
         private set
@@ -161,6 +163,10 @@ internal class GameSession(context: Context) {
         get() = online && network.welcome?.spectating == true
     val spectating: Boolean
         get() = online && (roomSpectating || arenaActive && arenaNetwork.welcome?.spectating == true)
+    val canControlSecondary: Boolean
+        get() = localID2 != null && (!spectating || !arenaActive)
+    val hasLocalPlayer: Boolean
+        get() = !spectating || canControlSecondary
     var followingID = 0
         private set
 
@@ -175,7 +181,6 @@ internal class GameSession(context: Context) {
     var queuePacket: JSONObject? = null
         private set
 
-    val chat = mutableListOf<String>()
     private val spawnNotices = GodlikeSpawnNotices()
     val encounterNotice: String?
         get() = if (online && activeNetwork.isPublic) spawnNotices.current(System.nanoTime() / 1e9) else null
@@ -316,8 +321,15 @@ internal class GameSession(context: Context) {
             replacements.forEach { (seat, replacement) -> store.savePending(origin, AccountKeys.pending(seat,replacement,purpose="release-replacement")) }
         } catch (error: Exception) { completed(Result.failure(error)); return }
         switchingCallsign = true
-        accounts.release(origin,key) { result ->
+        releasingCallsign = true
+        for (seat in 0..1) accounts.invalidate(origin, seat)
+        val previousStatus = status
+        status = "Releasing callsign…"
+        changed(false)
+        runCatching { accounts.release(origin,key) { result ->
             switchingCallsign = false
+            releasingCallsign = false
+            if (server == origin) status = previousStatus
             val finished = result.mapCatching {
                 replacements.forEach { (seat,replacement) ->
                     if (store.selected(origin,seat) == null) {
@@ -331,11 +343,17 @@ internal class GameSession(context: Context) {
                 }
                 if (server == origin) { save(); preparePreview(); changed(true) }
             }
+            changed(false)
             completed(finished)
+        } }.onFailure { error ->
+            switchingCallsign = false; releasingCallsign = false
+            if (server == origin) status = previousStatus
+            changed(false); completed(Result.failure(error))
         }
     }
 
     fun accountImported(seat: Int) {
+        if (releasingCallsign) return
         committedCallsigns[seat] = nameDrafts.name(seat)
         nameDrafts.cancel(seat)
         persistNameDrafts()
@@ -343,12 +361,18 @@ internal class GameSession(context: Context) {
 
     fun generateCallsign(seat: Int) {
         require(seat in 0..1)
-        if (switchingCallsign) return
+        if (switchingCallsign || releasingCallsign) return
         val origin = server
         val previousName = committedCallsigns[seat]
+        val previousKey = store.selected(origin, seat)?.key
+        val sourceScreen = screen
+        val sourceOnline = online
+        val stamp = nameDrafts.request(seat, origin, previousKey.orEmpty())
+        fun unchanged() = !releasingCallsign && screen == sourceScreen && online == sourceOnline &&
+            nameDrafts.isCurrent(stamp, server, store.selected(server, seat)?.key.orEmpty())
         store.selected(origin,seat)?.let { accounts.rememberCallsign(origin,seat,previousName,it.key) }
         switchingCallsign = true
-        accounts.generate(origin,listOf(seat),java.util.UUID.randomUUID().toString(),freshAccount = true) { result ->
+        accounts.generate(origin,listOf(seat),java.util.UUID.randomUUID().toString(),freshAccount = true, canCommit = ::unchanged) { result ->
             switchingCallsign = false
             result.onSuccess { rows ->
                 val row = rows.single()
@@ -356,7 +380,24 @@ internal class GameSession(context: Context) {
                 committedCallsigns[seat] = row.name
                 if (seat == 0) callsign = row.name else localCallsign = row.name
                 nameDrafts.cancel(seat); save(); leave()
-            }.onFailure { error(it.message) }
+            }.onFailure { failure ->
+                if (!unchanged()) return@onFailure
+                val canStageOffline = !online && unchanged() &&
+                    (failure as? NetworkFailure)?.code in setOf("network", "server_busy", "server_error")
+                if (!canStageOffline) { error(failure.message); return@onFailure }
+                var name = CallsignDrafts.randomName()
+                val otherName = if (seat == 0) localCallsign else callsign
+                while (name == otherName) name = CallsignDrafts.randomName()
+                // A lost generation response may already own its name; use a separate key
+                // for the local fallback and retain the earlier candidate for recovery.
+                accounts.switchCallsign(origin, seat, name, previousName, localOnly = true) { local ->
+                    local.onSuccess {
+                        committedCallsigns[seat] = name
+                        if (seat == 0) callsign = name else localCallsign = name
+                        nameDrafts.cancel(seat); save(); leave()
+                    }.onFailure { error(it.message) }
+                }
+            }
         }
     }
 
@@ -383,7 +424,7 @@ internal class GameSession(context: Context) {
     }
 
     private fun ensureDefaultNames() {
-        if (!active || nameRequest != null || System.nanoTime() < nextNameAttempt) return
+        if (!active || releasingCallsign || nameRequest != null || System.nanoTime() < nextNameAttempt) return
         if (!(nameDrafts.pending(0) || localSelected && nameDrafts.pending(1))) {
             pendingOnlineAction?.let {
                 pendingOnlineAction = null
@@ -683,6 +724,7 @@ internal class GameSession(context: Context) {
     }
 
     fun play() {
+        if (releasingCallsign) return
         if (!online && publicSelected && !nameDrafts.pending(0) && prepareIdentityForOnline(::play)) return
         if (!validHumanNames()) return
         localStartError?.let { error(it); return }
@@ -810,6 +852,7 @@ internal class GameSession(context: Context) {
     }
 
     fun share() {
+        if (releasingCallsign) return
         if (!nameDrafts.pending(0) && prepareIdentityForOnline(::share)) return
         if (!validHumanNames() || awaitDefaultNames(::share)) return
         save()
@@ -865,6 +908,7 @@ internal class GameSession(context: Context) {
     }
 
     fun join(code: String, spectator: Boolean = false) {
+        if (releasingCallsign) return
         if (!nameDrafts.pending(0) && prepareIdentityForOnline { join(code, spectator) }) return
         if (!validHumanNames() || awaitDefaultNames { join(code, spectator) }) return
         save()
@@ -885,6 +929,7 @@ internal class GameSession(context: Context) {
     }
 
     fun findMatch() {
+        if (releasingCallsign) return
         if (!validHumanNames() || !online && awaitDefaultNames(::findMatch)) return
         if (online) command("queue_info")
         else {
@@ -996,15 +1041,15 @@ internal class GameSession(context: Context) {
             fixed?.combat?.resetFire(id)
         }
         cancelFireFeedback()
-        if (online && !spectating) {
+        if (online && hasLocalPlayer) {
             val client = activeNetwork
-            client.sendInput(
+            if (!spectating) client.sendInput(
                 timeline.neutralPacket(),
                 paused = true,
                 player = localID,
                 member = client.welcome?.member,
             )
-            if (localID2 != null)
+            if (canControlSecondary)
                 client.sendInput(
                     timeline.neutralLocalPacket() ?: GameInput(),
                     paused = true,
@@ -1128,7 +1173,7 @@ internal class GameSession(context: Context) {
                         maze,
                         input2 = input2.takeIf { localID2 != null },
                         sendLocal = { packet ->
-                            if (!spectating) client.sendInput(
+                            if (canControlSecondary) client.sendInput(
                                 packet,
                                 local = true,
                                 player = localID2,
@@ -1230,34 +1275,49 @@ internal class GameSession(context: Context) {
     val authoritativeSnapshot: ArenaSnapshot
         get() = if (online) timeline.authoritativeSnapshot ?: snapshot else practice?.snapshot ?: fixed?.snapshot ?: snapshot
 
-    private fun canonicalCallsign(name: String) = Callsigns.limit(name.trim()).replace(Regex(" +"), " ").lowercase(java.util.Locale.ROOT)
+    private fun canonicalCallsign(name: String) = Callsigns.canonical(name)
 
     fun renameCallsign(name: String, seat: Int = 0, validate: Boolean = false, completed: (() -> Unit)? = null) {
         require(seat in 0..1)
         val cleaned = Callsigns.limit(name.trim()).ifBlank { if (seat == 0) "Pilot" else "Co-pilot" }
         if (Callsigns.botReserved(cleaned)) { error(Callsigns.botNamespaceMessage); return }
-        if (switchingCallsign) return
+        if (switchingCallsign || releasingCallsign) return
         val previousName = committedCallsigns[seat]
         val selected = store.selected(server, seat)
         val same = canonicalCallsign(cleaned) == canonicalCallsign(previousName)
         if (seat == 0) callsign = cleaned else localCallsign = cleaned
-        if (!validate && canonicalCallsign(cleaned) == canonicalCallsign(previousName) && selected?.registrationPending == false) {
+        if (!validate && same) {
             if (seat == 0) callsign = cleaned else localCallsign = cleaned
             save(); completed?.invoke(); return
         }
+        val origin = server
+        val sourceScreen = screen
+        val sourceOnline = online
+        val stamp = nameDrafts.request(seat, origin, selected?.key.orEmpty())
+        fun unchanged() = !releasingCallsign && screen == sourceScreen && online == sourceOnline &&
+            nameDrafts.isCurrent(stamp, server, store.selected(server, seat)?.key.orEmpty())
+        fun accept(checked: CheckedAccount) {
+            committedCallsigns[seat] = checked.info.preferredCallsign ?: cleaned
+            if (seat == 0) callsign = committedCallsigns[seat] else localCallsign = committedCallsigns[seat]
+            save()
+            if (!validate || !same || checked.key != selected?.key) leave()
+            completed?.invoke()
+        }
+        fun reject(error: Throwable) {
+            if (!unchanged()) return
+            if (seat == 0) callsign = previousName else localCallsign = previousName
+            save(); error(error.message); changed(true)
+        }
         switchingCallsign = true
         runCatching {
-            accounts.switchCallsign(server, seat, cleaned, previousName, localOnly = !online && screen == Screen.PLAYING) { result ->
+            accounts.switchCallsign(origin, seat, cleaned, previousName, localOnly = !online && screen == Screen.PLAYING, canCommit = ::unchanged) { result ->
                 switchingCallsign = false
-                result.onSuccess { checked ->
-                    committedCallsigns[seat] = checked.info.preferredCallsign ?: cleaned
-                    if (seat == 0) callsign = committedCallsigns[seat] else localCallsign = committedCallsigns[seat]
-                    save()
-                    if (!validate || !same || checked.key != selected?.key) leave()
-                    completed?.invoke()
-                }.onFailure {
-                    if (seat == 0) callsign = previousName else localCallsign = previousName
-                    save(); error(it.message); changed(true)
+                result.onSuccess(::accept).onFailure { failure ->
+                    if (!validate && !online && unchanged() && (failure as? NetworkFailure)?.code in setOf("network", "server_busy", "server_error")) {
+                        accounts.switchCallsign(origin, seat, cleaned, previousName, localOnly = true, canCommit = ::unchanged) {
+                            it.onSuccess(::accept).onFailure(::reject)
+                        }
+                    } else reject(failure)
                 }
             }
         }.onFailure { switchingCallsign = false; error(it.message) }
@@ -1352,7 +1412,7 @@ internal class GameSession(context: Context) {
                 val welcome = event.welcome
                 if (isPlayingClient) {
                     localID = welcome.id
-                    localID2 = welcome.localId.takeUnless { welcome.spectating }
+                    localID2 = welcome.localId.takeUnless { welcome.spectating && (fromArena || welcome.isPublic) }
                     followingID = welcome.following
                     welcome.seed?.let { maze = InfiniteMaze(it) }
                     if (fromArena || welcome.isPublic) {
@@ -1423,7 +1483,7 @@ internal class GameSession(context: Context) {
                         !fromArena &&
                         arenaActive &&
                         arenaNetwork.isPublic &&
-                        event.code !in setOf("account_key_revoked", "session_replaced")
+                        event.code !in setOf("account_key_revoked", "account_key_invalid", "session_replaced")
                 ) {
                     // Public accounts survive loss of the temporary party/room route.
                     network.disconnect(false)
@@ -1524,19 +1584,6 @@ internal class GameSession(context: Context) {
                         save()
                     }
                 }
-            }
-            "chat",
-            "chat_history" -> {
-                if (packet.optString("type") == "chat_history") chat.clear()
-                val rows =
-                    packet.optJSONArray("messages")
-                        ?: JSONArray().apply { packet.optJSONObject("message")?.let(::put) }
-                repeat(rows.length()) {
-                    val m = rows.getJSONObject(it)
-                    chat.add("${m.optString("name")}: ${m.optString("text")}")
-                }
-                while (chat.size > 80) chat.removeAt(0)
-                if (packet.optString("type") == "chat") notifyChat()
             }
             "queue_catalog",
             "queue_status",

@@ -26,7 +26,7 @@ test('prediction and fractional presentation expire Starman while the real offli
 test('fixed local controls and bot tunings use the same Starman speed floor',()=>{
  for(const control of ['humanControl','botControl','godlikeBotControl']){
   const make=patch=>{const h=boot();Object.assign(h,{stick:{mag:0},heldAction:(_,key)=>input[key],mouseAimHeading:()=>null});
-   vm.runInContext(declaration('humanControl'),h);const p=tank(0,126,126,{human:control==='humanControl',difficulty:control==='godlikeBotControl'?'godlike':'normal',...patch});
+   vm.runInContext(declaration('hardwareUsesP2')+'\n'+declaration('humanControl'),h);const p=tank(0,126,126,{human:control==='humanControl',difficulty:control==='godlikeBotControl'?'godlike':'normal',...patch});
    h.tanks=[p,tank(1,546,126,{human:true})];return {h,p};};
   const a=make({starmanTime:8}),b=make({speedTime:10,speedStacks:2});
   if(control==='humanControl'){a.h[control](a.p,Net.STEP,true,input);b.h[control](b.p,Net.STEP,true,input);}

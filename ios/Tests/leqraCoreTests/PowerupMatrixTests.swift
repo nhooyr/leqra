@@ -201,13 +201,17 @@ final class PowerupMatrixTests: XCTestCase {
             shooter.invulnerable = 100
             arena.snapshot.tanks = [target, shooter]
             for hit in 1...5 {
-                advance(arena, input: GameInput(fire: true))
+                arena.captureFire(false, player: shooter.id)
+                arena.captureFire(true, player: shooter.id)
+                advance(arena)
                 XCTAssertEqual(arena.snapshot.tanks[0].hp, 1, map)
                 XCTAssertEqual(arena.snapshot.tanks[0].shieldCharges, 5 - hit, map)
                 XCTAssertTrue(arena.snapshot.effects.contains { $0.kind == "shield" }, map)
                 advance(arena, ticks: 30)
             }
-            advance(arena, input: GameInput(fire: true))
+            arena.captureFire(false, player: shooter.id)
+                arena.captureFire(true, player: shooter.id)
+                advance(arena)
             XCTAssertEqual(arena.snapshot.tanks[0].hp, 0, map)
             XCTAssertTrue(arena.snapshot.effects.contains { $0.kind == "hit" }, map)
         }

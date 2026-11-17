@@ -98,6 +98,13 @@ test('failed request retries retain UUID and bearer; a manual generation uses a 
  h.field.value='Taken';const manual=h.api.generate(h.field,h.form);await flush();const fresh=h.pending[3];assert.notEqual(fresh.body.requestId,first.body.requestId);
  h.answer(fresh,'pilot#CCCCCC');await manual;assert.equal(h.field.value,'pilot#CCCCCC');
 });
+test('a late manual reply clears its old pending request after another account is selected',async()=>{
+ const h=boot(new Map([['leqra.name','Original'],['leqra.local2Name','Wing']]));h.api.init(h.hooks);await flush();
+ h.field.value='Taken';const generated=h.api.generate(h.field,h.form);await flush();assert.equal(h.api.isPending(0),true);
+ h.storage.set('leqra.publicToken','p_'+Buffer.alloc(32,9).toString('base64url'));h.models[0]=h.field.value='Chosen';
+ h.answer(h.pending[0],'pilot#CCCCCC');await generated;
+ assert.equal(h.field.value,'Chosen');assert.equal(h.models[0],'Chosen');assert.equal(h.api.isPending(0),false);assert.equal(h.applied.length,0);
+});
 test('taken feedback has three stable lines, reserved feedback has no misleading import action, offline generation works',async()=>{
  const h=boot(new Map(),'file:');h.api.init(h.hooks);await flush();
  h.api.status(h.field,h.form,'Taken',true);assert.equal(h.status.children[0].textContent,'Used online; offline is OK.');

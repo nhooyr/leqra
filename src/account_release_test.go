@@ -169,3 +169,32 @@ func TestAccountReleaseP2LeavesIndependentP1AccountUsable(t *testing.T) {
 		t.Fatal("P2 key remains valid", err)
 	}
 }
+
+func TestAccountReleaseIdentifiesAffectedPublicSeat(t *testing.T) {
+	for _, seat := range []int{0, 1} {
+		t.Run(fmt.Sprint("seat", seat), func(t *testing.T) {
+			a := accountAppFixture(t, filepath.Join(t.TempDir(), "data.sqlite"))
+			_, active, primary, local := independentPair(t, a.infinite, "Primary", "Wing", "")
+			drain(active)
+			keys := []string{primary, local}
+			if status, released := releaseFixtureRequest(a, keys[seat]); status != 200 || !released {
+				t.Fatal(status, released)
+			}
+			found := false
+			for _, packet := range drain(active) {
+				if packet["type"] == "error" && packet["code"] == "account_key_invalid" {
+					found = true
+					if packet["seat"] != float64(seat) {
+						t.Fatal("release notice identified the wrong account", packet["seat"])
+					}
+				}
+			}
+			if !found {
+				t.Fatal("active pair did not receive its release notice")
+			}
+			if _, err := a.infinite.accountInfo(keys[1-seat]); err != nil {
+				t.Fatal("release invalidated the other account", err)
+			}
+		})
+	}
+}

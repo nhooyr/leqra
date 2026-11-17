@@ -132,7 +132,7 @@ test('fixed rendering projects fractional tank and projectile poses and restores
   angleDelta:Net.delta,moveTank:free,advanceGhost(t,dt){t.ghostTime=Math.max(0,t.ghostTime-dt);},survivalBreak:()=>false,
   projectOnlineBullet:b=>({...b,x:1}),weaponControl(){throw Error('rendering fired a weapon');},
   renderArena(){draws++;assert.ok(s.tanks[0].x>state.x);assert.equal(s.bullets[0].x,1);}};
- vm.createContext(s);for(const name of ['humanControl','localMovementInput','advanceLocalRenderTank','localTankPose','render'])vm.runInContext(declaration(game,name),s);
+ vm.createContext(s);for(const name of ['hardwareUsesP2','humanControl','localMovementInput','advanceLocalRenderTank','localTankPose','render'])vm.runInContext(declaration(game,name),s);
  const before=JSON.stringify(state),actualTanks=s.tanks,actualBullets=s.bullets;s.render();
  assert.equal(draws,1);assert.equal(s.tanks,actualTanks);assert.equal(s.bullets,actualBullets);assert.equal(JSON.stringify(state),before);
  s.renderArena=()=>{throw Error('draw failure');};assert.throws(()=>s.render(),/draw failure/);assert.equal(s.tanks,actualTanks);

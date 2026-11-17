@@ -46,12 +46,21 @@ final class GameScene: SKScene {
     private var frameMapInstallSeconds = 0.0
     enum LayoutMode { case infinity, fixed }
     var onFrame: ((TimeInterval) -> Void)?
-    var input = GameInput() { didSet { if oldValue.fire != input.fire { onFireChanged?(input.fire) } } }
-    private var fireInputSources = FireInputSources()
+    var onEscape: (() -> Void)?
+    private(set) var input = GameInput() { didSet { if oldValue.fire != input.fire { onFireChanged?(input.fire) } } }
+    private var inputSources = LocalInputSources()
+    private var showsTouchControls = true
+    private var frozenShowcase: ShowcaseScene?
+    private var tankScreenPositions: [Int: CGPoint] = [:]
+    private var secondaryPilotID: Int?
     var onFireChanged: ((Bool) -> Void)?
     var onControlsReset: (() -> Void)?
     var localFireRecoil: ((ArenaTank) -> Double)?
     private(set) var minimumProbeBarrelX: CGFloat = 0
+    var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
+    var controlLabelProbe: String {
+        "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y)"
+    }
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private(set) var layoutMode: LayoutMode = .infinity
     private var landscape = false
@@ -77,12 +86,8 @@ final class GameScene: SKScene {
     private let fireButton = SKShapeNode(circleOfRadius: 52)
     private let fireReadyRing = SKShapeNode()
     private let fireTrackRing = SKShapeNode(circleOfRadius: 53.5)
-    private let centerHint = SKLabelNode(fontNamed: "Menlo-Regular")
-    private let fireZoneCaption = SKLabelNode(fontNamed: "Menlo-Regular")
     private let aimingGuide = SKShapeNode()
     private let missileWarnings = ["homing": SKShapeNode(), "grenade": SKShapeNode()]
-    private let moveCaption = SKLabelNode(fontNamed: "Menlo-Bold")
-    private let fireCaption = SKLabelNode(fontNamed: "Menlo-Bold")
 
     private var tanks: [Int: TankNode] = [:]
     private var tankPool: [TankNode] = []
@@ -124,7 +129,6 @@ final class GameScene: SKScene {
     private var guideKey = ""
     private var renderGeneration: Int?
     private var fireTitle = "FIRE"
-    private var fireHintText = "HOLD TO FIRE"
     private var fireProgress = 1.0
     private var lastLocalSpawn = -1
     private var lastLocalHP = 0
@@ -206,27 +210,11 @@ final class GameScene: SKScene {
         controls.addChild(fireTrackRing)
         fireReadyRing.position = fireButton.position
         controls.addChild(fireReadyRing)
-        for caption in [centerHint, fireZoneCaption] {
-            caption.fontSize = 10
-            caption.fontColor = UIColor(hex: 0x9babbb)
-            caption.verticalAlignmentMode = .center
-            controls.addChild(caption)
-        }
-        centerHint.numberOfLines = 2
-        fireZoneCaption.text = "LET IT RIP"
         controlBar.fillColor = UIColor(hex: 0x192127)
         controlBar.strokeColor = UIColor(hex: 0x34434a)
         controlBar.lineWidth = 1
         controlBar.zPosition = -1
         controls.addChild(controlBar)
-        for label in [moveCaption, fireCaption] {
-            label.fontSize = 11
-            label.fontColor = UIColor(hex: 0xdce9ef)
-            label.verticalAlignmentMode = .center
-            controls.addChild(label)
-        }
-        moveCaption.text = "STEER"
-        fireCaption.text = "FIRE"
         let crosshair = SKShapeNode()
         let path = CGMutablePath()
         path.addEllipse(in: CGRect(x: -7, y: -7, width: 14, height: 14))
@@ -243,7 +231,7 @@ final class GameScene: SKScene {
         center.fillColor = Palette.accent
         center.strokeColor = Palette.accent
         crosshair.addChild(center)
-        crosshair.position.y = 6
+        crosshair.position = .zero
         fireButton.addChild(crosshair)
         let arguments = ProcessInfo.processInfo.arguments
         if !(arguments.contains("--native-performance-probe") && arguments.contains("--probe-cold-resources")) {
@@ -306,7 +294,7 @@ final class GameScene: SKScene {
         for index in 0..<min(2, tankPool.count) {
             let node = tankPool[index]
             node.update(ArenaTank(id: index + 1, name: "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789#-_", colorIndex: index),
-                        local: index == 0, zoom: 1, infinity: false)
+                        localSeat: index == 0 ? 1 : nil, zoom: 1, infinity: false)
             node.position = CGPoint(x: index * 200 + 100, y: 50)
             node.identity.position = CGPoint(x: index * 200 + 100, y: 80)
             warmup.addChild(node); warmup.addChild(node.identity)
@@ -358,31 +346,29 @@ final class GameScene: SKScene {
     override func didChangeSize(_ oldSize: CGSize) {
         cachedRegion = nil
         layoutControls()
+        if let frozenShowcase { displayShowcase(frozenShowcase) }
     }
 
-    func configureLayout(infinity: Bool, landscape: Bool, loadoutHeight: CGFloat, spectating: Bool = false) {
+    func configureLayout(infinity: Bool, landscape: Bool, loadoutHeight: CGFloat, spectating: Bool = false, showsTouchControls: Bool = true) {
         let mode: LayoutMode = infinity ? .infinity : .fixed
-        guard layoutMode != mode || self.landscape != landscape || fixedLoadoutHeight != loadoutHeight || self.spectating != spectating else { return }
+        guard layoutMode != mode || self.landscape != landscape || fixedLoadoutHeight != loadoutHeight || self.spectating != spectating || self.showsTouchControls != showsTouchControls else { return }
         layoutMode = mode
         self.landscape = landscape
         fixedLoadoutHeight = loadoutHeight
         self.spectating = spectating
-        controls.isHidden = spectating
+        self.showsTouchControls = showsTouchControls
+        controls.isHidden = spectating || !showsTouchControls
         if spectating { resetControls() }
         cachedRegion = nil
         layoutControls()
     }
 
-    func configureReadiness(label: String, hint: String, progress: Double, locked: Bool) {
+    func configureReadiness(label: String, progress: Double, locked: Bool) {
         fireTitle = label
-        fireHintText = hint
         fireProgress = min(1, max(0, progress))
-        fireCaption.text = label
-        centerHint.text = hint
         let detonate = label == "BOOM"
         let color = UIColor(hex: detonate ? 0xffc46b : 0x40d5ff)
         fireButton.strokeColor = color.withAlphaComponent(0.63)
-        fireCaption.fontColor = color
         fireReadyRing.strokeColor = color
         let path = CGMutablePath()
         path.addArc(center: .zero, radius: 53.5, startAngle: .pi / 2,
@@ -393,13 +379,15 @@ final class GameScene: SKScene {
     }
 
     private var worldViewport: CGRect {
-        let reserve = layoutMode == .fixed && !landscape && !spectating ? min(max(0, size.height - 60), 119 + fixedLoadoutHeight) : 0
+        let reserve = layoutMode == .fixed && !landscape && !spectating && showsTouchControls ? min(max(0, size.height - 60), 119 + fixedLoadoutHeight) : 0
         return CGRect(x: 0, y: reserve, width: max(1, size.width), height: max(1, size.height - reserve))
     }
 
     private func layoutControls() {
         let fixedPortrait = layoutMode == .fixed && !landscape
-        let bottom: CGFloat = fixedPortrait ? 59.5 : 67.5
+        // The complete readiness ring and fully deflected thumb fit above an
+        // 8pt bottom inset; controls no longer reserve room for captions.
+        let bottom: CGFloat = 63
         let left: CGFloat = fixedPortrait ? 27 : 18
         stickOrigin = CGPoint(x: left + 66, y: bottom)
         fireOrigin = CGPoint(x: size.width - left - (fixedPortrait ? 58.5 : 45.5), y: bottom)
@@ -420,48 +408,65 @@ final class GameScene: SKScene {
         fireButton.position = fireOrigin
         fireReadyRing.position = fireOrigin
         fireTrackRing.position = fireOrigin
-        moveCaption.fontSize = 10
-        moveCaption.fontName = "Menlo-Regular"
-        moveCaption.fontColor = UIColor(hex: 0x9babbb)
-        moveCaption.position = CGPoint(x: stickOrigin.x, y: 8)
-        fireCaption.fontSize = 10
-        fireCaption.fontName = "Menlo-Regular"
-        fireCaption.fontColor = UIColor(hex: 0x40d5ff)
-        fireCaption.position = CGPoint(x: fireOrigin.x, y: fireOrigin.y - 18)
-        centerHint.isHidden = !fixedPortrait
-        centerHint.preferredMaxLayoutWidth = max(40, size.width - 260)
-        centerHint.text = fireHintText
-        centerHint.position = CGPoint(x: size.width / 2, y: 59)
-        fireZoneCaption.isHidden = !fixedPortrait
-        fireZoneCaption.position = CGPoint(x: fireOrigin.x, y: 8)
         controlBar.isHidden = !fixedPortrait
         controlBar.path = CGPath(rect: CGRect(x: 0, y: 0, width: size.width, height: 119), transform: nil)
         // A screen-space label layer keeps names readable even when the map is
         // zoomed out on a small phone or in landscape.
+        updateWorldScale()
+        configureReadiness(label: fireTitle, progress: fireProgress, locked: false)
+    }
+
+    private func updateWorldScale() {
         zoom = min(1.2, max(0.7, min(worldViewport.width, worldViewport.height) / 420))
+        if frozenShowcase != nil && !landscape {
+            // Keep the authored top and bottom rows, their names and badges
+            // visible when a short portrait screen leaves less arena space.
+            zoom = min(zoom, max(0.05, worldViewport.height / 632))
+        }
         world.setScale(zoom)
-        configureReadiness(label: fireTitle, hint: fireHintText, progress: fireProgress, locked: false)
     }
 
     func resetControls() {
         onControlsReset?()
-        aimTouch = nil
-        stickTouch = nil
-        fireTouch = nil
-        input.forward = false
-        input.reverse = false
-        input.left = false
-        input.right = false
-        fireInputSources.reset()
-        input.fire = false
-        input.stickX = 0
-        input.stickY = 0
-        input.touchAim = true
-        input.aimOnly = false
-        input.snapAim = false
+        aimTouch = nil; stickTouch = nil; fireTouch = nil
+        inputSources.reset(); publishInput()
         stickKnob.position = stickOrigin
-        fireButton.fillTexture = NativeArt.fireButton(held: false, detonate: fireTitle == "BOOM")
+    }
+
+    private func publishInput() {
+        input = inputSources.input
+        fireButton.fillTexture = NativeArt.fireButton(held: input.fire, detonate: fireTitle == "BOOM")
         fireButton.fillColor = .white
+    }
+
+    func setKeyboardInput(_ value: GameInput) {
+        guard frozenShowcase == nil else { return }
+        if value.forward || value.reverse || value.left || value.right { clearDirectAim() }
+        inputSources.keyboard = value; publishInput()
+    }
+
+    func setGamepadInput(_ value: GameInput) {
+        guard frozenShowcase == nil else { return }
+        inputSources.gamepad = value; publishInput()
+    }
+
+    func setMouseFire(_ down: Bool) { guard frozenShowcase == nil else { return }; inputSources.mouseFire = down && NativeInputSettings.shared.mouseFire; publishInput() }
+    func clearMouseAim() { inputSources.mouseAim = nil; publishInput() }
+
+    /// Pointer coordinates belong to the view under the pointer. In Infinity,
+    /// the second camera accepts P2's pointer; fixed rooms share one camera.
+    @discardableResult func updateMouseAim(at point: CGPoint, target: GameScene) -> Bool {
+        guard frozenShowcase == nil, target.frozenShowcase == nil, worldViewport.contains(point), !spectating,
+              layoutMode == .fixed || target === self else { return false }
+        let id = target === self ? currentLocalID : secondaryPilotID
+        guard let id, let tank = tankScreenPositions[id] else { return false }
+        let dx = Double(point.x - tank.x), dy = Double(tank.y - point.y), distance = hypot(dx, dy)
+        if !NativeInputSettings.shared.mouseAim { target.clearMouseAim() }
+        else if distance >= 2 {
+            target.inputSources.mouseAim = BeamPoint(x: dx / distance, y: dy / distance)
+            target.publishInput()
+        }
+        return true
     }
 
     func resetWorld() {
@@ -473,6 +478,8 @@ final class GameScene: SKScene {
         fixedWorld = nil
         fixedGeometry = nil
         renderGeometry = nil
+        frozenShowcase = nil
+        tankScreenPositions.removeAll()
         renderGeneration = nil
         guideKey = ""
         aimingGuide.path = nil
@@ -504,7 +511,24 @@ final class GameScene: SKScene {
         onFrame?(elapsed)
     }
 
-    func display(snapshot: ArenaSnapshot, localID: Int, maze: InfiniteMaze?, fixedWalls: [MazeWall] = []) {
+    func displayShowcase(_ fixture: ShowcaseScene) {
+        display(snapshot: fixture.snapshot, localID: fixture.localID, maze: fixture.maze, showcase: fixture)
+        if let tank = fixture.snapshot.tanks.first(where: { $0.id == fixture.localID }) {
+            let readiness = PilotReadout(tank: tank, snapshot: fixture.snapshot, infinity: true, online: false)
+            configureReadiness(label: readiness.fireLabel, progress: readiness.progress, locked: readiness.locked)
+        }
+    }
+
+    func display(snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int? = nil, primaryLocalID: Int? = nil, maze: InfiniteMaze?, fixedWalls: [MazeWall] = [], showcase: ShowcaseScene? = nil) {
+        let changedScene = (frozenShowcase != nil || showcase != nil) && (
+            frozenShowcase?.seed != showcase?.seed
+            || frozenShowcase?.timeMilliseconds != showcase?.timeMilliseconds
+            || frozenShowcase?.snapshot != showcase?.snapshot)
+        if changedScene { resetWorld() }
+        frozenShowcase = showcase
+        if showcase != nil || changedScene { updateWorldScale() }
+        secondaryPilotID = secondaryLocalID
+        let visualTime = showcase?.time ?? CACurrentMediaTime()
         let profiled = profilesRendering
         let started = profiled ? CACurrentMediaTime() : 0
         let texturesBefore = profiled ? NativeArt.textureCreationCount : 0
@@ -551,7 +575,7 @@ final class GameScene: SKScene {
             cachedRegion = nil
         }
         if layoutMode == .fixed, let fixed = fixedWorld {
-            let reserve: CGFloat = landscape && !spectating ? 252 : 0
+            let reserve: CGFloat = landscape && !spectating && showsTouchControls ? 252 : 0
             zoom = max(0.05, min((worldViewport.width - reserve - 12) / fixed.width, (worldViewport.height - 12) / fixed.height))
             world.setScale(zoom)
             cameraPoint = CGPoint(x: fixed.width / 2, y: fixed.height / 2)
@@ -577,23 +601,24 @@ final class GameScene: SKScene {
         world.position = CGPoint(x: worldViewport.midX - cameraPoint.x * zoom,
                                  y: worldViewport.midY + cameraPoint.y * zoom)
         aimTankPosition = focus.flatMap { $0.id == localID && $0.hp > 0 ? CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom) : nil }
+        tankScreenPositions = Dictionary(uniqueKeysWithValues: snapshot.tanks.filter { $0.hp > 0 }.map { ($0.id, CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom)) })
         renderGeometry = maze ?? fixedGeometry
         let visible = visibleWorldBounds
         updateMap(maze: maze, fixedWalls: fixedWalls, visible: visible)
         metrics.mapSeconds = elapsed()
-        synchronizeTanks(snapshot.tanks, localID: localID, visible: visible)
+        synchronizeTanks(snapshot.tanks, localID: localID, secondaryLocalID: secondaryLocalID, primaryLocalID: primaryLocalID, visible: visible)
         metrics.tankSeconds = elapsed()
         updateGuide(tank: snapshot.tanks.first { $0.id == localID }, geometry: maze ?? fixedGeometry, snapshot: snapshot)
         metrics.guideSeconds = elapsed()
         synchronizeObjectives(snapshot.objectives, tanks: snapshot.tanks)
         metrics.objectiveSeconds = elapsed()
-        synchronizeBullets(snapshot.bullets, visible: visible, time: CACurrentMediaTime())
+        synchronizeBullets(snapshot.bullets, visible: visible, time: visualTime)
         metrics.bulletSeconds = elapsed()
         updateMissileWarnings(snapshot: snapshot, localID: localID)
         metrics.warningSeconds = elapsed()
-        synchronizePickups(snapshot.pickups)
+        synchronizePickups(snapshot.pickups, time: visualTime)
         metrics.pickupSeconds = elapsed()
-        let effectTime = CACurrentMediaTime()
+        let effectTime = visualTime
         for index in liveEffects.indices.reversed() where !liveEffects[index].animate(at: effectTime) {
             let node = liveEffects.remove(at: index)
             node.removeFromParent()
@@ -626,7 +651,7 @@ final class GameScene: SKScene {
             points = geometry.projectileGuide(x: tank.x, y: tank.y, angle: tank.angle, kind: tank.power,
                                              range: 112, radius: radius, maxSegments: tank.power == "cannon" ? 32 : 2)
         }
-        if layoutMode == .fixed {
+        if layoutMode == .fixed && tank.power != "cannon" && tank.power != "laser" {
             var clipped: [BeamPoint] = []
             if let first = points.first { clipped.append(first) }
             for (first, last) in zip(points, points.dropFirst()) {
@@ -740,11 +765,12 @@ final class GameScene: SKScene {
         rasterizedMap = nil; preloadingMap = nil; preparedMap = nil
     }
 
-    private func synchronizeTanks(_ items: [ArenaTank], localID: Int, visible: CGRect) {
+    private func synchronizeTanks(_ items: [ArenaTank], localID: Int, secondaryLocalID: Int?, primaryLocalID: Int?, visible: CGRect) {
         let liveIDs = Set(items.map(\.id))
         for id in Array(tanks.keys) where !liveIDs.contains(id) {
             if let node = tanks.removeValue(forKey: id) { recycleTank(node) }
         }
+        var labels: [ScreenLabelLayout.Label] = []
         for tank in items {
             let node: TankNode
             if let existing = tanks[tank.id] { node = existing }
@@ -756,16 +782,25 @@ final class GameScene: SKScene {
             }
             node.position = CGPoint(x: tank.x, y: -tank.y)
             let recoil = tank.id == localID ? localFireRecoil?(tank) ?? tank.recoil : tank.recoil
-            node.update(tank, local: tank.id == localID, zoom: zoom, infinity: layoutMode == .infinity, recoil: recoil)
+            let localSeat = tank.id == (primaryLocalID ?? localID) ? 1 : tank.id == secondaryLocalID ? 2 : nil
+            node.update(tank, localSeat: localSeat, zoom: zoom, infinity: layoutMode == .infinity, recoil: recoil, showWreck: frozenShowcase != nil)
             if tank.id == localID, emptyFireProbe {
                 minimumProbeBarrelX = min(minimumProbeBarrelX, node.barrelOffset)
             }
             let screen = CGPoint(x: world.position.x + CGFloat(tank.x) * zoom,
                                  y: world.position.y - CGFloat(tank.y) * zoom)
-            node.identity.isHidden = tank.hp <= 0 || !visible.contains(CGPoint(x: tank.x, y: tank.y))
+            node.identity.isHidden = (tank.hp <= 0 && frozenShowcase == nil) || !visible.contains(CGPoint(x: tank.x, y: tank.y))
             let halfWidth = node.identityWidth / 2
             node.identity.position = CGPoint(x: min(max(screen.x, halfWidth + 5), max(halfWidth + 5, size.width - halfWidth - 5)),
                                              y: min(worldViewport.maxY - 6 - node.identityHeight, screen.y + 32 * zoom))
+            if !node.identity.isHidden {
+                labels.append(.init(id: tank.id, frame: CGRect(x: node.identity.position.x - halfWidth,
+                    y: node.identity.position.y, width: node.identityWidth, height: node.identityHeight), local: localSeat != nil))
+            }
+        }
+        let viewport = worldViewport.insetBy(dx: 5, dy: 6)
+        for (id, frame) in ScreenLabelLayout.place(labels, in: viewport) {
+            tanks[id]?.identity.position = CGPoint(x: frame.midX, y: frame.minY)
         }
     }
 
@@ -804,7 +839,11 @@ final class GameScene: SKScene {
                 let path: CGMutablePath
                 if let existing = paths[style] { path = existing }
                 else { path = CGMutablePath(); paths[style] = path }
-                node.appendTrail(to: path)
+                if let frozen = frozenShowcase?.projectiles.first(where: { $0.id == bullet.id }), let first = frozen.trail.first {
+                    path.move(to: CGPoint(x: first.x, y: -first.y))
+                    for point in frozen.trail.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
+                    path.addLine(to: CGPoint(x: bullet.x, y: -bullet.y))
+                } else { node.appendTrail(to: path) }
             }
         }
         projectileRemovalIDs.removeAll(keepingCapacity: true)
@@ -821,9 +860,15 @@ final class GameScene: SKScene {
     }
 
     private func trailNode(_ style: ProjectileStyle) -> SKShapeNode {
-        if let existing = projectileTrails[style] { return existing }
+        let alpha: CGFloat = frozenShowcase != nil && style.kind == "cannon" ? 0.32 : 0.16
+        if let existing = projectileTrails[style] {
+            if abs(existing.strokeColor.cgColor.alpha - alpha) > 0.001 {
+                existing.strokeColor = Palette.tank(style.colorIndex).withAlphaComponent(alpha)
+            }
+            return existing
+        }
         let trail = SKShapeNode()
-        trail.strokeColor = Palette.tank(style.colorIndex).withAlphaComponent(0.16)
+        trail.strokeColor = Palette.tank(style.colorIndex).withAlphaComponent(alpha)
         trail.lineWidth = style.kind == "cannon" ? 12 : style.kind == "homing" ? 4 : 3
         trail.lineCap = .round; trail.zPosition = -1; trail.isHidden = true
         projectileTrails[style] = trail; bulletLayer.addChild(trail)
@@ -837,7 +882,7 @@ final class GameScene: SKScene {
         pooledProjectileCount += 1
     }
 
-    private func synchronizePickups(_ items: [ArenaPickup]) {
+    private func synchronizePickups(_ items: [ArenaPickup], time: Double) {
         let liveIDs = Set(items.map(\.id))
         for id in Array(pickups.keys) where !liveIDs.contains(id) { pickups.removeValue(forKey: id)?.removeFromParent() }
         for pickup in items {
@@ -850,7 +895,7 @@ final class GameScene: SKScene {
                 pickupLayer.addChild(node)
             }
             node.position = CGPoint(x: pickup.x, y: -pickup.y)
-            node.update(life: pickup.life, time: ProcessInfo.processInfo.systemUptime)
+            node.update(life: pickup.life, time: time)
         }
     }
 
@@ -968,14 +1013,17 @@ final class GameScene: SKScene {
             node = TransientEffectNode()
             if profilesRendering { frameEffectCreations += 1 }
         }
-        node.configure(effect, geometry: renderGeometry, infinity: layoutMode == .infinity, time: time)
+        let history = frozenShowcase?.effects.first { $0.id == effect.id }
+        node.configure(effect, geometry: renderGeometry, infinity: layoutMode == .infinity,
+                       time: time - (history?.ageMilliseconds ?? 0) / 1000, outline: history?.outline)
+        if history != nil { _ = node.animate(at: time) }
         if node.parent == nil { effectLayer.addChild(node) }
         liveEffects.append(node)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !spectating else { return }
-        for touch in touches {
+        guard frozenShowcase == nil, !spectating, showsTouchControls else { return }
+        for touch in touches where touch.type != .indirectPointer {
             let location = touch.location(in: self)
             if aimTouch == nil && updateDirectAim(location, nearOnly: true) {
                 aimTouch = touch
@@ -1008,55 +1056,58 @@ final class GameScene: SKScene {
             if touch === aimTouch { aimTouch = nil }
             if touch === stickTouch {
                 stickTouch = nil
-                if !input.snapAim { input.stickX = 0; input.stickY = 0 }
+                if !inputSources.touch.snapAim { inputSources.touch.stickX = 0; inputSources.touch.stickY = 0 }
                 stickKnob.position = stickOrigin
             }
-            if touch === fireTouch {
-                fireTouch = nil
-                setFireSource(.touch, down: false)
-            }
+            if touch === fireTouch { fireTouch = nil; setFireSource(.touch, down: false) }
         }
+        publishInput()
     }
 
     func clearDirectAim() {
         aimTouch = nil
-        if input.snapAim { input.stickX = 0; input.stickY = 0; input.aimOnly = false; input.snapAim = false }
+        if inputSources.touch.snapAim {
+            inputSources.touch.stickX = 0; inputSources.touch.stickY = 0
+            inputSources.touch.aimOnly = false; inputSources.touch.snapAim = false
+            publishInput()
+        }
     }
 
     private func updateDirectAim(_ point: CGPoint, nearOnly: Bool = false) -> Bool {
         guard let tank = aimTankPosition, worldViewport.contains(point) else { return false }
         let dx = Double(point.x - tank.x), dy = Double(tank.y - point.y), distance = hypot(dx, dy)
         guard distance >= 2, !nearOnly || distance <= max(64, 51 * Double(zoom)) else { return false }
-        input.stickX = dx / distance
-        input.stickY = dy / distance
-        input.aimOnly = true
-        input.snapAim = true
+        inputSources.touch.stickX = dx / distance; inputSources.touch.stickY = dy / distance
+        inputSources.touch.aimOnly = true; inputSources.touch.snapAim = true
         stickKnob.position = stickOrigin
+        publishInput()
         return true
     }
 
     private func updateStick(_ point: CGPoint) {
         aimTouch = nil
-        input.snapAim = false
-        let dx = point.x - stickOrigin.x
-        let dy = point.y - stickOrigin.y
-        let length = hypot(dx, dy)
-        let reach: CGFloat = 29
-        let divisor = max(reach, length)
-        input.stickX = Double(dx / divisor)
-        input.stickY = Double(-dy / divisor)
-        input.touchAim = true
-        input.aimOnly = false
-        stickKnob.position = CGPoint(x: stickOrigin.x + dx * reach / divisor,
-                                    y: stickOrigin.y + dy * reach / divisor)
+        inputSources.touch.snapAim = false
+        let dx = point.x - stickOrigin.x, dy = point.y - stickOrigin.y
+        let reach: CGFloat = 29, divisor = max(reach, hypot(dx, dy))
+        inputSources.touch.stickX = Double(dx / divisor); inputSources.touch.stickY = Double(-dy / divisor)
+        inputSources.touch.touchAim = true; inputSources.touch.aimOnly = false
+        stickKnob.position = CGPoint(x: stickOrigin.x + dx * reach / divisor, y: stickOrigin.y + dy * reach / divisor)
+        publishInput()
     }
 
     func setKeyboardFire(_ down: Bool) { setFireSource(.keyboard, down: down) }
 
     private func setFireSource(_ source: FireInputSources.Source, down: Bool) {
-        input.fire = fireInputSources.set(source, down: down)
-        fireButton.fillTexture = NativeArt.fireButton(held: input.fire, detonate: fireTitle == "BOOM")
+        guard frozenShowcase == nil else { return }
+        switch source {
+        case .touch: inputSources.touch.fire = down
+        case .keyboard: inputSources.keyboard.fire = down
+        case .mouse: inputSources.mouseFire = down
+        case .gamepad: inputSources.gamepad.fire = down
+        }
+        publishInput()
     }
+
 }
 
 @MainActor
@@ -1151,8 +1202,9 @@ private final class TankNode: SKNode {
 
     required init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func update(_ tank: ArenaTank, local: Bool, zoom: CGFloat, infinity: Bool, recoil: Double? = nil) {
-        isHidden = infinity && tank.hp <= 0
+    func update(_ tank: ArenaTank, localSeat: Int?, zoom: CGFloat, infinity: Bool, recoil: Double? = nil, showWreck: Bool = false) {
+        let local = localSeat != nil
+        isHidden = infinity && tank.hp <= 0 && !showWreck
         paint = Palette.tank(tank.colorIndex)
         hull.zRotation = -tank.angle
         hull.alpha = tank.hp <= 0 ? 0.6 : tank.ghostTime > 0 ? (tank.starmanTime > 0 ? 0.84 : 0.58) : 1
@@ -1197,7 +1249,7 @@ private final class TankNode: SKNode {
             speedLines.path = path
         }
         let displayName = CallsignPolicy.displayName(tank.name, bot: tank.bot)
-        let text = local ? displayName + " (P1)" : displayName
+        let text = displayName + (localSeat.map { " (P\($0))" } ?? "")
         let warning = tank.botWarning
         nameLabel.fontColor = paint
         let size = max(10, infinity ? 11 * zoom : 10 * zoom)
@@ -1422,7 +1474,7 @@ private final class TransientEffectNode: SKNode {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(_ effect: ArenaEffect, geometry: InfiniteMaze?, infinity: Bool, time: Double) {
+    func configure(_ effect: ArenaEffect, geometry: InfiniteMaze?, infinity: Bool, time: Double, outline: [BeamPoint]? = nil) {
         began = time
         laser = effect.kind == "laser"
         blast = effect.kind == "blast"
@@ -1445,7 +1497,12 @@ private final class TransientEffectNode: SKNode {
             ring.strokeColor = paint
             ring.lineWidth = blast ? 3 : 2
             ring.fillColor = .clear
-            if blast, let geometry {
+            if blast, let outline, let first = outline.first {
+                let path = CGMutablePath(); path.move(to: CGPoint(x: first.x, y: -first.y))
+                for point in outline.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
+                path.closeSubpath(); ring.path = path
+                ring.fillColor = paint.withAlphaComponent(0.11); endScale = 1; setScale(0.65)
+            } else if blast, let geometry {
                 let path = CGMutablePath()
                 for index in 0..<24 {
                     let angle = Double(index) * .pi * 2 / 24

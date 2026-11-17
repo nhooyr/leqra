@@ -50,6 +50,7 @@ class PracticeArena(
     private val effectTimes = mutableMapOf<Int, Double>()
     private val held = mutableMapOf<Int, Boolean>()
     private val pendingFirePresses = mutableSetOf<Int>()
+    private val fireUntilRelease = mutableSetOf<Int>()
     private val movementInputs = mutableMapOf<Int, GameInput>()
     private val rapidShotTicks = mutableMapOf<Int, Long>()
     private val expiredAmmo = mutableSetOf<Int>()
@@ -78,10 +79,12 @@ class PracticeArena(
         var segmentX: Double = birthX,
         var segmentY: Double = birthY,
         var segmentTick: Double = birthTick,
+        var cannonHits: MutableMap<Int, Int>? = null,
     ) {
         val radius
             get() = spec(wire.kind).radius
 
+        // Presentation never mutates collision history.
         fun deepCopy() = copy(wire = wire.copy())
     }
 
@@ -168,6 +171,7 @@ class PracticeArena(
                 roamingHomes.remove(2)?.let { roamingHomes[replacement] = it }
                 held.remove(2)?.let { held[replacement] = it }
                 if (pendingFirePresses.remove(2)) pendingFirePresses.add(replacement)
+                if (fireUntilRelease.remove(2)) fireUntilRelease.add(replacement)
                 movementInputs.remove(2)?.let { movementInputs[replacement] = it }
                 rapidShotTicks.remove(2)?.let { rapidShotTicks[replacement] = it }
                 botCourses.remove(2)?.let { botCourses[replacement] = it }
@@ -178,6 +182,7 @@ class PracticeArena(
                 for (projectile in projectiles) {
                     if (projectile.wire.owner == 2) projectile.wire.owner = replacement
                     if (projectile.wire.target == 2) projectile.wire.target = replacement
+                    projectile.cannonHits?.remove(2)?.let { projectile.cannonHits?.put(replacement, it) }
                 }
                 snapshot.bullets =
                     snapshot.bullets.map { b ->
@@ -265,12 +270,14 @@ class PracticeArena(
         if (fire) pendingFirePresses += id
         else {
             held[id] = false
+            fireUntilRelease -= id
         }
     }
 
     fun resetFire(id: Int) {
         held[id] = false
         pendingFirePresses -= id
+        fireUntilRelease -= id
     }
 
     fun step(input: GameInput, dt: Double) = step(mapOf(localID to input), dt)
@@ -298,6 +305,7 @@ class PracticeArena(
             val t = snapshot.tanks[i]
             if (t.hp == 0) {
                 pendingFirePresses -= t.id
+                fireUntilRelease -= t.id
                 if (!respawnsEnabled) {
                     t.respawnTime = 0.0
                     continue
@@ -318,6 +326,7 @@ class PracticeArena(
             val t = snapshot.tanks[i]
             if (t.hp > 0) {
                 val controls = if (t.bot) botInput(i, dt) else inputs[t.id] ?: GameInput()
+                if (t.bot && t.id in fireUntilRelease) controls.fire = false
                 movementInputs[t.id] = controls.copy()
                 val hadSpeed = t.speedTime > 0
                 val hadGhost = t.ghostTime > 0
@@ -439,6 +448,7 @@ class PracticeArena(
             inactiveRoamingReadyAt[tank.id] = time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
             roamingIDs.remove(tank.id); roamingHomes.remove(tank.id); held.remove(tank.id); movementInputs.remove(tank.id)
             pendingFirePresses.remove(tank.id)
+            fireUntilRelease.remove(tank.id)
             botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
             rapidShotTicks.remove(tank.id); expiredAmmo.remove(tank.id)
             nextBoostEffects.remove(tank.id); motionPresenters.remove(tank.id)
@@ -612,6 +622,7 @@ class PracticeArena(
             )
         snapshot.tanks = snapshot.tanks.toMutableList().also { it[index] = replacement }
         pendingFirePresses.remove(old.id)
+        fireUntilRelease.remove(old.id)
         botCourses.remove(old.id)
         dumbBrains.remove(old.id)
         nextBoostEffects.remove(old.id)
@@ -938,6 +949,8 @@ class PracticeArena(
         val t = snapshot.tanks[index]
         val pressed = pendingFirePresses.remove(t.id) || fire && held[t.id] != true
         held[t.id] = fire
+        if (!fire || pressed) fireUntilRelease -= t.id
+        if (t.id in fireUntilRelease) return
         if (t.hp <= 0 || t.spawnProtected && t.invulnerable > 1e-9) return
         if (pressed) {
             val grenadeEpoch = t.grenadeEpoch ?: t.ammoEpoch
@@ -946,6 +959,7 @@ class PracticeArena(
                 grenades.forEach { detonate(it.wire, completedFlight(it)) }
                 projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == grenadeEpoch }
                 t.grenadeEpoch = null
+                if (fire) fireUntilRelease += t.id
                 return
             }
         }
@@ -1109,8 +1123,24 @@ class PracticeArena(
         repeat(4) {
             val b = p.wire
             val wall = maze.projectileHit(b.kind, b.x, b.y, dx, dy, p.radius)
+            if (b.kind == "cannon" && !visualOnly) {
+                val hits = p.cannonHits ?: mutableMapOf<Int, Int>().also { p.cannonHits = it }
+                val eligible = snapshot.tanks.indices.mapNotNull { index ->
+                    val target = snapshot.tanks[index]
+                    if (target.hp <= 0 || target.invulnerable > 0 || target.id == b.owner ||
+                        !friendlyFire && !opposes(b.owner, target) || hits[target.id] == target.spawnSerial) null
+                    else circleHit(b.x, b.y, dx, dy, target.x, target.y, 17 + p.radius)
+                        ?.takeIf { it < (wall?.fraction ?: 1.00000001) }?.let { TargetHit(index, it) }
+                }.sortedBy { it.fraction }
+                for (hit in eligible) {
+                    val target = snapshot.tanks[hit.index]
+                    hits[target.id] = target.spawnSerial
+                    hurt(hit.index, b.owner, projectileId = 0, kind = "cannon",
+                        contactTick = p.pathTick + if (recordTime) remaining * hit.fraction * 60 else 0.0)
+                }
+            }
             val target =
-                targetHit(
+                if (b.kind == "cannon") null else targetHit(
                     b.owner,
                     b.x,
                     b.y,

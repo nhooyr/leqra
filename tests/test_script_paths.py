@@ -1,4 +1,4 @@
-"""Check shell entry points without invoking renderers or controlling Chrome."""
+"""Check shell entry points without invoking renderers."""
 
 import json
 import os
@@ -13,7 +13,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 GENERATORS = {
     "gen-icons.sh": ("python3", "render-icons.py"),
-    "gen-showcase.sh": ("node", "render-showcase.cjs"),
     "gen-version.sh": ("python3", "vergen.py"),
 }
 
@@ -35,7 +34,7 @@ class ScriptPathTests(unittest.TestCase):
                 shutil.copy2(path, self.scripts / path.name)
         self.commands = self.parent / "mock commands"
         self.commands.mkdir()
-        for name in ("python3", "node", "osascript"):
+        for name in ("python3", "go"):
             command = self.commands / name
             command.write_text(f"#!{sys.executable}\n" +
                                "import json, os, sys\n"
@@ -76,20 +75,28 @@ class ScriptPathTests(unittest.TestCase):
                         self.assertEqual(Path(recorded["cwd"]).resolve(), self.caller.resolve())
                         self.assertEqual(result.stderr, "mock stderr\n")
 
-    def test_fit_helper_preserves_its_applescript_and_caller_directory(self):
+    def test_featured_graphic_preserves_paths_arguments_and_exit_status(self):
         for form in ("absolute", "relative", "path", "relative_path"):
-            with self.subTest(invocation=form):
-                command, env = self.invocation("fit-showcase.sh", form)
-                env["MOCK_EXIT"] = "37"
-                result = subprocess.run([command], cwd=self.caller, env=env, input="",
-                                        capture_output=True, text=True)
-                self.assertEqual(result.returncode, 37, result.stderr)
-                recorded = json.loads(result.stdout)
-                self.assertEqual(recorded["args"], [])
-                self.assertEqual(Path(recorded["cwd"]).resolve(), self.caller.resolve())
-                self.assertIn('tell application "Google Chrome"', recorded["stdin"])
-                self.assertIn("set bounds of showcaseWindow to fittedBounds", recorded["stdin"])
-                self.assertIn("screen.availLeft", recorded["stdin"])
+            for status in (0, 37):
+                with self.subTest(invocation=form, exit=status):
+                    command, env = self.invocation("gen-featured-android.sh", form)
+                    env["MOCK_EXIT"] = str(status)
+                    arguments = ["-input", "my screenshot.png", "-center", "700,520"]
+                    result = subprocess.run([command, *arguments], cwd=self.caller, env=env,
+                                            input="", capture_output=True, text=True)
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    recorded = json.loads(result.stdout)
+                    self.assertEqual(recorded["command"], "go")
+                    args = recorded["args"]
+                    self.assertEqual(args[0], "run")
+                    self.assertEqual((self.caller / args[1]).resolve(), (self.scripts / "featured-graphic/main.go").resolve())
+                    self.assertEqual(args[2], "-input")
+                    self.assertEqual((self.caller / args[3]).resolve(), (self.project / "docs/showcase.png").resolve())
+                    self.assertEqual(args[4], "-output")
+                    self.assertEqual((self.caller / args[5]).resolve(), (self.project / "docs/showcase-featured-android.png").resolve())
+                    self.assertEqual(args[6:], arguments)
+                    self.assertEqual(Path(recorded["cwd"]).resolve(), self.caller.resolve())
+                    self.assertEqual(result.stderr, "mock stderr\n")
 
     def test_version_query_works_from_an_unrelated_directory_and_path(self):
         for form in ("absolute", "relative", "path", "relative_path"):

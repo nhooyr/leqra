@@ -24,6 +24,277 @@ class SessionParityTest {
     private val testWorld = ArenaWorld(8400.0, 8400.0, 100, 100)
 
     @Test
+    fun fixedRoomWatchingPrimaryKeepsSecondaryControlsAndAudio() {
+        val context = context()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                val joined = NetworkWelcome.parse(JSONObject().put("id", 1).put("member", 10)
+                    .put("spectating", true).put("localId", 2).put("localMember", 20))
+                set(session, "online", true)
+                set(session, "infinity", false)
+                set(session.network, "connected", true)
+                set(session.network, "welcome", joined)
+                event(session, NetworkEvent.Welcome(joined))
+                event(session, NetworkEvent.State(snapshot(1).apply { tanks = tanks.filter { it.id == 2 } }))
+                assertTrue(session.spectating)
+                assertEquals(2, session.localID2)
+                assertTrue(session.canControlSecondary)
+                assertTrue(session.hasLocalPlayer)
+                assertTrue(session.audioGameplayActive)
+                val p1 = session.network.lastInputSequence
+                val p2 = session.network.lastLocalInputSequence
+                session.input2 = GameInput(fire = true)
+                session.input2 = GameInput()
+                assertEquals("P2 press and release are sent while P1 watches", p2 + 2, session.network.lastLocalInputSequence)
+                assertEquals(p1, session.network.lastInputSequence)
+                session.input2 = GameInput(forward = true)
+                session.frame(System.nanoTime())
+                session.neutral()
+                assertTrue(session.network.lastLocalInputSequence > p2 + 2)
+                assertEquals("Spectating P1 never sends movement or neutral packets", p1, session.network.lastInputSequence)
+                val hud = NativeHudView(context)
+                hud.update(session.snapshot, session.localID, session.localID2, false, false, true)
+                assertTrue(hud.contentDescription.toString().contains("Secondary (P2)"))
+                val view = com.leqra.android.render.NativeArenaView(context)
+                try {
+                    view.showControls = false
+                    view.mouseInputEnabled = true
+                    val mouse = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_HOVER_MOVE, 80f, 80f, 0)
+                    mouse.source = android.view.InputDevice.SOURCE_MOUSE
+                    try { assertTrue(view.onGenericMotionEvent(mouse)); assertTrue(view.hasMouseInput) }
+                    finally { mouse.recycle() }
+                } finally { view.release() }
+                set(session, "arenaActive", true)
+                set(session.arenaNetwork, "welcome", joined)
+                assertFalse("Infinity spectators cannot retain a playing P2", session.canControlSecondary)
+                assertFalse(session.hasLocalPlayer)
+                set(session.network, "welcome", welcome(local = true))
+                set(session.arenaNetwork, "welcome", welcome(local = true))
+                assertTrue("An active Infinity primary retains P2 controls", session.canControlSecondary)
+                assertTrue(session.hasLocalPlayer)
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun unchangedPendingCallsignBlurCannotInterruptOfflinePlay() {
+        val context = context()
+        context.getSharedPreferences("leqra-settings", 0).edit()
+            .putString("server", "http://127.0.0.1:1").putString("callsign", "OFFLINE")
+            .putString("localCallsign", "SECOND").putBoolean("autoPending0", false)
+            .putBoolean("autoPending1", false).putBoolean("publicSelected", false).commit()
+        val session = main { GameSession(context) }
+        try {
+            main {
+                session.store.prepareRegistration(session.server, 0)
+                session.botCount = 0
+                session.play()
+                assertEquals(Screen.PLAYING, session.screen)
+                session.renameCallsign(session.callsign)
+                assertEquals("Focus changes keep the current offline match", Screen.PLAYING, session.screen)
+                assertEquals(false, field(session, "switchingCallsign"))
+                assertTrue(session.store.selected(session.server, 0)!!.registrationPending)
+            }
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun customCallsignCanBeStagedInOfflineReadyRoomAndSurvivesColdLoad() {
+        val context = context()
+        val origin = "http://127.0.0.1:1"
+        context.getSharedPreferences("leqra-settings", 0).edit()
+            .putString("server", origin).putString("callsign", "ORIGINAL")
+            .putString("localCallsign", "SECOND").putBoolean("autoPending0", false)
+            .putBoolean("autoPending1", false).putBoolean("publicSelected", false).commit()
+        var session = main { GameSession(context) }
+        val old = com.leqra.android.accounts.AccountKeys.create()
+        try {
+            main { session.store.select(origin, 0, old); session.renameCallsign("CUSTOM") }
+            eventually("Offline custom callsign was not staged") { field(session, "switchingCallsign") == false && session.callsign == "CUSTOM" }
+            val key = main {
+                val credential = session.store.selected(origin, 0)!!
+                assertTrue(credential.registrationPending)
+                assertNotEquals(old, credential.key)
+                assertTrue(session.accounts.savedCallsigns(origin).any { it.name == "ORIGINAL" && it.key == old })
+                session.release()
+                session = GameSession(context)
+                assertEquals("CUSTOM", session.callsign)
+                assertEquals(credential.key, session.store.selected(origin, 0)!!.key)
+                session.botCount = 0; session.play()
+                assertEquals(Screen.PLAYING, session.screen)
+                credential.key
+            }
+            assertNotEquals(old, key)
+        } finally { main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun pendingReleaseHoldsGameStartAndAlwaysUnblocksIt() {
+        for (succeeds in listOf(true, false)) {
+            val context = context()
+            val server = java.net.ServerSocket(0).apply { soTimeout = 5000 }
+            val requested = java.util.concurrent.CountDownLatch(1)
+            val respond = java.util.concurrent.CountDownLatch(1)
+            val origin = "http://127.0.0.1:${server.localPort}"
+            context.getSharedPreferences("leqra-settings", 0).edit().putString("server", origin)
+                .putString("callsign", "ORIGINAL").putString("localCallsign", "SECOND")
+                .putBoolean("autoPending0", false).putBoolean("autoPending1", false).putBoolean("publicSelected", false).commit()
+            val worker = Thread {
+                server.accept().use { socket ->
+                    val input = socket.getInputStream().bufferedReader(); var length = 0
+                    while (true) { val line = input.readLine(); if (line.isEmpty()) break; if (line.startsWith("Content-Length:", true)) length = line.substringAfter(':').trim().toInt() }
+                    repeat(length) { input.read() }; requested.countDown(); check(respond.await(5, TimeUnit.SECONDS))
+                    val body = if (succeeds) """{"released":true}""" else """{"code":"server_busy","message":"Try again"}"""
+                    val status = if (succeeds) "200 OK" else "503 Busy"
+                    socket.getOutputStream().write("HTTP/1.1 $status\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body".toByteArray())
+                }
+            }.apply { start() }
+            val session = main { GameSession(context) }
+            val old = com.leqra.android.accounts.AccountKeys.create()
+            var completed: Result<Unit>? = null
+            try {
+                main { session.store.select(origin, 0, old); session.releaseCallsign(old) { completed = it } }
+                assertTrue(requested.await(5, TimeUnit.SECONDS))
+                main {
+                    assertTrue(session.releasingCallsign); assertFalse(session.canImportAccount)
+                    session.callsign = "CHANGED"; session.localCallsign = "CHANGED TWO"
+                    session.renameCallsign("RENAMED"); session.generateCallsign(1)
+                    assertEquals("ORIGINAL", session.callsign); assertEquals("SECOND", session.localCallsign)
+                    session.play(); session.share(); session.join("ANY"); session.findMatch()
+                    assertEquals("No arena starts with an account being released", Screen.READY, session.screen)
+                }
+                respond.countDown()
+                eventually("Release did not finish") { completed != null }
+                main {
+                    assertEquals(succeeds, completed!!.isSuccess)
+                    assertFalse(session.releasingCallsign)
+                    if (succeeds) assertNotEquals(old, session.store.selected(origin, 0)!!.key)
+                    else { assertEquals(old, session.store.selected(origin, 0)!!.key); assertEquals("ORIGINAL", session.callsign) }
+                    session.botCount = 0; session.play()
+                    assertEquals("Release completion unblocks Play", Screen.PLAYING, session.screen)
+                    assertEquals(session.callsign, session.snapshot.tanks.first().name)
+                }
+            } finally { respond.countDown(); worker.join(6000); server.close(); main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+        }
+    }
+
+    @Test
+    fun delayedNameGenerationFailureCannotInterruptAnAlreadyStartedGame() {
+        val context = context()
+        val server = java.net.ServerSocket(0).apply { soTimeout = 5000 }
+        val requested = java.util.concurrent.CountDownLatch(1)
+        val respond = java.util.concurrent.CountDownLatch(1)
+        val origin = "http://127.0.0.1:${server.localPort}"
+        context.getSharedPreferences("leqra-settings", 0).edit().putString("server", origin)
+            .putString("callsign", "ORIGINAL").putString("localCallsign", "SECOND")
+            .putBoolean("autoPending0", false).putBoolean("autoPending1", false).putBoolean("publicSelected", false).commit()
+        val worker = Thread {
+            server.accept().use { socket ->
+                val input = socket.getInputStream().bufferedReader(); var length = 0
+                while (true) { val line = input.readLine(); if (line.isEmpty()) break; if (line.startsWith("Content-Length:", true)) length = line.substringAfter(':').trim().toInt() }
+                repeat(length) { input.read() }; requested.countDown(); check(respond.await(5, TimeUnit.SECONDS))
+                val body = """{"code":"server_busy","message":"DELAYED FAILURE"}"""
+                socket.getOutputStream().write("HTTP/1.1 503 Busy\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body".toByteArray())
+            }
+        }.apply { start() }
+        val session = main { GameSession(context) }
+        val old = com.leqra.android.accounts.AccountKeys.create()
+        val errors = mutableListOf<String>()
+        try {
+            main { session.store.select(origin, 0, old); session.notifyError = { errors += it }; session.generateCallsign(0) }
+            assertTrue(requested.await(5, TimeUnit.SECONDS))
+            main { session.botCount = 0; session.play(); assertEquals(Screen.PLAYING, session.screen) }
+            respond.countDown()
+            eventually("Generation request did not finish") { field(session, "switchingCallsign") == false }
+            main {
+                assertEquals(Screen.PLAYING, session.screen); assertEquals(old, session.store.selected(origin, 0)!!.key)
+                assertEquals("ORIGINAL", session.callsign); assertTrue("A stale failure cannot show an error dialog", errors.isEmpty())
+            }
+        } finally { respond.countDown(); worker.join(6000); server.close(); main { session.release() }; context.noBackupFilesDir.deleteRecursively() }
+    }
+
+    @Test
+    fun delayedRenameCannotReplaceTheAccountOrLeaveAnAlreadyStartedGame() {
+        val context = context()
+        val server = java.net.ServerSocket(0).apply { soTimeout = 5000 }
+        val requested = java.util.concurrent.CountDownLatch(1)
+        val respond = java.util.concurrent.CountDownLatch(1)
+        val origin = "http://127.0.0.1:${server.localPort}"
+        context.getSharedPreferences("leqra-settings", 0).edit().putString("server",origin)
+            .putString("callsign","ORIGINAL").putString("localCallsign","SECOND")
+            .putBoolean("autoPending0",false).putBoolean("autoPending1",false).putBoolean("publicSelected",false).commit()
+        val worker = Thread {
+            server.accept().use { socket ->
+                val input=socket.getInputStream().bufferedReader();var length=0
+                while(true){val line=input.readLine();if(line.isEmpty())break;if(line.startsWith("Content-Length:",true))length=line.substringAfter(':').trim().toInt()}
+                repeat(length){input.read()};requested.countDown();check(respond.await(5,TimeUnit.SECONDS))
+                val body="""{"names":["NEW"],"totalNames":1}"""
+                socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body".toByteArray())
+            }
+        }.apply{start()}
+        val session=main{GameSession(context)}
+        val old=com.leqra.android.accounts.AccountKeys.create()
+        try {
+            main {session.store.select(origin,0,old);session.renameCallsign("NEW")}
+            assertTrue(requested.await(5,TimeUnit.SECONDS))
+            main {session.botCount=0;session.play();assertEquals(Screen.PLAYING,session.screen)}
+            respond.countDown()
+            eventually("Rename request did not finish"){field(session,"switchingCallsign")==false}
+            main {assertEquals(Screen.PLAYING,session.screen);assertEquals(old,session.store.selected(origin,0)!!.key)}
+        } finally {respond.countDown();worker.join(6000);server.close();main{session.release()};context.noBackupFilesDir.deleteRecursively()}
+    }
+
+    @Test
+    fun delayedExplicitRandomNameNeverOverwritesANewerDraftOrSelectsItsAccount() {
+        val context = context()
+        val server = java.net.ServerSocket(0).apply { soTimeout = 5000 }
+        val requested = java.util.concurrent.CountDownLatch(1)
+        val respond = java.util.concurrent.CountDownLatch(1)
+        val origin = "http://127.0.0.1:${server.localPort}"
+        context.getSharedPreferences("leqra-settings", 0).edit()
+            .putString("server", origin).putString("callsign", "ORIGINAL")
+            .putString("localCallsign", "SECOND").putBoolean("autoPending0", false)
+            .putBoolean("autoPending1", false).putBoolean("publicSelected", false).commit()
+        val worker = Thread {
+            server.accept().use { socket ->
+                val input = socket.getInputStream().bufferedReader()
+                var length = 0
+                while (true) {
+                    val line = input.readLine()
+                    if (line.isEmpty()) break
+                    if (line.startsWith("Content-Length:", ignoreCase = true)) length = line.substringAfter(':').trim().toInt()
+                }
+                repeat(length) { input.read() }
+                requested.countDown()
+                check(respond.await(5, TimeUnit.SECONDS))
+                val body = """{"names":[{"seat":0,"name":"pilot#ABC234"}]}"""
+                socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body".toByteArray())
+            }
+        }.apply { start() }
+        val session = main { GameSession(context) }
+        val previous = com.leqra.android.accounts.AccountKeys.create()
+        try {
+            main {
+                session.store.select(origin, 0, previous)
+                session.generateCallsign(0)
+            }
+            assertTrue(requested.await(5, TimeUnit.SECONDS))
+            main { session.callsign = "NEW DRAFT"; session.callsign = "ORIGINAL" }
+            respond.countDown()
+            eventually("Generation response did not finish") { field(session, "switchingCallsign") == false }
+            main {
+                assertEquals("ORIGINAL", session.callsign)
+                assertEquals(previous, session.store.selected(origin, 0)!!.key)
+                assertTrue(session.store.pending(origin, 0).any { it.purpose.startsWith("generate:") && it.key != previous })
+            }
+        } finally {
+            respond.countDown(); worker.join(6000); server.close()
+            main { session.release() }; context.noBackupFilesDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun incompatibleSurvivalChangesNeverDeleteTheRosterOrChangePublicSelection() {
         val context = context()
         context.getSharedPreferences("leqra-settings", 0).edit().putString("server", "http://127.0.0.1:1")
@@ -737,7 +1008,7 @@ class SessionParityTest {
     }
 
     @Test
-    fun privateP2RenameAcknowledgementsAndPublicP1P2RenamesUseTheCorrectSeatAndSocket() {
+    fun callsignChangesSelectSeparateAccountsAndReturnToReadyRoom() {
         val server = InstrumentationRegistry.getArguments().getString("server")
         assumeTrue("Local server argument was not supplied", server != null)
         val context = context()
@@ -747,7 +1018,6 @@ class SessionParityTest {
         val secondary = "RW$tag"
         val renamedLocal = "RN$tag"
         val renamedPrimary = "RX$tag"
-        val renamedSecondary = "RY$tag"
         try {
             main {
                 session.setServer(server!!)
@@ -760,55 +1030,41 @@ class SessionParityTest {
                 session.share()
             }
             eventually("Private paired room did not publish") {
-                session.network.connected &&
-                    session.network.welcome?.localId != null &&
-                    session.room != null
+                session.network.connected && session.network.welcome?.localId != null && session.room != null
             }
+            val originalKeys = main { (0..1).map { session.store.selected(server!!, it)!!.key } }
             main { session.renameCallsign(renamedLocal, 1) }
-            eventually("Private P2 rename did not acknowledge the right seat") {
-                val rows = session.room?.optJSONArray("players")
-                val name = rows?.let {
-                    (0 until it.length())
-                        .map { index -> it.getJSONObject(index) }
-                        .firstOrNull { it.optInt("id") == session.network.welcome?.localId }
-                        ?.optString("name")
-                }
-                val pending = field(session, "renameNames") as Array<*>
-                name == renamedLocal && pending[1] == null
+            eventually("P2 account change did not return to the ready room") {
+                session.screen == Screen.READY && session.room == null && session.localCallsign == renamedLocal
             }
             main {
                 assertEquals(primary, session.callsign)
-                assertEquals(renamedLocal, session.localCallsign)
+                assertEquals(originalKeys[0], session.store.selected(server!!, 0)!!.key)
+                assertNotEquals(originalKeys[1], session.store.selected(server, 1)!!.key)
+                assertTrue(session.accounts.savedCallsigns(server).any { it.name == secondary && it.key == originalKeys[1] })
                 session.togglePublic(true)
                 session.play()
             }
             eventually("Public paired arena did not start") {
-                session.arenaNetwork.connected &&
-                    session.arenaNetwork.isPublic &&
-                    session.localID2 != null
+                session.arenaNetwork.connected && session.arenaNetwork.isPublic && session.localID2 != null
             }
-            val startSequence = main { field(session.arenaNetwork, "renameSequence") as Long }
-            main {
-                session.renameCallsign(renamedPrimary, 0)
-                session.renameCallsign(renamedSecondary, 1)
-            }
-            eventually("Public P1/P2 names were not both confirmed in the arena") {
-                val first = session.snapshot.tanks.firstOrNull { it.id == session.localID }?.name
-                val second = session.snapshot.tanks.firstOrNull { it.id == session.localID2 }?.name
-                val pending = field(session, "renameNames") as Array<*>
-                first == renamedPrimary && second == renamedSecondary && pending.all { it == null }
+            val localKey = main { session.store.selected(server!!, 1)!!.key }
+            main { session.renameCallsign(renamedPrimary, 0) }
+            eventually("P1 account change did not return to the ready room") {
+                session.screen == Screen.READY && !session.online && session.callsign == renamedPrimary
             }
             main {
-                assertEquals(startSequence + 2, field(session.arenaNetwork, "renameSequence"))
-                assertEquals(0L, field(session.network, "renameSequence"))
-                assertEquals(renamedPrimary, session.callsign)
-                assertEquals(renamedSecondary, session.localCallsign)
+                assertEquals(renamedLocal, session.localCallsign)
+                assertEquals(localKey, session.store.selected(server!!, 1)!!.key)
+                assertNotEquals(originalKeys[0], session.store.selected(server, 0)!!.key)
+                assertTrue(session.accounts.savedCallsigns(server).any { it.name == primary && it.key == originalKeys[0] })
+                session.renameCallsign(primary, 0)
+            }
+            eventually("Saved account could not be selected again") {
+                session.callsign == primary && session.store.selected(server!!, 0)?.key == originalKeys[0]
             }
         } finally {
-            main {
-                session.leave()
-                session.release()
-            }
+            main { session.leave(); session.release() }
             context.noBackupFilesDir.deleteRecursively()
         }
     }
@@ -862,23 +1118,26 @@ class SessionParityTest {
                 val offline = "http://10.0.2.2:1"
                 session!!.setServer(offline)
                 session!!.generateCallsign(0)
+            }
+            eventually("Offline generation must select a local pending account") {
+                val current = session!!
+                Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(current.callsign) &&
+                    current.store.selected("http://10.0.2.2:1", 0)?.registrationPending == true
+            }
+            main {
+                val offline = "http://10.0.2.2:1"
                 val fallback = session!!.callsign
-                val draft = field(session!!, "nameDrafts") as com.leqra.android.accounts.CallsignDrafts
-                val requestID = draft.requestID(0)
                 val key = session!!.store.selected(offline, 0)!!.key
-                assertTrue(Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(fallback))
-                assertTrue(session!!.automaticNamePending(0))
-                session!!.publicSelected = false
-                session!!.localSelected = false
-                session!!.play()
-                assertEquals(Screen.PLAYING, session!!.screen)
+                assertTrue("Unconfirmed server generation stays recoverable", session!!.store.pending(offline, 0).any { it.purpose.startsWith("generate:") })
                 session!!.save()
                 session!!.release()
                 session = GameSession(context)
                 assertEquals(fallback, session!!.callsign)
-                assertEquals(requestID, (field(session!!, "nameDrafts") as com.leqra.android.accounts.CallsignDrafts).requestID(0))
                 assertEquals(key, session!!.store.selected(offline, 0)!!.key)
-                assertTrue(session!!.automaticNamePending(0))
+                session!!.publicSelected = false
+                session!!.localSelected = false
+                session!!.play()
+                assertEquals("Offline play remains available after failed server generation", Screen.PLAYING, session!!.screen)
             }
         } finally {
             main { session?.leave(); session?.release() }

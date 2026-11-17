@@ -42,7 +42,7 @@ from the same release.
 
 Infinity, Elimination, Capture the flag, King of the hill and Survival run locally
 with native physics, bots and all ten power-ups. Public Infinity, private rooms,
-room rules, bots, teams, paint, matchmaking, chat and leaderboards use the same
+room rules, bots, teams, paint, matchmaking and leaderboards use the same
 authoritative server as the web and iOS apps. Account-key buttons beside the
 callsigns manage independent P1 and P2 accounts. Import a key to move an account
 between platforms; the newest Public Infinity device takes over its tank. Every
@@ -52,11 +52,25 @@ Successful changes return to the ready room; failures keep the current account.
 Accounts expire after one month without signing in.
 
 Touch controls steer on the left and fire on the right. Touch near your tank to
-point it exactly toward your finger without moving; drag there to adjust aim. Keyboard and gamepad
-controls are listed in the app's Controls panel. P2 uses a keyboard or another
-gamepad. Local bot names, paint, difficulty and teams are editable and retained
+point it exactly toward your finger without moving; drag there to adjust aim.
+Enable P2 manually to keep touch on P1 and route keyboard and mouse controls to P2.
+Both W/A/S/D and arrow keys work; move the mouse to aim and hold its left button
+to fire. With one local tank, those controls belong to P1. Gamepads retain their
+separate seats. Full controls are listed in the app's Controls panel.
+Local bot names, paint, difficulty and teams are editable and retained
 when publishing the same roster online. Sound effects mix with music from other
 apps, including when launching muted. The default sound volume is 50%.
+
+Controls also opens the frozen Showcase battle using the native arena renderer.
+It includes the normal header, touch controls, and loadout bar. Portrait uses a
+closer arrangement of tanks and pickups; landscape keeps the wide scene.
+Escape returns to Controls. On touch devices, switch away from the app and return
+to exit Showcase. Previewing it does not join a room or change the current account.
+
+Rules describes each power-up using the selected mode and maze size. Fixed mazes
+allow pickup-rate and type changes; Infinity always includes all ten types.
+With Public Infinity selected, room settings keep the room name and sharing;
+turn it off to choose a room mode or edit its rules and presets.
 
 For local server development, run `./dev.sh` at the repository root. In a debug
 build, open Settings and use `http://10.0.2.2:8080` from the Android emulator, or

@@ -110,7 +110,7 @@ func TestInfinityProjectileKeepsGoneOwnerColorAndCallsign(t *testing.T) {
 	drain(client)
 	target.X, target.Y, target.Protected = 142, 42, false
 	bullet := infiniteBullet{Owner: 999, ownerName: "DEPARTED", Color: 6, Kind: "cannon", X: 42, Y: 42}
-	if a.advanceBullet(&bullet, 100, 0) || target.HP != 0 {
+	if !a.advanceBullet(&bullet, 100, 0) || target.HP != 0 {
 		t.Fatal("departed owner's shell did not hit")
 	}
 	a.broadcast()

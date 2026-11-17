@@ -47,7 +47,11 @@ func (g *Game) bulletContact(t *Tank, b *Bullet) *projectileContact {
 	if b.ID > 0 && b.flightTracked {
 		at = clamp(b.flightTick(), 0, float64(g.Tick))
 	}
-	return &projectileContact{ProjectileID: b.ID, Kind: kind, Tick: at, Target: t.ID, SpawnSerial: t.SpawnSerial, Before: tankContactBefore(t)}
+	id := b.ID
+	if kind == "cannon" {
+		id = 0 // Piercing contacts resolve now; the shell's terminal flight comes later.
+	}
+	return &projectileContact{ProjectileID: id, Kind: kind, Tick: at, Target: t.ID, SpawnSerial: t.SpawnSerial, Before: tankContactBefore(t)}
 }
 
 func (g *Game) emitContact(kind string, t *Tank, owner int, text string, contact *projectileContact) {
@@ -70,6 +74,9 @@ func (a *infiniteArena) bulletContact(target *infinitePilot, b *infiniteBullet) 
 	}
 	contact := a.instantContact(target, kind)
 	contact.ProjectileID = b.ID
+	if kind == "cannon" {
+		contact.ProjectileID = 0
+	}
 	if b.ID > 0 && b.flightTracked {
 		contact.Tick = clamp(b.flightTick(), 0, float64(a.tick))
 	}

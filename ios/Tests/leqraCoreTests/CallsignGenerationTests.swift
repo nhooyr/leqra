@@ -161,7 +161,10 @@ final class CallsignGenerationTests: XCTestCase {
             XCTAssertEqual(info.names, [try XCTUnwrap(first.first { $0.seat == account.seat }).name])
         }
         let fresh = try await client.generateCallsigns(baseURL: base, requestId: UUID(), accounts: [accounts[1]])
-        XCTAssertEqual(fresh.first?.seat, 1); XCTAssertNotEqual(fresh.first?.name, first[1].name)
+        XCTAssertEqual(fresh.first?.seat, 1)
+        XCTAssertEqual(fresh.first?.name, first[1].name, "A different request UUID cannot rename an existing account")
+        let newAccount = try await client.generateCallsigns(baseURL: base, requestId: UUID(), accounts: [(seat: 1, publicToken: key())])
+        XCTAssertNotEqual(newAccount.first?.name, first[1].name, "A newly generated name belongs to a fresh account key")
     }
 }
 

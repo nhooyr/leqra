@@ -50,14 +50,22 @@ test('offline published shell draws its exact terminal edge without rewinding an
  }
 });
 
-test('Laser and Starman preserve one contact frame; own Starman is not delayed by the remote clock',()=>{
- for(const kind of ['laser','starman']){
+test('instant Laser, Starman and piercing Cannon preserve one contact frame',()=>{
+ for(const kind of ['laser','starman','cannon']){
   const {event,authority}=fixture(kind);delete event.flight;event.contact.projectileId=0;
   const cache=new Net.ProjectileFlights();cache.accept([event],0);let sounds=0;cache.deferContact(1,()=>sounds++);
   const options={own:new Set([2]),localTick:12},clock=kind==='starman'?1:12;
   cache.sample(clock,100,options);assert.equal(cache.visualTank(authority,authority,null,100,move).hp,1);cache.flush();assert.equal(sounds,0);
   cache.sample(clock,109,options);assert.equal(cache.visualTank(authority,authority,null,109,move).hp,0);cache.flush();assert.equal(sounds,1);
  }
+});
+
+test('piercing Cannon contact never rewinds or retires its continuing shell',()=>{
+ const {event,authority}=fixture('cannon'),cache=new Net.ProjectileFlights();delete event.flight;event.contact.projectileId=0;
+ const shell={id:7,owner:2,kind:'cannon',x:500,y:100,r:14};cache.observe([shell],14);cache.accept([event],100);
+ cache.sample(14,100);assert.equal(cache.visualTank(authority,authority,null,100,move).hp,1);
+ assert.equal(cache.controls(7,14),false);assert.equal(shell.x,500);
+ cache.sample(14,109);assert.equal(cache.visualTank(authority,authority,null,109,move).hp,0);assert.equal(cache.controls(7,14),false);
 });
 
 test('stale victim lives and reconnects cannot replay deferred damage or apply it to a new tank',()=>{

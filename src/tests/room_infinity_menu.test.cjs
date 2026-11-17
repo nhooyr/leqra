@@ -29,10 +29,10 @@ test('the same spectator invite preserves encoded room identity and explicitly r
  s.joinWatchInvite(url.searchParams.get('room'));assert.equal(s.request.type,'join');assert.equal(s.request.spectating,true);assert.equal(s.request.code,'Friends & bots');assert.equal(s.request.name,'Viewer');
 });
 
-test('only Public Infinity replaces the fixed room header and room presets retain their menu slot',()=>{
+test('Public Infinity hides room-mode configuration while private Infinity retains it',()=>{
  assert.match(css,/body\.public-infinity-preview \.arena-shell>\.arena-bar:not\(\.infinity-preview-header\)/);
  assert.doesNotMatch(css,/body\.infinity-preview[^\n]*\{display:none/,'room preview cover styling cannot remove header or log height');
- assert.match(declaration('syncFeatureSummary'),/\$\('roomRulesBtn'\)\.hidden=\$\('roomPresetsBtn'\)\.hidden=false/);
+ assert.match(declaration('syncFeatureSummary'),/\$\('roomRulesBtn'\)\.hidden=\$\('roomPresetsBtn'\)\.hidden=publicOnly/);
  assert.match(css,/\.room-mode-help\{min-height:35px;padding-top:6px\}/,'two14.5px description lines plus6px padding fit without moving the next field');
 });
 

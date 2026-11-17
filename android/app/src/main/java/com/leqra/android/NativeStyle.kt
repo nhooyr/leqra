@@ -273,31 +273,22 @@ internal object NativeStyle {
                 ink.color = if (kind == "muted") muted else accent
                 ink.strokeWidth = 1.8f
                 ink.style = android.graphics.Paint.Style.STROKE
-                if (kind == "chat") {
-                    canvas.drawRoundRect(2f, 3f, 22f, 18f, 4f, 4f, ink)
-                    shape.rewind()
-                    shape.moveTo(7f, 18f)
-                    shape.lineTo(7f, 22f)
-                    shape.lineTo(12f, 18f)
-                    canvas.drawPath(shape, ink)
+                ink.style = android.graphics.Paint.Style.FILL
+                canvas.drawRect(2f, 8f, 7f, 16f, ink)
+                shape.rewind()
+                shape.moveTo(7f, 8f)
+                shape.lineTo(12f, 4f)
+                shape.lineTo(12f, 20f)
+                shape.lineTo(7f, 16f)
+                shape.close()
+                canvas.drawPath(shape, ink)
+                ink.style = android.graphics.Paint.Style.STROKE
+                if (kind == "muted") {
+                    canvas.drawLine(16f, 8f, 22f, 16f, ink)
+                    canvas.drawLine(16f, 16f, 22f, 8f, ink)
                 } else {
-                    ink.style = android.graphics.Paint.Style.FILL
-                    canvas.drawRect(2f, 8f, 7f, 16f, ink)
-                    shape.rewind()
-                    shape.moveTo(7f, 8f)
-                    shape.lineTo(12f, 4f)
-                    shape.lineTo(12f, 20f)
-                    shape.lineTo(7f, 16f)
-                    shape.close()
-                    canvas.drawPath(shape, ink)
-                    ink.style = android.graphics.Paint.Style.STROKE
-                    if (kind == "muted") {
-                        canvas.drawLine(16f, 8f, 22f, 16f, ink)
-                        canvas.drawLine(16f, 16f, 22f, 8f, ink)
-                    } else {
-                        canvas.drawArc(10f, 7f, 20f, 17f, -50f, 100f, false, ink)
-                        canvas.drawArc(8f, 3f, 24f, 21f, -50f, 100f, false, ink)
-                    }
+                    canvas.drawArc(10f, 7f, 20f, 17f, -50f, 100f, false, ink)
+                    canvas.drawArc(8f, 3f, 24f, 21f, -50f, 100f, false, ink)
                 }
                 canvas.restore()
             }

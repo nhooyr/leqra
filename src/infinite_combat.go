@@ -239,16 +239,24 @@ func infiniteSpec(kind string) infiniteProjectileSpec {
 
 func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 	k := &p.kit
-	if p.HP == 0 {
+	if p.HP == 0 || a.result != nil {
 		return
 	}
 	k.fireHeld = held
 	k.fireBlocked = false
+	if !held || pressed {
+		k.fireRelease = false
+	}
+	if k.fireRelease {
+		k.fireBlocked = held
+		return
+	}
 	if k.SpawnProtected && k.Invulnerable > 1e-9 {
 		return
 	}
 	if pressed {
 		detonated := false
+		a.volleyDepth++
 		for i := range a.bullets {
 			b := &a.bullets[i]
 			if b.Owner == p.ID && b.AmmoEpoch == grenadeControlEpoch(k) && b.Kind == "grenade" && !b.dead {
@@ -256,9 +264,12 @@ func (a *infiniteArena) weaponControl(p *infinitePilot, held, pressed bool) {
 				detonated = true
 			}
 		}
+		a.volleyDepth--
 		if detonated {
+			a.checkTargetResult(p.ID, p.Team)
 			k.GrenadeEpoch = nil
 			k.fireBlocked = held
+			k.fireRelease = held
 			return
 		}
 	}
@@ -425,16 +436,12 @@ func (a *infiniteArena) fireLaser(p *infinitePilot) {
 		a.effect("laser", p.X, p.Y, p.ID, points)
 	}
 	// Resolve the complete volley before a target-score win can stop combat.
-	var result *infiniteResult
+	a.volleyDepth++
 	for _, target := range targets {
 		a.hurtWithContact(target, p.ID, p.Team, p.Name, a.instantContact(target, "laser"))
-		if a.result != nil {
-			result, a.result = a.result, nil
-		}
 	}
-	if result != nil {
-		a.result = result
-	}
+	a.volleyDepth--
+	a.checkTargetResult(p.ID, p.Team)
 	a.spendWeapon(k)
 }
 
@@ -632,12 +639,20 @@ func (a *infiniteArena) eliminatePilotWithContact(target *infinitePilot, owner, 
 		}
 		if ownerTeam > 0 {
 			a.teamScores[ownerTeam-1]++
-			score := a.teamScores[ownerTeam-1]
-			if a.rules.Target > 0 && score >= a.rules.Target {
-				a.result = &infiniteResult{Name: a.rules.TeamNames[ownerTeam-1], Team: ownerTeam, Score: score}
-			}
 		}
-	} else if shooter != nil && a.rules != nil && a.rules.Target > 0 && shooter.Score >= a.rules.Target {
+	}
+	a.checkTargetResult(owner, ownerTeam)
+}
+
+func (a *infiniteArena) checkTargetResult(owner, ownerTeam int) {
+	if a.volleyDepth != 0 || a.result != nil || a.rules == nil || a.rules.Target <= 0 {
+		return
+	}
+	if a.teams() {
+		if ownerTeam > 0 && a.teamScores[ownerTeam-1] >= a.rules.Target {
+			a.result = &infiniteResult{Name: a.rules.TeamNames[ownerTeam-1], Team: ownerTeam, Score: a.teamScores[ownerTeam-1]}
+		}
+	} else if shooter := a.pilotByID(owner); shooter != nil && shooter.Score >= a.rules.Target {
 		a.result = &infiniteResult{ID: owner, Name: shooter.Name, Score: shooter.Score}
 	}
 }
@@ -646,6 +661,12 @@ func (a *infiniteArena) detonate(b *infiniteBullet) {
 	b.dead = true
 	a.effect("blast", b.X, b.Y, b.Owner, nil)
 	a.attachFlightEffect(b)
+	if a.result != nil {
+		return
+	}
+	// One blast is simultaneous damage. Resolve every eligible victim before
+	// allowing its target-score result to freeze the remaining combat.
+	a.volleyDepth++
 	for _, p := range a.pilots {
 		if p.ID == b.Owner || p.HP == 0 || p.Protected || math.Hypot(p.X-b.X, p.Y-b.Y) > blastRadius+tankRadius {
 			continue
@@ -654,6 +675,8 @@ func (a *infiniteArena) detonate(b *infiniteBullet) {
 			a.hurtProjectile(p, b)
 		}
 	}
+	a.volleyDepth--
+	a.checkTargetResult(b.Owner, b.ownerTeam)
 }
 
 func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
@@ -661,6 +684,12 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 }
 
 func (a *infiniteArena) advanceBulletDuring(b *infiniteBullet, dx, dy, span float64) bool {
+	if b.Kind == "cannon" {
+		a.cannonSegment(b, dx, dy, b.age-span, span)
+		b.X, b.Y = b.X+dx, b.Y+dy
+		b.flightAge = b.age
+		return true
+	}
 	radius := b.radius
 	if radius <= 0 {
 		radius = regularRadius

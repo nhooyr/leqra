@@ -1,8 +1,57 @@
+import Foundation
 import XCTest
 import CryptoKit
 @testable import leqraCore
 
 final class MazeTests: XCTestCase {
+    func testReportLaserGuideCPU() throws {
+        guard ProcessInfo.processInfo.environment["LEQRA_PROFILE_GUIDE"] == "1" else { throw XCTSkip("Opt in to the laser guide CPU benchmark.") }
+        let maze = InfiniteMaze(seed: 42)
+        var samples: [Double] = []
+        for run in 0..<240 {
+            let start = ProcessInfo.processInfo.systemUptime
+            for frame in 0..<24 {
+                _ = maze.laserGuide(x: 420 + Double(run) * 0.75, y: 420, angle: Double(run * 24 + frame) / 1200, range: 36 * 84)
+            }
+            if run >= 40 { samples.append((ProcessInfo.processInfo.systemUptime - start) * 1000 / 24) }
+        }
+        samples.sort()
+        print("Laser guide CPU ms/frame p50=\(samples[100]) p95=\(samples[190]) p99=\(samples[198])")
+    }
+
+    func testBoundedLaserGuideMatchesFullSegmentSearchAtEveryRicochet() {
+        for seed: UInt32 in [1, 42, 12345] {
+            let maze = InfiniteMaze(seed: seed)
+            for index in 0..<60 {
+                let startX = Double(index % 7) * 83 + 31, startY = Double(index % 5) * 83 + 49
+                let angle = Double(index) * 0.107, range = 36 * 84.0
+                let actual = maze.laserGuide(x: startX, y: startY, angle: angle, range: range)
+                guard let launch = maze.launchRay(x: startX, y: startY, angle: angle, kind: "laser", radius: 3) else { XCTAssertTrue(actual.isEmpty); continue }
+                var x = launch.x, y = launch.y, ux = launch.ux, uy = launch.uy
+                var left = range - launch.distance
+                var expected: [BeamPoint] = []
+                for segment in 0..<256 {
+                    let wall = maze.rayHit(x: x, y: y, dx: ux * left, dy: uy * left, radius: 3)
+                    let length = left * (wall?.fraction ?? 1)
+                    if segment == 0 {
+                        let crop = launch.bounced ? 0 : 28.0
+                        expected.append(BeamPoint(x: x + ux * min(crop, length), y: y + uy * min(crop, length)))
+                    }
+                    x += ux * length; y += uy * length; left -= length
+                    expected.append(BeamPoint(x: x, y: y))
+                    guard let wall, left > 1e-7 else { break }
+                    if wall.nx != 0 { ux = -ux }; if wall.ny != 0 { uy = -uy }
+                    let nudge = min(0.001, left)
+                    x += ux * nudge; y += uy * nudge; left -= nudge
+                }
+                XCTAssertEqual(actual.count, expected.count)
+                for (a, b) in zip(actual, expected) {
+                    XCTAssertEqual(a.x, b.x, accuracy: 1e-6)
+                    XCTAssertEqual(a.y, b.y, accuracy: 1e-6)
+                }
+            }
+        }
+    }
     private struct Fixture: Decodable {
         var seed: UInt32
         var bounds: [Double]

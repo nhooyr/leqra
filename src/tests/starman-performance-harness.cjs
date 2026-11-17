@@ -15,6 +15,7 @@ function boot({kind='regular',pilots=8,sourcePath=assetPath('game.js')}={}){
  const names=['canDamage','makeMaze','nearbyWalls','rayWalls','circleHit','tankHit','rayBounds','projectileWall','projectileSpec','muzzleBlocked','muzzleProjectile','activeAmmo','powerCapacity','recycleStarmanProjectiles',
   'fire','fireLaser','laserTrace','laserEffect','steerMissile','guideGrenade','grenadeDragIntegral','grenadeDragFactor','spendMissileRange','missileWallNudge','updateBullets','compactLife','compactNotDead','updateTraces','burst','addRing'];
  if(source.includes('function projectileLaunch('))names.push('projectileLaunch');
+ if(source.includes('function advanceCannon('))names.push('advanceCannon');
  const factory=new Function('env','let {'+Object.keys(env).join(',')+'}=env;\n'+constants+'\n'+names.map(name=>declaration(source,name)).join('\n')+`
  makeMaze();
  for(let id=0;id<8;id++)tanks.push({id,team:0,x:(1+id%4*5+.5)*CELL,y:(1+Math.floor(id/4)*8+.5)*CELL,r:17,angle:id*Math.PI/4,alive:true,human:true,color:'#d2f65a',invulnerable:1e9,ghostTime:1e9,spawnProtected:false,starmanTime:1e9,power:null,cooldown:0,charges:3,machineRounds:180});

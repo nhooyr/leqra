@@ -192,7 +192,10 @@ class AmmoResetTest {
             assertNull(tank.grenadeEpoch)
             tank.cooldown = 0.0
             arena.step(GameInput(fire = true), dt)
-            assertEquals("The next held tick retries standard", 2, arena.snapshot.bullets.count { it.kind.isEmpty() })
+            assertEquals("Holding the pop must not shoot standard", 1, arena.snapshot.bullets.count { it.kind.isEmpty() })
+            arena.step(GameInput(), dt)
+            arena.step(GameInput(fire = true), dt)
+            assertEquals("A fresh press fires standard", 2, arena.snapshot.bullets.count { it.kind.isEmpty() })
         }
         for (power in PracticeArena.pickupKinds) {
             val arena = arena()
@@ -264,7 +267,9 @@ class AmmoResetTest {
         grenades.step(GameInput(), dt); grenades.step(GameInput(fire = true), dt)
         assertEquals("Pop controls only the new bank", listOf(old), grenades.snapshot.bullets.map { it.id })
         pilot.cooldown = 0.0; grenades.step(GameInput(fire = true), dt)
-        assertEquals("Held throw resumes after pop tick", 2, grenades.snapshot.bullets.size)
+        assertEquals("Held detonation does not throw another grenade", 1, grenades.snapshot.bullets.size)
+        grenades.step(GameInput(), dt); grenades.step(GameInput(fire = true), dt)
+        assertEquals("Releasing permits the next throw", 2, grenades.snapshot.bullets.size)
     }
 
     @Test fun finalShieldChargeAndRespawnEachStartAFullBank() {

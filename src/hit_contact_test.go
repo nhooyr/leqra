@@ -72,9 +72,9 @@ func TestAllFixedBallisticsLinkHitAndShieldToExactTerminalContact(t *testing.T) 
 								continue
 							}
 							contacts++
-							assertContact(t, event.Contact, target.ID, target.SpawnSerial, kind, before, true)
+							assertContact(t, event.Contact, target.ID, target.SpawnSerial, kind, before, kind != "cannon")
 							flight := flights[event.Contact.ProjectileID]
-							if flight == nil || math.Abs(flight.EndTick-event.Contact.Tick) > 1e-8 || flight.EndTick > float64(g.Tick) {
+							if kind != "cannon" && (flight == nil || math.Abs(flight.EndTick-event.Contact.Tick) > 1e-8 || flight.EndTick > float64(g.Tick)) {
 								t.Fatal("victim transition is not tied to its exact terminal endpoint", event, flight)
 							}
 							if shield && event.Type != "shield" || !shield && event.Type != "hit" {
@@ -137,9 +137,9 @@ func TestAllInfinityBallisticsLinkHitAndShieldToExactTerminalContact(t *testing.
 						continue
 					}
 					contacts++
-					assertContact(t, effect.Contact, target.ID, target.Spawn, kind, before, true)
+					assertContact(t, effect.Contact, target.ID, target.Spawn, kind, before, kind != "cannon")
 					flight := flights[effect.Contact.ProjectileID]
-					if flight == nil || math.Abs(flight.EndTick-effect.Contact.Tick) > 1e-8 || effect.Tick != a.tick {
+					if kind != "cannon" && (flight == nil || math.Abs(flight.EndTick-effect.Contact.Tick) > 1e-8 || effect.Tick != a.tick) {
 						t.Fatal("Infinity victim transition lacks its shared terminal clock", kind, effect, flight)
 					}
 				}

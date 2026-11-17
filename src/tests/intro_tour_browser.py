@@ -44,7 +44,7 @@ def check_sidebar(page, touch):
     expect(toggle).to_have_attribute("aria-expanded", "true")
     expect(dialog.locator(".power-row")).to_have_count(10)
     if touch:
-        touch_instructions = dialog.get_by_text("Drag the joystick to drive and aim. Tap or hold Fire to shoot.")
+        touch_instructions = dialog.get_by_text("Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.")
         expect(touch_instructions).to_be_visible()
     last_pickup = dialog.locator(".power-row").last
     last_pickup.scroll_into_view_if_needed()
@@ -137,9 +137,9 @@ def check_public_headers(page, paired, screenshot=None):
         assert all(item['left']>=layout['header']['left']-1 and item['right']<=layout['header']['right']+1 for item in layout['bounds']),layout
     page.locator('#infinityToggle').check()
     check('infinityPreviewBar','infinityPreviewTitle')
-    page.evaluate("paired=>leqraInfinity.start('online',{name:'HEADER PILOT',...(paired?{localName:'HEADER WING'}:{})})",paired)
+    page.evaluate("paired=>leqraInfinity.start('online',{name:document.getElementById('roomCallsign').value,...(paired?{localName:document.getElementById('roomP2Callsign').value}:{})})",paired)
     expect(page.locator('#infiniteOnlineCount')).to_have_text(re.compile(r'^[1-9]\d* online$'))
-    expect(page.locator('#infiniteKills .infinite-score-value').last).to_have_text(re.compile(r'^: \(-?\d+, #[1-9]\d*\)$'))
+    expect(page.locator('#infiniteKills .infinite-score-value').last).to_have_text(re.compile(r'^score: -?\d+, rank: #[1-9]\d*$'))
     check('infiniteStatusbar','infiniteArenaTitle')
     if screenshot:
         page.screenshot(path=str(screenshot))

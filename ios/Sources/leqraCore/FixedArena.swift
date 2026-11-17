@@ -5,6 +5,7 @@ import Foundation
 public final class FixedArena {
     public var hasPendingProjectileFlights: Bool { combat.hasPendingProjectileFlights }
     public let localID = 1
+    public var secondaryLocalID: Int? { combat.secondaryLocalID }
     public private(set) var world: ArenaWorld
     public private(set) var rules: RoomRules
     var combat: PracticeArena
@@ -17,6 +18,7 @@ public final class FixedArena {
     private let botDifficulties: [String]
     private let botTeams: [Int]
     private let localTeam: Int
+    private let secondaryPlayer: NativeSeatSpec?
     private struct PilotConfiguration { var name: String; var colorIndex: Int; var team: Int; var difficulty: String }
     private var pilotConfigurations: [Int: PilotConfiguration] = [:]
     private var randomState: UInt32
@@ -33,11 +35,13 @@ public final class FixedArena {
     public init(rules: RoomRules, name: String, colorIndex: Int, botCount: Int = 3,
                 difficulty: String = "normal", seed: UInt32,
                 botNames: [String] = [], botColors: [Int] = [], botDifficulties: [String] = [],
-                botTeams: [Int] = [], localTeam: Int = 0) {
+                botTeams: [Int] = [], localTeam: Int = 0, secondaryPlayer: NativeSeatSpec? = nil) {
         self.rules = rules; self.rules.infinity = false
         if rules.mode == "ctf" || rules.mode == "survival" { self.rules.teamMode = "teams" }
         self.name = name; self.colorIndex = GamePalette.index(colorIndex)
-        self.botCount = max(0, min(rules.mode == "survival" ? 3 : 7, botCount))
+        self.secondaryPlayer = secondaryPlayer.flatMap { $0.spectating ? nil : $0 }
+        let humans = self.secondaryPlayer == nil ? 1 : 2
+        self.botCount = max(0, min((rules.mode == "survival" ? 4 : 8) - humans, botCount))
         self.difficulty = difficulty
         self.botNames = botNames; self.botColors = botColors; self.botDifficulties = botDifficulties
         self.botTeams = botTeams; self.localTeam = localTeam
@@ -75,7 +79,7 @@ public final class FixedArena {
         startRound(wave: survival.wave, cleared: survival.wavesCleared, preserveWorld: true)
     }
 
-    public func step(input: GameInput, dt: Double) {
+    public func step(input: GameInput, secondaryInput: GameInput? = nil, dt: Double) {
         guard dt.isFinite, dt > 0, dt <= 0.1 else { return }
         tick += 1
         if phase == "matchOver" { return }
@@ -99,7 +103,7 @@ public final class FixedArena {
             return
         }
         clock = max(0, clock - dt)
-        combat.step(input: input, dt: dt)
+        combat.step(input: input, secondaryInput: secondaryInput, dt: dt)
         // Combat kills do not award points in finite modes.
         restoreScores()
         if rules.mode == "survival" { stepSurvival() }
@@ -108,9 +112,9 @@ public final class FixedArena {
         combat.refreshStandings()
     }
 
-    public func presentationSnapshot(fraction: Double, localInput: GameInput? = nil) -> ArenaSnapshot {
+    public func presentationSnapshot(fraction: Double, localInput: GameInput? = nil, secondaryInput: GameInput? = nil) -> ArenaSnapshot {
         let active = phase == "playing" && objectives?.survival?.status != "break"
-        return compose(combat.presentationSnapshot(fraction: active ? fraction : 0, localInput: localInput))
+        return compose(combat.presentationSnapshot(fraction: active ? fraction : 0, localInput: localInput, secondaryInput: secondaryInput))
     }
 
     public func configurePilot(id: Int, name: String, colorIndex: Int, team: Int = 0, difficulty: String = "normal") {
@@ -146,7 +150,7 @@ public final class FixedArena {
         generation += 1; winner = -1; phase = "countdown"; phaseTime = 3; clock = Double(rules.timeLimit)
         if !preserveWorld { world = makeWorld() }
         combat = PracticeArena(seed: randomState, name: name, colorIndex: colorIndex, botCount: botCount,
-                               difficulty: difficulty, world: world)
+                               difficulty: difficulty, world: world, secondaryPlayer: secondaryPlayer)
         combat.configure(rules: rules)
         combat.killScoring = false
         combat.respawnsEnabled = rules.mode == "ctf" || rules.mode == "koth"
@@ -157,11 +161,15 @@ public final class FixedArena {
         var spots = combat.snapshot.tanks.count <= 4 ? Array(cells.prefix(4)) : cells
         for index in spots.indices.reversed() where index > 0 { spots.swapAt(index, random(index + 1)) }
         for index in combat.snapshot.tanks.indices {
-            let id = index + 1, team = rules.mode == "survival" ? 1 : rules.teamMode == "teams"
-                ? (index == 0 ? (localTeam > 0 ? localTeam : 1) : (botTeams.indices.contains(index - 1) && botTeams[index - 1] > 0 ? botTeams[index - 1] : index % 2 + 1)) : 0
-            let paint = team > 0 ? rules.teamColors[safe: team - 1] ?? (team - 1) : index == 0 ? colorIndex : botColors[safe: index - 1] ?? GamePalette.index(colorIndex + index)
-            combat.configurePilot(id: id, name: index == 0 ? name : botNames[safe: index - 1] ?? "Bot \(index)", colorIndex: paint, team: team,
-                                  difficulty: index == 0 ? difficulty : botDifficulties[safe: index - 1] ?? difficulty)
+            let id = index + 1, isPrimary = id == localID, isSecondary = id == secondaryLocalID
+            let botIndex = index - (secondaryLocalID == nil ? 1 : 2)
+            let configuredTeam = isPrimary ? localTeam : isSecondary ? secondaryPlayer?.team ?? 0 : botTeams[safe: botIndex] ?? 0
+            let team = rules.mode == "survival" ? 1 : rules.teamMode == "teams" ? (configuredTeam > 0 ? configuredTeam : index % 2 + 1) : 0
+            let ownPaint = isPrimary ? colorIndex : isSecondary ? secondaryPlayer?.colorIndex ?? GamePalette.index(colorIndex + 1) : botColors[safe: botIndex] ?? GamePalette.index(colorIndex + index)
+            let paint = team > 0 ? rules.teamColors[safe: team - 1] ?? (team - 1) : ownPaint
+            let pilotName = isPrimary ? name : isSecondary ? secondaryPlayer?.name ?? "CO-PILOT" : botNames[safe: botIndex] ?? "Bot \(botIndex + 1)"
+            combat.configurePilot(id: id, name: pilotName, colorIndex: paint, team: team,
+                                  difficulty: isPrimary || isSecondary ? difficulty : botDifficulties[safe: botIndex] ?? difficulty)
             if let configured = pilotConfigurations[id] {
                 let team = rules.mode == "survival" ? 1 : configured.team
                 let paint = team > 0 ? rules.teamColors[safe: team - 1] ?? team - 1 : configured.colorIndex

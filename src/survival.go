@@ -75,7 +75,7 @@ func (g *Game) clearSurvivalInput(players [maxTanks]*Player) {
 		}
 		if t := g.Tanks[id]; t != nil {
 			t.VX, t.VY = 0, 0
-			t.fireHeld, t.fireBlocked = false, false
+			t.fireHeld, t.fireBlocked, t.fireRelease = false, false, false
 		}
 	}
 }

@@ -55,7 +55,7 @@ final class ContactProbeCaseTests: XCTestCase {
     }
 
     func testLaserAndStarmanRequireASeparateLivingContactFrameAndKeepZeroProjectileSentinel() {
-        for kind in ["laser", "starman"] {
+        for kind in ["laser", "starman", "cannon"] {
             let attacker = ArenaTank(id: 1, x: 107, y: 42, starmanTime: kind == "starman" ? 10 : 0)
             let target = ArenaTank(id: 2, x: 140, y: 42, spawnSerial: 1)
             var dead = target; dead.hp = 0
@@ -64,7 +64,9 @@ final class ContactProbeCaseTests: XCTestCase {
             let beam = ArenaEffect(id: 20, kind: "laser", owner: 1,
                 points: [BeamPoint(x: 107, y: 42), BeamPoint(x: 123, y: 42)])
             let authority = ArenaSnapshot(tanks: [attacker, dead], effects: [hit])
-            let endpoint = ArenaSnapshot(tanks: [attacker, target], effects: kind == "laser" ? [beam] : [])
+            let endpoint = ArenaSnapshot(tanks: [attacker, target],
+                bullets: kind == "cannon" ? [ArenaBullet(id: 30, x: 115, y: 42, owner: 1, kind: "cannon")] : [],
+                effects: kind == "laser" ? [beam] : [])
             let released = ArenaSnapshot(tanks: [attacker, dead], effects: [hit])
             var probe = ContactProbeCase()
             probe.observe(authoritative: authority, visible: endpoint, dt: 1 / 120)

@@ -130,6 +130,12 @@ final class PracticeTests: XCTestCase {
             PracticeArena.applyPower(tank: &arena.snapshot.tanks[index], kind: "starman", starDuration: 20)
         }
         for _ in 0..<360 {
+            // Stress every synthetic actor explicitly; ordinary P1 input must
+            // never be copied into another human pilot's control channel.
+            for tank in arena.snapshot.tanks where tank.id != arena.localID {
+                arena.captureFire(false, player: tank.id)
+                arena.captureFire(true, player: tank.id)
+            }
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
             let ids = arena.snapshot.bullets.map(\.id)
             XCTAssertEqual(ids, ids.sorted())

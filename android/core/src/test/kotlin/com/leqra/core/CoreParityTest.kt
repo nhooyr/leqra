@@ -360,7 +360,7 @@ class CoreParityTest {
     }
 
     @Test
-    fun heldGrenadesAutoThrowAndFreshPressPopsOnlyThatTickWithoutSelfDamage() {
+    fun heldGrenadesAutoThrowAndDetonationRequiresReleaseBeforeNextThrow() {
         for (boosted in listOf(false, true)) {
             val a = arena("compact"); val t = a.snapshot.tanks[0]
             equip(t, "grenade", if (boosted) "starman" else "ghost")
@@ -371,6 +371,8 @@ class CoreParityTest {
             assertFalse(a.snapshot.bullets.any { it.kind == "grenade" })
             assertTrue(a.snapshot.effects.any { it.kind == "blast" }); assertEquals(1, t.hp)
             t.cooldown = 0.0; advance(a, GameInput(fire = true))
+            assertEquals(0, a.snapshot.bullets.count { it.kind == "grenade" })
+            advance(a); advance(a, GameInput(fire = true))
             assertEquals(1, a.snapshot.bullets.count { it.kind == "grenade" })
         }
     }

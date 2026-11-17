@@ -10,23 +10,23 @@ class OfflineProjectileVisibilityTest {
         arena.configure(RoomRules(infinity = true, infinityTarget = 1))
         arena.snapshot.tanks.first().apply { x = 100.0; y = 100.0; angle = 0.0; invulnerable = 0.0; spawnProtected = false }
         arena.snapshot.tanks[1].apply { x = 140.0; y = 100.0; invulnerable = 0.0; spawnProtected = false }
-        PracticeArena.applyPower(arena.snapshot.tanks.first(), "cannon")
+        PracticeArena.applyPower(arena.snapshot.tanks.first(), "homing")
         arena.step(GameInput(fire = true), 1.0 / 60)
         assertNotNull(arena.snapshot.result)
         val tick = arena.snapshot.tick
         val score = arena.snapshot.tanks.first().score
         val traveling = arena.presentationSnapshot(0.0, nowSeconds = 10.0)
-        assertTrue(traveling.bullets.any { it.kind == "cannon" })
+        assertTrue(traveling.bullets.any { it.kind == "homing" })
         assertNull(traveling.result)
-        assertTrue(arena.presentationSnapshot(0.0, nowSeconds = 10.1).bullets.any { it.kind == "cannon" })
-        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 10.11).bullets.any { it.kind == "cannon" })
+        assertTrue(arena.presentationSnapshot(0.0, nowSeconds = 10.1).bullets.any { it.kind == "homing" })
+        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 10.11).bullets.any { it.kind == "homing" })
         assertNotNull(arena.presentationSnapshot(0.0, nowSeconds = 10.12).result)
         assertEquals(tick, arena.snapshot.tick)
         assertEquals(score, arena.snapshot.tanks.first().score)
     }
     @Test
     fun closeRangeKillingShotsRemainVisibleEvenWhenTheyNeverReachASnapshot() {
-        for (kind in listOf("", "rapid", "scatter", "homing", "grenade", "cannon")) {
+        for (kind in listOf("", "rapid", "scatter", "homing", "grenade")) {
             val arena =
                 PracticeArena(123, "P1", 0, 0, world = ArenaWorld(width = 1000.0, height = 1000.0))
             arena.snapshot.tanks.first().apply {
@@ -95,16 +95,16 @@ class OfflineProjectileVisibilityTest {
             invulnerable = 0.0
             spawnProtected = false
         }
-        PracticeArena.applyPower(first, "cannon")
+        PracticeArena.applyPower(first, "homing")
         arena.step(GameInput(fire = true), 1.0 / 60)
         assertNotEquals("playing", arena.snapshot.phase)
         val traveling = arena.presentationSnapshot(0.0, nowSeconds = 20.0)
-        assertTrue(traveling.bullets.any { it.kind == "cannon" })
+        assertTrue(traveling.bullets.any { it.kind == "homing" })
         assertEquals("playing", traveling.phase)
         assertTrue(
-            arena.presentationSnapshot(0.0, nowSeconds = 20.1).bullets.any { it.kind == "cannon" }
+            arena.presentationSnapshot(0.0, nowSeconds = 20.1).bullets.any { it.kind == "homing" }
         )
-        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 20.11).bullets.any { it.kind == "cannon" })
+        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 20.11).bullets.any { it.kind == "homing" })
         assertNotEquals("playing", arena.presentationSnapshot(0.0, nowSeconds = 20.12).phase)
     }
 }

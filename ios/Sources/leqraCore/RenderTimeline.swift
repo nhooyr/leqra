@@ -9,6 +9,10 @@ public final class RenderTimeline {
     private let move: Move
     private let maze: InfiniteMaze?
     private var localID: Int
+    private var secondary: RenderTimeline?
+    private var predictionOnly = false
+    private var lastSecondarySequence: UInt64 = 0
+    public var secondaryLocalID: Int? { secondary?.localID }
     private var samples: [Sample] = []
     private var frames: [Frame] = []
     private var sent: [UInt64: Int] = [:]
@@ -55,16 +59,38 @@ public final class RenderTimeline {
     public var authoritativeSnapshotTime: Double? { latest == nil ? nil : lastArrival }
     var bufferedAcknowledgementCount: Int { sent.count }
 
-    public init(localID: Int, initialSequence: UInt64 = 0, maze: InfiniteMaze? = nil, move: @escaping Move) {
+    public init(localID: Int, initialSequence: UInt64 = 0, secondaryLocalID: Int? = nil, initialSecondarySequence: UInt64 = 0, maze: InfiniteMaze? = nil, move: @escaping Move) {
         self.localID = localID
         self.move = move
         self.maze = maze
         sequence = initialSequence
+        setSecondaryLocalID(secondaryLocalID, initialSequence: initialSecondarySequence)
+    }
+
+    /// Each local pilot has its own input sequence, acknowledgement history and
+    /// correction state. World interpolation and projectile presentation stay shared.
+    public func setSecondaryLocalID(_ id: Int?, initialSequence: UInt64 = 0) {
+        lastSecondarySequence = max(lastSecondarySequence, secondary?.sequence ?? 0)
+        guard let id, id >= 0, id != localID else { secondary = nil; return }
+        guard secondary?.localID != id else { return }
+        let channel = RenderTimeline(localID: id, initialSequence: max(initialSequence, lastSecondarySequence), maze: maze, move: move)
+        channel.predictionOnly = true
+        if let latest { channel.accept(snapshotForSecondary(latest), at: lastArrival) }
+        secondary = channel
+    }
+
+    private func snapshotForSecondary(_ snapshot: ArenaSnapshot) -> ArenaSnapshot {
+        var local = snapshot
+        // Fixed-room spectator state describes P1. Its separately owned P2
+        // remains an active pilot; Infinity still requires an active primary.
+        if snapshot.world != nil { local.spectating = false; local.following = nil }
+        return local
     }
 
     public func setLocalID(_ id: Int) {
         guard localID != id else { return }
         localID = id
+        if secondary?.localID == id { setSecondaryLocalID(nil) }
         resetPrediction(latest?.tanks.first(where: { $0.id == id }))
         cannonFlights.reset()
         if let latest { cannonFlights.accept(latest.effects, baseline: true, throughTick: Double(latest.tick), tanks: latest.tanks) }
@@ -91,19 +117,22 @@ public final class RenderTimeline {
             } else if snapshot.tick <= previous.tick { return }
         }
         latest = snapshot
+        secondary?.accept(snapshotForSecondary(snapshot), at: now)
         if recovering {
             baselineFlights = true; cannonFlights.reset()
             samples.removeAll(); clock = nil; playbackRate = 1
         }
-        cannonFlights.accept(snapshot.effects, baseline: baselineFlights, throughTick: Double(snapshot.tick), tanks: snapshot.tanks)
-        let liveTankIDs = Set(snapshot.tanks.map(\.id))
-        pathChecks = pathChecks.filter { liveTankIDs.contains($0.key) }
+        if !predictionOnly {
+            cannonFlights.accept(snapshot.effects, baseline: baselineFlights, throughTick: Double(snapshot.tick), tanks: snapshot.tanks)
+            let liveTankIDs = Set(snapshot.tanks.map(\.id))
+            pathChecks = pathChecks.filter { liveTankIDs.contains($0.key) }
+            let timestamp = Double(snapshot.tick) / 60
+            samples.append(Sample(state: snapshot, time: timestamp))
+            if samples.count > 90 { samples.removeFirst(samples.count - 90) }
+            if clock == nil { clock = timestamp - 0.085 }
+        }
         lastArrival = now
         stale = false
-        let timestamp = Double(snapshot.tick) / 60
-        samples.append(Sample(state: snapshot, time: timestamp))
-        if samples.count > 90 { samples.removeFirst(samples.count - 90) }
-        if clock == nil { clock = timestamp - 0.085 }
         guard var tank = snapshot.tanks.first(where: { $0.id == localID }) else {
             resetPrediction(nil); return
         }
@@ -153,15 +182,31 @@ public final class RenderTimeline {
 
     /// Call once per display frame. Movement packets remain fixed at 60/s;
     /// actual Fire edges can also be sent through inputEdgePacket between ticks.
-    public func render(dt: Double, input: GameInput, now: Double,
+    public func render(dt: Double, input: GameInput, secondaryInput: GameInput? = nil, now: Double,
+                       sendSecondary: ((GameInput) -> Void)? = nil,
                        send: (GameInput) -> Void) -> ArenaSnapshot? {
+        guard latest != nil else { return nil }
+        let primaryTank = advancePrediction(dt: dt, input: input, now: now, send: send)
+        let secondaryTank = secondary?.advancePrediction(dt: dt, input: secondaryInput ?? GameInput(), now: now,
+                                                          send: sendSecondary ?? { _ in })
+        var result = interpolated(dt: max(0, min(0.1, dt)))
+        if let primaryTank, let index = result.tanks.firstIndex(where: { $0.id == localID }) { result.tanks[index] = primaryTank }
+        if let secondaryTank, let index = result.tanks.firstIndex(where: { $0.id == secondaryLocalID }) { result.tanks[index] = secondaryTank }
+        cannonFlights.applyContacts(to: &result.tanks, from: oldTanks, previousTick: contactPreviousTick) { [self] first, second in
+            first.ghostTime > 0 || movementPathClear(from: first, to: second, world: latest?.world)
+        }
+        return result
+    }
+
+    private func advancePrediction(dt: Double, input: GameInput, now: Double,
+                                   send: (GameInput) -> Void) -> ArenaTank? {
         guard let latest else { return nil }
         renderNow = now
         let elapsed = max(0, min(0.1, dt))
         stale = now - lastArrival > 2.5
         if stale { clearCorrection(); motionPresenter.reset() }
         accumulator += elapsed
-        var controls = stale || latest.result != nil ? GameInput() : input
+        var controls = stale || latest.result != nil || latest.spectating ? GameInput() : input
         lastInput = controls
         while accumulator + 1e-9 >= 1 / 60 {
             accumulator = max(0, accumulator - 1 / 60)
@@ -172,7 +217,7 @@ public final class RenderTimeline {
                 rememberSent(at: step)
                 send(controls)
             }
-            if var tank = predicted, tank.hp > 0, latest.phase == "playing", latest.result == nil, !stale {
+            if var tank = predicted, tank.hp > 0, latest.phase == "playing", latest.result == nil, !latest.spectating, !stale {
                 let wasPhasing = tank.ghostTime > 0
                 move(&tank, controls, 1 / 60)
                 if wasPhasing != (tank.ghostTime > 0) { clearCorrection(); motionPresenter.reset() }
@@ -182,9 +227,8 @@ public final class RenderTimeline {
             }
         }
         advanceCorrection(dt: elapsed)
-        var result = interpolated(dt: elapsed)
         if var tank = predicted {
-            if tank.hp > 0, latest.phase == "playing", latest.result == nil, !stale {
+            if tank.hp > 0, latest.phase == "playing", latest.result == nil, !latest.spectating, !stale {
                 tank = motionPresenter.present(tank: tank, input: controls, tick: UInt64(step),
                     generation: latest.generation, fraction: accumulator * 60,
                     move: move, canInterpolate: { first, second in
@@ -192,7 +236,7 @@ public final class RenderTimeline {
                             && (first.ghostTime > 0 || self.movementPathClear(from: first, to: second, world: latest.world))
                     })
             }
-            if tank.hp > 0, latest.phase == "playing", latest.result == nil, !stale {
+            if tank.hp > 0, latest.phase == "playing", latest.result == nil, !latest.spectating, !stale {
                 if correction.x != 0 || correction.y != 0 {
                     var corrected = tank
                     corrected.x += correction.x; corrected.y += correction.y
@@ -203,12 +247,9 @@ public final class RenderTimeline {
                 }
                 tank.angle = atan2(sin(tank.angle + correction.angle), cos(tank.angle + correction.angle))
             }
-            if let index = result.tanks.firstIndex(where: { $0.id == localID }) { result.tanks[index] = tank }
+            return tank
         }
-        cannonFlights.applyContacts(to: &result.tanks, from: oldTanks, previousTick: contactPreviousTick) { [self] first, second in
-            first.ghostTime > 0 || movementPathClear(from: first, to: second, world: latest.world)
-        }
-        return result
+        return nil
     }
 
     private func advanceCorrection(dt: Double) {
@@ -243,6 +284,7 @@ public final class RenderTimeline {
     }
 
     public func neutralize() {
+        secondary?.neutralize()
         accumulator = 0; clearCorrection(); lastInput = GameInput()
         motionPresenter.reset()
         // No display time advances while the pause menu is open. Resume from
@@ -257,6 +299,12 @@ public final class RenderTimeline {
         sequence += 1
         rememberSent(at: step + 1)
         return GameInput(seq: sequence)
+    }
+
+    public func neutralSecondaryPacket() -> GameInput? { secondary?.neutralPacket() }
+
+    public func secondaryInputEdgePacket(_ input: GameInput, now: Double) -> GameInput? {
+        secondary?.inputEdgePacket(input, now: now)
     }
 
     /// Send actual Fire edges immediately, without advancing movement or
@@ -412,7 +460,7 @@ public final class RenderTimeline {
             bullet.vy = first.vy + (second.vy - first.vy) * alpha
             return bullet
         }
-        cannonFlights.append(to: &result.bullets, tick: playhead * 60, now: renderNow, authorityTick: Double(newest.state.tick), localID: localID)
+        cannonFlights.append(to: &result.bullets, tick: playhead * 60, now: renderNow, authorityTick: Double(newest.state.tick), localID: localID, secondaryLocalID: secondaryLocalID)
         result.effects = cannonFlights.effects(result.effects)
         return result
     }

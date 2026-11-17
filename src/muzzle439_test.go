@@ -116,7 +116,7 @@ func TestMuzzle439CloseGrazingTankCannotBeSkippedByLaunch(t *testing.T) {
 			if !g.fire(shooter) {
 				t.Fatal("fixture did not fire")
 			}
-			if target.Alive || len(g.Bullets) != 0 {
+			if target.Alive || len(g.Bullets) != map[bool]int{true: 1, false: 0}[tc.kind == "cannon"] {
 				t.Fatal("launch contact was not resolved before exposing the projectile")
 			}
 			g.updateBullets(tickDT)
@@ -150,7 +150,7 @@ func TestMuzzle439ContactKeepsDamageEligibility(t *testing.T) {
 				}
 				g.fire(shooter)
 				contact := status == "friendly_fire" || kind == "grenade" && status != "dead"
-				if (len(g.Bullets) == 0) != contact {
+				if (len(g.Bullets) == 0) != (contact && kind != "cannon") {
 					t.Fatal("muzzle contact did not match flight eligibility", len(g.Bullets))
 				}
 				if target.Alive != (status != "friendly_fire" && status != "dead") {
@@ -188,6 +188,9 @@ func TestMuzzle439ShieldAndShotAccounting(t *testing.T) {
 				t.Fatal("launch impact bypassed or duplicated shot accounting")
 			}
 			wantBullets := 0
+			if kind == "cannon" {
+				wantBullets = 1
+			}
 			if kind == "scatter" {
 				wantBullets = 2 // First pellet grants protection from the rest of this volley.
 			}
@@ -215,7 +218,7 @@ func TestMuzzle439WallPrecedenceAndCannonPassage(t *testing.T) {
 			}
 			g.fire(shooter)
 			if kind == "cannon" {
-				if target.Alive || len(g.Bullets) != 0 {
+				if target.Alive || len(g.Bullets) != 1 {
 					t.Fatal("cannon muzzle no longer passes through interior cover")
 				}
 				return

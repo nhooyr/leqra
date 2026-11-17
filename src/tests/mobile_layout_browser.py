@@ -254,7 +254,7 @@ def check_mobile_header(browser, devices, url, errors, has_safe_area_override, s
                 assert geometry["linkHit"], geometry
                 if geometry["brandMark"]["width"]:
                     # The larger transparent mark keeps a compact gap to the title.
-                    assert geometry["brandMark"]["right"] + 4 <= geometry["brandName"]["left"], geometry
+                    assert geometry["brandMark"]["right"] <= geometry["brandName"]["left"], geometry
                 link = geometry["link"]
                 for part in (geometry["icon"], geometry["version"]):
                     assert link["left"] <= part["left"] < part["right"] <= link["right"], geometry

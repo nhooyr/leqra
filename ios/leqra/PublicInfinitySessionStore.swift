@@ -82,7 +82,7 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
     static func applicationStore(arguments: [String] = ProcessInfo.processInfo.arguments) -> KeychainPublicInfinitySessions {
         let index = arguments.firstIndex(of: "--public-session-test-namespace")
         let testNamespace = index.flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
-        let diagnostic = arguments.contains("--native-performance-probe") || arguments.contains("--native-render-probe")
+        let diagnostic = arguments.contains("--native-performance-probe") || arguments.contains("--native-render-probe") || arguments.contains("--probe-direct-aim")
         let result = KeychainPublicInfinitySessions(namespace: testNamespace ?? (diagnostic ? "diagnostic" : nil))
         if testNamespace != nil, arguments.contains("--reset-public-session-test-store") {
             result.delete(account: nil)
@@ -220,7 +220,7 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
     @discardableResult func saveCallsign(_ name: String, credential: PublicInfinitySession) -> Bool {
         var rows = savedCallsigns(for: credential.baseURL)
         if rows.contains(where: { $0.name == name && $0.credential == credential }) { return true }
-        rows.removeAll { $0.name.lowercased() == name.lowercased() || $0.credential == credential }
+        rows.removeAll { CallsignPolicy.canonical($0.name) == CallsignPolicy.canonical(name) || $0.credential == credential }
         rows.append(SavedCallsignAccount(name: name, credential: credential))
         guard let data = try? JSONEncoder().encode(rows) else { return false }
         return write(data, account: "callsigns-" + account(for: credential.origin, seat: 0))

@@ -71,12 +71,13 @@ test('pending Starman shells leave ordinary projectile slots available after exp
  shot.shells=[{}];
  assert.equal(p.tryFire(expired,true,500,options({free:1})),null);
 });
-test('grenade hold auto-throws on cooldown and a fresh press pops only that sample',()=>{
+test('grenade hold auto-throws until a fresh detonation press waits for release',()=>{
  const p=new N.ShotPresentation(),t=tank({power:'grenade',charges:3});p.sync(t,'playing',0);
  const o=options({charged:true,cooldown:.8});assert.ok(p.tryFire(t,true,0,o));
  assert.equal(p.tryFire(t,true,798,o),null);assert.ok(p.tryFire(t,true,800,o));
  p.tryFire(t,false,810,o);assert.equal(p.tryFire(t,true,1600,{...o,grenade:true}),null,'detonation never predicts a shot');
- assert.ok(p.tryFire(t,true,1617,o),'hold resumes without another release');
+ assert.equal(p.tryFire(t,true,1617,o),null,'the detonation hold cannot throw another grenade');
+ p.tryFire(t,false,1620,o);assert.ok(p.tryFire(t,true,1621,o),'a new press can throw');
  assert.equal(p.previews.size,3);
 });
 test('every authoritative weapon ending lets the same hold resume on a refilled magazine',()=>{

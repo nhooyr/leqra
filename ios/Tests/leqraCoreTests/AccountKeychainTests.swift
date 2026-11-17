@@ -30,6 +30,15 @@ final class AccountKeychainTests: XCTestCase {
         XCTAssertEqual(cold.savedCallsigns(for: base).filter { $0.name.lowercased() == "first" }.map(\.credential), [rotated])
     }
 
+    func testSavedCallsignHistoryUsesTheSameUnicodeIdentityAsTheServer() throws {
+        let io = MemoryAccountKeychain(), store = KeychainPublicInfinitySessions(namespace: "unit", storage: io)
+        let first = try credential("A"), replacement = try credential("B")
+        XCTAssertTrue(store.saveCallsign("Σnow", credential: first))
+        XCTAssertTrue(store.saveCallsign("ςNOW", credential: replacement))
+        XCTAssertEqual(store.savedCallsigns(for: base).count, 1)
+        XCTAssertEqual(store.savedCallsigns(for: base).first?.credential, replacement)
+    }
+
     func testPendingCallsignKeepsExactRetryCandidateWithoutReplacingHistory() throws {
         let io = MemoryAccountKeychain(), store = KeychainPublicInfinitySessions(namespace: "unit", storage: io)
         let old = try credential("A"), candidate = try credential("B")

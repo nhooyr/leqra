@@ -7,7 +7,7 @@ const pauseMenu = byID('infinitePauseMenu');
 const pauseSidebar = byID('infinitePauseSidebar');
 const header = byID('infiniteHeader');
 const controlsDialog = byID('controlsDialog');
-const canvas = byID('infiniteCanvas');
+let canvas = byID('infiniteCanvas');
 const stick = byID('infiniteStick');
 const stickBase = byID('infiniteStickBase');
 const knob = byID('infiniteKnob');
@@ -24,7 +24,7 @@ const retry = byID('infiniteRetry');
 const geometry = window.leqraInfiniteMaze;
 const art = window.leqraInfinityArt;
 const net = window.leqraNet;
-const ctx = canvas?.getContext('2d', {alpha: false});
+let ctx = canvas?.getContext('2d', {alpha: false});
 if (!arena || !geometry || !ctx || !art || !net) return;
 
 const STEP = 1 / 60;
@@ -237,6 +237,7 @@ function roamingDifficulty(rules) {
 function mouseAimEnabled(){return art.mouseAimEnabled?.()!==false;}
 function mouseFireEnabled(){return art.mouseFireEnabled?.()!==false;}
 function mouseEnabled(){return mouseAimEnabled()||mouseFireEnabled();}
+function mouseSeat(world=session){return world?.local&&art.hardwareUsesP2?.(true)?world.local:world;}
 
 function inputState(seat) {
  const input = {
@@ -250,13 +251,15 @@ function inputState(seat) {
   input.stickX = touchAim.x;
   input.stickY = touchAim.y;
   if (touchAim.assisted) input.touchAim = true;
-  input.fire ||= mouseFireEnabled()&&(mousePointer !== null||mouseTap)||firePointer !== null;
+  input.fire ||= firePointer !== null;
   if (directAim.active) {
    input.stickX=directAim.x;input.stickY=directAim.y;input.aimOnly=true;input.snapAim=true;
-  } else if (mouseAimEnabled()&&stickPointer === null && mouseAim && !input.left && !input.right) {
-   input.stickX = mouseAim.x;
-   input.stickY = mouseAim.y;
-   input.aimOnly = true;
+  }
+ }
+ if(seat===mouseSeat()){
+  input.fire ||= mouseFireEnabled()&&(mousePointer !== null||mouseTap);
+  if(mouseAimEnabled()&&mouseAim&&!input.left&&!input.right&&(seat!==session||stickPointer===null&&!directAim.active)){
+   input.stickX=mouseAim.x;input.stickY=mouseAim.y;input.aimOnly=true;
   }
  }
  return input;
@@ -314,6 +317,19 @@ function wallHit(maze, x, y, dx, dy, radius, includeOrigin = false) {
  return hit;
 }
 
+
+function laserWallHit(maze,x,y,dx,dy,radius){
+ // Search nearby spans first; most beam bounces meet a wall within a cell.
+ const length=Math.hypot(dx,dy);if(length<=2*CELL+1e-7)return wallHit(maze,x,y,dx,dy,radius);
+ const ux=dx/length,uy=dy/length;
+ for(let searched=0;searched<length;){
+  const span=Math.min(2*CELL,length-searched),hit=wallHit(maze,x+ux*searched,y+uy*searched,ux*span,uy*span,radius);
+  if(hit)return{...hit,fraction:(searched+span*hit.fraction)/length};
+  searched+=span;
+ }
+ return null;
+}
+
 function canDamage(world, owner, team, target) {
  return target.id !== owner && (!team || team !== target.team || world.rules?.friendlyFire);
 }
@@ -323,7 +339,7 @@ function tankHit(world, bullet, dx, dy, limit) {
  const speed2 = dx * dx + dy * dy;
  const radius = RADIUS + bullet.r;
  for (const target of world.tanks) {
-  if (!target.hp || target.id === bullet.owner ||
+  if (!target.hp || target.id === bullet.owner || bullet.hitTanks?.get(target.id)===(target.spawnSerial||0) ||
       bullet.kind !== 'grenade' && (target.invulnerable > 0 || !canDamage(world, bullet.owner, bullet.team, target))) continue;
   const px = bullet.x - target.x, py = bullet.y - target.y;
   const dot = px * dx + py * dy, c = px * px + py * py - radius * radius;
@@ -367,13 +383,17 @@ function hurt(world, target, ownerID, ownerTeam, ownerName, starmanContact = fal
  if (target.team) world.teamScores[target.team - 1]--;
  if (ownerTeam) world.teamScores[ownerTeam - 1]++;
  world.impactContact=contact;effect(world, 'hit', target.x, target.y, ownerID);delete world.impactContact;
- const targetScore = world.rules?.infinityTarget;
  // Mutual Starman contact commits both deaths together. Each participant gets
  // one kill and one death, so neither transient +1 may end a target-score game.
- if (targetScore > 0 && !mutualStarman) {
-  const score = ownerTeam ? world.teamScores[ownerTeam - 1] : owner?.score;
-  if (score >= targetScore) world.result = {id:ownerID, team:ownerTeam, name:ownerTeam ? teamName(world,ownerTeam) : owner.name, score};
- }
+ if (!mutualStarman) checkTargetResult(world,ownerID,ownerTeam);
+}
+
+function checkTargetResult(world,ownerID,ownerTeam) {
+ const targetScore=world.rules?.infinityTarget;
+ if(world.volleyDepth||world.result||!(targetScore>0))return;
+ const owner=world.tanks.find(tank=>tank.id===ownerID)||world.botPool?.find(tank=>tank.id===ownerID);
+ const team=world.rules?.teamMode==='teams'?ownerTeam:0,score=team?world.teamScores[team-1]:owner?.score;
+ if(score>=targetScore)world.result={id:ownerID,team,name:team?teamName(world,team):owner.name,score};
 }
 
 function detonate(world, bullet) {
@@ -381,28 +401,39 @@ function detonate(world, bullet) {
  const previousFlight=world.impactFlight;world.impactFlight=bullet.id;
  bullet.dead = true;
  effect(world, 'blast', bullet.x, bullet.y, bullet.owner);
+ if(world.result){world.impactFlight=previousFlight;return;}
+ world.volleyDepth=(world.volleyDepth||0)+1;
  for (const tank of world.tanks) {
   const dx = tank.x - bullet.x, dy = tank.y - bullet.y;
   if (tank.hp && tank.id !== bullet.owner && Math.hypot(dx, dy) <= BLAST_RADIUS + RADIUS &&
       !wallHit(world.maze, bullet.x, bullet.y, dx, dy, 0)) hurt(world, tank, bullet.owner, bullet.team, bullet.ownerName,false,bullet.color||'',bullet);
  }
+ world.volleyDepth--;
+ checkTargetResult(world,bullet.owner,bullet.team);
  world.impactFlight=previousFlight;
 }
 
 function weaponControl(world, tank, held, pressed) {
+ if(!held||pressed)tank.detonationHeld=false;
+ if(!tank.hp||world.result)return;
  tank.fireHeld = held;
  tank.fireBlocked = false;
+ if(tank.detonationHeld)return;
  if (tank.spawnProtected && tank.invulnerable > 1e-9) return;
  if (pressed) {
   let detonated = false;
+  world.volleyDepth=(world.volleyDepth||0)+1;
   for (const bullet of world.bullets) {
    if (!bullet.dead && bullet.kind === 'grenade' && bullet.owner === tank.id && net.ammoEpoch(bullet) === net.grenadeEpoch(tank)) {
     detonate(world, bullet);
     detonated = true;
    }
   }
+  world.volleyDepth--;
   if (detonated) {
+   checkTargetResult(world,tank.id,tank.team);
    tank.fireBlocked = held;
+   tank.detonationHeld=held;
    delete tank.grenadeEpoch;
    return;
   }
@@ -424,7 +455,7 @@ function traceLaser(world, tank, preview = false) {
  const points = [], targets = [], seen = new Set();
  for (let i = 0; i < 256 && length > 1e-7; i++) {
   const dx = ux * length, dy = uy * length;
-  const wall = wallHit(world.maze, x, y, dx, dy, 3);
+  const wall = laserWallHit(world.maze, x, y, dx, dy, 3);
   const limit = wall?.fraction ?? 1;
   const hits=[];
   if (!preview) {
@@ -479,9 +510,10 @@ function fireShot(world, tank) {
    tank.nextBoostEffect = world.time + 4 * STEP;
    effect(world, 'laser', tank.x, tank.y, tank.id, points);
   }
-  let result;
-  for(const target of targets){hurt(world,target,tank.id,tank.team,tank.name);if(world.result){result=world.result;world.result=null;}}
-  if(result)world.result=result;
+  world.volleyDepth=(world.volleyDepth||0)+1;
+  for(const target of targets)hurt(world,target,tank.id,tank.team,tank.name);
+  world.volleyDepth--;
+  checkTargetResult(world,tank.id,tank.team);
   spendWeapon(tank);
   return;
  }
@@ -512,6 +544,17 @@ function fireShot(world, tank) {
 }
 
 function advanceBullet(world, bullet, remaining) {
+ if(bullet.kind==='cannon'){
+  const dx=bullet.vx*remaining,dy=bullet.vy*remaining,startX=bullet.x,startY=bullet.y;
+  bullet.hitTanks||=new Map();world.volleyDepth=(world.volleyDepth||0)+1;
+  for(;;){
+   bullet.x=startX;bullet.y=startY;const hit=tankHit(world,bullet,dx,dy,1.00000001);if(!hit.tank)break;
+   bullet.hitTanks.set(hit.tank.id,hit.tank.spawnSerial||0);bullet.x=startX+dx*hit.fraction;bullet.y=startY+dy*hit.fraction;
+   effect(world,'impact',bullet.x,bullet.y,bullet.owner);
+   hurt(world,hit.tank,bullet.owner,bullet.team,bullet.ownerName,false,bullet.color||'',{...bullet,id:0});
+  }
+  bullet.x=startX+dx;bullet.y=startY+dy;world.volleyDepth--;checkTargetResult(world,bullet.owner,bullet.team);return true;
+ }
  for (let i = 0; i < 4 && remaining > .000001; i++) {
   const dx = bullet.vx * remaining, dy = bullet.vy * remaining;
   const wall = bullet.kind === 'cannon' ? null : wallHit(world.maze, bullet.x, bullet.y, dx, dy, bullet.r);
@@ -700,7 +743,7 @@ function respawnOfflineTank(world, tank, point) {
  const fireHeld = !tank.bot && inputState(tank.id === world.local?.id ? world.local : world).fire;
  Object.assign(tank, fresh, {name: tank.name, colorIndex: tank.colorIndex, score: tank.score,
   ammoEpoch: net.ammoEpoch(tank), spawnSerial: tank.spawnSerial + 1, killedBy: '', killedByColor:'',power: '', powerTime: 0, charges: 0, shield: 0, shieldCharges: 0,
-  ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false});net.refillAmmo(tank);
+  ghostTime: 0, speedTime: 0, starmanTime: 0, fireHeld, fireBlocked: false, detonationHeld: false});net.refillAmmo(tank);
 }
 
 function parkBot(world, bot) {
@@ -805,9 +848,9 @@ function offlineStep(world, dt) {
    if (tank.bot && pickup.type === 'grenade') tank.fireHeld = false;
    effect(world, 'pickup', tank.x, tank.y, tank.id);
   }
-  const seat=tank.id===world.local?.id?world.local:world,pressed=controls.fire&&!tank.fireHeld||!tank.bot&&(seat.fireTap||seat===world&&mouseTap);
+  const seat=tank.id===world.local?.id?world.local:world,pressed=controls.fire&&!tank.fireHeld||!tank.bot&&(seat.fireTap||seat===mouseSeat(world)&&mouseTap);
   weaponControl(world, tank, controls.fire, pressed);
-  if(!tank.bot){seat.fireTap=false;if(seat===world)mouseTap=false;}
+  if(!tank.bot){seat.fireTap=false;if(seat===mouseSeat(world))mouseTap=false;}
   if (world.result) return;
  }
  for (let i = 0; i < actors.length; i++) {
@@ -880,13 +923,14 @@ function refreshBindings(world) {
  }
  const bindings = world.readBindings();
  const layout = Array.isArray(bindings) ? bindings : [bindings];
- world.keys = world.local ? setupBindings(layout[0],PRIMARY_KEYS) : setupBindings(layout,{...PRIMARY_KEYS,...LOCAL_KEYS});
- if (world.local) world.local.keys = setupBindings(layout[1],LOCAL_KEYS);
+ const hardwareP2=!!world.local&&art.hardwareUsesP2?.(true);
+ world.keys = hardwareP2?{}:world.local ? setupBindings(layout[0],PRIMARY_KEYS) : setupBindings(layout,{...PRIMARY_KEYS,...LOCAL_KEYS});
+ if (world.local) world.local.keys = hardwareP2?setupBindings(layout,{...PRIMARY_KEYS,...LOCAL_KEYS}):setupBindings(layout[1],LOCAL_KEYS);
  const hint = byID('infiniteControlsHint');
  if (!hint) return;
  const pilot=pilotIdentity(world,0),second=world.local&&pilotIdentity(world,1);
  const content=art.controlHintHTML(world.keys,second?pilot.label:'',art.isTouchUI()?'touch':mouseEnabled()?'mouse':'',pilot.color)+
-  (second?art.controlHintHTML(world.local.keys,second.label,'',second.color):'');
+  (second?art.controlHintHTML(world.local.keys,second.label,hardwareP2&&mouseEnabled()?'mouse':'',second.color):'');
  if(hint.innerHTML!==content){
   hint.innerHTML=content;
   const revision=world.controlHintRevision=(world.controlHintRevision||0)+1;
@@ -964,10 +1008,15 @@ function onlineBulletPose(world,bullet,frame){
  return {...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,vx:a.vx+(b.vx-a.vx)*f,vy:a.vy+(b.vy-a.vy)*f,life:a.life+(b.life-a.life)*f,trail:b.kind==='rapid'?null:b.trail||[a,b]};
 }
 
-function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity, deferCounts=false) {
+function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity, deferCounts=false, labelLayout=null, wreck=false) {
  const color = COLORS[tank.colorIndex] || COLORS[0];
  ctx.save();
  ctx.translate(tank.x, tank.y);
+ if(wreck){
+  ctx.save();ctx.rotate(tank.angle);ctx.globalAlpha=.6;ctx.fillStyle='#091116';
+  art.rect(ctx,-18,-16,36,32,5);ctx.fill();ctx.strokeStyle='#46545a';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-8,-8);ctx.lineTo(8,8);ctx.moveTo(8,-8);ctx.lineTo(-8,8);ctx.stroke();ctx.restore();
+ }else{
  const shields = tank.shield > 0 ? tank.shieldCharges || 1 : 0;
  if (shields || tank.invulnerable > 0 || highlight) {
   ctx.strokeStyle = shields ? powers.shield.color : highlight ? color : art.theme.protection;
@@ -1009,26 +1058,29 @@ function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLef
  art.hull(skin, ctx, zoom, ratio);
  art.turret(ctx, skin);
  ctx.restore();
+ }
  const labelFont=Math.max(11,10/zoom);
- ctx.font = 'bold '+labelFont+'px ui-monospace,SFMono-Regular,Consolas,monospace';
+ ctx.font = (highlight?'bold ':'normal ')+labelFont+'px ui-monospace,SFMono-Regular,Consolas,monospace';
  ctx.textAlign = 'center';
- const width = (ctx.measureText(label)?.width || 30) + 10,height=Math.max(16,labelFont*1.25+3);
+ const lines=labelLayout?.lines||[label],lineHeight=labelFont*1.25;
+ const width=labelLayout?.labelWidth||(ctx.measureText(label)?.width||30)+10,height=labelLayout?.labelHeight||Math.max(16,lineHeight+3);
  ctx.fillStyle = '#0e171ddb';
- art.rect(ctx, -width / 2, -32-height, width, height, 3);
+ const labelX=labelLayout?labelLayout.x-tank.x:0,labelY=labelLayout?labelLayout.labelY-tank.y:-32-height;
+ art.rect(ctx, labelX-width / 2, labelY, width, height, 3);
  ctx.fill();
  ctx.fillStyle = color;
- ctx.fillText(label, 0, -32-height+(height-3)/1.25);
+ for(let i=0;i<lines.length;i++)ctx.fillText(lines[i],labelX,labelY+labelFont+i*lineHeight);
  if (tank.bot && tank.difficulty === 'godlike') {
   const warningWidth = (ctx.measureText('GODLIKE')?.width || 50) + 12;
-  const warningX = clamp(0,viewLeft-tank.x+warningWidth/2+2/zoom,viewRight-tank.x-warningWidth/2-2/zoom);
-  const warningY = Math.max(viewTop-tank.y+2/zoom,-32-height*2-Math.max(3,3/zoom));
+  const warningX = clamp(labelX,viewLeft-tank.x+warningWidth/2+2/zoom,viewRight-tank.x-warningWidth/2-2/zoom);
+  const warningY = Math.max(viewTop-tank.y+2/zoom,labelY-height-Math.max(3,3/zoom));
   ctx.fillStyle = '#302217f2';
   ctx.strokeStyle = '#ffc46b';ctx.lineWidth = Math.max(1,1/zoom);
   art.rect(ctx,warningX-warningWidth/2,warningY,warningWidth,height,3);ctx.fill();ctx.stroke();
   ctx.fillStyle = '#ffc46b';ctx.fillText('GODLIKE',warningX,warningY+(height-3)/1.25);
  }
  ctx.restore();
- art.drawBadges(tank, ctx, zoom,deferCounts?'icons':'all');
+ if(!wreck)art.drawBadges(tank, ctx, zoom,deferCounts?'icons':'all');
 }
 
 function drawMaze(world, x0, y0, x1, y1) {
@@ -1291,7 +1343,7 @@ function primaryView(width,height,split) {
  return width>=height?[Math.ceil(width/2),height]:[width,Math.ceil(height/2)];
 }
 
-function draw(world, now, dt) {
+function draw(world, now, dt, hud = true) {
  const width = canvas.clientWidth, height = canvas.clientHeight;
  if (!width || !height) return;
  const ratio = art.renderPixelRatio(width, height);
@@ -1340,7 +1392,7 @@ function draw(world, now, dt) {
  world.visualEffects = world.visualEffects.filter(effect=>effect.end>now);
  const [firstWidth,firstHeight] = primaryView(width,height,!!world.local);
  const split = !world.local ? '' : firstWidth < width ? 'side' : 'stacked';
- if (arena.dataset.split!==split) arena.dataset.split=split;
+ if (hud&&arena.dataset.split!==split) arena.dataset.split=split;
  drawView(world,world,0,0,firstWidth,firstHeight,ratio,alpha,now,age);
  if (world.local) {
   const left = firstWidth < width ? firstWidth : 0, top = firstHeight < height ? firstHeight : 0;
@@ -1352,12 +1404,27 @@ function draw(world, now, dt) {
   if (left) ctx.fillRect(left-1,0,2,height);
   else ctx.fillRect(0,top-1,width,2);
  }
- updateHUD(world,world.spectating?world.display:world.tanks.find(tank=>tank.id===world.id),world.local&&world.tanks.find(tank=>tank.id===world.local.id),now);
+ if(hud)updateHUD(world,world.spectating?world.display:world.tanks.find(tank=>tank.id===world.id),world.local&&world.tanks.find(tank=>tank.id===world.local.id),now);
+}
+
+function showcaseRenderer(target,scene,{portrait=false}={}) {
+ const primary=scene.tanks.find(tank=>tank.id===scene.localID);
+ const world={...scene,showcase:true,showcasePortrait:portrait,id:scene.localID,name:primary.name,online:false,result:true,local:null,time:scene.time/1000,
+  tanks:scene.tanks.map(tank=>({...tank})),bullets:scene.bullets.map(bullet=>({...bullet})),
+  visualEffects:scene.effects.map(effect=>({...effect})),maze:geometry.create(scene.seed),mapCache:new Map(),visibleBullets:[],
+  previousTanks:new Map(),previousBullets:new Map(),controllers:[],arrived:scene.time,interval:1000/60,camera:{x:primary.x,y:primary.y}};
+ world.controllers=[world];
+ const destroyed=scene.tanks.filter(tank=>!tank.hp).map(tank=>art.botName?.(tank.name,tank.bot)||tank.name);
+ target.setAttribute('aria-label','Frozen Infinity battle'+(destroyed.length?'. Destroyed tanks: '+destroyed.join(', '):'')+'.');
+ return()=>{const oldCanvas=canvas,oldContext=ctx;try{canvas=target;ctx=target.getContext('2d',{alpha:false});draw(world,scene.time,0,false);}finally{canvas=oldCanvas;ctx=oldContext;}};
 }
 
 function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
  const {x,y} = seat.camera, pilot = seat.display;
- const zoom = clamp(Math.min(width, height) / (CELL * 5), .7, 1.2);
+ const normalZoom = clamp(Math.min(width, height) / (CELL * 5), .7, 1.2);
+ // Short portrait previews include the outer tanks and their labels without
+ // changing gameplay cameras or the composition on taller phones.
+ const zoom = world.showcasePortrait ? Math.min(normalZoom,height/(2*(3*CELL+64))) : normalZoom;
  const x0 = x - width / (2 * zoom), y0 = y - height / (2 * zoom);
  const x1 = x + width / (2 * zoom), y1 = y + height / (2 * zoom);
  ctx.save();
@@ -1378,6 +1445,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   drawTrace(seat.aim.points, powers.laser.color, 2, .5, true);
  }
  const badgeTanks=world.badgeTanks||=[];badgeTanks.length=0;
+ const rendered=[];
  for (const tank of world.sceneTanks) {
   const owner = world.controllers.find(controller=>controller.id===tank.id);
   if (!owner&&!visible(tank)&&!world.flights?.holdsTank(tank)) continue;
@@ -1385,13 +1453,18 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   let displayed = owner?.display || (world.online ?
    art.ageTank({... (remote||interpolate(world.previousTanks.get(tank.id),tank,alpha))},tank,age) : world.displayTanks.get(tank.id)||tank);
   if(world.online&&!owner)displayed=world.flights?.visualTank(tank,displayed,world.remoteFrame,now,world.moveTank)||displayed;
-  if(!displayed.hp)continue;
+  if(!displayed.hp&&!world.showcase)continue;
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
-  drawTank(displayed, !!owner, zoom, ratio,
-   owner?pilotIdentity(world,owner===world?0:1,tank).label:art.botName?.(tank.name||'Tank',tank.bot)||tank.name||'Tank',x0,y0,x1,true);
-  badgeTanks.push(displayed);
+  const label=owner?pilotIdentity(world,owner===world?0:1,tank).label:art.botName?.(tank.name||'Tank',tank.bot)||tank.name||'Tank';
+  const font=Math.max(11,10/zoom);ctx.font=(owner?'bold ':'normal ')+font+'px ui-monospace,SFMono-Regular,Consolas,monospace';
+  const maxWidth=Math.max(10,Math.min(190/zoom,x1-x0)-14/zoom),measure=text=>ctx.measureText(text)?.width||30;
+  const lines=art.wrapTankLabel?.(label,maxWidth,measure)||[label],labelHeight=Math.max(16,font*1.25*lines.length+3),labelWidth=Math.max(Math.max(...lines.map(measure))+10,tank.bot&&tank.difficulty==='godlike'?measure('GODLIKE')+12:0);
+  rendered.push({id:tank.id,local:!!owner,warning:tank.bot&&tank.difficulty==='godlike',tank:displayed,label,layout:{x:displayed.x,labelY:displayed.y-32-labelHeight,labelWidth,labelHeight,lines}});
+  if(displayed.hp)badgeTanks.push(displayed);
  }
+ art.placeTankLabels?.(rendered,{left:x0+2/zoom,right:x1-2/zoom,top:y0+2/zoom,bottom:y1-2/zoom},zoom);
+ for(const entry of rendered)drawTank(entry.tank,entry.local,zoom,ratio,entry.label,x0,y0,x1,true,entry.layout,world.showcase&&!entry.tank.hp);
  const bullets = world.visibleBullets;
  bullets.length = 0;
  const frame=world.online&&world.remoteFrame;
@@ -1411,7 +1484,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
  world.flights?.observe(bullets,world.flightTick);
  for(const item of world.flightBullets)if(visible(item))bullets.push({...item,color:COLORS[item.colorIndex]});
  world.rapidTracerWall||=(_kind,x,y,dx,dy,r)=>wallHit(world.maze,x,y,dx,dy,r);
- art.bullets(bullets, ctx, now / 1000,world.rapidTracerWall);
+ art.bullets(bullets, ctx, now / 1000,world.rapidTracerWall,world.showcase?.4:.23);
  if (!world.spectating && !world.result && !world.failed && !pauseMenu.open) {
   art.drawHomingWarnings(ctx,pilot,world.bullets,(b,target)=>canDamage(world,b.owner,b.team,target));
  }
@@ -1453,7 +1526,7 @@ function sendInput(seat = session, now = performance.now(), immediate = false, i
  seat.nextSend = now + 1000 / 30;
  seat.keepAlive = now + 140;
  seat.fireTap = false;
- if(seat===world)mouseTap=false;
+ if(seat===mouseSeat(world))mouseTap=false;
 }
 
 function measureLatency(world, now) {
@@ -1610,7 +1683,7 @@ function receive(ws, event) {
  if (message.type === 'error') {
   if(message.action==='follow'&&session.spectating){session.followError=message.message||'That tank is no longer available. Choose another.';session.followErrorUntil=performance.now()+4000;setStatus(session.followError);return;}
   if(message.code==='session_replaced'){art.exposeAccountError?.();connectionFailed((message.seat===1?'P2’s tank':'Your tank')+' was taken over by another device using this account.');return;}
-  if(message.code==='account_key_revoked'){art.exposeAccountError?.();const seat=message.seat===1?1:0;art.forgetRevokedAccount?.(seat?session.localPublicToken:session.publicToken,seat);connectionFailed((seat?'P2’s':'P1’s')+' account key was reset. Import the latest key in Account to continue.');return;}
+  if(message.code==='account_key_revoked'||message.code==='account_key_invalid'){art.exposeAccountError?.();const seat=message.seat===1?1:0;art.forgetRevokedAccount?.(seat?session.localPublicToken:session.publicToken,seat);connectionFailed((seat?'P2’s':'P1’s')+(message.code==='account_key_revoked'?' account key was reset. Import the latest key in Account to continue.':' account expired or was released. Choose a callsign in Account to continue.'));return;}
   if(message.code==='callsign_taken'&&session.onConflict){session.onConflict(message);return;}
   if(message.code==='public_resume_invalid'&&!session.publicFallback){session.publicFallback=true;const previous=session.publicToken;session.publicToken='';art.rememberPublicIdentity?.('',previous||'');retryConnection('Rejoining Public Infinity…');return;}
   if(message.code==='server_shutdown'||message.code==='public_store_busy'){retryConnection(message.message||'Reconnecting…');return;}
@@ -1821,7 +1894,7 @@ function resetMouseControls(kind) {
  if(kind!=='fire')mouseAim=null;
  if(kind!=='aim'){mousePointer=null;mouseTap=false;}
  canvas.style.cursor=mouseEnabled()?'':'auto';
- if(session){refreshBindings(session);sendInput(session,performance.now(),true);}
+ if(session){refreshBindings(session);sendInput(mouseSeat(),performance.now(),true);}
 }
 
 function syncScoreboardButton() {
@@ -1903,6 +1976,7 @@ function addController(world,seat) {
 }
 
 function start(mode, options = {}) {
+ if(byID('accountDialog')?.accountReleaseRequest){const error=Error('Finish releasing the callsign before starting a game.');setStatus(error.message);options.onError?.(error);return;}
  if(mode==='online'&&!options.accountsReady&&art.ensureSelectedCallsignAccounts){Promise.resolve(art.ensureSelectedCallsignAccounts(options.localName?[0,1]:[0])).then(()=>start(mode,{...options,accountsReady:true})).catch(error=>{setStatus(error.message);options.onError?.(error);});return;}
  if ((mode !== 'offline' && mode !== 'online') || arena.open) return;
  stop();
@@ -1975,18 +2049,19 @@ function start(mode, options = {}) {
  frame = requestAnimationFrame(loop);
 }
 
-function mousePosition(event) {
+function mousePosition(event,seat=session) {
  if(!session||session.spectating||art.chatOpen())return null;
  const rect = canvas.getBoundingClientRect();
- const [width,height] = primaryView(rect.width,rect.height,!!session?.local);
- const px=event.clientX-rect.left,py=event.clientY-rect.top;
+ const [firstWidth,firstHeight] = primaryView(rect.width,rect.height,!!session?.local);
+ const second=seat===session.local,left=second&&firstWidth<rect.width?firstWidth:0,top=second&&firstHeight<rect.height?firstHeight:0;
+ const width=second?rect.width-left:firstWidth,height=second?rect.height-top:firstHeight,px=event.clientX-rect.left-left,py=event.clientY-rect.top-top;
  if(px<0||py<0||px>=width||py>=height)return null;
  return{x:px-width/2,y:py-height/2};
 }
 
 function updateMouse(event,position) {
  if(!mouseAimEnabled()){mouseAim=null;return false;}
- position ||= mousePosition(event);
+ position ||= mousePosition(event,mouseSeat());
  if(!position){mouseAim=null;return false;}
  const {x,y}=position;
  const distance = Math.hypot(x, y);
@@ -2031,6 +2106,7 @@ function capturePointer(element, event) {
 }
 
 function endPointer(event) {
+ let seat=session;
  if(event.pointerId===directAim.id){
   directAim.id=null;if(event.type==='pointercancel')directAim.active=false;
  } else if (event.pointerId === stickPointer) {
@@ -2043,12 +2119,12 @@ function endPointer(event) {
   firePointer = null;
   fire.classList.remove('held');
  } else if (event.pointerId === mousePointer) {
-  mousePointer = null;
+  mousePointer = null;seat=mouseSeat();
  } else {
   return;
  }
  if (event.type === 'pointerup') art.primeAudioUnlock(event);
- sendInput(session,performance.now(),true);
+ sendInput(seat,performance.now(),true);
 }
 
 arena.addEventListener('keydown', event => {
@@ -2083,7 +2159,7 @@ arena.addEventListener('keydown', event => {
  if (event.repeat || pressed.has(event.code)) return;
  pressed.add(event.code);
  if (seat===session&&['forward','reverse','left','right'].includes(action)){directAim.active=false;directAim.id=null;}
- if (seat===session&&(action==='left'||action==='right')) mouseAim = null;
+ if (seat===mouseSeat()&&(action==='left'||action==='right')) mouseAim = null;
  if (action === 'fire') pressFire(event,seat);
  else sendInput(seat,performance.now(),true);
 });
@@ -2099,7 +2175,7 @@ function updateDirectAim(event,nearOnly=false){
  if(!position||!pilot?.alive)return false;
  const distance=Math.hypot(position.x,position.y);
  if(!Number.isFinite(distance)||distance<2||nearOnly&&distance>64)return false;
- directAim.x=position.x/distance;directAim.y=position.y/distance;directAim.active=true;mouseAim=null;
+ directAim.x=position.x/distance;directAim.y=position.y/distance;directAim.active=true;if(mouseSeat()===session)mouseAim=null;
  sendInput(session,performance.now(),nearOnly);return true;
 }
 canvas.addEventListener('pointerdown',event=>{
@@ -2120,19 +2196,19 @@ canvas.addEventListener('pointerleave', event => {
 });
 canvas.addEventListener('pointerdown', event => {
  if (event.pointerType !== 'mouse' || event.button !== 0 || mousePointer !== null || !mouseEnabled()) return;
- const position=mousePosition(event);if(!position)return;
+ const seat=mouseSeat(),position=mousePosition(event,seat);if(!position)return;
  updateMouse(event,position);
  canvas.focus({preventScroll: true});
  if(!mouseFireEnabled())return;
  capturePointer(canvas, event);
  mousePointer = event.pointerId;
- pressFire(event,session,true);
+ pressFire(event,seat,true);
 });
 stick.addEventListener('pointerdown', event => {
  if (event.button !== 0 || stickPointer !== null || art.chatOpen()) return;
  capturePointer(stick, event);
  art.primeAudioUnlock(event);
- mouseAim = null;
+ if(mouseSeat()===session)mouseAim = null;
  stickPointer = event.pointerId;
  touchAim.assisted = event.pointerType === 'touch' || event.pointerType === 'pen';
  const rect = stickBase.getBoundingClientRect(), size = Math.min(rect.width,rect.height);
@@ -2240,6 +2316,6 @@ function sidebarHelp() {
    (target?'Reach '+target+' points to win.':'Keep growing the score without a time limit.')+
    (session.public&&session.room?' Everyone competes individually, including pilots from your room.':'')};
 }
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls, resetMouseControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, localPilots, renamePilot, togglePause,followTank});
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, resetMouseControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, localPilots, renamePilot, togglePause,followTank,showcaseRenderer});
 art.roomSessionReady?.();
 })();

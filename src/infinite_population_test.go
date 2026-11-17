@@ -183,7 +183,7 @@ func TestInfinitePooledBotKeepsInFlightKillCreditAndClearsWithLastHuman(t *testi
 	if len(roamingBots(a)) != 0 || len(a.inactiveBots) != 1 || len(a.leaderboard(nil)) != 2 {
 		t.Fatal("a disconnected reservation retained active roaming bots")
 	}
-	if a.advanceBullet(&a.bullets[0], 100, 0) || target.HP != 0 || bot.Score != 1 || target.KilledBy != bot.Name {
+	if !a.advanceBullet(&a.bullets[0], 100, 0) || target.HP != 0 || bot.Score != 1 || target.KilledBy != bot.Name {
 		t.Fatal("pooled owner lost in-flight kill credit or callsign")
 	}
 	a.remove(target)

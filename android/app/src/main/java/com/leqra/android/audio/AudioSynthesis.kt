@@ -16,7 +16,6 @@ enum class AudioCue {
     IMPACT,
     SHIELD,
     PICKUP,
-    CHAT,
     VOLUME_PREVIEW,
     UNMUTE,
     COUNTDOWN,
@@ -129,11 +128,6 @@ object AudioSynthesis {
                         tone(480.0, 520.0, .095, .013),
                         tone(640.0, 700.0, .10, .011, delay = .07),
                         tone(880.0, 980.0, .12, .010, delay = .14),
-                    )
-                AudioCue.CHAT ->
-                    listOf(
-                        tone(660.0, 720.0, .07, .014),
-                        tone(880.0, 760.0, .09, .010, delay = .065),
                     )
                 AudioCue.VOLUME_PREVIEW -> listOf(tone(620.0, 760.0, .10, .008))
                 AudioCue.UNMUTE -> listOf(tone(500.0, 700.0, .10, .008))

@@ -178,6 +178,25 @@ final class PublicInfinitySessionTests: XCTestCase {
         XCTAssertFalse(client.reconnect(), "Two valid clients must not repeatedly take the same pilot from one another.")
     }
 
+    @MainActor func testReleasedAccountStopsActiveTransportWithoutRetryingEitherSeat() throws {
+        for slot in [0, 1] {
+            let client = NetworkClient()
+            defer { client.disconnect() }
+            var notices: [ServerNotice] = [], attempts = 0
+            client.onEvent = { event in
+                if case .roomEvent(.notice(let notice)) = event { notices.append(notice) }
+                if case .roomEvent(.reconnecting) = event { attempts += 1 }
+            }
+            client.connectPublic(baseURL: URL(string: "http://127.0.0.1:9")!, name: "PILOT", colorIndex: 0)
+            try client.receive(packet(["type": "welcome", "id": 1, "seed": 42, "public": true, "publicToken": firstToken]))
+            try client.receive(packet(["type": "error", "code": "account_key_invalid", "seat": slot, "message": "Account expired."]))
+            XCTAssertEqual(notices.last?.seat, slot)
+            XCTAssertEqual(attempts, 0)
+            XCTAssertFalse(client.connected)
+            XCTAssertFalse(client.reconnect(), "Released credentials cannot start an automatic rejoin loop")
+        }
+    }
+
     @MainActor func testPrivateInfinityOwnerCredentialDoesNotBecomeStandalonePublicResume() throws {
         let client = NetworkClient()
         defer { client.disconnect() }
@@ -260,7 +279,7 @@ final class PublicInfinitySessionTests: XCTestCase {
         XCTAssertFalse(forged.reconnect(), "A callsign conflict after the one fresh-join fallback is terminal.")
     }
 
-    @MainActor func testLiveManualNameEditRetainsIdentityAndRecoveryIgnoresStaleDraft() async throws {
+    @MainActor func testLiveNameChangeRequiresNewAccountAndRecoveryKeepsOriginalIdentity() async throws {
         guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
             throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable server with online callsign ownership.")
         }
@@ -296,28 +315,43 @@ final class PublicInfinitySessionTests: XCTestCase {
         conflicts = []
         manual.connectPublic(baseURL: base, name: editedName, colorIndex: 2, publicToken: token, updateNames: true)
         try await waitFor { manualName == editedName || !conflicts.isEmpty }
+        XCTAssertNil(manualWelcome)
+        XCTAssertTrue(conflicts.contains { $0.contains("separate account") })
+        manual.suspend()
+        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max) }
+        let replacement = "p_" + Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let proof = FileManager.default.temporaryDirectory.appendingPathComponent("leqra-name-switch-" + UUID().uuidString + ".key")
+        try Data(replacement.utf8).write(to: proof, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: proof.path)
+        defer { try? FileManager.default.removeItem(at: proof) }
+        let account = try await manual.createAccount(baseURL: base, publicToken: replacement, name: editedName)
+        XCTAssertEqual(account.names, [editedName])
+        conflicts = []
+        manual.connectPublic(baseURL: base, name: editedName, colorIndex: 2, publicToken: replacement, updateNames: true)
+        try await waitFor { manualName == editedName || !conflicts.isEmpty }
         XCTAssertTrue(conflicts.isEmpty, conflicts.joined(separator: ", "))
-        XCTAssertEqual(manualWelcome?.id, original.id)
-        XCTAssertEqual(manualWelcome?.publicToken, token)
+        XCTAssertNotEqual(manualWelcome?.id, original.id)
+        XCTAssertEqual(manualWelcome?.publicToken, replacement)
+        let newInfo = try await manual.fetchAccountInfo(baseURL: base, publicToken: replacement)
+        XCTAssertEqual(newInfo.publicProfile?.score, 0)
         manual.suspend()
         recovery.onEvent = { event in
             if case .welcome(let value) = event { recoveredWelcome = value }
             if case .state(let value) = event { recoveredName = value.tanks.first(where: { $0.id == recoveredWelcome?.id })?.name }
             if case .error(let value) = event { errors.append(value) }
         }
-        recovery.connectPublic(baseURL: base, name: initialName, colorIndex: 2, publicToken: token)
+        recovery.connectPublic(baseURL: base, name: editedName, colorIndex: 2, publicToken: token)
         try await waitFor { recoveredName != nil || !errors.isEmpty }
         XCTAssertTrue(errors.isEmpty, errors.joined(separator: ", "))
         XCTAssertEqual(recoveredWelcome?.id, original.id)
-        XCTAssertEqual(recoveredName, editedName, "Automatic recovery must never apply an old locally cached name over the authoritative name.")
-        // These are aliases for one account, not the independently authenticated
-        // P1/P2 rows represented by a multi-name availability request.
+        XCTAssertEqual(recoveredName, initialName, "Automatic recovery must keep the saved account's own name.")
         let ownedInitial = try await recovery.fetchCallsignAvailability(baseURL: base, names: [initialName], publicToken: token)
         let ownedEdited = try await recovery.fetchCallsignAvailability(baseURL: base, names: [editedName], publicToken: token)
         let unownedInitial = try await recovery.fetchCallsignAvailability(baseURL: base, names: [initialName])
         let unownedEdited = try await recovery.fetchCallsignAvailability(baseURL: base, names: [editedName])
-        XCTAssertEqual((ownedInitial + ownedEdited).map(\.available), [true, true])
-        XCTAssertEqual((unownedInitial + unownedEdited).map(\.available), [false, false], "Renaming must not release either claimed name to another owner.")
+        XCTAssertEqual((ownedInitial + ownedEdited).map(\.available), [true, false])
+        XCTAssertEqual((unownedInitial + unownedEdited).map(\.available), [false, false], "Both independent accounts keep their own names reserved.")
     }
 
     private func packet(_ object: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: object) }

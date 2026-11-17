@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'v5.4.0';
+const VERSION = 'v5.5.0';
 const BUILD = self.LEQRA_BUILD || VERSION;
 const CACHE = 'leqra-app-' + BUILD;
 let resetting=false;
@@ -17,6 +17,8 @@ const SHELL = [
   BASE + 'game.js',
   BASE + 'infinite-maze.js',
   BASE + 'infinite.js',
+  BASE + 'showcase-scene.js',
+  BASE + 'showcase.js',
   BASE + 'pwa.js',
   BASE + 'manifest.webmanifest',
   BASE + 'icon-192.png',

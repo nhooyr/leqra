@@ -239,7 +239,7 @@ class NativeNetworkClient(
         player: Int? = null,
         member: Long? = null,
     ) {
-        if (!connected || welcome?.spectating == true) return
+        if (!connected || welcome?.spectating == true && (infinity || !local || welcome?.localId == null)) return
         val previous = if (local) localSequence else sequence
         val next = if (input.seq > 0) input.seq else previous + 1
         if (next <= previous) return
@@ -401,9 +401,9 @@ class NativeNetworkClient(
                                     "invalid_response",
                                     "The server sent an invalid response.",
                                 )
-                            val source = it.body?.source() ?: throw IOException()
+                            val source = it.body?.source() ?: throw NetworkFailure("invalid_response", "The server sent an invalid response.")
                             if (source.request(8193) && source.buffer.size > 8192)
-                                throw IOException()
+                                throw NetworkFailure("invalid_response", "The server sent an invalid response.")
                             val version = JSONObject(source.readUtf8()).getString("version")
                             if (version != BuildConfig.VERSION_NAME)
                                 throw NetworkFailure(
@@ -420,7 +420,7 @@ class NativeNetworkClient(
                             { error ->
                                 fail(
                                     error.message ?: "The server sent an invalid response.",
-                                    (error as? NetworkFailure)?.terminal ?: true,
+                                    (error as? NetworkFailure)?.terminal ?: (error !is IOException),
                                     (error as? NetworkFailure)?.code,
                                 )
                             },
@@ -447,8 +447,11 @@ class NativeNetworkClient(
             override fun onResponse(call: Call, response: Response) {
                 val checked = runCatching {
                     response.use {
-                        val source = it.body?.source() ?: throw IOException()
-                        if (source.request(65537) && source.buffer.size > 65536) throw IOException()
+                        if (it.code == 429 || it.code >= 500)
+                            throw NetworkFailure("server_busy", "The account server is temporarily unavailable. Reconnecting…", terminal = false)
+                        val source = it.body?.source() ?: throw NetworkFailure("invalid_response", "The account server sent an invalid response.")
+                        if (source.request(65537) && source.buffer.size > 65536)
+                            throw NetworkFailure("invalid_response", "The account server sent an invalid response.")
                         val json = JSONObject(source.readUtf8())
                         when {
                             it.isSuccessful -> { require(json.has("names")); true }
@@ -471,7 +474,7 @@ class NativeNetworkClient(
                         }
                         if (infinity && !pendingJoin.has("code")) resumeJoin = JSONObject(pendingJoin.toString())
                         openSocket(current, version)
-                    }, { error -> fail(error.message ?: "The account could not be checked.", (error as? NetworkFailure)?.terminal ?: false, (error as? NetworkFailure)?.code) })
+                    }, { error -> fail(error.message ?: "The account could not be checked.", (error as? NetworkFailure)?.terminal ?: (error !is IOException), (error as? NetworkFailure)?.code) })
                 }
             }
         })
@@ -654,11 +657,11 @@ class NativeNetworkClient(
                         else -> json.optString("message", "The server rejected this action.")
                     }
                 onEvent(NetworkEvent.Packet(json))
-                if (code == "account_key_revoked") {
+                if (code in setOf("account_key_revoked", "account_key_invalid")) {
                     val slot = seat ?: 0
                     val old = selectionAtJoin[slot.coerceIn(0, 1)]
                     if (old != null)
-                        origin?.let { store.clearIfMatching(it, slot.coerceIn(0, 1), old) }
+                        origin?.let { store.forgetAccount(it, old) }
                 }
                 val transient =
                     isPublic &&
@@ -675,7 +678,7 @@ class NativeNetworkClient(
                     fail(message, false, code, seat)
                 else if (
                     !connected ||
-                        code in setOf("kicked", "session_replaced", "account_key_revoked", "room_access_changed") ||
+                        code in setOf("kicked", "session_replaced", "account_key_revoked", "account_key_invalid", "room_access_changed") ||
                         json.optString("action") == "version"
                 )
                     fail(message, true, code, seat)
@@ -691,6 +694,7 @@ class NativeNetworkClient(
                 onEvent(NetworkEvent.Packet(json))
                 disconnect()
             }
+            "chat", "chat_history" -> Unit
             else -> onEvent(NetworkEvent.Packet(json))
         }
     }

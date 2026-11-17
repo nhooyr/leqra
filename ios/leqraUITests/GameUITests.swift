@@ -6,7 +6,422 @@ import XCTest
 final class GameUITests: XCTestCase {
     private let publicSessionTestNamespace = "ui-" + UUID().uuidString
 
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        addUIInterruptionMonitor(withDescription: "Local development server permission") { alert in
+            guard alert.label.contains("local networks") || alert.staticTexts.matching(NSPredicate(format: "label CONTAINS 'local networks'")).count > 0,
+                  alert.buttons["Allow"].exists else { return false }
+            alert.buttons["Allow"].tap(); return true
+        }
+    }
+
+    @MainActor
+    func testPublicInfinityHidesUnusedRoomRules() {
+        let app = launch()
+        selectPublic(true, in: app)
+        let settings = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Room settings'")).firstMatch
+        reveal(settings, in: app); settings.tap()
+        XCTAssertTrue(app.staticTexts["publicInfinityRulesNotice"].exists)
+        XCTAssertFalse(app.buttons["mode_elimination"].exists)
+        XCTAssertFalse(app.buttons["Rules"].exists)
+        XCTAssertFalse(app.buttons["Presets"].exists)
+        selectPublic(false, in: app)
+        XCTAssertFalse(app.staticTexts["publicInfinityRulesNotice"].exists)
+        XCTAssertTrue(app.buttons["mode_elimination"].exists)
+        XCTAssertTrue(app.buttons["Rules"].exists)
+        app.terminate()
+    }
+
+    @MainActor
+    func testControlsSwitchesFitPortraitAndLandscape() {
+        let app = launch()
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        for landscape in [false, true] {
+            XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+            waitForOrientation(app, landscape: landscape)
+            for identifier in ["settingHighFrameRate", "settingShowFPS", "settingSound"] {
+                let toggle = app.switches[identifier]; reveal(toggle, in: app)
+                let panel = app.scrollViews["modalScroll"].frame
+                XCTAssertGreaterThanOrEqual(toggle.frame.minX, panel.minX)
+                XCTAssertLessThanOrEqual(toggle.frame.maxX, panel.maxX)
+                XCTAssertGreaterThanOrEqual(toggle.frame.width, 50)
+                let previous = toggle.value as? String
+                toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                XCTAssertNotEqual(toggle.value as? String, previous)
+            }
+            capture(app, name: "Controls switches \(landscape ? "landscape" : "portrait")")
+        }
+        app.terminate()
+    }
+
+    @MainActor
+    func testShowcaseBackgroundReturnRestoresControls() async throws {
+        let app = launch()
+        let name = app.textFields["callsignField"].value as? String
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let open = app.buttons["openShowcase"]
+        for _ in 0..<12 where !app.scrollViews["modalScroll"].frame.contains(open.frame) { app.scrollViews["modalScroll"].swipeUp() }
+        open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let stage = app.descendants(matching: .any)["showcaseStage"].firstMatch
+        XCTAssertTrue(stage.waitForExistence(timeout: 10))
+        capture(app, name: "Showcase before app switch")
+        XCUIDevice.shared.press(.home)
+        try await Task.sleep(nanoseconds: 700_000_000)
+        app.activate()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: stage)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed)
+        XCTAssertTrue(app.buttons["Close Controls"].exists)
+        app.buttons["Close Controls"].tap()
+        XCTAssertEqual(app.textFields["callsignField"].value as? String, name)
+        app.terminate()
+    }
+
+    @MainActor
+    func testHardwareEscapeNotificationClosesBothOverlays() {
+        let app = launch(arguments: ["--probe-hardware-controls", "--probe-hardware-escape"])
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let bind = app.buttons["bind0_forward"]; reveal(bind, in: app)
+        bind.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["Press a key"].waitForExistence(timeout: 5))
+        let captureGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.staticTexts["Press a key"])
+        XCTAssertEqual(XCTWaiter.wait(for: [captureGone], timeout: 5), .completed)
+        let open = app.buttons["openShowcase"]; reveal(open, in: app)
+        open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let stage = app.descendants(matching: .any)["showcaseStage"].firstMatch
+        XCTAssertTrue(stage.waitForExistence(timeout: 5))
+        let showcaseGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: stage)
+        XCTAssertEqual(XCTWaiter.wait(for: [showcaseGone], timeout: 5), .completed)
+        XCTAssertTrue(app.buttons["Close Controls"].exists)
+        app.terminate()
+    }
+
+    @MainActor
+    func testHardwareEscapeExitsShowcase() throws {
+        guard ProcessInfo.processInfo.environment["LEQRA_HARDWARE_ESCAPE_UI"] == "1" else {
+            throw XCTSkip("Requires a hardware route that delivers Escape; this simulator intercepts named and literal Escape before UIKit.")
+        }
+        let app = launch()
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let open = app.buttons["openShowcase"]; reveal(open, in: app)
+        open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let stage = app.descendants(matching: .any)["showcaseStage"].firstMatch
+        XCTAssertTrue(stage.waitForExistence(timeout: 5))
+        hardwareKey(XCUIKeyboardKey.escape.rawValue, in: app)
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: stage)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
+        app.terminate()
+    }
+
+    @MainActor
+    func testShowcaseRendersAndRestoresOnAppReturn() async throws {
+        let app = launch(callsign: "SCENE " + UUID().uuidString.prefix(8), arguments: [])
+        let originalName = app.textFields["callsignField"].value as? String
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let open = app.buttons["openShowcase"]
+        for _ in 0..<12 where !app.scrollViews["modalScroll"].frame.contains(open.frame) { app.scrollViews["modalScroll"].swipeUp() }
+        print("Showcase before tap: " + open.debugDescription)
+        open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let stage = app.descendants(matching: .any)["showcaseStage"].firstMatch
+        XCTAssertTrue(stage.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Close Controls"].isHittable)
+        let header = app.staticTexts["showcaseBrand"]
+        let status = app.staticTexts["showcaseTitle"]
+        let loadout = app.staticTexts["pilotIdentity"]
+        XCTAssertTrue(header.exists); XCTAssertTrue(status.exists); XCTAssertTrue(loadout.exists)
+        XCTAssertLessThanOrEqual(header.frame.maxY, stage.frame.minY)
+        XCTAssertGreaterThanOrEqual(loadout.frame.minY, stage.frame.maxY)
+        XCTAssertEqual(app.staticTexts["pilotIdentity"].label, "aqsnow (P1)")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'LASER'")).firstMatch.exists)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let pixelsBefore = stage.screenshot().image.cgImage?.dataProvider?.data
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let stick = origin.withOffset(CGVector(dx: stage.frame.minX + 84, dy: stage.frame.maxY - 63))
+        stick.press(forDuration: 0.05, thenDragTo: stick.withOffset(CGVector(dx: 25, dy: -25)), withVelocity: .slow, thenHoldForDuration: 0.2)
+        origin.withOffset(CGVector(dx: stage.frame.maxX - 63.5, dy: stage.frame.maxY - 63)).press(forDuration: 0.2)
+        XCTAssertEqual(pixelsBefore as Data?, stage.screenshot().image.cgImage?.dataProvider?.data as Data?, "The displayed gameplay controls must leave the frozen scene unchanged.")
+        capture(app, name: "Showcase portrait with gameplay chrome")
+        XCTAssertTrue(stage.exists, "Touch gestures must not dismiss Showcase.")
+        XCUIDevice.shared.orientation = .landscapeLeft; waitForOrientation(app, landscape: true)
+        XCTAssertTrue(header.exists); XCTAssertTrue(loadout.exists)
+        capture(app, name: "Showcase landscape with gameplay chrome")
+        XCUIDevice.shared.press(.home)
+        try await Task.sleep(nanoseconds: 700_000_000)
+        app.activate()
+        XCTAssertTrue(app.buttons["Close Controls"].waitForExistence(timeout: 10))
+        let returned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: stage)
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
+        app.buttons["Close Controls"].tap()
+        XCTAssertEqual(app.textFields["callsignField"].value as? String, originalName)
+        XCTAssertEqual(app.alerts.count, 0)
+        app.terminate()
+    }
+
+    @MainActor
+    func testLocalP2ManualSetupEveryModeAndSplitLayouts() async throws {
+        let app = launch(callsign: "FIRST " + UUID().uuidString.prefix(8), arguments: ["--probe-local-p2-input", "-localCallsign", "MWMWMWMWMWMWMWMW"])
+        selectPublic(false, in: app)
+        openPlayers(in: app)
+        let add = app.buttons["addLocalP2"]; reveal(add, in: app); add.tap()
+        let local = app.textFields["localCallsignField"]
+        XCTAssertTrue(local.waitForExistence(timeout: 5))
+        let name = local.value as? String ?? ""
+        XCTAssertFalse(name.isEmpty)
+        let removal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '"))
+        while removal.count > 0 {
+            let button = removal.firstMatch; reveal(button, in: app); button.tap()
+        }
+        for mode in ["infinity", "elimination", "ctf", "koth", "survival"] {
+            selectMode(mode, in: app); play(in: app)
+            let p2 = app.staticTexts["pilotIdentityP2"]
+            XCTAssertTrue(p2.waitForExistence(timeout: 10))
+            XCTAssertEqual(p2.label, name + " (P2)")
+            XCTAssertTrue(app.descendants(matching: .any)["pilotAmmoP2"].firstMatch.exists)
+            if mode == "infinity" {
+                let stage = arena(in: app)
+                let before = p2InputState(stage)
+                for _ in 0..<8 { hardwareKey("a", in: app) }
+                try await Task.sleep(nanoseconds: 200_000_000)
+                let after = p2InputState(stage)
+                XCTAssertNotEqual(before["p2a"], after["p2a"], "Hardware keyboard must rotate P2.")
+                XCTAssertEqual(before["p1a"]!, after["p1a"]!, accuracy: 0.001, "Hardware keyboard must not rotate touch P1.")
+                exerciseControls(in: app)
+                let touched = p2InputState(stage)
+                XCTAssertEqual(after["p2a"]!, touched["p2a"]!, accuracy: 0.001, "Touch must not steer P2.")
+            } else { exerciseControls(in: app, fixedPortrait: true) }
+            for landscape in [false, true] {
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                XCTAssertTrue(p2.exists)
+                XCTAssertTrue(app.staticTexts["pilotIdentity"].exists)
+                XCTAssertTrue(app.frame.contains(p2.frame))
+                if mode == "infinity" {
+                    let first = app.descendants(matching: .any)["arenaStage"].firstMatch
+                    let second = app.descendants(matching: .any)["secondaryArenaStage"].firstMatch
+                    XCTAssertTrue(second.exists)
+                    if landscape { XCTAssertLessThan(first.frame.midX, second.frame.midX) }
+                    else { XCTAssertLessThan(first.frame.midY, second.frame.midY) }
+                }
+                capture(app, name: "P2 \(mode) \(landscape ? "landscape" : "portrait")")
+            }
+            leaveGame(in: app)
+        }
+        openPlayers(in: app)
+        let remove = app.buttons["removeLocalP2"]; reveal(remove, in: app); remove.tap()
+        XCTAssertTrue(app.buttons["addLocalP2"].exists)
+        XCTAssertFalse(app.textFields["localCallsignField"].exists)
+        app.terminate()
+    }
+
+    @MainActor
+    func testOnlineP2PublicAndPrivateInputsRemainIndependent() async throws {
+        let app = launch(callsign: "DUO " + UUID().uuidString.prefix(8), arguments: ["--probe-local-p2-input"])
+        openPlayers(in: app)
+        let add = app.buttons["addLocalP2"]; reveal(add, in: app); add.tap()
+        let name = app.textFields["localCallsignField"].value as? String ?? ""
+        XCTAssertFalse(name.isEmpty)
+        selectPublic(true, in: app); play(in: app)
+        XCTAssertTrue(app.staticTexts["pilotIdentityP2"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["pilotIdentityP2"].label, name + " (P2)")
+        let before = p2InputState(arena(in: app))
+        for _ in 0..<8 { hardwareKey("a", in: app) }
+        try await Task.sleep(nanoseconds: 600_000_000)
+        let after = p2InputState(arena(in: app))
+        XCTAssertNotEqual(before["p2a"], after["p2a"])
+        if before["p1life"] == after["p1life"] { XCTAssertEqual(before["p1a"]!, after["p1a"]!, accuracy: 0.01) }
+        capture(app, name: "Public Infinity P2 hardware input")
+        leaveGame(in: app)
+        selectPublic(false, in: app); selectMode("elimination", in: app)
+        openPlayers(in: app)
+        let removal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '"))
+        while removal.count > 0 { let button = removal.firstMatch; reveal(button, in: app); button.tap() }
+        let share = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'SHARE ROOM ONLINE'")).firstMatch
+        reveal(share, in: app); share.tap()
+        XCTAssertTrue(app.staticTexts["roomCodeValue"].waitForExistence(timeout: 15))
+        play(in: app)
+        XCTAssertTrue(app.staticTexts["pilotIdentityP2"].waitForExistence(timeout: 10))
+        capture(app, name: "Private match P2 independent account")
+        try await Task.sleep(nanoseconds: 3_200_000_000)
+        let fixedBefore = p2InputState(arena(in: app))
+        for _ in 0..<5 { hardwareKey("a", in: app) }
+        hardwareKey("q", in: app)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let fixedAfter = p2InputState(arena(in: app))
+        XCTAssertNotEqual(fixedBefore["p2a"], fixedAfter["p2a"])
+        if fixedBefore["p1life"] == fixedAfter["p1life"] { XCTAssertEqual(fixedBefore["p1a"]!, fixedAfter["p1a"]!, accuracy: 0.01) }
+        exerciseControls(in: app, fixedPortrait: true)
+        pause(in: app)
+        let room = app.buttons["Return to room"]; reveal(room, in: app); room.tap()
+        XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10))
+        openPlayers(in: app)
+        let addBot = app.buttons["Add bot"]; reveal(addBot, in: app); addBot.tap()
+        let menu = app.buttons["pilotMenu_0"]; reveal(menu, in: app); menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["Spectate"].tap()
+        try await Task.sleep(nanoseconds: 500_000_000)
+        let startWatched = app.buttons["playRoom"]; reveal(startWatched, in: app); startWatched.tap()
+        XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["pilotIdentityP2"].waitForExistence(timeout: 10))
+        try await Task.sleep(nanoseconds: 3_200_000_000)
+        let watcherBefore = p2InputState(arena(in: app))
+        for _ in 0..<5 { hardwareKey("a", in: app) }
+        let watcherAfter = p2InputState(arena(in: app))
+        XCTAssertNotEqual(watcherBefore["p2a"], watcherAfter["p2a"], "P2 remains controllable when P1 watches a fixed match.")
+        capture(app, name: "Private P1 spectator and active P2")
+        XCTAssertEqual(app.alerts.count, 0)
+        leaveGame(in: app); app.terminate()
+    }
+
+    @MainActor
+    func testHardwareBindingsMouseTogglesAndQuickTour() {
+        let app = launch(arguments: ["--probe-hardware-controls"])
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let binding = app.buttons["bind0_forward"]
+        reveal(binding, in: app); binding.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["Press a key"].waitForExistence(timeout: 5))
+        hardwareKey("a", in: app)
+        XCTAssertTrue(app.staticTexts["bindingError"].waitForExistence(timeout: 5))
+        hardwareKey("i", in: app)
+        XCTAssertTrue(binding.waitForExistence(timeout: 5))
+        XCTAssertEqual(binding.label, "I")
+        let other = app.buttons["bind1_forward"]
+        reveal(other, in: app); other.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        hardwareKey("i", in: app)
+        XCTAssertTrue(app.staticTexts["bindingError"].waitForExistence(timeout: 5))
+        if ProcessInfo.processInfo.environment["LEQRA_HARDWARE_ESCAPE_UI"] == "1" {
+            hardwareKey(XCUIKeyboardKey.escape.rawValue, in: app)
+        } else {
+            app.buttons["CANCEL"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        let captureGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.staticTexts["Press a key"])
+        XCTAssertEqual(XCTWaiter.wait(for: [captureGone], timeout: 5), .completed)
+        XCTAssertTrue(other.waitForExistence(timeout: 5))
+        for name in ["settingMouseAim", "settingMouseFire"] {
+            let toggle = app.switches[name]; reveal(toggle, in: app)
+            let before = toggle.value as? String; toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertNotEqual(toggle.value as? String, before)
+            XCTAssertLessThanOrEqual(toggle.frame.maxX, app.scrollViews["modalScroll"].frame.maxX)
+        }
+        let reset = app.buttons["resetBindings"]; reveal(reset, in: app); reset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertEqual(binding.label, "W")
+        let tour = app.buttons["quickTour"]; reveal(tour, in: app); tour.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["Quick tour"].waitForExistence(timeout: 5))
+        for _ in 0..<3 { app.buttons["tourNext"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        XCTAssertTrue(app.buttons["Close Controls"].waitForExistence(timeout: 5))
+        let all = app.buttons["resetAllSettings"]; reveal(all, in: app); all.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Reset all settings"].waitForExistence(timeout: 5))
+        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.03)).tap() }
+        XCTAssertTrue(app.buttons["Close Controls"].exists)
+        capture(app, name: "Hardware bindings and mouse settings")
+        app.terminate()
+    }
+
+    @MainActor
+    func testFixedP2KeepsHardwareWhenP1Spectates() async throws {
+        let app = launch(arguments: ["--probe-local-p2-input"])
+        selectPublic(false, in: app); selectMode("elimination", in: app)
+        openPlayers(in: app)
+        let removal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '"))
+        while removal.count > 0 { let button = removal.firstMatch; reveal(button, in: app); button.tap() }
+        let add = app.buttons["addLocalP2"]; reveal(add, in: app); add.tap()
+        let bot = app.buttons["Add bot"]; reveal(bot, in: app); bot.tap()
+        let share = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'SHARE ROOM ONLINE'")).firstMatch
+        reveal(share, in: app); share.tap()
+        XCTAssertTrue(app.staticTexts["roomCodeValue"].waitForExistence(timeout: 15))
+        openPlayers(in: app)
+        let menu = app.buttons["pilotMenu_0"]; reveal(menu, in: app)
+        menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["Spectate"].waitForExistence(timeout: 5)); app.buttons["Spectate"].tap()
+        let play = app.buttons["playRoom"]; reveal(play, in: app); play.tap()
+        XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["pilotIdentityP2"].waitForExistence(timeout: 10))
+        try await Task.sleep(nanoseconds: 3_200_000_000)
+        let before = p2InputState(arena(in: app))
+        for _ in 0..<3 { hardwareKey("a", in: app) }
+        let after = p2InputState(arena(in: app))
+        XCTAssertNotEqual(before["p2a"], after["p2a"], "before=\(before), after=\(after)")
+        capture(app, name: "P1 watching, P2 hardware control")
+        app.terminate()
+    }
+
+    @MainActor
+    func testGameplayEnduranceAcrossEveryMode() async throws {
+        guard let minutes = ProcessInfo.processInfo.environment["LEQRA_ENDURANCE_MINUTES"].flatMap(Double.init), minutes > 0 else {
+            throw XCTSkip("Opt in to a sustained native gameplay audit.")
+        }
+        let app = launch(callsign: "SOAK " + UUID().uuidString.prefix(8))
+        selectPublic(false, in: app)
+        let modes = ["elimination", "ctf", "koth", "survival", "infinity"]
+        let deadline = Date().addingTimeInterval(min(100, minutes) * 60)
+        var round = 0
+        while Date() < deadline {
+            XCUIDevice.shared.orientation = .portrait
+            selectMode(modes[round % modes.count], in: app)
+            play(in: app)
+            for pass in 0..<12 {
+                if Date() >= deadline { break }
+                exerciseControls(in: app, fixedPortrait: modes[round % modes.count] != "infinity")
+                if pass % 4 == 0 {
+                    XCUIDevice.shared.orientation = .landscapeLeft
+                    waitForOrientation(app, landscape: true)
+                    exerciseControls(in: app)
+                    XCUIDevice.shared.orientation = .portrait
+                    waitForOrientation(app, landscape: false)
+                }
+                if pass % 3 == 0 {
+                    pause(in: app)
+                    if pass % 2 == 0 {
+                        XCUIDevice.shared.press(.home)
+                        try await Task.sleep(nanoseconds: 500_000_000)
+                        app.activate()
+                        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
+                    }
+                    app.buttons["Resume"].tap()
+                    XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
+                }
+                XCTAssertEqual(app.alerts.count, 0)
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+            capture(app, name: "Endurance round \(round) " + modes[round % modes.count])
+            leaveGame(in: app)
+            round += 1
+            print("Native endurance completed round \(round), remaining seconds \(Int(deadline.timeIntervalSinceNow))")
+        }
+        app.terminate()
+    }
+
+    @MainActor
+    func testPublicInfinityRecoveryEndurance() async throws {
+        guard let minutes = ProcessInfo.processInfo.environment["LEQRA_PUBLIC_ENDURANCE_MINUTES"].flatMap(Double.init), minutes > 0 else {
+            throw XCTSkip("Opt in to repeated public Infinity foreground/background recovery.")
+        }
+        let name = "NET " + UUID().uuidString.prefix(8)
+        let app = launch(callsign: name)
+        selectPublic(true, in: app); play(in: app)
+        let deadline = Date().addingTimeInterval(min(60, minutes) * 60)
+        var round = 0
+        while Date() < deadline {
+            for _ in 0..<4 { exerciseControls(in: app) }
+            let manuallyPaused = round % 2 == 0
+            if manuallyPaused { pause(in: app) }
+            XCUIDevice.shared.press(.home)
+            try await Task.sleep(nanoseconds: 1_200_000_000)
+            app.activate()
+            if manuallyPaused {
+                XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 15))
+                app.buttons["Resume"].tap()
+            }
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15))
+            XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains(name))
+            XCTAssertFalse(app.buttons["Chat"].exists)
+            XCTAssertEqual(app.alerts.count, 0)
+            XCUIDevice.shared.orientation = round % 2 == 0 ? .landscapeLeft : .portrait
+            waitForOrientation(app, landscape: round % 2 == 0)
+            capture(app, name: "Public recovery endurance \(round)")
+            round += 1
+        }
+        leaveGame(in: app); app.terminate()
+        print("Native public recovery completed \(round) background cycles")
+    }
 
     @MainActor
     func testPublicBackgroundRecoveryPreservesActiveAndManualPauseIntent() async throws {
@@ -46,6 +461,370 @@ final class GameUITests: XCTestCase {
         selectMode("survival", in: app)
         XCTAssertEqual(app.buttons.matching(removal).count, 0, "An explicit local mode change must preserve an empty custom roster")
         app.terminate()
+    }
+
+    @MainActor
+    func testCannonTouchShotPiercesTheWholeTargetLine() {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--probe-direct-aim", "--probe-weapon", "cannon", "--probe-cannon-line",
+                                   "--public-session-test-namespace", "cannon-" + UUID().uuidString]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            let stage = arena(in: app)
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (stage.value as? String)?.contains("targets=3") == true }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+            let frame = stage.frame, origin = app.coordinate(withNormalizedOffset: .zero)
+            let fire = origin.withOffset(CGVector(dx: frame.maxX - (fixed ? 86 : 64), dy: frame.maxY - (fixed ? 60 : 68)))
+            fire.press(forDuration: 0.05)
+            let pierced = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                let data = (stage.value as? String) ?? ""
+                return data.contains("score=3") && data.contains("charges=2")
+            }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [pierced], timeout: 1.5), .completed, stage.value as? String ?? "No arena telemetry")
+            capture(app, name: "One Cannon shot pierces three tanks " + (fixed ? "fixed" : "Infinity"))
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testOnlineRoomsDoNotExposeChat() {
+        let app = launch(callsign: "ROOM " + UUID().uuidString.prefix(8))
+        selectPublic(false, in: app)
+        let share = app.buttons["SHARE ROOM ONLINE ↗"]
+        reveal(share, in: app); share.tap()
+        XCTAssertTrue(app.staticTexts["roomCodeValue"].waitForExistence(timeout: 15))
+        func noChat() {
+            XCTAssertFalse(app.buttons["Chat"].exists)
+            XCTAssertFalse(app.textFields["Message"].exists)
+        }
+        noChat()
+        for mode in ["elimination", "ctf", "koth", "survival", "infinity"] {
+            selectMode(mode, in: app); play(in: app); noChat()
+            capture(app, name: "Online " + mode + " without native chat")
+            pause(in: app)
+            app.buttons["Return to room"].tap()
+            XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10))
+            noChat()
+        }
+        app.terminate()
+    }
+
+    @MainActor
+    func testLongPresetNameOverwritesItsNormalizedRow() {
+        let app = launch()
+        selectPublic(false, in: app)
+        let settings = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Room settings'")).firstMatch
+        reveal(settings, in: app); settings.tap()
+        let presets = app.buttons["Presets"]
+        reveal(presets, in: app); presets.tap()
+        let name = "AUDIT " + UUID().uuidString + " EXTRA LONG"
+        let field = app.textFields["Preset name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        for _ in 0..<2 {
+            field.tap(); field.typeText(name + "\n")
+            let save = app.buttons["SAVE ROOM"]
+            if !save.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+            save.tap()
+        }
+        let normalized = String(name.prefix(40))
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", normalized)).count, 1,
+                       "Saving the same long name must replace its row instead of creating duplicate IDs")
+        capture(app, name: "Long room preset name saves once")
+        app.terminate()
+    }
+
+    @MainActor
+    func testSavedCallsignScoresSwitchBackAndManualReleaseStayIndependent() throws {
+        let first = "ONE " + UUID().uuidString.prefix(6), second = "TWO " + UUID().uuidString.prefix(6)
+        let app = launch(callsign: first)
+        selectPublic(true, in: app); play(in: app); leaveGame(in: app)
+        func editName(_ name: String) {
+            let field = app.textFields["callsignField"]
+            reveal(field, in: app); field.tap()
+            let old = field.value as? String ?? ""
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count + 1) + name + "\n")
+            let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", name), object: field)
+            XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 10), .completed)
+        }
+        editName(second)
+        let open = app.buttons["openAccount"]
+        reveal(open, in: app); open.tap()
+        let firstUse = app.buttons["USE " + first], secondUse = app.buttons["USE " + second]
+        XCTAssertTrue(firstUse.waitForExistence(timeout: 10))
+        XCTAssertTrue(secondUse.waitForExistence(timeout: 10))
+        XCTAssertFalse(secondUse.isEnabled)
+        let newScore = app.staticTexts["savedCallsignScore-" + second]
+        let zero = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == 'Score: 0'"), object: newScore)
+        XCTAssertEqual(XCTWaiter.wait(for: [zero], timeout: 10), .completed)
+        firstUse.tap()
+        XCTAssertTrue(app.buttons["playRoom"].waitForExistence(timeout: 10))
+        if !app.scrollViews["modalScroll"].exists { reveal(open, in: app); open.tap() }
+        XCTAssertTrue(firstUse.waitForExistence(timeout: 5))
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"), object: firstUse)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 10), .completed)
+        capture(app, name: "Saved callsigns retain independent scores and active button is disabled")
+        app.buttons["Close Account key"].tap()
+        selectPublic(false, in: app); selectMode("infinity", in: app); play(in: app); pause(in: app)
+        app.buttons["Controls"].tap()
+        let account = app.buttons["settingsAccount"]
+        for _ in 0..<5 where !account.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+        account.tap()
+        XCTAssertTrue(app.buttons["USE " + second].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["USE " + second].isEnabled, "Saved accounts cannot bypass the active-game import restriction")
+        app.buttons["Close Account key"].tap()
+        app.buttons["Resume"].tap()
+        leaveGame(in: app)
+        reveal(open, in: app); open.tap()
+        let release = app.buttons["releaseAccount"]
+        for _ in 0..<12 where !release.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+        XCTAssertTrue(release.isEnabled)
+        XCTAssertTrue(app.scrollViews["modalScroll"].frame.contains(release.frame), "Release must remain completely visible inside its scroller")
+        release.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["Release callsign and delete score"].tap()
+        let released = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Callsign released'"), object: app.staticTexts["accountStatus"])
+        XCTAssertEqual(XCTWaiter.wait(for: [released], timeout: 10), .completed)
+        XCTAssertFalse(app.buttons["USE " + first].exists)
+        XCTAssertTrue(app.buttons["USE " + second].exists)
+        capture(app, name: "Manual release preserves the other saved callsign")
+        app.buttons["Close Account key"].tap()
+        app.terminate()
+    }
+
+    @MainActor
+    func testHeldDetonationCannotThrowAgainUntilRelease() throws {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--probe-direct-aim", "--probe-weapon", "grenade",
+                                   "--public-session-test-namespace", "detonate-" + UUID().uuidString]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            let stage = arena(in: app)
+            func value(_ key: String) -> Int? {
+                ((stage.value as? String) ?? "").split(separator: ",").first { $0.hasPrefix(key + "=") }
+                    .flatMap { Int($0.split(separator: "=").last ?? "") }
+            }
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in value("charges") == 3 }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+            let frame = stage.frame, origin = app.coordinate(withNormalizedOffset: .zero)
+            let fire = origin.withOffset(CGVector(dx: frame.maxX - (fixed ? 86 : 64), dy: frame.maxY - (fixed ? 60 : 68)))
+            fire.press(forDuration: 0.05)
+            let thrown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in value("grenades") == 1 && value("charges") == 2 }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [thrown], timeout: 5), .completed)
+            fire.press(forDuration: 1.1)
+            XCTAssertEqual(value("grenades"), 0, "Detonating then holding must not throw another grenade")
+            XCTAssertEqual(value("charges"), 2, "Detonation cannot consume the next grenade charge")
+            fire.press(forDuration: 0.05)
+            let next = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in value("grenades") == 1 && value("charges") == 1 }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [next], timeout: 5), .completed)
+            capture(app, name: "Grenade requires a fresh press after detonation " + (fixed ? "fixed" : "Infinity"))
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testUnlabelledControlsFitInPortraitAndLandscape() {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--probe-direct-aim", "--public-session-test-namespace", "controls-" + UUID().uuidString]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15))
+            for landscape in [false, true] {
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                let stage = arena(in: app)
+                let values = Dictionary(uniqueKeysWithValues: ((stage.value as? String) ?? "").split(separator: ",").compactMap { item -> (String, Double)? in
+                    let pair = item.split(separator: "=")
+                    guard pair.count == 2, let number = Double(pair[1]) else { return nil }
+                    return (String(pair[0]), number)
+                })
+                XCTAssertEqual(values["controlLabels"], 0, "Neither touch control displays a caption")
+                XCTAssertGreaterThanOrEqual(values["stickBottom"] ?? -1, 8,
+                    "The lowest fully deflected thumb remains inside the stage")
+                XCTAssertGreaterThanOrEqual(values["fireBottom"] ?? -1, 8,
+                    "The complete readiness ring remains inside the stage")
+                XCTAssertLessThanOrEqual(values["controlCenterY"] ?? 999, 65,
+                    "The controls reclaim the former caption space")
+                capture(app, name: "Unlabelled controls " + (fixed ? "fixed " : "Infinity ") + (landscape ? "landscape" : "portrait"))
+                exerciseControls(in: app, fixedPortrait: fixed && !landscape)
+            }
+            XCTAssertEqual(app.alerts.count, 0)
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testDirectAimTouchSnapsWithoutMovingInBothLayouts() throws {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--probe-direct-aim", "--public-session-test-namespace", "aim-" + UUID().uuidString]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            let stage = arena(in: app)
+            func telemetry() -> [String: Double] {
+                Dictionary(uniqueKeysWithValues: ((stage.value as? String) ?? "").split(separator: ",").compactMap { item in
+                    let parts = item.split(separator: "=")
+                    guard parts.count == 2, let number = Double(parts[1]) else { return nil }
+                    return (String(parts[0]), number)
+                })
+            }
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in telemetry()["screenX"] != nil }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+            for direction in [0.0, .pi / 2, .pi, -.pi / 2, -.pi / 4] {
+                let before = telemetry(), frame = stage.frame
+                let origin = app.coordinate(withNormalizedOffset: .zero)
+                let target = origin.withOffset(CGVector(dx: frame.minX + (before["screenX"] ?? 0) + cos(direction) * 40,
+                                                        dy: frame.minY + (before["screenY"] ?? 0) + sin(direction) * 40))
+                target.press(forDuration: 0.05)
+                let aimed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    guard let angle = telemetry()["angle"] else { return false }
+                    return abs(sin(angle - direction)) < 0.025 && cos(angle - direction) > 0.99
+                }, object: stage)
+                XCTAssertEqual(XCTWaiter.wait(for: [aimed], timeout: 5), .completed)
+                let after = telemetry()
+                XCTAssertEqual(try XCTUnwrap(after["x"]), try XCTUnwrap(before["x"]), accuracy: 0.0001)
+                XCTAssertEqual(try XCTUnwrap(after["y"]), try XCTUnwrap(before["y"]), accuracy: 0.0001)
+            }
+            capture(app, name: "Direct aim touches " + (fixed ? "fixed" : "Infinity"))
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testPendingCallsignRegistrationCannotInterruptAnOfflineBattle() throws {
+        guard let server = ProcessInfo.processInfo.environment["LEQRA_DELAYED_ACCOUNT_SERVER"] else {
+            throw XCTSkip("Requires a delayed disposable account endpoint.")
+        }
+        for prefix in ["SLOW", "DOWN"] {
+            XCUIDevice.shared.orientation = .portrait
+            let app = XCUIApplication()
+            let changed = prefix + " " + UUID().uuidString.prefix(6)
+            app.launchArguments = ["-serverURL", server, "-callsign", "BEFORE",
+                "--public-session-test-namespace", "delayed-name-" + UUID().uuidString, "--skip-public-session-restore"]
+            app.launch()
+            XCTAssertTrue(app.switches["publicInfinityToggle"].waitForExistence(timeout: 10))
+            selectPublic(false, in: app); selectMode("infinity", in: app)
+            let field = app.textFields["callsignField"]
+            reveal(field, in: app); field.tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 17) + changed + "\n")
+            play(in: app)
+            let survived = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                app.buttons["pauseGame"].exists && app.staticTexts["pilotIdentity"].label.contains(changed) && app.alerts.count == 0
+            }, object: app)
+            XCTAssertEqual(XCTWaiter.wait(for: [survived], timeout: 8), .completed)
+            let delayed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in false }, object: app)
+            _ = XCTWaiter.wait(for: [delayed], timeout: 5.5)
+            XCTAssertTrue(app.buttons["pauseGame"].exists, "A late account response cannot exit an already started local battle")
+            XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains(changed))
+            XCTAssertEqual(app.alerts.count, 0)
+            leaveGame(in: app); app.terminate()
+        }
+    }
+
+    @MainActor
+    func testPendingCallsignReleaseBlocksPlayAndFailureUnblocksIt() async throws {
+        guard ProcessInfo.processInfo.environment["LEQRA_DELAYED_RELEASE_UI"] == "1" else {
+            throw XCTSkip("Opt in with the disposable delayed_release_server.py fixture.")
+        }
+        for fails in [false, true] {
+            let server = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18224"
+            _ = try await URLSession.shared.data(from: URL(string: server + "/reset-release")!)
+            let name = (fails ? "FAIL " : "RELEASE ") + UUID().uuidString.prefix(6)
+            let app = XCUIApplication()
+            app.launchArguments = ["-serverURL", server, "-callsign", "START",
+                "--public-session-test-namespace", "release-" + UUID().uuidString, "--skip-public-session-restore"]
+            XCUIDevice.shared.orientation = .portrait; app.launch()
+            XCTAssertTrue(app.switches["publicInfinityToggle"].waitForExistence(timeout: 10))
+            selectPublic(false, in: app)
+            let field = app.textFields["callsignField"]
+            reveal(field, in: app); field.tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20) + name + "\n")
+            let account = app.buttons["openAccount"]
+            reveal(account, in: app); account.tap()
+            let release = app.buttons["releaseAccount"]
+            let registered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: release)
+            XCTAssertEqual(XCTWaiter.wait(for: [registered], timeout: 10), .completed)
+            for _ in 0..<12 where !release.isHittable { app.scrollViews["modalScroll"].swipeUp() }
+            release.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            app.buttons["Release callsign and delete score"].tap()
+            app.buttons["Close Account key"].tap()
+            let playButton = app.buttons["playRoom"]
+            reveal(playButton, in: app)
+            XCTAssertFalse(playButton.isEnabled, "Closing the account menu cannot bypass a pending release")
+            XCTAssertFalse(field.isEnabled, "The pending release cannot be bypassed through the callsign editor")
+            _ = try await URLSession.shared.data(from: URL(string: server + "/finish-release")!)
+            let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: playButton)
+            XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 15), .completed)
+            if fails { XCTAssertEqual(field.value as? String, name, "A failed release retains the selected account") }
+            else { XCTAssertNotEqual(field.value as? String, name, "A successful release selects a fresh local account") }
+            play(in: app); exerciseControls(in: app)
+            XCTAssertTrue(app.buttons["pauseGame"].exists)
+            capture(app, name: "Release " + (fails ? "failure" : "success") + " permits play after completion")
+            leaveGame(in: app); app.terminate()
+        }
+    }
+
+    @MainActor
+    func testOfflineReadyRoomCallsignChangeSurvivesAnUnavailableServer() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        let original = "OFF " + UUID().uuidString.prefix(6)
+        let changed = "NEW " + UUID().uuidString.prefix(6)
+        app.launchArguments = ["-serverURL", "http://127.0.0.1:1", "-callsign", original,
+            "--public-session-test-namespace", "offline-name-" + UUID().uuidString, "--skip-public-session-restore"]
+        app.launch()
+        XCTAssertTrue(app.switches["publicInfinityToggle"].waitForExistence(timeout: 10))
+        selectPublic(false, in: app)
+        let field = app.textFields["callsignField"]
+        reveal(field, in: app); field.tap()
+        let old = field.value as? String ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count + 1) + changed + "\n")
+        let feedback = app.staticTexts["callsignAvailability"]
+        let unavailable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'could not be checked'"), object: feedback)
+        XCTAssertEqual(XCTWaiter.wait(for: [unavailable], timeout: 10), .completed)
+        XCTAssertEqual(app.alerts.count, 0, "Network failure cannot block a local callsign edit")
+        XCTAssertEqual(field.value as? String, changed)
+        selectMode("infinity", in: app)
+        play(in: app)
+        XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains(changed))
+        capture(app, name: "Offline callsign works while the server is unavailable")
+        leaveGame(in: app)
+        app.terminate()
+        if let index = app.launchArguments.firstIndex(of: "-callsign") { app.launchArguments.removeSubrange(index...index + 1) }
+        app.launch()
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertEqual(field.value as? String, changed, "The offline account draft must survive a cold launch")
+        selectPublic(false, in: app); selectMode("infinity", in: app); play(in: app)
+        XCTAssertTrue(app.staticTexts["pilotIdentity"].label.contains(changed))
+        leaveGame(in: app)
+        app.terminate()
+    }
+
+    @MainActor
+    func testUnchangedOfflineCallsignResumeKeepsItsBattleWithoutAnAccountKey() {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--native-performance-probe", "--probe-weapon", "rapid", "--probe-seconds", "60",
+                                   "--public-session-test-namespace", "resume-" + UUID().uuidString]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 15))
+            for _ in 0..<2 {
+                pause(in: app)
+                app.buttons["Resume"].tap()
+                let stayedInBattle = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: app.buttons["pauseGame"])
+                XCTAssertEqual(XCTWaiter.wait(for: [stayedInBattle], timeout: 5), .completed)
+                XCTAssertFalse(app.buttons["playRoom"].exists, "An unchanged callsign must not create an account and exit to the ready room")
+            }
+            capture(app, name: "Unchanged offline callsign resumes " + (fixed ? "fixed" : "Infinity"))
+            app.terminate()
+        }
     }
 
     @MainActor
@@ -327,7 +1106,7 @@ final class GameUITests: XCTestCase {
         app.buttons["Close Account key"].tap()
         let primary = try XCTUnwrap(field.value as? String)
         XCTAssertNotNil(primary.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression))
-        app.buttons.matching(NSPredicate(format: "label == 'Settings'")).firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
         let local = app.buttons["settingsLocalAccount"]
         for _ in 0..<5 where !local.isHittable { app.scrollViews["modalScroll"].swipeUp() }
         local.tap()
@@ -457,7 +1236,30 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch(callsign: String? = nil) -> XCUIApplication {
+    private func hardwareKey(_ key: String, in app: XCUIApplication) {
+        let physicalKey = key == XCUIKeyboardKey.escape.rawValue ? "\u{1B}" : key
+        app.typeKey(physicalKey, modifierFlags: [])
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let notNow = springboard.alerts.buttons["Not Now"]
+        if notNow.waitForExistence(timeout: 0.4), notNow.isHittable {
+            let frame = notNow.frame
+            springboard.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+            app.typeKey(physicalKey, modifierFlags: [])
+        }
+    }
+
+    @MainActor
+    private func p2InputState(_ stage: XCUIElement) -> [String: Double] {
+        let value = stage.value as? String ?? ""
+        return Dictionary(uniqueKeysWithValues: value.split(separator: ",").compactMap { item in
+            let pair = item.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2, let number = Double(pair[1]) else { return nil }
+            return (String(pair[0]), number)
+        })
+    }
+
+    @MainActor
+    private func launch(callsign: String? = nil, arguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         let server = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18081"
@@ -466,8 +1268,14 @@ final class GameUITests: XCTestCase {
         let name = callsign ?? "SWIFT FOX " + publicSessionTestNamespace.suffix(4).uppercased()
         app.launchArguments = ["-serverURL", server, "-callsign", name,
                                "--public-session-test-namespace", publicSessionTestNamespace,
-                               "--skip-public-session-restore"]
+                               "--skip-public-session-restore"] + arguments
         app.launch()
+        let keyboardAlert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Not Now"]
+        if keyboardAlert.exists, keyboardAlert.isHittable {
+            let frame = keyboardAlert.frame
+            XCUIApplication(bundleIdentifier: "com.apple.springboard").coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+        }
         XCTAssertTrue(app.switches["publicInfinityToggle"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["playRoom"].exists)
         return app
@@ -500,7 +1308,7 @@ final class GameUITests: XCTestCase {
         if app.buttons["Not Now"].exists { app.buttons["Not Now"].tap() }
 
         XCTAssertEqual(app.textFields["callsignField"].frame.midY, open.frame.midY, accuracy: 1, "Account access belongs beside its player's callsign.")
-        app.buttons.matching(NSPredicate(format: "label == 'Settings'")).firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
         let localAccount = app.buttons["settingsLocalAccount"]
         for _ in 0..<5 where !localAccount.isHittable { app.scrollViews["modalScroll"].swipeUp() }
         localAccount.tap()
@@ -513,7 +1321,7 @@ final class GameUITests: XCTestCase {
         XCTAssertEqual(app.textFields["callsignField"].value as? String, primaryName, "Managing P2 must not rename P1.")
 
         selectPublic(false, in: app); selectMode("infinity", in: app); play(in: app); pause(in: app)
-        app.buttons["Settings"].tap()
+        app.buttons["Controls"].tap()
         let account = app.buttons["settingsAccount"]
         for _ in 0..<5 where !account.isHittable { app.scrollViews["modalScroll"].swipeUp() }
         account.tap()
@@ -539,7 +1347,7 @@ final class GameUITests: XCTestCase {
         let measured = app.staticTexts["frameRateValue"]
         XCTAssertTrue(measured.waitForExistence(timeout: 5))
         print("Native playing frame rate before pause: \(measured.label), \(measured.value ?? "")")
-        app.buttons["Settings"].tap()
+        app.buttons["Controls"].tap()
         let soundVolume = app.sliders["Sound volume"]
         let soundVolumeValue = app.staticTexts["soundVolumeValue"]
         XCTAssertTrue(soundVolume.waitForExistence(timeout: 5))
@@ -576,7 +1384,7 @@ final class GameUITests: XCTestCase {
             let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "\(percentage)%"), object: soundVolumeValue)
             XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed,
                            "Sound volume must reach \(percentage)% after adjusting its native slider; actual: \(soundVolumeValue.label).")
-            XCTAssertTrue(app.buttons["Done"].isHittable)
+            XCTAssertTrue(app.buttons["Close Controls"].isHittable)
         }
         capture(app, name: "Native sound-volume settings")
         let highRate = app.switches["Request 120 FPS"]
@@ -586,7 +1394,7 @@ final class GameUITests: XCTestCase {
         }
         setSwitch(highRate, to: initialRate == "1" ? "0" : "1")
         setSwitch(highRate, to: initialRate)
-        app.buttons["Done"].tap()
+        app.buttons["Close Controls"].tap()
         app.buttons["Resume"].tap()
         XCTAssertFalse(app.staticTexts["Paused"].exists)
 
@@ -869,14 +1677,16 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        let modal = app.scrollViews["modalScroll"]
         let ready = app.scrollViews["readyRoomScroll"]
         let pause = app.scrollViews["pauseMenuScroll"]
-        let scroll = pause.exists ? pause : ready.exists ? ready : app
+        let scroll = modal.exists ? modal : pause.exists ? pause : ready.exists ? ready : app
         for attempt in 0..<8 {
-            if element.isHittable { return }
             let before = element.frame
             let viewport = scroll.frame.intersection(app.frame).insetBy(dx: 4, dy: 8)
             guard !viewport.isEmpty else { break }
+            if element.isHittable && viewport.contains(before) { return }
+            if scroll.frame.insetBy(dx: -1, dy: -1).contains(before) { return }
             if viewport.contains(before) {
                 let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: element)
                 if XCTWaiter.wait(for: [settled], timeout: 1) == .completed { return }
@@ -922,9 +1732,12 @@ final class GameUITests: XCTestCase {
             (app.frame.width > app.frame.height) == landscape
         }, evaluatedWith: nil)
         wait(for: [changed], timeout: 10)
-        let stage = arena(in: app)
+        let showcase = app.descendants(matching: .any)["showcaseStage"].firstMatch
+        let split = app.descendants(matching: .any)["secondaryArenaStage"].firstMatch
+        let stage = showcase.exists ? showcase : app.descendants(matching: .any)["arenaStage"].firstMatch
+        guard stage.exists, !app.scrollViews["modalScroll"].exists else { return }
         let resized = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (stage.frame.width > stage.frame.height) == landscape && app.frame.contains(stage.frame)
+            (split.exists || (stage.frame.width > stage.frame.height) == landscape) && app.frame.contains(stage.frame)
         }, object: stage)
         XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 5), .completed)
     }

@@ -1,6 +1,7 @@
 import Foundation
 
 public enum CallsignPolicy {
+    public static func canonical(_ name: String) -> String { CallsignCaseFold.fold(clean(name)) }
     /// Match the server's allowed characters, whitespace cleanup and 16-rune
     /// bound. Custom bot names are unrestricted by the human namespace rule.
     public static func clean(_ name: String) -> String {

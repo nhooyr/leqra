@@ -517,7 +517,19 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
         var remaining = max(0.0, (if (kind == "laser") range else min(range, 20000.0)) - launch.distance)
         val points = mutableListOf<BeamPoint>()
         for (i in 0 until maxSegments.coerceIn(0, if (kind == "laser") 256 else 128)) {
-            val wall = projectileHit(kind, xx, yy, ux * remaining, uy * remaining, radius)
+            val wall = if (kind == "laser" && world == null) {
+                // A nearby wall ends this segment. Avoid enumerating the entire
+                // long diagonal's bounding box again at each reflection.
+                var searched = 0.0
+                var hit: RayHit? = null
+                while (searched < remaining && hit == null) {
+                    val span = min(168.0, remaining - searched)
+                    hit = rayHit(xx + ux * searched, yy + uy * searched, ux * span, uy * span, radius)
+                    if (hit != null) hit.fraction = (searched + span * hit.fraction) / remaining
+                    searched += span
+                }
+                hit
+            } else projectileHit(kind, xx, yy, ux * remaining, uy * remaining, radius)
             val length = remaining * (wall?.fraction ?: 1.0)
             if (i == 0) {
                 val crop = if (launch.bounced) 0.0 else 28.0
