@@ -7,8 +7,10 @@ Android Keystore account storage. There is no WebView or JavaScript game runtime
 
 1. Install Android Studio, including Android SDK Platform 36 and Build Tools 36.
 2. Open this `android` directory as the Android Studio project. Let Gradle sync.
-   Select JDK 17 for Gradle (Settings → Build, Execution, Deployment → Build Tools
-   → Gradle). Android Studio can download it if necessary.
+   Use Android Studio's bundled JDK for Gradle (Settings → Build, Execution,
+   Deployment → Build Tools → Gradle). The Gradle 9.9.1 wrapper supports JDK
+   17–27; OpenJDK 27 works too. The compiler toolchain is separately pinned to
+   JDK 17, which Gradle downloads automatically if it is not already installed.
 3. Select the `app` run configuration and an emulator or connected Android phone,
    then click **Run ▶**. For a phone, enable Developer options and USB debugging,
    connect it, and accept its debugging prompt.
@@ -19,8 +21,8 @@ gestures. High refresh rate is enabled by default and requests the fastest
 compatible display mode. The actual refresh rate depends on the device and its
 system settings.
 
-From the repository root, with `JAVA_HOME` pointing to JDK 17 and `ANDROID_HOME`
-pointing to the Android SDK:
+From the repository root, with `JAVA_HOME` pointing to a supported JDK and
+`ANDROID_HOME` pointing to the Android SDK:
 
 ```sh
 ./android/gradlew -p android :app:assembleDebug
@@ -28,15 +30,61 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.leqra/com.leqra.android.MainActivity
 ```
 
-The debug APK is signed with the local Android debug key. Release builds use
-`./android/gradlew -p android :app:assembleRelease`; supply your own release
-signing configuration before distribution. No personal signing configuration,
-device identifiers or SDK paths belong in version control. `local.properties`
-and build output are ignored.
+The debug APK is signed with the local Android debug key. `local.properties`
+and build output are ignored. No personal signing configuration, device
+identifiers or SDK paths belong in version control.
 
 The package version and online protocol handshake read `../scripts/version.sh`,
 which derives the version from `../src/main.go`. Build the Android app and server
 from the same release.
+
+The build uses Gradle 9.9.1 and Android Gradle Plugin 9.5.1. The app uses the
+Android plugin's built-in Kotlin support; the shared JVM core uses Kotlin 2.4.21.
+
+## Signed Play Store builds
+
+Configure the upload key once in your private `~/.gradle/gradle.properties`
+(or `$GRADLE_USER_HOME/gradle.properties` if set), not this repository's
+`android/gradle.properties`:
+
+```properties
+leqraUploadStoreFile=/absolute/path/to/leqra-upload.jks
+leqraUploadStorePassword=YOUR_KEYSTORE_PASSWORD
+leqraUploadKeyAlias=leqra-upload
+leqraUploadKeyPassword=YOUR_KEY_PASSWORD
+```
+
+Use the upload key already registered in Play Console for an existing app.
+For a new app, create a key outside the repository; this command prompts for
+its password and certificate details without putting the password in shell
+history:
+
+```sh
+keytool -genkeypair -keystore /absolute/path/to/leqra-upload.jks \
+  -alias leqra-upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+With the settings saved, build a signed Android App Bundle from the repository
+root:
+
+```sh
+./android/gradlew -p android :app:bundleRelease
+```
+
+Upload `android/app/build/outputs/bundle/release/app-release.aab` to Play Console.
+For a signed APK instead, run `:app:assembleRelease`; its output is
+`android/app/build/outputs/apk/release/app-release.apk`.
+
+CI can supply `LEQRA_UPLOAD_STORE_FILE`, `LEQRA_UPLOAD_STORE_PASSWORD`,
+`LEQRA_UPLOAD_KEY_ALIAS`, and `LEQRA_UPLOAD_KEY_PASSWORD` as environment secrets.
+Each Gradle property takes precedence over its corresponding environment
+variable. Keystore paths may be absolute or relative to the `android` directory;
+use an absolute path for a key stored elsewhere. Keep the keystore and passwords
+out of version control and retain a secure backup.
+
+Release packaging fails if any signing setting is missing or the keystore file
+does not exist; it never falls back to an unsigned release or the debug key.
+Debug builds, IDE sync, and unit tests do not require upload credentials.
 
 ## Play
 
