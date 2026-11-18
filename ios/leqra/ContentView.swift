@@ -18,7 +18,7 @@ struct ContentView: View {
                     else { game(landscape: landscape) }
                 }.padding(.horizontal, session.screen == .playing && session.isInfinity ? 0 : 9)
                     .padding(.top, landscape ? 5 : 9).padding(.bottom, session.screen == .playing && session.isInfinity ? 0 : 8)
-                    .allowsHitTesting(!session.paused && !session.showRules && !session.showControls && !session.showSettings && !session.showAccount && !session.showJoin && !session.showPresets && !session.showQueues && !session.showSidebar)
+                    .allowsHitTesting(!session.paused && !session.showRules && !session.showControls && !session.showAccount && !session.showJoin && !session.showPresets && !session.showQueues && !session.showSidebar)
                 if session.paused && session.screen == .playing { PauseCard(session: session, landscape: landscape) }
                 if session.showSidebar { SidebarPanel(session: session) }
                 if session.showPresets { PresetsPanel(session: session) }
@@ -36,6 +36,8 @@ struct ContentView: View {
         .alert("leqra", isPresented: Binding(get: { session.error != nil }, set: { if !$0 { session.error = nil } })) {
             Button("OK") { session.error = nil }
         } message: { Text(session.error ?? "") }
+        .onAppear { session.syncGamepads() }
+        .onChange(of: session.gamepadTargets) { _ in session.syncGamepads() }
         .onChange(of: scenePhase) { phase in session.scenePhaseChanged(phase) }
         .statusBarHidden(session.fullscreen)
         .persistentSystemOverlays(session.fullscreen ? .hidden : .automatic)

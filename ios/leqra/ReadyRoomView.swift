@@ -231,7 +231,7 @@ struct ReadyRoomView: View {
                     ForEach(1...(session.selectedMode == .survival ? 1 : session.selectedMode == .ctf ? 2 : 4), id: \.self) { Text("Team \($0)").tag($0) }
                 }.font(.system(size: 12))
             }
-            Text("Touch controls P1. Keyboard/mouse controls P2. Gamepads control their assigned player.")
+            Text("Touch controls P1. Keyboard/mouse controls P2.")
                 .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
     }

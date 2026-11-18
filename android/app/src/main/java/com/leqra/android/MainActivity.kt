@@ -118,29 +118,28 @@ class MainActivity : Activity() {
     private var controlLocalOwner: Int? = null
     private var updateControlsHardware: (() -> Unit)? = null
 
-    private data class ControllerState(
-        var x: Double = 0.0,
-        var y: Double = 0.0,
-        var trigger: Boolean = false,
-        val buttons: MutableSet<Int> = mutableSetOf(),
-    )
-
-    private val controllers = mutableMapOf<Int, ControllerState>()
+    private val gamepads = GamepadControls()
+    private var gamepadIDs = emptyList<Int>()
     private val controllerDevices = object : InputManager.InputDeviceListener {
-        private fun reset() {
-            // Removed hardware emits no final release. Clear hardware inputs
-            // without releasing P1's independent touch controls.
-            controllers.clear()
-            pressed.clear()
-            if (::session.isInitialized && ::arena.isInitialized) {
+        override fun onInputDeviceAdded(deviceId: Int) = refreshGamepads()
+        override fun onInputDeviceRemoved(deviceId: Int) = refreshGamepads(deviceId)
+        override fun onInputDeviceChanged(deviceId: Int) = refreshGamepads(deviceId)
+    }
+
+    private fun refreshGamepads(changed: Int? = null) {
+        val wasGamepad = changed != null && changed in gamepadIDs
+        gamepadIDs = InputDevice.getDeviceIds().filter { InputDevice.getDevice(it)?.isGamepad() == true }.sorted()
+        gamepads.updateDevices(gamepadIDs, controlOwner != null, controlLocalOwner != null, changed)
+        quickTourDialog?.updateGamepads(gamepadIDs, changed)
+        if (::session.isInitialized && ::arena.isInitialized) {
+            // Keyboard and mouse disconnects may never deliver a final release.
+            if (changed != null && !wasGamepad && changed !in gamepadIDs) {
+                pressed.clear()
                 arena.clearMouseControls()
-                keyboardInput()
             }
-            updateControlsHardware?.invoke()
+            keyboardInput()
         }
-        override fun onInputDeviceAdded(deviceId: Int) = reset()
-        override fun onInputDeviceRemoved(deviceId: Int) = reset()
-        override fun onInputDeviceChanged(deviceId: Int) = reset()
+        updateControlsHardware?.invoke()
     }
     private var frameCount = 0
     private var fpsStarted = 0L
@@ -206,8 +205,10 @@ class MainActivity : Activity() {
             }
         }
         session.emitAudioCue = { audio.play(it) }
+        gamepads.enabled = session.gamepadSupport
         buildShell()
         getSystemService(InputManager::class.java).registerInputDeviceListener(controllerDevices, main)
+        refreshGamepads()
         if (Build.VERSION.SDK_INT >= 33)
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
@@ -292,7 +293,7 @@ class MainActivity : Activity() {
         availability?.cancel()
         if (::arena.isInitialized) {
             pressed.clear()
-            controllers.clear()
+            gamepads.clear()
             session.background()
             arena.pause()
             audio.pause()
@@ -329,13 +330,14 @@ class MainActivity : Activity() {
                 applyFullscreen()
             },
             openRoom = { if (session.screen == Screen.PLAYING) showMenu() },
+            openSidebar = { showSidebar() },
         )
         root.add(header, gap = 0)
         statusLine =
             NativeStatusView(this, openScores = {
                 showScores = !showScores
                 updateScores()
-            }, openSidebar = { showSidebar() })
+            })
         root.add(statusLine, gap = 0)
         objectiveLine = NativeObjectiveView(this)
         root.add(objectiveLine, gap = 0)
@@ -435,8 +437,8 @@ class MainActivity : Activity() {
         }
         val availableWidthDp = resources.configuration.screenWidthDp -
             (safeLeft + safeRight) / resources.displayMetrics.density
-        header.display(landscape, availableWidthDp, session.muted, playing, fullscreen, session.roomCode)
         val loading = session.screen == Screen.CONNECTING
+        header.display(landscape, availableWidthDp, session.muted, playing, fullscreen, session.roomCode, showSidebar = !loading)
         if (loading || (!playing && previousPlaying)) showScores = false
         val awake = playing && !session.paused
         arena.controlsLayout = playing && !session.spectating
@@ -588,7 +590,7 @@ class MainActivity : Activity() {
 
     private fun clearHeldControls(resetPrediction: Boolean = true) {
         pressed.clear()
-        controllers.clear()
+        gamepads.clear()
         if (::arena.isInitialized) arena.resetControls()
         if (resetPrediction) session.neutral()
         else {
@@ -600,7 +602,7 @@ class MainActivity : Activity() {
 
     private fun syncControlSeats() {
         val owner = session.localID.takeIf { session.screen == Screen.PLAYING && !session.spectating }
-        val local = session.localID2.takeIf { session.screen == Screen.PLAYING }
+        val local = session.localID2.takeIf { session.screen == Screen.PLAYING && session.canControlSecondary }
         if (owner != controlOwner || local != controlLocalOwner) {
             val samePrimary = owner != null && owner == controlOwner
             controlOwner = owner
@@ -1164,7 +1166,7 @@ class MainActivity : Activity() {
                 refresh(true)
             }
             if (session.rules.teamMode == "teams") localTeamChoice(secondary, 1)
-            secondary.add(label(this, "Touch controls P1. Keyboard/mouse controls P2. Gamepads control their assigned player.", 11f, soft), gap = 0)
+            secondary.add(label(this, "Touch controls P1. Keyboard/mouse controls P2.", 11f, soft), gap = 0)
             panel.add(secondary)
         }
         for (bot in session.localBots) localBotRow(panel, bot)
@@ -1450,6 +1452,13 @@ class MainActivity : Activity() {
             appendFieldManual(panel)
         }
         showPanel(panel, "Paused")
+        dialog?.setOnKeyListener { _, key, event ->
+            if (key != KeyEvent.KEYCODE_BUTTON_START || !event.isGamepad()) return@setOnKeyListener false
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+                gamepads.inputForDevice(event.deviceId, controlOwner != null, controlLocalOwner != null) != null
+            ) resumeBattle()
+            true
+        }
     }
 
     private fun showControls() = showControls(false)
@@ -1457,14 +1466,33 @@ class MainActivity : Activity() {
     private fun showControls(returnToPause: Boolean) {
         val panel = column(this, 16)
         val paired = if (session.online) session.localID2 != null else session.localSelected
+        val hasLocalCoPilot = when {
+            session.room != null -> session.roomLocalPilot != null
+            session.online || session.screen == Screen.PLAYING -> session.localID2 != null
+            else -> session.localSelected
+        }
         panel.add(label(this, session.identity, 13f, paint(session.colorIndex), true))
         panel.add(label(this, "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Hold the right Fire button to shoot. Pickups equip automatically.", 13f))
-        panel.add(label(this, "Grenades can be thrown with a tap or hold. Release, then tap again to detonate. Release again before throwing another grenade. Projectiles pass through the tank that fired them.", 12f, soft))
-        val gamepadSeats = if (paired) " The first gamepad controls P1 and the second controls P2." else ""
-        panel.add(label(this, "On a gamepad, use the left stick to drive and A/R1/R2 to fire.$gamepadSeats Back pauses. Swipe from an edge for Android system controls.", 12f, soft))
+        panel.add(label(this, "Swipe from an edge for Android system controls.", 12f, soft))
         val showcaseHelp = label(this, "", 11f, soft)
         hardwareControls(panel, paired, showcaseHelp)
+        panel.add(button(this, "QUICK TOUR", { showQuickTour() }))
+        panel.add(button(this, "SHOWCASE", { showShowcase() }))
+        panel.add(showcaseHelp)
+        val reopenControls = { showControls(returnToPause) }
+        panel.add(button(this, if (hasLocalCoPilot) "P1 ACCOUNT KEY" else "ACCOUNT KEY", {
+            showAccount(0, returnToPause = false, onClose = reopenControls)
+        }))
+        if (hasLocalCoPilot) panel.add(button(this, "P2 ACCOUNT KEY", {
+            showAccount(1, returnToPause = false, onClose = reopenControls)
+        }))
         panel.add(View(this).apply { setBackgroundColor(NativeStyle.edge) }, height = 1)
+        panel.add(settingsToggle("Game controller support", session.gamepadSupport) {
+            session.gamepadSupport = it
+            gamepads.enabled = it
+            keyboardInput()
+            session.save()
+        })
         panel.add(settingsToggle("Request high refresh rate", session.highRefresh) {
             session.highRefresh = it
             session.save()
@@ -1513,30 +1541,13 @@ class MainActivity : Activity() {
                 }
             })
         })
-        panel.add(label(this, "Display rate adapts to the screen, power, temperature, and Android settings.", 11f, soft))
         onlineServerSetting(panel)
         panel.add(label(this, "App version ${BuildConfig.VERSION_NAME}", 11f, muted, mono = true))
-        val reopenControls = { showControls(returnToPause) }
-        panel.add(button(this, "ACCOUNT KEY", { showAccount(0, returnToPause = false, onClose = reopenControls) }))
-        panel.add(button(this, "P2 ACCOUNT KEY", { showAccount(1, returnToPause = false, onClose = reopenControls) }))
-        panel.add(button(this, "QUICK TOUR", { showQuickTour() }))
-        panel.add(button(this, "SHOWCASE", { showShowcase() }))
-        panel.add(showcaseHelp)
         panel.add(button(this, "RESET ALL SETTINGS", { confirmResetSettings() }, role = "danger"))
         panel.add(button(this, "BACK", ::dismissDialog, role = "primary"), gap = 0)
-        val header = row(this).apply {
-            setPadding(dp(16), dp(10), dp(10), dp(4))
-            weighted(label(this@MainActivity, "Controls", 23f, bold = true).apply {
-                if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
-            })
-            add(button(this@MainActivity, "×", ::dismissDialog, role = "text").apply {
-                textSize = 22f
-                contentDescription = "Close Controls"
-            }, width = 44, height = 44, gap = 0)
-        }
         panel.isFocusableInTouchMode = true
         panel.requestFocus()
-        showPanel(panel, "Controls", afterClose = if (returnToPause) ::showMenu else null, header = header)
+        showPanel(panel, "Controls", afterClose = if (returnToPause) ::showMenu else null, header = panelHeader("Controls"))
     }
 
     private fun onlineServerSetting(panel: LinearLayout) {
@@ -2148,7 +2159,6 @@ class MainActivity : Activity() {
             session.server == origin && session.store.selected(origin, seat)?.key == selected?.key
         val pilot = if (seat == 0) session.identity else "${session.localCallsign} (P2)"
         val pilotColor = paint(if (seat == 0) session.colorIndex else session.localColorIndex)
-        panel.add(label(this, "Account key", 24f, accent, true))
         panel.add(label(this, pilot, 12f, pilotColor, true, mono = true))
         panel.add(label(this, "Each local player has a separate account key. Copying, importing, or resetting this key affects only this player's account.", 12f, soft))
         val details =
@@ -2367,7 +2377,8 @@ class MainActivity : Activity() {
                 },
             ),
         )
-        showPanel(panel, "P${seat+1} account key", secure = true, afterClose = if (returnToPause) ::showMenu else onClose)
+        showPanel(panel, "P${seat+1} account key", secure = true, afterClose = if (returnToPause) ::showMenu else onClose,
+            header = panelHeader("Account key"))
         val shown = dialog ?: return
         accountDialog = shown
         val pendingScores = mutableSetOf<CancelRequest>()
@@ -2449,7 +2460,7 @@ class MainActivity : Activity() {
         currentLeaders().forEachIndexed { index, player ->
             panel.add(standingsRow(player, index + 1, localSeat(player)))
         }
-        appendFieldManual(panel)
+        appendFieldManual(panel, sidebar = true)
         panel.add(button(this, "CONTROLS", { showControls() }))
         showPanel(panel, "Sidebar", afterClose = if (returnToResults) ({
             main.post {
@@ -2465,13 +2476,14 @@ class MainActivity : Activity() {
         }) else null)
     }
 
-    private fun appendFieldManual(panel: LinearLayout) {
+    private fun appendFieldManual(panel: LinearLayout, sidebar: Boolean = false) {
         val infinity = if (session.screen == Screen.PLAYING) session.infinity else session.rules.infinity || session.publicSelected
         val rules = session.rules.copy(infinity = infinity)
         val world = session.snapshot.world.takeIf { session.screen == Screen.PLAYING }
         panel.add(label(this, "FIELD MANUAL", 10f, accent, mono = true))
         panel.add(label(this, "Touch", 13f, text, true))
         panel.add(label(this, "Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.", 12f, soft))
+        if (sidebar) panel.add(label(this, "Connect a game controller to play.", 12f, soft))
         panel.add(label(this, if (infinity) "INFINITY" else session.modeTitle.uppercase(java.util.Locale.ROOT), 10f, accent, mono = true))
         panel.add(label(this, if (infinity) "Gain a point for each kill and lose a point each time the tank is destroyed. Respawn after one second. Keep growing the score without a time limit."
             else modeHelp(session.mode), 12f, soft))
@@ -2480,7 +2492,7 @@ class MainActivity : Activity() {
         for (kind in PowerupHelp.kinds) {
             val entry = column(this)
             entry.add(label(this, PowerupHelp.title(kind), 12f, text, true), gap = 3)
-            entry.add(label(this, PowerupHelp.description(kind, rules, world), 12f, soft), gap = 0)
+            entry.add(label(this, PowerupHelp.description(kind, rules, world, includeGrenadeControls = sidebar), 12f, soft), gap = 0)
             panel.add(entry)
         }
     }
@@ -2662,8 +2674,9 @@ class MainActivity : Activity() {
 
     private fun showQuickTour() {
         if (quickTourDialog != null) return
-        val shown = QuickTour(this, session.highRefresh, ::previewAudio)
+        val shown = QuickTour(this, session.highRefresh, session.gamepadSupport, ::previewAudio)
         quickTourDialog = shown
+        shown.updateGamepads(gamepadIDs)
         // Keep a static backdrop while the dialog owns the interactive arena.
         if (arena.renderedFrames == 0L) arena.submit(session.snapshot, session.localID, session.maze, session.localID2, session.online)
         arena.pause()
@@ -2680,6 +2693,17 @@ class MainActivity : Activity() {
         }
         shown.show()
         shown.resize()
+    }
+
+    private fun panelHeader(title: String) = row(this).apply {
+        setPadding(dp(16), dp(10), dp(10), dp(4))
+        weighted(label(this@MainActivity, title, 23f, bold = true).apply {
+            if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+        })
+        add(button(this@MainActivity, "×", ::dismissDialog, role = "text").apply {
+            textSize = 22f
+            contentDescription = "Close $title"
+        }, width = 44, height = 44, gap = 0)
     }
 
     private fun showPanel(
@@ -2925,31 +2949,38 @@ class MainActivity : Activity() {
             ::session.isInitialized &&
                 session.screen == Screen.PLAYING &&
                 dialog == null &&
-                event.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
+                event.isGamepadMotion()
         )
-            return onGenericMotionEvent(event)
+        {
+            syncControlSeats()
+            val gamepad = gamepads.inputForDevice(event.deviceId, controlOwner != null, controlLocalOwner != null)
+            if (gamepad != null) {
+                gamepad.motion(event)
+                keyboardInput()
+            }
+            return true
+        }
         return super.dispatchGenericMotionEvent(event)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (session.screen != Screen.PLAYING || dialog != null)
             return super.onKeyDown(keyCode, event)
-        if (keyCode == KeyEvent.KEYCODE_ESCAPE || keyCode == KeyEvent.KEYCODE_BUTTON_START) {
-            showMenu()
-            return true
-        }
         syncControlSeats()
-        if (
-            keyCode in gamepadFireKeys &&
-                event.device?.sources?.and(InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
-        ) {
-            val buttons = controllers.getOrPut(event.deviceId) { ControllerState() }.buttons
-            if (event.repeatCount > 0 && keyCode !in buttons) return true
-            buttons.add(keyCode)
-            controllerInput(event.deviceId)
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            if (event.repeatCount == 0) showMenu()
             return true
         }
-        if (isGameKey(keyCode)) {
+        if (event.isGamepad() && keyCode == KeyEvent.KEYCODE_BUTTON_START) {
+            if (event.repeatCount == 0 && gamepads.inputForDevice(event.deviceId, controlOwner != null, controlLocalOwner != null) != null)
+                showMenu()
+            return true
+        }
+        if (keyCode in GamepadInput.keys && event.isGamepad()) {
+            gamepadKey(event, down = true)
+            return true
+        }
+        if (keyCode in session.keyboardBindings) {
             if (event.repeatCount > 0 && keyCode !in pressed) return true
             if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) return super.onKeyDown(keyCode, event)
             if (session.keyboardBindings.isTurn(keyCode)) arena.clearMouseAim()
@@ -2962,10 +2993,11 @@ class MainActivity : Activity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (::session.isInitialized) syncControlSeats()
-        if (controllers[event.deviceId]?.buttons?.remove(keyCode) == true) {
-            controllerInput(event.deviceId)
+        if (keyCode in GamepadInput.keys && event.isGamepad()) {
+            gamepadKey(event, down = false)
             return true
         }
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_START && event.isGamepad()) return true
         if (pressed.remove(keyCode)) {
             keyboardInput()
             return true
@@ -2973,7 +3005,13 @@ class MainActivity : Activity() {
         return super.onKeyUp(keyCode, event)
     }
 
-    private fun isGameKey(code: Int) = code in gamepadFireKeys || code in session.keyboardBindings
+    private fun gamepadKey(event: KeyEvent, down: Boolean) {
+        val gamepad = gamepads.inputForDevice(event.deviceId, controlOwner != null, controlLocalOwner != null) ?: return
+        gamepad.key(event.keyCode, down, event.repeatCount > 0)
+        keyboardInput()
+    }
+
+    private fun isGameKey(code: Int) = code in GamepadInput.keys || code in session.keyboardBindings
 
     private fun keyboardInput() {
         session.input = combinedInput(false)
@@ -2984,18 +3022,9 @@ class MainActivity : Activity() {
         val paired = session.localID2 != null
         val keyboardSeat = local == paired
         val controls = if (keyboardSeat) session.keyboardBindings.input(pressed) else GameInput(touchAim = false)
-        if (keyboardSeat && gamepadFireKeys.any(pressed::contains)) controls.fire = true
-        var analog: ControllerState? = null
-        if (controllers.isNotEmpty()) {
-            val devices = InputDevice.getDeviceIds().filter {
-                InputDevice.getDevice(it)?.sources?.and(InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
-            }
-            for ((id, state) in controllers) if (id in devices && (paired && devices.indexOf(id) > 0) == local) {
-                controls.fire = controls.fire || state.trigger || state.buttons.isNotEmpty()
-                if (analog == null || hypot(state.x, state.y) > hypot(analog.x, analog.y)) analog = state
-            }
-        }
-        if (!local && (controls.forward || controls.reverse || controls.left || controls.right || analog?.let { hypot(it.x, it.y) > .1 } == true)) arena.clearDirectAim()
+        gamepads.inputForSeat(if (local) 1 else 0, controlOwner != null, controlLocalOwner != null)?.merge(controls)
+        val analog = hypot(controls.stickX, controls.stickY) > .1
+        if (!local && (controls.forward || controls.reverse || controls.left || controls.right || analog)) arena.clearDirectAim()
         val touch = if (local) null else arena.input
         val mouse = if (keyboardSeat) arena.mouseInput() else null
         if (touch != null) controls.fire = controls.fire || touch.fire
@@ -3003,9 +3032,7 @@ class MainActivity : Activity() {
         if (touch != null && hypot(touch.stickX, touch.stickY) > .1) {
             controls.stickX = touch.stickX; controls.stickY = touch.stickY; controls.touchAim = true
             controls.aimOnly = touch.aimOnly; controls.snapAim = touch.snapAim
-        } else if (analog != null && hypot(analog.x, analog.y) > .1) {
-            controls.stickX = analog.x; controls.stickY = analog.y; controls.touchAim = true
-        } else if (mouse != null && hypot(mouse.stickX, mouse.stickY) > .1 && !controls.left && !controls.right) {
+        } else if (!analog && mouse != null && hypot(mouse.stickX, mouse.stickY) > .1 && !controls.left && !controls.right) {
             controls.stickX = mouse.stickX; controls.stickY = mouse.stickY
             controls.aimOnly = true
             controls.snapAim = !controls.forward && !controls.reverse
@@ -3013,31 +3040,8 @@ class MainActivity : Activity() {
         return controls
     }
 
-    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        if (
-            event.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK &&
-                session.screen == Screen.PLAYING &&
-                dialog == null
-        ) {
-            val state = controllers.getOrPut(event.deviceId) { ControllerState() }
-            state.x = event.getAxisValue(MotionEvent.AXIS_X).toDouble()
-            state.y = event.getAxisValue(MotionEvent.AXIS_Y).toDouble()
-            state.trigger = event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > .3
-            controllerInput(event.deviceId)
-            return true
-        }
-        return super.onGenericMotionEvent(event)
-    }
-
-    private fun controllerInput(deviceId: Int) {
-        if (deviceId in controllers) keyboardInput()
-    }
-
     companion object {
         private const val CALLSIGN_TAKEN_HINT =
             "Used online; offline is OK.\nYours? Import account key\nGenerate random?"
-        private val gamepadFireKeys =
-            setOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_BUTTON_R2)
-
     }
 }

@@ -20,7 +20,15 @@ test('shared power cards avoid weapon-specific immunity and finite-map claims in
  assert.match(sidebar,/Cannon<span>Pierces walls\. 4× size and speed\./);assert.match(sidebar,/Homing missile<span>Guided missiles that ricochet\./);assert.match(sidebar,/Shotgun<span>Fast, ricocheting spread\./);
  const note=sidebar.match(/<p class="power-note">([^<]*)<\/p>/)[1];assert.doesNotMatch(note,/Most timed|Huge maps|within that time/);assert.match(note,/Walls stop blasts/);
  assert.match(html,/Every tank is immune to its own weapons\./);assert.match(source,/add\(generalTips,'owner-immunity','Every tank is immune to its own weapons\.'\)/);
- assert.match(html,/Grenade<\/strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds\./);
+});
+
+test('grenade guidance appears in the sidebar and Quick Tour',()=>{
+ const sidebar=html.slice(html.indexOf('<aside class="sidebar"'),html.indexOf('</aside>'));
+ const tour=html.match(/<dialog id="introTourDialog"[^>]*>[\s\S]*?<\/dialog>/)[0];
+ const controls=source.slice(source.indexOf('<dialog class="feature-dialog" id="controlsDialog"'),source.indexOf('document.body.append(dialogs)'));
+ assert.match(sidebar,/Grenade<span>[^<]*next Fire press, or after 10 seconds\. Release Fire after detonating to shoot again\./);
+ assert.match(tour,/Grenade<\/strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds\./);
+ assert.doesNotMatch(controls,/grenade/i);
 });
 
 test('power-up timing lives in the sidebar and Rules, not Controls',()=>{

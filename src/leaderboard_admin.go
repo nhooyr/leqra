@@ -36,7 +36,10 @@ type leaderboardAdmin struct {
 	csrf    string
 }
 
-type leaderboardAdminListener struct{ server *http.Server }
+type leaderboardAdminListener struct {
+	server *http.Server
+	url    string
+}
 
 func (l *leaderboardAdminListener) Close() error {
 	if l.server == nil {
@@ -49,7 +52,7 @@ func (l *leaderboardAdminListener) Close() error {
 
 // The admin handler is deliberately never registered on the game's HTTP server.
 // Both the listener and handler reject non-loopback access, including rebinding.
-func startLeaderboardAdmin(backend leaderboardAdminBackend, address string) (io.Closer, error) {
+func startLeaderboardAdmin(backend leaderboardAdminBackend, address string) (*leaderboardAdminListener, error) {
 	if address == "off" {
 		return &leaderboardAdminListener{}, nil
 	}
@@ -61,7 +64,8 @@ func startLeaderboardAdmin(backend leaderboardAdminBackend, address string) (io.
 	if err != nil {
 		return nil, fmt.Errorf("listen for leaderboard admin: %w", err)
 	}
-	if tcp, ok := listener.Addr().(*net.TCPAddr); !ok || !tcp.IP.IsLoopback() {
+	tcp, ok := listener.Addr().(*net.TCPAddr)
+	if !ok || !tcp.IP.IsLoopback() {
 		listener.Close()
 		return nil, errors.New("leaderboard admin listener must be loopback")
 	}
@@ -76,8 +80,8 @@ func startLeaderboardAdmin(backend leaderboardAdminBackend, address string) (io.
 			log.Printf("leaderboard admin: %v", err)
 		}
 	}()
-	log.Printf("leaderboard admin: http://%s (loopback only)", listener.Addr())
-	return &leaderboardAdminListener{server: server}, nil
+	openURL, _ := startupURLs(tcp, nil, lanHostname)
+	return &leaderboardAdminListener{server: server, url: openURL}, nil
 }
 
 func adminLoopbackHost(host string) bool {

@@ -36,7 +36,6 @@ final class GameSession: ObservableObject {
     @Published private(set) var followingID = 0
     @Published private(set) var followError = ""
     @Published var showScores = false
-    var showSettings: Bool { get { showControls } set { showControls = newValue } }
     @Published var showAccount = false { didSet { refreshStarmanActivity() } }
     @Published var accountSeatContext = 0
     @Published var accountInfo: AccountInfo?
@@ -65,6 +64,12 @@ final class GameSession: ObservableObject {
     @Published var publicStatus: NativePublicStatus?
     @Published var showFPS = NativePreferences.current.object(forKey: "showFPS") as? Bool ?? true {
         didSet { NativePreferences.current.set(showFPS, forKey: "showFPS") }
+    }
+    @Published var gamepadSupport = NativePreferences.gamepadSupportEnabled() {
+        didSet {
+            NativePreferences.current.set(gamepadSupport, forKey: NativePreferences.gamepadSupportKey)
+            gamepads.setSupportEnabled(gamepadSupport)
+        }
     }
     @Published var fullscreen = false
     @Published var weaponsLive = false
@@ -126,6 +131,7 @@ final class GameSession: ObservableObject {
     }
     let scene = GameScene(size: CGSize(width: 800, height: 600))
     let secondaryScene = GameScene(size: CGSize(width: 800, height: 600))
+    let gamepads = NativeGamepads()
     private let audio = GameAudio()
     private let roomClient = NetworkClient()
     private let arenaClient = NetworkClient()
@@ -217,6 +223,9 @@ final class GameSession: ObservableObject {
         if !savedPresets.isEmpty { NativePreferences.current.set(try? JSONEncoder().encode(savedPresets), forKey: "nativePresets") }
         scene.scaleMode = .resizeFill
         secondaryScene.scaleMode = .resizeFill
+        gamepads.setSupportEnabled(gamepadSupport)
+        gamepads.gameplayInputAllowed = { [weak self] in self?.gamepadTargets.enabled == true }
+        gamepads.onMenu = { [weak self] in self?.toggleGamepadPause() }
         scene.onFrame = { [weak self] dt in self?.frame(dt) }
         scene.onFireChanged = { [weak self] down in self?.fireInputChanged(down) }
         scene.onControlsReset = { [weak self] in
@@ -342,15 +351,17 @@ final class GameSession: ObservableObject {
     var canConfirmQueue: Bool { queueState?.stage == "confirming" && queueState?.members.contains { $0.controller == welcome?.member && !$0.accepted } == true }
     var canCancelQueue: Bool { isHost || queueState?.members.contains { $0.controller == welcome?.member } == true }
     var canQueue: Bool { isHost && (room.map { ["lobby", "matchOver"].contains($0.phase) && !$0.infinityActive && $0.matchmaking == nil && $0.awayMatch.isEmpty } ?? true) }
-    var hasModal: Bool { showSettings || showAccount || showRules || showControls || showSidebar || showJoin || showPresets || showQueues || showShowcase }
+    var hasModal: Bool { showAccount || showRules || showControls || showSidebar || showJoin || showPresets || showQueues || showShowcase }
     var canImportAccount: Bool {
         !releasingCallsign && screen == .menu && room == nil && !arenaActive && !publicIdentityActive && !publicRecoveryPending
             && !roomClient.connected && !arenaClient.connected && !pendingShare
     }
     var accountOrigin: String { accountServer.flatMap { try? PublicInfinitySession.normalizedOrigin($0) } ?? "Invalid server address" }
     var accountLocalPlayer: RoomMember? { room?.players.first { $0.kind == "local" && $0.owner == welcome?.id } }
+    var accountLocalMember: RoomMember? { accountLocalPlayer ?? room?.spectators.first { $0.kind == "local" && $0.owner == welcome?.id } }
+    var hasAttachedLocalP2: Bool { room == nil ? localP2Enabled : accountLocalMember != nil }
     var accountContextIdentity: String {
-        accountSeatContext == 1 ? (accountLocalPlayer?.name ?? accountInfo?.publicProfile?.name ?? localCallsign) + " (P2)" : identity
+        accountSeatContext == 1 ? (accountLocalMember?.name ?? accountInfo?.publicProfile?.name ?? localCallsign) + " (P2)" : identity
     }
     var accountHasKey: Bool { accountServer.map { accountSession(for: $0, seat: accountSeatContext) != nil || publicSessions.pendingKey(for: $0, seat: accountSeatContext) != nil } ?? false }
     var accountCanCopyKey: Bool {
@@ -529,7 +540,7 @@ final class GameSession: ObservableObject {
             arenaActive = false; publicIdentityActive = false
             if slot == 0 { publicSessions.activate(nil) }
         }
-        showSettings = false; showAccount = true
+        showAccount = true
         let operation = UUID(); accountOperation = operation
         accountTask?.cancel(); accountInfo = nil; accountStatus = ""
         refreshSavedCallsignScores(currentLoading: true)
@@ -1340,7 +1351,7 @@ final class GameSession: ObservableObject {
         callsignOperation = UUID(); accountOperation = UUID(); switchingCallsign = false
         NativePreferences.resetAppSettings()
         serverAddress = "https://leqra.com"
-        highFrameRate = true; showFPS = true; soundEnabled = true; soundVolume = 50; fullscreen = false
+        highFrameRate = true; showFPS = true; gamepadSupport = true; soundEnabled = true; soundVolume = 50; fullscreen = false
         NativeInputSettings.shared.resetAll()
         colorIndex = 0; localP2ColorIndex = 1; localTeam = 0; localP2Team = 0; localP2Enabled = false
         localRules = RoomRules.localDefaults(); localRules.infinity = false
@@ -1525,6 +1536,7 @@ final class GameSession: ObservableObject {
     /// Suspension and force-quit preserve only the authenticated public route.
     /// A room's short-lived reservation is never used to restore public score.
     func scenePhaseChanged(_ phase: ScenePhase) {
+        defer { syncGamepads() }
         if showShowcase {
             if phase == .background { showcaseBackgrounded = true }
             if phase == .active && showcaseBackgrounded { dismissShowcase() }
@@ -1591,6 +1603,32 @@ final class GameSession: ObservableObject {
         }
         UIApplication.shared.isIdleTimerDisabled = screen == .playing && !value
         if value { audio.pause(fadeLoop: !lifecycleInactive) } else { applyAudioSetting() }
+        syncGamepads()
+    }
+
+    struct GamepadTargets: Equatable {
+        let primary: Bool
+        let secondary: Bool
+        let enabled: Bool
+    }
+
+    var gamepadTargets: GamepadTargets {
+        let playing = screen == .playing
+        return GamepadTargets(primary: playing && !spectating, secondary: playing && secondaryLocalID != nil,
+                              enabled: gamepadSupport && playing && !paused && !hasModal && !lifecycleInactive && !disconnected
+                                  && error == nil && snapshot.result == nil && snapshot.phase != "matchOver")
+    }
+
+    func syncGamepads() {
+        let targets = gamepadTargets
+        gamepads.configure(primary: targets.primary ? scene : nil, secondary: targets.secondary ? secondaryScene : nil,
+                           enabled: targets.enabled)
+    }
+
+    private func toggleGamepadPause() {
+        guard screen == .playing, !hasModal, !lifecycleInactive, !disconnected, error == nil,
+              snapshot.result == nil, snapshot.phase != "matchOver", !paused || canResume else { return }
+        setPaused(!paused)
     }
 
     func setSoundVolume(_ value: Double) {
@@ -1646,7 +1684,7 @@ final class GameSession: ObservableObject {
         localTank = nil; secondaryLocalTank = nil; pendingLocalJoin = false; showQueues = false; showJoin = false; showPresets = false
         publicIdentityActive = false; publicRecoveryPending = false; publicResumePaused = false
         publicSuspended = false; publicScoreResetPending = false
-        showRules = false; showControls = false; showSidebar = false; showSettings = false; showAccount = false
+        showRules = false; showControls = false; showSidebar = false; showAccount = false
         queueState = nil; queueListings = []
         UIApplication.shared.isIdleTimerDisabled = false
     }
@@ -1933,7 +1971,7 @@ final class GameSession: ObservableObject {
                     dropPublicRoomRoute()
                     disconnected = true; paused = false; screen = .connecting
                     scene.resetControls(); timeline?.neutralize(); audio.pause()
-                    showSettings = false; showAccount = false; showControls = false; showScores = false
+                    showAccount = false; showControls = false; showScores = false
                     showRules = false; showSidebar = false
                     UIApplication.shared.isIdleTimerDisabled = false
                 } else if arena, spectating {

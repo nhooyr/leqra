@@ -39,6 +39,27 @@ class NativeChromeTest {
     }
 
     @Test
+    fun compactRoomHeaderFitsSidebarBesideControlsAndKeepsTheVersion() {
+        instrumentation.runOnMainSync {
+            val context = instrumentation.targetContext
+            var openedSidebar = false
+            val header = NativeGameHeader(context, {}, {}, {}, openSidebar = { openedSidebar = true })
+            header.display(false, 375f, false, false, roomCode = "PARITY")
+            layout(header, context.dp(375), context.dp(54))
+            val views = (0 until header.childCount).map(header::getChildAt)
+            val sidebar = views.single { it.contentDescription == "Open sidebar" }
+            val controls = views.single { it.contentDescription == "Controls" }
+            val badge = views.filterIsInstance<TextView>().single { it.contentDescription == "View leqra on GitHub" }
+            assertEquals(header, sidebar.parent)
+            assertEquals(controls.left, sidebar.right)
+            assertTrue("Controls stays within the compact header", controls.right <= header.width - header.paddingRight)
+            assertEquals("v${BuildConfig.VERSION_NAME}", badge.text.toString())
+            assertTrue(sidebar.performClick())
+            assertTrue(openedSidebar)
+        }
+    }
+
+    @Test
     fun headerSoundIconStaysCenteredWhenMuted() {
         instrumentation.runOnMainSync {
             val context = instrumentation.targetContext

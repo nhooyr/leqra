@@ -47,6 +47,21 @@ class PowerupHelpTest {
         }
     }
 
+    @Test fun grenadeControlInstructionsAreOnlyInTheSidebar() {
+        val rules = RoomRules.modeDefaults("elimination").apply { mapSize = "standard" }
+        val rulesDescription = PowerupHelp.description("grenade", rules)
+        assertTrue(rulesDescription.contains("contact or after a 10-second fuse"))
+        assertTrue(rulesDescription.contains("Walls block the blast"))
+        assertTrue(rulesDescription.contains("3 throws or 10 seconds"))
+        assertFalse(rulesDescription.contains("Fire"))
+
+        val sidebarDescription = PowerupHelp.description("grenade", rules, includeGrenadeControls = true)
+        assertTrue(sidebarDescription.startsWith(rulesDescription))
+        assertTrue(sidebarDescription.contains("Tap or hold Fire to throw"))
+        assertTrue(sidebarDescription.contains("press Fire again to detonate early"))
+        assertTrue(sidebarDescription.contains("Release Fire after detonation to shoot again"))
+    }
+
     @Test fun manualUsesTheActiveMazeAndListsDisabledWeapons() {
         val rules = RoomRules.modeDefaults("ctf").apply {
             mapSize = "compact"

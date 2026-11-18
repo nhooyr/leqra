@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.6.2';
+const GAME_VERSION='5.7.0';
 const GAME_PROTOCOL=1;
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
@@ -61,6 +61,10 @@ const WEBKIT_ENGINE=/AppleWebKit\//.test(UA)&&(!/(?:Chrome|Chromium|Edg|OPR)\//.
 const SAFARI_BROWSER=WEBKIT_ENGINE&&/Safari\//.test(UA)&&!/(?:CriOS|FxiOS|EdgiOS|OPiOS)\//.test(UA);
 document.body.classList.toggle('webkit-engine',WEBKIT_ENGINE);document.body.classList.toggle('safari-browser',SAFARI_BROWSER);document.body.classList.toggle('ios-webkit',IOS_WEBKIT);
 const keys=new Set(), firePointers=new Set(), firePresses=new Set();
+const gamepads=new window.leqraGamepads.Gamepads();
+const gamepadInput=seat=>gamepads.inputs[seat];
+let gamepadEnabled=true;
+try{gamepadEnabled=localStorage.getItem('leqra.gamepad')!=='0';}catch(_){}
 const stick={id:null,x:0,y:0,mag:0,cx:0,cy:0,max:36,assisted:false};
 const mouseAim={active:false,x:0,y:0};
 const Net=window.leqraNet;
@@ -114,9 +118,9 @@ const isSpectating=()=>!!roomMember(localPlayerID())?.spectating;
 const controlledTank=()=>tanks.find(t=>t.id===localPlayerID());
 const hasLocalP2=()=>mode==='duel'||!!secondLocal();
 const secondaryID=()=>mode==='duel'?1:secondLocal()?.id;
-const primaryFireHeld=()=>heldAction(0,'fire')||firePointers.size>(hardwareUsesP2()?mouseAim.firePointers?.size||0:0);
+const primaryFireHeld=()=>heldAction(0,'fire')||firePointers.size>(hardwareUsesP2()?mouseAim.firePointers?.size||0:0)||!!gamepadInput(0)?.fire;
 function hardwareUsesP2(paired=typeof hasLocalP2==='function'&&hasLocalP2()){return !!paired&&typeof navigator!=='undefined'&&(navigator.maxTouchPoints||0)>0;}
-function secondaryFireHeld(){return heldAction(1,'fire')||hardwareUsesP2()&&!!mouseAim.firePointers?.size;}
+function secondaryFireHeld(){return heldAction(1,'fire')||hardwareUsesP2()&&!!mouseAim.firePointers?.size||!!gamepadInput(1)?.fire;}
 function mouseControlledTank(){return hardwareUsesP2()?tanks.find(t=>t.id===secondaryID()):controlledTank();}
 const primaryFireKey=code=>keyForAction(0,'fire',code);
 
@@ -498,7 +502,7 @@ function syncPauseButton(){
  const title=label+' (P/Esc)';if(button.title!==title)button.title=title;
 }
 function setScreen(which){if($('inviteDialog')?.open)$('inviteDialog').close();if(which)pendingMatchPresentation=null;syncPauseButton();syncRestartWaveActions();if($('leaveMatchBtn'))$('leaveMatchBtn').hidden=mode!=='online';document.body.classList.toggle('room-setup',which==='room');if(which==='online'){which='room';if(!$('joinDialog').open)$('joinDialog').showModal();}document.body.classList.toggle('overlay-open',!!which);$('overlay').hidden=!which;for(const id of ['lobby','pause','match','online','room','onlineMenu'])$(id+'Screen').hidden=id!==which;syncArenaAudio();stabilizeArenaLayout();}
-function clearInput(){keys.clear();firePointers.clear();firePresses.clear();mouseAim.firePointers?.clear();mouseAim.firePressed=false;clearMouseAim();clearDirectAim();for(const t of tanks){t.fireBlocked=false;t.detonationHeld=false;}stick.id=null;stick.assisted=false;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
+function clearInput(){keys.clear();gamepads.clear();firePointers.clear();firePresses.clear();mouseAim.firePointers?.clear();mouseAim.firePressed=false;clearMouseAim();clearDirectAim();for(const t of tanks){t.fireBlocked=false;t.detonationHeld=false;}stick.id=null;stick.assisted=false;stick.x=stick.y=stick.mag=0;stick.cx=stick.cy=0;$('stickKnob').style.transform='translate(0,0)';$('fireBtn').classList.remove('held');}
 function setMode(value){delete $('manualContent').dataset.content;if(value==='online'){openOnline();return;}mode=value;document.querySelectorAll('[data-mode]').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});$('difficultyOptions').style.opacity=mode==='duel'?'.35':'1';document.querySelectorAll('[data-difficulty]').forEach(b=>b.disabled=mode==='duel');$('difficultyLabel').textContent=mode==='duel'?'TWO PLAYERS, ONE KEYBOARD':'BOT DIFFICULTY';$('lobbyNote').innerHTML=mode==='duel'?pilotControlHint(0,'mouse',false,true)+pilotControlHint(1,'',false,true):'FIRST TO 5, BOT SQUAD, FRESH MAZES';$('manualContent').innerHTML=fieldManualHTML();
  if(phase==='menu'){resetPreview();setLayout();}}
 function setDifficulty(value){if(!Object.prototype.hasOwnProperty.call(DIFFICULTY,value))return;difficulty=value;save('difficulty',value);document.querySelectorAll('[data-difficulty]').forEach(b=>{const selected=b.dataset.difficulty===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});}
@@ -1607,7 +1611,12 @@ function update(dt){
  for(const t of tanks)if(t.alive){localTankActors[t.id]=t;t.invulnerable=Math.max(0,t.invulnerable-dt);if(t.invulnerable===0)t.spawnProtected=false;t.ammoRefillPending=t.starmanTime>0&&t.starmanTime<=dt||t.shield>0&&t.shield<=dt||t.ghostTime>0&&t.ghostTime<=dt;t.starmanTime=Math.max(0,(t.starmanTime||0)-dt);t.shield=Math.max(0,t.shield-dt);if(t.shield<=0)t.shieldCharges=0;advanceGhost(t,dt);}
  let actorCount=0;for(const t of localTankActors)if(t)localTankActors[actorCount++]=t;
  for(let i=0;i<actorCount;i++){const t=localTankActors[(i+localTick)%actorCount];if(!t.alive)continue;t.cooldown=Math.max(0,t.cooldown-dt);if(t.cooldown<=1e-9)t.cooldown=0;let refill=t.ammoRefillPending||t.speedTime>0&&t.speedTime<=dt;t.ammoRefillPending=false;t.speedTime=Math.max(0,(t.speedTime||0)-dt);if(t.speedTime<=0)t.speedStacks=0;t.recoil=Math.max(0,t.recoil-dt*9);if(t.power&&!(t.starmanTime>0)){t.powerTime-=dt;if(t.powerTime<=0){Net.clearWeapon(t);refill=true;}}if(refill)Net.refillAmmo(t);
-  const x=t.x,y=t.y,angle=t.angle;if(t.human)humanControl(t,dt);else botControl(t,dt);t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.renderTurn=Math.atan2(Math.sin(t.angle-angle),Math.cos(t.angle-angle))/dt;t.track+=Math.hypot(t.x-x,t.y-y);
+  const x=t.x,y=t.y,angle=t.angle;
+  if(t.human){
+   const seat=(mode==='room'?t.localIndex===1:t.id!==0)?1:0;
+   humanControl(t,dt,false,gamepadInput(seat)?localMovementInput(t):undefined);
+  }else botControl(t,dt);
+  t.vx=(t.x-x)/dt;t.vy=(t.y-y)/dt;t.renderTurn=Math.atan2(Math.sin(t.angle-angle),Math.cos(t.angle-angle))/dt;t.track+=Math.hypot(t.x-x,t.y-y);
  }
  for(let i=0;i<tanks.length;i++)for(let j=i+1;j<tanks.length;j++){
   const a=tanks[i],b=tanks[j];if(!a.alive||!b.alive)continue;
@@ -2005,9 +2014,11 @@ function localMovementInput(t){
  const primary=mode==='room'?t.localIndex!==1:t.id===0,index=primary?0:1,mouse=index===(hardwareUsesP2()?1:0);
  const left=heldAction(index,'left'),right=heldAction(index,'right');
  const snap=primary&&directAim.active,aim=snap?directAim.angle:mouse&&(!primary||stick.mag<=.10)&&!left&&!right?mouseAimHeading(t):null;
- return {forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:false,
+ const input={forward:heldAction(index,'forward'),reverse:heldAction(index,'reverse'),left,right,fire:false,
   stickX:aim!==null?Math.cos(aim):primary?stick.x:0,stickY:aim!==null?Math.sin(aim):primary?stick.y:0,
   aimOnly:aim!==null,snapAim:snap,touchAim:primary&&stick.mag>.10&&stick.assisted};
+ const pad=gamepadInput(index);
+ return pad?window.leqraGamepads.merge(input,pad,primary&&(snap||stick.mag>.10)):input;
 }
 function advanceLocalRenderTank(pose,span,input){
  pose.starmanTime=Math.max(0,(pose.starmanTime||0)-span);
@@ -2066,8 +2077,38 @@ function renderArena(){
  for(const t of tanks)if(t.alive)drawTankLabel(t,tankLabelLayoutScratch[t.id]);
  ctx.save();ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();for(const t of tanks)drawTankPowerBadges(t,ctx,scale,'counts');ctx.restore();
 }
+function browserGamepads(){
+ if(!gamepadEnabled)return null;
+ let pads;
+ try{pads=navigator.getGamepads?.();}catch(_){}
+ return (pads&&Array.prototype.some.call(pads,Boolean))||gamepads.slots.some(Boolean)?pads||[]:null;
+}
+function sampleGamepads(pads,context,primary,secondary,canPause){
+ const focused=!document.hidden&&document.hasFocus?.()!==false;
+ return gamepads.sample(pads,focused?context:'',primary,secondary,focused&&canPause);
+}
+function gamepadDialogBlocked(...allowed){
+ return [...document.querySelectorAll('dialog[open]')].some(dialog=>!allowed.includes(dialog.id));
+}
+function pollFiniteGamepads(){
+ if($('introTourDialog').open&&!$('introTourPractice').hidden)return;
+ const pads=browserGamepads();if(!pads)return;
+ const permitted=!gamepadDialogBlocked()&&!chatHasFocus();
+ const playable=permitted&&phase==='playing'&&!online.menu&&!survivalBreak()&&(mode!=='online'||online.connected);
+ const canPause=permitted&&['countdown','playing','roundOver','paused'].includes(phase)&&(mode!=='online'||online.connected);
+ const before=[primaryFireHeld(),secondaryFireHeld()];
+ if(sampleGamepads(pads,playable?'finite':'',!isSpectating(),hasLocalP2(),canPause)){togglePause();return;}
+ const after=[primaryFireHeld(),secondaryFireHeld()];
+ if(before[0]===after[0]&&before[1]===after[1])return;
+ if(mode==='online'){sendOnlineInput(true);return;}
+ if(!playable)return;
+ for(const [seat,id] of [localPlayerID(),secondaryID()].entries())if(id!==undefined&&after[seat]&&!before[seat]){
+  initAudio();firePresses.add(id);
+ }
+}
 function frame(now){if(typeof settingsResetActive!=='undefined'&&settingsResetActive)return;if(!lastFrame)lastFrame=now;const elapsed=clamp((now-lastFrame)/1000,0,.10);lastFrame=now;
  if($('infiniteArena').open){requestAnimationFrame(frame);return;}
+ pollFiniteGamepads();
  const workStart=performance.now();
  if(mode==='online'){accumulator=0;onlineUpdate(elapsed);renderOnlineMotion(elapsed,now);}
  else{accumulator+=elapsed;let steps=0;while(accumulator>=1/120&&steps<12){update(1/120);accumulator-=1/120;steps++;}}
@@ -2594,10 +2635,10 @@ async function useImportedAccount(){
  for(const form of callsignForms())if(!form.hidden)scheduleCallsignAvailability(form.elements.callsign,form,0);
  openAccount(Number(dialog.dataset.accountSeat));accountNotice('accountImportNotice','Account imported. Play Public Infinity to continue with its saved score.');
 }
-function exposeAccountError(){for(const id of ['accountDialog','infinitePauseMenu']){const dialog=$(id);if(dialog?.open)dialog.close();}}
+function exposeAccountError(){for(const id of ['accountDialog','controlsDialog','infinitePauseMenu']){const dialog=$(id);if(dialog?.open)dialog.close();}}
 function initAccountTransfer(){
  for(const seat of [0,1]){try{rememberCurrentCallsignAccount(seat);}catch(_){}}
- for(const button of document.querySelectorAll('.callsign-account-button'))button.onclick=()=>openAccount(Number(button.dataset.accountSeat));
+ for(const button of document.querySelectorAll('button[data-account-seat]'))button.onclick=()=>openAccount(Number(button.dataset.accountSeat));
  $('pauseAccountBtn').onclick=()=>openAccount(0);
  $('accountCopyBtn').onclick=copyAccountKey;$('accountRotateBtn').onclick=rotateAccountKey;$('accountReleaseBtn').onclick=()=>releaseCallsignAccount(publicIdentityToken(accountSeat()),boundCallsignName(accountSeat())).catch(error=>accountNotice('accountCurrentNotice',error.message,true));$('accountImportForm').addEventListener('submit',event=>{event.preventDefault();checkImportedAccount();});$('accountUseBtn').onclick=useImportedAccount;
  $('accountImportKey').addEventListener('input',()=>{clearAccountImport();accountNotice('accountImportNotice','');syncAccountImport();});
@@ -2758,7 +2799,8 @@ function onlineControls(second=false){
   stickX:aim!==null?Math.cos(aim):second?0:stick.x,stickY:aim!==null?Math.sin(aim):second?0:stick.y,aimOnly:aim!==null};
  if(snap)input.snapAim=true;
  if(!second&&stick.assisted&&stick.mag>.10)input.touchAim=true;
- return input;
+ const pad=gamepadInput(index);
+ return pad?window.leqraGamepads.merge(input,pad,!second&&(snap||stick.mag>.10)):input;
 }
 function resetOnlineMotion(){
  updateOnlineBounceSounds([],null);
@@ -4248,6 +4290,7 @@ function fieldManualHTML(){
  const aliases=infinity?!infinity.twoPilots:aliasesActive(),paired=!aliases&&!!(infinity?.twoPilots||hasLocalP2());
  const fireTip='<p class="manual-fire-tip">Hold any fire key to rapid fire.</p>';
  let html='<div class="manual-line manual-touch"><span>Touch</span><span>Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.</span></div>';
+ html+='<p>Connect a game controller to play.</p>';
  html+='<div class="manual-controls">'+pilotControlHint(0,'mouse',aliases,!aliases);
  if(paired)html+=pilotControlHint(1,'',false,true);else html+=fireTip;
  html+='</div><div class="manual-shared-controls">'+(paired?fireTip:'')+[['Menu',['P','ESC']],['Mute',['M']],['Fullscreen',['F']]].map(([label,keys])=>'<span class="control-key-group"><span class="control-action">'+label+'</span><span class="control-keycaps">'+keys.map((key,index)=>'<span class="control-key-option">'+(index?'<span class="control-alias">/</span>':'')+'<kbd>'+key+'</kbd></span>').join('')+'</span></span>').join(' ')+'</div>';
@@ -4259,6 +4302,9 @@ function isMobileWeb(){
 }
 function syncControlIdentities(){
  const paired=controlPairActive(),hardwareP2=hardwareUsesP2(paired);
+ const pairedAccounts=paired||!!secondaryMember();
+ setText('controlsAccountBtn',pairedAccounts?'P1 ACCOUNT KEY':'ACCOUNT KEY');
+ $('controlsP2AccountBtn').hidden=!pairedAccounts;
  if($('pauseInstructions'))$('pauseInstructions').innerHTML=pilotControlHint(0,'mouse')+(paired?pilotControlHint(1):'')+'<span class="control-device">'+escapeHTML(modeInstructions())+'</span>';
  for(const [index,section]of [...$('bindingGrid').querySelectorAll('.binding-player')].entries()){
   const owner=hardwareP2?1:index,identity=localPilotIdentity(owner,null,paired),alternate=index===1&&(!paired||hardwareP2);
@@ -4914,7 +4960,8 @@ function initFeatures(){
  </div><p class="mode-help">Each rate adds to the spawn mix. 1× averages one bot every 1.5 seconds per living human while the shared bot budget has space. Off disables that difficulty; all Off disables roaming bots. Roster bots keep their own difficulty.</p></div></section>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Every tank is immune to its own weapons.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><div id="rule-weapon-options"><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="secondary" type="button" id="defaultRulesBtn">DEFAULT RULES</button><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span aria-hidden="true">→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP <span aria-hidden="true">→</span></button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
- <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><details class="room-disclosure" id="controlsBinds" hidden><summary>Binds</summary><div class="room-disclosure-content"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><div id="controlsKeyboardHelp"><p class="mode-help controls-shortcuts"><span>${controlKeyHTML(['KeyP','ESC'])} opens the menu.</span><span>${controlKeyHTML(['KeyM'])} toggles sound.</span><span>${controlKeyHTML(['KeyF'])} toggles fullscreen.</span></p><p class="mode-help controls-firing-help">Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.</p></div><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button></div></details><button class="secondary" id="openIntroTour" type="button" hidden>QUICK TOUR</button><button class="secondary" id="showcaseBtn" type="button">SHOWCASE</button><p class="mode-help">Showcase freezes a staged battle for screenshots. <span id="showcaseKeyboardHint" hidden>Press Escape to exit. </span>You can also switch away and return to exit.</p><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button></div></dialog>`;
+ <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><details class="room-disclosure" id="controlsBinds" hidden><summary>Binds</summary><div class="room-disclosure-content"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><div id="controlsKeyboardHelp"><p class="mode-help controls-shortcuts"><span>${controlKeyHTML(['KeyP','ESC'])} opens the menu.</span><span>${controlKeyHTML(['KeyM'])} toggles sound.</span><span>${controlKeyHTML(['KeyF'])} toggles fullscreen.</span></p><p class="mode-help controls-firing-help">Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.</p></div><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button></div></details><button class="secondary" id="openIntroTour" type="button" hidden>QUICK TOUR</button><button class="secondary" id="showcaseBtn" type="button">SHOWCASE</button><p class="mode-help">Showcase freezes a staged battle for screenshots. <span id="showcaseKeyboardHint" hidden>Press Escape to exit. </span>You can also switch away and return to exit.</p>
+ <button class="secondary" id="controlsAccountBtn" type="button" data-account-seat="0" aria-haspopup="dialog" aria-controls="accountDialog">ACCOUNT KEY</button><button class="secondary" id="controlsP2AccountBtn" type="button" hidden data-account-seat="1" aria-haspopup="dialog" aria-controls="accountDialog">P2 ACCOUNT KEY</button><label class="check-label"><input id="gamepadSupport" type="checkbox"> Game controller support</label><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button></div></dialog>`;
  document.body.append(dialogs);$('roomRulesBtn').onclick=()=>openFeature('rules');$('roomPresetsBtn').onclick=()=>openFeature('presets');$('roomControlsBtn').onclick=$('menuControlsBtn').onclick=()=>openFeature('controls');
  const binds=$('controlsBinds');
  binds.addEventListener('toggle',()=>{if(!binds.open&&bindingCapture){bindingCapture=null;renderBindings();}});
@@ -4925,6 +4972,9 @@ function initFeatures(){
  $('loadPresetBtn').onclick=applySelectedPreset;$('savePresetBtn').onclick=saveCurrentPreset;$('deletePresetBtn').onclick=deleteSelectedPreset;$('presetSelect').onchange=()=>$('deletePresetBtn').disabled=!$('presetSelect').value.startsWith('saved:');
  $('presetName').addEventListener('keydown',e=>{if(e.key==='Enter'&&!composingKey(e)){e.preventDefault();saveCurrentPreset();}});
  $('showcaseBtn').onclick=()=>{bindingCapture=null;clearInput();window.leqraShowcase.open();};
+ const gamepadSupport=$('gamepadSupport');
+ gamepadSupport.checked=gamepadEnabled;
+ gamepadSupport.onchange=()=>{gamepadEnabled=gamepadSupport.checked;gamepads.clear();save('gamepad',gamepadEnabled?'1':'0');};
  $('resetBindingsBtn').onclick=()=>{bindings=defaultBindings();bindingCapture=null;clearInput();try{localStorage.setItem('leqra.bindings.v1',JSON.stringify({version:4,bindings}));}catch(_){}renderBindings();syncFeatureSummary();updateHUD(true);};
  initSettingsReset();initAccountTransfer();
  $('masterVolume').oninput=e=>setAudioVolume(e.target.value,false,false);$('masterVolume').onchange=e=>setAudioVolume(e.target.value,true,true);syncVolumeControl();
@@ -4955,7 +5005,7 @@ function syncIntroTourControls(){
 function initIntroTour(){
  if(!window.leqraInfinity?.createTourArena)return;
  const dialog=$('introTourDialog'),pages=dialog.querySelectorAll('[data-intro-page]');
- const practice=$('introTourPractice'),arena=$('introTourCanvas'),touchControls=$('introTourTouchControls');
+ const lessons=$('introTourLessons'),practice=$('introTourPractice'),arena=$('introTourCanvas'),touchControls=$('introTourTouchControls');
  const joystick=$('introTourStick'),base=$('introTourStickBase'),knob=$('introTourStickKnob'),fireButton=$('introTourFireButton');
  const next=$('introTourNext'),titles=['Drive and aim','Fire','Score a point','Choose a battle'];
  const hints=['Move the tank to continue.','Fire a shot to continue.'];
@@ -4968,8 +5018,9 @@ function initIntroTour(){
  const canFire=()=>step===1||step===2;
  const usesTouch=()=>!touchControls.hidden;
  function held(action){for(const code of keys)if(bindings[code]===action)return true;return false;}
+ const practiceFireHeld=()=>held('fire')||fireID!==null||!!gamepadInput(0)?.fire;
  function clearPracticeInput(){
-  keys.clear();stickID=aimID=fireID=null;stickX=stickY=0;touchAim=mousePoint=null;firePressed=false;
+  keys.clear();gamepads.clear();stickID=aimID=fireID=null;stickX=stickY=0;touchAim=mousePoint=null;firePressed=false;
   knob.style.transform='';fireButton.classList.remove('held');arena.classList.remove('mouse-aiming');
   lastFrame=null;accumulator=0;
  }
@@ -4978,11 +5029,12 @@ function initIntroTour(){
   setText('introTourPracticeStatus',step<2?(completed[step]?success[step]:hints[step]):'');
  }
  function showStep(index){
+  const scrollTop=demo&&step<3&&index<3?dialog.scrollTop:0;
   clearPracticeInput();
   step=index;
   demo=step===2?(scoreDemo??=window.leqraInfinity.createTourArena(arena,true)):practiceDemo;
   for(const [i,page] of pages.entries())page.hidden=i!==step;
-  practice.hidden=step>=3;fireButton.hidden=!canFire();
+  lessons.hidden=practice.hidden=step>=3;fireButton.hidden=!canFire();
   $('introTourPracticeStatus').hidden=step>=2;
   arena.setAttribute('aria-describedby',step===2?'introTourScoreInstructions':'introTourPracticeStatus');
   $('introTourScorePanel').hidden=step!==2;
@@ -4991,7 +5043,7 @@ function initIntroTour(){
   $('introTourTitle').textContent=titles[step];
   $('introTourBack').disabled=step===0;
   next.textContent=step===pages.length-1?'Done':'Next';syncProgress();
-  $('introTourTitle').focus({preventScroll:true});dialog.scrollTop=0;
+  $('introTourTitle').focus({preventScroll:true});dialog.scrollTop=scrollTop;
   if(interactive()){
    demo.render(guideEnabled);
    if(!frameID)frameID=requestAnimationFrame(practiceFrame);
@@ -5002,10 +5054,14 @@ function initIntroTour(){
   if(!interactive())return;
   if(lastFrame!==null)accumulator+=clamp((now-lastFrame)/1000,0,.10);
   lastFrame=now;
-  const forward=held('forward'),reverse=held('reverse'),left=held('left'),right=held('right'),firing=canFire()&&(held('fire')||fireID!==null);
+  const wasFiring=practiceFireHeld(),pads=browserGamepads();
+  if(pads)sampleGamepads(pads,'tour:'+step,true,false,false);
+  const firing=canFire()&&practiceFireHeld();
+  if(firing&&!wasFiring){initAudio();firePressed=true;}
+  const forward=held('forward'),reverse=held('reverse'),left=held('left'),right=held('right');
   const mouse=!!mousePoint&&combatPrefs.mouseAim!==false;
   const angle=touchAim??(mouse&&!left&&!right?demo.aimAt(mousePoint.clientX,mousePoint.clientY,false):null);
-  const controls={forward,reverse,left,right,stickX:angle===null?stickX:Math.cos(angle),stickY:angle===null?stickY:Math.sin(angle),aimOnly:angle!==null,snapAim:touchAim!==null,touchAim:stickID!==null};
+  const controls=window.leqraGamepads.merge({forward,reverse,left,right,stickX:angle===null?stickX:Math.cos(angle),stickY:angle===null?stickY:Math.sin(angle),aimOnly:angle!==null,snapAim:touchAim!==null,touchAim:stickID!==null},gamepadInput(0),stickID!==null||touchAim!==null);
   while(accumulator+1e-9>=physicsStep){
    const result=demo.step(physicsStep,controls,firing,canFire()&&firePressed);
    firePressed=false;accumulator=Math.max(0,accumulator-physicsStep);
@@ -5022,7 +5078,7 @@ function initIntroTour(){
  }
  function open(){
   if(dialog.open)return;
-  practiceDemo=window.leqraInfinity.createTourArena(arena);scoreDemo=null;completed=[];
+  practiceDemo=window.leqraInfinity.createTourArena(arena);demo=scoreDemo=null;completed=[];
   bindings=syncIntroTourControls();
   syncControlIdentities();
   openFeature('introTour');showStep(0);syncArenaAudio();
@@ -5031,7 +5087,7 @@ function initIntroTour(){
   if(!interactive()||usesTouch()||arenaKeyBlocked(e))return;
   const action=bindings[e.code];if(!action)return;
   e.preventDefault();if(e.repeat||keys.has(e.code))return;
-  if(action==='fire'&&canFire()&&!held('fire')){firePressed=true;initAudio();}
+  if(action==='fire'&&canFire()&&!practiceFireHeld()){firePressed=true;initAudio();}
   if(action==='left'||action==='right')mousePoint=null;
   keys.add(e.code);
  });
@@ -5048,11 +5104,11 @@ function initIntroTour(){
  });
  function beginPracticeFire(e,element){
   if(!canFire()||fireID!==null)return;
-  e.preventDefault();initAudio();fireID=e.pointerId;firePressed=true;capturePointer(element,fireID);
+  e.preventDefault();initAudio();if(!practiceFireHeld())firePressed=true;fireID=e.pointerId;capturePointer(element,fireID);
   if(element===fireButton)fireButton.classList.add('held');
  }
  fireButton.addEventListener('pointerdown',e=>{if(interactive()&&usesTouch()&&e.button===0)beginPracticeFire(e,fireButton);});
- fireButton.addEventListener('click',e=>{if(interactive()&&usesTouch()&&canFire()&&e.detail===0){initAudio();firePressed=true;}});
+ fireButton.addEventListener('click',e=>{if(interactive()&&usesTouch()&&canFire()&&e.detail===0&&!practiceFireHeld()){initAudio();firePressed=true;}});
  arena.addEventListener('pointerdown',e=>{
   if(!interactive()||e.button!==0)return;
   if(usesTouch()&&e.pointerType!=='mouse'&&stickID===null&&aimID===null){
@@ -5713,6 +5769,7 @@ function mountHeader(container){
  container.append(header);headerLoan.chatHost.append(chat);
  document.body.classList.add('infinity-header-active');
  sidebar.setAttribute('aria-label','Open sidebar');sidebar.title='Open sidebar';
+ $('sidebarDetailsBtn').setAttribute('aria-controls','infinitePauseMenu');
 }
 function restoreHeader(container){
  const header=$('gameHeader'),loan=headerLoan;
@@ -5721,6 +5778,8 @@ function restoreHeader(container){
  loan.home.insertBefore(header,loan.next?.parentElement===loan.home?loan.next:null);
  const chat=$('chatPanel');if(chat.parentElement===loan.chatHost)loan.chatHome.insertBefore(chat,loan.chatNext?.parentElement===loan.chatHome?loan.chatNext:null);
  $('sidebarBtn').setAttribute('aria-label',loan.sidebarLabel);$('sidebarBtn').setAttribute('aria-expanded',loan.sidebarExpanded);$('sidebarBtn').title=loan.sidebarTitle;
+ $('sidebarDetailsBtn').setAttribute('aria-controls','sidebarDialog');
+ $('sidebarDetailsBtn').setAttribute('aria-expanded','false');
  document.body.classList.remove('infinity-header-active');headerLoan=null;
 }
 function syncSidebarContext(){
@@ -5738,11 +5797,12 @@ function syncSidebarContext(){
 function mountSidebar(container){
  const sidebar=$('gameSidebar'),dialog=$('sidebarDialog');
  if(dialog.open)dialog.close();
- container.append(sidebar);$('sidebarDetailsBtn').setAttribute('aria-expanded','false');syncSidebarContext();
+ container.append(sidebar);$('sidebarDetailsBtn').setAttribute('aria-expanded',String(container.id==='infinitePauseSidebar'));syncSidebarContext();
 }
 function restoreSidebar(container){
  const sidebar=$('gameSidebar');
  if(sidebar.parentElement===container)sidebarHome.append(sidebar);
+ if(container.id==='infinitePauseSidebar')$('sidebarDetailsBtn').setAttribute('aria-expanded','false');
  syncSidebarContext();
 }
 function initPresentation(){
@@ -5756,7 +5816,10 @@ function initPresentation(){
  let hidden=false;try{hidden=localStorage.getItem('leqra.sidebarHidden')==='1';}catch(_){}apply(hidden);
  button.onclick=()=>{if($('infiniteArena')?.open){window.leqraInfinity?.togglePause();return;}const hidden=!document.body.classList.contains('sidebar-hidden');apply(hidden);save('sidebarHidden',hidden?'1':'0');};
  const detailsButton=$('sidebarDetailsBtn'),sidebarDialog=$('sidebarDialog');
- detailsButton.onclick=()=>{$('sidebarDetails').append(sidebar);openFeature('sidebar');sidebarDialog.scrollTop=0;detailsButton.setAttribute('aria-expanded','true');};
+ detailsButton.onclick=()=>{
+  if($('infiniteArena')?.open){window.leqraInfinity?.togglePause();return;}
+  $('sidebarDetails').append(sidebar);openFeature('sidebar');sidebarDialog.scrollTop=0;detailsButton.setAttribute('aria-expanded','true');
+ };
  sidebarDialog.addEventListener('close',()=>{if(sidebarDialog.open)return;if(sidebar.parentElement===$('sidebarDetails'))sidebarHome.append(sidebar);detailsButton.setAttribute('aria-expanded','false');});
  const dialog=document.createElement('dialog');dialog.id='victoryDialog';dialog.className='feature-dialog victory-dialog';dialog.setAttribute('aria-labelledby','victoryTitle');dialog.innerHTML='<div class="feature-body"><div class="eyebrow" id="victoryEyebrow">MATCH RESULTS</div><h2 id="victoryTitle"></h2><div class="victory-emblem" id="victoryEmblem" aria-hidden="true">★</div><p id="victoryMembers"></p><p id="victoryMessage"></p><div id="victorySummary" class="victory-summary"></div><div id="victoryScores" aria-label="Final scores"></div><section id="victoryStats" hidden></section></div><footer class="feature-footer victory-actions"><button class="primary back-action" id="victoryCloseBtn" type="button">BACK TO ROOM <span aria-hidden="true">←</span></button><button class="secondary" id="victoryRestartWaveBtn" type="button" hidden>RESTART WAVE</button><button class="secondary result-replay" id="victoryAgainBtn" type="button">PLAY AGAIN <span>↻</span></button></footer>';
  document.body.append(dialog);$('victoryRestartWaveBtn').onclick=requestRestartSurvivalWave;$('victoryCloseBtn').onclick=resultBackToRoom;$('victoryAgainBtn').onclick=quickReplay;dialog.addEventListener('cancel',e=>{e.preventDefault();resultBackToRoom();});
@@ -6095,6 +6158,7 @@ function showSafariRecommendation(){if(!SAFARI_BROWSER||IOS_WEBKIT||innerWidth<7
 // Infinity keeps its own camera and streamed world, while sharing the finite arena's art and audio.
 window.leqraIdentity=Object.freeze({token:publicIdentityToken,remember:rememberPublicIdentity,prepareLocal:prepareLocalAccount,revoke:forgetRevokedAccount,exposeError:exposeAccountError,schedule:scheduleCallsignAvailability});
 window.leqraInfinityArt=Object.freeze({
+ browserGamepads,sampleGamepads,gamepadInput,gamepadDialogBlocked,mergeGamepad:window.leqraGamepads.merge,clearGamepads:()=>gamepads.clear(),
  toggleFullscreen,sampleFrame:(now,work,latency=null)=>sampleFrame(now,work,'infiniteFPSIndicator',latency),
  ensureSelectedCallsignAccounts,selectCallsignAccount,publicIdentityToken,rememberPublicIdentity,prepareLocalAccount,forgetRevokedAccount,exposeAccountError,infinityBotSpawnRates,botName:(name,bot)=>window.leqraCallsigns?.botName(name,bot)||name,leaderboardBot:(name,bot,difficulty)=>window.leqraCallsigns?.leaderboardBot?.(name,bot,difficulty)||{name,difficulty:''},
  theme,colors:Theme.colors,canonicalColor:index=>COLORS[index]||'',colorIndex,powers:POWER,choosePickup,grantPower,grenadeDragFactor,toggleSound,primeAudioUnlock,renderPixelRatio,touchPolicy:()=>{syncPauseButton();syncArenaAudio();},

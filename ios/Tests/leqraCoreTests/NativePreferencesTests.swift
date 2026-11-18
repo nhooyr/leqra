@@ -3,6 +3,19 @@ import XCTest
 @testable import leqraCore
 
 final class NativePreferencesTests: XCTestCase {
+    func testGamepadSupportDefaultsEnabledAndResetRestoresIt() {
+        let name = "gamepad-support-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+
+        XCTAssertTrue(NativePreferences.gamepadSupportEnabled(in: defaults))
+        defaults.set(false, forKey: NativePreferences.gamepadSupportKey)
+        let reopened = UserDefaults(suiteName: name)!
+        XCTAssertFalse(NativePreferences.gamepadSupportEnabled(in: reopened))
+        NativePreferences.resetAppSettings(in: reopened)
+        XCTAssertTrue(NativePreferences.gamepadSupportEnabled(in: reopened))
+    }
+
     func testResetRemovesEveryAppSettingWithoutTouchingAnotherDomain() {
         let name = "reset-settings-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: name)!

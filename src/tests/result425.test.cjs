@@ -214,7 +214,7 @@ test('local result reveal is canceled by navigation, restarting or setup replace
 
 test('animation frames reveal queued results at the deadline after rendering impact-only updates',()=>{
  const {s,$}=boot();s.currentRules().mode='ctf';s.now=1000;s.lastFrame=1000;s.accumulator=0;s.clamp=(n,min,max)=>Math.max(min,Math.min(max,n));s.syncFiniteStarmanAudio=()=>{};s.updateCombatFeedback=()=>{};s.render=()=>s.renders=(s.renders||0)+1;s.sampleFrame=()=>{};s.requestAnimationFrame=()=>{};
- vm.runInContext(declaration('frame'),s);s.finishMatch(0);s.now=2999;s.frame(2999);assert.equal($('victoryDialog').open,false);s.now=3000;s.frame(3000);assert.equal($('victoryDialog').open,true);assert.equal(s.renders,2);assert.equal(s.pendingMatchPresentation,null);
+ s.pollFiniteGamepads=()=>{};vm.runInContext(declaration('frame'),s);s.finishMatch(0);s.now=2999;s.frame(2999);assert.equal($('victoryDialog').open,false);s.now=3000;s.frame(3000);assert.equal($('victoryDialog').open,true);assert.equal(s.renders,2);assert.equal(s.pendingMatchPresentation,null);
 });
 
 test('opening Controls during the terminal reveal postpones results until the dialog closes',()=>{

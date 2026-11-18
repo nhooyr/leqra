@@ -25,6 +25,7 @@ func TestStartupURLs(t *testing.T) {
 		{"hostname", net.TCPAddr{IP: net.IPv6zero, Port: 45678}, "host.local", "http://localhost:45678", []string{"http://host.local:45678"}, []net.IP{lanIP, v6IP}},
 		{"IP fallback", net.TCPAddr{IP: net.IPv4zero, Port: 45678}, "", "http://localhost:45678", []string{"http://192.0.2.14:45678"}, []net.IP{lanIP}},
 		{"loopback only", net.TCPAddr{IP: net.IPv6loopback, Port: 45678}, "host.local", "http://localhost:45678", nil, nil},
+		{"alternate loopback", net.TCPAddr{IP: net.IPv4(127, 0, 0, 2), Port: 45678}, "host.local", "http://127.0.0.2:45678", nil, nil},
 		{"bound interface", net.TCPAddr{IP: lanIP, Port: 45678}, "host.local", "http://192.0.2.14:45678", []string{"http://host.local:45678"}, []net.IP{lanIP}},
 		{"bound IPv6 fallback", net.TCPAddr{IP: v6IP, Port: 45678}, "", "http://[2001:db8::14]:45678", nil, []net.IP{v6IP}},
 	} {

@@ -13,7 +13,7 @@ function boot(p2=false,stored=null){
  const pilots=[{name:'Lead',color:'#32c5ff'},{name:'Wing',color:'#ff83bd'}];
  const sandbox={phase:'playing',mode:'room',combatPrefs:{mouseAim:true,mouseFire:true},navigator:{},UA:'',IOS_WEBKIT:false,touchUI:false,window:{},pilots,COLORS:pilots.map(p=>p.color),tanks:[],paintColor:c=>c,roomMember:id=>pilots[id],secondaryMember:()=>p2?pilots[1]:null,localPlayerID:()=>0,secondaryID:()=>1,savedLocalCallsign:()=>pilots[1].name,teamColor:id=>pilots[id].color,infinityPlayMode:()=>'',keys:new Set(),hasLocalP2:()=>p2,modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
  vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],sandbox);
- for(const name of ['hardwareUsesP2','pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','isMobileWeb','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['hardwareUsesP2','pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','isMobileWeb','setText','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
  sandbox.bindings=sandbox.loadBindings();sandbox.storage=storage;return sandbox;
 }
 function assign(s,player,action,code){s.bindings[player][action]=code;assert.ok(s.validateBindings(s.bindings),'the controls editor accepts this remap');}
@@ -367,6 +367,16 @@ test('Binds is available on desktop and needs an installed app with a fine point
  }
  assert.match(source,/<details[^>]*id="controlsBinds" hidden><summary>Binds<\/summary>/);
  assert.doesNotMatch(source,/noteControlsKeyboard|controlsKeyboardSeen/);
+});
+test('Controls labels account keys by attached local seat',()=>{
+ const s=boot(),$=tour(s),primary=$('controlsAccountBtn'),secondary=$('controlsP2AccountBtn');
+ assert.equal(primary.textContent,'ACCOUNT KEY');assert.equal(secondary.hidden,true);
+ s.secondaryMember=()=>({...s.pilots[1],spectating:true});s.syncControlIdentities();
+ assert.equal(primary.textContent,'P1 ACCOUNT KEY');assert.equal(secondary.hidden,false);
+ s.secondaryMember=()=>null;s.window.leqraInfinity={localPilots:()=>s.pilots};s.syncControlIdentities();
+ assert.equal(primary.textContent,'P1 ACCOUNT KEY');assert.equal(secondary.hidden,false);
+ s.window.leqraInfinity=null;s.syncControlIdentities();
+ assert.equal(primary.textContent,'ACCOUNT KEY');assert.equal(secondary.hidden,true);
 });
 test('old saved bindings migrate both extra fire keys without losing remaps',()=>{
  const raw=boot().defaultBindings();delete raw[0].fireAlt;delete raw[1].fireAlt;raw[0].forward='KeyI';raw[1].fire='KeyL';

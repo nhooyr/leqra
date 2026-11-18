@@ -238,6 +238,7 @@ function mouseAimEnabled(){return art.mouseAimEnabled?.()!==false;}
 function mouseFireEnabled(){return art.mouseFireEnabled?.()!==false;}
 function mouseEnabled(){return mouseAimEnabled()||mouseFireEnabled();}
 function mouseSeat(world=session){return world?.local&&art.hardwareUsesP2?.(true)?world.local:world;}
+function padFireHeld(seat){return !!art.gamepadInput?.(seat===session.local?1:0)?.fire;}
 
 function inputState(seat) {
  const input = {
@@ -262,7 +263,8 @@ function inputState(seat) {
    input.stickX=mouseAim.x;input.stickY=mouseAim.y;input.aimOnly=true;
   }
  }
- return input;
+ const pad = art.gamepadInput?.(seat === session.local ? 1 : 0);
+ return pad ? art.mergeGamepad(input,pad,seat===session&&(stickPointer!==null||directAim.active)) : input;
 }
 
 function phaseExit(tank, maze) {
@@ -1647,9 +1649,29 @@ function showResult(world, now) {
  resultDialog.showModal();
 }
 
+function pollInfinityGamepads(now) {
+ if (byID('introTourDialog')?.open && !byID('introTourPractice').hidden) return;
+ const pads = art.browserGamepads?.();
+ if (!pads) return;
+ const permitted = !session.result && !art.chatOpen() && !art.gamepadDialogBlocked('infiniteArena','infinitePauseMenu');
+ const playable = permitted && !pauseMenu.open && !session.spectating && (!session.online || session.joined);
+ const seats = session.controllers;
+ const before = seats.map(seat => inputState(seat).fire);
+ if (art.sampleGamepads(pads,playable?'infinity':'',!session.spectating,!!session.local,permitted)) {
+  togglePause();
+  return;
+ }
+ for (const [i, seat] of seats.entries()) {
+  const input = inputState(seat);
+  if (playable && input.fire && !before[i]) pressFire(null,seat);
+  else if (!input.fire && before[i]) sendInput(seat,now,true,input);
+ }
+}
+
 function loop(now) {
  if (!arena.open || !session) return;
  const workStart = performance.now();
+ pollInfinityGamepads(now);
  const dt = clamp((now - lastTime) / 1000, 0, .1);
  measureLatency(session,now);
  if (session.online && !session.spectating && session.joined && !session.result) {
@@ -1973,6 +1995,7 @@ function connect() {
 }
 
 function resetControls() {
+ art.clearGamepads?.();
  directAim.active=false;directAim.id=null;
  pressed.clear();
  mouseAim = null;
@@ -2260,7 +2283,7 @@ arena.addEventListener('keydown', event => {
  pressed.add(event.code);
  if (seat===session&&['forward','reverse','left','right'].includes(action)){directAim.active=false;directAim.id=null;}
  if (seat===mouseSeat()&&(action==='left'||action==='right')) mouseAim = null;
- if (action === 'fire') pressFire(event,seat);
+ if (action === 'fire' && !padFireHeld(seat)) pressFire(event,seat);
  else sendInput(seat,performance.now(),true);
 });
 arena.addEventListener('keyup', event => {
@@ -2302,7 +2325,7 @@ canvas.addEventListener('pointerdown', event => {
  if(!mouseFireEnabled())return;
  capturePointer(canvas, event);
  mousePointer = event.pointerId;
- pressFire(event,seat,true);
+ if (!padFireHeld(seat)) pressFire(event,seat,true);
 });
 stick.addEventListener('pointerdown', event => {
  if (event.button !== 0 || stickPointer !== null || art.chatOpen()) return;
@@ -2328,11 +2351,11 @@ fire.addEventListener('pointerdown', event => {
  capturePointer(fire, event);
  firePointer = event.pointerId;
  fire.classList.add('held');
- pressFire(event);
+ if (session && !padFireHeld(session)) pressFire(event);
 });
 fire.addEventListener('click', event => {
  // Keyboard and assistive activation has no pointer press to queue the shot.
- if (event.detail === 0) pressFire(event);
+ if (event.detail === 0 && session && !padFireHeld(session)) pressFire(event);
 });
 // A second touch can make Safari lose element-level capture.
 for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {

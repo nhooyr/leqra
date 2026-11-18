@@ -68,9 +68,9 @@ test('reset supports non-PWA/offline pages and reports an unavailable or stalled
  assert.match(stalled.$('settingsResetStatus').textContent,/timed out/);assert.equal(stalled.$('settingsResetRetryBtn').hidden,false);assert.equal(stalled.$('settingsResetReloadBtn').disabled,false);
 });
 
-test('Controls puts Quick Tour directly above Showcase and the reload prompt has no dismiss action',()=>{
- assert.match(source,/<button[^>]*id="openIntroTour"[^>]*>QUICK TOUR<\/button>\s*<button[^>]*id="showcaseBtn"[^>]*>SHOWCASE<\/button>/);
+test('Controls puts Quick Tour and Showcase directly below Binds and the reload prompt has no dismiss action',()=>{
  const controls=source.slice(source.indexOf('<dialog class="feature-dialog" id="controlsDialog"'),source.indexOf('document.body.append(dialogs)'));
+ assert.match(controls,/<\/details>\s*<button[^>]*id="openIntroTour"[^>]*>QUICK TOUR<\/button>\s*<button[^>]*id="showcaseBtn"[^>]*>SHOWCASE<\/button>/);
  assert.match(controls,/<button[^>]*id="resetAllSettingsBtn"[^>]*>RESET ALL SETTINGS<\/button><\/div><\/dialog>/);
  assert.match(source,/\$\('resetAllSettingsBtn'\)\.insertAdjacentHTML\('beforebegin','<hr><h3>PERFORMANCE<\/h3>/);
  const html=readFileSync(path.join(__dirname,'../web/index.html'),'utf8'),dialog=html.match(/<dialog id="settingsResetDialog"[\s\S]*?<\/dialog>/)?.[0];assert.ok(dialog);assert.match(dialog,/aria-labelledby="settingsResetTitle"/);assert.doesNotMatch(dialog,/CANCEL|CLOSE|data-close-dialog|method="dialog"/);

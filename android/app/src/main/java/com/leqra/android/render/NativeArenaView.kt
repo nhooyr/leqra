@@ -1689,9 +1689,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             KeyEvent.KEYCODE_DPAD_LEFT -> input.left = down
             KeyEvent.KEYCODE_D,
             KeyEvent.KEYCODE_DPAD_RIGHT -> input.right = down
-            KeyEvent.KEYCODE_SPACE,
-            KeyEvent.KEYCODE_BUTTON_A,
-            KeyEvent.KEYCODE_BUTTON_R1 -> {
+            KeyEvent.KEYCODE_SPACE -> {
                 input.fire = down
                 fireHeld = down
             }
@@ -1705,18 +1703,6 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (frozenTime != null) return false
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return mouseEvent(event)
-        if (
-            event.source and InputDevice.SOURCE_JOYSTICK != 0 &&
-                event.action == MotionEvent.ACTION_MOVE
-        ) {
-            val x = event.getAxisValue(MotionEvent.AXIS_X)
-            val y = event.getAxisValue(MotionEvent.AXIS_Y)
-            input.stickX = if (abs(x) < .15) 0.0 else x.toDouble()
-            input.stickY = if (abs(y) < .15) 0.0 else y.toDouble()
-            input.touchAim = true
-            onInput?.invoke(input.copy())
-            return true
-        }
         return super.onGenericMotionEvent(event)
     }
 

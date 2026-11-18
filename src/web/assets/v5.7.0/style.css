@@ -331,6 +331,9 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .binding-mouse-toggle:checked+.binding-mouse-state:before{content:'✓'}
 .binding-mouse-toggle:checked+.binding-mouse-state:after{content:'ON'}
 .binding-player{min-width:0}.binding-player h3{overflow-wrap:anywhere}
+.intro-lessons{display:grid}
+.intro-lessons>[data-intro-page]{grid-area:1/1;align-self:start;min-width:0}
+.intro-lessons>[hidden]{display:grid!important;visibility:hidden}
 .intro-control-groups{display:grid;gap:12px}
 .intro-tour .intro-control-groups h3{font:700 14px var(--sans);color:var(--accent-ink);margin:0 0 4px}
 .intro-control-groups dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 10px;margin:0}
@@ -339,11 +342,14 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .intro-movement-keys{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px}
 .intro-control-groups .control-keycaps{max-width:100%;vertical-align:middle}
 .intro-tour .intro-control-groups p{margin:4px 0 0;font-size:12px}
-.intro-practice{position:relative;margin-top:12px}
+.intro-practice{margin-top:12px}
+.intro-practice-field{position:relative}
 .intro-practice-arena{position:relative;aspect-ratio:5/3;min-height:100px;max-height:min(40dvh,250px);overflow:hidden;border:1px solid var(--border-strong);border-radius:7px;background:var(--surface-sunken)}
 .intro-practice-arena canvas{position:absolute;inset:0}
 .intro-practice-arena canvas:focus-visible{outline:2px solid var(--accent-ink);outline-offset:-3px}
-.intro-practice-score{position:absolute;top:6px;right:6px;padding:3px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--accent-ink);font:var(--min-font-size)/1.4 var(--mono);font-variant-numeric:tabular-nums;pointer-events:none}
+.intro-practice-score-row{display:flex;justify-content:flex-end;margin-bottom:4px}
+.intro-practice-score{padding:3px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--accent-ink);font:var(--min-font-size)/1.4 var(--mono);font-variant-numeric:tabular-nums;pointer-events:none}
+.intro-practice-score[hidden],#introTourPracticeStatus[hidden]{display:block!important;visibility:hidden}
 #introTourMazeTips summary{cursor:pointer;color:var(--text-main)}
 #introTourMazeTips[open] summary{margin-bottom:8px}
 .intro-touch-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 10px;touch-action:none;user-select:none;-webkit-touch-callout:none}
@@ -353,7 +359,7 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .intro-touch-controls .stick-knob{width:34px;height:34px;top:18px;left:18px}
 .intro-touch-controls .stick-knob::after{inset:10px}
 .intro-touch-controls .fire-button{width:62px;height:62px}
-#introTourPracticeStatus{margin:8px 0 0;color:var(--text-main);font-size:12px}
+#introTourPracticeStatus{min-height:1.6em;margin:8px 0 0;color:var(--text-main);font-size:12px}
 @media(max-height:460px) and (orientation:landscape){
  .intro-tour .feature-header,.intro-tour .feature-body,.intro-tour .feature-footer{padding:8px 16px}
  .intro-tour .feature-header h2{margin-top:3px;font-size:20px}
@@ -423,7 +429,7 @@ body.touch-ui .sidebar-toggle{display:none}
 .sidebar-details-toggle{display:none}
 @media(max-width:920px){.sidebar-details-toggle{display:grid}}
 body.touch-ui .sidebar-details-toggle{display:grid}
-.arena-bar .icon-btn.sidebar-details-toggle{width:32px;height:32px;flex:none;margin-block:-7px;touch-action:manipulation}
+.header .icon-btn.sidebar-details-toggle{touch-action:manipulation}
 .sidebar-dialog{width:min(460px,calc(100vw - 24px))}
 .sidebar-dialog .feature-body{padding:12px}
 .sidebar-dialog[open] .sidebar{display:flex;overflow:visible}
@@ -738,7 +744,7 @@ body #roomScreen.unified-room .room-connection-actions .room-action:disabled{opa
 /* v4.22: single integrated match chat and field-only room editing. */
 .room-code-editor{grid-template-columns:minmax(0,1fr)}
 
-.volume-label{display:flex;align-items:center;justify-content:space-between;gap:12px;font:10px var(--mono);color:var(--text-soft);margin:2px 0 9px}.volume-label strong{font:12px var(--mono);color:var(--accent-ink);font-variant-numeric:tabular-nums}.volume-slider{display:block;width:100%;height:28px;margin:0;accent-color:var(--accent-ink);cursor:pointer}.volume-slider:focus-visible{outline:2px solid var(--accent-ink);outline-offset:3px}
+.volume-label{display:flex;align-items:center;justify-content:space-between;gap:12px;font:13px var(--mono);color:var(--text-soft);margin:2px 0 9px}.volume-label strong{font:inherit;color:var(--accent-ink);font-variant-numeric:tabular-nums}.volume-slider{display:block;width:100%;height:28px;margin:0;accent-color:var(--accent-ink);cursor:pointer}.volume-slider:focus-visible{outline:2px solid var(--accent-ink);outline-offset:3px}
 
 /* v4.23.1: result and shutdown emphasis */
 .victory-actions .result-replay{background:#39ff88;color:#06160d;border-color:#72ffaa;box-shadow:0 3px 0 #15994d,0 0 22px rgb(57 255 136 / .30);font-weight:900}
