@@ -96,7 +96,7 @@ callsigns manage independent P1 and P2 accounts. Import a key to move an account
 between platforms; the newest Public Infinity device takes over its tank. Every
 callsign has its own account and score. Changing callsigns starts a new account
 at zero; earlier names and keys stay in encrypted storage for switching back.
-Successful changes return to the ready room; failures keep the current account.
+Successful changes return to the room; failures keep the current account.
 Accounts expire after one month without signing in.
 
 Touch controls steer on the left and fire on the right. Touch near your tank to
@@ -109,7 +109,7 @@ Local bot names, paint, difficulty and teams are editable and retained
 when publishing the same roster online. Sound effects mix with music from other
 apps, including when launching muted. The default sound volume is 50%.
 
-Quick Tour opens on the first visit to the ready room and can be replayed from
+Quick Tour opens on the first visit to the room and can be replayed from
 Controls. The same panel holds the input, display, audio and account settings.
 Show FPS and ping is enabled by default. During local battles the status bar
 shows FPS, and online battles also show the measured ping.
@@ -125,16 +125,19 @@ allow pickup-rate and type changes; Infinity always includes all ten types.
 With Public Infinity selected, room settings keep the room name and sharing;
 turn it off to choose a room mode or edit its rules and presets.
 
-For local server development, run `./dev.sh` at the repository root. Launch a
-debug build with a development server address using the `server` intent extra:
+Set the online server in Controls. The default is `https://leqra.com`. Release
+builds accept HTTPS addresses, and debug builds also accept HTTP. Account keys
+are scoped to each server origin.
+
+For local server development, run `./dev.sh` at the repository root. You can
+also launch a debug build with the `server` intent extra:
 
 ```sh
 adb shell am force-stop com.leqra
 adb shell am start -n com.leqra/com.leqra.android.MainActivity --es server http://10.0.2.2:8080
 ```
 
-Use your development server's address on a physical phone. Release builds use
-`https://leqra.com`. Account keys are scoped to each server origin.
+Use your development server's address on a physical phone.
 
 ## Validation
 
@@ -192,4 +195,4 @@ replacement-key candidates are persisted before registration or rotation. Secret
 HTTP requests reject redirects. Public scores, hits and ownership are always
 decided by the server; clients send controls, never scores.
 
-Account controls can also release the current or a saved callsign from the offline ready room. After confirmation, Release permanently deletes that account's score, frees its callsign for reuse, invalidates its key on every device, and removes its saved credentials from this device. Other accounts stay saved.
+Account controls can also release the current or a saved callsign from the local room. After confirmation, Release permanently deletes that account's score, frees its callsign for reuse, invalidates its key on every device, and removes its saved credentials from this device. Other accounts stay saved.

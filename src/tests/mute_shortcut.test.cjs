@@ -112,7 +112,7 @@ test('typing, IME, modifiers and an already handled key retain M on both input p
 });
 test('M remains reserved during binding capture and cannot mute or become a combat binding',()=>{
  for(const surface of ['fixed','infinity']){
-  const b=boot({feature:true}),capture={p:0,action:'fire'};b.s.bindingCapture=capture;b.$('controlsDialog').open=true;
+  const b=boot({feature:true}),capture={p:0,action:'fire'};b.s.bindingCapture=capture;b.$('controlsDialog').open=true;b.$('controlsBinds').open=true;
   assert.equal(b.s.validBinding('KeyM'),false);assert.equal(b.s.validBinding('KeyN'),true);
   const event=b.key(surface,'KeyM',{target:{tagName:'BUTTON'}});
   assert.equal(event.immediate,true);assert.equal(event.defaultPrevented,true);assert.equal(b.s.bindingCapture,capture);

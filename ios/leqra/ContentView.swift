@@ -76,7 +76,8 @@ struct ContentView: View {
         VStack(spacing: 0) {
             ArenaStatusBar(session: session, preview: true)
             ZStack(alignment: .topTrailing) {
-                NativeGameView(scene: session.scene, highFrameRate: false, paused: true, infinity: true, landscape: landscape)
+                NativeGameView(scene: session.scene, highFrameRate: false, paused: true, infinity: true, landscape: landscape,
+                               renderingSuspended: session.showQuickTour)
                     .blur(radius: 2).overlay(WebStyle.sunken.opacity(0.58)).allowsHitTesting(false)
                 ReadyRoomView(session: session, landscape: landscape)
                 if session.showScores { ArenaStandings(session: session, preview: true).padding(10) }
@@ -116,7 +117,7 @@ struct ContentView: View {
                                    infinity: session.isInfinity, landscape: landscape,
                                    loadoutHeight: fixedLoadoutHeight, spectating: !canControl,
                                    hardwareInputScene: session.secondaryLocalID == nil ? session.scene : session.secondaryScene,
-                                   showsTouchControls: !session.spectating)
+                                   showsTouchControls: !session.spectating, renderingSuspended: session.showQuickTour)
                         .accessibilityIdentifier("arenaStage")
                     if !session.isInfinity && !landscape && !session.spectating {
                         VStack {
@@ -153,7 +154,8 @@ struct ContentView: View {
             NativeGameView(scene: seat == 0 ? session.scene : session.secondaryScene,
                            highFrameRate: session.highFrameRate, paused: session.paused || session.hasModal,
                            infinity: true, landscape: landscape, hardwareInputScene: session.secondaryScene,
-                           acceptsHardware: seat == 0, showsTouchControls: seat == 0, mouseTargetScene: session.secondaryScene)
+                           acceptsHardware: seat == 0, showsTouchControls: seat == 0, mouseTargetScene: session.secondaryScene,
+                           renderingSuspended: session.showQuickTour)
                 .accessibilityIdentifier(seat == 0 ? "arenaStage" : "secondaryArenaStage")
             PilotLoadoutView(session: session, compact: true, seat: seat, paired: landscape)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)

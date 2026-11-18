@@ -47,18 +47,20 @@ internal class GameSession(context: Context) {
     var present: (ArenaSnapshot, InfiniteMaze?, Int, Int?, Boolean) -> Unit = { _, _, _, _, _ -> }
     var notifyError: (String) -> Unit = {}
     var emitAudioCue: (AudioCue) -> Unit = {}
-    var server = if (BuildConfig.DEBUG) prefs.getString("server", productionServer) ?: productionServer else productionServer
+    var server =
+        prefs.getString("server", null)?.let { address ->
+            runCatching { ServerAddress.configuredOrigin(address, BuildConfig.DEBUG) }.getOrNull()
+        } ?: defaultServer
         private set
 
     init {
-        // Old releases allowed a custom origin. Keep its saved account keys, but never auto-resume there in production.
-        if (!BuildConfig.DEBUG && store.activeIntent()?.origin?.let { it != productionServer } == true)
+        // A saved battle can resume only on the server selected in Controls.
+        if (store.activeIntent()?.origin?.let { it != server } == true)
             store.setActiveIntent(null)
     }
 
-    private val bootstrapOrigin = store.activeIntent()?.origin ?: server
     private val bootstrapNames = listOf(prefs.getString("callsign", null), prefs.getString("localCallsign", null)).mapIndexed { seat, name ->
-        name.takeUnless { LegacyCallsignDefaults.shouldGenerate(it, store.selected(bootstrapOrigin, seat) != null) }
+        name.takeUnless { LegacyCallsignDefaults.shouldGenerate(it, store.selected(server, seat) != null) }
     }
     private val nameDrafts = CallsignDrafts(
         bootstrapNames,
@@ -78,8 +80,8 @@ internal class GameSession(context: Context) {
     private var onlineIdentityReady = false
     init {
         for (seat in 0..1) {
-            val key = store.selected(bootstrapOrigin, seat)?.key
-            accounts.savedCallsigns(bootstrapOrigin).firstOrNull { it.key == key }?.let { committedCallsigns[seat] = it.name }
+            val key = store.selected(server, seat)?.key
+            accounts.savedCallsigns(server).firstOrNull { it.key == key }?.let { committedCallsigns[seat] = it.name }
         }
     }
     var colorIndex = prefs.getInt("color", 0)
@@ -349,7 +351,7 @@ internal class GameSession(context: Context) {
     }
 
     fun releaseCallsign(key: String, completed: (Result<Unit>) -> Unit) {
-        if (!canImportAccount || switchingCallsign) { completed(Result.failure(IllegalStateException("Return to the offline ready room before releasing a callsign."))); return }
+        if (!canImportAccount || switchingCallsign) { completed(Result.failure(IllegalStateException("Return to the local room before releasing a callsign."))); return }
         val origin = server
         val seats = (0..1).filter { store.selected(origin,it)?.key == key }
         val replacements = seats.associateWith { AccountKeys.create() }
@@ -591,21 +593,32 @@ internal class GameSession(context: Context) {
     }
 
     fun setServer(address: String) {
-        check(BuildConfig.DEBUG) { "Server overrides are only available in debug builds." }
-        val normalized = ServerAddress.origin(address)
+        val normalized = ServerAddress.configuredOrigin(address, BuildConfig.DEBUG)
         if (normalized == server) return
-        leave()
+        check(!releasingCallsign) { "Wait for the callsign release to finish before changing servers." }
+        if (online || screen == Screen.CONNECTING) leave()
+        else if (store.activeIntent() != null) store.setActiveIntent(null)
+        val previousServer = server
         server = normalized
+        onlineIdentityReady = false
         nameRequest?.cancel()
         nameRequest = null
         nameRequestEpoch++
         nextNameAttempt = 0
+        val savedNames = accounts.savedCallsigns(server)
+        for (seat in 0..1) {
+            accounts.invalidate(previousServer, seat)
+            val key = store.selected(server, seat)?.key
+            committedCallsigns[seat] = if (key == null) nameDrafts.name(seat)
+            else savedNames.firstOrNull { it.key == key }?.name.orEmpty()
+        }
         prefs.edit().putString("server", server).apply()
         statusRequest?.cancel()
         statusRequest = null
         statusInFlight = false
         statusEpoch++
         publicStatus = null
+        latency = null
         refreshStatus()
         changed(true)
     }
@@ -1209,18 +1222,17 @@ internal class GameSession(context: Context) {
     fun foreground() {
         active = true
         previousFrame = 0
+        val intent = if (online) null else store.activeIntent()?.takeIf { it.origin == server }
         if (online) {
             network.resume()
             if (arenaActive) arenaNetwork.resume()
-        } else if (store.activeIntent() != null) {
-            val intent = store.activeIntent()!!
+        } else if (intent != null) {
             val legacyIntent = LegacyCallsignDefaults.shouldGenerate(intent.name, store.selected(intent.origin, 0) != null) ||
                 intent.localName?.let { LegacyCallsignDefaults.shouldGenerate(it, store.selected(intent.origin, 1) != null) } == true
             if (legacyIntent) {
                 // A stale no-key auto-resume must not restore an old default over the bootstrap.
                 // The next deliberate Play claims the new defaults with persisted independent keys.
                 store.setActiveIntent(null)
-                server = intent.origin
                 localSelected = intent.localName != null
                 colorIndex = intent.colorIndex
                 localColorIndex = intent.localColorIndex
@@ -1234,7 +1246,6 @@ internal class GameSession(context: Context) {
             infinity = true
             arenaActive = true
             screen = Screen.CONNECTING
-            server = intent.origin
             callsign = intent.name
             localSelected = intent.localName != null
             localCallsign = intent.localName ?: localCallsign
@@ -1771,7 +1782,7 @@ internal class GameSession(context: Context) {
     }
 
     companion object {
-        private const val productionServer = "https://leqra.com"
+        const val defaultServer = "https://leqra.com"
 
         val modes =
             linkedMapOf(

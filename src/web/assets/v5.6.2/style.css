@@ -38,7 +38,6 @@ body.touch-landscape{--callsign-input-height:35px;--callsign-input-pad-x:10px}
 .callsign-label .pilot-identity{font-weight:700}
 .pilot-identity{font-weight:400}.pilot-identity.local-pilot{font-weight:700}
 body .seat-heading .pilot-name{font-weight:400}body .seat-heading .pilot-name.local-pilot{font-weight:700}
-#roomScreen .room-controls-button{margin-top:10px}
 #infinitePauseMenu .callsign-status{min-height:1.4em}
 #infinitePauseMenu .callsign-status[hidden]{display:block!important;visibility:hidden}
 body.settings-reset{overflow:hidden}
@@ -302,6 +301,7 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 @media(prefers-reduced-motion:reduce){.cooldown-track i{will-change:auto}}
 
 .intro-tour{width:min(520px,calc(100vw - 24px))}
+.intro-tour::backdrop{-webkit-backdrop-filter:none;backdrop-filter:none}
 #introTourTitle:focus{outline:none}
 .intro-tour .feature-body{color:var(--text-soft);font-size:14px;line-height:1.6}
 .intro-tour p{margin:0 0 12px}.intro-tour p:last-child{margin-bottom:0}
@@ -311,6 +311,8 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .manual-fire-tip{flex-basis:100%;margin:0;color:var(--text-soft);font-size:11px;line-height:1.5}
 .manual-controls>.manual-fire-tip{margin-top:10px}
 .controls-shortcuts{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+#resetAllSettingsBtn{color:var(--moderation-color);border-color:var(--moderation-color);background:color-mix(in srgb,var(--moderation-color) 10%,transparent)}
+#resetAllSettingsBtn:hover{background:color-mix(in srgb,var(--moderation-color) 16%,transparent)}
 .controls-shortcuts>span{display:inline-flex;align-items:center;gap:6px}.manual-controls .control-player+.control-player{padding-top:10px;border-top:1px solid var(--border)}
 .manual-shared-controls{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 0 12px;border-top:1px solid var(--border)}
 .binding-mouse-row{min-height:37px}
@@ -337,6 +339,29 @@ body.touch-ui .room-config-actions{margin-top:8px}body.touch-ui .room-config-act
 .intro-movement-keys{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px}
 .intro-control-groups .control-keycaps{max-width:100%;vertical-align:middle}
 .intro-tour .intro-control-groups p{margin:4px 0 0;font-size:12px}
+.intro-practice{position:relative;margin-top:12px}
+.intro-practice-arena{position:relative;aspect-ratio:5/3;min-height:100px;max-height:min(40dvh,250px);overflow:hidden;border:1px solid var(--border-strong);border-radius:7px;background:var(--surface-sunken)}
+.intro-practice-arena canvas{position:absolute;inset:0}
+.intro-practice-arena canvas:focus-visible{outline:2px solid var(--accent-ink);outline-offset:-3px}
+.intro-practice-score{position:absolute;top:6px;right:6px;padding:3px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--accent-ink);font:var(--min-font-size)/1.4 var(--mono);font-variant-numeric:tabular-nums;pointer-events:none}
+#introTourMazeTips summary{cursor:pointer;color:var(--text-main)}
+#introTourMazeTips[open] summary{margin-bottom:8px}
+.intro-touch-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 10px;touch-action:none;user-select:none;-webkit-touch-callout:none}
+.intro-touch-controls :is(.stick-zone,.fire-zone){width:88px;height:84px}
+.intro-touch-controls .stick-base{width:72px;height:72px}
+.intro-touch-controls .stick-base::before,.intro-touch-controls .stick-base::after{top:34px;left:9px;width:52px}
+.intro-touch-controls .stick-knob{width:34px;height:34px;top:18px;left:18px}
+.intro-touch-controls .stick-knob::after{inset:10px}
+.intro-touch-controls .fire-button{width:62px;height:62px}
+#introTourPracticeStatus{margin:8px 0 0;color:var(--text-main);font-size:12px}
+@media(max-height:460px) and (orientation:landscape){
+ .intro-tour .feature-header,.intro-tour .feature-body,.intro-tour .feature-footer{padding:8px 16px}
+ .intro-tour .feature-header h2{margin-top:3px;font-size:20px}
+ .intro-practice-arena{max-height:34dvh}
+ .intro-practice:has(.intro-touch-controls:not([hidden])) .intro-practice-arena{margin-inline:86px}
+ .intro-touch-controls{position:absolute;inset:0 0 auto;padding:0;min-height:100px;pointer-events:none}
+ .intro-touch-controls :is(.stick-zone,.fire-button){pointer-events:auto}
+}
 .intro-tour-actions{display:grid;grid-template-columns:1.2fr 1fr 1fr;align-items:stretch;gap:8px}
 #introTourDialog .intro-tour-actions>button{display:grid;place-items:center;min-width:0;min-height:44px;margin:0;padding:9px 6px;font-size:12px;box-shadow:none;transform:none}
 #openIntroTour{margin-top:8px}
@@ -1058,7 +1083,7 @@ body.touch-ui .local-loadouts.two-pilots .lock-status{max-width:none;overflow:vi
  body.touch-ui .local-loadouts.two-pilots .pilot-loadout{grid-template-rows:minmax(30px,auto) minmax(13px,auto)}
 }
 
-#arena.mouse-aiming{cursor:crosshair}
+#arena.mouse-aiming,#introTourCanvas.mouse-aiming{cursor:crosshair}
 
 .pwa-install-hint{position:fixed;z-index:25;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));width:min(420px,calc(100vw - max(12px,env(safe-area-inset-left)) - max(12px,env(safe-area-inset-right))));display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:12px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface);color:var(--text-main);box-shadow:0 6px 24px #0005}
 .pwa-install-hint[hidden]{display:none}

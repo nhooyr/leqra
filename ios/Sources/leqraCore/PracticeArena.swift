@@ -21,6 +21,7 @@ public final class PracticeArena {
     private var powerDuration = 15.0
     private var starDuration = 8.0
     private var activeRules: RoomRules?
+    private let stationaryTankID: Int?
     private var roamingIDs = Set<Int>()
     private var parkedRoamers: [Int: ArenaTank] = [:]
     private var roamingReadyAt: [Int: Double] = [:]
@@ -66,9 +67,11 @@ public final class PracticeArena {
 
     public init(seed: UInt32 = 0x1e9a2026, name: String, colorIndex: Int,
                 botCount: Int = 8, difficulty: String = "normal", world: ArenaWorld? = nil, initialTanks: [ArenaTank]? = nil,
-                secondaryPlayer: NativeSeatSpec? = nil) {
+                secondaryPlayer: NativeSeatSpec? = nil, respawnsEnabled: Bool = true, stationaryTankID: Int? = nil) {
         maze = world.map { InfiniteMaze(world: $0) } ?? InfiniteMaze(seed: seed)
         botDifficulty = difficulty
+        self.respawnsEnabled = respawnsEnabled
+        self.stationaryTankID = stationaryTankID
         randomState = seed == 0 ? 1 : seed
         snapshot.tanks = [ArenaTank(id: localID, name: name, x: 42, y: 42,
                                    colorIndex: GamePalette.index(colorIndex), spawnProtected: true,
@@ -208,8 +211,8 @@ public final class PracticeArena {
         let count = snapshot.tanks.count
         for offset in 0..<count {
             let index = (Int(snapshot.tick % UInt64(count)) + offset) % count
-            guard snapshot.tanks[index].hp > 0 else { continue }
             let tank = snapshot.tanks[index]
+            guard tank.hp > 0, tank.id != stationaryTankID else { continue }
             let controls = tank.bot ? botInput(index, dt: dt)
                 : tank.id == localID ? input : tank.id == secondaryLocalID ? secondaryInput ?? GameInput() : GameInput()
             movementInputs[snapshot.tanks[index].id] = controls
@@ -233,8 +236,14 @@ public final class PracticeArena {
                         if maze.segmentBlocked(x: first.x, y: first.y, dx: dx, dy: dy) { continue }
                     }
                     if distance < 0.001 { dx = 1; dy = 0; distance = 1 }
-                    TankMovement.displace(tank: &snapshot.tanks[a], dx: -dx / distance * overlap / 2, dy: -dy / distance * overlap / 2, world: world)
-                    TankMovement.displace(tank: &snapshot.tanks[b], dx: dx / distance * overlap / 2, dy: dy / distance * overlap / 2, world: world)
+                    let firstShare = first.id == stationaryTankID ? 0 : second.id == stationaryTankID ? 1.0 : 0.5
+                    let secondShare = 1 - firstShare
+                    if firstShare > 0 {
+                        TankMovement.displace(tank: &snapshot.tanks[a], dx: -dx / distance * overlap * firstShare, dy: -dy / distance * overlap * firstShare, world: world)
+                    }
+                    if secondShare > 0 {
+                        TankMovement.displace(tank: &snapshot.tanks[b], dx: dx / distance * overlap * secondShare, dy: dy / distance * overlap * secondShare, world: world)
+                    }
                 }
             }
         }

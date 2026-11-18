@@ -24,6 +24,30 @@ final class PracticeTests: XCTestCase {
         XCTAssertEqual(first.snapshot.leaderboard.count, 9)
     }
 
+    func testScoringPracticeRequiresProjectileContactWithStationaryTarget() {
+        let world = ArenaWorld(width: 336, height: 168, cols: 4, rows: 2)
+        let target = ArenaTank(id: 2, x: 266, y: 84, angle: .pi, colorIndex: 1)
+        let arena = PracticeArena(name: "", colorIndex: 0, botCount: 0, world: world,
+                                  initialTanks: [ArenaTank(id: 1, x: 126, y: 84), target],
+                                  respawnsEnabled: false, stationaryTankID: target.id)
+        var rules = RoomRules()
+        rules.pickupRate = "off"
+        arena.configure(rules: rules)
+
+        for _ in 0..<90 { arena.step(input: GameInput(forward: true), dt: 1 / 60) }
+        XCTAssertEqual(arena.snapshot.tanks[1].x, target.x)
+        XCTAssertEqual(arena.snapshot.tanks[1].y, target.y)
+        XCTAssertEqual(arena.snapshot.tanks[0].score, 0)
+        for _ in 0..<36 { arena.step(input: GameInput(reverse: true), dt: 1 / 60) }
+        arena.step(input: GameInput(fire: true), dt: 1 / 60)
+        XCTAssertTrue(arena.snapshot.bullets.contains { $0.owner == arena.localID })
+        XCTAssertEqual(arena.snapshot.tanks[0].score, 0)
+
+        for _ in 0..<120 { arena.step(input: GameInput(), dt: 1 / 60) }
+        XCTAssertEqual(arena.snapshot.tanks[0].score, 1)
+        XCTAssertEqual(arena.snapshot.tanks[1].hp, 0)
+    }
+
     func testCannonPenetratesWallsBeyondEighteenCellsThenExpiresAtFivePointThreeSeconds() throws {
         let arena = solitary("cannon")
         arena.step(input: GameInput(fire: true), dt: 1 / 60)

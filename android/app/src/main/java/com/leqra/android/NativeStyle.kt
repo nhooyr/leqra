@@ -144,6 +144,9 @@ internal object NativeStyle {
             if (role == "primary") {
                 setTextColor(0xff002536.toInt())
                 background = background(context, accent, 6, 0xff95eaff.toInt())
+            } else if (role == "danger") {
+                setTextColor(NativeStyle.danger)
+                background = background(context, 0x1aff4f5f, 6, NativeStyle.danger)
             } else if (role == "share" || role == "text") {
                 textSize = 10f
                 typeface = Typeface.MONOSPACE
@@ -258,7 +261,8 @@ internal object NativeStyle {
         title: String,
         detail: String = "",
         expanded: Boolean,
-        action: () -> Unit,
+        controlledContent: View? = null,
+        action: () -> Unit = {},
     ): LinearLayout =
         row(context).apply {
             minimumHeight = context.dp(44)
@@ -271,9 +275,6 @@ internal object NativeStyle {
                 )
             isClickable = true
             isFocusable = true
-            contentDescription =
-                "$title, ${if(detail.isNotEmpty()) "$detail, " else ""}${if(expanded) "Expanded" else "Collapsed"}"
-            setOnClickListener { action() }
             weighted(
                 label(context, title, 14f, text, true).apply {
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -288,16 +289,21 @@ internal object NativeStyle {
                     width = -2,
                     gap = 0,
                 )
-            add(
-                label(context, "›", 24f, accent, true).apply {
-                    rotation = if (expanded) 90f else 0f
-                    gravity = android.view.Gravity.CENTER
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                },
-                28,
-                44,
-                gap = 0,
-            )
+            val indicator = label(context, "›", 24f, accent, true).apply {
+                gravity = android.view.Gravity.CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            add(indicator, 28, 44, gap = 0)
+            fun setExpanded(open: Boolean) {
+                contentDescription = "$title, ${if (detail.isNotEmpty()) "$detail, " else ""}${if (open) "Expanded" else "Collapsed"}"
+                indicator.rotation = if (open) 90f else 0f
+                controlledContent?.visibility = if (open) View.VISIBLE else View.GONE
+            }
+            setExpanded(expanded)
+            setOnClickListener {
+                if (controlledContent != null) setExpanded(controlledContent.visibility != View.VISIBLE)
+                action()
+            }
         }
 
     fun paintChip(

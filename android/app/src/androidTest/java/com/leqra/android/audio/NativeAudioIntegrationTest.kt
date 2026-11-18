@@ -196,7 +196,7 @@ class NativeAudioIntegrationTest {
             val stopped = audio.framesWritten
             SystemClock.sleep(80)
             assertEquals(
-                "Ready-room previews should release their output",
+                "Room previews should release their output",
                 stopped,
                 audio.framesWritten,
             )

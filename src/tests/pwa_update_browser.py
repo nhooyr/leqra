@@ -232,7 +232,7 @@ def check_upgrade(browser, screenshots, breaking=False):
         else:
             page.evaluate("__test.returnToRoom()")
             page.wait_for_timeout(1400)
-            assert page.evaluate("pwaDocument") == document_id, 'a compatible build reloaded the ready room'
+            assert page.evaluate("pwaDocument") == document_id, 'a compatible build reloaded the room'
             assert page.evaluate("Number(sessionStorage.pwaLoads)") == 1
             page.reload(wait_until="load")
         page.wait_for_function("() => !!window.__test && !!window.leqra")

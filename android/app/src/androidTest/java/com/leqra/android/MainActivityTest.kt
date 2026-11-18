@@ -5,7 +5,9 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -21,6 +23,10 @@ import android.view.ViewGroup
 import android.app.AlertDialog
 import com.leqra.android.render.NativeArenaView
 import java.io.File
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -66,7 +72,7 @@ class MainActivityTest {
         val namesDeadline = SystemClock.elapsedRealtime() + 15000
         while (main { state(activity).automaticNamePending(0) || state(activity).automaticNamePending(1) } &&
             SystemClock.elapsedRealtime() < namesDeadline) SystemClock.sleep(30)
-        assertFalse("Fresh names settle before interacting with the ready room", main {
+        assertFalse("Fresh names settle before interacting with the room", main {
             state(activity).automaticNamePending(0) || state(activity).automaticNamePending(1)
         })
         main { activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
@@ -135,31 +141,99 @@ class MainActivityTest {
         fun texts(root: View) = descendants(root).filterIsInstance<TextView>()
         fun click(root: View, title: String) =
             texts(root).single { it.text.toString() == title }.performClick()
-        fun verifyTour(activity: MainActivity, objective: String) {
-            val root = quickTour(activity)!!.window!!.decorView
+        fun backgroundAnimating(activity: MainActivity): Boolean {
+            val view = MainActivity::class.java.getDeclaredField("arena").apply { isAccessible = true }.get(activity)
+            return NativeArenaView::class.java.getDeclaredField("running").apply { isAccessible = true }.getBoolean(view)
+        }
+        fun verifyTour(activity: MainActivity) {
+            val window = main { quickTour(activity)!!.window!! }
+            val root = main { window.decorView }
+            val arena = main { descendants(root).filterIsInstance<NativeArenaView>().single() }
             val hardware = Regex("\\b(keyboard|mouse|gamepad|keys?)\\b", RegexOption.IGNORE_CASE)
-            val instructions = listOf("Touch near your tank to aim without moving.", "tap to detonate", objective)
-            for ((index, page) in listOf("Drive and aim", "Fire", "Play the objective").withIndex()) {
-                val labels = texts(root).map { it.text.toString() }
-                assertTrue(labels.contains("Quick tour"))
-                assertTrue(labels.contains(page))
-                assertTrue(labels.contains("${index + 1} / 3"))
-                assertTrue(labels.any { it.contains(instructions[index]) })
-                assertFalse("$page is a touch-only tour page", labels.any(hardware::containsMatchIn))
-                assertTrue(click(root, if (index == 2) "DONE" else "NEXT"))
+            val instructions = listOf(
+                "Drag the left stick to drive. Touch near your tank to aim without moving.",
+                "Hold the right Fire button to shoot a round.",
+                "Destroy the stationary tank to score a point.",
+            )
+            fun point(name: String): Float = NativeArenaView::class.java.getDeclaredField(name).run {
+                isAccessible = true
+                getFloat(arena) * arena.resources.displayMetrics.density
+            }
+            fun touch(action: Int, x: Float, y: Float) {
+                val now = SystemClock.uptimeMillis()
+                val event = MotionEvent.obtain(now, now, action, x, y, 0)
+                try { assertTrue(arena.onTouchEvent(event)) } finally { event.recycle() }
+            }
+            fun fire() {
+                touch(MotionEvent.ACTION_DOWN, point("fireX"), point("fireY"))
+                touch(MotionEvent.ACTION_UP, point("fireX"), point("fireY"))
+            }
+            fun tankImages() = NativeArenaView::class.java.getDeclaredField("snapshot").run {
+                isAccessible = true
+                (get(arena) as ArenaSnapshot).tanks
+            }
+            for ((index, page) in listOf("Drive and aim", "Fire", "Score a point").withIndex()) {
+                val button = main {
+                    val labels = texts(root).map { it.text.toString() }
+                    assertTrue(labels.contains("Quick tour"))
+                    assertTrue(labels.contains(page))
+                    assertTrue(labels.contains("${index + 1} / 3"))
+                    assertTrue(labels.contains(instructions[index]))
+                    assertFalse("$page is a touch-only tour page", labels.any(hardware::containsMatchIn))
+                    texts(root).single { it.text.toString() == if (index == 2) "DONE" else "NEXT" }
+                }
+                await("The arena renders for $page") { arena.isShown && arena.renderedFrames > 0 }
+                main {
+                    assertFalse("The covered arena has no running frame loop", backgroundAnimating(activity))
+                    assertTrue("The practice dialog requests the gameplay display rate", window.attributes.preferredRefreshRate > 30f)
+                    if (android.os.Build.VERSION.SDK_INT >= 35)
+                        assertEquals(window.attributes.preferredRefreshRate, arena.requestedFrameRate, 0f)
+                    assertFalse(arena.showTankLabels)
+                    assertEquals(index > 0, arena.showFireControl)
+                    assertFalse("$page needs practice to continue", button.isEnabled)
+                    when (index) {
+                        0 -> {
+                            touch(MotionEvent.ACTION_DOWN, point("stickX"), point("stickY"))
+                            touch(MotionEvent.ACTION_MOVE, point("stickX"), point("stickY") + 28f * arena.resources.displayMetrics.density)
+                        }
+                        1 -> fire()
+                        2 -> assertTrue(texts(root).any { it.text == "score: 0" && it.isShown })
+                    }
+                }
+                if (index == 2) {
+                    await("The stationary target appears in the practice arena") { tankImages().size == 2 }
+                    val desiredAngle = main {
+                        val (pilot, target) = tankImages()
+                        val angle = atan2(target.y - pilot.y, target.x - pilot.x)
+                        val reach = 28 * arena.resources.displayMetrics.density
+                        val x = point("aimTankX") + (cos(angle) * reach).toFloat()
+                        val y = point("aimTankY") + (sin(angle) * reach).toFloat()
+                        touch(MotionEvent.ACTION_DOWN, x, y)
+                        touch(MotionEvent.ACTION_UP, x, y)
+                        angle
+                    }
+                    await("Touch aims the tank at the target") {
+                        abs(com.leqra.core.TankMovement.angleDelta(tankImages().first().angle, desiredAngle)) < .05
+                    }
+                    main { fire() }
+                }
+                await("Actual practice unlocks the button for $page") { button.isEnabled }
+                if (index == 0) main { touch(MotionEvent.ACTION_UP, point("stickX"), point("stickY")) }
+                if (index == 2) main { assertTrue(texts(root).any { it.text == "score: 1" && it.isShown }) }
+                main { assertTrue(button.performClick()) }
             }
         }
 
         val fresh = launch(showTour = true)
         try {
-            main { verifyTour(fresh, "An endless tank arena.") }
-            await("Completing the tour closes its modal") { quickTour(fresh) == null }
+            verifyTour(fresh)
+            await("Completing the tour resumes the room arena cadence") { quickTour(fresh) == null && backgroundAnimating(fresh) }
         } finally { main { fresh.finish() } }
 
         val returning = startActivity()
         try {
-            await("The ready room is immediately interactive on relaunch") { returning.hasWindowFocus() }
-            main {
+            await("The room is immediately interactive on relaunch") { returning.hasWindowFocus() }
+            val controls = main {
                 assertNull(quickTour(returning))
                 state(returning).selectMode("ctf")
                 state(returning).localSelected = true
@@ -168,12 +242,11 @@ class MainActivityTest {
                     isAccessible = true
                     get(returning) as AlertDialog
                 }
-                assertTrue(texts(controls.window!!.decorView).any { it.text.startsWith("Keyboard defaults") })
                 assertTrue(click(controls.window!!.decorView, "QUICK TOUR"))
-                verifyTour(returning, "Carry the enemy flag home")
-                assertTrue(controls.isShowing)
+                controls
             }
-            await("Completing a replay returns to Controls") { quickTour(returning) == null }
+            verifyTour(returning)
+            await("Completing a replay returns to Controls") { quickTour(returning) == null && controls.isShowing && backgroundAnimating(returning) }
         } finally { main { returning.finish() } }
     }
 
@@ -1025,14 +1098,44 @@ class MainActivityTest {
             assertFalse(device.findObject(UiSelector().text("READY ROOM.")).exists())
             assertFalse(device.findObject(UiSelector().text("● READY ROOM")).exists())
             assertTrue(device.findObject(UiSelector().description("P1 account key")).exists())
-            device.findObject(UiSelector().description("Controls")).click()
-            assertTrue(device.findObject(UiSelector().text("Controls")).waitForExists(2000))
+            main {
+                val controlsIcon = descendants(activity.window.decorView).filterIsInstance<android.widget.ImageButton>()
+                    .single { it.isShown && it.contentDescription == "Controls" }
+                assertTrue(controlsIcon.performClick())
+            }
+            await("The Controls button opens Controls") { activeDialog()?.isShowing == true }
             main {
                 val controls = activeDialog()!!
-                val views = descendants(controls.window!!.decorView)
-                val titles = views.filterIsInstance<TextView>().map { it.text.toString() }
-                assertTrue(titles.containsAll(listOf("QUICK TOUR", "Show FPS and ping", "Sound volume", "RESET ALL SETTINGS", "BACK")))
-                assertFalse(views.any { it is android.widget.EditText })
+                val root = controls.window!!.decorView
+                val views = descendants(root)
+                fun visibleTitles() = descendants(root).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
+                val titles = visibleTitles()
+                assertTrue(titles.containsAll(listOf("QUICK TOUR", "SHOWCASE", "Show FPS and ping", "Sound volume", "ONLINE SERVER", "SAVE SERVER", "RESET ALL SETTINGS", "BACK")))
+                assertEquals("QUICK TOUR", titles[titles.indexOf("SHOWCASE") - 1])
+                assertEquals(listOf("RESET ALL SETTINGS", "BACK"), titles.takeLast(2))
+                val reset = views.filterIsInstance<android.widget.Button>().single { it.text == "RESET ALL SETTINGS" }
+                assertEquals(NativeStyle.danger, reset.currentTextColor)
+                val devices = InputDevice.getDeviceIds().asList().mapNotNull { InputDevice.getDevice(it) }.filterNot { it.isVirtual }
+                val keyboard = devices.any { it.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC }
+                val mouse = devices.any { it.supportsSource(InputDevice.SOURCE_MOUSE) }
+                val binds = views.singleOrNull { it.isShown && it.contentDescription == "Binds, Collapsed" }
+                assertEquals(keyboard || mouse, binds != null)
+                assertFalse(titles.any { it.startsWith("Keyboard defaults") })
+                assertTrue(titles.none { it in listOf("KEYBOARD LAYOUT 1", "RESET DEFAULT KEYS", "Mouse aim", "Mouse fire") })
+                if (binds != null) {
+                    assertTrue(binds.performClick())
+                    assertEquals("Binds, Expanded", binds.contentDescription)
+                    val expanded = visibleTitles()
+                    assertEquals(keyboard, expanded.any { it.startsWith("Keyboard defaults") })
+                    assertEquals(keyboard, "KEYBOARD LAYOUT 1" in expanded)
+                    assertEquals(keyboard, "RESET DEFAULT KEYS" in expanded)
+                    assertEquals(mouse, "Mouse aim" in expanded)
+                    assertEquals(mouse, "Mouse fire" in expanded)
+                    assertTrue(binds.performClick())
+                    assertEquals("Binds, Collapsed", binds.contentDescription)
+                    assertEquals(titles, visibleTitles())
+                }
+                assertEquals("Online server", views.filterIsInstance<android.widget.EditText>().single().contentDescription)
                 assertTrue(views.any { it.contentDescription == "Close Controls" })
                 val sound = views.filterIsInstance<android.widget.Switch>().single { it.text == "Sound and haptics" }
                 val session = state(activity)
@@ -1052,6 +1155,56 @@ class MainActivityTest {
         } finally {
             main { activity.finish() }
         }
+    }
+
+    @Test
+    fun onlineServerEditorValidatesSavesAndRestoresTheConfiguredOrigin() {
+        val settings = instrumentation.targetContext.getSharedPreferences("leqra-settings", 0)
+        val expectedOrigin = "https://leqra.test"
+        fun showControls(activity: MainActivity) =
+            MainActivity::class.java.getDeclaredMethod("showControls").apply { isAccessible = true }.invoke(activity)
+        fun controls(activity: MainActivity): List<View> = MainActivity::class.java.getDeclaredField("dialog").run {
+            isAccessible = true
+            descendants((get(activity) as AlertDialog).window!!.decorView)
+        }
+        fun editor(views: List<View>) = views.filterIsInstance<android.widget.EditText>().single { it.contentDescription == "Online server" }
+        fun save(views: List<View>) = views.filterIsInstance<android.widget.Button>().single { it.text == "SAVE SERVER" }.performClick()
+
+        val activity = launch()
+        try {
+            main {
+                val session = state(activity)
+                val initialOrigin = session.server
+                val initialPreference = settings.getString("server", null)
+                showControls(activity)
+                val views = controls(activity)
+                val field = editor(views)
+                assertEquals(initialOrigin, field.text.toString())
+                field.setText("not a server")
+                assertTrue(save(views))
+                assertEquals(initialOrigin, session.server)
+                assertEquals(initialPreference, settings.getString("server", null))
+                val error = "Enter an HTTP or HTTPS server address."
+                assertTrue(field.error?.toString() == error || views.filterIsInstance<TextView>().any { it.text == error && it.isShown })
+
+                field.setText("  https://LEQRA.test:443/room?name=test#fragment  ")
+                assertTrue(save(views))
+                assertEquals(expectedOrigin, session.server)
+                assertEquals(expectedOrigin, settings.getString("server", null))
+                assertEquals(expectedOrigin, editor(controls(activity)).text.toString())
+                assertTrue(controls(activity).filterIsInstance<TextView>().any { it.text == "Server saved." && it.isShown })
+            }
+        } finally { main { activity.finish() } }
+
+        val returning = startActivity()
+        try {
+            await("The room reopens with the saved server") { returning.hasWindowFocus() }
+            main {
+                assertEquals(expectedOrigin, state(returning).server)
+                showControls(returning)
+                assertEquals(expectedOrigin, editor(controls(returning)).text.toString())
+            }
+        } finally { main { returning.finish() } }
     }
 
     @Test
@@ -1465,7 +1618,7 @@ class MainActivityTest {
         val report = StringBuilder()
         val shared = setOf("COPY INVITE LINK ↗", "Join another room ↗", "LEAVE ROOM", "FIND ONLINE BATTLE")
         fun capture(label: String): Layout {
-            eventually("Ready-room layout did not settle") {
+            eventually("Room layout did not settle") {
                 val scroll = field("readyScroll") as? android.widget.ScrollView
                 scroll != null && scroll.isLaidOut && !scroll.isLayoutRequested
             }

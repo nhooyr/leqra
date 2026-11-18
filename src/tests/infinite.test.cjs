@@ -212,8 +212,136 @@ function harness(url = 'https://example.test/', openField = false, storage = new
   }
   now = until;
  };
- return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, state:window.testArena, botInput:window.testBotInput,setRandom(fn){math.random=fn;},sounds, loadouts, markers, labels, strokes, rings, frameSamples, bulletDraws, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
+ return {infinity: window.leqraInfinity, byID, sockets, advance, elapse, window, context, state:window.testArena, botInput:window.testBotInput,setRandom(fn){math.random=fn;},sounds, loadouts, markers, labels, strokes, rings, frameSamples, bulletDraws, combatPrefs,sidebarMoves,sidebarHome,get sidebarParent(){return sidebarParent;},headerMoves,headerHome,get headerParent(){return headerParent;},setChatOpen(value){chatOpen=value;if(value)window.leqraInfinity.resetControls();}};
 }
+
+test('Quick Tour practice uses real tank movement and ricochet physics in a separate arena',()=>{
+ const h=harness();
+ h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});
+ const match=h.state(),matchTank={...match.tanks[0]};
+ const art=h.window.leqraInfinityArt,tanks=[];
+ art.hull=tank=>tanks.push({...tank});
+ const practice=h.infinity.createTourArena(h.byID('introTourCanvas'));
+ const neutral=h.window.leqraNet.neutral(),dt=1/120;
+ practice.render(false);
+ const start=tanks.at(-1);
+ for(let tick=0;tick<40;tick++)assert.equal(practice.step(dt,{...neutral,left:true},false,false).moved,false);
+ practice.render(false);
+ assert.equal(tanks.at(-1).x,start.x);
+ assert.equal(tanks.at(-1).y,start.y);
+ assert.notEqual(tanks.at(-1).angle,start.angle);
+ practice.step(dt,{...neutral,stickX:1,aimOnly:true,snapAim:true},false,false);
+ for(let tick=0;tick<11;tick++)assert.equal(practice.step(dt,{...neutral,forward:true},false,false).moved,false);
+ assert.equal(practice.step(dt,{...neutral,forward:true},false,false).moved,true);
+ practice.render(false);
+ const physicalX=tanks.at(-1).x;
+ practice.render(false,dt/2,{...neutral,forward:true},dt);
+ assert.ok(tanks.at(-1).x>physicalX&&tanks.at(-1).x<physicalX+128*dt);
+ practice.render(false);
+ assert.equal(tanks.at(-1).x,physicalX,'in-between poses do not change the simulation');
+ assert.equal(practice.step(dt,neutral,false,true).fired,true,'a released tap leaves a live projectile');
+ assert.equal(practice.step(dt,neutral,false,true).fired,false,'cooldown blocks an immediate second shot');
+ practice.render(false);
+ const first=h.bulletDraws.at(-1)[0];
+ assert.ok(first.x>start.x&&first.vx>0);
+ for(let tick=0;tick<126;tick++)practice.step(dt,neutral,false,false);
+ practice.render(false);
+ const bounced=h.bulletDraws.at(-1)[0];
+ assert.ok(bounced.bounces>0&&bounced.vx<0);
+ assert.equal(h.labels.length,0);
+ assert.equal(h.state(),match);
+ assert.deepEqual({...match.tanks[0]},matchTank);
+ assert.equal(match.bullets.length,0);
+ assert.equal(h.sockets.length,0);
+ const replay=h.infinity.createTourArena(h.byID('introTourCanvas'));
+ const fresh=replay.step(dt,neutral,false,false);
+ assert.ok(!fresh.moved&&!fresh.fired);
+});
+
+test('Quick Tour score changes only after a real hit on the stationary target',()=>{
+ const h=harness(),neutral=h.window.leqraNet.neutral(),dt=1/120;
+ const practice=h.infinity.createTourArena(h.byID('introTourCanvas'),true);
+ let hulls=[];h.window.leqraInfinityArt.hull=tank=>hulls.push({...tank});
+ practice.render(false);
+ const target=hulls.find(tank=>tank.id==='target');
+ assert.ok(target);
+ for(let tick=0;tick<30;tick++)practice.step(dt,neutral,false,false);
+ hulls=[];practice.render(false);
+ assert.deepEqual(hulls.find(tank=>tank.id==='target'),target);
+ assert.equal(practice.score,0);
+ assert.equal(practice.step(dt,neutral,false,true).fired,true);
+ assert.equal(practice.score,0,'firing does not award a point');
+ for(let tick=0;tick<85;tick++)practice.step(dt,neutral,false,false);
+ assert.equal(practice.score,1);
+ hulls=[];practice.render(false);
+ assert.ok(!hulls.some(tank=>tank.id==='target'));
+ for(let tick=0;tick<120;tick++)practice.step(dt,neutral,true,false);
+ assert.equal(practice.score,1,'the target stays destroyed');
+});
+
+test('Quick Tour requires the demonstrated action on each page and resets on replay',()=>{
+ const source=readFileSync(assetPath('game.js'),'utf8'),start=source.indexOf('function initIntroTour(');
+ for(const touch of [false,true]){
+  const h=harness(),{$}=h.context,dialog=$('introTourDialog'),next=$('introTourNext');
+  const pages=Array.from({length:4},(_,index)=>$('tourPage'+index));
+  dialog.querySelectorAll=()=>pages;
+  Object.assign(h.context,{
+   mode:'room',phase:'menu',guideEnabled:true,clamp:h.window.leqraNet.clamp,
+   syncIntroTourControls:()=>({KeyW:'forward',KeyA:'left',KeyQ:'fire'}),
+   syncControlIdentities:()=>{$('introTourTouchControls').hidden=!touch;},
+   setText:(id,text)=>{$(id).textContent=String(text);},setStyle:(el,k,v)=>el.style.setProperty(k,v),
+   openFeature:()=>dialog.showModal(),closeFeature:()=>dialog.close(),syncArenaAudio(){},
+   save(){},capturePointer(){},initAudio(){},primeAudioUnlock(){},
+  });
+  vm.runInContext(source.slice(start,source.indexOf('\n}',start)+2)+'\ninitIntroTour();',h.context);
+  const key=(code)=>dialog.emit('keydown',{code});
+  const keyUp=(code)=>h.window.emit('keyup',{code});
+  const pointer={button:0,pointerType:'touch',pointerId:1,clientX:48,clientY:48};
+  assert.equal(next.disabled,true);
+  next.onclick();assert.equal($('introTourTitle').textContent,'Drive and aim');
+  key('KeyA');key('KeyQ');h.advance(18);keyUp('KeyA');keyUp('KeyQ');
+  assert.equal(next.disabled,true);
+  assert.equal(h.bulletDraws.at(-1).length,0);
+  if(touch){
+   $('introTourStick').emit('pointerdown',pointer);
+   h.window.emit('pointermove',{...pointer,clientX:84});h.advance(16);
+   h.window.emit('pointerup',pointer);
+  }else{key('KeyW');h.advance(12);keyUp('KeyW');}
+  assert.equal($('introTourPracticeStatus').textContent,'Tank moved.');
+  next.onclick();
+  assert.equal($('introTourTitle').textContent,'Fire');
+  next.onclick();h.advance(4);assert.equal(next.disabled,true);
+  if(touch){$('introTourFireButton').emit('pointerdown',pointer);h.window.emit('pointerup',pointer);}
+  else{key('KeyQ');keyUp('KeyQ');}
+  h.advance(4);
+  assert.equal($('introTourPracticeStatus').textContent,'Shot fired.');
+  assert.equal(h.bulletDraws.at(-1).length,1);
+  next.onclick();
+  assert.equal($('introTourTitle').textContent,'Score a point');
+  assert.equal($('introTourPractice').hidden,false);
+  assert.equal($('introTourPracticeStatus').hidden,true);
+  assert.equal($('introTourCanvas').attributes['aria-describedby'],'introTourScoreInstructions');
+  assert.equal($('introTourScorePanel').hidden,false);
+  assert.equal($('introTourScore').textContent,'0');
+  next.onclick();h.advance(50);
+  assert.equal(next.disabled,true,'the fire lesson’s shot cannot score in the next lesson');
+  if(touch){$('introTourFireButton').emit('pointerdown',pointer);h.window.emit('pointerup',pointer);}
+  else{key('KeyQ');keyUp('KeyQ');}
+  h.advance(4);
+  assert.equal(next.disabled,true);
+  assert.equal($('introTourScore').textContent,'0');
+  h.advance(42);
+  assert.equal($('introTourPracticeStatus').textContent,'');
+  assert.equal($('introTourScore').textContent,'1');
+  assert.equal(next.disabled,false);
+  next.onclick();assert.equal($('introTourPractice').hidden,true);
+  $('introTourSkip').onclick();assert.equal(dialog.open,false);
+  $('openIntroTour').onclick();h.advance(4);
+  assert.equal(dialog.open,true);
+  assert.equal(next.disabled,true);
+  assert.equal(h.bulletDraws.at(-1).length,0);
+ }
+});
 
 test('Showcase retains a defeated tank wreck and callsign without changing normal death rendering',()=>{
  const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});

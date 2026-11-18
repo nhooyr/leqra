@@ -1,9 +1,11 @@
 import SwiftUI
+import SpriteKit
 import leqraCore
 
 struct WebModal<Content: View>: View {
     let title: String
     var close: () -> Void
+    var scrolls = true
     @ViewBuilder var content: () -> Content
     var body: some View {
         GeometryReader { geometry in
@@ -17,8 +19,10 @@ struct WebModal<Content: View>: View {
                             Button(action: close) { Image(systemName: "xmark").frame(width: 32, height: 32) }.foregroundStyle(WebStyle.soft).accessibilityLabel("Close " + title)
                         }
                         WebStyle.border.frame(height: 1)
-                        ScrollView { content().frame(maxWidth: .infinity, alignment: .leading) }.scrollDismissesKeyboard(.interactively)
-                            .accessibilityIdentifier("modalScroll")
+                        if scrolls {
+                            ScrollView { content().frame(maxWidth: .infinity, alignment: .leading) }.scrollDismissesKeyboard(.interactively)
+                                .accessibilityIdentifier("modalScroll")
+                        } else { content() }
                     }
                 }.frame(width: min(650, max(0, geometry.size.width - 24)))
                     .frame(maxHeight: min(760, max(200, geometry.size.height - 24))).padding(12)
@@ -102,7 +106,7 @@ struct PauseCard: View {
             if session.snapshot.objectives?.survival?.status == "lost", session.isHost {
                 Button("Restart wave") { session.restartMatch(wave: true) }.buttonStyle(WebButtonStyle())
             }
-            Button(session.isInfinity ? "Exit Infinity" : "Return to ready room") { if session.isInfinity { session.exitArenaToRoom() } else { session.leave() } }
+            Button(session.isInfinity ? "Exit Infinity" : "Return to the room") { if session.isInfinity { session.exitArenaToRoom() } else { session.leave() } }
                 .buttonStyle(WebButtonStyle()).accessibilityIdentifier("Leave game")
         }.frame(maxWidth: .infinity)
     }
@@ -214,6 +218,7 @@ let powerEntries = [("cannon", "Cannon"), ("ghost", "Ghost"), ("laser", "Laser")
 
 struct NativePreferencesPanel: View {
     @ObservedObject var session: GameSession
+    let keyboardConnected: Bool
     @State private var confirmReset = false
     var body: some View {
             VStack(alignment: .leading, spacing: 18) {
@@ -234,13 +239,14 @@ struct NativePreferencesPanel: View {
                 Text("Release \(NetworkClient.supportedVersion), protocol \(NetworkClient.protocolVersion)").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 Button("ACCOUNT KEY") { session.openAccount() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsAccount")
                 Button("P2 ACCOUNT KEY") { session.openAccount(seat: 1) }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsLocalAccount")
+                Button("QUICK TOUR") { session.showQuickTour = true }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("quickTour")
                 Button("SHOWCASE") { session.presentShowcase() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("openShowcase")
-                Text("Exit Showcase with Escape, or switch away from the app and return.")
+                Text(keyboardConnected ? "Exit Showcase with Escape, or switch away from the app and return." : "Switch away from the app and return to exit Showcase.")
                     .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
                 Button("RESET ALL SETTINGS") { confirmReset = true }.buttonStyle(WebButtonStyle(kind: .danger))
                     .accessibilityIdentifier("resetAllSettings")
             }.font(.system(size: 13)).tint(WebStyle.accent)
-            .confirmationDialog("Restore defaults and return to the ready room? Room, server, display, audio, and control settings will reset. Saved account keys and callsigns stay on this device.", isPresented: $confirmReset, titleVisibility: .visible) {
+            .confirmationDialog("Restore defaults and return to the room? Room, server, display, audio, and control settings will reset. Saved account keys and callsigns stay on this device.", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("Reset all settings", role: .destructive) { session.resetAllSettings() }
                 Button("Cancel", role: .cancel) {}
             }
@@ -336,7 +342,7 @@ struct AccountPanel: View {
                     .accessibilityIdentifier("importAccountKey")
                     .onChange(of: draft) { _ in checked = nil; message = ""; checkTask?.cancel(); checking = false }
                 if !session.canImportAccount {
-                    Text("Return to the offline ready room to import or reset a key.").font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                    Text("Return to the offline room to import or reset a key.").font(.system(size: 11)).foregroundStyle(WebStyle.soft)
                 } else {
                     Button("CHECK KEY") { checkKey() }.buttonStyle(WebButtonStyle())
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || checking || session.accountBusy || session.accountRecoveryKeyPending)
@@ -416,9 +422,19 @@ struct AccountPanel: View {
 
 struct ControlsPanel: View {
     @ObservedObject var session: GameSession
+    @ObservedObject private var hardware = NativeHardwarePresence.shared
     @State private var capture: BindingCapture?
     @State private var bindingError = ""
-    @State private var tourPage: Int?
+    private var keyboardConnected: Bool { hardwareProbe ?? hardware.keyboardConnected }
+    private var mouseConnected: Bool { hardwareProbe ?? hardware.mouseConnected }
+    private var hardwareProbe: Bool? {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--probe-touch-only-controls") { return false }
+        if arguments.contains("--probe-hardware-controls") { return true }
+        #endif
+        return nil
+    }
     private struct BindingCapture: Identifiable {
         let layout: Int
         let action: NativeControlAction
@@ -429,20 +445,20 @@ struct ControlsPanel: View {
           WebModal(title: "Controls", close: { session.showControls = false }) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(session.identity).font(.system(size: 13, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex))
-                Text("Keyboard defaults: WASD/arrow keys to drive, Q/C/Space/Enter to fire.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
-                Text(session.hasLocalP2 ? "Touch controls P1. Keyboard/mouse controls P2. The first gamepad controls P1 and the second controls P2." : "Keyboard/mouse or touch controls P1. Add local P2 in Players and bots to assign keyboard/mouse to P2.")
-                    .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                if session.hasLocalP2 {
+                    Text("Touch controls P1. The first gamepad controls P1 and the second controls P2.")
+                        .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                }
                 Text("Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Hold the right Fire button to shoot. Pickups equip automatically.").font(.system(size: 13)).lineSpacing(5)
                 Text("Grenades: tap or hold to throw. Release, then tap again to detonate. Release again before throwing another grenade. Projectiles pass through the tank that fired them.").font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
-                Button("QUICK TOUR") { tourPage = 0 }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("quickTour")
-                HardwareControlsPanel(session: session) { layout, action in
+                HardwareControlsPanel(session: session, keyboardConnected: keyboardConnected, mouseConnected: mouseConnected) { layout, action in
                     bindingError = ""; capture = BindingCapture(layout: layout, action: action)
                 }
                 Divider().overlay(WebStyle.border)
-                NativePreferencesPanel(session: session)
+                NativePreferencesPanel(session: session, keyboardConnected: keyboardConnected)
                 Button("BACK") { session.showControls = false }.buttonStyle(WebButtonStyle(kind: .primary))
             }
-          }.allowsHitTesting(capture == nil && tourPage == nil).accessibilityHidden(capture != nil || tourPage != nil)
+          }.allowsHitTesting(capture == nil && !session.showQuickTour).accessibilityHidden(capture != nil || session.showQuickTour)
           if let capture {
               WebModal(title: "Press a key", close: { closeCapture() }) {
                   VStack(alignment: .leading, spacing: 16) {
@@ -463,30 +479,208 @@ struct ControlsPanel: View {
                   }
               }
           }
-          if let tourPage {
-              WebModal(title: "Quick tour", close: { self.tourPage = nil }) {
-                  VStack(alignment: .leading, spacing: 18) {
-                      Text(["Drive and aim", "Fire", "Play the objective"][tourPage]).font(.system(size: 20, weight: .bold))
-                      Text(tourText(tourPage)).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
-                          .accessibilityIdentifier("tourInstructions")
-                      Text("\(tourPage + 1) / 3").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
-                      Button(tourPage == 2 ? "DONE" : "NEXT") { self.tourPage = tourPage == 2 ? nil : tourPage + 1 }
-                          .buttonStyle(WebButtonStyle(kind: .primary)).accessibilityIdentifier("tourNext")
-                  }
-              }
+          if session.showQuickTour {
+              QuickTourPanel(highFrameRate: session.highFrameRate,
+                             playSound: { session.applyAudioSetting(preview: $0) }, close: { session.showQuickTour = false })
           }
+        }
+        .onChange(of: keyboardConnected) { connected in
+            if !connected { closeCapture() }
         }
     }
     private func closeCapture() {
         capture = nil
     }
-    private func tourText(_ page: Int) -> String {
+}
+
+private struct QuickTourPanel: View {
+    let highFrameRate: Bool
+    let close: () -> Void
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var practice: QuickTourPractice
+    @State private var page = 0
+
+    init(highFrameRate: Bool, playSound: @escaping (AudioCue) -> Void, close: @escaping () -> Void) {
+        self.highFrameRate = highFrameRate
+        self.close = close
+        _practice = StateObject(wrappedValue: QuickTourPractice(playSound: playSound))
+    }
+
+    private var canAdvance: Bool {
+        page == 0 ? practice.moved : page == 1 ? practice.fired : practice.score > 0
+    }
+
+    var body: some View {
+        WebModal(title: "Quick tour", close: close, scrolls: false) {
+            GeometryReader { geometry in
+                if geometry.size.width >= 440 && geometry.size.height < 330 {
+                    HStack(spacing: 16) {
+                        stage.frame(width: geometry.size.width * 0.57, height: geometry.size.height)
+                        VStack(alignment: .leading, spacing: 10) {
+                            ScrollView { instructions }
+                            navigation
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        instructions
+                        stage.frame(minHeight: 170, maxHeight: 320)
+                        navigation
+                    }
+                }
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { practice.scene.resetControls() }
+            practice.scene.resetFrameClock()
+        }
+        .onDisappear { practice.scene.resetControls() }
+    }
+
+    private var instructions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(["Drive and aim", "Fire", "Score a point"][page]).font(.system(size: 20, weight: .bold))
+            Text(tourText).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("tourInstructions")
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var stage: some View {
+        VStack(spacing: 0) {
+            if page == 2 {
+                Text("score: \(practice.score)").font(WebStyle.mono()).foregroundStyle(WebStyle.paint(0))
+                    .accessibilityIdentifier("tourScore")
+                    .frame(maxWidth: .infinity, minHeight: 30).background(WebStyle.surface)
+            }
+            SpriteView(scene: practice.scene, isPaused: scenePhase != .active,
+                       preferredFramesPerSecond: min(highFrameRate ? 120 : 60, UIScreen.main.maximumFramesPerSecond),
+                       options: [.ignoresSiblingOrder, .shouldCullNonVisibleNodes])
+                .accessibilityElement(children: .ignore).accessibilityLabel("Practice arena")
+                .accessibilityIdentifier("tourPracticeArena")
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(WebStyle.edge, lineWidth: 1).allowsHitTesting(false))
+    }
+
+    private var navigation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(page + 1) / 3").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
+            Button(page == 2 ? "DONE" : "NEXT") {
+                if page == 2 { close() }
+                else {
+                    if page == 0 { practice.enableFiring() }
+                    else { practice.startScoring() }
+                    page += 1
+                }
+            }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(!canAdvance)
+                .opacity(canAdvance ? 1 : 0.45)
+                .accessibilityIdentifier("tourNext")
+        }
+    }
+
+    private var tourText: String {
         switch page {
         case 0: return "Drag the left stick to drive. Touch near your tank to aim without moving."
-        case 1: return "Hold the right Fire button to shoot. After throwing a grenade, release Fire, then tap to detonate. Release again before throwing another grenade."
-        default:
-            let mode = session.readyRoom && (session.room?.infinityPublic ?? session.publicInfinitySelected) ? BattleMode.infinity : session.selectedMode
-            return mode.help + " Open the sidebar for the current room's weapon and power-up guide. Pause to review controls or return to the ready room."
+        case 1: return "Hold the right Fire button to shoot."
+        default: return "Destroy the stationary tank to score a point."
+        }
+    }
+}
+
+@MainActor private final class QuickTourPractice: ObservableObject {
+    @Published private(set) var moved = false
+    @Published private(set) var fired = false
+    @Published private(set) var score = 0
+    let scene = GameScene(size: CGSize(width: 320, height: 240))
+    private let start = CGPoint(x: 126, y: 84)
+    private var arena: PracticeArena
+    private let world: ArenaWorld
+    private let playSound: (AudioCue) -> Void
+    // Demo events never enter the match's audio history.
+    private var audioRouter = AudioEventRouter()
+    private var elapsed = 0.0
+    private var lastFireProgress: Double?
+
+    init(playSound: @escaping (AudioCue) -> Void) {
+        self.playSound = playSound
+        world = ArenaWorld(width: 336, height: 168, cols: 4, rows: 2, walls: [
+            MazeWall(x: 0, y: 0, w: 336, h: 8, axis: "h"), MazeWall(x: 0, y: 160, w: 336, h: 8, axis: "h"),
+            MazeWall(x: 0, y: 8, w: 8, h: 152), MazeWall(x: 328, y: 8, w: 8, h: 152),
+            MazeWall(x: 80, y: 8, w: 8, h: 38), MazeWall(x: 248, y: 122, w: 8, h: 38),
+        ])
+        arena = Self.makeArena(world: world, start: start)
+        scene.scaleMode = .resizeFill
+        scene.showsTankIdentities = false
+        scene.showsFireControl = false
+        scene.configureLayout(infinity: false, landscape: false, loadoutHeight: 0)
+        scene.onFrame = { [weak self] dt in self?.advance(dt) }
+        scene.onFireChanged = { [weak self] down in
+            guard let self, self.scene.showsFireControl else { return }
+            self.arena.captureFire(down, player: self.arena.localID)
+        }
+        scene.onControlsReset = { [weak self] in
+            guard let self else { return }
+            self.arena.resetFireInput(player: self.arena.localID)
+        }
+        display(arena.snapshot, now: ProcessInfo.processInfo.systemUptime)
+    }
+
+    private static func makeArena(world: ArenaWorld, start: CGPoint, scoring: Bool = false) -> PracticeArena {
+        var tanks = [ArenaTank(id: 1, x: start.x, y: start.y, colorIndex: 0)]
+        if scoring { tanks.append(ArenaTank(id: 2, x: 266, y: start.y, angle: .pi, colorIndex: 1)) }
+        let arena = PracticeArena(name: "", colorIndex: 0, botCount: 0, world: world, initialTanks: tanks,
+                                  respawnsEnabled: false, stationaryTankID: scoring ? 2 : nil)
+        var rules = RoomRules()
+        rules.pickupRate = "off"
+        arena.configure(rules: rules)
+        return arena
+    }
+
+    func enableFiring() {
+        scene.resetControls()
+        scene.showsFireControl = true
+    }
+
+    func startScoring() {
+        scene.resetWorld()
+        arena = Self.makeArena(world: world, start: start, scoring: true)
+        audioRouter = AudioEventRouter()
+        elapsed = 0
+        lastFireProgress = nil
+        display(arena.snapshot, now: ProcessInfo.processInfo.systemUptime)
+    }
+
+    private func advance(_ dt: Double) {
+        var input = scene.input
+        input.fire = scene.showsFireControl && input.fire
+        let step = 1.0 / 60
+        elapsed += min(dt, 0.08)
+        while elapsed + 1e-9 >= step {
+            arena.step(input: input, dt: step)
+            elapsed = max(0, elapsed - step)
+            if let tank = arena.snapshot.tanks.first {
+                if !moved && hypot(tank.x - start.x, tank.y - start.y) >= 12 { moved = true }
+                if score != tank.score { score = tank.score }
+            }
+            if scene.showsFireControl, !fired, arena.snapshot.bullets.contains(where: { $0.owner == arena.localID }) { fired = true }
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        display(arena.presentationSnapshot(fraction: elapsed / step, localInput: input, now: now), now: now)
+    }
+
+    private func display(_ snapshot: ArenaSnapshot, now: Double) {
+        var snapshot = snapshot
+        snapshot.world = world
+        scene.display(snapshot: snapshot, localID: arena.localID, maze: arena.maze, fixedWalls: world.walls)
+        let sounds = audioRouter.consume(snapshot: snapshot, localID: arena.localID, infinity: false, online: false,
+                                         now: now)
+        for sound in sounds where [.regular, .ricochet, .impact, .explosion].contains(sound.cue) { playSound(sound.cue) }
+        if scene.showsFireControl, let tank = snapshot.tanks.first {
+            let readout = PilotReadout(tank: tank, snapshot: snapshot, infinity: false, online: false)
+            if lastFireProgress != readout.progress {
+                lastFireProgress = readout.progress
+                scene.configureReadiness(label: readout.fireLabel, progress: readout.progress, locked: readout.locked)
+            }
         }
     }
 }
@@ -494,36 +688,46 @@ struct ControlsPanel: View {
 struct HardwareControlsPanel: View {
     @ObservedObject var session: GameSession
     @ObservedObject private var settings = NativeInputSettings.shared
-    @ObservedObject private var hardware = NativeHardwarePresence.shared
+    @State private var bindsOpen = false
+    let keyboardConnected: Bool
+    let mouseConnected: Bool
     var capture: (Int, NativeControlAction) -> Void
-    private var probe: Bool { ProcessInfo.processInfo.arguments.contains("--probe-hardware-controls") }
     var body: some View {
-        if hardware.keyboardConnected || hardware.mouseConnected || probe {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("KEYBOARD/MOUSE, " + (session.hasLocalP2 ? session.secondaryIdentity : session.identity))
-                    .font(WebStyle.mono(11, weight: .bold)).fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(WebStyle.paint(session.hasLocalP2 ? session.secondaryPaint : session.colorIndex))
-                if hardware.keyboardConnected || probe {
-                    ForEach(0..<2, id: \.self) { index in
-                        Text("KEYBOARD LAYOUT \(index + 1)").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
-                        ForEach(NativeControlAction.allCases, id: \.self) { action in
-                            HStack(spacing: 12) {
-                                Text(action.label).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                Button(NativeControlBindings.keyLabel(settings.bindings.layouts[index][action])) { capture(index, action) }
-                                    .buttonStyle(WebButtonStyle(compact: true)).frame(width: 115)
-                                    .accessibilityIdentifier("bind\(index)_\(action.rawValue)")
+        if keyboardConnected || mouseConnected {
+            WebDisclosure(isExpanded: $bindsOpen, title: "Binds") {
+                VStack(alignment: .leading, spacing: 12) {
+                    let devices = keyboardConnected ? (mouseConnected ? "KEYBOARD/MOUSE" : "KEYBOARD") : "MOUSE"
+                    Text(devices + ", " + (session.hasLocalP2 ? session.secondaryIdentity : session.identity))
+                        .font(WebStyle.mono(11, weight: .bold)).fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(WebStyle.paint(session.hasLocalP2 ? session.secondaryPaint : session.colorIndex))
+                    if !session.hasLocalP2 {
+                        Text("Add local P2 in Players and bots to assign them these controls.")
+                            .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                    }
+                    if keyboardConnected {
+                        Text("Keyboard defaults: WASD/arrow keys to drive, Q/C/Space/Enter to fire.")
+                            .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                        ForEach(0..<2, id: \.self) { index in
+                            Text("KEYBOARD LAYOUT \(index + 1)").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
+                            ForEach(NativeControlAction.allCases, id: \.self) { action in
+                                HStack(spacing: 12) {
+                                    Text(action.label).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Button(NativeControlBindings.keyLabel(settings.bindings.layouts[index][action])) { capture(index, action) }
+                                        .buttonStyle(WebButtonStyle(compact: true)).frame(width: 115)
+                                        .accessibilityIdentifier("bind\(index)_\(action.rawValue)")
+                                }
                             }
                         }
+                        Button("RESET DEFAULT KEYS") { settings.resetBindings() }.buttonStyle(WebButtonStyle())
+                            .accessibilityIdentifier("resetBindings")
                     }
-                    Button("RESET DEFAULT KEYS") { settings.resetBindings() }.buttonStyle(WebButtonStyle())
-                        .accessibilityIdentifier("resetBindings")
+                    if mouseConnected {
+                        NativeSettingToggle("Mouse aim", isOn: $settings.mouseAim, identifier: "settingMouseAim")
+                        NativeSettingToggle("Mouse fire", isOn: $settings.mouseFire, identifier: "settingMouseFire")
+                    }
                 }
-                if hardware.mouseConnected || probe {
-                    NativeSettingToggle("Mouse aim", isOn: $settings.mouseAim, identifier: "settingMouseAim")
-                    NativeSettingToggle("Mouse fire", isOn: $settings.mouseFire, identifier: "settingMouseFire")
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 }

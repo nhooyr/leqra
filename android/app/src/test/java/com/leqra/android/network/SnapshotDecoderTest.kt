@@ -268,4 +268,16 @@ class SnapshotDecoderTest {
             fail("URL credentials accepted")
         } catch (_: IllegalArgumentException) {}
     }
+
+    @Test
+    fun configuredServerAllowsCustomHttpsInReleaseAndHttpInDebug() {
+        assertEquals(
+            "https://example.com:8443",
+            ServerAddress.configuredOrigin("  https://EXAMPLE.com:8443/rooms?room=abc  ", allowCleartext = false),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ServerAddress.configuredOrigin("http://localhost:8080", allowCleartext = false)
+        }
+        assertEquals("http://localhost:8080", ServerAddress.configuredOrigin("http://localhost:8080", allowCleartext = true))
+    }
 }

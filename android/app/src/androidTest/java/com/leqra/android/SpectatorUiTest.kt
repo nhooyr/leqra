@@ -211,7 +211,7 @@ class SpectatorUiTest {
                 viewer.callsign = "View$suffix"
                 viewer.join(host!!.roomCode!!, spectator = true)
             }
-            eventually("Viewer did not join the ready room") {
+            eventually("Viewer did not join the room") {
                 viewer.roomSpectating && viewer.room != null
             }
             main { host!!.play() }
@@ -406,7 +406,7 @@ class SpectatorUiTest {
                 viewer.arenaNetwork.connected && viewer.spectating
             }
             main { host!!.lobby() }
-            eventually("Final ready room did not settle") {
+            eventually("Final room did not settle") {
                 viewer.screen == Screen.READY && viewer.room?.optBoolean("infinityActive") != true
             }
             main { host!!.command("unshare") }

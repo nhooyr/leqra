@@ -869,6 +869,10 @@ function offlineStep(world, dt) {
    }
   }
  }
+ stepOfflineBullets(world, dt);
+}
+
+function stepOfflineBullets(world, dt) {
  world.bullets = world.bullets.filter(bullet => {
   if (bullet.dead) return false;
   if (world.result) return true;
@@ -1110,8 +1114,9 @@ function drawMaze(world, x0, y0, x1, y1) {
  }
 }
 
-function drawTrace(points, color, width, alpha, dashed = false) {
+function drawTrace(points, color, width, alpha, dashed = false, context = ctx) {
  if (points.length < 2) return;
+ const ctx = context;
  ctx.save();
  ctx.strokeStyle = color;
  ctx.lineWidth = width;
@@ -1155,15 +1160,16 @@ function presentEffect(world, effect, now) {
  world.visualEffects.push({...effect, outline, end: now + (kind === 'laser' ? 180 : 430)});
 }
 
-function drawEffects(world, now) {
+function drawEffects(world, now, context = ctx) {
+ const ctx = context;
  for (const effect of world.visualEffects) {
   if(effect.flight&&world.flights?.pending(effect.flight.id)){effect.waitingFlight=true;continue;}
   if(effect.waitingFlight){effect.end=now+430;delete effect.waitingFlight;}
   if (effect.kind === 'laser') {
    if (effect.points) {
     const alpha = clamp((effect.end - now) / 180, 0, 1);
-    drawTrace(effect.points, powers.laser.color, 7, alpha * .45);
-    drawTrace(effect.points, '#fff2ff', 2, alpha);
+    drawTrace(effect.points, powers.laser.color, 7, alpha * .45, false, ctx);
+    drawTrace(effect.points, '#fff2ff', 2, alpha, false, ctx);
    }
    continue;
   }
@@ -1343,18 +1349,20 @@ function primaryView(width,height,split) {
  return width>=height?[Math.ceil(width/2),height]:[width,Math.ceil(height/2)];
 }
 
-function draw(world, now, dt, hud = true) {
- const width = canvas.clientWidth, height = canvas.clientHeight;
- if (!width || !height) return;
- const ratio = art.renderPixelRatio(width, height);
- const pixelsX = Math.round(width * ratio), pixelsY = Math.round(height * ratio);
- if (canvas.width !== pixelsX || canvas.height !== pixelsY) {
-  canvas.width = pixelsX;
-  canvas.height = pixelsY;
+function draw(world, now, dt, hud = true, paint = true) {
+ const width = paint ? canvas.clientWidth : 0, height = paint ? canvas.clientHeight : 0;
+ if (paint && (!width || !height)) return;
+ const ratio = paint ? art.renderPixelRatio(width, height) : 1;
+ if (paint) {
+  const pixelsX = Math.round(width * ratio), pixelsY = Math.round(height * ratio);
+  if (canvas.width !== pixelsX || canvas.height !== pixelsY) {
+   canvas.width = pixelsX;
+   canvas.height = pixelsY;
+  }
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.fillStyle = art.theme.arena;
+  ctx.fillRect(0, 0, width, height);
  }
- ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
- ctx.fillStyle = art.theme.arena;
- ctx.fillRect(0, 0, width, height);
  if (!world.maze) return;
  const alpha = clamp((now - world.arrived) / world.interval, 0, 1);
  const age = world.online&&!world.result ? Math.max(0,(now-world.arrived)/1000) : 0;
@@ -1370,6 +1378,10 @@ function draw(world, now, dt, hud = true) {
   if(status==='drop'){world.pendingImpacts.splice(i,1);continue;}
   if(status==='wait'||event.flight&&world.flights?.pending(event.flight.id)||Number.isFinite(event.tick)&&event.tick>world.flightTick){i++;continue;}
   world.pendingImpacts.splice(i,1);presentEffect(world,event,now);
+ }
+ if (!paint) {
+  world.flights?.observe(world.bullets,world.flightTick);
+  return;
  }
  world.displayTanks ||= new Map();world.displayTanks.clear();
  world.sceneTanks=world.online&&world.flights?.contactCount?world.tanks.concat(world.flights.missingTanks(world.authorityTanks||new Map(world.tanks.map(t=>[t.id,t])))):world.tanks;
@@ -1417,6 +1429,85 @@ function showcaseRenderer(target,scene,{portrait=false}={}) {
  const destroyed=scene.tanks.filter(tank=>!tank.hp).map(tank=>art.botName?.(tank.name,tank.bot)||tank.name);
  target.setAttribute('aria-label','Frozen Infinity battle'+(destroyed.length?'. Destroyed tanks: '+destroyed.join(', '):'')+'.');
  return()=>{const oldCanvas=canvas,oldContext=ctx;try{canvas=target;ctx=target.getContext('2d',{alpha:false});draw(world,scene.time,0,false);}finally{canvas=oldCanvas;ctx=oldContext;}};
+}
+
+function createTourArena(target, scoring = false) {
+ const courseCols=5,courseRows=3,width=courseCols*CELL,height=courseRows*CELL,halfWall=4;
+ const horizontal=(from,to,row)=>({x:from*CELL-halfWall,y:row*CELL-halfWall,w:(to-from)*CELL+8,h:8,axis:'h'});
+ const vertical=(from,to,col)=>({x:col*CELL-halfWall,y:from*CELL-halfWall,w:8,h:(to-from)*CELL+8,axis:'v'});
+ const walls=[horizontal(0,5,0),horizontal(0,5,3),vertical(0,3,0),vertical(0,3,5),
+  horizontal(0,1,1),horizontal(3,5,1),horizontal(1,3,2),vertical(0,1,2),vertical(2,3,4)];
+ const maze={
+  visitWalls(x0,y0,x1,y1,visit){return walls.some(({x,y,w,h})=>x<=x1&&x+w>=x0&&y<=y1&&y+h>=y0&&visit(x,y,w,h));},
+  blocked(x,y,radius){return this.visitWalls(x-radius,y-radius,x+radius,y+radius,(wx,wy,w,h)=>{
+   const dx=x-clamp(x,wx,wx+w),dy=y-clamp(y,wy,wy+h);return dx*dx+dy*dy<radius*radius;
+  });}
+ };
+ const startX=CELL*1.5,startY=CELL*1.5;
+ const tank={id:'practice',x:startX,y:startY,angle:0,hp:1,alive:true,colorIndex:0,color:COLORS[0],cooldown:0,track:0,recoil:0,score:0};
+ const enemy={...tank,id:'target',x:CELL*3.5,angle:Math.PI,colorIndex:1,color:COLORS[1]};
+ const world={maze,tanks:scoring?[tank,enemy]:[tank],controllers:[{id:tank.id,camera:tank}],time:0,bullets:[],lastBullet:0,visualEffects:[]};
+ const context=target.getContext('2d',{alpha:false});
+ const map=document.createElement('canvas');map.width=width;map.height=height;
+ const background=map.getContext('2d');background.fillStyle=art.theme.floor;background.fillRect(0,0,width,height);
+ for(let row=0;row<courseRows;row++)for(let col=0;col<courseCols;col++)art.tile(background,col,row);
+ for(const wall of walls)art.wall(background,wall);
+ const move=(body,dx,dy,phaseEnded)=>mazeMove(maze,body,dx,dy,phaseEnded);
+ function view(w,h) {
+  const zoom=Math.max(.01,Math.min((w-12)/width,(h-12)/height));
+  return {w,h,zoom,x:(w-width*zoom)/2,y:(h-height*zoom)/2};
+ }
+ function aimAt(clientX,clientY,nearOnly) {
+  const bounds=target.getBoundingClientRect(),{w,h,zoom,x,y}=view(bounds.width,bounds.height),px=clientX-bounds.left,py=clientY-bounds.top;
+  const dx=px-x-tank.x*zoom,dy=py-y-tank.y*zoom,distance=Math.hypot(dx,dy);
+  if(px<0||py<0||px>=w||py>=h||distance<2||nearOnly&&distance>Math.max(64,3*RADIUS*zoom))return null;
+  return Math.atan2(dy,dx);
+ }
+ function step(dt,controls,fireHeld,firePressed) {
+  world.time+=dt;tank.cooldown=Math.max(0,tank.cooldown-dt);tank.recoil=Math.max(0,tank.recoil-dt*9);
+  net.move(tank,controls,dt,move);
+  const previousBullet=world.lastBullet;
+  weaponControl(world,tank,fireHeld,firePressed);
+  const fired=world.bullets.some(bullet=>bullet.id>previousBullet);
+  stepOfflineBullets(world,dt);
+  return {moved:Math.hypot(tank.x-startX,tank.y-startY)>=12,fired};
+ }
+ function render(guide,remaining=0,controls=null,physicsStep=1/120) {
+  const {w,h,zoom,x,y}=view(target.clientWidth,target.clientHeight);if(!w||!h)return;
+  const moving=controls&&(controls.forward||controls.reverse||controls.left||controls.right||controls.stickX||controls.stickY);
+  const pose=moving&&remaining>0?net.visualMove(tank,controls,remaining,move,physicsStep):tank;
+  const ratio=art.renderPixelRatio(w,h),pxW=Math.round(w*ratio),pxH=Math.round(h*ratio);
+  if(target.width!==pxW)target.width=pxW;if(target.height!==pxH)target.height=pxH;
+  context.setTransform(ratio,0,0,ratio,0,0);context.fillStyle=art.theme.arena;context.fillRect(0,0,w,h);
+  context.translate(x,y);context.scale(zoom,zoom);context.drawImage(map,0,0);
+  context.save();context.beginPath();context.rect(0,0,width,height);context.clip();
+  if(guide){
+   const dx=Math.cos(pose.angle),dy=Math.sin(pose.angle),span=112,hit=wallHit(maze,pose.x,pose.y,dx*span,dy*span,BULLET_RADIUS);
+   const distance=span*(hit?.fraction??1),start=Math.min(28,distance);
+   context.save();context.strokeStyle=art.colors[0];context.globalAlpha=art.theme.guideAlpha;context.setLineDash([3,7]);context.lineWidth=1.3;
+   context.beginPath();context.moveTo(pose.x+dx*start,pose.y+dy*start);context.lineTo(pose.x+dx*distance,pose.y+dy*distance);
+   if(hit&&distance<span){const ux=hit.nx?-dx:dx,uy=hit.ny?-dy:dy,x=pose.x+dx*distance+hit.nx*.12,y=pose.y+dy*distance+hit.ny*.12;
+    const rest=span-distance,bounce=wallHit(maze,x,y,ux*rest,uy*rest,BULLET_RADIUS),length=rest*(bounce?.fraction??1);context.lineTo(x+ux*length,y+uy*length);}
+   context.stroke();context.restore();
+  }
+  for(const body of scoring?[pose,enemy]:[pose]){
+   if(!body.alive)continue;
+   context.save();context.translate(body.x,body.y);context.rotate(body.angle);
+   art.hull(body,context,zoom,ratio);art.turret(context,body);context.restore();
+  }
+  const rounds=remaining>0?world.bullets.map(bullet=>offlineBulletPose(world,bullet,remaining)):world.bullets;
+  if(scoring&&world.flights){
+   const tick=world.time/STEP,now=performance.now();
+   world.flights.observe(rounds,tick);
+   const impacts=world.flights.sample(tick,now);
+   world.flights.flush();
+   world.visualEffects=world.visualEffects.filter(effect=>effect.end>now);
+   art.bullets([...rounds,...impacts.map(bullet=>({...bullet,color:COLORS[bullet.colorIndex]}))],context,world.time+remaining);
+   drawEffects(world,now,context);
+  }else art.bullets(rounds,context,world.time+remaining);
+  context.restore();
+ }
+ return {step,render,aimAt,get score(){return tank.score;},get readiness(){return tank.cooldownTotal>0?clamp(1-tank.cooldown/tank.cooldownTotal,0,1):1;}};
 }
 
 function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
@@ -1579,7 +1670,8 @@ function loop(now) {
  lastTime = now;
  const audioAge=session.online?Math.max(0,(now-session.arrived)/1000):0;
  art.starmanAudio?.(!session.spectating&&!pauseMenu.open&&!session.result&&(!session.online||session.joined&&audioAge<2)&&session.controllers.some(seat=>{const tank=session.tanks.find(tank=>tank.id===seat.id);return tank?.hp>0&&tank.starmanTime>audioAge;}));
- if (session.online ? session.joined || session.retryAt === undefined : !pauseMenu.open) draw(session, now, dt);
+ if (session.online ? session.joined || session.retryAt === undefined : !pauseMenu.open)
+  draw(session, now, dt, true, !byID('introTourDialog')?.open);
  showResult(session, now);
  art.sampleFrame(now,performance.now()-workStart,session.online?(session.latency??NaN):null);
  frame = requestAnimationFrame(loop);
@@ -2324,6 +2416,6 @@ function sidebarHelp() {
    (target?'Reach '+target+' points to win.':'Keep growing the score without a time limit.')+
    (session.public&&session.room?' Everyone competes individually, including pilots from your room.':'')};
 }
-window.leqraInfinity = Object.freeze({start, close: stop, resetControls, resetMouseControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, localPilots, renamePilot, togglePause,followTank,showcaseRenderer});
+window.leqraInfinity = Object.freeze({start, close: stop, resetControls, resetMouseControls, syncRoom, closeRoom, savedRoomGeneration, pickupHelp, sidebarHelp, localPilots, renamePilot, togglePause,followTank,showcaseRenderer,createTourArena});
 art.roomSessionReady?.();
 })();

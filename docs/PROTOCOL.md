@@ -1,10 +1,10 @@
-# leqra v5.6.1 — current game protocol (protocol 1)
+# leqra v5.6.2 — current game protocol (protocol 1)
 
 The network protocol epoch is **1**. Clients and servers can play together when they use the same epoch. Release versions identify builds and remain available for display and update prompts.
 
 ```json
-{"type":"server_hello","version":"5.6.1","protocol":1}
-{"type":"client_hello","version":"5.6.1","protocol":1}
+{"type":"server_hello","version":"5.6.2","protocol":1}
+{"type":"client_hello","version":"5.6.2","protocol":1}
 ```
 
 The fixed-room socket requires `client_hello` before room and matchmaking actions. The server replies with `client_ready` on success. An incompatible protocol receives an error with `code: "version_mismatch"`, `action: "version"`, `serverVersion`, and the required `protocol`.
@@ -25,7 +25,7 @@ The server shares immutable encoded JSON between equal views and compresses it i
 
 ## Infinity
 
-`GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The ready-room preview reads these standings immediately, then every second, without allocating a tank or joining a room. The same request supplies the menu's server round-trip measurement, refreshing ping and the online count together. Private arenas are not included. Public roaming bots use mostly Dumb difficulty, with Medium and rare Godlike encounters on the schedule below; private rooms retain their configured bot settings.
+`GET /api/infinity` returns uncached public-arena `players`, `tankCount`, `capacity`, and up to ten ranked `leaders` with tank names, scores and colors. The room preview reads these standings immediately, then every second, without allocating a tank or joining a room. The same request supplies the menu's server round-trip measurement, refreshing ping and the online count together. Private arenas are not included. Public roaming bots use mostly Dumb difficulty, with Medium and rare Godlike encounters on the schedule below; private rooms retain their configured bot settings.
 
 `/ws/infinite` accepts a JSON `join` with the matching numeric `protocol` and a `name` or room credentials. The `version` field is available for older servers that require their release. A legacy join that omits `protocol` uses epoch **1**. An incompatible protocol receives the same version error as the fixed-room socket. The `welcome` includes the `protocol`, the pilot's `id`, and a shared maze `seed`. Send `input` with increasing `seq` and the usual movement, aim and fire fields. Duplicate and older sequences are ignored before changing controls, pause state, fire edges or activity time. Each local seat has its own sequence, beginning at 1 after an authenticated controller binding; an ordinary tank respawn retains that connection's chronology. Tank `ack` and `ackSteps` describe the latest input consumed by the server and its elapsed simulation steps. `spawnSerial` identifies each life.
 
@@ -35,7 +35,7 @@ Infinity inputs can set `paused: true` to neutralize the pilot's controls and ho
 
 After joining Infinity, `{"type":"ping","t":1234.5}` echoes as `{"type":"pong","t":1234.5}`. The timestamp must be a finite number. The client probes immediately after joining and every second, measuring round-trip time against its own matching outstanding timestamp; replies from older connections and stale measurements are discarded. More than eight ping messages in one second closes the connection.
 
-An authenticated Infinity socket can update the display spelling of its same canonical callsign with `{"type":"rename","seat":0,"name":"SNOW FOX","requestId":1}`. Seat 0 is the primary tank and seat 1 is its local co-pilot. Request IDs must be positive JavaScript safe integers. The server replies with `{"type":"renamed","seat":0,"name":"SNOW FOX","requestId":1}` or `{"type":"rename_error","seat":0,"requestId":1,"message":"..."}`. A different canonical callsign is rejected as `callsign_immutable`. Changing to a different callsign uses `/api/account/create` with a new key, or explicitly signs into a saved account, then returns to the ready room. No score or tank body transfers between accounts. Names follow the room's 16-character Unicode rules. Replaced connections and revoked seats cannot change spelling. More than eight rename requests in one second closes the connection.
+An authenticated Infinity socket can update the display spelling of its same canonical callsign with `{"type":"rename","seat":0,"name":"SNOW FOX","requestId":1}`. Seat 0 is the primary tank and seat 1 is its local co-pilot. Request IDs must be positive JavaScript safe integers. The server replies with `{"type":"renamed","seat":0,"name":"SNOW FOX","requestId":1}` or `{"type":"rename_error","seat":0,"requestId":1,"message":"..."}`. A different canonical callsign is rejected as `callsign_immutable`. Changing to a different callsign uses `/api/account/create` with a new key, or explicitly signs into a saved account, then returns to the room. No score or tank body transfers between accounts. Names follow the room's 16-character Unicode rules. Replaced connections and revoked seats cannot change spelling. More than eight rename requests in one second closes the connection.
 
 The server sends `state` up to 30 times per second with `tick`, nearby `tanks`, `bullets`, `pickups`, and cosmetic `effects`, the arena's connected human `players` count, total `tankCount`, and up to ten `leaderboard` entries with `id`, `name`, `score`, `bot`, `colorIndex`, and optional `team`. The total `tankCount` covers the complete leaderboard pool, including bots and distant, respawning, or disconnected reserved pilots, parked roaming identities, and listed public archives. Each leaderboard color matches that tank. Each effect has an increasing `id`, a `kind`, position and owner. Laser effects also carry beam points. One unprotected hit destroys a tank. The server owns pickups, damage and score.
 
@@ -52,7 +52,7 @@ Private `welcome` includes the run's `generation`. If the Infinity socket discon
 A room spectator can watch a running **private** Infinity arena without taking a tank seat:
 
 ```json
-{"type":"join","version":"5.6.1","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
+{"type":"join","version":"5.6.2","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
 {"type":"welcome","protocol":1,"id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
 ```
 

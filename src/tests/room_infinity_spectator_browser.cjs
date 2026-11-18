@@ -46,7 +46,7 @@ window.__spectatorProbe={state(){const w=session;if(!w)return null;const target=
    await host.evaluate(()=>{while(__test.localRoom.players.length<8)__test.addRoomSeat('bot');for(const p of __test.localRoom.players)if(p.kind==='bot')__test.changeSeat(p,{difficulty:'dumb'});__test.changeSeat(__test.localRoom.players.find(p=>p.kind==='bot'),{name:'天地玄黃宇宙洪荒日月盈昃辰宿列張'});__test.setLocalRules({...__test.currentRules(),infinity:true,infinityRandomBots:true,infinityBotDifficulty:'dumb',teamMode:'ffa'});});
    await host.locator('#copyInviteBtn').click();await host.waitForFunction(()=>__test.online.connected&&__test.online.roomData?.rules.infinity);const code=await host.evaluate(()=>__test.online.code);
    const {page:viewer,context:viewerContext}=await joinViewer(profile,'V'+run+index,code);
-   check(!await viewer.locator('#infiniteArena').evaluate(node=>node.open),label+' pre-start spectator stays in the ready room');
+   check(!await viewer.locator('#infiniteArena').evaluate(node=>node.open),label+' pre-start spectator stays in the room');
    await host.locator('#startRoomBtn').click();await Promise.all([watchReady(viewer),host.waitForFunction(()=>document.getElementById('infiniteArena').open&&__spectatorProbe.state()?.joined,null,{timeout:15000})]);
    // A background controller deliberately holds respawn. Keep the real human
    // host focused while waiting for its normal roaming-bot population.

@@ -27,6 +27,12 @@ object ServerAddress {
             .removeSuffix("/")
     }
 
+    fun configuredOrigin(value: String, allowCleartext: Boolean): String {
+        val address = origin(value.trim())
+        require(allowCleartext || address.startsWith("https://")) { "Enter an HTTPS server address." }
+        return address
+    }
+
     fun endpoint(origin: String, path: String): HttpUrl =
         (origin(origin) + path).toHttpUrlOrNull()
             ?: throw NetworkFailure("invalid_url", "Enter an HTTP or HTTPS server address.")

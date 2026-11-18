@@ -1345,7 +1345,7 @@ class SessionParityTest {
             }
             val originalKeys = main { (0..1).map { session.store.selected(server!!, it)!!.key } }
             main { session.renameCallsign(renamedLocal, 1) }
-            eventually("P2 account change did not return to the ready room") {
+            eventually("P2 account change did not return to the room") {
                 session.screen == Screen.READY && session.room == null && session.localCallsign == renamedLocal
             }
             main {
@@ -1361,7 +1361,7 @@ class SessionParityTest {
             }
             val localKey = main { session.store.selected(server!!, 1)!!.key }
             main { session.renameCallsign(renamedPrimary, 0) }
-            eventually("P1 account change did not return to the ready room") {
+            eventually("P1 account change did not return to the room") {
                 session.screen == Screen.READY && !session.online && session.callsign == renamedPrimary
             }
             main {

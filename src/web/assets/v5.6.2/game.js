@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.6.1';
+const GAME_VERSION='5.6.2';
 const GAME_PROTOCOL=1;
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
@@ -272,7 +272,7 @@ function setArenaAudio(active){
  if(!active)cancelPendingAudio();
 }
 function syncArenaAudio(){
- setArenaAudio(!!$('infiniteArena')?.open||((mode!=='online'||online.connected)&&
+ setArenaAudio(!!$('infiniteArena')?.open||!!$('introTourDialog')?.open||((mode!=='online'||online.connected)&&
   ['roomScreen','lobbyScreen','onlineScreen','matchScreen'].every(id=>$(id).hidden)));
 }
 function applyAudioLevel(){
@@ -490,6 +490,7 @@ function syncPauseButton(){
  const infinity=!!$('infiniteArena')?.open,button=$('pauseBtn'),active=infinity||['countdown','playing','roundOver','paused'].includes(phase);
  syncMatchTouchPolicy(active);
  button.hidden=!active||!infinity&&(mode==='online'&&!online.connected);
+ const controls=$('roomControlsBtn');if(controls)controls.hidden=active;
  if(infinity){button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','infinitePauseMenu');$('sidebarBtn')?.setAttribute('aria-expanded',String(!!$('infinitePauseMenu')?.open));}
  else if(button.getAttribute('aria-controls')==='infinitePauseMenu'){button.removeAttribute('aria-haspopup');button.removeAttribute('aria-controls');}
  const label=infinity?'Open Infinity pause menu':mode==='online'?'Match menu':phase==='paused'?'Resume game':'Pause game';
@@ -2023,9 +2024,13 @@ function localTankPose(t,remaining){
  const pose={...t};moveTank(pose,(t.vx||0)*remaining,(t.vy||0)*remaining);
  pose.angle+=(t.renderTurn||0)*remaining;pose.track=(t.track||0)+Math.hypot(pose.x-t.x,pose.y-t.y);return pose;
 }
-function render(){
- const simulationTanks=tanks,simulationBullets=bullets;
+function render(paint=true){
  const flights=mode!=='online'&&typeof fire!=='undefined'&&fire.flights;
+ if(!paint){
+  if(flights){flights.sample(time/Net.STEP,performance.now());flights.observe(bullets);flights.flush();}
+  return;
+ }
+ const simulationTanks=tanks,simulationBullets=bullets;
  const extra=flights?flights.sample(time/Net.STEP,performance.now()):null;
  if(mode!=='online'&&phase==='playing'&&!survivalBreak()){
   tanks=tanks.map(t=>localTankPose(t,accumulator));
@@ -2066,7 +2071,10 @@ function frame(now){if(typeof settingsResetActive!=='undefined'&&settingsResetAc
  const workStart=performance.now();
  if(mode==='online'){accumulator=0;onlineUpdate(elapsed);renderOnlineMotion(elapsed,now);}
  else{accumulator+=elapsed;let steps=0;while(accumulator>=1/120&&steps<12){update(1/120);accumulator-=1/120;steps++;}}
- flushMatchPresentation(now);syncFiniteStarmanAudio();updateCombatFeedback();render();sampleFrame(now,performance.now()-workStart);requestAnimationFrame(frame);}
+ flushMatchPresentation(now);syncFiniteStarmanAudio();
+ if($('introTourDialog').open)render(false);
+ else{updateCombatFeedback();render();sampleFrame(now,performance.now()-workStart);}
+ requestAnimationFrame(frame);}
 // Online play: the server owns the world. This client sends controls only.
 // Remote entities interpolate snapshots; the local tank predicts movement and
 // reconciles to authoritative positions. Predictions never award hits or points.
@@ -2390,7 +2398,7 @@ function freshReleasedSeat(seat){
  if(seat){rememberLocalCallsign(name);const player=secondaryMember();if(player)player.name=name;}else{rememberCallsign(name);const player=localRoom.players.find(p=>p.id===localRoom.self);if(player)player.name=name;}
 }
 async function releaseCallsignAccount(token,name,seat=accountSeat()){
- if(!accountImportAllowed())throw Error('Return to the ready room before releasing a callsign.');
+ if(!accountImportAllowed())throw Error('Return to the room before releasing a callsign.');
  if($('accountDialog').accountRotateRequest||$('accountDialog').accountRecoveryRequest||$('accountDialog').accountReleaseRequest)throw Error('Finish the current account action first.');
  if(!accountKeyValid(token))throw Error('This account key is unavailable.');
  const selected=[publicIdentityToken(0),publicIdentityToken(1)],isCurrent=()=>accountImportAllowed()&&selected.every((value,index)=>publicIdentityToken(index)===value);
@@ -2455,7 +2463,7 @@ function syncAccountImport(){
  const dialog=$('accountDialog'),seat=accountSeat(),allowed=accountImportAllowed(),busy=!!dialog.accountRotateRequest||!!dialog.accountRecoveryRequest||!!dialog.accountReleaseRequest,unregistered=seat===1&&localAccountRegistrationPending(publicIdentityToken(1))&&dialog.accountRegisteredKey!==publicIdentityToken(1);
  $('accountImportKey').disabled=!allowed||busy;$('accountCheckBtn').disabled=!allowed||busy||!$('accountImportKey').value.trim()||!!dialog.accountImportRequest;
  $('accountReleaseBtn').disabled=!allowed||busy||unregistered||!publicIdentityToken(seat);$('accountRotateBtn').disabled=!allowed||busy||unregistered||!publicIdentityToken(seat);$('accountCopyBtn').disabled=!publicIdentityToken(seat)||unregistered||!!dialog.accountRotateRequest;
- $('accountImportHelp').textContent=allowed?'Importing replaces only P'+(seat+1)+'’s account key on this device. Copy its current key first if you want to keep both accounts.':'Return to the ready room and leave online play before importing another account.';
+ $('accountImportHelp').textContent=allowed?'Importing replaces only P'+(seat+1)+'’s account key on this device. Copy its current key first if you want to keep both accounts.':'Return to the room and leave online play before importing another account.';
 }
 function openAccount(seat=0){
  seat=seat===1?1:0;
@@ -2477,7 +2485,7 @@ async function copyAccountKey(){
 }
 async function checkImportedAccount(){
  const dialog=$('accountDialog'),field=$('accountImportKey'),token=field.value.trim();clearAccountImport();
- if(!accountImportAllowed()){syncAccountImport();accountNotice('accountImportNotice','Leave online play and return to the ready room first.',true);return;}
+ if(!accountImportAllowed()){syncAccountImport();accountNotice('accountImportNotice','Leave online play and return to the room first.',true);return;}
  if(token&&token===publicIdentityToken(accountSeat()===1?0:1)){accountNotice('accountImportNotice','P1 and P2 need separate account keys. Paste this player’s own key.',true);return;}
  if(!accountKeyValid(token)){accountNotice('accountImportNotice','Paste the complete account key.',true);return;}
  const seat=accountSeat(),oldToken=publicIdentityToken(seat),revision=dialog.accountImportRevision,controller=new AbortController();dialog.accountImportRequest=controller;syncAccountImport();accountNotice('accountImportNotice','Checking account key…');
@@ -4068,8 +4076,10 @@ function featureNotice(id,text,error=false){const n=$(id);n.textContent=text;n.c
 function openFeature(kind){
  if($('infiniteArena')?.open&&!$('infinitePauseMenu')?.open)window.leqraInfinity?.togglePause();
  closeChat();clearInput();if(mode==='online')sendOnlineInput(true);
- if(kind==='rules')fillRulesForm();if(kind==='presets')renderPresets();if(kind==='controls')renderBindings();
- const d=$(kind+'Dialog');if(!d.open)d.showModal();
+ const d=$(kind+'Dialog');
+ if(kind==='rules')fillRulesForm();if(kind==='presets')renderPresets();
+ if(kind==='controls'){if(!d.open)$('controlsBinds').open=false;renderBindings();}
+ if(!d.open)d.showModal();
 }
 function closeFeature(d){bindingCapture=null;d.close();clearInput();if(mode==='online')sendOnlineInput(true);}
 function syncFeatureSummary(){
@@ -4244,7 +4254,7 @@ function fieldManualHTML(){
  html+='<div class="warning"><b>'+escapeHTML(infinity?(infinity.title||'Infinity').toUpperCase():publicPreview?'PUBLIC INFINITY':modeLabel())+'</b><br>'+escapeHTML(infinity?infinity.instructions:publicPreview?'Gain a point for each kill and lose a point when your tank is destroyed. Respawn after 1 second. Keep playing and growing your score without a time limit. All pilots compete individually.':modeInstructions())+'<br>Use Controls menu to change keys.</div>';
  return html;
 }
-function introTourUsesTouchOnly(){
+function isMobileWeb(){
  return IOS_WEBKIT||/Android|Mobile/i.test(UA)||navigator.userAgentData?.mobile===true||navigator.userAgentData?.platform==='Android'||window.matchMedia?.('(pointer: coarse)').matches;
 }
 function syncControlIdentities(){
@@ -4257,11 +4267,26 @@ function syncControlIdentities(){
  }
  const identity=localPilotIdentity(hardwareP2?1:0,null,paired);
  for(const [id,key,label]of [['p1MouseAimEnabled','mouseAim','Mouse aim'],['p1MouseFireEnabled','mouseFire','Mouse fire']])if($(id)){$(id).checked=combatPrefs[key]!==false;$(id).setAttribute('aria-label',label+' for '+identity.label);}
- const touchOnly=introTourUsesTouchOnly();
- if($('introTourTouch'))$('introTourTouch').hidden=!touchOnly;
- if($('introTourKeyboard'))$('introTourKeyboard').hidden=touchOnly;
- if($('introTourDesktop'))$('introTourDesktop').hidden=touchOnly||combatPrefs.mouseAim===false&&combatPrefs.mouseFire===false||!window.matchMedia?.('(any-pointer: fine)').matches;
- for(const [id,disabled]of [['introTourMouseAim',combatPrefs.mouseAim===false],['introTourMouseFire',combatPrefs.mouseFire===false]])if($(id)){$(id).hidden=disabled;if($(id).previousElementSibling)$(id).previousElementSibling.hidden=disabled;}
+ const touchOnly=isMobileWeb(),hasMouse=!touchOnly&&window.matchMedia?.('(any-pointer: fine)').matches;
+ for(const id of ['introTourTouch','introTourTouchFire','introTourTouchControls'])if($(id))$(id).hidden=!touchOnly;
+ for(const id of ['introTourKeyboard','introTourKeyboardFire'])if($(id))$(id).hidden=touchOnly;
+ if($('introTourDesktop'))$('introTourDesktop').hidden=!hasMouse||combatPrefs.mouseAim===false;
+ if($('introTourMouseFireHelp'))$('introTourMouseFireHelp').hidden=!hasMouse||combatPrefs.mouseFire===false;
+}
+const controlsMouseQuery=window.matchMedia?.('(any-pointer: fine)');
+const controlsStandaloneQuery=window.matchMedia?.('(display-mode: standalone)');
+let controlsStandaloneBeforeFullscreen=!!controlsStandaloneQuery?.matches;
+function syncControlsHardware(){
+ const standalone=!!controlsStandaloneQuery?.matches;
+ // An installed app can temporarily report fullscreen instead of standalone.
+ if(standalone||!document.fullscreenElement)controlsStandaloneBeforeFullscreen=standalone;
+ const mobile=isMobileWeb(),mouse=!!controlsMouseQuery?.matches;
+ const available=!mobile||(mouse&&(navigator.standalone===true||controlsStandaloneBeforeFullscreen));
+ const binds=$('controlsBinds'),grid=$('bindingGrid');
+ binds.hidden=!available;
+ if(!available)binds.open=false;
+ for(const row of grid.querySelectorAll('.binding-mouse-row'))row.hidden=!mouse;
+ $('showcaseKeyboardHint').hidden=!available;
 }
 function renderBindings(){
  const grid=$('bindingGrid');grid.replaceChildren();
@@ -4274,12 +4299,12 @@ function renderBindings(){
    const control=document.createElement('span');control.className='binding-mouse-control';const state=document.createElement('span');state.className='binding-mouse-state';state.setAttribute('aria-hidden','true');control.append(checkbox,state);row.append(label,control);section.append(row);
   }
  }
- syncControlIdentities();
+ syncControlIdentities();syncControlsHardware();
  $('missileVisuals').checked=combatPrefs.visual;$('missileAudio').checked=combatPrefs.audio;if($('showFPS'))$('showFPS').checked=combatPrefs.fps;if($('performanceMode'))$('performanceMode').checked=combatPrefs.performance;
  featureNotice('controlsNotice','Click a binding to change it. Conflicts are rejected. Settings are saved on this device.');
 }
 function captureBinding(e){
- if(!bindingCapture||!$('controlsDialog').open)return;
+ if(!bindingCapture||!$('controlsDialog').open||!$('controlsBinds').open)return;
  e.preventDefault();e.stopImmediatePropagation();if(e.repeat)return;
  if(e.code==='Escape'){bindingCapture=null;renderBindings();return;}
  if(e.ctrlKey||e.metaKey||e.altKey||!validBinding(e.code)){featureNotice('controlsNotice','That key is reserved or unsupported. Choose a letter, number, arrow, Shift, Space, or Enter.',true);return;}
@@ -4889,8 +4914,10 @@ function initFeatures(){
  </div><p class="mode-help">Each rate adds to the spawn mix. 1× averages one bot every 1.5 seconds per living human while the shared bot budget has space. Off disables that difficulty; all Off disables roaming bots. Roster bots keep their own difficulty.</p></div></section>
  <label class="check-label"><input id="rule-friendlyFire" type="checkbox">Allow friendly fire (teammate damage)</label><p class="mode-help">Every tank is immune to its own weapons.</p><p class="mode-help" id="rule-help"></p><p class="mode-help" id="rule-pickup-density"></p><div id="rule-weapon-options"><h3>AVAILABLE POWER-UPS</h3><div class="weapon-checks">${Object.entries(POWER).map(([key,p])=>'<label><input type="checkbox" data-weapon-toggle="'+key+'"><canvas data-power-icon="'+key+'" width="26" height="26" aria-hidden="true"></canvas><span>'+p.name+'</span></label>').join('')}</div></div></fieldset><p class="feature-notice" id="rulesNotice" role="status"></p></div><footer class="feature-footer"><button class="secondary" type="button" id="defaultRulesBtn">DEFAULT RULES</button><button class="primary" type="submit" id="applyRulesBtn">APPLY RULES <span aria-hidden="true">→</span></button></footer></form></dialog>
  <dialog class="feature-dialog" id="presetsDialog" aria-labelledby="presetsTitle"><header class="feature-header"><div><div class="eyebrow">YOUR SAVED SETUPS</div><h2 id="presetsTitle">A room in one click.</h2></div><button type="button" class="dialog-close" data-close-dialog="presetsDialog" aria-label="Close presets">×</button></header><div class="feature-body"><label class="feature-label">QUICK SETUP OR SAVED PRESET<select id="presetSelect"></select></label><div class="preset-actions"><button class="primary" id="loadPresetBtn" type="button">LOAD SETUP <span aria-hidden="true">→</span></button><button class="secondary" id="deletePresetBtn" type="button">Delete saved</button></div><hr><h3>SAVE THIS ROOM</h3><label class="feature-label">PRESET NAME<input class="net-input" id="presetName" maxlength="40" placeholder="Friday night squad" autocomplete="off"></label><button class="secondary" id="savePresetBtn" type="button">SAVE CURRENT SETUP</button><p class="feature-notice" id="presetsNotice" role="status"></p></div></dialog>
- <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><div id="controlsKeyboardHelp"><p class="mode-help controls-shortcuts"><span>${controlKeyHTML(['KeyP','ESC'])} opens the menu.</span><span>${controlKeyHTML(['KeyM'])} toggles sound.</span><span>${controlKeyHTML(['KeyF'])} toggles fullscreen.</span></p><p class="mode-help controls-firing-help">Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.</p></div><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button><button class="secondary" id="showcaseBtn" type="button">SHOWCASE</button><p class="mode-help">Showcase freezes a staged battle for screenshots. Press Escape to return, or switch away from the app and return on mobile.</p><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p></div></dialog>`;
+ <dialog class="feature-dialog" id="controlsDialog" aria-labelledby="controlsTitle"><header class="feature-header"><div><div class="eyebrow">THIS DEVICE ONLY</div><h2 id="controlsTitle">Make it feel right.</h2></div><button type="button" class="dialog-close" data-close-dialog="controlsDialog" aria-label="Close controls">×</button></header><div class="feature-body"><details class="room-disclosure" id="controlsBinds" hidden><summary>Binds</summary><div class="room-disclosure-content"><div id="bindingGrid" class="binding-grid"></div><p class="feature-notice" id="controlsNotice" role="status"></p><div id="controlsKeyboardHelp"><p class="mode-help controls-shortcuts"><span>${controlKeyHTML(['KeyP','ESC'])} opens the menu.</span><span>${controlKeyHTML(['KeyM'])} toggles sound.</span><span>${controlKeyHTML(['KeyF'])} toggles fullscreen.</span></p><p class="mode-help controls-firing-help">Hold any fire key to rapid fire.<br> With one local tank, both keyboard layouts control it.</p></div><button class="secondary" id="resetBindingsBtn" type="button">RESET DEFAULT KEYS</button></div></details><button class="secondary" id="openIntroTour" type="button" hidden>QUICK TOUR</button><button class="secondary" id="showcaseBtn" type="button">SHOWCASE</button><p class="mode-help">Showcase freezes a staged battle for screenshots. <span id="showcaseKeyboardHint" hidden>Press Escape to exit. </span>You can also switch away and return to exit.</p><hr><h3>AUDIO</h3><label class="volume-label" for="masterVolume"><span>VOLUME</span><strong id="masterVolumeValue">50%</strong></label><input class="volume-slider" id="masterVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Game audio volume"><hr><h3>COMBAT FEEDBACK</h3><label class="check-label"><input id="missileVisuals" type="checkbox"> Directional homing warnings</label><label class="check-label"><input id="missileAudio" type="checkbox"> Homing lock warning sound</label><p class="mode-help">Both local players have their own warnings and cooldown bars. Muting the game also mutes warnings.</p><button class="secondary" id="resetAllSettingsBtn" type="button">RESET ALL SETTINGS</button></div></dialog>`;
  document.body.append(dialogs);$('roomRulesBtn').onclick=()=>openFeature('rules');$('roomPresetsBtn').onclick=()=>openFeature('presets');$('roomControlsBtn').onclick=$('menuControlsBtn').onclick=()=>openFeature('controls');
+ const binds=$('controlsBinds');
+ binds.addEventListener('toggle',()=>{if(!binds.open&&bindingCapture){bindingCapture=null;renderBindings();}});
  for(const b of document.querySelectorAll('[data-close-dialog]'))b.onclick=()=>closeFeature($(b.dataset.closeDialog));for(const d of document.querySelectorAll('.feature-dialog'))d.addEventListener('close',()=>{bindingCapture=null;clearInput();});
  $('rulesForm').onsubmit=submitRules;$('defaultRulesBtn').onclick=resetRuleDefaults;
  $('rule-pickupRate').onchange=$('rule-infinityRandomBots').onchange=updateRuleHelp;for(const input of document.querySelectorAll('[data-weapon-toggle]'))input.onchange=updateRuleHelp;
@@ -4909,6 +4936,11 @@ function initFeatures(){
   setAudioVolume(50+direction*5,true,true);
  };
  for(const id of ['missileVisuals','missileAudio'])$(id).onchange=()=>{combatPrefs={...combatPrefs,visual:$('missileVisuals').checked,audio:$('missileAudio').checked};try{localStorage.setItem('leqra.feedback.v1',JSON.stringify(combatPrefs));}catch(_){}initAudio();};
+ for(const query of [controlsMouseQuery,controlsStandaloneQuery]){
+  if(query?.addEventListener)query.addEventListener('change',syncControlsHardware);
+  else query?.addListener?.(syncControlsHardware);
+ }
+ document.addEventListener('fullscreenchange',syncControlsHardware);
  window.addEventListener('keydown',captureBinding,true);
 }
 
@@ -4918,31 +4950,146 @@ function syncIntroTourControls(){
  $('introTourFireKeys').innerHTML=controlKeyHTML(codes('fire'));
  $('introTourMouseAimKey').innerHTML=controlMouseKeyHTML(false);
  $('introTourMouseFireKey').innerHTML=controlMouseKeyHTML(true);
+ return keys;
 }
 function initIntroTour(){
+ if(!window.leqraInfinity?.createTourArena)return;
  const dialog=$('introTourDialog'),pages=dialog.querySelectorAll('[data-intro-page]');
- const titles=['Drive and aim','Use the maze','Choose a battle'];
- let step=0;
+ const practice=$('introTourPractice'),arena=$('introTourCanvas'),touchControls=$('introTourTouchControls');
+ const joystick=$('introTourStick'),base=$('introTourStickBase'),knob=$('introTourStickKnob'),fireButton=$('introTourFireButton');
+ const next=$('introTourNext'),titles=['Drive and aim','Fire','Score a point','Choose a battle'];
+ const hints=['Move the tank to continue.','Fire a shot to continue.'];
+ const success=['Tank moved.','Shot fired.'];
+ const keys=new Set();
+ const physicsStep=1/120;
+ let step=0,demo,practiceDemo,scoreDemo,completed=[],bindings={},frameID=0,lastFrame=null,accumulator=0;
+ let stickID=null,aimID=null,fireID=null,stickX=0,stickY=0,touchAim=null,mousePoint=null,firePressed=false;
+ const interactive=()=>dialog.open&&step<3&&!!demo;
+ const canFire=()=>step===1||step===2;
+ const usesTouch=()=>!touchControls.hidden;
+ function held(action){for(const code of keys)if(bindings[code]===action)return true;return false;}
+ function clearPracticeInput(){
+  keys.clear();stickID=aimID=fireID=null;stickX=stickY=0;touchAim=mousePoint=null;firePressed=false;
+  knob.style.transform='';fireButton.classList.remove('held');arena.classList.remove('mouse-aiming');
+  lastFrame=null;accumulator=0;
+ }
+ function syncProgress(){
+  next.disabled=step<3&&!completed[step];
+  setText('introTourPracticeStatus',step<2?(completed[step]?success[step]:hints[step]):'');
+ }
  function showStep(index){
+  clearPracticeInput();
   step=index;
+  demo=step===2?(scoreDemo??=window.leqraInfinity.createTourArena(arena,true)):practiceDemo;
   for(const [i,page] of pages.entries())page.hidden=i!==step;
+  practice.hidden=step>=3;fireButton.hidden=!canFire();
+  $('introTourPracticeStatus').hidden=step>=2;
+  arena.setAttribute('aria-describedby',step===2?'introTourScoreInstructions':'introTourPracticeStatus');
+  $('introTourScorePanel').hidden=step!==2;
+  if(step===2)setText('introTourScore',demo.score);
   $('introTourStep').textContent='QUICK TOUR, '+(step+1)+' OF '+pages.length;
   $('introTourTitle').textContent=titles[step];
   $('introTourBack').disabled=step===0;
-  $('introTourNext').textContent=step===pages.length-1?'Done':'Next';
+  next.textContent=step===pages.length-1?'Done':'Next';syncProgress();
   $('introTourTitle').focus({preventScroll:true});dialog.scrollTop=0;
+  if(interactive()){
+   demo.render(guideEnabled);
+   if(!frameID)frameID=requestAnimationFrame(practiceFrame);
+  }else if(frameID){cancelAnimationFrame(frameID);frameID=0;}
+ }
+ function practiceFrame(now){
+  frameID=0;
+  if(!interactive())return;
+  if(lastFrame!==null)accumulator+=clamp((now-lastFrame)/1000,0,.10);
+  lastFrame=now;
+  const forward=held('forward'),reverse=held('reverse'),left=held('left'),right=held('right'),firing=canFire()&&(held('fire')||fireID!==null);
+  const mouse=!!mousePoint&&combatPrefs.mouseAim!==false;
+  const angle=touchAim??(mouse&&!left&&!right?demo.aimAt(mousePoint.clientX,mousePoint.clientY,false):null);
+  const controls={forward,reverse,left,right,stickX:angle===null?stickX:Math.cos(angle),stickY:angle===null?stickY:Math.sin(angle),aimOnly:angle!==null,snapAim:touchAim!==null,touchAim:stickID!==null};
+  while(accumulator+1e-9>=physicsStep){
+   const result=demo.step(physicsStep,controls,firing,canFire()&&firePressed);
+   firePressed=false;accumulator=Math.max(0,accumulator-physicsStep);
+   if(!completed[step]&&(step===0?result.moved:step===1?result.fired:demo.score>0)){
+    completed[step]=true;
+    if(step===2)setText('introTourScore',demo.score);
+    syncProgress();
+   }
+  }
+  arena.classList.toggle('mouse-aiming',mouse);
+  if(canFire()&&usesTouch())setStyle(fireButton,'--ready',demo.readiness);
+  demo.render(guideEnabled,accumulator,controls,physicsStep);
+  frameID=requestAnimationFrame(practiceFrame);
  }
  function open(){
-  syncIntroTourControls();
+  if(dialog.open)return;
+  practiceDemo=window.leqraInfinity.createTourArena(arena);scoreDemo=null;completed=[];
+  bindings=syncIntroTourControls();
   syncControlIdentities();
-  openFeature('introTour');showStep(0);
+  openFeature('introTour');showStep(0);syncArenaAudio();
  }
- $('resetBindingsBtn').insertAdjacentHTML('afterend','<button class="secondary" type="button" id="openIntroTour">QUICK TOUR</button>');
- $('openIntroTour').onclick=open;
+ dialog.addEventListener('keydown',e=>{
+  if(!interactive()||usesTouch()||arenaKeyBlocked(e))return;
+  const action=bindings[e.code];if(!action)return;
+  e.preventDefault();if(e.repeat||keys.has(e.code))return;
+  if(action==='fire'&&canFire()&&!held('fire')){firePressed=true;initAudio();}
+  if(action==='left'||action==='right')mousePoint=null;
+  keys.add(e.code);
+ });
+ window.addEventListener('keyup',e=>keys.delete(e.code));
+ function steer(e){
+  const box=base.getBoundingClientRect(),dx=e.clientX-box.left-box.width/2,dy=e.clientY-box.top-box.height/2;
+  const max=Math.max(24,Math.min(box.width,box.height)*.375),factor=Math.min(1,max/(Math.hypot(dx,dy)||1));
+  stickX=dx*factor/max;stickY=dy*factor/max;
+  knob.style.transform=`translate(${dx*factor}px,${dy*factor}px)`;
+ }
+ joystick.addEventListener('pointerdown',e=>{
+  if(!interactive()||!usesTouch()||e.button!==0||stickID!==null)return;
+  e.preventDefault();touchAim=null;stickID=e.pointerId;capturePointer(joystick,stickID);steer(e);
+ });
+ function beginPracticeFire(e,element){
+  if(!canFire()||fireID!==null)return;
+  e.preventDefault();initAudio();fireID=e.pointerId;firePressed=true;capturePointer(element,fireID);
+  if(element===fireButton)fireButton.classList.add('held');
+ }
+ fireButton.addEventListener('pointerdown',e=>{if(interactive()&&usesTouch()&&e.button===0)beginPracticeFire(e,fireButton);});
+ fireButton.addEventListener('click',e=>{if(interactive()&&usesTouch()&&canFire()&&e.detail===0){initAudio();firePressed=true;}});
+ arena.addEventListener('pointerdown',e=>{
+  if(!interactive()||e.button!==0)return;
+  if(usesTouch()&&e.pointerType!=='mouse'&&stickID===null&&aimID===null){
+   const angle=demo.aimAt(e.clientX,e.clientY,true);if(angle===null)return;
+   e.preventDefault();touchAim=angle;aimID=e.pointerId;capturePointer(arena,aimID);
+  }else if(!usesTouch()&&e.pointerType==='mouse'){
+   if(combatPrefs.mouseAim!==false)mousePoint=e;
+   arena.focus({preventScroll:true});
+   if(combatPrefs.mouseFire!==false)beginPracticeFire(e,arena);
+  }
+ });
+ arena.addEventListener('pointermove',e=>{
+  if(interactive()&&!usesTouch()&&e.pointerType==='mouse'&&combatPrefs.mouseAim!==false)mousePoint=e;
+ });
+ arena.addEventListener('pointerleave',()=>{mousePoint=null;});
+ window.addEventListener('pointermove',e=>{
+  if(!interactive())return;
+  if(e.pointerId===stickID){e.preventDefault();steer(e);}
+  else if(e.pointerId===aimID){e.preventDefault();touchAim=demo.aimAt(e.clientX,e.clientY,false)??touchAim;}
+ });
+ function release(e){
+  if(e.pointerId===stickID){stickID=null;stickX=stickY=0;knob.style.transform='';}
+  if(e.pointerId===aimID){aimID=null;if(e.type==='pointercancel')touchAim=null;}
+  if(e.pointerId===fireID){fireID=null;fireButton.classList.remove('held');if(e.type==='pointerup')primeAudioUnlock(e);}
+ }
+ for(const event of ['pointerup','pointercancel','lostpointercapture'])window.addEventListener(event,release,true);
+ for(const event of ['blur','pagehide'])window.addEventListener(event,clearPracticeInput);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)clearPracticeInput();});
+ practice.addEventListener('contextmenu',e=>e.preventDefault());
+ $('openIntroTour').hidden=false;$('openIntroTour').onclick=open;
  $('introTourSkip').onclick=()=>closeFeature(dialog);
  $('introTourBack').onclick=()=>showStep(step-1);
- $('introTourNext').onclick=()=>{if(step===pages.length-1)closeFeature(dialog);else showStep(step+1);};
- dialog.addEventListener('close',()=>{if(!dialog.open)save('introTour.v1',1);});
+ next.onclick=()=>{if(next.disabled)return;if(step===pages.length-1)closeFeature(dialog);else showStep(step+1);};
+ dialog.addEventListener('close',()=>{
+  if(dialog.open)return;
+  if(frameID)cancelAnimationFrame(frameID);frameID=0;demo=practiceDemo=scoreDemo=null;clearPracticeInput();syncArenaAudio();save('introTour.v1',1);
+ });
  try{if(localStorage.getItem('leqra.introTour.v1')==='1')return;}catch(_){}
  if(mode==='room'&&phase==='menu'&&!document.querySelector('dialog[open]'))open();
 }
@@ -5744,7 +5891,7 @@ function sampleFrame(now,work,surface='fpsIndicator',latency=frameLatency()){
 function initFrameSettings(){
  const indicators=[['fpsIndicator',wrap],['infiniteFPSIndicator',$('infiniteStatusbar')]];
  for(const [id,parent] of indicators)parent.insertAdjacentHTML('beforeend','<div id="'+id+'" class="fps-indicator" aria-label="Rendering performance" hidden>fps: —</div>');
- const host=$('controlsDialog').querySelector('.feature-body');host.insertAdjacentHTML('beforeend','<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every second. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra v'+GAME_VERSION+'</p>');
+ $('resetAllSettingsBtn').insertAdjacentHTML('beforebegin','<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every second. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra v'+GAME_VERSION+'</p>');
  const refresh=()=>{for(const [id] of indicators)$(id).hidden=!combatPrefs.fps;resetFrameSample();resize();};
  $('showFPS').onchange=()=>{combatPrefs.fps=$('showFPS').checked;storePerformancePrefs();refresh();};
  $('performanceMode').onchange=()=>{combatPrefs.performance=$('performanceMode').checked;storePerformancePrefs();refresh();};
@@ -6009,5 +6156,5 @@ function prepareUpdate(){
 }
 // Deterministic hooks are only present in explicit development/test mode.
 if(new URLSearchParams(location.search).has('test'))window.__test={platform:{webkit:WEBKIT_ENGINE,safari:SAFARI_BROWSER,ios:IOS_WEBKIT},renderPixelRatio,drawBullet,snapshotPreset,fillRulesForm,shieldCount,choosePickup,paintColor,teamColor,makeColorSelect,changeTankColor,canEditTankPaint,liveFeedbackTank,previewOnlineFire,projectileOnTimeline,resetOnlineMotion,onlineEffect,sendOnlineInput,get presentationMetrics(){return online.presentationMetrics;},rayBounds,projectileWall,wallBetweenCenters,advanceGhost,finishGhost,clearTankAt,cannonGuide,aimingGuide,drawAimingGuides,pickupCap,startingPickups,pickupLifetime,pickupLimitText,pickupHelpText,seedPickups,mapDimensions,setPilotFeedback,showStartingControls,get matchStats(){return localMatchStats;},get matchReport(){return localMatchReport;},beginLocalMatchStats,bindLocalTankStats,finishLocalMatchStats,renderMatchStats,setHullCache:on=>useHullCache=!!on,setCannonTrailCache:on=>useCannonTrailCache=!!on,get renderStats(){return{...renderStats,hullEntries:tankHullCache.size,labelEntries:labelWidthCache.size}},drawTank,paintTankHull,addObjectivePoint,beginLocalSuddenDeath,stepLocalSuddenDeath,receiveOnlineState,showVictory,quickReplay,closeVictory,restartLocalMatch,restartLocalSurvivalWave,requestRestartSurvivalWave,canRestartSurvivalWave,drawFlags,resize,get view(){return{cssW,cssH,scale,offsetX,offsetY,goUntil}},setPlayerSpectating,toggleMyRole,requestSwap,confirmSwap,syncSpectators,get online(){return online;},setWorld:world=>{W=world.width;H=world.height;cols=world.cols||Math.round(W/CELL);rows=world.rows||Math.round(H/CELL);walls=world.walls.map(w=>({...w}));resize();},currentRules,setLocalRules,validateRoomRules,defaultRoomRules,validateBindings,get bindings(){return bindings;},get localObjectives(){return localObjectives;},initLocalSurvival,stepLocalSurvival,startLocalSurvivalWave,endLocalSurvival,survivalWavePlan,initObjectives,stepLocalObjectives,respawnLocalPlayers,respawnLocalTank,objectiveGoal,updateCombatFeedback,missileLocks,applyLocalPreset,validatePreset,roomStartError,createLocalRoom,addRoomSeat,changeSeat,returnToRoom,shareLocalRoom,get localRoom(){return localRoom;},get walls(){return walls;},get grid(){return grid;},get tanks(){return tanks;},get bullets(){return bullets;},get pickups(){return pickups;},get phase(){return phase;},setPhase:v=>phase=v,update,fire,clearInput,weaponControl,detonateOwned,ownedGrenades,updateHUD,laserTrace,fireLaser,spawnPower,validRoomCode,cleanRoomCode,onlineInviteURL,get traces(){return traces;},grantPower,powerIcon,activeTankPowerBadges,drawTankPowerBadges,renderPowerLegend,projectOnlineBullet,steerMissile,grenadeForecast,grenadeDragFactor,detonate,projectileSpec,muzzleProjectile,humanControl,renderOnlineMotion,rayWalls,resolveWalls,moveTank,shotPrediction,bfs,canDamage,isEnemy,tankHit,updateBullets,botControl,evaluateBotShot,findBankAim,leadPoint,planBotPath,forecastThreats,forecastGrenadeBodies,chooseGrenadeAvoid,chooseDodge,setMode,setDifficulty,finishRound,finishMatch,startRound,hurt,resetPreview,chatNotificationSound,pickupSound,initAudio,setAudioVolume,get audioVolume(){return audioVolume;},get audioState(){return audio?.state||'none';},get lastChatNotify(){return lastChatNotify;},appendChat,chatPacket,openChat,closeChat,switchChatChannel,syncChatStatus,get roomChat(){return roomChat;},acceptOnlineRoomCode,localSnapshotFromOnline,restoreUnsharedPreview,unshareOnlineRoom,chatHasFocus,onlineControls,balanceLocalTeams,setChatSendTarget,addBullet:b=>bullets.push(b),clearBullets:()=>bullets=[],setClock:v=>roundClock=v,render};
-initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initInfinityPreview();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();loadOnlineWins();renderDeviceWins();createLocalRoom();initOnlineUI();initGeneratedCallsigns();initIntroTour();requestAnimationFrame(frame);
+initFeatures();initPresentation();initSpectators();initRoomChat();initFrameSettings();initInfinityPreview();initMatchmaking();syncSound();setDifficulty(difficulty);setLayout();showSafariRecommendation();loadOnlineWins();renderDeviceWins();createLocalRoom();initOnlineUI();initGeneratedCallsigns();document.addEventListener('DOMContentLoaded',initIntroTour,{once:true});requestAnimationFrame(frame);
 })();
