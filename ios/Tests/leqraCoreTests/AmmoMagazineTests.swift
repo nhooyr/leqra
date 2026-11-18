@@ -87,11 +87,12 @@ final class AmmoMagazineTests: XCTestCase {
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
             let tank = arena.snapshot.tanks[0]
             XCTAssertEqual(tank.power, "", weapon); XCTAssertEqual(tank.ammoEpoch, 5, weapon)
-            XCTAssertEqual(tank.cooldown, 0, weapon); XCTAssertEqual(tank.cooldownTotal, 0, weapon)
+            let reload = weapon == "grenade" ? 0.8 : weapon == "homing" ? 0.36 : 0.34
+            XCTAssertEqual(tank.cooldown, reload, weapon); XCTAssertEqual(tank.cooldownTotal, reload, weapon)
             XCTAssertEqual(tank.ammoUsed, 0, weapon); XCTAssertEqual(tank.grenades, weapon == "grenade" ? 1 : 0, weapon)
             XCTAssertEqual(PilotReadout(tank: tank, snapshot: arena.snapshot, infinity: !finite).available, 5, weapon)
             XCTAssertFalse(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, "No same-tick standard shot after the final charge: \(weapon)")
-            arena.step(input: GameInput(fire: true), dt: 1 / 60)
+            for _ in 0..<Int(ceil(reload * 60)) { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
             XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 }, weapon)
         } }
     }
@@ -108,6 +109,10 @@ final class AmmoMagazineTests: XCTestCase {
                 _ = feedback.setFire(true, tank: arena.snapshot.tanks[0], generation: 1, now: 1)
                 arena.step(input: GameInput(fire: true), dt: 1 / 60)
                 arena.step(input: GameInput(fire: true), dt: 1 / 60)
+                if !expires {
+                    let remaining = Int(ceil(arena.snapshot.tanks[0].cooldown * 60))
+                    for _ in 0..<remaining { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+                }
                 let restored = arena.snapshot.tanks[0]
                 let label = "\(weapon), finite=\(finite), expires=\(expires)"
                 XCTAssertEqual(restored.power, "", label)
@@ -172,6 +177,7 @@ final class AmmoMagazineTests: XCTestCase {
                 arena.step(input: GameInput(fire: true), dt: 1 / 60)
                 XCTAssertEqual(arena.snapshot.tanks[0].power, "")
                 arena.captureFire(false, player: 1)
+                for _ in 0..<48 { arena.step(input: GameInput(), dt: 1 / 60) }
                 arena.captureFire(true, player: 1)
                 if endsReleased { arena.captureFire(false, player: 1) }
                 arena.step(input: GameInput(fire: !endsReleased), dt: 1 / 60)
@@ -239,7 +245,7 @@ final class AmmoMagazineTests: XCTestCase {
             XCTAssertEqual(grenade.ammoEpoch, 4)
             XCTAssertEqual(arena.snapshot.tanks[0].power, "")
             XCTAssertEqual(arena.snapshot.tanks[0].ammoEpoch, 5)
-            for _ in 0..<5 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+            for _ in 0..<48 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
             XCTAssertTrue(arena.snapshot.bullets.contains { $0.kind.isEmpty && $0.ammoEpoch == 5 })
             let tank = arena.snapshot.tanks[0]
             arena.snapshot.pickups = [ArenaPickup(id: 9999, x: tank.x, y: tank.y, type: "shield")]

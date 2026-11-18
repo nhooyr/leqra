@@ -49,8 +49,9 @@
   t.power=empty;t.powerTime=t.charges=t.machineRounds=0;
  }
  function refillDepletedWeapon(t,empty=null){
-  const retained=t.power==='grenade'?grenadeEpoch(t):null;
+  const retained=t.power==='grenade'?grenadeEpoch(t):null,cooldown=Math.max(.34,t.cooldown||0);
   clearWeapon(t,empty);refillAmmo(t);
+  t.cooldown=t.cooldownTotal=cooldown;
   if(retained!==null)t.grenadeEpoch=retained;
  }
  function firePressInterval(t){return t.starmanTime>0?.065:t.power==='rapid'?.15:t.power==='scatter'?.27:t.power==='homing'?.36:t.power==='laser'||t.power==='cannon'?.85/3:.34;}

@@ -1139,8 +1139,7 @@ func (g *Game) fireLaser(t *Tank) bool {
 	if !starman {
 		t.Charges--
 		if t.Charges <= 0 {
-			clearWeapon(t)
-			refillAmmo(t)
+			refillDepletedWeapon(t)
 		}
 	}
 	return true

@@ -11,10 +11,10 @@ class AmmoResetTest {
         snapshot.tanks.first().apply { x = if (fixed) 5000.0 else 42.0; y = x; invulnerable = 0.0; spawnProtected = false }
     }
     private fun shots(arena: PracticeArena) = arena.snapshot.effects.count { it.kind.startsWith("shot:") || it.kind == "laser" }
-    private fun full(tank: ArenaTank, power: String, epoch: Long, remoteGrenades: Int = 0) {
+    private fun full(tank: ArenaTank, power: String, epoch: Long, remoteGrenades: Int = 0, cooldown: Double = 0.0) {
         assertEquals(power, tank.power)
         assertEquals(epoch, tank.ammoEpoch)
-        assertEquals(0.0, tank.cooldown, 0.0); assertEquals(0.0, tank.cooldownTotal, 0.0)
+        assertEquals(cooldown, tank.cooldown, 0.0); assertEquals(cooldown, tank.cooldownTotal, 0.0)
         assertEquals(0, tank.ammoUsed); assertEquals(remoteGrenades, tank.grenades)
         if (remoteGrenades == 0) assertEquals(0.0, tank.grenadeLife, 0.0) else assertTrue(tank.grenadeLife > 0)
         assertEquals(if (power == "scatter") 5 else if (power in weapons && power != "rapid") 3 else 0, tank.charges)
@@ -67,11 +67,11 @@ class AmmoResetTest {
             if (kind == "rapid") tank.machineRounds = 1 else tank.charges = 1
             val epoch = tank.ammoEpoch
             arena.step(GameInput(fire = true), dt)
-            full(tank, "", epoch + 1, if (kind == "grenade") 1 else 0)
+            val reload = if (kind == "grenade") .8 else if (kind == "homing") .36 else .34
+            full(tank, "", epoch + 1, if (kind == "grenade") 1 else 0, reload)
             assertFalse("Last $kind charge cannot also shoot standard", arena.snapshot.bullets.any { it.kind.isEmpty() })
-            val serial = shots(arena)
-            arena.step(GameInput(fire = true), dt)
-            assertEquals("Held $kind continues next tick", serial + 1, shots(arena))
+            repeat(kotlin.math.ceil(reload / dt).toInt()) { arena.step(GameInput(fire = true), dt) }
+            assertTrue("Held $kind continues after reload", shots(arena) > 0)
             assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
         }
     }
@@ -120,6 +120,7 @@ class AmmoResetTest {
             arena.step(GameInput(fire = true), dt)
             assertEquals("", tank.power)
             arena.captureFire(tank.id, false)
+            repeat(48) { arena.step(GameInput(), dt) }
             arena.captureFire(tank.id, true)
             arena.captureFire(tank.id, false)
             arena.step(GameInput(), dt)
@@ -152,7 +153,7 @@ class AmmoResetTest {
             val arena = arena(fixed); val tank = arena.snapshot.tanks.first()
             PracticeArena.applyPower(tank, "grenade"); tank.charges = 1
             arena.step(GameInput(fire = true), dt); val grenade = arena.snapshot.bullets.single().id
-            arena.step(GameInput(fire = true), dt)
+            repeat(48) { arena.step(GameInput(fire = true), dt) }
             assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
             val serial = shots(arena)
             arena.snapshot.pickups = listOf(ArenaPickup(id = 999, x = tank.x, y = tank.y, type = "speed"))
@@ -177,12 +178,12 @@ class AmmoResetTest {
             assertEquals(epoch, grenade.ammoEpoch)
             assertEquals(epoch, tank.grenadeEpoch)
             assertEquals(AmmoEpoch.next(epoch), tank.ammoEpoch)
-            full(tank, "", AmmoEpoch.next(epoch), 1)
+            full(tank, "", AmmoEpoch.next(epoch), 1, .8)
             val hud = PilotReadout(tank, arena.snapshot, !fixed)
             assertEquals(5, hud.available)
             assertEquals("DETONATE READY", hud.readiness)
             assertEquals("BOOM", hud.fireLabel)
-            repeat(5) { arena.step(GameInput(fire = true), dt) }
+            repeat(48) { arena.step(GameInput(fire = true), dt) }
             assertTrue(arena.snapshot.bullets.any { it.id == grenade.id })
             assertEquals(1, arena.snapshot.bullets.count { it.kind.isEmpty() })
             arena.step(GameInput(), dt)

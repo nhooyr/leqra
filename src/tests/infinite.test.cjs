@@ -399,11 +399,26 @@ test('offline Infinity starts a fresh grenade cycle and preserves old grenades o
  arena.emit('keyup',{code:'KeyQ'});h.advance();arena.emit('keydown',{code:'KeyQ'});h.advance();assert.ok(!w.bullets.includes(fresh));assert.ok(w.bullets.includes(old));assert.ok(old.life<oldLife&&!old.dead);
  arena.emit('keyup',{code:'KeyQ'});t.hp=0;t.respawn=100;old.life=1/120;h.window.testStep(w,1/60);assert.ok(!w.bullets.includes(old),'old cycle ends on its natural fuse');h.infinity.close();
 });
+test('offline Infinity short final-charge taps cannot fire standard ammo',()=>{
+ for(const kind of ['rapid','scatter','homing','grenade','laser','cannon'])for(const ticks of [1,3,6,10])for(const id of [0,1]){
+  const h=harness(undefined,true);h.infinity.start('offline',{localName:'Wingmate',roomRules:{infinityRandomBots:false}});
+  const w=h.state(),t=w.tanks[id];w.nextPickup=w.nextBot=Infinity;
+  Object.assign(t,{x:100+id*100,y:100,angle:0,invulnerable:0,spawnProtected:false});
+  h.window.leqraInfinityArt.grantPower(t,kind,15,8);t.charges=t.machineRounds=1;
+  for(let tick=0;tick<ticks;tick++){
+   if(tick){t.cooldown=Math.max(0,t.cooldown-1/60);w.time+=1/60;}
+   h.window.testWeaponControl(w,t,true,tick===0);
+  }
+  h.window.testWeaponControl(w,t,false,false);
+  assert.ok(w.bullets.filter(b=>b.owner===t.id).every(b=>b.kind),kind+' '+ticks+'-tick tap fired standard ammo');
+  h.infinity.close();
+ }
+});
 test('offline Infinity last Shield charge and last weapon charge refill immediately',()=>{
  for(const kind of ['rapid','scatter','homing','grenade','laser','cannon']){
   const h=harness(undefined,true);h.infinity.start('offline',{roomRules:{infinityRandomBots:false}});const w=h.state(),t=w.tanks[0];w.nextPickup=w.nextBot=Infinity;
   Object.assign(t,{x:100,y:100,angle:0,invulnerable:0,spawnProtected:false});h.window.leqraInfinityArt.grantPower(t,kind,15,8);t.charges=t.machineRounds=1;
-  h.window.testFire(w,t);assert.equal(t.power,'',kind);assert.equal(t.ammoEpoch,2,kind);assert.equal(t.cooldown,0,kind);assert.ok(w.bullets.every(b=>b.ammoEpoch===1&&!b.dead),kind);h.infinity.close();
+  h.window.testFire(w,t);assert.equal(t.power,'',kind);assert.equal(t.ammoEpoch,2,kind);assert.ok(t.cooldown>=.34,kind);assert.ok(w.bullets.every(b=>b.ammoEpoch===1&&!b.dead),kind);h.infinity.close();
  }
  const h=harness(undefined,true);h.infinity.start('offline');const w=h.state(),t=w.tanks[0];Object.assign(t,{invulnerable:0,spawnProtected:false,power:'rapid',powerTime:5,machineRounds:1,shield:4,shieldCharges:1,cooldown:4});
  h.window.testHurt(w,t,'enemy',0,'Enemy');assert.equal(t.hp,1);assert.equal(t.shield,0);assert.equal(t.machineRounds,180);assert.equal(t.cooldown,0);assert.equal(t.ammoEpoch,1);h.infinity.close();
@@ -1694,7 +1709,7 @@ test('offline Infinity grenade detonation consumes the hold until release',()=>{
   for(const tank of w.tanks)Object.assign(tank,{x:100+tank.colorIndex*300,y:100,angle:-Math.PI/2,invulnerable:1000,spawnProtected:false});
   h.window.leqraInfinityArt.grantPower(t,'grenade',15,8);Object.assign(t,{charges:1,ammoEpoch:epoch});const key=Object.keys(seat.keys).find(key=>seat.keys[key]==='fire');
   arena.emit('keydown',{code:key});h.advance();const grenade=w.bullets[0];assert.equal(t.grenadeEpoch,epoch);assert.equal(w.lastBullet,1);
-  h.advance();assert.equal(w.lastBullet,2);assert.ok(!grenade.dead);
+  h.advance();assert.equal(w.lastBullet,1);h.advance(47);assert.equal(w.lastBullet,2);assert.ok(!grenade.dead);
   arena.emit('keyup',{code:key});arena.emit('keydown',{code:key});h.advance();assert.ok(grenade.dead);assert.equal(w.lastBullet,2,'pop never also fires');assert.equal(t.grenadeEpoch,undefined);
   t.cooldown=0;h.advance();assert.equal(w.lastBullet,2,'same detonation hold cannot fire');arena.emit('keyup',{code:key});h.advance();arena.emit('keydown',{code:key});h.advance();assert.equal(w.lastBullet,3,'a new press fires normally');h.infinity.close();
  }

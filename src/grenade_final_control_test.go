@@ -43,8 +43,8 @@ func TestEveryGrenadeIncludingLastChargeKeepsItsNextDetonationPress(t *testing.T
 							if epoch == maxAmmoEpoch {
 								wantEpoch = 1
 							}
-							if tank.Power != "" || tank.Cooldown != 0 || tank.AmmoEpoch != wantEpoch || tank.GrenadeEpoch == nil || *tank.GrenadeEpoch != epoch {
-								t.Fatal("last throw lost its control bank or full ready standard ammo")
+							if tank.Power != "" || tank.Cooldown != .8 || tank.AmmoEpoch != wantEpoch || tank.GrenadeEpoch == nil || *tank.GrenadeEpoch != epoch {
+								t.Fatal("last throw lost its control bank, reload or full standard ammo")
 							}
 							wire, err := json.Marshal(tank)
 							if err != nil || !bytes.Contains(wire, []byte(fmt.Sprintf(`"grenadeEpoch":%d`, epoch))) {
@@ -75,6 +75,7 @@ func TestEveryGrenadeIncludingLastChargeKeepsItsNextDetonationPress(t *testing.T
 						}
 						control(false, false)
 					}
+					tank.Cooldown = 0
 					control(true, true)
 					if tank.ShotSerial != 4 || tank.Power != "" {
 						t.Fatal("the press after the final detonation did not fire standard ammo")

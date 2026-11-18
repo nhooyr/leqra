@@ -205,9 +205,10 @@ func TestRemoteGrenadeLaunchHoldThenPress(t *testing.T) {
 		t.Fatal("continued hold did not make exactly one final throw")
 	}
 	g.Tick++
+	p.Cooldown = 0
 	g.weaponControl(p, true, false)
 	if p.ShotSerial != 4 || len(g.Bullets) != 4 || g.Bullets[3].Kind != "" {
-		t.Fatal("standard fire did not resume on the tick after the last grenade")
+		t.Fatal("standard fire did not resume after the last grenade's reload")
 	}
 }
 func TestRemoteGrenadeDetonatesDuringLaunchCooldown(t *testing.T) {

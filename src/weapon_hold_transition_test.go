@@ -63,6 +63,8 @@ func TestEveryFiniteWeaponAcceptsFireEdgesBetweenTicks(t *testing.T) {
 						t.Fatal("last grenade lost its pending detonation bank")
 					}
 					send(2, false)
+					// Isolate edge coalescing from the separately tested reload.
+					tank.Cooldown = 0
 					send(3, true)
 					if released {
 						send(4, false)
@@ -115,9 +117,11 @@ func TestEveryFiniteWeaponEndKeepsTryingWhileHeld(t *testing.T) {
 								t.Fatal("depletion fired a second standard projectile in the same tick")
 							}
 						}
-						h.stepHeld(true, false)
+						for tick := 0; tick < 60 && h.tank.ShotSerial == 1; tick++ {
+							h.stepHeld(true, false)
+						}
 						if h.tank.ShotSerial != 2 {
-							t.Fatal("held fire did not use standard ammo on the following tick")
+							t.Fatal("held fire did not use standard ammo after reload")
 						}
 					}
 					serial := h.tank.ShotSerial
@@ -231,8 +235,14 @@ func TestGrenadesAutoThrowWhileHeldAndDetonationRequiresRelease(t *testing.T) {
 					if h.tank.ShotSerial != 3 {
 						t.Fatal("detonation hold fired again")
 					}
+					for tick := 0; tick < 60 && h.tank.Cooldown > 1e-9; tick++ {
+						h.stepHeld(false, false)
+					}
 					h.stepHeld(false, false)
 					h.stepHeld(true, true)
+				}
+				for tick := 0; tick < 60 && !pop && h.tank.ShotSerial == 3; tick++ {
+					h.stepHeld(true, false)
 				}
 				if h.tank.ShotSerial != 4 {
 					t.Fatal("ordinary ammo did not resume after release")

@@ -161,7 +161,7 @@ func TestWeaponDepletionAndLastShieldRefillStandardWithoutRetiringShots(t *testi
 			if !g.fire(p) {
 				t.Fatal("last charge did not fire")
 			}
-			assertFullReadyAmmo(t, p, epoch+1)
+			assertDepletedAmmo(t, p, epoch+1, kind)
 			if p.Power != "" {
 				t.Fatal("depleted weapon survived")
 			}
@@ -170,8 +170,12 @@ func TestWeaponDepletionAndLastShieldRefillStandardWithoutRetiringShots(t *testi
 					t.Fatal("last-charge projectile was removed or retagged")
 				}
 			}
+			if g.fire(p) {
+				t.Fatal("depletion bypassed standard reload")
+			}
+			p.Cooldown = 0
 			if !g.fire(p) {
-				t.Fatal("depletion did not ready full standard ammo")
+				t.Fatal("standard ammo was not available after reload")
 			}
 			a := newSeededInfiniteArena(503)
 			q := a.addPilot("Pilot", false, 0, 0, 0, 0)
@@ -181,7 +185,7 @@ func TestWeaponDepletionAndLastShieldRefillStandardWithoutRetiringShots(t *testi
 			q.kit.Charges, q.kit.MachineRounds = 1, 1
 			e := q.kit.AmmoEpoch
 			a.fire(q)
-			assertFullReadyAmmo(t, &q.kit, e+1)
+			assertDepletedAmmo(t, &q.kit, e+1, kind)
 			if q.kit.Power != "" {
 				t.Fatal("Infinity depleted weapon survived")
 			}
