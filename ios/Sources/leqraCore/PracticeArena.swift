@@ -783,6 +783,8 @@ public final class PracticeArena {
         if tank.power == "rapid" ? snapshot.tanks[index].machineRounds <= 0 : snapshot.tanks[index].charges <= 0 {
             snapshot.tanks[index].power = ""; snapshot.tanks[index].powerTime = 0; snapshot.tanks[index].charges = 0
             refillAmmo(index)
+            let reload = max(cooldown, Self.spec("").cooldown)
+            snapshot.tanks[index].cooldown = reload; snapshot.tanks[index].cooldownTotal = reload
             if tank.power == "grenade" { snapshot.tanks[index].grenadeEpoch = tank.ammoEpoch }
         }
     }

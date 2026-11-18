@@ -562,6 +562,37 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testFinalPowerUpTapNeverAlsoFiresStandardAmmo() async throws {
+        for fixed in [false, true] { for weapon in ["rapid", "scatter", "homing", "grenade", "laser", "cannon"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--probe-direct-aim", "--probe-final-charge", "--probe-weapon", weapon,
+                                   "--public-session-test-namespace", "last-ammo-" + UUID().uuidString]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            XCUIDevice.shared.orientation = .portrait
+            app.launch()
+            let stage = arena(in: app)
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.p2InputState(stage)["ammoEpoch"] == 0
+            }, object: stage)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+            let frame = stage.frame
+            let fire = app.coordinate(withNormalizedOffset: .zero).withOffset(
+                CGVector(dx: frame.maxX - (fixed ? 86 : 64), dy: frame.maxY - (fixed ? 60 : 68)))
+            fire.press(forDuration: 0.1)
+            try await Task.sleep(nanoseconds: 450_000_000)
+            let tapped = p2InputState(stage)
+            XCTAssertEqual(tapped["ammoEpoch"], 1, "The final \(weapon) charge must be consumed")
+            XCTAssertEqual(tapped["standardBullets"], 0, "A short final \(weapon) tap also fired standard ammo")
+            if weapon == "grenade" { fire.press(forDuration: 0.05) }
+            fire.press(forDuration: 1.1)
+            XCTAssertGreaterThan(p2InputState(stage)["standardBullets"] ?? 0, 0,
+                "Genuinely held fire must continue with standard ammo after reload")
+            capture(app, name: "Final \(weapon) charge and held continuation \(fixed ? "fixed" : "Infinity")")
+            app.terminate()
+        } }
+    }
+
+    @MainActor
     func testCannonTouchShotPiercesTheWholeTargetLine() {
         for fixed in [false, true] {
             let app = XCUIApplication()

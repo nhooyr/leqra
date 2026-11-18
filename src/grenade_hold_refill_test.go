@@ -16,7 +16,9 @@ func TestLastGrenadeHeldFireContinuesAcrossRefillsWithoutRemovingItsFuse(t *test
 				t.Fatal("last grenade did not produce exactly one final throw")
 			}
 			old := h.shots()[0]
-			h.stepHeld(true, false)
+			for range 48 {
+				h.stepHeld(true, false)
+			}
 			if h.tank.ShotSerial != 2 {
 				t.Fatal("held trigger did not continue with the standard magazine")
 			}

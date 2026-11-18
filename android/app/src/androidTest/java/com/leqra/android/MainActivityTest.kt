@@ -1052,6 +1052,66 @@ class MainActivityTest {
     }
 
     @Test
+    fun finalPowerUpTapNeverAlsoFiresStandardAmmo() {
+        val activity = launch()
+        try {
+            val session = main { state(activity) }
+            val view = main { MainActivity::class.java.getDeclaredField("arena").run {
+                isAccessible = true; get(activity) as NativeArenaView
+            } }
+            for (fixed in listOf(false, true)) for (weapon in listOf("rapid", "scatter", "homing", "grenade", "laser", "cannon")) {
+                lateinit var practice: com.leqra.core.PracticeArena
+                main {
+                    view.resetControls()
+                    practice = com.leqra.core.PracticeArena(42, "TAP", 0, 0,
+                        world = if (fixed) com.leqra.core.ArenaWorld(840.0, 840.0, 10, 10) else null)
+                    practice.snapshot.tanks.first().apply {
+                        x = 420.0; y = 420.0; invulnerable = 3600.0; spawnProtected = false
+                        com.leqra.core.PracticeArena.applyPower(this, weapon)
+                        charges = 1; machineRounds = 1
+                    }
+                    fun set(name: String, value: Any?) = GameSession::class.java.getDeclaredField(name).run {
+                        isAccessible = true; set(session, value)
+                    }
+                    set("practice", practice); set("fixed", null); set("online", false)
+                    set("screen", Screen.PLAYING); set("infinity", !fixed); set("localID", 1)
+                    set("maze", practice.maze); set("snapshot", practice.snapshot)
+                    session.mode = if (fixed) "elimination" else "infinity"
+                    session.rules = RoomRules.localDefaults(session.mode)
+                    session.input = GameInput()
+                    session.changed(true)
+                }
+                SystemClock.sleep(150)
+                var downTime = 0L
+                fun touch(action: Int) = main {
+                    val now = SystemClock.uptimeMillis()
+                    if (action == MotionEvent.ACTION_DOWN) downTime = now
+                    fun coordinate(name: String) = NativeArenaView::class.java.getDeclaredField(name).run {
+                        isAccessible = true; getFloat(view) * view.resources.displayMetrics.density
+                    }
+                    val event = MotionEvent.obtain(downTime, now, action, coordinate("fireX"), coordinate("fireY"), 0)
+                    try { assertTrue(view.onTouchEvent(event)) } finally { event.recycle() }
+                }
+                touch(MotionEvent.ACTION_DOWN); SystemClock.sleep(100); touch(MotionEvent.ACTION_UP)
+                SystemClock.sleep(450)
+                main {
+                    assertEquals("Final $weapon charge is consumed", "", practice.snapshot.tanks.first().power)
+                    assertFalse("A short final $weapon tap also fired standard ammo, fixed=$fixed",
+                        practice.snapshot.bullets.any { it.kind.isEmpty() })
+                }
+                if (weapon == "grenade") {
+                    touch(MotionEvent.ACTION_DOWN); SystemClock.sleep(50); touch(MotionEvent.ACTION_UP)
+                }
+                touch(MotionEvent.ACTION_DOWN); SystemClock.sleep(1100); touch(MotionEvent.ACTION_UP)
+                main {
+                    assertTrue("Held fire continues after $weapon reload, fixed=$fixed",
+                        practice.snapshot.bullets.any { it.kind.isEmpty() })
+                }
+            }
+        } finally { main { activity.finish() } }
+    }
+
+    @Test
     fun touchAndKeyboardFireRemainHeldUntilBothSourcesRelease() {
         val activity = launch()
         try {

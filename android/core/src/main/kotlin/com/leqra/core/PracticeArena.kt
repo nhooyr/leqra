@@ -1070,6 +1070,9 @@ class PracticeArena(
             t.charges = 0
             t.machineRounds = 0
             refillAmmo(t)
+            val reload = max(cooldown, standardSpec.cooldown)
+            t.cooldown = reload
+            t.cooldownTotal = reload
             t.grenadeEpoch = grenadeEpoch
         }
     }

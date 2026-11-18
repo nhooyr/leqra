@@ -36,8 +36,12 @@ func grenadeControlEpoch(t *Tank) uint64 {
 // automatic return to standard ammo starts a fresh capacity epoch.
 func refillDepletedWeapon(t *Tank) {
 	grenade, bank := t.Power == "grenade", grenadeControlEpoch(t)
+	// Replacing the magazine must not turn one brief press into a powered shot
+	// followed immediately by a standard shot. Held fire resumes after reload.
+	cooldown := max(.34, t.Cooldown)
 	clearWeapon(t)
 	refillAmmo(t)
+	t.Cooldown, t.CooldownTotal = cooldown, cooldown
 	if grenade {
 		t.GrenadeEpoch = &bank
 	}

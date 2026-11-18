@@ -139,6 +139,20 @@ test('pickup feedback explains map duration, Starman, machine-gun firing time an
 });
 
 const weapons=['rapid','scatter','homing','grenade','laser','cannon'];
+test('one short tap on the final power-up charge never fires standard ammo',()=>{
+ for(const power of weapons)for(const ticks of [1,3,6,10])for(const id of [0,1]){
+  const s=boot(),t=s.tanks[id],noop=()=>{};
+  Object.assign(s,{detonateOwned:()=>false,LASER_COOLDOWN:.85/3,laserTrace:()=>({x:0,y:0,endX:1,endY:0,targets:[]}),laserEffect:noop});
+  vm.runInContext(declaration('weaponControl')+'\n'+declaration('fireLaser'),s);
+  s.grantPower(t,power);t.charges=t.machineRounds=1;
+  for(let tick=0;tick<ticks;tick++){
+   if(tick){t.cooldown=Math.max(0,t.cooldown-1/60);s.time+=1/60;}
+   s.weaponControl(t,true,tick===0);
+  }
+  s.weaponControl(t,false,false);
+  assert.ok(s.bullets.every(b=>b.kind),power+' '+ticks+'-tick tap fired standard ammo');
+ }
+});
 test('every pickup refills the selected weapon and leaves older shells alive for either local pilot',()=>{
  for(const id of [0,1])for(const equipped of ['',...weapons])for(const pickup of kinds){
   const s=boot(),t=s.tanks[id];Object.assign(t,{power:equipped,machineRounds:1,charges:1,cooldown:3,cooldownTotal:3,fireBlocked:true,rapidTick:42});
@@ -169,9 +183,10 @@ test('a buff ending refills a surviving weapon without extending its duration',(
 test('last charged or machine-gun shot restores ordinary ammo without deleting the final volley',()=>{
  for(const power of weapons.filter(p=>p!=='laser')){
   const s=boot(),t=s.tanks[0];s.grantPower(t,power);t.machineRounds=t.charges=1;s.time=1;
-  assert.equal(s.fire(t),true,power);assert.equal(t.power,null,power);assert.equal(t.cooldown,0,power);assert.equal(t.ammoEpoch,2,power);
+  assert.equal(s.fire(t),true,power);assert.equal(t.power,null,power);assert.ok(t.cooldown>=.34,power);assert.equal(t.ammoEpoch,2,power);
   assert.equal(s.bullets.length,power==='scatter'?3:1,power);assert.ok(s.bullets.every(b=>!b.dead&&b.ammoEpoch===1),power);assert.equal(s.activeAmmo(t),0,power);
-  assert.equal(s.fire(t),true,power+' can immediately fire standard ammo');assert.equal(s.bullets.at(-1).ammoEpoch,2);
+  assert.equal(s.fire(t),false,power+' must wait for standard reload');s.time+=t.cooldown;t.cooldown=0;
+  assert.equal(s.fire(t),true,power+' can fire standard ammo after reload');assert.equal(s.bullets.at(-1).ammoEpoch,2);
  }
 });
 test('a refill keeps the rapid60Hz guard while held grenade fire retries',()=>{
@@ -199,12 +214,13 @@ test('machine tuple decoding keeps the12-number format and associates optional e
  const t={ammoEpoch:Number.MAX_SAFE_INTEGER,power:'rapid',rapidTick:5};N.refillAmmo(t);assert.equal(t.ammoEpoch,1);assert.equal(t.machineRounds,180);assert.equal(t.rapidTick,5);
 });
 
-test('last grenade fires alone, then a held trigger resumes regular fire on the next sample',()=>{
+test('last grenade fires alone, then a held trigger resumes regular fire after reload',()=>{
  for(const id of [0,1]){
   const s=boot(),t=s.tanks[id];s.detonateOwned=()=>false;vm.runInContext(declaration('weaponControl'),s);
   s.grantPower(t,'grenade');t.charges=1;s.weaponControl(t,true,true);
   assert.equal(t.power,null);assert.equal(s.bullets.length,1);assert.equal(s.bullets[0].kind,'grenade');
-  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
+  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,1);
+  s.time+=t.cooldown;t.cooldown=0;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2);assert.equal(s.bullets[1].kind,null);
  }
 });
 test('the final grenade remains remotely controlled while held standard fire resumes',()=>{
@@ -212,7 +228,7 @@ test('the final grenade remains remotely controlled while held standard fire res
   const s=boot(),t=s.tanks[id];Object.assign(t,{power:'grenade',powerTime:15,charges:1,ammoEpoch:epoch});
   s.detonate=b=>{b.dead=true;};for(const name of ['ownedGrenades','detonateOwned','weaponControl','pilotProjectileState'])vm.runInContext(declaration(name),s);
   s.weaponControl(t,true,true);const grenade=s.bullets[0];assert.equal(t.grenadeEpoch,epoch);assert.equal(N.ammoEpoch(t),epoch+1);
-  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2);assert.ok(!grenade.dead);
+  s.time+=t.cooldown;t.cooldown=0;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2);assert.ok(!grenade.dead);
   s.weaponControl(t,false,false);s.weaponControl(t,true,true);
   assert.ok(grenade.dead);assert.equal(s.bullets.length,2,'detonation emits no regular shell');assert.equal(t.grenadeEpoch,undefined);
   s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,2,'detonation press stays consumed until release');
@@ -241,7 +257,7 @@ test('every depleted or expired weapon retries held Fire and passive refills nev
   vm.runInContext(declaration('weaponControl')+'\n'+declaration('fireLaser'),s);s.grantPower(t,power);
   if(expiry){t.fireHeld=true;t.powerTime=.001;s.update(1/120);}else{t.charges=t.machineRounds=1;s.weaponControl(t,true,true);}
   const fired=s.bullets.length,label=[power,expiry,id].join('/');assert.equal(t.power,null,label);
-  s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,fired+1,label+' regular fire resumes');
+  s.time+=t.cooldown;t.cooldown=0;s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,fired+1,label+' regular fire resumes after reload');
   s.grantPower(t,'shield',.001);s.update(1/120);s.time+=1/60;s.weaponControl(t,true,false);assert.equal(s.bullets.length,fired+2,label+' refill retries');
  }
 });

@@ -42,9 +42,9 @@ final class FinalGrenadeTests: XCTestCase {
             let readout = PilotReadout(tank: tank, snapshot: arena.snapshot, infinity: !fixed)
             XCTAssertEqual(readout.available, 5); XCTAssertEqual(readout.readiness, "DETONATE READY")
             XCTAssertEqual(readout.fireHint, "TAP TO DETONATE, HOLD TO FIRE")
-            for _ in 0..<4 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
+            for _ in 0..<48 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
             XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind == "grenade" }.map(\.id), [grenade.id])
-            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty }.count, 1, "The following held tick fires standard ammunition")
+            XCTAssertEqual(arena.snapshot.bullets.filter { $0.kind.isEmpty }.count, 1, "Held fire resumes standard ammunition after reload")
             arena.step(input: GameInput(), dt: 1 / 60)
             let standardIDs = arena.snapshot.bullets.filter { $0.kind.isEmpty }.map(\.id)
             arena.step(input: GameInput(fire: true), dt: 1 / 60)

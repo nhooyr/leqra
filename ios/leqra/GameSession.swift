@@ -262,7 +262,8 @@ final class GameSession: ObservableObject {
                 let weapon = arguments.firstIndex(of: "--probe-weapon").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? ""
                 let game = PracticeArena(seed: 42, name: "AIM TEST", colorIndex: 0, botCount: 0, world: world,
                     initialTanks: [ArenaTank(id: 1, name: "AIM TEST", x: 420, y: 420, invulnerable: 3600, powerTime: weapon.isEmpty ? 0 : 3600,
-                        power: weapon, charges: 3)] + (arguments.contains("--probe-cannon-line") ? (2...4).map {
+                        power: weapon, charges: arguments.contains("--probe-final-charge") ? 1 : 3,
+                        machineRounds: weapon == "rapid" ? (arguments.contains("--probe-final-charge") ? 1 : 180) : 0)] + (arguments.contains("--probe-cannon-line") ? (2...4).map {
                             ArenaTank(id: $0, name: "TARGET \($0)", x: 420 + Double($0 - 1) * 60, y: 420, bot: true, cooldown: 999)
                         } : []))
                 game.configure(rules: rules)
@@ -2099,7 +2100,8 @@ final class GameSession: ObservableObject {
         }
         if directAimProbe, let tank = snapshot.tanks.first(where: { $0.id == localID }), let point = scene.directAimProbePoint {
             let alive = snapshot.tanks.filter { $0.id != localID && $0.hp > 0 }.count
-            scene.view?.superview?.accessibilityValue = "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),screenX=\(point.x),screenY=\(point.y),grenades=\(tank.grenades),charges=\(tank.charges),bullets=\(snapshot.bullets.count),targets=\(alive),score=\(tank.score),\(scene.controlLabelProbe)"
+            let standard = snapshot.bullets.filter { $0.owner == tank.id && $0.kind.isEmpty }.count
+            scene.view?.superview?.accessibilityValue = "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),screenX=\(point.x),screenY=\(point.y),grenades=\(tank.grenades),charges=\(tank.charges),bullets=\(snapshot.bullets.count),standardBullets=\(standard),ammoEpoch=\(tank.ammoEpoch),targets=\(alive),score=\(tank.score),\(scene.controlLabelProbe)"
         }
         if ProcessInfo.processInfo.arguments.contains("--probe-local-p2-input") {
             let primary = snapshot.tanks.first { $0.id == localID }
