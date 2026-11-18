@@ -36,6 +36,7 @@ function buildChrome(scene){
  stage.querySelector('.infinite-touch-controls')?.remove();
  stage.querySelector('.infinite-leaderboard')?.remove();
  const header=document.createElement('div');header.className='infinite-header showcase-header';header.append(visualClone(document.getElementById('gameHeader')));
+ header.querySelector('[data-showcase-source="roomControlsBtn"]')?.remove();
  for(const id of ['roomBtn','chatBtn']){const node=header.querySelector('[data-showcase-source="'+id+'"]');if(node)node.hidden=mobile||id==='chatBtn';}
  const room=header.querySelector('[data-showcase-source="roomBtn"]');if(room){room.textContent='ROOM';room.className='room-badge';}
  header.querySelector('[data-showcase-source="soundBtn"]').setAttribute('aria-pressed','true');

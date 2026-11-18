@@ -50,7 +50,7 @@ func TestGeneratedUnusedP2SurvivesSoloTakeoverRestartAndRoomWelcome(t *testing.T
 	a.hub.addClient(host)
 	action(t, a.hub, host, map[string]any{"type": "join", "code": room.Code, "token": seat.Token, "publicToken": primary, "localPublicToken": local, "localNewAccount": true, "independentAccounts": true})
 	if host.room != room {
-		t.Fatal("solo ready-room reconnect failed")
+		t.Fatal("solo room reconnect failed")
 	}
 	assertSoloWelcome(host)
 	rules := room.Game.settings()

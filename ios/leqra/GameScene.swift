@@ -47,6 +47,14 @@ final class GameScene: SKScene {
     enum LayoutMode { case infinity, fixed }
     var onFrame: ((TimeInterval) -> Void)?
     var onEscape: (() -> Void)?
+    var showsTankIdentities = true
+    var showsFireControl = true {
+        didSet {
+            fireButton.isHidden = !showsFireControl
+            fireReadyRing.isHidden = !showsFireControl
+            fireTrackRing.isHidden = !showsFireControl
+        }
+    }
     private(set) var input = GameInput() { didSet { if oldValue.fire != input.fire { onFireChanged?(input.fire) } } }
     private var inputSources = LocalInputSources()
     private var showsTouchControls = true
@@ -281,7 +289,7 @@ final class GameScene: SKScene {
         guard !combatRendererPrepared, !combatTextures.isEmpty else { return }
         // Texture preloading alone does not exercise SpriteKit's first sprite
         // draw. Render the real pooled glyphs into a disposable offscreen image
-        // while attaching the ready-room view, never while handling a shot.
+        // while attaching the room view, never while handling a shot.
         let warmup = SKNode()
         var index = 0
         for texture in tankTextures {
@@ -501,6 +509,8 @@ final class GameScene: SKScene {
         seenEffects.removeAll()
         effectOrder.removeAll()
     }
+
+    func resetFrameClock() { previousTime = 0 }
 
     override func update(_ currentTime: TimeInterval) {
         let elapsed = previousTime > 0 ? max(0, currentTime - previousTime) : 1 / 120
@@ -789,7 +799,7 @@ final class GameScene: SKScene {
             }
             let screen = CGPoint(x: world.position.x + CGFloat(tank.x) * zoom,
                                  y: world.position.y - CGFloat(tank.y) * zoom)
-            node.identity.isHidden = (tank.hp <= 0 && frozenShowcase == nil) || !visible.contains(CGPoint(x: tank.x, y: tank.y))
+            node.identity.isHidden = !showsTankIdentities || (tank.hp <= 0 && frozenShowcase == nil) || !visible.contains(CGPoint(x: tank.x, y: tank.y))
             let halfWidth = node.identityWidth / 2
             node.identity.position = CGPoint(x: min(max(screen.x, halfWidth + 5), max(halfWidth + 5, size.width - halfWidth - 5)),
                                              y: min(worldViewport.maxY - 6 - node.identityHeight, screen.y + 32 * zoom))
@@ -1030,7 +1040,7 @@ final class GameScene: SKScene {
             } else if stickTouch == nil && location.x < size.width / 2 && location.y < size.height * 0.75 {
                 stickTouch = touch
                 updateStick(location)
-            } else if fireTouch == nil && location.x >= size.width / 2 && location.y < max(210, size.height * 0.38) {
+            } else if showsFireControl && fireTouch == nil && location.x >= size.width / 2 && location.y < max(210, size.height * 0.38) {
                 fireTouch = touch
                 setFireSource(.touch, down: true)
                 impact.prepare()

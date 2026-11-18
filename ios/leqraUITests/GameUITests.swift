@@ -34,11 +34,17 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     func testControlsSwitchesFitPortraitAndLandscape() {
-        let app = launch()
+        let app = launch(arguments: ["--probe-touch-only-controls"])
         app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
         for landscape in [false, true] {
             XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
             waitForOrientation(app, landscape: landscape)
+            XCTAssertFalse(app.buttons["Binds"].exists)
+            XCTAssertFalse(app.buttons["bind0_forward"].exists)
+            XCTAssertFalse(app.buttons["resetBindings"].exists)
+            XCTAssertFalse(app.switches["settingMouseAim"].exists)
+            XCTAssertFalse(app.switches["settingMouseFire"].exists)
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Keyboard defaults'")).firstMatch.exists)
             for identifier in ["settingHighFrameRate", "settingShowFPS", "settingSound"] {
                 let toggle = app.switches[identifier]; reveal(toggle, in: app)
                 let panel = app.scrollViews["modalScroll"].frame
@@ -80,6 +86,7 @@ final class GameUITests: XCTestCase {
     func testHardwareEscapeNotificationClosesBothOverlays() {
         let app = launch(arguments: ["--probe-hardware-controls", "--probe-hardware-escape"])
         app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let binds = app.buttons["Binds"]; reveal(binds, in: app); binds.tap()
         let bind = app.buttons["bind0_forward"]; reveal(bind, in: app)
         bind.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Press a key"].waitForExistence(timeout: 5))
@@ -274,7 +281,14 @@ final class GameUITests: XCTestCase {
     func testHardwareBindingsMouseTogglesAndQuickTour() {
         let app = launch(arguments: ["--probe-hardware-controls"])
         app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let binds = app.buttons["Binds"]; reveal(binds, in: app)
+        XCTAssertEqual(binds.value as? String, "Collapsed")
         let binding = app.buttons["bind0_forward"]
+        XCTAssertFalse(binding.exists)
+        XCTAssertFalse(app.switches["settingMouseAim"].exists)
+        binds.tap()
+        XCTAssertEqual(binds.value as? String, "Expanded")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Keyboard defaults'")).firstMatch.exists)
         reveal(binding, in: app); binding.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Press a key"].waitForExistence(timeout: 5))
         hardwareKey("a", in: app)
@@ -302,15 +316,44 @@ final class GameUITests: XCTestCase {
         }
         let reset = app.buttons["resetBindings"]; reveal(reset, in: app); reset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertEqual(binding.label, "W")
-        let tour = app.buttons["quickTour"]; reveal(tour, in: app); tour.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        reveal(binds, in: app); binds.tap()
+        XCTAssertEqual(binds.value as? String, "Collapsed")
+        XCTAssertFalse(binding.exists)
+        XCTAssertFalse(app.switches["settingMouseAim"].exists)
+        let tour = app.buttons["quickTour"]; reveal(tour, in: app)
+        let actions = app.scrollViews["modalScroll"].buttons.allElementsBoundByIndex.map(\.identifier)
+        XCTAssertEqual(Array(actions.drop(while: { $0 != "quickTour" }).prefix(2)), ["quickTour", "openShowcase"])
+        tour.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Quick tour"].waitForExistence(timeout: 5))
-        let peripherals = ["keyboard", "mouse", "gamepad"]
-        for heading in ["Drive and aim", "Fire", "Play the objective"] {
+        let excludedTourTerms = ["keyboard", "mouse", "gamepad", "P1", "P2"]
+        let next = app.buttons["tourNext"]
+        let stage = app.descendants(matching: .any)["tourPracticeArena"].firstMatch
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let score = app.staticTexts["tourScore"]
+        for (page, heading) in ["Drive and aim", "Fire", "Score a point"].enumerated() {
             XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5))
             let instructions = app.staticTexts["tourInstructions"]
             XCTAssertTrue(instructions.exists)
-            XCTAssertFalse(peripherals.contains { instructions.label.localizedCaseInsensitiveContains($0) })
-            app.buttons["tourNext"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertFalse(excludedTourTerms.contains { instructions.label.localizedCaseInsensitiveContains($0) })
+            XCTAssertTrue(stage.waitForExistence(timeout: 5))
+            XCTAssertFalse(next.isEnabled)
+            if page == 2 {
+                XCTAssertEqual(instructions.label, "Destroy the stationary tank to score a point.")
+                XCTAssertEqual(score.label, "score: 0")
+            } else { XCTAssertFalse(score.exists) }
+            let frame = stage.frame
+            let fire = origin.withOffset(CGVector(dx: frame.maxX - 85.5, dy: frame.maxY - 63))
+            fire.press(forDuration: 0.06)
+            if page == 0 {
+                XCTAssertFalse(next.isEnabled, "Fire cannot complete the movement exercise.")
+                let stick = origin.withOffset(CGVector(dx: frame.minX + 93, dy: frame.maxY - 63))
+                stick.press(forDuration: 0.05, thenDragTo: stick.withOffset(CGVector(dx: 31, dy: 0)),
+                            withVelocity: .slow, thenHoldForDuration: 0.3)
+            }
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: next)
+            XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+            if page == 2 { XCTAssertEqual(score.label, "score: 1") }
+            next.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
         XCTAssertTrue(app.buttons["Close Controls"].waitForExistence(timeout: 5))
         let all = app.buttons["resetAllSettings"]; reveal(all, in: app); all.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -827,7 +870,7 @@ final class GameUITests: XCTestCase {
                 app.buttons["Resume"].tap()
                 let stayedInBattle = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: app.buttons["pauseGame"])
                 XCTAssertEqual(XCTWaiter.wait(for: [stayedInBattle], timeout: 5), .completed)
-                XCTAssertFalse(app.buttons["playRoom"].exists, "An unchanged callsign must not create an account and exit to the ready room")
+                XCTAssertFalse(app.buttons["playRoom"].exists, "An unchanged callsign must not create an account and exit to the room")
             }
             capture(app, name: "Unchanged offline callsign resumes " + (fixed ? "fixed" : "Infinity"))
             app.terminate()
@@ -1151,7 +1194,7 @@ final class GameUITests: XCTestCase {
         app.scrollViews["readyRoomScroll"].swipeDown()
         XCUIDevice.shared.orientation = .landscapeLeft
         try await Task.sleep(nanoseconds: 700_000_000)
-        capture(app, name: "Native generated ready room landscape")
+        capture(app, name: "Native generated room landscape")
         app.terminate()
     }
 
@@ -1334,7 +1377,7 @@ final class GameUITests: XCTestCase {
         account.tap()
         XCTAssertTrue(app.secureTextFields["importAccountKey"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.secureTextFields["importAccountKey"].isEnabled)
-        XCTAssertTrue(app.staticTexts["Return to the offline ready room to import or reset a key."].exists)
+        XCTAssertTrue(app.staticTexts["Return to the offline room to import or reset a key."].exists)
         app.buttons["Close Account key"].tap()
         leaveGame(in: app)
     }
@@ -1429,7 +1472,7 @@ final class GameUITests: XCTestCase {
         waitForOrientation(app, landscape: false)
         XCTAssertTrue(app.buttons["pauseGame"].isHittable)
         leaveGame(in: app)
-        capture(app, name: "Native ready room")
+        capture(app, name: "Native room")
     }
 
     @MainActor

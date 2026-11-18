@@ -14,8 +14,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.*
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import com.leqra.android.NativeStyle.accent
@@ -114,6 +116,7 @@ class MainActivity : Activity() {
     private val pressed = mutableSetOf<Int>()
     private var controlOwner: Int? = null
     private var controlLocalOwner: Int? = null
+    private var updateControlsHardware: (() -> Unit)? = null
 
     private data class ControllerState(
         var x: Double = 0.0,
@@ -133,6 +136,7 @@ class MainActivity : Activity() {
                 arena.clearMouseControls()
                 keyboardInput()
             }
+            updateControlsHardware?.invoke()
         }
         override fun onInputDeviceAdded(deviceId: Int) = reset()
         override fun onInputDeviceRemoved(deviceId: Int) = reset()
@@ -269,7 +273,7 @@ class MainActivity : Activity() {
         foreground = true
         if (::arena.isInitialized) {
             session.foreground()
-            arena.start()
+            if (quickTourDialog == null) arena.start()
             refresh(true)
             openPendingRoomInvite()
             if (
@@ -277,12 +281,14 @@ class MainActivity : Activity() {
                     intent.data?.let { RoomJoinRequest.fromInvite(it) } == null &&
                     !getSharedPreferences("leqra-settings", MODE_PRIVATE).getBoolean(QUICK_TOUR_SEEN, false)
             ) showQuickTour()
+            quickTourDialog?.resumePractice()
         }
     }
 
     override fun onPause() {
         if (showcaseDialog != null) showcaseReturnOnResume = true
         foreground = false
+        quickTourDialog?.pausePractice()
         availability?.cancel()
         if (::arena.isInitialized) {
             pressed.clear()
@@ -615,30 +621,8 @@ class MainActivity : Activity() {
             "${attachedDisplay?.displayId}:${session.screen}:${session.paused}:${session.highRefresh}:${resources.configuration.orientation}"
         if (key == refreshRateKey) return
         refreshRateKey = key
-        val current = attachedDisplay?.mode ?: return
-        val compatible =
-            attachedDisplay.supportedModes.filter {
-                it.physicalWidth == current.physicalWidth &&
-                    it.physicalHeight == current.physicalHeight
-            }
-        val best =
-            if (session.highRefresh) compatible.maxByOrNull { it.refreshRate }
-            else compatible.minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
-        val playing = session.screen == Screen.PLAYING && !session.paused
-        val target = if (playing) best?.modeId ?: 0 else 0
-        val rate = if (playing) if (session.highRefresh) best?.refreshRate ?: 60f else 60f else 30f
-        // Android 15+ needs an explicit view vote as well as the compatible display mode.
-        if (Build.VERSION.SDK_INT >= 35 && arena.requestedFrameRate != rate)
-            arena.requestedFrameRate = rate
-        if (
-            window.attributes.preferredDisplayModeId != target ||
-                window.attributes.preferredRefreshRate != rate
-        )
-            window.attributes =
-                window.attributes.apply {
-                    preferredDisplayModeId = target
-                    preferredRefreshRate = rate
-                }
+        if (attachedDisplay == null) return
+        window.applyArenaRefreshRate(arena, attachedDisplay, session.screen == Screen.PLAYING && !session.paused, session.highRefresh)
     }
 
     private fun buildReadyRoom() {
@@ -1452,7 +1436,7 @@ class MainActivity : Activity() {
                 dismissDialog()
                 session.restartMatch(true)
             }))
-        actions.add(button(this, if (session.infinity) "Exit Infinity" else "Return to ready room", {
+        actions.add(button(this, if (session.infinity) "Exit Infinity" else "Return to room", {
             dismissDialog()
             if (session.infinity) session.lobby(endMatch = false) else session.leave()
         }), gap = 0)
@@ -1474,16 +1458,12 @@ class MainActivity : Activity() {
         val panel = column(this, 16)
         val paired = if (session.online) session.localID2 != null else session.localSelected
         panel.add(label(this, session.identity, 13f, paint(session.colorIndex), true))
-        panel.add(label(this, "Keyboard defaults are WASD/arrow keys to drive and Q/C/Space/Enter to fire.", 12f, soft))
-        val seatHelp =
-            if (paired) "Touch controls P1. Keyboard/mouse controls P2. The first gamepad controls P1 and the second controls P2."
-            else "Keyboard/mouse or touch controls P1. Add local P2 in Players and bots to assign keyboard/mouse to P2."
-        panel.add(label(this, seatHelp, 12f, soft))
         panel.add(label(this, "Drag the left stick to drive and aim. Touch near your tank to rotate toward that point without moving. Hold the right Fire button to shoot. Pickups equip automatically.", 13f))
         panel.add(label(this, "Grenades can be thrown with a tap or hold. Release, then tap again to detonate. Release again before throwing another grenade. Projectiles pass through the tank that fired them.", 12f, soft))
-        panel.add(label(this, "On a gamepad, use the left stick to drive and A/R1/R2 to fire. Back/Escape pauses. Swipe from an edge for Android system controls.", 12f, soft))
-        panel.add(button(this, "QUICK TOUR", { showQuickTour() }))
-        hardwareControls(panel, paired)
+        val gamepadSeats = if (paired) " The first gamepad controls P1 and the second controls P2." else ""
+        panel.add(label(this, "On a gamepad, use the left stick to drive and A/R1/R2 to fire.$gamepadSeats Back pauses. Swipe from an edge for Android system controls.", 12f, soft))
+        val showcaseHelp = label(this, "", 11f, soft)
+        hardwareControls(panel, paired, showcaseHelp)
         panel.add(View(this).apply { setBackgroundColor(NativeStyle.edge) }, height = 1)
         panel.add(settingsToggle("Request high refresh rate", session.highRefresh) {
             session.highRefresh = it
@@ -1534,13 +1514,15 @@ class MainActivity : Activity() {
             })
         })
         panel.add(label(this, "Display rate adapts to the screen, power, temperature, and Android settings.", 11f, soft))
+        onlineServerSetting(panel)
         panel.add(label(this, "App version ${BuildConfig.VERSION_NAME}", 11f, muted, mono = true))
         val reopenControls = { showControls(returnToPause) }
         panel.add(button(this, "ACCOUNT KEY", { showAccount(0, returnToPause = false, onClose = reopenControls) }))
         panel.add(button(this, "P2 ACCOUNT KEY", { showAccount(1, returnToPause = false, onClose = reopenControls) }))
+        panel.add(button(this, "QUICK TOUR", { showQuickTour() }))
         panel.add(button(this, "SHOWCASE", { showShowcase() }))
-        panel.add(label(this, "Exit Showcase with Escape, or switch away from the app and return.", 11f, soft))
-        panel.add(button(this, "RESET ALL SETTINGS", { confirmResetSettings() }, danger = true))
+        panel.add(showcaseHelp)
+        panel.add(button(this, "RESET ALL SETTINGS", { confirmResetSettings() }, role = "danger"))
         panel.add(button(this, "BACK", ::dismissDialog, role = "primary"), gap = 0)
         val header = row(this).apply {
             setPadding(dp(16), dp(10), dp(10), dp(4))
@@ -1552,7 +1534,50 @@ class MainActivity : Activity() {
                 contentDescription = "Close Controls"
             }, width = 44, height = 44, gap = 0)
         }
+        panel.isFocusableInTouchMode = true
+        panel.requestFocus()
         showPanel(panel, "Controls", afterClose = if (returnToPause) ::showMenu else null, header = header)
+    }
+
+    private fun onlineServerSetting(panel: LinearLayout) {
+        val address = field(this, session.server, GameSession.defaultServer, 512).apply {
+            contentDescription = "Online server"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            imeOptions = EditorInfo.IME_ACTION_DONE
+        }
+        val feedback = label(this, "", 11f, soft).apply {
+            visibility = View.GONE
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        if (session.online) panel.add(label(this, "Changing servers returns you to the room.", 11f, soft))
+        fun applyServer() {
+            val previous = session.server
+            val connected = session.online
+            runCatching { session.setServer(address.text.toString()) }.onSuccess {
+                getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(address.windowToken, 0)
+                if (connected && previous != session.server) dismissDialog()
+                else {
+                    address.setText(session.server)
+                    address.clearFocus()
+                    feedback.text = "Server saved."
+                    feedback.visibility = View.VISIBLE
+                }
+            }.onFailure { address.error = it.message ?: "Invalid server address." }
+        }
+        address.addTextChangedListener(watcher {
+            address.error = null
+            feedback.visibility = View.GONE
+        })
+        address.setOnEditorActionListener { _, action, _ ->
+            if (action != EditorInfo.IME_ACTION_DONE) false else {
+                applyServer()
+                true
+            }
+        }
+        panel.add(label(this, "ONLINE SERVER", 10f, muted, mono = true), gap = 6)
+        panel.add(address)
+        panel.add(button(this, "SAVE SERVER", ::applyServer))
+        panel.add(feedback)
     }
 
     private fun settingsToggle(title: String, value: Boolean, change: (Boolean) -> Unit): Switch =
@@ -1564,31 +1589,65 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, enabled -> change(enabled) }
         }
 
-    private fun hardwareControls(panel: LinearLayout, paired: Boolean) {
-        val hardware = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().filterNot { it.isVirtual }
-        val keyboard = hardware.any { it.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC }
-        val mouse = hardware.any { it.supportsSource(InputDevice.SOURCE_MOUSE) }
-        if (!keyboard && !mouse) return
+    private fun hardwareControls(panel: LinearLayout, paired: Boolean, showcaseHelp: TextView) {
         val pilot = if (paired) "${session.localCallsign} (P2)" else session.identity
         val color = paint(if (paired) session.localColorIndex else session.colorIndex)
-        panel.add(label(this, "KEYBOARD/MOUSE, $pilot", 11f, color, true, mono = true))
-        if (keyboard) {
-            val bindingRows = column(this)
-            buildKeyBindings(bindingRows)
-            panel.add(bindingRows)
-        }
-        if (mouse) {
-            panel.add(settingsToggle("Mouse aim", session.mouseAim) {
+        val section = column(this).apply { visibility = View.GONE }
+        val contents = column(this)
+        val heading = label(this, "", 11f, color, true, mono = true)
+        val seatHelp = label(this, "", 12f, soft)
+        val keyboardDefaults = label(this, "Keyboard defaults are WASD/arrow keys to drive and Q/C/Space/Enter to fire.", 12f, soft)
+        val bindingRows = column(this)
+        val mouseOptions = column(this).apply {
+            add(settingsToggle("Mouse aim", session.mouseAim) {
                 session.mouseAim = it
                 session.save()
                 arena.mouseAimEnabled = it
             })
-            panel.add(settingsToggle("Mouse fire", session.mouseFire) {
+            add(settingsToggle("Mouse fire", session.mouseFire) {
                 session.mouseFire = it
                 session.save()
                 arena.mouseFireEnabled = it
-            })
+            }, gap = 0)
         }
+        contents.add(heading)
+        contents.add(seatHelp)
+        contents.add(keyboardDefaults)
+        contents.add(bindingRows)
+        contents.add(mouseOptions, gap = 0)
+        section.add(NativeStyle.disclosure(this, "Binds", expanded = false, controlledContent = contents))
+        section.add(contents, gap = 0)
+        val update = {
+            val hardware = InputDevice.getDeviceIds().asList().mapNotNull { InputDevice.getDevice(it) }.filterNot { it.isVirtual }
+            val keyboard = hardware.any { it.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC }
+            val mouse = hardware.any { it.supportsSource(InputDevice.SOURCE_MOUSE) }
+            val methods = when {
+                keyboard && mouse -> "Keyboard/mouse"
+                keyboard -> "Keyboard"
+                else -> "Mouse"
+            }
+            section.visibility = if (keyboard || mouse) View.VISIBLE else View.GONE
+            heading.text = "${methods.uppercase()}, $pilot"
+            seatHelp.text = if (paired) "Touch controls P1. $methods controls P2."
+                else "$methods and touch control P1. Add local P2 in Players and bots to assign ${methods.lowercase()} to P2."
+            keyboardDefaults.visibility = if (keyboard) View.VISIBLE else View.GONE
+            bindingRows.visibility = keyboardDefaults.visibility
+            mouseOptions.visibility = if (mouse) View.VISIBLE else View.GONE
+            if (keyboard && bindingRows.childCount == 0) buildKeyBindings(bindingRows)
+            if (!keyboard) keyCaptureDialog?.dismiss()
+            showcaseHelp.text = if (keyboard) "Exit Showcase with Escape, or switch away from the app and return."
+                else "Switch away from the app and return to exit Showcase."
+        }
+        section.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) {
+                updateControlsHardware = update
+                update()
+            }
+            override fun onViewDetachedFromWindow(view: View) {
+                if (updateControlsHardware === update) updateControlsHardware = null
+            }
+        })
+        panel.add(section)
     }
 
     private fun buildKeyBindings(panel: LinearLayout) {
@@ -1651,7 +1710,7 @@ class MainActivity : Activity() {
     private fun confirmResetSettings() {
         AlertDialog.Builder(this)
             .setTitle("Reset all settings?")
-            .setMessage("Restore defaults and return to the ready room. Room, display, audio, and control settings will reset. Saved account keys and callsigns stay on this device.")
+            .setMessage("Restore defaults and return to the room. Room, server, display, audio, and control settings will reset. Saved account keys and callsigns stay on this device.")
             .setNegativeButton("CANCEL", null)
             .setPositiveButton("RESET ALL SETTINGS") { _, _ -> resetSettings() }
             .show()
@@ -1659,9 +1718,8 @@ class MainActivity : Activity() {
 
     private fun resetSettings() {
         val settings = getSharedPreferences("leqra-settings", MODE_PRIVATE)
-        val preserve = mutableSetOf("callsign", "localCallsign", "autoPending0", "autoPending1",
+        val preserve = setOf("callsign", "localCallsign", "autoPending0", "autoPending1",
             "autoRequest0", "autoRequest1", QUICK_TOUR_SEEN)
-        if (BuildConfig.DEBUG) preserve.add("server")
         dialog?.apply {
             setOnDismissListener(null)
             dismiss()
@@ -1669,7 +1727,7 @@ class MainActivity : Activity() {
         dialog = null
         session.leave()
         settings.edit().apply { (settings.all.keys - preserve).forEach(::remove) }.apply()
-        setIntent(Intent(intent).setData(null))
+        setIntent(Intent(intent).setData(null).apply { removeExtra("server") })
         fullscreen = false
         applyFullscreen()
         recreate()
@@ -2064,7 +2122,7 @@ class MainActivity : Activity() {
     }
 
     private fun confirmReleaseCallsign(name: String, key: String) {
-        if (!session.canImportAccount) { alert("Release callsign", "Return to the offline ready room first."); return }
+        if (!session.canImportAccount) { alert("Release callsign", "Return to the local room first."); return }
         AlertDialog.Builder(this)
             .setTitle("Release $name?")
             .setMessage("This permanently deletes this account's score, makes its callsign available to others, and signs out its devices. Other saved accounts are kept.")
@@ -2198,7 +2256,7 @@ class MainActivity : Activity() {
         if (!canReview) {
             val reason =
                 if (resetPending) "A key reset is pending. Retry reset to finish it safely."
-                else "Return to the offline ready room to import or reset a key."
+                else "Return to the local room to import or reset a key."
             panel.add(label(this, reason, 11f, muted))
         }
         var checked: CheckedAccount? = null
@@ -2604,16 +2662,22 @@ class MainActivity : Activity() {
 
     private fun showQuickTour() {
         if (quickTourDialog != null) return
-        val mode =
-            if (session.screen == Screen.READY && (session.room?.optBoolean("infinityPublic") ?: session.publicSelected))
-                "infinity"
-            else session.mode
-        val shown = QuickTour(this, modeHelp(mode))
+        val shown = QuickTour(this, session.highRefresh, ::previewAudio)
         quickTourDialog = shown
+        // Keep a static backdrop while the dialog owns the interactive arena.
+        if (arena.renderedFrames == 0L) arena.submit(session.snapshot, session.localID, session.maze, session.localID2, session.online)
+        arena.pause()
+        fpsStarted = 0L
+        frameCount = 0
         shown.setOnCancelListener {
             getSharedPreferences("leqra-settings", MODE_PRIVATE).edit().putBoolean(QUICK_TOUR_SEEN, true).apply()
         }
-        shown.setOnDismissListener { quickTourDialog = null }
+        shown.setOnDismissListener {
+            if (quickTourDialog === shown) {
+                quickTourDialog = null
+                if (foreground && !isFinishing && !isDestroyed) arena.start()
+            }
+        }
         shown.show()
         shown.resize()
     }

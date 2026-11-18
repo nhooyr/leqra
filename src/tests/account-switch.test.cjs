@@ -37,7 +37,7 @@ test('pending account retries reuse the durable key after failure and reload',as
 test('an offline pending saved account is claimed using its same key before selection',async()=>{
  const h=boot();h.s.saveCallsignAccount('Bravo',saved,true);const p=h.s.selectCallsignAccount(0,'Bravo');await flush();assert.equal(new URL(h.requests[0].url).pathname,'/api/account/create');assert.equal(h.requests[0].body.publicToken,saved);h.answer(h.requests[0],200,['Bravo']);await p;assert.equal(h.s.publicIdentityToken(),saved);
 });
-test('offline ready-room callsign changes survive unavailable servers with a durable pending key',async()=>{
+test('offline room callsign changes survive unavailable servers with a durable pending key',async()=>{
  for(const status of [0,503]){
   const h=boot();h.s.mode='room';h.s.online.connected=false;
   const pending=h.s.selectCallsignAccount(0,'Bravo');await flush();const key=h.requests[0].body.publicToken;

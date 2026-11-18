@@ -161,6 +161,7 @@ struct NativeGameView: UIViewRepresentable {
     var acceptsHardware = true
     var showsTouchControls = true
     var mouseTargetScene: GameScene? = nil
+    var renderingSuspended = false
 
     func makeUIView(context: Context) -> UIView {
         let container = KeyboardGameContainer(scene: scene)
@@ -177,7 +178,7 @@ struct NativeGameView: UIViewRepresentable {
                               spectating: spectating, showsTouchControls: showsTouchControls)
         container.configure(scene: scene, highFrameRate: highFrameRate, paused: paused, spectating: spectating,
                             hardwareScene: hardwareInputScene ?? scene, acceptsHardware: acceptsHardware,
-                            mouseScene: mouseTargetScene ?? hardwareInputScene ?? scene)
+                            mouseScene: mouseTargetScene ?? hardwareInputScene ?? scene, renderingSuspended: renderingSuspended)
     }
 }
 
@@ -242,7 +243,7 @@ private final class KeyboardGameContainer: UIView {
     deinit { for observer in controllerObservers + inputObservers { NotificationCenter.default.removeObserver(observer) } }
 
     func configure(scene: GameScene, highFrameRate: Bool, paused: Bool, spectating: Bool,
-                   hardwareScene: GameScene, acceptsHardware: Bool, mouseScene: GameScene) {
+                   hardwareScene: GameScene, acceptsHardware: Bool, mouseScene: GameScene, renderingSuspended: Bool) {
         if self.hardwareScene !== hardwareScene { resetKeyboard(); self.hardwareScene?.setGamepadInput(GameInput()) }
         if self.mouseScene !== mouseScene { self.mouseScene?.setMouseFire(false); self.mouseScene?.clearMouseAim() }
         self.highFrameRate = highFrameRate; self.paused = paused; self.spectating = spectating
@@ -251,6 +252,10 @@ private final class KeyboardGameContainer: UIView {
         isUserInteractionEnabled = !paused && !spectating
         gameView.isUserInteractionEnabled = !paused && !spectating
         if gameView.scene !== scene { gameView.presentScene(scene) }
+        if gameView.isPaused != renderingSuspended {
+            scene.resetFrameClock()
+            gameView.isPaused = renderingSuspended
+        }
         scene.isUserInteractionEnabled = !paused && !spectating
         if paused || spectating {
             resetKeyboard(); mouseScene.setMouseFire(false); mouseScene.clearMouseAim()

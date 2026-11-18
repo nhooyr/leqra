@@ -36,6 +36,9 @@ def check_tour_labels(page):
         ("introTourTouch", "introTourTouchTitle", "Touch"),
         ("introTourKeyboard", "introTourKeyboardTitle", "Keyboard"),
         ("introTourDesktop", "introTourMouseTitle", "Mouse"),
+        ("introTourTouchFire", "introTourTouchFireTitle", "Touch"),
+        ("introTourKeyboardFire", "introTourKeyboardFireTitle", "Keyboard"),
+        ("introTourMouseFireHelp", "introTourMouseFireTitle", "Mouse"),
     ):
         section = dialog.locator(f"#{section_id}")
         expect(section).to_have_attribute("aria-labelledby", heading_id)
@@ -46,15 +49,132 @@ def check_tour_labels(page):
 def check_touch_tour(page):
     touch = page.locator("#introTourTouch")
     expect(touch.get_by_role("heading", name="Touch")).to_be_visible()
-    check_control_rows(touch, ["Movement", "Aim", "Fire"])
+    check_control_rows(touch, ["Movement", "Aim"])
     expect(touch.locator("dd")).to_have_text([
         "Drag the left stick to drive and aim.",
         "Touch near your tank to aim without moving.",
-        "Tap or hold the Fire button.",
     ])
     expect(page.locator("#introTourKeyboard")).to_be_hidden()
     expect(page.locator("#introTourDesktop")).to_be_hidden()
     check_tour_labels(page)
+
+
+def check_fire_tour(page, touch, mouse_enabled=True):
+    expect(page.locator("#introTourTitle")).to_have_text("Fire")
+    check_tour_labels(page)
+    touch_help = page.locator("#introTourTouchFire")
+    keyboard = page.locator("#introTourKeyboardFire")
+    mouse = page.locator("#introTourMouseFireHelp")
+    if touch:
+        expect(touch_help.get_by_role("heading", name="Touch")).to_be_visible()
+        expect(page.locator("#introTourFireButton")).to_be_visible()
+        expect(keyboard).to_be_hidden()
+        expect(mouse).to_be_hidden()
+    else:
+        expect(touch_help).to_be_hidden()
+        expect(page.locator("#introTourTouchControls")).to_be_hidden()
+        expect(keyboard.get_by_role("heading", name="Keyboard")).to_be_visible()
+        if mouse_enabled:
+            expect(mouse.get_by_role("heading", name="Mouse")).to_be_visible()
+        else:
+            expect(mouse).to_be_hidden()
+
+
+def hold_practice_key(page, key):
+    page.keyboard.down(key)
+    try:
+        expect(page.locator("#introTourNext")).to_be_enabled()
+    finally:
+        page.keyboard.up(key)
+
+
+def drag_practice_stick(page):
+    stick = page.locator("#introTourStick")
+    stick.scroll_into_view_if_needed()
+    base = page.locator("#introTourStickBase").bounding_box()
+    x = base["x"] + base["width"] / 2
+    y = base["y"] + base["height"] / 2
+    next_button = page.locator("#introTourNext")
+    if page.context.browser.browser_type.name == "chromium":
+        session = page.context.new_cdp_session(page)
+        try:
+            session.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+            session.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x + 35, "y": y}]})
+            expect(next_button).to_be_enabled()
+        finally:
+            session.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+            session.detach()
+    else:
+        # Playwright does not expose a touchscreen drag for WebKit. Send the
+        # pointer events to the arena's joystick and wait for the simulated tank to move.
+        pointer = {"pointerId": 1, "pointerType": "touch", "isPrimary": True, "clientY": y}
+        try:
+            stick.dispatch_event("pointerdown", {**pointer, "button": 0, "buttons": 1, "clientX": x})
+            stick.dispatch_event("pointermove", {**pointer, "button": -1, "buttons": 1, "clientX": x + 35})
+            expect(next_button).to_be_enabled()
+        finally:
+            stick.dispatch_event("pointerup", {**pointer, "button": 0, "buttons": 0, "clientX": x + 35})
+
+
+def advance_drive_practice(page, touch, key="w"):
+    expect(page.locator("#introTourTitle")).to_have_text("Drive and aim")
+    expect(page.locator("#introTourCanvas")).to_be_visible()
+    next_button = page.locator("#introTourNext")
+    status = page.locator("#introTourPracticeStatus")
+    expect(next_button).to_be_disabled()
+    expect(status).to_have_text("Move the tank to continue.")
+    if touch:
+        expect(page.locator("#introTourFireButton")).to_be_hidden()
+        drag_practice_stick(page)
+    else:
+        expect(page.locator("#introTourTouchControls")).to_be_hidden()
+        hold_practice_key(page, key)
+    expect(status).to_have_text("Tank moved.")
+    next_button.click()
+    expect(page.locator("#introTourTitle")).to_have_text("Fire")
+    expect(page.locator("#introTourBack")).to_be_enabled()
+    expect(next_button).to_be_disabled()
+
+
+def fire_in_practice(page, touch, key, mouse=False):
+    if touch:
+        page.locator("#introTourFireButton").tap()
+    elif mouse:
+        page.locator("#introTourCanvas").click()
+    else:
+        hold_practice_key(page, key)
+
+
+def advance_fire_practice(page, touch, key="q", mouse=False):
+    next_button = page.locator("#introTourNext")
+    status = page.locator("#introTourPracticeStatus")
+    expect(next_button).to_be_disabled()
+    expect(status).to_have_text("Fire a shot to continue.")
+    fire_in_practice(page, touch, key, mouse=mouse)
+    expect(next_button).to_be_enabled()
+    expect(status).to_have_text("Shot fired.")
+    next_button.click()
+    expect(page.locator("#introTourTitle")).to_have_text("Score a point")
+    expect(page.locator("#introTourPractice")).to_be_visible()
+    expect(next_button).to_be_disabled()
+
+
+def advance_score_practice(page, touch, key="q"):
+    next_button = page.locator("#introTourNext")
+    score = page.locator("#introTourScore")
+    expect(page.locator("#introTourTitle")).to_have_text("Score a point")
+    expect(page.locator('[data-intro-page="2"]')).to_have_text("Destroy the stationary tank to score a point.")
+    expect(page.locator("#introTourCanvas")).to_be_visible()
+    expect(page.locator("#introTourScorePanel")).to_be_visible()
+    expect(next_button).to_be_disabled()
+    expect(score).to_have_text("0")
+    fire_in_practice(page, touch, key)
+    expect(score).to_have_text("1")
+    expect(page.locator("#introTourPracticeStatus")).to_be_hidden()
+    expect(next_button).to_be_enabled()
+    next_button.click()
+    expect(page.locator("#introTourTitle")).to_have_text("Choose a battle")
+    expect(page.locator("#introTourPractice")).to_be_hidden()
 
 
 def check_desktop_tour(page, mouse_enabled=True):
@@ -127,8 +247,99 @@ def check_roster_tools_order(page):
     assert order[0]==0 and order==sorted(order),ids
 
 
+def emulate_controls_device(page, installed=False):
+    page.add_init_script("""(() => {
+        const query = '(any-pointer: fine)';
+        const standaloneQuery = '(display-mode: standalone)';
+        const matchMedia = window.matchMedia.bind(window);
+        const pointer = new EventTarget();
+        pointer.media = query;
+        pointer.matches = matchMedia(query).matches;
+        const standalone = Object.assign(new EventTarget(), {media: standaloneQuery, matches: INSTALLED});
+        window.matchMedia = media => media === query ? pointer : media === standaloneQuery ? standalone : matchMedia(media);
+        window.setTestMouseConnected = connected => {
+            if (pointer.matches === connected) return;
+            pointer.matches = connected;
+            pointer.dispatchEvent(new MediaQueryListEvent('change', {matches: connected, media: query}));
+        };
+    })();""".replace('INSTALLED', 'true' if installed else 'false'))
+
+
+def check_mobile_controls_hardware(browser, url):
+    for display_mode, ios_standalone in ((False, False), (True, False), (False, True)):
+        installed = display_mode or ios_standalone
+        with browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True,
+                                 has_touch=True, service_workers='block') as context:
+            page = context.new_page()
+            page.add_init_script("localStorage.setItem('leqra.introTour.v1','1')")
+            emulate_controls_device(page, installed=display_mode)
+            if ios_standalone:
+                page.add_init_script("Object.defineProperty(navigator, 'standalone', {value: true})")
+            page.goto(url)
+            open_room_controls(page)
+            binds = page.locator('#controlsBinds')
+            grid = page.locator('#bindingGrid')
+            keyboard = [page.locator(selector) for selector in (
+                '[data-bind="0:forward"]', '[data-bind="1:forward"]', '#controlsKeyboardHelp', '#resetBindingsBtn',
+            )]
+            mouse = [page.locator(f'#p1Mouse{action}Enabled') for action in ('Aim', 'Fire')]
+
+            def check_options(keyboard_visible, mouse_visible):
+                for controls, visible in ((keyboard, keyboard_visible), (mouse, mouse_visible),
+                                          ([grid], keyboard_visible or mouse_visible)):
+                    for control in controls:
+                        if visible:
+                            expect(control).to_be_visible()
+                        else:
+                            expect(control).to_be_hidden()
+
+            check_options(False, False)
+            expect(binds).to_be_hidden()
+            page.evaluate('setTestMouseConnected(true)')
+            if installed:
+                expect(binds.locator(':scope > summary')).to_be_visible()
+                assert not binds.evaluate('node => node.open')
+                check_options(False, False)
+                open_controls_binds(page)
+            else:
+                expect(binds).to_be_hidden()
+            check_options(installed, installed)
+            page.evaluate('setTestMouseConnected(false)')
+            check_options(False, False)
+            expect(binds).to_be_hidden()
+            page.locator('#controlsDialog').dispatch_event('keydown', {'key': 'Shift', 'code': 'ShiftLeft'})
+            page.keyboard.press('Shift')
+            check_options(False, False)
+            expect(binds).to_be_hidden()
+            page.evaluate('setTestMouseConnected(true)')
+            if installed:
+                open_controls_binds(page)
+            check_options(installed, installed)
+    print(f'PASS {browser.browser_type.name}: mobile browser hides Binds and standalone offers both bindings with a detected pointer', flush=True)
+
+
+def open_room_controls(page):
+    launcher = page.locator('#gameHeader').get_by_role('button', name='Controls', exact=True)
+    expect(launcher).to_have_attribute('id', 'roomControlsBtn')
+    expect(launcher.locator('svg[aria-hidden="true"]')).to_have_count(1)
+    launcher.click()
+    expect(page.locator('#controlsDialog #openIntroTour + #showcaseBtn')).to_be_visible()
+
+
+def open_controls_binds(page):
+    binds = page.locator('#controlsBinds')
+    summary = binds.locator(':scope > summary')
+    expect(summary).to_have_text('Binds')
+    expect(summary).to_be_visible()
+    if not binds.evaluate('node => node.open'):
+        summary.click()
+
+
 def check_remapped_tour(page, touch, screenshot_dir=None):
-    page.locator('#roomControlsBtn').click()
+    if touch:
+        page.evaluate('setTestMouseConnected(true)')
+    open_room_controls(page)
+    open_controls_binds(page)
     for binding, key in (('0:forward','i'), ('0:fire','z'), ('1:forward','u')):
         page.locator('[data-bind="'+binding+'"]').click()
         page.keyboard.press(key)
@@ -140,7 +351,12 @@ def check_remapped_tour(page, touch, screenshot_dir=None):
     else:
         check_desktop_tour(page, mouse_enabled=False)
         check_keycaps(page.locator('#introTourMoveKeys'), ['I','A','S','D','U','←','↓','→'])
+    advance_drive_practice(page, touch, key='i')
+    check_fire_tour(page, touch, mouse_enabled=False)
+    if not touch:
         check_keycaps(page.locator('#introTourFireKeys'), ['Z','C','SPACE','ENTER'])
+    advance_fire_practice(page, touch, key='z')
+    advance_score_practice(page, touch, key='z')
     page.locator('#introTourSkip').click()
     page.locator('#p1MouseAimEnabled').check()
     page.locator('#p1MouseFireEnabled').check()
@@ -150,24 +366,28 @@ def check_remapped_tour(page, touch, screenshot_dir=None):
     else:
         check_desktop_tour(page)
         check_mouse_symbols(page)
+    expect(page.locator('#introTourNext')).to_be_disabled()
     page.locator('#introTourSkip').click()
     page.locator('[data-close-dialog="controlsDialog"]').click()
     page.locator('#roomPlayers').evaluate('node => node.open = true')
     check_roster_tools_order(page)
     page.locator('#addLocalBtn').click()
-    page.locator('#roomControlsBtn').click()
+    open_room_controls(page)
     page.locator('#openIntroTour').click()
     if touch:
         check_touch_tour(page)
     else:
         check_desktop_tour(page)
         check_keycaps(page.locator('#introTourMoveKeys'), ['I','A','S','D'])
-        check_keycaps(page.locator('#introTourFireKeys'), ['Z','C'])
         check_mouse_symbols(page)
     assert page.locator('#introTourDialog').evaluate('node => node.scrollWidth <= node.clientWidth')
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     if screenshot_dir is not None:
         page.screenshot(path=str(screenshot_dir))
+    advance_drive_practice(page, touch, key='i')
+    check_fire_tour(page, touch)
+    if not touch:
+        check_keycaps(page.locator('#introTourFireKeys'), ['Z','C'])
     page.locator('#introTourSkip').click()
     page.locator('[data-close-dialog="controlsDialog"]').click()
 
@@ -203,8 +423,66 @@ def check_mouse_preferences(browser, url, width, height, touch, screenshot_dir=N
     with browser.new_context(viewport={'width':width,'height':height},is_mobile=touch,has_touch=touch,service_workers='block') as context:
         page=context.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
         page.add_init_script("localStorage.setItem('leqra.introTour.v1','1')")
+        emulate_controls_device(page, installed=touch)
         page.goto(url);page.wait_for_function('() => !!window.leqraInfinity')
-        page.locator('#roomControlsBtn').click()
+        open_room_controls(page)
+        reset_all = page.locator('#resetAllSettingsBtn')
+        expect(reset_all).to_be_visible()
+        reset_layout = reset_all.evaluate("""button => {
+            const style = getComputedStyle(button);
+            return {last: button.closest('.feature-body').lastElementChild === button,
+                color: style.color, border: style.borderTopColor};
+        }""")
+        assert reset_layout == {'last': True, 'color': 'rgb(255, 79, 95)', 'border': 'rgb(255, 79, 95)'}, reset_layout
+        key_binding = page.locator('[data-bind="0:fireAlt"]')
+        keyboard_help = page.locator('#controlsKeyboardHelp')
+        reset_keys = page.locator('#resetBindingsBtn')
+        aim = page.locator('#p1MouseAimEnabled')
+        fire = page.locator('#p1MouseFireEnabled')
+        binds = page.locator('#controlsBinds')
+        summary = binds.locator(':scope > summary')
+        if touch:
+            expect(binds).to_be_hidden()
+            for control in (key_binding, keyboard_help, reset_keys, aim, fire):
+                expect(control).to_be_hidden()
+        else:
+            expect(summary).to_have_text('Binds')
+            assert not binds.evaluate('node => node.open')
+            expect(key_binding).to_be_hidden()
+            expect(aim).to_be_hidden()
+            open_controls_binds(page)
+            for control in (key_binding, keyboard_help, reset_keys, aim, fire):
+                expect(control).to_be_visible()
+            summary.click()
+            expect(key_binding).to_be_hidden()
+            expect(aim).to_be_hidden()
+            summary.click()
+            expect(key_binding).to_be_visible()
+            expect(aim).to_be_visible()
+        page.evaluate('setTestMouseConnected(true)')
+        if touch:
+            expect(summary).to_be_visible()
+            assert not binds.evaluate('node => node.open')
+            expect(aim).to_be_hidden()
+            open_controls_binds(page)
+        expect(aim).to_be_visible()
+        expect(fire).to_be_visible()
+        page.evaluate('setTestMouseConnected(false)')
+        expect(aim).to_be_hidden()
+        expect(fire).to_be_hidden()
+        if touch:
+            expect(binds).to_be_hidden()
+            page.keyboard.press('Shift')
+            expect(binds).to_be_hidden()
+        else:
+            expect(key_binding).to_be_visible()
+        page.evaluate('setTestMouseConnected(true)')
+        if touch:
+            open_controls_binds(page)
+        for control in (key_binding, keyboard_help, reset_keys):
+            expect(control).to_be_visible()
+        expect(aim).to_be_visible()
+        expect(fire).to_be_visible()
         geometry=page.evaluate("""() => {
             const rect=node=>{const r=node.getBoundingClientRect();return {width:r.width,height:r.height,right:r.right};};
             return {key:rect(document.querySelector('[data-bind="0:fireAlt"]')),
@@ -213,7 +491,6 @@ def check_mouse_preferences(browser, url, width, height, touch, screenshot_dir=N
         assert all(abs(item['width']-geometry['key']['width'])<=1 and
                    abs(item['height']-geometry['key']['height'])<=1 and
                    abs(item['right']-geometry['key']['right'])<=1 for item in geometry['toggles']),geometry
-        aim=page.locator('#p1MouseAimEnabled');fire=page.locator('#p1MouseFireEnabled')
         def caption(node):
             return node.evaluate("""input=>{const state=input.nextElementSibling,r=state.getBoundingClientRect(),s=getComputedStyle(state),cols=s.gridTemplateColumns.split(' ').map(parseFloat),gap=parseFloat(s.columnGap),left=r.left+(r.width-cols.reduce((a,b)=>a+b,0)-gap)/2;return {display:s.display,cols,icon:left,text:left+cols[0]+gap,content:getComputedStyle(state,'::after').content};}""")
         on=caption(aim)
@@ -232,7 +509,15 @@ def check_mouse_preferences(browser, url, width, height, touch, screenshot_dir=N
         assert abs(off_caption['icon']-on_caption['icon'])<.1 and abs(off_caption['text']-on_caption['text'])<.1,(off_caption,on_caption)
         stored=page.evaluate("JSON.parse(localStorage.getItem('leqra.feedback.v1'))")
         assert stored['mouseAim'] is False and stored['mouseFire'] is True,stored
-        page.reload();page.wait_for_function('() => !!window.leqraInfinity');page.locator('#roomControlsBtn').click()
+        page.locator('[data-close-dialog="controlsDialog"]').click()
+        open_room_controls(page)
+        assert not binds.evaluate('node => node.open')
+        page.reload();page.wait_for_function('() => !!window.leqraInfinity')
+        page.evaluate('setTestMouseConnected(true)')
+        open_room_controls(page)
+        assert not binds.evaluate('node => node.open')
+        open_controls_binds(page)
+        expect(key_binding).to_be_visible()
         expect(page.locator('#p1MouseAimEnabled')).not_to_be_checked();expect(page.locator('#p1MouseFireEnabled')).to_be_checked()
         assert page.locator('#controlsKeyboardHelp').inner_text().count(tip_text)==1
         expect(page.locator('#controlsKeyboardHelp .controls-shortcuts kbd')).to_have_text(['P','ESC','M','F'])
@@ -244,10 +529,14 @@ def check_mouse_preferences(browser, url, width, height, touch, screenshot_dir=N
         page.locator('#openIntroTour').click()
         if touch:
             check_touch_tour(page)
-            tip = page.locator('#introTourTouch').get_by_text("Tap or hold the Fire button.", exact=True)
         else:
-            check_desktop_tour(page)
-            tip = page.locator('#introTourKeyboard .intro-fire-tip')
+            check_desktop_tour(page, mouse_enabled=False)
+        advance_drive_practice(page, touch)
+        check_fire_tour(page, touch)
+        if touch:
+            tip = page.locator('#introTourTouchFire').get_by_text("Tap or hold the Fire button.", exact=True)
+        else:
+            tip = page.locator('#introTourKeyboardFire .intro-fire-tip')
             expect(tip).to_have_text(tip_text)
         page.locator('#introTourDialog').evaluate('node => node.scrollTop=node.scrollHeight')
         expect(tip).to_be_in_viewport(ratio=1)
@@ -256,7 +545,7 @@ def check_mouse_preferences(browser, url, width, height, touch, screenshot_dir=N
         assert page.locator('#introTourDialog').evaluate('node => node.scrollWidth <= node.clientWidth')
         if screenshot_dir:
             page.screenshot(path=str(screenshot_dir/f'{browser.browser_type.name}-{width}-tour-fire-tip.png'))
-        next_button.click();expect(page.locator('#introTourTitle')).to_have_text('Use the maze')
+        advance_fire_practice(page, touch, mouse=not touch)
         page.locator('#introTourSkip').click();page.locator('[data-close-dialog="controlsDialog"]').click()
         for paired in (False,True):
             page.evaluate("paired=>leqraInfinity.start('offline',{name:'ONE',...(paired?{localName:'TWO'}:{}),roomRules:{infinityRandomBots:false}})",paired)
@@ -288,36 +577,46 @@ def check_context(browser, url, width, height, touch, screenshot_dir=None):
         page = context.new_page()
         errors=[]
         page.on('pageerror',lambda error:errors.append(str(error)))
+        if touch:
+            emulate_controls_device(page, installed=True)
         page.goto(url)
         expect(page.locator("#introTourDialog")).to_be_visible()
-        assert page.locator('[data-intro-page="0"] > section').evaluate_all("nodes => nodes.map(node => node.id)") == ["introTourTouch", "introTourKeyboard", "introTourDesktop"]
         if touch:
             check_touch_tour(page)
         else:
             check_desktop_tour(page)
             keyboard_help = page.locator("#introTourKeyboard")
-            check_control_rows(keyboard_help, ["Movement", "Fire"])
+            check_control_rows(keyboard_help, ["Movement"])
             check_keycaps(page.locator("#introTourMoveKeys"), ["W","A","S","D","↑","←","↓","→"])
-            check_keycaps(page.locator("#introTourFireKeys"), ["Q","C","SPACE","ENTER"])
             check_mouse_symbols(page)
         expect(page.locator("#introTourBack")).to_be_disabled()
         check_buttons(page, "Next")
-        page.locator("#introTourNext").click()
-        maze_step = page.locator('[data-intro-page="1"]')
-        expect(maze_step.locator("li > strong")).to_have_text(["Laser", "Grenade", "Starman"])
-        sidebar_note = maze_step.get_by_text(
-            "There are more power-ups. Check the sidebar for the full list and details."
-        )
-        expect(sidebar_note).to_be_visible()
-        if touch:
-            page.locator("#introTourDialog").evaluate("dialog => dialog.scrollTop = dialog.scrollHeight")
-            expect(sidebar_note).to_be_in_viewport(ratio=1)
+        advance_drive_practice(page, touch)
+        check_fire_tour(page, touch)
+        if not touch:
+            check_keycaps(page.locator("#introTourFireKeys"), ["Q","C","SPACE","ENTER"])
         check_buttons(page, "Next")
+        advance_fire_practice(page, touch)
+        page.locator("#introTourBack").click()
+        expect(page.locator("#introTourTitle")).to_have_text("Fire")
+        expect(page.locator("#introTourNext")).to_be_enabled()
         page.locator("#introTourNext").click()
-        check_buttons(page, "Done")
-        expect(page.locator('[data-intro-page="2"] li > strong')).to_have_text(
+        check_buttons(page, "Next")
+        advance_score_practice(page, touch)
+        choose_step = page.locator('[data-intro-page="3"]')
+        expect(choose_step.locator(":scope > ul li > strong")).to_have_text(
             ["Public Infinity", "Elimination", "Capture the Flag", "King of the Hill", "Survival"]
         )
+        maze_tips = choose_step.locator("#introTourMazeTips")
+        expect(maze_tips.locator("li > strong")).to_have_text(["Laser", "Grenade", "Starman"])
+        sidebar_note = maze_tips.get_by_text("Check the sidebar for the full list of power-ups.")
+        expect(sidebar_note).to_be_hidden()
+        maze_tips.locator("summary").click()
+        expect(sidebar_note).to_be_visible()
+        if touch:
+            sidebar_note.scroll_into_view_if_needed()
+            expect(sidebar_note).to_be_in_viewport(ratio=1)
+        check_buttons(page, "Done")
         page.locator("#introTourNext").click()
         expect(page.locator("#introTourDialog")).to_be_hidden()
         github = page.locator(".github-link")
@@ -376,7 +675,7 @@ def check_context(browser, url, width, height, touch, screenshot_dir=None):
                 page.locator("#onlineReturnBtn").press(key)
                 expect(page.locator("#onlineMenuScreen")).to_be_hidden()
         assert not errors,errors
-        tour_details = "touch-only Quick Tour for solo and paired play" if touch else "keyboard and mouse Quick Tour with remapped controls"
+        tour_details = "touch-only Quick Tour practice for solo and paired play" if touch else "keyboard and mouse Quick Tour practice with remapped controls"
         print(f'PASS {browser.browser_type.name} {width}x{height}: {tour_details}', flush=True)
 
 
@@ -418,7 +717,7 @@ def check_desktop_touchscreen_tour(browser, url):
             toggle.uncheck()
         page.locator("#roomPlayers > summary").click()
         page.locator("#addLocalBtn").click()
-        page.locator("#roomControlsBtn").click()
+        open_room_controls(page)
         page.locator("#openIntroTour").click()
         check_desktop_tour(page)
     print(f"PASS {browser.browser_type.name}: narrow touchscreen desktop Quick Tour shows only hardware controls", flush=True)
@@ -443,6 +742,7 @@ if __name__ == '__main__':
                     check_context(browser,target,width,height,touch,args.screenshots)
                 check_mobile_device_identity(browser, target)
                 check_desktop_touchscreen_tour(browser, target)
+                check_mobile_controls_hardware(browser, target)
                 for width,height,touch in ((1280,900,False),(500,800,True),(320,568,True),(390,844,True),(844,390,True)):
                     check_mouse_preferences(browser,target,width,height,touch,args.screenshots)
             finally:

@@ -54,7 +54,7 @@ function restored(seat,name){
  const value=record(seat);if(value?.auto&&value.name!==name)remove(pending[seat]);
  write(names[seat],name);return name;
 }
-// Generate local names before game.js creates the ready room, including offline launches.
+// Generate local names before game.js creates the room, including offline launches.
 initial(0);initial(1);
 function prepare(seat){
  if(seat===1)return hooks.prepareLocal().localPublicToken;

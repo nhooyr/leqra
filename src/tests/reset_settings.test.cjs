@@ -68,10 +68,13 @@ test('reset supports non-PWA/offline pages and reports an unavailable or stalled
  assert.match(stalled.$('settingsResetStatus').textContent,/timed out/);assert.equal(stalled.$('settingsResetRetryBtn').hidden,false);assert.equal(stalled.$('settingsResetReloadBtn').disabled,false);
 });
 
-test('Controls exposes reset after default keys and the reload prompt has no dismiss action',()=>{
- assert.match(source,/<button[^>]*id="resetBindingsBtn"[^>]*>RESET DEFAULT KEYS<\/button><button[^>]*id="resetAllSettingsBtn"[^>]*>RESET ALL SETTINGS<\/button>/);
+test('Controls puts Quick Tour directly above Showcase and the reload prompt has no dismiss action',()=>{
+ assert.match(source,/<button[^>]*id="openIntroTour"[^>]*>QUICK TOUR<\/button>\s*<button[^>]*id="showcaseBtn"[^>]*>SHOWCASE<\/button>/);
+ const controls=source.slice(source.indexOf('<dialog class="feature-dialog" id="controlsDialog"'),source.indexOf('document.body.append(dialogs)'));
+ assert.match(controls,/<button[^>]*id="resetAllSettingsBtn"[^>]*>RESET ALL SETTINGS<\/button><\/div><\/dialog>/);
+ assert.match(source,/\$\('resetAllSettingsBtn'\)\.insertAdjacentHTML\('beforebegin','<hr><h3>PERFORMANCE<\/h3>/);
  const html=readFileSync(path.join(__dirname,'../web/index.html'),'utf8'),dialog=html.match(/<dialog id="settingsResetDialog"[\s\S]*?<\/dialog>/)?.[0];assert.ok(dialog);assert.match(dialog,/aria-labelledby="settingsResetTitle"/);assert.doesNotMatch(dialog,/CANCEL|CLOSE|data-close-dialog|method="dialog"/);
- const css=readFileSync(assetPath('style.css'),'utf8');assert.match(css,/\.settings-reset-dialog \.feature-footer\{[^}]*gap:10px/);assert.match(css,/\.settings-reset-dialog \.feature-footer button\{margin:0\}/);
+ const css=readFileSync(assetPath('style.css'),'utf8');assert.match(css,/#resetAllSettingsBtn\{color:var\(--moderation-color\);border-color:var\(--moderation-color\)/);assert.match(css,/\.settings-reset-dialog \.feature-footer\{[^}]*gap:10px/);assert.match(css,/\.settings-reset-dialog \.feature-footer button\{margin:0\}/);
 });
 
 

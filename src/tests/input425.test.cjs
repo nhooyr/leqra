@@ -13,7 +13,7 @@ function boot(p2=false,stored=null){
  const pilots=[{name:'Lead',color:'#32c5ff'},{name:'Wing',color:'#ff83bd'}];
  const sandbox={phase:'playing',mode:'room',combatPrefs:{mouseAim:true,mouseFire:true},navigator:{},UA:'',IOS_WEBKIT:false,touchUI:false,window:{},pilots,COLORS:pilots.map(p=>p.color),tanks:[],paintColor:c=>c,roomMember:id=>pilots[id],secondaryMember:()=>p2?pilots[1]:null,localPlayerID:()=>0,secondaryID:()=>1,savedLocalCallsign:()=>pilots[1].name,teamColor:id=>pilots[id].color,infinityPlayMode:()=>'',keys:new Set(),hasLocalP2:()=>p2,modeLabel:()=> 'ELIMINATION',modeInstructions:()=> 'Play',localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};vm.createContext(sandbox);
  vm.runInContext(source.match(/^const escapeHTML=.*$/m)[0],sandbox);
- for(const name of ['hardwareUsesP2','pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','introTourUsesTouchOnly','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
+ for(const name of ['hardwareUsesP2','pilotIdentity','pilotIdentityHTML','localPilotIdentity','localPilotIdentityHTML','defaultBindings','validBinding','validateBindings','loadBindings','aliasesActive','keyForAction','heldAction','isWeaponKey','isControlKey','fireAliasLabels','keyLabel','movementKeySummary','controlKeyMap','controlPairActive','controlSummary','pilotControlHint','controlKeycapsHTML','controlMouseKeyHTML','controlKeyHTML','controlHintHTML','fieldManualHTML','isMobileWeb','syncIntroTourControls','syncControlIdentities'])vm.runInContext(declaration(name),sandbox);
  sandbox.bindings=sandbox.loadBindings();sandbox.storage=storage;return sandbox;
 }
 function assign(s,player,action,code){s.bindings[player][action]=code;assert.ok(s.validateBindings(s.bindings),'the controls editor accepts this remap');}
@@ -55,16 +55,24 @@ test('mobile tour shows touch only even with paired pilots and a fine pointer',(
   if(device==='coarse primary pointer')s.window.matchMedia=pointers('(pointer: coarse)','(any-pointer: fine)');
   const $=tour(s);
   assert.equal($('introTourTouch').hidden,false,device);
+  assert.equal($('introTourTouchFire').hidden,false,device);
+  assert.equal($('introTourTouchControls').hidden,false,device);
   assert.equal($('introTourKeyboard').hidden,true,device);
+  assert.equal($('introTourKeyboardFire').hidden,true,device);
   assert.equal($('introTourDesktop').hidden,true,device);
+  assert.equal($('introTourMouseFireHelp').hidden,true,device);
  }
 });
 
 test('narrow fine-pointer desktop shows only keyboard and mouse tour help',()=>{
  const s=boot();s.touchUI=true;const $=tour(s);
  assert.equal($('introTourTouch').hidden,true);
+ assert.equal($('introTourTouchFire').hidden,true);
+ assert.equal($('introTourTouchControls').hidden,true);
  assert.equal($('introTourKeyboard').hidden,false);
+ assert.equal($('introTourKeyboardFire').hidden,false);
  assert.equal($('introTourDesktop').hidden,false);
+ assert.equal($('introTourMouseFireHelp').hidden,false);
 });
 
 test('tour keyboard hints use themed keycaps and current aliases without advertising the active co-pilot keys',()=>{
@@ -88,10 +96,10 @@ test('tour omits player identities and names its sections by input device',()=>{
  assert.ok(dialog);
  assert.doesNotMatch(dialog,/introTourPilot|\bP[12]\b/i);
  const s=boot(true);s.navigator.maxTouchPoints=5;const $=tour(s);
- for(const [section,title]of [['Touch','Touch'],['Keyboard','Keyboard'],['Desktop','Mouse']]){
+ for(const [section,heading,title]of [['Touch','Touch','Touch'],['Keyboard','Keyboard','Keyboard'],['Desktop','Mouse','Mouse'],['TouchFire','TouchFire','Touch'],['KeyboardFire','KeyboardFire','Keyboard'],['MouseFireHelp','MouseFire','Mouse']]){
   const id='introTour'+section;
-  assert.ok(dialog.includes(`<section id="${id}" aria-labelledby="introTour${title}Title">`));
-  assert.ok(dialog.includes(`<h3 id="introTour${title}Title">${title}</h3>`));
+  assert.ok(dialog.includes(`<section id="${id}" aria-labelledby="introTour${heading}Title">`));
+  assert.ok(dialog.includes(`<h3 id="introTour${heading}Title">${title}</h3>`));
   assert.equal($(id)['aria-label'],undefined);
  }
 });
@@ -108,7 +116,7 @@ test('tour mouse hints share distinct aim and fire SVG keycaps and honor indepen
  assert.equal(aim.includes('mouse-button-fill'),false);assert.ok(fire.includes('mouse-button-fill'));
  const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');assert.match(html,/<dd id="introTourMouseAim">[\s\S]*?Point over the maze\.[\s\S]*?<\/dd>/);assert.match(html,/<dd id="introTourMouseFire">[\s\S]*?Left-click to fire[\s\S]*?<\/dd>/);
  for(const [mouseAim,mouseFire]of [[true,false],[false,true],[false,false],[true,true]]){
-  Object.assign(s.combatPrefs,{mouseAim,mouseFire});s.syncControlIdentities();s.syncIntroTourControls();assert.equal($('introTourMouseAim').hidden,!mouseAim);assert.equal($('introTourMouseFire').hidden,!mouseFire);assert.equal($('introTourDesktop').hidden,!mouseAim&&!mouseFire);
+  Object.assign(s.combatPrefs,{mouseAim,mouseFire});s.syncControlIdentities();s.syncIntroTourControls();assert.equal($('introTourDesktop').hidden,!mouseAim);assert.equal($('introTourMouseFireHelp').hidden,!mouseFire);
   assert.equal(($('introTourMouseAimKey').innerHTML.match(/class="control-mouse-key"/g)||[]).length,1);assert.equal(($('introTourMouseFireKey').innerHTML.match(/class="control-mouse-key"/g)||[]).length,1,'reopening or refreshing the tour never duplicates a mouse icon');
  }
 });
@@ -117,7 +125,7 @@ test('mouse binding controls keep native checkbox behavior inside the same sized
  const s=boot(),nodes=new Map(),changes=[];
  const element=tag=>({tag,children:[],dataset:{},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},setAttribute(key,value){this[key]=value;}});
  s.document={createElement:element};s.$=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
- s.syncControlIdentities=s.syncControlsPickupInfo=s.featureNotice=()=>{};
+ s.syncControlIdentities=s.syncControlsHardware=s.featureNotice=()=>{};
  s.setMouseControlEnabled=(kind,enabled)=>changes.push([kind,enabled]);
  vm.runInContext(declaration('renderBindings'),s);s.renderBindings();
  const sections=s.$('bindingGrid').children;assert.equal(sections.length,2);
@@ -145,7 +153,7 @@ test('hold-fire help follows the solo pilot or both pilots according to the acti
  const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
  assert.ok(html.includes('<p class="intro-fire-tip">'+tip+'</p>'));
  assert.ok(html.indexOf('class="intro-fire-tip"')>html.indexOf('id="introTourFireKeys"'));
- assert.ok(html.indexOf('class="intro-fire-tip"')<html.indexOf('Rebind keys in Controls.'));
+ assert.ok(html.indexOf('class="intro-fire-tip"')<html.indexOf('id="introTourMouseFireHelp"'));
  assert.equal(source.includes('Both fire keys can also detonate your grenade.'),false);
  for(const [roomP2,infinityP2,paired]of [[false,null,false],[true,null,true],[true,false,false],[false,true,true]]){
   const s=boot(roomP2);if(infinityP2!==null)s.window.leqraInfinity={sidebarHelp:()=>({twoPilots:infinityP2,instructions:'Keep playing.'})};
@@ -320,7 +328,45 @@ test('open controls refresh identities without replacing an active binding captu
  assert.equal(s.$('p1MouseAimEnabled').checked,false);assert.equal(s.$('p1MouseFireEnabled').checked,false);assert.equal(s.$('introTourDesktop').hidden,true);
  assert.equal(s.$('pauseInstructions').innerHTML.includes('control-mouse-key'),false);
  s.combatPrefs.mouseFire=true;s.syncControlIdentities();
- assert.equal(s.$('introTourDesktop').hidden,false);assert.equal(s.$('introTourMouseAim').hidden,true);assert.equal(s.$('introTourMouseFire').hidden,false);
+ assert.equal(s.$('introTourDesktop').hidden,true);assert.equal(s.$('introTourMouseFireHelp').hidden,false);
+});
+test('Binds is available on desktop and needs an installed app with a fine pointer on mobile',()=>{
+ const s=boot(),nodes=new Map(),mouseRow={};
+ s.$=id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id);};
+ const binds=s.$('controlsBinds');binds.open=false;
+ s.$('bindingGrid').querySelectorAll=selector=>selector==='.binding-mouse-row'?[mouseRow]:[];
+ s.controlsMouseQuery={matches:false};s.controlsStandaloneQuery={matches:false};s.controlsStandaloneBeforeFullscreen=false;
+ s.document={};vm.runInContext(declaration('syncControlsHardware'),s);
+ s.syncControlsHardware();
+ assert.equal(binds.hidden,false,'desktop Binds is available before any keypress');
+ assert.equal(binds.open,false);assert.equal(mouseRow.hidden,true);
+ s.controlsMouseQuery.matches=true;s.syncControlsHardware();
+ assert.equal(mouseRow.hidden,false);assert.equal(binds.open,false);
+ for(const mobile of ['Android','iPad','touch screen']){
+  s.UA=mobile==='Android'?'Mozilla/5.0 (Linux; Android 17)':'';
+  s.IOS_WEBKIT=mobile==='iPad';
+  s.window.matchMedia=mobile==='touch screen'?pointers('(pointer: coarse)'):pointers();
+  s.controlsMouseQuery.matches=true;s.syncControlsHardware();
+  assert.equal(binds.hidden,true,mobile+' browser tab hides Binds with a fine pointer');
+  assert.equal(s.$('showcaseKeyboardHint').hidden,true);
+  s.document.fullscreenElement={};s.syncControlsHardware();
+  assert.equal(binds.hidden,true,mobile+' browser fullscreen still hides Binds');
+  s.document.fullscreenElement=null;
+  s.controlsStandaloneQuery.matches=true;s.controlsMouseQuery.matches=false;s.syncControlsHardware();
+  assert.equal(binds.hidden,true,mobile+' installed app still needs a fine pointer');
+  s.controlsMouseQuery.matches=true;s.syncControlsHardware();
+  assert.equal(binds.hidden,false);assert.equal(binds.open,false);assert.equal(mouseRow.hidden,false);
+  s.document.fullscreenElement={};s.controlsStandaloneQuery.matches=false;s.syncControlsHardware();
+  assert.equal(binds.hidden,false,mobile+' installed app keeps Binds in fullscreen');
+  s.document.fullscreenElement=null;s.syncControlsHardware();
+  assert.equal(binds.hidden,true,mobile+' browser display hides Binds again');
+  s.navigator.standalone=true;s.syncControlsHardware();assert.equal(binds.hidden,false);
+  binds.open=true;s.controlsMouseQuery.matches=false;s.syncControlsHardware();
+  assert.equal(binds.hidden,true);assert.equal(binds.open,false);
+  s.navigator.standalone=false;
+ }
+ assert.match(source,/<details[^>]*id="controlsBinds" hidden><summary>Binds<\/summary>/);
+ assert.doesNotMatch(source,/noteControlsKeyboard|controlsKeyboardSeen/);
 });
 test('old saved bindings migrate both extra fire keys without losing remaps',()=>{
  const raw=boot().defaultBindings();delete raw[0].fireAlt;delete raw[1].fireAlt;raw[0].forward='KeyI';raw[1].fire='KeyL';

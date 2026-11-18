@@ -10,7 +10,7 @@ type infiniteStatusLeader struct {
 	Rank int `json:"rank"`
 }
 
-// The ready room can show the public standings without allocating a tank.
+// The room can show the public standings without allocating a tank.
 func (a *App) infinityStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)

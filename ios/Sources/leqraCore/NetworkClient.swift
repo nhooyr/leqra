@@ -381,7 +381,7 @@ private struct ServerProtocolMetadata: Decodable {
         sendCommand(["type": "follow", "target": target])
     }
 
-    /// The ready-room preview never joins an arena or allocates a pilot.
+    /// The room preview never joins an arena or allocates a pilot.
     public func fetchPublicStatus(baseURL: URL) async throws -> NativePublicStatus {
         var request = URLRequest(url: try ServerAddress.endpoint(baseURL, path: "/api/infinity"))
         request.cachePolicy = .reloadIgnoringLocalCacheData

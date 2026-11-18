@@ -6,6 +6,7 @@ Without a URL this checks the current source directly, including offline Infinit
 import argparse
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
+from intro_tour_browser import advance_drive_practice, advance_fire_practice, advance_score_practice
 
 
 def check_text(page):
@@ -73,9 +74,14 @@ def check_context(browser, url, width, height, touch):
             page.locator("#infiniteControlsBtn").click()
             check_text(page)
             page.locator("#openIntroTour").click()
-            for _ in range(3):
-                check_text(page)
-                page.locator("#introTourNext").click()
+            check_text(page)
+            advance_drive_practice(page, touch)
+            check_text(page)
+            advance_fire_practice(page, touch)
+            check_text(page)
+            advance_score_practice(page, touch)
+            check_text(page)
+            page.locator("#introTourNext").click()
             page.locator('[data-close-dialog="controlsDialog"]').click()
             page.locator("#infiniteExit").click()
             print(f"PASS {browser.browser_type.name} {width}x{height} {'two pilots' if paired else 'solo'}: font floor, controls, rules, fixed/Infinity HUD, pause and tour", flush=True)

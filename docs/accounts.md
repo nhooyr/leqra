@@ -13,7 +13,7 @@ saves the new key before registering it and switches after the server
 accepts the name. If the server cannot be reached during offline play or setup,
 the client saves a pending local account and checks it before online play.
 A rejected name leaves the current account and game unchanged.
-A successful account switch returns to the ready room.
+A successful account switch returns to the room.
 
 Previously used callsigns and their account keys are saved on the device.
 Entering a saved callsign again, or selecting it under **Saved callsigns** in
@@ -49,7 +49,7 @@ and the old Android `Pilot 100` through `Pilot 999` pattern. Matching ignores
 case and repeated spaces. Saved custom names and names with an existing key are
 kept. This migration runs at startup, never in response to a revoked-key error.
 
-Open **Account** beside the pilot's callsign in the ready room to copy that
+Open **Account** beside the pilot's callsign in the room to copy that
 pilot's key, then open Account on another
 device and import it. Check the account preview before using it. All platforms use
 the same key format, scoped to the selected server. A local development key will
@@ -77,7 +77,7 @@ the selected account gives that seat a fresh, unregistered local callsign.
 Game entry and account changes wait until a pending release finishes.
 
 If the key might have been exposed, use **Reset account key** after returning to
-the ready room. This preserves the callsign and public score, invalidates the old
+the room. This preserves the callsign and public score, invalidates the old
 key and all of its public/private sessions, and requires the new key on other
 devices. Clients save a pending replacement before requesting the reset so a
 network interruption cannot discard the only valid key. Complete or recover

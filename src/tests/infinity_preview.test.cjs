@@ -76,7 +76,7 @@ test('private and offline Infinity change only the preview maze while retaining 
 test('startup and tour name the public switch separately from room Infinity',()=>{
  const html=readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
  assert.match(html,/<label[^>]+id="infinityToggleLabel"[^>]*>[\s\S]*?<strong>Public Infinity<\/strong>[\s\S]*?<\/label>/);
- const battle=html.split('<div data-intro-page="2"')[1].split('</div>')[0];
+ const battle=html.split('<div data-intro-page="3"')[1].split('</div>')[0];
  assert.match(battle,/<li><strong>Public Infinity<\/strong>/);assert.match(battle,/Public Infinity switch above Play/);
  assert.match(battle,/Choose Infinity in Room settings/);assert.match(battle,/turn off Public Infinity/);
 });

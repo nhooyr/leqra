@@ -34,6 +34,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             invalidate()
         }
     var controlsLayout = true
+    var showFireControl = true
+    var showTankLabels = true
     var fireLabel = "FIRE"
     var fireProgress = 1.0
         set(value) {
@@ -342,8 +344,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     fun start() {
-        if (frozenTime != null) return
-        if (running) return
+        if (released || frozenTime != null || running) return
         running = true
         keepScreenOn = true
         Choreographer.getInstance().postFrameCallback(this)
@@ -714,6 +715,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, false)
         for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, true)
         canvas.restore()
+        if (!showTankLabels) return
         canvas.save()
         canvas.clipRect(viewport)
         identityCount = 0
@@ -1526,6 +1528,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         canvas.drawBitmap(art.stickKnob(), null, destination, paint)
         stroke(0xff506d80.toInt(), 1.5f)
         canvas.drawCircle(stickX + knobX, stickY + knobY, 22f, paint)
+        if (!showFireControl) return
         val detonate = fireLabel == "BOOM"
         val color = if (detonate) 0xffffc46b.toInt() else 0xff40d5ff.toInt()
         paint.style = Paint.Style.FILL
@@ -1611,7 +1614,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 requestFocus()
                 val x = event.getX(index) / density
                 val y = event.getY(index) / density
-                if (aimPointer < 0 && aim(index, nearOnly = true)) {
+                val overlaidControl = !controlsLayout && (hypot(x - stickX, y - stickY) <= 48f ||
+                    showFireControl && hypot(x - fireX, y - fireY) <= 45.5f)
+                if (aimPointer < 0 && !overlaidControl && aim(index, nearOnly = true)) {
                     aimPointer = pointer
                 } else if (
                     controlViewport.contains(x, y) && x < controlViewport.centerX() &&
@@ -1621,7 +1626,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     stickPointer = pointer
                     update(index)
                 } else if (
-                    controlViewport.contains(x, y) && x >= controlViewport.centerX() &&
+                    showFireControl && controlViewport.contains(x, y) && x >= controlViewport.centerX() &&
                         firePointer < 0 &&
                         y > controlViewport.bottom - max(210f, controlViewport.height() * .38f)
                 ) {

@@ -7,7 +7,7 @@ private enum AccountActionError: LocalizedError {
     case finishOnline, serverChanged, keychain, duplicateAccount
     var errorDescription: String? {
         switch self {
-        case .finishOnline: return "Return to the offline ready room before changing account keys."
+        case .finishOnline: return "Return to the offline room before changing account keys."
         case .serverChanged: return "The server changed. Check the account key again."
         case .keychain: return "The pending key could not be saved in Keychain. Your current key is unchanged."
         case .duplicateAccount: return "P1 and P2 need different account keys. This key is already assigned to the other local player."
@@ -48,7 +48,13 @@ final class GameSession: ObservableObject {
     @Published var accountSavedActivationCount = 0
     @Published private var accountScores: [String: SavedAccountScore] = [:]
     @Published var showRules = false { didSet { refreshStarmanActivity() } }
-    @Published var showControls = false { didSet { refreshStarmanActivity() } }
+    @Published var showControls = false {
+        didSet {
+            if !showControls && showQuickTour { showQuickTour = false }
+            refreshStarmanActivity()
+        }
+    }
+    @Published var showQuickTour = false
     @Published private(set) var showShowcase = false
     @Published private(set) var showcaseFrame: ShowcaseScene?
     @Published var showSidebar = false { didSet { refreshStarmanActivity() } }

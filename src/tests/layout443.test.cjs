@@ -35,7 +35,9 @@ test('startup callsign editors are top-level before collapsed room settings and 
  assert.match(declaration('initSpectators'),/actions\.after\(localActions\)/,'the conditional P2 spectator card follows the primary card inside Players and bots');
  assert.match(html.slice(find('addLocalBtn').position).split('</button>')[0],/ADD LOCAL P2/);
  assert.doesNotMatch(declaration('initSpectators'),/\$\('roomCallsignForm'\)\.after\(actions\)/);
- assert.equal(controls.parent,primary.parent);assert.ok(controls.position>players.position);assert.match(controls.raw,/type="button"/);
+ assert.equal(controls.parent.parent,find('gameHeader'));assert.match(controls.raw,/class="icon-btn"/);
+ assert.match(controls.raw,/aria-label="Controls"/);assert.match(controls.raw,/aria-controls="controlsDialog"/);
+ assert.match(html.slice(controls.position).split('</button>')[0],/<svg\b/);
  const toolbar=declaration('initFeatures').split('\n').find(line=>line.includes('toolbar.innerHTML'));
  assert.match(toolbar,/roomRulesBtn/);assert.match(toolbar,/roomPresetsBtn/);assert.doesNotMatch(toolbar,/roomControlsBtn/,'Room settings no longer creates a duplicate Controls launcher');
  const nodes={roomControlsBtn:{},menuControlsBtn:{}},opened=[];

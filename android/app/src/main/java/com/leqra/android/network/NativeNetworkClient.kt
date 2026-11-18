@@ -703,7 +703,7 @@ class NativeNetworkClient(
             json.put("token", welcome?.token)
         }
         if (infinity && !json.optBoolean("public") && pendingJoin.has("code")) {
-            // Arena welcomes omit the private route already authenticated by the ready-room socket.
+            // Arena welcomes omit the private route already authenticated by the room socket.
             json
                 .put("room", pendingJoin.getString("code"))
                 .put("token", pendingJoin.stringOrNull("token"))
