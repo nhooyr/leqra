@@ -9,7 +9,7 @@ final class GameUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         addUIInterruptionMonitor(withDescription: "Local development server permission") { alert in
-            guard alert.label.contains("local networks") || alert.staticTexts.matching(NSPredicate(format: "label CONTAINS 'local networks'")).count > 0,
+            guard alert.label.localizedCaseInsensitiveContains("local network") || alert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'local network'")).count > 0,
                   alert.buttons["Allow"].exists else { return false }
             alert.buttons["Allow"].tap(); return true
         }
@@ -35,7 +35,19 @@ final class GameUITests: XCTestCase {
     @MainActor
     func testControlsSwitchesFitPortraitAndLandscape() {
         let app = launch(arguments: ["--probe-touch-only-controls"])
-        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let sidebar = app.buttons["Open sidebar"]
+        let controls = app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        XCTAssertEqual(sidebar.frame.midY, controls.frame.midY, accuracy: 1)
+        XCTAssertLessThan(sidebar.frame.maxX, controls.frame.maxX)
+        sidebar.tap()
+        XCTAssertEqual(app.staticTexts["manualGamepadHint"].label, "Connect a game controller to play.")
+        app.buttons["Close Sidebar"].tap()
+        controls.tap()
+        XCTAssertFalse(app.staticTexts["manualGamepadHint"].exists)
+        let gameController = app.switches["settingGamepadSupport"]
+        XCTAssertEqual(gameController.label, "Game controller support")
+        XCTAssertEqual(gameController.value as? String, "1")
         for landscape in [false, true] {
             XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
             waitForOrientation(app, landscape: landscape)
@@ -45,11 +57,15 @@ final class GameUITests: XCTestCase {
             XCTAssertFalse(app.switches["settingMouseAim"].exists)
             XCTAssertFalse(app.switches["settingMouseFire"].exists)
             XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Keyboard defaults'")).firstMatch.exists)
-            for identifier in ["settingHighFrameRate", "settingShowFPS", "settingSound"] {
+            XCTAssertTrue(app.buttons["quickTour"].exists)
+            XCTAssertTrue(app.buttons["openShowcase"].exists)
+            XCTAssertEqual(app.buttons["settingsAccount"].label, "ACCOUNT KEY")
+            XCTAssertFalse(app.buttons["settingsLocalAccount"].exists)
+            for identifier in ["settingHighFrameRate", "settingShowFPS", "settingGamepadSupport", "settingSound"] {
                 let toggle = app.switches[identifier]; reveal(toggle, in: app)
                 let panel = app.scrollViews["modalScroll"].frame
                 XCTAssertGreaterThanOrEqual(toggle.frame.minX, panel.minX)
-                XCTAssertLessThanOrEqual(toggle.frame.maxX, panel.maxX)
+                XCTAssertLessThanOrEqual(toggle.frame.maxX, panel.maxX - 8)
                 XCTAssertGreaterThanOrEqual(toggle.frame.width, 50)
                 let previous = toggle.value as? String
                 toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -221,6 +237,7 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     func testOnlineP2PublicAndPrivateInputsRemainIndependent() async throws {
+        try requireOnlineTestServer()
         let app = launch(callsign: "DUO " + UUID().uuidString.prefix(8), arguments: ["--probe-local-p2-input"])
         openPlayers(in: app)
         let add = app.buttons["addLocalP2"]; reveal(add, in: app); add.tap()
@@ -268,11 +285,31 @@ final class GameUITests: XCTestCase {
         XCTAssertTrue(app.buttons["pauseGame"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["pilotIdentityP2"].waitForExistence(timeout: 10))
         try await Task.sleep(nanoseconds: 3_200_000_000)
-        let watcherBefore = p2InputState(arena(in: app))
-        for _ in 0..<5 { hardwareKey("a", in: app) }
-        let watcherAfter = p2InputState(arena(in: app))
-        XCTAssertNotEqual(watcherBefore["p2a"], watcherAfter["p2a"], "P2 remains controllable when P1 watches a fixed match.")
+        let watcherStage = arena(in: app)
+        let roundLabel = app.staticTexts.matching(NSPredicate(format: "label MATCHES 'ROUND [0-9]+'")).firstMatch
+        XCTAssertTrue(roundLabel.waitForExistence(timeout: 5))
+        var watcherBefore = p2InputState(watcherStage), watcherAfter = watcherBefore
+        var turned = false
+        // A bot can kill P2 between a batch of keys and the final snapshot,
+        // resetting the new round's angle to the same value as the old one.
+        // Require an observed turn from one key while P2 stays alive in one round.
+        for attempt in 0..<12 {
+            let roundBefore = roundLabel.label
+            watcherBefore = p2InputState(watcherStage)
+            hardwareKey("a", in: app)
+            watcherAfter = p2InputState(watcherStage)
+            let roundAfter = roundLabel.label
+            print("Private P1 spectator input attempt \(attempt): \(roundBefore) -> \(roundAfter), before=\(watcherBefore), after=\(watcherAfter)")
+            if let beforeAngle = watcherBefore["p2a"], let afterAngle = watcherAfter["p2a"],
+               watcherBefore["p2hp", default: 0] > 0, watcherAfter["p2hp", default: 0] > 0,
+               watcherBefore["p2life"] == watcherAfter["p2life"], roundBefore == roundAfter,
+               beforeAngle != afterAngle {
+                turned = true
+                break
+            }
+        }
         capture(app, name: "Private P1 spectator and active P2")
+        XCTAssertTrue(turned, "P2 must turn while alive when P1 watches a fixed match. before=\(watcherBefore), after=\(watcherAfter)")
         XCTAssertEqual(app.alerts.count, 0)
         leaveGame(in: app); app.terminate()
     }
@@ -322,14 +359,16 @@ final class GameUITests: XCTestCase {
         XCTAssertFalse(app.switches["settingMouseAim"].exists)
         let tour = app.buttons["quickTour"]; reveal(tour, in: app)
         let actions = app.scrollViews["modalScroll"].buttons.allElementsBoundByIndex.map(\.identifier)
-        XCTAssertEqual(Array(actions.drop(while: { $0 != "quickTour" }).prefix(2)), ["quickTour", "openShowcase"])
+        XCTAssertEqual(Array(actions.drop(while: { $0 != "Binds" }).prefix(4)),
+                       ["Binds", "quickTour", "openShowcase", "settingsAccount"])
         tour.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Quick tour"].waitForExistence(timeout: 5))
-        let excludedTourTerms = ["keyboard", "mouse", "gamepad", "P1", "P2"]
+        let excludedTourTerms = ["keyboard", "mouse", "gamepad", "game controller", "P1", "P2"]
         let next = app.buttons["tourNext"]
         let stage = app.descendants(matching: .any)["tourPracticeArena"].firstMatch
         let origin = app.coordinate(withNormalizedOffset: .zero)
         let score = app.staticTexts["tourScore"]
+        var firstStageFrame: CGRect?
         for (page, heading) in ["Drive and aim", "Fire", "Score a point"].enumerated() {
             XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5))
             let instructions = app.staticTexts["tourInstructions"]
@@ -342,6 +381,12 @@ final class GameUITests: XCTestCase {
                 XCTAssertEqual(score.label, "score: 0")
             } else { XCTAssertFalse(score.exists) }
             let frame = stage.frame
+            if let firstStageFrame {
+                XCTAssertEqual(frame.minX, firstStageFrame.minX, accuracy: 1)
+                XCTAssertEqual(frame.minY, firstStageFrame.minY, accuracy: 1)
+                XCTAssertEqual(frame.width, firstStageFrame.width, accuracy: 1)
+                XCTAssertEqual(frame.height, firstStageFrame.height, accuracy: 1)
+            } else { firstStageFrame = frame }
             let fire = origin.withOffset(CGVector(dx: frame.maxX - 85.5, dy: frame.maxY - 63))
             fire.press(forDuration: 0.06)
             if page == 0 {
@@ -367,6 +412,7 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     func testFixedP2KeepsHardwareWhenP1Spectates() async throws {
+        try requireOnlineTestServer()
         let app = launch(arguments: ["--probe-local-p2-input"])
         selectPublic(false, in: app); selectMode("elimination", in: app)
         openPlayers(in: app)
@@ -444,6 +490,7 @@ final class GameUITests: XCTestCase {
         guard let minutes = ProcessInfo.processInfo.environment["LEQRA_PUBLIC_ENDURANCE_MINUTES"].flatMap(Double.init), minutes > 0 else {
             throw XCTSkip("Opt in to repeated public Infinity foreground/background recovery.")
         }
+        try requireOnlineTestServer()
         let name = "NET " + UUID().uuidString.prefix(8)
         let app = launch(callsign: name)
         selectPublic(true, in: app); play(in: app)
@@ -475,6 +522,7 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     func testPublicBackgroundRecoveryPreservesActiveAndManualPauseIntent() async throws {
+        try requireOnlineTestServer()
         let name = "WARM " + UUID().uuidString.prefix(8)
         let app = launch(callsign: name)
         selectPublic(true, in: app); play(in: app)
@@ -539,7 +587,8 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    func testOnlineRoomsDoNotExposeChat() {
+    func testOnlineRoomsDoNotExposeChat() throws {
+        try requireOnlineTestServer()
         let app = launch(callsign: "ROOM " + UUID().uuidString.prefix(8))
         selectPublic(false, in: app)
         let share = app.buttons["SHARE ROOM ONLINE ↗"]
@@ -587,6 +636,7 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     func testSavedCallsignScoresSwitchBackAndManualReleaseStayIndependent() throws {
+        try requireOnlineTestServer()
         let first = "ONE " + UUID().uuidString.prefix(6), second = "TWO " + UUID().uuidString.prefix(6)
         let app = launch(callsign: first)
         selectPublic(true, in: app); play(in: app); leaveGame(in: app)
@@ -624,6 +674,7 @@ final class GameUITests: XCTestCase {
         XCTAssertTrue(app.buttons["USE " + second].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["USE " + second].isEnabled, "Saved accounts cannot bypass the active-game import restriction")
         app.buttons["Close Account key"].tap()
+        app.buttons["Close Controls"].tap()
         app.buttons["Resume"].tap()
         leaveGame(in: app)
         reveal(open, in: app); open.tap()
@@ -781,6 +832,7 @@ final class GameUITests: XCTestCase {
         guard ProcessInfo.processInfo.environment["LEQRA_DELAYED_RELEASE_UI"] == "1" else {
             throw XCTSkip("Opt in with the disposable delayed_release_server.py fixture.")
         }
+        try requireOnlineTestServer()
         for fails in [false, true] {
             let server = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18224"
             _ = try await URLSession.shared.data(from: URL(string: server + "/reset-release")!)
@@ -923,9 +975,10 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    func testExplicitModeSelectionLeavesPublicInfinityAndStartsTheChosenLocalMode() {
+    func testDisablingPublicInfinityThenSelectingModeStartsChosenLocalMode() {
         let app = launch()
         selectPublic(true, in: app)
+        selectPublic(false, in: app)
         selectMode("ctf", in: app)
         XCTAssertEqual(app.switches["publicInfinityToggle"].value as? String, "0")
         play(in: app)
@@ -1036,6 +1089,7 @@ final class GameUITests: XCTestCase {
         guard let code = ProcessInfo.processInfo.environment["LEQRA_SPECTATOR_UI_ROOM"] else {
             throw XCTSkip("Requires a disposable live Room Infinity host.")
         }
+        try requireOnlineTestServer()
         let app = launch(callsign: "WATCH " + UUID().uuidString.prefix(7))
         func joinWatching() {
             let join = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Join another room'")).firstMatch
@@ -1096,6 +1150,7 @@ final class GameUITests: XCTestCase {
 
     @MainActor
     func testRoomModeSwitchKeepsReadyCardAndPlayGeometryInBothOrientations() async throws {
+        try requireOnlineTestServer()
         let app = launch(callsign: "MENU " + UUID().uuidString.prefix(8))
         selectPublic(false, in: app)
         selectMode("elimination", in: app)
@@ -1143,6 +1198,7 @@ final class GameUITests: XCTestCase {
     @MainActor
     func testFreshGeneratedDefaultsAndReservedFeedbackStayStable() async throws {
         guard ProcessInfo.processInfo.environment["LEQRA_FRESH_INSTALL_UI"] == "1" else { throw XCTSkip("Requires a disposable fresh installation.") }
+        try requireOnlineTestServer()
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         let server = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18091"
@@ -1156,6 +1212,9 @@ final class GameUITests: XCTestCase {
         app.buttons["Close Account key"].tap()
         let primary = try XCTUnwrap(field.value as? String)
         XCTAssertNotNil(primary.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression))
+        openPlayers(in: app)
+        let add = app.buttons["addLocalP2"]; reveal(add, in: app); add.tap()
+        XCTAssertTrue(app.textFields["localCallsignField"].waitForExistence(timeout: 5))
         app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
         let local = app.buttons["settingsLocalAccount"]
         for _ in 0..<5 where !local.isHittable { app.scrollViews["modalScroll"].swipeUp() }
@@ -1166,6 +1225,7 @@ final class GameUITests: XCTestCase {
         XCTAssertNotNil(secondary.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression))
         XCTAssertTrue(reserved.waitForExistence(timeout: 10))
         app.buttons["Close Account key"].tap()
+        app.buttons["Close Controls"].tap()
         var editing = false
         func replace(_ text: String) {
             if !editing {
@@ -1358,27 +1418,61 @@ final class GameUITests: XCTestCase {
         if app.buttons["Not Now"].exists { app.buttons["Not Now"].tap() }
 
         XCTAssertEqual(app.textFields["callsignField"].frame.midY, open.frame.midY, accuracy: 1, "Account access belongs beside its player's callsign.")
-        app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch.tap()
+        let controls = app.buttons.matching(NSPredicate(format: "label == 'Controls'")).firstMatch
+        let closeControls = app.buttons["Close Controls"]
+        let closeAccount = app.buttons["Close Account key"]
+        let account = app.buttons["settingsAccount"]
         let localAccount = app.buttons["settingsLocalAccount"]
-        for _ in 0..<5 where !localAccount.isHittable { app.scrollViews["modalScroll"].swipeUp() }
-        localAccount.tap()
+        controls.tap()
+        XCTAssertEqual(account.label, "ACCOUNT KEY")
+        XCTAssertFalse(localAccount.exists)
+        reveal(account, in: app); account.tap()
+        XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].label.contains("(P1)"))
+        XCTAssertTrue(closeAccount.isHittable, "Account Key is the active dialog.")
+        closeAccount.tap()
+        XCTAssertFalse(closeAccount.exists)
+        XCTAssertTrue(closeControls.waitForExistence(timeout: 5))
+        closeControls.tap()
+
+        openPlayers(in: app)
+        let add = app.buttons["addLocalP2"]; reveal(add, in: app); add.tap()
+        XCTAssertTrue(app.textFields["localCallsignField"].waitForExistence(timeout: 5))
+        controls.tap()
+        XCTAssertEqual(account.label, "P1 ACCOUNT KEY")
+        XCTAssertEqual(localAccount.label, "P2 ACCOUNT KEY")
+        reveal(localAccount, in: app); localAccount.tap()
         XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["accountPlayerIdentity"].label.contains("(P2)"))
         if app.staticTexts["maskedAccountKey"].label == "No account key saved on this device." {
             XCTAssertFalse(app.buttons["copyAccountKey"].isEnabled, "A missing P2 credential must never fall back to P1's key.")
         }
-        app.buttons["Close Account key"].tap()
+        closeAccount.tap()
+        XCTAssertFalse(closeAccount.exists)
+        XCTAssertTrue(closeControls.waitForExistence(timeout: 5))
+        XCTAssertEqual(account.label, "P1 ACCOUNT KEY")
+        closeControls.tap()
         XCTAssertEqual(app.textFields["callsignField"].value as? String, primaryName, "Managing P2 must not rename P1.")
+        let remove = app.buttons["removeLocalP2"]
+        if !remove.exists { openPlayers(in: app) }
+        reveal(remove, in: app); remove.tap()
+        controls.tap()
+        XCTAssertEqual(account.label, "ACCOUNT KEY")
+        XCTAssertFalse(localAccount.exists)
+        closeControls.tap()
 
         selectPublic(false, in: app); selectMode("infinity", in: app); play(in: app); pause(in: app)
         app.buttons["Controls"].tap()
-        let account = app.buttons["settingsAccount"]
         for _ in 0..<5 where !account.isHittable { app.scrollViews["modalScroll"].swipeUp() }
         account.tap()
         XCTAssertTrue(app.secureTextFields["importAccountKey"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.secureTextFields["importAccountKey"].isEnabled)
         XCTAssertTrue(app.staticTexts["Return to the offline room to import or reset a key."].exists)
-        app.buttons["Close Account key"].tap()
+        closeAccount.tap()
+        XCTAssertFalse(closeAccount.exists)
+        XCTAssertTrue(closeControls.waitForExistence(timeout: 5))
+        closeControls.tap()
+        app.buttons["Resume"].tap()
         leaveGame(in: app)
     }
 
@@ -1492,7 +1586,8 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    func testPublicInfinityStandingsAndLeave() {
+    func testPublicInfinityStandingsAndLeave() throws {
+        try requireOnlineTestServer()
         let app = launch()
         selectPublic(true, in: app)
         play(in: app)
@@ -1516,6 +1611,8 @@ final class GameUITests: XCTestCase {
         guard ProcessInfo.processInfo.environment["LEQRA_PUBLIC_RECOVERY_UI"] == "1" else {
             throw XCTSkip("Opt in to authenticated public Infinity cold-launch recovery.")
         }
+        try requireOnlineTestServer()
+        try await prepareRunnerLocalNetworkAccess()
         let name = "REC " + UUID().uuidString.prefix(8).uppercased()
         let app = launch(callsign: name)
         let namespaceIndex = try XCTUnwrap(app.launchArguments.firstIndex(of: "--public-session-test-namespace")) + 1
@@ -1583,6 +1680,50 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    private func prepareRunnerLocalNetworkAccess() async throws {
+        #if !targetEnvironment(simulator)
+        let address = try XCTUnwrap(ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"])
+        let base = try XCTUnwrap(URL(string: address))
+        let runnerID = try XCTUnwrap(Bundle.main.bundleIdentifier)
+        let runner = XCUIApplication(bundleIdentifier: runnerID)
+        runner.activate()
+        XCTAssertTrue(runner.wait(for: .runningForeground, timeout: 5))
+
+        // iOS cannot present the runner's first local-network prompt while
+        // leqra is in front. Establish this permission before testing recovery.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 5
+        configuration.timeoutIntervalForResource = 5
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let endpoint = base.appendingPathComponent("api/build")
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for attempt in 0..<3 {
+            let request = Task { try await session.data(from: endpoint) }
+            await Task.yield()
+            let alert = springboard.alerts.firstMatch
+            if alert.waitForExistence(timeout: 2),
+               alert.label.localizedCaseInsensitiveContains("local network")
+                || alert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'local network'")).count > 0 {
+                let allow = alert.buttons["Allow"]
+                XCTAssertTrue(allow.exists, "The runner's local-network prompt must offer Allow.")
+                if allow.exists { allow.tap() }
+            }
+            do {
+                let (_, response) = try await request.value
+                let http = try XCTUnwrap(response as? HTTPURLResponse)
+                XCTAssertEqual(http.statusCode, 200, "The UI test runner must reach the disposable server.")
+                return
+            } catch let error as URLError where attempt < 2
+                && [.notConnectedToInternet, .networkConnectionLost, .timedOut].contains(error.code) {
+                // The first request can fail before the permission is granted.
+                try await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
+        #endif
+    }
+
+    @MainActor
     private func publicLeader(named name: String) async throws -> PublicLeader {
         let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"] ?? "http://127.0.0.1:18081"
         let base = try XCTUnwrap(URL(string: address))
@@ -1602,7 +1743,8 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    func testPrivateInfinityReturnsToRoomWithLocalIdentityThenStartsFixedMatch() {
+    func testPrivateInfinityReturnsToRoomWithLocalIdentityThenStartsFixedMatch() throws {
+        try requireOnlineTestServer()
         let app = launch()
         selectPublic(false, in: app)
         selectMode("infinity", in: app)
@@ -1646,6 +1788,15 @@ final class GameUITests: XCTestCase {
         reveal(app.buttons["Leave room"], in: app)
         app.buttons["Leave room"].tap()
         XCTAssertTrue(app.switches["publicInfinityToggle"].waitForExistence(timeout: 5))
+    }
+
+    private func requireOnlineTestServer() throws {
+        #if !targetEnvironment(simulator)
+        guard let server = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"],
+              !server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw XCTSkip("Physical-device online tests require LEQRA_TEST_SERVER.")
+        }
+        #endif
     }
 
     @MainActor

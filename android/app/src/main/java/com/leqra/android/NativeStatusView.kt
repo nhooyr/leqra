@@ -25,7 +25,7 @@ internal fun performanceReadout(preview: Boolean, online: Boolean, fps: Int, pin
 }
 
 /** Stable three-column arena chrome matching the native iOS status bar. */
-internal class NativeStatusView(context: Context, openScores: () -> Unit, openSidebar: () -> Unit = {}) : LinearLayout(context) {
+internal class NativeStatusView(context: Context, openScores: () -> Unit) : LinearLayout(context) {
     private val title = NativeStyle.label(context, "INFINITY", 10f, NativeStyle.text, mono = true)
     private val count = NativeStyle.label(context, "", 10f, NativeStyle.muted, mono = true)
     private val score = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
@@ -33,14 +33,6 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit, openSi
     private val infinityPerformance = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
     private val round = NativeStyle.label(context, "", 10f, NativeStyle.text, mono = true)
     private val clock = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
-    private val sidebar = android.widget.ImageButton(context).apply {
-        contentDescription = "Open sidebar"
-        setImageResource(R.drawable.ic_sidebar)
-        setPadding(0, 0, 0, 0)
-        scaleType = android.widget.ImageView.ScaleType.CENTER
-        background = NativeStyle.background(context, NativeStyle.surface, 8, 0xff34434a.toInt())
-        setOnClickListener { openSidebar() }
-    }
     private val scores =
         Button(context).apply {
             text = "LEADERBOARD"
@@ -108,7 +100,6 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit, openSi
         addView(middle, LayoutParams(0, -2, 1.2f).apply { marginEnd = context.dp(6) })
         addView(round, LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
         addView(clock, LayoutParams(-2, -2).apply { marginEnd = context.dp(6) })
-        addView(sidebar, LayoutParams(context.dp(36), context.dp(36)))
         addView(scores, LayoutParams(-2, context.dp(30)))
     }
 
@@ -118,7 +109,6 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit, openSi
         val finiteVisibility = if (infinity) View.GONE else View.VISIBLE
         round.visibility = finiteVisibility
         clock.visibility = finiteVisibility
-        sidebar.visibility = finiteVisibility
         scores.visibility = if (infinity) View.VISIBLE else View.GONE
         scores.contentDescription = "Leaderboard"
     }

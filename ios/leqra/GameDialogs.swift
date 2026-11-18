@@ -6,6 +6,7 @@ struct WebModal<Content: View>: View {
     let title: String
     var close: () -> Void
     var scrolls = true
+    var scrollTrailingInset: CGFloat = 0
     @ViewBuilder var content: () -> Content
     var body: some View {
         GeometryReader { geometry in
@@ -20,7 +21,9 @@ struct WebModal<Content: View>: View {
                         }
                         WebStyle.border.frame(height: 1)
                         if scrolls {
-                            ScrollView { content().frame(maxWidth: .infinity, alignment: .leading) }.scrollDismissesKeyboard(.interactively)
+                            ScrollView {
+                                content().frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, scrollTrailingInset)
+                            }.scrollDismissesKeyboard(.interactively)
                                 .accessibilityIdentifier("modalScroll")
                         } else { content() }
                     }
@@ -218,31 +221,24 @@ let powerEntries = [("cannon", "Cannon"), ("ghost", "Ghost"), ("laser", "Laser")
 
 struct NativePreferencesPanel: View {
     @ObservedObject var session: GameSession
-    let keyboardConnected: Bool
     @State private var confirmReset = false
     var body: some View {
             VStack(alignment: .leading, spacing: 18) {
                 NativeSettingToggle("Request 120 FPS", isOn: $session.highFrameRate, identifier: "settingHighFrameRate")
                 NativeSettingToggle("Show FPS and ping", isOn: $session.showFPS, identifier: "settingShowFPS")
+                NativeSettingToggle("Game controller support", isOn: $session.gamepadSupport, identifier: "settingGamepadSupport")
                 NativeSettingToggle("Sound and haptics", isOn: $session.soundEnabled, identifier: "settingSound")
                     .onChange(of: session.soundEnabled) { _ in session.applyAudioSetting(preview: .unmute) }
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack { Text("Sound volume"); Spacer(); Text("\(Int(session.soundVolume))%").font(WebStyle.mono()).accessibilityIdentifier("soundVolumeValue") }
+                    HStack { Text("Sound volume"); Spacer(); Text("\(Int(session.soundVolume))%").font(WebStyle.mono(13)).accessibilityIdentifier("soundVolumeValue") }
                     Slider(value: Binding(get: { session.soundVolume }, set: session.setSoundVolume), in: 0...100, step: 1) { editing in
                         if !editing { session.applyAudioSetting(preview: .volumePreview) }
                     }.accessibilityLabel("Sound volume")
                 }
-                Text("Display rate adapts to the screen, power, temperature, and iOS settings.").font(.system(size: 11)).foregroundStyle(WebStyle.soft)
                 if !session.frameRateDetails.isEmpty { Text(session.frameRateDetails).font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
                 Text("ONLINE SERVER").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 TextField("https://leqra.com", text: $session.serverAddress).modifier(WebField()).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Text("Release \(NetworkClient.supportedVersion), protocol \(NetworkClient.protocolVersion)").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                Button("ACCOUNT KEY") { session.openAccount() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsAccount")
-                Button("P2 ACCOUNT KEY") { session.openAccount(seat: 1) }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsLocalAccount")
-                Button("QUICK TOUR") { session.showQuickTour = true }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("quickTour")
-                Button("SHOWCASE") { session.presentShowcase() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("openShowcase")
-                Text(keyboardConnected ? "Exit Showcase with Escape, or switch away from the app and return." : "Switch away from the app and return to exit Showcase.")
-                    .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
                 Button("RESET ALL SETTINGS") { confirmReset = true }.buttonStyle(WebButtonStyle(kind: .danger))
                     .accessibilityIdentifier("resetAllSettings")
             }.font(.system(size: 13)).tint(WebStyle.accent)
@@ -285,7 +281,7 @@ struct AccountPanel: View {
         WebModal(title: "Account key", close: session.closeAccount) {
             VStack(alignment: .leading, spacing: 14) {
                 Text(session.accountContextIdentity).font(WebStyle.mono(12, weight: .bold))
-                    .foregroundStyle(session.accountSeatContext == 1 ? WebStyle.mapped(session.accountLocalPlayer?.color ?? GamePalette.colors[1]) : WebStyle.paint(session.colorIndex))
+                    .foregroundStyle(session.accountSeatContext == 1 ? WebStyle.mapped(session.accountLocalMember?.color ?? GamePalette.colors[1]) : WebStyle.paint(session.colorIndex))
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("accountPlayerIdentity")
                 Text("Each local player has a separate account key. Copying, importing, or resetting this key affects only this player's account.")
                     .font(.system(size: 12)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
@@ -441,24 +437,36 @@ struct ControlsPanel: View {
         var id: String { "\(layout)-\(action.rawValue)" }
     }
     var body: some View {
+        let controlsCovered = capture != nil || session.showQuickTour || session.showAccount
         ZStack {
-          WebModal(title: "Controls", close: { session.showControls = false }) {
+          WebModal(title: "Controls", close: { session.showControls = false }, scrollTrailingInset: 10) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(session.identity).font(.system(size: 13, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex))
                 if session.hasLocalP2 {
-                    Text("Touch controls P1. The first gamepad controls P1 and the second controls P2.")
-                        .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                    Text("Touch controls P1.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
                 }
                 Text("Drag the left stick to drive and aim. Touch near your tank to rotate exactly toward that point without moving. Hold the right Fire button to shoot. Pickups equip automatically.").font(.system(size: 13)).lineSpacing(5)
-                Text("Grenades: tap or hold to throw. Release, then tap again to detonate. Release again before throwing another grenade. Projectiles pass through the tank that fired them.").font(.system(size: 12)).lineSpacing(5).foregroundStyle(WebStyle.soft)
                 HardwareControlsPanel(session: session, keyboardConnected: keyboardConnected, mouseConnected: mouseConnected) { layout, action in
                     bindingError = ""; capture = BindingCapture(layout: layout, action: action)
                 }
+                Button("QUICK TOUR") { session.showQuickTour = true }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("quickTour")
+                Button("SHOWCASE") { session.presentShowcase() }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("openShowcase")
+                Text(keyboardConnected ? "Exit Showcase with Escape, or switch away from the app and return." : "Switch away from the app and return to exit Showcase.")
+                    .font(.system(size: 11)).foregroundStyle(WebStyle.soft)
+                Button(session.hasAttachedLocalP2 ? "P1 ACCOUNT KEY" : "ACCOUNT KEY") { session.openAccount() }
+                    .buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsAccount")
+                if session.hasAttachedLocalP2 {
+                    Button("P2 ACCOUNT KEY") { session.openAccount(seat: 1) }
+                        .buttonStyle(WebButtonStyle()).accessibilityIdentifier("settingsLocalAccount")
+                }
                 Divider().overlay(WebStyle.border)
-                NativePreferencesPanel(session: session, keyboardConnected: keyboardConnected)
+                NativePreferencesPanel(session: session)
                 Button("BACK") { session.showControls = false }.buttonStyle(WebButtonStyle(kind: .primary))
             }
-          }.allowsHitTesting(capture == nil && !session.showQuickTour).accessibilityHidden(capture != nil || session.showQuickTour)
+          }
+          .opacity(session.showAccount ? 0 : 1)
+          .allowsHitTesting(!controlsCovered)
+          .accessibilityHidden(controlsCovered)
           if let capture {
               WebModal(title: "Press a key", close: { closeCapture() }) {
                   VStack(alignment: .leading, spacing: 16) {
@@ -480,7 +488,7 @@ struct ControlsPanel: View {
               }
           }
           if session.showQuickTour {
-              QuickTourPanel(highFrameRate: session.highFrameRate,
+              QuickTourPanel(highFrameRate: session.highFrameRate, gamepads: session.gamepads,
                              playSound: { session.applyAudioSetting(preview: $0) }, close: { session.showQuickTour = false })
           }
         }
@@ -495,13 +503,20 @@ struct ControlsPanel: View {
 
 private struct QuickTourPanel: View {
     let highFrameRate: Bool
+    let gamepads: NativeGamepads
     let close: () -> Void
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var practice: QuickTourPractice
     @State private var page = 0
+    private static let lessons: [(title: String, instruction: String)] = [
+        ("Drive and aim", "Drag the left stick to drive. Touch near your tank to aim without moving."),
+        ("Fire", "Hold the right Fire button to shoot."),
+        ("Score a point", "Destroy the stationary tank to score a point."),
+    ]
 
-    init(highFrameRate: Bool, playSound: @escaping (AudioCue) -> Void, close: @escaping () -> Void) {
+    init(highFrameRate: Bool, gamepads: NativeGamepads, playSound: @escaping (AudioCue) -> Void, close: @escaping () -> Void) {
         self.highFrameRate = highFrameRate
+        self.gamepads = gamepads
         self.close = close
         _practice = StateObject(wrappedValue: QuickTourPractice(playSound: playSound))
     }
@@ -530,27 +545,48 @@ private struct QuickTourPanel: View {
                 }
             }
         }
+        .onAppear { if scenePhase == .active { gamepads.setPractice(practice.scene) } }
         .onChange(of: scenePhase) { phase in
             if phase != .active { practice.scene.resetControls() }
+            gamepads.setPractice(phase == .active ? practice.scene : nil)
             practice.scene.resetFrameClock()
         }
-        .onDisappear { practice.scene.resetControls() }
+        .onDisappear {
+            gamepads.setPractice(nil)
+            practice.scene.resetControls()
+        }
     }
 
     private var instructions: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(["Drive and aim", "Fire", "Score a point"][page]).font(.system(size: 20, weight: .bold))
-            Text(tourText).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("tourInstructions")
+        // Reserve the tallest lesson at the current width.
+        ZStack(alignment: .topLeading) {
+            ForEach(Self.lessons.indices, id: \.self) { index in
+                if index == page {
+                    lesson(index, accessible: true)
+                } else {
+                    lesson(index, accessible: false).hidden().accessibilityHidden(true)
+                }
+            }
         }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func lesson(_ index: Int, accessible: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Self.lessons[index].title).font(.system(size: 20, weight: .bold))
+            Text(Self.lessons[index].instruction).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(accessible ? "tourInstructions" : "")
+        }
     }
 
     private var stage: some View {
         VStack(spacing: 0) {
-            if page == 2 {
-                Text("score: \(practice.score)").font(WebStyle.mono()).foregroundStyle(WebStyle.paint(0))
-                    .accessibilityIdentifier("tourScore")
-                    .frame(maxWidth: .infinity, minHeight: 30).background(WebStyle.surface)
+            // Leave room for the score without resizing the practice renderer.
+            Color.clear.frame(height: 30).overlay {
+                if page == 2 {
+                    Text("score: \(practice.score)").font(WebStyle.mono()).foregroundStyle(WebStyle.paint(0))
+                        .accessibilityIdentifier("tourScore")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(WebStyle.surface)
+                }
             }
             SpriteView(scene: practice.scene, isPaused: scenePhase != .active,
                        preferredFramesPerSecond: min(highFrameRate ? 120 : 60, UIScreen.main.maximumFramesPerSecond),
@@ -570,6 +606,7 @@ private struct QuickTourPanel: View {
                 else {
                     if page == 0 { practice.enableFiring() }
                     else { practice.startScoring() }
+                    gamepads.rearmPractice()
                     page += 1
                 }
             }.buttonStyle(WebButtonStyle(kind: .primary)).disabled(!canAdvance)
@@ -578,13 +615,6 @@ private struct QuickTourPanel: View {
         }
     }
 
-    private var tourText: String {
-        switch page {
-        case 0: return "Drag the left stick to drive. Touch near your tank to aim without moving."
-        case 1: return "Hold the right Fire button to shoot."
-        default: return "Destroy the stationary tank to score a point."
-        }
-    }
 }
 
 @MainActor private final class QuickTourPractice: ObservableObject {
@@ -766,7 +796,7 @@ struct SidebarPanel: View {
                     }.font(.system(size: 12)).foregroundStyle(WebStyle.paint(entry.colorIndex))
                 }
                 WebStyle.border.frame(height: 1)
-                FieldManualContent(session: session)
+                FieldManualContent(session: session, includeSidebarControls: true)
                 Button("CONTROLS") { session.showSidebar = false; session.showControls = true }.buttonStyle(WebButtonStyle())
             }
         }
@@ -775,6 +805,7 @@ struct SidebarPanel: View {
 
 struct FieldManualContent: View {
     @ObservedObject var session: GameSession
+    var includeSidebarControls = false
     private var infinity: Bool { session.isInfinity || session.effectiveRules.infinity || session.readyRoom && (session.room?.infinityPublic ?? session.publicInfinitySelected) }
     private var powerHelp: PowerupHelp {
         PowerupHelp(rules: session.effectiveRules, world: session.readyRoom ? nil : session.snapshot.world, infinity: infinity)
@@ -784,6 +815,10 @@ struct FieldManualContent: View {
             Text("FIELD MANUAL").font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
             Text("Touch").font(.system(size: 13, weight: .semibold))
             Text("Drag the joystick to drive and aim. Touch near the tank to aim in place. Tap or hold Fire to shoot.").font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+            if includeSidebarControls {
+                Text("Connect a game controller to play.")
+                    .font(.system(size: 12)).foregroundStyle(WebStyle.soft).accessibilityIdentifier("manualGamepadHint")
+            }
             Text(infinity ? "INFINITY" : session.selectedMode.title.uppercased()).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
             Text(infinity ? "Gain a point for each kill and lose a point each time the tank is destroyed. Respawn after one second. Keep growing the score without a time limit." : session.selectedMode.help)
                 .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
@@ -793,7 +828,7 @@ struct FieldManualContent: View {
             ForEach(powerEntries, id: \.0) { kind, name in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(name).font(.system(size: 12, weight: .bold)).foregroundStyle(WebStyle.text)
-                    Text(powerHelp.description(for: kind)).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
+                    Text(powerHelp.description(for: kind, includeGrenadeControls: includeSidebarControls)).font(.system(size: 12)).foregroundStyle(WebStyle.soft)
                 }
             }
         }

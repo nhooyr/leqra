@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -148,21 +149,27 @@ func TestLeaderboardAdminRefusesPublicListener(t *testing.T) {
 			t.Fatalf("accepted public address %q", address)
 		}
 	}
-	closer, err := startLeaderboardAdmin(b, "off")
+	admin, err := startLeaderboardAdmin(b, "off")
 	if err != nil {
 		t.Fatal(err)
 	}
-	closer.Close()
+	if admin.url != "" {
+		t.Fatalf("disabled admin reported URL %q", admin.url)
+	}
+	admin.Close()
 	for _, address := range []string{"127.0.0.1:0", "[::1]:0"} {
-		closer, err := startLeaderboardAdmin(b, address)
+		admin, err := startLeaderboardAdmin(b, address)
 		if err != nil {
 			t.Fatal(err)
 		}
-		server := closer.(*leaderboardAdminListener).server
-		if _, ok := server.Handler.(*leaderboardAdmin); !ok {
+		if _, ok := admin.server.Handler.(*leaderboardAdmin); !ok {
 			t.Fatal("wrong listener handler")
 		}
-		if err := closer.Close(); err != nil {
+		advertised, err := url.Parse(admin.url)
+		if err != nil || advertised.Scheme != "http" || advertised.Hostname() != "localhost" || advertised.Port() == "" || advertised.Port() == "0" {
+			t.Fatalf("invalid startup URL %q for %q", admin.url, address)
+		}
+		if err := admin.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}

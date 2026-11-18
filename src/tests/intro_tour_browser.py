@@ -116,6 +116,21 @@ def drag_practice_stick(page):
             stick.dispatch_event("pointerup", {**pointer, "button": 0, "buttons": 0, "clientX": x + 35})
 
 
+def practice_frame(page):
+    return page.locator("#introTourCanvas").evaluate(
+        "canvas => { const {x, y, width, height} = canvas.getBoundingClientRect(); return [x, y, width, height]; }"
+    )
+
+
+def next_practice_step(page):
+    next_button = page.locator("#introTourNext")
+    next_button.scroll_into_view_if_needed()
+    before = practice_frame(page)
+    next_button.click()
+    after = practice_frame(page)
+    assert all(abs(first - second) < .5 for first, second in zip(before, after)), (before, after)
+
+
 def advance_drive_practice(page, touch, key="w"):
     expect(page.locator("#introTourTitle")).to_have_text("Drive and aim")
     expect(page.locator("#introTourCanvas")).to_be_visible()
@@ -130,7 +145,7 @@ def advance_drive_practice(page, touch, key="w"):
         expect(page.locator("#introTourTouchControls")).to_be_hidden()
         hold_practice_key(page, key)
     expect(status).to_have_text("Tank moved.")
-    next_button.click()
+    next_practice_step(page)
     expect(page.locator("#introTourTitle")).to_have_text("Fire")
     expect(page.locator("#introTourBack")).to_be_enabled()
     expect(next_button).to_be_disabled()
@@ -153,7 +168,7 @@ def advance_fire_practice(page, touch, key="q", mouse=False):
     fire_in_practice(page, touch, key, mouse=mouse)
     expect(next_button).to_be_enabled()
     expect(status).to_have_text("Shot fired.")
-    next_button.click()
+    next_practice_step(page)
     expect(page.locator("#introTourTitle")).to_have_text("Score a point")
     expect(page.locator("#introTourPractice")).to_be_visible()
     expect(next_button).to_be_disabled()
@@ -193,6 +208,7 @@ def check_sidebar(page, touch):
     sidebar = page.locator("#gameSidebar")
     toggle = page.get_by_role("button", name="Open sidebar")
     dialog = page.get_by_role("dialog", name="Sidebar")
+    expect(page.locator("#gameHeader #sidebarDetailsBtn")).to_be_visible()
     expect(sidebar).to_be_hidden()
     expect(toggle).to_have_attribute("aria-expanded", "false")
     expect(toggle).to_be_in_viewport(ratio=1)

@@ -1,10 +1,10 @@
-# leqra v5.6.2 — current game protocol (protocol 1)
+# leqra v5.7.0 — current game protocol (protocol 1)
 
 The network protocol epoch is **1**. Clients and servers can play together when they use the same epoch. Release versions identify builds and remain available for display and update prompts.
 
 ```json
-{"type":"server_hello","version":"5.6.2","protocol":1}
-{"type":"client_hello","version":"5.6.2","protocol":1}
+{"type":"server_hello","version":"5.7.0","protocol":1}
+{"type":"client_hello","version":"5.7.0","protocol":1}
 ```
 
 The fixed-room socket requires `client_hello` before room and matchmaking actions. The server replies with `client_ready` on success. An incompatible protocol receives an error with `code: "version_mismatch"`, `action: "version"`, `serverVersion`, and the required `protocol`.
@@ -52,7 +52,7 @@ Private `welcome` includes the run's `generation`. If the Infinity socket discon
 A room spectator can watch a running **private** Infinity arena without taking a tank seat:
 
 ```json
-{"type":"join","version":"5.6.2","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
+{"type":"join","version":"5.7.0","protocol":1,"code":"FRIENDS","token":"existing-room-token","spectating":true,"resume":true,"generation":3,"target":12}
 {"type":"welcome","protocol":1,"id":0,"seed":123,"generation":3,"resumed":true,"spectating":true,"following":12}
 ```
 

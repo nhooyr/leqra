@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version = "5.6.2"
+	version = "5.7.0"
 	// Advance the protocol epoch only when existing clients cannot use the wire contract.
 	protocolVersion = 1
 	maxRoomLimit    = 32768
@@ -47,7 +47,7 @@ var appIconPNGs = [...]string{
 
 var appShellFiles = [...]string{
 	"theme.js", "theme.css", "style.css", "favicon.svg",
-	"netcode.js", "game.js", "callsigns.js", "infinite-maze.js", "infinite.js",
+	"netcode.js", "gamepads.js", "game.js", "callsigns.js", "infinite-maze.js", "infinite.js",
 	"showcase-scene.js", "showcase.js",
 	"pwa.js", "manifest.webmanifest", "sw.js",
 }
@@ -518,6 +518,9 @@ func main() {
 	fmt.Printf("leqra server v%s\n%s\n", version, openURL)
 	for _, lanURL := range lanURLs {
 		fmt.Println(lanURL)
+	}
+	if admin.url != "" {
+		fmt.Printf("admin: %s\n", admin.url)
 	}
 	if err := app.serve(srv, listener, stopped); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)

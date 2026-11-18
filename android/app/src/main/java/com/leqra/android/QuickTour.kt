@@ -4,9 +4,12 @@ import android.app.Dialog
 import android.content.Context
 import android.os.Build
 import android.view.Gravity
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import com.leqra.android.NativeStyle.add
@@ -22,10 +25,16 @@ import com.leqra.android.NativeStyle.weighted
 import com.leqra.android.audio.AudioCue
 import com.leqra.android.audio.AudioEventRouter
 import com.leqra.android.render.NativeArenaView
+import kotlin.math.hypot
 
 internal const val QUICK_TOUR_SEEN = "quickTourSeen"
 
-internal class QuickTour(context: Context, private val highRefresh: Boolean, playSound: (AudioCue) -> Unit) : Dialog(context) {
+internal class QuickTour(
+    context: Context,
+    private val highRefresh: Boolean,
+    gamepadSupport: Boolean,
+    playSound: (AudioCue) -> Unit,
+) : Dialog(context) {
     private val pages = listOf(
         "Drive and aim" to
             "Drag the left stick to drive. Touch near your tank to aim without moving.",
@@ -37,10 +46,16 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
     private var page = 0
     private var lastFrame: Long? = null
     private val practice = QuickTourPractice()
+    private val gamepads = GamepadControls().apply { enabled = gamepadSupport }
+    private var fireHeld = false
     private val audioEvents = AudioEventRouter()
     private val arena = NativeArenaView(context).apply {
         controlsLayout = false
         keyboardInputEnabled = false
+        // Touching the practice arena should not ask the ScrollView to reveal a new focus.
+        // The dialog handles controller input without requiring the arena to own keyboard focus.
+        isFocusableInTouchMode = false
+        isFocusable = false
         showTankLabels = false
         submit(practice.advance(input, 0.0), practice.tankID, practice.maze)
     }
@@ -53,7 +68,7 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
         minimumHeight = context.dp(39)
         setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
         setBackgroundColor(surface)
-        visibility = View.GONE
+        visibility = View.INVISIBLE
     }
 
     init {
@@ -71,14 +86,20 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
         }, width = 44, height = 44, gap = 0)
         panel.add(header, gap = 14)
 
-        val title = label(context, "", 20f, bold = true).apply {
-            if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+        val briefing = FrameLayout(context)
+        val briefings = pages.map { (heading, message) ->
+            column(context).apply {
+                visibility = View.INVISIBLE
+                add(label(context, heading, 20f, bold = true).apply {
+                    if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+                }, gap = 8)
+                add(label(context, message, 14f).apply { setLineSpacing(context.dp(4).toFloat(), 1f) }, gap = 0)
+                briefing.addView(this, FrameLayout.LayoutParams(-1, -2))
+            }
         }
-        val message = label(context, "", 14f).apply { setLineSpacing(context.dp(4).toFloat(), 1f) }
         val progress = label(context, "", 10f, soft, mono = true)
         instructions.apply {
-            add(title, gap = 8)
-            add(message, gap = 12)
+            add(briefing, gap = 12)
             add(progress, gap = 0)
         }
         lesson.add(instructions, gap = 12)
@@ -101,20 +122,18 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
             next.isEnabled = enabled
             next.alpha = if (enabled) 1f else .45f
         }
-        var fireHeld = false
-        arena.onInput = { input ->
-            if (fireHeld != input.fire) {
-                fireHeld = input.fire
-                practice.captureFire(fireHeld)
-            }
-        }
+        arena.onInput = { captureFire() }
         arena.onControlsReset = practice::resetFire
         var shownScore = 0
         arena.onFrame = { time ->
             val elapsed = lastFrame?.let { (time - it) / 1e9 } ?: 0.0
             lastFrame = time
             val now = time / 1e9
-            val state = practice.advance(arena.input, elapsed, nowSeconds = now)
+            val gamepad = gamepads.inputForSeat(0, primary = true, secondary = false)
+            val input = if (gamepad == null) arena.input else arena.input.copy().also {
+                gamepad.merge(it, steer = hypot(it.stickX, it.stickY) <= .1)
+            }
+            val state = practice.advance(input, elapsed, nowSeconds = now)
             arena.submit(state, practice.tankID, practice.maze)
             audioEvents.consume(state, practice.tankID, infinity = false, online = false, now = now)
                 .forEach { playSound(it.cue) }
@@ -127,22 +146,21 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
             updateNext()
         }
         fun update() {
-            val (heading, instructions) = pages[page]
-            title.text = heading
-            message.text = instructions
+            // Invisible pages still measure at the current width, so the longest
+            // briefing and the score row reserve their space on every lesson.
+            briefings.forEachIndexed { index, view -> view.visibility = if (page == index) View.VISIBLE else View.INVISIBLE }
             progress.text = "${page + 1} / ${pages.size}"
             next.text = if (page == pages.lastIndex) "DONE" else "NEXT"
+            gamepads.clear()
             arena.resetControls()
             practice.fireLesson = page > 0
             arena.showFireControl = practice.fireLesson
-            arena.contentDescription = "Practice arena. $instructions"
+            arena.contentDescription = "Practice arena. ${pages[page].second}"
             if (page == pages.lastIndex) {
                 practice.startTargetLesson()
                 score.visibility = View.VISIBLE
             }
             updateNext()
-            layoutPractice()
-            scroll.scrollTo(0, 0)
         }
         next.setOnClickListener {
             if (!canAdvance()) return@setOnClickListener
@@ -152,6 +170,7 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
                 update()
             }
         }
+        layoutPractice()
         update()
         setContentView(panel)
         window?.apply {
@@ -171,6 +190,44 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
         super.onStop()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!event.isGamepad() || event.keyCode !in GamepadInput.keys) return super.dispatchKeyEvent(event)
+        gamepads.inputForDevice(event.deviceId, primary = true, secondary = false)?.let { input ->
+            input.key(event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.repeatCount > 0)
+            captureFire()
+        }
+        return true
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (!event.isGamepadMotion()) return super.dispatchGenericMotionEvent(event)
+        gamepads.inputForDevice(event.deviceId, primary = true, secondary = false)?.let { input ->
+            input.motion(event)
+            captureFire()
+        }
+        return true
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) {
+            gamepads.clear()
+            captureFire()
+        }
+    }
+
+    fun updateGamepads(ids: List<Int>, changed: Int? = null) {
+        gamepads.updateDevices(ids, primary = true, secondary = false, changed = changed)
+        captureFire()
+    }
+
+    private fun captureFire() {
+        val firing = arena.input.fire || gamepads.inputForSeat(0, primary = true, secondary = false)?.firing == true
+        if (fireHeld == firing) return
+        fireHeld = firing
+        practice.captureFire(fireHeld)
+    }
+
     fun resumePractice() {
         applyRefreshRate()
         arena.start()
@@ -178,6 +235,7 @@ internal class QuickTour(context: Context, private val highRefresh: Boolean, pla
 
     fun pausePractice() {
         lastFrame = null
+        gamepads.clear()
         arena.pause()
     }
 

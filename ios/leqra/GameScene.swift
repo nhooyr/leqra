@@ -454,7 +454,10 @@ final class GameScene: SKScene {
     }
 
     func setGamepadInput(_ value: GameInput) {
-        guard frozenShowcase == nil else { return }
+        guard frozenShowcase == nil, inputSources.gamepad != value else { return }
+        if aimTouch == nil, value.forward || value.reverse || value.left || value.right || value.stickX != 0 || value.stickY != 0 {
+            clearDirectAim()
+        }
         inputSources.gamepad = value; publishInput()
     }
 

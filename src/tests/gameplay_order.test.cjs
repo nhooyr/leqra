@@ -4,6 +4,7 @@ const {boot,tank,declaration}=require('./godlike426-harness.cjs');
 
 function localCombat(tick,fire,wallList=[]){
  const s=boot({cols:7,rows:7,wallList}),noop=()=>{};
+ s.gamepadInput=()=>null;
  Object.assign(s,{localTick:tick,time:0,round:1,bulletId:0,reduceMotion:true,mode:'room',shake:0,burst:noop,addRing:noop,shieldSound:noop,ricochetSound:noop,toast:noop,boom:noop,updateHUD:noop,shotSound:noop,addLog:noop,impactEffect:noop,recordLocalDeath:noop,
   objectiveMode:()=>false,survivalMode:()=>false,survivalBreak:()=>false,roundClock:75,phaseTime:0,fxTime:0,particles:[],rings:[],toastTime:0,uiClock:1,spawnClock:5,updateTraces:noop,liveLocalStats:()=>false,advanceGhost:noop,
   heldAction:(_,action)=>fire&&action==='fire',primaryFireHeld:()=>fire,firePresses:new Set(),directAim:{active:false},mouseAim:{firePressed:false},mouseAimHeading:()=>null,stick:{mag:0},detonateOwned:()=>false,finishRound:winner=>s.winner=winner,

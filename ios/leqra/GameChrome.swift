@@ -39,6 +39,9 @@ struct GameHeader: View {
                 session.soundEnabled.toggle(); session.applyAudioSetting(preview: .unmute)
             }
             WebIconButton(symbol: "viewfinder", label: session.fullscreen ? "Exit fullscreen" : "Enter fullscreen", active: session.fullscreen) { if !showcase { session.fullscreen.toggle() } }
+            if !showcase && (session.readyRoom || session.screen == .playing) {
+                WebIconButton(symbol: "rectangle.rightthird.inset.filled", label: "Open sidebar") { session.showSidebar = true }
+            }
             if showcase || session.screen == .playing {
                 WebIconButton(symbol: "pause", label: "Pause game") { if !showcase { session.setPaused(true) } }.accessibilityIdentifier("pauseGame")
             } else {
@@ -47,9 +50,12 @@ struct GameHeader: View {
         }.padding(.horizontal, 4).padding(.bottom, landscape ? 5 : 10)
     }
     private var versionBadge: some View {
-        HStack(spacing: 4) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
+                Text("v" + NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize()
+            }
             GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
-            Text("v" + NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize()
         }.foregroundStyle(WebStyle.muted).padding(.horizontal, 5).frame(minHeight: 32)
             .background(WebStyle.surface, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(WebStyle.border, lineWidth: 1).allowsHitTesting(false))
@@ -112,12 +118,9 @@ struct ArenaStatusBar: View {
                 }.font(WebStyle.mono()).accessibilityIdentifier("gameScore")
                 Text("ROUND \(String(format: "%02d", max(1, session.snapshot.round)))").font(WebStyle.mono())
                 Text(clock).font(WebStyle.mono()).foregroundStyle(WebStyle.accent)
-                WebIconButton(symbol: "rectangle.rightthird.inset.filled", label: "Open sidebar") { session.showSidebar = true }
             }
         }.foregroundStyle(WebStyle.text).padding(.horizontal, 12).padding(.vertical, 8)
-            // The finite preview's sidebar button establishes a 52pt row.
-            // Keep that footprint when Infinity uses its shorter leaderboard.
-            .frame(minHeight: preview ? 52 : 39).background(WebStyle.surface)
+            .frame(minHeight: preview || !infinity ? 52 : 39).background(WebStyle.surface)
             .overlay(alignment: .bottom) { WebStyle.border.frame(height: 1).allowsHitTesting(false) }
     }
     private var title: String {

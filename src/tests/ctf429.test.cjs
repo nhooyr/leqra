@@ -6,6 +6,7 @@ function arena(level,escorts=1,corridor=false){
  const walls=[{x:-4,y:-4,w:512,h:8,axis:'h'},{x:-4,y:416,w:512,h:8,axis:'h'},{x:-4,y:-4,w:8,h:428,axis:'v'},{x:500,y:-4,w:8,h:428,axis:'v'}];
  if(corridor)walls.push({x:80,y:164,w:8,h:92,axis:'v'},{x:80,y:164,w:344,h:8,axis:'h'},{x:80,y:248,w:344,h:8,axis:'h'});
  const s=boot({cols:6,rows:5,wallList:walls}),carrier=tank(0,378,210,{team:1,human:true,angle:Math.PI,cooldown:100});
+ s.gamepadInput=()=>null;
  s.tanks=[carrier];for(let i=1;i<=escorts;i++)s.tanks.push(tank(i,corridor?126+(i-1)*40:126,corridor?210:210+(i-1)*36,{team:1,difficulty:level,cooldown:100}));s.tanks.push(tank(escorts+1,462,42,{team:2,human:true,invulnerable:100,cooldown:100}));
  Object.assign(s,{fxTime:0,time:0,phaseTime:100,toastTime:0,particles:[],rings:[],shake:0,uiClock:0,roundClock:600,spawnClock:100,scores:Array(8).fill(0),walking:true,
   updateTraces(){},compactLife(){},survivalMode:()=>false,objectiveMode:()=>true,suddenDeath:()=>false,liveLocalStats:()=>false,respawnLocalPlayers(){},advanceGhost(){},updateBullets(){},updateHUD(){},addLog(){},recordLocalObjective(){},pickupSound(){},toast(){},teamName:n=>'Team '+n,

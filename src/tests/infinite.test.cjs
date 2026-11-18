@@ -292,7 +292,9 @@ test('Quick Tour requires the demonstrated action on each page and resets on rep
    setText:(id,text)=>{$(id).textContent=String(text);},setStyle:(el,k,v)=>el.style.setProperty(k,v),
    openFeature:()=>dialog.showModal(),closeFeature:()=>dialog.close(),syncArenaAudio(){},
    save(){},capturePointer(){},initAudio(){},primeAudioUnlock(){},
+   gamepads:{clear(){}},gamepadInput:()=>null,browserGamepads:()=>null,
   });
+  h.window.leqraGamepads=require(assetPath('gamepads.js'));
   vm.runInContext(source.slice(start,source.indexOf('\n}',start)+2)+'\ninitIntroTour();',h.context);
   const key=(code)=>dialog.emit('keydown',{code});
   const keyUp=(code)=>h.window.emit('keyup',{code});

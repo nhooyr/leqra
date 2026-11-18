@@ -149,6 +149,139 @@ struct NativeKeyCaptureView: UIViewRepresentable {
     }
 }
 
+/// Controller assignments belong to the session, so changing arena layouts
+/// or opening a menu cannot swap the two local controllers.
+@MainActor
+final class NativeGamepads {
+    var onMenu: () -> Void = {}
+    var gameplayInputAllowed: () -> Bool = { false }
+    private var controllers: [GCController?] = [nil, nil]
+    private var observers: [NSObjectProtocol] = []
+    private weak var primary: GameScene?
+    private weak var secondary: GameScene?
+    private weak var practice: GameScene?
+    private var supportEnabled = true
+    private var enabled = false
+    private var routes: [ObjectIdentifier: GameScene] = [:]
+    private var waitingForNeutral: Set<ObjectIdentifier> = []
+
+    init() {
+        for name in [Notification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.syncControllers() }
+            })
+        }
+        syncControllers()
+    }
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+    func setSupportEnabled(_ value: Bool) {
+        guard supportEnabled != value else { return }
+        supportEnabled = value
+        updateRoutes()
+    }
+
+    func configure(primary: GameScene?, secondary: GameScene?, enabled: Bool) {
+        self.primary = primary; self.secondary = secondary; self.enabled = enabled
+        updateRoutes()
+    }
+
+    func setPractice(_ scene: GameScene?) {
+        practice = scene
+        updateRoutes()
+    }
+
+    func rearmPractice() {
+        guard supportEnabled, let practice, let controller = controllers.compactMap({ $0 }).first,
+              let pad = controller.extendedGamepad else { return }
+        practice.setGamepadInput(GameInput())
+        let id = ObjectIdentifier(controller)
+        waitingForNeutral.remove(id)
+        if Self.input(pad) != GameInput() { waitingForNeutral.insert(id) }
+    }
+
+    private func syncControllers() {
+        let available = GCController.controllers().filter { $0.extendedGamepad != nil }
+        for index in controllers.indices {
+            guard let controller = controllers[index], !available.contains(where: { $0 === controller }) else { continue }
+            controller.extendedGamepad?.valueChangedHandler = nil
+            controller.extendedGamepad?.buttonMenu.pressedChangedHandler = nil
+            controllers[index] = nil
+        }
+        for controller in available where !controllers.contains(where: { $0 === controller }) {
+            guard let index = controllers.firstIndex(where: { $0 == nil }), let pad = controller.extendedGamepad else { break }
+            controllers[index] = controller
+            controller.playerIndex = index == 0 ? .index1 : .index2
+            controller.handlerQueue = .main
+            let id = ObjectIdentifier(controller)
+            pad.valueChangedHandler = { [weak self] pad, _ in
+                // Deliver each edge on the configured queue. Deferring a read
+                // of the profile could coalesce a quick press and release.
+                MainActor.assumeIsolated { self?.apply(Self.input(pad), from: id) }
+            }
+            pad.buttonMenu.pressedChangedHandler = { [weak self] _, _, pressed in
+                guard pressed else { return }
+                MainActor.assumeIsolated { self?.menuPressed(by: index, id: id) }
+            }
+        }
+        updateRoutes()
+    }
+
+    private func target(for index: Int) -> GameScene? {
+        guard let seat = NativeGamepadControls.seat(for: index, connected: controllers.compactMap { $0 }.count,
+                                                    primary: primary != nil, secondary: secondary != nil) else { return nil }
+        return seat == 0 ? primary : secondary
+    }
+
+    private func updateRoutes() {
+        var next: [ObjectIdentifier: GameScene] = [:]
+        for (index, controller) in controllers.enumerated() where supportEnabled {
+            guard let controller, let pad = controller.extendedGamepad else { continue }
+            let id = ObjectIdentifier(controller)
+            let scene: GameScene?
+            if let practice {
+                guard next.isEmpty else { break }
+                scene = practice
+            } else {
+                scene = enabled ? target(for: index) : nil
+            }
+            guard let scene else { continue }
+            next[id] = scene
+            if routes[id] !== scene {
+                waitingForNeutral.remove(id)
+                if Self.input(pad) != GameInput() { waitingForNeutral.insert(id) }
+            }
+        }
+        for (id, scene) in routes where next[id] !== scene { scene.setGamepadInput(GameInput()) }
+        waitingForNeutral.formIntersection(next.keys)
+        routes = next
+    }
+
+    private func apply(_ input: GameInput, from id: ObjectIdentifier) {
+        guard let scene = routes[id], scene === practice || gameplayInputAllowed() else { return }
+        if waitingForNeutral.contains(id) {
+            guard input == GameInput() else { return }
+            waitingForNeutral.remove(id)
+        }
+        scene.setGamepadInput(input)
+    }
+
+    private func menuPressed(by index: Int, id: ObjectIdentifier) {
+        guard supportEnabled, let controller = controllers[index], ObjectIdentifier(controller) == id,
+              practice == nil, target(for: index) != nil else { return }
+        onMenu()
+    }
+
+    private static func input(_ pad: GCExtendedGamepad) -> GameInput {
+        NativeGamepadControls.input(leftX: Double(pad.leftThumbstick.xAxis.value), leftY: -Double(pad.leftThumbstick.yAxis.value),
+                                   rightX: Double(pad.rightThumbstick.xAxis.value), rightY: -Double(pad.rightThumbstick.yAxis.value),
+                                   forward: pad.dpad.up.isPressed, reverse: pad.dpad.down.isPressed,
+                                   left: pad.dpad.left.isPressed, right: pad.dpad.right.isPressed,
+                                   fire: pad.buttonA.isPressed || pad.rightTrigger.isPressed || pad.rightShoulder.isPressed)
+    }
+}
+
 struct NativeGameView: UIViewRepresentable {
     let scene: GameScene
     let highFrameRate: Bool
@@ -182,7 +315,7 @@ struct NativeGameView: UIViewRepresentable {
     }
 }
 
-/// Only the primary view owns the keyboard and gamepads. Both views can receive
+/// Only the primary view owns the keyboard. Both views can receive
 /// pointer events, while SpriteKit touch gestures stay on the primary scene.
 private final class KeyboardGameContainer: UIView {
     private let gameView = SKView()
@@ -194,8 +327,6 @@ private final class KeyboardGameContainer: UIView {
     private weak var hardwareScene: GameScene?
     private weak var mouseScene: GameScene?
     private var gameScene: GameScene? { gameView.scene as? GameScene }
-    private var controllerSeats: [ObjectIdentifier: (controller: GCController, seat: Int)] = [:]
-    private var controllerObservers: [NSObjectProtocol] = []
     private var inputObservers: [NSObjectProtocol] = []
 
     init(scene: GameScene) {
@@ -232,19 +363,14 @@ private final class KeyboardGameContainer: UIView {
         press.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         press.cancelsTouchesInView = true
         addGestureRecognizer(press)
-        for name in [Notification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
-            controllerObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.syncControllers() }
-            })
-        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { for observer in controllerObservers + inputObservers { NotificationCenter.default.removeObserver(observer) } }
+    deinit { for observer in inputObservers { NotificationCenter.default.removeObserver(observer) } }
 
     func configure(scene: GameScene, highFrameRate: Bool, paused: Bool, spectating: Bool,
                    hardwareScene: GameScene, acceptsHardware: Bool, mouseScene: GameScene, renderingSuspended: Bool) {
-        if self.hardwareScene !== hardwareScene { resetKeyboard(); self.hardwareScene?.setGamepadInput(GameInput()) }
+        if self.hardwareScene !== hardwareScene { resetKeyboard() }
         if self.mouseScene !== mouseScene { self.mouseScene?.setMouseFire(false); self.mouseScene?.clearMouseAim() }
         self.highFrameRate = highFrameRate; self.paused = paused; self.spectating = spectating
         self.hardwareScene = hardwareScene; self.mouseScene = mouseScene; self.acceptsHardware = acceptsHardware
@@ -261,7 +387,6 @@ private final class KeyboardGameContainer: UIView {
             resetKeyboard(); mouseScene.setMouseFire(false); mouseScene.clearMouseAim()
             scene.resetControls(); resignFirstResponder()
         } else if acceptsHardware, window != nil, !isFirstResponder { becomeFirstResponder() }
-        syncControllers()
         applyFrameRate()
     }
 
@@ -291,7 +416,6 @@ private final class KeyboardGameContainer: UIView {
         if window != nil { gameScene?.prepareCombatRenderer(in: gameView) }
         if window != nil && !paused && !spectating && acceptsHardware { becomeFirstResponder() }
         else { resetKeyboard(); gameScene?.resetControls() }
-        syncControllers()
     }
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if !setKeys(presses, down: true) { super.pressesBegan(presses, with: event) }
@@ -344,45 +468,6 @@ private final class KeyboardGameContainer: UIView {
         if scene.updateMouseAim(at: point, target: target) { target.setMouseFire(true) }
     }
 
-    private func controllerScene(_ seat: Int) -> GameScene? {
-        guard let primary = gameScene else { return nil }
-        return seat == 0 ? primary : hardwareScene !== primary ? hardwareScene : nil
-    }
-    private func syncControllers() {
-        let active = acceptsHardware && !paused && !spectating && window != nil
-        let available = active ? GCController.controllers().filter { $0.extendedGamepad != nil } : []
-        let connected = Set(available.map(ObjectIdentifier.init))
-        for (id, record) in controllerSeats where !connected.contains(id) {
-            record.controller.extendedGamepad?.valueChangedHandler = nil
-            controllerScene(record.seat)?.setGamepadInput(GameInput())
-            controllerSeats.removeValue(forKey: id)
-        }
-        guard active else { return }
-        for controller in available where controllerSeats[ObjectIdentifier(controller)] == nil {
-            let used = Set(controllerSeats.values.map(\.seat))
-            guard let seat = (0..<2).first(where: { !used.contains($0) && controllerScene($0) != nil }) else { continue }
-            controllerSeats[ObjectIdentifier(controller)] = (controller, seat)
-            controller.playerIndex = seat == 0 ? .index1 : .index2
-            controller.extendedGamepad?.valueChangedHandler = { [weak self] pad, _ in
-                Task { @MainActor in self?.applyGamepad(pad, seat: seat) }
-            }
-        }
-        for record in controllerSeats.values { if let pad = record.controller.extendedGamepad { applyGamepad(pad, seat: record.seat) } }
-    }
-    private func applyGamepad(_ pad: GCExtendedGamepad, seat: Int) {
-        guard acceptsHardware, !paused, !spectating, window != nil, let scene = controllerScene(seat) else { return }
-        var x = Double(pad.leftThumbstick.xAxis.value), y = -Double(pad.leftThumbstick.yAxis.value)
-        if hypot(x, y) < 0.15 { x = 0; y = 0 }
-        let ax = Double(pad.rightThumbstick.xAxis.value), ay = -Double(pad.rightThumbstick.yAxis.value)
-        let aiming = hypot(ax, ay) >= 0.15
-        scene.setGamepadInput(GameInput(
-            forward: pad.dpad.up.isPressed || aiming && hypot(x, y) > 0.15,
-            reverse: pad.dpad.down.isPressed,
-            left: pad.dpad.left.isPressed, right: pad.dpad.right.isPressed,
-            fire: pad.buttonA.isPressed || pad.rightTrigger.isPressed || pad.rightShoulder.isPressed,
-            stickX: aiming ? ax : x, stickY: aiming ? ay : y, touchAim: false, aimOnly: aiming
-        ))
-    }
 }
 
 

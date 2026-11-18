@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ArenaStatusUiTest {
     @Test
-    fun performanceSettingShowsOneCombinedReadoutAndFiniteOpensSidebar() {
+    fun performanceSettingShowsOneCombinedReadoutAcrossModes() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val accountContext = isolatedAccountContext()
             val prefix = "arena-status-${UUID.randomUUID()}-"
@@ -28,8 +28,7 @@ class ArenaStatusUiTest {
             val session = GameSession(context)
             try {
                 assertTrue(session.showFPS)
-                var sidebarOpened = false
-                val status = NativeStatusView(context, openScores = {}, openSidebar = { sidebarOpened = true })
+                val status = NativeStatusView(context, openScores = {})
                 session.publicSelected = true
                 status.update(session, fps = 120)
                 assertTrue("fps: —, ping: —" in visibleTexts(status))
@@ -39,8 +38,7 @@ class ArenaStatusUiTest {
                 session.selectMode("elimination")
                 status.update(session, fps = 120)
                 assertTrue("fps: —, ping: —" in visibleTexts(status))
-                children(status).single { it.visibility == View.VISIBLE && it.contentDescription == "Open sidebar" }.performClick()
-                assertTrue(sidebarOpened)
+                assertFalse(children(status).any { it.contentDescription == "Open sidebar" })
 
                 session.showFPS = false
                 session.save()

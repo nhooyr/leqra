@@ -28,6 +28,14 @@ final class PowerupHelpTests: XCTestCase {
         XCTAssertFalse(help.description(for: "laser").contains("Disabled"))
         XCTAssertTrue(help.description(for: "rapid").contains("18 maze cells"))
     }
+    func testGrenadeControlsAreOptIn() {
+        let help = PowerupHelp(rules: .localDefaults())
+        let description = help.description(for: "grenade")
+        let tip = " Press Fire again to detonate early. Release Fire before throwing another grenade."
+        XCTAssertTrue(description.contains("explodes on tank impact or after its 10-second fuse"))
+        XCTAssertFalse(description.contains("Fire"))
+        XCTAssertEqual(help.description(for: "grenade", includeGrenadeControls: true), description + tip)
+    }
     func testDraftRulesDescribeDisabledTypesAndCurrentFrequency() {
         var rules = RoomRules(); rules.infinity = false; rules.pickupRate = "slow"; rules.weapons = ["laser"]
         let help = PowerupHelp(rules: rules)

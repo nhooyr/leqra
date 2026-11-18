@@ -28,6 +28,7 @@ function boot(mode='room',mobile=false){
   mouseAim:{active:false,x:0,y:0},stick:{x:0,y:0,mag:0},combatPrefs:{visual:false,audio:false,fps:true,performance:true},localStorage:{getItem:key=>saved.get(key)||null,setItem:(key,value)=>saved.set(key,value)},cssW:500,cssH:500,offsetX:10,offsetY:20,scale:.5,
   BOOST_SPEED_PER_STACK:.65,BOOST_TURN_PER_STACK:.25,angleDelta:Net.delta,clamp:Net.clamp,
   $(id){if(!elements.has(id))elements.set(id,eventTarget());return elements.get(id);},
+  gamepadInput:()=>null,gamepads:{clear(){}},
   secondLocal:()=>p2,secondaryID:()=>p2.id,localPlayerID:()=>p1.id,controlledTank:()=>p1,chatHasFocus:()=>s.chat,survivalBreak:()=>s.intermission,
   keyForAction:(player,action,code)=>bindings[player][action]===code,heldAction:(player,action)=>s.keys.has(bindings[player][action]),isControlKey:code=>bindings.some(b=>Object.values(b).includes(code)),isWeaponKey:code=>bindings.some(b=>b.fire===code),
   primaryFireHeld:()=>s.heldAction(0,'fire')||s.firePointers.size>(s.hardwareUsesP2()?s.mouseAim.firePointers?.size||0:0),primaryFireKey:code=>s.keyForAction(0,'fire',code),initAudio(){},primeAudioUnlock(){},sendOnlineInput(){packets.push(s.onlineControls());},

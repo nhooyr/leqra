@@ -33,15 +33,17 @@ public struct PowerupHelp: Sendable {
         return "\(enabledKinds.count) of 10 power-up types enabled. New power-ups spawn every \(interval) seconds while there is space. " + timing
     }
 
-    public func description(for kind: String) -> String {
+    public func description(for kind: String, includeGrenadeControls: Bool = false) -> String {
         let timer = "\(powerDuration) seconds"
-        let effect: String
+        var effect: String
         switch kind {
         case "cannon": effect = "3 shots or \(timer). Pierces every opponent and internal wall, bounces off the rim, and flies for 5.3 seconds."
         case "ghost": effect = "Phase through internal walls for \(timer). The rim stays solid. Stacks with weapons and other buffs."
         case "laser": effect = "3 shots or \(timer). Instant ricocheting beams hit every opponent in their path. Range: \(infinity ? "36 maze cells" : "twice the maze perimeter")."
         case "homing": effect = "3 missiles or \(timer). Tracks visible opponents and bounces off walls. Range: \(infinity ? "18 maze cells" : "half the maze perimeter")."
-        case "grenade": effect = "3 throws or \(timer). Homes toward opponents and explodes on tank impact, a new Fire press, or its 10-second fuse. Walls block the blast. Release Fire after detonating."
+        case "grenade":
+            effect = "3 throws or \(timer). Homes toward opponents and explodes on tank impact or after its 10-second fuse. Walls block the blast."
+            if includeGrenadeControls { effect += " Press Fire again to detonate early. Release Fire before throwing another grenade." }
         case "speed": effect = "Up to 5 stacks, each adding 65% movement speed and 25% turn speed. Another pickup refreshes the shared \(timer)."
         case "rapid": effect = "3 seconds of firing within \(timer), using tiny, fast ricocheting rounds. Range: \(infinity ? "18 maze cells" : "a quarter of the maze perimeter")."
         case "scatter": effect = "5 volleys or \(timer). Fires three fast ricocheting pellets in a spread."

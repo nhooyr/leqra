@@ -1,6 +1,7 @@
 /deploy/leqra
 /deploy/leqra.exe
 /bin/
+/.build/
 /*.test
 /src/*.test
 /test-output/

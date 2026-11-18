@@ -2,6 +2,7 @@ package com.leqra.android
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
@@ -25,6 +26,7 @@ internal class NativeGameHeader(
     openMenu: () -> Unit,
     toggleFullscreen: () -> Unit = {},
     openRoom: () -> Unit = {},
+    openSidebar: (() -> Unit)? = null,
 ) : LinearLayout(context) {
     private val brand = row(context)
     private val brandMark = NativeStyle.brandIcon(context)
@@ -37,6 +39,11 @@ internal class NativeGameHeader(
     }
     private val soundButton = iconButton(toggleSound)
     private val fullscreenButton = iconButton(toggleFullscreen)
+    private val hasSidebar = openSidebar != null
+    private val sidebarButton = iconButton { openSidebar?.invoke() }.apply {
+        displayIcon(context.getDrawable(R.drawable.ic_sidebar), "Open sidebar")
+        visibility = if (hasSidebar) VISIBLE else GONE
+    }
     private val menuButton = iconButton(openMenu)
     private var soundMuted: Boolean? = null
     private var fullscreenActive: Boolean? = null
@@ -68,6 +75,7 @@ internal class NativeGameHeader(
         add(roomButton, -2, 36, gap = 0)
         add(soundButton, 44, 44, gap = 0)
         add(fullscreenButton, 44, 44, gap = 0)
+        add(sidebarButton, 44, 44, gap = 0)
         add(menuButton, 44, 44, gap = 0)
     }
 
@@ -78,10 +86,13 @@ internal class NativeGameHeader(
         playing: Boolean,
         fullscreen: Boolean = false,
         roomCode: String? = null,
+        showSidebar: Boolean = true,
     ) {
-        val compact = widthDp < 375 || (roomCode != null && widthDp < 500)
-        brandSubtitle.visibility = if (landscape) View.GONE else View.VISIBLE
+        val sidebarVisible = hasSidebar && showSidebar
+        val compact = widthDp < (if (sidebarVisible) 390 else 375) || (roomCode != null && widthDp < 500)
+        brandSubtitle.visibility = if (landscape || (compact && sidebarVisible)) View.GONE else View.VISIBLE
         brandMark.visibility = if (compact) GONE else VISIBLE
+        sidebarButton.visibility = if (sidebarVisible) VISIBLE else GONE
         val brandGap = context.dp(if (compact) 4 else 8)
         if (brand.paddingEnd != brandGap) brand.setPaddingRelative(0, 0, brandGap, 0)
         roomButton.visibility = if (roomCode == null) GONE else VISIBLE
@@ -106,8 +117,11 @@ internal class NativeGameHeader(
         setOnClickListener { action() }
     }
 
-    private fun ImageButton.displayIcon(kind: String, description: String, active: Boolean = false) {
-        setImageDrawable(NativeStyle.icon(context, kind, active))
+    private fun ImageButton.displayIcon(kind: String, description: String, active: Boolean = false) =
+        displayIcon(NativeStyle.icon(context, kind, active), description, active)
+
+    private fun ImageButton.displayIcon(icon: Drawable?, description: String, active: Boolean = false) {
+        setImageDrawable(icon)
         contentDescription = description
         background = InsetDrawable(
             RippleDrawable(

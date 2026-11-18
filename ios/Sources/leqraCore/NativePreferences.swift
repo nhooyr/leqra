@@ -3,8 +3,13 @@ import Foundation
 /// Diagnostic launches must not overwrite the player's ordinary preferences.
 public enum NativePreferences {
     public static let current = applicationStore()
-    public static let appSettingKeys = ["tankColor", "serverURL", "highFrameRate", "showFPS", "soundEnabled", "soundVolume", "nativePresets", "nativeHardwareControls.v1",
+    public static let gamepadSupportKey = "gamepadSupport"
+    public static let appSettingKeys = ["tankColor", "serverURL", "highFrameRate", "showFPS", "soundEnabled", "soundVolume", "nativePresets", "nativeHardwareControls.v1", gamepadSupportKey,
         "callsign", "callsignAutoPending", "callsignAutoPendingName", "callsignRevision", "localCallsign", "localCallsignAutoPending", "localCallsignAutoPendingName", "localCallsignRevision", "callsignGenerationAttempt"]
+
+    public static func gamepadSupportEnabled(in defaults: UserDefaults = current) -> Bool {
+        defaults.object(forKey: gamepadSupportKey) as? Bool ?? true
+    }
 
     /// Account bearers and saved callsigns are intentionally held in Keychain.
     public static func resetAppSettings(in defaults: UserDefaults = current) {

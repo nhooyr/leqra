@@ -135,6 +135,7 @@ internal class GameSession(context: Context) {
     var keyboardBindings = NativeControlBindings.decode(prefs.getString(NativeControlBindings.storageKey, null))
     var mouseAim = prefs.getBoolean("mouseAim", true)
     var mouseFire = prefs.getBoolean("mouseFire", true)
+    var gamepadSupport = prefs.getBoolean("gamepadSupport", true)
     var showFPS = prefs.getBoolean("showPerformanceReadout", true)
     var screen = Screen.READY
         private set
@@ -588,6 +589,7 @@ internal class GameSession(context: Context) {
             .putString(NativeControlBindings.storageKey, keyboardBindings.encode())
             .putBoolean("mouseAim", mouseAim)
             .putBoolean("mouseFire", mouseFire)
+            .putBoolean("gamepadSupport", gamepadSupport)
             .putBoolean("showPerformanceReadout", showFPS)
             .apply()
     }

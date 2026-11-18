@@ -59,14 +59,23 @@ internal object PowerupHelp {
         return "$spawning $timing Weapons replace the equipped weapon. Shield, Super speed, Ghost, and Starman can stack with it."
     }
 
-    fun description(kind: String, rules: RoomRules, world: ArenaWorld? = null): String {
+    fun description(
+        kind: String,
+        rules: RoomRules,
+        world: ArenaWorld? = null,
+        includeGrenadeControls: Boolean = false,
+    ): String {
         val duration = duration(rules, world)
         val effect = when (kind) {
             "rapid" -> "Hold Fire for small ricocheting rounds. 3 seconds of firing within $duration seconds. Range ${if (rules.infinity) "18 maze cells" else "a quarter of the maze perimeter"}."
             "scatter" -> "Three ricocheting pellets per volley. 5 volleys or $duration seconds."
             "shield" -> "Absorbs one damaging hit per charge. Up to 5 charges with a shared $duration-second timer."
             "homing" -> "Tracks visible opponents and bounces off walls. 3 missiles or $duration seconds. Range ${if (rules.infinity) "18 maze cells" else "half the maze perimeter"}."
-            "grenade" -> "Homes toward opponents. Contact, the next Fire press, or its 10-second fuse detonates it; walls block the blast. Release Fire after detonation to shoot again. 3 throws or $duration seconds."
+            "grenade" -> {
+                val facts = "Homes toward opponents. Detonates on contact or after a 10-second fuse. Walls block the blast. 3 throws or $duration seconds."
+                if (includeGrenadeControls) "$facts Tap or hold Fire to throw. Release, then press Fire again to detonate early. Release Fire after detonation to shoot again."
+                else facts
+            }
             "speed" -> "+65% movement and +25% turn speed per stack. Up to 5 stacks with a shared $duration-second timer."
             "laser" -> "Instant ricocheting beam hits every eligible tank along its path. 3 shots or $duration seconds. Range ${if (rules.infinity) "36 maze cells" else "twice the maze perimeter"}."
             "cannon" -> "Rounds pass through internal walls and every eligible tank, then expire after 5.3 seconds. ${if (rules.infinity) "" else "Bounce off the arena rim. "}3 shots or $duration seconds."
