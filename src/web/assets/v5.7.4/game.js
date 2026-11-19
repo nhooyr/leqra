@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.7.3';
+const GAME_VERSION='5.7.4';
 const GAME_PROTOCOL=1;
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
@@ -530,7 +530,7 @@ function nearbyWalls(x,y,dx,dy,r){
  if(walls.length<24)return walls;
  let z=wallIndex;
  if(!z||z.source!==walls||z.count!==walls.length||z.cols!==cols||z.rows!==rows){
-  z={source:walls,count:walls.length,cols,rows,bins:Array.from({length:cols*rows},()=>[]),mask:new Uint32Array(Math.ceil(walls.length/32)),result:[],order:new Map(walls.map((w,i)=>[w,i]))};
+  z={source:walls,count:walls.length,cols,rows,bins:Array.from({length:cols*rows},()=>[]),mask:new Uint32Array(Math.ceil(walls.length/32)),result:[],queries:Array(64),order:new Map(walls.map((w,i)=>[w,i]))};
   for(let i=0;i<walls.length;i++){const w=walls[i],x0=clamp(Math.floor(w.x/CELL),0,cols-1),x1=clamp(Math.floor((w.x+w.w)/CELL),0,cols-1),y0=clamp(Math.floor(w.y/CELL),0,rows-1),y1=clamp(Math.floor((w.y+w.h)/CELL),0,rows-1);for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++)z.bins[yy*cols+xx].push(i);}
   // Cell bins already contain each wall once in authoritative wall order.
   // Most movement/guidance sweeps stay in one cell: reuse that immutable list.
@@ -539,15 +539,25 @@ function nearbyWalls(x,y,dx,dy,r){
  }
  const x0=clamp(Math.floor((Math.min(x,x+dx)-r)/CELL),0,cols-1),x1=clamp(Math.floor((Math.max(x,x+dx)+r)/CELL),0,cols-1),y0=clamp(Math.floor((Math.min(y,y+dy)-r)/CELL),0,rows-1),y1=clamp(Math.floor((Math.max(y,y+dy)+r)/CELL),0,rows-1);
  if(x0===x1&&y0===y1)return z.cellWalls[y0*cols+x0];
- if((x1-x0+1)*(y1-y0+1)>cols*rows/3)return walls;
+ const cells=(x1-x0+1)*(y1-y0+1);
+ if(cells>cols*rows/3)return walls;
+ let result=z.result;
+ if(cells>4){
+  const first=y0*cols+x0,last=y1*cols+x1,slot=((Math.imul(first,0x9e3779b1)^Math.imul(last,0x85ebca77))>>>16)&63;
+  let query=z.queries[slot];
+  if(query&&query.first===first&&query.last===last)return query.walls;
+  if(!query)query=z.queries[slot]={walls:[]};
+  query.first=first;query.last=last;result=query.walls;
+ }
+ result.length=0;
  // A bit per authoritative wall deduplicates overlapping cell bins and emits
  // candidates in their original order without sorting IDs for every sweep.
- z.mask.fill(0);z.result.length=0;
+ z.mask.fill(0);
  for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++)for(const id of z.bins[yy*cols+xx])z.mask[id>>>5]|=1<<(id&31);
  for(let word=0;word<z.mask.length;word++){
-  let bits=z.mask[word];while(bits){const bit=31-Math.clz32(bits&-bits);z.result.push(walls[(word<<5)+bit]);bits&=bits-1;}
+  let bits=z.mask[word];while(bits){const bit=31-Math.clz32(bits&-bits);result.push(walls[(word<<5)+bit]);bits&=bits-1;}
  }
- return z.result;
+ return result;
 }
 
 function rayWalls(x,y,dx,dy,r=0){

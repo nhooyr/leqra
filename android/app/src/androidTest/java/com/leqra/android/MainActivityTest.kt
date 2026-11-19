@@ -686,7 +686,7 @@ class MainActivityTest {
                 SystemClock.sleep(500)
                 main {
                     val header = MainActivity::class.java.getDeclaredField("header").run { isAccessible = true; get(activity) as ViewGroup }
-                    val version = (0 until header.childCount).map { header.getChildAt(it) }.filterIsInstance<TextView>().single { it.text.toString() == "v${BuildConfig.VERSION_NAME}" }
+                    val version = (0 until header.childCount).map { header.getChildAt(it) }.filterIsInstance<TextView>().single { it.text.toString() == BuildConfig.VERSION_NAME }
                     val visible = android.graphics.Rect()
                     assertTrue("Header version stays visible in both orientations", version.isShown && version.getGlobalVisibleRect(visible))
                     assertEquals("Version is not clipped", version.width, visible.width())

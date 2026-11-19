@@ -23,6 +23,13 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
     private val queryMarks = IntArray(world?.walls?.size ?: 0)
     private val queryIndices = IntArray(world?.walls?.size ?: 0)
     private var queryStamp = 0
+    private class WallQuery {
+        var first = -1
+        var last = -1
+        var indices = IntArray(0)
+        var size = 0
+    }
+    private val fixedQueries = arrayOfNulls<WallQuery>(64)
     private val hotChunkX = IntArray(4)
     private val hotChunkY = IntArray(4)
     private val hotChunks = arrayOfNulls<IntArray>(4)
@@ -77,21 +84,24 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
         val start = next(64)
         val visited = BooleanArray(64)
         visited[start] = true
-        val stack = mutableListOf(start)
-        while (stack.isNotEmpty()) {
-            val cell = stack.last()
+        val stack = IntArray(64)
+        val neighbors = IntArray(4)
+        var depth = 1
+        stack[0] = start
+        while (depth > 0) {
+            val cell = stack[depth - 1]
             val x = cell % 8
             val y = cell / 8
-            val neighbors = ArrayList<Int>(4)
-            if (y > 0 && !visited[cell - 8]) neighbors.add(cell - 8)
-            if (x < 7 && !visited[cell + 1]) neighbors.add(cell + 1)
-            if (y < 7 && !visited[cell + 8]) neighbors.add(cell + 8)
-            if (x > 0 && !visited[cell - 1]) neighbors.add(cell - 1)
-            if (neighbors.isEmpty()) {
-                stack.removeAt(stack.lastIndex)
+            var count = 0
+            if (y > 0 && !visited[cell - 8]) neighbors[count++] = cell - 8
+            if (x < 7 && !visited[cell + 1]) neighbors[count++] = cell + 1
+            if (y < 7 && !visited[cell + 8]) neighbors[count++] = cell + 8
+            if (x > 0 && !visited[cell - 1]) neighbors[count++] = cell - 1
+            if (count == 0) {
+                depth--
                 continue
             }
-            val neighbor = neighbors[next(neighbors.size)]
+            val neighbor = neighbors[next(count)]
             when (neighbor - cell) {
                 -8 -> cells[cell] = cells[cell] and 1.inv()
                 1 -> cells[neighbor] = cells[neighbor] and 2.inv()
@@ -99,7 +109,7 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
                 else -> cells[cell] = cells[cell] and 2.inv()
             }
             visited[neighbor] = true
-            stack.add(neighbor)
+            stack[depth++] = neighbor
         }
         for (i in cells.indices) {
             if (i >= 8 && cells[i] and 1 != 0 && next(5) == 0) cells[i] = cells[i] and 1.inv()
@@ -199,22 +209,33 @@ class InfiniteMaze private constructor(val seed: Int, val world: ArenaWorld?) {
                     return true
                 return false
             }
-            // Keep world order, including exact corner-hit ties, without boxed sets or query lists.
-            if (queryStamp == Int.MAX_VALUE) {
-                queryMarks.fill(0)
-                queryStamp = 0
-            }
-            val stamp = ++queryStamp
-            var count = 0
-            for (y in ay..by) for (x in ax..bx) for (index in fixedBins[y * world.cols + x]) {
-                if (queryMarks[index] != stamp) {
-                    queryMarks[index] = stamp
-                    queryIndices[count++] = index
+            val first = ay * world.cols + ax
+            val last = by * world.cols + bx
+            val slot = ((first * 0x9e3779b1.toInt() xor (last * 0x85ebca77.toInt())) ushr 16) and 63
+            val query = fixedQueries[slot] ?: WallQuery().also { fixedQueries[slot] = it }
+            if (query.first != first || query.last != last) {
+                // Cache only ordered broad-phase membership; exact wall tests stay below.
+                if (queryStamp == Int.MAX_VALUE) {
+                    queryMarks.fill(0)
+                    queryStamp = 0
                 }
+                val stamp = ++queryStamp
+                var count = 0
+                for (y in ay..by) for (x in ax..bx) for (index in fixedBins[y * world.cols + x]) {
+                    if (queryMarks[index] != stamp) {
+                        queryMarks[index] = stamp
+                        queryIndices[count++] = index
+                    }
+                }
+                java.util.Arrays.sort(queryIndices, 0, count)
+                if (query.indices.size < count) query.indices = IntArray(count)
+                queryIndices.copyInto(query.indices, endIndex = count)
+                query.first = first
+                query.last = last
+                query.size = count
             }
-            java.util.Arrays.sort(queryIndices, 0, count)
-            for (offset in 0 until count) {
-                val w = world.walls[queryIndices[offset]]
+            for (offset in 0 until query.size) {
+                val w = world.walls[query.indices[offset]]
                 if (
                     w.x <= x1 &&
                         w.x + w.w >= x0 &&

@@ -8,10 +8,20 @@ public final class InfiniteMaze {
     public let seed: UInt32
     public let world: ArenaWorld?
     private let fixedBins: [[Int]]
+    private final class WallQuery {
+        var first, last: Int
+        var indices: [Int] = []
+        init(first: Int, last: Int) { self.first = first; self.last = last }
+    }
+    private var fixedMask: [UInt64] = []
+    private var fixedQueries = [WallQuery?](repeating: nil, count: 64)
     private struct Coordinate: Hashable { var x: Int; var y: Int }
     private var chunks: [Coordinate: [UInt8]] = [:]
     private var order: [Coordinate] = []
     private var nextEviction = 0
+    private var hotCoordinates = [Coordinate](repeating: Coordinate(x: 0, y: 0), count: 4)
+    private var hotChunks = [[UInt8]?](repeating: nil, count: 4)
+    private var nextHot = 0
     var cachedChunkCount: Int { chunks.count }
 
     public init(seed: UInt32) { self.seed = seed; world = nil; fixedBins = [] }
@@ -27,6 +37,7 @@ public final class InfiniteMaze {
             for row in y0...max(y0, y1) { for col in x0...max(x0, x1) { bins[row * world.cols + col].append(index) } }
         }
         fixedBins = bins
+        fixedMask = [UInt64](repeating: 0, count: (world.walls.count + 63) / 64)
     }
 
     private func hash(_ coord: Coordinate, _ salt: UInt32) -> UInt32 {
@@ -38,7 +49,10 @@ public final class InfiniteMaze {
     }
 
     private func chunk(_ coord: Coordinate) -> [UInt8] {
-        if let cached = chunks[coord] { return cached }
+        for index in hotChunks.indices {
+            if hotCoordinates[index] == coord, let cached = hotChunks[index] { return cached }
+        }
+        if let cached = chunks[coord] { return rememberChunk(cached, at: coord) }
         var cells = [UInt8](repeating: 3, count: 64)
         var state = hash(coord, 0x243f6a88)
         if state == 0 { state = 1 }
@@ -49,16 +63,19 @@ public final class InfiniteMaze {
         let start = Int(random() % 64)
         var visited = [Bool](repeating: false, count: 64)
         visited[start] = true
-        var stack = [start]
-        while let cell = stack.last {
+        var stack = [Int](repeating: 0, count: 64), neighbors = [Int](repeating: 0, count: 4)
+        var depth = 1
+        stack[0] = start
+        while depth > 0 {
+            let cell = stack[depth - 1]
             let x = cell % 8, y = cell / 8
-            var neighbors: [Int] = []
-            if y > 0 && !visited[cell - 8] { neighbors.append(cell - 8) }
-            if x < 7 && !visited[cell + 1] { neighbors.append(cell + 1) }
-            if y < 7 && !visited[cell + 8] { neighbors.append(cell + 8) }
-            if x > 0 && !visited[cell - 1] { neighbors.append(cell - 1) }
-            if neighbors.isEmpty { stack.removeLast(); continue }
-            let neighbor = neighbors[Int(random() % UInt32(neighbors.count))]
+            var count = 0
+            if y > 0 && !visited[cell - 8] { neighbors[count] = cell - 8; count += 1 }
+            if x < 7 && !visited[cell + 1] { neighbors[count] = cell + 1; count += 1 }
+            if y < 7 && !visited[cell + 8] { neighbors[count] = cell + 8; count += 1 }
+            if x > 0 && !visited[cell - 1] { neighbors[count] = cell - 1; count += 1 }
+            if count == 0 { depth -= 1; continue }
+            let neighbor = neighbors[Int(random() % UInt32(count))]
             switch neighbor - cell {
             case -8: cells[cell] &= ~1
             case 1: cells[neighbor] &= ~2
@@ -66,7 +83,7 @@ public final class InfiniteMaze {
             default: cells[cell] &= ~2
             }
             visited[neighbor] = true
-            stack.append(neighbor)
+            stack[depth] = neighbor; depth += 1
         }
         for i in cells.indices {
             if i >= 8 && cells[i] & 1 != 0 && random() % 5 == 0 { cells[i] &= ~1 }
@@ -78,11 +95,19 @@ public final class InfiniteMaze {
         cells[(1 + Int(west % 3)) * 8] &= ~2
         cells[(4 + Int((west >> 16) % 3)) * 8] &= ~2
         if order.count == 128 {
+            for index in hotChunks.indices where hotCoordinates[index] == order[nextEviction] { hotChunks[index] = nil }
             chunks.removeValue(forKey: order[nextEviction])
             order[nextEviction] = coord
             nextEviction = (nextEviction + 1) % 128
         } else { order.append(coord) }
         chunks[coord] = cells
+        return rememberChunk(cells, at: coord)
+    }
+
+    private func rememberChunk(_ cells: [UInt8], at coordinate: Coordinate) -> [UInt8] {
+        hotCoordinates[nextHot] = coordinate
+        hotChunks[nextHot] = cells
+        nextHot = (nextHot + 1) % hotChunks.count
         return cells
     }
 
@@ -99,19 +124,41 @@ public final class InfiniteMaze {
         guard [x0, y0, x1, y1].allSatisfy({ $0.isFinite && abs($0) < 1e14 }),
               x0 <= x1, y0 <= y1, x1 - x0 < 84 * 256, y1 - y0 < 84 * 256 else { return false }
         if let world {
+            let firstX = min(max(Int(floor(x0 / 84)), 0), world.cols - 1)
+            let lastX = min(max(Int(floor(x1 / 84)), 0), world.cols - 1)
+            let firstY = min(max(Int(floor(y0 / 84)), 0), world.rows - 1)
+            let lastY = min(max(Int(floor(y1 / 84)), 0), world.rows - 1)
+            if fixedBins.isEmpty || (lastX - firstX + 1) * (lastY - firstY + 1) > world.cols * world.rows / 3 {
+                for wall in world.walls {
+                    guard wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0 else { continue }
+                    if visit(wall) { return true }
+                }
+                return false
+            }
             let candidates: [Int]
-            if fixedBins.isEmpty { candidates = Array(world.walls.indices) }
+            if firstX == lastX && firstY == lastY { candidates = fixedBins[firstY * world.cols + firstX] }
             else {
-                let firstX = min(max(Int(floor(x0 / 84)), 0), world.cols - 1)
-                let lastX = min(max(Int(floor(x1 / 84)), 0), world.cols - 1)
-                let firstY = min(max(Int(floor(y0 / 84)), 0), world.rows - 1)
-                let lastY = min(max(Int(floor(y1 / 84)), 0), world.rows - 1)
-                if firstX == lastX && firstY == lastY { candidates = fixedBins[firstY * world.cols + firstX] }
-                else if (lastX - firstX + 1) * (lastY - firstY + 1) > world.cols * world.rows / 3 { candidates = Array(world.walls.indices) }
+                let first = firstY * world.cols + firstX, last = lastY * world.cols + lastX
+                let hash = (UInt32(truncatingIfNeeded: first) &* 0x9e3779b1) ^ (UInt32(truncatingIfNeeded: last) &* 0x85ebca77)
+                let slot = Int((hash >> 16) & 63)
+                if let query = fixedQueries[slot], query.first == first, query.last == last { candidates = query.indices }
                 else {
-                    var indices = Set<Int>()
-                    for row in firstY...lastY { for col in firstX...lastX { indices.formUnion(fixedBins[row * world.cols + col]) } }
-                    candidates = indices.sorted()
+                    let query = fixedQueries[slot] ?? WallQuery(first: first, last: last)
+                    query.first = first; query.last = last
+                    query.indices.removeAll(keepingCapacity: true)
+                    for index in fixedMask.indices { fixedMask[index] = 0 }
+                    for row in firstY...lastY { for col in firstX...lastX {
+                        for index in fixedBins[row * world.cols + col] { fixedMask[index >> 6] |= UInt64(1) << (index & 63) }
+                    } }
+                    for (word, mask) in fixedMask.enumerated() {
+                        var bits = mask
+                        while bits != 0 {
+                            query.indices.append(word * 64 + bits.trailingZeroBitCount)
+                            bits &= bits - 1
+                        }
+                    }
+                    fixedQueries[slot] = query
+                    candidates = query.indices
                 }
             }
             for index in candidates {

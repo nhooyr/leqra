@@ -498,7 +498,7 @@ class NativeNetworkClient(
                             }
                             if (infinity)
                                 send(JSONObject(pendingJoin.toString())
-                                    .put("version", BuildConfig.VERSION_NAME)
+                                    .put("version", BuildConfig.GAME_VERSION)
                                     .put("protocol", GameWireProtocol.epoch))
                         }
                     }
@@ -583,7 +583,7 @@ class NativeNetworkClient(
                 send(
                     JSONObject()
                         .put("type", "client_hello")
-                        .put("version", BuildConfig.VERSION_NAME)
+                        .put("version", BuildConfig.GAME_VERSION)
                         .put("protocol", GameWireProtocol.epoch),
                 )
                 send(pendingJoin)

@@ -59,7 +59,7 @@ internal class NativeGameHeader(
         names.add(brandSubtitle, gap = 0)
         brand.add(names, width = -2, gap = 0)
         add(brand, width = -2, gap = 0)
-        add(label(context, "v${BuildConfig.VERSION_NAME}", 10f, NativeStyle.muted, mono = true).apply {
+        add(label(context, BuildConfig.VERSION_NAME, 10f, NativeStyle.muted, mono = true).apply {
             contentDescription = "View leqra on GitHub"
             gravity = Gravity.CENTER_VERTICAL
             minHeight = context.dp(32)

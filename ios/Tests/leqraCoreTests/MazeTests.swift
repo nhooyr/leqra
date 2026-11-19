@@ -4,6 +4,22 @@ import CryptoKit
 @testable import leqraCore
 
 final class MazeTests: XCTestCase {
+    func testFixedQueryCacheKeepsExactBoundsAndOriginalWallOrder() {
+        var rules = RoomRules()
+        rules.mapSize = "ultrawide"
+        let world = FixedArena(rules: rules, name: "PERF", colorIndex: 0, botCount: 0, seed: 42).world
+        let maze = InfiniteMaze(world: world)
+        for index in 0..<1200 {
+            let x = Double((index * 37) % 2100) - 50
+            let y = Double((index * 53) % 1200) - 50
+            for offset in [0.0, 0.75] {
+                let x0 = x + offset, y0 = y + offset, x1 = x0 + 91, y1 = y0 + 173
+                let expected = world.walls.filter { $0.x <= x1 && $0.x + $0.w >= x0 && $0.y <= y1 && $0.y + $0.h >= y0 }
+                XCTAssertEqual(maze.walls(x0: x0, y0: y0, x1: x1, y1: y1), expected)
+            }
+        }
+    }
+
     func testReportLaserGuideCPU() throws {
         guard ProcessInfo.processInfo.environment["LEQRA_PROFILE_GUIDE"] == "1" else { throw XCTSkip("Opt in to the laser guide CPU benchmark.") }
         let maze = InfiniteMaze(seed: 42)

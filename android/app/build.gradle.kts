@@ -45,8 +45,9 @@ android {
         applicationId = "com.leqra"
         minSdk = 26
         targetSdk = 36
-        versionName = releaseVersion
+        versionName = "v$releaseVersion"
         versionCode = parts[0] * 1000000 + parts[1] * 10000 + parts[2]
+        buildConfigField("String", "GAME_VERSION", "\"$releaseVersion\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { buildConfig = true }

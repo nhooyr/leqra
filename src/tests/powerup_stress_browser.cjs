@@ -68,7 +68,7 @@ window.__stress.verifyDryFire=function(){
   weaponControl(t,true,true);check(voices.join(',')==='dryFire'&&bullets.length===5,'fixed empty press emits only dry feedback');check(this.audioSources-sources===(enabled?1:0),'fixed dry WebAudio source respects audio setting');
   time+=1;weaponControl(t,true,false);check(voices.length===1,'fixed empty hold is silent');weaponControl(t,false,false);bullets=[];weaponControl(t,true,true);check(voices.length===2&&voices[1]===''&&bullets.length===1,'fixed available ammo emits one real shot');
   bullets=[];grantPower(t,'grenade');t.charges=1;weaponControl(t,true,true);check(bullets.length===1&&bullets[0].kind==='grenade','fixed last grenade throws once');
-  for(let i=0;i<5;i++){time+=1/60;weaponControl(t,true,false);}grantPower(t,'shield');weaponControl(t,true,false);if(this.continuousFire){check(bullets.length===3&&bullets[1].kind===''&&bullets[2].kind==='','fixed hold resumes regular fire and retries on pickup');}else{check(bullets.length===1,'legacy fixed hold survives refills');weaponControl(t,false,false);weaponControl(t,true,true);check(bullets.length===2&&bullets[1].kind==='','legacy fixed fresh press returns to standard');}
+  for(let i=0;i<5;i++){time+=1/60;weaponControl(t,true,false);}check(bullets.length===1,'fixed final charge respects reload');time+=t.cooldown;t.cooldown=0;weaponControl(t,true,false);grantPower(t,'shield');time+=t.cooldown;t.cooldown=0;weaponControl(t,true,false);if(this.continuousFire){check(bullets.length===3&&bullets[1].kind===''&&bullets[2].kind==='','fixed hold resumes regular fire and retries on pickup');}else{check(bullets.length===1,'legacy fixed hold survives refills');weaponControl(t,false,false);weaponControl(t,true,true);check(bullets.length===2&&bullets[1].kind==='','legacy fixed fresh press returns to standard');}
  }finally{shotSound=original;}return checks;
 };
 window.__stress.verifyCannonTrails=function(){
@@ -97,7 +97,7 @@ window.__verifyInfinityDryFire=function(){
  w.time+=1;weaponControl(w,t,true,false);check(window.__stress.audioSources-sources===(enabled?1:0),'Infinity held empty fire is silent');
  weaponControl(w,t,false,false);w.bullets=[];weaponControl(w,t,true,true);check(w.lastBullet===6,'Infinity fresh loaded press fires normally');
  w.bullets=[];art.grantPower(t,'grenade',15,8);t.charges=1;weaponControl(w,t,true,true);const grenade=w.bullets[0];check(w.bullets.length===1&&grenade.kind==='grenade','Infinity last grenade throws once');
- for(let i=0;i<5;i++){w.time+=1/60;weaponControl(w,t,true,false);}art.grantPower(t,'shield',15,8);weaponControl(w,t,true,false);if(window.__stress.continuousFire){check(w.bullets.length===3&&w.bullets.includes(grenade),'Infinity hold resumes regular fire and retries on pickup');}else{check(w.bullets.length===1,'legacy Infinity hold survives refills');weaponControl(w,t,false,false);weaponControl(w,t,true,true);check(w.bullets.length===2&&w.bullets.includes(grenade),'legacy Infinity fresh press returns to standard');}return checks;
+ for(let i=0;i<5;i++){w.time+=1/60;weaponControl(w,t,true,false);}check(w.bullets.length===1,'Infinity final charge respects reload');w.time+=t.cooldown;t.cooldown=0;weaponControl(w,t,true,false);art.grantPower(t,'shield',15,8);w.time+=t.cooldown;t.cooldown=0;weaponControl(w,t,true,false);if(window.__stress.continuousFire){check(w.bullets.length===3&&w.bullets.includes(grenade),'Infinity hold resumes regular fire and retries on pickup');}else{check(w.bullets.length===1,'legacy Infinity hold survives refills');weaponControl(w,t,false,false);weaponControl(w,t,true,true);check(w.bullets.length===2&&w.bullets.includes(grenade),'legacy Infinity fresh press returns to standard');}return checks;
 };
 window.__stressInfinity={world:()=>session,transition(kind){
  const w=session,t=w.tanks[0];
@@ -125,7 +125,7 @@ function staged(name,variant){
 function summary(values){if(!values.length)return null;const sorted=[...values].sort((a,b)=>a-b),at=p=>sorted[Math.min(sorted.length-1,Math.floor(sorted.length*p))];return{samples:values.length,mean:values.reduce((a,b)=>a+b)/values.length,p50:at(.5),p95:at(.95),p99:at(.99),max:sorted.at(-1)};}
 
 (async()=>{
- const served=new Map();for(const variant of ['before','after'])for(const name of ['game.js','infinite.js','netcode.js'])served.set(variant+'/'+name,staged(name,variant));
+ const served=new Map();for(const variant of ['before','after'])for(const name of ['game.js','infinite.js','infinite-maze.js','netcode.js'])served.set(variant+'/'+name,staged(name,variant));
  const server=http.createServer((request,response)=>{
   const url=new URL(request.url,'http://localhost'),variant=url.searchParams.get('variant')||request.headers.cookie?.match(/variant=(before|after)/)?.[1]||'after';
   if(url.pathname==='/'){response.setHeader('Set-Cookie','variant='+variant+'; SameSite=Lax');response.setHeader('Content-Type','text/html');response.end(fs.readFileSync(path.join(web,'index.html')));return;}
