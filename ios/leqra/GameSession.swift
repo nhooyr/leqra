@@ -163,6 +163,7 @@ final class GameSession: ObservableObject {
     private var fireArrival = 0.0
     private let emptyFireProbe = ProcessInfo.processInfo.arguments.contains("--probe-empty-fire-feedback")
     private let directAimProbe = ProcessInfo.processInfo.arguments.contains("--probe-direct-aim")
+    private let deathNoticeProbe = ProcessInfo.processInfo.arguments.contains("--probe-death-notice")
     private var hudElapsed = 0.0
     private var frameElapsed = 0.0
     private var frameCount = 0
@@ -2072,6 +2073,15 @@ final class GameSession: ObservableObject {
             if timeline.stale { status = "Waiting for server…" }
         }
         if directAimProbe { snapshot?.world = world }
+        if deathNoticeProbe, var fixture = snapshot {
+            if let index = fixture.tanks.firstIndex(where: { $0.id == localID }) {
+                fixture.tanks[index].hp = 0
+                fixture.tanks[index].killedBy = "A very long killer callsign with 雪 and <literal> text"
+                fixture.tanks[index].killedByColor = GamePalette.colors[5]
+                fixture.tanks.append(ArenaTank(id: 99, name: "Witness", x: fixture.tanks[index].x + 60, y: fixture.tanks[index].y, colorIndex: 5))
+            }
+            snapshot = fixture
+        }
         guard let snapshot else { return }
         if offline { cacheFireAuthority(frameProfiler != nil ? snapshot : practice?.snapshot ?? fixedArena?.snapshot ?? snapshot) }
         let finalShot = (snapshot.result != nil || snapshot.phase == "matchOver" || snapshot.phase == "roundOver")
@@ -2110,6 +2120,9 @@ final class GameSession: ObservableObject {
             let primary = snapshot.tanks.first { $0.id == localID }
             let secondary = snapshot.tanks.first { $0.id == secondaryLocalID }
             scene.view?.superview?.accessibilityValue = "p1x=\(primary?.x ?? 0),p1y=\(primary?.y ?? 0),p1a=\(primary?.angle ?? 0),p1life=\(primary?.spawnSerial ?? 0),p1hp=\(primary?.hp ?? 0),p1ammo=\(primary?.ammoUsed ?? 0),p2x=\(secondary?.x ?? 0),p2y=\(secondary?.y ?? 0),p2a=\(secondary?.angle ?? 0),p2life=\(secondary?.spawnSerial ?? 0),p2hp=\(secondary?.hp ?? 0),p2ammo=\(secondary?.ammoUsed ?? 0)"
+        }
+        if deathNoticeProbe {
+            scene.view?.superview?.accessibilityValue = scene.deathNoticeProbeValue
         }
         hudElapsed += dt
         if hudElapsed >= 0.1 {

@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.7.5';
+const GAME_VERSION='5.7.6';
 const GAME_PROTOCOL=1;
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
@@ -1789,8 +1789,13 @@ function wrapTankLabel(label,maxWidth,measure){
  for(const letter of label){const next=line+letter;if(line&&measure(next)>maxWidth){lines.push(line);line=letter;}else line=next;}
  if(line||!lines.length)lines.push(line);return lines;
 }
+function tankLabelFontSize(zoom,infinity=false){return Math.max(10,(infinity?11:10)*zoom);}
+function syncTankLabelSize(element,zoom,infinity=false){
+ const value=tankLabelFontSize(zoom,infinity)+'px',style=element?.style;
+ if(style?.getPropertyValue&&style.getPropertyValue('--tank-label-font-size')!==value)style.setProperty('--tank-label-font-size',value);
+}
 function tankStatusLayout(t){
- const zoom=Math.max(.05,scale),font=Math.max(10,10/zoom),margin=2*Math.max(1,.72/zoom),lineHeight=font*1.25;
+ const zoom=Math.max(.05,scale),font=tankLabelFontSize(zoom)/zoom,margin=2*Math.max(1,.72/zoom),lineHeight=font*1.25;
  // Anchor to the hull, not the current effects: names stay close and do not
  // jump when a weapon or shield is acquired. Badges may cover outer shield rings.
  const local=t.id===localPlayerID()||t.id===secondaryID()||mode==='duel',weight=local?'bold ':'normal ';
@@ -2074,6 +2079,7 @@ function render(paint=true){
 function renderArena(){
  // Resizing clears the bitmap; keep that clear and the redraw in one frame.
  syncCanvasSize();
+ if(typeof wrap!=='undefined'&&wrap.style)syncTankLabelSize(wrap,scale);
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=paintColor(theme.arena);ctx.fillRect(0,0,cssW,cssH);
  // Subtle registration marks in the letterbox area.
  ctx.strokeStyle=paintColor(theme.registration);ctx.lineWidth=1;const mx=offsetX-6,my=offsetY-6,mw=W*scale+12,mh=H*scale+12;for(const [x,y,sx,sy]of[[mx,my,1,1],[mx+mw,my,-1,1],[mx,my+mh,1,-1],[mx+mw,my+mh,-1,-1]]){ctx.beginPath();ctx.moveTo(x+sx*9,y);ctx.lineTo(x,y);ctx.lineTo(x,y+sy*9);ctx.stroke();}
@@ -6188,7 +6194,7 @@ window.leqraInfinityArt=Object.freeze({
  recycleStarmanProjectiles,starmanAudio:syncStarmanAudio,
  missileTurn:MISSILE_TURN,
  rect:roundRect,tile:paintArenaTile,wall:paintArenaWall,hull:drawCachedTankHull,turret:paintTankTurret,pickup:drawPickup,bullets:drawBullets,
- drawBadges:drawTankPowerBadges,ageTank:applyOnlineTankEffects,placeTankLabels,wrapTankLabel,
+ drawBadges:drawTankPowerBadges,ageTank:applyOnlineTankEffects,placeTankLabels,wrapTankLabel,tankLabelFontSize,syncTankLabelSize,
  shot:shotSound,dryFire:dryFireSound,ricochet:ricochetSound,collect:pickupSound,shield:shieldSound,blast:boom,grenade:grenadeBoom,
  impact:()=>tone(170,95,.095,SOUND_LEVELS.impact,'sine')
 });

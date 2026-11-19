@@ -1017,6 +1017,7 @@ function onlineBulletPose(world,bullet,frame){
  return {...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,vx:a.vx+(b.vx-a.vx)*f,vy:a.vy+(b.vy-a.vy)*f,life:a.life+(b.life-a.life)*f,trail:b.kind==='rapid'?null:b.trail||[a,b]};
 }
 
+function labelFontSize(zoom){return (art.tankLabelFontSize?.(zoom,true)??Math.max(10,11*zoom))/zoom;}
 function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity, deferCounts=false, labelLayout=null, wreck=false, maze=null) {
  const color = COLORS[tank.colorIndex] || COLORS[0];
  ctx.save();
@@ -1071,7 +1072,7 @@ function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLef
  art.turret(ctx, skin);
  ctx.restore();
  }
- const labelFont=Math.max(11,10/zoom);
+ const labelFont=labelFontSize(zoom);
  ctx.font = (highlight?'bold ':'normal ')+labelFont+'px ui-monospace,SFMono-Regular,Consolas,monospace';
  ctx.textAlign = 'center';
  const lines=labelLayout?.lines||[label],lineHeight=labelFont*1.25;
@@ -1524,6 +1525,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
  // Short portrait previews include the outer tanks and their labels without
  // changing gameplay cameras or the composition on taller phones.
  const zoom = world.showcasePortrait ? Math.min(normalZoom,height/(2*(3*CELL+64))) : normalZoom;
+ art.syncTankLabelSize?.(arena,zoom,true);
  const x0 = x - width / (2 * zoom), y0 = y - height / (2 * zoom);
  const x1 = x + width / (2 * zoom), y1 = y + height / (2 * zoom);
  ctx.save();
@@ -1556,7 +1558,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   if (!visible(displayed)) continue;
   if (owner&&now<owner.previewRecoilUntil) displayed.recoil = Math.max(displayed.recoil || 0,(owner.previewRecoilUntil-now)/100);
   const label=owner?pilotIdentity(world,owner===world?0:1,tank).label:art.botName?.(tank.name||'Tank',tank.bot)||tank.name||'Tank';
-  const font=Math.max(11,10/zoom);ctx.font=(owner?'bold ':'normal ')+font+'px ui-monospace,SFMono-Regular,Consolas,monospace';
+  const font=labelFontSize(zoom);ctx.font=(owner?'bold ':'normal ')+font+'px ui-monospace,SFMono-Regular,Consolas,monospace';
   const maxWidth=Math.max(10,Math.min(190/zoom,x1-x0)-14/zoom),measure=text=>ctx.measureText(text)?.width||30;
   const lines=art.wrapTankLabel?.(label,maxWidth,measure)||[label],labelHeight=Math.max(16,font*1.25*lines.length+3),labelWidth=Math.max(Math.max(...lines.map(measure))+10,tank.bot&&tank.difficulty==='godlike'?measure('GODLIKE')+12:0);
   rendered.push({id:tank.id,local:!!owner,warning:tank.bot&&tank.difficulty==='godlike',tank:displayed,label,layout:{x:displayed.x,labelY:displayed.y-32-labelHeight,labelWidth,labelHeight,lines}});
