@@ -309,7 +309,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra;
 				PRODUCT_NAME = leqra;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -331,7 +331,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra;
 				PRODUCT_NAME = leqra;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -346,7 +346,7 @@
 				DEVELOPMENT_TEAM = 7WUF7WB9JD;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = leqra;
@@ -360,7 +360,7 @@
 				DEVELOPMENT_TEAM = 7WUF7WB9JD;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.ios.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.leqra.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = leqra;

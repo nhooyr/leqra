@@ -5,7 +5,7 @@ set -eu
 
 device=${TARGET_DEVICE_IDENTIFIER:-}
 platform=${TARGET_DEVICE_PLATFORM_NAME:-${PLATFORM_NAME:-}}
-runner=com.leqra.ios.uitests.xctrunner
+runner=com.leqra.uitests.xctrunner
 
 case "$device" in
     ''|*placeholder*|*Placeholder*) exit 0 ;;

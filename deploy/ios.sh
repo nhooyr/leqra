@@ -23,4 +23,4 @@ xcrun devicectl device install app \
 xcrun devicectl device process launch \
   --device "$1" \
   --terminate-existing \
-  com.leqra.ios
+  com.leqra

@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/cleanup-ios-test-runner.sh"
-RUNNER = "com.leqra.ios.uitests.xctrunner"
+RUNNER = "com.leqra.uitests.xctrunner"
 
 
 class RunnerCleanupTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class RunnerCleanupTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(commands, [["devicectl", "device", "uninstall", "app", "--device",
                                          "selected destination", RUNNER, "--timeout", "15", "--quiet"]])
-            self.assertNotIn("com.leqra.ios", commands[0])
+            self.assertNotIn("com.leqra", commands[0])
 
     def test_missing_generic_and_unsupported_destinations_are_untouched(self):
         for platform, device in (("iphoneos", ""), ("iphoneos", "dvtdevice-placeholder"),

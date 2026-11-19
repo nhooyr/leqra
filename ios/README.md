@@ -10,7 +10,7 @@ The interface follows the current mobile web game: the unified room, compact bra
 2. Select the **leqra** scheme and an iPhone or iPad simulator, then Run.
 3. For an iPhone, select your signing team under **Signing & Capabilities**, enable Developer Mode on the phone, and Run. A free Personal Team works for development. Trust the developer profile on the phone if iOS requests it.
 
-Requires an iOS SDK, iOS 16 or newer, and no third-party dependencies. The visible app name is lowercase **leqra**.
+Requires an iOS SDK, iOS 16 or newer, and no third-party dependencies. The visible app name is lowercase **leqra**. The bundle ID is `com.leqra`.
 
 The app starts directly in the room. Public Infinity uses `https://leqra.com`; turn off **Public Infinity** to play locally. Expand **Room settings** to choose Infinity, Elimination, Capture the Flag, King of the Hill, or Survival. All five modes run locally in Swift. Expand **Players and bots** to add or remove local P2, edit each local callsign and paint, or configure bot names, paint, difficulty, and teams. **Share room online** publishes the current local configuration through the existing Go server.
 
