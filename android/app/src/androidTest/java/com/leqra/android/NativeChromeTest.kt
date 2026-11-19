@@ -31,7 +31,7 @@ class NativeChromeTest {
             val badge = (0 until header.childCount).map(header::getChildAt).filterIsInstance<TextView>()
                 .single { it.contentDescription == "View leqra on GitHub" }
             val mark = requireNotNull(badge.compoundDrawablesRelative[0])
-            assertEquals("v${BuildConfig.VERSION_NAME}", badge.text.toString())
+            assertEquals(BuildConfig.VERSION_NAME, badge.text.toString())
             assertEquals(context.dp(17), mark.intrinsicWidth)
             assertTrue(badge.performClick())
             assertTrue(openedGitHub)
@@ -53,7 +53,7 @@ class NativeChromeTest {
             assertEquals(header, sidebar.parent)
             assertEquals(controls.left, sidebar.right)
             assertTrue("Controls stays within the compact header", controls.right <= header.width - header.paddingRight)
-            assertEquals("v${BuildConfig.VERSION_NAME}", badge.text.toString())
+            assertEquals(BuildConfig.VERSION_NAME, badge.text.toString())
             assertTrue(sidebar.performClick())
             assertTrue(openedSidebar)
         }

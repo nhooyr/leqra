@@ -13,6 +13,13 @@ type wallIndex struct {
 	bins              [][]int
 	all, candidates   []int
 	mask              []uint64
+	queries           [64]wallQuery
+}
+
+type wallQuery struct {
+	first, last int
+	valid       bool
+	indices     []int
 }
 
 func (g *Game) wallCandidates(x, y, dx, dy, r float64) []int {
@@ -35,7 +42,7 @@ func (g *Game) wallCandidates(x, y, dx, dy, r float64) []int {
 	}
 	z := g.spatial
 	if z == nil || z.first != &ws[0] || z.count != len(ws) || z.cols != cols || z.rows != rows {
-		z = &wallIndex{first: &ws[0], count: len(ws), cols: cols, rows: rows, bins: make([][]int, cols*rows), all: make([]int, len(ws)), mask: make([]uint64, (len(ws)+63)/64), candidates: make([]int, 0, len(ws))}
+		z = &wallIndex{first: &ws[0], count: len(ws), cols: cols, rows: rows, bins: make([][]int, cols*rows), all: make([]int, len(ws)), mask: make([]uint64, (len(ws)+63)/64)}
 		for i, w := range ws {
 			z.all[i] = i
 			x0 := int(clamp(math.Floor(w.X/cellSize), 0, float64(cols-1)))
@@ -55,7 +62,8 @@ func (g *Game) wallCandidates(x, y, dx, dy, r float64) []int {
 	x1 := int(clamp(math.Floor((max(x, x+dx)+r)/cellSize), 0, float64(cols-1)))
 	y0 := int(clamp(math.Floor((min(y, y+dy)-r)/cellSize), 0, float64(rows-1)))
 	y1 := int(clamp(math.Floor((max(y, y+dy)+r)/cellSize), 0, float64(rows-1)))
-	if len(ws) < 24 || (x1-x0+1)*(y1-y0+1) > cols*rows/3 {
+	cells := (x1 - x0 + 1) * (y1 - y0 + 1)
+	if len(ws) < 24 || cells > cols*rows/3 {
 		return z.all
 	}
 	// A cell bin already contains each wall once in authoritative order. Most
@@ -63,10 +71,23 @@ func (g *Game) wallCandidates(x, y, dx, dy, r float64) []int {
 	if x0 == x1 && y0 == y1 {
 		return z.bins[y0*cols+x0]
 	}
+	// Only cache broad-phase membership. Every ray still performs its exact
+	// collision tests, including corner ties, against the original wall order.
+	var query *wallQuery
+	candidates := z.candidates[:0]
+	if cells > 4 {
+		first, last := y0*cols+x0, y1*cols+x1
+		slot := ((uint32(first)*0x9e3779b1 ^ uint32(last)*0x85ebca77) >> 16) & 63
+		query = &z.queries[slot]
+		if query.valid && query.first == first && query.last == last {
+			return query.indices
+		}
+		query.first, query.last, query.valid = first, last, true
+		candidates = query.indices[:0]
+	}
 	// Deduplicate overlapping cell bins without sorting on each query. Reading
 	// set bits in ascending order preserves the original collision wall order.
 	clear(z.mask)
-	z.candidates = z.candidates[:0]
 	for yy := y0; yy <= y1; yy++ {
 		for xx := x0; xx <= x1; xx++ {
 			for _, i := range z.bins[yy*cols+xx] {
@@ -76,9 +97,14 @@ func (g *Game) wallCandidates(x, y, dx, dy, r float64) []int {
 	}
 	for word, mask := range z.mask {
 		for mask != 0 {
-			z.candidates = append(z.candidates, word*64+bits.TrailingZeros64(mask))
+			candidates = append(candidates, word*64+bits.TrailingZeros64(mask))
 			mask &= mask - 1
 		}
 	}
-	return z.candidates
+	if query == nil {
+		z.candidates = candidates
+	} else {
+		query.indices = candidates
+	}
+	return candidates
 }

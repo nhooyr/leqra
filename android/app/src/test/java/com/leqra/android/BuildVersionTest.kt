@@ -13,7 +13,8 @@ class BuildVersionTest {
         val process = ProcessBuilder("sh", "scripts/version.sh").directory(root).start()
         val version = process.inputStream.bufferedReader().readText().trim()
         assertEquals(0, process.waitFor())
-        assertEquals(version, BuildConfig.VERSION_NAME)
+        assertEquals("v$version", BuildConfig.VERSION_NAME)
+        assertEquals(version, BuildConfig.GAME_VERSION)
         val parts = version.split('.').map(String::toInt)
         assertEquals(parts[0] * 1000000 + parts[1] * 10000 + parts[2], BuildConfig.VERSION_CODE)
         assertTrue(

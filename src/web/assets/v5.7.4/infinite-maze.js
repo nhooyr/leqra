@@ -54,14 +54,17 @@ function makeChunk(seed,cx,cy){
 
 function create(seed){
  const cache=new Map();
+ const hot=Array.from({length:4},()=>({x:0,y:0,walls:null}));let nextHot=0;
  function chunk(cx,cy){
+  for(const entry of hot)if(entry.walls&&entry.x===cx&&entry.y===cy)return entry.walls;
   const key=`${cx},${cy}`;
   let walls=cache.get(key);
   if(!walls){
    walls=makeChunk(seed,cx,cy);
-   if(cache.size===CACHE_SIZE)cache.delete(cache.keys().next().value);
+   if(cache.size===CACHE_SIZE){const oldest=cache.keys().next().value,evicted=cache.get(oldest);cache.delete(oldest);for(const entry of hot)if(entry.walls===evicted)entry.walls=null;}
    cache.set(key,walls);
   }
+  const entry=hot[nextHot];entry.x=cx;entry.y=cy;entry.walls=walls;nextHot=(nextHot+1)%hot.length;
   return walls;
  }
  function visitWalls(x0,y0,x1,y1,visit){

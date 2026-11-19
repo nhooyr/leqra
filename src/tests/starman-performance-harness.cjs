@@ -12,7 +12,7 @@ function boot({kind='regular',pilots=8,sourcePath=assetPath('game.js')}={}){
   clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),rnd:(a,b)=>a+math.random()*(b-a),distance:(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),
   isEnemy:(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team),angleDelta:(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a))};
  const constants=source.slice(source.indexOf('const POWER_EFFECT_DURATION='),source.indexOf("let phase='menu'"));
- const names=['canDamage','makeMaze','nearbyWalls','rayWalls','circleHit','tankHit','rayBounds','projectileWall','projectileSpec','muzzleBlocked','muzzleProjectile','activeAmmo','powerCapacity','recycleStarmanProjectiles',
+ const names=['canDamage','makeMaze','nearbyWalls','rayWalls','barrelRetraction','circleHit','tankHit','rayBounds','projectileWall','projectileSpec','muzzleBlocked','muzzleProjectile','activeAmmo','powerCapacity','recycleStarmanProjectiles',
   'fire','fireLaser','laserTrace','laserEffect','steerMissile','guideGrenade','grenadeDragIntegral','grenadeDragFactor','spendMissileRange','missileWallNudge','updateBullets','compactLife','compactNotDead','updateTraces','burst','addRing'];
  if(source.includes('function projectileLaunch('))names.push('projectileLaunch');
  if(source.includes('function advanceCannon('))names.push('advanceCannon');
