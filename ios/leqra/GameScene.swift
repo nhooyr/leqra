@@ -66,6 +66,13 @@ final class GameScene: SKScene {
     var localFireRecoil: ((ArenaTank) -> Double)?
     private(set) var minimumProbeBarrelX: CGFloat = 0
     private(set) var muzzleDeviceProbeValue = ""
+    var deathNoticeProbeValue: String {
+        let visible = deathNotices.filter { !$0.isHidden }
+        let notice = visible.first
+        let identity = tanks.values.first { !$0.identity.isHidden }
+        let bounds = notice?.calculateAccumulatedFrame() ?? .zero
+        return "noticeCount=\(visible.count),noticeFont=\(notice?.fontSize ?? 0),nameFont=\(identity?.identityFontSize ?? 0),noticeWidth=\(bounds.width),noticeHeight=\(bounds.height),viewportWidth=\(worldViewport.width)"
+    }
     var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
     var controlLabelProbe: String {
         "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y)"
@@ -84,6 +91,7 @@ final class GameScene: SKScene {
     private let bulletLayer = SKNode()
     private let effectLayer = SKNode()
     private let labelLayer = SKNode()
+    private let deathNotices = [DeathNoticeNode(), DeathNoticeNode()]
     private let controls = SKNode()
     private let grid = SKShapeNode()
     private let mapImage = SKSpriteNode()
@@ -181,6 +189,7 @@ final class GameScene: SKScene {
             world.addChild(warning)
         }
         addChild(labelLayer)
+        for notice in deathNotices { notice.zPosition = 150; addChild(notice) }
         addChild(controls)
         controls.zPosition = 200
         labelLayer.zPosition = 100
@@ -498,6 +507,7 @@ final class GameScene: SKScene {
         lastLocalSpawn = -1
         lastLocalHP = 0
         currentLocalID = -1
+        deathNotices.forEach { $0.isHidden = true }
         previousTime = 0
         tanks.values.forEach { recycleTank($0) }
         for node in bullets.values { recycleProjectile(node) }
@@ -648,6 +658,24 @@ final class GameScene: SKScene {
             effectOrder.removeFirst(effectOrder.count - 512)
         }
         metrics.effectSeconds = elapsed()
+        synchronizeDeathNotices(snapshot, localID: localID, secondaryLocalID: secondaryLocalID, primaryLocalID: primaryLocalID)
+    }
+
+    private func synchronizeDeathNotices(_ snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int?, primaryLocalID: Int?) {
+        let visible = showsTankIdentities && frozenShowcase == nil && !spectating
+            && (!snapshot.spectating || primaryLocalID != nil)
+            && !["menu", "lobby", "waiting"].contains(snapshot.phase)
+        let paired = layoutMode == .fixed && secondaryLocalID != nil && secondaryLocalID != localID
+        let fontSize = CGFloat(ArenaTypography.labelSize(zoom: Double(zoom), infinity: layoutMode == .infinity))
+        let maxWidth = min(280, worldViewport.width * (paired ? 0.42 : 0.8))
+        for (index, node) in deathNotices.enumerated() {
+            let id = index == 0 ? localID : paired ? secondaryLocalID : nil
+            let tank = visible ? id.flatMap { id in snapshot.tanks.first { $0.id == id } } : nil
+            node.update(DeathNotice(tank: tank), fontSize: fontSize, maximumWidth: maxWidth)
+            let fraction: CGFloat = paired ? (index == 0 ? 0.25 : 0.75) : 0.5
+            node.position = CGPoint(x: worldViewport.minX + worldViewport.width * fraction,
+                                    y: worldViewport.minY + worldViewport.height * (layoutMode == .infinity ? 0.58 : 0.6))
+        }
     }
 
     private func updateGuide(tank: ArenaTank?, geometry: InfiniteMaze?, snapshot: ArenaSnapshot) {
@@ -1151,6 +1179,7 @@ private final class TankNode: SKNode {
     private var previousSpeed = -1
     private var protectionRadius: CGFloat = -1
     private var fontSize: CGFloat = 0
+    var identityFontSize: CGFloat { fontSize }
     private(set) var paint = Palette.accent
     private(set) var identityWidth: CGFloat = 120
     private(set) var identityHeight: CGFloat = 20
@@ -1270,7 +1299,7 @@ private final class TankNode: SKNode {
         let text = displayName + (localSeat.map { " (P\($0))" } ?? "")
         let warning = tank.botWarning
         nameLabel.fontColor = paint
-        let size = max(10, infinity ? 11 * zoom : 10 * zoom)
+        let size = CGFloat(ArenaTypography.labelSize(zoom: Double(zoom), infinity: infinity))
         if currentText != text || currentWarning != warning || abs(fontSize - size) > 0.01 {
             currentText = text
             currentWarning = warning
@@ -1307,6 +1336,61 @@ private final class TankNode: SKNode {
             badge.update(size: badgeSize, zoom: zoom, count: count, remaining: life, warning: kind == "starman" ? 1 : 3)
             badge.isHidden = tank.hp <= 0
         }
+    }
+}
+
+@MainActor
+private final class DeathNoticeNode: SKNode {
+    private let background = SKShapeNode()
+    private let label = SKLabelNode()
+    private var previousNotice: DeathNotice?
+    private var previousSize: CGFloat = 0
+    private var previousWidth: CGFloat = 0
+    var fontSize: CGFloat { previousSize }
+
+    override init() {
+        super.init()
+        isHidden = true
+        background.fillColor = UIColor(hex: 0x192127).withAlphaComponent(0.94)
+        background.strokeColor = UIColor(hex: 0x34434a)
+        background.lineWidth = 1
+        addChild(background)
+        label.numberOfLines = 0
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        addChild(label)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func update(_ notice: DeathNotice?, fontSize: CGFloat, maximumWidth: CGFloat) {
+        isHidden = notice == nil
+        guard let notice else { return }
+        let width = max(10, maximumWidth - 24)
+        guard previousNotice != notice || previousSize != fontSize || previousWidth != width else { return }
+        previousNotice = notice; previousSize = fontSize; previousWidth = width
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byCharWrapping
+        paragraph.lineHeightMultiple = 1.25
+        let regular = UIFont(name: "Menlo-Regular", size: fontSize) ?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let bold = UIFont(name: "Menlo-Bold", size: fontSize) ?? .monospacedSystemFont(ofSize: fontSize, weight: .bold)
+        let text = NSMutableAttributedString(string: notice.text, attributes: [
+            .font: regular, .foregroundColor: UIColor(hex: 0xd8e9c5), .paragraphStyle: paragraph,
+        ])
+        let nameRange = NSRange(location: ("Killed by " as NSString).length, length: (notice.killer as NSString).length)
+        text.addAttribute(.font, value: bold, range: nameRange)
+        if let index = GamePalette.colors.firstIndex(where: { $0.caseInsensitiveCompare(notice.color) == .orderedSame }) {
+            text.addAttribute(.foregroundColor, value: Palette.tank(index), range: nameRange)
+        } else if notice.color.hasPrefix("#"), notice.color.count == 7, let rgb = UInt32(notice.color.dropFirst(), radix: 16) {
+            text.addAttribute(.foregroundColor, value: UIColor(hex: rgb), range: nameRange)
+        }
+        label.preferredMaxLayoutWidth = width
+        label.position = .zero
+        label.attributedText = text
+        label.position.y = -label.frame.midY
+        let bounds = label.frame.insetBy(dx: -12, dy: -8)
+        background.path = CGPath(roundedRect: bounds, cornerWidth: 5, cornerHeight: 5, transform: nil)
     }
 }
 

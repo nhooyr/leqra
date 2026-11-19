@@ -119,6 +119,32 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
+    func testDeathNoticeMatchesTankLabelsInPortraitAndLandscape() {
+        for fixed in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--probe-direct-aim", "--probe-death-notice", "--public-session-test-namespace", "death-notice-" + UUID().uuidString]
+            if fixed { app.launchArguments.append("--probe-fixed") }
+            app.launch()
+            for landscape in [false, true] {
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                let stage = arena(in: app)
+                let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    let values = self.p2InputState(stage)
+                    return values["noticeCount"] == 1 && (values["nameFont"] ?? 0) >= 10
+                        && abs((values["noticeFont"] ?? 0) - (values["nameFont"] ?? -1)) < 0.01
+                }, object: stage)
+                XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
+                let values = p2InputState(stage)
+                XCTAssertLessThanOrEqual(values["noticeWidth"] ?? .infinity, values["viewportWidth"] ?? 0)
+                XCTAssertGreaterThan(values["noticeHeight"] ?? 0, (values["noticeFont"] ?? 0) * 2, "Long killer names wrap instead of shrinking")
+                capture(app, name: "Death notice " + (fixed ? "fixed " : "Infinity ") + (landscape ? "landscape" : "portrait"))
+            }
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testPublicInfinityHidesUnusedRoomRules() {
         let app = launch()
         selectPublic(true, in: app)

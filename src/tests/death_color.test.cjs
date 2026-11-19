@@ -2,6 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),{readFileSync}=require('node:fs');
 const {assetPath}=require('./web_assets.cjs');
 const game=readFileSync(assetPath('game.js'),'utf8'),fixtures=require('./killer-color-fixtures.json');
+const typographyFixtures=require('./arena-typography-fixtures.json');
 function declaration(name){const start=game.indexOf('function '+name+'('),end=game.indexOf('\n',start),line=game.slice(start,end);assert.ok(start>=0,name);return line.endsWith('}')?line:game.slice(start,game.indexOf('\n}',end)+2);}
 class Element{
  constructor(tag='div'){this.tagName=tag.toUpperCase();this.children=[];this.style={};this.hidden=false;this.text='';}
@@ -15,6 +16,20 @@ function boot(){
  const context=vm.createContext({window:{},document,$});vm.runInContext(readFileSync(assetPath('theme.js'),'utf8'),context);context.paintColor=context.window.leqraTheme.assetColor;
  vm.runInContext(declaration('renderDeathNotice'),context);return{context,$};
 }
+test('death notice sizing follows tank labels at every arena zoom without repeated style writes',()=>{
+ const context=vm.createContext({});
+ vm.runInContext(declaration('tankLabelFontSize')+'\n'+declaration('syncTankLabelSize'),context);
+ let value='',writes=0;
+ const element={style:{getPropertyValue:()=>value,setProperty:(key,next)=>{assert.equal(key,'--tank-label-font-size');value=next;writes++;}}};
+ for(const row of typographyFixtures.filter(row=>row.fontScale===1)){
+  assert.ok(Math.abs(context.tankLabelFontSize(row.zoom,row.infinity)-row.size)<.0001);
+  context.syncTankLabelSize(element,row.zoom,row.infinity);
+  assert.ok(Math.abs(parseFloat(value)-row.size)<.0001);
+  const previous=writes;context.syncTankLabelSize(element,row.zoom,row.infinity);assert.equal(writes,previous);
+ }
+ const css=readFileSync(assetPath('style.css'),'utf8');
+ assert.match(css,/\.death-notice\.toast\{[^}]*font-size:var\(--tank-label-font-size,10px\)/);
+});
 test('death notices safely bold only the killer name and map every canonical tank color',()=>{
  const {context:s,$}=boot();
  for(const fixture of fixtures){

@@ -16,7 +16,7 @@ function boot(){
  const s={ctx,mode:'room',phase:'playing',pausedFrom:'playing',isSpectating:()=>false,survivalBreak:()=>false,scale:1,W:2400,H:1500,TAU:Math.PI*2,MAX_SPEED_STACKS:5,MACHINE_FIRING_ROUNDS:180,reduceMotion:true,fxTime:0,shake:0,combatPrefs:{performance:true},WEBKIT_ENGINE:false,theme:{protection:'#fff'},localPlayerID:()=>0,secondaryID:()=>1,paintColor:c=>c,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),tankPowerBadgeCache:new Map(),tankPowerBadgeScratch:[],labelWidthCache:new Map(),drawCachedTankHull(){},roundRect:(c,...args)=>{c.beginPath();c.rect(...args);},powerIcon:(kind,c=ctx)=>c.canvas.kind=kind,document:{createElement:()=>{const c=recorder(),canvas=c.canvas;canvas.getContext=()=>c;made.push(canvas);return canvas;}}};
  Object.assign(s,{Net,rayWalls:()=>null});vm.createContext(s);vm.runInContext(declaration('barrelRetraction'),s);require('./identity_fixture.cjs')(s,source);s.localRoom={players:[]};vm.runInContext(source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS=')),s);
  vm.runInContext(source.slice(source.indexOf('const tankPowerBadgeCache='),source.indexOf('function activeTankPowerBadges(')),s);
- for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankLabel','wrapTankLabel','tankStatusLayout','placeTankLabels','tankPowerBadgePositions','powerExpiryAlpha','expiryFadeAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
+ for(const name of ['shieldCount','speedCount','measureLabel','activeTankPowerBadges','tankPowerBadgeImage','tankLabel','wrapTankLabel','tankLabelFontSize','tankStatusLayout','placeTankLabels','tankPowerBadgePositions','powerExpiryAlpha','expiryFadeAlpha','tankPowerBadgeLife','tankPowerBadgeCount','drawTankPowerBadgeCount','drawTankPowerBadges','protectionRingAlpha','localSpawnGuideAlpha','drawLocalSpawnGuide','drawTankLabel','paintTankTurret','drawTank','drawPickup','update'])if(source.includes('function '+name+'('))vm.runInContext(declaration(name),s);
  return {s,ctx,made};
 }
 function tank(patch={}){return{id:3,name:'GODLIKE BOSS',human:false,alive:true,invulnerable:.75,spawnProtected:true,x:1200,y:700,angle:0,recoil:0,track:0,color:'#73cee4',power:'laser',powerTime:15,charges:3,machineRounds:180,shield:10,shieldCharges:5,speedTime:10,speedStacks:2,ghostTime:10,...patch};}
@@ -150,7 +150,7 @@ test('Infinity and fixed tanks use the same badge positions, sprite counts and e
  const {s,ctx}=boot(),infinite=readFileSync(assetPath('infinite.js'),'utf8');
  Object.assign(s,{net:s.Net,BULLET_RADIUS:3.5,PROJECTILES:{rapid:{r:3.5/3}},COLORS:['#73cee4'],powers:vm.runInContext('POWER',s),
   art:{pilotIdentity:s.pilotIdentity,theme:s.theme,rect:s.roundRect,hull(){},turret(){},drawBadges:s.drawTankPowerBadges}});
- vm.runInContext(declaration('drawTank',infinite).replace('function drawTank','function drawInfinityTank'),s);
+ vm.runInContext(declaration('labelFontSize',infinite)+'\n'+declaration('drawTank',infinite).replace('function drawTank','function drawInfinityTank'),s);
  for(const zoom of [.5,1,1.2])for(const mine of [false,true]){
   const t=tank({id:mine?1:3,human:mine,colorIndex:0,power:'rapid',powerTime:1,machineRounds:76,shield:3,speedTime:2,starmanTime:.5});
   s.scale=zoom;ctx.events.length=0;s.drawTank(t);

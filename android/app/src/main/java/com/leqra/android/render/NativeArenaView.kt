@@ -52,6 +52,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var noticeLayoutWidth = 0f
     private var noticeLayoutSize = 0f
     private var noticeLines: List<String> = emptyList()
+    private val deathNotices = Array(2) { NativeDeathNotice() }
     val input = GameInput(touchAim = true)
     var renderedFrames: Long = 0
         private set
@@ -721,7 +722,24 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         identityCount = 0
         for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && (tank.hp > 0 || frozenTime != null))
             drawIdentity(canvas, tank)
+        drawDeathNotices(canvas, state, pilotID)
         canvas.restore()
+    }
+
+    private fun drawDeathNotices(canvas: Canvas, state: ArenaSnapshot, pilotID: Int) {
+        val visible = frozenTime == null && followingID == null && !state.spectating && state.phase != "menu" && state.phase != "lobby" && state.phase != "waiting"
+        val paired = !infinity && localID2 != null
+        val viewportSeat = if (pilotID == localID2) 1 else 0
+        val size = ArenaTypography.labelSize(zoom.toDouble(), infinity, textScale.toDouble()).toFloat()
+        val maxWidth = min(280f, viewport.width() * if (paired) .42f else .8f)
+        for (index in deathNotices.indices) {
+            if (infinity && index != viewportSeat) continue
+            val id = if (infinity || index == 0) pilotID else if (paired) localID2 else null
+            val tank = if (visible) state.tanks.firstOrNull { it.id == id } else null
+            val fraction = if (paired) { if (index == 0) .25f else .75f } else .5f
+            deathNotices[index].draw(canvas, DeathNotice.from(tank), size, maxWidth,
+                viewport.left + viewport.width() * fraction, viewport.top + viewport.height() * if (infinity) .42f else .4f)
+        }
     }
 
     private fun updateCamera(state: ArenaSnapshot, landscape: Boolean, pilotID: Int) {
@@ -922,7 +940,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private fun drawIdentity(canvas: Canvas, tank: ArenaTank) {
         val seat = if (tank.id == localID) 1 else if (tank.id == localID2) 2 else 0
         textPaint.typeface = if (seat > 0) boldTypeface else Typeface.MONOSPACE
-        textPaint.textSize = max(10f * textScale, if (infinity) 11f * zoom else 10f * zoom)
+        textPaint.textSize = ArenaTypography.labelSize(zoom.toDouble(), infinity, textScale.toDouble()).toFloat()
         val maxWidth = min(190f, viewport.width() - 20).coerceAtLeast(40f)
         var label = labels[tank.id]
         if (
