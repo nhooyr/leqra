@@ -29,12 +29,14 @@
    best=distance;Object.assign(launch,{x:px,y:py,valid:true});
   }
   if(!launch.valid)return launch;
-  launch.distance=Math.sqrt(best);launch.muzzle=Math.max(0,muzzle-launch.distance);
+  launch.distance=Math.sqrt(best);launch.muzzle=0;
   if((launch.x-x)*ux<-1e-9)launch.ux=-ux;if((launch.y-y)*uy<-1e-9)launch.uy=-uy;
   return launch;
  }
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
  const delta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
+ // Recoil and cover retract the same barrel; do not add their offsets together.
+ function barrelRetraction(recoil=0,wallFraction=1,radius=3.5){return Math.max(clamp(recoil,0,1)*4,30*(1-clamp(wallFraction,0,1))-Math.min(2,Math.max(0,radius-.5)));}
  const neutral=()=>({forward:false,reverse:false,left:false,right:false,fire:false,stickX:0,stickY:0,aimOnly:false});
  const ammoEpoch=t=>Number.isSafeInteger(t?.ammoEpoch)&&t.ammoEpoch>=0?t.ammoEpoch:0;
  const grenadeEpoch=t=>Number.isSafeInteger(t?.grenadeEpoch)&&t.grenadeEpoch>=0?t.grenadeEpoch:ammoEpoch(t);
@@ -358,7 +360,7 @@
    return out;
   }
   pending(id){return this.items.has(id);}
-  begin(b,tick){b.flightStartTick=tick;b.flightStartX=b.x;b.flightStartY=b.y;}
+  begin(b,tick,x=b.x,y=b.y){b.flightStartTick=tick;b.flightStartX=x;b.flightStartY=y;}
   vertex(b,tick){
    if(!Number.isFinite(b.flightStartTick))return;
    const points=b.flightPoints||=[{x:b.flightStartX,y:b.flightStartY,tick:b.flightStartTick}];
@@ -712,5 +714,5 @@
    for(const [id,p] of this.pilots)if(!this.hasPending(id))p.next=p.serial;
   }
  }
- return Object.freeze({wallLaunch,expandMachineBullets,ammoEpoch,grenadeEpoch,refillAmmo,clearWeapon,refillDepletedWeapon,firePressInterval,ammoUnavailable,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,movementStacks,presentation,visualMove,RicochetPath,ProjectileFlights,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
+ return Object.freeze({barrelRetraction,wallLaunch,expandMachineBullets,ammoEpoch,grenadeEpoch,refillAmmo,clearWeapon,refillDepletedWeapon,firePressInterval,ammoUnavailable,STEP,STEP_MS,MACHINE_CAPACITY,clamp,delta,neutral,controlsEqual,steeringTurn,move,movementStacks,presentation,visualMove,RicochetPath,ProjectileFlights,MotionPresenter,Predictor,SnapshotBuffer,ShotPresentation});
 });

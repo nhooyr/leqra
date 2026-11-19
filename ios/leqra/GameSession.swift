@@ -2098,6 +2098,9 @@ final class GameSession: ObservableObject {
         if emptyFireProbe {
             scene.view?.superview?.accessibilityValue = "minBarrelX=\(scene.minimumProbeBarrelX), bullets=\(snapshot.bullets.count), ammoUsed=\(fireAuthority?.ammoUsed ?? -1), infinity=\(isInfinity)"
         }
+        if ProcessInfo.processInfo.arguments.contains("--probe-muzzle-device") {
+            scene.view?.superview?.accessibilityValue = scene.muzzleDeviceProbeValue + ",online=\(offline ? 0 : 1),connected=\(roomClient.connected || arenaClient.connected ? 1 : 0),arenaConnected=\(arenaClient.connected ? 1 : 0),wireSeq=\((arenaActive ? arenaClient : roomClient).lastInputSequence),spectating=\(spectating ? 1 : 0),tick=\(snapshot.tick)," + scene.controlLabelProbe
+        }
         if directAimProbe, let tank = snapshot.tanks.first(where: { $0.id == localID }), let point = scene.directAimProbePoint {
             let alive = snapshot.tanks.filter { $0.id != localID && $0.hp > 0 }.count
             let standard = snapshot.bullets.filter { $0.owner == tank.id && $0.kind.isEmpty }.count

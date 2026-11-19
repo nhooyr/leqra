@@ -48,7 +48,7 @@
       "ux": -1,
       "uy": 0,
       "distance": 7.12,
-      "muzzle": 20.88,
+      "muzzle": 0,
       "bounced": true,
       "valid": true
     }
@@ -75,7 +75,7 @@
       "ux": -1,
       "uy": 0,
       "distance": 0.12,
-      "muzzle": 27.88,
+      "muzzle": 0,
       "bounced": true,
       "valid": true
     }
@@ -102,7 +102,7 @@
       "ux": 0,
       "uy": 1,
       "distance": 7.12,
-      "muzzle": 20.88,
+      "muzzle": 0,
       "bounced": true,
       "valid": true
     }
@@ -129,7 +129,7 @@
       "ux": -0.7071067811865476,
       "uy": 0.7071067811865476,
       "distance": 0.12,
-      "muzzle": 27.88,
+      "muzzle": 0,
       "bounced": true,
       "valid": true
     }
@@ -162,7 +162,7 @@
       "ux": -0.7071067811865476,
       "uy": -0.7071067811865476,
       "distance": 10.069200564096437,
-      "muzzle": 17.930799435903563,
+      "muzzle": 0,
       "bounced": true,
       "valid": true
     }

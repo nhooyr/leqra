@@ -15,7 +15,7 @@
 const $ = id => document.getElementById(id);
 const canvas=$('arena'), ctx=canvas.getContext('2d',{alpha:false}), wrap=$('arenaWrap');
 if(!ctx){ $('lobbyScreen').textContent='This browser cannot create a 2D canvas. Please open the game in another browser.'; return; }
-const GAME_VERSION='5.7.2';
+const GAME_VERSION='5.7.3';
 const GAME_PROTOCOL=1;
 const TAU=Math.PI*2, CELL=84, WALL=8, RADIUS=17, TARGET=5, ROUND_SECONDS=75, ROUND_END_SECONDS=2;
 const Theme=window.leqraTheme;
@@ -740,12 +740,17 @@ function fire(t){
  for(const offset of spread){const angle=t.angle+offset,b=muzzleProjectile(t,angle);b.id=++bulletId;b.boosted=boosted;b.ammoEpoch=Net.ammoEpoch(t);
   const cannonMuzzle=b.kind==='cannon'&&b.launchTravel?{x:b.x,y:b.y,vx:b.vx,vy:b.vy,bounces:b.bounces}:null;
   if(cannonMuzzle){b.x=b.launchX;b.y=b.launchY;b.vx=Math.cos(angle)*spec.speed;b.vy=Math.sin(angle)*spec.speed;b.bounces=0;}
-  flights.begin(b,time/Net.STEP);
+  let visibleX=b.x,visibleY=b.y;
+  if(cannonMuzzle){
+   const dx=Math.cos(angle)*b.launchTravel,dy=Math.sin(angle)*b.launchTravel,hit=tankHit(b.x,b.y,dx,dy,b.r,t.id),wall=projectileWall('cannon',b.x,b.y,dx,dy,b.r);
+   const visible=Math.min(1,hit?.at??1,wall?.t??1);visibleX=b.x+dx*visible;visibleY=b.y+dy*visible;
+  }
+  flights.begin(b,time/Net.STEP,visibleX,visibleY);
   if(cannonMuzzle){advanceCannon(b,b.launchTravel/spec.speed,true);Object.assign(b,cannonMuzzle);delete b.launchTravel;delete b.launchX;delete b.launchY;}
   if(b.launchHit!==undefined)projectileTankImpact(b,tanks.find(other=>other.id===b.launchHit));
   else if(b.dead)impactEffect(b.x,b.y,b.color);
   if(!b.dead)bullets.push(b);
-  if(!fast||spec.kind==='grenade'||tick%4===0)burst(t.x+Math.cos(angle)*27,t.y+Math.sin(angle)*27,t.color,3,40);
+  if(!fast||spec.kind==='grenade'||tick%4===0){const tip=Math.min(27,30-barrelRetraction(t));burst(t.x+Math.cos(angle)*tip,t.y+Math.sin(angle)*tip,t.color,3,40);}
  }
  recycleStarmanProjectiles(bullets,t.id,boosted,Net.ammoEpoch(t));
  shotSound(spec.kind,t.human,undefined,boosted);
@@ -1866,8 +1871,14 @@ function drawLocalSpawnGuide(t){
  ctx.strokeStyle='#081015';ctx.lineWidth=width+1.5/zoom;ctx.stroke();
  ctx.strokeStyle=paintColor(t.color);ctx.lineWidth=width;ctx.stroke();ctx.restore();
 }
+function barrelRetraction(t){
+ const radius=t.power==='rapid'?3.5/3:t.power==='homing'?5:t.power==='grenade'?6:t.power==='laser'?3:3.5;
+ let hit=rayWalls(t.x,t.y,Math.cos(t.angle)*30,Math.sin(t.angle)*30,radius),clearance=radius;
+ if(!hit&&t.ghostTime>0){hit=rayWalls(t.x,t.y,Math.cos(t.angle)*30,Math.sin(t.angle)*30,0);clearance=.5;}
+ return Net.barrelRetraction(t.recoil,hit?.t,clearance);
+}
 function paintTankTurret(c,t){
- const recoil=t.recoil*4;c.fillStyle=paintColor('#0a121a');roundRect(c,4-recoil,-4.5,26,9,2);c.fill();c.fillStyle=paintColor(t.color);c.fillRect(5-recoil,-3,23,6);c.fillStyle=paintColor('#e4f0d98a');c.fillRect(26-recoil,-3.5,3,7);
+ const recoil=t.barrelRetraction??barrelRetraction(t);if(recoil<21){c.fillStyle=paintColor('#0a121a');roundRect(c,4-recoil,-4.5,26,9,2);c.fill();c.fillStyle=paintColor(t.color);c.fillRect(5-recoil,-3,23,6);c.fillStyle=paintColor('#e4f0d98a');c.fillRect(26-recoil,-3.5,3,7);}
  c.fillStyle=paintColor('#00000042');c.beginPath();c.arc(0,2,9.5,0,TAU);c.fill();c.fillStyle=paintColor(t.color);c.beginPath();c.arc(0,0,9,0,TAU);c.fill();c.strokeStyle=paintColor('#09121970');c.lineWidth=2;c.stroke();c.fillStyle=paintColor('#172124');c.beginPath();c.arc(-1,0,3.2,0,TAU);c.fill();
 }
 function drawTank(t,withLabel=true){
@@ -3210,7 +3221,7 @@ function onlineEffect(e,s){
   else if(e.type==='blast')blastEffect(e.x,e.y,e.color,e.radius||BLAST_RADIUS);
  if(e.type==='impact')impactEffect(e.x,e.y,e.color,e.radius||25);
  const t=s.tankMap.get(e.player),color=e.color||COLORS[e.player]||COLORS[0];
- if(e.type==='shot'){if(online.shots.heard(e.player,e.spawnSerial,e.shotSerial)){online.presentationMetrics.suppressedSounds++;return;}const angle=e.angle??t?.angle??0;burst(e.x+Math.cos(angle)*27,e.y+Math.sin(angle)*27,color,3,40);shotSound(e.text,e.player===online.id||e.player===secondaryID(),time,false,e.tick,online.shots);}
+ if(e.type==='shot'){if(online.shots.heard(e.player,e.spawnSerial,e.shotSerial)){online.presentationMetrics.suppressedSounds++;return;}const angle=e.angle??t?.angle??0,tip=Math.min(27,30-barrelRetraction({x:e.x,y:e.y,angle,recoil:1}));burst(e.x+Math.cos(angle)*tip,e.y+Math.sin(angle)*tip,color,3,40);shotSound(e.text,e.player===online.id||e.player===secondaryID(),time,false,e.tick,online.shots);}
  if(e.type==='suddenDeath'){goUntil=0;clearInput();toast(e.text||'SUDDEN DEATH, NO RESPAWNS',3);addLog(e.text||'Sudden death');}
  if(e.type==='objective'){if(e.text){addLog(e.text);toast(e.text,2);}pickupSound();}
  if(e.type==='respawn'){addRing(e.x,e.y,color,38);}
@@ -3276,7 +3287,7 @@ function previewOnlineFire(second,controls,now){
  }
  if(power==='laser'){const beam=laserTrace(t);laserEffect(beam.x,beam.y,beam.endX,beam.endY,POWER.laser.color,beam.points);if(traces.length)traces.at(-1).previewKey=v.key;}
  else v.shells=(power==='scatter'?[-.21,0,.21]:[0]).map((offset,pellet)=>({...muzzleProjectile(t,t.angle+offset),pellet,shotSerial:v.shot,spawnSerial:v.life,ammoEpoch:v.ammoEpoch,preview:true}));
- if(!(v.boosted||power==='rapid')||power==='grenade'||v.shot%4===1)burst(t.x+Math.cos(t.angle)*27,t.y+Math.sin(t.angle)*27,t.color,3,40);
+ if(!(v.boosted||power==='rapid')||power==='grenade'||v.shot%4===1){const tip=Math.min(27,30-barrelRetraction(t));burst(t.x+Math.cos(t.angle)*tip,t.y+Math.sin(t.angle)*tip,t.color,3,40);}
  shotSound(power,true,undefined,v.boosted);
  if(power!=='rapid')updateCombatFeedback(true);
 }

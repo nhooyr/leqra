@@ -6,6 +6,109 @@ import XCTest
 final class GameUITests: XCTestCase {
     private let publicSessionTestNamespace = "ui-" + UUID().uuidString
 
+    @MainActor
+    func testOnlineMuzzleGhostWallsAndTouchTurning() async throws {
+        try requireOnlineTestServer()
+        guard ProcessInfo.processInfo.environment["LEQRA_MUZZLE_DEVICE_UI"] == "1" else {
+            throw XCTSkip("Requires the isolated native muzzle device fixture.")
+        }
+        let hostCoordinated = ProcessInfo.processInfo.environment["LEQRA_MUZZLE_HOST_COORDINATED"] == "1"
+        if !hostCoordinated { try await prepareRunnerLocalNetworkAccess(activate: false) }
+        let base = try XCTUnwrap(URL(string: ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"]!))
+        var currentStage: XCUIElement?
+        var serial = 100_000
+        func fixture(_ body: [String: Any]) async throws -> [String: Any] {
+            if hostCoordinated {
+                var command = body
+                if body["read"] as? Bool != true { serial += 1; command["serial"] = serial }
+                print("MUZZLE_HOST " + String(data: try JSONSerialization.data(withJSONObject: command, options: .sortedKeys), encoding: .utf8)!)
+                if body["read"] as? Bool == true { return [:] }
+                let stage = try XCTUnwrap(currentStage)
+                let marker = serial
+                let applied = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    self.p2InputState(stage)["serial"] == Double(marker)
+                }, object: stage)
+                XCTAssertEqual(XCTWaiter.wait(for: [applied], timeout: 15), .completed)
+                let values = p2InputState(stage)
+                print("MUZZLE VIEW SETUP \(values)")
+                return ["x": values["x"] ?? 0, "wallX": (values["x"] ?? 0) + (body["gap"] as? Double ?? 0)]
+            }
+            var request = URLRequest(url: base.appendingPathComponent("_fixture/muzzle"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, String(data: data, encoding: .utf8) ?? "")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        for infinity in [true, false] {
+            let name = "MuzzleI" + UUID().uuidString.prefix(6)
+            let app = launch(callsign: name, arguments: ["--probe-muzzle-device"])
+            selectPublic(false, in: app)
+            selectMode(infinity ? "infinity" : "elimination", in: app)
+            let share = app.buttons["SHARE ROOM ONLINE ↗"]
+            reveal(share, in: app); share.tap()
+            XCTAssertTrue(app.staticTexts["roomCodeValue"].waitForExistence(timeout: 20))
+            let code = app.staticTexts["roomCodeValue"].label
+            play(in: app)
+            let stage = arena(in: app)
+            currentStage = stage
+            for landscape in [false, true] {
+                XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+                waitForOrientation(app, landscape: landscape)
+                let cases = [("", false, 22.0), ("", true, 1.0), ("", true, 22.0)]
+                    + ["", "rapid", "scatter", "homing", "grenade", "laser", "cannon"].map { ($0, true, 8.0) }
+                for (weapon, ghost, gap) in cases {
+                    let setup = try await fixture(["name":name,"code":code,"infinity":infinity,"weapon":weapon,"ghost":ghost,"gap":gap])
+                    let x = try XCTUnwrap(setup["x"] as? Double), wall = try XCTUnwrap(setup["wallX"] as? Double)
+                    let positioned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                        let values = self.p2InputState(stage)
+                        return abs((values["x"] ?? -999)-x) < 1 && values["connected"] == 1 && values["online"] == 1 && ((values["ghost"] ?? 0) > 0) == ghost
+                    }, object: stage)
+                    let positionedResult = XCTWaiter.wait(for: [positioned], timeout: 10)
+                    XCTAssertEqual(positionedResult, .completed, "Expected x=\(x), ghost=\(ghost); got \(p2InputState(stage))")
+                    let view = p2InputState(stage)
+                    XCTAssertLessThanOrEqual(view["tip"] ?? 99, gap+0.1, "Ghost barrel protrudes through wall")
+                    let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+                        dx:stage.frame.minX+(view["fireX"] ?? 0),dy:stage.frame.maxY-(view["fireY"] ?? 0)))
+                    point.press(forDuration: 0.12)
+                    if hostCoordinated {
+                        _ = try await fixture(["name":name,"code":code,"infinity":infinity,"read":true,"check":"fire","weapon":weapon])
+                    } else {
+                        var result: [String:Any] = [:]
+                        for _ in 0..<20 {
+                            result = try await fixture(["name":name,"code":code,"infinity":infinity,"read":true])
+                            if (result["shots"] as? Int ?? 0) > 0 { break }
+                            try await Task.sleep(nanoseconds: 50_000_000)
+                        }
+                        XCTAssertGreaterThan(result["shots"] as? Int ?? 0, 0, "Real online Fire did not reach the server")
+                        if weapon != "cannon" {
+                            for bullet in result["bullets"] as? [[String:Any]] ?? [] {
+                                XCTAssertLessThanOrEqual(bullet["x"] as? Double ?? 99999, wall+0.1, "Shot crossed a wall")
+                                XCTAssertGreaterThan(bullet["bounces"] as? Int ?? 0, 0)
+                            }
+                        }
+                    }
+                    print("MUZZLE DEVICE PASS infinity=\(infinity) landscape=\(landscape) weapon=\(weapon) ghost=\(ghost) gap=\(gap)")
+                    if weapon.isEmpty && gap == 1 || weapon == "cannon" {
+                        capture(app, name: "Online muzzle \(infinity ? "Infinity" : "fixed") \(landscape ? "landscape" : "portrait") \(weapon.isEmpty ? "Ghost" : weapon)")
+                    }
+                }
+                _ = try await fixture(["name":name,"code":code,"infinity":infinity,"weapon":"","ghost":false,"gap":22])
+                try await Task.sleep(nanoseconds: 200_000_000)
+                let view = p2InputState(stage), origin = app.coordinate(withNormalizedOffset: .zero)
+                let stick = origin.withOffset(CGVector(dx:stage.frame.minX+(view["stickX"] ?? 0),dy:stage.frame.maxY-(view["stickY"] ?? 0)))
+                stick.press(forDuration: 0.05, thenDragTo: stick.withOffset(CGVector(dx:0,dy:-45)), withVelocity:.slow, thenHoldForDuration:0.35)
+                let turned = try await fixture(["name":name,"code":code,"infinity":infinity,"read":true,"check":"turn"])
+                if !hostCoordinated {
+                    XCTAssertGreaterThan(abs(turned["angle"] as? Double ?? 0), 0.5, "Real online touch turn did not reach the server")
+                    XCTAssertEqual((turned["input"] as? [String:Any])?["touchAim"] as? Bool, true)
+                }
+            }
+            app.terminate()
+        }
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         addUIInterruptionMonitor(withDescription: "Local development server permission") { alert in
@@ -1711,14 +1814,16 @@ final class GameUITests: XCTestCase {
     }
 
     @MainActor
-    private func prepareRunnerLocalNetworkAccess() async throws {
+    private func prepareRunnerLocalNetworkAccess(activate: Bool = true) async throws {
         #if !targetEnvironment(simulator)
         let address = try XCTUnwrap(ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"])
         let base = try XCTUnwrap(URL(string: address))
         let runnerID = try XCTUnwrap(Bundle.main.bundleIdentifier)
         let runner = XCUIApplication(bundleIdentifier: runnerID)
-        runner.activate()
-        XCTAssertTrue(runner.wait(for: .runningForeground, timeout: 5))
+        if activate {
+            runner.activate()
+            XCTAssertTrue(runner.wait(for: .runningForeground, timeout: 5))
+        }
 
         // iOS cannot present the runner's first local-network prompt while
         // leqra is in front. Establish this permission before testing recovery.

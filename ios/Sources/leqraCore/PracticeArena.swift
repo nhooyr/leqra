@@ -746,7 +746,7 @@ public final class PracticeArena {
                     continue
                 }
                 nextID += 1
-                let muzzle = max(0, (tank.power == "cannon" ? 32 : 28) - launch.distance)
+                let muzzle = launch.bounced ? 0 : max(0, (tank.power == "cannon" ? 32 : 28) - launch.distance)
                 let hiddenPath = launch.distance + muzzle
                 let life: Double
                 if rapidCombo {
@@ -758,14 +758,19 @@ public final class PracticeArena {
                                                              owner: tank.id, kind: tank.power, colorIndex: tank.colorIndex, life: life,
                                                              ammoEpoch: tank.ammoEpoch), boosted: boosted)
                 projectile.flightTick = Double(snapshot.tick) - 1
-                projectile.flightBirth = CannonFlightPoint(x: launch.x, y: launch.y, tick: projectile.flightTick)
+                let dx = launch.ux * muzzle, dy = launch.uy * muzzle
+                let wall = maze.projectileHit(kind: tank.power, x: launch.x, y: launch.y, dx: dx, dy: dy, radius: spec.radius)
+                let target = targetHit(owner: tank.id, x: launch.x, y: launch.y, dx: dx, dy: dy,
+                                       radius: spec.radius, limit: wall?.fraction ?? 1.00000001, contact: tank.power == "grenade")
+                let visible = min(1, wall?.fraction ?? 1, target?.fraction ?? 1)
+                projectile.flightBirth = CannonFlightPoint(x: launch.x + dx * visible, y: launch.y + dy * visible, tick: projectile.flightTick)
                 if let world = maze.world, tank.power == "homing" { projectile.rangeLeft = world.width + world.height }
                 if launch.bounced {
                     projectile.wire.bounces = 1
                     projectile.seekDelay = 0.04
                     if projectile.rangeLeft != nil { projectile.rangeLeft! -= launch.distance }
                 }
-                if advance(&projectile, dt: muzzle / spec.speed) { projectiles.append(projectile) }
+                if advance(&projectile, dt: muzzle / spec.speed, muzzle: true) { projectiles.append(projectile) }
             }
             if !boosted || tank.power == "rapid" || tank.power == "grenade" || time + 1e-9 >= (nextBoostEffects[tank.id] ?? 0) {
                 nextBoostEffects[tank.id] = time + 4 / 60
@@ -815,7 +820,7 @@ public final class PracticeArena {
         return fraction >= 0 && fraction <= 1 ? fraction : nil
     }
 
-    private func advance(_ projectile: inout Projectile, dt: Double) -> Bool {
+    private func advance(_ projectile: inout Projectile, dt: Double, muzzle: Bool = false) -> Bool {
         var dx = projectile.wire.vx * dt, dy = projectile.wire.vy * dt
         let startTick = projectile.flightTick, endTick = max(startTick, Double(snapshot.tick))
         if projectile.wire.kind == "cannon" {
@@ -856,7 +861,7 @@ public final class PracticeArena {
                 dx *= 1 - limit; dy *= 1 - limit
                 if wall.nx != 0 { dx = -dx; projectile.wire.vx = -projectile.wire.vx }
                 if wall.ny != 0 { dy = -dy; projectile.wire.vy = -projectile.wire.vy }
-                if limit == 1 { return true }
+                if muzzle || limit == 1 { return true }
             }
             projectile.flightTick = endTick
             return true
@@ -909,7 +914,7 @@ public final class PracticeArena {
             if wall.nx != 0 { dx = -dx; projectile.wire.vx = -projectile.wire.vx }
             if wall.ny != 0 { dy = -dy; projectile.wire.vy = -projectile.wire.vy }
             projectile.wire.target = 0; projectile.seekDelay = 0.04
-            if wall.fraction == 1 { return true }
+            if muzzle || wall.fraction == 1 { return true }
         }
         projectile.flightTick = endTick
         return true

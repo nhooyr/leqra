@@ -8,7 +8,7 @@ function boot(){
   projectileSpec:power=>({kind:power||'regular',cooldown:.34}),muzzleProjectile:(t,a)=>({owner:t.id,kind:t.power||'regular'}),activeAmmo:()=>0,
   laserTrace:()=>({x:100,y:100,endX:200,endY:100,points:[{x:100,y:100},{x:200,y:100}],target:null}),laserEffect:noop,detonate:b=>b.dead=true,
   canDamage:(id,t)=>t.id!==id,recordLocalDeath:noop,objectiveMode:()=>false,reduceMotion:true,addRing:noop,boom:noop,addLog:noop,updateHUD:noop};
- vm.createContext(s);for(const name of ['powerCapacity','recycleStarmanProjectiles','fire','fireLaser','ownedGrenades','detonateOwned','weaponControl','hurt','netTank'])vm.runInContext(declaration(name),s);return s;
+ s.rayWalls=()=>null;vm.createContext(s);for(const name of ['barrelRetraction','powerCapacity','recycleStarmanProjectiles','fire','fireLaser','ownedGrenades','detonateOwned','weaponControl','hurt','netTank'])vm.runInContext(declaration(name),s);return s;
 }
 function tank(power=null){return{id:0,name:'PILOT',x:100,y:100,angle:0,alive:true,human:true,power,powerTime:10,charges:3,machineRounds:180,cooldown:0,recoil:0,spawnProtected:true,invulnerable:.75};}
 

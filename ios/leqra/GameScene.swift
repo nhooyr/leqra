@@ -65,6 +65,7 @@ final class GameScene: SKScene {
     var onControlsReset: (() -> Void)?
     var localFireRecoil: ((ArenaTank) -> Double)?
     private(set) var minimumProbeBarrelX: CGFloat = 0
+    private(set) var muzzleDeviceProbeValue = ""
     var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
     var controlLabelProbe: String {
         "controlLabels=\(controls.children.filter { $0 is SKLabelNode }.count),stickBottom=\(stickOrigin.y - 51 - stickKnob.lineWidth / 2),fireBottom=\(fireOrigin.y - 53.5 - fireTrackRing.lineWidth / 2),controlCenterY=\(fireOrigin.y)"
@@ -796,7 +797,11 @@ final class GameScene: SKScene {
             node.position = CGPoint(x: tank.x, y: -tank.y)
             let recoil = tank.id == localID ? localFireRecoil?(tank) ?? tank.recoil : tank.recoil
             let localSeat = tank.id == (primaryLocalID ?? localID) ? 1 : tank.id == secondaryLocalID ? 2 : nil
-            node.update(tank, localSeat: localSeat, zoom: zoom, infinity: layoutMode == .infinity, recoil: recoil, showWreck: frozenShowcase != nil)
+            let retraction = MuzzlePresentation.retraction(tank: tank, maze: renderGeometry, recoil: recoil)
+            node.update(tank, localSeat: localSeat, zoom: zoom, infinity: layoutMode == .infinity, retraction: retraction, showWreck: frozenShowcase != nil)
+            if tank.id == localID && ProcessInfo.processInfo.arguments.contains("--probe-muzzle-device") {
+                muzzleDeviceProbeValue = "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),tip=\(30-retraction),barrelHidden=\(retraction>=21 ? 1 : 0),ghost=\(tank.ghostTime),serial=\(tank.spawnSerial),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),stickX=\(stickOrigin.x),stickY=\(stickOrigin.y)"
+            }
             if tank.id == localID, emptyFireProbe {
                 minimumProbeBarrelX = min(minimumProbeBarrelX, node.barrelOffset)
             }
@@ -1215,7 +1220,7 @@ private final class TankNode: SKNode {
 
     required init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func update(_ tank: ArenaTank, localSeat: Int?, zoom: CGFloat, infinity: Bool, recoil: Double? = nil, showWreck: Bool = false) {
+    func update(_ tank: ArenaTank, localSeat: Int?, zoom: CGFloat, infinity: Bool, retraction: Double = 0, showWreck: Bool = false) {
         let local = localSeat != nil
         isHidden = infinity && tank.hp <= 0 && !showWreck
         paint = Palette.tank(tank.colorIndex)
@@ -1229,9 +1234,9 @@ private final class TankNode: SKNode {
             barrel.texture = NativeArt.barrel(color: tank.colorIndex)
             turret.texture = NativeArt.turret(color: tank.colorIndex)
         }
-        barrel.isHidden = tank.hp <= 0
+        barrel.isHidden = tank.hp <= 0 || retraction >= 21
         turret.isHidden = tank.hp <= 0
-        barrel.position.x = -(recoil ?? tank.recoil) * 4
+        barrel.position.x = -retraction
         let shields = tank.hp > 0 && tank.shield > 0 ? max(1, min(5, tank.shieldCharges)) : 0
         for (index, ring) in shieldRings.enumerated() { ring.isHidden = index >= shields }
         protectionRing.isHidden = tank.hp <= 0 || shields > 0 || tank.invulnerable <= 0

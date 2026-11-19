@@ -534,8 +534,10 @@ function fireShot(world, tank) {
    vx: ux * spec.speed, vy: uy * spec.speed, age: 0, bounces: launch.bounced?1:0, seekDelay: launch.bounced?.04:0, target: null, trail: [],
   };
   if(kind==='rapid'&&boosted)bullet.life=(2*SHOT_RANGE+launch.distance+launch.muzzle)/spec.speed;
-  (world.flights||=new net.ProjectileFlights()).begin(bullet,world.time/STEP);
-  if (advanceBullet(world, bullet, launch.muzzle / spec.speed)) world.bullets.push(bullet);
+  const dx=ux*launch.muzzle,dy=uy*launch.muzzle,wall=kind==='cannon'?null:wallHit(world.maze,bullet.x,bullet.y,dx,dy,spec.r);
+  const hit=tankHit(world,bullet,dx,dy,wall?.fraction??1.00000001),visible=Math.min(1,wall?.fraction??1,hit.tank?hit.fraction:1);
+  (world.flights||=new net.ProjectileFlights()).begin(bullet,world.time/STEP,bullet.x+dx*visible,bullet.y+dy*visible);
+  if (advanceBullet(world, bullet, launch.muzzle / spec.speed, true)) world.bullets.push(bullet);
  }
  art.recycleStarmanProjectiles(world.bullets, tank.id, boosted, net.ammoEpoch(tank));
  if (showShot) {
@@ -545,7 +547,7 @@ function fireShot(world, tank) {
  spendWeapon(tank);
 }
 
-function advanceBullet(world, bullet, remaining) {
+function advanceBullet(world, bullet, remaining, muzzle=false) {
  if(bullet.kind==='cannon'){
   const dx=bullet.vx*remaining,dy=bullet.vy*remaining,startX=bullet.x,startY=bullet.y;
   bullet.hitTanks||=new Map();world.volleyDepth=(world.volleyDepth||0)+1;
@@ -593,6 +595,7 @@ function advanceBullet(world, bullet, remaining) {
   bullet.target = null;
   bullet.seekDelay = .04;
   if (nearCamera(world,bullet.x,bullet.y,CELL*7)) art.ricochet();
+  if(muzzle)return true; // The first reflected frame stays at the visible barrel tip.
   remaining *= 1 - wall.fraction;
  }
  return true;
@@ -1014,7 +1017,7 @@ function onlineBulletPose(world,bullet,frame){
  return {...b,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,vx:a.vx+(b.vx-a.vx)*f,vy:a.vy+(b.vy-a.vy)*f,life:a.life+(b.life-a.life)*f,trail:b.kind==='rapid'?null:b.trail||[a,b]};
 }
 
-function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity, deferCounts=false, labelLayout=null, wreck=false) {
+function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLeft=-Infinity, viewTop=-Infinity, viewRight=Infinity, deferCounts=false, labelLayout=null, wreck=false, maze=null) {
  const color = COLORS[tank.colorIndex] || COLORS[0];
  ctx.save();
  ctx.translate(tank.x, tank.y);
@@ -1060,7 +1063,10 @@ function drawTank(tank, highlight, zoom, ratio, label=tank.name||'Tank', viewLef
    ctx.stroke();
   }
  }
- const skin = {color, track: tank.track || 0, recoil: tank.recoil || 0};
+ const radius=tank.power==='cannon'?BULLET_RADIUS:PROJECTILES[tank.power||'regular']?.r||BULLET_RADIUS;
+ let wall=maze&&wallHit(maze,tank.x,tank.y,Math.cos(tank.angle)*30,Math.sin(tank.angle)*30,radius),clearance=radius;
+ if(!wall&&maze&&tank.ghostTime>0){wall=wallHit(maze,tank.x,tank.y,Math.cos(tank.angle)*30,Math.sin(tank.angle)*30,0);clearance=.5;}
+ const skin = {color, track: tank.track || 0, recoil: tank.recoil || 0, barrelRetraction:net.barrelRetraction(tank.recoil,wall?.fraction,clearance)};
  art.hull(skin, ctx, zoom, ratio);
  art.turret(ctx, skin);
  ctx.restore();
@@ -1557,7 +1563,7 @@ function drawView(world,seat,left,top,width,height,ratio,alpha,now,age) {
   if(displayed.hp)badgeTanks.push(displayed);
  }
  art.placeTankLabels?.(rendered,{left:x0+2/zoom,right:x1-2/zoom,top:y0+2/zoom,bottom:y1-2/zoom},zoom);
- for(const entry of rendered)drawTank(entry.tank,entry.local,zoom,ratio,entry.label,x0,y0,x1,true,entry.layout,world.showcase&&!entry.tank.hp);
+ for(const entry of rendered)drawTank(entry.tank,entry.local,zoom,ratio,entry.label,x0,y0,x1,true,entry.layout,world.showcase&&!entry.tank.hp,world.maze);
  const bullets = world.visibleBullets;
  bullets.length = 0;
  const frame=world.online&&world.remoteFrame;
