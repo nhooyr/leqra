@@ -923,12 +923,16 @@ func (g *Game) fire(t *Tank) bool {
 		}
 		if kind == "cannon" {
 			b.X, b.Y = launch.x, launch.y
-			b.beginFlight(b.X, b.Y, float64(g.Tick-1))
 			hit, hitOK := g.projectileWallHit(kind, b.X, b.Y, cs*travel, sn*travel, b.R)
 			limit := 1.0
 			if hitOK {
 				limit = hit.T
 			}
+			visible := limit
+			if target, at := g.projectileTankHit(b, b.X, b.Y, cs*travel, sn*travel); target != nil {
+				visible = min(visible, at)
+			}
+			b.beginFlight(b.X+cs*travel*visible, b.Y+sn*travel*visible, float64(g.Tick-1))
 			g.cannonSegment(b, cs*travel*limit, sn*travel*limit, 0, 0)
 			b.X += cs * travel * limit
 			b.Y += sn * travel * limit
@@ -972,11 +976,8 @@ func (g *Game) fire(t *Tank) bool {
 			}
 		}
 		{
-			x, y := b.X, b.Y
-			if target != nil || hitOK {
-				x, y = launch.x, launch.y
-			}
-			b.beginFlight(x, y, float64(g.Tick-1))
+			// The centre-to-muzzle sweep resolves damage, but is hidden in playback.
+			b.beginFlight(b.X, b.Y, float64(g.Tick-1))
 			if hitOK && target == nil {
 				b.ensureFlight().advance(b.X, b.Y, float64(g.Tick-1), true)
 			}

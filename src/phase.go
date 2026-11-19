@@ -139,7 +139,7 @@ func wallLaunch(x, y, ux, uy, radius, muzzle float64, walls []Wall, clearBounds 
 		return launch // Invalid/fully solid geometry absorbs the legal shot.
 	}
 	launch.distance = math.Sqrt(best)
-	launch.muzzle = max(0, muzzle-launch.distance)
+	launch.muzzle = 0 // The reflected shot first appears at this incoming wall face.
 	if (launch.x-x)*ux < -1e-9 {
 		launch.ux = -ux
 	}

@@ -832,8 +832,9 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         if (tank.hp > 0) {
             canvas.save()
             val preview = if (tank.id == localID) previewRecoil else if (tank.id == localID2) localPreviewRecoil else 0.0
-            canvas.translate((-max(tank.recoil, preview) * 4).toFloat(), 0f)
-            drawBitmap(canvas, art.barrel(tank.colorIndex), 32f)
+            val retraction = com.leqra.core.MuzzlePresentation.retraction(tank, geometry, max(tank.recoil, preview))
+            canvas.translate(-retraction.toFloat(), 0f)
+            if (retraction < 21) drawBitmap(canvas, art.barrel(tank.colorIndex), 32f)
             canvas.restore()
             drawBitmap(canvas, art.turret(tank.colorIndex), 12f)
             if (tank.ghostTime > 0 && !infinity) {

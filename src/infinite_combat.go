@@ -364,8 +364,18 @@ func (a *infiniteArena) fire(p *infinitePilot) {
 			b.Bounces = 1
 			b.seekDelay = missileWallDelay
 		}
-		b.beginFlight(b.X, b.Y, float64(a.tick)-1)
-		if a.advanceBullet(&b, launch.ux*launch.muzzle, launch.uy*launch.muzzle) {
+		dx, dy := launch.ux*launch.muzzle, launch.uy*launch.muzzle
+		visible := 1.0
+		if kind != "cannon" {
+			if wall, ok := a.rayWalls(b.X, b.Y, dx, dy, spec.radius); ok {
+				visible = wall.T
+			}
+		}
+		if target, at := a.hitTarget(p.ID, p.Team, b.X, b.Y, dx, dy, spec.radius, visible+1e-8, kind == "grenade"); target != nil {
+			visible = min(visible, at)
+		}
+		b.beginFlight(b.X+dx*visible, b.Y+dy*visible, float64(a.tick)-1)
+		if a.advanceBulletPath(&b, dx, dy, 0, true) {
 			b.flightBirth = cannonFlightPoint{b.X, b.Y, float64(a.tick) - 1}
 			if b.flight != nil {
 				b.flight.reset(b.X, b.Y, float64(a.tick)-1)
@@ -684,6 +694,10 @@ func (a *infiniteArena) advanceBullet(b *infiniteBullet, dx, dy float64) bool {
 }
 
 func (a *infiniteArena) advanceBulletDuring(b *infiniteBullet, dx, dy, span float64) bool {
+	return a.advanceBulletPath(b, dx, dy, span, false)
+}
+
+func (a *infiniteArena) advanceBulletPath(b *infiniteBullet, dx, dy, span float64, muzzle bool) bool {
 	if b.Kind == "cannon" {
 		a.cannonSegment(b, dx, dy, b.age-span, span)
 		b.X, b.Y = b.X+dx, b.Y+dy
@@ -750,7 +764,7 @@ func (a *infiniteArena) advanceBulletDuring(b *infiniteBullet, dx, dy, span floa
 			dy, b.VY = -dy, -b.VY
 		}
 		b.Target, b.seekDelay = 0, missileWallDelay
-		if wall.T == 1 {
+		if muzzle || wall.T == 1 {
 			return true
 		}
 	}

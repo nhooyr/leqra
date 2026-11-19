@@ -129,7 +129,7 @@ final class StarmanRapidTests: XCTestCase {
             game.snapshot.tanks[0].x = x; game.snapshot.tanks[0].y = y; game.snapshot.tanks[0].ghostTime = 10
             let launch = try XCTUnwrap(game.maze.launchRay(x: x, y: y, angle: 0, kind: "rapid", radius: 3.5 / 3))
             XCTAssertGreaterThan(launch.distance, isFixed ? 28 : 0)
-            let hidden = launch.distance + max(0, 28 - launch.distance)
+            let hidden = launch.distance + (launch.bounced ? 0 : max(0, 28 - launch.distance))
             let expectedLife = isFixed ? (2000 - hidden) / 1692 : (2 * 18 * 84 + hidden) / 1692
             game.step(input: GameInput(fire: true), dt: 1 / 60)
             let bullet = try XCTUnwrap(game.snapshot.bullets.first)

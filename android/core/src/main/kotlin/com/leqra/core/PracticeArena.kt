@@ -1014,12 +1014,18 @@ class PracticeArena(
                     effect("impact", t.x, t.y, t.id)
                     continue
                 }
-                val muzzle = max(0.0, (if (kind == "cannon") 32.0 else 28.0) - launch.distance)
+                val muzzle = if (launch.bounced) 0.0 else max(0.0, (if (kind == "cannon") 32.0 else 28.0) - launch.distance)
                 val launchPath = launch.distance + muzzle
                 val life = if (kind == "rapid" && boosted) {
                     if (world != null) max(0.0, world.width + world.height - launchPath) / spec.speed
                     else (rapidSpec.life * rapidSpec.speed * 2 + launchPath) / spec.speed
                 } else spec.life
+                val dx = launch.ux * muzzle
+                val dy = launch.uy * muzzle
+                val wall = maze.projectileHit(kind, launch.x, launch.y, dx, dy, spec.radius)
+                val target = targetHit(t.id, launch.x, launch.y, dx, dy, spec.radius,
+                    wall?.fraction ?: 1.00000001, kind == "grenade")
+                val visible = minOf(1.0, wall?.fraction ?: 1.0, target?.fraction ?: 1.0)
                 val p =
                     Projectile(
                         ArenaBullet(
@@ -1039,13 +1045,15 @@ class PracticeArena(
                             if (world != null && kind == "homing") world.width + world.height
                             else null,
                         pathTick = stepStarted * 60,
+                        birthX = launch.x + dx * visible,
+                        birthY = launch.y + dy * visible,
                     )
                 if (launch.bounced) {
                     p.wire.bounces = 1
                     p.seekDelay = .04
                     p.rangeLeft = p.rangeLeft?.minus(launch.distance)
                 }
-                if (advance(p, muzzle / spec.speed, recordTime = false)) projectiles.add(p)
+                if (advance(p, muzzle / spec.speed, recordTime = false, muzzle = true)) projectiles.add(p)
             }
             // Rapid audio has one display-time gate; do not sparsify its source a second time.
             if (!boosted || kind == "rapid" || kind == "grenade" || time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0)) {
@@ -1131,7 +1139,7 @@ class PracticeArena(
             points, p.wire.kind.ifEmpty { "regular" }, p.radius)
     }
 
-    private fun advance(p: Projectile, dt: Double, visualOnly: Boolean = false, recordTime: Boolean = true): Boolean {
+    private fun advance(p: Projectile, dt: Double, visualOnly: Boolean = false, recordTime: Boolean = true, muzzle: Boolean = false): Boolean {
         var dx = p.wire.vx * dt
         var dy = p.wire.vy * dt
         var remaining = dt
@@ -1218,7 +1226,7 @@ class PracticeArena(
             }
             b.target = 0
             p.seekDelay = .04
-            if (wall.fraction == 1.0) return true
+            if (muzzle || wall.fraction == 1.0) return true
         }
         return true
     }
