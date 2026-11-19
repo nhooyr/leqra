@@ -2,6 +2,7 @@
 
 Native Kotlin, hardware-accelerated Canvas graphics, low-latency PCM sound and
 Android Keystore account storage. There is no WebView or JavaScript game runtime.
+The application ID is `com.leqra`.
 
 ## Build and run
 
