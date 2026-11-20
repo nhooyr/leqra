@@ -9,7 +9,7 @@ listen=${ADDR:-:${PORT:-8080}}
 port=${listen##*:}
 if [ "$(uname -s)" = Darwin ] && [ "$port" -gt 0 ] 2>/dev/null; then
 	host=${listen%:*}
-	case "$host" in ''|0.0.0.0|'[::]') host=$(hostname);; esac
+	case "$host" in '' | 0.0.0.0 | '[::]') host=$(hostname) ;; esac
 	url="http://$host:$port"
 	(
 		for i in $(seq 1 20); do

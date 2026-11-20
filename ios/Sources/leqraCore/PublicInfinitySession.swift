@@ -8,7 +8,8 @@ public struct PublicInfinitySession: Codable, Equatable, Sendable {
 
     public init(baseURL: URL, publicToken: String) throws {
         guard !publicToken.isEmpty, publicToken.utf8.count <= 256,
-              publicToken.unicodeScalars.allSatisfy({ $0.value >= 0x21 && $0.value <= 0x7e }) else {
+            publicToken.unicodeScalars.allSatisfy({ $0.value >= 0x21 && $0.value <= 0x7e })
+        else {
             throw GameNetworkError.invalidResponse
         }
         origin = try Self.normalizedOrigin(baseURL)
@@ -24,9 +25,12 @@ public struct PublicInfinitySession: Codable, Equatable, Sendable {
     public static func normalizedOrigin(_ baseURL: URL) throws -> String {
         let endpoint = try ServerAddress.endpoint(baseURL, path: "")
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
-              let host = components.host else { throw GameNetworkError.invalidURL }
+            let host = components.host
+        else { throw GameNetworkError.invalidURL }
         components.host = host.lowercased()
-        if components.scheme == "https" && components.port == 443 || components.scheme == "http" && components.port == 80 {
+        if components.scheme == "https" && components.port == 443
+            || components.scheme == "http" && components.port == 80
+        {
             components.port = nil
         }
         guard let origin = components.url?.absoluteString else { throw GameNetworkError.invalidURL }

@@ -14,50 +14,87 @@ struct ReadyRoomView: View {
 
     var body: some View {
         GeometryReader { geometry in
-          ScrollView {
-            WebPanel(accent: true, paddingAmount: 16) {
-                Group {
-                    if landscape {
-                        HStack(alignment: .top, spacing: 24) {
-                            intro.frame(maxWidth: .infinity)
-                            configuration.frame(maxWidth: .infinity)
+            ScrollView {
+                WebPanel(accent: true, paddingAmount: 16) {
+                    Group {
+                        if landscape {
+                            HStack(alignment: .top, spacing: 24) {
+                                intro.frame(maxWidth: .infinity)
+                                configuration.frame(maxWidth: .infinity)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 18) {
+                                intro
+                                configuration
+                            }
                         }
-                    } else { VStack(alignment: .leading, spacing: 18) { intro; configuration } }
-                }
-            }.frame(maxWidth: landscape ? 650 : 420)
-                .accessibilityElement(children: .contain).accessibilityIdentifier("readyRoomCard")
-                .padding(12).frame(maxWidth: .infinity)
-          }.frame(width: geometry.size.width, height: geometry.size.height)
-              .accessibilityIdentifier("readyRoomScroll")
-              .scrollDismissesKeyboard(.interactively)
+                    }
+                }.frame(maxWidth: landscape ? 650 : 420)
+                    .accessibilityElement(children: .contain).accessibilityIdentifier("readyRoomCard")
+                    .padding(12).frame(maxWidth: .infinity)
+            }.frame(width: geometry.size.width, height: geometry.size.height)
+                .accessibilityIdentifier("readyRoomScroll")
+                .scrollDismissesKeyboard(.interactively)
         }.onChange(of: callsignFocused) { focused in if !focused { session.saveCallsign() } }
-            .onChange(of: localCallsignFocused) { focused in if !focused { session.switchCallsign(session.localCallsign, seat: 1, localOnly: session.offline) } }
+            .onChange(of: localCallsignFocused) { focused in
+                if !focused {
+                    session.switchCallsign(session.localCallsign, seat: 1, localOnly: session.offline)
+                }
+            }
             .task(id: session.serverAddress) { session.scheduleCallsignAvailability() }
     }
 
     private var publicSelected: Bool { session.room?.infinityPublic ?? session.publicInfinitySelected }
     private var intro: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(session.room == nil ? "LOCAL ROOM" : "ONLINE ROOM").font(WebStyle.mono()).foregroundStyle(WebStyle.soft)
+            Text(session.room == nil ? "LOCAL ROOM" : "ONLINE ROOM").font(WebStyle.mono()).foregroundStyle(
+                WebStyle.soft)
             if session.isHost {
                 HStack(spacing: 9) {
-                    WebSwitch(isOn: Binding(get: { publicSelected }, set: session.togglePublic)).frame(width: 51, height: 31).scaleEffect(0.7).frame(width: 35, height: 20).accessibilityIdentifier("publicInfinityToggle")
+                    WebSwitch(isOn: Binding(get: { publicSelected }, set: session.togglePublic)).frame(
+                        width: 51, height: 31
+                    ).scaleEffect(0.7).frame(width: 35, height: 20).accessibilityIdentifier(
+                        "publicInfinityToggle")
                     Text("Public Infinity").font(.system(size: 13, weight: .bold))
                     Spacer()
                 }.frame(minHeight: 44)
             }
-            Button { session.play() } label: {
-                HStack { Spacer(); Text(playLabel); Spacer(); Image(systemName: session.isHost ? "arrow.right" : "checkmark") }
+            Button {
+                session.play()
+            } label: {
+                HStack {
+                    Spacer()
+                    Text(playLabel)
+                    Spacer()
+                    Image(systemName: session.isHost ? "arrow.right" : "checkmark")
+                }
             }.buttonStyle(WebButtonStyle(kind: .play)).accessibilityIdentifier("playRoom")
-                .disabled(session.releasingCallsign || session.room == nil && !publicSelected && !session.localInfinityStartError.isEmpty || (session.room?.infinityActive == true ? session.ownRoomMember == nil || publicSelected && session.ownRoomMember?.spectating == true : session.room != nil && session.isHost && !(session.room?.canStart ?? false) && !(publicSelected && (session.room?.canStartPublicInfinity ?? false))))
+                .disabled(
+                    session.releasingCallsign
+                        || session.room == nil && !publicSelected && !session.localInfinityStartError.isEmpty
+                        || (session.room?.infinityActive == true
+                            ? session.ownRoomMember == nil
+                                || publicSelected && session.ownRoomMember?.spectating == true
+                            : session.room != nil && session.isHost && !(session.room?.canStart ?? false)
+                                && !(publicSelected && (session.room?.canStartPublicInfinity ?? false)))
+                )
             ZStack {
-                ForEach(["PUBLIC INFINITY, ENDLESS", "ENDLESS TANK ARENA, START WHEN READY", "BOT SKIRMISH, START WHEN READY"], id: \.self) { hint in
+                ForEach(
+                    [
+                        "PUBLIC INFINITY, ENDLESS", "ENDLESS TANK ARENA, START WHEN READY",
+                        "BOT SKIRMISH, START WHEN READY",
+                    ], id: \.self
+                ) { hint in
                     Text(hint).opacity(hint == readyHint ? 1 : 0).accessibilityHidden(hint != readyHint)
                 }
-            }.font(WebStyle.mono()).foregroundStyle(WebStyle.muted).multilineTextAlignment(.center).frame(maxWidth: .infinity)
-            Button("FIND ONLINE BATTLE") { session.openQueue() }.buttonStyle(WebButtonStyle()).disabled(session.releasingCallsign)
+            }.font(WebStyle.mono()).foregroundStyle(WebStyle.muted).multilineTextAlignment(.center).frame(
+                maxWidth: .infinity)
+            Button("FIND ONLINE BATTLE") { session.openQueue() }.buttonStyle(WebButtonStyle()).disabled(
+                session.releasingCallsign)
             if session.room == nil {
-                Button("SHARE ROOM ONLINE ↗") { session.shareRoom() }.buttonStyle(WebButtonStyle(kind: .share)).disabled(session.releasingCallsign)
+                Button("SHARE ROOM ONLINE ↗") { session.shareRoom() }.buttonStyle(
+                    WebButtonStyle(kind: .share)
+                ).disabled(session.releasingCallsign)
             } else {
                 Button {
                     UIPasteboard.general.url = session.inviteURL
@@ -67,7 +104,8 @@ struct ReadyRoomView: View {
                         inviteCopied = false
                     }
                 } label: {
-                    Text(inviteCopied ? "INVITE LINK COPIED ✓" : "COPY INVITE LINK ↗").frame(maxWidth: .infinity)
+                    Text(inviteCopied ? "INVITE LINK COPIED ✓" : "COPY INVITE LINK ↗").frame(
+                        maxWidth: .infinity)
                 }.buttonStyle(WebButtonStyle())
                 if !publicSelected {
                     Button(spectatorInviteCopied ? "SPECTATOR LINK COPIED ✓" : "COPY SPECTATOR LINK ↗") {
@@ -80,30 +118,52 @@ struct ReadyRoomView: View {
                     }.buttonStyle(WebButtonStyle()).accessibilityIdentifier("copySpectatorLink")
                 }
             }
-            Button("Join another room ↗") { session.showJoin = true }.buttonStyle(WebButtonStyle(kind: .text)).frame(maxWidth: .infinity)
+            Button("Join another room ↗") { session.showJoin = true }.buttonStyle(WebButtonStyle(kind: .text))
+                .frame(maxWidth: .infinity)
             if session.room != nil {
                 Button("Leave room") { session.leave() }.buttonStyle(WebButtonStyle(kind: .danger))
-                if let room = session.room { Text(room.code).font(WebStyle.mono(13, weight: .bold)).textSelection(.enabled).accessibilityIdentifier("roomCodeValue") }
+                if let room = session.room {
+                    Text(room.code).font(WebStyle.mono(13, weight: .bold)).textSelection(.enabled)
+                        .accessibilityIdentifier("roomCodeValue")
+                }
             }
-            Text(session.room == nil ? "Local play is ready. Share to invite online friends." : session.status.isEmpty ? "Room connected. Invite friends or deploy tanks." : session.status)
-                .font(.system(size: 11)).lineSpacing(4).foregroundStyle(WebStyle.soft)
+            Text(
+                session.room == nil
+                    ? "Local play is ready. Share to invite online friends."
+                    : session.status.isEmpty
+                        ? "Room connected. Invite friends or deploy tanks." : session.status
+            )
+            .font(.system(size: 11)).lineSpacing(4).foregroundStyle(WebStyle.soft)
             if !publicSelected {
-                Text(session.room?.startError ?? session.localInfinityStartError).font(.system(size: 11)).foregroundStyle(WebStyle.danger)
-                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+                Text(session.room?.startError ?? session.localInfinityStartError).font(.system(size: 11))
+                    .foregroundStyle(WebStyle.danger)
+                    .fixedSize(horizontal: false, vertical: true).frame(
+                        maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
             }
         }
     }
 
     private var configuration: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) { Text(session.identity).font(WebStyle.mono(11, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex)); Text("callsign").font(WebStyle.mono()).foregroundStyle(WebStyle.muted) }
+            HStack(spacing: 6) {
+                Text(session.identity).font(WebStyle.mono(11, weight: .bold)).foregroundStyle(
+                    WebStyle.paint(session.colorIndex))
+                Text("callsign").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+            }
             HStack(spacing: 8) {
-                TextField("Callsign", text: $session.callsign).modifier(WebField(font: WebStyle.mono(16), color: WebStyle.paint(session.colorIndex))).focused($callsignFocused)
-                    .textInputAutocapitalization(.words).autocorrectionDisabled().onSubmit { session.saveCallsign() }
-                    .onChange(of: session.callsign) { value in if value.count > 16 { session.callsign = String(value.prefix(16)) } }
+                TextField("Callsign", text: $session.callsign).modifier(
+                    WebField(font: WebStyle.mono(16), color: WebStyle.paint(session.colorIndex))
+                ).focused($callsignFocused)
+                    .textInputAutocapitalization(.words).autocorrectionDisabled().onSubmit {
+                        session.saveCallsign()
+                    }
+                    .onChange(of: session.callsign) { value in
+                        if value.count > 16 { session.callsign = String(value.prefix(16)) }
+                    }
                     .disabled(session.releasingCallsign)
                     .accessibilityIdentifier("callsignField")
-                AccountKeyButton(session: session, seat: 0, identity: session.identity, identifier: "openAccount")
+                AccountKeyButton(
+                    session: session, seat: 0, identity: session.identity, identifier: "openAccount")
             }
             CallsignFeedback(session: session)
             WebDisclosure(isExpanded: $settingsOpen, title: "Room settings") {
@@ -117,39 +177,51 @@ struct ReadyRoomView: View {
                     if publicSelected {
                         Text("Disable Public Infinity to choose room modes and rules.")
                             .font(.system(size: 12)).foregroundStyle(WebStyle.soft)
-                            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("publicInfinityRulesNotice")
+                            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier(
+                                "publicInfinityRulesNotice")
                     } else {
-                    Text("CHOOSE YOUR BATTLE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                    modeChoices
-                    ZStack(alignment: .topLeading) {
-                        Text("Survival supports up to four squad tanks. Remove a bot before changing modes.").hidden().accessibilityHidden(true)
-                        Text(session.roomSetupError).accessibilityIdentifier("roomSetupError")
-                    }.font(.system(size: 11)).foregroundStyle(WebStyle.danger)
-                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                    // Measure every mode's wrapped copy at the current width.
-                    // Selecting a mode changes ink, never the settings footprint.
-                    ZStack(alignment: .topLeading) {
-                        ForEach(BattleMode.allCases) { mode in
-                            Text(mode.help).opacity(mode == session.selectedMode ? 1 : 0)
-                                .accessibilityHidden(mode != session.selectedMode)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }.font(.system(size: 10)).foregroundStyle(WebStyle.soft).frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 6) {
-                        Button("Rules") { session.showRules = true }
-                        Button("Teams") { session.showRules = true }
-                        Button("Presets") { session.showPresets = true }
-                    }.buttonStyle(WebButtonStyle(compact: true))
-                    ZStack(alignment: .topLeading) {
-                        Text("FIRST TO 999 WAVES, UP TO 8 TANKS\nTeammates share wins. Friendly fire is off.")
+                        Text("CHOOSE YOUR BATTLE").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
+                        modeChoices
+                        ZStack(alignment: .topLeading) {
+                            Text(
+                                "Survival supports up to four squad tanks. Remove a bot before changing modes."
+                            ).hidden().accessibilityHidden(true)
+                            Text(session.roomSetupError).accessibilityIdentifier("roomSetupError")
+                        }.font(.system(size: 11)).foregroundStyle(WebStyle.danger)
+                            .fixedSize(horizontal: false, vertical: true).frame(
+                                maxWidth: .infinity, alignment: .leading)
+                        // Measure every mode's wrapped copy at the current width.
+                        // Selecting a mode changes ink, never the settings footprint.
+                        ZStack(alignment: .topLeading) {
+                            ForEach(BattleMode.allCases) { mode in
+                                Text(mode.help).opacity(mode == session.selectedMode ? 1 : 0)
+                                    .accessibilityHidden(mode != session.selectedMode)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }.font(.system(size: 10)).foregroundStyle(WebStyle.soft).frame(
+                            maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 6) {
+                            Button("Rules") { session.showRules = true }
+                            Button("Teams") { session.showRules = true }
+                            Button("Presets") { session.showPresets = true }
+                        }.buttonStyle(WebButtonStyle(compact: true))
+                        ZStack(alignment: .topLeading) {
+                            Text(
+                                "FIRST TO 999 WAVES, UP TO 8 TANKS\nTeammates share wins. Friendly fire is off."
+                            )
                             .hidden().accessibilityHidden(true)
-                        Text(ruleSummary).accessibilityIdentifier("roomRuleSummary")
-                    }.font(WebStyle.mono()).foregroundStyle(WebStyle.soft).lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                            Text(ruleSummary).accessibilityIdentifier("roomRuleSummary")
+                        }.font(WebStyle.mono()).foregroundStyle(WebStyle.soft).lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true).frame(
+                                maxWidth: .infinity, alignment: .leading)
                     }
                 }.padding(.top, 12)
             }
-            WebDisclosure(isExpanded: $playersOpen, title: "Players and bots", detail: "\(session.room?.players.count ?? session.localBots.count + (session.localP2Enabled ? 2 : 1)) / \(session.room?.maxPlayers ?? (session.selectedMode == .survival ? 4 : 8))") {
+            WebDisclosure(
+                isExpanded: $playersOpen, title: "Players and bots",
+                detail:
+                    "\(session.room?.players.count ?? session.localBots.count + (session.localP2Enabled ? 2 : 1)) / \(session.room?.maxPlayers ?? (session.selectedMode == .survival ? 4 : 8))"
+            ) {
                 VStack(spacing: 10) {
                     if !session.hasLocalP2 {
                         Button("＋ ADD LOCAL P2") { session.setLocalP2Enabled(true) }
@@ -157,98 +229,141 @@ struct ReadyRoomView: View {
                             .accessibilityIdentifier("addLocalP2")
                     }
                     if session.isHost {
-                        Button("＋ ADD BOT") { session.addBot() }.buttonStyle(WebButtonStyle(compact: true)).accessibilityIdentifier("Add bot")
+                        Button("＋ ADD BOT") { session.addBot() }.buttonStyle(WebButtonStyle(compact: true))
+                            .accessibilityIdentifier("Add bot")
                     }
                     if let room = session.room {
                         ForEach(room.players) { member in RoomPilotRow(session: session, member: member) }
                         if !room.spectators.isEmpty {
-                            Text("SPECTATORS").font(WebStyle.mono()).foregroundStyle(WebStyle.muted).frame(maxWidth: .infinity, alignment: .leading)
-                            ForEach(room.spectators) { member in RoomPilotRow(session: session, member: member) }
+                            Text("SPECTATORS").font(WebStyle.mono()).foregroundStyle(WebStyle.muted).frame(
+                                maxWidth: .infinity, alignment: .leading)
+                            ForEach(room.spectators) { member in
+                                RoomPilotRow(session: session, member: member)
+                            }
                         }
                     } else {
                         localHuman
                         if session.localP2Enabled { localSecondary }
-                        ForEach($session.localBots) { $bot in LocalBotRow(bot: $bot, teams: session.effectiveRules.teamMode == "teams") {
-                            session.localBots.removeAll { $0.id == bot.id }
-                        } }
+                        ForEach($session.localBots) { $bot in
+                            LocalBotRow(bot: $bot, teams: session.effectiveRules.teamMode == "teams") {
+                                session.localBots.removeAll { $0.id == bot.id }
+                            }
+                        }
                     }
                 }.padding(.top, 12)
             }
             Button("CONTROLS") { session.showControls = true }.buttonStyle(WebButtonStyle(compact: true))
-            if session.room != nil { Button("FIND A MATCH") { session.openQueue() }.buttonStyle(WebButtonStyle(compact: true)) }
+            if session.room != nil {
+                Button("FIND A MATCH") { session.openQueue() }.buttonStyle(WebButtonStyle(compact: true))
+            }
         }
     }
 
     private var modeChoices: some View {
         HStack(spacing: 2) {
             ForEach(BattleMode.allCases) { mode in
-                Button { session.selectMode(mode) } label: {
+                Button {
+                    session.selectMode(mode)
+                } label: {
                     VStack(spacing: 6) {
                         Image(systemName: mode.symbol).font(.system(size: 20)).frame(height: 24)
-                        Text(mode.short).font(.system(size: 10, weight: .semibold)).multilineTextAlignment(.center).frame(minHeight: 25)
+                        Text(mode.short).font(.system(size: 10, weight: .semibold)).multilineTextAlignment(
+                            .center
+                        ).frame(minHeight: 25)
                     }.frame(maxWidth: .infinity).padding(.vertical, 8)
                         .foregroundStyle(session.selectedMode == mode ? WebStyle.accent : WebStyle.muted)
-                        .background(session.selectedMode == mode ? WebStyle.accentWash : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(
+                            session.selectedMode == mode ? WebStyle.accentWash : .clear,
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
                         .contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel(mode.title).accessibilityIdentifier("mode_" + mode.rawValue).disabled(!session.isHost)
+                }.buttonStyle(.plain).accessibilityLabel(mode.title).accessibilityIdentifier(
+                    "mode_" + mode.rawValue
+                ).disabled(!session.isHost)
             }
         }.padding(3).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(WebStyle.edge, lineWidth: 1).allowsHitTesting(false))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9).stroke(WebStyle.edge, lineWidth: 1).allowsHitTesting(false))
     }
 
     private var localHuman: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(session.identity).font(.system(size: 12, weight: .bold)).foregroundStyle(WebStyle.paint(session.colorIndex)).fixedSize(horizontal: false, vertical: true)
+            Text(session.identity).font(.system(size: 12, weight: .bold)).foregroundStyle(
+                WebStyle.paint(session.colorIndex)
+            ).fixedSize(horizontal: false, vertical: true)
             PaintChoices(selected: session.colorIndex, action: session.setPaint)
             if session.effectiveRules.teamMode == "teams" {
-                Picker("Team", selection: $session.localTeam) { ForEach(1...4, id: \.self) { Text("Team \($0)").tag($0) } }.font(.system(size: 12))
+                Picker("Team", selection: $session.localTeam) {
+                    ForEach(1...4, id: \.self) { Text("Team \($0)").tag($0) }
+                }.font(.system(size: 12))
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(
+            WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
     }
     private var localSecondary: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top) {
                 Text(session.localCallsign + " (P2)").font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(WebStyle.paint(session.localP2ColorIndex)).fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(WebStyle.paint(session.localP2ColorIndex)).fixedSize(
+                        horizontal: false, vertical: true)
                 Spacer(minLength: 4)
-                Button("REMOVE P2") { session.setLocalP2Enabled(false) }.font(WebStyle.mono()).foregroundStyle(WebStyle.danger)
+                Button("REMOVE P2") { session.setLocalP2Enabled(false) }.font(WebStyle.mono())
+                    .foregroundStyle(WebStyle.danger)
                     .accessibilityIdentifier("removeLocalP2")
             }
             HStack(spacing: 8) {
-                TextField("Callsign", text: $session.localCallsign).modifier(WebField(color: WebStyle.paint(session.localP2ColorIndex)))
-                    .focused($localCallsignFocused).autocorrectionDisabled().textInputAutocapitalization(.words)
-                    .onSubmit { session.switchCallsign(session.localCallsign, seat: 1, localOnly: session.offline) }
-                    .onChange(of: session.localCallsign) { value in
-                        if value.count > 16 { session.localCallsign = String(value.prefix(16)) }
-                        session.scheduleCallsignAvailability(localName: value)
-                    }.disabled(session.releasingCallsign).accessibilityIdentifier("localCallsignField")
-                AccountKeyButton(session: session, seat: 1, identity: session.localCallsign + " (P2)", identifier: "openLocalAccount")
+                TextField("Callsign", text: $session.localCallsign).modifier(
+                    WebField(color: WebStyle.paint(session.localP2ColorIndex))
+                )
+                .focused($localCallsignFocused).autocorrectionDisabled().textInputAutocapitalization(.words)
+                .onSubmit {
+                    session.switchCallsign(session.localCallsign, seat: 1, localOnly: session.offline)
+                }
+                .onChange(of: session.localCallsign) { value in
+                    if value.count > 16 { session.localCallsign = String(value.prefix(16)) }
+                    session.scheduleCallsignAvailability(localName: value)
+                }.disabled(session.releasingCallsign).accessibilityIdentifier("localCallsignField")
+                AccountKeyButton(
+                    session: session, seat: 1, identity: session.localCallsign + " (P2)",
+                    identifier: "openLocalAccount")
             }
             CallsignFeedback(session: session, seat: 1)
             PaintChoices(selected: session.localP2ColorIndex, action: session.setLocalP2Paint)
             if session.effectiveRules.teamMode == "teams" {
                 Picker("Team", selection: $session.localP2Team) {
-                    ForEach(1...(session.selectedMode == .survival ? 1 : session.selectedMode == .ctf ? 2 : 4), id: \.self) { Text("Team \($0)").tag($0) }
+                    ForEach(
+                        1...(session.selectedMode == .survival ? 1 : session.selectedMode == .ctf ? 2 : 4),
+                        id: \.self
+                    ) { Text("Team \($0)").tag($0) }
                 }.font(.system(size: 12))
             }
             Text("Touch controls P1. Keyboard/mouse controls P2.")
-                .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
+                .font(.system(size: 11)).foregroundStyle(WebStyle.soft).fixedSize(
+                    horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(
+            WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
     }
     private var playLabel: String {
-        if session.room?.infinityActive == true { return session.ownRoomMember?.spectating == true ? "WATCH INFINITY" : "REJOIN INFINITY" }
+        if session.room?.infinityActive == true {
+            return session.ownRoomMember?.spectating == true ? "WATCH INFINITY" : "REJOIN INFINITY"
+        }
         if session.isHost { return "PLAY" }
         let ready = session.room?.players.first(where: { $0.id == session.localID })?.ready ?? false
         return ready ? "READY ✓" : "READY"
     }
     private var readyHint: String {
         if publicSelected { return "PUBLIC INFINITY, ENDLESS" }
-        return session.effectiveRules.infinity ? "ENDLESS TANK ARENA, START WHEN READY" : "BOT SKIRMISH, START WHEN READY"
+        return session.effectiveRules.infinity
+            ? "ENDLESS TANK ARENA, START WHEN READY" : "BOT SKIRMISH, START WHEN READY"
     }
     private var ruleSummary: String {
         let rules = session.effectiveRules
-        if rules.infinity { return rules.infinityTarget == 0 ? "ENDLESS, UP TO 8 TANKS" : "FIRST TO \(rules.infinityTarget), UP TO 8 TANKS" }
-        return "FIRST TO \(rules.scoreTarget) \(rules.mode == "survival" ? "WAVES" : "WINS"), UP TO \(rules.mode == "survival" ? 4 : 8) TANKS\nTeammates share wins. Friendly fire is \(rules.friendlyFire ? "on" : "off")."
+        if rules.infinity {
+            return rules.infinityTarget == 0
+                ? "ENDLESS, UP TO 8 TANKS" : "FIRST TO \(rules.infinityTarget), UP TO 8 TANKS"
+        }
+        return
+            "FIRST TO \(rules.scoreTarget) \(rules.mode == "survival" ? "WAVES" : "WINS"), UP TO \(rules.mode == "survival" ? 4 : 8) TANKS\nTeammates share wins. Friendly fire is \(rules.friendlyFire ? "on" : "off")."
     }
 }
 
@@ -258,9 +373,15 @@ struct PaintChoices: View {
     var body: some View {
         HStack(spacing: 5) {
             ForEach(0..<8) { index in
-                Button { action(index) } label: {
+                Button {
+                    action(index)
+                } label: {
                     RoundedRectangle(cornerRadius: 4).fill(WebStyle.paint(index)).frame(width: 22, height: 22)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white, lineWidth: selected == index ? 2 : 0).padding(-2).allowsHitTesting(false)).frame(maxWidth: .infinity, minHeight: 36)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4).stroke(
+                                .white, lineWidth: selected == index ? 2 : 0
+                            ).padding(-2).allowsHitTesting(false)
+                        ).frame(maxWidth: .infinity, minHeight: 36)
                 }.buttonStyle(.plain).accessibilityLabel(GamePalette.names[index])
             }
         }
@@ -276,15 +397,21 @@ struct LocalBotRow: View {
             HStack {
                 TankMark().foregroundStyle(WebStyle.paint(bot.colorIndex))
                 Text("BOT").font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
-                TextField("Callsign", text: $bot.name).font(.system(size: 12)).foregroundStyle(WebStyle.paint(bot.colorIndex))
-                Button(action: remove) { Image(systemName: "xmark").frame(width: 32, height: 32) }.foregroundStyle(WebStyle.danger).accessibilityLabel("Remove " + bot.name)
+                TextField("Callsign", text: $bot.name).font(.system(size: 12)).foregroundStyle(
+                    WebStyle.paint(bot.colorIndex))
+                Button(action: remove) { Image(systemName: "xmark").frame(width: 32, height: 32) }
+                    .foregroundStyle(WebStyle.danger).accessibilityLabel("Remove " + bot.name)
             }
             HStack {
                 Picker("Difficulty", selection: $bot.difficulty) {
                     ForEach(BotDifficulty.allCases, id: \.rawValue) { Text($0.displayName).tag($0.rawValue) }
                 }.font(.system(size: 11))
                 Spacer()
-                if teams { Picker("Team", selection: $bot.team) { ForEach(1...4, id: \.self) { Text("Team \($0)").tag($0) } }.font(.system(size: 11)) }
+                if teams {
+                    Picker("Team", selection: $bot.team) {
+                        ForEach(1...4, id: \.self) { Text("Team \($0)").tag($0) }
+                    }.font(.system(size: 11))
+                }
             }
             PaintChoices(selected: bot.colorIndex) { bot.colorIndex = $0 }
         }.padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
@@ -298,22 +425,37 @@ struct RoomPilotRow: View {
     private var primary: Bool { member.id == session.roomPilotID }
     private var ownedLocal: Bool { member.kind == "local" && member.owner == session.roomPilotID }
     private var owned: Bool { primary || ownedLocal }
-    private var canRename: Bool { session.roomEditable && (session.isHost && member.kind == "bot" || ownedLocal) }
-    private var canPaint: Bool { session.roomEditable && session.effectiveRules.teamMode == "ffa" && !member.spectating && (owned || session.isHost && member.kind == "bot") }
-    private var label: String { primary ? session.identity : ownedLocal ? member.name + " (P2)" : member.name }
-    private var teams: ClosedRange<Int> { session.effectiveRules.mode == "survival" && !session.effectiveRules.infinity ? 1...1 : session.effectiveRules.mode == "ctf" && !session.effectiveRules.infinity ? 1...2 : 1...4 }
+    private var canRename: Bool {
+        session.roomEditable && (session.isHost && member.kind == "bot" || ownedLocal)
+    }
+    private var canPaint: Bool {
+        session.roomEditable && session.effectiveRules.teamMode == "ffa" && !member.spectating
+            && (owned || session.isHost && member.kind == "bot")
+    }
+    private var label: String {
+        primary ? session.identity : ownedLocal ? member.name + " (P2)" : member.name
+    }
+    private var teams: ClosedRange<Int> {
+        session.effectiveRules.mode == "survival" && !session.effectiveRules.infinity
+            ? 1...1 : session.effectiveRules.mode == "ctf" && !session.effectiveRules.infinity ? 1...2 : 1...4
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 Circle().fill(WebStyle.mapped(member.color)).frame(width: 10, height: 10).padding(.top, 3)
                 Text(CallsignPolicy.displayName(label, bot: member.kind == "bot"))
-                    .font(.system(size: 12, weight: owned ? .bold : .regular)).foregroundStyle(WebStyle.mapped(member.color))
-                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier(primary ? "localRoomIdentity" : "roomPilot_\(member.id)")
+                    .font(.system(size: 12, weight: owned ? .bold : .regular)).foregroundStyle(
+                        WebStyle.mapped(member.color)
+                    )
+                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier(
+                        primary ? "localRoomIdentity" : "roomPilot_\(member.id)")
                 Spacer(minLength: 4)
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(member.kind == "bot" ? "BOT" : "HUMAN PILOT")
                     if member.kind != "bot" {
-                        Text((member.id == session.room?.host ? "HOST, " : "") + (member.spectating ? "WATCHING" : member.ready ? "READY" : "WAITING"))
+                        Text(
+                            (member.id == session.room?.host ? "HOST, " : "")
+                                + (member.spectating ? "WATCHING" : member.ready ? "READY" : "WAITING"))
                     }
                 }.font(WebStyle.mono()).foregroundStyle(WebStyle.muted)
                 if owned || session.isHost {
@@ -321,40 +463,76 @@ struct RoomPilotRow: View {
                         if session.roomEditable && session.isHost {
                             if member.kind == "bot" {
                                 ForEach(BotDifficulty.allCases, id: \.rawValue) { difficulty in
-                                    Button(difficulty.displayName) { session.send(.configure(target: member.id, member: member.member, difficulty: difficulty.rawValue)) }
+                                    Button(difficulty.displayName) {
+                                        session.send(
+                                            .configure(
+                                                target: member.id, member: member.member,
+                                                difficulty: difficulty.rawValue))
+                                    }
                                 }
                             }
                             if session.effectiveRules.teamMode == "teams" && !member.spectating {
-                                ForEach(teams, id: \.self) { team in Button("Team \(team)") { session.send(.configure(target: member.id, member: member.member, team: team)) } }
+                                ForEach(teams, id: \.self) { team in
+                                    Button("Team \(team)") {
+                                        session.send(
+                                            .configure(target: member.id, member: member.member, team: team))
+                                    }
+                                }
                             }
                         }
-                        if owned { Button(member.spectating ? "Return to play" : "Spectate") { session.send(.spectate(!member.spectating, target: member.id, member: member.member)) } }
-                        if session.isHost && !primary && session.room?.matchmaking == nil { Button("Remove", role: .destructive) { session.send(.kick(target: member.id, member: member.member)) } }
-                    } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
-                        .accessibilityIdentifier("pilotMenu_\(member.id)")
+                        if owned {
+                            Button(member.spectating ? "Return to play" : "Spectate") {
+                                session.send(
+                                    .spectate(!member.spectating, target: member.id, member: member.member))
+                            }
+                        }
+                        if session.isHost && !primary && session.room?.matchmaking == nil {
+                            Button("Remove", role: .destructive) {
+                                session.send(.kick(target: member.id, member: member.member))
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis").frame(width: 32, height: 32)
+                    }
+                    .accessibilityIdentifier("pilotMenu_\(member.id)")
                 }
             }
             if canRename {
                 HStack(spacing: 8) {
                     TextField("Callsign", text: $name).modifier(WebField()).autocorrectionDisabled()
                         .onSubmit {
-                            let value = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(16))
+                            let value = String(
+                                name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(16))
                             guard !value.isEmpty else { return }
-                            if ownedLocal { session.send(.renameLocal(target: member.id, member: member.member, name: value)) }
-                            else { session.send(.configure(target: member.id, member: member.member, name: value)) }
+                            if ownedLocal {
+                                session.send(
+                                    .renameLocal(target: member.id, member: member.member, name: value))
+                            } else {
+                                session.send(
+                                    .configure(target: member.id, member: member.member, name: value))
+                            }
                         }
                         .onAppear { name = member.name }.onChange(of: member.name) { name = $0 }
-                        .onChange(of: name) { value in if ownedLocal { session.scheduleCallsignAvailability(localName: value) } }
-                        .accessibilityIdentifier(ownedLocal ? "localCallsignField" : "botCallsign_\(member.id)")
+                        .onChange(of: name) { value in
+                            if ownedLocal { session.scheduleCallsignAvailability(localName: value) }
+                        }
+                        .accessibilityIdentifier(
+                            ownedLocal ? "localCallsignField" : "botCallsign_\(member.id)"
+                        )
                         .disabled(ownedLocal && session.releasingCallsign)
-                    if ownedLocal { AccountKeyButton(session: session, seat: 1, identity: label, identifier: "openLocalAccount") }
+                    if ownedLocal {
+                        AccountKeyButton(
+                            session: session, seat: 1, identity: label, identifier: "openLocalAccount")
+                    }
                 }
                 if ownedLocal {
                     CallsignFeedback(session: session, seat: 1)
                 }
             }
             if canPaint {
-                PaintChoices(selected: member.colorIndex ?? GamePalette.colors.firstIndex(of: member.color) ?? 0) { session.send(.paint(target: member.id, member: member.member, colorIndex: $0)) }
+                PaintChoices(
+                    selected: member.colorIndex ?? GamePalette.colors.firstIndex(of: member.color) ?? 0
+                ) { session.send(.paint(target: member.id, member: member.member, colorIndex: $0)) }
             }
         }.padding(10).background(WebStyle.sunken, in: RoundedRectangle(cornerRadius: 7))
     }
@@ -385,13 +563,17 @@ struct CallsignFeedback: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(message.isEmpty && session.callsignChecking ? "Checking online callsign…" : message)
-                .foregroundStyle(session.callsignChecking && message.isEmpty ? WebStyle.muted : WebStyle.danger)
+                .foregroundStyle(
+                    session.callsignChecking && message.isEmpty ? WebStyle.muted : WebStyle.danger
+                )
                 .frame(height: 20, alignment: .leading).accessibilityIdentifier(identifier)
             Button("Yours? Import account key") { session.openAccount(seat: seat) }
                 .opacity(taken && !reserved ? 1 : 0).disabled(!taken || reserved)
                 .accessibilityHidden(!taken || reserved).frame(height: 20, alignment: .leading)
             Button("Generate random?") { session.generateRandomCallsign(seat: seat) }
-                .opacity(taken || reserved ? 1 : 0).disabled(!(taken || reserved) || session.callsignGenerating || session.releasingCallsign)
+                .opacity(taken || reserved ? 1 : 0).disabled(
+                    !(taken || reserved) || session.callsignGenerating || session.releasingCallsign
+                )
                 .accessibilityHidden(!(taken || reserved)).frame(height: 20, alignment: .leading)
                 .accessibilityIdentifier(seat == 1 ? "generateLocalCallsign" : "generateCallsign")
         }.font(.system(size: 10)).buttonStyle(.plain).foregroundStyle(WebStyle.accent)

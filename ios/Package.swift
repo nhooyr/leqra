@@ -6,13 +6,19 @@ let package = Package(
     platforms: [.iOS(.v16), .macOS(.v13)],
     products: [.library(name: "leqraCore", targets: ["leqraCore"])],
     targets: [
-        .target(name: "leqraCore", resources: [.process("Resources")], plugins: [.plugin(name: "VersionPlugin")]),
-        .target(name: "leqraAccountStore", dependencies: ["leqraCore"], path: "leqra",
-                exclude: ["Assets.xcassets", "Info.plist", "PrivacyInfo.xcprivacy", "ContentView.swift", "FrameProfiler.swift",
-                          "GameApp.swift", "GameAudio.swift", "GameChrome.swift", "GameDialogs.swift", "GameScene.swift",
-                          "GameSession.swift", "NativeGameView.swift", "ReadyRoomView.swift", "WebStyle.swift"],
-                sources: ["PublicInfinitySessionStore.swift"]),
+        .target(
+            name: "leqraCore", resources: [.process("Resources")], plugins: [.plugin(name: "VersionPlugin")]),
+        .target(
+            name: "leqraAccountStore", dependencies: ["leqraCore"], path: "leqra",
+            exclude: [
+                "Assets.xcassets", "Info.plist", "PrivacyInfo.xcprivacy", "ContentView.swift",
+                "FrameProfiler.swift",
+                "GameApp.swift", "GameAudio.swift", "GameChrome.swift", "GameDialogs.swift",
+                "GameScene.swift",
+                "GameSession.swift", "NativeGameView.swift", "ReadyRoomView.swift", "WebStyle.swift",
+            ],
+            sources: ["PublicInfinitySessionStore.swift"]),
         .testTarget(name: "leqraCoreTests", dependencies: ["leqraCore", "leqraAccountStore"]),
-        .plugin(name: "VersionPlugin", capability: .buildTool())
+        .plugin(name: "VersionPlugin", capability: .buildTool()),
     ]
 )

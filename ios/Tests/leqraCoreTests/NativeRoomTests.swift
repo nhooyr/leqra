@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class NativeRoomTests: XCTestCase {
@@ -7,7 +8,7 @@ final class NativeRoomTests: XCTestCase {
         let commands: [NativeRoomCommand] = [
             .configure(target: 2, member: 19, name: "SNOW BOT", difficulty: "godlike", team: 3),
             .paint(target: 2, member: 19, colorIndex: 5), .kick(target: 2, member: 19),
-            .spectate(true, target: 2, member: 19), .renameLocal(target: 2, member: 19, name: "CO-PILOT")
+            .spectate(true, target: 2, member: 19), .renameLocal(target: 2, member: 19, name: "CO-PILOT"),
         ]
         for command in commands {
             let data = try JSONSerialization.data(withJSONObject: command.payload)
@@ -29,9 +30,12 @@ final class NativeRoomTests: XCTestCase {
     }
 
     func testPresetPayloadNeverContainsCredentials() throws {
-        let roster = [NativeSeatSpec(kind: "human", name: "SNOW", colorIndex: 2),
-                      NativeSeatSpec(kind: "bot", name: "FOX", difficulty: "hard", colorIndex: 5)]
-        let data = try JSONSerialization.data(withJSONObject: NativeRoomCommand.preset(rules: RoomRules(), roster: roster).payload)
+        let roster = [
+            NativeSeatSpec(kind: "human", name: "SNOW", colorIndex: 2),
+            NativeSeatSpec(kind: "bot", name: "FOX", difficulty: "hard", colorIndex: 5),
+        ]
+        let data = try JSONSerialization.data(
+            withJSONObject: NativeRoomCommand.preset(rules: RoomRules(), roster: roster).payload)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["type"] as? String, "preset")
         let rows = try XCTUnwrap(object["roster"] as? [[String: Any]])
@@ -42,9 +46,15 @@ final class NativeRoomTests: XCTestCase {
     }
 
     func testChatHistoryAndLiveMessagesShareTheSameModel() throws {
-        let row = #"{"id":2,"member":10,"name":"SNOW","text":"hello 🦊","spectating":false,"team":1,"at":1234}"#
-        let live = try JSONDecoder().decode(ChatPacket.self, from: Data("{\"type\":\"chat\",\"room\":\"A\",\"channel\":\"room\",\"message\":\(row)}".utf8))
-        let history = try JSONDecoder().decode(ChatPacket.self, from: Data("{\"type\":\"chat_history\",\"room\":\"A\",\"channel\":\"room\",\"messages\":[\(row)]}".utf8))
+        let row =
+            #"{"id":2,"member":10,"name":"SNOW","text":"hello 🦊","spectating":false,"team":1,"at":1234}"#
+        let live = try JSONDecoder().decode(
+            ChatPacket.self,
+            from: Data("{\"type\":\"chat\",\"room\":\"A\",\"channel\":\"room\",\"message\":\(row)}".utf8))
+        let history = try JSONDecoder().decode(
+            ChatPacket.self,
+            from: Data(
+                "{\"type\":\"chat_history\",\"room\":\"A\",\"channel\":\"room\",\"messages\":[\(row)]}".utf8))
         XCTAssertEqual(live.messages, history.messages)
         XCTAssertFalse(live.isHistory)
         XCTAssertTrue(history.isHistory)
@@ -52,7 +62,9 @@ final class NativeRoomTests: XCTestCase {
     }
 
     func testQueueStatusDecodesConsentAndCatalog() throws {
-        let data = Data(#"{"type":"queue_status","queue":{"id":4,"key":"ctf-3","name":"CTF","stage":"confirming","players":2,"required":6,"members":[{"member":10,"name":"SNOW","kind":"human","controller":10,"accepted":false}],"since":100},"queues":[{"definition":{"key":"ctf-3","name":"CTF","mode":"ctf","teamSize":3,"players":6,"map":"huge","cols":14,"rows":12,"target":3,"seconds":180},"waitingPlayers":2,"waitingParties":1}],"capacityBlocked":false}"#.utf8)
+        let data = Data(
+            #"{"type":"queue_status","queue":{"id":4,"key":"ctf-3","name":"CTF","stage":"confirming","players":2,"required":6,"members":[{"member":10,"name":"SNOW","kind":"human","controller":10,"accepted":false}],"since":100},"queues":[{"definition":{"key":"ctf-3","name":"CTF","mode":"ctf","teamSize":3,"players":6,"map":"huge","cols":14,"rows":12,"target":3,"seconds":180},"waitingPlayers":2,"waitingParties":1}],"capacityBlocked":false}"#
+                .utf8)
         let status = try JSONDecoder().decode(QueuePacket.self, from: data)
         XCTAssertEqual(status.queue?.members.first?.accepted, false)
         XCTAssertEqual(status.queue?.id, 4)
@@ -61,7 +73,9 @@ final class NativeRoomTests: XCTestCase {
     }
 
     func testPublicPreviewIncludesRankAndTankCount() throws {
-        let data = Data(#"{"players":1,"tankCount":8,"capacity":32,"leaders":[{"id":8,"name":"SNOW","score":5,"bot":false,"colorIndex":2,"rank":1}]}"#.utf8)
+        let data = Data(
+            #"{"players":1,"tankCount":8,"capacity":32,"leaders":[{"id":8,"name":"SNOW","score":5,"bot":false,"colorIndex":2,"rank":1}]}"#
+                .utf8)
         let status = try JSONDecoder().decode(NativePublicStatus.self, from: data)
         XCTAssertEqual(status.players, 1)
         XCTAssertEqual(status.tankCount, 8)
@@ -72,7 +86,9 @@ final class NativeRoomTests: XCTestCase {
     }
 
     func testFixedHUDDerivesAmmoGrenadeFuseAndHostileLocksFromAuthoritativeProjectiles() throws {
-        let data = Data(#"{"type":"state","phase":"playing","tick":4,"tanks":[{"id":0,"alive":true,"team":1},{"id":1,"alive":true,"team":2}],"bullets":[{"id":1,"owner":0,"kind":"grenade","life":6},{"id":2,"owner":0,"kind":"rapid","life":1},{"id":3,"owner":1,"kind":"homing","target":0,"life":2}],"boostedBulletIds":[2],"rules":{"friendlyFire":false},"events":[{"id":1,"type":"shot","text":"homing","owner":1}]}"#.utf8)
+        let data = Data(
+            #"{"type":"state","phase":"playing","tick":4,"tanks":[{"id":0,"alive":true,"team":1},{"id":1,"alive":true,"team":2}],"bullets":[{"id":1,"owner":0,"kind":"grenade","life":6},{"id":2,"owner":0,"kind":"rapid","life":1},{"id":3,"owner":1,"kind":"homing","target":0,"life":2}],"boostedBulletIds":[2],"rules":{"friendlyFire":false},"events":[{"id":1,"type":"shot","text":"homing","owner":1}]}"#
+                .utf8)
         let normalized = try SnapshotDecoder.normalized(data: data, previousWorld: nil)
         let state = try JSONDecoder().decode(ArenaSnapshot.self, from: normalized.data)
         XCTAssertEqual(state.tanks[0].ammoUsed, 1)
@@ -82,24 +98,39 @@ final class NativeRoomTests: XCTestCase {
         XCTAssertEqual(state.effects[0].kind, "shot:homing")
         var allied = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         var tanks = try XCTUnwrap(allied["tanks"] as? [[String: Any]])
-        tanks[1]["team"] = 1; allied["tanks"] = tanks
-        let safe = try SnapshotDecoder.normalized(data: JSONSerialization.data(withJSONObject: allied), previousWorld: nil)
+        tanks[1]["team"] = 1
+        allied["tanks"] = tanks
+        let safe = try SnapshotDecoder.normalized(
+            data: JSONSerialization.data(withJSONObject: allied), previousWorld: nil)
         XCTAssertFalse(try JSONDecoder().decode(ArenaSnapshot.self, from: safe.data).tanks[0].locked)
     }
 
     /// Uses a disposable Go server, never the public deployment.
     @MainActor func testLiveRoomControlsChatAndPrivateReconnect() async throws {
-        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
+        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"],
+            let base = URL(string: address)
+        else {
             throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable local server.")
         }
-        let client = NetworkClient(), arena = NetworkClient()
-        defer { client.disconnect(); arena.disconnect() }
-        let suffix = UUID().uuidString.prefix(8).uppercased(), roomName = "ROOM " + suffix, botName = "FOX " + suffix
+        let client = NetworkClient()
+        let arena = NetworkClient()
+        defer {
+            client.disconnect()
+            arena.disconnect()
+        }
+        let suffix = UUID().uuidString.prefix(8).uppercased()
+        let roomName = "ROOM " + suffix
+        let botName = "FOX " + suffix
         let preview = try await client.fetchPublicStatus(baseURL: base)
         XCTAssertEqual(preview.capacity, 32)
         XCTAssertGreaterThanOrEqual(preview.latencyMilliseconds, 0)
-        var room: RoomInfo?, welcome: NetworkWelcome?, arenaWelcome: NetworkWelcome?, arenaState: ArenaSnapshot?
-        var chats: [NativeChatMessage] = [], errors: [String] = [], reconnects = 0
+        var room: RoomInfo?
+        var welcome: NetworkWelcome?
+        var arenaWelcome: NetworkWelcome?
+        var arenaState: ArenaSnapshot?
+        var chats: [NativeChatMessage] = []
+        var errors: [String] = []
+        var reconnects = 0
         client.onEvent = { event in
             switch event {
             case .welcome(let value): welcome = value
@@ -117,9 +148,14 @@ final class NativeRoomTests: XCTestCase {
         try await waitFor { room?.players.contains { $0.kind == "bot" } == true || !errors.isEmpty }
         let bot = try XCTUnwrap(room?.players.first { $0.kind == "bot" })
         client.send(.configure(target: bot.id, member: bot.member, name: botName, difficulty: "hard"))
-        try await waitFor { room?.players.contains { $0.name == botName && $0.difficulty == "hard" } == true || !errors.isEmpty }
+        try await waitFor {
+            room?.players.contains { $0.name == botName && $0.difficulty == "hard" } == true
+                || !errors.isEmpty
+        }
         client.send(.paint(target: bot.id, member: bot.member, colorIndex: 5))
-        try await waitFor { room?.players.contains { $0.id == bot.id && $0.colorIndex == 5 } == true || !errors.isEmpty }
+        try await waitFor {
+            room?.players.contains { $0.id == bot.id && $0.colorIndex == 5 } == true || !errors.isEmpty
+        }
         client.send(.chat("NATIVE CHAT"))
         try await waitFor { chats.contains { $0.text == "NATIVE CHAT" } || !errors.isEmpty }
         let code = "Swift room \(UUID().uuidString.prefix(8))"
@@ -153,7 +189,9 @@ final class NativeRoomTests: XCTestCase {
         try await waitFor { arenaWelcome != nil && arenaState != nil || !errors.isEmpty }
         let arenaIdentity = try XCTUnwrap(arenaWelcome)
         arena.sendInput(GameInput(seq: 1, stickX: 1))
-        try await waitFor { arenaState?.tanks.contains { $0.id == arenaIdentity.id && $0.ack == 1 } == true || !errors.isEmpty }
+        try await waitFor {
+            arenaState?.tanks.contains { $0.id == arenaIdentity.id && $0.ack == 1 } == true || !errors.isEmpty
+        }
         arena.reconnect()
         try await waitFor { arenaWelcome?.resumed == true || !errors.isEmpty }
         XCTAssertEqual(arenaWelcome?.id, arenaIdentity.id)
@@ -166,19 +204,34 @@ final class NativeRoomTests: XCTestCase {
     @MainActor private func waitFor(_ condition: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(12)
         while !condition(), Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
-        if !condition() { XCTFail("Timed out waiting for the local server"); throw GameNetworkError.timeout }
+        if !condition() {
+            XCTFail("Timed out waiting for the local server")
+            throw GameNetworkError.timeout
+        }
     }
 
     @MainActor func testLiveSpectatorQueueConsentKickAndLocalAccountImmutability() async throws {
-        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else {
+        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"],
+            let base = URL(string: address)
+        else {
             throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable local server.")
         }
-        let host = NetworkClient(), guest = NetworkClient()
-        defer { host.disconnect(); guest.disconnect() }
+        let host = NetworkClient()
+        let guest = NetworkClient()
+        defer {
+            host.disconnect()
+            guest.disconnect()
+        }
         let suffix = UUID().uuidString.prefix(8).uppercased()
-        let hostName = "HOST " + suffix, guestName = "GUEST " + suffix, localName = "WING " + suffix
-        var room: RoomInfo?, guestWelcome: NetworkWelcome?, catalog: QueuePacket?
-        var hostErrors: [String] = [], cancelled = false, kicked = false
+        let hostName = "HOST " + suffix
+        let guestName = "GUEST " + suffix
+        let localName = "WING " + suffix
+        var room: RoomInfo?
+        var guestWelcome: NetworkWelcome?
+        var catalog: QueuePacket?
+        var hostErrors: [String] = []
+        var cancelled = false
+        var kicked = false
         host.onEvent = { event in
             switch event {
             case .room(let value): room = value
@@ -202,7 +255,9 @@ final class NativeRoomTests: XCTestCase {
         try await waitFor { room?.spectators.count == 1 && guestWelcome != nil || !hostErrors.isEmpty }
         XCTAssertEqual(guestWelcome?.spectating, true)
         guest.send(.spectate(false))
-        try await waitFor { room?.players.count == 2 && guestWelcome?.spectating == false || !hostErrors.isEmpty }
+        try await waitFor {
+            room?.players.count == 2 && guestWelcome?.spectating == false || !hostErrors.isEmpty
+        }
         host.send(.queueInfo)
         try await waitFor { catalog?.queues.count == 6 || !hostErrors.isEmpty }
         host.send(.queueJoin("elimination-2"))
@@ -215,24 +270,33 @@ final class NativeRoomTests: XCTestCase {
         host.send(.kick(target: player.id, member: player.member))
         try await waitFor { kicked && room?.players.count == 1 || !hostErrors.isEmpty }
         let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max) }
-        let localKey = "p_" + Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+        let localKey =
+            "p_"
+            + Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-        let proof = FileManager.default.temporaryDirectory.appendingPathComponent("leqra-p2-" + UUID().uuidString + ".key")
+        let proof = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "leqra-p2-" + UUID().uuidString + ".key")
         try Data(localKey.utf8).write(to: proof, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: proof.path)
         defer { try? FileManager.default.removeItem(at: proof) }
         var add = NativeRoomCommand.add(kind: "local", name: "CO " + suffix).payload
-        add["independentAccounts"] = true; add["localPublicToken"] = localKey; add["localNewAccount"] = true
+        add["independentAccounts"] = true
+        add["localPublicToken"] = localKey
+        add["localNewAccount"] = true
         host.sendCommand(add)
         try await waitFor { room?.players.contains { $0.kind == "local" } == true || !hostErrors.isEmpty }
         let local = try XCTUnwrap(room?.players.first { $0.kind == "local" })
         // Host action budget is eight per second; the queue and roster actions
         // above intentionally stay within that existing server limit.
-        var rename = NativeRoomCommand.renameLocal(target: local.id, member: local.member, name: localName).payload
-        rename["independentAccounts"] = true; rename["localPublicToken"] = localKey
+        var rename = NativeRoomCommand.renameLocal(target: local.id, member: local.member, name: localName)
+            .payload
+        rename["independentAccounts"] = true
+        rename["localPublicToken"] = localKey
         host.sendCommand(rename)
         try await waitFor { room?.players.contains { $0.name == localName } == true || !hostErrors.isEmpty }
-        XCTAssertTrue(hostErrors.contains { $0.contains("separate account") }, "Changing a name must require a different account key")
+        XCTAssertTrue(
+            hostErrors.contains { $0.contains("separate account") },
+            "Changing a name must require a different account key")
         XCTAssertEqual(room?.players.first { $0.kind == "local" }?.name, "CO " + suffix)
         let info = try await host.fetchAccountInfo(baseURL: base, publicToken: localKey)
         XCTAssertEqual(info.names, ["CO " + suffix])

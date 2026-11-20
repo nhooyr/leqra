@@ -20,7 +20,9 @@ class CallsignCaseFoldTest {
         }
         // scalarSHA256 in src/tests/fixtures/callsign-fold.json; generated from Go's
         // complete scalar mapping, independently of this Kotlin lookup implementation.
-        assertEquals("9f7a70a69a10727f79cff9a16879a85220f0416e129aea1b218f2ce69a78f907",
-            digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) })
+        assertEquals(
+            "9f7a70a69a10727f79cff9a16879a85220f0416e129aea1b218f2ce69a78f907",
+            digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) },
+        )
     }
 }

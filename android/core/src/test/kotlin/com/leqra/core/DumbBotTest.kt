@@ -69,7 +69,7 @@ class DumbBotTest {
                     infinityBotDifficulty = "dumb",
                     infinityRandomBots = true,
                     infinityRandomDifficulty = true,
-                )
+                ),
         )
         assertEquals(0, arena.snapshot.tanks.count { it.bot })
         arena.snapshot.tanks.first().invulnerable = 1000.0
@@ -86,13 +86,13 @@ class DumbBotTest {
             assertTrue(
                 arena.snapshot.tanks
                     .filter { it.bot }
-                    .all { it.difficulty == "dumb" && !it.isGodlikeBot }
+                    .all { it.difficulty == "dumb" && !it.isGodlikeBot },
             )
         }
         val invalid = PracticeArena(name = "PILOT", colorIndex = 0, botCount = 0)
         invalid.configure(
             RoomRules.localDefaults("infinity")
-                .copy(infinityBotDifficulty = "invalid", infinityRandomBots = true)
+                .copy(infinityBotDifficulty = "invalid", infinityRandomBots = true),
         )
         invalid.step(GameInput(), 1.0 / 60)
         assertTrue(invalid.snapshot.tanks.filter { it.bot }.all { it.difficulty == "normal" })
@@ -101,9 +101,11 @@ class DumbBotTest {
     @Test
     fun godlikeWarningRequiresActualBotTierNotItsCallsign() {
         assertTrue(ArenaTank(bot = true, difficulty = "godlike", name = "BOT").isGodlikeBot)
-        assertFalse(ArenaTank(bot = true, difficulty = "dumb", name = "Bot 1 - Godlike").isGodlikeBot)
         assertFalse(
-            ArenaTank(bot = false, difficulty = "godlike", name = "Godlike Bot 1").isGodlikeBot
+            ArenaTank(bot = true, difficulty = "dumb", name = "Bot 1 - Godlike").isGodlikeBot,
+        )
+        assertFalse(
+            ArenaTank(bot = false, difficulty = "godlike", name = "Godlike Bot 1").isGodlikeBot,
         )
         assertFalse(ArenaTank(bot = true, difficulty = "unknown").isGodlikeBot)
     }

@@ -54,14 +54,21 @@ internal class NativeArt {
         for (color in 0..7) {
             if (Thread.currentThread().isInterrupted) return false
             for (phase in 0..3) hull(color, phase)
-            barrel(color); turret(color)
+            barrel(color)
+            turret(color)
         }
         for (kind in ArenaPalette.powers.keys) {
             if (Thread.currentThread().isInterrupted) return false
-            pickup(kind); badge(kind)
+            pickup(kind)
+            badge(kind)
         }
-        wreck(); stickBase(); stickKnob()
-        for (held in listOf(false, true)) for (detonate in listOf(false, true)) fireButton(held, detonate)
+        wreck()
+        stickBase()
+        stickKnob()
+        for (held in listOf(false, true)) for (detonate in listOf(false, true)) fireButton(
+            held,
+            detonate,
+        )
         for (step in 0..256) grenadeFuse(step)
         for (image in cache.values) {
             if (Thread.currentThread().isInterrupted) return false
@@ -70,7 +77,8 @@ internal class NativeArt {
         return true
     }
 
-    val bitmapCount: Int get() = cache.size
+    val bitmapCount: Int
+        get() = cache.size
 
     private fun bitmap(key: String, size: Int, draw: (Canvas) -> Unit): Bitmap =
         cache.getOrPut(key) {

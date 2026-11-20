@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import leqraCore
 
 final class MovementTests: XCTestCase {
@@ -7,7 +8,9 @@ final class MovementTests: XCTestCase {
         for fixed in [false, true] {
             for angle in [-Double.pi, -.pi / 2, -0.1, 0, 0.8, .pi / 2, .pi] {
                 var tank = ArenaTank(id: 1, x: 420, y: 420, angle: 1.5, speedTime: 5, speedStacks: 5)
-                let input = GameInput(forward: true, fire: true, stickX: cos(angle), stickY: sin(angle), aimOnly: true, snapAim: true)
+                let input = GameInput(
+                    forward: true, fire: true, stickX: cos(angle), stickY: sin(angle), aimOnly: true,
+                    snapAim: true)
                 let maze = fixed ? InfiniteMaze(world: world) : InfiniteMaze(seed: 42)
                 TankMovement.step(tank: &tank, input: input, dt: 1 / 60, maze: maze)
                 XCTAssertEqual(tank.x, 420, accuracy: 1e-10)
@@ -20,7 +23,8 @@ final class MovementTests: XCTestCase {
 
     func testStarmanExpiryIsAgedDuringPredictionAndOnlyOnceInPractice() {
         var tank = ArenaTank(x: 420, y: 420, starmanTime: 1 / 120)
-        TankMovement.step(tank: &tank, input: GameInput(forward: true), dt: 1 / 60, walls: [], width: 840, height: 840)
+        TankMovement.step(
+            tank: &tank, input: GameInput(forward: true), dt: 1 / 60, walls: [], width: 840, height: 840)
         XCTAssertEqual(tank.starmanTime, 0)
         XCTAssertEqual(tank.x, 420 + 128.0 / 60, accuracy: 1e-10)
         let arena = PracticeArena(seed: 42, name: "Pilot", colorIndex: 0, botCount: 0)
@@ -34,17 +38,22 @@ final class MovementTests: XCTestCase {
         let world = ArenaWorld(width: 840, height: 840, cols: 10, rows: 10)
         for bot in [false, true] {
             for collected in 0...5 {
-                var star = ArenaTank(x: 420, y: 420, bot: bot, speedTime: collected == 0 ? 0 : 5,
-                                     starmanTime: 8, speedStacks: collected, difficulty: "normal")
+                var star = ArenaTank(
+                    x: 420, y: 420, bot: bot, speedTime: collected == 0 ? 0 : 5,
+                    starmanTime: 8, speedStacks: collected, difficulty: "normal")
                 var reference = star
-                reference.starmanTime = 0; reference.speedTime = 5; reference.speedStacks = max(2, collected)
+                reference.starmanTime = 0
+                reference.speedTime = 5
+                reference.speedStacks = max(2, collected)
                 let input = GameInput(forward: true, right: true, stickX: bot ? 1 : 0, stickY: bot ? 1 : 0)
                 if bot {
                     TankMovement.stepBot(tank: &star, input: input, dt: 1 / 60, world: world)
                     TankMovement.stepBot(tank: &reference, input: input, dt: 1 / 60, world: world)
                 } else {
-                    TankMovement.step(tank: &star, input: input, dt: 1 / 60, walls: [], width: 840, height: 840)
-                    TankMovement.step(tank: &reference, input: input, dt: 1 / 60, walls: [], width: 840, height: 840)
+                    TankMovement.step(
+                        tank: &star, input: input, dt: 1 / 60, walls: [], width: 840, height: 840)
+                    TankMovement.step(
+                        tank: &reference, input: input, dt: 1 / 60, walls: [], width: 840, height: 840)
                 }
                 XCTAssertEqual(star.x, reference.x, accuracy: 1e-10)
                 XCTAssertEqual(star.y, reference.y, accuracy: 1e-10)
@@ -55,13 +64,18 @@ final class MovementTests: XCTestCase {
                 XCTAssertEqual(TankMovement.effectiveSpeedStacks(star), collected)
             }
         }
-        var star = ArenaTank(x: 420, y: 420, starmanTime: 8), speed = star
-        speed.starmanTime = 0; speed.speedTime = 5; speed.speedStacks = 2
+        var star = ArenaTank(x: 420, y: 420, starmanTime: 8)
+        var speed = star
+        speed.starmanTime = 0
+        speed.speedTime = 5
+        speed.speedStacks = 2
         let maze = InfiniteMaze(seed: 42)
-        star.ghostTime = 8; speed.ghostTime = 8
+        star.ghostTime = 8
+        speed.ghostTime = 8
         TankMovement.step(tank: &star, input: GameInput(forward: true, right: true), dt: 1 / 60, maze: maze)
         TankMovement.step(tank: &speed, input: GameInput(forward: true, right: true), dt: 1 / 60, maze: maze)
-        XCTAssertEqual(star.x, speed.x, accuracy: 1e-10); XCTAssertEqual(star.y, speed.y, accuracy: 1e-10)
+        XCTAssertEqual(star.x, speed.x, accuracy: 1e-10)
+        XCTAssertEqual(star.y, speed.y, accuracy: 1e-10)
         XCTAssertEqual(star.angle, speed.angle, accuracy: 1e-10)
     }
     private struct Fixture: Decodable {
@@ -78,7 +92,8 @@ final class MovementTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("src/tests/fixtures/touch-steering.json"))
         for fixture in try JSONDecoder().decode([Fixture].self, from: data) {
-            let result = TankMovement.steer(angle: fixture.angle, input: fixture.input, turnScale: fixture.turnScale, dt: 1 / 60)
+            let result = TankMovement.steer(
+                angle: fixture.angle, input: fixture.input, turnScale: fixture.turnScale, dt: 1 / 60)
             XCTAssertEqual(result.angle, fixture.angleAfter, accuracy: 1e-12, fixture.name)
             XCTAssertEqual(result.throttle, fixture.throttle, accuracy: 1e-12, fixture.name)
         }
@@ -98,7 +113,9 @@ final class MovementTests: XCTestCase {
         let wall = MazeWall(x: 80, y: 0, w: 8, h: 200, axis: "v", line: 84)
         var tank = ArenaTank(x: 62, y: 42)
         for _ in 0..<60 {
-            TankMovement.step(tank: &tank, input: GameInput(forward: true), dt: 1 / 60, walls: [wall], width: 168, height: 168)
+            TankMovement.step(
+                tank: &tank, input: GameInput(forward: true), dt: 1 / 60, walls: [wall], width: 168,
+                height: 168)
         }
         XCTAssertLessThan(tank.x, 63.001)
         tank.x = -500
@@ -117,15 +134,19 @@ final class MovementTests: XCTestCase {
 
     func testFiniteBotsUseDifficultySpeedAndTurnWithSharedBoosts() {
         let world = ArenaWorld(width: 840, height: 840, cols: 10, rows: 10)
-        for (level, speed, turn) in [("dumb", 60.0, 1.8), ("easy", 89.0, 2.8), ("normal", 108.0, 3.4),
-                                      ("hard", 123.0, 4.3), ("godlike", 123.0, 4.3)] {
+        for (level, speed, turn) in [
+            ("dumb", 60.0, 1.8), ("easy", 89.0, 2.8), ("normal", 108.0, 3.4),
+            ("hard", 123.0, 4.3), ("godlike", 123.0, 4.3),
+        ] {
             for stacks in [0, 3] {
-                var tank = ArenaTank(x: 420, y: 420, bot: true, speedTime: stacks == 0 ? 0 : 5,
-                                     speedStacks: stacks, difficulty: level)
+                var tank = ArenaTank(
+                    x: 420, y: 420, bot: true, speedTime: stacks == 0 ? 0 : 5,
+                    speedStacks: stacks, difficulty: level)
                 TankMovement.stepBot(tank: &tank, input: GameInput(stickX: 1), dt: 1 / 60, world: world)
                 XCTAssertEqual(tank.x, 420 + speed * (1 + 0.65 * Double(stacks)) / 60, accuracy: 1e-10, level)
                 XCTAssertEqual(tank.y, 420, accuracy: 1e-10)
-                tank.x = 420; tank.y = 420
+                tank.x = 420
+                tank.y = 420
                 TankMovement.stepBot(tank: &tank, input: GameInput(stickY: 1), dt: 1 / 60, world: world)
                 XCTAssertEqual(tank.angle, turn * (1 + 0.25 * Double(stacks)) / 60, accuracy: 1e-10, level)
             }

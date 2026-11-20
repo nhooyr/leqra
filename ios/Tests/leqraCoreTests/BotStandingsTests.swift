@@ -1,10 +1,14 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class BotStandingsTests: XCTestCase {
     func testNumberedBotsKeepDifficultyInArenaButMoveItIntoLeaderboardBadge() {
-        for (level, key) in [("Dumb", "dumb"), ("Medium", "normal"), ("Godlike", "godlike"), ("Easy", "easy"), ("Hard", "hard")] {
+        for (level, key) in [
+            ("Dumb", "dumb"), ("Medium", "normal"), ("Godlike", "godlike"), ("Easy", "easy"),
+            ("Hard", "hard"),
+        ] {
             let name = "Bot 17 - \(level)"
             let entry = LeaderboardEntry(id: 17, name: name, score: 9, bot: true)
             XCTAssertEqual(CallsignPolicy.displayName(name, bot: true), name)
@@ -23,7 +27,8 @@ final class BotStandingsTests: XCTestCase {
             XCTAssertEqual(entry.difficultyLabel, "HARD")
         }
         let custom = LeaderboardEntry(name: "Rust - Normal", bot: true, difficulty: "easy")
-        XCTAssertEqual(custom.displayName, "Bot Rust - Normal", "Only a canonical numbered suffix moves into the badge")
+        XCTAssertEqual(
+            custom.displayName, "Bot Rust - Normal", "Only a canonical numbered suffix moves into the badge")
         XCTAssertEqual(custom.difficultyLabel, "EASY")
     }
 
@@ -34,7 +39,10 @@ final class BotStandingsTests: XCTestCase {
         }
         let old = LeaderboardEntry(name: "Bot 3 - Godlike", bot: true, difficulty: "unknown")
         XCTAssertEqual(old.difficultyLabel, "GODLIKE")
-        for name in ["Godlike Bot 7", "Rust - Normal", "Bot 7 - Normal", "Bot 7 - Medium", "Normal", "Chill", "Fierce", "pilot#ABCD23"] {
+        for name in [
+            "Godlike Bot 7", "Rust - Normal", "Bot 7 - Normal", "Bot 7 - Medium", "Normal", "Chill", "Fierce",
+            "pilot#ABCD23",
+        ] {
             let human = LeaderboardEntry(name: name, bot: false, difficulty: "godlike")
             XCTAssertEqual(human.displayName, name)
             XCTAssertNil(human.difficultyLabel)
@@ -48,22 +56,34 @@ final class BotStandingsTests: XCTestCase {
             XCTAssertEqual(CallsignPolicy.leaderboardDifficulty(name, bot: true, difficulty: nil), "normal")
             XCTAssertEqual(LeaderboardEntry(name: name, bot: true).difficultyLabel, "MEDIUM")
         }
-        XCTAssertEqual(CallsignPolicy.displayName("Rust - Normal", bot: true), "Bot Rust - Normal", "Custom bot names remain literal")
+        XCTAssertEqual(
+            CallsignPolicy.displayName("Rust - Normal", bot: true), "Bot Rust - Normal",
+            "Custom bot names remain literal")
     }
 
     func testSnapshotAndPublicPreviewDecodeDifficultyWithoutRequiringItFromOlderServers() throws {
         let decoder = JSONDecoder()
         for difficulty in [nil, "dumb", "normal", "godlike"] as [String?] {
-            var record: [String: Any] = ["id": 8, "name": "Bot 8 - Normal", "score": 5, "colorIndex": 1, "bot": true, "rank": 1]
+            var record: [String: Any] = [
+                "id": 8, "name": "Bot 8 - Normal", "score": 5, "colorIndex": 1, "bot": true, "rank": 1,
+            ]
             record["difficulty"] = difficulty
-            let entry = try decoder.decode(LeaderboardEntry.self, from: JSONSerialization.data(withJSONObject: record))
+            let entry = try decoder.decode(
+                LeaderboardEntry.self, from: JSONSerialization.data(withJSONObject: record))
             XCTAssertEqual(entry.difficulty, difficulty)
-            let snapshot = try decoder.decode(ArenaSnapshot.self, from: JSONSerialization.data(withJSONObject: ["leaderboard": [record]]))
+            let snapshot = try decoder.decode(
+                ArenaSnapshot.self, from: JSONSerialization.data(withJSONObject: ["leaderboard": [record]]))
             XCTAssertEqual(snapshot.leaderboard.first?.difficulty, difficulty)
-            let status = try decoder.decode(NativePublicStatus.self, from: JSONSerialization.data(withJSONObject: ["players": 1, "tankCount": 2, "capacity": 32, "leaders": [record]]))
+            let status = try decoder.decode(
+                NativePublicStatus.self,
+                from: JSONSerialization.data(withJSONObject: [
+                    "players": 1, "tankCount": 2, "capacity": 32, "leaders": [record],
+                ]))
             let leader = try XCTUnwrap(status.leaders.first)
             XCTAssertEqual(leader.difficulty, difficulty)
-            let preview = LeaderboardEntry(id: leader.id, name: leader.name, score: leader.score, colorIndex: leader.colorIndex, bot: leader.bot, team: leader.team ?? 0, difficulty: leader.difficulty)
+            let preview = LeaderboardEntry(
+                id: leader.id, name: leader.name, score: leader.score, colorIndex: leader.colorIndex,
+                bot: leader.bot, team: leader.team ?? 0, difficulty: leader.difficulty)
             XCTAssertEqual(preview, entry)
             let roundtrip = try decoder.decode(LeaderboardEntry.self, from: JSONEncoder().encode(entry))
             XCTAssertEqual(roundtrip, entry)
@@ -78,7 +98,8 @@ final class BotStandingsTests: XCTestCase {
         XCTAssertEqual(standing.difficultyLabel, "HARD")
         XCTAssertNil(practice.snapshot.leaderboard.first(where: { !$0.bot })?.difficultyLabel)
 
-        let fixed = FixedArena(rules: RoomRules(), name: "PILOT", colorIndex: 0, botCount: 1, difficulty: "easy", seed: 42)
+        let fixed = FixedArena(
+            rules: RoomRules(), name: "PILOT", colorIndex: 0, botCount: 1, difficulty: "easy", seed: 42)
         XCTAssertEqual(fixed.snapshot.leaderboard.first(where: \.bot)?.difficultyLabel, "EASY")
         XCTAssertNil(fixed.snapshot.leaderboard.first(where: { !$0.bot })?.difficultyLabel)
     }

@@ -52,8 +52,11 @@ public struct ChatPacket: Decodable, Sendable {
         room = try c.decode(String.self, forKey: .room)
         channel = try c.decodeIfPresent(ChatChannel.self, forKey: .channel) ?? .room
         isHistory = try c.decode(String.self, forKey: .type) == "chat_history"
-        if isHistory { messages = try c.decodeIfPresent([NativeChatMessage].self, forKey: .messages) ?? [] }
-        else { messages = [try c.decode(NativeChatMessage.self, forKey: .message)] }
+        if isHistory {
+            messages = try c.decodeIfPresent([NativeChatMessage].self, forKey: .messages) ?? []
+        } else {
+            messages = [try c.decode(NativeChatMessage.self, forKey: .message)]
+        }
     }
 }
 
@@ -204,28 +207,41 @@ public struct NativeSeatSpec: Codable, Equatable, Sendable {
     public var team: Int
     public var colorIndex: Int?
     public var spectating: Bool
-    public init(kind: String, name: String, difficulty: String = "normal", team: Int = 0,
-                colorIndex: Int? = nil, spectating: Bool = false) {
-        self.kind = kind; self.name = name; self.difficulty = difficulty
-        self.team = team; self.colorIndex = colorIndex; self.spectating = spectating
+    public init(
+        kind: String, name: String, difficulty: String = "normal", team: Int = 0,
+        colorIndex: Int? = nil, spectating: Bool = false
+    ) {
+        self.kind = kind
+        self.name = name
+        self.difficulty = difficulty
+        self.team = team
+        self.colorIndex = colorIndex
+        self.spectating = spectating
     }
 }
 
 /// Every action below maps directly to an existing Go clientMessage command.
 public enum NativeRoomCommand {
-    case ready(Bool), start, lobby, rematch, queueInfo, returnParty, unshare
+    case ready(Bool)
+    case start, lobby, rematch, queueInfo, returnParty, unshare
     case add(kind: String, name: String, difficulty: String = "normal", team: Int? = nil)
-    case configure(target: Int, member: UInt64, name: String? = nil, difficulty: String? = nil, team: Int? = nil)
+    case configure(
+        target: Int, member: UInt64, name: String? = nil, difficulty: String? = nil, team: Int? = nil)
     case paint(target: Int? = nil, member: UInt64? = nil, colorIndex: Int)
     case kick(target: Int, member: UInt64)
     case spectate(Bool, target: Int? = nil, member: UInt64? = nil)
     case swap(target: Int, member: UInt64, spectator: Int, spectatorMember: UInt64)
-    case rename(String), renameRoom(String)
+    case rename(String)
+    case renameRoom(String)
     case renameLocal(target: Int, member: UInt64, name: String)
-    case rules(RoomRules), preset(rules: RoomRules, roster: [NativeSeatSpec])
-    case publicInfinity(Bool), startPublicInfinity
+    case rules(RoomRules)
+    case preset(rules: RoomRules, roster: [NativeSeatSpec])
+    case publicInfinity(Bool)
+    case startPublicInfinity
     case restartWave(generation: Int, wave: Int)
-    case queueJoin(String), queueAccept(UInt64), queueCancel(UInt64)
+    case queueJoin(String)
+    case queueAccept(UInt64)
+    case queueCancel(UInt64)
     case chat(String, channel: ChatChannel = .room)
 
     public var payload: [String: Any] {
@@ -244,30 +260,44 @@ public enum NativeRoomCommand {
             return v
         case .configure(let target, let member, let name, let difficulty, let team):
             var v: [String: Any] = ["type": "configure", "target": target, "member": member]
-            v["name"] = name; v["difficulty"] = difficulty; v["team"] = team
+            v["name"] = name
+            v["difficulty"] = difficulty
+            v["team"] = team
             return v
         case .paint(let target, let member, let color):
             var v: [String: Any] = ["type": "paint", "colorIndex": color]
-            v["target"] = target; v["member"] = member
+            v["target"] = target
+            v["member"] = member
             return v
         case .kick(let target, let member): return ["type": "kick", "target": target, "member": member]
         case .spectate(let watching, let target, let member):
             var v: [String: Any] = ["type": "spectate", "spectating": watching]
-            v["target"] = target; v["member"] = member
+            v["target"] = target
+            v["member"] = member
             return v
         case .swap(let target, let member, let spectator, let spectatorMember):
-            return ["type": "swap", "target": target, "member": member, "spectator": spectator, "spectatorMember": spectatorMember]
+            return [
+                "type": "swap", "target": target, "member": member, "spectator": spectator,
+                "spectatorMember": spectatorMember,
+            ]
         case .rename(let name): return ["type": "rename", "name": name]
-        case .renameLocal(let target, let member, let name): return ["type": "rename_local", "target": target, "member": member, "name": name]
+        case .renameLocal(let target, let member, let name):
+            return ["type": "rename_local", "target": target, "member": member, "name": name]
         case .renameRoom(let code): return ["type": "rename_room", "code": code]
         case .rules(let rules): return rules.command()
         case .preset(let rules, let roster):
-            var v = rules.command(); v["type"] = "preset"
-            if let data = try? JSONEncoder().encode(roster), let rows = try? JSONSerialization.jsonObject(with: data) { v["roster"] = rows }
+            var v = rules.command()
+            v["type"] = "preset"
+            if let data = try? JSONEncoder().encode(roster),
+                let rows = try? JSONSerialization.jsonObject(with: data)
+            {
+                v["roster"] = rows
+            }
             return v
         case .publicInfinity(let enabled): return ["type": "select_public_infinity", "enabled": enabled]
         case .startPublicInfinity: return ["type": "start_public_infinity"]
-        case .restartWave(let generation, let wave): return ["type": "restart_wave", "generation": generation, "wave": wave]
+        case .restartWave(let generation, let wave):
+            return ["type": "restart_wave", "generation": generation, "wave": wave]
         case .queueJoin(let key): return ["type": "queue_join", "queue": key]
         case .queueAccept(let id): return ["type": "queue_accept", "queueId": id, "ready": true]
         case .queueCancel(let id): return ["type": "queue_cancel", "queueId": id]
@@ -276,6 +306,6 @@ public enum NativeRoomCommand {
     }
 }
 
-@MainActor public extension NetworkClient {
-    func send(_ command: NativeRoomCommand) { sendCommand(command.payload) }
+@MainActor extension NetworkClient {
+    public func send(_ command: NativeRoomCommand) { sendCommand(command.payload) }
 }

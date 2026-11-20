@@ -93,10 +93,16 @@ class OnlinePresentation(
     private var followingTanks = emptyMap<Int, ArenaTank>()
     var stale = false
         private set
-    val hasPendingProjectileFlights: Boolean get() = completedFlights.hasPending || contacts.hasPending
-    val authoritativeSnapshot: ArenaSnapshot? get() = latest
+
+    val hasPendingProjectileFlights: Boolean
+        get() = completedFlights.hasPending || contacts.hasPending
+
+    val authoritativeSnapshot: ArenaSnapshot?
+        get() = latest
+
     /** Arrival clock of the accepted authority; rejected packets cannot re-age equipment. */
-    val authoritativeArrivalTime: Double get() = lastArrival
+    val authoritativeArrivalTime: Double
+        get() = lastArrival
 
     internal val bufferedAcknowledgementCount
         get() = primary.sent.size
@@ -226,8 +232,9 @@ class OnlinePresentation(
                 move(newNext, lastInput, 1.0 / 60)
                 correctionVelocityX += ((oldNext.x - old.x) - (newNext.x - authoritative.x)) * 60
                 correctionVelocityY += ((oldNext.y - old.y) - (newNext.y - authoritative.y)) * 60
-                correctionVelocityAngle += (TankMovement.angleDelta(oldNext.angle, old.angle) -
-                    TankMovement.angleDelta(newNext.angle, authoritative.angle)) * 60
+                correctionVelocityAngle +=
+                    (TankMovement.angleDelta(oldNext.angle, old.angle) -
+                        TankMovement.angleDelta(newNext.angle, authoritative.angle)) * 60
                 correctionX += old.x - authoritative.x
                 correctionY += old.y - authoritative.y
                 correctionAngle =
@@ -316,9 +323,18 @@ class OnlinePresentation(
             impulse = (correctionVelocityAngle + omega * correctionAngle) * dt
             correctionAngle = (correctionAngle + impulse) * decay
             correctionVelocityAngle = (correctionVelocityAngle - omega * impulse) * decay
-            if (abs(correctionX) < 1e-5 && abs(correctionVelocityX) < 1e-4) { correctionX = 0.0; correctionVelocityX = 0.0 }
-            if (abs(correctionY) < 1e-5 && abs(correctionVelocityY) < 1e-4) { correctionY = 0.0; correctionVelocityY = 0.0 }
-            if (abs(correctionAngle) < 1e-5 && abs(correctionVelocityAngle) < 1e-4) { correctionAngle = 0.0; correctionVelocityAngle = 0.0 }
+            if (abs(correctionX) < 1e-5 && abs(correctionVelocityX) < 1e-4) {
+                correctionX = 0.0
+                correctionVelocityX = 0.0
+            }
+            if (abs(correctionY) < 1e-5 && abs(correctionVelocityY) < 1e-4) {
+                correctionY = 0.0
+                correctionVelocityY = 0.0
+            }
+            if (abs(correctionAngle) < 1e-5 && abs(correctionVelocityAngle) < 1e-4) {
+                correctionAngle = 0.0
+                correctionVelocityAngle = 0.0
+            }
         }
 
         private fun clampCorrection(limit: Double) {
@@ -329,7 +345,10 @@ class OnlinePresentation(
                 correctionX = nx * limit
                 correctionY = ny * limit
                 val outward = correctionVelocityX * nx + correctionVelocityY * ny
-                if (outward > 0) { correctionVelocityX -= nx * outward; correctionVelocityY -= ny * outward }
+                if (outward > 0) {
+                    correctionVelocityX -= nx * outward
+                    correctionVelocityY -= ny * outward
+                }
             }
             if (abs(correctionAngle) >= .7) {
                 correctionAngle = correctionAngle.coerceIn(-.7, .7)
@@ -391,11 +410,16 @@ class OnlinePresentation(
 
     fun accept(snapshot: ArenaSnapshot, at: Double) {
         val previous = latest
-        val changedView = previous != null && (snapshot.spectating != previous.spectating || snapshot.spectating && snapshot.following != previous.following)
+        val changedView =
+            previous != null &&
+                (snapshot.spectating != previous.spectating ||
+                    snapshot.spectating && snapshot.following != previous.following)
         if (
             previous != null &&
                 (snapshot.generation < previous.generation ||
-                    snapshot.generation == previous.generation && (snapshot.tick < previous.tick || snapshot.tick == previous.tick && !changedView))
+                    snapshot.generation == previous.generation &&
+                        (snapshot.tick < previous.tick ||
+                            snapshot.tick == previous.tick && !changedView))
         )
             return
         val recovering = previous != null && (stale || at - lastArrival > 2.5)
@@ -411,12 +435,27 @@ class OnlinePresentation(
             curves.clear()
             ricochetPaths.clear()
         }
-        if (previous == null || previous.generation != snapshot.generation || changedView || recovering)
-            { completedFlights.reset(snapshot.effects); contacts.reset(snapshot.effects) }
-        else {
-            completedFlights.accept(snapshot.effects, clock ?: snapshot.tick / 60.0 - .085, snapshot.tanks.size)
-            contacts.accept(snapshot.effects, snapshot.tanks, clock ?: snapshot.tick / 60.0 - .085, snapshot.tick.toDouble(),
-                if (snapshot.spectating) emptySet() else setOfNotNull(primary.id, secondary?.id))
+        if (
+            previous == null ||
+                previous.generation != snapshot.generation ||
+                changedView ||
+                recovering
+        ) {
+            completedFlights.reset(snapshot.effects)
+            contacts.reset(snapshot.effects)
+        } else {
+            completedFlights.accept(
+                snapshot.effects,
+                clock ?: snapshot.tick / 60.0 - .085,
+                snapshot.tanks.size,
+            )
+            contacts.accept(
+                snapshot.effects,
+                snapshot.tanks,
+                clock ?: snapshot.tick / 60.0 - .085,
+                snapshot.tick.toDouble(),
+                if (snapshot.spectating) emptySet() else setOfNotNull(primary.id, secondary?.id),
+            )
         }
         latest = snapshot
         lastArrival = at
@@ -449,7 +488,12 @@ class OnlinePresentation(
         val newest = latest ?: return null
         val elapsed = if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0
         stale = now - lastArrival > 2.5
-        if (newest.spectating || newest.result != null || newest.phase in listOf("roundOver", "matchOver")) return finishPresentation(interpolated(elapsed, null))
+        if (
+            newest.spectating ||
+                newest.result != null ||
+                newest.phase in listOf("roundOver", "matchOver")
+        )
+            return finishPresentation(interpolated(elapsed, null))
         val controls = primary.advance(elapsed, input, newest, send)
         val second = secondary
         val secondControls =
@@ -471,8 +515,14 @@ class OnlinePresentation(
     /** Finishes visual paths after a result overlay pauses controls; no simulation or packets. */
     fun renderTerminal(dt: Double): ArenaSnapshot? {
         val state = latest ?: return null
-        if (!hasPendingProjectileFlights || state.result == null && state.phase !in listOf("roundOver", "matchOver")) return null
-        return finishPresentation(interpolated(if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0, null))
+        if (
+            !hasPendingProjectileFlights ||
+                state.result == null && state.phase !in listOf("roundOver", "matchOver")
+        )
+            return null
+        return finishPresentation(
+            interpolated(if (dt.isFinite()) dt.coerceIn(0.0, .1) else 0.0, null),
+        )
     }
 
     fun neutralize() {
@@ -503,7 +553,8 @@ class OnlinePresentation(
         val fill = target - playhead
         val wanted = if (fill > .02) 1.05 else if (fill < -.02) .95 else 1.0
         playbackRate += (wanted - playbackRate) * min(1.0, dt * 6)
-        val terminal = newest.state.result != null || newest.state.phase in listOf("roundOver", "matchOver")
+        val terminal =
+            newest.state.result != null || newest.state.phase in listOf("roundOver", "matchOver")
         playhead = min(playhead + dt * playbackRate, newest.time + if (terminal) .1 else 0.0)
         clock = playhead
         var ai = 0
@@ -604,10 +655,10 @@ class OnlinePresentation(
             val second = newBullets[bullet.id]
             if (first == null || second == null) bullet
             else if (first.bounces != second.bounces) {
-                if (!ricochetPaths.containsKey(bullet.id)) ricochetPaths[bullet.id] = RicochetPath.between(first, second, span, maze)
+                if (!ricochetPaths.containsKey(bullet.id))
+                    ricochetPaths[bullet.id] = RicochetPath.between(first, second, span, maze)
                 ricochetPaths[bullet.id]?.sample(second, first, alpha) ?: bullet
-            }
-            else
+            } else
                 second.copy(
                     x = first.x + (second.x - first.x) * alpha,
                     y = first.y + (second.y - first.y) * alpha,
@@ -620,11 +671,22 @@ class OnlinePresentation(
 
     private fun finishPresentation(result: ArenaSnapshot): ArenaSnapshot {
         val playhead = clock ?: result.tick / 60.0
-        val flightImage = completedFlights.render(result.bullets, result.effects, playhead, contacts::canCompleteProjectile)
-        val contactImage = contacts.render(result.tanks, flightImage.effects, playhead, completedFlights) { from, to ->
-            fits(to, result.world) && (from.ghostTime > 0 || pathClear(from, to, result.world))
-        }
-        result.bullets = flightImage.bullets; result.tanks = contactImage.tanks; result.effects = contactImage.effects
+        val flightImage =
+            completedFlights.render(
+                result.bullets,
+                result.effects,
+                playhead,
+                contacts::canCompleteProjectile,
+            )
+        val contactImage =
+            contacts.render(result.tanks, flightImage.effects, playhead, completedFlights) {
+                from,
+                to ->
+                fits(to, result.world) && (from.ghostTime > 0 || pathClear(from, to, result.world))
+            }
+        result.bullets = flightImage.bullets
+        result.tanks = contactImage.tanks
+        result.effects = contactImage.effects
         if (hasPendingProjectileFlights) {
             result.result = null
             if (result.phase in listOf("roundOver", "matchOver")) result.phase = "playing"

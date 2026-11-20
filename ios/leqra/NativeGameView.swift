@@ -1,6 +1,6 @@
-import SwiftUI
-import SpriteKit
 import GameController
+import SpriteKit
+import SwiftUI
 import leqraCore
 
 @MainActor
@@ -15,20 +15,31 @@ final class NativeInputSettings: ObservableObject {
     init(defaults: UserDefaults = NativePreferences.current) {
         self.defaults = defaults
         let stored = NativeControlPreferences.load(from: defaults)
-        bindings = stored.bindings; mouseAim = stored.mouseAim; mouseFire = stored.mouseFire
+        bindings = stored.bindings
+        mouseAim = stored.mouseAim
+        mouseFire = stored.mouseFire
     }
     func assign(keyCode: Int, layout: Int, action: NativeControlAction) throws {
         let next = try bindings.assigning(keyCode, layout: layout, action: action)
         guard next != bindings else { return }
-        bindings = next; save()
+        bindings = next
+        save()
     }
-    func resetBindings() { bindings = .defaults; save() }
+    func resetBindings() {
+        bindings = .defaults
+        save()
+    }
     func resetAll() {
-        bindings = .defaults; mouseAim = true; mouseFire = true; save()
+        bindings = .defaults
+        mouseAim = true
+        mouseFire = true
+        save()
     }
     private func save() {
         var stored = NativeControlPreferences()
-        stored.bindings = bindings; stored.mouseAim = mouseAim; stored.mouseFire = mouseFire
+        stored.bindings = bindings
+        stored.mouseAim = mouseAim
+        stored.mouseFire = mouseFire
         stored.save(to: defaults)
         NotificationCenter.default.post(name: Self.changed, object: self)
     }
@@ -46,10 +57,15 @@ final class NativeHardwarePresence: ObservableObject {
     private var previousEscapeHandler: GCControllerButtonValueChangedHandler?
     private init() {
         refresh()
-        for name in [Notification.Name.GCKeyboardDidConnect, .GCKeyboardDidDisconnect, .GCMouseDidConnect, .GCMouseDidDisconnect] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
-            })
+        for name in [
+            Notification.Name.GCKeyboardDidConnect, .GCKeyboardDidDisconnect, .GCMouseDidConnect,
+            .GCMouseDidDisconnect,
+        ] {
+            observers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
+                    [weak self] _ in
+                    Task { @MainActor in self?.refresh() }
+                })
         }
     }
     func refresh() {
@@ -83,10 +99,14 @@ struct NativeKeyCaptureView: UIViewRepresentable {
     var onCancel: () -> Void
     var onError: (String) -> Void = { _ in }
     func makeUIView(context: Context) -> KeyCaptureResponder {
-        let view = KeyCaptureResponder(); updateUIView(view, context: context); return view
+        let view = KeyCaptureResponder()
+        updateUIView(view, context: context)
+        return view
     }
     func updateUIView(_ view: KeyCaptureResponder, context: Context) {
-        view.onKey = onKey; view.onCancel = onCancel; view.onError = onError
+        view.onKey = onKey
+        view.onCancel = onCancel
+        view.onError = onError
         if view.window != nil { view.becomeFirstResponder() }
     }
     final class KeyCaptureResponder: UIView {
@@ -105,7 +125,9 @@ struct NativeKeyCaptureView: UIViewRepresentable {
         deinit { if let escapeObserver { NotificationCenter.default.removeObserver(escapeObserver) } }
         private func observeHardwareEscape() {
             _ = NativeHardwarePresence.shared
-            escapeObserver = NotificationCenter.default.addObserver(forName: NativeHardwarePresence.escapePressed, object: nil, queue: .main) { [weak self] _ in
+            escapeObserver = NotificationCenter.default.addObserver(
+                forName: NativeHardwarePresence.escapePressed, object: nil, queue: .main
+            ) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.window != nil else { return }
                     self.onCancel()
@@ -114,7 +136,8 @@ struct NativeKeyCaptureView: UIViewRepresentable {
         }
         override var canBecomeFirstResponder: Bool { true }
         override var keyCommands: [UIKeyCommand]? {
-            let escape = UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelCapture))
+            let escape = UIKeyCommand(
+                input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelCapture))
             escape.wantsPriorityOverSystemBehavior = true
             return [escape]
         }
@@ -125,25 +148,31 @@ struct NativeKeyCaptureView: UIViewRepresentable {
             guard window != nil else { return }
             becomeFirstResponder()
             #if DEBUG
-            // Exercise the physical-keyboard notification route in UI tests
-            // without claiming the simulator synthesized a hardware Escape.
-            if ProcessInfo.processInfo.arguments.contains("--probe-hardware-escape") {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                    guard let self, self.window != nil else { return }
-                    NotificationCenter.default.post(name: NativeHardwarePresence.escapePressed, object: nil)
+                // Exercise the physical-keyboard notification route in UI tests
+                // without claiming the simulator synthesized a hardware Escape.
+                if ProcessInfo.processInfo.arguments.contains("--probe-hardware-escape") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                        guard let self, self.window != nil else { return }
+                        NotificationCenter.default.post(
+                            name: NativeHardwarePresence.escapePressed, object: nil)
+                    }
                 }
-            }
             #endif
         }
         override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             for press in presses {
                 guard let key = press.key else { continue }
                 NativeHardwarePresence.shared.noteKeyboard()
-                if key.keyCode == .keyboardEscape { onCancel(); return }
-                guard key.modifierFlags.intersection([.command, .control, .alternate]).isEmpty else {
-                    onError("System shortcuts cannot be assigned."); return
+                if key.keyCode == .keyboardEscape {
+                    onCancel()
+                    return
                 }
-                onKey(key.keyCode.rawValue); return
+                guard key.modifierFlags.intersection([.command, .control, .alternate]).isEmpty else {
+                    onError("System shortcuts cannot be assigned.")
+                    return
+                }
+                onKey(key.keyCode.rawValue)
+                return
             }
         }
     }
@@ -167,9 +196,11 @@ final class NativeGamepads {
 
     init() {
         for name in [Notification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.syncControllers() }
-            })
+            observers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
+                    [weak self] _ in
+                    Task { @MainActor in self?.syncControllers() }
+                })
         }
         syncControllers()
     }
@@ -183,7 +214,9 @@ final class NativeGamepads {
     }
 
     func configure(primary: GameScene?, secondary: GameScene?, enabled: Bool) {
-        self.primary = primary; self.secondary = secondary; self.enabled = enabled
+        self.primary = primary
+        self.secondary = secondary
+        self.enabled = enabled
         updateRoutes()
     }
 
@@ -194,7 +227,8 @@ final class NativeGamepads {
 
     func rearmPractice() {
         guard supportEnabled, let practice, let controller = controllers.compactMap({ $0 }).first,
-              let pad = controller.extendedGamepad else { return }
+            let pad = controller.extendedGamepad
+        else { return }
         practice.setGamepadInput(GameInput())
         let id = ObjectIdentifier(controller)
         waitingForNeutral.remove(id)
@@ -204,13 +238,16 @@ final class NativeGamepads {
     private func syncControllers() {
         let available = GCController.controllers().filter { $0.extendedGamepad != nil }
         for index in controllers.indices {
-            guard let controller = controllers[index], !available.contains(where: { $0 === controller }) else { continue }
+            guard let controller = controllers[index], !available.contains(where: { $0 === controller })
+            else { continue }
             controller.extendedGamepad?.valueChangedHandler = nil
             controller.extendedGamepad?.buttonMenu.pressedChangedHandler = nil
             controllers[index] = nil
         }
         for controller in available where !controllers.contains(where: { $0 === controller }) {
-            guard let index = controllers.firstIndex(where: { $0 == nil }), let pad = controller.extendedGamepad else { break }
+            guard let index = controllers.firstIndex(where: { $0 == nil }),
+                let pad = controller.extendedGamepad
+            else { break }
             controllers[index] = controller
             controller.playerIndex = index == 0 ? .index1 : .index2
             controller.handlerQueue = .main
@@ -229,8 +266,11 @@ final class NativeGamepads {
     }
 
     private func target(for index: Int) -> GameScene? {
-        guard let seat = NativeGamepadControls.seat(for: index, connected: controllers.compactMap { $0 }.count,
-                                                    primary: primary != nil, secondary: secondary != nil) else { return nil }
+        guard
+            let seat = NativeGamepadControls.seat(
+                for: index, connected: controllers.compactMap { $0 }.count,
+                primary: primary != nil, secondary: secondary != nil)
+        else { return nil }
         return seat == 0 ? primary : secondary
     }
 
@@ -269,16 +309,18 @@ final class NativeGamepads {
 
     private func menuPressed(by index: Int, id: ObjectIdentifier) {
         guard supportEnabled, let controller = controllers[index], ObjectIdentifier(controller) == id,
-              practice == nil, target(for: index) != nil else { return }
+            practice == nil, target(for: index) != nil
+        else { return }
         onMenu()
     }
 
     private static func input(_ pad: GCExtendedGamepad) -> GameInput {
-        NativeGamepadControls.input(leftX: Double(pad.leftThumbstick.xAxis.value), leftY: -Double(pad.leftThumbstick.yAxis.value),
-                                   rightX: Double(pad.rightThumbstick.xAxis.value), rightY: -Double(pad.rightThumbstick.yAxis.value),
-                                   forward: pad.dpad.up.isPressed, reverse: pad.dpad.down.isPressed,
-                                   left: pad.dpad.left.isPressed, right: pad.dpad.right.isPressed,
-                                   fire: pad.buttonA.isPressed || pad.rightTrigger.isPressed || pad.rightShoulder.isPressed)
+        NativeGamepadControls.input(
+            leftX: Double(pad.leftThumbstick.xAxis.value), leftY: -Double(pad.leftThumbstick.yAxis.value),
+            rightX: Double(pad.rightThumbstick.xAxis.value), rightY: -Double(pad.rightThumbstick.yAxis.value),
+            forward: pad.dpad.up.isPressed, reverse: pad.dpad.down.isPressed,
+            left: pad.dpad.left.isPressed, right: pad.dpad.right.isPressed,
+            fire: pad.buttonA.isPressed || pad.rightTrigger.isPressed || pad.rightShoulder.isPressed)
     }
 }
 
@@ -307,11 +349,14 @@ struct NativeGameView: UIViewRepresentable {
     }
 
     private func configure(_ container: KeyboardGameContainer) {
-        scene.configureLayout(infinity: infinity, landscape: landscape, loadoutHeight: loadoutHeight,
-                              spectating: spectating, showsTouchControls: showsTouchControls)
-        container.configure(scene: scene, highFrameRate: highFrameRate, paused: paused, spectating: spectating,
-                            hardwareScene: hardwareInputScene ?? scene, acceptsHardware: acceptsHardware,
-                            mouseScene: mouseTargetScene ?? hardwareInputScene ?? scene, renderingSuspended: renderingSuspended)
+        scene.configureLayout(
+            infinity: infinity, landscape: landscape, loadoutHeight: loadoutHeight,
+            spectating: spectating, showsTouchControls: showsTouchControls)
+        container.configure(
+            scene: scene, highFrameRate: highFrameRate, paused: paused, spectating: spectating,
+            hardwareScene: hardwareInputScene ?? scene, acceptsHardware: acceptsHardware,
+            mouseScene: mouseTargetScene ?? hardwareInputScene ?? scene,
+            renderingSuspended: renderingSuspended)
     }
 }
 
@@ -345,16 +390,22 @@ private final class KeyboardGameContainer: UIView {
         gameView.presentScene(scene)
         _ = NativeHardwarePresence.shared
         for name in [NativeInputSettings.changed, NativeHardwarePresence.changed] {
-            inputObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.resetHardwareControls() }
-            })
+            inputObservers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
+                    [weak self] _ in
+                    Task { @MainActor in self?.resetHardwareControls() }
+                })
         }
-        inputObservers.append(NotificationCenter.default.addObserver(forName: NativeHardwarePresence.escapePressed, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.window != nil, self.acceptsHardware, self.gameScene?.onEscape != nil else { return }
-                self.closeShowcase()
-            }
-        })
+        inputObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NativeHardwarePresence.escapePressed, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.window != nil, self.acceptsHardware, self.gameScene?.onEscape != nil
+                    else { return }
+                    self.closeShowcase()
+                }
+            })
         let hover = UIHoverGestureRecognizer(target: self, action: #selector(pointerHover(_:)))
         hover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         addGestureRecognizer(hover)
@@ -368,12 +419,21 @@ private final class KeyboardGameContainer: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { for observer in inputObservers { NotificationCenter.default.removeObserver(observer) } }
 
-    func configure(scene: GameScene, highFrameRate: Bool, paused: Bool, spectating: Bool,
-                   hardwareScene: GameScene, acceptsHardware: Bool, mouseScene: GameScene, renderingSuspended: Bool) {
+    func configure(
+        scene: GameScene, highFrameRate: Bool, paused: Bool, spectating: Bool,
+        hardwareScene: GameScene, acceptsHardware: Bool, mouseScene: GameScene, renderingSuspended: Bool
+    ) {
         if self.hardwareScene !== hardwareScene { resetKeyboard() }
-        if self.mouseScene !== mouseScene { self.mouseScene?.setMouseFire(false); self.mouseScene?.clearMouseAim() }
-        self.highFrameRate = highFrameRate; self.paused = paused; self.spectating = spectating
-        self.hardwareScene = hardwareScene; self.mouseScene = mouseScene; self.acceptsHardware = acceptsHardware
+        if self.mouseScene !== mouseScene {
+            self.mouseScene?.setMouseFire(false)
+            self.mouseScene?.clearMouseAim()
+        }
+        self.highFrameRate = highFrameRate
+        self.paused = paused
+        self.spectating = spectating
+        self.hardwareScene = hardwareScene
+        self.mouseScene = mouseScene
+        self.acceptsHardware = acceptsHardware
         isAccessibilityElement = !paused
         isUserInteractionEnabled = !paused && !spectating
         gameView.isUserInteractionEnabled = !paused && !spectating
@@ -384,9 +444,14 @@ private final class KeyboardGameContainer: UIView {
         }
         scene.isUserInteractionEnabled = !paused && !spectating
         if paused || spectating {
-            resetKeyboard(); mouseScene.setMouseFire(false); mouseScene.clearMouseAim()
-            scene.resetControls(); resignFirstResponder()
-        } else if acceptsHardware, window != nil, !isFirstResponder { becomeFirstResponder() }
+            resetKeyboard()
+            mouseScene.setMouseFire(false)
+            mouseScene.clearMouseAim()
+            scene.resetControls()
+            resignFirstResponder()
+        } else if acceptsHardware, window != nil, !isFirstResponder {
+            becomeFirstResponder()
+        }
         applyFrameRate()
     }
 
@@ -399,14 +464,16 @@ private final class KeyboardGameContainer: UIView {
     override var canBecomeFirstResponder: Bool { acceptsHardware }
     override var keyCommands: [UIKeyCommand]? {
         guard acceptsHardware, gameScene?.onEscape != nil else { return super.keyCommands }
-        let escape = UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(closeShowcase))
+        let escape = UIKeyCommand(
+            input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(closeShowcase))
         escape.wantsPriorityOverSystemBehavior = true
         return [escape]
     }
     @objc private func closeShowcase() { gameScene?.onEscape?() }
     override func layoutSubviews() {
         super.layoutSubviews()
-        if acceptsHardware, !paused, !spectating, window != nil, gameScene?.onEscape != nil, !isFirstResponder {
+        if acceptsHardware, !paused, !spectating, window != nil, gameScene?.onEscape != nil, !isFirstResponder
+        {
             becomeFirstResponder()
         }
     }
@@ -414,8 +481,12 @@ private final class KeyboardGameContainer: UIView {
         super.didMoveToWindow()
         applyFrameRate()
         if window != nil { gameScene?.prepareCombatRenderer(in: gameView) }
-        if window != nil && !paused && !spectating && acceptsHardware { becomeFirstResponder() }
-        else { resetKeyboard(); gameScene?.resetControls() }
+        if window != nil && !paused && !spectating && acceptsHardware {
+            becomeFirstResponder()
+        } else {
+            resetKeyboard()
+            gameScene?.resetControls()
+        }
     }
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if !setKeys(presses, down: true) { super.pressesBegan(presses, with: event) }
@@ -434,27 +505,42 @@ private final class KeyboardGameContainer: UIView {
         for press in presses {
             guard let key = press.key else { continue }
             NativeHardwarePresence.shared.noteKeyboard()
-            if key.keyCode == .keyboardEscape { if down { gameScene?.onEscape?() }; handled = true; continue }
+            if key.keyCode == .keyboardEscape {
+                if down { gameScene?.onEscape?() }
+                handled = true
+                continue
+            }
             let code = key.keyCode.rawValue
             if down && !key.modifierFlags.intersection([.command, .control, .alternate]).isEmpty { continue }
             guard bindings.contains(code) || pressedKeys.contains(key.keyCode) else { continue }
             handled = true
-            if down && !paused && !spectating { pressedKeys.insert(key.keyCode) }
-            else { pressedKeys.remove(key.keyCode) }
+            if down && !paused && !spectating {
+                pressedKeys.insert(key.keyCode)
+            } else {
+                pressedKeys.remove(key.keyCode)
+            }
         }
         if handled { scene.setKeyboardInput(bindings.input(pressed: Set(pressedKeys.map(\.rawValue)))) }
         return handled
     }
 
-    private func resetKeyboard() { pressedKeys.removeAll(); hardwareScene?.setKeyboardInput(GameInput()) }
+    private func resetKeyboard() {
+        pressedKeys.removeAll()
+        hardwareScene?.setKeyboardInput(GameInput())
+    }
     private func resetHardwareControls() {
-        resetKeyboard(); mouseScene?.setMouseFire(false); mouseScene?.clearMouseAim()
+        resetKeyboard()
+        mouseScene?.setMouseFire(false)
+        mouseScene?.clearMouseAim()
     }
 
     @objc private func pointerHover(_ gesture: UIHoverGestureRecognizer) {
         NativeHardwarePresence.shared.noteMouse()
         guard !paused, !spectating, let scene = gameScene, let target = mouseScene else { return }
-        if gesture.state == .ended || gesture.state == .cancelled { target.clearMouseAim(); return }
+        if gesture.state == .ended || gesture.state == .cancelled {
+            target.clearMouseAim()
+            return
+        }
         let point = scene.convertPoint(fromView: gesture.location(in: gameView))
         if !scene.updateMouseAim(at: point, target: target) { target.clearMouseAim() }
     }
@@ -462,7 +548,10 @@ private final class KeyboardGameContainer: UIView {
     @objc private func pointerPress(_ gesture: UILongPressGestureRecognizer) {
         NativeHardwarePresence.shared.noteMouse()
         guard let target = mouseScene else { return }
-        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed { target.setMouseFire(false); return }
+        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
+            target.setMouseFire(false)
+            return
+        }
         guard !paused, !spectating, let scene = gameScene else { return }
         let point = scene.convertPoint(fromView: gesture.location(in: gameView))
         if scene.updateMouseAim(at: point, target: target) { target.setMouseFire(true) }
@@ -470,11 +559,13 @@ private final class KeyboardGameContainer: UIView {
 
 }
 
-
 /// A secondary mouse button must not become a fire activation.
 private final class PrimaryMousePressRecognizer: UILongPressGestureRecognizer {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard event.buttonMask.contains(.primary) else { state = .failed; return }
+        guard event.buttonMask.contains(.primary) else {
+            state = .failed
+            return
+        }
         super.touchesBegan(touches, with: event)
     }
 }

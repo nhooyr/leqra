@@ -29,9 +29,9 @@ html = re.sub(r'<link[^>]*>', '', (web/'index.html').read_text())
 html = re.sub(r'<script src="[^"]+" defer></script>', '', html)
 html = html.replace('</head>', '<style>'+(assets/'style.css').read_text()+'</style></head>')
 js = (assets/'game.js').read_text().replace('(() => {', '((location) => {', 1)
-i = js.rfind('})();')
+i = js.rfind('})()')
 assert i >= 0
-js = js[:i] + '})(window.__location);' + js[i+5:]
+js = js[:i] + '})(window.__location);' + js[i+4:]
 
 def load(context, storage=None, broken=False):
     p = context.new_page()

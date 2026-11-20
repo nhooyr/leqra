@@ -1,25 +1,82 @@
-'use strict';
+"use strict"
+const { replaceSource, sourceIndex } = require("./source_helpers.cjs")
 // Real Canvas2D, DOM and WebAudio stress fixture; all staging hooks are injected
 // into temporary served copies. No fixture controls ship in the game assets.
 // node src/tests/powerup_stress_browser.cjs /tmp/leqra-powerup-browser
 // --events --audio=on,off captures first pickup/fire work in a fresh page per
 // case; --seconds=8 extends a sustained case. Profiling adds sampling overhead.
-const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),{execFileSync}=require('node:child_process');
-const {chromium}=require('playwright'),{assetPath,assetVersion}=require('./web_assets.cjs');
-const root=path.resolve(__dirname,'../..'),web=path.join(root,'src/web'),output=path.resolve(process.argv[2]||'/tmp/leqra-powerup-browser');
-const only=process.argv.find(arg=>arg.startsWith('--only='))?.slice(7);
-const transitions=process.argv.includes('--transitions');
-const events=transitions||process.argv.includes('--events');
-const audioModes=process.argv.find(arg=>arg.startsWith('--audio='))?.slice(8).split(',')||['on'];
-const seconds=Number(process.argv.find(arg=>arg.startsWith('--seconds='))?.slice(10));
-if(Number.isFinite(seconds)&&seconds!==0&&(seconds<1||seconds>30))throw Error('--seconds must be 1–30.');
-const variants=process.argv.find(arg=>arg.startsWith('--variant='))?.slice(10).split(',')||['before','after'];
-const arenas=process.argv.find(arg=>arg.startsWith('--arena='))?.slice(8).split(',')||['fixed','infinity'];
-const powers=['rapid','scatter','shield','homing','grenade','speed','laser','cannon','ghost','starman'];
-const cases=(transitions?['death','kill','wall'].map(kind=>({name:kind,powers:[],eventPower:'regular',transition:kind})):events?['regular',...powers].map(kind=>({name:kind,powers:[],eventPower:kind,grenade:kind==='grenade'})):[...powers.map(kind=>({name:kind,powers:[kind],grenade:kind==='grenade'})),...['regular','rapid','scatter','homing','grenade','laser','cannon'].map(kind=>({name:'stacked-'+kind,powers:[...Array(5).fill('shield'),...Array(5).fill('speed'),'ghost','starman',...(kind==='regular'?[]:[kind])],grenade:kind==='grenade'}))]).filter(item=>!only||item.name===only);
-fs.mkdirSync(output,{recursive:true});
+const fs = require("node:fs"),
+  path = require("node:path"),
+  http = require("node:http"),
+  { execFileSync } = require("node:child_process")
+const { chromium } = require("playwright"),
+  { assetPath, assetVersion } = require("./web_assets.cjs")
+const root = path.resolve(__dirname, "../.."),
+  web = path.join(root, "src/web"),
+  output = path.resolve(process.argv[2] || "/tmp/leqra-powerup-browser")
+const only = process.argv.find((arg) => arg.startsWith("--only="))?.slice(7)
+const transitions = process.argv.includes("--transitions")
+const events = transitions || process.argv.includes("--events")
+const audioModes = process.argv
+  .find((arg) => arg.startsWith("--audio="))
+  ?.slice(8)
+  .split(",") || ["on"]
+const seconds = Number(process.argv.find((arg) => arg.startsWith("--seconds="))?.slice(10))
+if (Number.isFinite(seconds) && seconds !== 0 && (seconds < 1 || seconds > 30))
+  throw Error("--seconds must be 1–30.")
+const variants = process.argv
+  .find((arg) => arg.startsWith("--variant="))
+  ?.slice(10)
+  .split(",") || ["before", "after"]
+const arenas = process.argv
+  .find((arg) => arg.startsWith("--arena="))
+  ?.slice(8)
+  .split(",") || ["fixed", "infinity"]
+const powers = [
+  "rapid",
+  "scatter",
+  "shield",
+  "homing",
+  "grenade",
+  "speed",
+  "laser",
+  "cannon",
+  "ghost",
+  "starman",
+]
+const cases = (
+  transitions
+    ? ["death", "kill", "wall"].map((kind) => ({
+        name: kind,
+        powers: [],
+        eventPower: "regular",
+        transition: kind,
+      }))
+    : events
+      ? ["regular", ...powers].map((kind) => ({
+          name: kind,
+          powers: [],
+          eventPower: kind,
+          grenade: kind === "grenade",
+        }))
+      : [
+          ...powers.map((kind) => ({ name: kind, powers: [kind], grenade: kind === "grenade" })),
+          ...["regular", "rapid", "scatter", "homing", "grenade", "laser", "cannon"].map((kind) => ({
+            name: "stacked-" + kind,
+            powers: [
+              ...Array(5).fill("shield"),
+              ...Array(5).fill("speed"),
+              "ghost",
+              "starman",
+              ...(kind === "regular" ? [] : [kind]),
+            ],
+            grenade: kind === "grenade",
+          })),
+        ]
+).filter((item) => !only || item.name === only)
+fs.mkdirSync(output, { recursive: true })
 
-const fixedHooks=String.raw`
+const fixedHooks = String.raw`
 window.__stress={capture:false,spec:null,frames:[],longTasks:[],renderMs:0,maxProjectiles:0,maxParticles:0,maxEffects:0,audioSources:0,held:false,costs:{},eventAt:null,eventDone:false,eventStage:'idle',
  reset(){this.frames=[];this.longTasks=[];this.costs={};this.powerGrants=[];this.badgeMisses=[];this.shots=0;this.firstShot=null;this.eventAt=null;this.eventDone=false;this.transitionDone=false;this.eventStage='idle';this.maxProjectiles=this.maxParticles=this.maxEffects=this.audioSources=0;this.capture=true;},
  primary(tank){return tank.id===(this.arena==='infinity'?window.__stressInfinity.world().id:0);},
@@ -87,8 +144,8 @@ for(const name of ['grantPower','fire','fireLaser','shotSound','pickupSound','ta
  const original=eval(name);eval(name+' = function(...args){const start=performance.now(),probe=window.__stress;if(probe.capture&&"'+name+'"==="tankPowerBadgeImage"&&!tankPowerBadgeCache.has(args[0]))probe.badgeMisses.push({kind:args[0],at:start});try{const result=original(...args);if(probe.capture){if("'+name+'"==="grantPower"&&probe.primary(args[0]))probe.powerGrants.push({kind:args[1],at:start,state:{power:args[0].power,shield:args[0].shieldCharges||0,speed:args[0].speedStacks||0,ghost:args[0].ghostTime||0,starman:args[0].starmanTime||0}});if("'+name+'"==="fire"&&result&&probe.primary(args[0]))probe.shot(args[0],start);}return result;}finally{if(probe.capture)probe.costs["'+name+'"]=(probe.costs["'+name+'"]||0)+performance.now()-start;}}');
 }
 try{new PerformanceObserver(list=>{if(window.__stress.capture)for(const entry of list.getEntries())window.__stress.longTasks.push(entry.duration);}).observe({type:'longtask'});}catch(_){}
-`;
-const infinityHooks=String.raw`
+`
+const infinityHooks = String.raw`
 window.__verifyInfinityDryFire=function(){
  window.__stressInfinity.prepare({name:'dry-check',powers:[]});window.__stress.spec=null;resetControls();const w=session,t=w.tanks[0],checks=[],check=(ok,label)=>{if(!ok)throw Error(label);checks.push(label);};
  w.tanks=[t];w.maze={wallsNear:()=>[],visitWalls:()=>false,blocked:()=>false};Object.assign(t,{x:100,y:210,angle:-Math.PI/2,invulnerable:0,spawnProtected:false});
@@ -110,74 +167,299 @@ window.__stressInfinity={world:()=>session,transition(kind){
 const stressOfflineStep=offlineStep;offlineStep=function(w,dt){if(window.__stress.spec&&window.__stress.arena==='infinity')window.__stress.controls(w.time,pressed);return stressOfflineStep(w,dt);};
 const stressDraw=draw;draw=function(...args){const start=performance.now();const result=stressDraw(...args);window.__stress.renderMs=performance.now()-start;return result;};
 const stressFireShot=fireShot;fireShot=function(world,tank,...args){const start=performance.now(),serial=world.lastBullet,recoil=tank.recoil;try{return stressFireShot(world,tank,...args);}finally{const p=window.__stress;if(p.capture){p.costs.fireShot=(p.costs.fireShot||0)+performance.now()-start;if(p.primary(tank)&&(world.lastBullet>serial||tank.recoil===1&&recoil!==1))p.shot(tank,start);}}};
-`;
+`
 
-function staged(name,variant){
- const source=variant==='before'?execFileSync('git',['show','HEAD:'+path.relative(root,assetPath(name))],{cwd:root,encoding:'utf8'}):fs.readFileSync(assetPath(name),'utf8');
- if(name==='game.js'){
-  const marker='window.leqraInfinityArt=Object.freeze({';
-  if(!source.includes(marker))throw Error('fixed fixture marker missing');
-  return source.replace(marker,fixedHooks+'\nwindow.__stress.continuousFire='+(!source.includes("if(!t.fireBlocked&&t.power!=='grenade'"))+';\n'+marker);
- }
- if(name==='infinite.js')return source.replace('window.leqraInfinity =',infinityHooks+'\nwindow.leqraInfinity =');
- return source;
-}
-function summary(values){if(!values.length)return null;const sorted=[...values].sort((a,b)=>a-b),at=p=>sorted[Math.min(sorted.length-1,Math.floor(sorted.length*p))];return{samples:values.length,mean:values.reduce((a,b)=>a+b)/values.length,p50:at(.5),p95:at(.95),p99:at(.99),max:sorted.at(-1)};}
-
-(async()=>{
- const served=new Map();for(const variant of ['before','after'])for(const name of ['game.js','infinite.js','infinite-maze.js','netcode.js'])served.set(variant+'/'+name,staged(name,variant));
- const server=http.createServer((request,response)=>{
-  const url=new URL(request.url,'http://localhost'),variant=url.searchParams.get('variant')||request.headers.cookie?.match(/variant=(before|after)/)?.[1]||'after';
-  if(url.pathname==='/'){response.setHeader('Set-Cookie','variant='+variant+'; SameSite=Lax');response.setHeader('Content-Type','text/html');response.end(fs.readFileSync(path.join(web,'index.html')));return;}
-  if(url.pathname==='/healthz'){response.end('ok');return;}
-  if(url.pathname==='/api/infinity'){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({players:0,tankCount:0,capacity:64,leaders:[]}));return;}
-  const file=path.resolve(web,'.'+url.pathname);if(!file.startsWith(web+path.sep)){response.writeHead(403).end();return;}
-  const name=path.basename(file);if(url.pathname===`/assets/${assetVersion}/${name}`&&served.has(variant+'/'+name)){response.setHeader('Content-Type','application/javascript');response.end(served.get(variant+'/'+name));return;}
-  if(!fs.existsSync(file)){response.writeHead(404).end();return;}
-  const ext=path.extname(file);response.setHeader('Content-Type',({'.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json'})[ext]||'application/octet-stream');response.end(fs.readFileSync(file));
- });
- await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- const origin='http://127.0.0.1:'+server.address().port;
- let browser;try{browser=await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required']});}catch(error){server.close();throw error;}
- const results=[],errors=[],validations=[];
- try{
-  for(const variant of variants)for(const audioMode of audioModes)for(const arena of arenas)for(const spec of cases){
-   const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true,serviceWorkers:'block'});
-   await context.addInitScript(()=>{localStorage.setItem('leqra.introTour.v1','1');localStorage.setItem('leqra.muted','0');localStorage.setItem('leqra.volume','50');localStorage.setItem('leqra.feedback.v1',JSON.stringify({fps:true}));});
-   const page=await context.newPage();page.on('pageerror',error=>errors.push({variant,message:error.message}));
-   await page.goto(origin+'/?test=1&variant='+variant);await page.waitForFunction(()=>window.__test&&window.__stressInfinity);
-   await page.locator('#soundBtn').click();await page.evaluate(audioMode=>{const wanted=audioMode==='on';if((document.querySelector('#soundBtn').getAttribute('aria-pressed')==='true')!==wanted)document.querySelector('#soundBtn').click();__test.initAudio();},audioMode);
-   const cdp=await context.newCDPSession(page);await cdp.send('Performance.enable');
-    const initial=await page.evaluate(({arena,spec})=>arena==='fixed'?__stress.fixed(spec):__stressInfinity.prepare(spec),{arena,spec});
-    const weapon=spec.powers.filter(power=>['rapid','scatter','homing','grenade','laser','cannon'].includes(power)).at(-1)||'';
-    if(initial.powers.length!==8||initial.powers.some(tank=>(tank.power||'')!==weapon||tank.shield!==Math.min(5,spec.powers.filter(power=>power==='shield').length)||tank.speed!==Math.min(5,spec.powers.filter(power=>power==='speed').length)||spec.powers.includes('ghost')&&!(tank.ghost>0)||spec.powers.includes('starman')&&!(tank.starman>0)))throw Error('Power fixture failed: '+JSON.stringify({arena,spec,initial}));
-    await page.waitForTimeout(spec.name.startsWith('stacked-')?2000:250);
-    await page.evaluate(()=>__test.initAudio());
-    const before=(await cdp.send('Performance.getMetrics')).metrics;
-    if(events){await cdp.send('Profiler.enable');await cdp.send('Profiler.setSamplingInterval',{interval:250});await cdp.send('Profiler.start');}
-    await page.evaluate(()=>__stress.reset());
-    await page.waitForTimeout(seconds>0?seconds*1000:spec.name.startsWith('stacked-')?2000:1250);
-    const after=(await cdp.send('Performance.getMetrics')).metrics;
-    if(events){const profile=await cdp.send('Profiler.stop');fs.writeFileSync(path.join(output,[variant,audioMode,arena,spec.name].join('-')+'.cpuprofile'),JSON.stringify(profile.profile));}
-    const raw=await page.evaluate(()=>__stress.finish()),intervals=raw.frames.slice(1).map((frame,index)=>frame.at-raw.frames[index].at);
-    const metric=name=>(after.find(m=>m.name===name)?.value||0)-(before.find(m=>m.name===name)?.value||0);
-    const record={variant,audioMode,arena,case:spec.name,initial,frames:summary(intervals),frameWorkMs:summary(raw.frames.map(frame=>frame.work)),renderSubmissionMs:summary(raw.frames.map(frame=>frame.render)),eventFrames:events?raw.frames:undefined,powerGrants:raw.powerGrants,badgeMisses:raw.badgeMisses,shots:raw.shots,firstShot:raw.firstShot,over25ms:intervals.filter(value=>value>25).length,longTasks:raw.longTasks,maxProjectiles:raw.maxProjectiles,maxParticles:raw.maxParticles,maxEffects:raw.maxEffects,audio:raw.audio,audioSources:raw.audioSources,scriptSeconds:metric('ScriptDuration'),taskSeconds:metric('TaskDuration'),layoutSeconds:metric('LayoutDuration')};
-    if(spec.transition&&!raw.transitionDone)throw Error('Scheduled transition did not occur: '+arena+'/'+spec.name);
-    if(raw.frames.length<30)throw Error('Insufficient actual animation frames: '+arena+'/'+spec.name);
-    if(events&&spec.eventPower!=='regular'&&!raw.powerGrants.some(grant=>grant.kind===spec.eventPower))throw Error('Scheduled P1 pickup was not collected: '+arena+'/'+spec.name);
-    if(events&&spec.eventPower!=='regular'){const grant=raw.powerGrants.find(grant=>grant.kind===spec.eventPower),field={shield:'shield',speed:'speed',ghost:'ghost',starman:'starman'}[spec.eventPower];if(field?!(grant.state[field]>0):grant.state.power!==spec.eventPower)throw Error('P1 pickup state was not applied: '+arena+'/'+spec.name);}
-    if(events&&!spec.transition&&!raw.shots)throw Error('Scheduled P1 fire did not launch: '+arena+'/'+spec.name);
-    if(events&&raw.powerGrants.length&&!(raw.firstShot.at>=raw.powerGrants[0].at))throw Error('P1 fired before its scheduled pickup: '+arena+'/'+spec.name);
-    if(events&&variant==='after'&&raw.badgeMisses.length)throw Error('First pickup created an unprepared badge: '+arena+'/'+spec.name);
-    if(audioMode==='on'&&(raw.audio!=='running'||!raw.audioEnabled||!raw.audioSources))throw Error('WebAudio did not render active sources: '+JSON.stringify(record));
-    if(audioMode==='off'&&(raw.audioEnabled||raw.audioSources))throw Error('Muted fixture created active audio: '+arena+'/'+spec.name);
-    results.push(record);fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({browser:browser.version(),environment:'Headless Chromium, macOS, mobile touch 390×844 DPR3. Actual production RAF, Canvas2D, DOM and running WebAudio. Frames are 60Hz headless scheduling; no iPhone/Safari/ProMotion FPS claim. Protected tanks sustain deterministic load. Test-only seeded 8-pilot inputs move/rotate/fire; grenade inputs alternate press/release/detonate. Before=HEAD game assets, after=working tree; current HTML/CSS/PWA are shared.',results,validations,errors},null,2));
-    console.log(JSON.stringify({variant,arena,case:spec.name,frames:record.frames.samples,frameP95:record.frames.p95,workP95:record.frameWorkMs.p95,renderP95:record.renderSubmissionMs.p95,projectiles:record.maxProjectiles,audio:raw.audio}));
-    if(spec.name==='stacked-laser')await page.screenshot({path:path.join(output,variant+'-'+arena+'-stacked-laser.png')});
-   if(arena===arenas.at(-1)&&spec===cases.at(-1))validations.push({variant,audioMode,checks:await page.evaluate(()=>__stress.verifyGameplay()),dryFireChecks:await page.evaluate(()=>[...__stress.verifyDryFire(),...__verifyInfinityDryFire()]),cannonTrailPixels:await page.evaluate(()=>__stress.verifyCannonTrails())});
-   await context.close();
+function staged(name, variant) {
+  const source =
+    variant === "before"
+      ? execFileSync("git", ["show", "HEAD:" + path.relative(root, assetPath(name))], {
+          cwd: root,
+          encoding: "utf8",
+        })
+      : fs.readFileSync(assetPath(name), "utf8")
+  if (name === "game.js") {
+    const marker = "window.leqraInfinityArt=Object.freeze({"
+    if (!(sourceIndex(source, marker) >= 0)) throw Error("fixed fixture marker missing")
+    return replaceSource(
+      source,
+      marker,
+      fixedHooks +
+        "\nwindow.__stress.continuousFire=" +
+        (sourceIndex(source, "if(!t.fireBlocked&&t.power!=='grenade'") < 0) +
+        ";\n" +
+        marker,
+    )
   }
-  const report=JSON.parse(fs.readFileSync(path.join(output,'report.json'),'utf8'));report.validations=validations;report.errors=errors;fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2));
-  if(errors.length)throw Error('Browser runtime errors: '+JSON.stringify(errors));
- }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+  if (name === "infinite.js")
+    return replaceSource(source, "window.leqraInfinity =", infinityHooks + "\nwindow.leqraInfinity =")
+  return source
+}
+function summary(values) {
+  if (!values.length) return null
+  const sorted = [...values].sort((a, b) => a - b),
+    at = (p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))]
+  return {
+    samples: values.length,
+    mean: values.reduce((a, b) => a + b) / values.length,
+    p50: at(0.5),
+    p95: at(0.95),
+    p99: at(0.99),
+    max: sorted.at(-1),
+  }
+}
+
+;(async () => {
+  const served = new Map()
+  for (const variant of ["before", "after"])
+    for (const name of ["game.js", "infinite.js", "infinite-maze.js", "netcode.js"])
+      served.set(variant + "/" + name, staged(name, variant))
+  const server = http.createServer((request, response) => {
+    const url = new URL(request.url, "http://localhost"),
+      variant =
+        url.searchParams.get("variant") ||
+        request.headers.cookie?.match(/variant=(before|after)/)?.[1] ||
+        "after"
+    if (url.pathname === "/") {
+      response.setHeader("Set-Cookie", "variant=" + variant + "; SameSite=Lax")
+      response.setHeader("Content-Type", "text/html")
+      response.end(fs.readFileSync(path.join(web, "index.html")))
+      return
+    }
+    if (url.pathname === "/healthz") {
+      response.end("ok")
+      return
+    }
+    if (url.pathname === "/api/infinity") {
+      response.setHeader("Content-Type", "application/json")
+      response.end(JSON.stringify({ players: 0, tankCount: 0, capacity: 64, leaders: [] }))
+      return
+    }
+    const file = path.resolve(web, "." + url.pathname)
+    if (!file.startsWith(web + path.sep)) {
+      response.writeHead(403).end()
+      return
+    }
+    const name = path.basename(file)
+    if (url.pathname === `/assets/${assetVersion}/${name}` && served.has(variant + "/" + name)) {
+      response.setHeader("Content-Type", "application/javascript")
+      response.end(served.get(variant + "/" + name))
+      return
+    }
+    if (!fs.existsSync(file)) {
+      response.writeHead(404).end()
+      return
+    }
+    const ext = path.extname(file)
+    response.setHeader(
+      "Content-Type",
+      {
+        ".js": "application/javascript",
+        ".css": "text/css",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".webmanifest": "application/manifest+json",
+      }[ext] || "application/octet-stream",
+    )
+    response.end(fs.readFileSync(file))
+  })
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const origin = "http://127.0.0.1:" + server.address().port
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required"] })
+  } catch (error) {
+    server.close()
+    throw error
+  }
+  const results = [],
+    errors = [],
+    validations = []
+  try {
+    for (const variant of variants)
+      for (const audioMode of audioModes)
+        for (const arena of arenas)
+          for (const spec of cases) {
+            const context = await browser.newContext({
+              viewport: { width: 390, height: 844 },
+              deviceScaleFactor: 3,
+              isMobile: true,
+              hasTouch: true,
+              serviceWorkers: "block",
+            })
+            await context.addInitScript(() => {
+              localStorage.setItem("leqra.introTour.v1", "1")
+              localStorage.setItem("leqra.muted", "0")
+              localStorage.setItem("leqra.volume", "50")
+              localStorage.setItem("leqra.feedback.v1", JSON.stringify({ fps: true }))
+            })
+            const page = await context.newPage()
+            page.on("pageerror", (error) => errors.push({ variant, message: error.message }))
+            await page.goto(origin + "/?test=1&variant=" + variant)
+            await page.waitForFunction(() => window.__test && window.__stressInfinity)
+            await page.locator("#soundBtn").click()
+            await page.evaluate((audioMode) => {
+              const wanted = audioMode === "on"
+              if ((document.querySelector("#soundBtn").getAttribute("aria-pressed") === "true") !== wanted)
+                document.querySelector("#soundBtn").click()
+              __test.initAudio()
+            }, audioMode)
+            const cdp = await context.newCDPSession(page)
+            await cdp.send("Performance.enable")
+            const initial = await page.evaluate(
+              ({ arena, spec }) =>
+                arena === "fixed" ? __stress.fixed(spec) : __stressInfinity.prepare(spec),
+              { arena, spec },
+            )
+            const weapon =
+              spec.powers
+                .filter((power) =>
+                  ["rapid", "scatter", "homing", "grenade", "laser", "cannon"].includes(power),
+                )
+                .at(-1) || ""
+            if (
+              initial.powers.length !== 8 ||
+              initial.powers.some(
+                (tank) =>
+                  (tank.power || "") !== weapon ||
+                  tank.shield !== Math.min(5, spec.powers.filter((power) => power === "shield").length) ||
+                  tank.speed !== Math.min(5, spec.powers.filter((power) => power === "speed").length) ||
+                  (spec.powers.includes("ghost") && !(tank.ghost > 0)) ||
+                  (spec.powers.includes("starman") && !(tank.starman > 0)),
+              )
+            )
+              throw Error("Power fixture failed: " + JSON.stringify({ arena, spec, initial }))
+            await page.waitForTimeout(spec.name.startsWith("stacked-") ? 2000 : 250)
+            await page.evaluate(() => __test.initAudio())
+            const before = (await cdp.send("Performance.getMetrics")).metrics
+            if (events) {
+              await cdp.send("Profiler.enable")
+              await cdp.send("Profiler.setSamplingInterval", { interval: 250 })
+              await cdp.send("Profiler.start")
+            }
+            await page.evaluate(() => __stress.reset())
+            await page.waitForTimeout(
+              seconds > 0 ? seconds * 1000 : spec.name.startsWith("stacked-") ? 2000 : 1250,
+            )
+            const after = (await cdp.send("Performance.getMetrics")).metrics
+            if (events) {
+              const profile = await cdp.send("Profiler.stop")
+              fs.writeFileSync(
+                path.join(output, [variant, audioMode, arena, spec.name].join("-") + ".cpuprofile"),
+                JSON.stringify(profile.profile),
+              )
+            }
+            const raw = await page.evaluate(() => __stress.finish()),
+              intervals = raw.frames.slice(1).map((frame, index) => frame.at - raw.frames[index].at)
+            const metric = (name) =>
+              (after.find((m) => m.name === name)?.value || 0) -
+              (before.find((m) => m.name === name)?.value || 0)
+            const record = {
+              variant,
+              audioMode,
+              arena,
+              case: spec.name,
+              initial,
+              frames: summary(intervals),
+              frameWorkMs: summary(raw.frames.map((frame) => frame.work)),
+              renderSubmissionMs: summary(raw.frames.map((frame) => frame.render)),
+              eventFrames: events ? raw.frames : undefined,
+              powerGrants: raw.powerGrants,
+              badgeMisses: raw.badgeMisses,
+              shots: raw.shots,
+              firstShot: raw.firstShot,
+              over25ms: intervals.filter((value) => value > 25).length,
+              longTasks: raw.longTasks,
+              maxProjectiles: raw.maxProjectiles,
+              maxParticles: raw.maxParticles,
+              maxEffects: raw.maxEffects,
+              audio: raw.audio,
+              audioSources: raw.audioSources,
+              scriptSeconds: metric("ScriptDuration"),
+              taskSeconds: metric("TaskDuration"),
+              layoutSeconds: metric("LayoutDuration"),
+            }
+            if (spec.transition && !raw.transitionDone)
+              throw Error("Scheduled transition did not occur: " + arena + "/" + spec.name)
+            if (raw.frames.length < 30)
+              throw Error("Insufficient actual animation frames: " + arena + "/" + spec.name)
+            if (
+              events &&
+              spec.eventPower !== "regular" &&
+              !raw.powerGrants.some((grant) => grant.kind === spec.eventPower)
+            )
+              throw Error("Scheduled P1 pickup was not collected: " + arena + "/" + spec.name)
+            if (events && spec.eventPower !== "regular") {
+              const grant = raw.powerGrants.find((grant) => grant.kind === spec.eventPower),
+                field = { shield: "shield", speed: "speed", ghost: "ghost", starman: "starman" }[
+                  spec.eventPower
+                ]
+              if (field ? !(grant.state[field] > 0) : grant.state.power !== spec.eventPower)
+                throw Error("P1 pickup state was not applied: " + arena + "/" + spec.name)
+            }
+            if (events && !spec.transition && !raw.shots)
+              throw Error("Scheduled P1 fire did not launch: " + arena + "/" + spec.name)
+            if (events && raw.powerGrants.length && !(raw.firstShot.at >= raw.powerGrants[0].at))
+              throw Error("P1 fired before its scheduled pickup: " + arena + "/" + spec.name)
+            if (events && variant === "after" && raw.badgeMisses.length)
+              throw Error("First pickup created an unprepared badge: " + arena + "/" + spec.name)
+            if (audioMode === "on" && (raw.audio !== "running" || !raw.audioEnabled || !raw.audioSources))
+              throw Error("WebAudio did not render active sources: " + JSON.stringify(record))
+            if (audioMode === "off" && (raw.audioEnabled || raw.audioSources))
+              throw Error("Muted fixture created active audio: " + arena + "/" + spec.name)
+            results.push(record)
+            fs.writeFileSync(
+              path.join(output, "report.json"),
+              JSON.stringify(
+                {
+                  browser: browser.version(),
+                  environment:
+                    "Headless Chromium, macOS, mobile touch 390×844 DPR3. Actual production RAF, Canvas2D, DOM and running WebAudio. Frames are 60Hz headless scheduling; no iPhone/Safari/ProMotion FPS claim. Protected tanks sustain deterministic load. Test-only seeded 8-pilot inputs move/rotate/fire; grenade inputs alternate press/release/detonate. Before=HEAD game assets, after=working tree; current HTML/CSS/PWA are shared.",
+                  results,
+                  validations,
+                  errors,
+                },
+                null,
+                2,
+              ),
+            )
+            console.log(
+              JSON.stringify({
+                variant,
+                arena,
+                case: spec.name,
+                frames: record.frames.samples,
+                frameP95: record.frames.p95,
+                workP95: record.frameWorkMs.p95,
+                renderP95: record.renderSubmissionMs.p95,
+                projectiles: record.maxProjectiles,
+                audio: raw.audio,
+              }),
+            )
+            if (spec.name === "stacked-laser")
+              await page.screenshot({ path: path.join(output, variant + "-" + arena + "-stacked-laser.png") })
+            if (arena === arenas.at(-1) && spec === cases.at(-1))
+              validations.push({
+                variant,
+                audioMode,
+                checks: await page.evaluate(() => __stress.verifyGameplay()),
+                dryFireChecks: await page.evaluate(() => [
+                  ...__stress.verifyDryFire(),
+                  ...__verifyInfinityDryFire(),
+                ]),
+                cannonTrailPixels: await page.evaluate(() => __stress.verifyCannonTrails()),
+              })
+            await context.close()
+          }
+    const report = JSON.parse(fs.readFileSync(path.join(output, "report.json"), "utf8"))
+    report.validations = validations
+    report.errors = errors
+    fs.writeFileSync(path.join(output, "report.json"), JSON.stringify(report, null, 2))
+    if (errors.length) throw Error("Browser runtime errors: " + JSON.stringify(errors))
+  } finally {
+    await browser.close()
+    await new Promise((resolve) => server.close(resolve))
+  }
+})().catch((error) => {
+  console.error(error)
+  process.exitCode = 1
+})

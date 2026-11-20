@@ -1,0 +1,10 @@
+*.md
+*.markdown
+*.mdx
+android/.gradle/
+android/.kotlin/
+android/.idea/
+android/**/build/
+ios/.build/
+ios/.swiftpm/
+ios/DerivedData/

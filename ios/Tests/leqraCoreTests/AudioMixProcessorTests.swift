@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class AudioMixProcessorTests: XCTestCase {
@@ -12,19 +13,22 @@ final class AudioMixProcessorTests: XCTestCase {
             (.rapid, 0.10355628281831741, 0.008488832582143476),
             (.laser, 0.15497878193855286, 0.02378347603170648),
             (.cannon, 0.33652395009994507, 0.055846590780702775),
-            (.pickup, 0.17037874460220337, 0.027143030315682107)
+            (.pickup, 0.17037874460220337, 0.027143030315682107),
         ]
         for (cue, expectedPeak, expectedRMS) in references {
             let raw = AudioSynthesis.samples(for: cue, sampleRate: 48_000)
             var processor = AudioMixProcessor(sampleRate: 48_000)
-            var peak = 0.0, energy = 0.0
+            var peak = 0.0
+            var energy = 0.0
             for frame in 0..<28_800 {
                 let sample = Double(processor.process(frame < raw.count ? raw[frame] : 0))
-                peak = max(peak, abs(sample)); energy += sample * sample
+                peak = max(peak, abs(sample))
+                energy += sample * sample
             }
             // Overlapping pickup oscillators have a small phase-dependent
             // transient difference; their integrated level stays within .5%.
-            XCTAssertEqual(peak, expectedPeak, accuracy: expectedPeak * (cue == .pickup ? 0.025 : 0.005), cue.rawValue)
+            XCTAssertEqual(
+                peak, expectedPeak, accuracy: expectedPeak * (cue == .pickup ? 0.025 : 0.005), cue.rawValue)
             XCTAssertEqual(sqrt(energy / 28_800), expectedRMS, accuracy: expectedRMS * 0.005, cue.rawValue)
         }
     }
@@ -67,7 +71,8 @@ final class AudioMixProcessorTests: XCTestCase {
         var energy = 0.0
         for frame in 0..<12_000 {
             let input = Float(sin(Double(frame) * 2 * .pi * 180 / 48_000) * 0.4)
-            let loud = full.process(input), quiet = quarter.process(input)
+            let loud = full.process(input)
+            let quiet = quarter.process(input)
             XCTAssertEqual(quiet, loud * 0.25, accuracy: 0.000001)
             energy += Double(loud * loud)
         }
@@ -111,7 +116,8 @@ final class AudioMixProcessorTests: XCTestCase {
 
     func testMalformedPCMDoesNotLeakNonFiniteSamplesOrPoisonLaterCues() {
         var processor = AudioMixProcessor(sampleRate: .nan, volume: .infinity)
-        for sample in [Float.nan, .infinity, -.infinity, .greatestFiniteMagnitude, -.greatestFiniteMagnitude] {
+        for sample in [Float.nan, .infinity, -.infinity, .greatestFiniteMagnitude, -.greatestFiniteMagnitude]
+        {
             XCTAssertTrue(processor.process(sample).isFinite)
         }
         for _ in 0..<1000 {

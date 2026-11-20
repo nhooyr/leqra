@@ -12,15 +12,21 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.leqra.android.NativeStyle.dp
-import kotlin.math.ceil
-import kotlin.math.roundToInt
 import com.leqra.core.ArenaSnapshot
 import com.leqra.core.PilotIdentity
 import java.util.Locale
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
-internal fun performanceReadout(preview: Boolean, online: Boolean, fps: Int, ping: Double?): String {
+internal fun performanceReadout(
+    preview: Boolean,
+    online: Boolean,
+    fps: Int,
+    ping: Double?,
+): String {
     val fpsValue = if (preview) "—" else fps.toString()
-    val pingValue = ping?.takeIf { it.isFinite() && it >= 0.0 }?.let { "${it.roundToInt()} ms" } ?: "—"
+    val pingValue =
+        ping?.takeIf { it.isFinite() && it >= 0.0 }?.let { "${it.roundToInt()} ms" } ?: "—"
     return "fps: $fpsValue" + if (preview || online) ", ping: $pingValue" else ""
 }
 
@@ -29,8 +35,10 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
     private val title = NativeStyle.label(context, "INFINITY", 10f, NativeStyle.text, mono = true)
     private val count = NativeStyle.label(context, "", 10f, NativeStyle.muted, mono = true)
     private val score = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
-    private val finitePerformance = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
-    private val infinityPerformance = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
+    private val finitePerformance =
+        NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
+    private val infinityPerformance =
+        NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
     private val round = NativeStyle.label(context, "", 10f, NativeStyle.text, mono = true)
     private val clock = NativeStyle.label(context, "", 10f, NativeStyle.accent, mono = true)
     private val scores =
@@ -60,16 +68,26 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
         val pilot = snapshot.tanks.firstOrNull { it.id == localID }
         score.value("score: ${pilot?.score ?: 0}, rank: #${pilot?.rank ?: 0}")
         score.setTextColor(NativeStyle.paint(pilot?.colorIndex ?: 0))
-        displayPerformance(infinity = true, if (showFPS) performanceReadout(false, true, fps, ping.toDouble()) else "")
+        displayPerformance(
+            infinity = true,
+            if (showFPS) performanceReadout(false, true, fps, ping.toDouble()) else "",
+        )
         showMode(infinity = true, preview = false)
     }
 
     private fun showTitle(value: String) {
         title.visibility = if (value.isEmpty()) View.GONE else View.VISIBLE
         if (!TextUtils.equals(title.text, value)) {
-            title.text = android.text.SpannableString(value).apply {
-                if (value.isNotEmpty()) setSpan(ForegroundColorSpan(NativeStyle.accent), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
+            title.text =
+                android.text.SpannableString(value).apply {
+                    if (value.isNotEmpty())
+                        setSpan(
+                            ForegroundColorSpan(NativeStyle.accent),
+                            0,
+                            1,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                        )
+                }
             textUpdates++
         }
     }
@@ -93,7 +111,10 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
                 gravity = Gravity.CENTER
                 score.gravity = Gravity.CENTER
                 infinityPerformance.gravity = Gravity.CENTER
-                addView(infinityPerformance, LayoutParams(-1, -2).apply { bottomMargin = context.dp(2) })
+                addView(
+                    infinityPerformance,
+                    LayoutParams(-1, -2).apply { bottomMargin = context.dp(2) },
+                )
                 addView(score, LayoutParams(-1, -2))
             }
         addView(left, LayoutParams(0, -2, 1f).apply { marginEnd = context.dp(6) })
@@ -114,16 +135,18 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
     }
 
     private fun displayPerformance(infinity: Boolean, performance: String) {
-        finitePerformance.visibility = if (!infinity && performance.isNotEmpty()) View.VISIBLE else View.GONE
-        infinityPerformance.visibility = if (infinity && performance.isNotEmpty()) View.VISIBLE else View.GONE
-        if (infinity) infinityPerformance.value(performance) else finitePerformance.value(performance)
+        finitePerformance.visibility =
+            if (!infinity && performance.isNotEmpty()) View.VISIBLE else View.GONE
+        infinityPerformance.visibility =
+            if (infinity && performance.isNotEmpty()) View.VISIBLE else View.GONE
+        if (infinity) infinityPerformance.value(performance)
+        else finitePerformance.value(performance)
     }
 
     fun update(session: GameSession, fps: Int) {
         val preview = session.screen != Screen.PLAYING
         val public = session.room?.optBoolean("infinityPublic") ?: session.publicSelected
-        val infinity =
-            if (preview) public || session.rules.infinity else session.infinity
+        val infinity = if (preview) public || session.rules.infinity else session.infinity
         val name =
             if (preview) {
                 if (infinity) if (public) "PUBLIC INFINITY" else "INFINITY" else ""
@@ -137,7 +160,9 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
                     "roundOver" -> "ROUND COMPLETE"
                     else -> "MATCH COMPLETE"
                 }
-        val titleText = if (name.isEmpty()) "" else "● ${if (infinity && session.spectating && !preview) "SPECTATING" else name}"
+        val titleText =
+            if (name.isEmpty()) ""
+            else "● ${if (infinity && session.spectating && !preview) "SPECTATING" else name}"
         showTitle(titleText)
         showMode(infinity, preview)
         val onlineCount =
@@ -145,23 +170,45 @@ internal class NativeStatusView(context: Context, openScores: () -> Unit) : Line
             else if (!preview && infinity && session.online) session.snapshot.players else null
         count.value(onlineCount?.let { "$it online" } ?: "")
         count.visibility = if (onlineCount == null) View.GONE else View.VISIBLE
-        displayPerformance(infinity, if (session.showFPS) performanceReadout(preview, session.online, fps, session.latency) else "")
-        val pilot = session.snapshot.tanks.firstOrNull { it.id == if (session.spectating) session.followingID else session.localID }
+        displayPerformance(
+            infinity,
+            if (session.showFPS) performanceReadout(preview, session.online, fps, session.latency)
+            else "",
+        )
+        val pilot =
+            session.snapshot.tanks.firstOrNull {
+                it.id == if (session.spectating) session.followingID else session.localID
+            }
         if (infinity) {
             scoreKey = null
             val following = session.spectating && !preview
-            val followingName = session.snapshot.leaderboard.firstOrNull { it.id == session.followingID }
-                ?.let { PilotIdentity.leaderboardLabel(it.name, it.bot) }
-                ?: pilot?.let { PilotIdentity.leaderboardLabel(it.name, it.bot) }
+            val followingName =
+                session.snapshot.leaderboard
+                    .firstOrNull { it.id == session.followingID }
+                    ?.let { PilotIdentity.leaderboardLabel(it.name, it.bot) }
+                    ?: pilot?.let { PilotIdentity.leaderboardLabel(it.name, it.bot) }
             score.value(
-                if (following) followingName?.let { (if (pilot == null) "WAITING FOR " else "FOLLOWING ") + it } ?: "WAITING FOR TANKS"
-                else "score: ${if(preview) 0 else pilot?.score ?: 0}, rank: #${if(preview) 0 else pilot?.rank ?: 0}",
+                if (following)
+                    followingName?.let {
+                        (if (pilot == null) "WAITING FOR " else "FOLLOWING ") + it
+                    } ?: "WAITING FOR TANKS"
+                else
+                    "score: ${if(preview) 0 else pilot?.score ?: 0}, rank: #${if(preview) 0 else pilot?.rank ?: 0}",
             )
-            score.setTextColor(if (following) NativeStyle.soft else NativeStyle.paint(if (preview) session.colorIndex else pilot?.colorIndex ?: session.colorIndex))
+            score.setTextColor(
+                if (following) NativeStyle.soft
+                else
+                    NativeStyle.paint(
+                        if (preview) session.colorIndex
+                        else pilot?.colorIndex ?: session.colorIndex,
+                    ),
+            )
         } else {
             val teams = session.rules.teamMode == "teams"
             val entries = session.snapshot.leaderboard
-            val key = "$teams:" + entries.joinToString { "${it.id}:${it.team}:${it.colorIndex}:${it.score}" }
+            val key =
+                "$teams:" +
+                    entries.joinToString { "${it.id}:${it.team}:${it.colorIndex}:${it.score}" }
             if (key != scoreKey) {
                 scoreKey = key
                 score.setTextColor(NativeStyle.text)

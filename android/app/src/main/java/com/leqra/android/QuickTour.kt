@@ -35,41 +35,43 @@ internal class QuickTour(
     gamepadSupport: Boolean,
     playSound: (AudioCue) -> Unit,
 ) : Dialog(context) {
-    private val pages = listOf(
-        "Drive and aim" to
-            "Drag the left stick to drive. Touch near your tank to aim without moving.",
-        "Fire" to
-            "Hold the right Fire button to shoot a round.",
-        "Score a point" to
-            "Destroy the stationary tank to score a point.",
-    )
+    private val pages =
+        listOf(
+            "Drive and aim" to
+                "Drag the left stick to drive. Touch near your tank to aim without moving.",
+            "Fire" to "Hold the right Fire button to shoot a round.",
+            "Score a point" to "Destroy the stationary tank to score a point.",
+        )
     private var page = 0
     private var lastFrame: Long? = null
     private val practice = QuickTourPractice()
     private val gamepads = GamepadControls().apply { enabled = gamepadSupport }
     private var fireHeld = false
     private val audioEvents = AudioEventRouter()
-    private val arena = NativeArenaView(context).apply {
-        controlsLayout = false
-        keyboardInputEnabled = false
-        // Touching the practice arena should not ask the ScrollView to reveal a new focus.
-        // The dialog handles controller input without requiring the arena to own keyboard focus.
-        isFocusableInTouchMode = false
-        isFocusable = false
-        showTankLabels = false
-        submit(practice.advance(input, 0.0), practice.tankID, practice.maze)
-    }
+    private val arena =
+        NativeArenaView(context).apply {
+            controlsLayout = false
+            keyboardInputEnabled = false
+            // Touching the practice arena should not ask the ScrollView to reveal a new focus.
+            // The dialog handles controller input without requiring the arena to own keyboard
+            // focus.
+            isFocusableInTouchMode = false
+            isFocusable = false
+            showTankLabels = false
+            submit(practice.advance(input, 0.0), practice.tankID, practice.maze)
+        }
     private val lesson = column(context)
     private val instructions = column(context)
     private val arenaPanel = column(context)
-    private val score = label(context, "score: 0", 10f, NativeStyle.paint(0), mono = true).apply {
-        gravity = Gravity.CENTER
-        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-        minimumHeight = context.dp(39)
-        setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
-        setBackgroundColor(surface)
-        visibility = View.INVISIBLE
-    }
+    private val score =
+        label(context, "score: 0", 10f, NativeStyle.paint(0), mono = true).apply {
+            gravity = Gravity.CENTER
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            minimumHeight = context.dp(39)
+            setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
+            setBackgroundColor(surface)
+            visibility = View.INVISIBLE
+        }
 
     init {
         requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -77,23 +79,38 @@ internal class QuickTour(
 
         val panel = column(context, 22)
         val header = row(context)
-        header.weighted(label(context, "Quick tour", 23f, bold = true).apply {
-            if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
-        })
-        header.add(button(context, "×", { cancel() }, role = "text").apply {
-            textSize = 22f
-            contentDescription = "Close Quick tour"
-        }, width = 44, height = 44, gap = 0)
+        header.weighted(
+            label(context, "Quick tour", 23f, bold = true).apply {
+                if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+            },
+        )
+        header.add(
+            button(context, "×", { cancel() }, role = "text").apply {
+                textSize = 22f
+                contentDescription = "Close Quick tour"
+            },
+            width = 44,
+            height = 44,
+            gap = 0,
+        )
         panel.add(header, gap = 14)
 
         val briefing = FrameLayout(context)
         val briefings = pages.map { (heading, message) ->
             column(context).apply {
                 visibility = View.INVISIBLE
-                add(label(context, heading, 20f, bold = true).apply {
-                    if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
-                }, gap = 8)
-                add(label(context, message, 14f).apply { setLineSpacing(context.dp(4).toFloat(), 1f) }, gap = 0)
+                add(
+                    label(context, heading, 20f, bold = true).apply {
+                        if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+                    },
+                    gap = 8,
+                )
+                add(
+                    label(context, message, 14f).apply {
+                        setLineSpacing(context.dp(4).toFloat(), 1f)
+                    },
+                    gap = 0,
+                )
                 briefing.addView(this, FrameLayout.LayoutParams(-1, -2))
             }
         }
@@ -107,15 +124,19 @@ internal class QuickTour(
         arenaPanel.add(arena, height = 220, gap = 0)
         lesson.add(arenaPanel, gap = 0)
         val scroll = ScrollView(context).apply { addView(lesson) }
-        panel.addView(scroll, LinearLayout.LayoutParams(-1, -2, 1f).apply { bottomMargin = context.dp(18) })
+        panel.addView(
+            scroll,
+            LinearLayout.LayoutParams(-1, -2, 1f).apply { bottomMargin = context.dp(18) },
+        )
 
         val next = button(context, "NEXT", {}, role = "primary")
         panel.add(next, gap = 0)
-        fun canAdvance() = when (page) {
-            0 -> practice.moved
-            1 -> practice.fired
-            else -> practice.score > 0
-        }
+        fun canAdvance() =
+            when (page) {
+                0 -> practice.moved
+                1 -> practice.fired
+                else -> practice.score > 0
+            }
         fun updateNext() {
             val enabled = canAdvance()
             if (next.isEnabled == enabled) return
@@ -130,15 +151,20 @@ internal class QuickTour(
             lastFrame = time
             val now = time / 1e9
             val gamepad = gamepads.inputForSeat(0, primary = true, secondary = false)
-            val input = if (gamepad == null) arena.input else arena.input.copy().also {
-                gamepad.merge(it, steer = hypot(it.stickX, it.stickY) <= .1)
-            }
+            val input =
+                if (gamepad == null) arena.input
+                else
+                    arena.input.copy().also {
+                        gamepad.merge(it, steer = hypot(it.stickX, it.stickY) <= .1)
+                    }
             val state = practice.advance(input, elapsed, nowSeconds = now)
             arena.submit(state, practice.tankID, practice.maze)
-            audioEvents.consume(state, practice.tankID, infinity = false, online = false, now = now)
+            audioEvents
+                .consume(state, practice.tankID, infinity = false, online = false, now = now)
                 .forEach { playSound(it.cue) }
             val pilot = state.tanks.first()
-            arena.fireProgress = if (pilot.cooldownTotal > 0.0) 1.0 - pilot.cooldown / pilot.cooldownTotal else 1.0
+            arena.fireProgress =
+                if (pilot.cooldownTotal > 0.0) 1.0 - pilot.cooldown / pilot.cooldownTotal else 1.0
             if (shownScore != practice.score) {
                 shownScore = practice.score
                 score.text = "score: $shownScore"
@@ -148,7 +174,9 @@ internal class QuickTour(
         fun update() {
             // Invisible pages still measure at the current width, so the longest
             // briefing and the score row reserve their space on every lesson.
-            briefings.forEachIndexed { index, view -> view.visibility = if (page == index) View.VISIBLE else View.INVISIBLE }
+            briefings.forEachIndexed { index, view ->
+                view.visibility = if (page == index) View.VISIBLE else View.INVISIBLE
+            }
             progress.text = "${page + 1} / ${pages.size}"
             next.text = if (page == pages.lastIndex) "DONE" else "NEXT"
             gamepads.clear()
@@ -191,7 +219,8 @@ internal class QuickTour(
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!event.isGamepad() || event.keyCode !in GamepadInput.keys) return super.dispatchKeyEvent(event)
+        if (!event.isGamepad() || event.keyCode !in GamepadInput.keys)
+            return super.dispatchKeyEvent(event)
         gamepads.inputForDevice(event.deviceId, primary = true, secondary = false)?.let { input ->
             input.key(event.keyCode, event.action == KeyEvent.ACTION_DOWN, event.repeatCount > 0)
             captureFire()
@@ -222,7 +251,9 @@ internal class QuickTour(
     }
 
     private fun captureFire() {
-        val firing = arena.input.fire || gamepads.inputForSeat(0, primary = true, secondary = false)?.firing == true
+        val firing =
+            arena.input.fire ||
+                gamepads.inputForSeat(0, primary = true, secondary = false)?.firing == true
         if (fireHeld == firing) return
         fireHeld = firing
         practice.captureFire(fireHeld)
@@ -247,22 +278,29 @@ internal class QuickTour(
 
     private fun applyRefreshRate() {
         val shown = window ?: return
-        @Suppress("DEPRECATION")
-        val display = arena.display ?: shown.windowManager.defaultDisplay
+        @Suppress("DEPRECATION") val display = arena.display ?: shown.windowManager.defaultDisplay
         shown.applyArenaRefreshRate(arena, display, interactive = true, highRefresh = highRefresh)
     }
 
-    private fun dialogWidth() = minOf(context.resources.displayMetrics.widthPixels - context.dp(24), context.dp(650))
+    private fun dialogWidth() =
+        minOf(context.resources.displayMetrics.widthPixels - context.dp(24), context.dp(650))
 
     private fun layoutPractice() {
         val metrics = context.resources.displayMetrics
         val landscape = metrics.widthPixels > metrics.heightPixels
         lesson.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-        instructions.layoutParams = if (landscape) LinearLayout.LayoutParams(0, -2, 1f).apply {
-            marginEnd = context.dp(18)
-        } else LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = context.dp(12) }
-        arenaPanel.layoutParams = if (landscape) LinearLayout.LayoutParams(0, -2, 1.5f) else LinearLayout.LayoutParams(-1, -2)
-        val height = if (landscape) context.dp(174) else minOf(context.dp(228), dialogWidth() - context.dp(48))
+        instructions.layoutParams =
+            if (landscape)
+                LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    marginEnd = context.dp(18)
+                }
+            else LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = context.dp(12) }
+        arenaPanel.layoutParams =
+            if (landscape) LinearLayout.LayoutParams(0, -2, 1.5f)
+            else LinearLayout.LayoutParams(-1, -2)
+        val height =
+            if (landscape) context.dp(174)
+            else minOf(context.dp(228), dialogWidth() - context.dp(48))
         arena.layoutParams = LinearLayout.LayoutParams(-1, height)
     }
 }

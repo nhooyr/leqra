@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 import Security
 import leqraCore
 
@@ -54,14 +54,22 @@ protocol PublicInfinitySessionStoring: AnyObject {
 }
 
 extension PublicInfinitySessionStoring {
-    func hasStoredCredential(for server: URL, seat: Int) -> Bool { session(for: server, seat: seat) != nil || pendingKey(for: server, seat: seat) != nil }
+    func hasStoredCredential(for server: URL, seat: Int) -> Bool {
+        session(for: server, seat: seat) != nil || pendingKey(for: server, seat: seat) != nil
+    }
     func session(for server: URL) -> PublicInfinitySession? { session(for: server, seat: 0) }
     @discardableResult func remember(_ session: PublicInfinitySession) -> Bool { remember(session, seat: 0) }
     @discardableResult func activate(_ server: URL?) -> Bool { activate(server, local: false) }
-    @discardableResult func forget(_ server: URL, ifMatching key: String) -> Bool { forget(server, ifMatching: key, seat: 0) }
+    @discardableResult func forget(_ server: URL, ifMatching key: String) -> Bool {
+        forget(server, ifMatching: key, seat: 0)
+    }
     func pendingKey(for server: URL) -> PendingAccountKey? { pendingKey(for: server, seat: 0) }
-    @discardableResult func rememberPendingKey(_ pending: PendingAccountKey) -> Bool { rememberPendingKey(pending, seat: 0) }
-    @discardableResult func clearPendingKey(_ server: URL, ifMatching key: String) -> Bool { clearPendingKey(server, ifMatching: key, seat: 0) }
+    @discardableResult func rememberPendingKey(_ pending: PendingAccountKey) -> Bool {
+        rememberPendingKey(pending, seat: 0)
+    }
+    @discardableResult func clearPendingKey(_ server: URL, ifMatching key: String) -> Bool {
+        clearPendingKey(server, ifMatching: key, seat: 0)
+    }
 }
 
 /// Bearer credentials and saved callsign labels stay in device-only Keychain.
@@ -79,19 +87,31 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
         service = "com.leqra.ios.public-infinity" + (suffix.map { "." + ($0.isEmpty ? "test" : $0) } ?? "")
     }
 
-    static func applicationStore(arguments: [String] = ProcessInfo.processInfo.arguments) -> KeychainPublicInfinitySessions {
+    static func applicationStore(arguments: [String] = ProcessInfo.processInfo.arguments)
+        -> KeychainPublicInfinitySessions
+    {
         let index = arguments.firstIndex(of: "--public-session-test-namespace")
         let testNamespace = index.flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
-        let diagnostic = arguments.contains("--native-performance-probe") || arguments.contains("--native-render-probe") || arguments.contains("--probe-direct-aim")
-        let result = KeychainPublicInfinitySessions(namespace: testNamespace ?? (diagnostic ? "diagnostic" : nil))
+        let diagnostic =
+            arguments.contains("--native-performance-probe") || arguments.contains("--native-render-probe")
+            || arguments.contains("--probe-direct-aim")
+        let result = KeychainPublicInfinitySessions(
+            namespace: testNamespace ?? (diagnostic ? "diagnostic" : nil))
         if testNamespace != nil, arguments.contains("--reset-public-session-test-store") {
             result.delete(account: nil)
         }
         return result
     }
 
-    private struct ActiveIntent: Codable { let origin: String; let local: Bool }
-    private struct FreshCredential: Codable { let origin: String; let publicToken: String; let registrationPending: Bool }
+    private struct ActiveIntent: Codable {
+        let origin: String
+        let local: Bool
+    }
+    private struct FreshCredential: Codable {
+        let origin: String
+        let publicToken: String
+        let registrationPending: Bool
+    }
 
     private var activeIntent: ActiveIntent? {
         guard let data = read(account: "active-origin") else { return nil }
@@ -100,15 +120,18 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
     }
     var activeServer: URL? {
         guard let intent = activeIntent, let url = URL(string: intent.origin),
-              (try? PublicInfinitySession.normalizedOrigin(url)) == intent.origin else { return nil }
+            (try? PublicInfinitySession.normalizedOrigin(url)) == intent.origin
+        else { return nil }
         return url
     }
     var activeLocal: Bool { activeIntent?.local ?? false }
 
     func session(for server: URL, seat: Int) -> PublicInfinitySession? {
         guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
-              let data = read(account: account(for: origin, seat: seat)),
-              let result = try? JSONDecoder().decode(PublicInfinitySession.self, from: data), result.matches(server) else { return nil }
+            let data = read(account: account(for: origin, seat: seat)),
+            let result = try? JSONDecoder().decode(PublicInfinitySession.self, from: data),
+            result.matches(server)
+        else { return nil }
         return result
     }
 
@@ -123,8 +146,12 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
         guard write(data, account: account(for: session.origin, seat: seat)) else { return false }
         // Only the selected, durably saved credential makes its backup redundant.
         let backupAccount = "registrations-" + account(for: session.origin, seat: seat)
-        if let old = read(account: backupAccount), let backups = try? JSONDecoder().decode([PublicInfinitySession].self, from: old),
-           let updated = try? JSONEncoder().encode(backups.filter { $0 != session }) { _ = write(updated, account: backupAccount) }
+        if let old = read(account: backupAccount),
+            let backups = try? JSONDecoder().decode([PublicInfinitySession].self, from: old),
+            let updated = try? JSONEncoder().encode(backups.filter { $0 != session })
+        {
+            _ = write(updated, account: backupAccount)
+        }
         return true
     }
 
@@ -139,7 +166,9 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
             return delete(account: "active-origin")
         }
         guard let origin = try? PublicInfinitySession.normalizedOrigin(server) else { return false }
-        guard let data = try? JSONEncoder().encode(ActiveIntent(origin: origin, local: local)) else { return false }
+        guard let data = try? JSONEncoder().encode(ActiveIntent(origin: origin, local: local)) else {
+            return false
+        }
         return write(data, account: "active-origin")
     }
 
@@ -150,32 +179,40 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
 
     func pendingKey(for server: URL, seat: Int) -> PendingAccountKey? {
         guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
-              let data = read(account: "pending-" + account(for: origin, seat: seat)),
-              let pending = try? JSONDecoder().decode(PendingAccountKey.self, from: data),
-              pending.previous.matches(server), pending.replacement.matches(server) else { return nil }
+            let data = read(account: "pending-" + account(for: origin, seat: seat)),
+            let pending = try? JSONDecoder().decode(PendingAccountKey.self, from: data),
+            pending.previous.matches(server), pending.replacement.matches(server)
+        else { return nil }
         return pending
     }
 
     @discardableResult func rememberPendingKey(_ pending: PendingAccountKey, seat: Int) -> Bool {
         guard pending.previous.origin == pending.replacement.origin,
-              let data = try? JSONEncoder().encode(pending) else { return false }
+            let data = try? JSONEncoder().encode(pending)
+        else { return false }
         return write(data, account: "pending-" + account(for: pending.previous.origin, seat: seat))
     }
 
     @discardableResult func clearPendingKey(_ server: URL, ifMatching key: String, seat: Int) -> Bool {
-        guard let pending = pendingKey(for: server, seat: seat), pending.replacement.publicToken == key else { return true }
+        guard let pending = pendingKey(for: server, seat: seat), pending.replacement.publicToken == key else {
+            return true
+        }
         return delete(account: "pending-" + account(for: pending.replacement.origin, seat: seat))
     }
 
     func pendingCallsign(for server: URL, seat: Int) -> PendingCallsignAccount? {
         guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
-              let data = read(account: "callsign-switch-" + account(for: origin, seat: seat)),
-              let pending = try? JSONDecoder().decode(PendingCallsignAccount.self, from: data), pending.credential.matches(server) else { return nil }
+            let data = read(account: "callsign-switch-" + account(for: origin, seat: seat)),
+            let pending = try? JSONDecoder().decode(PendingCallsignAccount.self, from: data),
+            pending.credential.matches(server)
+        else { return nil }
         return pending
     }
 
     @discardableResult func savePendingCallsign(_ pending: PendingCallsignAccount, seat: Int) -> Bool {
-        guard let data = try? JSONEncoder().encode(pending), backup(pending.credential, seat: seat) else { return false }
+        guard let data = try? JSONEncoder().encode(pending), backup(pending.credential, seat: seat) else {
+            return false
+        }
         return write(data, account: "callsign-switch-" + account(for: pending.credential.origin, seat: seat))
     }
 
@@ -188,39 +225,57 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
         let server = credential.baseURL
         let history = savedCallsigns(for: server).filter { $0.credential != credential }
         guard let data = try? JSONEncoder().encode(history),
-              write(data, account: "callsigns-" + account(for: credential.origin, seat: 0)) else { return false }
+            write(data, account: "callsigns-" + account(for: credential.origin, seat: 0))
+        else { return false }
         for seat in 0...1 {
             if session(for: server, seat: seat) == credential,
-               !delete(account: account(for: credential.origin, seat: seat)) { return false }
-            if let pending = pendingKey(for: server, seat: seat), pending.previous == credential || pending.replacement == credential {
-                if pending.replacement != credential, !backup(pending.replacement, seat: seat) { return false }
-                guard delete(account: "pending-" + account(for: credential.origin, seat: seat)) else { return false }
+                !delete(account: account(for: credential.origin, seat: seat))
+            {
+                return false
+            }
+            if let pending = pendingKey(for: server, seat: seat),
+                pending.previous == credential || pending.replacement == credential
+            {
+                if pending.replacement != credential, !backup(pending.replacement, seat: seat) {
+                    return false
+                }
+                guard delete(account: "pending-" + account(for: credential.origin, seat: seat)) else {
+                    return false
+                }
             }
             if let pending = pendingCallsign(for: server, seat: seat) {
                 if pending.credential == credential {
                     guard clearPendingCallsign(for: server, seat: seat) else { return false }
                 } else if pending.previous == credential {
-                    guard savePendingCallsign(.init(name: pending.name, credential: pending.credential, previous: nil), seat: seat) else { return false }
+                    guard
+                        savePendingCallsign(
+                            .init(name: pending.name, credential: pending.credential, previous: nil),
+                            seat: seat)
+                    else { return false }
                 }
             }
             let backupKey = "registrations-" + account(for: credential.origin, seat: seat)
             let backups = registrationCandidates(for: server, seat: seat).filter { $0 != credential }
-            guard let backupData = try? JSONEncoder().encode(backups), write(backupData, account: backupKey) else { return false }
+            guard let backupData = try? JSONEncoder().encode(backups), write(backupData, account: backupKey)
+            else { return false }
         }
         return true
     }
 
     func savedCallsigns(for server: URL) -> [SavedCallsignAccount] {
         guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
-              let data = read(account: "callsigns-" + account(for: origin, seat: 0)),
-              let rows = try? JSONDecoder().decode([SavedCallsignAccount].self, from: data) else { return [] }
+            let data = read(account: "callsigns-" + account(for: origin, seat: 0)),
+            let rows = try? JSONDecoder().decode([SavedCallsignAccount].self, from: data)
+        else { return [] }
         return rows.filter { $0.credential.matches(server) }
     }
 
     @discardableResult func saveCallsign(_ name: String, credential: PublicInfinitySession) -> Bool {
         var rows = savedCallsigns(for: credential.baseURL)
         if rows.contains(where: { $0.name == name && $0.credential == credential }) { return true }
-        rows.removeAll { CallsignPolicy.canonical($0.name) == CallsignPolicy.canonical(name) || $0.credential == credential }
+        rows.removeAll {
+            CallsignPolicy.canonical($0.name) == CallsignPolicy.canonical(name) || $0.credential == credential
+        }
         rows.append(SavedCallsignAccount(name: name, credential: credential))
         guard let data = try? JSONEncoder().encode(rows) else { return false }
         return write(data, account: "callsigns-" + account(for: credential.origin, seat: 0))
@@ -230,7 +285,9 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
         let key = "registrations-" + account(for: credential.origin, seat: seat)
         var rows: [PublicInfinitySession] = []
         if let data = read(account: key) {
-            guard let saved = try? JSONDecoder().decode([PublicInfinitySession].self, from: data) else { return false }
+            guard let saved = try? JSONDecoder().decode([PublicInfinitySession].self, from: data) else {
+                return false
+            }
             rows = saved
         }
         if !rows.contains(credential) { rows.append(credential) }
@@ -243,26 +300,35 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
         var backups: [PublicInfinitySession] = []
         if let data = read(account: backupAccount) {
             guard let saved = try? JSONDecoder().decode([PublicInfinitySession].self, from: data),
-                  saved.allSatisfy({ $0.matches(session.baseURL) }) else { return false }
+                saved.allSatisfy({ $0.matches(session.baseURL) })
+            else { return false }
             backups = saved
         }
         if !backups.contains(session) { backups.append(session) }
-        guard let backup = try? JSONEncoder().encode(backups), write(backup, account: backupAccount) else { return false }
-        guard let data = try? JSONEncoder().encode(FreshCredential(origin: session.origin, publicToken: session.publicToken, registrationPending: true)) else { return false }
+        guard let backup = try? JSONEncoder().encode(backups), write(backup, account: backupAccount) else {
+            return false
+        }
+        guard
+            let data = try? JSONEncoder().encode(
+                FreshCredential(
+                    origin: session.origin, publicToken: session.publicToken, registrationPending: true))
+        else { return false }
         return write(data, account: account(for: session.origin, seat: seat))
     }
 
     func registrationCandidates(for server: URL, seat: Int) -> [PublicInfinitySession] {
         guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
-              let data = read(account: "registrations-" + account(for: origin, seat: seat)),
-              let saved = try? JSONDecoder().decode([PublicInfinitySession].self, from: data) else { return [] }
+            let data = read(account: "registrations-" + account(for: origin, seat: seat)),
+            let saved = try? JSONDecoder().decode([PublicInfinitySession].self, from: data)
+        else { return [] }
         return saved.filter { $0.matches(server) }
     }
 
     func registrationPending(for server: URL, seat: Int) -> Bool {
         guard let origin = try? PublicInfinitySession.normalizedOrigin(server),
-              let data = read(account: account(for: origin, seat: seat)),
-              let value = try? JSONDecoder().decode(FreshCredential.self, from: data) else { return false }
+            let data = read(account: account(for: origin, seat: seat)),
+            let value = try? JSONDecoder().decode(FreshCredential.self, from: data)
+        else { return false }
         return value.registrationPending
     }
 
@@ -281,12 +347,15 @@ final class KeychainPublicInfinitySessions: PublicInfinitySessionStoring {
     }
 
     private func account(for origin: String, seat: Int) -> String {
-        (seat == 1 ? "local-identity-" : "identity-") + SHA256.hash(data: Data(origin.utf8)).map { String(format: "%02x", $0) }.joined()
+        (seat == 1 ? "local-identity-" : "identity-")
+            + SHA256.hash(data: Data(origin.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     private func query(account: String?) -> [String: Any] {
-        var result: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service, kSecAttrSynchronizable as String: false]
+        var result: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service, kSecAttrSynchronizable as String: false,
+        ]
         result[kSecAttrAccount as String] = account
         return result
     }

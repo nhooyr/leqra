@@ -1,0 +1,13 @@
+{
+  "name": "leqra",
+  "private": true,
+  "scripts": {
+    "fmt": "./ci/fmt.sh",
+    "lint": "./ci/lint.sh",
+    "test": "node --test src/tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "acorn": "8.19.0",
+    "prettier": "3.10.1"
+  }
+}

@@ -30,7 +30,11 @@ class QuickTourPracticeTest {
         assertTrue(initial.world!!.walls.isNotEmpty())
         assertTrue(pilot.name.isEmpty())
 
-        val aimed = practice.advance(GameInput(stickY = 1.0, aimOnly = true, snapAim = true, fire = true), 1.0 / 60)
+        val aimed =
+            practice.advance(
+                GameInput(stickY = 1.0, aimOnly = true, snapAim = true, fire = true),
+                1.0 / 60,
+            )
         assertEquals(pilot.x, aimed.tanks.single().x, 0.0)
         assertEquals(pilot.y, aimed.tanks.single().y, 0.0)
         assertTrue(aimed.tanks.single().angle > 1.0)
@@ -52,13 +56,21 @@ class QuickTourPracticeTest {
         val fired = practice.advance(GameInput(), 1.0 / 60)
         assertEquals(practice.tankID, fired.bullets.single().owner)
         assertTrue(practice.fired)
-        val shot = audio.consume(fired, practice.tankID, infinity = false, online = false, now = 1.0 / 60)
+        val shot =
+            audio.consume(fired, practice.tankID, infinity = false, online = false, now = 1.0 / 60)
         assertTrue(shot.any { it.cue == AudioCue.REGULAR })
 
         var ricochet = false
         for (tick in 2..61) {
             val state = practice.advance(GameInput(), 1.0 / 60)
-            val cues = audio.consume(state, practice.tankID, infinity = false, online = false, now = tick / 60.0)
+            val cues =
+                audio.consume(
+                    state,
+                    practice.tankID,
+                    infinity = false,
+                    online = false,
+                    now = tick / 60.0,
+                )
             if (cues.any { it.cue == AudioCue.RICOCHET }) ricochet = true
         }
         assertTrue("A wall contact produces the ordinary ricochet cue", ricochet)
@@ -83,7 +95,13 @@ class QuickTourPracticeTest {
             assertEquals(target.y, idle.y, 0.0)
             assertEquals(1, idle.hp)
         }
-        val aim = GameInput(stickX = target.x - pilot.x, stickY = target.y - pilot.y, aimOnly = true, snapAim = true)
+        val aim =
+            GameInput(
+                stickX = target.x - pilot.x,
+                stickY = target.y - pilot.y,
+                aimOnly = true,
+                snapAim = true,
+            )
         practice.advance(aim, step)
         assertEquals(0, practice.score)
         val firing = practice.advance(aim.copy(fire = true), step)

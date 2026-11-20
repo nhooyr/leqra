@@ -52,12 +52,14 @@ var appShellFiles = [...]string{
 	"pwa.js", "manifest.webmanifest", "sw.js",
 }
 
-var shellVersionMarkers = map[string]string{
-	"game.js": "const GAME_VERSION='" + version + "';",
-	"pwa.js":  "const VERSION = 'v" + version + "';",
-	"sw.js":   "const VERSION = 'v" + version + "';",
+var shellVersionMarkers = map[string]*regexp.Regexp{
+	"game.js": regexp.MustCompile(`\bconst\s+GAME_VERSION\s*=\s*["']` + regexp.QuoteMeta(version) + `["']`),
+	"pwa.js":  regexp.MustCompile(`\bconst\s+VERSION\s*=\s*["']v` + regexp.QuoteMeta(version) + `["']`),
+	"sw.js":   regexp.MustCompile(`\bconst\s+VERSION\s*=\s*["']v` + regexp.QuoteMeta(version) + `["']`),
 }
 
+var shellVersionMeta = regexp.MustCompile(`<meta\s+name="leqra-version"\s+content="v` + regexp.QuoteMeta(version) + `"\s*/?>`)
+var shellProtocolMarker = regexp.MustCompile(fmt.Sprintf(`\bconst\s+GAME_PROTOCOL\s*=\s*%d\b`, protocolVersion))
 var shellAssetReference = regexp.MustCompile(`[[:space:]](?:src|href)="(assets/[^"]+)"`)
 var workerURL = regexp.MustCompile(`^/assets/v[0-9]+\.[0-9]+\.[0-9]+/sw\.js$`)
 
@@ -99,7 +101,7 @@ func checkAppAssets(web fs.FS) error {
 	if err != nil {
 		return fmt.Errorf("required app shell: %w", err)
 	}
-	if !bytes.Contains(shell, []byte(`<meta name="leqra-version" content="v`+version+`">`)) {
+	if !shellVersionMeta.Match(shell) {
 		return fmt.Errorf("%s must declare leqra version v%s", index, version)
 	}
 	linked := make(map[string]bool)
@@ -120,10 +122,10 @@ func checkAppAssets(web fs.FS) error {
 		if len(bytes.TrimSpace(data)) == 0 {
 			return fmt.Errorf("required app asset %s is empty", path)
 		}
-		if marker := shellVersionMarkers[name]; marker != "" && !bytes.Contains(data, []byte(marker)) {
+		if marker := shellVersionMarkers[name]; marker != nil && !marker.Match(data) {
 			return fmt.Errorf("required app asset %s does not use leqra version v%s", path, version)
 		}
-		if name == "game.js" && !bytes.Contains(data, []byte(fmt.Sprintf("const GAME_PROTOCOL=%d;", protocolVersion))) {
+		if name == "game.js" && !shellProtocolMarker.Match(data) {
 			return fmt.Errorf("required app asset %s does not use leqra protocol %d", path, protocolVersion)
 		}
 		if name == "manifest.webmanifest" {

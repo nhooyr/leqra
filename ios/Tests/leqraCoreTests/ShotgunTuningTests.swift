@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import leqraCore
 
 final class ShotgunTuningTests: XCTestCase {
@@ -6,7 +7,9 @@ final class ShotgunTuningTests: XCTestCase {
         let world = finite ? ArenaWorld(width: 1000, height: 1000) : nil
         let arena = PracticeArena(seed: 42, name: "RELOAD", colorIndex: 0, botCount: 0, world: world)
         arena.snapshot.tanks = [ArenaTank(id: 1, x: 42, y: 42, powerTime: 15, power: "scatter", charges: 5)]
-        if boosted { PracticeArena.applyPower(tank: &arena.snapshot.tanks[0], kind: "starman", starDuration: 8) }
+        if boosted {
+            PracticeArena.applyPower(tank: &arena.snapshot.tanks[0], kind: "starman", starDuration: 8)
+        }
         return arena
     }
 
@@ -23,7 +26,9 @@ final class ShotgunTuningTests: XCTestCase {
                 XCTAssertEqual(pellet.life, 3.9 - 1 / 60, accuracy: 1e-8)
             }
             for _ in 0..<16 { arena.step(input: GameInput(fire: true), dt: 1 / 60) }
-            XCTAssertEqual(arena.snapshot.tanks[0].charges, 4, "The next volley cannot fire before the new reload expires")
+            XCTAssertEqual(
+                arena.snapshot.tanks[0].charges, 4,
+                "The next volley cannot fire before the new reload expires")
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
             XCTAssertEqual(arena.snapshot.tanks[0].charges, 3)
             XCTAssertTrue(arena.snapshot.effects.contains { $0.kind == "shot:scatter" })

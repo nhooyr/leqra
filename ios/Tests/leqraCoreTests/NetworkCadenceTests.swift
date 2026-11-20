@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import leqraCore
 
 final class NetworkCadenceTests: XCTestCase {

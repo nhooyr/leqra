@@ -11,11 +11,17 @@ public final class InfiniteMaze {
     private final class WallQuery {
         var first, last: Int
         var indices: [Int] = []
-        init(first: Int, last: Int) { self.first = first; self.last = last }
+        init(first: Int, last: Int) {
+            self.first = first
+            self.last = last
+        }
     }
     private var fixedMask: [UInt64] = []
     private var fixedQueries = [WallQuery?](repeating: nil, count: 64)
-    private struct Coordinate: Hashable { var x: Int; var y: Int }
+    private struct Coordinate: Hashable {
+        var x: Int
+        var y: Int
+    }
     private var chunks: [Coordinate: [UInt8]] = [:]
     private var order: [Coordinate] = []
     private var nextEviction = 0
@@ -24,27 +30,38 @@ public final class InfiniteMaze {
     private var nextHot = 0
     var cachedChunkCount: Int { chunks.count }
 
-    public init(seed: UInt32) { self.seed = seed; world = nil; fixedBins = [] }
+    public init(seed: UInt32) {
+        self.seed = seed
+        world = nil
+        fixedBins = []
+    }
     public init(world: ArenaWorld) {
-        seed = 0; self.world = world
-        guard world.cols > 0, world.rows > 0 else { fixedBins = []; return }
+        seed = 0
+        self.world = world
+        guard world.cols > 0, world.rows > 0 else {
+            fixedBins = []
+            return
+        }
         var bins = [[Int]](repeating: [], count: world.cols * world.rows)
         for (index, wall) in world.walls.enumerated() {
             let x0 = min(max(Int(floor(wall.x / 84)), 0), world.cols - 1)
             let x1 = min(max(Int(floor((wall.x + wall.w) / 84)), 0), world.cols - 1)
             let y0 = min(max(Int(floor(wall.y / 84)), 0), world.rows - 1)
             let y1 = min(max(Int(floor((wall.y + wall.h) / 84)), 0), world.rows - 1)
-            for row in y0...max(y0, y1) { for col in x0...max(x0, x1) { bins[row * world.cols + col].append(index) } }
+            for row in y0...max(y0, y1) {
+                for col in x0...max(x0, x1) { bins[row * world.cols + col].append(index) }
+            }
         }
         fixedBins = bins
         fixedMask = [UInt64](repeating: 0, count: (world.walls.count + 63) / 64)
     }
 
     private func hash(_ coord: Coordinate, _ salt: UInt32) -> UInt32 {
-        var n = seed ^ (UInt32(truncatingIfNeeded: coord.x) &* 0x9e3779b1)
-            ^ (UInt32(truncatingIfNeeded: coord.y) &* 0x85ebca77) ^ salt
-        n = (n ^ (n >> 16)) &* 0x7feb352d
-        n = (n ^ (n >> 15)) &* 0x846ca68b
+        var n =
+            seed ^ (UInt32(truncatingIfNeeded: coord.x) &* 0x9e37_79b1)
+            ^ (UInt32(truncatingIfNeeded: coord.y) &* 0x85eb_ca77) ^ salt
+        n = (n ^ (n >> 16)) &* 0x7feb_352d
+        n = (n ^ (n >> 15)) &* 0x846c_a68b
         return n ^ (n >> 16)
     }
 
@@ -54,27 +71,46 @@ public final class InfiniteMaze {
         }
         if let cached = chunks[coord] { return rememberChunk(cached, at: coord) }
         var cells = [UInt8](repeating: 3, count: 64)
-        var state = hash(coord, 0x243f6a88)
+        var state = hash(coord, 0x243f_6a88)
         if state == 0 { state = 1 }
         func random() -> UInt32 {
-            state ^= state << 13; state ^= state >> 17; state ^= state << 5
+            state ^= state << 13
+            state ^= state >> 17
+            state ^= state << 5
             return state
         }
         let start = Int(random() % 64)
         var visited = [Bool](repeating: false, count: 64)
         visited[start] = true
-        var stack = [Int](repeating: 0, count: 64), neighbors = [Int](repeating: 0, count: 4)
+        var stack = [Int](repeating: 0, count: 64)
+        var neighbors = [Int](repeating: 0, count: 4)
         var depth = 1
         stack[0] = start
         while depth > 0 {
             let cell = stack[depth - 1]
-            let x = cell % 8, y = cell / 8
+            let x = cell % 8
+            let y = cell / 8
             var count = 0
-            if y > 0 && !visited[cell - 8] { neighbors[count] = cell - 8; count += 1 }
-            if x < 7 && !visited[cell + 1] { neighbors[count] = cell + 1; count += 1 }
-            if y < 7 && !visited[cell + 8] { neighbors[count] = cell + 8; count += 1 }
-            if x > 0 && !visited[cell - 1] { neighbors[count] = cell - 1; count += 1 }
-            if count == 0 { depth -= 1; continue }
+            if y > 0 && !visited[cell - 8] {
+                neighbors[count] = cell - 8
+                count += 1
+            }
+            if x < 7 && !visited[cell + 1] {
+                neighbors[count] = cell + 1
+                count += 1
+            }
+            if y < 7 && !visited[cell + 8] {
+                neighbors[count] = cell + 8
+                count += 1
+            }
+            if x > 0 && !visited[cell - 1] {
+                neighbors[count] = cell - 1
+                count += 1
+            }
+            if count == 0 {
+                depth -= 1
+                continue
+            }
             let neighbor = neighbors[Int(random() % UInt32(count))]
             switch neighbor - cell {
             case -8: cells[cell] &= ~1
@@ -83,23 +119,29 @@ public final class InfiniteMaze {
             default: cells[cell] &= ~2
             }
             visited[neighbor] = true
-            stack[depth] = neighbor; depth += 1
+            stack[depth] = neighbor
+            depth += 1
         }
         for i in cells.indices {
             if i >= 8 && cells[i] & 1 != 0 && random() % 5 == 0 { cells[i] &= ~1 }
             if i % 8 != 0 && cells[i] & 2 != 0 && random() % 5 == 0 { cells[i] &= ~2 }
         }
-        let north = hash(coord, 0xb7e15162), west = hash(coord, 0x8aed2a6b)
+        let north = hash(coord, 0xb7e1_5162)
+        let west = hash(coord, 0x8aed_2a6b)
         cells[1 + Int(north % 3)] &= ~1
         cells[4 + Int((north >> 16) % 3)] &= ~1
         cells[(1 + Int(west % 3)) * 8] &= ~2
         cells[(4 + Int((west >> 16) % 3)) * 8] &= ~2
         if order.count == 128 {
-            for index in hotChunks.indices where hotCoordinates[index] == order[nextEviction] { hotChunks[index] = nil }
+            for index in hotChunks.indices where hotCoordinates[index] == order[nextEviction] {
+                hotChunks[index] = nil
+            }
             chunks.removeValue(forKey: order[nextEviction])
             order[nextEviction] = coord
             nextEviction = (nextEviction + 1) % 128
-        } else { order.append(coord) }
+        } else {
+            order.append(coord)
+        }
         chunks[coord] = cells
         return rememberChunk(cells, at: coord)
     }
@@ -113,43 +155,61 @@ public final class InfiniteMaze {
 
     public func walls(x0: Double, y0: Double, x1: Double, y1: Double) -> [MazeWall] {
         var result: [MazeWall] = []
-        visitWalls(x0: x0, y0: y0, x1: x1, y1: y1) { result.append($0); return false }
+        visitWalls(x0: x0, y0: y0, x1: x1, y1: y1) {
+            result.append($0)
+            return false
+        }
         return result
     }
 
     @discardableResult
-    private func visitWalls(x0: Double, y0: Double, x1: Double, y1: Double,
-                            visit: (MazeWall) -> Bool) -> Bool {
+    private func visitWalls(
+        x0: Double, y0: Double, x1: Double, y1: Double,
+        visit: (MazeWall) -> Bool
+    ) -> Bool {
         // Bound malformed snapshots and prevent overflowing Int conversion.
         guard [x0, y0, x1, y1].allSatisfy({ $0.isFinite && abs($0) < 1e14 }),
-              x0 <= x1, y0 <= y1, x1 - x0 < 84 * 256, y1 - y0 < 84 * 256 else { return false }
+            x0 <= x1, y0 <= y1, x1 - x0 < 84 * 256, y1 - y0 < 84 * 256
+        else { return false }
         if let world {
             let firstX = min(max(Int(floor(x0 / 84)), 0), world.cols - 1)
             let lastX = min(max(Int(floor(x1 / 84)), 0), world.cols - 1)
             let firstY = min(max(Int(floor(y0 / 84)), 0), world.rows - 1)
             let lastY = min(max(Int(floor(y1 / 84)), 0), world.rows - 1)
-            if fixedBins.isEmpty || (lastX - firstX + 1) * (lastY - firstY + 1) > world.cols * world.rows / 3 {
+            if fixedBins.isEmpty || (lastX - firstX + 1) * (lastY - firstY + 1) > world.cols * world.rows / 3
+            {
                 for wall in world.walls {
-                    guard wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0 else { continue }
+                    guard wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0
+                    else { continue }
                     if visit(wall) { return true }
                 }
                 return false
             }
             let candidates: [Int]
-            if firstX == lastX && firstY == lastY { candidates = fixedBins[firstY * world.cols + firstX] }
-            else {
-                let first = firstY * world.cols + firstX, last = lastY * world.cols + lastX
-                let hash = (UInt32(truncatingIfNeeded: first) &* 0x9e3779b1) ^ (UInt32(truncatingIfNeeded: last) &* 0x85ebca77)
+            if firstX == lastX && firstY == lastY {
+                candidates = fixedBins[firstY * world.cols + firstX]
+            } else {
+                let first = firstY * world.cols + firstX
+                let last = lastY * world.cols + lastX
+                let hash =
+                    (UInt32(truncatingIfNeeded: first) &* 0x9e37_79b1)
+                    ^ (UInt32(truncatingIfNeeded: last) &* 0x85eb_ca77)
                 let slot = Int((hash >> 16) & 63)
-                if let query = fixedQueries[slot], query.first == first, query.last == last { candidates = query.indices }
-                else {
+                if let query = fixedQueries[slot], query.first == first, query.last == last {
+                    candidates = query.indices
+                } else {
                     let query = fixedQueries[slot] ?? WallQuery(first: first, last: last)
-                    query.first = first; query.last = last
+                    query.first = first
+                    query.last = last
                     query.indices.removeAll(keepingCapacity: true)
                     for index in fixedMask.indices { fixedMask[index] = 0 }
-                    for row in firstY...lastY { for col in firstX...lastX {
-                        for index in fixedBins[row * world.cols + col] { fixedMask[index >> 6] |= UInt64(1) << (index & 63) }
-                    } }
+                    for row in firstY...lastY {
+                        for col in firstX...lastX {
+                            for index in fixedBins[row * world.cols + col] {
+                                fixedMask[index >> 6] |= UInt64(1) << (index & 63)
+                            }
+                        }
+                    }
                     for (word, mask) in fixedMask.enumerated() {
                         var bits = mask
                         while bits != 0 {
@@ -163,29 +223,46 @@ public final class InfiniteMaze {
             }
             for index in candidates {
                 let wall = world.walls[index]
-                guard wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0 else { continue }
+                guard wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0 else {
+                    continue
+                }
                 if visit(wall) { return true }
             }
             return false
         }
-        let firstX = Int(ceil((x0 - 4) / 84)) - 1, firstY = Int(ceil((y0 - 4) / 84)) - 1
-        let lastX = Int(floor((x1 + 4) / 84)), lastY = Int(floor((y1 + 4) / 84))
-        let chunkX0 = Int(floor(Double(firstX) / 8)), chunkX1 = Int(floor(Double(lastX) / 8))
-        let chunkY0 = Int(floor(Double(firstY) / 8)), chunkY1 = Int(floor(Double(lastY) / 8))
+        let firstX = Int(ceil((x0 - 4) / 84)) - 1
+        let firstY = Int(ceil((y0 - 4) / 84)) - 1
+        let lastX = Int(floor((x1 + 4) / 84))
+        let lastY = Int(floor((y1 + 4) / 84))
+        let chunkX0 = Int(floor(Double(firstX) / 8))
+        let chunkX1 = Int(floor(Double(lastX) / 8))
+        let chunkY0 = Int(floor(Double(firstY) / 8))
+        let chunkY1 = Int(floor(Double(lastY) / 8))
         for cy in chunkY0...chunkY1 {
             for cx in chunkX0...chunkX1 {
-                let cells = chunk(Coordinate(x: cx, y: cy)), baseX = cx * 8, baseY = cy * 8
+                let cells = chunk(Coordinate(x: cx, y: cy))
+                let baseX = cx * 8
+                let baseY = cy * 8
                 for y in max(firstY, baseY)...min(lastY, baseY + 7) {
                     for x in max(firstX, baseX)...min(lastX, baseX + 7) {
                         let bits = cells[(y - baseY) * 8 + x - baseX]
-                        let wx = Double(x) * 84, wy = Double(y) * 84
+                        let wx = Double(x) * 84
+                        let wy = Double(y) * 84
                         if bits & 1 != 0 {
                             let wall = MazeWall(x: wx - 4, y: wy - 4, w: 92, h: 8, axis: "h", line: wy)
-                            if wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0 && visit(wall) { return true }
+                            if wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0
+                                && visit(wall)
+                            {
+                                return true
+                            }
                         }
                         if bits & 2 != 0 {
                             let wall = MazeWall(x: wx - 4, y: wy - 4, w: 8, h: 92, axis: "v", line: wx)
-                            if wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0 && visit(wall) { return true }
+                            if wall.x <= x1 && wall.x + wall.w >= x0 && wall.y <= y1 && wall.y + wall.h >= y0
+                                && visit(wall)
+                            {
+                                return true
+                            }
                         }
                     }
                 }
@@ -196,7 +273,11 @@ public final class InfiniteMaze {
 
     public func blocked(x: Double, y: Double, radius: Double) -> Bool {
         guard x.isFinite, y.isFinite, radius.isFinite, radius >= 0 else { return true }
-        if let world, x < 4 + radius || x > world.width - 4 - radius || y < 4 + radius || y > world.height - 4 - radius { return true }
+        if let world,
+            x < 4 + radius || x > world.width - 4 - radius || y < 4 + radius || y > world.height - 4 - radius
+        {
+            return true
+        }
         return visitWalls(x0: x - radius, y0: y - radius, x1: x + radius, y1: y + radius) { wall in
             let dx = x - min(max(x, wall.x), wall.x + wall.w)
             let dy = y - min(max(y, wall.y), wall.y + wall.h)
@@ -206,32 +287,51 @@ public final class InfiniteMaze {
 
     public func phaseExit(x: Double, y: Double, radius: Double = 17) -> (x: Double, y: Double) {
         guard blocked(x: x, y: y, radius: radius) else { return (x, y) }
-        let cx = Int(floor(x / 84)), cy = Int(floor(y / 84)), margin = 4 + radius + 0.01
-        var best = Double.infinity, result = (x: x, y: y)
+        let cx = Int(floor(x / 84))
+        let cy = Int(floor(y / 84))
+        let margin = 4 + radius + 0.01
+        var best = Double.infinity
+        var result = (x: x, y: y)
         for row in (cy - 1)...(cy + 1) {
             for col in (cx - 1)...(cx + 1) {
                 let xx = min(max(x, Double(col) * 84 + margin), Double(col + 1) * 84 - margin)
                 let yy = min(max(y, Double(row) * 84 + margin), Double(row + 1) * 84 - margin)
                 let distance = hypot(xx - x, yy - y)
-                if distance < best - 1e-8 { best = distance; result = (xx, yy) }
+                if distance < best - 1e-8 {
+                    best = distance
+                    result = (xx, yy)
+                }
             }
         }
         return result
     }
 
-    struct RayHit { var fraction: Double; var nx: Double; var ny: Double }
+    struct RayHit {
+        var fraction: Double
+        var nx: Double
+        var ny: Double
+    }
 
-    public func laserGuide(x: Double, y: Double, angle: Double, range: Double = 36 * 84,
-                           radius: Double = 3, maxSegments: Int = 256) -> [BeamPoint] {
-        projectileGuide(x: x, y: y, angle: angle, kind: "laser", range: range, radius: radius, maxSegments: maxSegments)
+    public func laserGuide(
+        x: Double, y: Double, angle: Double, range: Double = 36 * 84,
+        radius: Double = 3, maxSegments: Int = 256
+    ) -> [BeamPoint] {
+        projectileGuide(
+            x: x, y: y, angle: angle, kind: "laser", range: range, radius: radius, maxSegments: maxSegments)
     }
 
     /// Pure geometry for native aim guides; never chooses a target or awards a hit.
-    public func projectileGuide(x: Double, y: Double, angle: Double, kind: String,
-                                range: Double, radius: Double, maxSegments: Int = 128) -> [BeamPoint] {
+    public func projectileGuide(
+        x: Double, y: Double, angle: Double, kind: String,
+        range: Double, radius: Double, maxSegments: Int = 128
+    ) -> [BeamPoint] {
         guard [x, y, angle, range, radius].allSatisfy(\.isFinite), range > 0, radius >= 0,
-              let launch = launchRay(x: x, y: y, angle: angle, kind: kind, radius: radius) else { return [] }
-        var x = launch.x, y = launch.y, ux = launch.ux, uy = launch.uy
+            let launch = launchRay(x: x, y: y, angle: angle, kind: kind, radius: radius)
+        else { return [] }
+        var x = launch.x
+        var y = launch.y
+        var ux = launch.ux
+        var uy = launch.uy
         var remaining = max(0, min(range, 20000) - launch.distance)
         var points: [BeamPoint] = []
         for index in 0..<max(0, min(maxSegments, kind == "laser" ? 256 : 128)) {
@@ -239,31 +339,41 @@ public final class InfiniteMaze {
             if kind == "laser", world == nil {
                 // Search nearby spans first: most ricochets meet a wall within
                 // a cell, so scanning the whole remaining beam wastes work.
-                var searched = 0.0, nearest: RayHit?
+                var searched = 0.0
+                var nearest: RayHit?
                 while searched < remaining {
                     let span = min(2 * Self.cellSize, remaining - searched)
-                    if let hit = rayHit(x: x + ux * searched, y: y + uy * searched,
-                                        dx: ux * span, dy: uy * span, radius: radius) {
-                        nearest = RayHit(fraction: (searched + span * hit.fraction) / remaining, nx: hit.nx, ny: hit.ny)
+                    if let hit = rayHit(
+                        x: x + ux * searched, y: y + uy * searched,
+                        dx: ux * span, dy: uy * span, radius: radius)
+                    {
+                        nearest = RayHit(
+                            fraction: (searched + span * hit.fraction) / remaining, nx: hit.nx, ny: hit.ny)
                         break
                     }
                     searched += span
                 }
                 wall = nearest
             } else {
-                wall = projectileHit(kind: kind, x: x, y: y, dx: ux * remaining, dy: uy * remaining, radius: radius)
+                wall = projectileHit(
+                    kind: kind, x: x, y: y, dx: ux * remaining, dy: uy * remaining, radius: radius)
             }
             let length = remaining * (wall?.fraction ?? 1)
             if index == 0 {
                 let crop = launch.bounced ? 0 : 28.0
                 points.append(BeamPoint(x: x + ux * min(crop, length), y: y + uy * min(crop, length)))
             }
-            x += ux * length; y += uy * length; remaining -= length
+            x += ux * length
+            y += uy * length
+            remaining -= length
             points.append(BeamPoint(x: x, y: y))
             guard let wall, remaining > 1e-7 else { break }
-            if wall.nx != 0 { ux = -ux }; if wall.ny != 0 { uy = -uy }
+            if wall.nx != 0 { ux = -ux }
+            if wall.ny != 0 { uy = -uy }
             let nudge = min(0.001, remaining)
-            x += ux * nudge; y += uy * nudge; remaining -= nudge
+            x += ux * nudge
+            y += uy * nudge
+            remaining -= nudge
         }
         return points
     }
@@ -282,65 +392,92 @@ public final class InfiniteMaze {
     /// the projectile reflects there instead of tunneling through the wall.
     public func launchRay(x: Double, y: Double, angle: Double, kind: String, radius: Double) -> LaunchRay? {
         guard [x, y, angle, radius].allSatisfy(\.isFinite), radius >= 0 else { return nil }
-        let ux = cos(angle), uy = sin(angle)
+        let ux = cos(angle)
+        let uy = sin(angle)
         let original = LaunchRay(x: x, y: y, ux: ux, uy: uy, distance: 0, bounced: false)
         guard kind != "cannon" else { return original }
         let overlapping = walls(x0: x - radius, y0: y - radius, x1: x + radius, y1: y + radius).filter {
             x >= $0.x - radius && x <= $0.x + $0.w + radius && y >= $0.y - radius && y <= $0.y + $0.h + radius
         }
-        guard !overlapping.isEmpty || isMuzzleBlocked(x: x, y: y, kind: kind, radius: radius) else { return original }
-        var xs = [x], ys = [y]
+        guard !overlapping.isEmpty || isMuzzleBlocked(x: x, y: y, kind: kind, radius: radius) else {
+            return original
+        }
+        var xs = [x]
+        var ys = [y]
         for wall in overlapping {
             xs.append(contentsOf: [wall.x - radius - 0.12, wall.x + wall.w + radius + 0.12])
             ys.append(contentsOf: [wall.y - radius - 0.12, wall.y + wall.h + radius + 0.12])
         }
-        xs.sort(); ys.sort()
+        xs.sort()
+        ys.sort()
         var best: (x: Double, y: Double, squared: Double)?
-        for ax in xs { for ay in ys {
-            let dx = ax - x, dy = ay - y, squared = dx * dx + dy * dy
-            guard squared <= 32 * 32 + 1e-7, dx * ux + dy * uy <= 1e-7,
-                  !isMuzzleBlocked(x: ax, y: ay, kind: kind, radius: radius) else { continue }
-            if let old = best {
-                if squared > old.squared + 1e-7 { continue }
-                if abs(squared - old.squared) <= 1e-7 && (ax > old.x || ax == old.x && ay >= old.y) { continue }
+        for ax in xs {
+            for ay in ys {
+                let dx = ax - x
+                let dy = ay - y
+                let squared = dx * dx + dy * dy
+                guard squared <= 32 * 32 + 1e-7, dx * ux + dy * uy <= 1e-7,
+                    !isMuzzleBlocked(x: ax, y: ay, kind: kind, radius: radius)
+                else { continue }
+                if let old = best {
+                    if squared > old.squared + 1e-7 { continue }
+                    if abs(squared - old.squared) <= 1e-7 && (ax > old.x || ax == old.x && ay >= old.y) {
+                        continue
+                    }
+                }
+                best = (ax, ay, squared)
             }
-            best = (ax, ay, squared)
-        } }
+        }
         guard let best else { return nil }
         let nx = best.x == x ? 0.0 : best.x > x ? 1.0 : -1.0
         let ny = best.y == y ? 0.0 : best.y > y ? 1.0 : -1.0
-        return LaunchRay(x: best.x, y: best.y,
-                         ux: ux * nx < -1e-9 ? -ux : ux,
-                         uy: uy * ny < -1e-9 ? -uy : uy,
-                         distance: sqrt(best.squared), bounced: true)
+        return LaunchRay(
+            x: best.x, y: best.y,
+            ux: ux * nx < -1e-9 ? -ux : ux,
+            uy: uy * ny < -1e-9 ? -uy : uy,
+            distance: sqrt(best.squared), bounced: true)
     }
 
     public func isMuzzleBlocked(x: Double, y: Double, kind: String, radius: Double) -> Bool {
         guard kind != "cannon" else { return false }
         guard [x, y, radius].allSatisfy(\.isFinite), radius >= 0 else { return true }
-        if let world, x < 4 + radius || x > world.width - 4 - radius || y < 4 + radius || y > world.height - 4 - radius { return true }
+        if let world,
+            x < 4 + radius || x > world.width - 4 - radius || y < 4 + radius || y > world.height - 4 - radius
+        {
+            return true
+        }
         return visitWalls(x0: x - radius, y0: y - radius, x1: x + radius, y1: y + radius) { wall in
-            x >= wall.x - radius && x <= wall.x + wall.w + radius && y >= wall.y - radius && y <= wall.y + wall.h + radius
+            x >= wall.x - radius && x <= wall.x + wall.w + radius && y >= wall.y - radius
+                && y <= wall.y + wall.h + radius
         }
     }
 
-    func projectileHit(kind: String, x: Double, y: Double, dx: Double, dy: Double, radius: Double) -> RayHit? {
+    func projectileHit(kind: String, x: Double, y: Double, dx: Double, dy: Double, radius: Double) -> RayHit?
+    {
         guard kind == "cannon" else { return rayHit(x: x, y: y, dx: dx, dy: dy, radius: radius) }
         guard let world else { return nil }
         var best: RayHit?
         func consider(_ at: Double, _ nx: Double, _ ny: Double) {
             guard at >= -1e-7, at <= 1 + 1e-7 else { return }
             let at = min(max(at, 0), 1)
-            if best == nil || at < best!.fraction - 1e-7 { best = RayHit(fraction: at, nx: nx, ny: ny) }
-            else if abs(at - best!.fraction) < 1e-7 {
-                if nx != 0 { best!.nx = nx }; if ny != 0 { best!.ny = ny }
+            if best == nil || at < best!.fraction - 1e-7 {
+                best = RayHit(fraction: at, nx: nx, ny: ny)
+            } else if abs(at - best!.fraction) < 1e-7 {
+                if nx != 0 { best!.nx = nx }
+                if ny != 0 { best!.ny = ny }
             }
         }
         let margin = 4 + radius
-        if dx > 1e-9 { consider((world.width - margin - x) / dx, -1, 0) }
-        else if dx < -1e-9 { consider((margin - x) / dx, 1, 0) }
-        if dy > 1e-9 { consider((world.height - margin - y) / dy, 0, -1) }
-        else if dy < -1e-9 { consider((margin - y) / dy, 0, 1) }
+        if dx > 1e-9 {
+            consider((world.width - margin - x) / dx, -1, 0)
+        } else if dx < -1e-9 {
+            consider((margin - x) / dx, 1, 0)
+        }
+        if dy > 1e-9 {
+            consider((world.height - margin - y) / dy, 0, -1)
+        } else if dy < -1e-9 {
+            consider((margin - y) / dy, 0, 1)
+        }
         return best
     }
 
@@ -348,16 +485,23 @@ public final class InfiniteMaze {
     /// inside it. Projectile sweeps intentionally ignore that initial overlap.
     func segmentBlocked(x: Double, y: Double, dx: Double, dy: Double) -> Bool {
         visitWalls(x0: min(x, x + dx), y0: min(y, y + dy), x1: max(x, x + dx), y1: max(y, y + dy)) { wall in
-            var enter = -Double.infinity, exit = Double.infinity
-            if abs(dx) < 1e-9 { if x < wall.x || x > wall.x + wall.w { return false } }
-            else {
-                let a = (wall.x - x) / dx, b = (wall.x + wall.w - x) / dx
-                enter = max(enter, min(a, b)); exit = min(exit, max(a, b))
+            var enter = -Double.infinity
+            var exit = Double.infinity
+            if abs(dx) < 1e-9 {
+                if x < wall.x || x > wall.x + wall.w { return false }
+            } else {
+                let a = (wall.x - x) / dx
+                let b = (wall.x + wall.w - x) / dx
+                enter = max(enter, min(a, b))
+                exit = min(exit, max(a, b))
             }
-            if abs(dy) < 1e-9 { if y < wall.y || y > wall.y + wall.h { return false } }
-            else {
-                let a = (wall.y - y) / dy, b = (wall.y + wall.h - y) / dy
-                enter = max(enter, min(a, b)); exit = min(exit, max(a, b))
+            if abs(dy) < 1e-9 {
+                if y < wall.y || y > wall.y + wall.h { return false }
+            } else {
+                let a = (wall.y - y) / dy
+                let b = (wall.y + wall.h - y) / dy
+                enter = max(enter, min(a, b))
+                exit = min(exit, max(a, b))
             }
             return enter <= exit && exit >= 0 && enter <= 1
         }
@@ -365,22 +509,42 @@ public final class InfiniteMaze {
 
     func rayHit(x: Double, y: Double, dx: Double, dy: Double, radius: Double) -> RayHit? {
         var nearest: RayHit?
-        visitWalls(x0: min(x, x + dx) - radius, y0: min(y, y + dy) - radius,
-                   x1: max(x, x + dx) + radius, y1: max(y, y + dy) + radius) { wall in
-            let minX = wall.x - radius, maxX = wall.x + wall.w + radius
-            let minY = wall.y - radius, maxY = wall.y + wall.h + radius
-            var tx1 = -Double.infinity, tx2 = Double.infinity, ty1 = -Double.infinity, ty2 = Double.infinity
-            if abs(dx) < 1e-9 { if x < minX || x > maxX { return false } }
-            else { tx1 = (minX - x) / dx; tx2 = (maxX - x) / dx; if tx1 > tx2 { swap(&tx1, &tx2) } }
-            if abs(dy) < 1e-9 { if y < minY || y > maxY { return false } }
-            else { ty1 = (minY - y) / dy; ty2 = (maxY - y) / dy; if ty1 > ty2 { swap(&ty1, &ty2) } }
-            let enter = max(tx1, ty1), exit = min(tx2, ty2)
+        visitWalls(
+            x0: min(x, x + dx) - radius, y0: min(y, y + dy) - radius,
+            x1: max(x, x + dx) + radius, y1: max(y, y + dy) + radius
+        ) { wall in
+            let minX = wall.x - radius
+            let maxX = wall.x + wall.w + radius
+            let minY = wall.y - radius
+            let maxY = wall.y + wall.h + radius
+            var tx1 = -Double.infinity
+            var tx2 = Double.infinity
+            var ty1 = -Double.infinity
+            var ty2 = Double.infinity
+            if abs(dx) < 1e-9 {
+                if x < minX || x > maxX { return false }
+            } else {
+                tx1 = (minX - x) / dx
+                tx2 = (maxX - x) / dx
+                if tx1 > tx2 { swap(&tx1, &tx2) }
+            }
+            if abs(dy) < 1e-9 {
+                if y < minY || y > maxY { return false }
+            } else {
+                ty1 = (minY - y) / dy
+                ty2 = (maxY - y) / dy
+                if ty1 > ty2 { swap(&ty1, &ty2) }
+            }
+            let enter = max(tx1, ty1)
+            let exit = min(tx2, ty2)
             guard enter <= exit, exit >= 0, enter <= 1, enter >= -0.0001 else { return false }
             let nx = abs(tx1 - ty1) < 1e-7 || tx1 > ty1 ? (dx > 0 ? -1.0 : 1.0) : 0
             let ny = abs(tx1 - ty1) < 1e-7 || ty1 > tx1 ? (dy > 0 ? -1.0 : 1.0) : 0
-            if nearest == nil || enter < nearest!.fraction - 1e-7 { nearest = RayHit(fraction: max(0, enter), nx: nx, ny: ny) }
-            else if abs(enter - nearest!.fraction) < 1e-7 {
-                if nx != 0 { nearest!.nx = nx }; if ny != 0 { nearest!.ny = ny }
+            if nearest == nil || enter < nearest!.fraction - 1e-7 {
+                nearest = RayHit(fraction: max(0, enter), nx: nx, ny: ny)
+            } else if abs(enter - nearest!.fraction) < 1e-7 {
+                if nx != 0 { nearest!.nx = nx }
+                if ny != 0 { nearest!.ny = ny }
             }
             return false
         }

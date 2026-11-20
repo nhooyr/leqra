@@ -13,7 +13,7 @@ def check(ok,text):
  assert ok,text
  checks.append(text);print('PASS',text,flush=True)
 html=re.sub(r'<link[^>]*>|<script src="theme.js"></script>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
-js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location,window.__history);'+js[i+4:]
 def load(b,w=1365,h=950,live=False,name='TEST',invite='',stored=None):
  mobile=w<760 or h<620;c=b.new_context(viewport={'width':w,'height':h},has_touch=mobile,is_mobile=mobile,device_scale_factor=2 if mobile else 1)
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)

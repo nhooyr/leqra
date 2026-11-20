@@ -1,10 +1,14 @@
 import XCTest
+
 @testable import leqraCore
 
 final class AudioSynthesisTests: XCTestCase {
     func testDryFireIsTheSameSoftCachedTriangleClickNearAndFar() {
-        let expected = AudioRecipe(tones: [AudioTone(frequency: 240, endFrequency: 100,
-            duration: 0.045, gain: 0.016, waveform: .triangle)])
+        let expected = AudioRecipe(tones: [
+            AudioTone(
+                frequency: 240, endFrequency: 100,
+                duration: 0.045, gain: 0.016, waveform: .triangle)
+        ])
         XCTAssertEqual(AudioSynthesis.recipe(.dryFire), expected)
         XCTAssertEqual(AudioSynthesis.recipe(.dryFire, local: false), expected)
         XCTAssertTrue(AudioCue.allCases.contains(.dryFire))
@@ -19,17 +23,23 @@ final class AudioSynthesisTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
         let index = try String(contentsOf: root.appendingPathComponent("src/web/index.html"))
-        let versionPattern = try NSRegularExpression(pattern: "<meta name=\"leqra-version\" content=\"([^\"]+)\">")
-        let versionMatch = try XCTUnwrap(versionPattern.firstMatch(in: index, range: NSRange(index.startIndex..., in: index)))
+        let versionPattern = try NSRegularExpression(
+            pattern: #"<meta\s+name="leqra-version"\s+content="([^"]+)"\s*/?>"#)
+        let versionMatch = try XCTUnwrap(
+            versionPattern.firstMatch(in: index, range: NSRange(index.startIndex..., in: index)))
         let version = String(index[try XCTUnwrap(Range(versionMatch.range(at: 1), in: index))])
         let source = try String(contentsOf: root.appendingPathComponent("src/web/assets/\(version)/game.js"))
-        let expression = try NSRegularExpression(pattern: "(regular|rapid|scatter|laser|homing|grenade|cannon):(\\[\\[[^\\n]*?\\]\\])")
+        let expression = try NSRegularExpression(
+            pattern: #"(regular|rapid|scatter|laser|homing|grenade|cannon):\s*(\[(?:\s*\[[^\]]*\],?)+\s*\])"#)
         let matches = expression.matches(in: source, range: NSRange(source.startIndex..., in: source))
         XCTAssertEqual(matches.count, 7)
         for match in matches {
             let name = String(source[Range(match.range(at: 1), in: source)!])
-            var json = String(source[Range(match.range(at: 2), in: source)!]).replacingOccurrences(of: "'", with: "\"")
-            json = json.replacingOccurrences(of: "(?<=[,\\[])\\.(\\d+)", with: "0.$1", options: .regularExpression)
+            var json = String(source[Range(match.range(at: 2), in: source)!]).replacingOccurrences(
+                of: "'", with: "\"")
+            json = json.replacingOccurrences(
+                of: "(?<=[,\\[])\\.(\\d+)", with: "0.$1", options: .regularExpression)
+            json = json.replacingOccurrences(of: #",\s*(?=\])"#, with: "", options: .regularExpression)
             let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[Any]])
             let cue = try XCTUnwrap(AudioCue(rawValue: name))
             for local in [true, false] {
@@ -67,7 +77,9 @@ final class AudioSynthesisTests: XCTestCase {
         XCTAssertEqual(AudioSynthesis.frequency(tone, at: 0.25), 200, accuracy: 1e-10)
         let delta = 0.000001
         for (time, pitch) in [(0.05, 800 / sqrt(2)), (0.15, 200 * sqrt(2)), (0.205, 200)] {
-            let measured = (AudioSynthesis.phase(tone, at: time + delta) - AudioSynthesis.phase(tone, at: time - delta)) / (4 * .pi * delta)
+            let measured =
+                (AudioSynthesis.phase(tone, at: time + delta) - AudioSynthesis.phase(tone, at: time - delta))
+                / (4 * .pi * delta)
             XCTAssertEqual(measured, pitch, accuracy: 1e-6)
         }
     }
@@ -95,21 +107,27 @@ final class AudioSynthesisTests: XCTestCase {
         XCTAssertEqual(local.count, remote.count)
         var maximumError = 0.0
         for (index, pair) in zip(local, remote).enumerated() {
-            let time = Double(index) / 44_100, envelope = AudioSynthesis.envelope(nearTone, at: time)
+            let time = Double(index) / 44_100
+            let envelope = AudioSynthesis.envelope(nearTone, at: time)
             // Both voices decay to the same absolute .0001 gain. Their gain
             // ratio therefore converges to one during the release.
-            let expected = envelope > 0 ? Double(pair.0) * AudioSynthesis.envelope(farTone, at: time) / envelope : 0
+            let expected =
+                envelope > 0 ? Double(pair.0) * AudioSynthesis.envelope(farTone, at: time) / envelope : 0
             maximumError = max(maximumError, abs(Double(pair.1) - expected))
         }
         XCTAssertLessThan(maximumError, 1e-8)
     }
 
     func testExplosionUsesFilteredDecayingNoiseAndSeparateBassLayers() throws {
-        let death = AudioSynthesis.recipe(.explosion), grenade = AudioSynthesis.recipe(.grenadeExplosion)
-        let deathNoise = try XCTUnwrap(death.noise), grenadeNoise = try XCTUnwrap(grenade.noise)
-        XCTAssertEqual(deathNoise.cutoff, 320); XCTAssertEqual(grenadeNoise.cutoff, 750)
+        let death = AudioSynthesis.recipe(.explosion)
+        let grenade = AudioSynthesis.recipe(.grenadeExplosion)
+        let deathNoise = try XCTUnwrap(death.noise)
+        let grenadeNoise = try XCTUnwrap(grenade.noise)
+        XCTAssertEqual(deathNoise.cutoff, 320)
+        XCTAssertEqual(grenadeNoise.cutoff, 750)
         XCTAssertEqual(deathNoise.resonanceDB, 0.5)
-        XCTAssertEqual(deathNoise.gain, 0.10); XCTAssertEqual(grenadeNoise.gain, 0.12)
+        XCTAssertEqual(deathNoise.gain, 0.10)
+        XCTAssertEqual(grenadeNoise.gain, 0.12)
         XCTAssertEqual(death.tones.map(\.frequency), [90])
         XCTAssertEqual(grenade.tones.map(\.frequency), [160, 360])
         XCTAssertEqual(grenade.tones.map(\.delay), [0, 0.02])
@@ -152,7 +170,7 @@ final class AudioSynthesisTests: XCTestCase {
             (.laser, 0.002774291993038309, 0.026573486626148224),
             (.pickup, 0.0021029309166631753, 0.012912243604660034),
             (.explosion, 0.007940465198757839, 0.05132853239774704),
-            (.grenadeExplosion, 0.010716303496570814, 0.06949907541275024)
+            (.grenadeExplosion, 0.010716303496570814, 0.06949907541275024),
         ]
         for (cue, rms, peak) in references {
             let pcm = AudioSynthesis.samples(for: cue, sampleRate: 48_000)
@@ -167,10 +185,12 @@ final class AudioSynthesisTests: XCTestCase {
         // xorshift0x51e9a7c3 noise texture and browser's two decay envelopes.
         let noise = try XCTUnwrap(AudioSynthesis.recipe(.explosion).noise)
         let pcm = AudioSynthesis.samples(for: AudioRecipe(noise: noise), sampleRate: 48_000)
-        for (index, reference) in [(1, 1.18927189874e-7), (64, -0.000294787227176),
-                                    (960, -0.00562115199864), (1000, -0.0088546378538),
-                                    (4096, 0.00888813566417), (8192, 0.00225069350563),
-                                    (12000, 0.000367495318642), (14399, -1.88370363752e-9)] {
+        for (index, reference) in [
+            (1, 1.18927189874e-7), (64, -0.000294787227176),
+            (960, -0.00562115199864), (1000, -0.0088546378538),
+            (4096, 0.00888813566417), (8192, 0.00225069350563),
+            (12000, 0.000367495318642), (14399, -1.88370363752e-9),
+        ] {
             XCTAssertEqual(Double(pcm[index]), reference, accuracy: 2e-9)
         }
     }

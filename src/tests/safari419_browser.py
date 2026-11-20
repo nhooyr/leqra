@@ -15,7 +15,7 @@ assets = asset_directory(web)
 parser=argparse.ArgumentParser(); parser.add_argument('--output',default=str(root/'tests/results/v4.19-safari')); args=parser.parse_args()
 out=Path(args.output); out.mkdir(parents=True,exist_ok=True)
 html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
-js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location,window.__history);'+js[i+4:]
 checks=[];errors=[]
 def check(ok,label):
     assert ok,label;checks.append(label);print('PASS',label,flush=True)

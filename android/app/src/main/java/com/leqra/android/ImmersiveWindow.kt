@@ -27,10 +27,14 @@ internal fun Window.setImmersiveSystemBars(enabled: Boolean) {
             } else show(bars)
         }
     } else {
-        val layout = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        val hidden = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        val layout =
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        val hidden =
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         decor.systemUiVisibility = layout or (if (enabled) hidden else 0)
     }
 }
@@ -42,7 +46,8 @@ internal data class ImmersiveInsets(
     val bottom: Int,
     val keyboard: Int = 0,
 ) {
-    val contentBottom: Int get() = (bottom - keyboard).coerceAtLeast(0)
+    val contentBottom: Int
+        get() = (bottom - keyboard).coerceAtLeast(0)
 }
 
 @Suppress("DEPRECATION")
@@ -53,9 +58,12 @@ internal fun WindowInsets.immersiveInsets(): ImmersiveInsets {
         val keyboard = getInsets(WindowInsets.Type.ime()).bottom
         return ImmersiveInsets(safe.left, safe.top, safe.right, bottom, keyboard)
     }
-    val cutout = if (Build.VERSION.SDK_INT >= 28) {
-        displayCutout?.let { Rect(it.safeInsetLeft, it.safeInsetTop, it.safeInsetRight, it.safeInsetBottom) }
-    } else null
+    val cutout =
+        if (Build.VERSION.SDK_INT >= 28) {
+            displayCutout?.let {
+                Rect(it.safeInsetLeft, it.safeInsetTop, it.safeInsetRight, it.safeInsetBottom)
+            }
+        } else null
     val gestures = if (Build.VERSION.SDK_INT >= 29) systemGestureInsets.bottom else 0
     // Legacy decor handles keyboard resize. Reserve only a system bar's height here.
     return ImmersiveInsets(

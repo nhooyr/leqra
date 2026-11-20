@@ -12,7 +12,7 @@ def check(ok,s):
  assert ok,s
  checks.append(s);print('PASS',s,flush=True)
 html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
-js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[i+5:]
+js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})()');js=js[:i]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[i+4:]
 def load(c):
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''()=>{const store=d=>({getItem:k=>Object.hasOwn(d,k)?d[k]:null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]});Object.defineProperty(window,'localStorage',{value:store({'leqra.muted':'1'})});Object.defineProperty(window,'sessionStorage',{value:store({})});}''')

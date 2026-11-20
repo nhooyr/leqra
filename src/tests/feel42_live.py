@@ -13,7 +13,7 @@ def check(ok,label):
  assert ok,label
  checks.append(label);print('PASS',label,flush=True)
 html=re.sub(r'<link[^>]*>|<script src="theme.js"></script>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
-js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location,window.__history);'+js[i+4:]
 source=(r/'tests/network_smoothing.py').read_text();wrapper=re.search(r'wrapper=r"""(.*?)"""',source,re.S).group(1)
 wrapper=wrapper.replace('base:60,jitter:[0,45,8,27,65,2,30,12]','base:90,jitter:[0,25,8,40,3,12]')
 def load(b,name,w=1365,h=950,invite=''):

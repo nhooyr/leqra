@@ -15,8 +15,11 @@ final class GameAudio {
             renderState.setVolume(volume)
             if volume <= 0 {
                 let ongoing = requestedActive
-                pause(fadeLoop: false); requestedActive = ongoing
-            } else if requestedActive && enabled { resume() }
+                pause(fadeLoop: false)
+                requestedActive = ongoing
+            } else if requestedActive && enabled {
+                resume()
+            }
         }
     }
 
@@ -48,13 +51,15 @@ final class GameAudio {
     private var configurationObserver: NSObjectProtocol?
     private let pickupHaptic = UIImpactFeedbackGenerator(style: .light)
     private let hitHaptic = UIImpactFeedbackGenerator(style: .medium)
-    private nonisolated static let sessionQueue = DispatchQueue(label: "com.leqra.audio-session", qos: .userInitiated)
+    private nonisolated static let sessionQueue = DispatchQueue(
+        label: "com.leqra.audio-session", qos: .userInitiated)
 
     init() {
         for cue in AudioCue.allCases {
             let local = AudioSynthesis.samples(for: cue, sampleRate: Self.sampleRate)
             buffers[BufferKey(cue: cue, local: true)] = local
-            buffers[BufferKey(cue: cue, local: false)] = AudioSynthesis.recipe(cue) == AudioSynthesis.recipe(cue, local: false)
+            buffers[BufferKey(cue: cue, local: false)] =
+                AudioSynthesis.recipe(cue) == AudioSynthesis.recipe(cue, local: false)
                 ? local : AudioSynthesis.samples(for: cue, local: false, sampleRate: Self.sampleRate)
         }
         sessionLifecycle = AudioSessionLifecycle(
@@ -66,8 +71,10 @@ final class GameAudio {
             ready: { [weak self] in try self?.startPlayback() },
             failed: { [weak self] in
                 guard let self else { return }
-                self.active = false; self.activationPending = false
-                self.previewActive = false; self.pendingPreview = nil
+                self.active = false
+                self.activationPending = false
+                self.previewActive = false
+                self.pendingPreview = nil
                 self.clearPlayback()
             })
         interruptionObserver = NotificationCenter.default.addObserver(
@@ -80,21 +87,27 @@ final class GameAudio {
                 if rawType == AVAudioSession.InterruptionType.began.rawValue {
                     self.interrupted = true
                     self.sessionLifecycle?.invalidateActivation()
-                    self.previewTask?.cancel(); self.previewTask = nil
-                    self.shutdownTask?.cancel(); self.shutdownTask = nil
-                    self.previewActive = false; self.pendingPreview = nil
+                    self.previewTask?.cancel()
+                    self.previewTask = nil
+                    self.shutdownTask?.cancel()
+                    self.shutdownTask = nil
+                    self.previewActive = false
+                    self.pendingPreview = nil
                     self.activationPending = false
                     self.clearPlayback()
-                    self.router.reset(); self.generation = nil
+                    self.router.reset()
+                    self.generation = nil
                     self.engine?.pause()
                     self.active = false
                     self.deactivateSession()
                 } else {
                     self.interrupted = false
-                    let shouldResume = AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+                    let shouldResume = AVAudioSession.InterruptionOptions(rawValue: options).contains(
+                        .shouldResume)
                     if !shouldResume { self.requestedActive = false }
                     if self.requestedActive, shouldResume,
-                          UIApplication.shared.applicationState == .active {
+                        UIApplication.shared.applicationState == .active
+                    {
                         self.resume()
                     }
                 }
@@ -130,10 +143,14 @@ final class GameAudio {
             Task { @MainActor [weak self] in
                 guard let self, self.engine?.isRunning != true else { return }
                 self.clearPlayback()
-                self.router.reset(); self.generation = nil; self.active = false
+                self.router.reset()
+                self.generation = nil
+                self.active = false
                 self.activationPending = false
                 self.sessionLifecycle?.invalidateActivation()
-                if self.wantsPlayback && UIApplication.shared.applicationState == .active { self.activatePlayback() }
+                if self.wantsPlayback && UIApplication.shared.applicationState == .active {
+                    self.activatePlayback()
+                }
             }
         }
         return engine
@@ -152,7 +169,8 @@ final class GameAudio {
     func resume() {
         guard enabled else { return }
         requestedActive = true
-        shutdownTask?.cancel(); shutdownTask = nil
+        shutdownTask?.cancel()
+        shutdownTask = nil
         activatePlayback()
     }
 
@@ -168,29 +186,42 @@ final class GameAudio {
 
     private func startPlayback() throws {
         activationPending = false
-        guard wantsPlayback else { deactivateSession(); return }
+        guard wantsPlayback else {
+            deactivateSession()
+            return
+        }
         do {
             let engine = playbackEngine()
             renderState.setVolume(volume, immediate: true)
-            if !engine.isRunning { engine.prepare(); try engine.start() }
+            if !engine.isRunning {
+                engine.prepare()
+                try engine.start()
+            }
             active = true
             playPendingPreview()
         } catch {
             active = false
             engine?.pause()
-            throw error // The lifecycle releases the route; a match continues silently.
+            throw error  // The lifecycle releases the route; a match continues silently.
         }
     }
 
     func pause(fadeLoop: Bool = true) {
-        previewTask?.cancel(); previewTask = nil
-        shutdownTask?.cancel(); shutdownTask = nil
-        requestedActive = false; active = false
-        activationPending = false; previewActive = false; pendingPreview = nil
+        previewTask?.cancel()
+        previewTask = nil
+        shutdownTask?.cancel()
+        shutdownTask = nil
+        requestedActive = false
+        active = false
+        activationPending = false
+        previewActive = false
+        pendingPreview = nil
         starmanRequested = false
-        router.reset(); generation = nil
+        router.reset()
+        generation = nil
         if fadeLoop, engine?.isRunning == true, UIApplication.shared.applicationState == .active,
-           renderState.fadeLoopAndClearEffects() {
+            renderState.fadeLoopAndClearEffects()
+        {
             // Include one I/O block for mailbox delivery, then let the 12ms
             // envelope and shared 6ms look-ahead drain. One cancelable task
             // covers pause/menu/connection transitions.
@@ -199,11 +230,15 @@ final class GameAudio {
             shutdownTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(drain * 1_000_000_000))
                 guard !Task.isCancelled, let self, !self.requestedActive else { return }
-                self.clearPlayback(); self.engine?.pause(); self.deactivateSession()
+                self.clearPlayback()
+                self.engine?.pause()
+                self.deactivateSession()
                 self.shutdownTask = nil
             }
         } else {
-            clearPlayback(); engine?.pause(); deactivateSession()
+            clearPlayback()
+            engine?.pause()
+            deactivateSession()
         }
     }
 
@@ -214,8 +249,10 @@ final class GameAudio {
     private static func sessionWork(_ operation: @escaping @Sendable () throws -> Void) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             sessionQueue.async {
-                do { try operation(); continuation.resume() }
-                catch { continuation.resume(throwing: error) }
+                do {
+                    try operation()
+                    continuation.resume()
+                } catch { continuation.resume(throwing: error) }
             }
         }
     }
@@ -245,11 +282,15 @@ final class GameAudio {
     func reset() {
         pause()
         router.reset()
-        generation = nil; previousHP = nil; lastHaptic = 0
+        generation = nil
+        previousHP = nil
+        lastHaptic = 0
     }
 
-    func consume(snapshot: ArenaSnapshot, localID: Int, infinity: Bool, online: Bool,
-                 secondaryLocalID: Int? = nil, gameplayActive: Bool = true) {
+    func consume(
+        snapshot: ArenaSnapshot, localID: Int, infinity: Bool, online: Bool,
+        secondaryLocalID: Int? = nil, gameplayActive: Bool = true
+    ) {
         let local = snapshot.tanks.first { $0.id == localID }
         if generation != snapshot.generation {
             generation = snapshot.generation
@@ -259,8 +300,11 @@ final class GameAudio {
         let justDied = (previousHP ?? 0) > 0 && local?.hp == 0
         previousHP = local?.hp
         let now = ProcessInfo.processInfo.systemUptime
-        let requests = router.consume(snapshot: snapshot, localID: localID, infinity: infinity, online: online, now: now)
-        updateStarman(snapshot: snapshot, localID: localID, secondaryLocalID: secondaryLocalID, gameplayActive: gameplayActive)
+        let requests = router.consume(
+            snapshot: snapshot, localID: localID, infinity: infinity, online: online, now: now)
+        updateStarman(
+            snapshot: snapshot, localID: localID, secondaryLocalID: secondaryLocalID,
+            gameplayActive: gameplayActive)
         guard enabled, volume > 0, active, engine?.isRunning == true else { return }
         if justDied, now - lastHaptic >= 0.1 {
             hitHaptic.impactOccurred(intensity: 0.55)
@@ -275,9 +319,14 @@ final class GameAudio {
         }
     }
 
-    func updateStarman(snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int? = nil, gameplayActive: Bool) {
-        let wanted = enabled && volume > 0 && active && engine?.isRunning == true && generation == snapshot.generation
-            && StarmanAudio.isActive(snapshot: snapshot, primaryID: localID, secondaryID: secondaryLocalID, gameplayActive: gameplayActive)
+    func updateStarman(
+        snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int? = nil, gameplayActive: Bool
+    ) {
+        let wanted =
+            enabled && volume > 0 && active && engine?.isRunning == true && generation == snapshot.generation
+            && StarmanAudio.isActive(
+                snapshot: snapshot, primaryID: localID, secondaryID: secondaryLocalID,
+                gameplayActive: gameplayActive)
         guard starmanRequested != wanted else { return }
         starmanRequested = wanted
         renderState.setStarman(wanted)
@@ -296,8 +345,10 @@ final class GameAudio {
     func preview(_ cue: AudioCue) {
         guard enabled, volume > 0, !interrupted else { return }
         previewTask?.cancel()
-        shutdownTask?.cancel(); shutdownTask = nil
-        pendingPreview = cue; previewActive = true
+        shutdownTask?.cancel()
+        shutdownTask = nil
+        pendingPreview = cue
+        previewActive = true
         activatePlayback()
         if active { playPendingPreview() }
     }
@@ -306,7 +357,10 @@ final class GameAudio {
         guard active, let cue = pendingPreview else { return }
         pendingPreview = nil
         play(cue)
-        guard !requestedActive else { previewActive = false; return }
+        guard !requestedActive else {
+            previewActive = false
+            return
+        }
         previewTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self, !self.requestedActive else { return }

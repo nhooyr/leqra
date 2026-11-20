@@ -8,7 +8,12 @@ class OnlinePresentationTest {
     @Test
     fun rejectedPacketsCannotRestartTheAcceptedEquipmentAgingClock() {
         val timeline = OnlinePresentation()
-        fun state(tick: Long, generation: Int = 7) = ArenaSnapshot(tick = tick, generation = generation, tanks = listOf(ArenaTank(id = 1, cooldown = .2)))
+        fun state(tick: Long, generation: Int = 7) =
+            ArenaSnapshot(
+                tick = tick,
+                generation = generation,
+                tanks = listOf(ArenaTank(id = 1, cooldown = .2)),
+            )
         timeline.accept(state(100), 1.0)
         assertEquals(1.0, timeline.authoritativeArrivalTime, 0.0)
         for (old in listOf(state(99), state(100), state(200, generation = 6))) {
@@ -23,30 +28,77 @@ class OnlinePresentationTest {
         timeline.accept(state(101), 1.3)
         assertEquals(1.3, timeline.authoritativeArrivalTime, 0.0)
     }
+
     private val tick = 1.0 / 60
 
-    @Test fun pausingRejoiningAndChangingSpectatorViewConsumePendingCombatHistory() {
+    @Test
+    fun pausingRejoiningAndChangingSpectatorViewConsumePendingCombatHistory() {
         for (boundary in listOf("pause", "follow", "role", "generation", "rejoin")) {
             val timeline = timeline()
             val victim = ArenaTank(id = 8, x = 140.0, y = 210.0, spawnSerial = 2)
-            val base = state().copy(tanks = state().tanks + victim, spectating = boundary == "follow", following = 8)
+            val base =
+                state()
+                    .copy(
+                        tanks = state().tanks + victim,
+                        spectating = boundary == "follow",
+                        following = 8,
+                    )
             timeline.accept(base, 0.0)
             render(timeline)
-            val effects = listOf(
-                ArenaEffect(id = 1, kind = "impact", tick = 2, flight = ProjectileFlight(7, 1, 0, 0.0, 2.0, listOf(ProjectileFlightPoint(100.0,210.0,0.0), ProjectileFlightPoint(109.0,210.0,2.0)))),
-                ArenaEffect(id = 2, kind = "hit", tick = 2, contact = CombatContact(7,"cannon",2.0,8,2,ContactTankState(140.0,210.0,0.0))))
-            val dead = base.copy(tick = 2, tanks = base.tanks.map { if(it.id == 8) it.copy(hp=0) else it }, effects = effects)
+            val effects =
+                listOf(
+                    ArenaEffect(
+                        id = 1,
+                        kind = "impact",
+                        tick = 2,
+                        flight =
+                            ProjectileFlight(
+                                7,
+                                1,
+                                0,
+                                0.0,
+                                2.0,
+                                listOf(
+                                    ProjectileFlightPoint(100.0, 210.0, 0.0),
+                                    ProjectileFlightPoint(109.0, 210.0, 2.0),
+                                ),
+                            ),
+                    ),
+                    ArenaEffect(
+                        id = 2,
+                        kind = "hit",
+                        tick = 2,
+                        contact =
+                            CombatContact(
+                                7,
+                                "cannon",
+                                2.0,
+                                8,
+                                2,
+                                ContactTankState(140.0, 210.0, 0.0),
+                            ),
+                    ),
+                )
+            val dead =
+                base.copy(
+                    tick = 2,
+                    tanks = base.tanks.map { if (it.id == 8) it.copy(hp = 0) else it },
+                    effects = effects,
+                )
             timeline.accept(dead, .03)
             assertTrue(timeline.hasPendingProjectileFlights)
             when (boundary) {
                 "pause" -> timeline.neutralize()
-                "follow" -> timeline.accept(dead.copy(following=1), .04)
-                "role" -> timeline.accept(dead.copy(spectating=true), .04)
-                "generation" -> timeline.accept(dead.copy(tick=0,generation=2), .04)
-                "rejoin" -> timeline.accept(dead.copy(tick=180), 3.0)
+                "follow" -> timeline.accept(dead.copy(following = 1), .04)
+                "role" -> timeline.accept(dead.copy(spectating = true), .04)
+                "generation" -> timeline.accept(dead.copy(tick = 0, generation = 2), .04)
+                "rejoin" -> timeline.accept(dead.copy(tick = 180), 3.0)
             }
-            assertFalse("$boundary clears old contact playback", timeline.hasPendingProjectileFlights)
-            val image = render(timeline, now=3.0)
+            assertFalse(
+                "$boundary clears old contact playback",
+                timeline.hasPendingProjectileFlights,
+            )
+            val image = render(timeline, now = 3.0)
             assertEquals(0, image.tanks.first { it.id == 8 }.hp)
             assertTrue("$boundary cannot replay damage FX", image.effects.isEmpty())
         }
@@ -168,7 +220,8 @@ class OnlinePresentationTest {
         val up = t.inputEdgePacket(controls)!!
         val second = t.inputEdgePacket(controls.copy(fire = true), local = true)!!
         assertEquals(listOf(1L, 2L), listOf(down.seq, up.seq))
-        assertTrue(down.fire); assertFalse(up.fire)
+        assertTrue(down.fire)
+        assertFalse(up.fire)
         assertEquals(51L, second.seq)
         assertEquals(.4, down.stickX, 0.0)
         assertEquals(0, t.bufferedFrameCount)
@@ -363,7 +416,10 @@ class OnlinePresentationTest {
         positions.zipWithNext().forEach { assertTrue(it.second >= it.first) }
         assertTrue(positions.toSet().size > 20)
         t.accept(ArenaSnapshot(tick = 26), .41)
-        assertFalse("A future removal must not erase the buffered flight", render(t, now = .41).bullets.isEmpty())
+        assertFalse(
+            "A future removal must not erase the buffered flight",
+            render(t, now = .41).bullets.isEmpty(),
+        )
         repeat(20) { render(t, 1.0 / 120, now = .41 + (it + 1) / 120.0) }
         assertTrue(render(t, now = .6).bullets.isEmpty())
     }
@@ -372,7 +428,16 @@ class OnlinePresentationTest {
     fun killingCannonSurvivesANewerDeathSnapshotUntilTheBufferedFlightCompletes() {
         for (rtt in listOf(.001, .05, .2, .4)) {
             val t = timeline(99)
-            val bullet = ArenaBullet(id = 7, kind = "cannon", owner = 1, x = 120.0, y = 42.0, vx = 846.0, life = 5.3)
+            val bullet =
+                ArenaBullet(
+                    id = 7,
+                    kind = "cannon",
+                    owner = 1,
+                    x = 120.0,
+                    y = 42.0,
+                    vx = 846.0,
+                    life = 5.3,
+                )
             val empty = ArenaSnapshot(tick = 0)
             val inFlight = ArenaSnapshot(tick = 2, bullets = listOf(bullet))
             val killed = ArenaSnapshot(tick = 4, tanks = listOf(ArenaTank(id = 2, hp = 0)))
@@ -380,7 +445,9 @@ class OnlinePresentationTest {
             t.accept(inFlight, rtt / 2 + 2 * tick)
             t.accept(killed, rtt / 2 + 4 * tick)
             val shown = mutableListOf<ArenaBullet>()
-            repeat(30) { frame -> shown += render(t, 1.0 / 120, now = rtt / 2 + 4 * tick + frame / 120.0).bullets }
+            repeat(30) { frame ->
+                shown += render(t, 1.0 / 120, now = rtt / 2 + 4 * tick + frame / 120.0).bullets
+            }
             assertTrue("Short killing flight was erased at RTT=$rtt", shown.any { it.id == 7 })
             assertTrue(render(t, now = rtt / 2 + .5).bullets.isEmpty())
             assertEquals(listOf(bullet), inFlight.bullets)
@@ -393,12 +460,34 @@ class OnlinePresentationTest {
         for (phase in listOf("playing", "roundOver", "matchOver")) {
             val timeline = timeline()
             timeline.accept(state(), 0.0)
-            val flight = ProjectileFlight(7, 1, 0, 0.0, .2, listOf(ProjectileFlightPoint(100.0, 210.0, 0.0), ProjectileFlightPoint(110.0, 210.0, .2)))
-            val terminal = state(tick = 1).copy(phase = phase, result = if (phase == "playing") ArenaResult(id = 1, score = 1) else null,
-                effects = listOf(ArenaEffect(id = 1, kind = "impact", flight = flight)))
+            val flight =
+                ProjectileFlight(
+                    7,
+                    1,
+                    0,
+                    0.0,
+                    .2,
+                    listOf(
+                        ProjectileFlightPoint(100.0, 210.0, 0.0),
+                        ProjectileFlightPoint(110.0, 210.0, .2),
+                    ),
+                )
+            val terminal =
+                state(tick = 1)
+                    .copy(
+                        phase = phase,
+                        result = if (phase == "playing") ArenaResult(id = 1, score = 1) else null,
+                        effects = listOf(ArenaEffect(id = 1, kind = "impact", flight = flight)),
+                    )
             timeline.accept(terminal, tick)
             val packets = mutableListOf<GameInput>()
-            val initial = timeline.render(0.0, GameInput(forward = true, fire = true), tick, send = packets::add)!!
+            val initial =
+                timeline.render(
+                    0.0,
+                    GameInput(forward = true, fire = true),
+                    tick,
+                    send = packets::add,
+                )!!
             var visible = initial.bullets.isNotEmpty()
             repeat(40) {
                 timeline.renderTerminal(1.0 / 120)?.let { view ->

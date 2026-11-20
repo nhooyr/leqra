@@ -78,7 +78,7 @@ window.WebSocket=class extends RealSocket{
             page.set_content(html)
             page.evaluate('()=>{'+setup+'}')
             js = assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
-            pos = js.rfind('})();'); js=js[:pos]+f'}})(new URL({json.dumps(url)}));'+js[pos+5:]
+            pos = js.rfind('})()'); js=js[:pos]+f'}})(new URL({json.dumps(url)}));'+js[pos+4:]
             page.add_script_tag(content=assets.joinpath('netcode.js').read_text())
             page.add_script_tag(content=js)
         else:

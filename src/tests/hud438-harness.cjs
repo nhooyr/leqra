@@ -1,31 +1,141 @@
-'use strict';
-const assert=require('node:assert/strict'),{readFileSync}=require('node:fs');
-function declaration(source,name){
- const start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);
- const end=source.indexOf('\n',start),line=source.slice(start,end);
- return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);
+"use strict"
+const { extractFunction, sourceIndex } = require("./source_helpers.cjs")
+const assert = require("node:assert/strict"),
+  { readFileSync } = require("node:fs")
+function declaration(source, name) {
+  return extractFunction(source, name)
 }
-const {assetPath}=require('./web_assets.cjs');
-function boot({sourcePath=process.env.LEQRA_HUD_SOURCE||assetPath('game.js'),mode='room',projectileCount=192}={}){
- const source=readFileSync(sourcePath,'utf8'),nodes=new Map();
- const $=id=>{if(!nodes.has(id)){
-  const attrs=new Map(),styles=new Map(),classes=new Set();
-  nodes.set(id,{hidden:false,textContent:'',innerHTML:'',dataset:{},title:'',classList:{toggle:(k,on)=>on?classes.add(k):classes.delete(k),contains:k=>classes.has(k)},style:{getPropertyValue:k=>styles.get(k),setProperty:(k,v)=>styles.set(k,String(v))},getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,String(v))});
- }return nodes.get(id);};
- const tanks=Array.from({length:8},(_,id)=>({id,name:'PILOT '+id,color:'#73cee4',team:id===0||id===7?1:2,alive:true,power:id===0?'grenade':'scatter',charges:3,powerTime:8,machineRounds:180,cooldown:.2,cooldownTotal:.54,ghostTime:0,shield:0,speedTime:0}));
- const bullets=Array.from({length:projectileCount},(_,n)=>({owner:n%8,kind:n%17===0?'homing':n%29===0?'grenade':'rapid',life:2.2+n%8/10,dead:n%31===0,target:n%2?7:0}));
- const rules={friendlyFire:false},online={snapshots:[{bullets,tankMap:new Map(tanks.map(t=>[t.id,t])),received:1000}]};
- const env={Net:require(assetPath('netcode.js')),mode,phase:'playing',bullets,tanks,online,rules,$,nodes,now:1000,performance:{now:()=>env.now},feedbackAt:-Infinity,time:1,
-  controlledTank:()=>tanks[0],secondaryID:()=>7,roomData:()=>({players:tanks}),currentRules:()=>rules,isEnemy:(a,b)=>a.id!==b.id&&(a.team===0||a.team!==b.team),
-  survivalState:()=>env.survival,survivalBreak:()=>env.survival?.status==='break',survivalMode:()=>!!env.survival,objectiveMode:()=>false,combatPrefs:{visual:true,audio:false},homingAlerts:[{},{}],clearTankAt:()=>true,muzzleBlocked:()=>false,
-  clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),paintColor:c=>c,pilotFeedback:[],shieldCount:t=>t.shieldCharges||0,speedCount:t=>t.speedStacks||0,COLORS:['#fff'],MACHINE_CAPACITY:96,MACHINE_FIRING_ROUNDS:180,CANNON_COOLDOWN:.85};
- const names=['pilotIdentity','canDamage','activeAmmo','ownedGrenades','missileLocks','setText','setStyle','setAttr','powerCapacity','cooldownDuration','pilotLoadoutTank','liveFeedbackTank','updateMachineBudget','renderPilotLoadout','updateHomingAlert','updateCombatFeedback'];
- if(source.includes('function applyOnlineTankEffects('))names.push('applyOnlineTankEffects');
- if(source.includes('function pilotProjectileState('))names.push('pilotProjectileState');
- if(source.includes('function renderPilotReadiness('))names.push('renderPilotReadiness','infinityHUDId','renderInfinityLoadout');
- if(source.includes('function renderDeathNotice('))names.push('renderDeathNotice');
- const constants=source.slice(source.indexOf('const POWER='),source.indexOf('\nconst LASER_MAX_SEGMENTS='));
- const factory=new Function('env','let {'+Object.keys(env).join(',')+'}=env;\n'+constants+'\n'+names.map(n=>declaration(source,n)).join('\n')+'\nreturn {'+names.join(',')+',setPhase(value){phase=value;},run(){renderPilotLoadout(tanks[0],1);renderPilotLoadout(tanks[7],2);updateCombatFeedback(true);}};');
- return Object.assign(env,factory(env));
+const { assetPath } = require("./web_assets.cjs")
+function boot({
+  sourcePath = process.env.LEQRA_HUD_SOURCE || assetPath("game.js"),
+  mode = "room",
+  projectileCount = 192,
+} = {}) {
+  const source = readFileSync(sourcePath, "utf8"),
+    nodes = new Map()
+  const $ = (id) => {
+    if (!nodes.has(id)) {
+      const attrs = new Map(),
+        styles = new Map(),
+        classes = new Set()
+      nodes.set(id, {
+        hidden: false,
+        textContent: "",
+        innerHTML: "",
+        dataset: {},
+        title: "",
+        classList: {
+          toggle: (k, on) => (on ? classes.add(k) : classes.delete(k)),
+          contains: (k) => classes.has(k),
+        },
+        style: { getPropertyValue: (k) => styles.get(k), setProperty: (k, v) => styles.set(k, String(v)) },
+        getAttribute: (k) => attrs.get(k),
+        setAttribute: (k, v) => attrs.set(k, String(v)),
+      })
+    }
+    return nodes.get(id)
+  }
+  const tanks = Array.from({ length: 8 }, (_, id) => ({
+    id,
+    name: "PILOT " + id,
+    color: "#73cee4",
+    team: id === 0 || id === 7 ? 1 : 2,
+    alive: true,
+    power: id === 0 ? "grenade" : "scatter",
+    charges: 3,
+    powerTime: 8,
+    machineRounds: 180,
+    cooldown: 0.2,
+    cooldownTotal: 0.54,
+    ghostTime: 0,
+    shield: 0,
+    speedTime: 0,
+  }))
+  const bullets = Array.from({ length: projectileCount }, (_, n) => ({
+    owner: n % 8,
+    kind: n % 17 === 0 ? "homing" : n % 29 === 0 ? "grenade" : "rapid",
+    life: 2.2 + (n % 8) / 10,
+    dead: n % 31 === 0,
+    target: n % 2 ? 7 : 0,
+  }))
+  const rules = { friendlyFire: false },
+    online = { snapshots: [{ bullets, tankMap: new Map(tanks.map((t) => [t.id, t])), received: 1000 }] }
+  const env = {
+    Net: require(assetPath("netcode.js")),
+    mode,
+    phase: "playing",
+    bullets,
+    tanks,
+    online,
+    rules,
+    $,
+    nodes,
+    now: 1000,
+    performance: { now: () => env.now },
+    feedbackAt: -Infinity,
+    time: 1,
+    controlledTank: () => tanks[0],
+    secondaryID: () => 7,
+    roomData: () => ({ players: tanks }),
+    currentRules: () => rules,
+    isEnemy: (a, b) => a.id !== b.id && (a.team === 0 || a.team !== b.team),
+    survivalState: () => env.survival,
+    survivalBreak: () => env.survival?.status === "break",
+    survivalMode: () => !!env.survival,
+    objectiveMode: () => false,
+    combatPrefs: { visual: true, audio: false },
+    homingAlerts: [{}, {}],
+    clearTankAt: () => true,
+    muzzleBlocked: () => false,
+    clamp: (v, a, b) => Math.max(a, Math.min(b, v)),
+    paintColor: (c) => c,
+    pilotFeedback: [],
+    shieldCount: (t) => t.shieldCharges || 0,
+    speedCount: (t) => t.speedStacks || 0,
+    COLORS: ["#fff"],
+    MACHINE_CAPACITY: 96,
+    MACHINE_FIRING_ROUNDS: 180,
+    CANNON_COOLDOWN: 0.85,
+  }
+  const names = [
+    "pilotIdentity",
+    "canDamage",
+    "activeAmmo",
+    "ownedGrenades",
+    "missileLocks",
+    "setText",
+    "setStyle",
+    "setAttr",
+    "powerCapacity",
+    "cooldownDuration",
+    "pilotLoadoutTank",
+    "liveFeedbackTank",
+    "updateMachineBudget",
+    "renderPilotLoadout",
+    "updateHomingAlert",
+    "updateCombatFeedback",
+  ]
+  if (source.includes("function applyOnlineTankEffects(")) names.push("applyOnlineTankEffects")
+  if (source.includes("function pilotProjectileState(")) names.push("pilotProjectileState")
+  if (source.includes("function renderPilotReadiness("))
+    names.push("renderPilotReadiness", "infinityHUDId", "renderInfinityLoadout")
+  if (source.includes("function renderDeathNotice(")) names.push("renderDeathNotice")
+  const constants = source.slice(
+    sourceIndex(source, "const POWER="),
+    sourceIndex(source, "\nconst LASER_MAX_SEGMENTS="),
+  )
+  const factory = new Function(
+    "env",
+    "let {" +
+      Object.keys(env).join(",") +
+      "}=env;\n" +
+      constants +
+      "\n" +
+      names.map((n) => declaration(source, n)).join("\n") +
+      "\nreturn {" +
+      names.join(",") +
+      ",setPhase(value){phase=value;},run(){renderPilotLoadout(tanks[0],1);renderPilotLoadout(tanks[7],2);updateCombatFeedback(true);}};",
+  )
+  return Object.assign(env, factory(env))
 }
-module.exports={boot};
+module.exports = { boot }

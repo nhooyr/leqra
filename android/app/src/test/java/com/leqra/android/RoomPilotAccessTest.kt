@@ -12,7 +12,14 @@ class RoomPilotAccessTest {
         val bot = JSONObject().put("kind", "bot").put("id", 4)
         val local = JSONObject().put("kind", "local").put("id", 5).put("owner", 1)
         fun controls(member: JSONObject, host: Boolean, editable: Boolean, rules: RoomRules) =
-            roomPilotAccess(member, controller = 1, host = host, setupOpen = editable, matchmaking = false, rules = rules)
+            roomPilotAccess(
+                member,
+                controller = 1,
+                host = host,
+                setupOpen = editable,
+                matchmaking = false,
+                rules = rules,
+            )
 
         val ctf = RoomRules(mode = "ctf", teamMode = "teams")
         val hostRemote = controls(remote, true, true, ctf)

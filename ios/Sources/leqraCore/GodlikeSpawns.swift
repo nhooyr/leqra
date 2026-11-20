@@ -4,13 +4,20 @@ public struct GodlikeSpawn: Codable, Equatable, Sendable {
     public var id: Int
     public var spawnSerial: Int
     public var name: String
-    public init(id: Int, spawnSerial: Int, name: String) { self.id = id; self.spawnSerial = spawnSerial; self.name = name }
+    public init(id: Int, spawnSerial: Int, name: String) {
+        self.id = id
+        self.spawnSerial = spawnSerial
+        self.name = name
+    }
 }
 
 /// A passive notice is independent of errors/audio. Retained across reconnects,
 /// the bounded life history prevents repeated snapshots replaying a warning.
 public struct GodlikeSpawnNotices {
-    private struct Life: Hashable { var id: Int; var serial: Int }
+    private struct Life: Hashable {
+        var id: Int
+        var serial: Int
+    }
     private var seen = Set<Life>()
     private var order: [Life] = []
     private var message = ""

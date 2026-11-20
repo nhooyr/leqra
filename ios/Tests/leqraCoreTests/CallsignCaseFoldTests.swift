@@ -1,6 +1,7 @@
-import Foundation
 import CryptoKit
+import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class CallsignCaseFoldTests: XCTestCase {
@@ -10,17 +11,27 @@ final class CallsignCaseFoldTests: XCTestCase {
     }
 
     func testGeneratedFoldMatchesEverySharedMappingAndCanonicalCase() throws {
-        struct Fixture: Decodable { let scalarSHA256: String; let ranges: [[Int]]; let singles: [[Int]]; let cases: [[String]] }
+        struct Fixture: Decodable {
+            let scalarSHA256: String
+            let ranges: [[Int]]
+            let singles: [[Int]]
+            let cases: [[String]]
+        }
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: root.appendingPathComponent("src/tests/fixtures/callsign-fold.json")))
+        let fixture = try JSONDecoder().decode(
+            Fixture.self,
+            from: Data(contentsOf: root.appendingPathComponent("src/tests/fixtures/callsign-fold.json")))
         for pair in fixture.cases { XCTAssertEqual(CallsignCaseFold.fold(pair[0]), pair[1]) }
         for pair in fixture.singles {
-            XCTAssertEqual(CallsignCaseFold.fold(String(Unicode.Scalar(pair[0])!)), String(Unicode.Scalar(pair[1])!))
+            XCTAssertEqual(
+                CallsignCaseFold.fold(String(Unicode.Scalar(pair[0])!)), String(Unicode.Scalar(pair[1])!))
         }
         for range in fixture.ranges {
             for scalar in stride(from: range[0], through: range[1], by: range[2]) {
-                XCTAssertEqual(CallsignCaseFold.fold(String(Unicode.Scalar(scalar)!)), String(Unicode.Scalar(scalar + range[3])!))
+                XCTAssertEqual(
+                    CallsignCaseFold.fold(String(Unicode.Scalar(scalar)!)),
+                    String(Unicode.Scalar(scalar + range[3])!))
             }
         }
         XCTAssertEqual(CallsignPolicy.canonical(" ςNOW "), CallsignPolicy.canonical("Σnow"))
@@ -38,6 +49,7 @@ final class CallsignCaseFoldTests: XCTestCase {
                 records.append(UInt8(truncatingIfNeeded: word))
             }
         }
-        XCTAssertEqual(SHA256.hash(data: records).map { String(format: "%02x", $0) }.joined(), fixture.scalarSHA256)
+        XCTAssertEqual(
+            SHA256.hash(data: records).map { String(format: "%02x", $0) }.joined(), fixture.scalarSHA256)
     }
 }

@@ -4,15 +4,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProjectileFlightPresentationTest {
-    @Test fun publishedShellsNeverRewindToTheMuzzleAndAlwaysDrawTheExactEndpoint() {
+    @Test
+    fun publishedShellsNeverRewindToTheMuzzleAndAlwaysDrawTheExactEndpoint() {
         for (kind in listOf("regular", "rapid", "scatter", "homing", "grenade", "cannon")) {
             val cache = ProjectileFlightPresentation()
             val hit = effect(kind)
-            cache.render(listOf(ArenaBullet(id = 1, kind = kind, x = 80.0, y = 42.0)), emptyList(), .075)
+            cache.render(
+                listOf(ArenaBullet(id = 1, kind = kind, x = 80.0, y = 42.0)),
+                emptyList(),
+                .075,
+            )
             cache.accept(listOf(hit), .075)
-            assertEquals(80.0, cache.render(emptyList(), listOf(hit), .075).bullets.single().x, 1e-9)
+            assertEquals(
+                80.0,
+                cache.render(emptyList(), listOf(hit), .075).bullets.single().x,
+                1e-9,
+            )
             assertTrue(cache.render(emptyList(), listOf(hit), .085).bullets.single().x > 80)
-            assertEquals(100.0, cache.render(emptyList(), listOf(hit), .11).bullets.single().x, 1e-9)
+            assertEquals(
+                100.0,
+                cache.render(emptyList(), listOf(hit), .11).bullets.single().x,
+                1e-9,
+            )
             assertEquals(listOf(hit), cache.render(emptyList(), listOf(hit), .12).effects)
             cache.reset()
             cache.accept(listOf(effect(kind, start = 6.0, end = 12.0)), 0.0)
@@ -21,19 +34,43 @@ class ProjectileFlightPresentationTest {
         }
     }
 
-    @Test fun simultaneousMuzzleReflectionsStillLatchTheFinalContactPoint() {
-        for (observed in listOf(false,true)) for (zeroDuration in listOf(false,true)) {
-            val cache=ProjectileFlightPresentation()
-            val terminal=effect().let { e -> e.copy(flight=e.flight!!.copy(startTick=if(zeroDuration)6.0 else 0.0,
-                points=listOf(ProjectileFlightPoint(0.0,42.0,if(zeroDuration)6.0 else 0.0),ProjectileFlightPoint(80.0,42.0,6.0),ProjectileFlightPoint(100.0,42.0,6.0)))) }
-            if(observed) cache.render(listOf(ArenaBullet(id=1,kind="cannon",x=90.0,y=42.0)),emptyList(),.2)
-            cache.accept(listOf(terminal),.2)
-            val end=cache.render(emptyList(),listOf(terminal),.26)
-            assertEquals(100.0,end.bullets.single().x,0.0)
+    @Test
+    fun simultaneousMuzzleReflectionsStillLatchTheFinalContactPoint() {
+        for (observed in listOf(false, true)) for (zeroDuration in listOf(false, true)) {
+            val cache = ProjectileFlightPresentation()
+            val terminal =
+                effect().let { e ->
+                    e.copy(
+                        flight =
+                            e.flight!!.copy(
+                                startTick = if (zeroDuration) 6.0 else 0.0,
+                                points =
+                                    listOf(
+                                        ProjectileFlightPoint(
+                                            0.0,
+                                            42.0,
+                                            if (zeroDuration) 6.0 else 0.0,
+                                        ),
+                                        ProjectileFlightPoint(80.0, 42.0, 6.0),
+                                        ProjectileFlightPoint(100.0, 42.0, 6.0),
+                                    ),
+                            ),
+                    )
+                }
+            if (observed)
+                cache.render(
+                    listOf(ArenaBullet(id = 1, kind = "cannon", x = 90.0, y = 42.0)),
+                    emptyList(),
+                    .2,
+                )
+            cache.accept(listOf(terminal), .2)
+            val end = cache.render(emptyList(), listOf(terminal), .26)
+            assertEquals(100.0, end.bullets.single().x, 0.0)
             assertTrue(end.effects.isEmpty())
-            assertEquals(listOf(terminal),cache.render(emptyList(),emptyList(),.27).effects)
+            assertEquals(listOf(terminal), cache.render(emptyList(), emptyList(), .27).effects)
         }
     }
+
     private fun effect(
         kind: String = "cannon",
         start: Double = 0.0,
@@ -114,7 +151,7 @@ class ProjectileFlightPresentationTest {
                         arrival + .08,
                     )
                     .bullets
-                    .isEmpty()
+                    .isEmpty(),
             )
             cache.accept(listOf(hit), arrival + .1)
             assertTrue(cache.render(emptyList(), emptyList(), arrival + .1).bullets.isEmpty())
@@ -143,7 +180,7 @@ class ProjectileFlightPresentationTest {
                             listOf(
                                 ProjectileFlightPoint(Double.NaN, 1.0, 0.0),
                                 ProjectileFlightPoint(1.0, 1.0, 6.0),
-                            )
+                            ),
                     ),
             )
         cache.accept(listOf(invalid), 0.0)
@@ -163,8 +200,8 @@ class ProjectileFlightPresentationTest {
                                     ProjectileFlightPoint(0.0, 42.0, 0.0),
                                     ProjectileFlightPoint(80.0, 42.0, 2.0),
                                     ProjectileFlightPoint(0.0, 42.0, 6.0),
-                                )
-                        )
+                                ),
+                        ),
                 )
             }
         cache.accept(listOf(hit), 0.0)

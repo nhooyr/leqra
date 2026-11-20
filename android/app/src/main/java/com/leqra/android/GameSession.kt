@@ -55,35 +55,57 @@ internal class GameSession(context: Context) {
 
     init {
         // A saved battle can resume only on the server selected in Controls.
-        if (store.activeIntent()?.origin?.let { it != server } == true)
-            store.setActiveIntent(null)
+        if (store.activeIntent()?.origin?.let { it != server } == true) store.setActiveIntent(null)
     }
 
-    private val bootstrapNames = listOf(prefs.getString("callsign", null), prefs.getString("localCallsign", null)).mapIndexed { seat, name ->
-        name.takeUnless { LegacyCallsignDefaults.shouldGenerate(it, store.selected(server, seat) != null) }
-    }
-    private val nameDrafts = CallsignDrafts(
-        bootstrapNames,
-        (0..1).map { if (bootstrapNames[it] != null && prefs.contains("autoPending$it")) prefs.getBoolean("autoPending$it", false) else null },
-        (0..1).map { if (bootstrapNames[it] != null) prefs.getString("autoRequest$it", null) else null },
-    )
+    private val bootstrapNames =
+        listOf(prefs.getString("callsign", null), prefs.getString("localCallsign", null))
+            .mapIndexed { seat, name ->
+                name.takeUnless {
+                    LegacyCallsignDefaults.shouldGenerate(it, store.selected(server, seat) != null)
+                }
+            }
+    private val nameDrafts =
+        CallsignDrafts(
+            bootstrapNames,
+            (0..1).map {
+                if (bootstrapNames[it] != null && prefs.contains("autoPending$it"))
+                    prefs.getBoolean("autoPending$it", false)
+                else null
+            },
+            (0..1).map {
+                if (bootstrapNames[it] != null) prefs.getString("autoRequest$it", null) else null
+            },
+        )
     var callsign: String
         get() = nameDrafts.name(0)
-        set(value) { if (!releasingCallsign) nameDrafts.edit(0, value) }
+        set(value) {
+            if (!releasingCallsign) nameDrafts.edit(0, value)
+        }
+
     var localCallsign: String
         get() = nameDrafts.name(1)
-        set(value) { if (!releasingCallsign) nameDrafts.edit(1, value) }
+        set(value) {
+            if (!releasingCallsign) nameDrafts.edit(1, value)
+        }
+
     private val committedCallsigns = arrayOf(callsign, localCallsign)
     private var switchingCallsign = false
     var releasingCallsign = false
         private set
+
     private var onlineIdentityReady = false
+
     init {
         for (seat in 0..1) {
             val key = store.selected(server, seat)?.key
-            accounts.savedCallsigns(server).firstOrNull { it.key == key }?.let { committedCallsigns[seat] = it.name }
+            accounts
+                .savedCallsigns(server)
+                .firstOrNull { it.key == key }
+                ?.let { committedCallsigns[seat] = it.name }
         }
     }
+
     var colorIndex = prefs.getInt("color", 0)
     var localColorIndex = prefs.getInt("localColor", 1)
     var localSelected = prefs.getBoolean("localSelected", false)
@@ -92,6 +114,7 @@ internal class GameSession(context: Context) {
             if (field != value) configurationError = null
             field = value
         }
+
     var publicSelected = prefs.getBoolean("publicSelected", true)
     var mode = prefs.getString("mode", "elimination")!!.takeIf { it in modes } ?: "elimination"
     var rules =
@@ -113,9 +136,14 @@ internal class GameSession(context: Context) {
         get() = mutablePresets
 
     val localStartError: String?
-        get() = if (online || publicSelected) null else rules.infinityStartError(
-            listOf(localTeam) + (if (localSelected) listOf(secondLocalTeam) else emptyList()) + localBots.map { it.team },
-        )
+        get() =
+            if (online || publicSelected) null
+            else
+                rules.infinityStartError(
+                    listOf(localTeam) +
+                        (if (localSelected) listOf(secondLocalTeam) else emptyList()) +
+                        localBots.map { it.team },
+                )
 
     var botCount: Int
         get() = mutableLocalBots.size
@@ -127,12 +155,14 @@ internal class GameSession(context: Context) {
 
     var localTeam = prefs.getInt("localTeam", 1).coerceIn(1, 4)
     var secondLocalTeam = prefs.getInt("secondLocalTeam", 1).coerceIn(1, 4)
-    var difficulty = prefs.getString("difficulty", "normal")?.takeIf { it in BotDifficulty.names } ?: "normal"
+    var difficulty =
+        prefs.getString("difficulty", "normal")?.takeIf { it in BotDifficulty.names } ?: "normal"
     var roomName = ""
     var muted = prefs.getBoolean("muted", false)
     var volume = prefs.getFloat("volume", .5f)
     var highRefresh = prefs.getBoolean("highRefresh", true)
-    var keyboardBindings = NativeControlBindings.decode(prefs.getString(NativeControlBindings.storageKey, null))
+    var keyboardBindings =
+        NativeControlBindings.decode(prefs.getString(NativeControlBindings.storageKey, null))
     var mouseAim = prefs.getBoolean("mouseAim", true)
     var mouseFire = prefs.getBoolean("mouseFire", true)
     var gamepadSupport = prefs.getBoolean("gamepadSupport", true)
@@ -147,7 +177,16 @@ internal class GameSession(context: Context) {
         private set
 
     val audioSceneActive: Boolean
-        get() = active && screen == Screen.PLAYING && !paused && (!online || activeNetwork.connected && !timeline.stale && audioStateOwner === activeNetwork && audioStateConnection == activeNetwork.connectionGeneration)
+        get() =
+            active &&
+                screen == Screen.PLAYING &&
+                !paused &&
+                (!online ||
+                    activeNetwork.connected &&
+                        !timeline.stale &&
+                        audioStateOwner === activeNetwork &&
+                        audioStateConnection == activeNetwork.connectionGeneration)
+
     val audioGameplayActive: Boolean
         get() = audioSceneActive && hasLocalPlayer
 
@@ -159,6 +198,7 @@ internal class GameSession(context: Context) {
 
     var status = "Local play is ready. Share to invite online friends."
         private set
+
     var configurationError: String? = null
         private set
 
@@ -179,17 +219,29 @@ internal class GameSession(context: Context) {
 
     val roomSpectating: Boolean
         get() = online && network.welcome?.spectating == true
+
     val spectating: Boolean
-        get() = online && (roomSpectating || arenaActive && arenaNetwork.welcome?.spectating == true)
+        get() =
+            online && (roomSpectating || arenaActive && arenaNetwork.welcome?.spectating == true)
+
     val canControlSecondary: Boolean
         get() = localID2 != null && (!spectating || !arenaActive)
+
     val hasLocalPlayer: Boolean
         get() = !spectating || canControlSecondary
+
     var followingID = 0
         private set
 
     fun followTank(id: Int) {
-        if (!spectating || !arenaActive || !arenaNetwork.connected || id <= 0 || snapshot.leaderboard.none { it.id == id }) return
+        if (
+            !spectating ||
+                !arenaActive ||
+                !arenaNetwork.connected ||
+                id <= 0 ||
+                snapshot.leaderboard.none { it.id == id }
+        )
+            return
         arenaNetwork.send(JSONObject().put("type", "follow").put("target", id))
     }
 
@@ -201,20 +253,33 @@ internal class GameSession(context: Context) {
 
     private val spawnNotices = GodlikeSpawnNotices()
     val encounterNotice: String?
-        get() = if (online && activeNetwork.isPublic) spawnNotices.current(System.nanoTime() / 1e9) else null
+        get() =
+            if (online && activeNetwork.isPublic) spawnNotices.current(System.nanoTime() / 1e9)
+            else null
+
     private val fireFeedback = PressFireFeedback()
     private val localFireFeedback = PressFireFeedback()
     private var observedFire = false
     private var observedLocalFire = false
     var previewRecoil = 0.0
         private set
+
     var localPreviewRecoil = 0.0
         private set
+
     var fireFeedbackAllowed: () -> Boolean = { true }
     var input = GameInput()
-        set(value) { field = value; observeFire(false, value.fire, System.nanoTime()) }
+        set(value) {
+            field = value
+            observeFire(false, value.fire, System.nanoTime())
+        }
+
     var input2 = GameInput()
-        set(value) { field = value; observeFire(true, value.fire, System.nanoTime()) }
+        set(value) {
+            field = value
+            observeFire(true, value.fire, System.nanoTime())
+        }
+
     private var practice: PracticeArena? = null
     private var fixed: FixedArena? = null
     private var previousFrame = 0L
@@ -256,24 +321,34 @@ internal class GameSession(context: Context) {
         get() = room == null || room?.optInt("host") == network.welcome?.id
 
     val roomSetupOpen: Boolean
-        get() = room?.let {
-            screen == Screen.READY && !it.optBoolean("infinityActive") &&
-                it.optString("phase") in setOf("lobby", "matchOver") &&
-                it.isNull("queue") && it.isNull("matchmaking") && it.optString("awayMatch").isEmpty()
-        } == true
+        get() =
+            room?.let {
+                screen == Screen.READY &&
+                    !it.optBoolean("infinityActive") &&
+                    it.optString("phase") in setOf("lobby", "matchOver") &&
+                    it.isNull("queue") &&
+                    it.isNull("matchmaking") &&
+                    it.optString("awayMatch").isEmpty()
+            } == true
 
     val roomLocalPilot: JSONObject?
         get() {
             val controller = network.welcome?.id ?: return null
-            return room?.roomRosterMembers()?.firstOrNull { it.optString("kind") == "local" && it.optInt("owner", -1) == controller }
+            return room?.roomRosterMembers()?.firstOrNull {
+                it.optString("kind") == "local" && it.optInt("owner", -1) == controller
+            }
         }
 
     val canAddRoomLocalPilot: Boolean
-        get() = room?.let { current ->
-            isHost && roomSetupOpen && !releasingCallsign &&
-                (current.optJSONArray("players")?.length() ?: 0) < current.optInt("maxPlayers", 8) &&
-                current.roomRosterMembers().none { it.optString("kind") == "local" }
-        } == true
+        get() =
+            room?.let { current ->
+                isHost &&
+                    roomSetupOpen &&
+                    !releasingCallsign &&
+                    (current.optJSONArray("players")?.length() ?: 0) <
+                        current.optInt("maxPlayers", 8) &&
+                    current.roomRosterMembers().none { it.optString("kind") == "local" }
+            } == true
 
     val roomCode: String?
         get() = room?.optString("code")?.takeIf { it.isNotBlank() } ?: network.welcome?.room
@@ -317,7 +392,10 @@ internal class GameSession(context: Context) {
                         ),
                     )
                 }
-            } ?: resizeBots(prefs.getInt("bots", if (publicSelected) 0 else 3).coerceIn(0, maxLocalBots))
+            }
+                ?: resizeBots(
+                    prefs.getInt("bots", if (publicSelected) 0 else 3).coerceIn(0, maxLocalBots),
+                )
         }
             .onFailure {
                 mutableLocalBots.clear()
@@ -352,43 +430,67 @@ internal class GameSession(context: Context) {
     }
 
     fun releaseCallsign(key: String, completed: (Result<Unit>) -> Unit) {
-        if (!canImportAccount || switchingCallsign) { completed(Result.failure(IllegalStateException("Return to the local room before releasing a callsign."))); return }
+        if (!canImportAccount || switchingCallsign) {
+            completed(
+                Result.failure(
+                    IllegalStateException("Return to the local room before releasing a callsign."),
+                ),
+            )
+            return
+        }
         val origin = server
-        val seats = (0..1).filter { store.selected(origin,it)?.key == key }
+        val seats = (0..1).filter { store.selected(origin, it)?.key == key }
         val replacements = seats.associateWith { AccountKeys.create() }
         try {
-            replacements.forEach { (seat, replacement) -> store.savePending(origin, AccountKeys.pending(seat,replacement,purpose="release-replacement")) }
-        } catch (error: Exception) { completed(Result.failure(error)); return }
+            replacements.forEach { (seat, replacement) ->
+                store.savePending(
+                    origin,
+                    AccountKeys.pending(seat, replacement, purpose = "release-replacement"),
+                )
+            }
+        } catch (error: Exception) {
+            completed(Result.failure(error))
+            return
+        }
         switchingCallsign = true
         releasingCallsign = true
         for (seat in 0..1) accounts.invalidate(origin, seat)
         val previousStatus = status
         status = "Releasing callsign…"
         changed(false)
-        runCatching { accounts.release(origin,key) { result ->
-            switchingCallsign = false
-            releasingCallsign = false
-            if (server == origin) status = previousStatus
-            val finished = result.mapCatching {
-                replacements.forEach { (seat,replacement) ->
-                    if (store.selected(origin,seat) == null) {
-                        store.select(origin,seat,replacement,registrationPending=true)
-                        if (server == origin) {
-                            val name = CallsignDrafts.randomName()
-                            committedCallsigns[seat] = name
-                            if (seat == 0) callsign = name else localCallsign = name
+        runCatching {
+            accounts.release(origin, key) { result ->
+                switchingCallsign = false
+                releasingCallsign = false
+                if (server == origin) status = previousStatus
+                val finished = result.mapCatching {
+                    replacements.forEach { (seat, replacement) ->
+                        if (store.selected(origin, seat) == null) {
+                            store.select(origin, seat, replacement, registrationPending = true)
+                            if (server == origin) {
+                                val name = CallsignDrafts.randomName()
+                                committedCallsigns[seat] = name
+                                if (seat == 0) callsign = name else localCallsign = name
+                            }
                         }
                     }
+                    if (server == origin) {
+                        save()
+                        preparePreview()
+                        changed(true)
+                    }
                 }
-                if (server == origin) { save(); preparePreview(); changed(true) }
+                changed(false)
+                completed(finished)
             }
-            changed(false)
-            completed(finished)
-        } }.onFailure { error ->
-            switchingCallsign = false; releasingCallsign = false
-            if (server == origin) status = previousStatus
-            changed(false); completed(Result.failure(error))
         }
+            .onFailure { error ->
+                switchingCallsign = false
+                releasingCallsign = false
+                if (server == origin) status = previousStatus
+                changed(false)
+                completed(Result.failure(error))
+            }
     }
 
     fun accountImported(seat: Int) {
@@ -407,36 +509,62 @@ internal class GameSession(context: Context) {
         val sourceScreen = screen
         val sourceOnline = online
         val stamp = nameDrafts.request(seat, origin, previousKey.orEmpty())
-        fun unchanged() = !releasingCallsign && screen == sourceScreen && online == sourceOnline &&
-            nameDrafts.isCurrent(stamp, server, store.selected(server, seat)?.key.orEmpty())
-        store.selected(origin,seat)?.let { accounts.rememberCallsign(origin,seat,previousName,it.key) }
+        fun unchanged() =
+            !releasingCallsign &&
+                screen == sourceScreen &&
+                online == sourceOnline &&
+                nameDrafts.isCurrent(stamp, server, store.selected(server, seat)?.key.orEmpty())
+        store.selected(origin, seat)?.let {
+            accounts.rememberCallsign(origin, seat, previousName, it.key)
+        }
         switchingCallsign = true
-        accounts.generate(origin,listOf(seat),java.util.UUID.randomUUID().toString(),freshAccount = true, canCommit = ::unchanged) { result ->
+        accounts.generate(
+            origin,
+            listOf(seat),
+            java.util.UUID.randomUUID().toString(),
+            freshAccount = true,
+            canCommit = ::unchanged,
+        ) { result ->
             switchingCallsign = false
-            result.onSuccess { rows ->
-                val row = rows.single()
-                if (server != origin || !row.selected) return@onSuccess
-                committedCallsigns[seat] = row.name
-                if (seat == 0) callsign = row.name else localCallsign = row.name
-                nameDrafts.cancel(seat); save(); leave()
-            }.onFailure { failure ->
-                if (!unchanged()) return@onFailure
-                val canStageOffline = !online && unchanged() &&
-                    (failure as? NetworkFailure)?.code in setOf("network", "server_busy", "server_error")
-                if (!canStageOffline) { error(failure.message); return@onFailure }
-                var name = CallsignDrafts.randomName()
-                val otherName = if (seat == 0) localCallsign else callsign
-                while (name == otherName) name = CallsignDrafts.randomName()
-                // A lost generation response may already own its name; use a separate key
-                // for the local fallback and retain the earlier candidate for recovery.
-                accounts.switchCallsign(origin, seat, name, previousName, localOnly = true) { local ->
-                    local.onSuccess {
-                        committedCallsigns[seat] = name
-                        if (seat == 0) callsign = name else localCallsign = name
-                        nameDrafts.cancel(seat); save(); leave()
-                    }.onFailure { error(it.message) }
+            result
+                .onSuccess { rows ->
+                    val row = rows.single()
+                    if (server != origin || !row.selected) return@onSuccess
+                    committedCallsigns[seat] = row.name
+                    if (seat == 0) callsign = row.name else localCallsign = row.name
+                    nameDrafts.cancel(seat)
+                    save()
+                    leave()
                 }
-            }
+                .onFailure { failure ->
+                    if (!unchanged()) return@onFailure
+                    val canStageOffline =
+                        !online &&
+                            unchanged() &&
+                            (failure as? NetworkFailure)?.code in
+                                setOf("network", "server_busy", "server_error")
+                    if (!canStageOffline) {
+                        error(failure.message)
+                        return@onFailure
+                    }
+                    var name = CallsignDrafts.randomName()
+                    val otherName = if (seat == 0) localCallsign else callsign
+                    while (name == otherName) name = CallsignDrafts.randomName()
+                    // A lost generation response may already own its name; use a separate key
+                    // for the local fallback and retain the earlier candidate for recovery.
+                    accounts.switchCallsign(origin, seat, name, previousName, localOnly = true) {
+                        local ->
+                        local
+                            .onSuccess {
+                                committedCallsigns[seat] = name
+                                if (seat == 0) callsign = name else localCallsign = name
+                                nameDrafts.cancel(seat)
+                                save()
+                                leave()
+                            }
+                            .onFailure { error(it.message) }
+                    }
+                }
         }
     }
 
@@ -453,9 +581,11 @@ internal class GameSession(context: Context) {
     private fun pendingHumanNames(includeLocal: Boolean): Boolean =
         nameDrafts.pending(0) || includeLocal && nameDrafts.pending(1)
 
-    private fun awaitDefaultNames(includeLocal: Boolean = localSelected, action: () -> Unit): Boolean {
-        if (online || !pendingHumanNames(includeLocal))
-            return false
+    private fun awaitDefaultNames(
+        includeLocal: Boolean = localSelected,
+        action: () -> Unit,
+    ): Boolean {
+        if (online || !pendingHumanNames(includeLocal)) return false
         pendingOnlineAction = PendingOnlineAction(includeLocal, action)
         screen = Screen.CONNECTING
         status = "Choosing available callsigns…"
@@ -466,12 +596,20 @@ internal class GameSession(context: Context) {
     }
 
     private fun ensureDefaultNames() {
-        if (!active || releasingCallsign || nameRequest != null || System.nanoTime() < nextNameAttempt) return
-        pendingOnlineAction?.takeUnless { pendingHumanNames(it.includeLocal) }?.let {
-            pendingOnlineAction = null
-            screen = Screen.READY
-            it.run()
-        }
+        if (
+            !active ||
+                releasingCallsign ||
+                nameRequest != null ||
+                System.nanoTime() < nextNameAttempt
+        )
+            return
+        pendingOnlineAction
+            ?.takeUnless { pendingHumanNames(it.includeLocal) }
+            ?.let {
+                pendingOnlineAction = null
+                screen = Screen.READY
+                it.run()
+            }
         val requested = (0..1).filter { nameDrafts.pending(it) }
         if (requested.isEmpty()) return
         val requestID = nameDrafts.requestID(requested.first())
@@ -479,57 +617,64 @@ internal class GameSession(context: Context) {
         val origin = server
         val epoch = ++nameRequestEpoch
         runCatching {
-                persistNameDrafts()
-                val stamps =
-                    seats.associateWith {
-                        nameDrafts.request(
-                            it,
-                            origin,
-                            (store.selected(origin, it) ?: store.prepareRegistration(origin, it))
-                                .key,
-                        )
-                    }
-                nameRequest =
-                    accounts.generate(origin, seats, requestID) { result ->
-                        if (epoch != nameRequestEpoch) return@generate
-                        nameRequest = null
-                        nextNameAttempt = System.nanoTime() + 3_000_000_000L
-                        if (origin != server) return@generate
-                        result
-                            .onSuccess { rows ->
-                                var updated = false
-                                rows.forEach { row ->
-                                    val stamp = stamps.getValue(row.seat)
-                                    if (
-                                        row.selected &&
-                                            nameDrafts.complete(
-                                                stamp,
-                                                server,
-                                                store.selected(server, row.seat)?.key,
-                                                row.name,
-                                            )
-                                    ) {
-                                        committedCallsigns[row.seat] = row.name
-                                        if (row.seat == 0) callsign = row.name else localCallsign = row.name
-                                        updated = true
-                                    }
-                                }
-                                persistNameDrafts()
-                                if (updated) changed(true)
-                                nextNameAttempt = 0
-                                ensureDefaultNames()
-                            }
-                            .onFailure {
-                        if ((it as? NetworkFailure)?.code in setOf("account_key_revoked", "invalid_account_key", "account_invalid", "invalid_key")) {
-                                    seats.forEach { seat -> nameDrafts.cancel(seat) }
-                                    persistNameDrafts()
-                                    pendingOnlineAction = null
-                                    screen = Screen.READY
-                                    error(it.message)
-                                }
-                            }
-                    }
+            persistNameDrafts()
+            val stamps = seats.associateWith {
+                nameDrafts.request(
+                    it,
+                    origin,
+                    (store.selected(origin, it) ?: store.prepareRegistration(origin, it)).key,
+                )
             }
+            nameRequest =
+                accounts.generate(origin, seats, requestID) { result ->
+                    if (epoch != nameRequestEpoch) return@generate
+                    nameRequest = null
+                    nextNameAttempt = System.nanoTime() + 3_000_000_000L
+                    if (origin != server) return@generate
+                    result
+                        .onSuccess { rows ->
+                            var updated = false
+                            rows.forEach { row ->
+                                val stamp = stamps.getValue(row.seat)
+                                if (
+                                    row.selected &&
+                                        nameDrafts.complete(
+                                            stamp,
+                                            server,
+                                            store.selected(server, row.seat)?.key,
+                                            row.name,
+                                        )
+                                ) {
+                                    committedCallsigns[row.seat] = row.name
+                                    if (row.seat == 0) callsign = row.name
+                                    else localCallsign = row.name
+                                    updated = true
+                                }
+                            }
+                            persistNameDrafts()
+                            if (updated) changed(true)
+                            nextNameAttempt = 0
+                            ensureDefaultNames()
+                        }
+                        .onFailure {
+                            if (
+                                (it as? NetworkFailure)?.code in
+                                    setOf(
+                                        "account_key_revoked",
+                                        "invalid_account_key",
+                                        "account_invalid",
+                                        "invalid_key",
+                                    )
+                            ) {
+                                seats.forEach { seat -> nameDrafts.cancel(seat) }
+                                persistNameDrafts()
+                                pendingOnlineAction = null
+                                screen = Screen.READY
+                                error(it.message)
+                            }
+                        }
+                }
+        }
             .onFailure {
                 nextNameAttempt = System.nanoTime() + 3_000_000_000L
                 status = it.message ?: "Callsign settings could not be saved."
@@ -552,9 +697,12 @@ internal class GameSession(context: Context) {
         prefs
             .edit()
             .apply {
-                if (!Callsigns.botReserved(callsign)) putString("callsign", Callsigns.limit(callsign.trim()))
-                if (!Callsigns.botReserved(localCallsign)) putString("localCallsign", Callsigns.limit(localCallsign.trim()))
-                for (seat in 0..1) putBoolean("autoPending$seat", nameDrafts.pending(seat)).putString("autoRequest$seat", nameDrafts.requestID(seat))
+                if (!Callsigns.botReserved(callsign))
+                    putString("callsign", Callsigns.limit(callsign.trim()))
+                if (!Callsigns.botReserved(localCallsign))
+                    putString("localCallsign", Callsigns.limit(localCallsign.trim()))
+                for (seat in 0..1) putBoolean("autoPending$seat", nameDrafts.pending(seat))
+                    .putString("autoRequest$seat", nameDrafts.requestID(seat))
             }
             .putInt("color", colorIndex)
             .putInt("localColor", localColorIndex)
@@ -597,7 +745,9 @@ internal class GameSession(context: Context) {
     fun setServer(address: String) {
         val normalized = ServerAddress.configuredOrigin(address, BuildConfig.DEBUG)
         if (normalized == server) return
-        check(!releasingCallsign) { "Wait for the callsign release to finish before changing servers." }
+        check(!releasingCallsign) {
+            "Wait for the callsign release to finish before changing servers."
+        }
         if (online || screen == Screen.CONNECTING) leave()
         else if (store.activeIntent() != null) store.setActiveIntent(null)
         val previousServer = server
@@ -611,8 +761,9 @@ internal class GameSession(context: Context) {
         for (seat in 0..1) {
             accounts.invalidate(previousServer, seat)
             val key = store.selected(server, seat)?.key
-            committedCallsigns[seat] = if (key == null) nameDrafts.name(seat)
-            else savedNames.firstOrNull { it.key == key }?.name.orEmpty()
+            committedCallsigns[seat] =
+                if (key == null) nameDrafts.name(seat)
+                else savedNames.firstOrNull { it.key == key }?.name.orEmpty()
         }
         prefs.edit().putString("server", server).apply()
         statusRequest?.cancel()
@@ -648,9 +799,12 @@ internal class GameSession(context: Context) {
 
     fun changeRules(value: RoomRules) {
         if (rejectSurvivalRosterChange(value.mode, value.infinity, localSelected)) return
-        val updated = value.copy(
-            teamMode = if (!value.infinity && value.mode in listOf("ctf", "survival")) "teams" else value.teamMode,
-        )
+        val updated =
+            value.copy(
+                teamMode =
+                    if (!value.infinity && value.mode in listOf("ctf", "survival")) "teams"
+                    else value.teamMode,
+            )
         if (online) {
             command("rules", "rules" to rulesJson(updated))
             return
@@ -665,9 +819,17 @@ internal class GameSession(context: Context) {
         changed(true)
     }
 
-    private fun rejectSurvivalRosterChange(mode: String, infinity: Boolean, paired: Boolean): Boolean {
-        if (online || infinity || mode != "survival" || localBots.size + (if (paired) 2 else 1) <= 4) return false
-        configurationError = "Survival supports up to four squad tanks. Remove a bot or a local pilot first."
+    private fun rejectSurvivalRosterChange(
+        mode: String,
+        infinity: Boolean,
+        paired: Boolean,
+    ): Boolean {
+        if (
+            online || infinity || mode != "survival" || localBots.size + (if (paired) 2 else 1) <= 4
+        )
+            return false
+        configurationError =
+            "Survival supports up to four squad tanks. Remove a bot or a local pilot first."
         changed(true)
         return true
     }
@@ -676,7 +838,8 @@ internal class GameSession(context: Context) {
         configurationError = null
         publicSelected = enabled
         if (online) command("select_public_infinity", "enabled" to enabled)
-        else if (!enabled && !rules.infinity && localBots.isEmpty()) resizeBots(3.coerceAtMost(maxLocalBots))
+        else if (!enabled && !rules.infinity && localBots.isEmpty())
+            resizeBots(3.coerceAtMost(maxLocalBots))
         save()
         changed(true)
     }
@@ -685,7 +848,8 @@ internal class GameSession(context: Context) {
         while (mutableLocalBots.size > count) mutableLocalBots.removeAt(mutableLocalBots.lastIndex)
         while (mutableLocalBots.size < count) {
             val id = (mutableLocalBots.maxOfOrNull { it.id } ?: 1) + 1
-            val name = BotNames.next(mutableLocalBots.map { it.name } + callsign + localCallsign, id)
+            val name =
+                BotNames.next(mutableLocalBots.map { it.name } + callsign + localCallsign, id)
             mutableLocalBots.add(
                 LocalBot(
                     id,
@@ -760,9 +924,7 @@ internal class GameSession(context: Context) {
             old.copy(
                 name = name?.let { Callsigns.limit(it.trim()).ifBlank { "BOT" } } ?: old.name,
                 colorIndex = colorIndex?.let(GamePalette::index) ?: old.colorIndex,
-                difficulty =
-                    difficulty?.takeIf { it in BotDifficulty.names }
-                        ?: old.difficulty,
+                difficulty = difficulty?.takeIf { it in BotDifficulty.names } ?: old.difficulty,
                 team = side,
             )
         save()
@@ -777,20 +939,41 @@ internal class GameSession(context: Context) {
         accumulator = 0.0
         previousFrame = 0
         maze = InfiniteMaze(7319)
-        snapshot = ArenaSnapshot(
-            tanks = listOf(ArenaTank(id = localID, name = callsign, x = 126.0, y = 126.0, angle = -.6, colorIndex = colorIndex)),
-            pickups = listOf(
-                ArenaPickup(id = 1, x = 210.0, y = 210.0, type = "cannon"),
-                ArenaPickup(id = 2, x = 42.0, y = 210.0, type = "shield"),
-            ),
-        )
+        snapshot =
+            ArenaSnapshot(
+                tanks =
+                    listOf(
+                        ArenaTank(
+                            id = localID,
+                            name = callsign,
+                            x = 126.0,
+                            y = 126.0,
+                            angle = -.6,
+                            colorIndex = colorIndex,
+                        ),
+                    ),
+                pickups =
+                    listOf(
+                        ArenaPickup(id = 1, x = 210.0, y = 210.0, type = "cannon"),
+                        ArenaPickup(id = 2, x = 42.0, y = 210.0, type = "shield"),
+                    ),
+            )
     }
 
     fun play() {
         if (releasingCallsign) return
-        if (!online && publicSelected && !nameDrafts.pending(0) && prepareIdentityForOnline { play() }) return
+        if (
+            !online &&
+                publicSelected &&
+                !nameDrafts.pending(0) &&
+                prepareIdentityForOnline { play() }
+        )
+            return
         if (!validHumanNames()) return
-        localStartError?.let { error(it); return }
+        localStartError?.let {
+            error(it)
+            return
+        }
         if (!online && publicSelected && awaitDefaultNames { play() }) return
         save()
         neutral()
@@ -845,7 +1028,8 @@ internal class GameSession(context: Context) {
         }
         infinity = rules.infinity
         val seed = SecureRandom().nextInt()
-        val secondaryPlayer = if (localSelected) LocalPilot(localCallsign, localColorIndex, secondLocalTeam) else null
+        val secondaryPlayer =
+            if (localSelected) LocalPilot(localCallsign, localColorIndex, secondLocalTeam) else null
         if (infinity) {
             practice =
                 PracticeArena(
@@ -864,8 +1048,12 @@ internal class GameSession(context: Context) {
                 if (rules.teamMode == "teams") localTeam else 0,
             )
             practice!!.secondaryLocalID?.let {
-                practice!!.configurePilot(it, localCallsign, localColorIndex,
-                    if (rules.teamMode == "teams") secondLocalTeam else 0)
+                practice!!.configurePilot(
+                    it,
+                    localCallsign,
+                    localColorIndex,
+                    if (rules.teamMode == "teams") secondLocalTeam else 0,
+                )
             }
             val firstBotID = (practice!!.secondaryLocalID ?: practice!!.localID) + 1
             localBots.forEachIndexed { index, bot ->
@@ -912,8 +1100,7 @@ internal class GameSession(context: Context) {
 
     private fun localRoster(): List<PresetSeat> = buildList {
         add(PresetSeat("human", callsign, colorIndex, localTeam))
-        if (localSelected)
-            add(PresetSeat("local", localCallsign, localColorIndex, secondLocalTeam))
+        if (localSelected) add(PresetSeat("local", localCallsign, localColorIndex, secondLocalTeam))
         localBots.forEach { bot ->
             add(PresetSeat("bot", bot.name, bot.colorIndex, bot.team, bot.difficulty))
         }
@@ -921,10 +1108,15 @@ internal class GameSession(context: Context) {
 
     private fun onlineRoster(current: JSONObject): List<PresetSeat> {
         val host = current.optInt("host")
-        return current.optJSONArray("players")?.objects().orEmpty()
+        return current
+            .optJSONArray("players")
+            ?.objects()
+            .orEmpty()
             .filter { player ->
                 val kind = player.optString("kind")
-                player.optInt("id") == host || kind == "bot" || kind == "local" && player.optInt("owner") == host
+                player.optInt("id") == host ||
+                    kind == "bot" ||
+                    kind == "local" && player.optInt("owner") == host
             }
             .sortedBy { it.optInt("id") != host }
             .map { player ->
@@ -934,15 +1126,20 @@ internal class GameSession(context: Context) {
     }
 
     private fun readPresets(): MutableList<RoomPreset> {
-        val presets = runCatching { JSONArray(prefs.getString("roomPresets", "[]")!!).objects() }
+        val presets = runCatching {
+            JSONArray(prefs.getString("roomPresets", "[]")!!).objects()
+        }
             .getOrDefault(emptyList())
             .mapNotNull { runCatching { RoomPreset.fromJson(it) }.getOrNull() }
             .takeLast(RoomPreset.maxCount)
             .toMutableList()
-        if (presets.isEmpty()) prefs.getString("preset", null)?.let { encoded ->
-            runCatching { RoomPreset("Saved preset", SnapshotDecoder.rules(JSONObject(encoded)), null) }
-                .onSuccess { presets += it }
-        }
+        if (presets.isEmpty())
+            prefs.getString("preset", null)?.let { encoded ->
+                runCatching {
+                    RoomPreset("Saved preset", SnapshotDecoder.rules(JSONObject(encoded)), null)
+                }
+                    .onSuccess { presets += it }
+            }
         return presets
     }
 
@@ -951,21 +1148,26 @@ internal class GameSession(context: Context) {
             if (screen != Screen.READY || releasingCallsign) return false
             if (!online) return true
             val current = room ?: return false
-            return isHost && roomSetupOpen &&
+            return isHost &&
+                roomSetupOpen &&
                 (current.optJSONArray("spectators")?.length() ?: 0) == 0 &&
                 current.optJSONArray("players")?.objects().orEmpty().none {
-                    it.optInt("id") != current.optInt("host") && it.optString("kind") !in setOf("bot", "local")
+                    it.optInt("id") != current.optInt("host") &&
+                        it.optString("kind") !in setOf("bot", "local")
                 }
         }
 
     fun savePreset(value: String): Boolean {
         val name = Callsigns.limit(value.trim(), RoomPreset.maxNameLength)
         if (name.isEmpty() || !isHost || releasingCallsign || screen != Screen.READY) return false
-        val roster = if (online) room?.let(::onlineRoster)?.takeIf { it.isNotEmpty() } ?: return false else localRoster()
+        val roster =
+            if (online) room?.let(::onlineRoster)?.takeIf { it.isNotEmpty() } ?: return false
+            else localRoster()
         mutablePresets.removeAll { it.name == name }
         mutablePresets.add(RoomPreset(name, rules.copy(), roster))
         if (mutablePresets.size > RoomPreset.maxCount) mutablePresets.removeAt(0)
-        prefs.edit()
+        prefs
+            .edit()
             .putString("roomPresets", JSONArray(mutablePresets.map(RoomPreset::toJson)).toString())
             .remove("preset")
             .apply()
@@ -979,17 +1181,22 @@ internal class GameSession(context: Context) {
         }
         val roster = preset.roster
         if (roster == null) {
-            if (rejectSurvivalRosterChange(preset.rules.mode, preset.rules.infinity, localSelected)) return false
+            if (rejectSurvivalRosterChange(preset.rules.mode, preset.rules.infinity, localSelected))
+                return false
             changeRules(preset.rules)
             return true
         }
         if (online) {
             val current = onlineRoster(room ?: return false)
             val primary = current.firstOrNull() ?: return false
-            val selectedSecondary = store.selected(server, 1)?.let { credential ->
-                accounts.savedCallsigns(server).firstOrNull { it.key == credential.key }?.name
-            }
-            val localName = current.firstOrNull { it.kind == "local" }?.name ?: selectedSecondary ?: localCallsign
+            val selectedSecondary =
+                store.selected(server, 1)?.let { credential ->
+                    accounts.savedCallsigns(server).firstOrNull { it.key == credential.key }?.name
+                }
+            val localName =
+                current.firstOrNull { it.kind == "local" }?.name
+                    ?: selectedSecondary
+                    ?: localCallsign
             val seats = roster.map { seat ->
                 when (seat.kind) {
                     "human" -> seat.copy(name = primary.name)
@@ -1059,7 +1266,8 @@ internal class GameSession(context: Context) {
     }
 
     fun join(code: String, spectator: Boolean = false) {
-        val includeLocal = !spectator && (if (room != null) roomLocalPilot != null else localSelected)
+        val includeLocal =
+            !spectator && (if (room != null) roomLocalPilot != null else localSelected)
         join(code, spectator, includeLocal)
     }
 
@@ -1090,8 +1298,7 @@ internal class GameSession(context: Context) {
 
     fun findMatch() {
         if (releasingCallsign) return
-        if (online) command("queue_info")
-        else share(forQueue = true)
+        if (online) command("queue_info") else share(forQueue = true)
     }
 
     fun leave() {
@@ -1151,7 +1358,8 @@ internal class GameSession(context: Context) {
     }
 
     val canResume: Boolean
-        get() = (!online || activeNetwork.connected) && (spectating || !Callsigns.botReserved(callsign))
+        get() =
+            (!online || activeNetwork.connected) && (spectating || !Callsigns.botReserved(callsign))
 
     val canRestartWave: Boolean
         get() =
@@ -1203,12 +1411,13 @@ internal class GameSession(context: Context) {
         cancelFireFeedback()
         if (online && hasLocalPlayer) {
             val client = activeNetwork
-            if (!spectating) client.sendInput(
-                timeline.neutralPacket(),
-                paused = true,
-                player = localID,
-                member = client.welcome?.member,
-            )
+            if (!spectating)
+                client.sendInput(
+                    timeline.neutralPacket(),
+                    paused = true,
+                    player = localID,
+                    member = client.welcome?.member,
+                )
             if (canControlSecondary)
                 client.sendInput(
                     timeline.neutralLocalPacket() ?: GameInput(),
@@ -1229,8 +1438,17 @@ internal class GameSession(context: Context) {
             network.resume()
             if (arenaActive) arenaNetwork.resume()
         } else if (intent != null) {
-            val legacyIntent = LegacyCallsignDefaults.shouldGenerate(intent.name, store.selected(intent.origin, 0) != null) ||
-                intent.localName?.let { LegacyCallsignDefaults.shouldGenerate(it, store.selected(intent.origin, 1) != null) } == true
+            val legacyIntent =
+                LegacyCallsignDefaults.shouldGenerate(
+                    intent.name,
+                    store.selected(intent.origin, 0) != null,
+                ) ||
+                    intent.localName?.let {
+                        LegacyCallsignDefaults.shouldGenerate(
+                            it,
+                            store.selected(intent.origin, 1) != null,
+                        )
+                    } == true
             if (legacyIntent) {
                 // A stale no-key auto-resume must not restore an old default over the bootstrap.
                 // The next deliberate Play claims the new defaults with persisted independent keys.
@@ -1293,7 +1511,13 @@ internal class GameSession(context: Context) {
 
     fun refreshStatus() {
         ensureDefaultNames()
-        if (!active || statusInFlight || screen != Screen.READY || (!publicSelected && (!showFPS || network.connected))) return
+        if (
+            !active ||
+                statusInFlight ||
+                screen != Screen.READY ||
+                (!publicSelected && (!showFPS || network.connected))
+        )
+            return
         statusInFlight = true
         val requestedServer = server
         val requestEpoch = ++statusEpoch
@@ -1331,15 +1555,21 @@ internal class GameSession(context: Context) {
                         maze,
                         input2 = input2.takeIf { localID2 != null },
                         sendLocal = { packet ->
-                            if (canControlSecondary) client.sendInput(
-                                packet,
-                                local = true,
-                                player = localID2,
-                                member = client.welcome?.localMember,
-                            )
+                            if (canControlSecondary)
+                                client.sendInput(
+                                    packet,
+                                    local = true,
+                                    player = localID2,
+                                    member = client.welcome?.localMember,
+                                )
                         },
                     ) { packet ->
-                        if (!spectating) client.sendInput(packet, player = localID, member = client.welcome?.member)
+                        if (!spectating)
+                            client.sendInput(
+                                packet,
+                                player = localID,
+                                member = client.welcome?.member,
+                            )
                     } ?: snapshot
             } else {
                 accumulator += dt
@@ -1364,21 +1594,45 @@ internal class GameSession(context: Context) {
                 fixed?.let { maze = it.maze }
             }
         }
-        if (screen == Screen.PLAYING && paused && (authoritativeSnapshot.result != null || authoritativeSnapshot.phase in listOf("roundOver", "matchOver"))) {
-            snapshot = if (online) timeline.renderTerminal(dt) ?: snapshot
-            else if (finishingProjectilePresentation) practice?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9)
-                ?: fixed?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9) ?: snapshot else snapshot
+        if (
+            screen == Screen.PLAYING &&
+                paused &&
+                (authoritativeSnapshot.result != null ||
+                    authoritativeSnapshot.phase in listOf("roundOver", "matchOver"))
+        ) {
+            snapshot =
+                if (online) timeline.renderTerminal(dt) ?: snapshot
+                else if (finishingProjectilePresentation)
+                    practice?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9)
+                        ?: fixed?.presentationSnapshot(0.0, nowSeconds = nanos / 1e9)
+                        ?: snapshot
+                else snapshot
         }
         val authority = authoritativeSnapshot
         val feedbackPlaying = fireFeedbackPlaying(authority)
-        previewRecoil = fireFeedback.pulse(authority.tanks.firstOrNull { it.id == localID }, authority.generation, feedbackPlaying, nanos / 1e9)
-        localPreviewRecoil = localFireFeedback.pulse(localID2?.let { id -> authority.tanks.firstOrNull { it.id == id } }, authority.generation, feedbackPlaying, nanos / 1e9)
+        previewRecoil =
+            fireFeedback.pulse(
+                authority.tanks.firstOrNull { it.id == localID },
+                authority.generation,
+                feedbackPlaying,
+                nanos / 1e9,
+            )
+        localPreviewRecoil =
+            localFireFeedback.pulse(
+                localID2?.let { id -> authority.tanks.firstOrNull { it.id == id } },
+                authority.generation,
+                feedbackPlaying,
+                nanos / 1e9,
+            )
         present(snapshot, maze, localID, localID2, online)
         if (screen == Screen.PLAYING) {
             uiElapsed += dt
             val authority = authoritativeSnapshot
-            val primaryEpoch = authority.tanks.firstOrNull { it.id == localID }?.ammoEpoch ?: Long.MIN_VALUE
-            val secondaryEpoch = localID2?.let { id -> authority.tanks.firstOrNull { it.id == id }?.ammoEpoch } ?: Long.MIN_VALUE
+            val primaryEpoch =
+                authority.tanks.firstOrNull { it.id == localID }?.ammoEpoch ?: Long.MIN_VALUE
+            val secondaryEpoch =
+                localID2?.let { id -> authority.tanks.firstOrNull { it.id == id }?.ammoEpoch }
+                    ?: Long.MIN_VALUE
             val refilled = primaryEpoch != hudAmmoEpoch || secondaryEpoch != hudLocalAmmoEpoch
             hudAmmoEpoch = primaryEpoch
             hudLocalAmmoEpoch = secondaryEpoch
@@ -1400,7 +1654,11 @@ internal class GameSession(context: Context) {
     }
 
     private fun fireFeedbackPlaying(state: ArenaSnapshot) =
-        audioGameplayActive && fireFeedbackAllowed() && state.phase == "playing" && state.result == null && state.objectives?.survival?.status != "break"
+        audioGameplayActive &&
+            fireFeedbackAllowed() &&
+            state.phase == "playing" &&
+            state.result == null &&
+            state.objectives?.survival?.status != "break"
 
     private fun observeFire(local: Boolean, fire: Boolean, nanos: Long) {
         val state = authoritativeSnapshot
@@ -1413,8 +1671,12 @@ internal class GameSession(context: Context) {
             if (online) {
                 val client = activeNetwork
                 timeline.inputEdgePacket(if (local) input2 else input, local)?.let { packet ->
-                    client.sendInput(packet, local = local, player = id,
-                        member = if (local) client.welcome?.localMember else client.welcome?.member)
+                    client.sendInput(
+                        packet,
+                        local = local,
+                        player = id,
+                        member = if (local) client.welcome?.localMember else client.welcome?.member,
+                    )
                 }
             } else {
                 practice?.captureFire(id, fire)
@@ -1422,23 +1684,52 @@ internal class GameSession(context: Context) {
             }
         }
         val age = if (online) max(0.0, nanos / 1e9 - timeline.authoritativeArrivalTime) else 0.0
-        val accepted = (if (local) localFireFeedback else fireFeedback).controls(fire, tank, state.generation, playing, nanos / 1e9, age)
-        if (accepted && tank != null && !muted && volume > 0 && PressFireFeedback.ammoUnavailable(tank, state, age)) emitAudioCue(AudioCue.DRY_FIRE)
+        val accepted =
+            (if (local) localFireFeedback else fireFeedback).controls(
+                fire,
+                tank,
+                state.generation,
+                playing,
+                nanos / 1e9,
+                age,
+            )
+        if (
+            accepted &&
+                tank != null &&
+                !muted &&
+                volume > 0 &&
+                PressFireFeedback.ammoUnavailable(tank, state, age)
+        )
+            emitAudioCue(AudioCue.DRY_FIRE)
     }
 
     val finishingProjectilePresentation: Boolean
-        get() = if (online) timeline.hasPendingProjectileFlights else practice?.hasPendingProjectileFlights ?: fixed?.hasPendingProjectileFlights ?: false
+        get() =
+            if (online) timeline.hasPendingProjectileFlights
+            else
+                practice?.hasPendingProjectileFlights ?: fixed?.hasPendingProjectileFlights ?: false
 
     /** HUD and input readiness always read immediate authority, never a held contact body. */
     val authoritativeSnapshot: ArenaSnapshot
-        get() = if (online) timeline.authoritativeSnapshot ?: snapshot else practice?.snapshot ?: fixed?.snapshot ?: snapshot
+        get() =
+            if (online) timeline.authoritativeSnapshot ?: snapshot
+            else practice?.snapshot ?: fixed?.snapshot ?: snapshot
 
     private fun canonicalCallsign(name: String) = Callsigns.canonical(name)
 
-    fun renameCallsign(name: String, seat: Int = 0, validate: Boolean = false, completed: (() -> Unit)? = null) {
+    fun renameCallsign(
+        name: String,
+        seat: Int = 0,
+        validate: Boolean = false,
+        completed: (() -> Unit)? = null,
+    ) {
         require(seat in 0..1)
-        val cleaned = Callsigns.limit(name.trim()).ifBlank { if (seat == 0) "Pilot" else "Co-pilot" }
-        if (Callsigns.botReserved(cleaned)) { error(Callsigns.botNamespaceMessage); return }
+        val cleaned =
+            Callsigns.limit(name.trim()).ifBlank { if (seat == 0) "Pilot" else "Co-pilot" }
+        if (Callsigns.botReserved(cleaned)) {
+            error(Callsigns.botNamespaceMessage)
+            return
+        }
         if (switchingCallsign || releasingCallsign) return
         val previousName = committedCallsigns[seat]
         val selected = store.selected(server, seat)
@@ -1446,17 +1737,23 @@ internal class GameSession(context: Context) {
         if (seat == 0) callsign = cleaned else localCallsign = cleaned
         if (!validate && same) {
             if (seat == 0) callsign = cleaned else localCallsign = cleaned
-            save(); completed?.invoke(); return
+            save()
+            completed?.invoke()
+            return
         }
         val origin = server
         val sourceScreen = screen
         val sourceOnline = online
         val stamp = nameDrafts.request(seat, origin, selected?.key.orEmpty())
-        fun unchanged() = !releasingCallsign && screen == sourceScreen && online == sourceOnline &&
-            nameDrafts.isCurrent(stamp, server, store.selected(server, seat)?.key.orEmpty())
+        fun unchanged() =
+            !releasingCallsign &&
+                screen == sourceScreen &&
+                online == sourceOnline &&
+                nameDrafts.isCurrent(stamp, server, store.selected(server, seat)?.key.orEmpty())
         fun accept(checked: CheckedAccount) {
             committedCallsigns[seat] = checked.info.preferredCallsign ?: cleaned
-            if (seat == 0) callsign = committedCallsigns[seat] else localCallsign = committedCallsigns[seat]
+            if (seat == 0) callsign = committedCallsigns[seat]
+            else localCallsign = committedCallsigns[seat]
             save()
             if (!validate || !same || checked.key != selected?.key) leave()
             completed?.invoke()
@@ -1464,29 +1761,65 @@ internal class GameSession(context: Context) {
         fun reject(error: Throwable) {
             if (!unchanged()) return
             if (seat == 0) callsign = previousName else localCallsign = previousName
-            save(); error(error.message); changed(true)
+            save()
+            error(error.message)
+            changed(true)
         }
         switchingCallsign = true
         runCatching {
-            accounts.switchCallsign(origin, seat, cleaned, previousName, localOnly = !online && screen == Screen.PLAYING, canCommit = ::unchanged) { result ->
+            accounts.switchCallsign(
+                origin,
+                seat,
+                cleaned,
+                previousName,
+                localOnly = !online && screen == Screen.PLAYING,
+                canCommit = ::unchanged,
+            ) { result ->
                 switchingCallsign = false
                 result.onSuccess(::accept).onFailure { failure ->
-                    if (!validate && !online && unchanged() && (failure as? NetworkFailure)?.code in setOf("network", "server_busy", "server_error")) {
-                        accounts.switchCallsign(origin, seat, cleaned, previousName, localOnly = true, canCommit = ::unchanged) {
+                    if (
+                        !validate &&
+                            !online &&
+                            unchanged() &&
+                            (failure as? NetworkFailure)?.code in
+                                setOf("network", "server_busy", "server_error")
+                    ) {
+                        accounts.switchCallsign(
+                            origin,
+                            seat,
+                            cleaned,
+                            previousName,
+                            localOnly = true,
+                            canCommit = ::unchanged,
+                        ) {
                             it.onSuccess(::accept).onFailure(::reject)
                         }
                     } else reject(failure)
                 }
             }
-        }.onFailure { switchingCallsign = false; error(it.message) }
+        }
+            .onFailure {
+                switchingCallsign = false
+                error(it.message)
+            }
     }
 
-    private fun prepareIdentityForOnline(includeLocal: Boolean = localSelected, action: () -> Unit): Boolean {
+    private fun prepareIdentityForOnline(
+        includeLocal: Boolean = localSelected,
+        action: () -> Unit,
+    ): Boolean {
         if (switchingCallsign) return true
-        if (onlineIdentityReady) { onlineIdentityReady = false; return false }
+        if (onlineIdentityReady) {
+            onlineIdentityReady = false
+            return false
+        }
         val seats = if (includeLocal) listOf(0, 1) else listOf(0)
         fun prepare(index: Int) {
-            if (index == seats.size) { onlineIdentityReady = true; action(); return }
+            if (index == seats.size) {
+                onlineIdentityReady = true
+                action()
+                return
+            }
             val seat = seats[index]
             renameCallsign(nameDrafts.name(seat), seat, validate = true) { prepare(index + 1) }
         }
@@ -1499,7 +1832,10 @@ internal class GameSession(context: Context) {
         // An existing credential stays paired with its committed callsign. The room add
         // claims a new durable P2 credential atomically when the seat has no account yet.
         val name = if (store.selected(server, 1) == null) localCallsign else committedCallsigns[1]
-        if (Callsigns.botReserved(name)) { error(Callsigns.botNamespaceMessage); return }
+        if (Callsigns.botReserved(name)) {
+            error(Callsigns.botNamespaceMessage)
+            return
+        }
         command("add", "kind" to "local", "name" to name)
     }
 
@@ -1507,9 +1843,17 @@ internal class GameSession(context: Context) {
         val json = JSONObject().put("type", type)
         fields.forEach { (key, value) -> json.put(key, value) }
         val target = json.optInt("target", -1)
-        if (type == "rename" && json.has("name")) { renameCallsign(json.getString("name"), 0); return }
-        if (type in setOf("rename_local", "configure") && json.has("name") && target == network.welcome?.localId) {
-            renameCallsign(json.getString("name"), 1); return
+        if (type == "rename" && json.has("name")) {
+            renameCallsign(json.getString("name"), 0)
+            return
+        }
+        if (
+            type in setOf("rename_local", "configure") &&
+                json.has("name") &&
+                target == network.welcome?.localId
+        ) {
+            renameCallsign(json.getString("name"), 1)
+            return
         }
         runCatching { (if (room != null) network else activeNetwork).send(json) }
             .onFailure { error(it.message) }
@@ -1554,7 +1898,13 @@ internal class GameSession(context: Context) {
                 ),
             )
         runCatching {
-            arenaNetwork.connectRoomInfinity(server, code, token, includeLocal = hasLocal, spectating = identity.spectating)
+            arenaNetwork.connectRoomInfinity(
+                server,
+                code,
+                token,
+                includeLocal = hasLocal,
+                spectating = identity.spectating,
+            )
         }
             .onFailure {
                 arenaActive = false
@@ -1575,7 +1925,10 @@ internal class GameSession(context: Context) {
                 val welcome = event.welcome
                 if (isPlayingClient) {
                     localID = welcome.id
-                    localID2 = welcome.localId.takeUnless { welcome.spectating && (fromArena || welcome.isPublic) }
+                    localID2 =
+                        welcome.localId.takeUnless {
+                            welcome.spectating && (fromArena || welcome.isPublic)
+                        }
                     followingID = welcome.following
                     welcome.seed?.let { maze = InfiniteMaze(it) }
                     if (fromArena || welcome.isPublic) {
@@ -1584,7 +1937,11 @@ internal class GameSession(context: Context) {
                     val newTransport =
                         timelineOwner !== client ||
                             timelineConnection != client.connectionGeneration
-                    timeline.setLocalIDs(if (welcome.spectating) -1 else localID, localID2, client.lastLocalInputSequence)
+                    timeline.setLocalIDs(
+                        if (welcome.spectating) -1 else localID,
+                        localID2,
+                        client.lastLocalInputSequence,
+                    )
                     if (newTransport) {
                         timeline.reset(client.lastInputSequence, client.lastLocalInputSequence)
                         timelineOwner = client
@@ -1598,7 +1955,8 @@ internal class GameSession(context: Context) {
                 if (isPlayingClient) {
                     audioStateOwner = client
                     audioStateConnection = client.connectionGeneration
-                    if (client.isPublic) spawnNotices.accept(event.snapshot.godlikeSpawns, System.nanoTime() / 1e9)
+                    if (client.isPublic)
+                        spawnNotices.accept(event.snapshot.godlikeSpawns, System.nanoTime() / 1e9)
                     timeline.accept(event.snapshot, System.nanoTime() / 1e9)
                     if (event.snapshot.spectating) followingID = event.snapshot.following
                     event.snapshot.world?.let { world ->
@@ -1608,19 +1966,24 @@ internal class GameSession(context: Context) {
                     snapshot = event.snapshot
                     for (seat in 0..1) {
                         val id = if (seat == 0) localID else localID2
-                        event.snapshot.tanks.firstOrNull { it.id == id }?.let { tank ->
-                            if (committedCallsigns[seat] != tank.name) {
-                                committedCallsigns[seat] = tank.name
-                                store.selected(server,seat)?.let { accounts.rememberCallsign(server,seat,tank.name,it.key) }
+                        event.snapshot.tanks
+                            .firstOrNull { it.id == id }
+                            ?.let { tank ->
+                                if (committedCallsigns[seat] != tank.name) {
+                                    committedCallsigns[seat] = tank.name
+                                    store.selected(server, seat)?.let {
+                                        accounts.rememberCallsign(server, seat, tank.name, it.key)
+                                    }
+                                }
                             }
-                        }
                     }
                 }
             is NetworkEvent.Latency -> if (isPlayingClient) latency = event.milliseconds
-            is NetworkEvent.InfinityStarted -> if (!fromArena) {
-                spectatorAutoEnter = true
-                attachRoomArena(event.isPublic)
-            }
+            is NetworkEvent.InfinityStarted ->
+                if (!fromArena) {
+                    spectatorAutoEnter = true
+                    attachRoomArena(event.isPublic)
+                }
             is NetworkEvent.Reconnecting ->
                 if (isPlayingClient) {
                     neutral()
@@ -1629,7 +1992,12 @@ internal class GameSession(context: Context) {
             is NetworkEvent.Disconnected ->
                 if (isPlayingClient && event.message != null) status = event.message
             is NetworkEvent.Error -> {
-                if (fromArena && event.terminal && event.code == "room_access_changed" && room != null) {
+                if (
+                    fromArena &&
+                        event.terminal &&
+                        event.code == "room_access_changed" &&
+                        room != null
+                ) {
                     neutral()
                     paused = false
                     arenaNetwork.disconnect(false)
@@ -1642,7 +2010,8 @@ internal class GameSession(context: Context) {
                         !fromArena &&
                         arenaActive &&
                         arenaNetwork.isPublic &&
-                        event.code !in setOf("account_key_revoked", "account_key_invalid", "session_replaced")
+                        event.code !in
+                            setOf("account_key_revoked", "account_key_invalid", "session_replaced")
                 ) {
                     // Public accounts survive loss of the temporary party/room route.
                     network.disconnect(false)
@@ -1683,11 +2052,19 @@ internal class GameSession(context: Context) {
                 packet.optJSONArray("players")?.let { rows ->
                     for (seat in 0..1) {
                         val id = if (seat == 0) network.welcome?.id else network.welcome?.localId
-                        val player = (0 until rows.length()).map { rows.getJSONObject(it) }.firstOrNull { it.optInt("id") == id }
-                        player?.optString("name")?.takeIf { it.isNotBlank() && it != committedCallsigns[seat] }?.let { name ->
-                            committedCallsigns[seat] = name
-                            store.selected(server,seat)?.let { accounts.rememberCallsign(server,seat,name,it.key) }
-                        }
+                        val player =
+                            (0 until rows.length())
+                                .map { rows.getJSONObject(it) }
+                                .firstOrNull { it.optInt("id") == id }
+                        player
+                            ?.optString("name")
+                            ?.takeIf { it.isNotBlank() && it != committedCallsigns[seat] }
+                            ?.let { name ->
+                                committedCallsigns[seat] = name
+                                store.selected(server, seat)?.let {
+                                    accounts.rememberCallsign(server, seat, name, it.key)
+                                }
+                            }
                     }
                 }
                 packet.optJSONObject("rules")?.let {
@@ -1712,15 +2089,20 @@ internal class GameSession(context: Context) {
                     }
                     screen = Screen.READY
                     followingID = 0
-                } else if (packet.optBoolean("infinityActive") && !packet.optBoolean("infinityPublic")) {
-                    val changedRole = arenaActive && arenaNetwork.welcome?.let { it.spectating != roomSpectating } == true
+                } else if (
+                    packet.optBoolean("infinityActive") && !packet.optBoolean("infinityPublic")
+                ) {
+                    val changedRole =
+                        arenaActive &&
+                            arenaNetwork.welcome?.let { it.spectating != roomSpectating } == true
                     if (changedRole) {
                         spectatorAutoEnter = true
                         neutral()
                         arenaNetwork.disconnect(false)
                         arenaActive = false
                     }
-                    if (!arenaActive && (roomSpectating && spectatorAutoEnter || changedRole)) attachRoomArena(false)
+                    if (!arenaActive && (roomSpectating && spectatorAutoEnter || changedRole))
+                        attachRoomArena(false)
                 }
                 infinity = arenaActive || rules.infinity
                 if (pendingLocalJoin) {

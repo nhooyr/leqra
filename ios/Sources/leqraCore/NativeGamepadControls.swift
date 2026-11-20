@@ -2,8 +2,10 @@ import Foundation
 
 public enum NativeGamepadControls {
     /// Stick axes use game coordinates, with positive Y pointing down.
-    public static func input(leftX: Double, leftY: Double, rightX: Double, rightY: Double,
-                             forward: Bool, reverse: Bool, left: Bool, right: Bool, fire: Bool) -> GameInput {
+    public static func input(
+        leftX: Double, leftY: Double, rightX: Double, rightY: Double,
+        forward: Bool, reverse: Bool, left: Bool, right: Bool, fire: Bool
+    ) -> GameInput {
         let driving = hypot(leftX, leftY) >= 0.15
         let aiming = hypot(rightX, rightY) >= 0.15
         guard driving || aiming || forward || reverse || left || right || fire else { return GameInput() }

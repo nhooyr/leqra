@@ -51,7 +51,7 @@ class RicochetPresentationTest {
             val impactFraction = (contact - first.x) / (300 * span)
             assertTrue(path!!.sample(second, first, (impactFraction + 1) / 2).x > second.x)
             assertTrue(
-                samples.all { it.x <= contact + 1e-9 && (!corner || it.y <= contact + 1e-9) }
+                samples.all { it.x <= contact + 1e-9 && (!corner || it.y <= contact + 1e-9) },
             )
             assertEquals(savedFirst, first)
             assertEquals(savedSecond, second)
@@ -86,7 +86,7 @@ class RicochetPresentationTest {
                 second.copy(kind = "homing"),
                 duration,
                 maze,
-            )
+            ),
         )
         assertNull(RicochetPath.between(first, second, duration, null))
     }

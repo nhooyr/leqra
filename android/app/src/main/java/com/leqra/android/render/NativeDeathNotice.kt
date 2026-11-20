@@ -21,35 +21,68 @@ import kotlin.math.max
 internal class NativeDeathNotice {
     private var previous: DeathNotice? = null
     private var previousWidth = 0
-    private val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = Typeface.MONOSPACE
-        color = 0xffd8e9c5.toInt()
-    }
+    private val paint =
+        TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.MONOSPACE
+            color = 0xffd8e9c5.toInt()
+        }
     private val background = Paint(Paint.ANTI_ALIAS_FLAG)
     val bounds = RectF()
     var layout: StaticLayout? = null
         private set
-    val fontSize: Float get() = paint.textSize
+
+    val fontSize: Float
+        get() = paint.textSize
+
     var visible = false
         private set
 
-    fun draw(canvas: Canvas, notice: DeathNotice?, size: Float, maximumWidth: Float, x: Float, y: Float) {
+    fun draw(
+        canvas: Canvas,
+        notice: DeathNotice?,
+        size: Float,
+        maximumWidth: Float,
+        x: Float,
+        y: Float,
+    ) {
         visible = notice != null
-        if (notice == null) { bounds.setEmpty(); return }
+        if (notice == null) {
+            bounds.setEmpty()
+            return
+        }
         val width = max(10, (maximumWidth - 24).toInt())
         if (previous != notice || previousWidth != width || paint.textSize != size) {
-            previous = notice; previousWidth = width; paint.textSize = size
+            previous = notice
+            previousWidth = width
+            paint.textSize = size
             val text = SpannableString(notice.text)
             val start = "Killed by ".length
-            text.setSpan(StyleSpan(Typeface.BOLD), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            text.setSpan(
+                StyleSpan(Typeface.BOLD),
+                start,
+                text.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
             if (notice.color.isNotEmpty()) {
-                val index = GamePalette.colors.indexOfFirst { it.equals(notice.color, ignoreCase = true) }
-                val color = if (index >= 0) ArenaPalette.tank(index) else runCatching { Color.parseColor(notice.color) }.getOrNull()
-                if (color != null) text.setSpan(ForegroundColorSpan(color), start, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                val index =
+                    GamePalette.colors.indexOfFirst { it.equals(notice.color, ignoreCase = true) }
+                val color =
+                    if (index >= 0) ArenaPalette.tank(index)
+                    else runCatching { Color.parseColor(notice.color) }.getOrNull()
+                if (color != null)
+                    text.setSpan(
+                        ForegroundColorSpan(color),
+                        start,
+                        text.length,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
             }
-            layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
-                .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false)
-                .setLineSpacing(0f, 1.25f).build()
+            layout =
+                StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
+                    .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                    .setIncludePad(false)
+                    .setLineSpacing(0f, 1.25f)
+                    .build()
         }
         val text = layout ?: return
         var textWidth = 0f

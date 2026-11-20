@@ -31,9 +31,14 @@ public struct AccountInfo: Decodable, Equatable, Sendable {
         totalNames = try values.decodeIfPresent(Int.self, forKey: .totalNames) ?? names.count
         publicProfile = try values.decodeIfPresent(PublicProfile.self, forKey: .publicProfile)
         guard names.count <= 128, totalNames >= names.count,
-              names.allSatisfy({ !$0.isEmpty && $0.count <= 16 }),
-              publicProfile.map({ !$0.name.isEmpty && $0.name.count <= 16 && ($0.localName.map { !$0.isEmpty && $0.count <= 16 } ?? true) }) ?? true else {
-            throw DecodingError.dataCorruptedError(forKey: .names, in: values, debugDescription: "Invalid account metadata")
+            names.allSatisfy({ !$0.isEmpty && $0.count <= 16 }),
+            publicProfile.map({
+                !$0.name.isEmpty && $0.name.count <= 16
+                    && ($0.localName.map { !$0.isEmpty && $0.count <= 16 } ?? true)
+            }) ?? true
+        else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .names, in: values, debugDescription: "Invalid account metadata")
         }
     }
 }
@@ -45,7 +50,8 @@ public struct AccountKeyRotation: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey { case publicToken }
 
     public init(from decoder: Decoder) throws {
-        publicToken = try decoder.container(keyedBy: CodingKeys.self).decode(String.self, forKey: .publicToken)
+        publicToken = try decoder.container(keyedBy: CodingKeys.self).decode(
+            String.self, forKey: .publicToken)
         account = try AccountInfo(from: decoder)
     }
 }

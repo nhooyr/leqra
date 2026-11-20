@@ -44,7 +44,10 @@ class IdentityNoticeTest {
         assertNull(PilotIdentity.leaderboardDifficulty("RUST", true))
         assertNull(PilotIdentity.leaderboardDifficulty("Bot 17", true))
         assertNull(PilotIdentity.leaderboardDifficulty("Bot 17", true, "unknown"))
-        assertEquals("normal", PilotIdentity.leaderboardDifficulty("Bot 17 - Normal", true, "unknown"))
+        assertEquals(
+            "normal",
+            PilotIdentity.leaderboardDifficulty("Bot 17 - Normal", true, "unknown"),
+        )
         assertEquals("Pilot (P2)", PilotIdentity.leaderboardLabel("Pilot", false, 2))
     }
 

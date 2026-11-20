@@ -66,7 +66,7 @@ class LegacyCallsignDefaultsTest {
             (0..1).all {
                 drafts.pending(it) &&
                     Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(drafts.name(it))
-            }
+            },
         )
         val mixed = CallsignDrafts(listOf(null, "MY NAME"), listOf(null, false), listOf(null, null))
         assertEquals("MY NAME", mixed.name(1))

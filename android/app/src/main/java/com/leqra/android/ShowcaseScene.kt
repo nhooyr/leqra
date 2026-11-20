@@ -8,7 +8,8 @@ import com.leqra.core.InfiniteMaze
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class ShowcaseScene private constructor(
+internal class ShowcaseScene
+private constructor(
     val snapshot: ArenaSnapshot,
     val maze: InfiniteMaze,
     val localID: Int,
@@ -21,12 +22,18 @@ internal class ShowcaseScene private constructor(
 ) {
     companion object {
         fun load(context: Context, portrait: Boolean = false): ShowcaseScene {
-            val root = context.assets.open("showcase.json").bufferedReader().use { JSONObject(it.readText()) }
+            val root =
+                context.assets.open("showcase.json").bufferedReader().use {
+                    JSONObject(it.readText())
+                }
             val json = if (portrait) root.optJSONObject("portrait") ?: root else root
             require(json.getInt("showcaseVersion") == 1)
-            fun points(array: JSONArray): List<BeamPoint> = List(array.length()) { index ->
-                array.getJSONObject(index).let { BeamPoint(it.getDouble("x"), it.getDouble("y")) }
-            }
+            fun points(array: JSONArray): List<BeamPoint> =
+                List(array.length()) { index ->
+                    array.getJSONObject(index).let {
+                        BeamPoint(it.getDouble("x"), it.getDouble("y"))
+                    }
+                }
             val effects = json.getJSONArray("effects")
             val ages = mutableMapOf<Int, Double>()
             val outlines = mutableMapOf<Int, List<BeamPoint>>()
@@ -55,9 +62,17 @@ internal class ShowcaseScene private constructor(
                 if (bullet.isNull("target")) bullet.put("target", -1)
                 bullet.optJSONArray("trail")?.let { trails[bullet.getInt("id")] = points(it) }
             }
-            return ShowcaseScene(SnapshotDecoder().decode(json), InfiniteMaze(json.getInt("seed")),
-                json.getInt("localID"), json.getDouble("time") / 1000, ages, outlines, trails,
-                json.optInt("fps", 120), json.optInt("ping", 8))
+            return ShowcaseScene(
+                SnapshotDecoder().decode(json),
+                InfiniteMaze(json.getInt("seed")),
+                json.getInt("localID"),
+                json.getDouble("time") / 1000,
+                ages,
+                outlines,
+                trails,
+                json.optInt("fps", 120),
+                json.optInt("ping", 8),
+            )
         }
     }
 }

@@ -36,12 +36,16 @@ public struct AudioEventRouter: Sendable {
 
     public mutating func reset() { self = AudioEventRouter() }
 
-    public mutating func consume(snapshot: ArenaSnapshot, localID: Int,
-                                 infinity: Bool, online: Bool, now: Double) -> [AudioCueRequest] {
+    public mutating func consume(
+        snapshot: ArenaSnapshot, localID: Int,
+        infinity: Bool, online: Bool, now: Double
+    ) -> [AudioCueRequest] {
         guard now.isFinite else { return [] }
         var requests: [AudioCueRequest] = []
         let localTank = snapshot.spectating || localID < 0 ? nil : snapshot.tanks.first { $0.id == localID }
-        let listener = snapshot.spectating ? snapshot.tanks.first { $0.id == snapshot.following && $0.id > 0 } : localTank
+        let listener =
+            snapshot.spectating
+            ? snapshot.tanks.first { $0.id == snapshot.following && $0.id > 0 } : localTank
         let focus = snapshot.spectating ? snapshot.following ?? 0 : nil
         if generation != snapshot.generation || spectatorFocus != focus {
             reset()
@@ -56,7 +60,10 @@ public struct AudioEventRouter: Sendable {
             appendHomingWarning(snapshot, localTank: localTank, now: now, into: &requests)
             return requests
         }
-        if now < machineShotClock { machineShotDue = -.infinity; machineShotArrival = -.infinity }
+        if now < machineShotClock {
+            machineShotDue = -.infinity
+            machineShotArrival = -.infinity
+        }
         machineShotClock = now
 
         appendPhaseCues(snapshot, infinity: infinity, online: online, into: &requests)
@@ -67,7 +74,8 @@ public struct AudioEventRouter: Sendable {
             let previous = bounceCounts[bullet.id]
             liveBounces[bullet.id] = max(previous ?? bullet.bounces, bullet.bounces)
             if let previous, bullet.bounces > previous,
-               !infinity || near(bullet.x, bullet.y, localTank: listener, radius: 588) {
+                !infinity || near(bullet.x, bullet.y, localTank: listener, radius: 588)
+            {
                 bounced = true
             }
         }
@@ -78,11 +86,15 @@ public struct AudioEventRouter: Sendable {
         }
 
         for effect in snapshot.effects.sorted(by: { $0.id < $1.id }) {
-            guard effect.id > 0, effect.id > baselineEffectID, seenEffects.insert(effect.id).inserted else { continue }
+            guard effect.id > 0, effect.id > baselineEffectID, seenEffects.insert(effect.id).inserted else {
+                continue
+            }
             effectOrder.append(effect.id)
             if effectOrder.count > 512 { seenEffects.remove(effectOrder.removeFirst()) }
             let own = !snapshot.spectating && localID >= 0 && (effect.player ?? effect.owner) == localID
-            guard !infinity || own || near(effect.x, effect.y, localTank: listener, radius: 504) else { continue }
+            guard !infinity || own || near(effect.x, effect.y, localTank: listener, radius: 504) else {
+                continue
+            }
             let shot: AudioCue?
             switch effect.kind {
             case "shot", "shot:", "shot:regular": shot = .regular
@@ -100,7 +112,8 @@ public struct AudioEventRouter: Sendable {
             if let shot {
                 let shooter = snapshot.tanks.first { $0.id == (effect.player ?? effect.owner) }
                 if shot == .rapid || (shooter?.starmanTime ?? 0) > 0 && shot != .grenade {
-                    let interval = AudioSynthesis.repeatedShotInterval, tolerance = 1.0 / 60
+                    let interval = AudioSynthesis.repeatedShotInterval
+                    let tolerance = 1.0 / 60
                     let sourceTick = effect.tick.flatMap { $0 >= 0 ? $0 : nil }
                     if let tick = sourceTick {
                         if let high = machineSourceHighWater, tick < high { continue }
@@ -113,7 +126,10 @@ public struct AudioEventRouter: Sendable {
                     guard now - machineShotArrival + 1e-12 >= interval / 2 else { continue }
                     if let tick = sourceTick {
                         if let previous = machinePlayedSource,
-                           Double(tick) - Double(previous) + 1e-12 < interval * 60 { continue }
+                            Double(tick) - Double(previous) + 1e-12 < interval * 60
+                        {
+                            continue
+                        }
                         machinePlayedSource = tick
                         machineShotDue = now + interval
                     } else {
@@ -136,7 +152,8 @@ public struct AudioEventRouter: Sendable {
                 // A grenade has its own cooldown, so an unrelated recent tank
                 // death cannot suppress it. Its victims share the death gate.
                 if now - lastGrenade >= AudioSynthesis.explosionInterval {
-                    lastGrenade = now; lastExplosion = now
+                    lastGrenade = now
+                    lastExplosion = now
                     requests.append(AudioCueRequest(cue: .grenadeExplosion, local: !snapshot.spectating))
                 }
             case "hit":
@@ -154,17 +171,24 @@ public struct AudioEventRouter: Sendable {
         return requests
     }
 
-    private mutating func appendHomingWarning(_ snapshot: ArenaSnapshot, localTank: ArenaTank?,
-                                              now: Double, into requests: inout [AudioCueRequest]) {
+    private mutating func appendHomingWarning(
+        _ snapshot: ArenaSnapshot, localTank: ArenaTank?,
+        now: Double, into requests: inout [AudioCueRequest]
+    ) {
         var locked = false
         if snapshot.phase == "playing", snapshot.result == nil, let tank = localTank, tank.hp > 0,
-           snapshot.objectives?.survival?.status != "break" {
-            locked = tank.locked || snapshot.bullets.contains { bullet in
-                guard (bullet.kind == "homing" || bullet.kind == "grenade"),
-                      bullet.target == tank.id, bullet.owner != tank.id else { return false }
-                let owner = snapshot.tanks.first { $0.id == bullet.owner }
-                return snapshot.rules?.friendlyFire == true || owner == nil || owner?.team == 0 || owner?.team != tank.team
-            }
+            snapshot.objectives?.survival?.status != "break"
+        {
+            locked =
+                tank.locked
+                || snapshot.bullets.contains { bullet in
+                    guard bullet.kind == "homing" || bullet.kind == "grenade",
+                        bullet.target == tank.id, bullet.owner != tank.id
+                    else { return false }
+                    let owner = snapshot.tanks.first { $0.id == bullet.owner }
+                    return snapshot.rules?.friendlyFire == true || owner == nil || owner?.team == 0
+                        || owner?.team != tank.team
+                }
         }
         if locked && !homingLocked && now - lastHomingWarning > AudioSynthesis.homingWarningInterval {
             requests.append(AudioCueRequest(cue: .homingWarning))
@@ -173,12 +197,18 @@ public struct AudioEventRouter: Sendable {
         homingLocked = locked
     }
 
-    private mutating func appendPhaseCues(_ snapshot: ArenaSnapshot, infinity: Bool,
-                                         online: Bool, into requests: inout [AudioCueRequest]) {
+    private mutating func appendPhaseCues(
+        _ snapshot: ArenaSnapshot, infinity: Bool,
+        online: Bool, into requests: inout [AudioCueRequest]
+    ) {
         defer { previousPhase = snapshot.phase }
-        guard !infinity else { countdownNumber = nil; return }
+        guard !infinity else {
+            countdownNumber = nil
+            return
+        }
         if snapshot.phase == "countdown", snapshot.phaseTime.isFinite,
-           snapshot.phaseTime > 0, snapshot.phaseTime < Double(Int.max) {
+            snapshot.phaseTime > 0, snapshot.phaseTime < Double(Int.max)
+        {
             let number = Int(ceil(snapshot.phaseTime))
             if countdownNumber != number { requests.append(AudioCueRequest(cue: .countdown)) }
             countdownNumber = number

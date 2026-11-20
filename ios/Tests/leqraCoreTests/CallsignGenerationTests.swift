@@ -1,33 +1,47 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class CallsignGenerationTests: XCTestCase {
     private let server = URL(string: "https://leqra.test")!
     func testOnlyUnownedExactHistoricalDefaultsMigrateBeforeKeyPreparation() {
-        for old in ["PILOT", "Player 1", "Player 2", "  pLaYeR   1  ", "player\t 2", "CO-PILOT", "you", "  snow   fox  ", "Pilot 100", "pIlOt 999"] {
-            let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
-            memory.values["callsign"] = old; memory.values["localCallsign"] = old
+        for old in [
+            "PILOT", "Player 1", "Player 2", "  pLaYeR   1  ", "player\t 2", "CO-PILOT", "you",
+            "  snow   fox  ", "Pilot 100", "pIlOt 999",
+        ] {
+            let memory = MemoryCallsignPreferences()
+            let store = CallsignDraftStore(preferences: memory)
+            memory.values["callsign"] = old
+            memory.values["localCallsign"] = old
             XCTAssertEqual(store.migrateLegacyDefaults { $0 == 1 }, [0])
             XCTAssertTrue(CallsignPolicy.isGenerated(store.name(seat: 0)), old)
-            XCTAssertTrue(store.automaticPending(seat: 0)); XCTAssertEqual(store.name(seat: 1), old)
+            XCTAssertTrue(store.automaticPending(seat: 0))
+            XCTAssertEqual(store.name(seat: 1), old)
             XCTAssertFalse(store.automaticPending(seat: 1), "A key-backed name is never silently renamed")
             XCTAssertTrue(store.migrateLegacyDefaults { _ in false }.contains(1))
             XCTAssertNotEqual(store.name(seat: 0), store.name(seat: 1))
         }
-        for name in ["Custom", "Player1", "player2", " PLAYER1 ", "Pilot 99", "Pilot 1000", "Pilot 012", "PILOT100", "PLAYER 10", "SNOW FOX 2", "pilot#BDF3XZ", "pilot-abcdefghij"] {
-            let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
+        for name in [
+            "Custom", "Player1", "player2", " PLAYER1 ", "Pilot 99", "Pilot 1000", "Pilot 012", "PILOT100",
+            "PLAYER 10", "SNOW FOX 2", "pilot#BDF3XZ", "pilot-abcdefghij",
+        ] {
+            let memory = MemoryCallsignPreferences()
+            let store = CallsignDraftStore(preferences: memory)
             memory.values["callsign"] = name
             XCTAssertTrue(store.migrateLegacyDefaults { _ in false }.isEmpty, name)
-            XCTAssertEqual(store.name(seat: 0), name); XCTAssertFalse(store.automaticPending(seat: 0))
+            XCTAssertEqual(store.name(seat: 0), name)
+            XCTAssertFalse(store.automaticPending(seat: 0))
         }
     }
 
     func testSpacedDefaultsPreserveEitherCredentialBackedSeatExactly() {
         for names in [["Player 1", "Player 2"], ["  pLaYeR   1  ", " PLAYER\t 2 "]] {
             for protected in 0...1 {
-                let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
-                memory.values["callsign"] = names[0]; memory.values["localCallsign"] = names[1]
+                let memory = MemoryCallsignPreferences()
+                let store = CallsignDraftStore(preferences: memory)
+                memory.values["callsign"] = names[0]
+                memory.values["localCallsign"] = names[1]
                 XCTAssertEqual(store.migrateLegacyDefaults { $0 == protected }, [1 - protected])
                 XCTAssertEqual(store.name(seat: protected), names[protected])
                 XCTAssertFalse(store.automaticPending(seat: protected))
@@ -38,32 +52,49 @@ final class CallsignGenerationTests: XCTestCase {
     }
 
     func testSavedRosterMigrationUsesCurrentSeatIdentityAndPreservesBotsAndOwnedAliases() {
-        let roster = [NativeSeatSpec(kind: "human", name: "Player 1"), NativeSeatSpec(kind: "local", name: "pLaYeR   2"),
-                      NativeSeatSpec(kind: "bot", name: "PILOT"), NativeSeatSpec(kind: "local", name: "MY CUSTOM")]
-        let updated = CallsignPolicy.migratingLegacyRoster(roster, primaryName: "pilot#BDF3XZ", secondaryName: "pilot#ABCD29", unownedSeats: [0, 1])
+        let roster = [
+            NativeSeatSpec(kind: "human", name: "Player 1"),
+            NativeSeatSpec(kind: "local", name: "pLaYeR   2"),
+            NativeSeatSpec(kind: "bot", name: "PILOT"), NativeSeatSpec(kind: "local", name: "MY CUSTOM"),
+        ]
+        let updated = CallsignPolicy.migratingLegacyRoster(
+            roster, primaryName: "pilot#BDF3XZ", secondaryName: "pilot#ABCD29", unownedSeats: [0, 1])
         XCTAssertEqual(updated.map(\.name), ["pilot#BDF3XZ", "pilot#ABCD29", "PILOT", "MY CUSTOM"])
-        let protected = CallsignPolicy.migratingLegacyRoster(roster, primaryName: "NEW", secondaryName: "OTHER", unownedSeats: [1])
-        XCTAssertEqual(protected[0].name, "Player 1"); XCTAssertEqual(protected[1].name, "OTHER")
-        let claimed = CallsignPolicy.updatingGeneratedRoster(updated, seat: 0, previous: "pilot#BDF3XZ", claimed: "pilot#XYZ234")
-        XCTAssertEqual(claimed[0].name, "pilot#XYZ234", "A repaired preset must follow its provisional name through the atomic server claim")
-        XCTAssertEqual(claimed[1].name, "pilot#ABCD29"); XCTAssertEqual(claimed[2].name, "PILOT")
+        let protected = CallsignPolicy.migratingLegacyRoster(
+            roster, primaryName: "NEW", secondaryName: "OTHER", unownedSeats: [1])
+        XCTAssertEqual(protected[0].name, "Player 1")
+        XCTAssertEqual(protected[1].name, "OTHER")
+        let claimed = CallsignPolicy.updatingGeneratedRoster(
+            updated, seat: 0, previous: "pilot#BDF3XZ", claimed: "pilot#XYZ234")
+        XCTAssertEqual(
+            claimed[0].name, "pilot#XYZ234",
+            "A repaired preset must follow its provisional name through the atomic server claim")
+        XCTAssertEqual(claimed[1].name, "pilot#ABCD29")
+        XCTAssertEqual(claimed[2].name, "PILOT")
     }
     func testFreshDefaultsAreIndependentPersistedAndPendingUntilClaimed() throws {
-        let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
-        let primary = store.name(seat: 0), second = store.name(seat: 1)
+        let memory = MemoryCallsignPreferences()
+        let store = CallsignDraftStore(preferences: memory)
+        let primary = store.name(seat: 0)
+        let second = store.name(seat: 1)
         XCTAssertNotEqual(primary, second)
         for value in [primary, second] {
             XCTAssertEqual(value.count, 12)
-            XCTAssertNotNil(value.range(of: #"^pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"#, options: .regularExpression))
+            XCTAssertNotNil(
+                value.range(
+                    of: #"^pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"#, options: .regularExpression))
         }
         let cold = CallsignDraftStore(preferences: memory)
-        XCTAssertEqual(cold.name(seat: 0), primary); XCTAssertEqual(cold.name(seat: 1), second)
-        XCTAssertTrue(cold.automaticPending(seat: 0)); XCTAssertTrue(cold.automaticPending(seat: 1))
+        XCTAssertEqual(cold.name(seat: 0), primary)
+        XCTAssertEqual(cold.name(seat: 1), second)
+        XCTAssertTrue(cold.automaticPending(seat: 0))
+        XCTAssertTrue(cold.automaticPending(seat: 1))
         let request = try cold.begin(server: server, seats: [0, 1])
         XCTAssertEqual(try store.begin(server: server, seats: [1, 0]).requestId, request.requestId)
         XCTAssertGreaterThan(memory.flushes, 0)
         XCTAssertTrue(cold.apply("pilot-abcdefghij", seat: 0, attempt: request))
-        XCTAssertFalse(cold.automaticPending(seat: 0)); XCTAssertTrue(cold.automaticPending(seat: 1))
+        XCTAssertFalse(cold.automaticPending(seat: 0))
+        XCTAssertTrue(cold.automaticPending(seat: 1))
         XCTAssertTrue(cold.apply("pilot-klmnopqrst", seat: 1, attempt: request))
         cold.complete(request)
         XCTAssertNotEqual(try cold.begin(server: server, seats: [0]).requestId, request.requestId)
@@ -74,20 +105,32 @@ final class CallsignGenerationTests: XCTestCase {
         memory.values["callsign"] = "Bot LEGACY"
         memory.values["localCallsign"] = "SAVED P2"
         let store = CallsignDraftStore(preferences: memory)
-        XCTAssertEqual(store.name(seat: 0), "Bot LEGACY"); XCTAssertEqual(store.name(seat: 1), "SAVED P2")
-        XCTAssertFalse(store.automaticPending(seat: 0)); XCTAssertFalse(store.automaticPending(seat: 1))
+        XCTAssertEqual(store.name(seat: 0), "Bot LEGACY")
+        XCTAssertEqual(store.name(seat: 1), "SAVED P2")
+        XCTAssertFalse(store.automaticPending(seat: 0))
+        XCTAssertFalse(store.automaticPending(seat: 1))
         let old = try store.begin(server: server, seats: [0, 1])
-        store.edited("OTHER", seat: 0); store.edited("Bot LEGACY", seat: 0)
-        XCTAssertFalse(store.apply("SERVER RESULT", seat: 0, attempt: old), "Editing away and back still invalidates a late response")
+        store.edited("OTHER", seat: 0)
+        store.edited("Bot LEGACY", seat: 0)
+        XCTAssertFalse(
+            store.apply("SERVER RESULT", seat: 0, attempt: old),
+            "Editing away and back still invalidates a late response")
         XCTAssertTrue(store.apply("VALID P2", seat: 1, attempt: old))
         memory.writable = false
         XCTAssertThrowsError(try store.begin(server: server, seats: [0]))
-        XCTAssertThrowsError(try store.begin(server: server, seats: [0]), "An in-memory UUID from a failed flush is still unsafe to send")
+        XCTAssertThrowsError(
+            try store.begin(server: server, seats: [0]),
+            "An in-memory UUID from a failed flush is still unsafe to send")
     }
 
     func testOnlyCanonicalBotNamespaceIsReservedForHumans() {
-        for name in ["Bot RUST", " bOt  17 ", "BOT", "Bot !RUST", "Bot 7 - Godlike", "B\u{0301}ot RUST", "B\u{034f}ot RUST"] { XCTAssertTrue(CallsignPolicy.reservedForBots(name), name) }
-        for name in ["Botanist", "BotRUST", "Bot-RUST", "Bot\tRUST", "RUST", "GODLIKE N", "godlike-n", "Godlike Bot 7"] { XCTAssertFalse(CallsignPolicy.reservedForBots(name), name) }
+        for name in [
+            "Bot RUST", " bOt  17 ", "BOT", "Bot !RUST", "Bot 7 - Godlike", "B\u{0301}ot RUST",
+            "B\u{034f}ot RUST",
+        ] { XCTAssertTrue(CallsignPolicy.reservedForBots(name), name) }
+        for name in [
+            "Botanist", "BotRUST", "Bot-RUST", "Bot\tRUST", "RUST", "GODLIKE N", "godlike-n", "Godlike Bot 7",
+        ] { XCTAssertFalse(CallsignPolicy.reservedForBots(name), name) }
         XCTAssertEqual(CallsignPolicy.displayName("RUST", bot: true), "Bot Rust")
         XCTAssertEqual(CallsignPolicy.displayName("BOT RUST", bot: true), "Bot Rust")
         XCTAssertEqual(CallsignPolicy.displayName("RUST", bot: false), "RUST")
@@ -98,20 +141,28 @@ final class CallsignGenerationTests: XCTestCase {
         XCTAssertEqual(CallsignPolicy.displayName("SNOW FOX", bot: false), "SNOW FOX")
         XCTAssertEqual(CallsignPolicy.displayName("VAPOR NOVA", bot: true), "Bot Vapor Nova")
         XCTAssertEqual(CallsignPolicy.clean("pilot#BDF3XZ"), "pilot#BDF3XZ")
-        for name in ["pilot#BDF3XZ", "pilot#ABCD29", "pilot-abcdefghij"] { XCTAssertTrue(CallsignPolicy.isGenerated(name), name) }
-        for name in ["pilot#ABCIO1", "pilot#abcdef", "pilot#ABCDEFG", "pilot-ABCDEF"] { XCTAssertFalse(CallsignPolicy.isGenerated(name), name) }
+        for name in ["pilot#BDF3XZ", "pilot#ABCD29", "pilot-abcdefghij"] {
+            XCTAssertTrue(CallsignPolicy.isGenerated(name), name)
+        }
+        for name in ["pilot#ABCIO1", "pilot#abcdef", "pilot#ABCDEFG", "pilot-ABCDEF"] {
+            XCTAssertFalse(CallsignPolicy.isGenerated(name), name)
+        }
     }
 
     func testPreviouslySavedGeneratedNamesAreNotReplacedByTheNewFormat() {
         let memory = MemoryCallsignPreferences()
-        memory.values["callsign"] = "pilot-abcdefghij"; memory.values["localCallsign"] = "pilot-klmnopqrst"
+        memory.values["callsign"] = "pilot-abcdefghij"
+        memory.values["localCallsign"] = "pilot-klmnopqrst"
         let store = CallsignDraftStore(preferences: memory)
-        XCTAssertEqual(store.name(seat: 0), "pilot-abcdefghij"); XCTAssertEqual(store.name(seat: 1), "pilot-klmnopqrst")
-        XCTAssertFalse(store.automaticPending(seat: 0)); XCTAssertFalse(store.automaticPending(seat: 1))
+        XCTAssertEqual(store.name(seat: 0), "pilot-abcdefghij")
+        XCTAssertEqual(store.name(seat: 1), "pilot-klmnopqrst")
+        XCTAssertFalse(store.automaticPending(seat: 0))
+        XCTAssertFalse(store.automaticPending(seat: 1))
     }
 
     func testAnEditedSeatAndManualRequestDoNotLoseTheOtherSeatsRetryID() throws {
-        let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
+        let memory = MemoryCallsignPreferences()
+        let store = CallsignDraftStore(preferences: memory)
         let pair = try store.begin(server: server, seats: [0, 1])
         store.edited("MY EDIT", seat: 0)
         let secondOnly = try store.begin(server: server, seats: [1])
@@ -123,14 +174,18 @@ final class CallsignGenerationTests: XCTestCase {
     }
 
     func testOfflineRepairKeepsTheRequestIdentityUntilItsServerClaimCompletes() throws {
-        let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
+        let memory = MemoryCallsignPreferences()
+        let store = CallsignDraftStore(preferences: memory)
         memory.values["callsign"] = "Bot LEGACY"
         let attempt = try store.begin(server: server, seats: [0])
         let provisional = try XCTUnwrap(store.provisionalName(seat: 0, attempt: attempt))
-        XCTAssertFalse(CallsignPolicy.reservedForBots(provisional)); XCTAssertEqual(provisional.count, 12)
+        XCTAssertFalse(CallsignPolicy.reservedForBots(provisional))
+        XCTAssertEqual(provisional.count, 12)
         XCTAssertTrue(store.automaticPending(seat: 0))
         store.editorChanged(from: provisional, to: provisional, seat: 0)
-        XCTAssertTrue(store.automaticPending(seat: 0), "Blur/save of the unchanged provisional name cannot cancel its online claim")
+        XCTAssertTrue(
+            store.automaticPending(seat: 0),
+            "Blur/save of the unchanged provisional name cannot cancel its online claim")
         let retry = try store.begin(server: server, seats: [0])
         XCTAssertEqual(retry.requestId, attempt.requestId)
         XCTAssertFalse(store.apply("LATE OLD", seat: 0, attempt: attempt))
@@ -139,7 +194,8 @@ final class CallsignGenerationTests: XCTestCase {
     }
 
     func testAReservedEditorDraftInvalidatesRetriesWithoutOverwritingTheLastSavedName() throws {
-        let memory = MemoryCallsignPreferences(), store = CallsignDraftStore(preferences: memory)
+        let memory = MemoryCallsignPreferences()
+        let store = CallsignDraftStore(preferences: memory)
         store.edited("SAVED PILOT", seat: 0)
         let pending = try store.begin(server: server, seats: [0])
         store.editorChanged(from: "SAVED PILOT", to: "Bot BAD DRAFT", seat: 0)
@@ -149,22 +205,36 @@ final class CallsignGenerationTests: XCTestCase {
     }
 
     @MainActor func testLiveGenerationIsIdempotentAndSupportsAnIndependentSecondSeat() async throws {
-        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"], let base = URL(string: address) else { throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable generation-enabled backend.") }
-        let client = NetworkClient(), request = UUID()
-        func key() -> String { "p_" + Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }
+        guard let address = ProcessInfo.processInfo.environment["LEQRA_TEST_SERVER"],
+            let base = URL(string: address)
+        else { throw XCTSkip("Set LEQRA_TEST_SERVER to a disposable generation-enabled backend.") }
+        let client = NetworkClient()
+        let request = UUID()
+        func key() -> String {
+            "p_"
+                + Data((0..<32).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
         let accounts = [(seat: 0, publicToken: key()), (seat: 1, publicToken: key())]
         let first = try await client.generateCallsigns(baseURL: base, requestId: request, accounts: accounts)
         let retry = try await client.generateCallsigns(baseURL: base, requestId: request, accounts: accounts)
-        XCTAssertEqual(first, retry); XCTAssertEqual(first.map(\.seat), [0, 1]); XCTAssertNotEqual(first[0].name, first[1].name)
+        XCTAssertEqual(first, retry)
+        XCTAssertEqual(first.map(\.seat), [0, 1])
+        XCTAssertNotEqual(first[0].name, first[1].name)
         for account in accounts {
             let info = try await client.fetchAccountInfo(baseURL: base, publicToken: account.publicToken)
             XCTAssertEqual(info.names, [try XCTUnwrap(first.first { $0.seat == account.seat }).name])
         }
-        let fresh = try await client.generateCallsigns(baseURL: base, requestId: UUID(), accounts: [accounts[1]])
+        let fresh = try await client.generateCallsigns(
+            baseURL: base, requestId: UUID(), accounts: [accounts[1]])
         XCTAssertEqual(fresh.first?.seat, 1)
-        XCTAssertEqual(fresh.first?.name, first[1].name, "A different request UUID cannot rename an existing account")
-        let newAccount = try await client.generateCallsigns(baseURL: base, requestId: UUID(), accounts: [(seat: 1, publicToken: key())])
-        XCTAssertNotEqual(newAccount.first?.name, first[1].name, "A newly generated name belongs to a fresh account key")
+        XCTAssertEqual(
+            fresh.first?.name, first[1].name, "A different request UUID cannot rename an existing account")
+        let newAccount = try await client.generateCallsigns(
+            baseURL: base, requestId: UUID(), accounts: [(seat: 1, publicToken: key())])
+        XCTAssertNotEqual(
+            newAccount.first?.name, first[1].name, "A newly generated name belongs to a fresh account key")
     }
 }
 
@@ -177,5 +247,8 @@ private final class MemoryCallsignPreferences: CallsignPreferences {
     func bool(forKey key: String) -> Bool { values[key] as? Bool ?? false }
     func set(_ value: Any?, forKey key: String) { values[key] = value }
     func removeObject(forKey key: String) { values.removeValue(forKey: key) }
-    func synchronize() -> Bool { flushes += 1; return writable }
+    func synchronize() -> Bool {
+        flushes += 1
+        return writable
+    }
 }

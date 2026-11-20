@@ -48,9 +48,9 @@ with sync_playwright() as pw:
                     Object.defineProperty(window,'sessionStorage',{value:store({})});
                 }''')
                 js = (assets / 'game.js').read_text().replace('(() => {', '((location) => {', 1)
-                i = js.rfind('})();')
+                i = js.rfind('})()')
                 assert i >= 0
-                js = js[:i] + '})(window.__location);' + js[i+5:]
+                js = js[:i] + '})(window.__location);' + js[i+4:]
                 page.add_script_tag(content=(assets/'netcode.js').read_text())
                 page.add_script_tag(content=js)
                 page.wait_for_function('window.__test && window.leqra')

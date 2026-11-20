@@ -19,8 +19,12 @@ class RoomJoinPanelTest {
     @Test
     fun fullLengthUnicodeInvitesRetainNameAndSpectatorIntent() {
         val code = "💥".repeat(roomNameLimit)
-        val link = Uri.parse("https://leqra.com/").buildUpon()
-            .appendQueryParameter("room", code).appendQueryParameter("spectate", "1").build()
+        val link =
+            Uri.parse("https://leqra.com/")
+                .buildUpon()
+                .appendQueryParameter("room", code)
+                .appendQueryParameter("spectate", "1")
+                .build()
         assertEquals(RoomJoinRequest(code, true), RoomJoinRequest.fromInvite(link))
         assertEquals(RoomJoinRequest(code, true), RoomJoinRequest.fromInput(link.toString(), false))
         assertEquals(RoomJoinRequest(code, false), RoomJoinRequest.fromInput(code, false))
@@ -34,10 +38,17 @@ class RoomJoinPanelTest {
             var joined: RoomJoinRequest? = null
             var activatedCallsign: String? = null
             var accountDraft: RoomJoinDraft? = null
-            val panel = roomJoinPanel(instrumentation.targetContext, "Pilot", RoomJoinDraft(), { true }, { accountDraft = it }) { callsign, request ->
-                activatedCallsign = callsign
-                joined = request
-            }
+            val panel =
+                roomJoinPanel(
+                    instrumentation.targetContext,
+                    "Pilot",
+                    RoomJoinDraft(),
+                    { true },
+                    { accountDraft = it },
+                ) { callsign, request ->
+                    activatedCallsign = callsign
+                    joined = request
+                }
             val views = (0 until panel.childCount).map(panel::getChildAt)
             val identity = views.filterIsInstance<LinearLayout>().single()
             val accountViews = (0 until identity.childCount).map(identity::getChildAt)

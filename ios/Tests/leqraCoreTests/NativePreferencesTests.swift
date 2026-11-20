@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class NativePreferencesTests: XCTestCase {
@@ -23,14 +24,17 @@ final class NativePreferencesTests: XCTestCase {
         for key in NativePreferences.appSettingKeys { defaults.set("changed", forKey: key) }
         defaults.set("system-owned", forKey: "NSUnrelatedSetting")
         NativePreferences.resetAppSettings(in: defaults)
-        for key in NativePreferences.appSettingKeys { XCTAssertNil(defaults.persistentDomain(forName: name)?[key], key) }
+        for key in NativePreferences.appSettingKeys {
+            XCTAssertNil(defaults.persistentDomain(forName: name)?[key], key)
+        }
         XCTAssertEqual(defaults.string(forKey: "NSUnrelatedSetting"), "system-owned")
     }
 
     func testProductionUsesOrdinaryStoreAndTestsKeepSeparatePersistentPreferences() {
         let baselineName = "preferences-baseline-" + UUID().uuidString
         let baseline = UserDefaults(suiteName: baselineName)!
-        let first = "first-" + UUID().uuidString, second = "second-" + UUID().uuidString
+        let first = "first-" + UUID().uuidString
+        let second = "second-" + UUID().uuidString
         defer {
             baseline.removePersistentDomain(forName: baselineName)
             baseline.removePersistentDomain(forName: NativePreferences.domain(first))
@@ -38,20 +42,26 @@ final class NativePreferencesTests: XCTestCase {
         }
         baseline.set("PLAYER", forKey: "callsign")
         XCTAssertTrue(NativePreferences.applicationStore(arguments: [], standard: baseline) === baseline)
-        let test = NativePreferences.applicationStore(arguments: ["--public-session-test-namespace", first], standard: baseline)
+        let test = NativePreferences.applicationStore(
+            arguments: ["--public-session-test-namespace", first], standard: baseline)
         test.set("TEST", forKey: "callsign")
-        let cold = NativePreferences.applicationStore(arguments: ["--public-session-test-namespace", first], standard: baseline)
+        let cold = NativePreferences.applicationStore(
+            arguments: ["--public-session-test-namespace", first], standard: baseline)
         XCTAssertEqual(cold.string(forKey: "callsign"), "TEST")
         XCTAssertEqual(baseline.string(forKey: "callsign"), "PLAYER")
-        let other = NativePreferences.applicationStore(arguments: ["--public-session-test-namespace", second], standard: baseline)
+        let other = NativePreferences.applicationStore(
+            arguments: ["--public-session-test-namespace", second], standard: baseline)
         XCTAssertNil(other.string(forKey: "callsign"))
-        _ = NativePreferences.applicationStore(arguments: ["--public-session-test-namespace", first, "--reset-public-session-test-store"], standard: baseline)
+        _ = NativePreferences.applicationStore(
+            arguments: ["--public-session-test-namespace", first, "--reset-public-session-test-store"],
+            standard: baseline)
         XCTAssertNil(test.string(forKey: "callsign"))
         XCTAssertEqual(baseline.string(forKey: "callsign"), "PLAYER")
     }
 
     func testLaunchArgumentOverridesSurviveIsolationWithoutBecomingStoredValues() {
-        let baselineName = "preferences-args-" + UUID().uuidString, namespace = UUID().uuidString
+        let baselineName = "preferences-args-" + UUID().uuidString
+        let namespace = UUID().uuidString
         let baseline = UserDefaults(suiteName: baselineName)!
         let originalArguments = baseline.volatileDomain(forName: UserDefaults.argumentDomain)
         defer {
@@ -59,8 +69,10 @@ final class NativePreferencesTests: XCTestCase {
             baseline.removePersistentDomain(forName: baselineName)
             baseline.removePersistentDomain(forName: NativePreferences.domain(namespace))
         }
-        baseline.setVolatileDomain(["serverURL": "http://127.0.0.1:18224"], forName: UserDefaults.argumentDomain)
-        let test = NativePreferences.applicationStore(arguments: ["--public-session-test-namespace", namespace], standard: baseline)
+        baseline.setVolatileDomain(
+            ["serverURL": "http://127.0.0.1:18224"], forName: UserDefaults.argumentDomain)
+        let test = NativePreferences.applicationStore(
+            arguments: ["--public-session-test-namespace", namespace], standard: baseline)
         XCTAssertEqual(test.string(forKey: "serverURL"), "http://127.0.0.1:18224")
         XCTAssertNil(test.persistentDomain(forName: NativePreferences.domain(namespace))?["serverURL"])
     }

@@ -38,7 +38,7 @@ class Peer:
   try:self.send(type='leave');time.sleep(.04);self.ws.close()
   except Exception:pass
 html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
-js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location,window.__history);'+js[i+4:]
 def load(b,name,w=1365,h=950,invite=''):
  mobile=w<760 or h<620;c=b.new_context(viewport={'width':w,'height':h},has_touch=mobile,is_mobile=mobile,device_scale_factor=2 if mobile else 1)
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.on('dialog',lambda d:d.accept());p.set_content(html)

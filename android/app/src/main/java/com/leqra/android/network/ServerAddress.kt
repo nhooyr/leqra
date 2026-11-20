@@ -29,7 +29,9 @@ object ServerAddress {
 
     fun configuredOrigin(value: String, allowCleartext: Boolean): String {
         val address = origin(value.trim())
-        require(allowCleartext || address.startsWith("https://")) { "Enter an HTTPS server address." }
+        require(allowCleartext || address.startsWith("https://")) {
+            "Enter an HTTPS server address."
+        }
         return address
     }
 

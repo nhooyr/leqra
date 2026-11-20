@@ -21,7 +21,7 @@ out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
 html=root.joinpath('index.html').read_text()
 html=re.sub(r'<link[^>]*>','',html).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
 js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
-pos=js.rfind('})();');js=js[:pos]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[pos+5:]
+pos=js.rfind('})()');js=js[:pos]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[pos+4:]
 wrapper="""window.__sockets=[];const RealSocket=window.WebSocket;window.WebSocket=class extends RealSocket{constructor(...args){super(...args);window.__sockets.push(this)}};"""
 checks=[]
 def check(ok,label):

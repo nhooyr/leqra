@@ -1,5 +1,6 @@
 package com.leqra.android
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
@@ -9,19 +10,18 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiSelector
+import com.leqra.android.render.NativeArenaView
+import com.leqra.core.ArenaResult
 import com.leqra.core.ArenaSnapshot
 import com.leqra.core.ArenaTank
 import com.leqra.core.GameInput
-import com.leqra.core.ArenaResult
 import com.leqra.core.RoomRules
-import android.widget.TextView
-import android.view.ViewGroup
-import android.app.AlertDialog
-import com.leqra.android.render.NativeArenaView
 import java.io.File
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -70,15 +70,24 @@ class MainActivityTest {
             else activity.hasWindowFocus()
         }
         val namesDeadline = SystemClock.elapsedRealtime() + 15000
-        while (main { state(activity).automaticNamePending(0) || state(activity).automaticNamePending(1) } &&
-            SystemClock.elapsedRealtime() < namesDeadline) SystemClock.sleep(30)
-        assertFalse("Fresh names settle before interacting with the room", main {
-            state(activity).automaticNamePending(0) || state(activity).automaticNamePending(1)
-        })
+        while (
+            main {
+                state(activity).automaticNamePending(0) || state(activity).automaticNamePending(1)
+            } && SystemClock.elapsedRealtime() < namesDeadline
+        ) SystemClock.sleep(30)
+        assertFalse(
+            "Fresh names settle before interacting with the room",
+            main {
+                state(activity).automaticNamePending(0) || state(activity).automaticNamePending(1)
+            },
+        )
         main { activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
         val orientationDeadline = SystemClock.elapsedRealtime() + 5000
-        while (main { activity.resources.configuration.orientation } != android.content.res.Configuration.ORIENTATION_PORTRAIT &&
-            SystemClock.elapsedRealtime() < orientationDeadline) SystemClock.sleep(30)
+        while (
+            main { activity.resources.configuration.orientation } !=
+                android.content.res.Configuration.ORIENTATION_PORTRAIT &&
+                SystemClock.elapsedRealtime() < orientationDeadline
+        ) SystemClock.sleep(30)
         return activity
     }
 
@@ -93,7 +102,9 @@ class MainActivityTest {
             instrumentation.targetContext.startActivity(intent)
             monitor.waitForActivityWithTimeout(10000) as? MainActivity
                 ?: throw AssertionError("MainActivity did not launch")
-        } finally { instrumentation.removeMonitor(monitor) }
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
     }
 
     private fun quickTour(activity: MainActivity): QuickTour? =
@@ -109,31 +120,42 @@ class MainActivityTest {
     }
 
     private fun descendants(view: View): List<View> =
-        listOf(view) + if (view is ViewGroup)
-            (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
-        else emptyList()
+        listOf(view) +
+            if (view is ViewGroup)
+                (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
+            else emptyList()
 
     @Test
     fun spectatorInvitePrefillsTheConfirmationPanelWithoutJoining() {
         val code = "Friday battle 🎮"
-        val invite = Uri.parse("https://leqra.com").buildUpon()
-            .appendQueryParameter("room", code).appendQueryParameter("spectate", "1").build()
+        val invite =
+            Uri.parse("https://leqra.com")
+                .buildUpon()
+                .appendQueryParameter("room", code)
+                .appendQueryParameter("spectate", "1")
+                .build()
         val activity = startActivity(invite)
         try {
             await("Invite opens a prefilled Watch confirmation") {
-                val dialog = MainActivity::class.java.getDeclaredField("dialog").run {
-                    isAccessible = true
-                    get(activity) as? AlertDialog
-                }
+                val dialog =
+                    MainActivity::class.java.getDeclaredField("dialog").run {
+                        isAccessible = true
+                        get(activity) as? AlertDialog
+                    }
                 val window = dialog?.window ?: return@await false
-                val texts = descendants(window.decorView).filterIsInstance<TextView>().map { it.text.toString() }
+                val texts =
+                    descendants(window.decorView).filterIsInstance<TextView>().map {
+                        it.text.toString()
+                    }
                 code in texts && "WATCH →" in texts
             }
             main {
                 assertNull(state(activity).roomCode)
                 assertFalse(state(activity).network.connected)
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -142,43 +164,70 @@ class MainActivityTest {
         fun click(root: View, title: String) =
             texts(root).single { it.text.toString() == title }.performClick()
         fun backgroundAnimating(activity: MainActivity): Boolean {
-            val view = MainActivity::class.java.getDeclaredField("arena").apply { isAccessible = true }.get(activity)
-            return NativeArenaView::class.java.getDeclaredField("running").apply { isAccessible = true }.getBoolean(view)
+            val view =
+                MainActivity::class
+                    .java
+                    .getDeclaredField("arena")
+                    .apply { isAccessible = true }
+                    .get(activity)
+            return NativeArenaView::class
+                .java
+                .getDeclaredField("running")
+                .apply { isAccessible = true }
+                .getBoolean(view)
         }
         fun verifyTour(activity: MainActivity) {
             val window = main { quickTour(activity)!!.window!! }
             val root = main { window.decorView }
             val arena = main { descendants(root).filterIsInstance<NativeArenaView>().single() }
-            val scroll = main { descendants(root).filterIsInstance<android.widget.ScrollView>().single() }
-            val hardware = Regex("\\b(keyboard|mouse|gamepad|game controller|keys?)\\b", RegexOption.IGNORE_CASE)
+            val scroll = main {
+                descendants(root).filterIsInstance<android.widget.ScrollView>().single()
+            }
+            val hardware =
+                Regex(
+                    "\\b(keyboard|mouse|gamepad|game controller|keys?)\\b",
+                    RegexOption.IGNORE_CASE,
+                )
             fun arenaFrame(): android.graphics.Rect {
                 val origin = IntArray(2).also(arena::getLocationOnScreen)
-                return android.graphics.Rect(origin[0], origin[1], origin[0] + arena.width, origin[1] + arena.height)
+                return android.graphics.Rect(
+                    origin[0],
+                    origin[1],
+                    origin[0] + arena.width,
+                    origin[1] + arena.height,
+                )
             }
             var startingFrame: android.graphics.Rect? = null
             var startingScrollY = 0
-            val instructions = listOf(
-                "Drag the left stick to drive. Touch near your tank to aim without moving.",
-                "Hold the right Fire button to shoot a round.",
-                "Destroy the stationary tank to score a point.",
-            )
-            fun point(name: String): Float = NativeArenaView::class.java.getDeclaredField(name).run {
-                isAccessible = true
-                getFloat(arena) * arena.resources.displayMetrics.density
-            }
+            val instructions =
+                listOf(
+                    "Drag the left stick to drive. Touch near your tank to aim without moving.",
+                    "Hold the right Fire button to shoot a round.",
+                    "Destroy the stationary tank to score a point.",
+                )
+            fun point(name: String): Float =
+                NativeArenaView::class.java.getDeclaredField(name).run {
+                    isAccessible = true
+                    getFloat(arena) * arena.resources.displayMetrics.density
+                }
             fun touch(action: Int, x: Float, y: Float) {
                 val now = SystemClock.uptimeMillis()
                 val event = MotionEvent.obtain(now, now, action, x, y, 0)
-                try { assertTrue(arena.onTouchEvent(event)) } finally { event.recycle() }
+                try {
+                    assertTrue(arena.onTouchEvent(event))
+                } finally {
+                    event.recycle()
+                }
             }
             fun fire() {
                 touch(MotionEvent.ACTION_DOWN, point("fireX"), point("fireY"))
                 touch(MotionEvent.ACTION_UP, point("fireX"), point("fireY"))
             }
-            fun tankImages() = NativeArenaView::class.java.getDeclaredField("snapshot").run {
-                isAccessible = true
-                (get(arena) as ArenaSnapshot).tanks
-            }
+            fun tankImages() =
+                NativeArenaView::class.java.getDeclaredField("snapshot").run {
+                    isAccessible = true
+                    (get(arena) as ArenaSnapshot).tanks
+                }
             for ((index, page) in listOf("Drive and aim", "Fire", "Score a point").withIndex()) {
                 val button = main {
                     val labels = texts(root).filter { it.isShown }.map { it.text.toString() }
@@ -186,7 +235,10 @@ class MainActivityTest {
                     assertTrue(labels.contains(page))
                     assertTrue(labels.contains("${index + 1} / 3"))
                     assertTrue(labels.contains(instructions[index]))
-                    assertFalse("$page is a touch-only tour page", labels.any(hardware::containsMatchIn))
+                    assertFalse(
+                        "$page is a touch-only tour page",
+                        labels.any(hardware::containsMatchIn),
+                    )
                     texts(root).single { it.text.toString() == if (index == 2) "DONE" else "NEXT" }
                 }
                 await("The arena renders for $page") { arena.isShown && arena.renderedFrames > 0 }
@@ -195,27 +247,49 @@ class MainActivityTest {
                         startingFrame = arenaFrame()
                         startingScrollY = scroll.scrollY
                     }
-                    assertEquals("Opening $page keeps the practice maze in place (scroll $startingScrollY → ${scroll.scrollY})",
-                        startingFrame, arenaFrame())
-                    assertFalse("The covered arena has no running frame loop", backgroundAnimating(activity))
-                    assertTrue("The practice dialog requests the gameplay display rate", window.attributes.preferredRefreshRate > 30f)
+                    assertEquals(
+                        "Opening $page keeps the practice maze in place (scroll $startingScrollY → ${scroll.scrollY})",
+                        startingFrame,
+                        arenaFrame(),
+                    )
+                    assertFalse(
+                        "The covered arena has no running frame loop",
+                        backgroundAnimating(activity),
+                    )
+                    assertTrue(
+                        "The practice dialog requests the gameplay display rate",
+                        window.attributes.preferredRefreshRate > 30f,
+                    )
                     if (android.os.Build.VERSION.SDK_INT >= 35)
-                        assertEquals(window.attributes.preferredRefreshRate, arena.requestedFrameRate, 0f)
+                        assertEquals(
+                            window.attributes.preferredRefreshRate,
+                            arena.requestedFrameRate,
+                            0f,
+                        )
                     assertFalse(arena.showTankLabels)
                     assertEquals(index > 0, arena.showFireControl)
-                    assertEquals(index == 2, texts(root).any { it.text == "score: 0" && it.isShown })
+                    assertEquals(
+                        index == 2,
+                        texts(root).any { it.text == "score: 0" && it.isShown },
+                    )
                     assertFalse("$page needs practice to continue", button.isEnabled)
                     when (index) {
                         0 -> {
                             touch(MotionEvent.ACTION_DOWN, point("stickX"), point("stickY"))
-                            touch(MotionEvent.ACTION_MOVE, point("stickX"), point("stickY") + 28f * arena.resources.displayMetrics.density)
+                            touch(
+                                MotionEvent.ACTION_MOVE,
+                                point("stickX"),
+                                point("stickY") + 28f * arena.resources.displayMetrics.density,
+                            )
                         }
                         1 -> fire()
                         2 -> Unit
                     }
                 }
                 if (index == 2) {
-                    await("The stationary target appears in the practice arena") { tankImages().size == 2 }
+                    await("The stationary target appears in the practice arena") {
+                        tankImages().size == 2
+                    }
                     val desiredAngle = main {
                         val (pilot, target) = tankImages()
                         val angle = atan2(target.y - pilot.y, target.x - pilot.x)
@@ -227,16 +301,27 @@ class MainActivityTest {
                         angle
                     }
                     await("Touch aims the tank at the target") {
-                        abs(com.leqra.core.TankMovement.angleDelta(tankImages().first().angle, desiredAngle)) < .05
+                        abs(
+                            com.leqra.core.TankMovement.angleDelta(
+                                tankImages().first().angle,
+                                desiredAngle,
+                            ),
+                        ) < .05
                     }
                     main { fire() }
                 }
                 await("Actual practice unlocks the button for $page") { button.isEnabled }
-                if (index == 0) main { touch(MotionEvent.ACTION_UP, point("stickX"), point("stickY")) }
-                if (index == 2) main {
-                    assertTrue(texts(root).any { it.text == "score: 1" && it.isShown })
-                    assertEquals("Scoring keeps the practice maze in place", startingFrame, arenaFrame())
-                }
+                if (index == 0)
+                    main { touch(MotionEvent.ACTION_UP, point("stickX"), point("stickY")) }
+                if (index == 2)
+                    main {
+                        assertTrue(texts(root).any { it.text == "score: 1" && it.isShown })
+                        assertEquals(
+                            "Scoring keeps the practice maze in place",
+                            startingFrame,
+                            arenaFrame(),
+                        )
+                    }
                 main { assertTrue(button.performClick()) }
             }
         }
@@ -244,31 +329,45 @@ class MainActivityTest {
         val fresh = launch(showTour = true)
         try {
             verifyTour(fresh)
-            await("Completing the tour resumes the room arena cadence") { quickTour(fresh) == null && backgroundAnimating(fresh) }
-        } finally { main { fresh.finish() } }
+            await("Completing the tour resumes the room arena cadence") {
+                quickTour(fresh) == null && backgroundAnimating(fresh)
+            }
+        } finally {
+            main { fresh.finish() }
+        }
 
         val returning = startActivity()
         try {
             await("The room is immediately interactive on relaunch") { returning.hasWindowFocus() }
             main { returning.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             await("The room has rotated before the landscape replay") {
-                returning.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                returning.resources.configuration.orientation ==
+                    android.content.res.Configuration.ORIENTATION_LANDSCAPE
             }
             val controls = main {
                 assertNull(quickTour(returning))
                 state(returning).selectMode("ctf")
                 state(returning).localSelected = true
-                MainActivity::class.java.getDeclaredMethod("showControls").apply { isAccessible = true }.invoke(returning)
-                val controls = MainActivity::class.java.getDeclaredField("dialog").run {
-                    isAccessible = true
-                    get(returning) as AlertDialog
-                }
+                MainActivity::class
+                    .java
+                    .getDeclaredMethod("showControls")
+                    .apply { isAccessible = true }
+                    .invoke(returning)
+                val controls =
+                    MainActivity::class.java.getDeclaredField("dialog").run {
+                        isAccessible = true
+                        get(returning) as AlertDialog
+                    }
                 assertTrue(click(controls.window!!.decorView, "QUICK TOUR"))
                 controls
             }
             verifyTour(returning)
-            await("Completing a replay returns to Controls") { quickTour(returning) == null && controls.isShowing && backgroundAnimating(returning) }
-        } finally { main { returning.finish() } }
+            await("Completing a replay returns to Controls") {
+                quickTour(returning) == null && controls.isShowing && backgroundAnimating(returning)
+            }
+        } finally {
+            main { returning.finish() }
+        }
     }
 
     private fun state(activity: MainActivity): GameSession =
@@ -285,28 +384,55 @@ class MainActivityTest {
 
     private fun awaitPlaying(activity: MainActivity) {
         val deadline = SystemClock.elapsedRealtime() + 5000
-        while (main { state(activity).screen } != Screen.PLAYING && SystemClock.elapsedRealtime() < deadline)
-            SystemClock.sleep(20)
-        assertEquals(main { "Play: ${state(activity).status}, name=${state(activity).callsign}" }, Screen.PLAYING, main { state(activity).screen })
+        while (
+            main { state(activity).screen } != Screen.PLAYING &&
+                SystemClock.elapsedRealtime() < deadline
+        ) SystemClock.sleep(20)
+        assertEquals(
+            main { "Play: ${state(activity).status}, name=${state(activity).callsign}" },
+            Screen.PLAYING,
+            main { state(activity).screen },
+        )
     }
 
     private fun tap(view: androidx.test.uiautomator.UiObject) {
         val bounds = view.visibleBounds
         val now = SystemClock.uptimeMillis()
-        for ((action, time) in listOf(android.view.MotionEvent.ACTION_DOWN to now, android.view.MotionEvent.ACTION_UP to now + 70)) {
-            val event = android.view.MotionEvent.obtain(now, time, action, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-            try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
+        for ((action, time) in
+            listOf(
+                android.view.MotionEvent.ACTION_DOWN to now,
+                android.view.MotionEvent.ACTION_UP to now + 70,
+            )) {
+            val event =
+                android.view.MotionEvent.obtain(
+                    now,
+                    time,
+                    action,
+                    bounds.exactCenterX(),
+                    bounds.exactCenterY(),
+                    0,
+                )
+            try {
+                instrumentation.sendPointerSync(event)
+            } finally {
+                event.recycle()
+            }
         }
     }
 
     @Test
     fun sustainedPairedGameplaySurvivesModesRotationsAndBackgrounds() {
-        val requestedSeconds = InstrumentationRegistry.getArguments().getString("soakSeconds")?.toIntOrNull()
-        org.junit.Assume.assumeTrue("Set soakSeconds for the extended gameplay audit", requestedSeconds != null && requestedSeconds > 0)
+        val requestedSeconds =
+            InstrumentationRegistry.getArguments().getString("soakSeconds")?.toIntOrNull()
+        org.junit.Assume.assumeTrue(
+            "Set soakSeconds for the extended gameplay audit",
+            requestedSeconds != null && requestedSeconds > 0,
+        )
         val seconds = requestedSeconds!!
         val activity = launch()
         val publicSoak = InstrumentationRegistry.getArguments().getString("publicSoak") == "true"
-        val online = publicSoak || InstrumentationRegistry.getArguments().getString("onlineSoak") == "true"
+        val online =
+            publicSoak || InstrumentationRegistry.getArguments().getString("onlineSoak") == "true"
         val reports = File(instrumentation.targetContext.cacheDir, "gameplay-soak.txt")
         var iterations = 0
         val until = SystemClock.elapsedRealtime() + seconds * 1000L
@@ -314,92 +440,186 @@ class MainActivityTest {
             val session = main { state(activity) }
             main {
                 val reportError = session.notifyError
-                session.notifyError = { message -> reports.appendText("error cycle=$iterations $message\n"); reportError(message) }
-                for ((label, client) in listOf("room" to session.network, "arena" to session.arenaNetwork)) {
-                    val eventField = client.javaClass.getDeclaredField("onEvent").apply { isAccessible = true }
-                    @Suppress("UNCHECKED_CAST") val receive = eventField.get(client) as (com.leqra.android.network.NetworkEvent) -> Unit
+                session.notifyError = { message ->
+                    reports.appendText("error cycle=$iterations $message\n")
+                    reportError(message)
+                }
+                for ((label, client) in
+                    listOf("room" to session.network, "arena" to session.arenaNetwork)) {
+                    val eventField =
+                        client.javaClass.getDeclaredField("onEvent").apply { isAccessible = true }
+                    @Suppress("UNCHECKED_CAST")
+                    val receive =
+                        eventField.get(client) as (com.leqra.android.network.NetworkEvent) -> Unit
                     var previousPhase = ""
-                    eventField.set(client, { event: com.leqra.android.network.NetworkEvent ->
-                        val detail = when (event) {
-                            is com.leqra.android.network.NetworkEvent.Error -> "error code=${event.code} seat=${event.seat} terminal=${event.terminal} ${event.message}"
-                            is com.leqra.android.network.NetworkEvent.Reconnecting -> "retry=${event.attempt}"
-                            is com.leqra.android.network.NetworkEvent.Welcome -> "welcome resumed=${event.welcome.resumed} connection=${client.connectionGeneration}"
-                            is com.leqra.android.network.NetworkEvent.Packet -> if (event.packet.optString("type") in listOf("room", "error", "room_offline")) "packet type=${event.packet.optString("type")} code=${event.packet.optString("code")} action=${event.packet.optString("action")} seat=${event.packet.optInt("seat", -1)} phase=${event.packet.optString("phase")} active=${event.packet.optBoolean("infinityActive")}" else ""
-                            is com.leqra.android.network.NetworkEvent.State -> "${event.snapshot.generation}:${event.snapshot.phase}".let { phase -> if (phase == previousPhase) "" else { previousPhase = phase; "state=$phase" } }
-                            else -> ""
-                        }
-                        if (detail.isNotEmpty()) reports.appendText("event cycle=$iterations $label $detail\n")
-                        receive(event)
-                    })
+                    eventField.set(
+                        client,
+                        { event: com.leqra.android.network.NetworkEvent ->
+                            val detail =
+                                when (event) {
+                                    is com.leqra.android.network.NetworkEvent.Error ->
+                                        "error code=${event.code} seat=${event.seat} terminal=${event.terminal} ${event.message}"
+                                    is com.leqra.android.network.NetworkEvent.Reconnecting ->
+                                        "retry=${event.attempt}"
+                                    is com.leqra.android.network.NetworkEvent.Welcome ->
+                                        "welcome resumed=${event.welcome.resumed} connection=${client.connectionGeneration}"
+                                    is com.leqra.android.network.NetworkEvent.Packet ->
+                                        if (
+                                            event.packet.optString("type") in
+                                                listOf("room", "error", "room_offline")
+                                        )
+                                            "packet type=${event.packet.optString("type")} code=${event.packet.optString("code")} action=${event.packet.optString("action")} seat=${event.packet.optInt("seat", -1)} phase=${event.packet.optString("phase")} active=${event.packet.optBoolean("infinityActive")}"
+                                        else ""
+                                    is com.leqra.android.network.NetworkEvent.State ->
+                                        "${event.snapshot.generation}:${event.snapshot.phase}"
+                                            .let { phase ->
+                                                if (phase == previousPhase) ""
+                                                else {
+                                                    previousPhase = phase
+                                                    "state=$phase"
+                                                }
+                                            }
+                                    else -> ""
+                                }
+                            if (detail.isNotEmpty())
+                                reports.appendText("event cycle=$iterations $label $detail\n")
+                            receive(event)
+                        },
+                    )
                 }
             }
             for (mode in (if (publicSoak) listOf("infinity") else GameSession.modes.keys).cycle()) {
                 if (SystemClock.elapsedRealtime() >= until) break
                 main {
-                    session.leave(); session.togglePublic(false)
-                    session.localSelected = true; session.botCount = 2
-                    session.selectMode(mode); session.togglePublic(publicSoak)
+                    session.leave()
+                    session.togglePublic(false)
+                    session.localSelected = true
+                    session.botCount = 2
+                    session.selectMode(mode)
+                    session.togglePublic(publicSoak)
                     if (online && !publicSoak) session.share() else session.play()
-                    activity.requestedOrientation = if (iterations % 2 == 0) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    activity.requestedOrientation =
+                        if (iterations % 2 == 0) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
                 if (online && !publicSoak) {
                     val deadline = SystemClock.elapsedRealtime() + 15000
-                    while (!main { session.network.connected && session.room != null } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(20)
-                    main { assertNotNull(session.room); session.play() }
+                    while (
+                        !main { session.network.connected && session.room != null } &&
+                            SystemClock.elapsedRealtime() < deadline
+                    ) SystemClock.sleep(20)
+                    main {
+                        assertNotNull(session.room)
+                        session.play()
+                    }
                 }
                 awaitPlaying(activity)
                 repeat(10) { pass ->
                     if (SystemClock.elapsedRealtime() >= until) return@repeat
                     main {
-                        session.input = GameInput(forward = true, right = pass % 2 == 0, fire = true, touchAim = false)
-                        session.input2 = GameInput(reverse = true, left = pass % 2 != 0, fire = true, touchAim = false)
+                        session.input =
+                            GameInput(
+                                forward = true,
+                                right = pass % 2 == 0,
+                                fire = true,
+                                touchAim = false,
+                            )
+                        session.input2 =
+                            GameInput(
+                                reverse = true,
+                                left = pass % 2 != 0,
+                                fire = true,
+                                touchAim = false,
+                            )
                     }
                     SystemClock.sleep(1000)
                     main {
-                        assertTrue(session.snapshot.tanks.all { it.x.isFinite() && it.y.isFinite() })
-                        if (session.snapshot.phase == "matchOver" || session.snapshot.result != null) {
-                            MainActivity::class.java.getDeclaredMethod("dismissDialog").apply { isAccessible = true }.invoke(activity)
+                        assertTrue(
+                            session.snapshot.tanks.all { it.x.isFinite() && it.y.isFinite() },
+                        )
+                        if (
+                            session.snapshot.phase == "matchOver" || session.snapshot.result != null
+                        ) {
+                            MainActivity::class
+                                .java
+                                .getDeclaredMethod("dismissDialog")
+                                .apply { isAccessible = true }
+                                .invoke(activity)
                             session.restartMatch()
                         }
                     }
                 }
-                val tick = main { session.pause(true); session.snapshot.tick }
+                val tick = main {
+                    session.pause(true)
+                    session.snapshot.tick
+                }
                 SystemClock.sleep(100)
                 main {
                     if (!online) assertEquals(tick, session.snapshot.tick)
-                    assertFalse(session.input.fire); assertFalse(session.input2.fire)
+                    assertFalse(session.input.fire)
+                    assertFalse(session.input2.fire)
                 }
                 val device = UiDevice.getInstance(instrumentation)
-                device.executeShellCommand("am start -W -a android.intent.action.MAIN -c android.intent.category.HOME")
+                device.executeShellCommand(
+                    "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME",
+                )
                 val awayUntil = SystemClock.elapsedRealtime() + 5000
-                while (main { activity.hasWindowFocus() } && SystemClock.elapsedRealtime() < awayUntil) SystemClock.sleep(20)
+                while (
+                    main { activity.hasWindowFocus() } && SystemClock.elapsedRealtime() < awayUntil
+                ) SystemClock.sleep(20)
                 assertFalse("Home removes the app's focus", main { activity.hasWindowFocus() })
-                device.executeShellCommand("am start -W --activity-reorder-to-front -n ${activity.packageName}/${MainActivity::class.java.name}")
+                device.executeShellCommand(
+                    "am start -W --activity-reorder-to-front -n ${activity.packageName}/${MainActivity::class.java.name}",
+                )
                 val resumeUntil = SystemClock.elapsedRealtime() + 15000
-                while (!main { activity.hasWindowFocus() } && SystemClock.elapsedRealtime() < resumeUntil) {
+                while (
+                    !main { activity.hasWindowFocus() } &&
+                        SystemClock.elapsedRealtime() < resumeUntil
+                ) {
                     // The online match can finish while Home is showing; its result dialog
                     // owns focus until dismissed, even though the Activity resumed normally.
-                    main { MainActivity::class.java.getDeclaredMethod("dismissDialog").apply { isAccessible = true }.invoke(activity) }
+                    main {
+                        MainActivity::class
+                            .java
+                            .getDeclaredMethod("dismissDialog")
+                            .apply { isAccessible = true }
+                            .invoke(activity)
+                    }
                     SystemClock.sleep(20)
                 }
                 if (!main { activity.hasWindowFocus() }) {
-                    reports.appendText("focus-timeout cycle=$iterations visiblePackage=${device.currentPackageName}\n")
+                    reports.appendText(
+                        "focus-timeout cycle=$iterations visiblePackage=${device.currentPackageName}\n",
+                    )
                     screenshot("online-soak-focus-failure")
                 }
-                main { assertTrue("Activity regains focus after Home", activity.hasWindowFocus()); session.pause(false) }
+                main {
+                    assertTrue("Activity regains focus after Home", activity.hasWindowFocus())
+                    session.pause(false)
+                }
                 if (online) {
                     val deadline = SystemClock.elapsedRealtime() + 15000
-                    fun connected() = (publicSoak || session.network.connected) && (!session.infinity || session.arenaNetwork.connected)
-                    while (!main { connected() } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(20)
-                    val connection = main { "mode=$mode public=$publicSoak online=${session.online} screen=${session.screen} infinity=${session.infinity} room=${session.network.connected} arena=${session.arenaNetwork.connected} phase=${session.snapshot.phase} roomPhase=${session.room?.optString("phase")} status=${session.status}" }
+                    fun connected() =
+                        (publicSoak || session.network.connected) &&
+                            (!session.infinity || session.arenaNetwork.connected)
+                    while (
+                        !main { connected() } && SystemClock.elapsedRealtime() < deadline
+                    ) SystemClock.sleep(20)
+                    val connection = main {
+                        "mode=$mode public=$publicSoak online=${session.online} screen=${session.screen} infinity=${session.infinity} room=${session.network.connected} arena=${session.arenaNetwork.connected} phase=${session.snapshot.phase} roomPhase=${session.room?.optString("phase")} status=${session.status}"
+                    }
                     reports.appendText("resume $iterations $connection\n")
                     if (!main { connected() }) screenshot("online-soak-reconnect-failure")
                     main { assertTrue("Online sockets reconnect: $connection", connected()) }
                 }
-                reports.appendText("$iterations $mode tick=$tick frame=${main { (MainActivity::class.java.getDeclaredField("arena").apply { isAccessible = true }.get(activity) as NativeArenaView).renderedFrames }}\n")
+                reports.appendText(
+                    "$iterations $mode tick=$tick frame=${main { (MainActivity::class.java.getDeclaredField("arena").apply { isAccessible = true }.get(activity) as NativeArenaView).renderedFrames }}\n",
+                )
                 iterations++
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     private fun <T> Collection<T>.cycle() = sequence { while (true) yieldAll(this@cycle) }
@@ -407,16 +627,37 @@ class MainActivityTest {
     @Test
     fun showcaseOnlyExitsWithEscapeOrAfterLeavingAndReturningToApp() {
         val activity = launch()
-        fun preview() = MainActivity::class.java.getDeclaredField("showcaseDialog").run { isAccessible = true; get(activity) as? android.app.Dialog }
+        fun preview() =
+            MainActivity::class.java.getDeclaredField("showcaseDialog").run {
+                isAccessible = true
+                get(activity) as? android.app.Dialog
+            }
         fun showcase(): ShowcaseView? {
-            fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
-            return preview()?.window?.decorView?.let { descendants(it).filterIsInstance<ShowcaseView>().singleOrNull() }
+            fun descendants(view: View): List<View> =
+                listOf(view) +
+                    if (view is ViewGroup)
+                        (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
+                    else emptyList()
+            return preview()?.window?.decorView?.let {
+                descendants(it).filterIsInstance<ShowcaseView>().singleOrNull()
+            }
         }
-        fun controls() = MainActivity::class.java.getDeclaredField("dialog").run { isAccessible = true; get(activity) as? AlertDialog }
-        fun invoke(name: String) = MainActivity::class.java.getDeclaredMethod(name).apply { isAccessible = true }.invoke(activity)
+        fun controls() =
+            MainActivity::class.java.getDeclaredField("dialog").run {
+                isAccessible = true
+                get(activity) as? AlertDialog
+            }
+        fun invoke(name: String) =
+            MainActivity::class
+                .java
+                .getDeclaredMethod(name)
+                .apply { isAccessible = true }
+                .invoke(activity)
         fun openShowcase() = main {
-            val button = descendants(controls()!!.window!!.decorView).filterIsInstance<android.widget.Button>()
-                .single { it.text == "SHOWCASE" }
+            val button =
+                descendants(controls()!!.window!!.decorView)
+                    .filterIsInstance<android.widget.Button>()
+                    .single { it.text == "SHOWCASE" }
             assertTrue(button.performClick())
         }
         fun await(message: String, condition: () -> Boolean) {
@@ -427,23 +668,43 @@ class MainActivityTest {
         val device = UiDevice.getInstance(instrumentation)
         try {
             val session = main { state(activity) }
-            main { session.localSelected = false; session.botCount = 0; session.play(); invoke("showControls") }
+            main {
+                session.localSelected = false
+                session.botCount = 0
+                session.play()
+                invoke("showControls")
+            }
             val tick = main { session.snapshot.tick }
             val key = main { session.store.selected(session.server, 0)?.key }
             openShowcase()
             await("Showcase opens", { preview()?.isShowing == true })
-            await("Portrait showcase is drawn", { showcase()?.let { it.height > it.width && it.scene.snapshot.tanks.size == 10 && it.arena.renderedFrames > 0 } == true })
+            await(
+                "Portrait showcase is drawn",
+                {
+                    showcase()?.let {
+                        it.height > it.width &&
+                            it.scene.snapshot.tanks.size == 10 &&
+                            it.arena.renderedFrames > 0
+                    } == true
+                },
+            )
             val immersiveEducation = device.findObject(UiSelector().textMatches("(?i)got it"))
             if (immersiveEducation.waitForExists(2500)) immersiveEducation.click()
-            await("Showcase receives keyboard input", { preview()?.window?.decorView?.hasWindowFocus() == true })
+            await(
+                "Showcase receives keyboard input",
+                { preview()?.window?.decorView?.hasWindowFocus() == true },
+            )
             main {
-                assertTrue(session.paused); assertEquals(tick, session.snapshot.tick)
+                assertTrue(session.paused)
+                assertEquals(tick, session.snapshot.tick)
                 val shown = showcase()!!
                 assertEquals(10, shown.scene.snapshot.tanks.size)
                 assertEquals(4, shown.scene.snapshot.pickups.size)
                 assertTrue(shown.arena.showControls)
-                val pauseButton = (0 until shown.header.childCount)
-                    .map(shown.header::getChildAt).single { it.contentDescription == "Pause game" }
+                val pauseButton =
+                    (0 until shown.header.childCount).map(shown.header::getChildAt).single {
+                        it.contentDescription == "Pause game"
+                    }
                 assertTrue(pauseButton.isEnabled)
                 assertTrue(shown.loadout.contentDescription.toString().contains("aqsnow (P1)"))
             }
@@ -451,42 +712,78 @@ class MainActivityTest {
             SystemClock.sleep(150)
             assertTrue("System Back cannot dismiss showcase", main { preview()?.isShowing == true })
             device.click(device.displayWidth / 2, device.displayHeight / 2)
-            device.swipe(device.displayWidth / 3, device.displayHeight / 2, device.displayWidth * 2 / 3, device.displayHeight / 2, 10)
+            device.swipe(
+                device.displayWidth / 3,
+                device.displayHeight / 2,
+                device.displayWidth * 2 / 3,
+                device.displayHeight / 2,
+                10,
+            )
             assertTrue("Touch cannot dismiss showcase", main { preview()?.isShowing == true })
             screenshot("showcase-portrait")
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_ESCAPE)
             await("Escape dismisses showcase", { preview() == null })
-            main { assertTrue(controls()?.isShowing == true); assertTrue(session.paused); assertEquals(key, session.store.selected(session.server, 0)?.key) }
+            main {
+                assertTrue(controls()?.isShowing == true)
+                assertTrue(session.paused)
+                assertEquals(key, session.store.selected(session.server, 0)?.key)
+            }
             openShowcase()
             await("Showcase reopens", { preview()?.isShowing == true })
             main { activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
-            await("Landscape showcase fills its rotated window", {
-                val shown = showcase()
-                val decor = preview()?.window?.decorView
-                shown != null && decor != null && decor.width > decor.height && shown.width > shown.height &&
-                    shown.scene.snapshot.tanks.size == 8 && shown.arena.renderedFrames > 0
-            })
+            await(
+                "Landscape showcase fills its rotated window",
+                {
+                    val shown = showcase()
+                    val decor = preview()?.window?.decorView
+                    shown != null &&
+                        decor != null &&
+                        decor.width > decor.height &&
+                        shown.width > shown.height &&
+                        shown.scene.snapshot.tanks.size == 8 &&
+                        shown.arena.renderedFrames > 0
+                },
+            )
             SystemClock.sleep(100)
             screenshot("showcase-landscape")
-            device.executeShellCommand("am start -W -a android.intent.action.MAIN -c android.intent.category.HOME")
-            device.executeShellCommand("am start -W --activity-reorder-to-front -n ${activity.packageName}/${MainActivity::class.java.name}")
+            device.executeShellCommand(
+                "am start -W -a android.intent.action.MAIN -c android.intent.category.HOME",
+            )
+            device.executeShellCommand(
+                "am start -W --activity-reorder-to-front -n ${activity.packageName}/${MainActivity::class.java.name}",
+            )
             await("Returning from another app dismisses showcase", { preview() == null })
             main {
                 assertTrue(controls()?.isShowing == true)
-                assertTrue(session.paused); assertEquals(tick, session.snapshot.tick)
+                assertTrue(session.paused)
+                assertEquals(tick, session.snapshot.tick)
                 assertEquals(key, session.store.selected(session.server, 0)?.key)
                 assertFalse(session.online)
             }
-        } finally { main { preview()?.dismiss(); invoke("dismissDialog"); activity.finish() } }
+        } finally {
+            main {
+                preview()?.dismiss()
+                invoke("dismissDialog")
+                activity.finish()
+            }
+        }
     }
 
     @Test
     fun publicInfinityRoomSettingsHidePrivateGameConfiguration() {
         val activity = launch()
-        fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+        fun descendants(view: View): List<View> =
+            listOf(view) +
+                if (view is ViewGroup)
+                    (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
+                else emptyList()
         fun settings(): List<View> {
             val panel = android.widget.LinearLayout(activity)
-            MainActivity::class.java.getDeclaredMethod("roomSettings", android.widget.LinearLayout::class.java).apply { isAccessible = true }.invoke(activity, panel)
+            MainActivity::class
+                .java
+                .getDeclaredMethod("roomSettings", android.widget.LinearLayout::class.java)
+                .apply { isAccessible = true }
+                .invoke(activity, panel)
             return descendants(panel)
         }
         try {
@@ -497,24 +794,45 @@ class MainActivityTest {
                 val texts = public.filterIsInstance<TextView>().map { it.text.toString() }
                 assertEquals(1, public.filterIsInstance<android.widget.EditText>().size)
                 assertTrue(texts.any { it.contains("Turn off Public Infinity") })
-                assertTrue(texts.none { it in listOf("CHOOSE YOUR BATTLE", "Rules", "Teams", "Presets") })
-                assertTrue(descendants(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == "SHARE ROOM ONLINE ↗" })
+                assertTrue(
+                    texts.none { it in listOf("CHOOSE YOUR BATTLE", "Rules", "Teams", "Presets") },
+                )
+                assertTrue(
+                    descendants(activity.window.decorView).filterIsInstance<TextView>().any {
+                        it.text.toString() == "SHARE ROOM ONLINE ↗"
+                    },
+                )
                 session.togglePublic(false)
-                val privateTexts = settings().filterIsInstance<TextView>().map { it.text.toString() }
+                val privateTexts =
+                    settings().filterIsInstance<TextView>().map { it.text.toString() }
                 assertTrue(privateTexts.contains("CHOOSE YOUR BATTLE"))
                 assertTrue(privateTexts.containsAll(listOf("Rules", "Teams", "Presets")))
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
     fun closingControlsReturnsToThePauseMenuBeforeResumingBattle() {
         val activity = launch()
-        fun invoke(name: String) = MainActivity::class.java.getDeclaredMethod(name).apply { isAccessible = true }.invoke(activity)
-        fun panel() = MainActivity::class.java.getDeclaredField("dialog").run { isAccessible = true; get(activity) as? AlertDialog }
-        fun button(title: String) = panel()?.window?.decorView?.let { root ->
-            descendants(root).filterIsInstance<android.widget.Button>().singleOrNull { it.text.toString() == title }
-        }
+        fun invoke(name: String) =
+            MainActivity::class
+                .java
+                .getDeclaredMethod(name)
+                .apply { isAccessible = true }
+                .invoke(activity)
+        fun panel() =
+            MainActivity::class.java.getDeclaredField("dialog").run {
+                isAccessible = true
+                get(activity) as? AlertDialog
+            }
+        fun button(title: String) =
+            panel()?.window?.decorView?.let { root ->
+                descendants(root).filterIsInstance<android.widget.Button>().singleOrNull {
+                    it.text.toString() == title
+                }
+            }
         try {
             main {
                 state(activity).play()
@@ -526,55 +844,99 @@ class MainActivityTest {
                 assertTrue("The open Controls panel keeps the match paused", state(activity).paused)
                 invoke("handleBack")
             }
-            await("Closing Controls returns to the paused battle card") { button("← BACK TO THE BATTLE") != null }
+            await("Closing Controls returns to the paused battle card") {
+                button("← BACK TO THE BATTLE") != null
+            }
             main {
                 assertTrue(state(activity).paused)
                 assertTrue(button("← BACK TO THE BATTLE")?.performClick() == true)
             }
-            await("Resuming closes the pause menu and unpauses play") { panel() == null && !state(activity).paused }
-        } finally { main { activity.finish() } }
+            await("Resuming closes the pause menu and unpauses play") {
+                panel() == null && !state(activity).paused
+            }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
     fun applyingRulesRefreshesTheExpandedReadyRoom() {
         val activity = launch()
         fun readyViews() = descendants(activity.window.decorView)
-        fun summary() = readyViews().filterIsInstance<TextView>()
-            .single { it.text.startsWith("FIRST TO ") }.text.toString()
+        fun summary() =
+            readyViews()
+                .filterIsInstance<TextView>()
+                .single { it.text.startsWith("FIRST TO ") }
+                .text
+                .toString()
         try {
             main {
                 state(activity).changeRules(RoomRules.localDefaults("elimination"))
-                assertTrue(readyViews().single { it.contentDescription == "Room settings, Collapsed" }.performClick())
+                assertTrue(
+                    readyViews()
+                        .single { it.contentDescription == "Room settings, Collapsed" }
+                        .performClick(),
+                )
                 assertTrue(summary().startsWith("FIRST TO 5 WINS"))
                 assertTrue(summary().contains("Friendly fire is off."))
-                assertTrue(readyViews().filterIsInstance<TextView>().single { it.text.toString() == "Rules" }.performClick())
+                assertTrue(
+                    readyViews()
+                        .filterIsInstance<TextView>()
+                        .single { it.text.toString() == "Rules" }
+                        .performClick(),
+                )
 
-                val dialog = MainActivity::class.java.getDeclaredField("dialog").run {
-                    isAccessible = true
-                    get(activity) as AlertDialog
-                }
+                val dialog =
+                    MainActivity::class.java.getDeclaredField("dialog").run {
+                        isAccessible = true
+                        get(activity) as AlertDialog
+                    }
                 val rules = descendants(dialog.window!!.decorView)
-                assertTrue(rules.single { it.contentDescription == "Increase Score target" }.performClick())
-                val friendlyFire = rules.filterIsInstance<android.widget.Switch>().single { it.text.toString() == "Friendly fire" }
+                assertTrue(
+                    rules
+                        .single { it.contentDescription == "Increase Score target" }
+                        .performClick(),
+                )
+                val friendlyFire =
+                    rules.filterIsInstance<android.widget.Switch>().single {
+                        it.text.toString() == "Friendly fire"
+                    }
                 friendlyFire.performClick()
                 assertTrue(friendlyFire.isChecked)
-                assertTrue(rules.filterIsInstance<TextView>().single { it.text.toString() == "APPLY RULES" }.performClick())
+                assertTrue(
+                    rules
+                        .filterIsInstance<TextView>()
+                        .single { it.text.toString() == "APPLY RULES" }
+                        .performClick(),
+                )
 
                 assertTrue(summary().startsWith("FIRST TO 6 WINS"))
                 assertTrue(summary().contains("Friendly fire is on."))
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
     fun rulesPowerHelpTracksActiveModeAndEditableDraft() {
         val activity = launch()
-        fun invoke(name: String) = MainActivity::class.java.getDeclaredMethod(name).apply { isAccessible = true }.invoke(activity)
-        fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
-        fun panelViews(): List<View> = MainActivity::class.java.getDeclaredField("dialog").run {
-            isAccessible = true
-            descendants((get(activity) as AlertDialog).window!!.decorView)
-        }
+        fun invoke(name: String) =
+            MainActivity::class
+                .java
+                .getDeclaredMethod(name)
+                .apply { isAccessible = true }
+                .invoke(activity)
+        fun descendants(view: View): List<View> =
+            listOf(view) +
+                if (view is ViewGroup)
+                    (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
+                else emptyList()
+        fun panelViews(): List<View> =
+            MainActivity::class.java.getDeclaredField("dialog").run {
+                isAccessible = true
+                descendants((get(activity) as AlertDialog).window!!.decorView)
+            }
         fun text() = panelViews().filterIsInstance<TextView>().joinToString("\n") { it.text }
         try {
             main {
@@ -582,12 +944,19 @@ class MainActivityTest {
                 for (mode in listOf("infinity", "elimination", "ctf", "koth", "survival")) {
                     session.selectMode(mode)
                     invoke("showRules")
-                    val boxes = panelViews().filterIsInstance<android.widget.CheckBox>().filter { it.text.toString() in PowerupHelp.kinds.map(PowerupHelp::title) }
-                    val rate = panelViews().filterIsInstance<android.widget.Spinner>().singleOrNull { it.contentDescription == "POWER-UP FREQUENCY" }
+                    val boxes =
+                        panelViews().filterIsInstance<android.widget.CheckBox>().filter {
+                            it.text.toString() in PowerupHelp.kinds.map(PowerupHelp::title)
+                        }
+                    val rate =
+                        panelViews().filterIsInstance<android.widget.Spinner>().singleOrNull {
+                            it.contentDescription == "POWER-UP FREQUENCY"
+                        }
                     if (mode == "infinity") {
                         assertTrue(boxes.isEmpty())
                         assertNull(rate)
-                        val labels = panelViews().filterIsInstance<TextView>().map { it.text.toString() }
+                        val labels =
+                            panelViews().filterIsInstance<TextView>().map { it.text.toString() }
                         assertTrue(labels.containsAll(PowerupHelp.kinds.map(PowerupHelp::title)))
                         assertTrue(text().contains("always spawns all ten"))
                         assertTrue(text().contains("3 shots or 15 seconds"))
@@ -607,35 +976,68 @@ class MainActivityTest {
                 assertTrue(text().contains("Hold the right Fire button to shoot"))
                 invoke("dismissDialog")
                 invoke("showRules")
-                panelViews().filterIsInstance<android.widget.Spinner>().single { it.contentDescription == "MAP SIZE" }.setSelection(4)
+                panelViews()
+                    .filterIsInstance<android.widget.Spinner>()
+                    .single { it.contentDescription == "MAP SIZE" }
+                    .setSelection(4)
             }
             SystemClock.sleep(150)
             main {
                 assertTrue(text().contains("3 shots or 15 seconds"))
                 assertTrue(text().contains("no reload for 7 seconds"))
-                panelViews().filterIsInstance<android.widget.CheckBox>().single { it.text.toString() == "Laser" }.performClick()
+                panelViews()
+                    .filterIsInstance<android.widget.CheckBox>()
+                    .single { it.text.toString() == "Laser" }
+                    .performClick()
                 assertTrue(text().contains("9 power-up types enabled"))
-                panelViews().filterIsInstance<android.widget.Spinner>().single { it.contentDescription == "POWER-UP FREQUENCY" }.setSelection(0)
+                panelViews()
+                    .filterIsInstance<android.widget.Spinner>()
+                    .single { it.contentDescription == "POWER-UP FREQUENCY" }
+                    .setSelection(0)
             }
             SystemClock.sleep(150)
             main { assertTrue(text().contains("Power-up spawning is off")) }
-        } finally { main { invoke("dismissDialog"); activity.finish() } }
+        } finally {
+            main {
+                invoke("dismissDialog")
+                activity.finish()
+            }
+        }
     }
 
     @Test
     fun onlineRoomsHaveNoChatControlsInLobbyOrGame() {
         org.junit.Assume.assumeNotNull(testServer)
         val activity = launch()
-        fun show(method: String) = MainActivity::class.java.getDeclaredMethod(method).apply { isAccessible = true }.invoke(activity)
-        fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+        fun show(method: String) =
+            MainActivity::class
+                .java
+                .getDeclaredMethod(method)
+                .apply { isAccessible = true }
+                .invoke(activity)
+        fun descendants(view: View): List<View> =
+            listOf(view) +
+                if (view is ViewGroup)
+                    (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) }
+                else emptyList()
         fun checkControls(label: String) {
             main {
                 val views = descendants(activity.window.decorView).toMutableList()
-                (MainActivity::class.java.getDeclaredField("dialog").apply { isAccessible = true }.get(activity) as? AlertDialog)?.window?.decorView?.let { views += descendants(it) }
-                assertFalse("$label has no chat entry point", views.any {
-                    it.contentDescription?.toString()?.contains("chat", true) == true ||
-                        it is TextView && it.text.toString().contains("chat", true)
-                })
+                (MainActivity::class
+                        .java
+                        .getDeclaredField("dialog")
+                        .apply { isAccessible = true }
+                        .get(activity) as? AlertDialog)
+                    ?.window
+                    ?.decorView
+                    ?.let { views += descendants(it) }
+                assertFalse(
+                    "$label has no chat entry point",
+                    views.any {
+                        it.contentDescription?.toString()?.contains("chat", true) == true ||
+                            it is TextView && it.text.toString().contains("chat", true)
+                    },
+                )
             }
         }
         try {
@@ -643,168 +1045,413 @@ class MainActivityTest {
             val configurations = GameSession.modes.keys.map { it to false } + ("infinity" to true)
             for ((mode, public) in configurations) {
                 main {
-                    show("dismissDialog"); session.leave(); session.localSelected = true
-                    session.botCount = 2; session.selectMode(mode); session.togglePublic(public)
+                    show("dismissDialog")
+                    session.leave()
+                    session.localSelected = true
+                    session.botCount = 2
+                    session.selectMode(mode)
+                    session.togglePublic(public)
                     if (public) session.play() else session.share()
                 }
                 if (!public) {
                     val deadline = SystemClock.elapsedRealtime() + 15000
-                    while (!main { session.network.connected && session.room != null } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(30)
-                    main { assertNotNull("$mode room", session.room); show("showMenu") }
+                    while (
+                        !main { session.network.connected && session.room != null } &&
+                            SystemClock.elapsedRealtime() < deadline
+                    ) SystemClock.sleep(30)
+                    main {
+                        assertNotNull("$mode room", session.room)
+                        show("showMenu")
+                    }
                     checkControls("$mode lobby")
-                    main { show("dismissDialog"); session.play() }
+                    main {
+                        show("dismissDialog")
+                        session.play()
+                    }
                 }
                 awaitPlaying(activity)
                 checkControls("$mode public=$public game")
-                if (public) { SystemClock.sleep(250); screenshot("native-online-without-chat") }
+                if (public) {
+                    SystemClock.sleep(250)
+                    screenshot("native-online-without-chat")
+                }
                 main { show("showMenu") }
                 checkControls("$mode public=$public pause")
-                if (public) { SystemClock.sleep(250); screenshot("native-online-menu-without-chat") }
-                main { show("dismissDialog"); session.leave() }
+                if (public) {
+                    SystemClock.sleep(250)
+                    screenshot("native-online-menu-without-chat")
+                }
+                main {
+                    show("dismissDialog")
+                    session.leave()
+                }
             }
             main { show("showControls") }
             main {
-                val dialog = MainActivity::class.java.getDeclaredField("dialog").apply { isAccessible = true }.get(activity) as AlertDialog
-                assertTrue("Hold-to-fire instructions remain in Controls", descendants(dialog.window!!.decorView).filterIsInstance<TextView>().any { it.text.contains("Hold the right Fire button") })
+                val dialog =
+                    MainActivity::class
+                        .java
+                        .getDeclaredField("dialog")
+                        .apply { isAccessible = true }
+                        .get(activity) as AlertDialog
+                assertTrue(
+                    "Hold-to-fire instructions remain in Controls",
+                    descendants(dialog.window!!.decorView).filterIsInstance<TextView>().any {
+                        it.text.contains("Hold the right Fire button")
+                    },
+                )
             }
-        } finally { main { show("dismissDialog"); activity.finish() } }
+        } finally {
+            main {
+                show("dismissDialog")
+                activity.finish()
+            }
+        }
     }
 
     @Test
     fun unlabelledNativeControlsStayClearWithFullyLoweredStick() {
-        val activity=launch()
+        val activity = launch()
         try {
-            val session=main{state(activity)}
-            for(mode in listOf("infinity","elimination")) for(landscape in listOf(false,true)) {
+            val session = main { state(activity) }
+            for (mode in listOf("infinity", "elimination")) for (landscape in listOf(false, true)) {
                 main {
-                    session.leave();session.togglePublic(false);session.localSelected=false;session.botCount=0
-                    session.selectMode(mode);session.play()
-                    activity.requestedOrientation=if(landscape)ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    session.leave()
+                    session.togglePublic(false)
+                    session.localSelected = false
+                    session.botCount = 0
+                    session.selectMode(mode)
+                    session.play()
+                    activity.requestedOrientation =
+                        if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
-                val orientationDeadline=SystemClock.elapsedRealtime()+5000
-                while(main{activity.window.decorView.width>activity.window.decorView.height}!=landscape&&SystemClock.elapsedRealtime()<orientationDeadline)SystemClock.sleep(20)
+                val orientationDeadline = SystemClock.elapsedRealtime() + 5000
+                while (
+                    main { activity.window.decorView.width > activity.window.decorView.height } !=
+                        landscape && SystemClock.elapsedRealtime() < orientationDeadline
+                ) SystemClock.sleep(20)
                 SystemClock.sleep(500)
                 main {
-                    val header = MainActivity::class.java.getDeclaredField("header").run { isAccessible = true; get(activity) as ViewGroup }
-                    val version = (0 until header.childCount).map { header.getChildAt(it) }.filterIsInstance<TextView>().single { it.text.toString() == BuildConfig.VERSION_NAME }
+                    val header =
+                        MainActivity::class.java.getDeclaredField("header").run {
+                            isAccessible = true
+                            get(activity) as ViewGroup
+                        }
+                    val version =
+                        (0 until header.childCount)
+                            .map { header.getChildAt(it) }
+                            .filterIsInstance<TextView>()
+                            .single { it.text.toString() == BuildConfig.VERSION_NAME }
                     val visible = android.graphics.Rect()
-                    assertTrue("Header version stays visible in both orientations", version.isShown && version.getGlobalVisibleRect(visible))
+                    assertTrue(
+                        "Header version stays visible in both orientations",
+                        version.isShown && version.getGlobalVisibleRect(visible),
+                    )
                     assertEquals("Version is not clipped", version.width, visible.width())
-                    val view=MainActivity::class.java.getDeclaredField("arena").run{isAccessible=true;get(activity) as NativeArenaView}
-                    fun coordinate(name:String)=NativeArenaView::class.java.getDeclaredField(name).run{isAccessible=true;getFloat(view)}*view.resources.displayMetrics.density
-                    val x=coordinate("stickX");val y=coordinate("stickY");val now=SystemClock.uptimeMillis()
-                    for((action,dy)in listOf(android.view.MotionEvent.ACTION_DOWN to 0f,android.view.MotionEvent.ACTION_MOVE to 200f)) {
-                        val event=android.view.MotionEvent.obtain(now,now,action,x,y+dy,0)
-                        try{view.onTouchEvent(event)}finally{event.recycle()}
+                    val view =
+                        MainActivity::class.java.getDeclaredField("arena").run {
+                            isAccessible = true
+                            get(activity) as NativeArenaView
+                        }
+                    fun coordinate(name: String) =
+                        NativeArenaView::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            getFloat(view)
+                        } * view.resources.displayMetrics.density
+                    val x = coordinate("stickX")
+                    val y = coordinate("stickY")
+                    val now = SystemClock.uptimeMillis()
+                    for ((action, dy) in
+                        listOf(
+                            android.view.MotionEvent.ACTION_DOWN to 0f,
+                            android.view.MotionEvent.ACTION_MOVE to 200f,
+                        )) {
+                        val event = android.view.MotionEvent.obtain(now, now, action, x, y + dy, 0)
+                        try {
+                            view.onTouchEvent(event)
+                        } finally {
+                            event.recycle()
+                        }
                     }
-                    val knob=NativeArenaView::class.java.getDeclaredField("knobY").run{isAccessible=true;getFloat(view)}
-                    assertEquals("Fully lowered stick",29f,knob,.1f)
+                    val knob =
+                        NativeArenaView::class.java.getDeclaredField("knobY").run {
+                            isAccessible = true
+                            getFloat(view)
+                        }
+                    assertEquals("Fully lowered stick", 29f, knob, .1f)
                 }
                 SystemClock.sleep(150)
                 screenshot("controls-$mode-${if(landscape)"landscape"else"portrait"}-held")
             }
-        }finally{main{activity.finish()}}
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
     fun twoRegisteredGamepadsRouteAxesTriggersAndButtonsToSeparateTanks() {
-        val pads = android.view.InputDevice.getDeviceIds().toList().mapNotNull(android.view.InputDevice::getDevice)
-            .filter { it.name.startsWith("leqra Audit Pad") && it.sources and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD }
-            .sortedBy { it.id }
+        val pads =
+            android.view.InputDevice.getDeviceIds()
+                .toList()
+                .mapNotNull(android.view.InputDevice::getDevice)
+                .filter {
+                    it.name.startsWith("leqra Audit Pad") &&
+                        it.sources and android.view.InputDevice.SOURCE_GAMEPAD ==
+                            android.view.InputDevice.SOURCE_GAMEPAD
+                }
+                .sortedBy { it.id }
         org.junit.Assume.assumeTrue("Two virtual audit gamepads are required", pads.size == 2)
         val activity = launch()
         try {
             main {
                 val session = state(activity)
-                assertFalse("Connecting hardware does not automatically add P2", session.localSelected)
-                session.localSelected = true; session.botCount = 0; session.play()
-                fun axis(id: Int, x: Float, y: Float, trigger: Float, aimX: Float = 0f, aimY: Float = 0f) {
+                assertFalse(
+                    "Connecting hardware does not automatically add P2",
+                    session.localSelected,
+                )
+                session.localSelected = true
+                session.botCount = 0
+                session.play()
+                fun axis(
+                    id: Int,
+                    x: Float,
+                    y: Float,
+                    trigger: Float,
+                    aimX: Float = 0f,
+                    aimY: Float = 0f,
+                ) {
                     val pointer = android.view.MotionEvent.PointerProperties().apply { this.id = 0 }
-                    val coordinates = android.view.MotionEvent.PointerCoords().apply {
-                        setAxisValue(android.view.MotionEvent.AXIS_X, x); setAxisValue(android.view.MotionEvent.AXIS_Y, y)
-                        setAxisValue(android.view.MotionEvent.AXIS_RTRIGGER, trigger)
-                        setAxisValue(android.view.MotionEvent.AXIS_Z, aimX); setAxisValue(android.view.MotionEvent.AXIS_RZ, aimY)
-                        setAxisValue(android.view.MotionEvent.AXIS_RX, aimX); setAxisValue(android.view.MotionEvent.AXIS_RY, aimY)
-                    }
+                    val coordinates =
+                        android.view.MotionEvent.PointerCoords().apply {
+                            setAxisValue(android.view.MotionEvent.AXIS_X, x)
+                            setAxisValue(android.view.MotionEvent.AXIS_Y, y)
+                            setAxisValue(android.view.MotionEvent.AXIS_RTRIGGER, trigger)
+                            setAxisValue(android.view.MotionEvent.AXIS_Z, aimX)
+                            setAxisValue(android.view.MotionEvent.AXIS_RZ, aimY)
+                            setAxisValue(android.view.MotionEvent.AXIS_RX, aimX)
+                            setAxisValue(android.view.MotionEvent.AXIS_RY, aimY)
+                        }
                     val now = SystemClock.uptimeMillis()
-                    val event = android.view.MotionEvent.obtain(now, now, android.view.MotionEvent.ACTION_MOVE, 1,
-                        arrayOf(pointer), arrayOf(coordinates), 0, 0, 1f, 1f, id, 0, android.view.InputDevice.SOURCE_JOYSTICK, 0)
-                    try { activity.dispatchGenericMotionEvent(event) } finally { event.recycle() }
+                    val event =
+                        android.view.MotionEvent.obtain(
+                            now,
+                            now,
+                            android.view.MotionEvent.ACTION_MOVE,
+                            1,
+                            arrayOf(pointer),
+                            arrayOf(coordinates),
+                            0,
+                            0,
+                            1f,
+                            1f,
+                            id,
+                            0,
+                            android.view.InputDevice.SOURCE_JOYSTICK,
+                            0,
+                        )
+                    try {
+                        activity.dispatchGenericMotionEvent(event)
+                    } finally {
+                        event.recycle()
+                    }
                 }
                 axis(pads[0].id, .75f, -.5f, 1f)
-                assertEquals(.75, session.input.stickX, 1e-6); assertEquals(-.5, session.input.stickY, 1e-6)
-                assertTrue(session.input.fire); assertFalse(session.input2.fire)
+                assertEquals(.75, session.input.stickX, 1e-6)
+                assertEquals(-.5, session.input.stickY, 1e-6)
+                assertTrue(session.input.fire)
+                assertFalse(session.input2.fire)
                 axis(pads[1].id, -.5f, .75f, 1f)
-                assertEquals(-.5, session.input2.stickX, 1e-6); assertEquals(.75, session.input2.stickY, 1e-6)
-                assertTrue(session.input2.fire); assertTrue(session.input.fire)
+                assertEquals(-.5, session.input2.stickX, 1e-6)
+                assertEquals(.75, session.input2.stickY, 1e-6)
+                assertTrue(session.input2.fire)
+                assertTrue(session.input.fire)
                 axis(pads[1].id, -.5f, .75f, 1f, .75f, -.5f)
-                assertEquals(.75, session.input2.stickX, 1e-6); assertEquals(-.5, session.input2.stickY, 1e-6)
-                assertTrue(session.input2.aimOnly); assertTrue(session.input2.forward)
+                assertEquals(.75, session.input2.stickX, 1e-6)
+                assertEquals(-.5, session.input2.stickY, 1e-6)
+                assertTrue(session.input2.aimOnly)
+                assertTrue(session.input2.forward)
                 assertFalse("P2 aim stays on P2", session.input.aimOnly)
-                axis(pads[0].id, 0f, 0f, 0f); axis(pads[1].id, 0f, 0f, 0f)
+                axis(pads[0].id, 0f, 0f, 0f)
+                axis(pads[1].id, 0f, 0f, 0f)
                 val now = SystemClock.uptimeMillis()
-                fun start(action: Int, repeat: Int = 0) = KeyEvent(now, now, action, KeyEvent.KEYCODE_BUTTON_START,
-                    repeat, 0, pads[0].id, 0, 0, android.view.InputDevice.SOURCE_GAMEPAD)
-                activity.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BUTTON_A, 0, 0, pads[1].id, 0, 0, android.view.InputDevice.SOURCE_GAMEPAD))
-                assertFalse(session.input.fire); assertTrue(session.input2.fire)
-                activity.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_A, 0, 0, pads[1].id, 0, 0, android.view.InputDevice.SOURCE_GAMEPAD))
+                fun start(action: Int, repeat: Int = 0) =
+                    KeyEvent(
+                        now,
+                        now,
+                        action,
+                        KeyEvent.KEYCODE_BUTTON_START,
+                        repeat,
+                        0,
+                        pads[0].id,
+                        0,
+                        0,
+                        android.view.InputDevice.SOURCE_GAMEPAD,
+                    )
+                activity.dispatchKeyEvent(
+                    KeyEvent(
+                        now,
+                        now,
+                        KeyEvent.ACTION_DOWN,
+                        KeyEvent.KEYCODE_BUTTON_A,
+                        0,
+                        0,
+                        pads[1].id,
+                        0,
+                        0,
+                        android.view.InputDevice.SOURCE_GAMEPAD,
+                    ),
+                )
+                assertFalse(session.input.fire)
+                assertTrue(session.input2.fire)
+                activity.dispatchKeyEvent(
+                    KeyEvent(
+                        now,
+                        now,
+                        KeyEvent.ACTION_UP,
+                        KeyEvent.KEYCODE_BUTTON_A,
+                        0,
+                        0,
+                        pads[1].id,
+                        0,
+                        0,
+                        android.view.InputDevice.SOURCE_GAMEPAD,
+                    ),
+                )
                 assertFalse(session.input2.fire)
                 activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Q))
-                assertFalse(session.input.fire); assertTrue("Keyboard still belongs to P2 beside gamepads", session.input2.fire)
-                activity.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BUTTON_A, 0, 0, pads[0].id, 0, 0, android.view.InputDevice.SOURCE_GAMEPAD))
-                assertTrue("First gamepad retains P1", session.input.fire); assertTrue(session.input2.fire)
+                assertFalse(session.input.fire)
+                assertTrue("Keyboard still belongs to P2 beside gamepads", session.input2.fire)
+                activity.dispatchKeyEvent(
+                    KeyEvent(
+                        now,
+                        now,
+                        KeyEvent.ACTION_DOWN,
+                        KeyEvent.KEYCODE_BUTTON_A,
+                        0,
+                        0,
+                        pads[0].id,
+                        0,
+                        0,
+                        android.view.InputDevice.SOURCE_GAMEPAD,
+                    ),
+                )
+                assertTrue("First gamepad retains P1", session.input.fire)
+                assertTrue(session.input2.fire)
                 activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Q))
-                assertTrue(session.input.fire); assertFalse(session.input2.fire)
-                activity.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_A, 0, 0, pads[0].id, 0, 0, android.view.InputDevice.SOURCE_GAMEPAD))
+                assertTrue(session.input.fire)
+                assertFalse(session.input2.fire)
+                activity.dispatchKeyEvent(
+                    KeyEvent(
+                        now,
+                        now,
+                        KeyEvent.ACTION_UP,
+                        KeyEvent.KEYCODE_BUTTON_A,
+                        0,
+                        0,
+                        pads[0].id,
+                        0,
+                        0,
+                        android.view.InputDevice.SOURCE_GAMEPAD,
+                    ),
+                )
                 activity.dispatchKeyEvent(start(KeyEvent.ACTION_DOWN))
                 assertTrue("Start opens the match menu", session.paused)
-                val pause = MainActivity::class.java.getDeclaredField("dialog").apply { isAccessible = true }.get(activity) as android.app.AlertDialog
+                val pause =
+                    MainActivity::class
+                        .java
+                        .getDeclaredField("dialog")
+                        .apply { isAccessible = true }
+                        .get(activity) as android.app.AlertDialog
                 pause.dispatchKeyEvent(start(KeyEvent.ACTION_DOWN, repeat = 1))
                 assertTrue("Holding Start does not close the menu again", session.paused)
                 pause.dispatchKeyEvent(start(KeyEvent.ACTION_UP))
                 pause.dispatchKeyEvent(start(KeyEvent.ACTION_DOWN))
                 assertFalse("A fresh Start press returns to the battle", session.paused)
                 activity.onWindowFocusChanged(false)
-                assertEquals(0.0, session.input.stickX, 0.0); assertEquals(0.0, session.input2.stickX, 0.0)
+                assertEquals(0.0, session.input.stickX, 0.0)
+                assertEquals(0.0, session.input2.stickX, 0.0)
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
     fun unpluggingHeldGamepadsNeutralizesBothSeatsWithoutTransferringInputs() {
-        org.junit.Assume.assumeTrue("Set unplugGamepads for external uinput removal", InstrumentationRegistry.getArguments().getString("unplugGamepads") == "true")
-        val pads = android.view.InputDevice.getDeviceIds().toList().mapNotNull(android.view.InputDevice::getDevice)
-            .filter { it.name.startsWith("leqra Audit Pad") }.sortedBy { it.id }
+        org.junit.Assume.assumeTrue(
+            "Set unplugGamepads for external uinput removal",
+            InstrumentationRegistry.getArguments().getString("unplugGamepads") == "true",
+        )
+        val pads =
+            android.view.InputDevice.getDeviceIds()
+                .toList()
+                .mapNotNull(android.view.InputDevice::getDevice)
+                .filter { it.name.startsWith("leqra Audit Pad") }
+                .sortedBy { it.id }
         assertEquals(2, pads.size)
         val activity = launch()
         try {
             main {
                 val session = state(activity)
-                session.localSelected = true; session.botCount = 0; session.play()
+                session.localSelected = true
+                session.botCount = 0
+                session.play()
                 for (pad in pads) {
                     val pointer = android.view.MotionEvent.PointerProperties().apply { id = 0 }
-                    val coordinates = android.view.MotionEvent.PointerCoords().apply {
-                        setAxisValue(android.view.MotionEvent.AXIS_X, .8f); setAxisValue(android.view.MotionEvent.AXIS_RTRIGGER, 1f)
-                    }
+                    val coordinates =
+                        android.view.MotionEvent.PointerCoords().apply {
+                            setAxisValue(android.view.MotionEvent.AXIS_X, .8f)
+                            setAxisValue(android.view.MotionEvent.AXIS_RTRIGGER, 1f)
+                        }
                     val now = SystemClock.uptimeMillis()
-                    val event = android.view.MotionEvent.obtain(now, now, android.view.MotionEvent.ACTION_MOVE, 1,
-                        arrayOf(pointer), arrayOf(coordinates), 0, 0, 1f, 1f, pad.id, 0, android.view.InputDevice.SOURCE_JOYSTICK, 0)
-                    try { activity.dispatchGenericMotionEvent(event) } finally { event.recycle() }
+                    val event =
+                        android.view.MotionEvent.obtain(
+                            now,
+                            now,
+                            android.view.MotionEvent.ACTION_MOVE,
+                            1,
+                            arrayOf(pointer),
+                            arrayOf(coordinates),
+                            0,
+                            0,
+                            1f,
+                            1f,
+                            pad.id,
+                            0,
+                            android.view.InputDevice.SOURCE_JOYSTICK,
+                            0,
+                        )
+                    try {
+                        activity.dispatchGenericMotionEvent(event)
+                    } finally {
+                        event.recycle()
+                    }
                 }
-                assertTrue(session.input.fire); assertTrue(session.input2.fire)
+                assertTrue(session.input.fire)
+                assertTrue(session.input2.fire)
             }
             File(instrumentation.targetContext.cacheDir, "unplug-ready").writeText("ready")
             val deadline = SystemClock.elapsedRealtime() + 30000
-            while (pads.any { android.view.InputDevice.getDevice(it.id) != null } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(20)
-            assertTrue("External virtual gamepad removal occurred", pads.none { android.view.InputDevice.getDevice(it.id) != null })
+            while (
+                pads.any { android.view.InputDevice.getDevice(it.id) != null } &&
+                    SystemClock.elapsedRealtime() < deadline
+            ) SystemClock.sleep(20)
+            assertTrue(
+                "External virtual gamepad removal occurred",
+                pads.none { android.view.InputDevice.getDevice(it.id) != null },
+            )
             SystemClock.sleep(100)
             main {
                 val session = state(activity)
                 assertFalse("Removed P1 controller cannot keep firing", session.input.fire)
                 assertFalse("Removed P2 controller cannot keep firing", session.input2.fire)
-                assertEquals(0.0, session.input.stickX, 0.0); assertEquals(0.0, session.input2.stickX, 0.0)
+                assertEquals(0.0, session.input.stickX, 0.0)
+                assertEquals(0.0, session.input2.stickX, 0.0)
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -904,83 +1551,194 @@ class MainActivityTest {
         val activity = launch()
         try {
             val session = main { state(activity) }
-            main { session.callsign = "ABCDEFGHIJKLMNOP"; session.localCallsign = "Wide界界界界界界界界界界界界" }
+            main {
+                session.callsign = "ABCDEFGHIJKLMNOP"
+                session.localCallsign = "Wide界界界界界界界界界界界界"
+            }
             for (mode in GameSession.modes.keys) for (landscape in listOf(false, true)) {
                 main {
-                    session.leave(); session.localSelected = true; session.botCount = 0
-                    session.selectMode(mode); session.play()
-                    activity.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    session.leave()
+                    session.localSelected = true
+                    session.botCount = 0
+                    session.selectMode(mode)
+                    session.play()
+                    activity.requestedOrientation =
+                        if (landscape) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 }
                 awaitPlaying(activity)
                 SystemClock.sleep(600)
                 main {
-                    val view = MainActivity::class.java.getDeclaredField("arena").run { isAccessible = true; get(activity) as NativeArenaView }
-                    fun point(name: String) = NativeArenaView::class.java.getDeclaredField(name).run { isAccessible = true; getFloat(view) } * view.resources.displayMetrics.density
+                    val view =
+                        MainActivity::class.java.getDeclaredField("arena").run {
+                            isAccessible = true
+                            get(activity) as NativeArenaView
+                        }
+                    fun point(name: String) =
+                        NativeArenaView::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            getFloat(view)
+                        } * view.resources.displayMetrics.density
                     fun key(code: Int, down: Boolean) {
                         val now = SystemClock.uptimeMillis()
-                        activity.dispatchKeyEvent(KeyEvent(now, now, if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
-                            code, 0, 0, 0, 0, 0, android.view.InputDevice.SOURCE_KEYBOARD))
+                        activity.dispatchKeyEvent(
+                            KeyEvent(
+                                now,
+                                now,
+                                if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
+                                code,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                android.view.InputDevice.SOURCE_KEYBOARD,
+                            ),
+                        )
                     }
                     fun touch(action: Int) {
                         val now = SystemClock.uptimeMillis()
-                        android.view.MotionEvent.obtain(now, now, action, point("fireX"), point("fireY"), 0).let { view.onTouchEvent(it); it.recycle() }
+                        android.view.MotionEvent.obtain(
+                                now,
+                                now,
+                                action,
+                                point("fireX"),
+                                point("fireY"),
+                                0,
+                            )
+                            .let {
+                                view.onTouchEvent(it)
+                                it.recycle()
+                            }
                     }
                     var mouseDirection = 1.0
                     fun mouse(action: Int, buttons: Int = 0) {
-                        val properties = android.view.MotionEvent.PointerProperties().apply { id = 0; toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE }
+                        val properties =
+                            android.view.MotionEvent.PointerProperties().apply {
+                                id = 0
+                                toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE
+                            }
                         val location = IntArray(2).also(view::getLocationInWindow)
                         val distance = 35 * view.resources.displayMetrics.density
-                        mouseDirection = if (point("mouseTankX") + distance < view.width) 1.0 else -1.0
-                        val coordinates = android.view.MotionEvent.PointerCoords().apply { x = location[0] + point("mouseTankX") + (distance * mouseDirection).toFloat(); y = location[1] + point("mouseTankY") }
+                        mouseDirection =
+                            if (point("mouseTankX") + distance < view.width) 1.0 else -1.0
+                        val coordinates =
+                            android.view.MotionEvent.PointerCoords().apply {
+                                x =
+                                    location[0] +
+                                        point("mouseTankX") +
+                                        (distance * mouseDirection).toFloat()
+                                y = location[1] + point("mouseTankY")
+                            }
                         val now = SystemClock.uptimeMillis()
-                        val event = android.view.MotionEvent.obtain(now, now, action, 1, arrayOf(properties), arrayOf(coordinates), 0, buttons, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_MOUSE, 0)
+                        val event =
+                            android.view.MotionEvent.obtain(
+                                now,
+                                now,
+                                action,
+                                1,
+                                arrayOf(properties),
+                                arrayOf(coordinates),
+                                0,
+                                buttons,
+                                1f,
+                                1f,
+                                0,
+                                0,
+                                android.view.InputDevice.SOURCE_MOUSE,
+                                0,
+                            )
                         try {
-                            if (action == android.view.MotionEvent.ACTION_HOVER_MOVE) activity.dispatchGenericMotionEvent(event) else activity.dispatchTouchEvent(event)
-                        } finally { event.recycle() }
+                            if (action == android.view.MotionEvent.ACTION_HOVER_MOVE)
+                                activity.dispatchGenericMotionEvent(event)
+                            else activity.dispatchTouchEvent(event)
+                        } finally {
+                            event.recycle()
+                        }
                     }
                     touch(android.view.MotionEvent.ACTION_DOWN)
-                    assertTrue("Touch belongs to P1", session.input.fire); assertFalse(session.input2.fire)
-                    key(KeyEvent.KEYCODE_W, true); key(KeyEvent.KEYCODE_Q, true)
-                    assertFalse(session.input.forward); assertTrue(session.input2.forward); assertTrue(session.input2.fire)
+                    assertTrue("Touch belongs to P1", session.input.fire)
+                    assertFalse(session.input2.fire)
+                    key(KeyEvent.KEYCODE_W, true)
+                    key(KeyEvent.KEYCODE_Q, true)
+                    assertFalse(session.input.forward)
+                    assertTrue(session.input2.forward)
+                    assertTrue(session.input2.fire)
                     key(KeyEvent.KEYCODE_Q, false)
                     mouse(android.view.MotionEvent.ACTION_HOVER_MOVE)
-                    assertTrue(session.input2.aimOnly); assertFalse("Mouse aim preserves held keyboard throttle", session.input2.snapAim)
-                    assertTrue(session.input2.forward); assertEquals(mouseDirection, session.input2.stickX, .001)
+                    assertTrue(session.input2.aimOnly)
+                    assertFalse(
+                        "Mouse aim preserves held keyboard throttle",
+                        session.input2.snapAim,
+                    )
+                    assertTrue(session.input2.forward)
+                    assertEquals(mouseDirection, session.input2.stickX, .001)
                     key(KeyEvent.KEYCODE_W, false)
-                    mouse(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.BUTTON_PRIMARY)
+                    mouse(
+                        android.view.MotionEvent.ACTION_DOWN,
+                        android.view.MotionEvent.BUTTON_PRIMARY,
+                    )
                     assertTrue("Stationary mouse aim is exact", session.input2.snapAim)
-                    assertTrue("Mouse fire belongs to P2", session.input2.fire); assertTrue("Mouse cannot release P1 touch", session.input.fire)
+                    assertTrue("Mouse fire belongs to P2", session.input2.fire)
+                    assertTrue("Mouse cannot release P1 touch", session.input.fire)
                     mouse(android.view.MotionEvent.ACTION_UP)
-                    assertFalse(session.input2.fire); assertTrue(session.input.fire)
+                    assertFalse(session.input2.fire)
+                    assertTrue(session.input.fire)
                     touch(android.view.MotionEvent.ACTION_UP)
                     assertFalse(session.input.fire)
-                    mouse(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.BUTTON_PRIMARY)
+                    mouse(
+                        android.view.MotionEvent.ACTION_DOWN,
+                        android.view.MotionEvent.BUTTON_PRIMARY,
+                    )
                     touch(android.view.MotionEvent.ACTION_DOWN)
                     key(KeyEvent.KEYCODE_W, true)
-                    val devices = MainActivity::class.java.getDeclaredField("controllerDevices").run { isAccessible = true; get(activity) as android.hardware.input.InputManager.InputDeviceListener }
+                    val devices =
+                        MainActivity::class.java.getDeclaredField("controllerDevices").run {
+                            isAccessible = true
+                            get(activity) as android.hardware.input.InputManager.InputDeviceListener
+                        }
                     devices.onInputDeviceRemoved(-1)
-                    assertTrue("Disconnecting external input keeps P1 touch held", session.input.fire)
-                    assertFalse("Disconnected keyboard cannot keep P2 moving", session.input2.forward)
+                    assertTrue(
+                        "Disconnecting external input keeps P1 touch held",
+                        session.input.fire,
+                    )
+                    assertFalse(
+                        "Disconnected keyboard cannot keep P2 moving",
+                        session.input2.forward,
+                    )
                     assertFalse("Disconnected mouse cannot keep P2 firing", session.input2.fire)
                     touch(android.view.MotionEvent.ACTION_UP)
-                    mouse(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.BUTTON_PRIMARY)
+                    mouse(
+                        android.view.MotionEvent.ACTION_DOWN,
+                        android.view.MotionEvent.BUTTON_PRIMARY,
+                    )
                     activity.onWindowFocusChanged(false)
-                    assertFalse(session.input.fire); assertFalse(session.input2.fire)
+                    assertFalse(session.input.fire)
+                    assertFalse(session.input2.fire)
                     activity.onWindowFocusChanged(true)
-                    for ((id, power) in listOf(session.localID to "rapid", session.localID2 to "cannon")) {
-                        session.authoritativeSnapshot.tanks.firstOrNull { it.id == id }?.let { tank ->
-                            com.leqra.core.PracticeArena.applyPower(tank, power)
-                            com.leqra.core.PracticeArena.applyPower(tank, "shield")
-                            com.leqra.core.PracticeArena.applyPower(tank, "speed")
-                            com.leqra.core.PracticeArena.applyPower(tank, if (id == session.localID2) "starman" else "ghost")
-                            tank.spawnProtected = false; tank.invulnerable = 0.0
-                        }
+                    for ((id, power) in
+                        listOf(session.localID to "rapid", session.localID2 to "cannon")) {
+                        session.authoritativeSnapshot.tanks
+                            .firstOrNull { it.id == id }
+                            ?.let { tank ->
+                                com.leqra.core.PracticeArena.applyPower(tank, power)
+                                com.leqra.core.PracticeArena.applyPower(tank, "shield")
+                                com.leqra.core.PracticeArena.applyPower(tank, "speed")
+                                com.leqra.core.PracticeArena.applyPower(
+                                    tank,
+                                    if (id == session.localID2) "starman" else "ghost",
+                                )
+                                tank.spawnProtected = false
+                                tank.invulnerable = 0.0
+                            }
                     }
                 }
                 SystemClock.sleep(200)
                 screenshot("p2-input-$mode-${if (landscape) "landscape" else "portrait"}")
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -996,15 +1754,32 @@ class MainActivityTest {
                 session.play()
                 fun key(code: Int, down: Boolean, repeat: Int = 0) {
                     val now = SystemClock.uptimeMillis()
-                    activity.dispatchKeyEvent(KeyEvent(now, now,
-                        if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code, repeat))
+                    activity.dispatchKeyEvent(
+                        KeyEvent(
+                            now,
+                            now,
+                            if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
+                            code,
+                            repeat,
+                        ),
+                    )
                 }
-                fun seat(id: Int?) = GameSession::class.java.getDeclaredField("localID2").run {
-                    isAccessible = true; set(session, id)
-                }
-                for (code in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_ENTER)) {
-                    key(code, true); assertTrue("Solo $code fires P1", session.input.fire)
-                    key(code, false); assertFalse(session.input.fire)
+                fun seat(id: Int?) =
+                    GameSession::class.java.getDeclaredField("localID2").run {
+                        isAccessible = true
+                        set(session, id)
+                    }
+                for (code in
+                    listOf(
+                        KeyEvent.KEYCODE_Q,
+                        KeyEvent.KEYCODE_C,
+                        KeyEvent.KEYCODE_SPACE,
+                        KeyEvent.KEYCODE_ENTER,
+                    )) {
+                    key(code, true)
+                    assertTrue("Solo $code fires P1", session.input.fire)
+                    key(code, false)
+                    assertFalse(session.input.fire)
                 }
                 key(KeyEvent.KEYCODE_SPACE, true)
                 seat(2)
@@ -1014,15 +1789,22 @@ class MainActivityTest {
                 assertFalse("Old solo Space cannot transfer to P2", session.input2.fire)
                 assertFalse(session.input.fire)
                 key(KeyEvent.KEYCODE_SPACE, true, repeat = 1)
-                assertFalse("A held key repeat cannot rearm after a seat change", session.input2.fire)
+                assertFalse(
+                    "A held key repeat cannot rearm after a seat change",
+                    session.input2.fire,
+                )
                 key(KeyEvent.KEYCODE_SPACE, false)
                 for (code in listOf(KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_ENTER)) {
-                    key(code, true); assertTrue("Paired $code belongs to P2", session.input2.fire)
+                    key(code, true)
+                    assertTrue("Paired $code belongs to P2", session.input2.fire)
                     assertFalse(session.input.fire)
-                    key(code, false); assertFalse(session.input2.fire)
+                    key(code, false)
+                    assertFalse(session.input2.fire)
                 }
                 for (code in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_C)) {
-                    key(code, true); assertFalse(session.input.fire); assertTrue(session.input2.fire)
+                    key(code, true)
+                    assertFalse(session.input.fire)
+                    assertTrue(session.input2.fire)
                     key(code, false)
                 }
                 key(KeyEvent.KEYCODE_DPAD_UP, true)
@@ -1032,7 +1814,10 @@ class MainActivityTest {
                 key(KeyEvent.KEYCODE_SPACE, true)
                 seat(null)
                 key(KeyEvent.KEYCODE_A, true)
-                assertFalse("Removing P2 cannot turn its Space hold into P1 fire", session.input.fire)
+                assertFalse(
+                    "Removing P2 cannot turn its Space hold into P1 fire",
+                    session.input.fire,
+                )
                 key(KeyEvent.KEYCODE_SPACE, true, repeat = 1)
                 assertFalse(session.input.fire)
                 key(KeyEvent.KEYCODE_SPACE, false)
@@ -1048,7 +1833,9 @@ class MainActivityTest {
                 assertTrue(session.input.fire)
                 key(KeyEvent.KEYCODE_ENTER, false)
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -1056,26 +1843,49 @@ class MainActivityTest {
         val activity = launch()
         try {
             val session = main { state(activity) }
-            val view = main { MainActivity::class.java.getDeclaredField("arena").run {
-                isAccessible = true; get(activity) as NativeArenaView
-            } }
-            for (fixed in listOf(false, true)) for (weapon in listOf("rapid", "scatter", "homing", "grenade", "laser", "cannon")) {
+            val view = main {
+                MainActivity::class.java.getDeclaredField("arena").run {
+                    isAccessible = true
+                    get(activity) as NativeArenaView
+                }
+            }
+            for (fixed in listOf(false, true)) for (weapon in
+                listOf("rapid", "scatter", "homing", "grenade", "laser", "cannon")) {
                 lateinit var practice: com.leqra.core.PracticeArena
                 main {
                     view.resetControls()
-                    practice = com.leqra.core.PracticeArena(42, "TAP", 0, 0,
-                        world = if (fixed) com.leqra.core.ArenaWorld(840.0, 840.0, 10, 10) else null)
+                    practice =
+                        com.leqra.core.PracticeArena(
+                            42,
+                            "TAP",
+                            0,
+                            0,
+                            world =
+                                if (fixed) com.leqra.core.ArenaWorld(840.0, 840.0, 10, 10)
+                                else null,
+                        )
                     practice.snapshot.tanks.first().apply {
-                        x = 420.0; y = 420.0; invulnerable = 3600.0; spawnProtected = false
+                        x = 420.0
+                        y = 420.0
+                        invulnerable = 3600.0
+                        spawnProtected = false
                         com.leqra.core.PracticeArena.applyPower(this, weapon)
-                        charges = 1; machineRounds = 1
+                        charges = 1
+                        machineRounds = 1
                     }
-                    fun set(name: String, value: Any?) = GameSession::class.java.getDeclaredField(name).run {
-                        isAccessible = true; set(session, value)
-                    }
-                    set("practice", practice); set("fixed", null); set("online", false)
-                    set("screen", Screen.PLAYING); set("infinity", !fixed); set("localID", 1)
-                    set("maze", practice.maze); set("snapshot", practice.snapshot)
+                    fun set(name: String, value: Any?) =
+                        GameSession::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            set(session, value)
+                        }
+                    set("practice", practice)
+                    set("fixed", null)
+                    set("online", false)
+                    set("screen", Screen.PLAYING)
+                    set("infinity", !fixed)
+                    set("localID", 1)
+                    set("maze", practice.maze)
+                    set("snapshot", practice.snapshot)
                     session.mode = if (fixed) "elimination" else "infinity"
                     session.rules = RoomRules.localDefaults(session.mode)
                     session.input = GameInput()
@@ -1086,29 +1896,59 @@ class MainActivityTest {
                 fun touch(action: Int) = main {
                     val now = SystemClock.uptimeMillis()
                     if (action == MotionEvent.ACTION_DOWN) downTime = now
-                    fun coordinate(name: String) = NativeArenaView::class.java.getDeclaredField(name).run {
-                        isAccessible = true; getFloat(view) * view.resources.displayMetrics.density
+                    fun coordinate(name: String) =
+                        NativeArenaView::class.java.getDeclaredField(name).run {
+                            isAccessible = true
+                            getFloat(view) * view.resources.displayMetrics.density
+                        }
+                    val event =
+                        MotionEvent.obtain(
+                            downTime,
+                            now,
+                            action,
+                            coordinate("fireX"),
+                            coordinate("fireY"),
+                            0,
+                        )
+                    try {
+                        assertTrue(view.onTouchEvent(event))
+                    } finally {
+                        event.recycle()
                     }
-                    val event = MotionEvent.obtain(downTime, now, action, coordinate("fireX"), coordinate("fireY"), 0)
-                    try { assertTrue(view.onTouchEvent(event)) } finally { event.recycle() }
                 }
-                touch(MotionEvent.ACTION_DOWN); SystemClock.sleep(100); touch(MotionEvent.ACTION_UP)
+                touch(MotionEvent.ACTION_DOWN)
+                SystemClock.sleep(100)
+                touch(MotionEvent.ACTION_UP)
                 SystemClock.sleep(450)
                 main {
-                    assertEquals("Final $weapon charge is consumed", "", practice.snapshot.tanks.first().power)
-                    assertFalse("A short final $weapon tap also fired standard ammo, fixed=$fixed",
-                        practice.snapshot.bullets.any { it.kind.isEmpty() })
+                    assertEquals(
+                        "Final $weapon charge is consumed",
+                        "",
+                        practice.snapshot.tanks.first().power,
+                    )
+                    assertFalse(
+                        "A short final $weapon tap also fired standard ammo, fixed=$fixed",
+                        practice.snapshot.bullets.any { it.kind.isEmpty() },
+                    )
                 }
                 if (weapon == "grenade") {
-                    touch(MotionEvent.ACTION_DOWN); SystemClock.sleep(50); touch(MotionEvent.ACTION_UP)
+                    touch(MotionEvent.ACTION_DOWN)
+                    SystemClock.sleep(50)
+                    touch(MotionEvent.ACTION_UP)
                 }
-                touch(MotionEvent.ACTION_DOWN); SystemClock.sleep(1100); touch(MotionEvent.ACTION_UP)
+                touch(MotionEvent.ACTION_DOWN)
+                SystemClock.sleep(1100)
+                touch(MotionEvent.ACTION_UP)
                 main {
-                    assertTrue("Held fire continues after $weapon reload, fixed=$fixed",
-                        practice.snapshot.bullets.any { it.kind.isEmpty() })
+                    assertTrue(
+                        "Held fire continues after $weapon reload, fixed=$fixed",
+                        practice.snapshot.bullets.any { it.kind.isEmpty() },
+                    )
                 }
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -1117,39 +1957,78 @@ class MainActivityTest {
         try {
             main {
                 val session = state(activity)
-                session.publicSelected = false; session.botCount = 0; session.selectMode("infinity"); session.play()
+                session.publicSelected = false
+                session.botCount = 0
+                session.selectMode("infinity")
+                session.play()
             }
             SystemClock.sleep(200)
             main {
                 val session = state(activity)
-                val view = MainActivity::class.java.getDeclaredField("arena").run { isAccessible = true; get(activity) as NativeArenaView }
+                val view =
+                    MainActivity::class.java.getDeclaredField("arena").run {
+                        isAccessible = true
+                        get(activity) as NativeArenaView
+                    }
                 val density = view.resources.displayMetrics.density
-                val x = NativeArenaView::class.java.getDeclaredField("fireX").apply { isAccessible = true }.getFloat(view) * density
-                val y = NativeArenaView::class.java.getDeclaredField("fireY").apply { isAccessible = true }.getFloat(view) * density
+                val x =
+                    NativeArenaView::class
+                        .java
+                        .getDeclaredField("fireX")
+                        .apply { isAccessible = true }
+                        .getFloat(view) * density
+                val y =
+                    NativeArenaView::class
+                        .java
+                        .getDeclaredField("fireY")
+                        .apply { isAccessible = true }
+                        .getFloat(view) * density
                 fun touch(action: Int) {
                     val now = SystemClock.uptimeMillis()
-                    android.view.MotionEvent.obtain(now, now, action, x, y, 0).let { view.onTouchEvent(it); it.recycle() }
+                    android.view.MotionEvent.obtain(now, now, action, x, y, 0).let {
+                        view.onTouchEvent(it)
+                        it.recycle()
+                    }
                 }
-                fun key(down: Boolean) { activity.dispatchKeyEvent(KeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Q)) }
-                key(true); touch(android.view.MotionEvent.ACTION_DOWN)
+                fun key(down: Boolean) {
+                    activity.dispatchKeyEvent(
+                        KeyEvent(
+                            if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
+                            KeyEvent.KEYCODE_Q,
+                        ),
+                    )
+                }
+                key(true)
+                touch(android.view.MotionEvent.ACTION_DOWN)
                 assertTrue(session.input.fire)
                 touch(android.view.MotionEvent.ACTION_UP)
-                assertTrue("Releasing touch cannot release the held keyboard Fire", session.input.fire)
-                key(false); assertFalse(session.input.fire)
-                touch(android.view.MotionEvent.ACTION_DOWN); key(true); key(false)
+                assertTrue(
+                    "Releasing touch cannot release the held keyboard Fire",
+                    session.input.fire,
+                )
+                key(false)
+                assertFalse(session.input.fire)
+                touch(android.view.MotionEvent.ACTION_DOWN)
+                key(true)
+                key(false)
                 assertTrue("Releasing keyboard cannot release held touch Fire", session.input.fire)
-                touch(android.view.MotionEvent.ACTION_UP); assertFalse(session.input.fire)
+                touch(android.view.MotionEvent.ACTION_UP)
+                assertFalse(session.input.fire)
                 // An independent touch joystick must also survive keyboard button changes.
-                view.input.stickX = .8; view.input.stickY = -.4
+                view.input.stickX = .8
+                view.input.stickY = -.4
                 view.onInput?.invoke(view.input.copy())
                 key(true)
-                assertEquals(.8, session.input.stickX, 0.0); assertEquals(-.4, session.input.stickY, 0.0)
+                assertEquals(.8, session.input.stickX, 0.0)
+                assertEquals(-.4, session.input.stickY, 0.0)
                 assertTrue(session.input.touchAim)
                 key(false)
                 view.resetControls()
                 assertFalse(session.input.fire)
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -1158,13 +2037,20 @@ class MainActivityTest {
         try {
             main {
                 val session = state(activity)
-                session.keyboardBindings = session.keyboardBindings.assign(0, NativeControlAction.FORWARD, KeyEvent.KEYCODE_I)
+                session.keyboardBindings =
+                    session.keyboardBindings.assign(
+                        0,
+                        NativeControlAction.FORWARD,
+                        KeyEvent.KEYCODE_I,
+                    )
                 session.localSelected = true
                 session.botCount = 0
                 session.play()
                 assertNotNull(session.localID2)
                 fun key(down: Boolean, code: Int) {
-                    activity.dispatchKeyEvent(KeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code))
+                    activity.dispatchKeyEvent(
+                        KeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, code),
+                    )
                 }
                 key(true, KeyEvent.KEYCODE_W)
                 assertFalse(session.input.forward)
@@ -1176,46 +2062,71 @@ class MainActivityTest {
                 key(false, KeyEvent.KEYCODE_I)
                 assertFalse(session.input2.forward)
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
     fun readyRoomShowsNativeAccountControlsAndCombinedSettings() {
         val activity = launch()
         val device = UiDevice.getInstance(instrumentation)
-        fun activeDialog() = MainActivity::class.java.getDeclaredField("dialog").run {
-            isAccessible = true
-            get(activity) as? AlertDialog
-        }
+        fun activeDialog() =
+            MainActivity::class.java.getDeclaredField("dialog").run {
+                isAccessible = true
+                get(activity) as? AlertDialog
+            }
         fun dialogViews() = activeDialog()?.window?.decorView?.let(::descendants).orEmpty()
         fun openControls() {
             main {
-                val icon = descendants(activity.window.decorView).filterIsInstance<android.widget.ImageButton>()
-                    .single { it.isShown && it.contentDescription == "Controls" }
+                val icon =
+                    descendants(activity.window.decorView)
+                        .filterIsInstance<android.widget.ImageButton>()
+                        .single { it.isShown && it.contentDescription == "Controls" }
                 assertTrue(icon.performClick())
             }
-            await("The Controls button opens Controls") { dialogViews().any { it.contentDescription == "Close Controls" } }
+            await("The Controls button opens Controls") {
+                dialogViews().any { it.contentDescription == "Close Controls" }
+            }
         }
         fun closeControls() {
-            main { assertTrue(dialogViews().single { it.contentDescription == "Close Controls" }.performClick()) }
+            main {
+                assertTrue(
+                    dialogViews()
+                        .single { it.contentDescription == "Close Controls" }
+                        .performClick(),
+                )
+            }
             await("Controls closes to the room") { activeDialog() == null }
         }
         fun roomViews() = descendants(activity.window.decorView).filter { it.isShown }
         fun clickRoomButton(title: String) {
-            assertTrue(roomViews().filterIsInstance<android.widget.Button>()
-                .single { it.text.toString() == title }.performClick())
+            assertTrue(
+                roomViews()
+                    .filterIsInstance<android.widget.Button>()
+                    .single { it.text.toString() == title }
+                    .performClick(),
+            )
         }
         fun checkAccountActions(vararg expected: String) {
             main {
-                val keys = dialogViews().filterIsInstance<android.widget.Button>()
-                    .filter { it.isShown && it.text.endsWith("ACCOUNT KEY") }.map { it.text.toString() }
+                val keys =
+                    dialogViews()
+                        .filterIsInstance<android.widget.Button>()
+                        .filter { it.isShown && it.text.endsWith("ACCOUNT KEY") }
+                        .map { it.text.toString() }
                 assertEquals(expected.toList(), keys)
             }
         }
         fun checkAccountReturn(action: String, seat: Int) {
             val identity = main {
                 val session = state(activity)
-                assertTrue(dialogViews().filterIsInstance<android.widget.Button>().single { it.text == action }.performClick())
+                assertTrue(
+                    dialogViews()
+                        .filterIsInstance<android.widget.Button>()
+                        .single { it.text == action }
+                        .performClick(),
+                )
                 if (seat == 0) session.identity else "${session.localCallsign} (P2)"
             }
             await("$action opens the account for $identity") {
@@ -1223,9 +2134,15 @@ class MainActivityTest {
                 identity in labels && "IMPORT FROM ANOTHER DEVICE" in labels
             }
             main {
-                assertTrue(dialogViews().single { it.contentDescription == "Close Account key" }.performClick())
+                assertTrue(
+                    dialogViews()
+                        .single { it.contentDescription == "Close Account key" }
+                        .performClick(),
+                )
             }
-            await("Close Account key returns to Controls") { dialogViews().any { it.contentDescription == "Close Controls" } }
+            await("Close Account key returns to Controls") {
+                dialogViews().any { it.contentDescription == "Close Controls" }
+            }
         }
         try {
             val education = device.findObject(UiSelector().text("Got it"))
@@ -1235,16 +2152,26 @@ class MainActivityTest {
                 val sidebar = roomViews().single { it.contentDescription == "Open sidebar" }
                 val controls = roomViews().single { it.contentDescription == "Controls" }
                 assertTrue(sidebar.parent is NativeGameHeader)
-                assertSame("Sidebar appears alongside Controls in the game header", controls.parent, sidebar.parent)
+                assertSame(
+                    "Sidebar appears alongside Controls in the game header",
+                    controls.parent,
+                    sidebar.parent,
+                )
                 assertTrue(sidebar.performClick())
             }
             await("The room sidebar shows the game controller tip") {
-                dialogViews().filterIsInstance<TextView>().any { it.text == "Connect a game controller to play." }
+                dialogViews().filterIsInstance<TextView>().any {
+                    it.text == "Connect a game controller to play."
+                }
             }
-            main { assertTrue(activeDialog()!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()) }
+            main {
+                assertTrue(activeDialog()!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick())
+            }
             await("The sidebar closes back to the room") { activeDialog() == null }
             main { state(activity).selectMode("elimination") }
-            assertTrue(device.findObject(UiSelector().description("P1 callsign")).waitForExists(5000))
+            assertTrue(
+                device.findObject(UiSelector().description("P1 callsign")).waitForExists(5000),
+            )
             assertFalse(device.findObject(UiSelector().text("READY ROOM.")).exists())
             assertFalse(device.findObject(UiSelector().text("● READY ROOM")).exists())
             assertTrue(device.findObject(UiSelector().description("P1 account key")).exists())
@@ -1253,27 +2180,77 @@ class MainActivityTest {
                 val controls = activeDialog()!!
                 val root = controls.window!!.decorView
                 val views = descendants(root)
-                fun visibleTitles() = descendants(root).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
+                fun visibleTitles() =
+                    descendants(root)
+                        .filterIsInstance<TextView>()
+                        .filter { it.isShown }
+                        .map { it.text.toString() }
                 val titles = visibleTitles()
-                assertTrue(titles.containsAll(listOf("QUICK TOUR", "SHOWCASE", "Game controller support", "Show FPS and ping", "Sound volume", "ONLINE SERVER", "SAVE SERVER", "RESET ALL SETTINGS", "BACK")))
+                assertTrue(
+                    titles.containsAll(
+                        listOf(
+                            "QUICK TOUR",
+                            "SHOWCASE",
+                            "Game controller support",
+                            "Show FPS and ping",
+                            "Sound volume",
+                            "ONLINE SERVER",
+                            "SAVE SERVER",
+                            "RESET ALL SETTINGS",
+                            "BACK",
+                        ),
+                    ),
+                )
                 assertFalse(titles.contains("Connect a game controller to play."))
                 assertEquals("QUICK TOUR", titles[titles.indexOf("SHOWCASE") - 1])
-                val actionsBeforeSettings = listOf("QUICK TOUR", "SHOWCASE", "ACCOUNT KEY", "Show FPS and ping")
-                assertEquals(actionsBeforeSettings, titles.filter { it in actionsBeforeSettings || it.endsWith("ACCOUNT KEY") })
+                val actionsBeforeSettings =
+                    listOf("QUICK TOUR", "SHOWCASE", "ACCOUNT KEY", "Show FPS and ping")
+                assertEquals(
+                    actionsBeforeSettings,
+                    titles.filter { it in actionsBeforeSettings || it.endsWith("ACCOUNT KEY") },
+                )
                 assertEquals(listOf("RESET ALL SETTINGS", "BACK"), titles.takeLast(2))
-                val reset = views.filterIsInstance<android.widget.Button>().single { it.text == "RESET ALL SETTINGS" }
+                val reset =
+                    views.filterIsInstance<android.widget.Button>().single {
+                        it.text == "RESET ALL SETTINGS"
+                    }
                 assertEquals(NativeStyle.danger, reset.currentTextColor)
-                val devices = InputDevice.getDeviceIds().asList().mapNotNull { InputDevice.getDevice(it) }.filterNot { it.isVirtual }
-                val keyboard = devices.any { it.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC }
+                val devices =
+                    InputDevice.getDeviceIds()
+                        .asList()
+                        .mapNotNull { InputDevice.getDevice(it) }
+                        .filterNot { it.isVirtual }
+                val keyboard = devices.any {
+                    it.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC
+                }
                 val mouse = devices.any { it.supportsSource(InputDevice.SOURCE_MOUSE) }
-                val binds = views.singleOrNull { it.isShown && it.contentDescription == "Binds, Collapsed" }
+                val binds = views.singleOrNull {
+                    it.isShown && it.contentDescription == "Binds, Collapsed"
+                }
                 assertEquals(keyboard || mouse, binds != null)
                 assertFalse(titles.any { it.startsWith("Keyboard defaults") })
-                assertTrue(titles.none { it in listOf("KEYBOARD LAYOUT 1", "RESET DEFAULT KEYS", "Mouse aim", "Mouse fire") })
+                assertTrue(
+                    titles.none {
+                        it in
+                            listOf(
+                                "KEYBOARD LAYOUT 1",
+                                "RESET DEFAULT KEYS",
+                                "Mouse aim",
+                                "Mouse fire",
+                            )
+                    },
+                )
                 if (binds != null) {
-                    val tour = views.filterIsInstance<android.widget.Button>().single { it.text == "QUICK TOUR" }
+                    val tour =
+                        views.filterIsInstance<android.widget.Button>().single {
+                            it.text == "QUICK TOUR"
+                        }
                     val panel = tour.parent as ViewGroup
-                    assertSame("Quick Tour follows the Binds section", binds.parent, panel.getChildAt(panel.indexOfChild(tour) - 1))
+                    assertSame(
+                        "Quick Tour follows the Binds section",
+                        binds.parent,
+                        panel.getChildAt(panel.indexOfChild(tour) - 1),
+                    )
                     assertTrue(binds.performClick())
                     assertEquals("Binds, Expanded", binds.contentDescription)
                     val expanded = visibleTitles()
@@ -1286,15 +2263,28 @@ class MainActivityTest {
                     assertEquals("Binds, Collapsed", binds.contentDescription)
                     assertEquals(titles, visibleTitles())
                 }
-                assertEquals("Online server", views.filterIsInstance<android.widget.EditText>().single().contentDescription)
+                assertEquals(
+                    "Online server",
+                    views.filterIsInstance<android.widget.EditText>().single().contentDescription,
+                )
                 assertTrue(views.any { it.contentDescription == "Close Controls" })
-                val sound = views.filterIsInstance<android.widget.Switch>().single { it.text == "Sound and haptics" }
+                val sound =
+                    views.filterIsInstance<android.widget.Switch>().single {
+                        it.text == "Sound and haptics"
+                    }
                 val session = state(activity)
-                val gamepad = views.filterIsInstance<android.widget.Switch>().single { it.text == "Game controller support" }
+                val gamepad =
+                    views.filterIsInstance<android.widget.Switch>().single {
+                        it.text == "Game controller support"
+                    }
                 assertTrue(gamepad.isChecked)
                 gamepad.performClick()
                 assertFalse(session.gamepadSupport)
-                assertFalse(instrumentation.targetContext.getSharedPreferences("leqra-settings", 0).getBoolean("gamepadSupport", true))
+                assertFalse(
+                    instrumentation.targetContext
+                        .getSharedPreferences("leqra-settings", 0)
+                        .getBoolean("gamepadSupport", true),
+                )
                 val muted = session.muted
                 sound.performClick()
                 assertEquals(!muted, session.muted)
@@ -1302,13 +2292,20 @@ class MainActivityTest {
             checkAccountReturn("ACCOUNT KEY", 0)
             closeControls()
             main {
-                assertTrue(roomViews().single { it.contentDescription?.startsWith("Players and bots,") == true }.performClick())
+                assertTrue(
+                    roomViews()
+                        .single { it.contentDescription?.startsWith("Players and bots,") == true }
+                        .performClick(),
+                )
                 clickRoomButton("＋ ADD LOCAL P2")
             }
             await("The local P2 is attached") { state(activity).localSelected }
             openControls()
             main {
-                val toggle = dialogViews().filterIsInstance<android.widget.Switch>().single { it.text == "Game controller support" }
+                val toggle =
+                    dialogViews().filterIsInstance<android.widget.Switch>().single {
+                        it.text == "Game controller support"
+                    }
                 assertFalse(toggle.isChecked)
                 toggle.performClick()
                 assertTrue(state(activity).gamepadSupport)
@@ -1331,13 +2328,25 @@ class MainActivityTest {
         val settings = instrumentation.targetContext.getSharedPreferences("leqra-settings", 0)
         val expectedOrigin = "https://leqra.test"
         fun showControls(activity: MainActivity) =
-            MainActivity::class.java.getDeclaredMethod("showControls").apply { isAccessible = true }.invoke(activity)
-        fun controls(activity: MainActivity): List<View> = MainActivity::class.java.getDeclaredField("dialog").run {
-            isAccessible = true
-            descendants((get(activity) as AlertDialog).window!!.decorView)
-        }
-        fun editor(views: List<View>) = views.filterIsInstance<android.widget.EditText>().single { it.contentDescription == "Online server" }
-        fun save(views: List<View>) = views.filterIsInstance<android.widget.Button>().single { it.text == "SAVE SERVER" }.performClick()
+            MainActivity::class
+                .java
+                .getDeclaredMethod("showControls")
+                .apply { isAccessible = true }
+                .invoke(activity)
+        fun controls(activity: MainActivity): List<View> =
+            MainActivity::class.java.getDeclaredField("dialog").run {
+                isAccessible = true
+                descendants((get(activity) as AlertDialog).window!!.decorView)
+            }
+        fun editor(views: List<View>) =
+            views.filterIsInstance<android.widget.EditText>().single {
+                it.contentDescription == "Online server"
+            }
+        fun save(views: List<View>) =
+            views
+                .filterIsInstance<android.widget.Button>()
+                .single { it.text == "SAVE SERVER" }
+                .performClick()
 
         val activity = launch()
         try {
@@ -1354,16 +2363,25 @@ class MainActivityTest {
                 assertEquals(initialOrigin, session.server)
                 assertEquals(initialPreference, settings.getString("server", null))
                 val error = "Enter an HTTP or HTTPS server address."
-                assertTrue(field.error?.toString() == error || views.filterIsInstance<TextView>().any { it.text == error && it.isShown })
+                assertTrue(
+                    field.error?.toString() == error ||
+                        views.filterIsInstance<TextView>().any { it.text == error && it.isShown },
+                )
 
                 field.setText("  https://LEQRA.test:443/room?name=test#fragment  ")
                 assertTrue(save(views))
                 assertEquals(expectedOrigin, session.server)
                 assertEquals(expectedOrigin, settings.getString("server", null))
                 assertEquals(expectedOrigin, editor(controls(activity)).text.toString())
-                assertTrue(controls(activity).filterIsInstance<TextView>().any { it.text == "Server saved." && it.isShown })
+                assertTrue(
+                    controls(activity).filterIsInstance<TextView>().any {
+                        it.text == "Server saved." && it.isShown
+                    },
+                )
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
 
         val returning = startActivity()
         try {
@@ -1373,7 +2391,9 @@ class MainActivityTest {
                 showControls(returning)
                 assertEquals(expectedOrigin, editor(controls(returning)).text.toString())
             }
-        } finally { main { returning.finish() } }
+        } finally {
+            main { returning.finish() }
+        }
     }
 
     @Test
@@ -1396,28 +2416,59 @@ class MainActivityTest {
             }
             main { session.renameCallsign(first, 0, validate = true) }
             eventually("First account wasn't selected") {
-                session.callsign == first && session.store.selected(server, 0)?.registrationPending == false &&
-                    !(GameSession::class.java.getDeclaredField("switchingCallsign").apply { isAccessible = true }.getBoolean(session))
+                session.callsign == first &&
+                    session.store.selected(server, 0)?.registrationPending == false &&
+                    !(GameSession::class
+                        .java
+                        .getDeclaredField("switchingCallsign")
+                        .apply { isAccessible = true }
+                        .getBoolean(session))
             }
             main { session.renameCallsign(second, 0, validate = true) }
             eventually("Second account wasn't selected") {
-                session.callsign == second && session.store.selected(server, 0)?.registrationPending == false &&
-                    !(GameSession::class.java.getDeclaredField("switchingCallsign").apply { isAccessible = true }.getBoolean(session))
+                session.callsign == second &&
+                    session.store.selected(server, 0)?.registrationPending == false &&
+                    !(GameSession::class
+                        .java
+                        .getDeclaredField("switchingCallsign")
+                        .apply { isAccessible = true }
+                        .getBoolean(session))
             }
             main {
-                activity.javaClass.getDeclaredMethod("showAccount", Int::class.javaPrimitiveType).apply { isAccessible = true }.invoke(activity, 0)
+                activity.javaClass
+                    .getDeclaredMethod("showAccount", Int::class.javaPrimitiveType)
+                    .apply { isAccessible = true }
+                    .invoke(activity, 0)
             }
             eventually("Saved scores did not load") {
-                val dialog = activity.javaClass.getDeclaredField("dialog").apply { isAccessible = true }.get(activity) as? AlertDialog
+                val dialog =
+                    activity.javaClass
+                        .getDeclaredField("dialog")
+                        .apply { isAccessible = true }
+                        .get(activity) as? AlertDialog
                 val root = dialog?.window?.decorView ?: return@eventually false
-                fun children(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()
+                fun children(view: View): List<View> =
+                    listOf(view) +
+                        if (view is ViewGroup)
+                            (0 until view.childCount).flatMap { children(view.getChildAt(it)) }
+                        else emptyList()
                 val text = children(root).filterIsInstance<TextView>()
-                text.any { it.text.toString() == "$first: 0 points" } && text.any { it.text.toString() == "$second: 0 points" }
+                text.any { it.text.toString() == "$first: 0 points" } &&
+                    text.any { it.text.toString() == "$second: 0 points" }
             }
             main {
-                val dialog = activity.javaClass.getDeclaredField("dialog").apply { isAccessible = true }.get(activity) as AlertDialog
-                fun children(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()
-                val buttons = children(dialog.window!!.decorView).filterIsInstance<android.widget.Button>()
+                val dialog =
+                    activity.javaClass
+                        .getDeclaredField("dialog")
+                        .apply { isAccessible = true }
+                        .get(activity) as AlertDialog
+                fun children(view: View): List<View> =
+                    listOf(view) +
+                        if (view is ViewGroup)
+                            (0 until view.childCount).flatMap { children(view.getChildAt(it)) }
+                        else emptyList()
+                val buttons =
+                    children(dialog.window!!.decorView).filterIsInstance<android.widget.Button>()
                 val active = buttons.single { it.text.toString() == "USE $second" }
                 assertFalse(active.isEnabled)
                 assertTrue("Active USE must be visibly dimmed", active.alpha < .6f)
@@ -1426,7 +2477,9 @@ class MainActivityTest {
             }
             screenshot("saved-callsign-scores")
             device.pressBack()
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -1442,9 +2495,18 @@ class MainActivityTest {
             }
             SystemClock.sleep(150)
             val before = main {
-                val play = MainActivity::class.java.getDeclaredField("readyPlay").run { isAccessible = true; get(activity) as View }
-                val error = MainActivity::class.java.getDeclaredField("readyStartError").run { isAccessible = true; get(activity) as TextView }
-                val location = IntArray(2); play.getLocationOnScreen(location)
+                val play =
+                    MainActivity::class.java.getDeclaredField("readyPlay").run {
+                        isAccessible = true
+                        get(activity) as View
+                    }
+                val error =
+                    MainActivity::class.java.getDeclaredField("readyStartError").run {
+                        isAccessible = true
+                        get(activity) as TextView
+                    }
+                val location = IntArray(2)
+                play.getLocationOnScreen(location)
                 listOf(location[0], location[1], play.width, play.height, error.height)
             }
             main { state(activity).selectMode("survival") }
@@ -1453,15 +2515,29 @@ class MainActivityTest {
                 val session = state(activity)
                 assertEquals("elimination", session.mode)
                 assertEquals(6, session.botCount)
-                val play = MainActivity::class.java.getDeclaredField("readyPlay").run { isAccessible = true; get(activity) as View }
-                val error = MainActivity::class.java.getDeclaredField("readyStartError").run { isAccessible = true; get(activity) as TextView }
-                val location = IntArray(2); play.getLocationOnScreen(location)
-                assertEquals(before, listOf(location[0], location[1], play.width, play.height, error.height))
+                val play =
+                    MainActivity::class.java.getDeclaredField("readyPlay").run {
+                        isAccessible = true
+                        get(activity) as View
+                    }
+                val error =
+                    MainActivity::class.java.getDeclaredField("readyStartError").run {
+                        isAccessible = true
+                        get(activity) as TextView
+                    }
+                val location = IntArray(2)
+                play.getLocationOnScreen(location)
+                assertEquals(
+                    before,
+                    listOf(location[0], location[1], play.width, play.height, error.height),
+                )
                 assertEquals(View.VISIBLE, error.visibility)
                 assertTrue(error.text.contains("four squad tanks"))
                 assertTrue(play.isEnabled)
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -1469,34 +2545,84 @@ class MainActivityTest {
         val activity = launch()
         fun texts(view: View): List<TextView> =
             (if (view is TextView) listOf(view) else emptyList()) +
-                if (view is ViewGroup) (0 until view.childCount).flatMap { texts(view.getChildAt(it)) } else emptyList()
+                if (view is ViewGroup)
+                    (0 until view.childCount).flatMap { texts(view.getChildAt(it)) }
+                else emptyList()
         try {
             main {
                 val session = state(activity)
-                session.publicSelected = false; session.botCount = 0
-                session.localSelected = true; session.selectMode("infinity"); session.play()
-                (MainActivity::class.java.getDeclaredField("arena").run { isAccessible = true; get(activity) } as NativeArenaView).onFrame = null
-                val show = MainActivity::class.java.getDeclaredMethod("showResult").apply { isAccessible = true }
-                val dismiss = MainActivity::class.java.getDeclaredMethod("dismissDialog").apply { isAccessible = true }
+                session.publicSelected = false
+                session.botCount = 0
+                session.localSelected = true
+                session.selectMode("infinity")
+                session.play()
+                (MainActivity::class.java.getDeclaredField("arena").run {
+                        isAccessible = true
+                        get(activity)
+                    } as NativeArenaView)
+                    .onFrame = null
+                val show =
+                    MainActivity::class.java.getDeclaredMethod("showResult").apply {
+                        isAccessible = true
+                    }
+                val dismiss =
+                    MainActivity::class.java.getDeclaredMethod("dismissDialog").apply {
+                        isAccessible = true
+                    }
                 for (kind in listOf("local", "bot", "team")) {
-                    session.rules = RoomRules.localDefaults().copy(teamMode = if (kind == "team") "teams" else "ffa",
-                        teamNames = listOf("Blue Comets", "Jade Squad", "Third", "Fourth"), teamColors = listOf(4, 5, 6, 7))
-                    val tank = ArenaTank(id = 2, name = if (kind == "bot") "RUST" else "Wing", bot = kind == "bot", colorIndex = 1,
-                        score = 5, team = if (kind == "team") 2 else 0)
-                    val snapshot = ArenaSnapshot(tanks = listOf(tank), winner = if (kind == "local") -1 else 2,
-                        result = if (kind == "local") ArenaResult(id = 2, name = "Wing", score = 5) else null)
-                    GameSession::class.java.getDeclaredField("snapshot").run { isAccessible = true; set(session, snapshot) }
+                    session.rules =
+                        RoomRules.localDefaults()
+                            .copy(
+                                teamMode = if (kind == "team") "teams" else "ffa",
+                                teamNames = listOf("Blue Comets", "Jade Squad", "Third", "Fourth"),
+                                teamColors = listOf(4, 5, 6, 7),
+                            )
+                    val tank =
+                        ArenaTank(
+                            id = 2,
+                            name = if (kind == "bot") "RUST" else "Wing",
+                            bot = kind == "bot",
+                            colorIndex = 1,
+                            score = 5,
+                            team = if (kind == "team") 2 else 0,
+                        )
+                    val snapshot =
+                        ArenaSnapshot(
+                            tanks = listOf(tank),
+                            winner = if (kind == "local") -1 else 2,
+                            result =
+                                if (kind == "local") ArenaResult(id = 2, name = "Wing", score = 5)
+                                else null,
+                        )
+                    GameSession::class.java.getDeclaredField("snapshot").run {
+                        isAccessible = true
+                        set(session, snapshot)
+                    }
                     show.invoke(activity)
-                    val dialog = MainActivity::class.java.getDeclaredField("dialog").run { isAccessible = true; get(activity) as AlertDialog }
+                    val dialog =
+                        MainActivity::class.java.getDeclaredField("dialog").run {
+                            isAccessible = true
+                            get(activity) as AlertDialog
+                        }
                     val label = texts(dialog.window!!.decorView).single { it.text.endsWith("WINS") }
-                    val expected = when (kind) { "local" -> "Wing (P2)"; "bot" -> "Bot Rust"; else -> "Jade Squad" }
+                    val expected =
+                        when (kind) {
+                            "local" -> "Wing (P2)"
+                            "bot" -> "Bot Rust"
+                            else -> "Jade Squad"
+                        }
                     assertEquals("$expected WINS", label.text.toString())
-                    assertEquals(NativeStyle.paint(if (kind == "team") 5 else 1), label.currentTextColor)
+                    assertEquals(
+                        NativeStyle.paint(if (kind == "team") 5 else 1),
+                        label.currentTextColor,
+                    )
                     assertEquals(kind != "bot", label.typeface.isBold)
                     dismiss.invoke(activity)
                 }
             }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -1558,7 +2684,9 @@ class MainActivityTest {
                     .apply { isAccessible = true }
                     .invoke(activity)
             }
-            assertTrue(device.findObject(UiSelector().text("← BACK TO THE BATTLE")).waitForExists(2000))
+            assertTrue(
+                device.findObject(UiSelector().text("← BACK TO THE BATTLE")).waitForExists(2000),
+            )
             device.findObject(UiSelector().text("← BACK TO THE BATTLE")).click()
             val deadline = SystemClock.elapsedRealtime() + 2000
             while (
@@ -1668,12 +2796,17 @@ class MainActivityTest {
         }
         bitmap.recycle()
     }
+
     @Test
     fun freshNamesReservedRepairP2AndPassiveNoticeRemainStable() {
         org.junit.Assume.assumeNotNull(testServer)
         val activity = launch()
         val device = UiDevice.getInstance(instrumentation)
-        fun field(instance: Any, name: String): Any? = instance.javaClass.getDeclaredField(name).run { isAccessible = true; get(instance) }
+        fun field(instance: Any, name: String): Any? =
+            instance.javaClass.getDeclaredField(name).run {
+                isAccessible = true
+                get(instance)
+            }
         fun eventually(message: String, condition: () -> Boolean) {
             val deadline = SystemClock.elapsedRealtime() + 20000
             while (SystemClock.elapsedRealtime() < deadline) {
@@ -1686,12 +2819,18 @@ class MainActivityTest {
         fun names() = field(activity, "callsignFields") as Array<android.widget.EditText?>
         @Suppress("UNCHECKED_CAST")
         fun feedback() = field(activity, "feedback") as Array<android.widget.TextView?>
-        fun y(view: View): Int { val point = IntArray(2); view.getLocationOnScreen(point); return point[1] }
+        fun y(view: View): Int {
+            val point = IntArray(2)
+            view.getLocationOnScreen(point)
+            return point[1]
+        }
         val errors = mutableListOf<String>()
         try {
             val session = main { state(activity) }
             main { session.notifyError = { errors.add(it) } }
-            eventually("Both fresh seats must receive claimed server defaults") { !session.automaticNamePending(0) && !session.automaticNamePending(1) }
+            eventually("Both fresh seats must receive claimed server defaults") {
+                !session.automaticNamePending(0) && !session.automaticNamePending(1)
+            }
             val initial = main { session.callsign to session.localCallsign }
             assertTrue(Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(initial.first))
             assertTrue(Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(initial.second))
@@ -1704,65 +2843,128 @@ class MainActivityTest {
             instrumentation.waitForIdleSync()
             val secondKey = main { session.store.selected(session.server, 1)!!.key }
             val layoutBefore = main { y(names()[1]!!) to feedback()[0]!!.height }
-            main { names()[0]!!.requestFocus(); names()[0]!!.setText("Bot RUST") }
+            main {
+                names()[0]!!.requestFocus()
+                names()[0]!!.setText("Bot RUST")
+            }
             instrumentation.waitForIdleSync()
             SystemClock.sleep(150)
-            assertTrue(device.takeScreenshot(File(instrumentation.targetContext.getExternalFilesDir(null), "identity-native-reserved.png")))
+            assertTrue(
+                device.takeScreenshot(
+                    File(
+                        instrumentation.targetContext.getExternalFilesDir(null),
+                        "identity-native-reserved.png",
+                    ),
+                ),
+            )
             main {
                 assertTrue(feedback()[0]!!.text.toString().contains("reserved"))
                 assertFalse(feedback()[0]!!.text.toString().contains("Import"))
                 assertEquals(layoutBefore.first, y(names()[1]!!))
                 assertEquals(layoutBefore.second, feedback()[0]!!.height)
-                val spans = (feedback()[0]!!.text as android.text.Spanned).getSpans(0, feedback()[0]!!.length(), android.text.style.ClickableSpan::class.java)
+                val spans =
+                    (feedback()[0]!!.text as android.text.Spanned).getSpans(
+                        0,
+                        feedback()[0]!!.length(),
+                        android.text.style.ClickableSpan::class.java,
+                    )
                 assertEquals(1, spans.size)
                 spans.single().onClick(feedback()[0]!!)
             }
             eventually("Generate repair must complete without a stale blur overwriting it") {
-                !session.automaticNamePending(0) && !com.leqra.core.Callsigns.botReserved(session.callsign)
+                !session.automaticNamePending(0) &&
+                    !com.leqra.core.Callsigns.botReserved(session.callsign)
             }
             main {
                 assertTrue(errors.isEmpty())
                 assertEquals(layoutBefore.first, y(names()[1]!!))
-                names()[1]!!.requestFocus(); names()[1]!!.setText("bOt WING")
-                val spans = (feedback()[1]!!.text as android.text.Spanned).getSpans(0, feedback()[1]!!.length(), android.text.style.ClickableSpan::class.java)
+                names()[1]!!.requestFocus()
+                names()[1]!!.setText("bOt WING")
+                val spans =
+                    (feedback()[1]!!.text as android.text.Spanned).getSpans(
+                        0,
+                        feedback()[1]!!.length(),
+                        android.text.style.ClickableSpan::class.java,
+                    )
                 spans.single().onClick(feedback()[1]!!)
             }
             eventually("P2 gets an independent repaired name") {
-                !session.automaticNamePending(1) && !com.leqra.core.Callsigns.botReserved(session.localCallsign)
+                !session.automaticNamePending(1) &&
+                    !com.leqra.core.Callsigns.botReserved(session.localCallsign)
             }
             main {
-                assertNotEquals("Generating P2's callsign creates a separate account", secondKey, session.store.selected(session.server, 1)!!.key)
-                assertNotEquals(session.store.selected(session.server, 0)!!.key, session.store.selected(session.server, 1)!!.key)
+                assertNotEquals(
+                    "Generating P2's callsign creates a separate account",
+                    secondKey,
+                    session.store.selected(session.server, 1)!!.key,
+                )
+                assertNotEquals(
+                    session.store.selected(session.server, 0)!!.key,
+                    session.store.selected(session.server, 1)!!.key,
+                )
                 assertFalse(session.store.selected(session.server, 1)!!.registrationPending)
-                assertTrue(session.accounts.savedCallsigns(session.server).any { it.name == initial.second && it.key == secondKey })
+                assertTrue(
+                    session.accounts.savedCallsigns(session.server).any {
+                        it.name == initial.second && it.key == secondKey
+                    },
+                )
                 session.publicSelected = true
                 session.play()
             }
-            eventually("Public entry with both generated accounts must succeed") { session.screen == Screen.PLAYING && session.localID2 != null && session.snapshot.tanks.any { it.id == session.localID2 } }
+            eventually("Public entry with both generated accounts must succeed") {
+                session.screen == Screen.PLAYING &&
+                    session.localID2 != null &&
+                    session.snapshot.tanks.any { it.id == session.localID2 }
+            }
             main {
                 assertFalse(session.store.selected(session.server, 1)!!.registrationPending)
-                assertTrue(session.store.pending(session.server, 1).none {
-                    it.purpose == "registration" && it.key == session.store.selected(session.server, 1)!!.key
-                })
+                assertTrue(
+                    session.store.pending(session.server, 1).none {
+                        it.purpose == "registration" &&
+                            it.key == session.store.selected(session.server, 1)!!.key
+                    },
+                )
                 val status = session.status
-                val packet = session.snapshot.copy(tick = session.snapshot.tick + 2, godlikeSpawns = listOf(com.leqra.core.GodlikeSpawn(2000000, 1, "Bot 999 - Godlike")))
-                GameSession::class.java.getDeclaredMethod("networkEvent", com.leqra.android.network.NetworkEvent::class.java, Boolean::class.javaPrimitiveType).run {
-                    isAccessible = true
-                    invoke(session, com.leqra.android.network.NetworkEvent.State(packet), true)
-                }
+                val packet =
+                    session.snapshot.copy(
+                        tick = session.snapshot.tick + 2,
+                        godlikeSpawns =
+                            listOf(com.leqra.core.GodlikeSpawn(2000000, 1, "Bot 999 - Godlike")),
+                    )
+                GameSession::class
+                    .java
+                    .getDeclaredMethod(
+                        "networkEvent",
+                        com.leqra.android.network.NetworkEvent::class.java,
+                        Boolean::class.javaPrimitiveType,
+                    )
+                    .run {
+                        isAccessible = true
+                        invoke(session, com.leqra.android.network.NetworkEvent.State(packet), true)
+                    }
                 assertEquals(status, session.status)
                 assertFalse(session.paused)
-                assertEquals("Bot 999 - Godlike spawned nearby. Watch out!", session.encounterNotice)
+                assertEquals(
+                    "Bot 999 - Godlike spawned nearby. Watch out!",
+                    session.encounterNotice,
+                )
                 assertTrue(errors.isEmpty())
             }
             eventually("The passive notice reaches Canvas without opening an error") {
-                (field(activity, "arena") as com.leqra.android.render.NativeArenaView).encounterNotice != null
+                (field(activity, "arena") as com.leqra.android.render.NativeArenaView)
+                    .encounterNotice != null
             }
             SystemClock.sleep(250)
-            val image = File(instrumentation.targetContext.getExternalFilesDir(null), "identity-native-warning.png")
+            val image =
+                File(
+                    instrumentation.targetContext.getExternalFilesDir(null),
+                    "identity-native-warning.png",
+                )
             assertTrue(device.takeScreenshot(image))
             main { session.leave() }
-        } finally { main { activity.finish() } }
+        } finally {
+            main { activity.finish() }
+        }
     }
 
     @Test
@@ -1770,7 +2972,11 @@ class MainActivityTest {
         org.junit.Assume.assumeNotNull(testServer)
         val activity = launch()
         val device = UiDevice.getInstance(instrumentation)
-        fun field(name: String): Any? = MainActivity::class.java.getDeclaredField(name).run { isAccessible = true; get(activity) }
+        fun field(name: String): Any? =
+            MainActivity::class.java.getDeclaredField(name).run {
+                isAccessible = true
+                get(activity)
+            }
         fun eventually(message: String, condition: () -> Boolean) {
             val deadline = SystemClock.elapsedRealtime() + 20000
             while (SystemClock.elapsedRealtime() < deadline) {
@@ -1781,11 +2987,19 @@ class MainActivityTest {
         }
         data class Bounds(val x: Int, val y: Int, val width: Int, val height: Int)
         data class Layout(val card: Bounds, val play: Bounds, val shared: Set<String>)
-        fun bounds(view: View): Bounds { val point = IntArray(2); view.getLocationOnScreen(point); return Bounds(point[0], point[1], view.width, view.height) }
-        fun buttons(view: View): List<android.widget.Button> = if (view is android.widget.Button) listOf(view)
-            else if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
+        fun bounds(view: View): Bounds {
+            val point = IntArray(2)
+            view.getLocationOnScreen(point)
+            return Bounds(point[0], point[1], view.width, view.height)
+        }
+        fun buttons(view: View): List<android.widget.Button> =
+            if (view is android.widget.Button) listOf(view)
+            else if (view is android.view.ViewGroup)
+                (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) }
+            else emptyList()
         val report = StringBuilder()
-        val shared = setOf("COPY INVITE LINK ↗", "Join another room ↗", "LEAVE ROOM", "FIND ONLINE BATTLE")
+        val shared =
+            setOf("COPY INVITE LINK ↗", "Join another room ↗", "LEAVE ROOM", "FIND ONLINE BATTLE")
         fun capture(label: String): Layout {
             eventually("Room layout did not settle") {
                 val scroll = field("readyScroll") as? android.widget.ScrollView
@@ -1797,10 +3011,22 @@ class MainActivityTest {
                 scroll.scrollTo(0, 0)
                 val holder = scroll.getChildAt(0) as android.view.ViewGroup
                 val card = holder.getChildAt(0)
-                Layout(bounds(card), bounds(field("readyPlay") as View), buttons(card).filter { it.visibility == View.VISIBLE && it.text.toString() in shared }.map { it.text.toString() }.toSet())
+                Layout(
+                    bounds(card),
+                    bounds(field("readyPlay") as View),
+                    buttons(card)
+                        .filter { it.visibility == View.VISIBLE && it.text.toString() in shared }
+                        .map { it.text.toString() }
+                        .toSet(),
+                )
             }
             report.appendLine("$label $layout")
-            device.takeScreenshot(File(instrumentation.targetContext.getExternalFilesDir(null), "android-room-$label.png"))
+            device.takeScreenshot(
+                File(
+                    instrumentation.targetContext.getExternalFilesDir(null),
+                    "android-room-$label.png",
+                ),
+            )
             return layout
         }
         try {
@@ -1812,33 +3038,74 @@ class MainActivityTest {
                 session.selectMode("elimination")
                 session.share()
             }
-            eventually("Published native room did not reach its lobby") { session.room != null && session.network.connected && session.screen == Screen.READY }
-            for (orientation in listOf(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)) {
-                val name = if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) "portrait" else "landscape"
-                main { activity.requestedOrientation = orientation; session.changeRules(com.leqra.core.RoomRules.localDefaults("elimination")) }
-                eventually("Elimination lobby orientation did not settle") { activity.resources.configuration.orientation == if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) android.content.res.Configuration.ORIENTATION_PORTRAIT else android.content.res.Configuration.ORIENTATION_LANDSCAPE }
-                SystemClock.sleep(500) // Let the system's rotation surface animation finish before screenshots.
-                eventually("Room did not select Elimination") { session.room?.optJSONObject("rules")?.optBoolean("infinity") == false }
+            eventually("Published native room did not reach its lobby") {
+                session.room != null && session.network.connected && session.screen == Screen.READY
+            }
+            for (orientation in
+                listOf(
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+                )) {
+                val name =
+                    if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) "portrait"
+                    else "landscape"
+                main {
+                    activity.requestedOrientation = orientation
+                    session.changeRules(com.leqra.core.RoomRules.localDefaults("elimination"))
+                }
+                eventually("Elimination lobby orientation did not settle") {
+                    activity.resources.configuration.orientation ==
+                        if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+                            android.content.res.Configuration.ORIENTATION_PORTRAIT
+                        else android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                }
+                SystemClock.sleep(
+                    500,
+                ) // Let the system's rotation surface animation finish before screenshots.
+                eventually("Room did not select Elimination") {
+                    session.room?.optJSONObject("rules")?.optBoolean("infinity") == false
+                }
                 val before = capture("$name-elimination")
                 main { session.changeRules(com.leqra.core.RoomRules.localDefaults("infinity")) }
-                eventually("Room did not select room Infinity") { session.room?.optJSONObject("rules")?.optBoolean("infinity") == true && !session.publicSelected }
+                eventually("Room did not select room Infinity") {
+                    session.room?.optJSONObject("rules")?.optBoolean("infinity") == true &&
+                        !session.publicSelected
+                }
                 val infinity = capture("$name-infinity")
                 main { session.changeRules(com.leqra.core.RoomRules.localDefaults("elimination")) }
-                eventually("Room did not return to Elimination") { session.room?.optJSONObject("rules")?.optBoolean("infinity") == false }
+                eventually("Room did not return to Elimination") {
+                    session.room?.optJSONObject("rules")?.optBoolean("infinity") == false
+                }
                 val restored = capture("$name-restored")
                 assertEquals("$name common room actions", shared, before.shared)
-                assertEquals("$name Infinity must keep every common action", shared, infinity.shared)
-                assertEquals("$name restored must keep every common action", shared, restored.shared)
-                assertEquals("$name ready card moved/resized on room-mode switch: $report", before.card, infinity.card)
-                assertEquals("$name Play moved/resized on room-mode switch: $report", before.play, infinity.play)
+                assertEquals(
+                    "$name Infinity must keep every common action",
+                    shared,
+                    infinity.shared,
+                )
+                assertEquals(
+                    "$name restored must keep every common action",
+                    shared,
+                    restored.shared,
+                )
+                assertEquals(
+                    "$name ready card moved/resized on room-mode switch: $report",
+                    before.card,
+                    infinity.card,
+                )
+                assertEquals(
+                    "$name Play moved/resized on room-mode switch: $report",
+                    before.play,
+                    infinity.play,
+                )
                 assertEquals(before.card, restored.card)
                 assertEquals(before.play, restored.play)
             }
             main { session.leave() }
         } finally {
-            File(instrumentation.targetContext.getExternalFilesDir(null), "android-room-bounds.txt").writeText(report.toString())
+            File(instrumentation.targetContext.getExternalFilesDir(null), "android-room-bounds.txt")
+                .writeText(report.toString())
             main { activity.finish() }
         }
     }
-
 }

@@ -7,10 +7,11 @@ object TankMovement {
     fun angleDelta(a: Double, b: Double) = atan2(sin(a - b), cos(a - b))
 
     /** Starman supplies two stacks without consuming or replacing pickup stacks. */
-    fun effectiveSpeedStacks(tank: ArenaTank): Int = max(
-        if (tank.speedTime > 0) tank.speedStacks.coerceIn(1, 5) else 0,
-        if (tank.starmanTime > 0) 2 else 0,
-    )
+    fun effectiveSpeedStacks(tank: ArenaTank): Int =
+        max(
+            if (tank.speedTime > 0) tank.speedStacks.coerceIn(1, 5) else 0,
+            if (tank.starmanTime > 0) 2 else 0,
+        )
 
     private fun smoothStep(value: Double): Double {
         val x = value.coerceIn(0.0, 1.0)
@@ -45,7 +46,13 @@ object TankMovement {
         return Steering(atan2(sin(a), cos(a)), throttle)
     }
 
-    fun step(tank: ArenaTank, input: GameInput, dt: Double, maze: InfiniteMaze, ageStarman: Boolean = true) {
+    fun step(
+        tank: ArenaTank,
+        input: GameInput,
+        dt: Double,
+        maze: InfiniteMaze,
+        ageStarman: Boolean = true,
+    ) {
         if (maze.world != null) {
             step(tank, input, dt, maze.world.walls, maze.world.width, maze.world.height, ageStarman)
             return
@@ -69,7 +76,12 @@ object TankMovement {
         tank.track += hypot(tank.x - oldX, tank.y - oldY)
     }
 
-    private inline fun equipment(t: ArenaTank, dt: Double, ageStarman: Boolean, finishGhost: () -> Unit) {
+    private inline fun equipment(
+        t: ArenaTank,
+        dt: Double,
+        ageStarman: Boolean,
+        finishGhost: () -> Unit,
+    ) {
         if (ageStarman) t.starmanTime = max(0.0, t.starmanTime - dt)
         t.speedTime = max(0.0, t.speedTime - dt)
         if (t.speedTime <= 0) t.speedStacks = 0
@@ -141,9 +153,17 @@ object TankMovement {
         tank.y = tank.y.coerceIn(21.0, world.height - 21)
     }
 
-    fun stepBot(tank: ArenaTank, input: GameInput, dt: Double, world: ArenaWorld, ageStarman: Boolean = true) {
+    fun stepBot(
+        tank: ArenaTank,
+        input: GameInput,
+        dt: Double,
+        world: ArenaWorld,
+        ageStarman: Boolean = true,
+    ) {
         if (dt <= 0 || dt > .1 || tank.hp <= 0) return
-        equipment(tank, dt, ageStarman) { finishGhost(tank, world.walls, world.width, world.height) }
+        equipment(tank, dt, ageStarman) {
+            finishGhost(tank, world.walls, world.width, world.height)
+        }
         val tuning = BotDifficulty.from(tank.difficulty)
         val stacks = effectiveSpeedStacks(tank)
         var throttle = 0.0
@@ -331,7 +351,8 @@ enum class BotDifficulty(val speed: Double, val turn: Double, val think: Double)
 
         fun from(value: String) = entries.firstOrNull { it.name.equals(value, true) } ?: NORMAL
 
-        fun index(value: String) = names.indexOf(value).takeIf { it >= 0 } ?: names.indexOf("normal")
+        fun index(value: String) =
+            names.indexOf(value).takeIf { it >= 0 } ?: names.indexOf("normal")
 
         fun title(value: String) = titles[index(value)]
     }

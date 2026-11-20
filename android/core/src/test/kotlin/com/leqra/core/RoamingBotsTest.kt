@@ -12,7 +12,7 @@ class RoamingBotsTest {
                     infinityRandomBots = true,
                     infinityBotDifficulty = "dumb",
                     infinityBotSpawnRate = rate,
-                )
+                ),
             )
             snapshot.tanks.first().invulnerable = 10000.0
         }

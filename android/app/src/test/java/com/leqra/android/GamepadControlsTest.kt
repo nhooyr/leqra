@@ -6,7 +6,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GamepadControlsTest {
-    @Test fun controllerAssignmentDoesNotMoveAHeldInputBetweenSeats() {
+    @Test
+    fun controllerAssignmentDoesNotMoveAHeldInputBetweenSeats() {
         val pads = GamepadControls()
         pads.updateDevices(listOf(1, 2, 3), primary = true, secondary = true)
         val p1 = pads.inputForSeat(0, primary = true, secondary = true)!!
@@ -23,7 +24,8 @@ class GamepadControlsTest {
         assertSame(p2, pads.inputForSeat(1, primary = true, secondary = true))
     }
 
-    @Test fun soleControllerCanSteerTheRemainingLocalPilot() {
+    @Test
+    fun soleControllerCanSteerTheRemainingLocalPilot() {
         val pads = GamepadControls()
         pads.updateDevices(listOf(1), primary = false, secondary = true)
         val fallback = pads.inputForDevice(1, primary = false, secondary = true)!!
@@ -37,7 +39,8 @@ class GamepadControlsTest {
         assertFalse(pads.inputForSeat(1, primary = false, secondary = true)!!.firing)
     }
 
-    @Test fun sticksAndDpadProduceDriveAndAimForTheTankSimulation() {
+    @Test
+    fun sticksAndDpadProduceDriveAndAimForTheTankSimulation() {
         val pad = GamepadInput()
         fun read() = GameInput(touchAim = false).also { pad.merge(it) }
         pad.motion(.08, .08, 0.0, 0.0, 0.0, 0.0, 0.0)
@@ -63,7 +66,8 @@ class GamepadControlsTest {
         assertFalse(read().forward)
     }
 
-    @Test fun releasingOneFireAliasPreservesTheOther() {
+    @Test
+    fun releasingOneFireAliasPreservesTheOther() {
         val pad = GamepadInput()
         pad.motion(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, .5)
         pad.key(KeyEvent.KEYCODE_BUTTON_A, down = true, repeat = false)
@@ -77,7 +81,8 @@ class GamepadControlsTest {
         assertFalse("Held key repeats after pausing cannot start firing", pad.firing)
     }
 
-    @Test fun reenablingControlsWaitsForHeldAxesToReturnToNeutral() {
+    @Test
+    fun reenablingControlsWaitsForHeldAxesToReturnToNeutral() {
         val pads = GamepadControls()
         pads.updateDevices(listOf(1), primary = true, secondary = false)
         val pad = pads.inputForSeat(0, primary = true, secondary = false)!!

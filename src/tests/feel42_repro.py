@@ -22,7 +22,7 @@ def load(b,src,w=1365,h=950):
  p.evaluate('''()=>{window.__clock=1000;Object.defineProperty(performance,'now',{value:()=>window.__clock});window.requestAnimationFrame=()=>0;
  for(const name of ['localStorage','sessionStorage']){const d={'leqra.muted':'1'};Object.defineProperty(window,name,{value:{getItem:k=>d[k]??null,setItem:(k,v)=>d[k]=String(v),removeItem:k=>delete d[k]}});}
  window.__location=new URL('http://127.0.0.1/?test=1');window.__history={replaceState(){}};}''')
- js=src['game.js'].replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+ js=src['game.js'].replace('(() => {','((location,history) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location,window.__history);'+js[i+4:]
  js=js.replace('window.__test={', '''window.__test={ setupNetwork42:()=>{mode='online';online.connected=true;online.id=0;online.code='TEST42';online.seq=0;online.socket={readyState:1,bufferedAmount:0,send(){},close(){}};online.roomData={...localRoom,code:'TEST42',phase:'playing',host:0};resetOnlineMotion();online.generation=-1;},''',1)
  p.add_script_tag(content=src['netcode.js']);p.add_script_tag(content=js);p.wait_for_function('window.__test')
  p.evaluate('''()=>{window.net42=()=>{const T=__test;T.startRound();const world={cols:12,rows:10,width:1008,height:840,walls:[{x:-4,y:-4,w:1016,h:8,axis:'h'},{x:-4,y:836,w:1016,h:8,axis:'h'},{x:-4,y:-4,w:8,h:848,axis:'v'},{x:1004,y:-4,w:8,h:848,axis:'v'}]};

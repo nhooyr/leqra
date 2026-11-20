@@ -8,49 +8,145 @@ import org.junit.Test
 
 /** Repeatable desktop allocation/timing evidence; not a physical Android frame-rate claim. */
 class PerformanceTest {
-    @Test fun everyPickupAndWeaponReadoutReportsItsUpdateCost() {
+    @Test
+    fun everyPickupAndWeaponReadoutReportsItsUpdateCost() {
         val powers = listOf("") + PracticeArena.pickupKinds
         for (infinity in listOf(false, true)) {
-            val tanks = powers.mapIndexed { index, power -> ArenaTank(id = index + 1, power = power, powerTime = 13.4,
-                charges = 3, machineRounds = 90, cooldown = .17, cooldownTotal = .34, shield = 10.0, shieldCharges = 3,
-                speedTime = 10.0, speedStacks = 2, starmanTime = if (power == "starman") 8.0 else 0.0, ghostTime = 10.0) }
-            val bullets = List(768) { ArenaBullet(id = it + 1, owner = it % powers.size + 1, kind = if (it % 16 == 0) "grenade" else "rapid", life = 7.24) }
-            val snapshot = ArenaSnapshot(tanks = tanks, bullets = bullets, boostedBulletIds = bullets.filter { it.id % 3 == 0 }.map { it.id })
+            val tanks = powers.mapIndexed { index, power ->
+                ArenaTank(
+                    id = index + 1,
+                    power = power,
+                    powerTime = 13.4,
+                    charges = 3,
+                    machineRounds = 90,
+                    cooldown = .17,
+                    cooldownTotal = .34,
+                    shield = 10.0,
+                    shieldCharges = 3,
+                    speedTime = 10.0,
+                    speedStacks = 2,
+                    starmanTime = if (power == "starman") 8.0 else 0.0,
+                    ghostTime = 10.0,
+                )
+            }
+            val bullets =
+                List(768) {
+                    ArenaBullet(
+                        id = it + 1,
+                        owner = it % powers.size + 1,
+                        kind = if (it % 16 == 0) "grenade" else "rapid",
+                        life = 7.24,
+                    )
+                }
+            val snapshot =
+                ArenaSnapshot(
+                    tanks = tanks,
+                    bullets = bullets,
+                    boostedBulletIds = bullets.filter { it.id % 3 == 0 }.map { it.id },
+                )
             var digest = 0L
-            fun update() { for (tank in tanks) { val readout = PilotReadout(tank, snapshot, infinity); digest += readout.weapon.hashCode() + readout.buffs.hashCode() + readout.readiness.hashCode() } }
+            fun update() {
+                for (tank in tanks) {
+                    val readout = PilotReadout(tank, snapshot, infinity)
+                    digest +=
+                        readout.weapon.hashCode() +
+                            readout.buffs.hashCode() +
+                            readout.readiness.hashCode()
+                }
+            }
             repeat(200) { update() }
-            val samples = LongArray(600); val before = bytes()
-            repeat(samples.size) { index -> val start = System.nanoTime(); update(); samples[index] = System.nanoTime() - start }
+            val samples = LongArray(600)
+            val before = bytes()
+            repeat(samples.size) { index ->
+                val start = System.nanoTime()
+                update()
+                samples[index] = System.nanoTime() - start
+            }
             samples.sort()
-            println("all powers readouts ${if(infinity) "infinity" else "fixed"}: p50=${samples[300]/1e6}ms p95=${samples[570]/1e6}ms p99=${samples[594]/1e6}ms bytes/update=${(bytes()-before)/samples.size} digest=$digest")
+            println(
+                "all powers readouts ${if(infinity) "infinity" else "fixed"}: p50=${samples[300]/1e6}ms p95=${samples[570]/1e6}ms p99=${samples[594]/1e6}ms bytes/update=${(bytes()-before)/samples.size} digest=$digest",
+            )
         }
     }
-    @Test fun retainedStarShotgunContactsReportTheirWorstBatchCost() {
+
+    @Test
+    fun retainedStarShotgunContactsReportTheirWorstBatchCost() {
         val tanks = (1..8).map { ArenaTank(id = it, x = 140.0, y = 42.0, spawnSerial = 2, hp = 0) }
-        val effects = (1..864).flatMap { id -> val path = ArenaEffect(id = id * 2, kind = "projectileFlight", tick = 6, flight = ProjectileFlight(id, 0, 0, 0.0, 6.0,
-                listOf(ProjectileFlightPoint(40.0,42.0,0.0),ProjectileFlightPoint(119.5,42.0,6.0)),"scatter",3.5))
-            val hit = ArenaEffect(id = id * 2 + 1, kind = "hit", tick = 6, contact = CombatContact(id,"scatter",6.0,1 + id % 8,2,ContactTankState(140.0,42.0,0.0)))
-            if(id>856) listOf(path,hit) else listOf(path) }
-        val flights = ProjectileFlightPresentation(); val contacts = CombatContactPresentation()
+        val effects =
+            (1..864).flatMap { id ->
+                val path =
+                    ArenaEffect(
+                        id = id * 2,
+                        kind = "projectileFlight",
+                        tick = 6,
+                        flight =
+                            ProjectileFlight(
+                                id,
+                                0,
+                                0,
+                                0.0,
+                                6.0,
+                                listOf(
+                                    ProjectileFlightPoint(40.0, 42.0, 0.0),
+                                    ProjectileFlightPoint(119.5, 42.0, 6.0),
+                                ),
+                                "scatter",
+                                3.5,
+                            ),
+                    )
+                val hit =
+                    ArenaEffect(
+                        id = id * 2 + 1,
+                        kind = "hit",
+                        tick = 6,
+                        contact =
+                            CombatContact(
+                                id,
+                                "scatter",
+                                6.0,
+                                1 + id % 8,
+                                2,
+                                ContactTankState(140.0, 42.0, 0.0),
+                            ),
+                    )
+                if (id > 856) listOf(path, hit) else listOf(path)
+            }
+        val flights = ProjectileFlightPresentation()
+        val contacts = CombatContactPresentation()
         fun run() {
-            flights.reset(); contacts.reset()
-            flights.accept(effects,0.0,8); contacts.accept(effects,tanks,0.0,6.0)
-            for (t in listOf(.05,.11,.12)) {
-                val image = flights.render(emptyList(),effects,t,contacts::canCompleteProjectile)
-                contacts.render(tanks,image.effects,t,flights)
+            flights.reset()
+            contacts.reset()
+            flights.accept(effects, 0.0, 8)
+            contacts.accept(effects, tanks, 0.0, 6.0)
+            for (t in listOf(.05, .11, .12)) {
+                val image = flights.render(emptyList(), effects, t, contacts::canCompleteProjectile)
+                contacts.render(tanks, image.effects, t, flights)
             }
         }
         repeat(100) { run() }
-        val before = bytes(); val samples = LongArray(300)
-        repeat(samples.size) { index -> val start=System.nanoTime(); run(); samples[index]=System.nanoTime()-start }
+        val before = bytes()
+        val samples = LongArray(300)
+        repeat(samples.size) { index ->
+            val start = System.nanoTime()
+            run()
+            samples[index] = System.nanoTime() - start
+        }
         samples.sort()
-        println("864retained contacts accept+3frames: p50=${samples[150]/1e6}ms p95=${samples[285]/1e6}ms p99=${samples[297]/1e6}ms bytes/batch=${(bytes()-before)/samples.size}")
+        println(
+            "864retained contacts accept+3frames: p50=${samples[150]/1e6}ms p95=${samples[285]/1e6}ms p99=${samples[297]/1e6}ms bytes/batch=${(bytes()-before)/samples.size}",
+        )
     }
+
     @Test
     fun fullRoomRoamingPopulationRemainsBoundedAndReportsItsSimulationCost() {
         val arena = PracticeArena(123, "Pilot", 0, 0)
-        arena.configure(RoomRules(infinity = true, infinityRandomBots = true, infinityBotSpawnRate = 4.0))
-        arena.snapshot.tanks = List(8) { index -> ArenaTank(id = index + 1, x = index * 4000.0 + 42, y = 42.0, invulnerable = 10000.0) }
+        arena.configure(
+            RoomRules(infinity = true, infinityRandomBots = true, infinityBotSpawnRate = 4.0),
+        )
+        arena.snapshot.tanks =
+            List(8) { index ->
+                ArenaTank(id = index + 1, x = index * 4000.0 + 42, y = 42.0, invulnerable = 10000.0)
+            }
         repeat(600) { arena.step(GameInput(), 1.0 / 60) }
         assertEquals(128, arena.snapshot.tanks.count { it.bot })
         val samples = LongArray(300)
@@ -62,8 +158,11 @@ class PerformanceTest {
             assertTrue(arena.snapshot.tanks.count { it.bot } <= 128)
         }
         samples.sort()
-        println("Room Infinity128 roaming bots: p50=${samples[150] / 1e6}ms p95=${samples[285] / 1e6}ms p99=${samples[297] / 1e6}ms bytes/tick=${(bytes() - before) / samples.size}")
+        println(
+            "Room Infinity128 roaming bots: p50=${samples[150] / 1e6}ms p95=${samples[285] / 1e6}ms p99=${samples[297] / 1e6}ms bytes/tick=${(bytes() - before) / samples.size}",
+        )
     }
+
     private val allocation =
         (ManagementFactory.getThreadMXBean() as? ThreadMXBean)?.apply {
             if (isThreadAllocatedMemorySupported) isThreadAllocatedMemoryEnabled = true

@@ -129,7 +129,8 @@ class AudioVoiceMixer(sampleRate: Double = 48_000.0, val capacity: Int = 32) {
     private val buffers = arrayOfNulls<FloatArray>(capacity)
     private val positions = IntArray(capacity)
     private val processor = AudioMixProcessor(sampleRate)
-    private val loopFadeFrames = max(1, (processor.sampleRate * StarmanSynthesis.fadeSeconds).roundToInt())
+    private val loopFadeFrames =
+        max(1, (processor.sampleRate * StarmanSynthesis.fadeSeconds).roundToInt())
     private var loopSamples: FloatArray? = null
     private var loopPosition = 0
     private var loopGain = 0f

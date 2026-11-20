@@ -80,7 +80,7 @@ class SpectatorUiTest {
         val activity =
             instrumentation.startActivitySync(
                 Intent(instrumentation.targetContext, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
             ) as MainActivity
         try {
             main {
@@ -97,7 +97,7 @@ class SpectatorUiTest {
                     session.arenaNetwork,
                     "welcome",
                     NetworkWelcome.parse(
-                        JSONObject().put("id", 0).put("spectating", true).put("following", 72)
+                        JSONObject().put("id", 0).put("spectating", true).put("following", 72),
                     ),
                 )
                 set(
@@ -136,7 +136,11 @@ class SpectatorUiTest {
                 val last = descendants(rows.last()).filterIsInstance<TextView>()
                 assertTrue(last.any { it.text.toString().contains("Bot 1234567890") })
                 assertTrue(last.any { it.text.toString() == "GODLIKE" })
-                assertFalse(last.any { it.text.toString().contains(" - Godlike") || it.text.toString() == "BOT" })
+                assertFalse(
+                    last.any {
+                        it.text.toString().contains(" - Godlike") || it.text.toString() == "BOT"
+                    },
+                )
                 assertTrue(last.any { it.text.toString() == "FOLLOWING" })
                 assertTrue(last.all { it.ellipsize == null })
                 scroll.scrollTo(0, scroll.getChildAt(0).height)
@@ -148,7 +152,7 @@ class SpectatorUiTest {
                     "snapshot",
                     session.snapshot.copy(
                         leaderboard =
-                            session.snapshot.leaderboard.map { it.copy(score = it.score + 1) }
+                            session.snapshot.leaderboard.map { it.copy(score = it.score + 1) },
                     ),
                 )
                 session.changed(false)
@@ -203,7 +207,7 @@ class SpectatorUiTest {
             activity =
                 instrumentation.startActivitySync(
                     Intent(instrumentation.targetContext, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
                 ) as MainActivity
             val shown = activity
             val viewer = main { get(shown, "session") as GameSession }
@@ -266,21 +270,25 @@ class SpectatorUiTest {
                     assertTrue(textViews.any { it.text.contains("Bot ") })
                     assertTrue(
                         textViews.all {
-                            it.textSize / it.resources.displayMetrics.scaledDensity >=
-                                10f
-                        }
+                            it.textSize / it.resources.displayMetrics.scaledDensity >= 10f
+                        },
                     )
                     assertTrue(scroll.height <= (get(shown, "stage") as View).height)
                     scroll.scrollTo(0, scroll.getChildAt(0).height)
                     // A large tablet can show the complete room roster without scrolling.
-                    val maximumScroll = (scroll.getChildAt(0).height - scroll.height).coerceAtLeast(0)
-                    assertEquals("Every row is reachable whether it overflows or fits", maximumScroll, scroll.scrollY)
+                    val maximumScroll =
+                        (scroll.getChildAt(0).height - scroll.height).coerceAtLeast(0)
+                    assertEquals(
+                        "Every row is reachable whether it overflows or fits",
+                        maximumScroll,
+                        scroll.scrollY,
+                    )
                     val target = viewer.snapshot.leaderboard.last()
                     selected = target.id
                     rows.first { it.contentDescription == "Follow ${target.name}" }.performClick()
                 }
                 eventually(
-                    "Tapping a tank did not receive its authoritative follow acknowledgement"
+                    "Tapping a tank did not receive its authoritative follow acknowledgement",
                 ) {
                     viewer.followingID == selected &&
                         viewer.snapshot.following == selected &&
@@ -308,7 +316,10 @@ class SpectatorUiTest {
                 viewer.foreground()
             }
             eventually("Viewer did not resume the selected target") {
-                viewer.arenaNetwork.connected && viewer.network.connected && viewer.network.welcome != null && viewer.snapshot.following == selected
+                viewer.arenaNetwork.connected &&
+                    viewer.network.connected &&
+                    viewer.network.welcome != null &&
+                    viewer.snapshot.following == selected
             }
             main {
                 viewer.command(
@@ -334,7 +345,7 @@ class SpectatorUiTest {
                 )
             }
             eventually(
-                "Demotion did not retire local controls and automatically enter the observer arena"
+                "Demotion did not retire local controls and automatically enter the observer arena",
             ) {
                 viewer.arenaNetwork.connected &&
                     viewer.spectating &&
@@ -362,7 +373,8 @@ class SpectatorUiTest {
             }
             eventually("The host's own Exit Infinity must leave the room's arena running") {
                 viewer.room?.optBoolean("infinityActive") == true &&
-                    viewer.arenaNetwork.connected && viewer.snapshot.tick > beforeHostExit
+                    viewer.arenaNetwork.connected &&
+                    viewer.snapshot.tick > beforeHostExit
             }
             main { host!!.lobby() }
             eventually("Host returning to lobby did not close the observer arena") {

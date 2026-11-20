@@ -34,7 +34,8 @@ struct DumbBotBrain {
     /// so Machine Gun and Starman cannot bypass the difficulty's reaction time.
     mutating func fire(now: Double, facing: Double, targetID: Int?, protected: Bool) -> Bool {
         guard attacks, let targetID, targetID == self.targetID, !protected, now + 1e-9 >= nextFire,
-              abs(atan2(sin(aim - facing), cos(aim - facing))) < 0.36 else { return false }
+            abs(atan2(sin(aim - facing), cos(aim - facing))) < 0.36
+        else { return false }
         nextFire = now + 1.8
         return true
     }

@@ -81,8 +81,16 @@ class SnapshotDecoder {
             for (bullet in bullets) {
                 val shooter = byId[bullet.owner]
                 if (shooter != null) {
-                    if (shooter.power != "laser" && bullet.id !in boostedSet && bullet.ammoEpoch == shooter.ammoEpoch) shooter.ammoUsed++
-                    if (bullet.kind == "grenade" && bullet.ammoEpoch == (shooter.grenadeEpoch ?: shooter.ammoEpoch)) {
+                    if (
+                        shooter.power != "laser" &&
+                            bullet.id !in boostedSet &&
+                            bullet.ammoEpoch == shooter.ammoEpoch
+                    )
+                        shooter.ammoUsed++
+                    if (
+                        bullet.kind == "grenade" &&
+                            bullet.ammoEpoch == (shooter.grenadeEpoch ?: shooter.ammoEpoch)
+                    ) {
                         shooter.grenades++
                         shooter.grenadeLife = maxOf(shooter.grenadeLife, bullet.life)
                     }
@@ -106,7 +114,15 @@ class SnapshotDecoder {
         val leaderboard =
             if (fixed)
                 tanks.sortedWith(compareByDescending<ArenaTank> { it.score }.thenBy { it.id }).map {
-                    LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team, it.difficulty)
+                    LeaderboardEntry(
+                        it.id,
+                        it.name,
+                        it.score,
+                        it.colorIndex,
+                        it.bot,
+                        it.team,
+                        it.difficulty,
+                    )
                 }
             else json.getJSONArray("leaderboard").objects(ProtocolJson::leaderboardEntry)
         val effects =
@@ -136,12 +152,13 @@ class SnapshotDecoder {
             effects = effects,
             godlikeSpawns =
                 if (spawns == null) emptyList()
-                else List(minOf(spawns.length(), 128)) { index ->
-                    val event = spawns.getJSONObject(index)
-                    val name = event.getString("name")
-                    require(name.isNotBlank() && name.codePointCount(0, name.length) <= 64)
-                    GodlikeSpawn(event.getInt("id"), event.getInt("spawnSerial"), name)
-                },
+                else
+                    List(minOf(spawns.length(), 128)) { index ->
+                        val event = spawns.getJSONObject(index)
+                        val name = event.getString("name")
+                        require(name.isNotBlank() && name.codePointCount(0, name.length) <= 64)
+                        GodlikeSpawn(event.getInt("id"), event.getInt("spawnSerial"), name)
+                    },
             leaderboard = leaderboard,
             players = if (fixed) tanks.count { !it.bot } else json.getInt("players"),
             tankCount = if (fixed) tanks.size else json.getInt("tankCount"),
