@@ -20,7 +20,8 @@ public struct NetworkWelcome: Decodable, Sendable {
     public let busy: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, seed, room, token, publicToken, localPublicToken, spectating, following, localId, generation, member, localMember, resumed, created, full, busy
+        case id, seed, room, token, publicToken, localPublicToken, spectating, following, localId, generation,
+            member, localMember, resumed, created, full, busy
         case isPublic = "public"
     }
     public init(from decoder: Decoder) throws {
@@ -71,7 +72,11 @@ public struct RoomRules: Codable, Equatable, Sendable {
     public var infinityRandomBots = false
     public var infinityBotSpawnRate = 2.0
     public var infinityBotSpawnRates: [String: Double]? {
-        didSet { if let rates = infinityBotSpawnRates { infinityBotSpawnRates = Self.validatedInfinityBotSpawnRates(rates) } }
+        didSet {
+            if let rates = infinityBotSpawnRates {
+                infinityBotSpawnRates = Self.validatedInfinityBotSpawnRates(rates)
+            }
+        }
     }
     public var infinityBotDifficulty = "normal"
     public var infinityRandomDifficulty = false
@@ -82,7 +87,9 @@ public struct RoomRules: Codable, Equatable, Sendable {
     public var timeLimit = 75
     public var respawnSeconds = 3
     public var pickupRate = "superfast"
-    public var weapons = ["rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"]
+    public var weapons = [
+        "rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman",
+    ]
     public var friendlyFire = false
     public var teamNames = ["Team 1", "Team 2", "Team 3", "Team 4"]
     public var teamColors = [0, 1, 2, 3]
@@ -90,8 +97,10 @@ public struct RoomRules: Codable, Equatable, Sendable {
     public init() {}
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case mode, infinity, infinityTarget, infinityRandomBots, infinityBotSpawnRate, infinityBotSpawnRates, infinityBotDifficulty, infinityRandomDifficulty
-        case teamMode, mapSize, portraitMaze, scoreTarget, timeLimit, respawnSeconds, pickupRate, weapons, friendlyFire, teamNames, teamColors
+        case mode, infinity, infinityTarget, infinityRandomBots, infinityBotSpawnRate, infinityBotSpawnRates,
+            infinityBotDifficulty, infinityRandomDifficulty
+        case teamMode, mapSize, portraitMaze, scoreTarget, timeLimit, respawnSeconds, pickupRate, weapons,
+            friendlyFire, teamNames, teamColors
     }
 
     public init(from decoder: Decoder) throws {
@@ -100,11 +109,14 @@ public struct RoomRules: Codable, Equatable, Sendable {
         mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? mode
         infinity = try c.decodeIfPresent(Bool.self, forKey: .infinity) ?? infinity
         infinityTarget = try c.decodeIfPresent(Int.self, forKey: .infinityTarget) ?? infinityTarget
-        infinityRandomBots = try c.decodeIfPresent(Bool.self, forKey: .infinityRandomBots) ?? infinityRandomBots
+        infinityRandomBots =
+            try c.decodeIfPresent(Bool.self, forKey: .infinityRandomBots) ?? infinityRandomBots
         let spawnRate = try c.decodeIfPresent(Double.self, forKey: .infinityBotSpawnRate) ?? 2
         infinityBotSpawnRate = [0.5, 1, 2, 4].contains(spawnRate) ? spawnRate : 2
-        infinityBotDifficulty = try c.decodeIfPresent(String.self, forKey: .infinityBotDifficulty) ?? infinityBotDifficulty
-        infinityRandomDifficulty = try c.decodeIfPresent(Bool.self, forKey: .infinityRandomDifficulty) ?? infinityRandomDifficulty
+        infinityBotDifficulty =
+            try c.decodeIfPresent(String.self, forKey: .infinityBotDifficulty) ?? infinityBotDifficulty
+        infinityRandomDifficulty =
+            try c.decodeIfPresent(Bool.self, forKey: .infinityRandomDifficulty) ?? infinityRandomDifficulty
         if let rates = try c.decodeIfPresent([String: Double].self, forKey: .infinityBotSpawnRates) {
             infinityBotSpawnRates = Self.validatedInfinityBotSpawnRates(rates)
         }
@@ -122,7 +134,9 @@ public struct RoomRules: Codable, Equatable, Sendable {
     }
 
     public func command() -> [String: Any] {
-        guard let data = try? JSONEncoder().encode(self), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        guard let data = try? JSONEncoder().encode(self),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
         return ["type": "rules", "rules": object]
     }
 }
@@ -186,8 +200,9 @@ public enum GameNetworkError: LocalizedError {
         guard let error = error as? URLError else { return false }
         switch error.code {
         case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
-             .dnsLookupFailed, .notConnectedToInternet, .internationalRoamingOff,
-             .callIsActive, .dataNotAllowed: return true
+            .dnsLookupFailed, .notConnectedToInternet, .internationalRoamingOff,
+            .callIsActive, .dataNotAllowed:
+            return true
         default: return false
         }
     }
@@ -200,9 +215,14 @@ public enum GameNetworkError: LocalizedError {
         case .timeout: return "The server stopped responding. Rejoin to play again."
         case .temporarilyUnavailable: return "The server is temporarily unavailable. Reconnecting…"
         case .invalidAccountKey: return "That account key is invalid or unavailable."
-        case .accountKeyRevoked: return "The account key was reset on another device. Import its new key to sign in again."
-        case .localAccountUnconfirmed: return "The server did not confirm P2's independent account. Update the server before adding P2; the saved key is unchanged."
-        case .localAccountMismatch: return "This private room still uses a different P2 account. Leave and rejoin P2 to use the imported key; the saved key is unchanged."
+        case .accountKeyRevoked:
+            return "The account key was reset on another device. Import its new key to sign in again."
+        case .localAccountUnconfirmed:
+            return
+                "The server did not confirm P2's independent account. Update the server before adding P2; the saved key is unchanged."
+        case .localAccountMismatch:
+            return
+                "This private room still uses a different P2 account. Leave and rejoin P2 to use the imported key; the saved key is unchanged."
         case .callsignTaken: return "Used online; offline is OK."
         }
     }
@@ -212,7 +232,8 @@ public enum GameNetworkError: LocalizedError {
 public enum ServerAddress {
     public static func endpoint(_ base: URL, path: String, webSocket: Bool = false) throws -> URL {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false),
-              let host = components.host, !host.isEmpty, components.user == nil, components.password == nil else { throw GameNetworkError.invalidURL }
+            let host = components.host, !host.isEmpty, components.user == nil, components.password == nil
+        else { throw GameNetworkError.invalidURL }
         switch components.scheme?.lowercased() {
         case "https", "wss": components.scheme = webSocket ? "wss" : "https"
         case "http", "ws": components.scheme = webSocket ? "ws" : "http"
@@ -244,7 +265,9 @@ struct NetworkLatencySampler {
     private var outstanding: [Double] = []
 
     mutating func nextPing(at now: Double) -> Double? {
-        guard now.isFinite, lastSent.map({ now - $0 >= NetworkRefreshCadence.interval * 1000 }) ?? true else { return nil }
+        guard now.isFinite, lastSent.map({ now - $0 >= NetworkRefreshCadence.interval * 1000 }) ?? true else {
+            return nil
+        }
         outstanding.removeAll { now - $0 > 6000 }
         if outstanding.count >= 8 { outstanding.removeFirst() }
         outstanding.append(now)
@@ -301,8 +324,14 @@ private struct ServerProtocolMetadata: Decodable {
         var command: [String: Any] {
             if let publicJoin { return publicJoin }
             var result: [String: Any] = ["type": "join", "code": code, "token": token, "name": name]
-            if infinity { result["resume"] = true; result["generation"] = generation }
-            if spectating { result["spectating"] = true; result["target"] = target }
+            if infinity {
+                result["resume"] = true
+                result["generation"] = generation
+            }
+            if spectating {
+                result["spectating"] = true
+                result["target"] = target
+            }
             return result
         }
     }
@@ -344,19 +373,29 @@ private struct ServerProtocolMetadata: Decodable {
         socket?.cancel(with: .goingAway, reason: nil)
     }
 
-    public func connectPublic(baseURL: URL, name: String, colorIndex: Int, localName: String? = nil, localColorIndex: Int = 1,
-                              publicToken: String? = nil, updateNames: Bool = false,
-                              localPublicToken: String? = nil, localNewAccount: Bool = false) {
+    public func connectPublic(
+        baseURL: URL, name: String, colorIndex: Int, localName: String? = nil, localColorIndex: Int = 1,
+        publicToken: String? = nil, updateNames: Bool = false,
+        localPublicToken: String? = nil, localNewAccount: Bool = false
+    ) {
         var join: [String: Any] = ["type": "join", "name": name, "colorIndex": min(7, max(0, colorIndex))]
-        if let localName { join["localName"] = localName; join["localColorIndex"] = min(7, max(0, localColorIndex)) }
-        if let publicToken, !publicToken.isEmpty { join["publicToken"] = publicToken; join["resume"] = true }
+        if let localName {
+            join["localName"] = localName
+            join["localColorIndex"] = min(7, max(0, localColorIndex))
+        }
+        if let publicToken, !publicToken.isEmpty {
+            join["publicToken"] = publicToken
+            join["resume"] = true
+        }
         if updateNames { join["updateNames"] = true }
         join["localPublicToken"] = localPublicToken
         if localNewAccount { join["localNewAccount"] = true }
         begin(baseURL: baseURL, infinity: true, join: join, resuming: publicToken?.isEmpty == false)
     }
 
-    public func connectRoom(baseURL: URL, name: String, code: String? = nil, spectating: Bool = false, publicToken: String? = nil) {
+    public func connectRoom(
+        baseURL: URL, name: String, code: String? = nil, spectating: Bool = false, publicToken: String? = nil
+    ) {
         var join: [String: Any] = ["type": code?.isEmpty == false ? "join" : "create", "name": name]
         if let code, !code.isEmpty { join["code"] = code }
         join["spectating"] = spectating
@@ -364,12 +403,20 @@ private struct ServerProtocolMetadata: Decodable {
         begin(baseURL: baseURL, infinity: false, join: join)
     }
 
-    public func connectRoomInfinity(baseURL: URL, code: String, token: String, resume: Bool = false, generation: UInt64? = nil,
-                                    localPublicToken: String? = nil, localNewAccount: Bool = false, spectating: Bool = false, target: Int? = nil) {
+    public func connectRoomInfinity(
+        baseURL: URL, code: String, token: String, resume: Bool = false, generation: UInt64? = nil,
+        localPublicToken: String? = nil, localNewAccount: Bool = false, spectating: Bool = false,
+        target: Int? = nil
+    ) {
         var join: [String: Any] = ["type": "join", "code": code, "token": token]
-        if resume { join["resume"] = true; join["generation"] = generation }
-        if spectating { join["spectating"] = true; if let target, target > 0 { join["target"] = target } }
-        else {
+        if resume {
+            join["resume"] = true
+            join["generation"] = generation
+        }
+        if spectating {
+            join["spectating"] = true
+            if let target, target > 0 { join["target"] = target }
+        } else {
             join["localPublicToken"] = localPublicToken
             if localNewAccount { join["localNewAccount"] = true }
         }
@@ -389,7 +436,8 @@ private struct ServerProtocolMetadata: Decodable {
         let start = ProcessInfo.processInfo.systemUptime
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 64 * 1024 else {
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 64 * 1024
+        else {
             throw GameNetworkError.invalidResponse
         }
         var status = try JSONDecoder().decode(NativePublicStatus.self, from: data)
@@ -399,7 +447,10 @@ private struct ServerProtocolMetadata: Decodable {
 
     /// Availability never allocates or claims an identity. Only an authenticated
     /// atomic online join or rename may claim the requested names.
-    public func fetchCallsignAvailability(baseURL: URL, names: [String], publicToken: String? = nil, localPublicToken: String? = nil, localNewAccount: Bool = false) async throws -> [CallsignAvailability] {
+    public func fetchCallsignAvailability(
+        baseURL: URL, names: [String], publicToken: String? = nil, localPublicToken: String? = nil,
+        localNewAccount: Bool = false
+    ) async throws -> [CallsignAvailability] {
         var request = URLRequest(url: try ServerAddress.endpoint(baseURL, path: "/api/callsigns"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -416,69 +467,101 @@ private struct ServerProtocolMetadata: Decodable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 16 * 1024 else {
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 16 * 1024
+        else {
             throw GameNetworkError.invalidResponse
         }
         struct Result: Decodable { let names: [CallsignAvailability] }
         let result = try JSONDecoder().decode(Result.self, from: data).names
-        guard result.count == names.count, result.enumerated().allSatisfy({ $0.offset == $0.element.seat }) else {
+        guard result.count == names.count, result.enumerated().allSatisfy({ $0.offset == $0.element.seat })
+        else {
             throw GameNetworkError.invalidResponse
         }
         return result
     }
 
     /// Account keys travel only in the request body, never URLs or logs.
-    public func generateCallsigns(baseURL: URL, requestId: UUID, accounts: [(seat: Int, publicToken: String)]) async throws -> [GeneratedCallsign] {
+    public func generateCallsigns(baseURL: URL, requestId: UUID, accounts: [(seat: Int, publicToken: String)])
+        async throws -> [GeneratedCallsign]
+    {
         guard !accounts.isEmpty, accounts.count <= 2, Set(accounts.map(\.seat)).count == accounts.count,
-              Set(accounts.map(\.publicToken)).count == accounts.count,
-              accounts.allSatisfy({ $0.seat == 0 || $0.seat == 1 }) else { throw GameNetworkError.invalidResponse }
+            Set(accounts.map(\.publicToken)).count == accounts.count,
+            accounts.allSatisfy({ $0.seat == 0 || $0.seat == 1 })
+        else { throw GameNetworkError.invalidResponse }
         var request = URLRequest(url: try ServerAddress.endpoint(baseURL, path: "/api/callsigns/generate"))
-        request.httpMethod = "POST"; request.timeoutInterval = 6; request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.httpMethod = "POST"
+        request.timeoutInterval = 6
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(try PublicInfinitySession.normalizedOrigin(baseURL), forHTTPHeaderField: "Origin")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["requestId": requestId.uuidString.lowercased(),
-            "accounts": accounts.map { ["seat": $0.seat, "publicToken": $0.publicToken] as [String: Any] }])
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "requestId": requestId.uuidString.lowercased(),
+            "accounts": accounts.map { ["seat": $0.seat, "publicToken": $0.publicToken] as [String: Any] },
+        ])
         let (data, response) = try await session.data(for: request, delegate: AccountRequestRedirectGuard())
         try Task.checkCancellation()
-        guard let response = response as? HTTPURLResponse, data.count <= 16 * 1024 else { throw GameNetworkError.invalidResponse }
+        guard let response = response as? HTTPURLResponse, data.count <= 16 * 1024 else {
+            throw GameNetworkError.invalidResponse
+        }
         if response.statusCode == 401 { throw GameNetworkError.accountKeyRevoked }
         guard response.statusCode == 200 else { throw GameNetworkError.temporarilyUnavailable }
         struct Result: Decodable { let names: [GeneratedCallsign] }
         let names = try JSONDecoder().decode(Result.self, from: data).names
         guard names.map(\.seat).sorted() == accounts.map(\.seat).sorted(),
-              names.allSatisfy({ CallsignPolicy.isGenerated($0.name) }) else { throw GameNetworkError.invalidResponse }
+            names.allSatisfy({ CallsignPolicy.isGenerated($0.name) })
+        else { throw GameNetworkError.invalidResponse }
         return names
     }
 
     /// Account keys travel only in the request body, never URLs or logs.
     /// This read-only check must succeed before an imported key replaces one.
-    public func fetchAccountInfo(baseURL: URL, publicToken: String, signIn: Bool = false) async throws -> AccountInfo {
-        try JSONDecoder().decode(AccountInfo.self, from: await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account", signIn: signIn))
+    public func fetchAccountInfo(baseURL: URL, publicToken: String, signIn: Bool = false) async throws
+        -> AccountInfo
+    {
+        try JSONDecoder().decode(
+            AccountInfo.self,
+            from: await accountRequest(
+                baseURL: baseURL, publicToken: publicToken, path: "/api/account", signIn: signIn))
     }
 
     public func releaseAccount(baseURL: URL, publicToken: String) async throws {
-        let data = try await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account/release")
+        let data = try await accountRequest(
+            baseURL: baseURL, publicToken: publicToken, path: "/api/account/release")
         struct ReleaseResult: Decodable { let released: Bool }
-        guard try JSONDecoder().decode(ReleaseResult.self, from: data).released else { throw GameNetworkError.invalidResponse }
+        guard try JSONDecoder().decode(ReleaseResult.self, from: data).released else {
+            throw GameNetworkError.invalidResponse
+        }
     }
 
     public func createAccount(baseURL: URL, publicToken: String, name: String) async throws -> AccountInfo {
-        let data = try await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account/create", name: name)
+        let data = try await accountRequest(
+            baseURL: baseURL, publicToken: publicToken, path: "/api/account/create", name: name)
         let info = try JSONDecoder().decode(AccountInfo.self, from: data)
-        guard info.preferredCallsign.map(CallsignPolicy.canonical) == CallsignPolicy.canonical(name) else { throw GameNetworkError.invalidResponse }
+        guard info.preferredCallsign.map(CallsignPolicy.canonical) == CallsignPolicy.canonical(name) else {
+            throw GameNetworkError.invalidResponse
+        }
         return info
     }
 
-    public func rotateAccountKey(baseURL: URL, publicToken: String, newPublicToken: String) async throws -> AccountKeyRotation {
+    public func rotateAccountKey(baseURL: URL, publicToken: String, newPublicToken: String) async throws
+        -> AccountKeyRotation
+    {
         _ = try PublicInfinitySession(baseURL: baseURL, publicToken: newPublicToken)
-        let data = try await accountRequest(baseURL: baseURL, publicToken: publicToken, path: "/api/account/rotate", replacement: newPublicToken)
+        let data = try await accountRequest(
+            baseURL: baseURL, publicToken: publicToken, path: "/api/account/rotate",
+            replacement: newPublicToken)
         let result = try JSONDecoder().decode(AccountKeyRotation.self, from: data)
         _ = try PublicInfinitySession(baseURL: baseURL, publicToken: result.publicToken)
-        guard result.publicToken == newPublicToken, result.publicToken != publicToken else { throw GameNetworkError.invalidResponse }
+        guard result.publicToken == newPublicToken, result.publicToken != publicToken else {
+            throw GameNetworkError.invalidResponse
+        }
         return result
     }
 
-    private func accountRequest(baseURL: URL, publicToken: String, path: String, replacement: String? = nil, signIn: Bool = false, name: String? = nil) async throws -> Data {
+    private func accountRequest(
+        baseURL: URL, publicToken: String, path: String, replacement: String? = nil, signIn: Bool = false,
+        name: String? = nil
+    ) async throws -> Data {
         let credential = try PublicInfinitySession(baseURL: baseURL, publicToken: publicToken)
         var request = URLRequest(url: try ServerAddress.endpoint(credential.baseURL, path: path))
         request.httpMethod = "POST"
@@ -500,19 +583,28 @@ private struct ServerProtocolMetadata: Decodable {
             throw GameNetworkError.invalidAccountKey
         }
         if response.statusCode == 409, path == "/api/account/create",
-           let error = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           error["code"] as? String == "callsign_taken" {
+            let error = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            error["code"] as? String == "callsign_taken"
+        {
             throw GameNetworkError.callsignTaken
         }
-        if [408, 429, 500, 502, 503, 504].contains(response.statusCode) { throw GameNetworkError.temporarilyUnavailable }
-        guard response.statusCode == 200, data.count <= 16 * 1024 else { throw GameNetworkError.invalidResponse }
+        if [408, 429, 500, 502, 503, 504].contains(response.statusCode) {
+            throw GameNetworkError.temporarilyUnavailable
+        }
+        guard response.statusCode == 200, data.count <= 16 * 1024 else {
+            throw GameNetworkError.invalidResponse
+        }
         return data
     }
 
-    public func connectPublishedRoom(baseURL: URL, code: String? = nil, rules: RoomRules, roster: [NativeSeatSpec], publicToken: String? = nil,
-                                     localPublicToken: String? = nil, localNewAccount: Bool = false) {
+    public func connectPublishedRoom(
+        baseURL: URL, code: String? = nil, rules: RoomRules, roster: [NativeSeatSpec],
+        publicToken: String? = nil,
+        localPublicToken: String? = nil, localNewAccount: Bool = false
+    ) {
         var join = NativeRoomCommand.preset(rules: rules, roster: roster).payload
-        join["type"] = "publish"; join["code"] = code
+        join["type"] = "publish"
+        join["code"] = code
         join["publicToken"] = publicToken
         join["localPublicToken"] = localPublicToken
         if localNewAccount { join["localNewAccount"] = true }
@@ -534,7 +626,8 @@ private struct ServerProtocolMetadata: Decodable {
     /// start new attempts while iOS has suspended the app.
     public func suspend() {
         suspended = true
-        reconnectTask?.cancel(); reconnectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
         let old = socket
         invalidate()
         old?.cancel(with: .goingAway, reason: nil)
@@ -561,26 +654,35 @@ private struct ServerProtocolMetadata: Decodable {
         join["independentAccounts"] = true
         let publicArena = infinity && join["code"] == nil
         if publicArena, join["localName"] == nil, join["localPublicToken"] == nil {
-            localAccountKey = nil; localAccountRequestKey = nil
+            localAccountKey = nil
+            localAccountRequestKey = nil
         }
-        if resuming, join["spectating"] as? Bool != true, let code = join["code"] as? String, code == resumeContext?.code,
-           join["localPublicToken"] == nil, let localAccountKey { join["localPublicToken"] = localAccountKey }
+        if resuming, join["spectating"] as? Bool != true, let code = join["code"] as? String,
+            code == resumeContext?.code,
+            join["localPublicToken"] == nil, let localAccountKey
+        {
+            join["localPublicToken"] = localAccountKey
+        }
         if resuming {
             let old = socket
             invalidate()
             old?.cancel(with: .goingAway, reason: nil)
             reconnectTask = nil
             reconnectDeadline = publicArena ? nil : reconnectDeadline ?? Date().addingTimeInterval(18)
-        } else { disconnect() }
+        } else {
+            disconnect()
+        }
         suspended = false
         currentBaseURL = baseURL
         if publicArena {
-            resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: "", token: "",
+            resumeContext = ResumeContext(
+                baseURL: baseURL, infinity: true, code: "", token: "",
                 name: join["name"] as? String ?? "", generation: nil, publicJoin: join)
         } else if infinity, let code = join["code"] as? String, let token = join["token"] as? String {
-            resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: code, token: token,
-                                          name: join["name"] as? String ?? "", generation: join["generation"] as? UInt64,
-                                          spectating: join["spectating"] as? Bool ?? false, target: join["target"] as? Int)
+            resumeContext = ResumeContext(
+                baseURL: baseURL, infinity: true, code: code, token: token,
+                name: join["name"] as? String ?? "", generation: join["generation"] as? UInt64,
+                spectating: join["spectating"] as? Bool ?? false, target: join["target"] as? Int)
         }
         isInfinity = infinity
         pendingJoin = join
@@ -598,14 +700,22 @@ private struct ServerProtocolMetadata: Decodable {
             do {
                 var request = URLRequest(url: try ServerAddress.endpoint(baseURL, path: "/api/build"))
                 request.cachePolicy = .reloadIgnoringLocalCacheData
-                request.timeoutInterval = resuming ? min(6, max(0.5, self.reconnectDeadline?.timeIntervalSinceNow ?? 6)) : 10
+                request.timeoutInterval =
+                    resuming ? min(6, max(0.5, self.reconnectDeadline?.timeIntervalSinceNow ?? 6)) : 10
                 let (data, response) = try await self.session.data(for: request)
                 guard self.epoch == current, !Task.isCancelled else { return }
-                guard let response = response as? HTTPURLResponse else { throw GameNetworkError.invalidResponse }
-                if response.statusCode == 429 || response.statusCode >= 500 { throw GameNetworkError.temporarilyUnavailable }
-                guard response.statusCode == 200, data.count <= 8192 else { throw GameNetworkError.invalidResponse }
+                guard let response = response as? HTTPURLResponse else {
+                    throw GameNetworkError.invalidResponse
+                }
+                if response.statusCode == 429 || response.statusCode >= 500 {
+                    throw GameNetworkError.temporarilyUnavailable
+                }
+                guard response.statusCode == 200, data.count <= 8192 else {
+                    throw GameNetworkError.invalidResponse
+                }
                 try Self.validateServerProtocol(data)
-                let url = try ServerAddress.endpoint(baseURL, path: infinity ? "/ws/infinite" : "/ws", webSocket: true)
+                let url = try ServerAddress.endpoint(
+                    baseURL, path: infinity ? "/ws/infinite" : "/ws", webSocket: true)
                 var socketRequest = URLRequest(url: url)
                 // The existing server validates same-origin upgrades even for
                 // native clients. URLSession does not synthesize this header.
@@ -665,38 +775,60 @@ private struct ServerProtocolMetadata: Decodable {
     }
 
     /// Input sequences belong to this socket; pause always clears held controls.
-    public func sendInput(_ input: GameInput, paused: Bool = false, local: Bool = false, player: Int? = nil, member: UInt64? = nil) {
-        guard connected, Self.permitsInput(welcome: welcome, infinity: isInfinity, local: local, player: player) else { return }
+    public func sendInput(
+        _ input: GameInput, paused: Bool = false, local: Bool = false, player: Int? = nil,
+        member: UInt64? = nil
+    ) {
+        guard connected,
+            Self.permitsInput(welcome: welcome, infinity: isInfinity, local: local, player: player)
+        else { return }
         var sequence = local ? localSentSequence : sentSequence
         if input.seq > 0 {
             guard input.seq > sequence else { return }
             sequence = input.seq
-        } else { sequence &+= 1 }
+        } else {
+            sequence &+= 1
+        }
         if local { localSentSequence = sequence } else { sentSequence = sequence }
-        var command: [String: Any] = ["type": "input", "seq": sequence,
+        var command: [String: Any] = [
+            "type": "input", "seq": sequence,
             "forward": !paused && input.forward, "reverse": !paused && input.reverse,
             "left": !paused && input.left, "right": !paused && input.right,
             "fire": !paused && input.fire, "stickX": paused ? 0 : input.stickX,
-            "stickY": paused ? 0 : input.stickY, "touchAim": input.touchAim, "aimOnly": input.aimOnly, "snapAim": input.snapAim]
-        if isInfinity { command["paused"] = paused; if local { command["local"] = true } }
-        else { command["player"] = player; command["member"] = member }
+            "stickY": paused ? 0 : input.stickY, "touchAim": input.touchAim, "aimOnly": input.aimOnly,
+            "snapAim": input.snapAim,
+        ]
+        if isInfinity {
+            command["paused"] = paused
+            if local { command["local"] = true }
+        } else {
+            command["player"] = player
+            command["member"] = member
+        }
         sendCommand(command)
     }
 
     public func sendCommand(_ command: [String: Any]) {
-        if let key = command["localPublicToken"] as? String, key != "" { pendingLocalAccountKey = key; localAccountRequestKey = key }
+        if let key = command["localPublicToken"] as? String, key != "" {
+            pendingLocalAccountKey = key
+            localAccountRequestKey = key
+        }
         guard let socket, JSONSerialization.isValidJSONObject(command),
-              let data = try? JSONSerialization.data(withJSONObject: command), data.count <= 8192,
-              let text = String(data: data, encoding: .utf8) else { return }
-        let current = epoch, previous = sendTask
-        guard queuedSends < 120 else { fail("The connection cannot keep up. Rejoin to play again."); return }
+            let data = try? JSONSerialization.data(withJSONObject: command), data.count <= 8192,
+            let text = String(data: data, encoding: .utf8)
+        else { return }
+        let current = epoch
+        let previous = sendTask
+        guard queuedSends < 120 else {
+            fail("The connection cannot keep up. Rejoin to play again.")
+            return
+        }
         queuedSends += 1
         sendTask = Task { [weak self] in
             await previous?.value
             guard let self, !Task.isCancelled, self.epoch == current else { return }
             defer { if self.epoch == current { self.queuedSends -= 1 } }
-            do { try await socket.send(.string(text)) }
-            catch {
+            do { try await socket.send(.string(text)) } catch {
                 guard self.epoch == current, !Task.isCancelled else { return }
                 self.fail(error.localizedDescription)
             }
@@ -708,11 +840,16 @@ private struct ServerProtocolMetadata: Decodable {
     public func disconnect() {
         let oldSocket = socket
         let wasConnected = connected
-        reconnectTask?.cancel(); reconnectTask = nil
-        resumeContext = nil; reconnectDeadline = nil; reconnectAttempt = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        resumeContext = nil
+        reconnectDeadline = nil
+        reconnectAttempt = 0
         currentBaseURL = nil
         accountKey = nil
-        localAccountKey = nil; pendingLocalAccountKey = nil; localAccountRequestKey = nil
+        localAccountKey = nil
+        pendingLocalAccountKey = nil
+        localAccountRequestKey = nil
         suspended = false
         invalidate()
         if let oldSocket {
@@ -729,17 +866,23 @@ private struct ServerProtocolMetadata: Decodable {
         welcome = nil
         latencySampler = NetworkLatencySampler()
         queuedSends = 0
-        connectionTask?.cancel(); connectionTask = nil
-        heartbeatTask?.cancel(); heartbeatTask = nil
-        sendTask?.cancel(); sendTask = nil
+        connectionTask?.cancel()
+        connectionTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        sendTask?.cancel()
+        sendTask = nil
         socket = nil
     }
 
     private func fail(_ message: String, terminal: Bool = false) {
         if !terminal, scheduleReconnect() { return }
         let oldSocket = socket
-        reconnectTask?.cancel(); reconnectTask = nil
-        resumeContext = nil; reconnectDeadline = nil; reconnectAttempt = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        resumeContext = nil
+        reconnectDeadline = nil
+        reconnectAttempt = 0
         invalidate()
         oldSocket?.cancel(with: .goingAway, reason: nil)
         onEvent?(.error(message))
@@ -748,7 +891,8 @@ private struct ServerProtocolMetadata: Decodable {
 
     private func scheduleReconnect(force: Bool = false) -> Bool {
         guard !suspended, automaticallyReconnects || force, let context = resumeContext else { return false }
-        let now = Date(), deadline = context.isPublic ? nil : reconnectDeadline ?? Date().addingTimeInterval(18)
+        let now = Date()
+        let deadline = context.isPublic ? nil : reconnectDeadline ?? Date().addingTimeInterval(18)
         if let deadline, now >= deadline { return false }
         reconnectDeadline = deadline
         reconnectAttempt += 1
@@ -761,11 +905,17 @@ private struct ServerProtocolMetadata: Decodable {
         onEvent?(.roomEvent(.reconnecting(attempt: attempt)))
         onEvent?(.status("Reconnecting…"))
         reconnectTask = Task { [weak self] in
-            let backoff = context.isPublic ? min(10, 0.3 * pow(1.6, Double(min(attempt - 1, 8)))) : min(2, 0.3 * Double(attempt))
+            let backoff =
+                context.isPublic
+                ? min(10, 0.3 * pow(1.6, Double(min(attempt - 1, 8)))) : min(2, 0.3 * Double(attempt))
             try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
             guard let self, !Task.isCancelled, self.epoch == current else { return }
-            if let deadline, Date() >= deadline { self.fail("The reconnect window expired. Join the room again.", terminal: true); return }
-            self.begin(baseURL: context.baseURL, infinity: context.infinity, join: context.command, resuming: true)
+            if let deadline, Date() >= deadline {
+                self.fail("The reconnect window expired. Join the room again.", terminal: true)
+                return
+            }
+            self.begin(
+                baseURL: context.baseURL, infinity: context.infinity, join: context.command, resuming: true)
         }
         return true
     }
@@ -777,14 +927,20 @@ private struct ServerProtocolMetadata: Decodable {
                 guard let self, !Task.isCancelled, self.epoch == current else { return }
                 let started = ProcessInfo.processInfo.systemUptime
                 if let deadline = self.reconnectDeadline, Date() >= deadline, !self.connected {
-                    self.fail("The reconnect window expired. Join the room again.", terminal: true); return
+                    self.fail("The reconnect window expired. Join the room again.", terminal: true)
+                    return
                 }
                 let elapsed = Date().timeIntervalSince(self.lastReceived)
-                if elapsed > (self.connected ? 12 : 8) { self.fail(GameNetworkError.timeout.localizedDescription); return }
+                if elapsed > (self.connected ? 12 : 8) {
+                    self.fail(GameNetworkError.timeout.localizedDescription)
+                    return
+                }
                 if self.connected, let timestamp = self.latencySampler.nextPing(at: started * 1000) {
                     self.sendCommand(["type": "ping", "t": timestamp])
                 }
-                try? await Task.sleep(nanoseconds: NetworkRefreshCadence.remainingNanoseconds(startedAt: started, now: ProcessInfo.processInfo.systemUptime))
+                try? await Task.sleep(
+                    nanoseconds: NetworkRefreshCadence.remainingNanoseconds(
+                        startedAt: started, now: ProcessInfo.processInfo.systemUptime))
             }
         }
     }
@@ -792,53 +948,75 @@ private struct ServerProtocolMetadata: Decodable {
     func receive(_ data: Data) throws {
         // JSON and model decoding failures are protocol errors, not transport
         // outages that an authenticated public session should retry forever.
-        do { try receiveMessage(data) }
-        catch let error as GameNetworkError { throw error }
-        catch { throw GameNetworkError.invalidResponse }
+        do { try receiveMessage(data) } catch let error as GameNetworkError { throw error } catch {
+            throw GameNetworkError.invalidResponse
+        }
     }
 
     private func receiveMessage(_ data: Data) throws {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = object["type"] as? String else { throw GameNetworkError.invalidResponse }
+            let type = object["type"] as? String
+        else { throw GameNetworkError.invalidResponse }
         switch type {
         case "server_hello":
             guard !isInfinity else { throw GameNetworkError.invalidResponse }
             try Self.validateServerProtocol(data)
-            sendCommand(["type": "client_hello", "version": Self.supportedVersion, "protocol": Self.protocolVersion])
+            sendCommand([
+                "type": "client_hello", "version": Self.supportedVersion, "protocol": Self.protocolVersion,
+            ])
             sendCommand(pendingJoin)
         case "welcome":
             try Self.validateServerProtocol(data)
             let info = try JSONDecoder().decode(NetworkWelcome.self, from: data)
             if let expected = pendingLocalAccountKey, info.localPublicToken != expected {
                 guard info.localPublicToken != nil else { throw GameNetworkError.localAccountUnconfirmed }
-                let roomRecoveredFreshCandidate = pendingJoin["code"] != nil && pendingJoin["localNewAccount"] as? Bool == true && info.resumed
+                let roomRecoveredFreshCandidate =
+                    pendingJoin["code"] != nil && pendingJoin["localNewAccount"] as? Bool == true
+                    && info.resumed
                 guard roomRecoveredFreshCandidate else { throw GameNetworkError.localAccountMismatch }
             }
-            if let local = info.localPublicToken, local == info.publicToken { throw GameNetworkError.localAccountUnconfirmed }
+            if let local = info.localPublicToken, local == info.publicToken {
+                throw GameNetworkError.localAccountUnconfirmed
+            }
             welcome = info
             if let key = info.publicToken { accountKey = key }
-            if let key = info.localPublicToken { localAccountKey = key; pendingLocalAccountKey = nil }
-            else if info.localId == nil { localAccountKey = nil; localAccountRequestKey = nil; pendingLocalAccountKey = nil }
+            if let key = info.localPublicToken {
+                localAccountKey = key
+                pendingLocalAccountKey = nil
+            } else if info.localId == nil {
+                localAccountKey = nil
+                localAccountRequestKey = nil
+                pendingLocalAccountKey = nil
+            }
             connected = true
             startHeartbeat(epoch: epoch)
             if let baseURL = currentBaseURL {
                 if isInfinity, info.isPublic, let publicToken = info.publicToken {
                     var join = resumeContext?.publicJoin ?? pendingJoin
-                    join["code"] = nil; join["token"] = nil; join["generation"] = nil
+                    join["code"] = nil
+                    join["token"] = nil
+                    join["generation"] = nil
                     join["updateNames"] = nil
-                    join["publicToken"] = publicToken; join["resume"] = true
+                    join["publicToken"] = publicToken
+                    join["resume"] = true
                     join["independentAccounts"] = true
                     join["localPublicToken"] = info.localPublicToken
                     join["localNewAccount"] = nil
-                    resumeContext = ResumeContext(baseURL: baseURL, infinity: true, code: "", token: "",
+                    resumeContext = ResumeContext(
+                        baseURL: baseURL, infinity: true, code: "", token: "",
                         name: join["name"] as? String ?? "", generation: nil, publicJoin: join)
                 } else if let code = info.room, let token = info.token {
-                    resumeContext = ResumeContext(baseURL: baseURL, infinity: isInfinity, code: code, token: token,
-                                                  name: pendingJoin["name"] as? String ?? "", generation: nil,
-                                                  spectating: info.spectating)
-                } else if isInfinity, info.generation != nil { resumeContext?.generation = info.generation }
+                    resumeContext = ResumeContext(
+                        baseURL: baseURL, infinity: isInfinity, code: code, token: token,
+                        name: pendingJoin["name"] as? String ?? "", generation: nil,
+                        spectating: info.spectating)
+                } else if isInfinity, info.generation != nil {
+                    resumeContext?.generation = info.generation
+                }
             }
-            reconnectDeadline = nil; reconnectAttempt = 0; reconnectTask = nil
+            reconnectDeadline = nil
+            reconnectAttempt = 0
+            reconnectTask = nil
             if isInfinity, info.spectating { resumeContext?.target = info.following }
             onEvent?(.welcome(info))
             onEvent?(.status("Connected"))
@@ -847,11 +1025,20 @@ private struct ServerProtocolMetadata: Decodable {
             var identity = object
             identity["room"] = welcome?.room
             identity["token"] = welcome?.token
-            let info = try JSONDecoder().decode(NetworkWelcome.self, from: JSONSerialization.data(withJSONObject: identity))
-            if info.localId != nil, let expected = pendingLocalAccountKey, info.localPublicToken != expected { throw GameNetworkError.localAccountUnconfirmed }
+            let info = try JSONDecoder().decode(
+                NetworkWelcome.self, from: JSONSerialization.data(withJSONObject: identity))
+            if info.localId != nil, let expected = pendingLocalAccountKey, info.localPublicToken != expected {
+                throw GameNetworkError.localAccountUnconfirmed
+            }
             if let key = info.publicToken { accountKey = key }
-            if let key = info.localPublicToken { localAccountKey = key; pendingLocalAccountKey = nil }
-            else if info.localId == nil { localAccountKey = nil; localAccountRequestKey = nil; pendingLocalAccountKey = nil }
+            if let key = info.localPublicToken {
+                localAccountKey = key
+                pendingLocalAccountKey = nil
+            } else if info.localId == nil {
+                localAccountKey = nil
+                localAccountRequestKey = nil
+                pendingLocalAccountKey = nil
+            }
             welcome = info
             if !isInfinity { resumeContext?.spectating = info.spectating }
             onEvent?(.welcome(info))
@@ -877,7 +1064,8 @@ private struct ServerProtocolMetadata: Decodable {
         case "renamed", "rename_error":
             let rename = try JSONDecoder().decode(PilotRename.self, from: data)
             if rename.type == "renamed", rename.seat == nil || rename.seat == 0, let name = rename.name {
-                resumeContext?.name = name; resumeContext?.publicJoin?["name"] = name
+                resumeContext?.name = name
+                resumeContext?.publicJoin?["name"] = name
             }
             onEvent?(.roomEvent(.pilotRenamed(rename)))
         case "swapped", "player_kicked", "unshared", "leaderboard_reset":
@@ -885,37 +1073,57 @@ private struct ServerProtocolMetadata: Decodable {
             if type == "unshared" { disconnect() }
         case "infinity_start": onEvent?(.infinityStarted(object["public"] as? Bool ?? false))
         case "followed":
-            guard let following = object["following"] as? Int, following >= 0 else { throw GameNetworkError.invalidResponse }
+            guard let following = object["following"] as? Int, following >= 0 else {
+                throw GameNetworkError.invalidResponse
+            }
             if isInfinity, welcome?.spectating == true { resumeContext?.target = following }
             onEvent?(.followed(following))
         case "pong":
             if let t = object["t"] as? Double,
-               let elapsed = latencySampler.roundTrip(echo: t, now: ProcessInfo.processInfo.systemUptime * 1000) {
+                let elapsed = latencySampler.roundTrip(
+                    echo: t, now: ProcessInfo.processInfo.systemUptime * 1000)
+            {
                 onEvent?(.latency(elapsed))
             }
         case "error":
             let message = object["message"] as? String ?? "The server rejected this action."
             let code = object["code"] as? String
             if resumeContext?.isPublic == true {
-                if code == "public_resume_invalid", (object["seat"] as? Int ?? 0) == 0, pendingJoin["publicToken"] != nil,
-                   let context = resumeContext, var join = context.publicJoin {
-                    join["publicToken"] = nil; join["resume"] = nil
+                if code == "public_resume_invalid", (object["seat"] as? Int ?? 0) == 0,
+                    pendingJoin["publicToken"] != nil,
+                    let context = resumeContext, var join = context.publicJoin
+                {
+                    join["publicToken"] = nil
+                    join["resume"] = nil
                     begin(baseURL: context.baseURL, infinity: true, join: join, resuming: true)
                     return
                 }
-                if ["server_shutdown", "server_busy", "full", "arena_full", "busy", "session_active"].contains(code ?? "") {
-                    fail(message); return
+                if ["server_shutdown", "server_busy", "full", "arena_full", "busy", "session_active"]
+                    .contains(code ?? "")
+                {
+                    fail(message)
+                    return
                 }
             }
             let noticeEpoch = epoch
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             guard epoch == noticeEpoch else { return }
-            if (object["code"] as? String) == "session_active", reconnectDeadline != nil { fail(message); return }
-            if !connected || code == "kicked" || code == "session_replaced" || code == "account_key_revoked" || code == "account_key_invalid" || (object["action"] as? String) == "version" {
+            if (object["code"] as? String) == "session_active", reconnectDeadline != nil {
+                fail(message)
+                return
+            }
+            if !connected || code == "kicked" || code == "session_replaced" || code == "account_key_revoked"
+                || code == "account_key_invalid" || (object["action"] as? String) == "version"
+            {
                 fail(message, terminal: true)
-            } else if (object["action"] as? String) != "follow" { onEvent?(.error(message)) }
+            } else if (object["action"] as? String) != "follow" {
+                onEvent?(.error(message))
+            }
         case "server_shutdown", "kicked", "room_offline":
-            if type == "server_shutdown", resumeContext?.isPublic == true { fail("Reconnecting after server restart…"); return }
+            if type == "server_shutdown", resumeContext?.isPublic == true {
+                fail("Reconnecting after server restart…")
+                return
+            }
             onEvent?(.roomEvent(.notice(try JSONDecoder().decode(ServerNotice.self, from: data))))
             fail(object["message"] as? String ?? "The server closed this session.", terminal: true)
         default: break
@@ -926,8 +1134,10 @@ private struct ServerProtocolMetadata: Decodable {
 /// A key is scoped to the exact configured origin. Never forward its POST body
 /// through an HTTP redirect, even if a server was misconfigured.
 private final class AccountRequestRedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+    ) {
         completionHandler(nil)
     }
 }
@@ -935,12 +1145,15 @@ private final class AccountRequestRedirectGuard: NSObject, URLSessionTaskDelegat
 /// Converts finite-maze packets to the shared native rendering model while
 /// retaining the server's reliable world update between periodic snapshots.
 enum SnapshotDecoder {
-    static let colors = ["#d2f65a", "#ff9679", "#73cee4", "#c5a2ff", "#ffc46b", "#ff83bd", "#75f0cb", "#b7c6ee"]
+    static let colors = [
+        "#d2f65a", "#ff9679", "#73cee4", "#c5a2ff", "#ffc46b", "#ff83bd", "#75f0cb", "#b7c6ee",
+    ]
 
     static func normalized(data: Data, previousWorld: Any?) throws -> (data: Data, world: Any?) {
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tanks = object["tanks"] as? [[String: Any]],
-              let bullets = object["bullets"] as? [[String: Any]] else { throw GameNetworkError.invalidResponse }
+            let tanks = object["tanks"] as? [[String: Any]],
+            let bullets = object["bullets"] as? [[String: Any]]
+        else { throw GameNetworkError.invalidResponse }
         let fixed = object["phase"] != nil
         if !fixed {
             guard object["leaderboard"] is [[String: Any]] else { throw GameNetworkError.invalidResponse }
@@ -958,11 +1171,16 @@ enum SnapshotDecoder {
         }
         object["tanks"] = mappedTanks
         let ranked = mappedTanks.sorted {
-            let a = $0["score"] as? Int ?? 0, b = $1["score"] as? Int ?? 0
+            let a = $0["score"] as? Int ?? 0
+            let b = $1["score"] as? Int ?? 0
             return a != b ? a > b : ($0["id"] as? Int ?? 0) < ($1["id"] as? Int ?? 0)
         }
-        object["leaderboard"] = ranked.map { ["id": $0["id"] ?? 0, "name": $0["name"] ?? "", "score": $0["score"] ?? 0,
-            "bot": $0["bot"] ?? false, "colorIndex": $0["colorIndex"] ?? 0, "team": $0["team"] ?? 0] }
+        object["leaderboard"] = ranked.map {
+            [
+                "id": $0["id"] ?? 0, "name": $0["name"] ?? "", "score": $0["score"] ?? 0,
+                "bot": $0["bot"] ?? false, "colorIndex": $0["colorIndex"] ?? 0, "team": $0["team"] ?? 0,
+            ]
+        }
         var mappedBullets = bullets.map { raw in
             var bullet = raw
             bullet["colorIndex"] = colors.firstIndex(of: raw["color"] as? String ?? "") ?? 0
@@ -971,15 +1189,25 @@ enum SnapshotDecoder {
         if let packed = object["machineBullets"] as? [[Double]] {
             let epochs: [UInt64]
             if let rawEpochs = object["machineAmmoEpochs"], !(rawEpochs is NSNull) {
-                guard JSONSerialization.isValidJSONObject(rawEpochs) else { throw GameNetworkError.invalidResponse }
-                epochs = try JSONDecoder().decode([UInt64].self, from: JSONSerialization.data(withJSONObject: rawEpochs))
-            } else { epochs = [] }
+                guard JSONSerialization.isValidJSONObject(rawEpochs) else {
+                    throw GameNetworkError.invalidResponse
+                }
+                epochs = try JSONDecoder().decode(
+                    [UInt64].self, from: JSONSerialization.data(withJSONObject: rawEpochs))
+            } else {
+                epochs = []
+            }
             for (index, row) in packed.enumerated() where row.count == 12 {
-                guard row.allSatisfy(\.isFinite), let id = Int(exactly: row[0]), let owner = Int(exactly: row[1]),
-                      let bounces = Int(exactly: row[10]), let color = Int(exactly: row[11]) else { throw GameNetworkError.invalidResponse }
-                mappedBullets.append(["id": id, "owner": owner, "kind": "rapid", "x": row[4], "y": row[5],
-                    "vx": row[6], "vy": row[7], "age": row[8], "life": row[9], "bounces": bounces, "colorIndex": color,
-                    "ammoEpoch": index < epochs.count ? epochs[index] : 0])
+                guard row.allSatisfy(\.isFinite), let id = Int(exactly: row[0]),
+                    let owner = Int(exactly: row[1]),
+                    let bounces = Int(exactly: row[10]), let color = Int(exactly: row[11])
+                else { throw GameNetworkError.invalidResponse }
+                mappedBullets.append([
+                    "id": id, "owner": owner, "kind": "rapid", "x": row[4], "y": row[5],
+                    "vx": row[6], "vy": row[7], "age": row[8], "life": row[9], "bounces": bounces,
+                    "colorIndex": color,
+                    "ammoEpoch": index < epochs.count ? epochs[index] : 0,
+                ])
             }
         }
         object["bullets"] = mappedBullets
@@ -988,20 +1216,30 @@ enum SnapshotDecoder {
         for index in mappedTanks.indices {
             let id = mappedTanks[index]["id"] as? Int ?? -1
             let epoch = mappedTanks[index]["ammoEpoch"] as? UInt64 ?? 0
-            let owned = mappedBullets.filter { ($0["owner"] as? Int) == id && ($0["ammoEpoch"] as? UInt64 ?? 0) == epoch }
+            let owned = mappedBullets.filter {
+                ($0["owner"] as? Int) == id && ($0["ammoEpoch"] as? UInt64 ?? 0) == epoch
+            }
             let grenadeEpoch = mappedTanks[index]["grenadeEpoch"] as? UInt64 ?? epoch
-            let grenades = mappedBullets.filter { ($0["owner"] as? Int) == id && ($0["kind"] as? String) == "grenade" && ($0["ammoEpoch"] as? UInt64 ?? 0) == grenadeEpoch }
+            let grenades = mappedBullets.filter {
+                ($0["owner"] as? Int) == id && ($0["kind"] as? String) == "grenade"
+                    && ($0["ammoEpoch"] as? UInt64 ?? 0) == grenadeEpoch
+            }
             let power = mappedTanks[index]["power"] as? String ?? ""
-            mappedTanks[index]["ammoUsed"] = power == "laser" ? max(0, 3 - (mappedTanks[index]["charges"] as? Int ?? 0))
+            mappedTanks[index]["ammoUsed"] =
+                power == "laser"
+                ? max(0, 3 - (mappedTanks[index]["charges"] as? Int ?? 0))
                 : owned.filter { !boosted.contains($0["id"] as? Int ?? -1) }.count
             mappedTanks[index]["grenades"] = grenades.count
             mappedTanks[index]["grenadeLife"] = grenades.map { $0["life"] as? Double ?? 0 }.max() ?? 0
             mappedTanks[index]["locked"] = mappedBullets.contains { bullet in
-                let kind = bullet["kind"] as? String ?? "", owner = bullet["owner"] as? Int ?? -1
-                guard owner != id, (kind == "homing" || kind == "grenade"), (bullet["target"] as? Int) == id else { return false }
+                let kind = bullet["kind"] as? String ?? ""
+                let owner = bullet["owner"] as? Int ?? -1
+                guard owner != id, kind == "homing" || kind == "grenade", (bullet["target"] as? Int) == id
+                else { return false }
                 let shooter = mappedTanks.first { ($0["id"] as? Int) == owner }
                 let team = shooter?["team"] as? Int ?? 0
-                return friendlyFire || shooter == nil || team == 0 || team != (mappedTanks[index]["team"] as? Int ?? 0)
+                return friendlyFire || shooter == nil || team == 0
+                    || team != (mappedTanks[index]["team"] as? Int ?? 0)
             }
         }
         object["tanks"] = mappedTanks

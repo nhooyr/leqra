@@ -65,7 +65,9 @@ final class FrameProfiler {
 
     init(arguments: [String]) {
         func argument(_ name: String) -> String? {
-            guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else { return nil }
+            guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else {
+                return nil
+            }
             return arguments[index + 1]
         }
         weapon = argument("--probe-weapon") ?? "regular"
@@ -87,12 +89,16 @@ final class FrameProfiler {
         projectileSpeedOverride = requestedSpeed.flatMap { $0.isFinite && $0 > 0 && $0 <= 4000 ? $0 : nil }
         if arguments.contains("--probe-fixed") {
             world = FixedArena(rules: RoomRules(), name: "PROBE", colorIndex: 0, botCount: 0, seed: 42).world
-        } else { world = nil }
+        } else {
+            world = nil
+        }
         maze = world.map { InfiniteMaze(world: $0) } ?? InfiniteMaze(seed: 42)
         if motionMode != nil {
             var tank = ArenaTank(id: 1, name: "PROBE PILOT", x: 420, y: 420)
-            tank.speedTime = 120; tank.speedStacks = 5
-            tank.ghostTime = 120; tank.starmanTime = 120
+            tank.speedTime = 120
+            tank.speedStacks = 5
+            tank.ghostTime = 120
+            tank.starmanTime = 120
             motionTank = tank
         }
         samples.reserveCapacity(Int(duration * 150))
@@ -106,20 +112,25 @@ final class FrameProfiler {
     }
 
     private func motionPresentation(_ tank: ArenaTank, input: GameInput, fraction: Double) -> ArenaTank {
-        motionPresenter.present(tank: tank, input: input, tick: motionTick, fraction: fraction, move: {
-            TankMovement.step(tank: &$0, input: $1, dt: $2, maze: self.maze)
-        })
+        motionPresenter.present(
+            tank: tank, input: input, tick: motionTick, fraction: fraction,
+            move: {
+                TankMovement.step(tank: &$0, input: $1, dt: $2, maze: self.maze)
+            })
     }
 
     func snapshot(dt: Double) -> ArenaSnapshot {
         elapsed += dt
         if emptyFireProbe {
-            return ArenaSnapshot(tick: UInt64(elapsed * 60), tanks: [ArenaTank(id: 1, name: "EMPTY", x: 420, y: 420, ammoUsed: 5)])
+            return ArenaSnapshot(
+                tick: UInt64(elapsed * 60),
+                tanks: [ArenaTank(id: 1, name: "EMPTY", x: 420, y: 420, ammoUsed: 5)])
         }
         if hitMatrixProbe { return hitSnapshot(dt: dt) }
         if ammoRefillProbe { return ammoSnapshot(dt: dt) }
         if pickupMatrixProbe { return pickupSnapshot() }
-        let time = elapsed, serial = Int(time * 60) + 200
+        let time = elapsed
+        let serial = Int(time * 60) + 200
         if var tank = motionTank {
             motionAccumulator += min(dt, 0.1)
             while motionAccumulator + 1e-9 >= 1 / 60 {
@@ -128,42 +139,69 @@ final class FrameProfiler {
                 motionAccumulator = max(0, motionAccumulator - 1 / 60)
             }
             motionTank = tank
-            motionPose = motionPresentation(tank, input: motionInput(at: time), fraction: motionAccumulator * 60)
+            motionPose = motionPresentation(
+                tank, input: motionInput(at: time), fraction: motionAccumulator * 60)
         }
-        let centerX = motionPose?.x ?? (420 + (pans ? time * 90 : 0)), centerY = motionPose?.y ?? 420.0
+        let centerX = motionPose?.x ?? (420 + (pans ? time * 90 : 0))
+        let centerY = motionPose?.y ?? 420.0
         var value = ArenaSnapshot()
-        value.generation = 1; value.tick = UInt64(serial); value.phase = "playing"
-        value.players = 1; value.tankCount = 8
+        value.generation = 1
+        value.tick = UInt64(serial)
+        value.phase = "playing"
+        value.players = 1
+        value.tankCount = 8
         value.tanks = (0..<8).map { index in
-            var tank = ArenaTank(id: index + 1, name: index == 0 ? "PROBE PILOT" : "ROVER \(index)",
-                                 x: centerX + Double(index % 3) * 84, y: centerY + Double(index / 3) * 84,
-                                 angle: time * 0.1, colorIndex: index, bot: index != 0)
+            var tank = ArenaTank(
+                id: index + 1, name: index == 0 ? "PROBE PILOT" : "ROVER \(index)",
+                x: centerX + Double(index % 3) * 84, y: centerY + Double(index / 3) * 84,
+                angle: time * 0.1, colorIndex: index, bot: index != 0)
             tank.power = weapon == "laser" ? "laser" : projectileKind
             tank.powerTime = 15
-            tank.starmanTime = 8; tank.ghostTime = 8; tank.invulnerable = 8
-            if buffs.contains("shield") || weapon == "shield" { tank.shield = 15; tank.shieldCharges = 5 }
-            if buffs.contains("speed") || weapon == "speed" { tank.speedTime = 15; tank.speedStacks = 5 }
-            tank.track = time * 30; tank.charges = 3; tank.machineRounds = 180
+            tank.starmanTime = 8
+            tank.ghostTime = 8
+            tank.invulnerable = 8
+            if buffs.contains("shield") || weapon == "shield" {
+                tank.shield = 15
+                tank.shieldCharges = 5
+            }
+            if buffs.contains("speed") || weapon == "speed" {
+                tank.speedTime = 15
+                tank.speedStacks = 5
+            }
+            tank.track = time * 30
+            tank.charges = 3
+            tank.machineRounds = 180
             if badgeCountProbe {
                 let counts = [180, 179, 100, 99, 10, 9]
                 tank.machineRounds = counts[Int(time * 2) % counts.count]
                 tank.starmanTime = 0
-                if index > 0 { tank.power = ["scatter", "homing", "grenade", "laser", "cannon", "speed", "shield"][index - 1] }
+                if index > 0 {
+                    tank.power =
+                        ["scatter", "homing", "grenade", "laser", "cannon", "speed", "shield"][index - 1]
+                }
                 tank.charges = 1 + Int(time * 2) % 3
             }
             if index == 0, let pose = motionPose {
-                tank.x = pose.x; tank.y = pose.y; tank.angle = pose.angle; tank.track = pose.track
+                tank.x = pose.x
+                tank.y = pose.y
+                tank.angle = pose.angle
+                tank.track = pose.track
             }
             return tank
         }
         value.bullets.reserveCapacity(count)
         for index in 0..<count {
-            let owner = index / 115, age = index % 115
+            let owner = index / 115
+            let age = index % 115
             let angle = Double(owner) * 0.7 + Double(serial - age) * 0.018
-            let distance = Double(age) * (weapon == "homing" ? 4 : 7) + (time * 60).truncatingRemainder(dividingBy: 1) * 7
+            let distance =
+                Double(age) * (weapon == "homing" ? 4 : 7) + (time * 60).truncatingRemainder(dividingBy: 1)
+                * 7
             let speed = projectileSpeedOverride ?? (weapon == "homing" ? 240.0 : 420.0)
             let rawX = cos(angle) * distance
-            var x = centerX + rawX, velocity = cos(angle) * speed, bounces = 0
+            var x = centerX + rawX
+            var velocity = cos(angle) * speed
+            var bounces = 0
             if reflects && projectileKind != "cannon" {
                 bounces = Int(floor((abs(rawX) + 210) / 420))
                 let phase = (rawX + 210).truncatingRemainder(dividingBy: 840)
@@ -171,7 +209,8 @@ final class FrameProfiler {
                 x = centerX - 210 + (positive <= 420 ? positive : 840 - positive)
                 velocity *= bounces % 2 == 0 ? 1 : -1
             }
-            var bullet = ArenaBullet(id: owner * 1_000_000 + serial - age,
+            var bullet = ArenaBullet(
+                id: owner * 1_000_000 + serial - age,
                 x: x, y: centerY + sin(angle) * distance,
                 vx: velocity, vy: sin(angle) * speed,
                 owner: owner + 1, kind: projectileKind,
@@ -184,30 +223,52 @@ final class FrameProfiler {
             value.bullets = []
             value.effects = (max(1, serial - 31)...serial).map { id in
                 let angle = Double(id) * 0.03
-                return ArenaEffect(id: id, kind: "laser", x: centerX, y: centerY, owner: 1,
-                    points: [BeamPoint(x: centerX, y: centerY),
-                             BeamPoint(x: centerX + cos(angle) * 520, y: centerY + sin(angle) * 520)])
+                return ArenaEffect(
+                    id: id, kind: "laser", x: centerX, y: centerY, owner: 1,
+                    points: [
+                        BeamPoint(x: centerX, y: centerY),
+                        BeamPoint(x: centerX + cos(angle) * 520, y: centerY + sin(angle) * 520),
+                    ])
             }
         } else {
             value.effects = (max(1, serial - 31)...serial).map {
                 ArenaEffect(id: $0, kind: "shot:" + projectileKind, x: centerX, y: centerY, owner: 1)
             }
         }
-        value.leaderboard = value.tanks.map { LeaderboardEntry(id: $0.id, name: $0.name, colorIndex: $0.colorIndex) }
+        value.leaderboard = value.tanks.map {
+            LeaderboardEntry(id: $0.id, name: $0.name, colorIndex: $0.colorIndex)
+        }
         if firstShotProbe {
             value.tanks = Array(value.tanks.prefix(1))
-            value.tanks[0].starmanTime = 0; value.tanks[0].ghostTime = 0; value.tanks[0].invulnerable = 0
-            let shot = Int(floor(max(0, time - 1) / 0.8)), age = time - 1 - Double(shot) * 0.8
-            value.bullets = []; value.effects = []; value.boostedBulletIds = []
+            value.tanks[0].starmanTime = 0
+            value.tanks[0].ghostTime = 0
+            value.tanks[0].invulnerable = 0
+            let shot = Int(floor(max(0, time - 1) / 0.8))
+            let age = time - 1 - Double(shot) * 0.8
+            value.bullets = []
+            value.effects = []
+            value.boostedBulletIds = []
             if age >= 0 && age < 0.25 {
                 let speed = projectileSpeedOverride ?? 420
-                value.bullets = [ArenaBullet(id: shot + 1, x: centerX + 32 + age * speed, y: centerY,
-                    vx: speed, owner: 1, kind: projectileKind, life: 5)]
-                value.effects = [ArenaEffect(id: shot + 1, kind: "shot:" + projectileKind, x: centerX, y: centerY, owner: 1)]
+                value.bullets = [
+                    ArenaBullet(
+                        id: shot + 1, x: centerX + 32 + age * speed, y: centerY,
+                        vx: speed, owner: 1, kind: projectileKind, life: 5)
+                ]
+                value.effects = [
+                    ArenaEffect(
+                        id: shot + 1, kind: "shot:" + projectileKind, x: centerX, y: centerY, owner: 1)
+                ]
                 if weapon == "laser" {
                     value.bullets = []
-                    value.effects = [ArenaEffect(id: shot + 1, kind: "laser", owner: 1,
-                        points: [BeamPoint(x: centerX + 28, y: centerY), BeamPoint(x: centerX + 400, y: centerY)])]
+                    value.effects = [
+                        ArenaEffect(
+                            id: shot + 1, kind: "laser", owner: 1,
+                            points: [
+                                BeamPoint(x: centerX + 28, y: centerY),
+                                BeamPoint(x: centerX + 400, y: centerY),
+                            ])
+                    ]
                 }
             }
         }
@@ -215,32 +276,59 @@ final class FrameProfiler {
     }
 
     private func pickupSnapshot() -> ArenaSnapshot {
-        let powers = ["regular", "rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"]
+        let powers =
+            [
+                "regular", "rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon",
+                "ghost", "starman",
+            ]
             + (eventMatrixProbe ? ["death", "kill", "wall"] : [])
-        let time = max(0, elapsed - 1), episode = Int(time / 0.55), age = time - Double(episode) * 0.55
+        let time = max(0, elapsed - 1)
+        let episode = Int(time / 0.55)
+        let age = time - Double(episode) * 0.55
         let power = powers[episode % powers.count]
         let stage = age < 0.1 || elapsed < 1 ? "plain" : age < 0.25 ? "pickup" : "fire"
         pickupEvent = (episode, stage, power)
         var tank = ArenaTank(id: 1, name: "PROBE PILOT", x: 420, y: 420, spawnSerial: 1)
         if stage != "plain" {
             switch power {
-            case "shield": tank.shield = 15; tank.shieldCharges = 1
-            case "speed": tank.speedTime = 15; tank.speedStacks = 1
+            case "shield":
+                tank.shield = 15
+                tank.shieldCharges = 1
+            case "speed":
+                tank.speedTime = 15
+                tank.speedStacks = 1
             case "ghost": tank.ghostTime = 15
             case "starman": tank.starmanTime = 8
             case "regular": break
-            default: tank.power = power; tank.powerTime = 15; tank.charges = 3; tank.machineRounds = 180
+            default:
+                tank.power = power
+                tank.powerTime = 15
+                tank.charges = 3
+                tank.machineRounds = 180
             }
         }
         var value = ArenaSnapshot(tick: UInt64(elapsed * 60), tanks: [tank])
-        value.generation = 1; value.phase = "playing"; value.players = 1; value.tankCount = 1; value.world = world
+        value.generation = 1
+        value.phase = "playing"
+        value.players = 1
+        value.tankCount = 1
+        value.world = world
         if ["death", "kill", "wall"].contains(power) {
             let struck = stage != "plain"
             if power == "death" { value.tanks[0].hp = struck ? 0 : 1 }
-            if power == "kill" { value.tanks.append(ArenaTank(id: 2, name: "PROBE TARGET", x: 510, y: 420, hp: struck ? 0 : 1, colorIndex: 1, bot: true)) }
+            if power == "kill" {
+                value.tanks.append(
+                    ArenaTank(
+                        id: 2, name: "PROBE TARGET", x: 510, y: 420, hp: struck ? 0 : 1, colorIndex: 1,
+                        bot: true))
+            }
             if struck {
                 let x = power == "death" ? 420.0 : 510
-                value.effects = [ArenaEffect(id: episode * 1000 + 1, kind: power == "wall" ? "impact" : "hit", x: x, y: 420, owner: power == "death" ? 2 : 1)]
+                value.effects = [
+                    ArenaEffect(
+                        id: episode * 1000 + 1, kind: power == "wall" ? "impact" : "hit", x: x, y: 420,
+                        owner: power == "death" ? 2 : 1)
+                ]
             }
             value.tanks[0].power = ""
             return value
@@ -249,13 +337,20 @@ final class FrameProfiler {
             value.effects = [ArenaEffect(id: episode * 1000 + 1, kind: "pickup", x: 420, y: 420, owner: 1)]
         }
         if stage == "fire" {
-            let kind = ["rapid", "scatter", "homing", "grenade", "cannon", "laser"].contains(power) ? power : ""
+            let kind =
+                ["rapid", "scatter", "homing", "grenade", "cannon", "laser"].contains(power) ? power : ""
             let id = episode * 1000 + 2
             if kind == "laser" {
-                value.effects = [ArenaEffect(id: id, kind: "laser", owner: 1, points: [BeamPoint(x: 448, y: 420), BeamPoint(x: 700, y: 420)])]
+                value.effects = [
+                    ArenaEffect(
+                        id: id, kind: "laser", owner: 1,
+                        points: [BeamPoint(x: 448, y: 420), BeamPoint(x: 700, y: 420)])
+                ]
             } else {
                 value.bullets = (0..<(kind == "scatter" ? 3 : 1)).map {
-                    ArenaBullet(id: id + $0, x: 452 + (age - 0.25) * 420, y: 420 + Double($0) * 7, vx: 420, owner: 1, kind: kind, life: 5)
+                    ArenaBullet(
+                        id: id + $0, x: 452 + (age - 0.25) * 420, y: 420 + Double($0) * 7, vx: 420, owner: 1,
+                        kind: kind, life: 5)
                 }
                 value.effects = [ArenaEffect(id: id, kind: "shot:" + kind, x: 420, y: 420, owner: 1)]
             }
@@ -265,33 +360,49 @@ final class FrameProfiler {
     }
 
     private func ammoSnapshot(dt: Double) -> ArenaSnapshot {
-        let cases = ["rapid", "scatter", "homing", "grenade", "laser", "cannon", "shieldExpiry", "speedExpiry", "ghostExpiry", "starmanExpiry", "weaponExpiry"]
-        let episode = Int(elapsed / 0.65), scenario = cases[episode % cases.count]
+        let cases = [
+            "rapid", "scatter", "homing", "grenade", "laser", "cannon", "shieldExpiry", "speedExpiry",
+            "ghostExpiry", "starmanExpiry", "weaponExpiry",
+        ]
+        let episode = Int(elapsed / 0.65)
+        let scenario = cases[episode % cases.count]
         let expiry = scenario.hasSuffix("Expiry")
         if episode != ammoEpisode {
-            ammoEpisode = episode; ammoAccumulator = 0; ammoSteps = 0
-            var tank = ArenaTank(id: 1, name: "AMMO CHECK", x: 42, y: 42, spawnSerial: 1,
+            ammoEpisode = episode
+            ammoAccumulator = 0
+            ammoSteps = 0
+            var tank = ArenaTank(
+                id: 1, name: "AMMO CHECK", x: 42, y: 42, spawnSerial: 1,
                 cooldown: expiry ? 0.5 : 0, powerTime: scenario == "weaponExpiry" ? 0.001 : 15,
                 power: expiry ? "cannon" : scenario, charges: scenario == "rapid" ? 0 : 1,
                 machineRounds: scenario == "rapid" ? 1 : 0, ammoEpoch: 41)
-            if scenario == "shieldExpiry" { tank.shield = 0.001; tank.shieldCharges = 1 }
-            if scenario == "speedExpiry" { tank.speedTime = 0.001; tank.speedStacks = 5 }
+            if scenario == "shieldExpiry" {
+                tank.shield = 0.001
+                tank.shieldCharges = 1
+            }
+            if scenario == "speedExpiry" {
+                tank.speedTime = 0.001
+                tank.speedStacks = 5
+            }
             if scenario == "ghostExpiry" { tank.ghostTime = 0.001 }
             if scenario == "starmanExpiry" { tank.starmanTime = 0.001 }
-            ammoArena = PracticeArena(seed: 42, name: tank.name, colorIndex: 0, botCount: 0, world: world, initialTanks: [tank])
+            ammoArena = PracticeArena(
+                seed: 42, name: tank.name, colorIndex: 0, botCount: 0, world: world, initialTanks: [tank])
         }
         let arena = ammoArena!
         ammoAccumulator += min(dt, 0.1)
         while ammoAccumulator + 1e-9 >= 1 / 60 {
             let fire = expiry ? ammoSteps > 0 : ammoSteps != 2 && ammoSteps != 5
             arena.step(input: GameInput(fire: fire), dt: 1 / 60)
-            ammoSteps += 1; ammoAccumulator = max(0, ammoAccumulator - 1 / 60)
+            ammoSteps += 1
+            ammoAccumulator = max(0, ammoAccumulator - 1 / 60)
             let tank = arena.snapshot.tanks[0]
             if ammoSteps == 1 {
                 ammoChecks += 1
                 let standard = !expiry || scenario == "weaponExpiry"
                 if tank.ammoEpoch != 42 || tank.cooldown != 0 || tank.ammoUsed != 0
-                    || tank.power != (standard ? "" : "cannon") || tank.charges != (standard ? 0 : 3) {
+                    || tank.power != (standard ? "" : "cannon") || tank.charges != (standard ? 0 : 3)
+                {
                     ammoFailures.append(scenario + ": magazine did not refill before firing")
                 }
             } else if ammoSteps == 2 {
@@ -304,7 +415,8 @@ final class FrameProfiler {
                 ammoChecks += 1
                 let fired = arena.snapshot.bullets.contains { $0.ammoEpoch == 42 }
                 if !fired || scenario == "grenade" && arena.snapshot.tanks[0].grenades != 0 {
-                    ammoFailures.append(scenario + ": fresh press did not pop the final grenade or fire standard ammo")
+                    ammoFailures.append(
+                        scenario + ": fresh press did not pop the final grenade or fire standard ammo")
                 }
             } else if scenario == "grenade" && ammoSteps == 7 {
                 ammoChecks += 1
@@ -328,48 +440,74 @@ final class FrameProfiler {
         let profiles = ["plain", "starman", "speed", "ghost", "shield"]
         if hitEpisode < 0 || hitCase.canAdvance {
             if hitEpisode >= 0 {
-                if hitCase.result == nil { hitFailures.append(hitLabel + ": no completed contact after credited simulation timeout") }
+                if hitCase.result == nil {
+                    hitFailures.append(hitLabel + ": no completed contact after credited simulation timeout")
+                }
                 if hitCaseTrace.count < 256 {
-                    hitCaseTrace.append(["episode": hitEpisode, "case": hitLabel, "frames": hitCase.frames,
+                    hitCaseTrace.append([
+                        "episode": hitEpisode, "case": hitLabel, "frames": hitCase.frames,
                         "simulationSeconds": hitCase.creditedSeconds, "wallSeconds": elapsed - hitCaseStarted,
-                        "result": hitCase.result?.rawValue ?? "timeout"])
+                        "result": hitCase.result?.rawValue ?? "timeout",
+                    ])
                 }
             }
-            hitEpisode += 1; hitAccumulator = 0; hitFired = false; hitCase = ContactProbeCase(); hitCaseStarted = elapsed
+            hitEpisode += 1
+            hitAccumulator = 0
+            hitFired = false
+            hitCase = ContactProbeCase()
+            hitCaseStarted = elapsed
             let episode = hitEpisode
-            let kind = weapons[episode % weapons.count], profile = profiles[(episode / weapons.count) % profiles.count]
+            let kind = weapons[episode % weapons.count]
+            let profile = profiles[(episode / weapons.count) % profiles.count]
             hitLabel = kind + "/" + profile
-            var shooter = ArenaTank(id: 1, name: "CONTACT", x: 42, y: 42, spawnSerial: 1, powerTime: 30,
+            var shooter = ArenaTank(
+                id: 1, name: "CONTACT", x: 42, y: 42, spawnSerial: 1, powerTime: 30,
                 power: ["regular", "starman"].contains(kind) ? "" : kind, charges: 3, machineRounds: 180)
             if kind == "starman" || profile == "starman" { shooter.starmanTime = 30 }
-            if profile == "speed" { shooter.speedTime = 30; shooter.speedStacks = 5 }
+            if profile == "speed" {
+                shooter.speedTime = 30
+                shooter.speedStacks = 5
+            }
             if profile == "ghost" { shooter.ghostTime = 30 }
-            var victim = ArenaTank(id: 2, name: "TARGET", x: kind == "starman" ? 75 : 78, y: 42, bot: true,
+            var victim = ArenaTank(
+                id: 2, name: "TARGET", x: kind == "starman" ? 75 : 78, y: 42, bot: true,
                 spawnSerial: 1, cooldown: 999)
-            if profile == "shield" { victim.shield = 30; victim.shieldCharges = 1 }
-            hitArena = PracticeArena(seed: 42, name: "CONTACT", colorIndex: 0, botCount: 0, initialTanks: [shooter, victim])
+            if profile == "shield" {
+                victim.shield = 30
+                victim.shieldCharges = 1
+            }
+            hitArena = PracticeArena(
+                seed: 42, name: "CONTACT", colorIndex: 0, botCount: 0, initialTanks: [shooter, victim])
         }
         let arena = hitArena!
         let credited = min(dt, 0.1)
         hitCreditedGap += max(0, dt - credited)
         hitAccumulator += credited
         while hitAccumulator + 1e-9 >= 1 / 60 {
-            arena.step(input: GameInput(fire: !hitFired && weapons[hitEpisode % weapons.count] != "starman"), dt: 1 / 60)
-            hitFired = true; hitAccumulator = max(0, hitAccumulator - 1 / 60)
+            arena.step(
+                input: GameInput(fire: !hitFired && weapons[hitEpisode % weapons.count] != "starman"),
+                dt: 1 / 60)
+            hitFired = true
+            hitAccumulator = max(0, hitAccumulator - 1 / 60)
         }
         let visible = arena.presentationSnapshot(fraction: hitAccumulator * 60, now: elapsed)
         let wasPending = hitCase.result == nil
         hitCase.observe(authoritative: arena.snapshot, visible: visible, dt: dt)
         if wasPending, let result = hitCase.result {
             hitChecks += 1
-            if result == .passed { completedHitCombinations.insert(hitLabel) }
-            else { hitFailures.append(hitLabel + ": damage before displayed contact") }
+            if result == .passed {
+                completedHitCombinations.insert(hitLabel)
+            } else {
+                hitFailures.append(hitLabel + ": damage before displayed contact")
+            }
         }
         return ContactProbeCase.renderSnapshot(visible, episode: hitEpisode)
     }
 
-    func record(dt: Double, cpu: Double, simulation: Double, audio: Double, hud: Double,
-                rendering: GameScene.RenderMetrics) {
+    func record(
+        dt: Double, cpu: Double, simulation: Double, audio: Double, hud: Double,
+        rendering: GameScene.RenderMetrics
+    ) {
         if elapsed <= 3 { startupMaxFrame = max(startupMaxFrame, dt) }
         var motion = [0.0, 0.0, 0.0]
         if let pose = motionPose, let previous = previousMotionPose, dt > 0 {
@@ -390,43 +528,58 @@ final class FrameProfiler {
             let key = "\(event.episode):\(event.stage)"
             if key != previousPickupEvent {
                 if event.stage == "plain" {
-                    FileHandle.standardOutput.write(Data("leqra pickup probe: \(event.power) at \(elapsed)s\n".utf8))
+                    FileHandle.standardOutput.write(
+                        Data("leqra pickup probe: \(event.power) at \(elapsed)s\n".utf8))
                 }
-                pickupEvents.append(["power": event.power, "stage": event.stage, "elapsed": elapsed,
+                pickupEvents.append([
+                    "power": event.power, "stage": event.stage, "elapsed": elapsed,
                     "cpuMS": cpu * 1000, "renderMS": rendering.totalSeconds * 1000,
                     "tanksMS": rendering.tankSeconds * 1000, "textureCreations": rendering.textureCreations,
                     "audioMS": audio * 1000, "hudMS": hud * 1000, "nextFrameMS": 0.0,
-                    "cpuMaxMS": cpu * 1000, "frameMaxMS": dt * 1000, "hudMaxMS": hud * 1000])
+                    "cpuMaxMS": cpu * 1000, "frameMaxMS": dt * 1000, "hudMaxMS": hud * 1000,
+                ])
                 previousPickupEvent = key
-            } else if !pickupEvents.isEmpty, pickupEvents[pickupEvents.count - 1]["nextFrameMS"] as? Double == 0 {
+            } else if !pickupEvents.isEmpty,
+                pickupEvents[pickupEvents.count - 1]["nextFrameMS"] as? Double == 0
+            {
                 pickupEvents[pickupEvents.count - 1]["nextFrameMS"] = dt * 1000
             }
             if !pickupEvents.isEmpty {
                 let index = pickupEvents.count - 1
-                pickupEvents[index]["cpuMaxMS"] = max(pickupEvents[index]["cpuMaxMS"] as? Double ?? 0, cpu * 1000)
-                pickupEvents[index]["frameMaxMS"] = max(pickupEvents[index]["frameMaxMS"] as? Double ?? 0, dt * 1000)
-                pickupEvents[index]["hudMaxMS"] = max(pickupEvents[index]["hudMaxMS"] as? Double ?? 0, hud * 1000)
+                pickupEvents[index]["cpuMaxMS"] = max(
+                    pickupEvents[index]["cpuMaxMS"] as? Double ?? 0, cpu * 1000)
+                pickupEvents[index]["frameMaxMS"] = max(
+                    pickupEvents[index]["frameMaxMS"] as? Double ?? 0, dt * 1000)
+                pickupEvents[index]["hudMaxMS"] = max(
+                    pickupEvents[index]["hudMaxMS"] as? Double ?? 0, hud * 1000)
             }
         }
         if firstShotProbe {
             let visible = weapon == "laser" ? rendering.effects : rendering.bullets
             if visible > 0 && previousBulletCount == 0 {
-                firstShots.append(["elapsed": elapsed, "cpuMS": cpu * 1000, "renderMS": rendering.totalSeconds * 1000,
-                    "bulletsMS": rendering.bulletSeconds * 1000, "projectileCreations": rendering.projectileCreations,
+                firstShots.append([
+                    "elapsed": elapsed, "cpuMS": cpu * 1000, "renderMS": rendering.totalSeconds * 1000,
+                    "bulletsMS": rendering.bulletSeconds * 1000,
+                    "projectileCreations": rendering.projectileCreations,
                     "textureCreations": rendering.textureCreations, "simulationMS": simulation * 1000,
-                    "audioMS": audio * 1000, "hudMS": hud * 1000, "nextFrameMS": 0.0])
+                    "audioMS": audio * 1000, "hudMS": hud * 1000, "nextFrameMS": 0.0,
+                ])
             } else if previousBulletCount > 0, !firstShots.isEmpty,
-                      firstShots[firstShots.count - 1]["nextFrameMS"] as? Double == 0 {
+                firstShots[firstShots.count - 1]["nextFrameMS"] as? Double == 0
+            {
                 firstShots[firstShots.count - 1]["nextFrameMS"] = dt * 1000
             }
             previousBulletCount = visible
         }
         guard !reported, elapsed > 3 else { return }
         if elapsed <= duration + 3 {
-            samples.append([dt, cpu, simulation, audio, hud, rendering.totalSeconds,
-                            rendering.mapSeconds, rendering.tankSeconds, rendering.guideSeconds,
-                            rendering.bulletSeconds, rendering.effectSeconds,
-                            rendering.mapRasterSeconds, rendering.mapInstallSeconds] + motion)
+            samples.append(
+                [
+                    dt, cpu, simulation, audio, hud, rendering.totalSeconds,
+                    rendering.mapSeconds, rendering.tankSeconds, rendering.guideSeconds,
+                    rendering.bulletSeconds, rendering.effectSeconds,
+                    rendering.mapRasterSeconds, rendering.mapInstallSeconds,
+                ] + motion)
             projectileCreations += rendering.projectileCreations
             effectCreations += rendering.effectCreations
             mapRebuilds += rendering.mapRebuilds
@@ -436,18 +589,25 @@ final class FrameProfiler {
         guard !samples.isEmpty else { return }
         func distribution(_ column: Int, multiplier: Double = 1000) -> [String: Double] {
             let values = samples.map { $0[column] * multiplier }.sorted()
-            func quantile(_ fraction: Double) -> Double { values[min(values.count - 1, Int(Double(values.count - 1) * fraction))] }
-            return ["mean": values.reduce(0, +) / Double(values.count), "p50": quantile(0.5),
-                    "p95": quantile(0.95), "p99": quantile(0.99), "max": values.last!]
+            func quantile(_ fraction: Double) -> Double {
+                values[min(values.count - 1, Int(Double(values.count - 1) * fraction))]
+            }
+            return [
+                "mean": values.reduce(0, +) / Double(values.count), "p50": quantile(0.5),
+                "p95": quantile(0.95), "p99": quantile(0.99), "max": values.last!,
+            ]
         }
-        var report: [String: Any] = ["weapon": weapon, "bullets": count, "pan": pans, "buffs": buffs.sorted(),
+        var report: [String: Any] = [
+            "weapon": weapon, "bullets": count, "pan": pans, "buffs": buffs.sorted(),
             "frames": samples.count, "fps": Double(samples.count) / samples.reduce(0) { $0 + $1[0] },
             "frameMS": distribution(0), "cpuMS": distribution(1), "simulationMS": distribution(2),
             "audioMS": distribution(3), "hudMS": distribution(4), "renderMS": distribution(5),
             "mapMS": distribution(6), "tanksMS": distribution(7), "guideMS": distribution(8),
             "bulletsMS": distribution(9), "effectsMS": distribution(10),
             "mapRasterMS": distribution(11), "mapInstallMS": distribution(12),
-            "projectileCreations": projectileCreations, "effectCreations": effectCreations, "mapRebuilds": mapRebuilds]
+            "projectileCreations": projectileCreations, "effectCreations": effectCreations,
+            "mapRebuilds": mapRebuilds,
+        ]
         if let projectileSpeedOverride { report["projectileSpeed"] = projectileSpeedOverride }
         if let motionMode {
             report["motion"] = motionMode
@@ -457,28 +617,42 @@ final class FrameProfiler {
         }
         if firstShotProbe { report["firstShots"] = firstShots }
         if hitMatrixProbe {
-            if completedHitCombinations.count < 40 { hitFailures.append("Incomplete matrix: \(completedHitCombinations.count) of 40 combinations completed") }
-            report["contactChecks"] = hitChecks; report["contactFailures"] = hitFailures
+            if completedHitCombinations.count < 40 {
+                hitFailures.append(
+                    "Incomplete matrix: \(completedHitCombinations.count) of 40 combinations completed")
+            }
+            report["contactChecks"] = hitChecks
+            report["contactFailures"] = hitFailures
             report["contactCombinationCount"] = completedHitCombinations.count
             report["contactCombinations"] = completedHitCombinations.sorted()
             report["contactCaseTrace"] = hitCaseTrace
             report["contactCreditedGapMS"] = hitCreditedGap * 1000
             report["startupMaxFrameMS"] = startupMaxFrame * 1000
         }
-        if pickupMatrixProbe { report["pickupEvents"] = pickupEvents; report["fixed"] = world != nil }
-        if ammoRefillProbe { report["ammoRefillChecks"] = ammoChecks; report["ammoRefillFailures"] = ammoFailures; report["fixed"] = world != nil }
+        if pickupMatrixProbe {
+            report["pickupEvents"] = pickupEvents
+            report["fixed"] = world != nil
+        }
+        if ammoRefillProbe {
+            report["ammoRefillChecks"] = ammoChecks
+            report["ammoRefillFailures"] = ammoFailures
+            report["fixed"] = world != nil
+        }
         do {
             let data = try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys])
             if pickupMatrixProbe {
-                let destination = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("leqra-profile.json")
+                let destination = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("leqra-profile.json")
                 try data.write(to: destination, options: .atomic)
                 FileHandle.standardOutput.write(Data("leqra performance report saved\n".utf8))
             } else if let json = String(data: data, encoding: .utf8) {
                 FileHandle.standardOutput.write(Data(("leqra performance: " + json + "\n").utf8))
             }
         } catch {
-            let invalid = report.filter { !JSONSerialization.isValidJSONObject([$0.key: $0.value]) }.map(\.key)
-            FileHandle.standardOutput.write(Data("leqra performance report error: \(error), fields \(invalid)\n".utf8))
+            let invalid = report.filter { !JSONSerialization.isValidJSONObject([$0.key: $0.value]) }.map(
+                \.key)
+            FileHandle.standardOutput.write(
+                Data("leqra performance report error: \(error), fields \(invalid)\n".utf8))
         }
     }
 }

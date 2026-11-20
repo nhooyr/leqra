@@ -14,11 +14,15 @@ object AmmoEpoch {
         tank.ammoUsed = 0
         tank.grenades = 0
         tank.grenadeLife = 0.0
-        tank.charges = when (tank.power) {
-            "scatter" -> 5
-            "homing", "grenade", "laser", "cannon" -> 3
-            else -> 0
-        }
+        tank.charges =
+            when (tank.power) {
+                "scatter" -> 5
+                "homing",
+                "grenade",
+                "laser",
+                "cannon" -> 3
+                else -> 0
+            }
         tank.machineRounds = if (tank.power == "rapid") 180 else 0
     }
 }

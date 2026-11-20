@@ -12,7 +12,7 @@ class CallsignDraftsTest {
         assertNotEquals(state.name(0), state.name(1))
         for (seat in 0..1) {
             assertTrue(
-                Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(state.name(seat))
+                Regex("pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}").matches(state.name(seat)),
             )
             assertTrue(state.pending(seat))
         }
@@ -59,12 +59,12 @@ class CallsignDraftsTest {
                     if (change == 3) "https://two.test" else request.origin,
                     if (change == 4) "key2" else request.key,
                     "pilot-abcdefghij",
-                )
+                ),
             )
         }
         val state = fresh()
         assertTrue(
-            state.complete(state.request(0, "origin", "key"), "origin", "key", "pilot-abcdefghij")
+            state.complete(state.request(0, "origin", "key"), "origin", "key", "pilot-abcdefghij"),
         )
         assertEquals("pilot-abcdefghij", state.name(0))
         assertFalse(state.pending(0))
@@ -87,7 +87,8 @@ class CallsignDraftsTest {
 
     @Test
     fun explicitGenerationStampIsInvalidatedEvenWhenAnEditReturnsToTheSameName() {
-        val state = CallsignDrafts(listOf("FIRST", "SECOND"), listOf(false, false), listOf(null, null))
+        val state =
+            CallsignDrafts(listOf("FIRST", "SECOND"), listOf(false, false), listOf(null, null))
         val request = state.request(0, "origin", "key")
         assertTrue(state.isCurrent(request, "origin", "key"))
         state.edit(0, "EDIT")

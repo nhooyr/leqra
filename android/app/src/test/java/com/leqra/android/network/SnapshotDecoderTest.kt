@@ -9,14 +9,17 @@ import org.junit.Test
 class SnapshotDecoderTest {
     @Test
     fun matchReportUsesRoomMemberAcrossSeatChangesAndKeepsModeStatistics() {
-        val packet = JSONObject("""{
+        val packet =
+            JSONObject(
+                """{
             "type":"state","tick":9,"phase":"matchOver","tanks":[],"bullets":[],
             "matchStats":{"mode":"ctf","duration":62.5,"rounds":3,"players":[
                 {"id":1,"member":23,"controllerMember":17,"seat":7,"name":"Wing","kind":"local","color":"#ec4899","team":2,"score":3,
                 "eliminations":8,"deaths":2,"selfDestructs":1,"captures":3,"flagReturns":4,"hillSeconds":6.5,"winner":true},
                 {"id":2,"member":18,"seat":0,"name":"Remote","kind":"human","score":1}
             ]}
-        }""")
+        }""",
+            )
         val report = SnapshotDecoder().decode(packet).matchStats!!
         assertEquals("ctf", report.mode)
         assertEquals(62.5, report.duration, 0.0)
@@ -25,7 +28,16 @@ class SnapshotDecoderTest {
         assertEquals(2, wing.localSeat(17))
         assertEquals(0, remote.localSeat(17))
         assertEquals(1, remote.localSeat(18))
-        assertEquals(listOf(8, 2, 1, 3, 4), listOf(wing.eliminations, wing.deaths, wing.selfDestructs, wing.captures, wing.flagReturns))
+        assertEquals(
+            listOf(8, 2, 1, 3, 4),
+            listOf(
+                wing.eliminations,
+                wing.deaths,
+                wing.selfDestructs,
+                wing.captures,
+                wing.flagReturns,
+            ),
+        )
         assertEquals(6.5, wing.hillSeconds, 0.0)
         assertTrue(wing.winner)
         assertNull(SnapshotDecoder().decode(packet.apply { remove("matchStats") }).matchStats)
@@ -33,7 +45,11 @@ class SnapshotDecoderTest {
 
     @Test
     fun perTierRatesRoundTripAndLegacyRandomPresetsMigrateExactly() {
-        val legacy = JSONObject().put("infinityBotDifficulty", "normal").put("infinityBotSpawnRate", 2.0).put("infinityRandomDifficulty", true)
+        val legacy =
+            JSONObject()
+                .put("infinityBotDifficulty", "normal")
+                .put("infinityBotSpawnRate", 2.0)
+                .put("infinityRandomDifficulty", true)
         val rules = ProtocolJson.roomRules(legacy)
         assertNull(rules.infinityBotSpawnRates)
         val migrated = ProtocolJson.roomRules(ProtocolJson.rules(rules))
@@ -41,16 +57,33 @@ class SnapshotDecoderTest {
         assertEquals(2.0 / 3, migrated.roamingBotSpawnRates().getValue("easy"), 0.0)
         assertEquals(2.0 / 3, migrated.roamingBotSpawnRates().getValue("normal"), 0.0)
         assertEquals(0.0, migrated.roamingBotSpawnRates().getValue("hard"), 0.0)
-        val modern = JSONObject(legacy.toString()).put("infinityBotSpawnRates", JSONObject().put("dumb", .125).put("godlike", 4.0))
+        val modern =
+            JSONObject(legacy.toString())
+                .put("infinityBotSpawnRates", JSONObject().put("dumb", .125).put("godlike", 4.0))
         val actual = ProtocolJson.roomRules(modern)
         assertEquals(.125, actual.roamingBotSpawnRates().getValue("dumb"), 0.0)
         assertEquals(0.0, actual.roamingBotSpawnRates().getValue("normal"), 0.0)
-        assertEquals(actual.roamingBotSpawnRates(), ProtocolJson.roomRules(ProtocolJson.rules(actual)).roamingBotSpawnRates())
-        val allOff = ProtocolJson.roomRules(JSONObject(legacy.toString()).put("infinityBotSpawnRates", JSONObject()))
+        assertEquals(
+            actual.roamingBotSpawnRates(),
+            ProtocolJson.roomRules(ProtocolJson.rules(actual)).roamingBotSpawnRates(),
+        )
+        val allOff =
+            ProtocolJson.roomRules(
+                JSONObject(legacy.toString()).put("infinityBotSpawnRates", JSONObject()),
+            )
         assertNotNull(allOff.infinityBotSpawnRates)
         assertTrue(allOff.roamingBotSpawnRates().values.all { it == 0.0 })
-        for (invalid in listOf(JSONObject().put("normal", -1), JSONObject().put("normal", 4.1), JSONObject().put("unknown", 1), JSONObject().put("normal", "2"), JSONObject().put("normal", JSONObject.NULL))) {
-            assertThrows(IllegalArgumentException::class.java) { ProtocolJson.roomRules(JSONObject().put("infinityBotSpawnRates", invalid)) }
+        for (invalid in
+            listOf(
+                JSONObject().put("normal", -1),
+                JSONObject().put("normal", 4.1),
+                JSONObject().put("unknown", 1),
+                JSONObject().put("normal", "2"),
+                JSONObject().put("normal", JSONObject.NULL),
+            )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                ProtocolJson.roomRules(JSONObject().put("infinityBotSpawnRates", invalid))
+            }
         }
     }
 
@@ -58,25 +91,50 @@ class SnapshotDecoderTest {
     fun botStandingsKeepAuthoritativeDifficultyForInfinityAndFixedModes() {
         for (level in listOf("dumb", "normal", "godlike")) {
             val name = "Bot 27 - " + level.replaceFirstChar { it.titlecase() }
-            val entry = JSONObject().put("id", 27).put("name", name).put("bot", true).put("difficulty", level)
-            val packet = JSONObject().put("type", "state").put("tick", 1)
-                .put("tanks", org.json.JSONArray().put(entry)).put("bullets", org.json.JSONArray())
-                .put("players", 0).put("tankCount", 1)
-                .put("leaderboard", org.json.JSONArray().put(entry))
+            val entry =
+                JSONObject()
+                    .put("id", 27)
+                    .put("name", name)
+                    .put("bot", true)
+                    .put("difficulty", level)
+            val packet =
+                JSONObject()
+                    .put("type", "state")
+                    .put("tick", 1)
+                    .put("tanks", org.json.JSONArray().put(entry))
+                    .put("bullets", org.json.JSONArray())
+                    .put("players", 0)
+                    .put("tankCount", 1)
+                    .put("leaderboard", org.json.JSONArray().put(entry))
             assertEquals(level, SnapshotDecoder().decode(packet).leaderboard.single().difficulty)
             assertEquals(name, SnapshotDecoder().decode(packet).leaderboard.single().name)
             packet.put("phase", "playing")
             assertEquals(level, SnapshotDecoder().decode(packet).leaderboard.single().difficulty)
         }
-        assertEquals("", ProtocolJson.leaderboardEntry(JSONObject().put("bot", true).put("name", "Bot 3")).difficulty)
+        assertEquals(
+            "",
+            ProtocolJson.leaderboardEntry(JSONObject().put("bot", true).put("name", "Bot 3"))
+                .difficulty,
+        )
     }
 
     @Test
     fun contactIdentityPoseAndShieldStateDecodeForFixedAndInfinity() {
-        val contact = JSONObject("""{"projectileId":17,"kind":"cannon","tick":1.25,"target":8,"spawnSerial":3,"before":{"x":140,"y":42,"angle":0.4,"vx":8,"vy":0,"hp":1,"shield":3,"shieldCharges":2,"invulnerable":0,"spawnProtected":false}}""")
+        val contact =
+            JSONObject(
+                """{"projectileId":17,"kind":"cannon","tick":1.25,"target":8,"spawnSerial":3,"before":{"x":140,"y":42,"angle":0.4,"vx":8,"vy":0,"hp":1,"shield":3,"shieldCharges":2,"invulnerable":0,"spawnProtected":false}}""",
+            )
         for (fixed in listOf(false, true)) {
-            val packet = JSONObject("""{"type":"state","tick":2,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0}""")
-            val event = JSONObject().put("id", 2).put("kind", "shield").put("type", "shield").put("contact", contact)
+            val packet =
+                JSONObject(
+                    """{"type":"state","tick":2,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0}""",
+                )
+            val event =
+                JSONObject()
+                    .put("id", 2)
+                    .put("kind", "shield")
+                    .put("type", "shield")
+                    .put("contact", contact)
             packet.put(if (fixed) "events" else "effects", org.json.JSONArray().put(event))
             if (fixed) packet.put("phase", "playing")
             val decoded = SnapshotDecoder().decode(packet).effects.single().contact!!
@@ -87,35 +145,94 @@ class SnapshotDecoderTest {
             assertEquals(2, decoded.before.shieldCharges)
             assertEquals(140.0, decoded.before.x, 0.0)
         }
-        for ((field, value) in listOf("projectileId" to -1, "target" to 8.5, "spawnSerial" to -1, "tick" to -1, "kind" to "unknown")) {
+        for ((field, value) in
+            listOf(
+                "projectileId" to -1,
+                "target" to 8.5,
+                "spawnSerial" to -1,
+                "tick" to -1,
+                "kind" to "unknown",
+            )) {
             val invalid = JSONObject(contact.toString()).put(field, value)
             assertNull(ProtocolJson.arenaEffect(JSONObject().put("contact", invalid)).contact)
         }
     }
+
     @Test
     fun completedProjectilePathsDecodeForFixedAndInfinityWithoutChangingAuthority() {
-        val descriptor = """{"id":17,"owner":0,"colorIndex":3,"startTick":1,"endTick":1.25,"kind":"cannon","radius":18,"points":[{"x":10,"y":20,"tick":1},{"x":13,"y":20,"tick":1.25}]}"""
+        val descriptor =
+            """{"id":17,"owner":0,"colorIndex":3,"startTick":1,"endTick":1.25,"kind":"cannon","radius":18,"points":[{"x":10,"y":20,"tick":1},{"x":13,"y":20,"tick":1.25}]}"""
         for (fixed in listOf(false, true)) {
-            val packet = JSONObject("""{"type":"state","tick":2,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0,"effects":[{"id":1,"kind":"impact","flight":$descriptor}]}""")
-            if (fixed) { packet.put("phase", "playing"); packet.put("events", org.json.JSONArray().put(JSONObject().put("id", 1).put("type", "impact").put("flight", JSONObject(descriptor)))) }
+            val packet =
+                JSONObject(
+                    """{"type":"state","tick":2,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0,"effects":[{"id":1,"kind":"impact","flight":$descriptor}]}""",
+                )
+            if (fixed) {
+                packet.put("phase", "playing")
+                packet.put(
+                    "events",
+                    org.json
+                        .JSONArray()
+                        .put(
+                            JSONObject()
+                                .put("id", 1)
+                                .put("type", "impact")
+                                .put("flight", JSONObject(descriptor)),
+                        ),
+                )
+            }
             val state = SnapshotDecoder().decode(packet)
             assertTrue(state.bullets.isEmpty())
             assertEquals(17, state.effects.single().flight!!.id)
             assertEquals(0, state.effects.single().flight!!.owner)
             assertEquals(1.25, state.effects.single().flight!!.points.last().tick, 0.0)
         }
-        val bad = JSONObject().put("id", 1).put("flight", JSONObject(descriptor).put("points", org.json.JSONArray()))
+        val bad =
+            JSONObject()
+                .put("id", 1)
+                .put("flight", JSONObject(descriptor).put("points", org.json.JSONArray()))
         assertNull(ProtocolJson.arenaEffect(bad).flight)
-        val legacy = JSONObject(descriptor).apply { remove("kind"); remove("radius") }
-        assertEquals("cannon", ProtocolJson.arenaEffect(JSONObject().put("flight", legacy)).flight!!.kind)
+        val legacy =
+            JSONObject(descriptor).apply {
+                remove("kind")
+                remove("radius")
+            }
+        assertEquals(
+            "cannon",
+            ProtocolJson.arenaEffect(JSONObject().put("flight", legacy)).flight!!.kind,
+        )
         assertEquals(2.0, ProtocolJson.roomRules(JSONObject()).infinityBotSpawnRate, 0.0)
-        assertEquals(.5, ProtocolJson.roomRules(JSONObject().put("infinityBotSpawnRate", .5)).infinityBotSpawnRate, 0.0)
-        assertEquals(4.0, ProtocolJson.rules(com.leqra.core.RoomRules(infinityBotSpawnRate = 4.0)).getDouble("infinityBotSpawnRate"), 0.0)
+        assertEquals(
+            .5,
+            ProtocolJson.roomRules(JSONObject().put("infinityBotSpawnRate", .5))
+                .infinityBotSpawnRate,
+            0.0,
+        )
+        assertEquals(
+            4.0,
+            ProtocolJson.rules(com.leqra.core.RoomRules(infinityBotSpawnRate = 4.0))
+                .getDouble("infinityBotSpawnRate"),
+            0.0,
+        )
     }
+
     @Test
     fun spectatorPacketsKeepFullRankingFollowTargetAndDeadDistantTank() {
-        val packet = JSONObject("""{"type":"state","tick":24,"spectating":true,"following":81,"tanks":[{"id":81,"name":"Far Tank","x":240000,"y":-300000,"hp":0}],"bullets":[],"leaderboard":[],"players":2,"tankCount":24}""")
-        repeat(24) { packet.getJSONArray("leaderboard").put(JSONObject().put("id", it + 81).put("name", "Tank $it").put("score", 24 - it).put("bot", it > 1)) }
+        val packet =
+            JSONObject(
+                """{"type":"state","tick":24,"spectating":true,"following":81,"tanks":[{"id":81,"name":"Far Tank","x":240000,"y":-300000,"hp":0}],"bullets":[],"leaderboard":[],"players":2,"tankCount":24}""",
+            )
+        repeat(24) {
+            packet
+                .getJSONArray("leaderboard")
+                .put(
+                    JSONObject()
+                        .put("id", it + 81)
+                        .put("name", "Tank $it")
+                        .put("score", 24 - it)
+                        .put("bot", it > 1),
+                )
+        }
         val state = SnapshotDecoder().decode(packet)
         assertTrue(state.spectating)
         assertEquals(81, state.following)
@@ -127,23 +244,38 @@ class SnapshotDecoderTest {
         val legacy = SnapshotDecoder().decode(packet)
         assertFalse(legacy.spectating)
         assertEquals(0, legacy.following)
-        val welcome = NetworkWelcome.parse(JSONObject().put("id", 0).put("seed", 123).put("spectating", true).put("following", 81))
+        val welcome =
+            NetworkWelcome.parse(
+                JSONObject()
+                    .put("id", 0)
+                    .put("seed", 123)
+                    .put("spectating", true)
+                    .put("following", 81),
+            )
         assertEquals(0, welcome.id)
         assertTrue(welcome.spectating)
         assertEquals(81, welcome.following)
         assertNull(welcome.localId)
         assertNull(welcome.publicToken)
-        val roleChange = NetworkWelcome.parse(JSONObject().put("id", 3).put("localId", -1).put("localMember", 0))
+        val roleChange =
+            NetworkWelcome.parse(JSONObject().put("id", 3).put("localId", -1).put("localMember", 0))
         assertNull("The room identity sentinel means no P2", roleChange.localId)
         assertNull(roleChange.localMember)
-        assertEquals(0, NetworkWelcome.parse(JSONObject().put("id", 3).put("localId", 0).put("localMember", 21)).localId)
+        assertEquals(
+            0,
+            NetworkWelcome.parse(JSONObject().put("id", 3).put("localId", 0).put("localMember", 21))
+                .localId,
+        )
     }
 
     @Test
     fun authoritativeLongGodlikeNamesRemainWholeAcrossTankLeaderboardAndNotice() {
         val name = "Bot 1234567890 - Godlike"
         assertTrue(name.length > 16)
-        val packet = JSONObject("""{"type":"state","tick":1,"tanks":[{"id":7,"name":"$name","bot":true,"difficulty":"godlike"}],"bullets":[],"leaderboard":[{"id":7,"name":"$name","score":1,"bot":true}],"godlikeSpawns":[{"id":7,"spawnSerial":2,"name":"$name"}],"players":0,"tankCount":1}""")
+        val packet =
+            JSONObject(
+                """{"type":"state","tick":1,"tanks":[{"id":7,"name":"$name","bot":true,"difficulty":"godlike"}],"bullets":[],"leaderboard":[{"id":7,"name":"$name","score":1,"bot":true}],"godlikeSpawns":[{"id":7,"spawnSerial":2,"name":"$name"}],"players":0,"tankCount":1}""",
+            )
         val state = SnapshotDecoder().decode(packet)
         assertEquals(name, state.tanks.single().name)
         assertEquals(name, state.leaderboard.single().name)
@@ -153,11 +285,24 @@ class SnapshotDecoderTest {
 
     @Test
     fun optionalGodlikeSpawnEventsRemainBoundedAndOldPacketsNeedNoNewFields() {
-        val packet = JSONObject("""{"type":"state","tick":1,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0}""")
+        val packet =
+            JSONObject(
+                """{"type":"state","tick":1,"tanks":[],"bullets":[],"leaderboard":[],"players":0,"tankCount":0}""",
+            )
         assertTrue(SnapshotDecoder().decode(packet).godlikeSpawns.isEmpty())
-        packet.put("godlikeSpawns", org.json.JSONArray().apply {
-            repeat(200) { put(JSONObject().put("id", it).put("spawnSerial", 3).put("name", "Bot $it - Godlike")) }
-        })
+        packet.put(
+            "godlikeSpawns",
+            org.json.JSONArray().apply {
+                repeat(200) {
+                    put(
+                        JSONObject()
+                            .put("id", it)
+                            .put("spawnSerial", 3)
+                            .put("name", "Bot $it - Godlike"),
+                    )
+                }
+            },
+        )
         val events = SnapshotDecoder().decode(packet).godlikeSpawns
         assertEquals(128, events.size)
         assertEquals(3, events[0].spawnSerial)
@@ -211,8 +356,8 @@ class SnapshotDecoderTest {
             SnapshotDecoder()
                 .decode(
                     JSONObject(
-                        """{"type":"state","tick":1,"tanks":[{"id":2,"name":"Bot 2 - Godlike","bot":true,"difficulty":"godlike"},{"id":3,"name":"Bot 3 - Godlike","bot":true,"difficulty":"dumb"},{"id":4,"name":"Godlike Bot 4","bot":false,"difficulty":"godlike"},{"id":5,"name":"Old server bot","bot":true}],"bullets":[],"leaderboard":[],"players":1,"tankCount":4}"""
-                    )
+                        """{"type":"state","tick":1,"tanks":[{"id":2,"name":"Bot 2 - Godlike","bot":true,"difficulty":"godlike"},{"id":3,"name":"Bot 3 - Godlike","bot":true,"difficulty":"dumb"},{"id":4,"name":"Godlike Bot 4","bot":false,"difficulty":"godlike"},{"id":5,"name":"Old server bot","bot":true}],"bullets":[],"leaderboard":[],"players":1,"tankCount":4}""",
+                    ),
                 )
         assertEquals(
             listOf("godlike", "dumb", "godlike", "normal"),
@@ -273,11 +418,17 @@ class SnapshotDecoderTest {
     fun configuredServerAllowsCustomHttpsInReleaseAndHttpInDebug() {
         assertEquals(
             "https://example.com:8443",
-            ServerAddress.configuredOrigin("  https://EXAMPLE.com:8443/rooms?room=abc  ", allowCleartext = false),
+            ServerAddress.configuredOrigin(
+                "  https://EXAMPLE.com:8443/rooms?room=abc  ",
+                allowCleartext = false,
+            ),
         )
         assertThrows(IllegalArgumentException::class.java) {
             ServerAddress.configuredOrigin("http://localhost:8080", allowCleartext = false)
         }
-        assertEquals("http://localhost:8080", ServerAddress.configuredOrigin("http://localhost:8080", allowCleartext = true))
+        assertEquals(
+            "http://localhost:8080",
+            ServerAddress.configuredOrigin("http://localhost:8080", allowCleartext = true),
+        )
     }
 }

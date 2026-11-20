@@ -33,6 +33,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             field = value
             invalidate()
         }
+
     var controlsLayout = true
     var showFireControl = true
     var showTankLabels = true
@@ -85,10 +86,18 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var artworkPrepared = false
     private var released = false
     private val artworkPreparation = Executors.newSingleThreadExecutor { task ->
-        Thread({
-            runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
-            task.run()
-        }, "leqra-artwork").apply { isDaemon = true }
+        Thread(
+                {
+                    runCatching {
+                        android.os.Process.setThreadPriority(
+                            android.os.Process.THREAD_PRIORITY_BACKGROUND,
+                        )
+                    }
+                    task.run()
+                },
+                "leqra-artwork",
+            )
+            .apply { isDaemon = true }
     }
     private val terrain = TerrainCache { postInvalidateOnAnimation() }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -97,14 +106,16 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             typeface = Typeface.MONOSPACE
             textAlign = Paint.Align.CENTER
         }
-    private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = boldTypeface
-        textAlign = Paint.Align.RIGHT
-    }
-    private val countOutlinePaint = Paint(countPaint).apply {
-        style = Paint.Style.STROKE
-        strokeJoin = Paint.Join.ROUND
-    }
+    private val countPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = boldTypeface
+            textAlign = Paint.Align.RIGHT
+        }
+    private val countOutlinePaint =
+        Paint(countPaint).apply {
+            style = Paint.Style.STROKE
+            strokeJoin = Paint.Join.ROUND
+        }
     private val path = Path()
     private val destination = RectF()
     private val viewport = RectF()
@@ -240,20 +251,37 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private var mouseAiming = false
     private var mouseFiring = false
     var mouseInputEnabled = false
-        set(value) { field = value; if (!value) clearMouseControls() }
+        set(value) {
+            field = value
+            if (!value) clearMouseControls()
+        }
+
     var mouseAimEnabled = true
-        set(value) { field = value; if (!value) clearMouseAim() }
+        set(value) {
+            field = value
+            if (!value) clearMouseAim()
+        }
+
     var mouseFireEnabled = true
-        set(value) { field = value; if (!value) mouseFiring = false }
+        set(value) {
+            field = value
+            if (!value) mouseFiring = false
+        }
+
     var keyboardInputEnabled = true
     private val mouseControls = GameInput(touchAim = false, aimOnly = true)
-    val hasMouseInput: Boolean get() = mouseAiming || mouseFiring
+    val hasMouseInput: Boolean
+        get() = mouseAiming || mouseFiring
 
-    fun clearMouseAim() { mouseAiming = false }
+    fun clearMouseAim() {
+        mouseAiming = false
+    }
 
     fun clearMouseControls() {
-        mouseAiming = false; mouseFiring = false
-        mouseX = Float.NaN; mouseY = Float.NaN
+        mouseAiming = false
+        mouseFiring = false
+        mouseX = Float.NaN
+        mouseY = Float.NaN
     }
 
     fun mouseInput(): GameInput {
@@ -265,10 +293,12 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             mouseControls.stickX = (dx / distance).toDouble()
             mouseControls.stickY = (dy / distance).toDouble()
         } else {
-            mouseControls.stickX = 0.0; mouseControls.stickY = 0.0
+            mouseControls.stickX = 0.0
+            mouseControls.stickY = 0.0
         }
         return mouseControls
     }
+
     private var stickPointer = -1
     private var firePointer = -1
     private var stickX = 82f
@@ -331,7 +361,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         setLayerType(LAYER_TYPE_NONE, null)
         artworkPreparation.execute {
             val prepared = NativeArt()
-            if (!prepared.prepare()) { prepared.clear(); return@execute }
+            if (!prepared.prepare()) {
+                prepared.clear()
+                return@execute
+            }
             post {
                 if (released) prepared.clear()
                 else {
@@ -447,11 +480,16 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         if (labels.size > 128) labels.keys.retainAll(snapshot.tanks.map { it.id }.toSet())
         val now = if (frameTime > 0) frameTime else System.nanoTime() / 1e9
         for (effect in snapshot.effects) if (effect.id > 0 && seenEffectIDs.add(effect.id)) {
-            if (seenEffectIDs.size > 512) seenEffectIDs.iterator().let { it.next(); it.remove() }
+            if (seenEffectIDs.size > 512)
+                seenEffectIDs.iterator().let {
+                    it.next()
+                    it.remove()
+                }
             if (
                 !effect.kind.startsWith("shot") &&
                     effect.kind != "roundEnd" &&
-                    effect.kind != "objective" && effect.kind != "projectileFlight"
+                    effect.kind != "objective" &&
+                    effect.kind != "projectileFlight"
             ) {
                 if (effects.size == 64) effects.removeAt(0)
                 val shape =
@@ -491,22 +529,37 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 // Cache conservative world bounds once. A laser can cross a pane even when
                 // its source is offscreen; blast bounds include the entire expanding ring.
                 val beam = effect.kind == "laser" && effect.points.size >= 2
-                val margin = if (beam) 10.0 else if (effect.kind == "blast") 224.0 else if (effect.kind == "hit") 72.0 else 51.0
-                effects += VisualEffect(effect, now, shape,
-                    (if (beam) effect.points.minOf { it.x } else effect.x) - margin,
-                    (if (beam) effect.points.minOf { it.y } else effect.y) - margin,
-                    (if (beam) effect.points.maxOf { it.x } else effect.x) + margin,
-                    (if (beam) effect.points.maxOf { it.y } else effect.y) + margin,
-                )
+                val margin =
+                    if (beam) 10.0
+                    else if (effect.kind == "blast") 224.0
+                    else if (effect.kind == "hit") 72.0 else 51.0
+                effects +=
+                    VisualEffect(
+                        effect,
+                        now,
+                        shape,
+                        (if (beam) effect.points.minOf { it.x } else effect.x) - margin,
+                        (if (beam) effect.points.minOf { it.y } else effect.y) - margin,
+                        (if (beam) effect.points.maxOf { it.x } else effect.x) + margin,
+                        (if (beam) effect.points.maxOf { it.y } else effect.y) + margin,
+                    )
             }
         }
         invalidate()
     }
 
     /** A static preview uses the normal renderer without advancing a game or presentation clock. */
-    fun showFrozenScene(snapshot: ArenaSnapshot, maze: InfiniteMaze, localID: Int, time: Double,
-                        effectAges: Map<Int, Double>, outlines: Map<Int, List<BeamPoint>>,
-                        trails: Map<Int, List<BeamPoint>>, controls: Boolean = false, fitPortrait: Boolean = false) {
+    fun showFrozenScene(
+        snapshot: ArenaSnapshot,
+        maze: InfiniteMaze,
+        localID: Int,
+        time: Double,
+        effectAges: Map<Int, Double>,
+        outlines: Map<Int, List<BeamPoint>>,
+        trails: Map<Int, List<BeamPoint>>,
+        controls: Boolean = false,
+        fitPortrait: Boolean = false,
+    ) {
         pause()
         frozenTime = time
         frozenPortraitFit = fitPortrait
@@ -518,11 +571,20 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         for (index in effects.indices) {
             val visual = effects[index]
             val outline = outlines[visual.effect.id]
-            val path = outline?.let { points -> Path().apply {
-                points.forEachIndexed { i, point -> if (i == 0) moveTo(point.x.toFloat(), point.y.toFloat()) else lineTo(point.x.toFloat(), point.y.toFloat()) }
-                close()
-            } }
-            effects[index] = visual.copy(began = time - (effectAges[visual.effect.id] ?: 0.0), shape = path ?: visual.shape)
+            val path = outline?.let { points ->
+                Path().apply {
+                    points.forEachIndexed { i, point ->
+                        if (i == 0) moveTo(point.x.toFloat(), point.y.toFloat())
+                        else lineTo(point.x.toFloat(), point.y.toFloat())
+                    }
+                    close()
+                }
+            }
+            effects[index] =
+                visual.copy(
+                    began = time - (effectAges[visual.effect.id] ?: 0.0),
+                    shape = path ?: visual.shape,
+                )
         }
         invalidate()
     }
@@ -576,7 +638,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
         fullViewport.set(viewport)
         val paired = infinity && localID2 != null && followingID == null
-        val pairedHudHeight = if (paired) min(pairedHudHeightDp, max(0f, fullViewport.height() - 2f)) else 0f
+        val pairedHudHeight =
+            if (paired) min(pairedHudHeightDp, max(0f, fullViewport.height() - 2f)) else 0f
         val sideBySide = landscape && pairedHudHeight == 0f
         primaryViewport.set(fullViewport)
         if (paired) {
@@ -606,8 +669,22 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             viewport.set(fullViewport)
             if (paired) {
                 stroke(0xff506d80.toInt(), 1f)
-                if (sideBySide) canvas.drawLine(primaryViewport.right, viewport.top, primaryViewport.right, viewport.bottom, paint)
-                else canvas.drawLine(viewport.left, primaryViewport.bottom, viewport.right, primaryViewport.bottom, paint)
+                if (sideBySide)
+                    canvas.drawLine(
+                        primaryViewport.right,
+                        viewport.top,
+                        primaryViewport.right,
+                        viewport.bottom,
+                        paint,
+                    )
+                else
+                    canvas.drawLine(
+                        viewport.left,
+                        primaryViewport.bottom,
+                        viewport.right,
+                        primaryViewport.bottom,
+                        paint,
+                    )
             }
             drawEncounterNotice(canvas)
         }
@@ -622,20 +699,29 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         }
     }
 
-    private fun drawWorldScene(canvas: Canvas, state: ArenaSnapshot, landscape: Boolean, pilotID: Int) {
+    private fun drawWorldScene(
+        canvas: Canvas,
+        state: ArenaSnapshot,
+        landscape: Boolean,
+        pilotID: Int,
+    ) {
         drawingPilotID = pilotID
         updateCamera(state, landscape, pilotID)
         if (pilotID == localID) {
             val tank = state.tanks.firstOrNull { it.id == localID && it.hp > 0 }
-            aimTankX = tank?.let { viewport.centerX() + ((it.x - cameraX) * zoom).toFloat() } ?: Float.NaN
-            aimTankY = tank?.let { viewport.centerY() + ((it.y - cameraY) * zoom).toFloat() } ?: Float.NaN
+            aimTankX =
+                tank?.let { viewport.centerX() + ((it.x - cameraX) * zoom).toFloat() } ?: Float.NaN
+            aimTankY =
+                tank?.let { viewport.centerY() + ((it.y - cameraY) * zoom).toFloat() } ?: Float.NaN
             aimTankZoom = zoom
         }
         val mouseID = localID2 ?: localID
         if (!infinity || pilotID == mouseID) {
             val tank = state.tanks.firstOrNull { it.id == mouseID && it.hp > 0 }
-            mouseTankX = tank?.let { viewport.centerX() + ((it.x - cameraX) * zoom).toFloat() } ?: Float.NaN
-            mouseTankY = tank?.let { viewport.centerY() + ((it.y - cameraY) * zoom).toFloat() } ?: Float.NaN
+            mouseTankX =
+                tank?.let { viewport.centerX() + ((it.x - cameraX) * zoom).toFloat() } ?: Float.NaN
+            mouseTankY =
+                tank?.let { viewport.centerY() + ((it.y - cameraY) * zoom).toFloat() } ?: Float.NaN
         }
         canvas.save()
         canvas.clipRect(viewport)
@@ -674,8 +760,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 fixedWorld.height.toFloat() - 1,
                 paint,
             )
-        } else
-            terrain.draw(canvas, worldLeft, worldTop, worldRight, worldBottom, originX, originY)
+        } else terrain.draw(canvas, worldLeft, worldTop, worldRight, worldBottom, originX, originY)
         drawObjectives(canvas, state)
         for (pickup in state.pickups) if (isVisible(pickup.x, pickup.y, 30.0)) {
             val alpha = if (pickup.life < 3) (.5 + .4 * sin(frameTime * 12)).toFloat() else 1f
@@ -713,32 +798,52 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         if (!infinity && localID2 != null) drawMissileWarnings(canvas, state, localID2!!)
         drawEffects(canvas)
         // Stable overlay passes keep firing shells and neighboring icons below every count.
-        for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, false)
-        for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0)) drawBadges(canvas, tank, true)
+        for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0))
+            drawBadges(canvas, tank, false)
+        for (tank in state.tanks) if (tank.hp > 0 && isVisible(tank.x, tank.y, 100.0))
+            drawBadges(canvas, tank, true)
         canvas.restore()
         if (!showTankLabels) return
         canvas.save()
         canvas.clipRect(viewport)
         identityCount = 0
-        for (tank in state.tanks) if (isVisible(tank.x, tank.y, 0.0) && (tank.hp > 0 || frozenTime != null))
+        for (tank in state.tanks) if (
+            isVisible(tank.x, tank.y, 0.0) && (tank.hp > 0 || frozenTime != null)
+        )
             drawIdentity(canvas, tank)
         drawDeathNotices(canvas, state, pilotID)
         canvas.restore()
     }
 
     private fun drawDeathNotices(canvas: Canvas, state: ArenaSnapshot, pilotID: Int) {
-        val visible = frozenTime == null && followingID == null && !state.spectating && state.phase != "menu" && state.phase != "lobby" && state.phase != "waiting"
+        val visible =
+            frozenTime == null &&
+                followingID == null &&
+                !state.spectating &&
+                state.phase != "menu" &&
+                state.phase != "lobby" &&
+                state.phase != "waiting"
         val paired = !infinity && localID2 != null
         val viewportSeat = if (pilotID == localID2) 1 else 0
-        val size = ArenaTypography.labelSize(zoom.toDouble(), infinity, textScale.toDouble()).toFloat()
+        val size =
+            ArenaTypography.labelSize(zoom.toDouble(), infinity, textScale.toDouble()).toFloat()
         val maxWidth = min(280f, viewport.width() * if (paired) .42f else .8f)
         for (index in deathNotices.indices) {
             if (infinity && index != viewportSeat) continue
             val id = if (infinity || index == 0) pilotID else if (paired) localID2 else null
             val tank = if (visible) state.tanks.firstOrNull { it.id == id } else null
-            val fraction = if (paired) { if (index == 0) .25f else .75f } else .5f
-            deathNotices[index].draw(canvas, DeathNotice.from(tank), size, maxWidth,
-                viewport.left + viewport.width() * fraction, viewport.top + viewport.height() * if (infinity) .42f else .4f)
+            val fraction =
+                if (paired) {
+                    if (index == 0) .25f else .75f
+                } else .5f
+            deathNotices[index].draw(
+                canvas,
+                DeathNotice.from(tank),
+                size,
+                maxWidth,
+                viewport.left + viewport.width() * fraction,
+                viewport.top + viewport.height() * if (infinity) .42f else .4f,
+            )
         }
     }
 
@@ -755,7 +860,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     )
                     .coerceAtLeast(.05f)
         } else {
-            val focus = state.tanks.firstOrNull { it.id == pilotID } ?: if (followingID == null && localID2 == null) state.tanks.firstOrNull() else null
+            val focus =
+                state.tanks.firstOrNull { it.id == pilotID }
+                    ?: if (followingID == null && localID2 == null) state.tanks.firstOrNull()
+                    else null
             if (focus != null) {
                 cameraX = focus.x
                 cameraY = focus.y
@@ -849,8 +957,15 @@ constructor(context: Context, attributes: AttributeSet? = null) :
         drawBitmap(canvas, if (tank.hp > 0) art.hull(tank.colorIndex, phase) else art.wreck(), 24f)
         if (tank.hp > 0) {
             canvas.save()
-            val preview = if (tank.id == localID) previewRecoil else if (tank.id == localID2) localPreviewRecoil else 0.0
-            val retraction = com.leqra.core.MuzzlePresentation.retraction(tank, geometry, max(tank.recoil, preview))
+            val preview =
+                if (tank.id == localID) previewRecoil
+                else if (tank.id == localID2) localPreviewRecoil else 0.0
+            val retraction =
+                com.leqra.core.MuzzlePresentation.retraction(
+                    tank,
+                    geometry,
+                    max(tank.recoil, preview),
+                )
             canvas.translate(-retraction.toFloat(), 0f)
             if (retraction < 21) drawBitmap(canvas, art.barrel(tank.colorIndex), 32f)
             canvas.restore()
@@ -902,7 +1017,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 }
                 val capacity = if (kind == "rapid") 180 else 5
                 val width =
-                    if (countWidths[capacity] == 0f) (countPaint.measureText(countText[capacity]) + 4).also { countWidths[capacity] = it }
+                    if (countWidths[capacity] == 0f)
+                        (countPaint.measureText(countText[capacity]) + 4).also {
+                            countWidths[capacity] = it
+                        }
                     else countWidths[capacity]
                 val height = countPaint.textSize + 2
                 val right = x + size / 2 - 2
@@ -919,7 +1037,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 )
                 countPaint.color = ArenaPalette.alpha(0xfff3f8ff.toInt(), alpha / 255f)
                 countOutlinePaint.textSize = countPaint.textSize
-                countOutlinePaint.color = ArenaPalette.alpha(android.graphics.Color.BLACK, alpha / 255f)
+                countOutlinePaint.color =
+                    ArenaPalette.alpha(android.graphics.Color.BLACK, alpha / 255f)
                 countOutlinePaint.strokeWidth = max(1.2f * scale, 1.2f / zoom)
                 canvas.drawText(text, right, bottom - 1, countOutlinePaint)
                 canvas.drawText(text, right, bottom - 1, countPaint)
@@ -940,7 +1059,8 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     private fun drawIdentity(canvas: Canvas, tank: ArenaTank) {
         val seat = if (tank.id == localID) 1 else if (tank.id == localID2) 2 else 0
         textPaint.typeface = if (seat > 0) boldTypeface else Typeface.MONOSPACE
-        textPaint.textSize = ArenaTypography.labelSize(zoom.toDouble(), infinity, textScale.toDouble()).toFloat()
+        textPaint.textSize =
+            ArenaTypography.labelSize(zoom.toDouble(), infinity, textScale.toDouble()).toFloat()
         val maxWidth = min(190f, viewport.width() - 20).coerceAtLeast(40f)
         var label = labels[tank.id]
         if (
@@ -1015,7 +1135,13 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             if (top < viewport.top + 6 || bottom > viewport.bottom - 6) return false
             for (index in 0 until identityCount) {
                 val placed = identityBounds[index]
-                if (left < placed.right + 3 && right > placed.left - 3 && top < placed.bottom + 3 && bottom > placed.top - 3) return false
+                if (
+                    left < placed.right + 3 &&
+                        right > placed.left - 3 &&
+                        top < placed.bottom + 3 &&
+                        bottom > placed.top - 3
+                )
+                    return false
             }
             return true
         }
@@ -1026,8 +1152,14 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             for (slot in 1..slots) {
                 val above = preferred - slot * step
                 val below = preferred + slot * step
-                if (free(above)) { y = above; break }
-                if (free(below)) { y = below; break }
+                if (free(above)) {
+                    y = above
+                    break
+                }
+                if (free(below)) {
+                    y = below
+                    break
+                }
             }
         }
         if (identityCount == identityBounds.size) identityBounds.add(RectF())
@@ -1081,7 +1213,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 if (history == null || history.kind != bullet.kind || history.color != color) {
                     val created = ProjectileHistory(bullet.kind, color)
                     frozenTrails[bullet.id]?.takeLast(7)?.let { points ->
-                        points.forEachIndexed { index, point -> created.points[index * 2] = point.x; created.points[index * 2 + 1] = point.y }
+                        points.forEachIndexed { index, point ->
+                            created.points[index * 2] = point.x
+                            created.points[index * 2 + 1] = point.y
+                        }
                         created.count = points.size
                         created.bounce = bullet.bounces
                         created.lastTime = frameTime
@@ -1104,19 +1239,23 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                         if (index == 0) trail.moveTo(rx(point.x), ry(point.y))
                         else trail.lineTo(rx(point.x), ry(point.y))
                     }
-                } else for (index in 0 until history.count) {
-                    val slot = (history.start + index) % 7
-                    val x = rx(history.points[slot * 2])
-                    val y = ry(history.points[slot * 2 + 1])
-                    if (index == 0) trail.moveTo(x, y) else trail.lineTo(x, y)
-                }
+                } else
+                    for (index in 0 until history.count) {
+                        val slot = (history.start + index) % 7
+                        val x = rx(history.points[slot * 2])
+                        val y = ry(history.points[slot * 2 + 1])
+                        if (index == 0) trail.moveTo(x, y) else trail.lineTo(x, y)
+                    }
                 trail.lineTo(rx(bullet.x), ry(bullet.y))
             }
         }
         paint.strokeCap = Paint.Cap.ROUND
         for (index in trails.indices) if (!trails[index].isEmpty) {
             stroke(
-                ArenaPalette.alpha(ArenaPalette.tank(index / 3), if (frozenTime != null && index % 3 == 2) .32f else .16f),
+                ArenaPalette.alpha(
+                    ArenaPalette.tank(index / 3),
+                    if (frozenTime != null && index % 3 == 2) .32f else .16f,
+                ),
                 when (index % 3) {
                     2 -> 12f
                     1 -> 4f
@@ -1361,7 +1500,13 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 continue
             }
             index++
-            if (visual.right < worldLeft || visual.left > worldRight || visual.bottom < worldTop || visual.top > worldBottom) continue
+            if (
+                visual.right < worldLeft ||
+                    visual.left > worldRight ||
+                    visual.bottom < worldTop ||
+                    visual.top > worldBottom
+            )
+                continue
             if (effect.kind == "laser" && visual.shape != null) {
                 canvas.save()
                 canvas.translate(rx(effect.points[0].x), ry(effect.points[0].y))
@@ -1583,8 +1728,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     fun clearDirectAim() {
         aimPointer = -1
         if (input.snapAim) {
-            input.stickX = 0.0; input.stickY = 0.0
-            input.snapAim = false; input.aimOnly = false
+            input.stickX = 0.0
+            input.stickY = 0.0
+            input.snapAim = false
+            input.aimOnly = false
         }
     }
 
@@ -1617,13 +1764,19 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             val dx = x - aimTankX
             val dy = y - aimTankY
             val distance = hypot(dx, dy)
-            if (!distance.isFinite() || distance < 2 || !primaryViewport.contains(x, y) ||
-                nearOnly && distance > max(64f, 51 * aimTankZoom)) return false
+            if (
+                !distance.isFinite() ||
+                    distance < 2 ||
+                    !primaryViewport.contains(x, y) ||
+                    nearOnly && distance > max(64f, 51 * aimTankZoom)
+            )
+                return false
             input.stickX = (dx / distance).toDouble()
             input.stickY = (dy / distance).toDouble()
             input.aimOnly = true
             input.snapAim = true
-            knobX = 0f; knobY = 0f
+            knobX = 0f
+            knobY = 0f
             return true
         }
         when (action) {
@@ -1633,19 +1786,24 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                 requestFocus()
                 val x = event.getX(index) / density
                 val y = event.getY(index) / density
-                val overlaidControl = !controlsLayout && (hypot(x - stickX, y - stickY) <= 48f ||
-                    showFireControl && hypot(x - fireX, y - fireY) <= 45.5f)
+                val overlaidControl =
+                    !controlsLayout &&
+                        (hypot(x - stickX, y - stickY) <= 48f ||
+                            showFireControl && hypot(x - fireX, y - fireY) <= 45.5f)
                 if (aimPointer < 0 && !overlaidControl && aim(index, nearOnly = true)) {
                     aimPointer = pointer
                 } else if (
-                    controlViewport.contains(x, y) && x < controlViewport.centerX() &&
+                    controlViewport.contains(x, y) &&
+                        x < controlViewport.centerX() &&
                         stickPointer < 0 &&
                         y > controlViewport.top + controlViewport.height() * .25f
                 ) {
                     stickPointer = pointer
                     update(index)
                 } else if (
-                    showFireControl && controlViewport.contains(x, y) && x >= controlViewport.centerX() &&
+                    showFireControl &&
+                        controlViewport.contains(x, y) &&
+                        x >= controlViewport.centerX() &&
                         firePointer < 0 &&
                         y > controlViewport.bottom - max(210f, controlViewport.height() * .38f)
                 ) {
@@ -1657,8 +1815,7 @@ constructor(context: Context, attributes: AttributeSet? = null) :
             MotionEvent.ACTION_MOVE -> {
                 val target = event.findPointerIndex(aimPointer)
                 val stick = event.findPointerIndex(stickPointer)
-                if (target >= 0) aim(target)
-                else if (stick >= 0) update(stick)
+                if (target >= 0) aim(target) else if (stick >= 0) update(stick)
             }
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_POINTER_UP -> {
@@ -1667,7 +1824,10 @@ constructor(context: Context, attributes: AttributeSet? = null) :
                     stickPointer = -1
                     knobX = 0f
                     knobY = 0f
-                    if (!input.snapAim) { input.stickX = 0.0; input.stickY = 0.0 }
+                    if (!input.snapAim) {
+                        input.stickX = 0.0
+                        input.stickY = 0.0
+                    }
                 }
                 if (pointer == firePointer) {
                     firePointer = -1
@@ -1726,22 +1886,33 @@ constructor(context: Context, attributes: AttributeSet? = null) :
     }
 
     override fun onHoverEvent(event: MotionEvent): Boolean =
-        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) mouseEvent(event) else super.onHoverEvent(event)
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) mouseEvent(event)
+        else super.onHoverEvent(event)
 
     private fun mouseEvent(event: MotionEvent): Boolean {
         if (frozenTime != null) return false
         if (!showControls && !mouseInputEnabled) return false
         when (event.actionMasked) {
-            MotionEvent.ACTION_CANCEL -> { mouseAiming = false; mouseFiring = false }
+            MotionEvent.ACTION_CANCEL -> {
+                mouseAiming = false
+                mouseFiring = false
+            }
             MotionEvent.ACTION_HOVER_EXIT -> if (!mouseFiring) mouseAiming = false
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP, MotionEvent.ACTION_MOVE,
-            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE,
-            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
-                mouseX = event.x / density; mouseY = event.y / density
+            MotionEvent.ACTION_DOWN,
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_MOVE,
+            MotionEvent.ACTION_HOVER_ENTER,
+            MotionEvent.ACTION_HOVER_MOVE,
+            MotionEvent.ACTION_BUTTON_PRESS,
+            MotionEvent.ACTION_BUTTON_RELEASE -> {
+                mouseX = event.x / density
+                mouseY = event.y / density
                 mouseAiming = mouseAimEnabled
-                mouseFiring = mouseFireEnabled && event.actionMasked != MotionEvent.ACTION_UP &&
-                    (event.buttonState and MotionEvent.BUTTON_PRIMARY != 0 ||
-                        event.actionMasked == MotionEvent.ACTION_DOWN && event.buttonState == 0)
+                mouseFiring =
+                    mouseFireEnabled &&
+                        event.actionMasked != MotionEvent.ACTION_UP &&
+                        (event.buttonState and MotionEvent.BUTTON_PRIMARY != 0 ||
+                            event.actionMasked == MotionEvent.ACTION_DOWN && event.buttonState == 0)
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) requestFocus()
             }
             else -> return false

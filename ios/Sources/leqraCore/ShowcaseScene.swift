@@ -39,7 +39,9 @@ public struct ShowcaseScene: Decodable, Sendable {
     public var time: Double { timeMilliseconds / 1000 }
     public var maze: InfiniteMaze { InfiniteMaze(seed: seed) }
 
-    private enum CodingKeys: String, CodingKey { case seed, time, localID, fps, ping, title, bullets, effects }
+    private enum CodingKeys: String, CodingKey {
+        case seed, time, localID, fps, ping, title, bullets, effects
+    }
     public init(from decoder: Decoder) throws {
         var frame = try ArenaSnapshot(from: decoder)
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -54,7 +56,9 @@ public struct ShowcaseScene: Decodable, Sendable {
         // Live native pilots start at 1, but this shared frozen fixture starts
         // at 0. Preserve "no target" instead of interpreting null as the hero.
         let targets = Dictionary(uniqueKeysWithValues: projectiles.map { ($0.id, $0.target ?? -1) })
-        for index in frame.bullets.indices { frame.bullets[index].target = targets[frame.bullets[index].id] ?? -1 }
+        for index in frame.bullets.indices {
+            frame.bullets[index].target = targets[frame.bullets[index].id] ?? -1
+        }
         snapshot = frame
     }
 
@@ -64,7 +68,8 @@ public struct ShowcaseScene: Decodable, Sendable {
         enum CodingKeys: String, CodingKey { case portrait }
         init(from decoder: Decoder) throws {
             wide = try ShowcaseScene(from: decoder)
-            portrait = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(ShowcaseScene.self, forKey: .portrait)
+            portrait = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(
+                ShowcaseScene.self, forKey: .portrait)
         }
     }
 
@@ -74,8 +79,10 @@ public struct ShowcaseScene: Decodable, Sendable {
         let resource = try JSONDecoder().decode(Resource.self, from: data)
         if !portrait { return resource.wide }
         guard let selected = resource.portrait else {
-            throw DecodingError.keyNotFound(Resource.CodingKeys.portrait,
-                DecodingError.Context(codingPath: [], debugDescription: "The portrait Showcase scene is missing."))
+            throw DecodingError.keyNotFound(
+                Resource.CodingKeys.portrait,
+                DecodingError.Context(
+                    codingPath: [], debugDescription: "The portrait Showcase scene is missing."))
         }
         return selected
     }

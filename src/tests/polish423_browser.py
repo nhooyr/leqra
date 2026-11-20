@@ -29,8 +29,8 @@ html = re.sub(r'<link[^>]*>', '', (web / 'index.html').read_text())
 html = re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>', '', html)
 html = html.replace('</head>', '<style>' + (assets / 'theme.css').read_text() + (assets / 'style.css').read_text() + '</style></head>')
 js = (assets / 'game.js').read_text().replace('(() => {', '((location,history) => {', 1)
-i = js.rfind('})();')
-js = js[:i] + '})(window.__location,window.__history);' + js[i + 5:]
+i = js.rfind('})()')
+js = js[:i] + '})(window.__location,window.__history);' + js[i+4:]
 checks, errors = [], []
 
 def check(ok, label):

@@ -11,16 +11,23 @@ import com.leqra.android.NativeStyle.dp
 import com.leqra.android.render.NativeArenaView
 
 /** The real native gameplay chrome around an immutable scene. */
-internal class ShowcaseView(context: Context, private val muted: Boolean, private val showFPS: Boolean = true) : LinearLayout(context) {
+internal class ShowcaseView(
+    context: Context,
+    private val muted: Boolean,
+    private val showFPS: Boolean = true,
+) : LinearLayout(context) {
     val header = NativeGameHeader(context, {}, {}, {})
     val status = NativeStatusView(context, openScores = {})
     val loadout = NativeHudView(context)
     private val field = FrameLayout(context)
     lateinit var arena: NativeArenaView
         private set
+
     lateinit var scene: ShowcaseScene
         private set
-    private var portrait = resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+
+    private var portrait =
+        resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
     private var safeLeft = 0
     private var safeRight = 0
     private var safeBottom = 0
@@ -51,11 +58,21 @@ internal class ShowcaseView(context: Context, private val muted: Boolean, privat
         if (::arena.isInitialized) arena.release()
         field.removeAllViews()
         scene = ShowcaseScene.load(context, portrait)
-        arena = NativeArenaView(context).apply {
-            contentDescription = "Tank arena, joystick on the left and fire on the right"
-            showFrozenScene(scene.snapshot, scene.maze, scene.localID, scene.time,
-                scene.effectAges, scene.outlines, scene.trails, controls = true, fitPortrait = portrait)
-        }
+        arena =
+            NativeArenaView(context).apply {
+                contentDescription = "Tank arena, joystick on the left and fire on the right"
+                showFrozenScene(
+                    scene.snapshot,
+                    scene.maze,
+                    scene.localID,
+                    scene.time,
+                    scene.effectAges,
+                    scene.outlines,
+                    scene.trails,
+                    controls = true,
+                    fitPortrait = portrait,
+                )
+            }
         field.addView(arena, FrameLayout.LayoutParams(-1, -1))
         loadout.update(scene.snapshot, scene.localID, null, true, false, true, frozen = true)
         arena.fireLabel = loadout.fireLabel
@@ -66,9 +83,25 @@ internal class ShowcaseView(context: Context, private val muted: Boolean, privat
     }
 
     private fun updateLayout() {
-        header.display(!portrait, (width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / resources.displayMetrics.density, muted, true)
-        header.setPadding(context.dp(12) + safeLeft, context.dp(5), context.dp(8) + safeRight, context.dp(5))
-        status.setPadding(context.dp(12) + safeLeft, context.dp(6), context.dp(12) + safeRight, context.dp(6))
+        header.display(
+            !portrait,
+            (width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) /
+                resources.displayMetrics.density,
+            muted,
+            true,
+        )
+        header.setPadding(
+            context.dp(12) + safeLeft,
+            context.dp(5),
+            context.dp(8) + safeRight,
+            context.dp(5),
+        )
+        status.setPadding(
+            context.dp(12) + safeLeft,
+            context.dp(6),
+            context.dp(12) + safeRight,
+            context.dp(6),
+        )
         loadout.compact = !portrait
         loadout.safeLeft = safeLeft
         loadout.safeRight = safeRight
@@ -81,7 +114,10 @@ internal class ShowcaseView(context: Context, private val muted: Boolean, privat
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val h = MeasureSpec.getSize(heightMeasureSpec)
         val next = w <= h
-        if (w > 0 && h > 0 && portrait != next) { portrait = next; rebuild() }
+        if (w > 0 && h > 0 && portrait != next) {
+            portrait = next
+            rebuild()
+        }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
@@ -91,9 +127,15 @@ internal class ShowcaseView(context: Context, private val muted: Boolean, privat
     }
 
     override fun dispatchTouchEvent(event: MotionEvent) = true
-    override fun dispatchGenericMotionEvent(event: MotionEvent) = true
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
-        if (event.keyCode == KeyEvent.KEYCODE_ESCAPE || event.keyCode == KeyEvent.KEYCODE_BACK) super.dispatchKeyEvent(event) else true
 
-    fun release() { arena.release() }
+    override fun dispatchGenericMotionEvent(event: MotionEvent) = true
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        if (event.keyCode == KeyEvent.KEYCODE_ESCAPE || event.keyCode == KeyEvent.KEYCODE_BACK)
+            super.dispatchKeyEvent(event)
+        else true
+
+    fun release() {
+        arena.release()
+    }
 }

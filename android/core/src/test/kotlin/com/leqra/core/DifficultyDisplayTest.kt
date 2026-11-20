@@ -19,7 +19,8 @@ class DifficultyDisplayTest {
 
     @Test
     fun canonicalAndLegacyNumberedBotSuffixesShareOneNormalTierAndDisplayMedium() {
-        for (name in listOf("Bot 17 - Medium", "Bot 17 - Normal", "BOT 17 - NORMAL", "bot 17 - medium")) {
+        for (name in
+            listOf("Bot 17 - Medium", "Bot 17 - Normal", "BOT 17 - NORMAL", "bot 17 - medium")) {
             assertEquals("Bot 17 - Medium", PilotIdentity.botName(name))
             assertEquals("Bot 17 - Medium", PilotIdentity.label(name, true))
             assertEquals("Bot 17", PilotIdentity.leaderboardLabel(name, true))
@@ -31,7 +32,17 @@ class DifficultyDisplayTest {
 
     @Test
     fun humanCallsignsAndAuthoredBotNamesContainingDifficultyWordsRemainTheirNames() {
-        for (name in listOf("Normal", "Chill", "Fierce", "Medium", "Normal Pilot", "Bot 17 - Normal", "BOT 17 - NORMAL", "Bot 17 - Medium")) {
+        for (name in
+            listOf(
+                "Normal",
+                "Chill",
+                "Fierce",
+                "Medium",
+                "Normal Pilot",
+                "Bot 17 - Normal",
+                "BOT 17 - NORMAL",
+                "Bot 17 - Medium",
+            )) {
             assertEquals(name, PilotIdentity.label(name, false))
             assertEquals("$name (P2)", PilotIdentity.label(name, false, 2))
             assertEquals(name, PilotIdentity.leaderboardLabel(name, false))
@@ -46,8 +57,20 @@ class DifficultyDisplayTest {
 
     @Test
     fun survivalBossNamesMatchTheNewTitlesWhileTheirDifficultyKeysStayCompatible() {
-        val arena = FixedArena(RoomRules.localDefaults("survival").copy(scoreTarget = 20), "Pilot", 0, botCount = 0, seed = 42)
-        for ((wave, name, difficulty) in listOf(Triple(5, "MEDIUM BOSS", "normal"), Triple(10, "HARD BOSS", "hard"), Triple(15, "GODLIKE BOSS", "godlike"))) {
+        val arena =
+            FixedArena(
+                RoomRules.localDefaults("survival").copy(scoreTarget = 20),
+                "Pilot",
+                0,
+                botCount = 0,
+                seed = 42,
+            )
+        for ((wave, name, difficulty) in
+            listOf(
+                Triple(5, "MEDIUM BOSS", "normal"),
+                Triple(10, "HARD BOSS", "hard"),
+                Triple(15, "GODLIKE BOSS", "godlike"),
+            )) {
             arena.objectives!!.survival!!.wave = wave
             arena.restartWave()
             val boss = arena.snapshot.tanks.single { it.survivalBoss }

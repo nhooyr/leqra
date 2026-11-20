@@ -8,11 +8,14 @@ public enum CallsignPolicy {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let allowed = trimmed.unicodeScalars.filter { scalar in
             switch scalar.properties.generalCategory {
-            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter, .decimalNumber: return true
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+                .decimalNumber:
+                return true
             default: return scalar == " " || scalar == "_" || scalar == "-" || scalar == "#"
             }
         }.prefix(16)
-        return String(String.UnicodeScalarView(allowed)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return String(String.UnicodeScalarView(allowed)).split(whereSeparator: \.isWhitespace).joined(
+            separator: " ")
     }
     public static func reservedForBots(_ name: String) -> Bool {
         let key = clean(name).lowercased()
@@ -20,48 +23,73 @@ public enum CallsignPolicy {
     }
     public static func displayName(_ name: String, bot: Bool) -> String {
         guard bot else { return name }
-        if name.range(of: #"^Bot [0-9]+(?: - (?:Dumb|Easy|Normal|Medium|Hard|Godlike))?$"#, options: .regularExpression) != nil {
+        if name.range(
+            of: #"^Bot [0-9]+(?: - (?:Dumb|Easy|Normal|Medium|Hard|Godlike))?$"#, options: .regularExpression)
+            != nil
+        {
             return name.hasSuffix(" - Normal") ? String(name.dropLast(6)) + "Medium" : name
         }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = trimmed.lowercased().hasPrefix("bot ") ? String(trimmed.dropFirst(4)) : trimmed.lowercased() == "bot" ? "" : trimmed
-        let formatted = body.isEmpty ? "Bot" : "Bot " + body.capitalized(with: Locale(identifier: "en_US_POSIX"))
-        return formatted.range(of: #"^Bot [0-9]+ - Normal$"#, options: .regularExpression) != nil ? String(formatted.dropLast(6)) + "Medium" : formatted
+        let body =
+            trimmed.lowercased().hasPrefix("bot ")
+            ? String(trimmed.dropFirst(4)) : trimmed.lowercased() == "bot" ? "" : trimmed
+        let formatted =
+            body.isEmpty ? "Bot" : "Bot " + body.capitalized(with: Locale(identifier: "en_US_POSIX"))
+        return formatted.range(of: #"^Bot [0-9]+ - Normal$"#, options: .regularExpression) != nil
+            ? String(formatted.dropLast(6)) + "Medium" : formatted
     }
     public static func leaderboardName(_ name: String, bot: Bool) -> String {
         let formatted = displayName(name, bot: bot)
-        guard bot, formatted.range(of: #"^Bot [0-9]+ - (?:Dumb|Easy|Medium|Hard|Godlike)$"#, options: .regularExpression) != nil,
-              let separator = formatted.range(of: " - ") else { return formatted }
+        guard bot,
+            formatted.range(
+                of: #"^Bot [0-9]+ - (?:Dumb|Easy|Medium|Hard|Godlike)$"#, options: .regularExpression) != nil,
+            let separator = formatted.range(of: " - ")
+        else { return formatted }
         return String(formatted[..<separator.lowerBound])
     }
     public static func leaderboardDifficulty(_ name: String, bot: Bool, difficulty: String?) -> String? {
         guard bot else { return nil }
         let levels = ["dumb", "easy", "normal", "hard", "godlike"]
-        if let difficulty = difficulty?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), levels.contains(difficulty) { return difficulty }
+        if let difficulty = difficulty?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+            levels.contains(difficulty)
+        {
+            return difficulty
+        }
         let formatted = displayName(name, bot: true)
-        guard formatted.range(of: #"^Bot [0-9]+ - (?:Dumb|Easy|Medium|Hard|Godlike)$"#, options: .regularExpression) != nil,
-              let separator = formatted.range(of: " - ") else { return nil }
+        guard
+            formatted.range(
+                of: #"^Bot [0-9]+ - (?:Dumb|Easy|Medium|Hard|Godlike)$"#, options: .regularExpression) != nil,
+            let separator = formatted.range(of: " - ")
+        else { return nil }
         let label = String(formatted[separator.upperBound...]).lowercased()
         return label == "medium" ? "normal" : label
     }
     public static func isGenerated(_ name: String) -> Bool {
-        name.range(of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#, options: .regularExpression) != nil
+        name.range(
+            of: #"^(?:pilot#[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}|pilot-[a-z2-7]{10})$"#,
+            options: .regularExpression) != nil
     }
     public static func isLegacyDefault(_ name: String) -> Bool {
         let key = name.split(whereSeparator: \.isWhitespace).joined(separator: " ").uppercased()
         return ["PILOT", "PLAYER 1", "PLAYER 2", "CO-PILOT", "YOU", "SNOW FOX"].contains(key)
             || key.range(of: #"^PILOT [1-9][0-9]{2}$"#, options: .regularExpression) != nil
     }
-    public static func migratingLegacyRoster(_ roster: [NativeSeatSpec], primaryName: String, secondaryName: String,
-                                             unownedSeats: Set<Int>) -> [NativeSeatSpec] {
+    public static func migratingLegacyRoster(
+        _ roster: [NativeSeatSpec], primaryName: String, secondaryName: String,
+        unownedSeats: Set<Int>
+    ) -> [NativeSeatSpec] {
         roster.map { original in
             var seat = original
             let index = seat.kind == "human" ? 0 : seat.kind == "local" ? 1 : -1
-            if unownedSeats.contains(index), isLegacyDefault(seat.name) { seat.name = index == 0 ? primaryName : secondaryName }
+            if unownedSeats.contains(index), isLegacyDefault(seat.name) {
+                seat.name = index == 0 ? primaryName : secondaryName
+            }
             return seat
         }
     }
-    public static func updatingGeneratedRoster(_ roster: [NativeSeatSpec], seat: Int, previous: String, claimed: String) -> [NativeSeatSpec] {
+    public static func updatingGeneratedRoster(
+        _ roster: [NativeSeatSpec], seat: Int, previous: String, claimed: String
+    ) -> [NativeSeatSpec] {
         guard isGenerated(previous) else { return roster }
         return roster.map { original in
             var row = original
@@ -111,7 +139,9 @@ public final class CallsignDraftStore {
     @discardableResult public func migrateLegacyDefaults(credentialPresent: (Int) -> Bool) -> Set<Int> {
         var migrated = Set<Int>()
         for seat in 0...1 {
-            guard !credentialPresent(seat), let old = defaults.string(forKey: nameKey(seat)), CallsignPolicy.isLegacyDefault(old) else { continue }
+            guard !credentialPresent(seat), let old = defaults.string(forKey: nameKey(seat)),
+                CallsignPolicy.isLegacyDefault(old)
+            else { continue }
             defaults.removeObject(forKey: nameKey(seat))
             _ = name(seat: seat)
             migrated.insert(seat)
@@ -121,7 +151,9 @@ public final class CallsignDraftStore {
     public func name(seat: Int) -> String {
         if let existing = defaults.string(forKey: nameKey(seat)) { return existing }
         var value = CallsignPolicy.bootstrap()
-        while value == defaults.string(forKey: nameKey(seat == 1 ? 0 : 1)) { value = CallsignPolicy.bootstrap() }
+        while value == defaults.string(forKey: nameKey(seat == 1 ? 0 : 1)) {
+            value = CallsignPolicy.bootstrap()
+        }
         defaults.set(value, forKey: nameKey(seat))
         defaults.set(true, forKey: pendingKey(seat))
         defaults.set(value, forKey: pendingKey(seat) + "Name")
@@ -129,7 +161,8 @@ public final class CallsignDraftStore {
         return value
     }
     public func automaticPending(seat: Int) -> Bool {
-        defaults.bool(forKey: pendingKey(seat)) && defaults.string(forKey: pendingKey(seat) + "Name") == defaults.string(forKey: nameKey(seat))
+        defaults.bool(forKey: pendingKey(seat))
+            && defaults.string(forKey: pendingKey(seat) + "Name") == defaults.string(forKey: nameKey(seat))
     }
     public func edited(_ name: String, seat: Int) {
         defaults.set(name, forKey: nameKey(seat))
@@ -138,8 +171,11 @@ public final class CallsignDraftStore {
     }
     public func editorChanged(from previous: String, to name: String, seat: Int) {
         guard previous != name else { return }
-        if CallsignPolicy.reservedForBots(name) { invalidateEditedDraft(seat: seat) }
-        else { edited(name, seat: seat) }
+        if CallsignPolicy.reservedForBots(name) {
+            invalidateEditedDraft(seat: seat)
+        } else {
+            edited(name, seat: seat)
+        }
     }
     public func invalidateEditedDraft(seat: Int) {
         defaults.set(false, forKey: pendingKey(seat))
@@ -154,7 +190,9 @@ public final class CallsignDraftStore {
                 && value.drafts.filter { requested.contains($0.seat) }.allSatisfy { matches($0) }
         }) {
             guard defaults.synchronize() else { throw GameNetworkError.temporarilyUnavailable }
-            return CallsignGenerationAttempt(requestId: old.requestId, origin: old.origin, drafts: old.drafts.filter { requested.contains($0.seat) })
+            return CallsignGenerationAttempt(
+                requestId: old.requestId, origin: old.origin,
+                drafts: old.drafts.filter { requested.contains($0.seat) })
         }
         let drafts = seats.sorted().map { seat -> CallsignGenerationAttempt.Draft in
             let value = name(seat: seat)
@@ -167,7 +205,8 @@ public final class CallsignDraftStore {
         attempts = attempts.compactMap { previous in
             guard previous.origin == origin else { return previous }
             let remaining = previous.drafts.filter { !requested.contains($0.seat) }
-            return remaining.isEmpty ? nil : .init(requestId: previous.requestId, origin: origin, drafts: remaining)
+            return remaining.isEmpty
+                ? nil : .init(requestId: previous.requestId, origin: origin, drafts: remaining)
         }
         attempts.append(attempt)
         defaults.set(try JSONEncoder().encode(Array(attempts.suffix(8))), forKey: attemptKey)
@@ -175,25 +214,36 @@ public final class CallsignDraftStore {
         return attempt
     }
     public func matches(_ draft: CallsignGenerationAttempt.Draft) -> Bool {
-        defaults.string(forKey: nameKey(draft.seat)) == draft.name && defaults.string(forKey: revisionKey(draft.seat)) == draft.revision
+        defaults.string(forKey: nameKey(draft.seat)) == draft.name
+            && defaults.string(forKey: revisionKey(draft.seat)) == draft.revision
     }
-    @discardableResult public func apply(_ name: String, seat: Int, attempt: CallsignGenerationAttempt) -> Bool {
-        guard let draft = attempt.drafts.first(where: { $0.seat == seat }), matches(draft) else { return false }
+    @discardableResult public func apply(_ name: String, seat: Int, attempt: CallsignGenerationAttempt)
+        -> Bool
+    {
+        guard let draft = attempt.drafts.first(where: { $0.seat == seat }), matches(draft) else {
+            return false
+        }
         edited(name, seat: seat)
         return true
     }
     public func provisionalName(seat: Int, attempt: CallsignGenerationAttempt) throws -> String? {
         guard let draft = attempt.drafts.first(where: { $0.seat == seat }), matches(draft) else { return nil }
         var name = CallsignPolicy.bootstrap()
-        while name == defaults.string(forKey: nameKey(seat == 1 ? 0 : 1)) { name = CallsignPolicy.bootstrap() }
+        while name == defaults.string(forKey: nameKey(seat == 1 ? 0 : 1)) {
+            name = CallsignPolicy.bootstrap()
+        }
         let revision = UUID().uuidString
-        defaults.set(name, forKey: nameKey(seat)); defaults.set(revision, forKey: revisionKey(seat))
-        defaults.set(true, forKey: pendingKey(seat)); defaults.set(name, forKey: pendingKey(seat) + "Name")
+        defaults.set(name, forKey: nameKey(seat))
+        defaults.set(revision, forKey: revisionKey(seat))
+        defaults.set(true, forKey: pendingKey(seat))
+        defaults.set(name, forKey: pendingKey(seat) + "Name")
         let attempts = savedAttempts().map { old -> CallsignGenerationAttempt in
             guard old.requestId == attempt.requestId else { return old }
-            return .init(requestId: old.requestId, origin: old.origin, drafts: old.drafts.map {
-                $0.seat == seat ? .init(seat: seat, name: name, revision: revision) : $0
-            })
+            return .init(
+                requestId: old.requestId, origin: old.origin,
+                drafts: old.drafts.map {
+                    $0.seat == seat ? .init(seat: seat, name: name, revision: revision) : $0
+                })
         }
         defaults.set(try JSONEncoder().encode(attempts), forKey: attemptKey)
         guard defaults.synchronize() else { throw GameNetworkError.temporarilyUnavailable }
@@ -204,13 +254,16 @@ public final class CallsignDraftStore {
         let remaining = savedAttempts().compactMap { current -> CallsignGenerationAttempt? in
             guard current.requestId == attempt.requestId else { return current }
             let drafts = current.drafts.filter { !completed.contains($0.seat) }
-            return drafts.isEmpty ? nil : .init(requestId: current.requestId, origin: current.origin, drafts: drafts)
+            return drafts.isEmpty
+                ? nil : .init(requestId: current.requestId, origin: current.origin, drafts: drafts)
         }
         if let data = try? JSONEncoder().encode(remaining) { defaults.set(data, forKey: attemptKey) }
     }
     private func savedAttempts() -> [CallsignGenerationAttempt] {
         guard let data = defaults.data(forKey: attemptKey) else { return [] }
-        if let array = try? JSONDecoder().decode([CallsignGenerationAttempt].self, from: data) { return array }
+        if let array = try? JSONDecoder().decode([CallsignGenerationAttempt].self, from: data) {
+            return array
+        }
         return (try? JSONDecoder().decode(CallsignGenerationAttempt.self, from: data)).map { [$0] } ?? []
     }
 }

@@ -166,7 +166,9 @@ internal class NativeHudView(context: Context) : View(context) {
         onlySeat: Int? = null,
     ) {
         val first = if (onlySeat == 1) null else snapshot.tanks.firstOrNull { it.id == localID }
-        val second = if (onlySeat == 0) null else localID2?.let { id -> snapshot.tanks.firstOrNull { it.id == id } }
+        val second =
+            if (onlySeat == 0) null
+            else localID2?.let { id -> snapshot.tanks.firstOrNull { it.id == id } }
         val count = (if (first != null) 1 else 0) + (if (second != null) 1 else 0)
         val previousCount = slots.size
         while (slots.size < count) slots.add(Slot())
@@ -206,8 +208,14 @@ internal class NativeHudView(context: Context) : View(context) {
                 val old = slot.content
                 // Readiness and lock messages have a reserved envelope; only new equipment
                 // can require more height, so firing does not trigger a layout every shot.
-                if (old == null || content.weapon.length > old.weapon.length || content.buffs.length > old.buffs.length ||
-                    (content.firingSeconds != null) != (old.firingSeconds != null) || content.unlimited != old.unlimited) layoutMayGrow = true
+                if (
+                    old == null ||
+                        content.weapon.length > old.weapon.length ||
+                        content.buffs.length > old.buffs.length ||
+                        (content.firingSeconds != null) != (old.firingSeconds != null) ||
+                        content.unlimited != old.unlimited
+                )
+                    layoutMayGrow = true
                 slot.content = content
                 changed = true
             }
@@ -299,9 +307,11 @@ internal class NativeHudView(context: Context) : View(context) {
                     )
                 slot.content?.let { content ->
                     val readyWidth = compactReadinessWidth(textWidth, content)
-                    val buffsWidth = if (content.buffs.isEmpty()) 0f else max(1f, textWidth - readyWidth - 12f)
+                    val buffsWidth =
+                        if (content.buffs.isEmpty()) 0f else max(1f, textWidth - readyWidth - 12f)
                     bottom = max(bottom, textHeight(content.readiness, readyWidth))
-                    if (content.buffs.isNotEmpty()) bottom = max(bottom, textHeight(content.buffs, buffsWidth))
+                    if (content.buffs.isNotEmpty())
+                        bottom = max(bottom, textHeight(content.buffs, buffsWidth))
                 }
                 compactTop = max(compactTop, top)
                 compactBottom = max(compactBottom, bottom)
@@ -321,20 +331,24 @@ internal class NativeHudView(context: Context) : View(context) {
                             textHeight("SHD×5 SPD×512 STAR12", equipmentWidth),
                     )
                 slot.content?.let { content ->
-                    equipment = max(equipment, textHeight(content.weapon, equipmentWidth) + 3f + textHeight(content.buffs, equipmentWidth))
+                    equipment =
+                        max(
+                            equipment,
+                            textHeight(content.weapon, equipmentWidth) +
+                                3f +
+                                textHeight(content.buffs, equipmentWidth),
+                        )
                 }
                 val readinessWidth = min(150f * fontScale, cellWidth * .55f)
-                val readinessHeight = max(textHeight("SPAWN PROTECTION", readinessWidth), textHeight(slot.content?.readiness.orEmpty(), readinessWidth))
+                val readinessHeight =
+                    max(
+                        textHeight("SPAWN PROTECTION", readinessWidth),
+                        textHeight(slot.content?.readiness.orEmpty(), readinessWidth),
+                    )
                 height =
                     max(
                         height,
-                        8f +
-                            identityHeight +
-                            5f +
-                            equipment +
-                            5f +
-                            readinessHeight +
-                            8f,
+                        8f + identityHeight + 5f + equipment + 5f + readinessHeight + 8f,
                     )
             }
         }
@@ -496,7 +510,10 @@ internal class NativeHudView(context: Context) : View(context) {
     private fun compactReadinessWidth(width: Float, content: Content): Float {
         if (content.buffs.isEmpty()) return width
         measurePaint.textSize = 10f * fontScale
-        return min(min(150f * fontScale, width * .58f), max(40f, measurePaint.measureText(content.readiness) + 2f))
+        return min(
+            min(150f * fontScale, width * .58f),
+            max(40f, measurePaint.measureText(content.readiness) + 2f),
+        )
     }
 
     private fun drawAmmo(canvas: Canvas, slot: Slot, x: Float, y: Float, width: Float) {

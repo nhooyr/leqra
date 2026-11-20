@@ -11,11 +11,13 @@ public enum MuzzlePresentation {
         case "laser": radius = 3
         default: radius = 3.5
         }
-        var hit = maze?.projectileHit(kind: "", x: tank.x, y: tank.y,
+        var hit = maze?.projectileHit(
+            kind: "", x: tank.x, y: tank.y,
             dx: cos(tank.angle) * 30, dy: sin(tank.angle) * 30, radius: radius)
         var clearance = radius
         if hit == nil && tank.ghostTime > 0 {
-            hit = maze?.projectileHit(kind: "", x: tank.x, y: tank.y,
+            hit = maze?.projectileHit(
+                kind: "", x: tank.x, y: tank.y,
                 dx: cos(tank.angle) * 30, dy: sin(tank.angle) * 30, radius: 0)
             clearance = 0.5
         }

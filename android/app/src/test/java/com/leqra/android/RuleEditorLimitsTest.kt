@@ -9,11 +9,33 @@ import org.junit.Test
 class RuleEditorLimitsTest {
     @Test
     fun rateDraftsKeepEveryExplicitFractionAndExactLegacyMixture() {
-        val source = RoomRules(infinity = true, infinityBotSpawnRates = mapOf("dumb" to .125, "hard" to 3.75))
-        assertEquals(source.roamingBotSpawnRates(), RuleEditorLimits.draft(source).roamingBotSpawnRates())
-        val legacy = RoomRules(infinity = true, infinityBotDifficulty = "normal", infinityRandomDifficulty = true, infinityBotSpawnRate = 2.0)
-        assertEquals(2.0 / 3, RuleEditorLimits.draft(legacy).roamingBotSpawnRates().getValue("dumb"), 0.0)
-        assertTrue(RuleEditorLimits.draft(source.copy(infinityBotSpawnRates = emptyMap())).roamingBotSpawnRates().values.all { it == 0.0 })
+        val source =
+            RoomRules(
+                infinity = true,
+                infinityBotSpawnRates = mapOf("dumb" to .125, "hard" to 3.75),
+            )
+        assertEquals(
+            source.roamingBotSpawnRates(),
+            RuleEditorLimits.draft(source).roamingBotSpawnRates(),
+        )
+        val legacy =
+            RoomRules(
+                infinity = true,
+                infinityBotDifficulty = "normal",
+                infinityRandomDifficulty = true,
+                infinityBotSpawnRate = 2.0,
+            )
+        assertEquals(
+            2.0 / 3,
+            RuleEditorLimits.draft(legacy).roamingBotSpawnRates().getValue("dumb"),
+            0.0,
+        )
+        assertTrue(
+            RuleEditorLimits.draft(source.copy(infinityBotSpawnRates = emptyMap()))
+                .roamingBotSpawnRates()
+                .values
+                .all { it == 0.0 },
+        )
     }
 
     @Test
@@ -77,7 +99,15 @@ class RuleEditorLimitsTest {
             RuleEditorLimits.draft(source.copy(infinityBotDifficulty = "invalid"))
                 .infinityBotDifficulty,
         )
-        for (rate in listOf(.5, 1.0, 2.0, 4.0)) assertEquals(rate, RuleEditorLimits.draft(source.copy(infinityBotSpawnRate = rate)).infinityBotSpawnRate, 0.0)
-        for (rate in listOf(Double.NaN, Double.POSITIVE_INFINITY, 0.0, 3.0)) assertEquals(2.0, RuleEditorLimits.draft(source.copy(infinityBotSpawnRate = rate)).infinityBotSpawnRate, 0.0)
+        for (rate in listOf(.5, 1.0, 2.0, 4.0)) assertEquals(
+            rate,
+            RuleEditorLimits.draft(source.copy(infinityBotSpawnRate = rate)).infinityBotSpawnRate,
+            0.0,
+        )
+        for (rate in listOf(Double.NaN, Double.POSITIVE_INFINITY, 0.0, 3.0)) assertEquals(
+            2.0,
+            RuleEditorLimits.draft(source.copy(infinityBotSpawnRate = rate)).infinityBotSpawnRate,
+            0.0,
+        )
     }
 }

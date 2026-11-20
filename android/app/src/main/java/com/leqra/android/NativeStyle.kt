@@ -2,8 +2,8 @@ package com.leqra.android
 
 import android.content.Context
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
@@ -33,24 +33,33 @@ internal object NativeStyle {
     val green = Color.parseColor("#39ff88")
     val danger = Color.parseColor("#ff4f5f")
 
-    private val checkedStates = arrayOf(
-        intArrayOf(-android.R.attr.state_enabled, android.R.attr.state_checked),
-        intArrayOf(-android.R.attr.state_enabled),
-        intArrayOf(android.R.attr.state_checked),
-        intArrayOf(),
-    )
-    private val toggleTrackColors = ColorStateList(
-        checkedStates,
-        intArrayOf(0xff265968.toInt(), 0xff293238.toInt(), 0xff00c8ff.toInt(), 0xff324249.toInt()),
-    )
-    private val toggleThumbColors = ColorStateList(
-        checkedStates,
-        intArrayOf(0xff193239.toInt(), 0xff697984.toInt(), 0xff002536.toInt(), muted),
-    )
-    private val checkBoxColors = ColorStateList(
-        checkedStates,
-        intArrayOf(0xff548190.toInt(), 0xff697984.toInt(), 0xff00c8ff.toInt(), muted),
-    )
+    private val checkedStates =
+        arrayOf(
+            intArrayOf(-android.R.attr.state_enabled, android.R.attr.state_checked),
+            intArrayOf(-android.R.attr.state_enabled),
+            intArrayOf(android.R.attr.state_checked),
+            intArrayOf(),
+        )
+    private val toggleTrackColors =
+        ColorStateList(
+            checkedStates,
+            intArrayOf(
+                0xff265968.toInt(),
+                0xff293238.toInt(),
+                0xff00c8ff.toInt(),
+                0xff324249.toInt(),
+            ),
+        )
+    private val toggleThumbColors =
+        ColorStateList(
+            checkedStates,
+            intArrayOf(0xff193239.toInt(), 0xff697984.toInt(), 0xff002536.toInt(), muted),
+        )
+    private val checkBoxColors =
+        ColorStateList(
+            checkedStates,
+            intArrayOf(0xff548190.toInt(), 0xff697984.toInt(), 0xff00c8ff.toInt(), muted),
+        )
 
     private val tankColors = GamePalette.displayColors.map(Color::parseColor)
 
@@ -58,7 +67,8 @@ internal object NativeStyle {
 
     fun mappedPaint(canonical: String): Int {
         val index = GamePalette.colors.indexOf(canonical.lowercase(java.util.Locale.ROOT))
-        return if (index >= 0) paint(index) else runCatching { Color.parseColor(canonical) }.getOrDefault(accent)
+        return if (index >= 0) paint(index)
+        else runCatching { Color.parseColor(canonical) }.getOrDefault(accent)
     }
 
     fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density + .5f).toInt()
@@ -169,18 +179,19 @@ internal object NativeStyle {
             setOnClickListener { action() }
         }
 
-    fun toggle(context: Context) = Switch(context).apply {
-        showText = false
-        splitTrack = false
-        switchMinWidth = context.dp(36)
-        switchPadding = context.dp(12)
-        minHeight = context.dp(44)
-        minimumHeight = context.dp(44)
-        thumbTintList = null
-        trackTintList = null
-        thumbDrawable = ToggleShape(context, 16, 16, toggleThumbColors)
-        trackDrawable = ToggleShape(context, 36, 22, toggleTrackColors, padding = 2)
-    }
+    fun toggle(context: Context) =
+        Switch(context).apply {
+            showText = false
+            splitTrack = false
+            switchMinWidth = context.dp(36)
+            switchPadding = context.dp(12)
+            minHeight = context.dp(44)
+            minimumHeight = context.dp(44)
+            thumbTintList = null
+            trackTintList = null
+            thumbDrawable = ToggleShape(context, 16, 16, toggleThumbColors)
+            trackDrawable = ToggleShape(context, 36, 22, toggleTrackColors, padding = 2)
+        }
 
     fun checkBox(context: Context) = CheckBox(context).apply { buttonTintList = checkBoxColors }
 
@@ -197,13 +208,16 @@ internal object NativeStyle {
         private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors.defaultColor }
 
         override fun getIntrinsicWidth() = shapeWidth
+
         override fun getIntrinsicHeight() = shapeHeight
+
         override fun getPadding(padding: Rect): Boolean {
             padding.set(inset, 0, inset, 0)
             return inset > 0
         }
 
         override fun isStateful() = true
+
         override fun onStateChange(state: IntArray): Boolean {
             val color = colors.getColorForState(state, colors.defaultColor)
             if (ink.color == color) return false
@@ -215,11 +229,25 @@ internal object NativeStyle {
         override fun draw(canvas: Canvas) {
             val radius = shapeHeight / 2f
             val y = bounds.exactCenterY()
-            canvas.drawRoundRect(bounds.left.toFloat(), y - radius, bounds.right.toFloat(), y + radius, radius, radius, ink)
+            canvas.drawRoundRect(
+                bounds.left.toFloat(),
+                y - radius,
+                bounds.right.toFloat(),
+                y + radius,
+                radius,
+                radius,
+                ink,
+            )
         }
 
-        override fun setAlpha(alpha: Int) { ink.alpha = alpha }
-        override fun setColorFilter(filter: ColorFilter?) { ink.colorFilter = filter }
+        override fun setAlpha(alpha: Int) {
+            ink.alpha = alpha
+        }
+
+        override fun setColorFilter(filter: ColorFilter?) {
+            ink.colorFilter = filter
+        }
+
         @Deprecated("Drawable opacity is no longer used")
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
@@ -289,19 +317,22 @@ internal object NativeStyle {
                     width = -2,
                     gap = 0,
                 )
-            val indicator = label(context, "›", 24f, accent, true).apply {
-                gravity = android.view.Gravity.CENTER
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }
+            val indicator =
+                label(context, "›", 24f, accent, true).apply {
+                    gravity = android.view.Gravity.CENTER
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }
             add(indicator, 28, 44, gap = 0)
             fun setExpanded(open: Boolean) {
-                contentDescription = "$title, ${if (detail.isNotEmpty()) "$detail, " else ""}${if (open) "Expanded" else "Collapsed"}"
+                contentDescription =
+                    "$title, ${if (detail.isNotEmpty()) "$detail, " else ""}${if (open) "Expanded" else "Collapsed"}"
                 indicator.rotation = if (open) 90f else 0f
                 controlledContent?.visibility = if (open) View.VISIBLE else View.GONE
             }
             setExpanded(expanded)
             setOnClickListener {
-                if (controlledContent != null) setExpanded(controlledContent.visibility != View.VISIBLE)
+                if (controlledContent != null)
+                    setExpanded(controlledContent.visibility != View.VISIBLE)
                 action()
             }
         }
@@ -351,7 +382,11 @@ internal object NativeStyle {
             override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
         }
 
-    fun icon(context: Context, kind: String, active: Boolean = false): android.graphics.drawable.Drawable =
+    fun icon(
+        context: Context,
+        kind: String,
+        active: Boolean = false,
+    ): android.graphics.drawable.Drawable =
         object : android.graphics.drawable.Drawable() {
             private val ink = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
             private val shape = android.graphics.Path()

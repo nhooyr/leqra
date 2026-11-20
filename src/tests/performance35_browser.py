@@ -13,7 +13,7 @@ with sync_playwright() as pw:
  p=b.new_page(viewport={'width':1365,'height':950}); errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
  web=root/'web';assets=asset_directory(web);html=re.sub(r'<link[^>]*>','',web.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>');p.set_content(html)
  p.evaluate("window.__location=new URL('http://game.test/?test=1');const store={};Object.defineProperty(window,'localStorage',{value:{getItem:k=>store[k]||null,setItem:(k,v)=>store[k]=v,removeItem:k=>delete store[k]}});localStorage.setItem('leqra.muted','1');")
- js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+ js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location);'+js[i+4:]
  p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.__test')
  p.evaluate('''count=>{let seed=35;Math.random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};const T=__test;T.setLocalRules({...T.currentRules(),mode:'koth',mapSize:'large',teamMode:'ffa',timeLimit:600,scoreTarget:300});while(leqra.getState().room.players.length<count)T.addRoomSeat('bot');}''',count)
  p.locator('#startRoomBtn').click();p.wait_for_function('leqra.getState().phase==="playing"')

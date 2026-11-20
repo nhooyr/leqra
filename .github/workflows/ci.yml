@@ -1,0 +1,149 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false # gofmt does not populate a Go build cache.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: ./ci/fmt.sh
+
+  lint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            go.sum
+            ci/lint.sh
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: ./ci/lint.sh
+
+  server:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            go.sum
+            ci/server.sh
+      - run: ./ci/server.sh
+
+  web:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: ./ci/web.sh
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./ci/ios-cache-key.sh
+        id: ios-cache
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ${{ runner.temp }}/leqra-swift
+            ${{ runner.temp }}/leqra-ios/Build
+            ${{ runner.temp }}/leqra-ios/ModuleCache.noindex
+            ${{ runner.temp }}/leqra-ios/SDKStatCaches.noindex
+            ${{ runner.temp }}/leqra-ios/SDKExplicitPrecompiledModules
+            ${{ runner.temp }}/leqra-ios/CompilationCache.noindex
+            ${{ runner.temp }}/leqra-ios/SourcePackages
+          key: ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-${{ hashFiles('ios/**', 'ci/ios.sh', 'scripts/ios-version.sh', 'scripts/version.sh', 'src/main.go') }}
+          restore-keys: |
+            ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.ios-cache.outputs.toolchain }}-
+      - run: ./ci/ios.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-test-results
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/leqra-ios-tests.xcresult
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: ./ci/gradle-version.sh
+        id: gradle-version
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ steps.gradle-version.outputs.version }}
+          cache-provider: basic
+      - uses: android-actions/setup-android@v4
+      - uses: actions/cache@v6
+        with:
+          path: |
+            android/.gradle
+            android/app/build
+            android/core/build
+            !android/.gradle/**/*.lock
+            !android/**/build/reports/**
+            !android/**/build/test-results/**
+            !android/**/build/outputs/androidTest-results/**
+          key: android-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
+          restore-keys: |
+            android-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}-
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.ANDROID_HOME }}/system-images/android-35/google_apis/x86_64
+          key: android-image-${{ runner.os }}-${{ runner.arch }}-35-google_apis-x86_64
+      - run: ./ci/android.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: ./ci/android-smoke.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: android-test-results
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            android/**/build/reports/
+            android/**/build/test-results/
+            android/**/build/outputs/androidTest-results/

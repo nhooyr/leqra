@@ -19,7 +19,7 @@ class BuildVersionTest {
         assertEquals(parts[0] * 1000000 + parts[1] * 10000 + parts[2], BuildConfig.VERSION_CODE)
         assertTrue(
             Regex("(?m)^\\s*version\\s*=\\s*\"${Regex.escape(version)}\"")
-                .containsMatchIn(File(root, "src/main.go").readText())
+                .containsMatchIn(File(root, "src/main.go").readText()),
         )
     }
 }

@@ -117,22 +117,39 @@ class StarmanAudioTest {
         state.result = ArenaResult()
         assertFalse(StarmanLoopState.active(state, 1, 2, true))
     }
+
     @Test
     fun cachedLoopSelectionAndRenderingDoNotAllocatePerAudioBlock() {
         val mixer = AudioVoiceMixer()
         mixer.setLoop(StarmanSynthesis.samples(), true)
         val block = FloatArray(192)
         val effect = FloatArray(8192) { .0001f }
-        val state = ArenaSnapshot(tanks = List(12) { ArenaTank(id = it + 190, starmanTime = if (it == 10) 8.0 else 0.0) })
+        val state =
+            ArenaSnapshot(
+                tanks =
+                    List(12) { ArenaTank(id = it + 190, starmanTime = if (it == 10) 8.0 else 0.0) },
+            )
         val secondary: Int? = 200
-        repeat(1000) { mixer.render(block); StarmanLoopState.active(state, 190, secondary, true) }
+        repeat(1000) {
+            mixer.render(block)
+            StarmanLoopState.active(state, 190, secondary, true)
+        }
         // App unit tests compile against Android's boot classes, so desktop-only
         // allocation instrumentation is reached reflectively, outside the measured loop.
-        val allocation = Class.forName("java.lang.management.ManagementFactory").getMethod("getThreadMXBean").invoke(null)
+        val allocation =
+            Class.forName("java.lang.management.ManagementFactory")
+                .getMethod("getThreadMXBean")
+                .invoke(null)
         val allocationClass = Class.forName("com.sun.management.ThreadMXBean")
-        assertEquals(true, allocationClass.getMethod("isThreadAllocatedMemorySupported").invoke(allocation))
-        allocationClass.getMethod("setThreadAllocatedMemoryEnabled", Boolean::class.javaPrimitiveType).invoke(allocation, true)
-        val allocatedBytes = allocationClass.getMethod("getThreadAllocatedBytes", Long::class.javaPrimitiveType)
+        assertEquals(
+            true,
+            allocationClass.getMethod("isThreadAllocatedMemorySupported").invoke(allocation),
+        )
+        allocationClass
+            .getMethod("setThreadAllocatedMemoryEnabled", Boolean::class.javaPrimitiveType)
+            .invoke(allocation, true)
+        val allocatedBytes =
+            allocationClass.getMethod("getThreadAllocatedBytes", Long::class.javaPrimitiveType)
         val thread = Thread.currentThread().id
         val samples = LongArray(2000)
         var active = 0
@@ -146,10 +163,11 @@ class StarmanAudioTest {
         }
         val allocated = (allocatedBytes.invoke(allocation, thread) as Number).toLong() - before
         samples.sort()
-        println("Starman loop+12-tank selection: p95=${samples[1900] / 1e6}ms, bytes/block=${allocated / samples.size}, active loops=${mixer.activeLoops}")
+        println(
+            "Starman loop+12-tank selection: p95=${samples[1900] / 1e6}ms, bytes/block=${allocated / samples.size}, active loops=${mixer.activeLoops}",
+        )
         assertEquals(samples.size, active)
         assertEquals(1, mixer.activeLoops)
         assertTrue("Cached music must not allocate per render block", allocated <= 4096)
     }
-
 }

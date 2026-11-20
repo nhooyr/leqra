@@ -42,7 +42,7 @@ const RealSocket=WebSocket;window.WebSocket=class extends RealSocket{constructor
 Object.defineProperty(window,'localStorage',{value:store({'leqra.name':NAME,'leqra.muted':'1'})});Object.defineProperty(window,'sessionStorage',{value:store({})});'''.replace('NAME',json.dumps(name))
    html=re.sub(r'<link[^>]*>','',root.joinpath('index.html').read_text()).replace('<script src="game.js" defer></script>','').replace('<script src="netcode.js" defer></script>','').replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
    p.set_content(html);p.evaluate('()=>{'+setup+'}')
-   js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})();');js=js[:pos]+f'}})(new URL({json.dumps(url)}));'+js[pos+5:]
+   js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})()');js=js[:pos]+f'}})(new URL({json.dumps(url)}));'+js[pos+4:]
    p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js)
   else:
    p.add_init_script(setup+f'localStorage.setItem("leqra.name",{json.dumps(name)});localStorage.setItem("leqra.muted","1");');p.goto(url)

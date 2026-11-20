@@ -66,7 +66,10 @@ object ProtocolJson {
             killedBy = json.optString("killedBy", ""),
             killedByColor = json.optString("killedByColor", ""),
             ammoEpoch = json.ammoEpoch(),
-            grenadeEpoch = if (json.has("grenadeEpoch") && !json.isNull("grenadeEpoch")) json.ammoEpoch("grenadeEpoch") else null,
+            grenadeEpoch =
+                if (json.has("grenadeEpoch") && !json.isNull("grenadeEpoch"))
+                    json.ammoEpoch("grenadeEpoch")
+                else null,
         )
 
     fun arenaBullet(json: JSONObject) =
@@ -107,8 +110,14 @@ object ProtocolJson {
             tick = json.intOrNull("tick"),
             spawnSerial = json.intOrNull("spawnSerial"),
             shotSerial = json.longOrNull("shotSerial"),
-            flight = json.optJSONObject("flight")?.let { runCatching { projectileFlight(it) }.getOrNull() },
-            contact = json.optJSONObject("contact")?.let { runCatching { combatContact(it) }.getOrNull() },
+            flight =
+                json.optJSONObject("flight")?.let {
+                    runCatching { projectileFlight(it) }.getOrNull()
+                },
+            contact =
+                json.optJSONObject("contact")?.let {
+                    runCatching { combatContact(it) }.getOrNull()
+                },
         )
 
     private fun combatContact(json: JSONObject): CombatContact {
@@ -117,15 +126,57 @@ object ProtocolJson {
         val life = json.getInt("spawnSerial")
         val tick = json.getDouble("tick")
         val kind = json.getString("kind")
-        require(json.getDouble("projectileId") == projectile.toDouble() && json.getDouble("target") == target.toDouble() && json.getDouble("spawnSerial") == life.toDouble())
+        require(
+            json.getDouble("projectileId") == projectile.toDouble() &&
+                json.getDouble("target") == target.toDouble() &&
+                json.getDouble("spawnSerial") == life.toDouble(),
+        )
         require(projectile >= 0 && target >= 0 && life >= 0 && tick.isFinite() && tick >= 0)
-        require(kind in listOf("regular", "rapid", "scatter", "homing", "grenade", "cannon", "laser", "starman"))
+        require(
+            kind in
+                listOf(
+                    "regular",
+                    "rapid",
+                    "scatter",
+                    "homing",
+                    "grenade",
+                    "cannon",
+                    "laser",
+                    "starman",
+                ),
+        )
         val b = json.getJSONObject("before")
-        val before = ContactTankState(b.getDouble("x"), b.getDouble("y"), b.getDouble("angle"),
-            b.number("vx", 0.0), b.number("vy", 0.0), b.optInt("hp", 1), b.number("shield", 0.0),
-            b.optInt("shieldCharges", 0), b.number("invulnerable", 0.0), b.optBoolean("spawnProtected", false))
-        require(listOf(before.x, before.y, before.angle, before.vx, before.vy, before.shield, before.invulnerable).all { it.isFinite() })
-        require(before.hp > 0 && before.shield >= 0 && before.shieldCharges in 0..5 && before.invulnerable >= 0)
+        val before =
+            ContactTankState(
+                b.getDouble("x"),
+                b.getDouble("y"),
+                b.getDouble("angle"),
+                b.number("vx", 0.0),
+                b.number("vy", 0.0),
+                b.optInt("hp", 1),
+                b.number("shield", 0.0),
+                b.optInt("shieldCharges", 0),
+                b.number("invulnerable", 0.0),
+                b.optBoolean("spawnProtected", false),
+            )
+        require(
+            listOf(
+                    before.x,
+                    before.y,
+                    before.angle,
+                    before.vx,
+                    before.vy,
+                    before.shield,
+                    before.invulnerable,
+                )
+                .all { it.isFinite() },
+        )
+        require(
+            before.hp > 0 &&
+                before.shield >= 0 &&
+                before.shieldCharges in 0..5 &&
+                before.invulnerable >= 0,
+        )
         return CombatContact(projectile, kind, tick, target, life, before)
     }
 
@@ -136,10 +187,24 @@ object ProtocolJson {
         val id = json.getInt("id")
         val owner = json.getInt("owner")
         val color = json.getInt("colorIndex")
-        require(json.getDouble("id") == id.toDouble() && json.getDouble("owner") == owner.toDouble() && json.getDouble("colorIndex") == color.toDouble())
-        return ProjectileFlight(id, owner, color, json.number("startTick"), json.number("endTick"),
-            points.objects { require(it.has("x") && it.has("y") && it.has("tick")); ProjectileFlightPoint(it.number("x"), it.number("y"), it.number("tick")) },
-            json.optString("kind", "cannon"), json.number("radius", 18.0))
+        require(
+            json.getDouble("id") == id.toDouble() &&
+                json.getDouble("owner") == owner.toDouble() &&
+                json.getDouble("colorIndex") == color.toDouble(),
+        )
+        return ProjectileFlight(
+            id,
+            owner,
+            color,
+            json.number("startTick"),
+            json.number("endTick"),
+            points.objects {
+                require(it.has("x") && it.has("y") && it.has("tick"))
+                ProjectileFlightPoint(it.number("x"), it.number("y"), it.number("tick"))
+            },
+            json.optString("kind", "cannon"),
+            json.number("radius", 18.0),
+        )
     }
 
     fun leaderboardEntry(json: JSONObject) =
@@ -207,29 +272,34 @@ object ProtocolJson {
             score = json.optInt("score", 0),
         )
 
-    fun matchReport(json: JSONObject) = MatchReport(
-        mode = json.optString("mode"),
-        duration = json.number("duration"),
-        rounds = json.optInt("rounds"),
-        players = json.optJSONArray("players")?.objects { player ->
-            MatchPlayer(
-                member = player.optLong("member"),
-                controllerMember = player.longOrNull("controllerMember"),
-                name = player.optString("name"),
-                color = player.optString("color"),
-                team = player.optInt("team"),
-                score = player.optInt("score"),
-                kind = player.optString("kind"),
-                eliminations = player.optInt("eliminations"),
-                deaths = player.optInt("deaths"),
-                selfDestructs = player.optInt("selfDestructs"),
-                captures = player.optInt("captures"),
-                flagReturns = player.optInt("flagReturns"),
-                hillSeconds = player.number("hillSeconds"),
-                winner = player.optBoolean("winner"),
-            )
-        }.orEmpty(),
-    )
+    fun matchReport(json: JSONObject) =
+        MatchReport(
+            mode = json.optString("mode"),
+            duration = json.number("duration"),
+            rounds = json.optInt("rounds"),
+            players =
+                json
+                    .optJSONArray("players")
+                    ?.objects { player ->
+                        MatchPlayer(
+                            member = player.optLong("member"),
+                            controllerMember = player.longOrNull("controllerMember"),
+                            name = player.optString("name"),
+                            color = player.optString("color"),
+                            team = player.optInt("team"),
+                            score = player.optInt("score"),
+                            kind = player.optString("kind"),
+                            eliminations = player.optInt("eliminations"),
+                            deaths = player.optInt("deaths"),
+                            selfDestructs = player.optInt("selfDestructs"),
+                            captures = player.optInt("captures"),
+                            flagReturns = player.optInt("flagReturns"),
+                            hillSeconds = player.number("hillSeconds"),
+                            winner = player.optBoolean("winner"),
+                        )
+                    }
+                    .orEmpty(),
+        )
 
     fun roomRules(json: JSONObject) =
         RoomRules(
@@ -296,7 +366,9 @@ object ProtocolJson {
         if (json.isNull("infinityBotSpawnRates")) return null
         val rates = json.getJSONObject("infinityBotSpawnRates")
         return rates.keys().asSequence().associateWith { level ->
-            require(level in BotDifficulty.names && !rates.isNull(level)) { "Invalid roaming bot rate." }
+            require(level in BotDifficulty.names && !rates.isNull(level)) {
+                "Invalid roaming bot rate."
+            }
             rates.number(level).also { require(it in 0.0..4.0) { "Invalid roaming bot rate." } }
         }
     }
@@ -309,19 +381,30 @@ internal fun JSONObject.number(key: String, fallback: Double = 0.0): Double {
     return value.toDouble().also { require(it.isFinite()) }
 }
 
-internal fun JSONObject.ammoEpoch(name: String = "ammoEpoch"): Long = if (isNull(name)) 0 else number(name).let {
-    require(it >= 0 && it <= AmmoEpoch.maximum && it == it.toLong().toDouble()) { "Invalid ammunition epoch." }
-    it.toLong()
-}
+internal fun JSONObject.ammoEpoch(name: String = "ammoEpoch"): Long =
+    if (isNull(name)) 0
+    else
+        number(name).let {
+            require(it >= 0 && it <= AmmoEpoch.maximum && it == it.toLong().toDouble()) {
+                "Invalid ammunition epoch."
+            }
+            it.toLong()
+        }
 
-internal fun JSONArray.ammoEpoch(index: Int): Long = if (index >= length() || isNull(index)) 0 else {
-    val value = get(index)
-    require(value is Number) { "Invalid ammunition epoch." }
-    value.toDouble().let {
-        require(it.isFinite() && it >= 0 && it <= AmmoEpoch.maximum && it == it.toLong().toDouble()) { "Invalid ammunition epoch." }
-        it.toLong()
+internal fun JSONArray.ammoEpoch(index: Int): Long =
+    if (index >= length() || isNull(index)) 0
+    else {
+        val value = get(index)
+        require(value is Number) { "Invalid ammunition epoch." }
+        value.toDouble().let {
+            require(
+                it.isFinite() && it >= 0 && it <= AmmoEpoch.maximum && it == it.toLong().toDouble(),
+            ) {
+                "Invalid ammunition epoch."
+            }
+            it.toLong()
+        }
     }
-}
 
 internal fun JSONArray.ints(): List<Int> = (0 until length()).map { getInt(it) }
 

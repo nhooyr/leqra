@@ -1,22 +1,30 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class CannonFlightTests: XCTestCase {
-    private func flight(kind: String = "cannon", id: Int = 8, start: Double = 60, end: Double = 61) -> CannonFlight {
-        CannonFlight(id: id, owner: 0, colorIndex: 2, startTick: start, endTick: end,
-            points: [CannonFlightPoint(x: 100, y: 100, tick: start), CannonFlightPoint(x: 110, y: 100, tick: end)], kind: kind, radius: 14)
+    private func flight(kind: String = "cannon", id: Int = 8, start: Double = 60, end: Double = 61)
+        -> CannonFlight
+    {
+        CannonFlight(
+            id: id, owner: 0, colorIndex: 2, startTick: start, endTick: end,
+            points: [
+                CannonFlightPoint(x: 100, y: 100, tick: start), CannonFlightPoint(x: 110, y: 100, tick: end),
+            ], kind: kind, radius: 14)
     }
 
     func testEveryUnseenTerminalProjectileHasABoundedVisibleTraversalAndOneImpact() {
         for kind in ["regular", "rapid", "scatter", "homing", "grenade", "cannon"] {
-            let presenter = CannonFlightPresenter(), record = flight(kind: kind)
+            let presenter = CannonFlightPresenter()
+            let record = flight(kind: kind)
             let effect = ArenaEffect(id: 20, kind: kind == "grenade" ? "blast" : "impact", flight: record)
             presenter.accept([effect])
             var bullets = [ArenaBullet(id: 8, x: 999, kind: kind)]
             presenter.append(to: &bullets, tick: 64, now: 0)
             XCTAssertEqual(bullets.count, 1, "No duplicate authoritative/visual projectile")
-            XCTAssertEqual(bullets[0].x, 100); XCTAssertEqual(bullets[0].kind, kind == "regular" ? "" : kind)
+            XCTAssertEqual(bullets[0].x, 100)
+            XCTAssertEqual(bullets[0].kind, kind == "regular" ? "" : kind)
             XCTAssertTrue(presenter.effects([effect]).isEmpty)
             for frame in 1...7 {
                 bullets = []
@@ -26,66 +34,93 @@ final class CannonFlightTests: XCTestCase {
             }
             XCTAssertTrue(bullets.isEmpty)
             XCTAssertEqual(presenter.effects([]), [effect], "Terminal effects survive wire event expiry")
-            presenter.accept([effect]); presenter.append(to: &bullets, tick: 70, now: 1)
-            XCTAssertTrue(bullets.isEmpty); XCTAssertTrue(presenter.effects([]).isEmpty)
+            presenter.accept([effect])
+            presenter.append(to: &bullets, tick: 70, now: 1)
+            XCTAssertTrue(bullets.isEmpty)
+            XCTAssertTrue(presenter.effects([]).isEmpty)
         }
     }
 
     func testNormalCannonPathUsesAuthoritativeBounceVerticesAndNeverOvershoots() {
-        let record = CannonFlight(id: 8, owner: 1, colorIndex: 0, startTick: 60, endTick: 66,
-            points: [CannonFlightPoint(x: 100, y: 100, tick: 60), CannonFlightPoint(x: 120, y: 100, tick: 63),
-                     CannonFlightPoint(x: 100, y: 100, tick: 66)])
-        let presenter = CannonFlightPresenter(), effect = ArenaEffect(id: 20, kind: "impact", flight: record)
+        let record = CannonFlight(
+            id: 8, owner: 1, colorIndex: 0, startTick: 60, endTick: 66,
+            points: [
+                CannonFlightPoint(x: 100, y: 100, tick: 60), CannonFlightPoint(x: 120, y: 100, tick: 63),
+                CannonFlightPoint(x: 100, y: 100, tick: 66),
+            ])
+        let presenter = CannonFlightPresenter()
+        let effect = ArenaEffect(id: 20, kind: "impact", flight: record)
         presenter.accept([effect])
         var bullets: [ArenaBullet] = []
         presenter.append(to: &bullets, tick: 62, now: 0)
         XCTAssertEqual(bullets.first?.x ?? 0, 100 + 40.0 / 3, accuracy: 1e-10)
-        bullets = []; presenter.append(to: &bullets, tick: 65, now: 0.01)
+        bullets = []
+        presenter.append(to: &bullets, tick: 65, now: 0.01)
         XCTAssertEqual(bullets.first?.x ?? 0, 100 + 20.0 / 3, accuracy: 1e-10)
-        bullets = []; presenter.append(to: &bullets, tick: 67, now: 0.02)
+        bullets = []
+        presenter.append(to: &bullets, tick: 67, now: 0.02)
         XCTAssertEqual(bullets.first?.x, 100, "The exact endpoint is drawn for a complete display frame")
         XCTAssertTrue(presenter.effects([]).isEmpty)
-        bullets = []; presenter.append(to: &bullets, tick: 67, now: 0.03)
-        XCTAssertTrue(bullets.isEmpty); XCTAssertEqual(presenter.effects([]), [effect])
+        bullets = []
+        presenter.append(to: &bullets, tick: 67, now: 0.03)
+        XCTAssertTrue(bullets.isEmpty)
+        XCTAssertEqual(presenter.effects([]), [effect])
     }
 
     func testBaselineMalformedAndZeroLengthFlightSafety() throws {
-        let presenter = CannonFlightPresenter(), old = ArenaEffect(id: 20, kind: "impact", flight: flight())
-        presenter.accept([old], baseline: true); presenter.accept([old])
+        let presenter = CannonFlightPresenter()
+        let old = ArenaEffect(id: 20, kind: "impact", flight: flight())
+        presenter.accept([old], baseline: true)
+        presenter.accept([old])
         var bullets: [ArenaBullet] = []
-        presenter.append(to: &bullets, tick: 65, now: 0); XCTAssertTrue(bullets.isEmpty)
-        var invalid = flight(id: 9); invalid.points[0].x = .nan
+        presenter.append(to: &bullets, tick: 65, now: 0)
+        XCTAssertTrue(bullets.isEmpty)
+        var invalid = flight(id: 9)
+        invalid.points[0].x = .nan
         presenter.accept([ArenaEffect(id: 21, flight: invalid)])
-        presenter.append(to: &bullets, tick: 65, now: 0); XCTAssertTrue(bullets.isEmpty)
-        var zero = flight(id: 10, start: 65, end: 65); zero.points[1].x = 100
+        presenter.append(to: &bullets, tick: 65, now: 0)
+        XCTAssertTrue(bullets.isEmpty)
+        var zero = flight(id: 10, start: 65, end: 65)
+        zero.points[1].x = 100
         presenter.accept([ArenaEffect(id: 22, kind: "impact", flight: zero)])
         presenter.append(to: &bullets, tick: 65, now: 0)
-        XCTAssertEqual(bullets.first?.x, 100); XCTAssertEqual(bullets.first?.vx, 0)
+        XCTAssertEqual(bullets.first?.x, 100)
+        XCTAssertEqual(bullets.first?.vx, 0)
         XCTAssertEqual(try JSONDecoder().decode(ArenaEffect.self, from: JSONEncoder().encode(old)), old)
     }
 
     func testFlightValidationPreservesSupportedKindsAndLegacyCannonWhileRejectingUnknownKinds() {
-        for kind in ["regular", "rapid", "scatter", "homing", "grenade", "cannon"] { XCTAssertTrue(flight(kind: kind).valid) }
-        var legacy = flight(); legacy.kind = nil
+        for kind in ["regular", "rapid", "scatter", "homing", "grenade", "cannon"] {
+            XCTAssertTrue(flight(kind: kind).valid)
+        }
+        var legacy = flight()
+        legacy.kind = nil
         XCTAssertTrue(legacy.valid)
         for kind in ["", "laser", "starman", "Cannon", "unknown"] { XCTAssertFalse(flight(kind: kind).valid) }
     }
 
     func testAudioAcceptsDelayedImpactAfterNewerShotWithoutReplayingEither() {
-        var router = AudioEventRouter(), snapshot = ArenaSnapshot(tanks: [ArenaTank(id: 1)])
+        var router = AudioEventRouter()
+        var snapshot = ArenaSnapshot(tanks: [ArenaTank(id: 1)])
         _ = router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0)
         snapshot.effects = [ArenaEffect(id: 22, kind: "shot:", owner: 1)]
-        XCTAssertEqual(router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0.1).map(\.cue), [.regular])
+        XCTAssertEqual(
+            router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0.1).map(
+                \.cue), [.regular])
         snapshot.effects.append(ArenaEffect(id: 20, kind: "impact"))
-        XCTAssertEqual(router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0.2).map(\.cue), [.impact])
-        XCTAssertTrue(router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0.3).isEmpty)
+        XCTAssertEqual(
+            router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0.2).map(
+                \.cue), [.impact])
+        XCTAssertTrue(
+            router.consume(snapshot: snapshot, localID: 1, infinity: false, online: true, now: 0.3).isEmpty)
     }
 
     func testPointBlankPracticeKillKeepsTheBodyUntilRenderedProjectileContact() throws {
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             let world = ArenaWorld(width: 840, height: 840, cols: 10, rows: 10)
             let arena = PracticeArena(seed: 42, name: "Human", colorIndex: 0, botCount: 0, world: world)
-            arena.snapshot.tanks[0] = ArenaTank(id: 1, x: 420, y: 420, powerTime: 10, power: kind, charges: 10, machineRounds: 100)
+            arena.snapshot.tanks[0] = ArenaTank(
+                id: 1, x: 420, y: 420, powerTime: 10, power: kind, charges: 10, machineRounds: 100)
             arena.snapshot.tanks.append(ArenaTank(id: 2, x: 456, y: 420, bot: true, cooldown: 999))
             arena.step(input: GameInput(fire: true), dt: 1 / 60)
             XCTAssertEqual(arena.snapshot.tanks[1].hp, 0, kind)
@@ -95,9 +130,12 @@ final class CannonFlightTests: XCTestCase {
             XCTAssertEqual(presented.tanks[1].hp, 1, kind)
             if kind == "cannon" {
                 let shell = try XCTUnwrap(presented.bullets.first { $0.kind == "cannon" })
-                XCTAssertLessThanOrEqual(hypot(shell.x - presented.tanks[1].x, shell.y - presented.tanks[1].y), 31.0000001)
+                XCTAssertLessThanOrEqual(
+                    hypot(shell.x - presented.tanks[1].x, shell.y - presented.tanks[1].y), 31.0000001)
             }
-            XCTAssertFalse(presented.effects.contains { $0.flight != nil && ["impact", "blast"].contains($0.kind) }, kind)
+            XCTAssertFalse(
+                presented.effects.contains { $0.flight != nil && ["impact", "blast"].contains($0.kind) }, kind
+            )
             XCTAssertEqual(arena.snapshot.tanks[1].hp, 0)
             let endpoint = arena.presentationSnapshot(fraction: 0, now: 0.05)
             if kind == "cannon" {
@@ -110,7 +148,9 @@ final class CannonFlightTests: XCTestCase {
             let bullet = try XCTUnwrap(endpoint.bullets.first { $0.id == terminal.id }, kind)
             XCTAssertEqual(bullet.x, terminal.points.last?.x)
             XCTAssertEqual(endpoint.tanks[1].hp, 1, kind)
-            XCTAssertLessThanOrEqual(hypot(bullet.x - endpoint.tanks[1].x, bullet.y - endpoint.tanks[1].y), 17 + (terminal.radius ?? 0) + 1e-7, kind)
+            XCTAssertLessThanOrEqual(
+                hypot(bullet.x - endpoint.tanks[1].x, bullet.y - endpoint.tanks[1].y),
+                17 + (terminal.radius ?? 0) + 1e-7, kind)
             XCTAssertFalse(endpoint.effects.contains { $0.kind == "hit" }, kind)
             let after = arena.presentationSnapshot(fraction: 0, now: 0.05 + 1 / 120)
             XCTAssertEqual(after.tanks[1].hp, 0, kind)
@@ -120,7 +160,9 @@ final class CannonFlightTests: XCTestCase {
 
     func testWinningPracticeCannonContactFinishesWhileItsShellRemains() {
         let arena = PracticeArena(seed: 42, name: "Human", colorIndex: 0, botCount: 0)
-        var rules = RoomRules(); rules.infinity = true; rules.infinityTarget = 1
+        var rules = RoomRules()
+        rules.infinity = true
+        rules.infinityTarget = 1
         arena.configure(rules: rules)
         arena.snapshot.tanks[0] = ArenaTank(id: 1, x: 42, y: 42, powerTime: 10, power: "cannon", charges: 10)
         arena.snapshot.tanks.append(ArenaTank(id: 2, x: 78, y: 42, bot: true, cooldown: 999))

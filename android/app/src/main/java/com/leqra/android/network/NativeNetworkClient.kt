@@ -14,13 +14,13 @@ import kotlin.math.min
 import kotlin.math.pow
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
@@ -147,7 +147,10 @@ class NativeNetworkClient(
                 .put("type", if (code.isNullOrBlank()) "create" else "join")
                 .put("name", name)
                 .put("spectating", spectating)
-                .put("publicToken", store.selected(origin, 0)?.takeUnless { it.registrationPending }?.key)
+                .put(
+                    "publicToken",
+                    store.selected(origin, 0)?.takeUnless { it.registrationPending }?.key,
+                )
         if (!code.isNullOrBlank()) join.put("code", code)
         begin(ServerAddress.origin(origin), false, join, false)
     }
@@ -166,7 +169,10 @@ class NativeNetworkClient(
                 .put("rules", rules)
                 .put("roster", roster)
                 .put("code", code)
-                .put("publicToken", store.selected(origin, 0)?.takeUnless { it.registrationPending }?.key)
+                .put(
+                    "publicToken",
+                    store.selected(origin, 0)?.takeUnless { it.registrationPending }?.key,
+                )
         if ((0 until roster.length()).any { roster.getJSONObject(it).optString("kind") == "local" })
             attachLocalCredential(join, origin)
         begin(ServerAddress.origin(origin), false, join, false)
@@ -182,7 +188,12 @@ class NativeNetworkClient(
         spectating: Boolean = false,
         target: Int? = null,
     ) {
-        val join = JSONObject().put("type", "join").put("code", code).put("token", token).put("spectating", spectating)
+        val join =
+            JSONObject()
+                .put("type", "join")
+                .put("code", code)
+                .put("token", token)
+                .put("spectating", spectating)
         if (spectating && target != null && target > 0) join.put("target", target)
         if (resume) join.put("resume", true).put("generation", generation)
         if (includeLocal && !spectating)
@@ -206,7 +217,12 @@ class NativeNetworkClient(
     fun send(command: JSONObject) {
         // These mutations can register/migrate P2, so its durable candidate must precede the send.
         val type = command.optString("type")
-        if (infinity && welcome?.spectating == true && type in setOf("input", "rename", "rename_local")) return
+        if (
+            infinity &&
+                welcome?.spectating == true &&
+                type in setOf("input", "rename", "rename_local")
+        )
+            return
         val includesLocal =
             type == "add" && command.optString("kind") == "local" ||
                 type == "preset" &&
@@ -239,7 +255,11 @@ class NativeNetworkClient(
         player: Int? = null,
         member: Long? = null,
     ) {
-        if (!connected || welcome?.spectating == true && (infinity || !local || welcome?.localId == null)) return
+        if (
+            !connected ||
+                welcome?.spectating == true && (infinity || !local || welcome?.localId == null)
+        )
+            return
         val previous = if (local) localSequence else sequence
         val next = if (input.seq > 0) input.seq else previous + 1
         if (next <= previous) return
@@ -285,7 +305,8 @@ class NativeNetworkClient(
     }
 
     fun hasRoomReservation(code: String): Boolean =
-        !infinity && resumeJoin?.optString("code") == code &&
+        !infinity &&
+            resumeJoin?.optString("code") == code &&
             deadline?.let { SystemClock.elapsedRealtime() < it } != false
 
     fun reconnect(): Boolean {
@@ -405,9 +426,17 @@ class NativeNetworkClient(
                                     "invalid_response",
                                     "The server sent an invalid response.",
                                 )
-                            val source = it.body?.source() ?: throw NetworkFailure("invalid_response", "The server sent an invalid response.")
+                            val source =
+                                it.body?.source()
+                                    ?: throw NetworkFailure(
+                                        "invalid_response",
+                                        "The server sent an invalid response.",
+                                    )
                             if (source.request(8193) && source.buffer.size > 8192)
-                                throw NetworkFailure("invalid_response", "The server sent an invalid response.")
+                                throw NetworkFailure(
+                                    "invalid_response",
+                                    "The server sent an invalid response.",
+                                )
                             GameWireProtocol.check(JSONObject(source.readUtf8()))
                         }
                     }
@@ -432,50 +461,111 @@ class NativeNetworkClient(
     /** A lost registration response must not strand an already registered owner key. */
     private fun resolvePendingPrimary(current: Long) {
         val address = origin ?: return
-        val candidate = store.selected(address, 0)?.takeIf { it.registrationPending && !pendingJoin.has("token") }
-        if (candidate == null) { openSocket(current); return }
-        val call = http.newCall(Request.Builder().url(ServerAddress.endpoint(address, "/api/account"))
-            .header("Origin", address)
-            .post(JSONObject().put("publicToken", candidate.key).toString().toRequestBody("application/json".toMediaType())).build())
-        discovery = call
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                main.post { if (epoch == current && !call.isCanceled()) fail("The account server could not be reached. Reconnecting…", false) }
+        val candidate =
+            store.selected(address, 0)?.takeIf {
+                it.registrationPending && !pendingJoin.has("token")
             }
-            override fun onResponse(call: Call, response: Response) {
-                val checked = runCatching {
-                    response.use {
-                        if (it.code == 429 || it.code >= 500)
-                            throw NetworkFailure("server_busy", "The account server is temporarily unavailable. Reconnecting…", terminal = false)
-                        val source = it.body?.source() ?: throw NetworkFailure("invalid_response", "The account server sent an invalid response.")
-                        if (source.request(65537) && source.buffer.size > 65536)
-                            throw NetworkFailure("invalid_response", "The account server sent an invalid response.")
-                        val json = JSONObject(source.readUtf8())
-                        when {
-                            it.isSuccessful -> { require(json.has("names")); true }
-                            it.code == 401 && json.optString("code") == "account_key_invalid" -> false
-                            else -> throw NetworkFailure(json.optString("code", "account_error"), json.optString("message", "The account could not be checked."), terminal = it.code != 429 && it.code < 500)
-                        }
+        if (candidate == null) {
+            openSocket(current)
+            return
+        }
+        val call =
+            http.newCall(
+                Request.Builder()
+                    .url(ServerAddress.endpoint(address, "/api/account"))
+                    .header("Origin", address)
+                    .post(
+                        JSONObject()
+                            .put("publicToken", candidate.key)
+                            .toString()
+                            .toRequestBody("application/json".toMediaType()),
+                    )
+                    .build(),
+            )
+        discovery = call
+        call.enqueue(
+            object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    main.post {
+                        if (epoch == current && !call.isCanceled())
+                            fail("The account server could not be reached. Reconnecting…", false)
                     }
                 }
-                main.post {
-                    if (epoch != current || call.isCanceled()) return@post
-                    checked.fold({ registered ->
-                        if (store.selected(address, 0)?.key != candidate.key) {
-                            fail("The selected account changed while joining. Join again to use it.", true, "account_selection_changed")
-                            return@fold
+
+                override fun onResponse(call: Call, response: Response) {
+                    val checked = runCatching {
+                        response.use {
+                            if (it.code == 429 || it.code >= 500)
+                                throw NetworkFailure(
+                                    "server_busy",
+                                    "The account server is temporarily unavailable. Reconnecting…",
+                                    terminal = false,
+                                )
+                            val source =
+                                it.body?.source()
+                                    ?: throw NetworkFailure(
+                                        "invalid_response",
+                                        "The account server sent an invalid response.",
+                                    )
+                            if (source.request(65537) && source.buffer.size > 65536)
+                                throw NetworkFailure(
+                                    "invalid_response",
+                                    "The account server sent an invalid response.",
+                                )
+                            val json = JSONObject(source.readUtf8())
+                            when {
+                                it.isSuccessful -> {
+                                    require(json.has("names"))
+                                    true
+                                }
+                                it.code == 401 && json.optString("code") == "account_key_invalid" ->
+                                    false
+                                else ->
+                                    throw NetworkFailure(
+                                        json.optString("code", "account_error"),
+                                        json.optString(
+                                            "message",
+                                            "The account could not be checked.",
+                                        ),
+                                        terminal = it.code != 429 && it.code < 500,
+                                    )
+                            }
                         }
-                        if (registered) {
-                            store.select(address, 0, candidate.key)
-                            pendingJoin.put("publicToken", candidate.key)
-                            if (infinity && !pendingJoin.has("code")) pendingJoin.put("resume", true)
-                        }
-                        if (infinity && !pendingJoin.has("code")) resumeJoin = JSONObject(pendingJoin.toString())
-                        openSocket(current)
-                    }, { error -> fail(error.message ?: "The account could not be checked.", (error as? NetworkFailure)?.terminal ?: (error !is IOException), (error as? NetworkFailure)?.code) })
+                    }
+                    main.post {
+                        if (epoch != current || call.isCanceled()) return@post
+                        checked.fold(
+                            { registered ->
+                                if (store.selected(address, 0)?.key != candidate.key) {
+                                    fail(
+                                        "The selected account changed while joining. Join again to use it.",
+                                        true,
+                                        "account_selection_changed",
+                                    )
+                                    return@fold
+                                }
+                                if (registered) {
+                                    store.select(address, 0, candidate.key)
+                                    pendingJoin.put("publicToken", candidate.key)
+                                    if (infinity && !pendingJoin.has("code"))
+                                        pendingJoin.put("resume", true)
+                                }
+                                if (infinity && !pendingJoin.has("code"))
+                                    resumeJoin = JSONObject(pendingJoin.toString())
+                                openSocket(current)
+                            },
+                            { error ->
+                                fail(
+                                    error.message ?: "The account could not be checked.",
+                                    (error as? NetworkFailure)?.terminal ?: (error !is IOException),
+                                    (error as? NetworkFailure)?.code,
+                                )
+                            },
+                        )
+                    }
                 }
-            }
-        })
+            },
+        )
     }
 
     private fun openSocket(current: Long) {
@@ -497,9 +587,11 @@ class NativeNetworkClient(
                                 return@post
                             }
                             if (infinity)
-                                send(JSONObject(pendingJoin.toString())
-                                    .put("version", BuildConfig.GAME_VERSION)
-                                    .put("protocol", GameWireProtocol.epoch))
+                                send(
+                                    JSONObject(pendingJoin.toString())
+                                        .put("version", BuildConfig.GAME_VERSION)
+                                        .put("protocol", GameWireProtocol.epoch),
+                                )
                         }
                     }
 
@@ -527,7 +619,14 @@ class NativeNetworkClient(
                                     try {
                                         when (incoming) {
                                             is Incoming.State -> {
-                                                if (incoming.snapshot.spectating && incoming.snapshot.following > 0) resumeJoin?.put("target", incoming.snapshot.following)
+                                                if (
+                                                    incoming.snapshot.spectating &&
+                                                        incoming.snapshot.following > 0
+                                                )
+                                                    resumeJoin?.put(
+                                                        "target",
+                                                        incoming.snapshot.following,
+                                                    )
                                                 onEvent(NetworkEvent.State(incoming.snapshot))
                                             }
                                             is Incoming.Packet -> receive(incoming.json)
@@ -578,7 +677,11 @@ class NativeNetworkClient(
     private fun receive(json: JSONObject) {
         when (val type = json.getString("type")) {
             "server_hello" -> {
-                if (infinity) throw NetworkFailure("invalid_response", "The server sent an unexpected room handshake.")
+                if (infinity)
+                    throw NetworkFailure(
+                        "invalid_response",
+                        "The server sent an unexpected room handshake.",
+                    )
                 GameWireProtocol.check(json)
                 send(
                     JSONObject()
@@ -611,8 +714,15 @@ class NativeNetworkClient(
                         val localId = local?.getInt("id")
                         val localMember = local?.getLong("member")
                         val spectators = json.optJSONArray("spectators") ?: JSONArray()
-                        val spectating = (0 until spectators.length()).any { spectators.getJSONObject(it).optInt("id", -1) == current.id }
-                        if (localId != current.localId || localMember != current.localMember || spectating != current.spectating) {
+                        val spectating =
+                            (0 until spectators.length()).any {
+                                spectators.getJSONObject(it).optInt("id", -1) == current.id
+                            }
+                        if (
+                            localId != current.localId ||
+                                localMember != current.localMember ||
+                                spectating != current.spectating
+                        ) {
                             welcome = current.withLocal(localId, localMember, spectating)
                             onEvent(NetworkEvent.Welcome(welcome!!))
                         }
@@ -658,8 +768,7 @@ class NativeNetworkClient(
                 if (code in setOf("account_key_revoked", "account_key_invalid")) {
                     val slot = seat ?: 0
                     val old = selectionAtJoin[slot.coerceIn(0, 1)]
-                    if (old != null)
-                        origin?.let { store.forgetAccount(it, old) }
+                    if (old != null) origin?.let { store.forgetAccount(it, old) }
                 }
                 val transient =
                     isPublic &&
@@ -676,7 +785,14 @@ class NativeNetworkClient(
                     fail(message, false, code, seat)
                 else if (
                     !connected ||
-                        code in setOf("kicked", "session_replaced", "account_key_revoked", "account_key_invalid", "room_access_changed") ||
+                        code in
+                            setOf(
+                                "kicked",
+                                "session_replaced",
+                                "account_key_revoked",
+                                "account_key_invalid",
+                                "room_access_changed",
+                            ) ||
                         json.optString("action") == "version"
                 )
                     fail(message, true, code, seat)
@@ -692,7 +808,8 @@ class NativeNetworkClient(
                 onEvent(NetworkEvent.Packet(json))
                 disconnect()
             }
-            "chat", "chat_history" -> Unit
+            "chat",
+            "chat_history" -> Unit
             else -> onEvent(NetworkEvent.Packet(json))
         }
     }

@@ -16,6 +16,7 @@ class PracticeArena(
     val localID = 1
     var secondaryLocalID: Int? = null
         private set
+
     var snapshot = ArenaSnapshot()
         internal set
 
@@ -46,7 +47,9 @@ class PracticeArena(
     private var lastVisualWallTime: Double? = null
     private val terminalFlights = ProjectileFlightPresentation()
     private val contacts = CombatContactPresentation()
-    val hasPendingProjectileFlights: Boolean get() = terminalFlights.hasPending || contacts.hasPending
+    val hasPendingProjectileFlights: Boolean
+        get() = terminalFlights.hasPending || contacts.hasPending
+
     private var nextPickup = 0.0
     private var nextID = 1
     private var nextEffect = 0
@@ -168,44 +171,53 @@ class PracticeArena(
             configurePilot(2, name, colorIndex, team)
             return 2
         }
-        (snapshot.tanks.firstOrNull { it.id == 2 } ?: inactiveRoamingBots[2])
-            ?.let { bot ->
-                val replacement =
-                    displacedBotID?.takeIf { id -> id > 2 && snapshot.tanks.none { it.id == id } && id !in inactiveRoamingBots }
-                        ?: max(nextRoamingID, max(snapshot.tanks.maxOfOrNull { it.id } ?: 1, inactiveRoamingBots.keys.maxOrNull() ?: 1) + 1)
-                nextRoamingID = max(nextRoamingID, replacement + 1)
-                if (roamingIDs.remove(2)) roamingIDs.add(replacement)
-                roamingHomes.remove(2)?.let { roamingHomes[replacement] = it }
-                held.remove(2)?.let { held[replacement] = it }
-                if (pendingFirePresses.remove(2)) pendingFirePresses.add(replacement)
-                if (fireUntilRelease.remove(2)) fireUntilRelease.add(replacement)
-                movementInputs.remove(2)?.let { movementInputs[replacement] = it }
-                rapidShotTicks.remove(2)?.let { rapidShotTicks[replacement] = it }
-                botCourses.remove(2)?.let { botCourses[replacement] = it }
-                botDecisions.remove(2)?.let { botDecisions[replacement] = it }
-                dumbBrains.remove(2)?.let { dumbBrains[replacement] = it }
-                nextBoostEffects.remove(2)?.let { nextBoostEffects[replacement] = it }
-                motionPresenters.remove(2)
-                for (projectile in projectiles) {
-                    if (projectile.wire.owner == 2) projectile.wire.owner = replacement
-                    if (projectile.wire.target == 2) projectile.wire.target = replacement
-                    projectile.cannonHits?.remove(2)?.let { projectile.cannonHits?.put(replacement, it) }
+        (snapshot.tanks.firstOrNull { it.id == 2 } ?: inactiveRoamingBots[2])?.let { bot ->
+            val replacement =
+                displacedBotID?.takeIf { id ->
+                    id > 2 && snapshot.tanks.none { it.id == id } && id !in inactiveRoamingBots
                 }
-                snapshot.bullets =
-                    snapshot.bullets.map { b ->
-                        b.copy(
-                            owner = if (b.owner == 2) replacement else b.owner,
-                            target = if (b.target == 2) replacement else b.target,
-                        )
-                    }
-                snapshot.effects =
-                    snapshot.effects.map { effect ->
-                        if (effect.owner == 2) effect.copy(owner = replacement) else effect
-                    }
-                bot.id = replacement
-                if (inactiveRoamingBots.remove(2) != null) inactiveRoamingBots[replacement] = bot
-                inactiveRoamingReadyAt.remove(2)?.let { inactiveRoamingReadyAt[replacement] = it }
+                    ?: max(
+                        nextRoamingID,
+                        max(
+                            snapshot.tanks.maxOfOrNull { it.id } ?: 1,
+                            inactiveRoamingBots.keys.maxOrNull() ?: 1,
+                        ) + 1,
+                    )
+            nextRoamingID = max(nextRoamingID, replacement + 1)
+            if (roamingIDs.remove(2)) roamingIDs.add(replacement)
+            roamingHomes.remove(2)?.let { roamingHomes[replacement] = it }
+            held.remove(2)?.let { held[replacement] = it }
+            if (pendingFirePresses.remove(2)) pendingFirePresses.add(replacement)
+            if (fireUntilRelease.remove(2)) fireUntilRelease.add(replacement)
+            movementInputs.remove(2)?.let { movementInputs[replacement] = it }
+            rapidShotTicks.remove(2)?.let { rapidShotTicks[replacement] = it }
+            botCourses.remove(2)?.let { botCourses[replacement] = it }
+            botDecisions.remove(2)?.let { botDecisions[replacement] = it }
+            dumbBrains.remove(2)?.let { dumbBrains[replacement] = it }
+            nextBoostEffects.remove(2)?.let { nextBoostEffects[replacement] = it }
+            motionPresenters.remove(2)
+            for (projectile in projectiles) {
+                if (projectile.wire.owner == 2) projectile.wire.owner = replacement
+                if (projectile.wire.target == 2) projectile.wire.target = replacement
+                projectile.cannonHits?.remove(2)?.let {
+                    projectile.cannonHits?.put(replacement, it)
+                }
             }
+            snapshot.bullets =
+                snapshot.bullets.map { b ->
+                    b.copy(
+                        owner = if (b.owner == 2) replacement else b.owner,
+                        target = if (b.target == 2) replacement else b.target,
+                    )
+                }
+            snapshot.effects =
+                snapshot.effects.map { effect ->
+                    if (effect.owner == 2) effect.copy(owner = replacement) else effect
+                }
+            bot.id = replacement
+            if (inactiveRoamingBots.remove(2) != null) inactiveRoamingBots[replacement] = bot
+            inactiveRoamingReadyAt.remove(2)?.let { inactiveRoamingReadyAt[replacement] = it }
+        }
         addSecondaryPilot(LocalPilot(name, colorIndex, team), maxCells = 3)
         configurePilot(2, name, colorIndex, team)
         return 2
@@ -255,7 +267,14 @@ class PracticeArena(
             configured = true
             roamingIDs.clear()
             roamingHomes.clear()
-            nextRoamingID = max(nextRoamingID, max(snapshot.tanks.maxOfOrNull { it.id } ?: 1, inactiveRoamingBots.keys.maxOrNull() ?: 1) + 1)
+            nextRoamingID =
+                max(
+                    nextRoamingID,
+                    max(
+                        snapshot.tanks.maxOfOrNull { it.id } ?: 1,
+                        inactiveRoamingBots.keys.maxOrNull() ?: 1,
+                    ) + 1,
+                )
             nextRoamingSpawn = time
             snapshot.tanks.forEachIndexed { i, t ->
                 t.team = if (rules.teamMode == "teams") if (t.team > 0) t.team else i % 2 + 1 else 0
@@ -263,8 +282,10 @@ class PracticeArena(
                     t.colorIndex = rules.teamColors.getOrNull(t.team - 1) ?: t.colorIndex
             }
             inactiveRoamingBots.values.forEach { t ->
-                t.team = if (rules.teamMode == "teams") t.team.takeIf { it > 0 } ?: (t.id % 2 + 1) else 0
-                if (t.team > 0) t.colorIndex = rules.teamColors.getOrNull(t.team - 1) ?: t.colorIndex
+                t.team =
+                    if (rules.teamMode == "teams") t.team.takeIf { it > 0 } ?: (t.id % 2 + 1) else 0
+                if (t.team > 0)
+                    t.colorIndex = rules.teamColors.getOrNull(t.team - 1) ?: t.colorIndex
             }
         }
         updateStandings()
@@ -343,7 +364,12 @@ class PracticeArena(
                 val hadSpeed = t.speedTime > 0
                 val hadGhost = t.ghostTime > 0
                 move(t, controls, dt, ageStarman = false)
-                if (expiredAmmo.remove(t.id) || hadSpeed && t.speedTime <= 0 || hadGhost && t.ghostTime <= 0) refillAmmo(t)
+                if (
+                    expiredAmmo.remove(t.id) ||
+                        hadSpeed && t.speedTime <= 0 ||
+                        hadGhost && t.ghostTime <= 0
+                )
+                    refillAmmo(t)
                 collectPickups(i)
                 weaponControl(i, controls.fire)
             }
@@ -387,7 +413,10 @@ class PracticeArena(
         for (i in projectiles.indices) {
             val p = projectiles[i]
             if (p.wire.kind != "cannon") {
-                p.segmentX = p.wire.x; p.segmentY = p.wire.y; p.segmentTick = p.pathTick; p.flightPoints = null
+                p.segmentX = p.wire.x
+                p.segmentY = p.wire.y
+                p.segmentTick = p.pathTick
+                p.flightPoints = null
             }
             val span =
                 min(
@@ -426,28 +455,81 @@ class PracticeArena(
         val living = humans.filter { it.hp > 0 }
         val rate = rules.roamingBotSpawnRates().values.sum()
         val budget = if (rules.infinityRandomBots && rate > 0) min(128, humans.size * 16) else 0
-        val retired = snapshot.tanks.filter { bot -> bot.id in roamingIDs &&
-            (budget == 0 || humans.none { abs(it.x - bot.x) <= 16 * 84 && abs(it.y - bot.y) <= 16 * 84 }) }.map { it.id }.toMutableSet()
+        val retired =
+            snapshot.tanks
+                .filter { bot ->
+                    bot.id in roamingIDs &&
+                        (budget == 0 ||
+                            humans.none {
+                                abs(it.x - bot.x) <= 16 * 84 && abs(it.y - bot.y) <= 16 * 84
+                            })
+                }
+                .map { it.id }
+                .toMutableSet()
         val excess = (roamingIDs.size - retired.size - budget).coerceAtLeast(0)
-        if (excess > 0) retired += roamingIDs.filter { it !in retired }.sortedDescending().take(excess)
+        if (excess > 0)
+            retired += roamingIDs.filter { it !in retired }.sortedDescending().take(excess)
         parkRoamingBots(retired)
         if (time < nextRoamingSpawn || living.isEmpty() || roamingIDs.size >= budget) return
         nextRoamingSpawn = time + (1 + unitRandom()) / rate
         repeat(min(living.size, budget - roamingIDs.size)) {
             val level = rules.roamingBotDifficulty(unitRandom()) ?: return@repeat
-            val anchor = living.minWith(compareBy<ArenaTank> { human -> roamingHomes.values.count { it == human.id } }.thenBy { it.id })
-            val previous = inactiveRoamingBots.values.filter { it.difficulty == level && time + 1e-9 >= (inactiveRoamingReadyAt[it.id] ?: 0.0) }.minByOrNull { it.id }
-            if (previous == null && inactiveRoamingBots.values.count { it.difficulty == level } + snapshot.tanks.count { it.id in roamingIDs && it.difficulty == level } >= 128) return@repeat
-            val id = previous?.id ?: max(nextRoamingID, max(snapshot.tanks.maxOfOrNull { it.id } ?: 1, inactiveRoamingBots.keys.maxOrNull() ?: 1) + 1)
+            val anchor =
+                living.minWith(
+                    compareBy<ArenaTank> { human -> roamingHomes.values.count { it == human.id } }
+                        .thenBy { it.id },
+                )
+            val previous =
+                inactiveRoamingBots.values
+                    .filter {
+                        it.difficulty == level &&
+                            time + 1e-9 >= (inactiveRoamingReadyAt[it.id] ?: 0.0)
+                    }
+                    .minByOrNull { it.id }
+            if (
+                previous == null &&
+                    inactiveRoamingBots.values.count { it.difficulty == level } +
+                        snapshot.tanks.count { it.id in roamingIDs && it.difficulty == level } >=
+                        128
+            )
+                return@repeat
+            val id =
+                previous?.id
+                    ?: max(
+                        nextRoamingID,
+                        max(
+                            snapshot.tanks.maxOfOrNull { it.id } ?: 1,
+                            inactiveRoamingBots.keys.maxOrNull() ?: 1,
+                        ) + 1,
+                    )
             nextRoamingID = max(nextRoamingID, id + 1)
             inactiveRoamingBots.remove(id)
             inactiveRoamingReadyAt.remove(id)
             val p = spawnPoint(anchor, 2, 5)
-            val team = if (rules.teamMode == "teams") previous?.team?.takeIf { it > 0 } ?: (snapshot.tanks.size % 2 + 1) else 0
-            snapshot.tanks += ArenaTank(id = id, name = previous?.name ?: "Bot ${id - 1}", x = p.x, y = p.y, angle = unitRandom() * 2 * PI - PI,
-                colorIndex = previous?.colorIndex ?: if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0 else GamePalette.index(id - 1), team = team,
-                score = previous?.score ?: 0, bot = true, spawnProtected = true, spawnSerial = (previous?.spawnSerial ?: 0) + 1, invulnerable = 1.0, difficulty = level,
-                ammoEpoch = if (previous == null) 0 else AmmoEpoch.next(previous.ammoEpoch))
+            val team =
+                if (rules.teamMode == "teams")
+                    previous?.team?.takeIf { it > 0 } ?: (snapshot.tanks.size % 2 + 1)
+                else 0
+            snapshot.tanks +=
+                ArenaTank(
+                    id = id,
+                    name = previous?.name ?: "Bot ${id - 1}",
+                    x = p.x,
+                    y = p.y,
+                    angle = unitRandom() * 2 * PI - PI,
+                    colorIndex =
+                        previous?.colorIndex
+                            ?: if (team > 0) rules.teamColors.getOrNull(team - 1) ?: 0
+                            else GamePalette.index(id - 1),
+                    team = team,
+                    score = previous?.score ?: 0,
+                    bot = true,
+                    spawnProtected = true,
+                    spawnSerial = (previous?.spawnSerial ?: 0) + 1,
+                    invulnerable = 1.0,
+                    difficulty = level,
+                    ammoEpoch = if (previous == null) 0 else AmmoEpoch.next(previous.ammoEpoch),
+                )
             roamingIDs += id
             roamingHomes[id] = anchor.id
         }
@@ -457,13 +539,21 @@ class PracticeArena(
         if (ids.isEmpty()) return
         for (tank in snapshot.tanks) if (tank.id in ids) {
             inactiveRoamingBots[tank.id] = tank.copy(hp = 0, respawnTime = 0.0)
-            inactiveRoamingReadyAt[tank.id] = time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
-            roamingIDs.remove(tank.id); roamingHomes.remove(tank.id); held.remove(tank.id); movementInputs.remove(tank.id)
+            inactiveRoamingReadyAt[tank.id] =
+                time + if (tank.hp <= 0) max(0.0, tank.respawnTime) else 0.0
+            roamingIDs.remove(tank.id)
+            roamingHomes.remove(tank.id)
+            held.remove(tank.id)
+            movementInputs.remove(tank.id)
             pendingFirePresses.remove(tank.id)
             fireUntilRelease.remove(tank.id)
-            botCourses.remove(tank.id); botDecisions.remove(tank.id); dumbBrains.remove(tank.id)
-            rapidShotTicks.remove(tank.id); expiredAmmo.remove(tank.id)
-            nextBoostEffects.remove(tank.id); motionPresenters.remove(tank.id)
+            botCourses.remove(tank.id)
+            botDecisions.remove(tank.id)
+            dumbBrains.remove(tank.id)
+            rapidShotTicks.remove(tank.id)
+            expiredAmmo.remove(tank.id)
+            nextBoostEffects.remove(tank.id)
+            motionPresenters.remove(tank.id)
         }
         snapshot.tanks = snapshot.tanks.filter { it.id !in ids }
     }
@@ -527,13 +617,32 @@ class PracticeArena(
         if (now.isFinite()) lastVisualWallTime = now
         visualTime = max(time, visualTime + elapsed)
         terminalFlights.accept(snapshot.effects, visualTime, snapshot.tanks.size)
-        contacts.accept(snapshot.effects, snapshot.tanks, visualTime, snapshot.tick.toDouble(), snapshot.tanks.filter { !it.bot }.map { it.id }.toSet())
-        val image = terminalFlights.render(result.bullets, result.effects, visualTime, contacts::canCompleteProjectile)
-        val contactImage = contacts.render(result.tanks, image.effects, visualTime, terminalFlights) { from, to ->
-            TankMovement.presentationFitsBounds(to, maze.world) && (from.ghostTime > 0 || maze.rayHit(from.x, from.y, to.x-from.x, to.y-from.y, 17.0) == null)
-        }
-        return result.copy(tanks = contactImage.tanks, bullets = image.bullets, effects = contactImage.effects,
-            result = if (hasPendingProjectileFlights) null else result.result)
+        contacts.accept(
+            snapshot.effects,
+            snapshot.tanks,
+            visualTime,
+            snapshot.tick.toDouble(),
+            snapshot.tanks.filter { !it.bot }.map { it.id }.toSet(),
+        )
+        val image =
+            terminalFlights.render(
+                result.bullets,
+                result.effects,
+                visualTime,
+                contacts::canCompleteProjectile,
+            )
+        val contactImage =
+            contacts.render(result.tanks, image.effects, visualTime, terminalFlights) { from, to ->
+                TankMovement.presentationFitsBounds(to, maze.world) &&
+                    (from.ghostTime > 0 ||
+                        maze.rayHit(from.x, from.y, to.x - from.x, to.y - from.y, 17.0) == null)
+            }
+        return result.copy(
+            tanks = contactImage.tanks,
+            bullets = image.bullets,
+            effects = contactImage.effects,
+            result = if (hasPendingProjectileFlights) null else result.result,
+        )
     }
 
     private fun present(
@@ -612,7 +721,15 @@ class PracticeArena(
         val old = snapshot.tanks[index]
         val p =
             respawnLocation?.invoke(old)
-                ?: spawnPoint(if (old.id in roamingIDs) snapshot.tanks.filter { !it.bot && it.hp > 0 }.minByOrNull { hypot(it.x - old.x, it.y - old.y) } ?: old else if (old.bot) snapshot.tanks[0] else old, 2, 5)
+                ?: spawnPoint(
+                    if (old.id in roamingIDs)
+                        snapshot.tanks
+                            .filter { !it.bot && it.hp > 0 }
+                            .minByOrNull { hypot(it.x - old.x, it.y - old.y) } ?: old
+                    else if (old.bot) snapshot.tanks[0] else old,
+                    2,
+                    5,
+                )
         val replacement =
             ArenaTank(
                 id = old.id,
@@ -669,7 +786,13 @@ class PracticeArena(
         }
         t.cooldown = max(0.0, t.cooldown - dt)
         t.recoil = max(0.0, t.recoil - 9 * dt)
-        if (ghostEnds || hadShield && t.shield <= 0 || hadStar && t.starmanTime <= 0 || hadWeapon && t.powerTime <= 0) expiredAmmo += t.id
+        if (
+            ghostEnds ||
+                hadShield && t.shield <= 0 ||
+                hadStar && t.starmanTime <= 0 ||
+                hadWeapon && t.powerTime <= 0
+        )
+            expiredAmmo += t.id
     }
 
     private fun refillAmmo(tank: ArenaTank) {
@@ -699,7 +822,9 @@ class PracticeArena(
         nextPickup = time + 1.25 + unitRandom() * 1.25
         val humans = snapshot.tanks.filter { !it.bot }
         snapshot.pickups =
-            snapshot.pickups.filter { pickup -> humans.any { hypot(pickup.x - it.x, pickup.y - it.y) < 11 * 84 } }
+            snapshot.pickups.filter { pickup ->
+                humans.any { hypot(pickup.x - it.x, pickup.y - it.y) < 11 * 84 }
+            }
         for (pilot in humans) {
             if (pilot.hp <= 0) continue
             var nearby = snapshot.pickups.count { hypot(it.x - pilot.x, it.y - pilot.y) < 5 * 84 }
@@ -715,7 +840,8 @@ class PracticeArena(
                         snapshot.pickups.any { hypot(it.x - x, it.y - y) < 1.1 * 84 }
                 )
                     continue
-                snapshot.pickups += ArenaPickup(id = ++nextID, x = x, y = y, type = weightedPickup())
+                snapshot.pickups +=
+                    ArenaPickup(id = ++nextID, x = x, y = y, type = weightedPickup())
                 nearby++
             }
         }
@@ -801,7 +927,9 @@ class PracticeArena(
     private fun botInput(index: Int, dt: Double): GameInput {
         val bot = snapshot.tanks[index]
         val targets =
-            if (maze.world == null && bot.id in roamingIDs && bot.team == 0) snapshot.tanks.filter { !it.bot } else snapshot.tanks
+            if (maze.world == null && bot.id in roamingIDs && bot.team == 0)
+                snapshot.tanks.filter { !it.bot }
+            else snapshot.tanks
         val pilot =
             targets
                 .filter { it.hp > 0 && opposes(bot.id, it) }
@@ -829,9 +957,10 @@ class PracticeArena(
             val previous = dumbBrains[bot.id]
             val brain =
                 if (previous?.first == bot.spawnSerial) previous.second
-                else DumbBotBrain(max(0.0, time - dt)).also {
-                    dumbBrains[bot.id] = bot.spawnSerial to it
-                }
+                else
+                    DumbBotBrain(max(0.0, time - dt)).also {
+                        dumbBrains[bot.id] = bot.spawnSerial to it
+                    }
             val decided =
                 brain.reconsider(time, pilot.id, atan2(dy, dx), sees && !routing, ::unitRandom)
             if (brain.tracks(pilot.id, sees && !routing)) {
@@ -840,8 +969,7 @@ class PracticeArena(
                         brain.trigger(
                             time,
                             bot.angle,
-                            pilot.invulnerable == 0.0 &&
-                                pilot.starmanTime == 0.0,
+                            pilot.invulnerable == 0.0 && pilot.starmanTime == 0.0,
                         ),
                     stickX = cos(brain.aim),
                     stickY = sin(brain.aim),
@@ -966,10 +1094,18 @@ class PracticeArena(
         if (t.hp <= 0 || t.spawnProtected && t.invulnerable > 1e-9) return
         if (pressed) {
             val grenadeEpoch = t.grenadeEpoch ?: t.ammoEpoch
-            val grenades = projectiles.filter { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == grenadeEpoch }
+            val grenades = projectiles.filter {
+                it.wire.owner == t.id &&
+                    it.wire.kind == "grenade" &&
+                    it.wire.ammoEpoch == grenadeEpoch
+            }
             if (grenades.isNotEmpty()) {
                 grenades.forEach { detonate(it.wire, completedFlight(it)) }
-                projectiles.removeAll { it.wire.owner == t.id && it.wire.kind == "grenade" && it.wire.ammoEpoch == grenadeEpoch }
+                projectiles.removeAll {
+                    it.wire.owner == t.id &&
+                        it.wire.kind == "grenade" &&
+                        it.wire.ammoEpoch == grenadeEpoch
+                }
                 t.grenadeEpoch = null
                 if (fire) fireUntilRelease += t.id
                 return
@@ -999,7 +1135,9 @@ class PracticeArena(
         )
             return
         val offsets = if (kind == "scatter") listOf(-.21, 0.0, .21) else listOf(0.0)
-        val ordinary = projectiles.count { it.wire.owner == t.id && !it.boosted && it.wire.ammoEpoch == t.ammoEpoch }
+        val ordinary = projectiles.count {
+            it.wire.owner == t.id && !it.boosted && it.wire.ammoEpoch == t.ammoEpoch
+        }
         if (!boosted && kind != "laser" && ordinary + offsets.size > spec.capacity) return
         if (kind == "rapid") rapidShotTicks[t.id] = snapshot.tick
         val cooldown = if (boosted) 0.0 else spec.cooldown
@@ -1014,17 +1152,30 @@ class PracticeArena(
                     effect("impact", t.x, t.y, t.id)
                     continue
                 }
-                val muzzle = if (launch.bounced) 0.0 else max(0.0, (if (kind == "cannon") 32.0 else 28.0) - launch.distance)
+                val muzzle =
+                    if (launch.bounced) 0.0
+                    else max(0.0, (if (kind == "cannon") 32.0 else 28.0) - launch.distance)
                 val launchPath = launch.distance + muzzle
-                val life = if (kind == "rapid" && boosted) {
-                    if (world != null) max(0.0, world.width + world.height - launchPath) / spec.speed
-                    else (rapidSpec.life * rapidSpec.speed * 2 + launchPath) / spec.speed
-                } else spec.life
+                val life =
+                    if (kind == "rapid" && boosted) {
+                        if (world != null)
+                            max(0.0, world.width + world.height - launchPath) / spec.speed
+                        else (rapidSpec.life * rapidSpec.speed * 2 + launchPath) / spec.speed
+                    } else spec.life
                 val dx = launch.ux * muzzle
                 val dy = launch.uy * muzzle
                 val wall = maze.projectileHit(kind, launch.x, launch.y, dx, dy, spec.radius)
-                val target = targetHit(t.id, launch.x, launch.y, dx, dy, spec.radius,
-                    wall?.fraction ?: 1.00000001, kind == "grenade")
+                val target =
+                    targetHit(
+                        t.id,
+                        launch.x,
+                        launch.y,
+                        dx,
+                        dy,
+                        spec.radius,
+                        wall?.fraction ?: 1.00000001,
+                        kind == "grenade",
+                    )
                 val visible = minOf(1.0, wall?.fraction ?: 1.0, target?.fraction ?: 1.0)
                 val p =
                     Projectile(
@@ -1053,17 +1204,27 @@ class PracticeArena(
                     p.seekDelay = .04
                     p.rangeLeft = p.rangeLeft?.minus(launch.distance)
                 }
-                if (advance(p, muzzle / spec.speed, recordTime = false, muzzle = true)) projectiles.add(p)
+                if (advance(p, muzzle / spec.speed, recordTime = false, muzzle = true))
+                    projectiles.add(p)
             }
             // Rapid audio has one display-time gate; do not sparsify its source a second time.
-            if (!boosted || kind == "rapid" || kind == "grenade" || time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0)) {
+            if (
+                !boosted ||
+                    kind == "rapid" ||
+                    kind == "grenade" ||
+                    time + 1e-9 >= (nextBoostEffects[t.id] ?: 0.0)
+            ) {
                 nextBoostEffects[t.id] = time + 4.0 / 60
                 effect("shot:$kind", t.x, t.y, t.id)
             }
             var remaining = max(0, 115 - if (boosted) 0 else ordinary + offsets.size)
             for (i in projectiles.indices.reversed()) {
                 val p = projectiles[i]
-                if (p.wire.owner == t.id && p.wire.ammoEpoch == t.ammoEpoch && (boosted || p.boosted)) {
+                if (
+                    p.wire.owner == t.id &&
+                        p.wire.ammoEpoch == t.ammoEpoch &&
+                        (boosted || p.boosted)
+                ) {
                     if (remaining > 0) remaining-- else p.wire.life = 0.0
                 }
             }
@@ -1120,10 +1281,15 @@ class PracticeArena(
     }
 
     private fun recordFlightPoint(p: Projectile) {
-        val points = p.flightPoints ?: ArrayList<ProjectileFlightPoint>(4).also {
-            it += if (p.wire.kind == "cannon") ProjectileFlightPoint(p.birthX, p.birthY, p.birthTick) else ProjectileFlightPoint(p.segmentX, p.segmentY, p.segmentTick)
-            p.flightPoints = it
-        }
+        val points =
+            p.flightPoints
+                ?: ArrayList<ProjectileFlightPoint>(4).also {
+                    it +=
+                        if (p.wire.kind == "cannon")
+                            ProjectileFlightPoint(p.birthX, p.birthY, p.birthTick)
+                        else ProjectileFlightPoint(p.segmentX, p.segmentY, p.segmentTick)
+                    p.flightPoints = it
+                }
         val point = ProjectileFlightPoint(p.wire.x, p.wire.y, p.pathTick)
         if (points.lastOrNull() == point) return
         if (points.size >= 32) points.removeAt(1)
@@ -1135,11 +1301,25 @@ class PracticeArena(
         val recorded = p.flightPoints ?: return null
         val points = if (recorded.size == 1) recorded + recorded.single() else recorded.toList()
         if (points.size < 2) return null
-        return ProjectileFlight(p.wire.id, p.wire.owner, p.wire.colorIndex, points.first().tick, points.last().tick,
-            points, p.wire.kind.ifEmpty { "regular" }, p.radius)
+        return ProjectileFlight(
+            p.wire.id,
+            p.wire.owner,
+            p.wire.colorIndex,
+            points.first().tick,
+            points.last().tick,
+            points,
+            p.wire.kind.ifEmpty { "regular" },
+            p.radius,
+        )
     }
 
-    private fun advance(p: Projectile, dt: Double, visualOnly: Boolean = false, recordTime: Boolean = true, muzzle: Boolean = false): Boolean {
+    private fun advance(
+        p: Projectile,
+        dt: Double,
+        visualOnly: Boolean = false,
+        recordTime: Boolean = true,
+        muzzle: Boolean = false,
+    ): Boolean {
         var dx = p.wire.vx * dt
         var dy = p.wire.vy * dt
         var remaining = dt
@@ -1148,31 +1328,50 @@ class PracticeArena(
             val wall = maze.projectileHit(b.kind, b.x, b.y, dx, dy, p.radius)
             if (b.kind == "cannon" && !visualOnly) {
                 val hits = p.cannonHits ?: mutableMapOf<Int, Int>().also { p.cannonHits = it }
-                val eligible = snapshot.tanks.indices.mapNotNull { index ->
-                    val target = snapshot.tanks[index]
-                    if (target.hp <= 0 || target.invulnerable > 0 || target.id == b.owner ||
-                        !friendlyFire && !opposes(b.owner, target) || hits[target.id] == target.spawnSerial) null
-                    else circleHit(b.x, b.y, dx, dy, target.x, target.y, 17 + p.radius)
-                        ?.takeIf { it < (wall?.fraction ?: 1.00000001) }?.let { TargetHit(index, it) }
-                }.sortedBy { it.fraction }
+                val eligible =
+                    snapshot.tanks.indices
+                        .mapNotNull { index ->
+                            val target = snapshot.tanks[index]
+                            if (
+                                target.hp <= 0 ||
+                                    target.invulnerable > 0 ||
+                                    target.id == b.owner ||
+                                    !friendlyFire && !opposes(b.owner, target) ||
+                                    hits[target.id] == target.spawnSerial
+                            )
+                                null
+                            else
+                                circleHit(b.x, b.y, dx, dy, target.x, target.y, 17 + p.radius)
+                                    ?.takeIf { it < (wall?.fraction ?: 1.00000001) }
+                                    ?.let { TargetHit(index, it) }
+                        }
+                        .sortedBy { it.fraction }
                 for (hit in eligible) {
                     val target = snapshot.tanks[hit.index]
                     hits[target.id] = target.spawnSerial
-                    hurt(hit.index, b.owner, projectileId = 0, kind = "cannon",
-                        contactTick = p.pathTick + if (recordTime) remaining * hit.fraction * 60 else 0.0)
+                    hurt(
+                        hit.index,
+                        b.owner,
+                        projectileId = 0,
+                        kind = "cannon",
+                        contactTick =
+                            p.pathTick + if (recordTime) remaining * hit.fraction * 60 else 0.0,
+                    )
                 }
             }
             val target =
-                if (b.kind == "cannon") null else targetHit(
-                    b.owner,
-                    b.x,
-                    b.y,
-                    dx,
-                    dy,
-                    p.radius,
-                    wall?.fraction ?: 1.00000001,
-                    b.kind == "grenade",
-                )
+                if (b.kind == "cannon") null
+                else
+                    targetHit(
+                        b.owner,
+                        b.x,
+                        b.y,
+                        dx,
+                        dy,
+                        p.radius,
+                        wall?.fraction ?: 1.00000001,
+                        b.kind == "grenade",
+                    )
             if (target != null) {
                 b.x += dx * target.fraction
                 b.y += dy * target.fraction
@@ -1184,8 +1383,15 @@ class PracticeArena(
                     else {
                         if ((b.kind == "homing" || b.kind == "cannon"))
                             effect("impact", b.x, b.y, b.owner, flight = flight)
-                        else if (flight != null) effect("projectileFlight", b.x, b.y, b.owner, flight = flight)
-                        hurt(target.index, b.owner, projectileId = b.id, kind = b.kind.ifEmpty { "regular" }, contactTick = p.pathTick)
+                        else if (flight != null)
+                            effect("projectileFlight", b.x, b.y, b.owner, flight = flight)
+                        hurt(
+                            target.index,
+                            b.owner,
+                            projectileId = b.id,
+                            kind = b.kind.ifEmpty { "regular" },
+                            contactTick = p.pathTick,
+                        )
                     }
                 }
                 return false
@@ -1203,7 +1409,8 @@ class PracticeArena(
             if (!visualOnly && b.bounces > limit) {
                 val flight = completedFlight(p)
                 if (b.kind == "grenade") detonate(b, flight)
-                else if (flight != null) effect("projectileFlight", b.x, b.y, b.owner, flight = flight)
+                else if (flight != null)
+                    effect("projectileFlight", b.x, b.y, b.owner, flight = flight)
                 return false
             }
             b.x += dx * wall.fraction + wall.nx * .12
@@ -1296,15 +1503,37 @@ class PracticeArena(
             val dy = uy * remaining
             val wall = maze.rayHit(x, y, dx, dy, 3.0)
             val limit = wall?.fraction ?: 1.0
-            val hits = snapshot.tanks.indices.mapNotNull { index ->
-                val target = snapshot.tanks[index]
-                if (target.hp <= 0 || target.invulnerable > 0 || (target.id == t.id || !friendlyFire && !opposes(t.id, target)) || target.id in hitIDs) null
-                else circleHit(x, y, dx, dy, target.x, target.y, 20.0)?.takeIf { it < limit }?.let { index to it }
-            }.sortedBy { it.second }
-            for ((index, _) in hits) { targets += index; hitIDs += snapshot.tanks[index].id }
+            val hits =
+                snapshot.tanks.indices
+                    .mapNotNull { index ->
+                        val target = snapshot.tanks[index]
+                        if (
+                            target.hp <= 0 ||
+                                target.invulnerable > 0 ||
+                                (target.id == t.id || !friendlyFire && !opposes(t.id, target)) ||
+                                target.id in hitIDs
+                        )
+                            null
+                        else
+                            circleHit(x, y, dx, dy, target.x, target.y, 20.0)
+                                ?.takeIf { it < limit }
+                                ?.let { index to it }
+                    }
+                    .sortedBy { it.second }
+            for ((index, _) in hits) {
+                targets += index
+                hitIDs += snapshot.tanks[index].id
+            }
             val length = remaining * limit
             if (i == 0) {
-                val crop = if (launch.bounced) 0.0 else min(28.0, hits.firstOrNull()?.let { remaining * it.second } ?: Double.POSITIVE_INFINITY)
+                val crop =
+                    if (launch.bounced) 0.0
+                    else
+                        min(
+                            28.0,
+                            hits.firstOrNull()?.let { remaining * it.second }
+                                ?: Double.POSITIVE_INFINITY,
+                        )
                 points.add(BeamPoint(x + ux * min(crop, length), y + uy * min(crop, length)))
             }
             x += ux * length
@@ -1342,11 +1571,24 @@ class PracticeArena(
                     maze.rayHit(b.x, b.y, t.x - b.x, t.y - b.y, 0.0) != null
             )
                 continue
-            hurt(i, b.owner, projectileId = b.id, kind = "grenade", contactTick = flight?.endTick ?: snapshot.tick.toDouble())
+            hurt(
+                i,
+                b.owner,
+                projectileId = b.id,
+                kind = "grenade",
+                contactTick = flight?.endTick ?: snapshot.tick.toDouble(),
+            )
         }
     }
 
-    private fun hurt(index: Int, owner: Int, starman: Boolean = false, projectileId: Int = 0, kind: String = if (starman) "starman" else "laser", contactTick: Double = snapshot.tick.toDouble()) {
+    private fun hurt(
+        index: Int,
+        owner: Int,
+        starman: Boolean = false,
+        projectileId: Int = 0,
+        kind: String = if (starman) "starman" else "laser",
+        contactTick: Double = snapshot.tick.toDouble(),
+    ) {
         val t = snapshot.tanks[index]
         if (
             owner == t.id ||
@@ -1355,11 +1597,30 @@ class PracticeArena(
                 !starman && t.invulnerable != 0.0
         )
             return
-        val contact = CombatContact(projectileId, kind, contactTick, t.id, t.spawnSerial,
-            ContactTankState(t.x, t.y, t.angle, hp = t.hp, shield = t.shield, shieldCharges = t.shieldCharges, invulnerable = t.invulnerable, spawnProtected = t.spawnProtected))
+        val contact =
+            CombatContact(
+                projectileId,
+                kind,
+                contactTick,
+                t.id,
+                t.spawnSerial,
+                ContactTankState(
+                    t.x,
+                    t.y,
+                    t.angle,
+                    hp = t.hp,
+                    shield = t.shield,
+                    shieldCharges = t.shieldCharges,
+                    invulnerable = t.invulnerable,
+                    spawnProtected = t.spawnProtected,
+                ),
+            )
         if (!starman && t.shield > 0) {
             t.shieldCharges = max(1, t.shieldCharges) - 1
-            if (t.shieldCharges == 0) { t.shield = 0.0; refillAmmo(t) }
+            if (t.shieldCharges == 0) {
+                t.shield = 0.0
+                refillAmmo(t)
+            }
             t.invulnerable = .35
             t.spawnProtected = false
             effect("shield", t.x, t.y, owner, contact = contact)
@@ -1369,16 +1630,16 @@ class PracticeArena(
         t.grenadeEpoch = null
         if (killScoring) t.score--
         t.respawnTime = if (respawnsEnabled) respawnDelay else 0.0
-        identity(owner)
-            ?.let {
-                if (killScoring) it.score++
-                t.killedBy = it.name
-                t.killedByColor = GamePalette.colors[GamePalette.index(it.colorIndex)]
-            }
+        identity(owner)?.let {
+            if (killScoring) it.score++
+            t.killedBy = it.name
+            t.killedByColor = GamePalette.colors[GamePalette.index(it.colorIndex)]
+        }
         effect("hit", t.x, t.y, owner, contact = contact)
     }
 
-    private fun identity(id: Int) = snapshot.tanks.firstOrNull { it.id == id } ?: inactiveRoamingBots[id]
+    private fun identity(id: Int) =
+        snapshot.tanks.firstOrNull { it.id == id } ?: inactiveRoamingBots[id]
 
     private fun team(id: Int) = identity(id)?.team ?: 0
 
@@ -1403,15 +1664,20 @@ class PracticeArena(
             if (attacker.hp <= 0 || attacker.starmanTime <= 0) continue
             for (i in snapshot.tanks.indices) {
                 val target = snapshot.tanks[i]
-                if (target.hp > 0 && target.starmanTime <= 0 &&
-                    (target.invulnerable == 0.0 || target.spawnProtected) && starContact(attacker, target))
+                if (
+                    target.hp > 0 &&
+                        target.starmanTime <= 0 &&
+                        (target.invulnerable == 0.0 || target.spawnProtected) &&
+                        starContact(attacker, target)
+                )
                     hurt(i, attacker.id, true)
             }
         }
     }
 
     private fun starContact(a: ArenaTank, b: ArenaTank): Boolean =
-        a.id != b.id && (friendlyFire || opposes(a.id, b)) &&
+        a.id != b.id &&
+            (friendlyFire || opposes(a.id, b)) &&
             hypot(a.x - b.x, a.y - b.y) <= 34 &&
             !maze.segmentBlocked(a.x, a.y, b.x - a.x, b.y - a.y)
 
@@ -1430,7 +1696,11 @@ class PracticeArena(
             if (p.boosted) boosted.add(b.id)
             indices[b.owner]?.let { i ->
                 if (!p.boosted && b.ammoEpoch == snapshot.tanks[i].ammoEpoch) owned[i].ammo++
-                if (b.kind == "grenade" && b.ammoEpoch == (snapshot.tanks[i].grenadeEpoch ?: snapshot.tanks[i].ammoEpoch)) {
+                if (
+                    b.kind == "grenade" &&
+                        b.ammoEpoch ==
+                            (snapshot.tanks[i].grenadeEpoch ?: snapshot.tanks[i].ammoEpoch)
+                ) {
                     owned[i].grenades++
                     owned[i].grenadeLife = max(owned[i].grenadeLife, b.life)
                 }
@@ -1451,7 +1721,15 @@ class PracticeArena(
         val ranks = sorted.mapIndexed { index, tank -> tank.id to index + 1 }.toMap()
         snapshot.leaderboard =
             (if (configured && maze.world == null) sorted else sorted.take(10)).map {
-                LeaderboardEntry(it.id, it.name, it.score, it.colorIndex, it.bot, it.team, it.difficulty)
+                LeaderboardEntry(
+                    it.id,
+                    it.name,
+                    it.score,
+                    it.colorIndex,
+                    it.bot,
+                    it.team,
+                    it.difficulty,
+                )
             }
         snapshot.tankCount = roster.size
         snapshot.teamScores =

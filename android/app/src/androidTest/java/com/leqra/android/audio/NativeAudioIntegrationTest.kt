@@ -14,15 +14,40 @@ class NativeAudioIntegrationTest {
     @Test
     fun dryFireUsesPreparedNativeOutputAndRespectsMuteAndZeroVolume() {
         lateinit var audio: NativeAudio
-        main { audio = NativeAudio(instrumentation.targetContext); audio.enabled = false }
+        main {
+            audio = NativeAudio(instrumentation.targetContext)
+            audio.enabled = false
+        }
         try {
-            main { audio.play(AudioCue.DRY_FIRE); assertEquals(0, audio.pendingCueCount); assertEquals(0, audio.outputStarts) }
-            waitUntil("Dry-fire PCM did not prepare") { audio.preparedVoiceCount == AudioCue.entries.size * 2 }
-            main { audio.enabled = true; audio.volume = 0f; audio.play(AudioCue.DRY_FIRE); assertEquals(0, audio.pendingCueCount); assertEquals(0, audio.outputStarts) }
-            main { audio.volume = .5f; audio.play(AudioCue.DRY_FIRE) }
-            waitUntil("The cached dry-fire click did not reach native output") { audio.framesWritten > 0 && audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 }
-        } finally { main { audio.release() } }
+            main {
+                audio.play(AudioCue.DRY_FIRE)
+                assertEquals(0, audio.pendingCueCount)
+                assertEquals(0, audio.outputStarts)
+            }
+            waitUntil("Dry-fire PCM did not prepare") {
+                audio.preparedVoiceCount == AudioCue.entries.size * 2
+            }
+            main {
+                audio.enabled = true
+                audio.volume = 0f
+                audio.play(AudioCue.DRY_FIRE)
+                assertEquals(0, audio.pendingCueCount)
+                assertEquals(0, audio.outputStarts)
+            }
+            main {
+                audio.volume = .5f
+                audio.play(AudioCue.DRY_FIRE)
+            }
+            waitUntil("The cached dry-fire click did not reach native output") {
+                audio.framesWritten > 0 &&
+                    audio.pendingCueCount == 0 &&
+                    audio.lastCueLatencyNanos > 0
+            }
+        } finally {
+            main { audio.release() }
+        }
     }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
     private fun main(block: () -> Unit) = instrumentation.runOnMainSync(block)
@@ -44,36 +69,59 @@ class NativeAudioIntegrationTest {
         val cold = ArrayList<Long>()
         val warm = ArrayList<Long>()
         try {
-            waitUntil("PCM bank did not prepare") { audio.preparedVoiceCount == AudioCue.entries.size * 2 }
+            waitUntil("PCM bank did not prepare") {
+                audio.preparedVoiceCount == AudioCue.entries.size * 2
+            }
             repeat(5) {
                 main { audio.pause() }
                 SystemClock.sleep(50)
                 main { audio.play(AudioCue.REGULAR) }
-                waitUntil("Cold first cue did not drain") { audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 }
+                waitUntil("Cold first cue did not drain") {
+                    audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0
+                }
                 cold += audio.lastCueLatencyNanos
                 main { audio.pause() }
                 SystemClock.sleep(50)
                 val starts = audio.outputStarts
                 main { audio.updateStarman(idle, 1, null, true) }
-                waitUntil("The arena must warm its silent output before firing") { audio.outputStarts > starts && audio.framesWritten > 0 }
+                waitUntil("The arena must warm its silent output before firing") {
+                    audio.outputStarts > starts && audio.framesWritten > 0
+                }
                 assertEquals(0, audio.pendingCueCount)
                 assertEquals(0, audio.activeLoopCount)
                 main { audio.play(AudioCue.REGULAR) }
-                waitUntil("Warm first cue did not drain") { audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 }
+                waitUntil("Warm first cue did not drain") {
+                    audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0
+                }
                 warm += audio.lastCueLatencyNanos
-                assertEquals("First projectile must reuse its prepared hardware stream", starts + 1, audio.outputStarts)
+                assertEquals(
+                    "First projectile must reuse its prepared hardware stream",
+                    starts + 1,
+                    audio.outputStarts,
+                )
             }
-            File(instrumentation.targetContext.cacheDir, "first-shot-audio.txt").writeText("cold first cue ms ${percentiles(cold)}\nscene-prepared first cue ms ${percentiles(warm)}\n")
+            File(instrumentation.targetContext.cacheDir, "first-shot-audio.txt")
+                .writeText(
+                    "cold first cue ms ${percentiles(cold)}\nscene-prepared first cue ms ${percentiles(warm)}\n",
+                )
             main {
-                audio.pause(); audio.enabled = false
+                audio.pause()
+                audio.enabled = false
                 audio.updateStarman(idle, 1, null, true)
-                audio.volume = 0f; audio.enabled = true
+                audio.volume = 0f
+                audio.enabled = true
                 audio.updateStarman(idle, 1, null, true)
             }
             val starts = audio.outputStarts
             SystemClock.sleep(80)
-            assertEquals("Muted/zero-volume scene entry never opens hardware output", starts, audio.outputStarts)
-        } finally { main { audio.release() } }
+            assertEquals(
+                "Muted/zero-volume scene entry never opens hardware output",
+                starts,
+                audio.outputStarts,
+            )
+        } finally {
+            main { audio.release() }
+        }
     }
 
     @Test
@@ -84,26 +132,61 @@ class NativeAudioIntegrationTest {
         val player = ArenaSnapshot(tick = 1, generation = 1, tanks = listOf(tank))
         val viewer = player.copy(spectating = true, following = 7)
         try {
-            waitUntil("PCM voices did not prepare") { audio.preparedVoiceCount == AudioCue.entries.size * 2 && audio.preparedLoop }
+            waitUntil("PCM voices did not prepare") {
+                audio.preparedVoiceCount == AudioCue.entries.size * 2 && audio.preparedLoop
+            }
             main { audio.updateStarman(player, 7, null, true) }
-            waitUntil("Player power loop did not start") { audio.framesWritten > 0 && audio.activeLoopCount == 1 }
+            waitUntil("Player power loop did not start") {
+                audio.framesWritten > 0 && audio.activeLoopCount == 1
+            }
             val starts = audio.outputStarts
             main {
                 audio.consume(viewer, -1, true, true, 1.0)
                 audio.updateStarman(viewer, 0, null, false, sceneActive = true)
-                audio.consume(viewer.copy(tick = 2, effects = listOf(ArenaEffect(id = 1, kind = "shot:regular", owner = 7, x = tank.x, y = tank.y))), -1, true, true, 1.1)
+                audio.consume(
+                    viewer.copy(
+                        tick = 2,
+                        effects =
+                            listOf(
+                                ArenaEffect(
+                                    id = 1,
+                                    kind = "shot:regular",
+                                    owner = 7,
+                                    x = tank.x,
+                                    y = tank.y,
+                                ),
+                            ),
+                    ),
+                    -1,
+                    true,
+                    true,
+                    1.1,
+                )
             }
-            waitUntil("Watched gun sound never reached native output") { audio.pendingCueCount == 0 && audio.lastCueLatencyNanos > 0 && audio.activeLoopCount == 0 }
+            waitUntil("Watched gun sound never reached native output") {
+                audio.pendingCueCount == 0 &&
+                    audio.lastCueLatencyNanos > 0 &&
+                    audio.activeLoopCount == 0
+            }
             val before = audio.framesWritten
             SystemClock.sleep(60)
-            assertTrue("Ending local Starman must not stop watched effects output", audio.framesWritten > before)
+            assertTrue(
+                "Ending local Starman must not stop watched effects output",
+                audio.framesWritten > before,
+            )
             assertEquals(starts, audio.outputStarts)
             main { audio.updateStarman(viewer, 0, null, false, sceneActive = false) }
             SystemClock.sleep(100)
             val stopped = audio.framesWritten
             SystemClock.sleep(50)
-            assertEquals("Observer menu/pause releases the audio engine", stopped, audio.framesWritten)
-        } finally { main { audio.release() } }
+            assertEquals(
+                "Observer menu/pause releases the audio engine",
+                stopped,
+                audio.framesWritten,
+            )
+        } finally {
+            main { audio.release() }
+        }
     }
 
     @Test
@@ -219,6 +302,7 @@ class NativeAudioIntegrationTest {
         fun p(fraction: Double) = ordered[((ordered.size - 1) * fraction).toInt()] / 1e6
         return "p50=%.3f p95=%.3f max=%.3f".format(p(.5), p(.95), p(1.0))
     }
+
     @Test
     fun starmanUsesOneCachedLocalLoopAndRespectsEveryPlaybackGate() {
         lateinit var audio: NativeAudio
@@ -243,7 +327,9 @@ class NativeAudioIntegrationTest {
                 audio.consume(snapshot, 1, true, false)
                 audio.updateStarman(snapshot, 1, 2, true)
             }
-            waitUntil("P2 power did not start one native loop") { audio.activeLoopCount == 1 && audio.framesWritten > 0 }
+            waitUntil("P2 power did not start one native loop") {
+                audio.activeLoopCount == 1 && audio.framesWritten > 0
+            }
             val starts = audio.outputStarts
             main {
                 first.starmanTime = 8.0
@@ -256,16 +342,26 @@ class NativeAudioIntegrationTest {
             SystemClock.sleep(100)
             val stopped = audio.framesWritten
             SystemClock.sleep(50)
-            assertEquals("Pause/menu/disconnect must release the native output", stopped, audio.framesWritten)
+            assertEquals(
+                "Pause/menu/disconnect must release the native output",
+                stopped,
+                audio.framesWritten,
+            )
             assertEquals(0, audio.activeLoopCount)
             main { audio.updateStarman(snapshot, 1, 2, true) }
-            waitUntil("Powered resume did not restart a single loop") { audio.outputStarts > starts && audio.activeLoopCount == 1 && audio.framesWritten > stopped }
+            waitUntil("Powered resume did not restart a single loop") {
+                audio.outputStarts > starts &&
+                    audio.activeLoopCount == 1 &&
+                    audio.framesWritten > stopped
+            }
             main {
                 first.hp = 0
                 second.hp = 0
                 audio.updateStarman(snapshot, 1, 2, true)
             }
-            waitUntil("Dead local pilots must not leave the power loop running") { audio.activeLoopCount == 0 }
+            waitUntil("Dead local pilots must not leave the power loop running") {
+                audio.activeLoopCount == 0
+            }
             main {
                 second.hp = 1
                 audio.updateStarman(snapshot, 1, 2, true)
@@ -277,7 +373,8 @@ class NativeAudioIntegrationTest {
             waitUntil("Unmute while powered did not resume") { audio.activeLoopCount == 1 }
             main { audio.pause() }
             assertEquals(0, audio.activeLoopCount)
-        } finally { main { audio.release() } }
+        } finally {
+            main { audio.release() }
+        }
     }
-
 }

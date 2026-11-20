@@ -67,8 +67,10 @@ class CallsignDrafts(saved: List<String?>, pending: List<Boolean?>, requestIDs: 
 
     fun isCurrent(request: Request, origin: String, key: String?): Boolean {
         val draft = seats[request.seat]
-        return request.origin == origin && request.key == key &&
-            request.revision == draft.revision && request.requestID == draft.requestID &&
+        return request.origin == origin &&
+            request.key == key &&
+            request.revision == draft.revision &&
+            request.requestID == draft.requestID &&
             request.name == draft.name
     }
 

@@ -6,19 +6,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AudioDspTest {
-    @Test fun dryFireIsOneSoftIdenticalNearAndFarTriangleWithoutNoise() {
+    @Test
+    fun dryFireIsOneSoftIdenticalNearAndFarTriangleWithoutNoise() {
         val recipe = AudioSynthesis.recipe(AudioCue.DRY_FIRE)
         assertEquals(recipe, AudioSynthesis.recipe(AudioCue.DRY_FIRE, false))
         assertNull(recipe.noise)
         val tone = recipe.tones.single()
         assertEquals(AudioWaveform.TRIANGLE, tone.waveform)
-        assertEquals(240.0, tone.frequency, 0.0); assertEquals(100.0, tone.endFrequency, 0.0)
-        assertEquals(.045, tone.duration, 0.0); assertEquals(.016, tone.gain, 0.0); assertEquals(0.0, tone.delay, 0.0)
+        assertEquals(240.0, tone.frequency, 0.0)
+        assertEquals(100.0, tone.endFrequency, 0.0)
+        assertEquals(.045, tone.duration, 0.0)
+        assertEquals(.016, tone.gain, 0.0)
+        assertEquals(0.0, tone.delay, 0.0)
         val pcm = AudioSynthesis.samples(AudioCue.DRY_FIRE)
         assertTrue(pcm.all { it.isFinite() })
-        assertEquals(0f, pcm.first(), .000001f); assertEquals(0f, pcm.last(), .000001f)
-        assertTrue(pcm.maxOf { abs(it) } < AudioSynthesis.samples(AudioCue.REGULAR).maxOf { abs(it) } * .5)
+        assertEquals(0f, pcm.first(), .000001f)
+        assertEquals(0f, pcm.last(), .000001f)
+        assertTrue(
+            pcm.maxOf { abs(it) } < AudioSynthesis.samples(AudioCue.REGULAR).maxOf { abs(it) } * .5,
+        )
     }
+
     @Test
     fun synthesizedVoicesMatchIndependentBrowserOfflineAudioReference() {
         // Captured from the browser's 48kHz OfflineAudioContext, also used by iOS.

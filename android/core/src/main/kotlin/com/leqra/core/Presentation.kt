@@ -72,31 +72,45 @@ class PilotReadout(
                 "cannon" -> 3
                 else -> 5
             }
-        val boosted = if (infinity || snapshot.boostedBulletIds.isEmpty()) emptySet() else snapshot.boostedBulletIds.toHashSet()
+        val boosted =
+            if (infinity || snapshot.boostedBulletIds.isEmpty()) emptySet()
+            else snapshot.boostedBulletIds.toHashSet()
         var ordinary = 0
         var ownedGrenades = 0
         var ownedGrenadeLife = 0.0
         var projectileLocked = tank.locked
-        if (!infinity || !projectileLocked) for (bullet in snapshot.bullets) {
-            if (!infinity && bullet.owner == tank.id) {
-                if (bullet.ammoEpoch == tank.ammoEpoch && bullet.id !in boosted) ordinary++
-                if (bullet.kind == "grenade" && bullet.ammoEpoch == (tank.grenadeEpoch ?: tank.ammoEpoch)) {
-                    ownedGrenades++
-                    ownedGrenadeLife = max(ownedGrenadeLife, bullet.life)
+        if (!infinity || !projectileLocked)
+            for (bullet in snapshot.bullets) {
+                if (!infinity && bullet.owner == tank.id) {
+                    if (bullet.ammoEpoch == tank.ammoEpoch && bullet.id !in boosted) ordinary++
+                    if (
+                        bullet.kind == "grenade" &&
+                            bullet.ammoEpoch == (tank.grenadeEpoch ?: tank.ammoEpoch)
+                    ) {
+                        ownedGrenades++
+                        ownedGrenadeLife = max(ownedGrenadeLife, bullet.life)
+                    }
+                }
+                if (
+                    !projectileLocked &&
+                        (bullet.kind == "homing" || bullet.kind == "grenade") &&
+                        bullet.target == tank.id &&
+                        bullet.owner != tank.id
+                ) {
+                    val owner = snapshot.tanks.firstOrNull { it.id == bullet.owner }
+                    projectileLocked =
+                        snapshot.rules?.friendlyFire == true ||
+                            owner == null ||
+                            owner.team == 0 ||
+                            owner.team != tank.team
                 }
             }
-            if (!projectileLocked && (bullet.kind == "homing" || bullet.kind == "grenade") && bullet.target == tank.id && bullet.owner != tank.id) {
-                val owner = snapshot.tanks.firstOrNull { it.id == bullet.owner }
-                projectileLocked = snapshot.rules?.friendlyFire == true || owner == null || owner.team == 0 || owner.team != tank.team
-            }
-        }
         val used =
             if (tank.power == "laser") max(0, 3 - tank.charges)
             else if (infinity) tank.ammoUsed else max(tank.ammoUsed, ordinary)
         available = if (alive) max(0, capacity - used) else 0
         val grenadeLife =
-            if (infinity) tank.grenadeLife
-            else max(tank.grenadeLife, ownedGrenadeLife)
+            if (infinity) tank.grenadeLife else max(tank.grenadeLife, ownedGrenadeLife)
         val grenades =
             if (infinity) if (grenadeLife > 0) tank.grenades else 0
             else max(tank.grenades, ownedGrenades)
@@ -195,7 +209,9 @@ class PilotReadout(
         } else if (grenades > 0) {
             readiness = "DETONATE READY"
             fireLabel = "BOOM"
-            fireHint = if (tank.power == "grenade") "HOLD TO THROW, TAP TO DETONATE" else "TAP TO DETONATE, HOLD TO FIRE"
+            fireHint =
+                if (tank.power == "grenade") "HOLD TO THROW, TAP TO DETONATE"
+                else "TAP TO DETONATE, HOLD TO FIRE"
         } else {
             val cooldown = if (unlimited) 0.0 else tank.cooldown
             val free =
@@ -230,7 +246,9 @@ class PilotReadout(
 
     companion object {
         private val compactBuffTime = Regex(" ([0-9]+)s$")
-        private val cooldownTimes = arrayOf("0.0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0")
+        private val cooldownTimes =
+            arrayOf("0.0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0")
+
         private fun decimal(value: Double) = String.format(Locale.ROOT, "%.1f", value)
     }
 }

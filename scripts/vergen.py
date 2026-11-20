@@ -62,13 +62,14 @@ def synchronize(root):
             updates.append((target or path, updated))
 
     html = re.sub(r"assets/v" + VERSION + "/", "assets/v" + version + "/", html)
-    html = replace(html, r'(<meta name="leqra-version" content="v)' + VERSION + r'(">)',
+    html = replace(html, r'(<meta\s+name="leqra-version"\s+content="v)' + VERSION + r'(")',
                    lambda match: match[1] + version + match[2], 1, "src/web/index.html")
     if html != index.read_text():
         updates.append((index, html))
-    for name, prefix in (("game.js", "const GAME_VERSION='"),
-                         ("pwa.js", "const VERSION = 'v"), ("sw.js", "const VERSION = 'v")):
-        stage(source / name, re.escape(prefix) + VERSION + "';", prefix + version + "';",
+    for name, marker, prefix in (("game.js", "GAME_VERSION", ""),
+                                 ("pwa.js", "VERSION", "v"), ("sw.js", "VERSION", "v")):
+        pattern = r"(\bconst\s+" + marker + r"\s*=\s*['\"]" + prefix + ")" + VERSION + r"(['\"])"
+        stage(source / name, pattern, lambda match: match[1] + version + match[2],
               target=destination / name)
     for name in ("polish49_test.go", "polish410_test.go"):
         stage(root / "src" / name, r'if version != "' + VERSION + '"', 'if version != "' + version + '"')
@@ -78,7 +79,7 @@ def synchronize(root):
     current = replace(current, r"^(# leqra v)" + VERSION + r"(?= — current game protocol)",
                       lambda match: match[1] + version, 1, "docs/PROTOCOL.md title")
     for packet_type in ("server_hello", "client_hello", "join"):
-        pattern = r'^(\{"type":"' + packet_type + r'","version":")' + VERSION + r'(?=")'
+        pattern = r'^(\s*\{\s*"type"\s*:\s*"' + packet_type + r'",\s*"version"\s*:\s*")' + VERSION + r'(?=")'
         current = replace(current, pattern, lambda match: match[1] + version, 1,
                           f"docs/PROTOCOL.md current {packet_type} example")
     updated = current + separator + history

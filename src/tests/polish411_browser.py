@@ -6,7 +6,7 @@ from web_assets import asset_directory
 ap=argparse.ArgumentParser();ap.add_argument('--output',default='test-output/polish411');a=ap.parse_args()
 r=Path(__file__).resolve().parents[1];web=r/'web';assets=asset_directory(web);out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
 html=re.sub(r'<link[^>]*>|<script[^>]*src=[^>]*></script>','',(web/'index.html').read_text()).replace('</head>','<style>'+(assets/'theme.css').read_text()+(assets/'style.css').read_text()+'</style></head>')
-js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location,window.__history);'+js[i+5:]
+js=(assets/'game.js').read_text().replace('(() => {','((location,history) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location,window.__history);'+js[i+4:]
 checks=[];errors=[]
 def check(ok,label): assert ok,label;checks.append(label);print('PASS',label,flush=True)
 with sync_playwright() as pw:

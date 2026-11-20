@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import leqraCore
 
 final class NativeGamepadControlsTests: XCTestCase {
@@ -26,8 +27,9 @@ final class NativeGamepadControlsTests: XCTestCase {
     }
 
     func testDigitalControlsAndLogicalFireRemainAvailable() {
-        let digital = NativeGamepadControls.input(leftX: 0, leftY: 0, rightX: 0, rightY: 0,
-                                                  forward: true, reverse: false, left: true, right: false, fire: true)
+        let digital = NativeGamepadControls.input(
+            leftX: 0, leftY: 0, rightX: 0, rightY: 0,
+            forward: true, reverse: false, left: true, right: false, fire: true)
         XCTAssertEqual(digital, GameInput(forward: true, left: true, fire: true, touchAim: false))
         XCTAssertEqual(input(), GameInput())
     }
@@ -47,9 +49,12 @@ final class NativeGamepadControlsTests: XCTestCase {
         XCTAssertNil(seat(0, 1, false, false))
     }
 
-    private func input(leftX: Double = 0, leftY: Double = 0, rightX: Double = 0, rightY: Double = 0,
-                       reverse: Bool = false, fire: Bool = false) -> GameInput {
-        NativeGamepadControls.input(leftX: leftX, leftY: leftY, rightX: rightX, rightY: rightY,
-                                    forward: false, reverse: reverse, left: false, right: false, fire: fire)
+    private func input(
+        leftX: Double = 0, leftY: Double = 0, rightX: Double = 0, rightY: Double = 0,
+        reverse: Bool = false, fire: Bool = false
+    ) -> GameInput {
+        NativeGamepadControls.input(
+            leftX: leftX, leftY: leftY, rightX: rightX, rightY: rightY,
+            forward: false, reverse: reverse, left: false, right: false, fire: fire)
     }
 }

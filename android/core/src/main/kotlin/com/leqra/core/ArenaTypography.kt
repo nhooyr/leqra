@@ -9,10 +9,13 @@ object ArenaTypography {
 }
 
 data class DeathNotice(val killer: String, val color: String) {
-    val text: String get() = "Killed by $killer"
+    val text: String
+        get() = "Killed by $killer"
 
     companion object {
         fun from(tank: ArenaTank?): DeathNotice? =
-            tank?.takeIf { it.hp <= 0 && it.killedBy.isNotEmpty() }?.let { DeathNotice(it.killedBy, it.killedByColor) }
+            tank
+                ?.takeIf { it.hp <= 0 && it.killedBy.isNotEmpty() }
+                ?.let { DeathNotice(it.killedBy, it.killedByColor) }
     }
 }

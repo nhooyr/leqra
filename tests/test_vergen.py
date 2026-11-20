@@ -95,6 +95,22 @@ class VersionGenerationTests(unittest.TestCase):
         self.assertIn("Already generated", result.stdout)
         self.assertEqual(before, {str(path): path.stat().st_mtime_ns for path in self.root.rglob("*")})
 
+    def test_preserves_prettier_formatting_when_updating_versions(self):
+        assets = self.root / "src/web/assets/v1.2.3"
+        for name, marker, prefix in (("game.js", "GAME_VERSION", ""),
+                                     ("pwa.js", "VERSION", "v"), ("sw.js", "VERSION", "v")):
+            (assets / name).write_text(f'  const {marker} = "{prefix}1.2.3"\n')
+        index = self.root / "src/web/index.html"
+        index.write_text(index.read_text().replace('<meta name="leqra-version" content="v1.2.3">',
+                                                  '<meta\n  name="leqra-version"\n  content="v1.2.3" />'))
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assets = self.root / "src/web/assets/v1.2.4"
+        self.assertEqual((assets / "game.js").read_text(), '  const GAME_VERSION = "1.2.4"\n')
+        self.assertEqual((assets / "pwa.js").read_text(), '  const VERSION = "v1.2.4"\n')
+        self.assertEqual((assets / "sw.js").read_text(), '  const VERSION = "v1.2.4"\n')
+        self.assertIn('content="v1.2.4" />', index.read_text())
+
     def test_existing_destination_fails_before_changing_any_file(self):
         destination = self.root / "src/web/assets/v1.2.4"
         destination.mkdir()

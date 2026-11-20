@@ -41,7 +41,7 @@ with sync_playwright() as pw:
    history.replaceState=(s,t,u)=>{if(historyThrows)throw Error('Restricted History');__historyCalls.push(String(u));__location.href=String(u)};
    Object.defineProperty(navigator,'clipboard',{value:{writeText:async v=>{__copied=v}}});
   }''',[url,ws,name,session,history_throws])
-  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})();');js=js[:pos]+'})(window.__location);'+js[pos+5:]
+  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);pos=js.rfind('})()');js=js[:pos]+'})(window.__location);'+js[pos+4:]
   p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
  def connected(p):p.wait_for_function('leqra.getState().online?.connected',timeout=10000)
 

@@ -1,15 +1,18 @@
 import XCTest
+
 @testable import leqraCore
 
 final class PresentationTests: XCTestCase {
     func testWinningSideIncludesWinningTeammate() {
-        let snapshot = ArenaSnapshot(tanks: [ArenaTank(id: 1, team: 2), ArenaTank(id: 3, team: 2)], winner: 3)
+        let snapshot = ArenaSnapshot(
+            tanks: [ArenaTank(id: 1, team: 2), ArenaTank(id: 3, team: 2)], winner: 3)
         XCTAssertEqual(snapshot.isWinningSide(localID: 1), true)
         XCTAssertEqual(snapshot.isWinningSide(localID: 3), true)
     }
 
     func testWinningSideRejectsEnemyTeam() {
-        let snapshot = ArenaSnapshot(tanks: [ArenaTank(id: 1, team: 1), ArenaTank(id: 3, team: 2)], winner: 3)
+        let snapshot = ArenaSnapshot(
+            tanks: [ArenaTank(id: 1, team: 1), ArenaTank(id: 3, team: 2)], winner: 3)
         XCTAssertEqual(snapshot.isWinningSide(localID: 1), false)
     }
 
@@ -61,7 +64,9 @@ final class PresentationTests: XCTestCase {
         let authoritative = arena.snapshot
         let image = arena.presentationSnapshot(fraction: 0.5, localInput: GameInput(forward: true))
         XCTAssertEqual(image.tanks[0].x - authoritative.tanks[0].x, 128 / 120, accuracy: 1e-10)
-        XCTAssertEqual(try XCTUnwrap(image.bullets.first).x - XCTUnwrap(authoritative.bullets.first).x, 1128 / 120, accuracy: 1e-10)
+        XCTAssertEqual(
+            try XCTUnwrap(image.bullets.first).x - XCTUnwrap(authoritative.bullets.first).x, 1128 / 120,
+            accuracy: 1e-10)
         XCTAssertEqual(arena.snapshot, authoritative)
     }
 
@@ -86,7 +91,8 @@ final class PresentationTests: XCTestCase {
             let now = Double(frame) / 120
             if frame.isMultiple(of: 4) {
                 let tick = UInt64(frame / 2)
-                let bullet = ArenaBullet(id: 1, x: Double(tick) * 10, y: 42, vx: 600, owner: 2, kind: "cannon", life: 5)
+                let bullet = ArenaBullet(
+                    id: 1, x: Double(tick) * 10, y: 42, vx: 600, owner: 2, kind: "cannon", life: 5)
                 timeline.accept(ArenaSnapshot(tick: tick, bullets: [bullet]), at: now)
             }
             let image = timeline.render(dt: 1 / 120, input: GameInput(), now: now) { _ in }
@@ -105,7 +111,10 @@ final class PresentationTests: XCTestCase {
         let image = timeline.render(dt: 1 / 120, input: GameInput(), now: 3 / 60) { _ in }
         XCTAssertEqual(image?.bullets.first?.id, 1)
         var last = image
-        for frame in 1...24 { last = timeline.render(dt: 1 / 120, input: GameInput(), now: 3 / 60 + Double(frame) / 120) { _ in } }
+        for frame in 1...24 {
+            last = timeline.render(dt: 1 / 120, input: GameInput(), now: 3 / 60 + Double(frame) / 120) { _ in
+            }
+        }
         XCTAssertTrue(last?.bullets.isEmpty == true)
     }
 

@@ -20,9 +20,11 @@ class ArenaStatusUiTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val accountContext = isolatedAccountContext()
             val prefix = "arena-status-${UUID.randomUUID()}-"
-            val context = object : ContextWrapper(accountContext) {
-                override fun getSharedPreferences(name: String, mode: Int) = super.getSharedPreferences(prefix + name, mode)
-            }
+            val context =
+                object : ContextWrapper(accountContext) {
+                    override fun getSharedPreferences(name: String, mode: Int) =
+                        super.getSharedPreferences(prefix + name, mode)
+                }
             val prefs = context.getSharedPreferences("leqra-settings", 0)
             prefs.edit().putBoolean("showFPS", false).commit()
             val session = GameSession(context)
@@ -32,7 +34,11 @@ class ArenaStatusUiTest {
                 session.publicSelected = true
                 status.update(session, fps = 120)
                 assertTrue("fps: —, ping: —" in visibleTexts(status))
-                assertFalse(children(status).any { it.visibility == View.VISIBLE && it.contentDescription == "Open sidebar" })
+                assertFalse(
+                    children(status).any {
+                        it.visibility == View.VISIBLE && it.contentDescription == "Open sidebar"
+                    },
+                )
 
                 session.publicSelected = false
                 session.selectMode("elimination")
@@ -52,11 +58,13 @@ class ArenaStatusUiTest {
         }
     }
 
-    private fun children(view: View) = if (view is ViewGroup) (0 until view.childCount).map(view::getChildAt) else emptyList()
+    private fun children(view: View) =
+        if (view is ViewGroup) (0 until view.childCount).map(view::getChildAt) else emptyList()
 
-    private fun visibleTexts(view: View): List<String> = when {
-        view.visibility != View.VISIBLE -> emptyList()
-        view is TextView -> listOf(view.text.toString())
-        else -> children(view).flatMap(::visibleTexts)
-    }
+    private fun visibleTexts(view: View): List<String> =
+        when {
+            view.visibility != View.VISIBLE -> emptyList()
+            view is TextView -> listOf(view.text.toString())
+            else -> children(view).flatMap(::visibleTexts)
+        }
 }

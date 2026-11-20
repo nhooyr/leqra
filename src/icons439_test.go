@@ -8,6 +8,7 @@ import (
 	"maps"
 	"math"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -143,6 +144,31 @@ func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
 		}
 		web[path] = &fstest.MapFile{Data: data}
 	}
+	for _, compact := range []bool{true, false} {
+		t.Run(fmt.Sprintf("formatting compact=%t", compact), func(t *testing.T) {
+			files := maps.Clone(web)
+			meta := fmt.Sprintf(`<meta name="leqra-version" content="v%s">`, version)
+			if !compact {
+				meta = fmt.Sprintf("<meta\n name=\"leqra-version\"\n content=\"v%s\" />", version)
+			}
+			files[index] = &fstest.MapFile{Data: shellVersionMeta.ReplaceAll(web[index].Data, []byte(meta))}
+			for name, marker := range shellVersionMarkers {
+				key, value := "VERSION", "v"+version
+				if name == "game.js" {
+					key, value = "GAME_VERSION", version
+				}
+				declaration := fmt.Sprintf("const %s='%s';", key, value)
+				if !compact {
+					declaration = fmt.Sprintf("const %s = \"%s\"", key, value)
+				}
+				path := dir + name
+				files[path] = &fstest.MapFile{Data: marker.ReplaceAll(web[path].Data, []byte(declaration))}
+			}
+			if err := checkAppAssets(files); err != nil {
+				t.Fatalf("formatting changed preflight: %v", err)
+			}
+		})
+	}
 	for _, path := range []string{index, dir + "game.js", dir + "infinite.js", dir + "sw.js", dir + "style.css", dir + "manifest.webmanifest"} {
 		t.Run("missing "+path, func(t *testing.T) {
 			files := maps.Clone(web)
@@ -162,9 +188,8 @@ func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
 	t.Run("different browser protocol", func(t *testing.T) {
 		files := maps.Clone(web)
 		path := dir + "game.js"
-		current := fmt.Sprintf("const GAME_PROTOCOL=%d;", protocolVersion)
 		other := fmt.Sprintf("const GAME_PROTOCOL=%d;", protocolVersion+1)
-		files[path] = &fstest.MapFile{Data: bytes.Replace(web[path].Data, []byte(current), []byte(other), 1)}
+		files[path] = &fstest.MapFile{Data: shellProtocolMarker.ReplaceAll(web[path].Data, []byte(other))}
 		if err := checkAppAssets(files); err == nil || !strings.Contains(err.Error(), "does not use leqra protocol") {
 			t.Fatalf("preflight = %v, want browser protocol mismatch", err)
 		}
@@ -239,7 +264,7 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 			if im.Bounds().Dx() != size || im.Bounds().Dy() != size {
 				t.Fatalf("export dimensions: %v, want %dx%d", im.Bounds(), size, size)
 			}
-			if !strings.Contains(sw, "BASE + '"+name+"'") {
+			if !regexp.MustCompile(`BASE\s*\+\s*["']` + regexp.QuoteMeta(name) + `["']`).MatchString(sw) {
 				t.Fatal("icon is missing from offline precache")
 			}
 			opaque := strings.HasPrefix(name, "apple-touch")
@@ -303,8 +328,9 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 	index := httptest.NewRecorder()
 	h.ServeHTTP(index, httptest.NewRequest("GET", "/", nil))
 	markup := strings.ReplaceAll(index.Body.String(), "?build="+index.Header().Get("X-Leqra-Build"), "")
-	brand := fmt.Sprintf(`<div class="brand-mark" aria-hidden="true"><img src="assets/v%s/favicon.svg" width="48" height="48" alt=""></div>`, version)
-	if !strings.Contains(markup, brand) {
+	markup = strings.Join(strings.Fields(markup), " ")
+	brand := `<div class="brand-mark" aria-hidden="true">\s*<img src="assets/v` + regexp.QuoteMeta(version) + `/favicon.svg" width="48" height="48" alt=""\s*/?>\s*</div>`
+	if !regexp.MustCompile(brand).MatchString(markup) {
 		t.Fatal("header must use the shared app icon rather than a separate tank drawing")
 	}
 	for _, link := range []string{

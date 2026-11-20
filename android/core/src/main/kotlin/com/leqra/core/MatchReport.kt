@@ -24,10 +24,12 @@ data class MatchPlayer(
     val hillSeconds: Double,
     val winner: Boolean,
 ) {
-    val bot: Boolean get() = kind == "bot"
+    val bot: Boolean
+        get() = kind == "bot"
 
     fun localSeat(ownMember: Long?): Int {
-        if (bot || ownMember == null || (member != ownMember && controllerMember != ownMember)) return 0
+        if (bot || ownMember == null || (member != ownMember && controllerMember != ownMember))
+            return 0
         return if (kind == "local") 2 else 1
     }
 }

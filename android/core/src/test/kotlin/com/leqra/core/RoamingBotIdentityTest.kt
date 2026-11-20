@@ -7,7 +7,12 @@ class RoamingBotIdentityTest {
     private val step = 1.0 / 60
 
     private fun rules(level: String, enabled: Boolean = true, teams: Boolean = false) =
-        RoomRules(infinity = true, infinityRandomBots = enabled, infinityBotSpawnRates = mapOf(level to .5), teamMode = if (teams) "teams" else "ffa")
+        RoomRules(
+            infinity = true,
+            infinityRandomBots = enabled,
+            infinityBotSpawnRates = mapOf(level to .5),
+            teamMode = if (teams) "teams" else "ffa",
+        )
 
     private fun arena(level: String = "dumb", teams: Boolean = false) =
         PracticeArena(123, "P1", 0, 0).apply {
@@ -17,13 +22,24 @@ class RoamingBotIdentityTest {
         }
 
     private fun nextSpawn(arena: PracticeArena, at: Double) {
-        PracticeArena::class.java.getDeclaredField("nextRoamingSpawn").apply { isAccessible = true }.setDouble(arena, at)
+        PracticeArena::class
+            .java
+            .getDeclaredField("nextRoamingSpawn")
+            .apply { isAccessible = true }
+            .setDouble(arena, at)
     }
 
     @Test
     fun corpseStaysForOneSecondAndCannotBypassTheConfiguredSpawnCadence() {
         val arena = arena()
-        val bot = arena.snapshot.tanks.single { it.bot }.apply { score = 17; hp = 0; respawnTime = 1.0 }
+        val bot =
+            arena.snapshot.tanks
+                .single { it.bot }
+                .apply {
+                    score = 17
+                    hp = 0
+                    respawnTime = 1.0
+                }
         arena.configurePilot(bot.id, "Changed", 3, difficulty = "godlike")
         assertEquals("dumb", bot.difficulty)
         assertEquals("Bot 1", bot.name)
@@ -38,8 +54,10 @@ class RoamingBotIdentityTest {
         nextSpawn(arena, 0.0)
         arena.step(GameInput(), step)
         val revived = arena.snapshot.tanks.single { it.bot }
-        assertEquals(bot.id, revived.id); assertEquals(bot.name, revived.name)
-        assertEquals("dumb", revived.difficulty); assertEquals(17, revived.score)
+        assertEquals(bot.id, revived.id)
+        assertEquals(bot.name, revived.name)
+        assertEquals("dumb", revived.difficulty)
+        assertEquals(17, revived.score)
         assertEquals(bot.spawnSerial + 1, revived.spawnSerial)
     }
 
@@ -53,7 +71,8 @@ class RoamingBotIdentityTest {
             val bot = arena.snapshot.tanks.single { it.bot }
             val previous = identities.putIfAbsent(level, bot.id to bot.name)
             if (previous != null) {
-                assertEquals(previous.first, bot.id); assertEquals(previous.second, bot.name)
+                assertEquals(previous.first, bot.id)
+                assertEquals(previous.second, bot.name)
                 assertEquals(index + 1, bot.score)
             }
             assertEquals(level, bot.difficulty)
@@ -78,23 +97,43 @@ class RoamingBotIdentityTest {
     @Test
     fun retirementPreservesOutgoingProjectilesAndCreditsTheParkedShooter() {
         val arena = arena(teams = true)
-        val bot = arena.snapshot.tanks.single { it.bot }.apply {
-            x = 42.0; y = 42.0; angle = 0.0; invulnerable = 0.0; spawnProtected = false
-            power = "cannon"; powerTime = 15.0; charges = 3
-        }
-        val human = arena.snapshot.tanks.single { !it.bot }.apply {
-            x = 160.0; y = 42.0; invulnerable = 0.0; spawnProtected = false
-        }
+        val bot =
+            arena.snapshot.tanks
+                .single { it.bot }
+                .apply {
+                    x = 42.0
+                    y = 42.0
+                    angle = 0.0
+                    invulnerable = 0.0
+                    spawnProtected = false
+                    power = "cannon"
+                    powerTime = 15.0
+                    charges = 3
+                }
+        val human =
+            arena.snapshot.tanks
+                .single { !it.bot }
+                .apply {
+                    x = 160.0
+                    y = 42.0
+                    invulnerable = 0.0
+                    spawnProtected = false
+                }
         assertNotEquals(human.team, bot.team)
-        PracticeArena::class.java.getDeclaredMethod("fireShot", Int::class.javaPrimitiveType).apply { isAccessible = true }
+        PracticeArena::class
+            .java
+            .getDeclaredMethod("fireShot", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }
             .invoke(arena, arena.snapshot.tanks.indexOf(bot))
-        bot.x = 10000.0; bot.y = 10000.0
+        bot.x = 10000.0
+        bot.y = 10000.0
         nextSpawn(arena, 100.0)
         arena.step(GameInput(), step)
         assertFalse(arena.snapshot.tanks.any { it.id == bot.id })
         assertTrue(arena.snapshot.bullets.any { it.owner == bot.id && it.kind == "cannon" })
         repeat(8) { arena.step(GameInput(), step) }
-        assertEquals(0, human.hp); assertEquals(-1, human.score)
+        assertEquals(0, human.hp)
+        assertEquals(-1, human.score)
         assertEquals(bot.name, human.killedBy)
         assertEquals(1, arena.snapshot.leaderboard.single { it.id == bot.id }.score)
         assertEquals(1, arena.snapshot.teamScores[bot.team - 1])
@@ -109,20 +148,37 @@ class RoamingBotIdentityTest {
         arena.configure(rules("dumb", enabled = false))
         arena.configureLocal("P2", 1)
         val parked = arena.snapshot.leaderboard.single { it.bot }
-        assertNotEquals(2, parked.id); assertEquals(bot.name, parked.name); assertEquals(17, parked.score)
+        assertNotEquals(2, parked.id)
+        assertEquals(bot.name, parked.name)
+        assertEquals(17, parked.score)
         assertEquals(1, arena.snapshot.tanks.count { it.id == 2 && !it.bot })
         arena.configure(rules("dumb"))
         arena.step(GameInput(), step)
         val revived = arena.snapshot.tanks.single { it.id == parked.id }
-        assertEquals(bot.name, revived.name); assertEquals(17, revived.score); assertEquals("dumb", revived.difficulty)
-        assertEquals(arena.snapshot.leaderboard.size, arena.snapshot.leaderboard.map { it.id }.distinct().size)
-        assertEquals(arena.snapshot.leaderboard.size, arena.snapshot.leaderboard.map { it.name }.distinct().size)
+        assertEquals(bot.name, revived.name)
+        assertEquals(17, revived.score)
+        assertEquals("dumb", revived.difficulty)
+        assertEquals(
+            arena.snapshot.leaderboard.size,
+            arena.snapshot.leaderboard.map { it.id }.distinct().size,
+        )
+        assertEquals(
+            arena.snapshot.leaderboard.size,
+            arena.snapshot.leaderboard.map { it.name }.distinct().size,
+        )
     }
 
     @Test
     fun earlyRetirementCannotReuseADeadIdentityBeforeItsRemainingCorpseDelay() {
         val arena = arena()
-        val original = arena.snapshot.tanks.single { it.bot }.apply { hp = 0; respawnTime = 1.0; score = 17 }
+        val original =
+            arena.snapshot.tanks
+                .single { it.bot }
+                .apply {
+                    hp = 0
+                    respawnTime = 1.0
+                    score = 17
+                }
         arena.configure(rules("dumb", enabled = false))
         arena.configure(rules("dumb"))
         arena.step(GameInput(), step)
@@ -147,7 +203,13 @@ class RoamingBotIdentityTest {
                 arena.configure(rules("dumb"))
                 arena.step(GameInput(), step)
             }
-            arena.snapshot.tanks.single { it.bot }.apply { hp = 0; respawnTime = 10000.0; score = index }
+            arena.snapshot.tanks
+                .single { it.bot }
+                .apply {
+                    hp = 0
+                    respawnTime = 10000.0
+                    score = index
+                }
             arena.configure(rules("dumb", enabled = false))
         }
         val first = arena.snapshot.leaderboard.filter { it.bot }.minBy { it.id }
@@ -155,12 +217,20 @@ class RoamingBotIdentityTest {
         repeat(120) { arena.step(GameInput(), step) }
         assertFalse(arena.snapshot.tanks.any { it.bot })
         assertEquals(128, arena.snapshot.leaderboard.count { it.bot })
-        assertEquals(128, arena.snapshot.leaderboard.filter { it.bot }.map { it.name }.distinct().size)
-        PracticeArena::class.java.getDeclaredField("time").apply { isAccessible = true }.setDouble(arena, 100000.0)
+        assertEquals(
+            128,
+            arena.snapshot.leaderboard.filter { it.bot }.map { it.name }.distinct().size,
+        )
+        PracticeArena::class
+            .java
+            .getDeclaredField("time")
+            .apply { isAccessible = true }
+            .setDouble(arena, 100000.0)
         nextSpawn(arena, 0.0)
         arena.step(GameInput(), step)
         val revived = arena.snapshot.tanks.single { it.bot }
-        assertEquals(first.id, revived.id); assertEquals(first.score, revived.score)
+        assertEquals(first.id, revived.id)
+        assertEquals(first.score, revived.score)
         assertEquals(128, arena.snapshot.leaderboard.count { it.bot })
     }
 
@@ -171,11 +241,21 @@ class RoamingBotIdentityTest {
             arena.configure(rules(level))
             arena.step(GameInput(), step)
         }
-        arena.configure(RoomRules(infinity = true, infinityRandomBots = true,
-            infinityBotSpawnRates = mapOf("dumb" to .5, "normal" to 1.0, "godlike" to 2.5)))
+        arena.configure(
+            RoomRules(
+                infinity = true,
+                infinityRandomBots = true,
+                infinityBotSpawnRates = mapOf("dumb" to .5, "normal" to 1.0, "godlike" to 2.5),
+            ),
+        )
         val counts = mutableMapOf<String, Int>()
         repeat(300) {
-            arena.snapshot.tanks.filter { it.bot }.forEach { it.x = 10000.0; it.y = 10000.0 }
+            arena.snapshot.tanks
+                .filter { it.bot }
+                .forEach {
+                    it.x = 10000.0
+                    it.y = 10000.0
+                }
             nextSpawn(arena, 0.0)
             arena.step(GameInput(), step)
             val bot = arena.snapshot.tanks.single { it.bot }

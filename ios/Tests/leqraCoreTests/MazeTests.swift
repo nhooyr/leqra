@@ -1,6 +1,7 @@
+import CryptoKit
 import Foundation
 import XCTest
-import CryptoKit
+
 @testable import leqraCore
 
 final class MazeTests: XCTestCase {
@@ -13,21 +14,30 @@ final class MazeTests: XCTestCase {
             let x = Double((index * 37) % 2100) - 50
             let y = Double((index * 53) % 1200) - 50
             for offset in [0.0, 0.75] {
-                let x0 = x + offset, y0 = y + offset, x1 = x0 + 91, y1 = y0 + 173
-                let expected = world.walls.filter { $0.x <= x1 && $0.x + $0.w >= x0 && $0.y <= y1 && $0.y + $0.h >= y0 }
+                let x0 = x + offset
+                let y0 = y + offset
+                let x1 = x0 + 91
+                let y1 = y0 + 173
+                let expected = world.walls.filter {
+                    $0.x <= x1 && $0.x + $0.w >= x0 && $0.y <= y1 && $0.y + $0.h >= y0
+                }
                 XCTAssertEqual(maze.walls(x0: x0, y0: y0, x1: x1, y1: y1), expected)
             }
         }
     }
 
     func testReportLaserGuideCPU() throws {
-        guard ProcessInfo.processInfo.environment["LEQRA_PROFILE_GUIDE"] == "1" else { throw XCTSkip("Opt in to the laser guide CPU benchmark.") }
+        guard ProcessInfo.processInfo.environment["LEQRA_PROFILE_GUIDE"] == "1" else {
+            throw XCTSkip("Opt in to the laser guide CPU benchmark.")
+        }
         let maze = InfiniteMaze(seed: 42)
         var samples: [Double] = []
         for run in 0..<240 {
             let start = ProcessInfo.processInfo.systemUptime
             for frame in 0..<24 {
-                _ = maze.laserGuide(x: 420 + Double(run) * 0.75, y: 420, angle: Double(run * 24 + frame) / 1200, range: 36 * 84)
+                _ = maze.laserGuide(
+                    x: 420 + Double(run) * 0.75, y: 420, angle: Double(run * 24 + frame) / 1200,
+                    range: 36 * 84)
             }
             if run >= 40 { samples.append((ProcessInfo.processInfo.systemUptime - start) * 1000 / 24) }
         }
@@ -39,11 +49,21 @@ final class MazeTests: XCTestCase {
         for seed: UInt32 in [1, 42, 12345] {
             let maze = InfiniteMaze(seed: seed)
             for index in 0..<60 {
-                let startX = Double(index % 7) * 83 + 31, startY = Double(index % 5) * 83 + 49
-                let angle = Double(index) * 0.107, range = 36 * 84.0
+                let startX = Double(index % 7) * 83 + 31
+                let startY = Double(index % 5) * 83 + 49
+                let angle = Double(index) * 0.107
+                let range = 36 * 84.0
                 let actual = maze.laserGuide(x: startX, y: startY, angle: angle, range: range)
-                guard let launch = maze.launchRay(x: startX, y: startY, angle: angle, kind: "laser", radius: 3) else { XCTAssertTrue(actual.isEmpty); continue }
-                var x = launch.x, y = launch.y, ux = launch.ux, uy = launch.uy
+                guard
+                    let launch = maze.launchRay(x: startX, y: startY, angle: angle, kind: "laser", radius: 3)
+                else {
+                    XCTAssertTrue(actual.isEmpty)
+                    continue
+                }
+                var x = launch.x
+                var y = launch.y
+                var ux = launch.ux
+                var uy = launch.uy
                 var left = range - launch.distance
                 var expected: [BeamPoint] = []
                 for segment in 0..<256 {
@@ -51,14 +71,20 @@ final class MazeTests: XCTestCase {
                     let length = left * (wall?.fraction ?? 1)
                     if segment == 0 {
                         let crop = launch.bounced ? 0 : 28.0
-                        expected.append(BeamPoint(x: x + ux * min(crop, length), y: y + uy * min(crop, length)))
+                        expected.append(
+                            BeamPoint(x: x + ux * min(crop, length), y: y + uy * min(crop, length)))
                     }
-                    x += ux * length; y += uy * length; left -= length
+                    x += ux * length
+                    y += uy * length
+                    left -= length
                     expected.append(BeamPoint(x: x, y: y))
                     guard let wall, left > 1e-7 else { break }
-                    if wall.nx != 0 { ux = -ux }; if wall.ny != 0 { uy = -uy }
+                    if wall.nx != 0 { ux = -ux }
+                    if wall.ny != 0 { uy = -uy }
                     let nudge = min(0.001, left)
-                    x += ux * nudge; y += uy * nudge; left -= nudge
+                    x += ux * nudge
+                    y += uy * nudge
+                    left -= nudge
                 }
                 XCTAssertEqual(actual.count, expected.count)
                 for (a, b) in zip(actual, expected) {
@@ -88,7 +114,8 @@ final class MazeTests: XCTestCase {
             let records = walls.map { w in
                 "{\"x\":\(Int(w.x)),\"y\":\(Int(w.y)),\"w\":\(Int(w.w)),\"h\":\(Int(w.h)),\"axis\":\"\(w.axis)\",\"line\":\(Int(w.line))}"
             }.joined(separator: ",")
-            let hash = SHA256.hash(data: Data("[\(records)]".utf8)).map { String(format: "%02x", $0) }.joined()
+            let hash = SHA256.hash(data: Data("[\(records)]".utf8)).map { String(format: "%02x", $0) }
+                .joined()
             XCTAssertEqual(hash, fixture.sha256, "seed \(fixture.seed)")
         }
     }
@@ -107,7 +134,8 @@ final class MazeTests: XCTestCase {
     func testCircleTangencyAndGhostExit() throws {
         let maze = InfiniteMaze(seed: 1)
         let wall = try XCTUnwrap(maze.walls(x0: 0, y0: 0, x1: 100, y1: 100).first { $0.axis == "h" })
-        let x = wall.x + wall.w / 2, tangentY = wall.y + wall.h + 17
+        let x = wall.x + wall.w / 2
+        let tangentY = wall.y + wall.h + 17
         XCTAssertFalse(maze.blocked(x: x, y: tangentY, radius: 17))
         XCTAssertTrue(maze.blocked(x: x, y: tangentY - 0.01, radius: 17))
         let point = maze.phaseExit(x: x, y: wall.y + wall.h / 2)
@@ -123,11 +151,13 @@ final class MazeTests: XCTestCase {
     }
 
     func testLaserGuideRicochetsFromEmbeddedOriginWhileCannonIgnoresInterior() {
-        let world = ArenaWorld(width: 168, height: 168, cols: 2, rows: 2, walls: [
-            MazeWall(x: 80, y: -4, w: 8, h: 176, axis: "v", line: 84),
-            MazeWall(x: -4, y: -4, w: 8, h: 176, axis: "v", line: 0),
-            MazeWall(x: 164, y: -4, w: 8, h: 176, axis: "v", line: 168)
-        ])
+        let world = ArenaWorld(
+            width: 168, height: 168, cols: 2, rows: 2,
+            walls: [
+                MazeWall(x: 80, y: -4, w: 8, h: 176, axis: "v", line: 84),
+                MazeWall(x: -4, y: -4, w: 8, h: 176, axis: "v", line: 0),
+                MazeWall(x: 164, y: -4, w: 8, h: 176, axis: "v", line: 168),
+            ])
         let maze = InfiniteMaze(world: world)
         let laser = maze.laserGuide(x: 42, y: 42, angle: 0, range: 150)
         XCTAssertGreaterThan(laser.count, 2)
@@ -135,7 +165,9 @@ final class MazeTests: XCTestCase {
         let embedded = maze.laserGuide(x: 84, y: 42, angle: 0, range: 150)
         XCTAssertGreaterThan(embedded.count, 1)
         XCTAssertLessThan(embedded[0].x, 80, "An embedded muzzle must begin on the firing side of the wall.")
-        XCTAssertLessThan(embedded[1].x, embedded[0].x, "The guide must initially point back from the wall, just like the fired laser.")
+        XCTAssertLessThan(
+            embedded[1].x, embedded[0].x,
+            "The guide must initially point back from the wall, just like the fired laser.")
         let cannon = maze.projectileGuide(x: 84, y: 42, angle: 0, kind: "cannon", range: 150, radius: 14)
         XCTAssertGreaterThan(cannon.count, 1)
         XCTAssertEqual(cannon[1].x, 150, accuracy: 1e-10)

@@ -42,14 +42,28 @@ internal class RoundAnnouncementSequence {
             phase == "countdown" -> {
                 val stage = if (rules.mode == "survival") "WAVE" else "ROUND"
                 val round = String.format(Locale.ROOT, "%02d", snapshot.round)
-                RoundAnnouncement("$stage $round", ceil(snapshot.phaseTime).toInt().coerceAtLeast(1).toString(), "Bounce. Dodge. Outlast.")
+                RoundAnnouncement(
+                    "$stage $round",
+                    ceil(snapshot.phaseTime).toInt().coerceAtLeast(1).toString(),
+                    "Bounce. Dodge. Outlast.",
+                )
             }
-            phase == "playing" && nowMillis < weaponsLiveUntil -> RoundAnnouncement("WEAPONS LIVE", "GO", "")
+            phase == "playing" && nowMillis < weaponsLiveUntil ->
+                RoundAnnouncement("WEAPONS LIVE", "GO", "")
             phase == "roundOver" && !finishingProjectile -> {
-                val winner = winnerPresentation(snapshot, rules, primaryID, secondaryID, member = null)
+                val winner =
+                    winnerPresentation(snapshot, rules, primaryID, secondaryID, member = null)
                 val detail = "NEW MAZE IN ${ceil(snapshot.phaseTime).toInt().coerceAtLeast(0)}"
                 if (snapshot.winner < 0) RoundAnnouncement("", "ROUND DRAW", detail, result = true)
-                else RoundAnnouncement("", "${winner.label} WINS", detail, winner.color, result = true, bold = winner.bold)
+                else
+                    RoundAnnouncement(
+                        "",
+                        "${winner.label} WINS",
+                        detail,
+                        winner.color,
+                        result = true,
+                        bold = winner.bold,
+                    )
             }
             else -> null
         }
@@ -61,9 +75,14 @@ internal class NativeRoundAnnouncement(context: Context) : FrameLayout(context) 
     private val sequence = RoundAnnouncementSequence()
     private val card = NativeStyle.column(context, 10).apply { gravity = Gravity.CENTER }
     private val heading = NativeStyle.label(context, "", 10f, NativeStyle.soft, mono = true)
-    private val title = NativeStyle.label(context, "", 72f, NativeStyle.accent, true).apply { gravity = Gravity.CENTER }
-    private val detail = NativeStyle.label(context, "", 11f, NativeStyle.soft).apply { gravity = Gravity.CENTER }
-    private val resultBackground = NativeStyle.background(context, 0xf2192127.toInt(), 6, 0xff34434a.toInt())
+    private val title =
+        NativeStyle.label(context, "", 72f, NativeStyle.accent, true).apply {
+            gravity = Gravity.CENTER
+        }
+    private val detail =
+        NativeStyle.label(context, "", 11f, NativeStyle.soft).apply { gravity = Gravity.CENTER }
+    private val resultBackground =
+        NativeStyle.background(context, 0xf2192127.toInt(), 6, 0xff34434a.toInt())
     private var current: RoundAnnouncement? = null
 
     init {
@@ -78,8 +97,15 @@ internal class NativeRoundAnnouncement(context: Context) : FrameLayout(context) 
 
     fun update(session: GameSession, snapshot: ArenaSnapshot) {
         val active = session.screen == Screen.PLAYING && !session.infinity
-        val shown = sequence.update(snapshot.takeIf { active }, session.rules, session.localID, session.localID2,
-            active && session.finishingProjectilePresentation, android.os.SystemClock.uptimeMillis())
+        val shown =
+            sequence.update(
+                snapshot.takeIf { active },
+                session.rules,
+                session.localID,
+                session.localID2,
+                active && session.finishingProjectilePresentation,
+                android.os.SystemClock.uptimeMillis(),
+            )
         if (shown == current) return
         current = shown
         visibility = if (shown == null) View.GONE else View.VISIBLE
@@ -88,7 +114,10 @@ internal class NativeRoundAnnouncement(context: Context) : FrameLayout(context) 
         heading.visibility = if (shown.heading.isEmpty()) View.GONE else View.VISIBLE
         title.text = shown.title
         updateTitleSize(shown, resources.configuration)
-        title.setTypeface(title.typeface, if (shown.bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        title.setTypeface(
+            title.typeface,
+            if (shown.bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL,
+        )
         title.setTextColor(shown.winnerPaint?.let(NativeStyle::mappedPaint) ?: NativeStyle.accent)
         detail.text = shown.detail
         detail.visibility = if (shown.detail.isEmpty()) View.GONE else View.VISIBLE
@@ -105,6 +134,8 @@ internal class NativeRoundAnnouncement(context: Context) : FrameLayout(context) 
     }
 
     private fun updateTitleSize(shown: RoundAnnouncement, config: Configuration) {
-        title.textSize = if (shown.result) 28f else if (config.orientation == Configuration.ORIENTATION_LANDSCAPE) 64f else 96f
+        title.textSize =
+            if (shown.result) 28f
+            else if (config.orientation == Configuration.ORIENTATION_LANDSCAPE) 64f else 96f
     }
 }

@@ -26,7 +26,7 @@ html=re.sub(r'<link[^>]*>','',html)
 html=re.sub(r'<script src="(?:game|netcode)\.js" defer></script>','',html)
 html=html.replace('</head>','<style>'+assets.joinpath('style.css').read_text()+'</style></head>')
 js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1)
-pos=js.rfind('})();');js=js[:pos]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[pos+5:]
+pos=js.rfind('})()');js=js[:pos]+f'}})(new URL({json.dumps(args.url+"/?test=1")}));'+js[pos+4:]
 # FIFO scheduling models ordered TCP/WebSocket delivery, including short bursts.
 wrapper=r"""(()=>{
  window.__lag={base:60,jitter:[0,45,8,27,65,2,30,12],enabled:true};

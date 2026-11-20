@@ -38,7 +38,7 @@ with sync_playwright() as pw:
    history.replaceState=(s,t,u)=>{__historyCalls.push(String(u));__location.href=String(u)};
    Object.defineProperty(navigator,'clipboard',{value:{writeText:async v=>{__copied=v}}});
   }''',[url,args.url.replace('http:','ws:')+'/ws',name,session,delay])
-  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+  js=assets.joinpath('game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location);'+js[i+4:]
   p.add_script_tag(content=assets.joinpath('netcode.js').read_text());p.add_script_tag(content=js);p.wait_for_function('window.leqra');return p
  def remove(p,id):
   p.locator(f'#roomRoster [data-kick-target="{id}"]').click();p.locator('#confirmKickBtn').click();p.wait_for_function('id=>!leqra.getState().room.players.some(p=>p.id===id)',arg=id)

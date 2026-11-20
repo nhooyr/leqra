@@ -28,10 +28,15 @@ internal class ProjectileFlightPresentation {
     private var highestEffect = 0
     private var capacity = 1024
     private var observationCapacity = 1024
-    val hasPending: Boolean get() = flights.isNotEmpty()
+    val hasPending: Boolean
+        get() = flights.isNotEmpty()
+
     fun pending(id: Int) = flights.containsKey(id)
+
     fun completed(id: Int) = id in completedIDs
+
     fun endpointShown(id: Int) = flights[id]?.endpointShown == true
+
     fun endTime(id: Int): Double? = flights[id]?.end
 
     fun reset(effects: List<ArenaEffect> = emptyList()) {
@@ -40,12 +45,14 @@ internal class ProjectileFlightPresentation {
         lastPoses.clear()
         completedIDs.clear()
         highestEffect = effects.maxOfOrNull { it.id } ?: 0
-        capacity = 1024; observationCapacity = 1024
+        capacity = 1024
+        observationCapacity = 1024
     }
 
     fun accept(effects: List<ArenaEffect>, playhead: Double, actors: Int = 1) {
         capacity = max(capacity, combatPresentationCapacity(actors))
-        observationCapacity = max(observationCapacity, actors.coerceIn(1, 256) * 128).coerceAtMost(32768)
+        observationCapacity =
+            max(observationCapacity, actors.coerceIn(1, 256) * 128).coerceAtMost(32768)
         val baseline = highestEffect
         for (effect in effects) {
             highestEffect = max(highestEffect, effect.id)
@@ -59,18 +66,28 @@ internal class ProjectileFlightPresentation {
             val visualStart = if (grace) max(start, playhead) else start
             // A published projectile can already be ahead of its final wire segment.
             // Keep its visual clock moving forward, then draw the exact contact once.
-            val resumeTick = lastPoses[path.id]?.let { last ->
-                var nearest = Double.POSITIVE_INFINITY
-                var tick = path.startTick
-                for ((a, b) in path.points.zipWithNext()) {
-                    val dx = b.x - a.x; val dy = b.y - a.y
-                    val f = if (dx * dx + dy * dy > 1e-9) (((last.x - a.x) * dx + (last.y - a.y) * dy) / (dx * dx + dy * dy)).coerceIn(0.0, 1.0) else 1.0
-                    val distance = hypot(last.x - a.x - dx * f, last.y - a.y - dy * f)
-                    if (distance <= nearest) { nearest = distance; tick = a.tick + (b.tick - a.tick) * f }
-                }
-                max(tick, (playhead * 60).coerceIn(path.startTick, path.endTick))
-            } ?: path.startTick
-            flights[path.id] = if (observed) Flight(effect, path, playhead, max(playhead, end), resumeTick)
+            val resumeTick =
+                lastPoses[path.id]?.let { last ->
+                    var nearest = Double.POSITIVE_INFINITY
+                    var tick = path.startTick
+                    for ((a, b) in path.points.zipWithNext()) {
+                        val dx = b.x - a.x
+                        val dy = b.y - a.y
+                        val f =
+                            if (dx * dx + dy * dy > 1e-9)
+                                (((last.x - a.x) * dx + (last.y - a.y) * dy) / (dx * dx + dy * dy))
+                                    .coerceIn(0.0, 1.0)
+                            else 1.0
+                        val distance = hypot(last.x - a.x - dx * f, last.y - a.y - dy * f)
+                        if (distance <= nearest) {
+                            nearest = distance
+                            tick = a.tick + (b.tick - a.tick) * f
+                        }
+                    }
+                    max(tick, (playhead * 60).coerceIn(path.startTick, path.endTick))
+                } ?: path.startTick
+            flights[path.id] =
+                if (observed) Flight(effect, path, playhead, max(playhead, end), resumeTick)
                 else Flight(effect, path, visualStart, if (grace) visualStart + .05 else end)
             if (flights.size > capacity)
                 flights.entries.iterator().let {
@@ -80,7 +97,12 @@ internal class ProjectileFlightPresentation {
         }
     }
 
-    fun render(bullets: List<ArenaBullet>, effects: List<ArenaEffect>, playhead: Double, canComplete: ProjectileCompletion = ProjectileCompletion { true }): Image {
+    fun render(
+        bullets: List<ArenaBullet>,
+        effects: List<ArenaEffect>,
+        playhead: Double,
+        canComplete: ProjectileCompletion = ProjectileCompletion { true },
+    ): Image {
         if (flights.isEmpty()) {
             for (bullet in bullets) remember(bullet)
             return Image(
@@ -96,7 +118,11 @@ internal class ProjectileFlightPresentation {
         while (iterator.hasNext()) {
             val (_, flight) = iterator.next()
             if (playhead < flight.start) continue
-            if (playhead >= flight.end && flight.endpointShown && canComplete.canComplete(flight.path.id)) {
+            if (
+                playhead >= flight.end &&
+                    flight.endpointShown &&
+                    canComplete.canComplete(flight.path.id)
+            ) {
                 completed += flight.effect
                 completedIDs += flight.path.id
                 if (completedIDs.size > capacity)
@@ -111,7 +137,8 @@ internal class ProjectileFlightPresentation {
                 if (flight.end > flight.start)
                     ((playhead - flight.start) / (flight.end - flight.start)).coerceIn(0.0, 1.0)
                 else 1.0
-            val tick = flight.sampleStartTick + (flight.path.endTick - flight.sampleStartTick) * alpha
+            val tick =
+                flight.sampleStartTick + (flight.path.endTick - flight.sampleStartTick) * alpha
             val points = flight.path.points
             val zeroDuration = flight.path.endTick - flight.path.startTick <= 1e-9
             val endpoint = alpha >= 1 || !zeroDuration && tick >= flight.path.endTick
@@ -156,8 +183,9 @@ internal class ProjectileFlightPresentation {
         }
         for ((id, bullet) in poses) if (id !in supplied) output += bullet
         for (bullet in output) remember(bullet)
-        val visibleEffects =
-            effects.filter { effect -> effect.flight?.id?.let { it !in flights } ?: true }
+        val visibleEffects = effects.filter { effect ->
+            effect.flight?.id?.let { it !in flights } ?: true
+        }
         return Image(
             output,
             if (completed.isEmpty()) visibleEffects

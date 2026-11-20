@@ -8,8 +8,19 @@ class OfflineProjectileVisibilityTest {
     fun winningInfinityProjectileFinishesAfterTheSimulationFreezesAtItsResult() {
         val arena = PracticeArena(123, "P1", 0, 1)
         arena.configure(RoomRules(infinity = true, infinityTarget = 1))
-        arena.snapshot.tanks.first().apply { x = 100.0; y = 100.0; angle = 0.0; invulnerable = 0.0; spawnProtected = false }
-        arena.snapshot.tanks[1].apply { x = 140.0; y = 100.0; invulnerable = 0.0; spawnProtected = false }
+        arena.snapshot.tanks.first().apply {
+            x = 100.0
+            y = 100.0
+            angle = 0.0
+            invulnerable = 0.0
+            spawnProtected = false
+        }
+        arena.snapshot.tanks[1].apply {
+            x = 140.0
+            y = 100.0
+            invulnerable = 0.0
+            spawnProtected = false
+        }
         PracticeArena.applyPower(arena.snapshot.tanks.first(), "homing")
         arena.step(GameInput(fire = true), 1.0 / 60)
         assertNotNull(arena.snapshot.result)
@@ -18,12 +29,17 @@ class OfflineProjectileVisibilityTest {
         val traveling = arena.presentationSnapshot(0.0, nowSeconds = 10.0)
         assertTrue(traveling.bullets.any { it.kind == "homing" })
         assertNull(traveling.result)
-        assertTrue(arena.presentationSnapshot(0.0, nowSeconds = 10.1).bullets.any { it.kind == "homing" })
-        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 10.11).bullets.any { it.kind == "homing" })
+        assertTrue(
+            arena.presentationSnapshot(0.0, nowSeconds = 10.1).bullets.any { it.kind == "homing" },
+        )
+        assertFalse(
+            arena.presentationSnapshot(0.0, nowSeconds = 10.11).bullets.any { it.kind == "homing" },
+        )
         assertNotNull(arena.presentationSnapshot(0.0, nowSeconds = 10.12).result)
         assertEquals(tick, arena.snapshot.tick)
         assertEquals(score, arena.snapshot.tanks.first().score)
     }
+
     @Test
     fun closeRangeKillingShotsRemainVisibleEvenWhenTheyNeverReachASnapshot() {
         for (kind in listOf("", "rapid", "scatter", "homing", "grenade")) {
@@ -48,7 +64,11 @@ class OfflineProjectileVisibilityTest {
             val authoritative = arena.snapshot.tanks.map { it.copy() }
             val terminalIDs = arena.snapshot.effects.mapNotNull { it.flight?.id }.toSet()
             val initial = arena.presentationSnapshot(0.0, nowSeconds = 10.0)
-            assertEquals("Victim must remain alive until visible contact: $kind", 1, initial.tanks[1].hp)
+            assertEquals(
+                "Victim must remain alive until visible contact: $kind",
+                1,
+                initial.tanks[1].hp,
+            )
             assertFalse(initial.effects.any { it.kind in listOf("hit", "blast", "impact") })
             assertTrue(
                 "The terminal projectile must be visible for $kind",
@@ -102,9 +122,11 @@ class OfflineProjectileVisibilityTest {
         assertTrue(traveling.bullets.any { it.kind == "homing" })
         assertEquals("playing", traveling.phase)
         assertTrue(
-            arena.presentationSnapshot(0.0, nowSeconds = 20.1).bullets.any { it.kind == "homing" }
+            arena.presentationSnapshot(0.0, nowSeconds = 20.1).bullets.any { it.kind == "homing" },
         )
-        assertFalse(arena.presentationSnapshot(0.0, nowSeconds = 20.11).bullets.any { it.kind == "homing" })
+        assertFalse(
+            arena.presentationSnapshot(0.0, nowSeconds = 20.11).bullets.any { it.kind == "homing" },
+        )
         assertNotEquals("playing", arena.presentationSnapshot(0.0, nowSeconds = 20.12).phase)
     }
 }

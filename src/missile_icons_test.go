@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -248,7 +249,7 @@ func TestLegendUsesSharedCanvasIconForEveryPower(t *testing.T) {
 			t.Fatalf("missing or duplicate legend icon %s", kind)
 		}
 	}
-	if !strings.Contains(string(js), "powerIcon(kind,c)") || !strings.Contains(string(js), "powerIcon(p.type,c)") {
+	if !regexp.MustCompile(`powerIcon\(\s*kind,\s*c\)`).Match(js) || !regexp.MustCompile(`powerIcon\(\s*p\.type,\s*c\)`).Match(js) {
 		t.Fatal("legend/maze do not share renderer")
 	}
 	if strings.Contains(string(html), ">↗</div>") || strings.Contains(string(html), ">⌁</div>") {

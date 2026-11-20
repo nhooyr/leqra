@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 /// Opt-in release-build CPU evidence; this is not a device frame-rate test.
@@ -11,7 +12,8 @@ final class GeometryPerformanceTests: XCTestCase {
         }
         var rules = RoomRules()
         rules.mapSize = "ultrawide"
-        let fixed = InfiniteMaze(world: FixedArena(rules: rules, name: "PERF", colorIndex: 0, botCount: 0, seed: 42).world)
+        let fixed = InfiniteMaze(
+            world: FixedArena(rules: rules, name: "PERF", colorIndex: 0, botCount: 0, seed: 42).world)
         for (name, maze) in [("fixed", fixed), ("infinity", InfiniteMaze(seed: 42))] {
             var queries: [Query] = []
             for index in 0..<1024 {
@@ -22,15 +24,21 @@ final class GeometryPerformanceTests: XCTestCase {
                 queries.append(Query(x: x, y: y, dx: dx, dy: dy))
             }
             for operation in ["ray", "launch", "muzzle"] {
-                var samples: [Double] = [], checksum: UInt64 = 0
+                var samples: [Double] = []
+                var checksum: UInt64 = 0
                 for sample in 0..<9 {
                     let start = ProcessInfo.processInfo.systemUptime
                     for index in 0..<16384 {
                         let q = queries[index % queries.count]
                         let value: Double
                         switch operation {
-                        case "ray": value = maze.rayHit(x: q.x, y: q.y, dx: q.dx, dy: q.dy, radius: 3.5)?.fraction ?? -1
-                        case "launch": value = maze.launchRay(x: q.x, y: q.y, angle: q.dx / 40, kind: "regular", radius: 3.5)?.x ?? -1
+                        case "ray":
+                            value =
+                                maze.rayHit(x: q.x, y: q.y, dx: q.dx, dy: q.dy, radius: 3.5)?.fraction ?? -1
+                        case "launch":
+                            value =
+                                maze.launchRay(
+                                    x: q.x, y: q.y, angle: q.dx / 40, kind: "regular", radius: 3.5)?.x ?? -1
                         default:
                             var tank = ArenaTank(id: 1, x: q.x, y: q.y, angle: q.dx / 40)
                             tank.ghostTime = 10
@@ -38,18 +46,24 @@ final class GeometryPerformanceTests: XCTestCase {
                         }
                         checksum = (checksum &* 31) &+ value.bitPattern
                     }
-                    if sample >= 2 { samples.append((ProcessInfo.processInfo.systemUptime - start) * 1e9 / 16384) }
+                    if sample >= 2 {
+                        samples.append((ProcessInfo.processInfo.systemUptime - start) * 1e9 / 16384)
+                    }
                 }
                 samples.sort()
-                print("GEOMETRY \(name) \(operation) ns/query p50=\(samples[3]) p95=\(samples[6]) checksum=\(checksum)")
+                print(
+                    "GEOMETRY \(name) \(operation) ns/query p50=\(samples[3]) p95=\(samples[6]) checksum=\(checksum)"
+                )
             }
         }
-        var samples: [Double] = [], checksum = 0
+        var samples: [Double] = []
+        var checksum = 0
         for sample in 0..<9 {
             let maze = InfiniteMaze(seed: 42)
             let start = ProcessInfo.processInfo.systemUptime
             for index in 0..<1024 {
-                checksum += maze.walls(x0: Double(index * 672), y0: 0, x1: Double(index * 672 + 84), y1: 84).count
+                checksum +=
+                    maze.walls(x0: Double(index * 672), y0: 0, x1: Double(index * 672 + 84), y1: 84).count
             }
             if sample >= 2 { samples.append((ProcessInfo.processInfo.systemUptime - start) * 1e9 / 1024) }
         }

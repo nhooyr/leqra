@@ -28,17 +28,18 @@ internal fun roomPilotAccess(
     val bot = kind == "bot" || member.optBoolean("bot")
     val id = member.optInt("id", -1)
     val spectating = member.optBoolean("spectating")
-    val seat = when {
-        controller == null || bot -> 0
-        id == controller -> 1
-        kind == "local" && member.optInt("owner", -1) == controller -> 2
-        else -> 0
-    }
+    val seat =
+        when {
+            controller == null || bot -> 0
+            id == controller -> 1
+            kind == "local" && member.optInt("owner", -1) == controller -> 2
+            else -> 0
+        }
     val canConfigure = host && setupOpen
-    val teamCount = if (!canConfigure || spectating || rules.teamMode != "teams") 0
+    val teamCount =
+        if (!canConfigure || spectating || rules.teamMode != "teams") 0
         else if (!rules.infinity && rules.mode == "survival") 1
-        else if (!rules.infinity && rules.mode == "ctf") 2
-        else 4
+        else if (!rules.infinity && rules.mode == "ctf") 2 else 4
     return RoomPilotAccess(
         localSeat = seat,
         bot = bot,

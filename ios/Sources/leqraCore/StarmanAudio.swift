@@ -5,8 +5,10 @@ import Foundation
 public enum StarmanAudio {
     public static let duration = 4.0
     public static let fadeDuration = 0.012
-    public static let leadNotes = [74, 78, 81, 86, 83, 81, 78, 81, 76, 79, 83, 88, 86, 83, 79, 83,
-                                   74, 81, 86, 90, 88, 86, 81, 78, 73, 76, 81, 85, 83, 81, 76, 73]
+    public static let leadNotes = [
+        74, 78, 81, 86, 83, 81, 78, 81, 76, 79, 83, 88, 86, 83, 79, 83,
+        74, 81, 86, 90, 88, 86, 81, 78, 73, 76, 81, 85, 83, 81, 76, 73,
+    ]
     public static let bassNotes = [50, 55, 50, 57, 50, 55, 52, 57]
 
     public static func samples(sampleRate: Double = 48_000) -> [Float] {
@@ -20,10 +22,13 @@ public enum StarmanAudio {
             let leadTime = time - Double(leadStep) * 0.125
             var value = 0.0
             if leadTime < 0.105 {
-                let envelope = max(0, min(1, leadTime / 0.006) * min(1, (0.105 - leadTime) / 0.035)
-                    * (0.7 + 0.3 * exp(-10 * leadTime)))
+                let envelope = max(
+                    0,
+                    min(1, leadTime / 0.006) * min(1, (0.105 - leadTime) / 0.035)
+                        * (0.7 + 0.3 * exp(-10 * leadTime)))
                 let phase = 2 * Double.pi * leads[leadStep] * leadTime
-                let wave = (sin(phase) - sin(3 * phase) / 9 + sin(5 * phase) / 25) * 8 / (Double.pi * Double.pi)
+                let wave =
+                    (sin(phase) - sin(3 * phase) / 9 + sin(5 * phase) / 25) * 8 / (Double.pi * Double.pi)
                 value += wave * envelope * 0.0035
             }
             let bassStep = min(bassNotes.count - 1, Int(time / 0.5))
@@ -40,10 +45,13 @@ public enum StarmanAudio {
 
     /// Snapshot state, never pickup history, controls the loop. P2's ID must
     /// come from the active arena identity rather than a retained room socket.
-    public static func isActive(snapshot: ArenaSnapshot, primaryID: Int, secondaryID: Int? = nil,
-                                gameplayActive: Bool = true) -> Bool {
+    public static func isActive(
+        snapshot: ArenaSnapshot, primaryID: Int, secondaryID: Int? = nil,
+        gameplayActive: Bool = true
+    ) -> Bool {
         guard gameplayActive, !snapshot.spectating, snapshot.phase == "playing", snapshot.result == nil,
-              snapshot.objectives?.survival?.status != "break" else { return false }
+            snapshot.objectives?.survival?.status != "break"
+        else { return false }
         return snapshot.tanks.contains { tank in
             (tank.id == primaryID && primaryID >= 0 || secondaryID.map { $0 >= 0 && tank.id == $0 } == true)
                 && !tank.bot && tank.hp > 0 && tank.starmanTime.isFinite && tank.starmanTime > 0
@@ -81,7 +89,12 @@ public struct AudioLoopVoice: Sendable {
     }
 
     public mutating func reset() {
-        cursor = 0; gain = 0; target = 0; increment = 0; remaining = 0; requested = false
+        cursor = 0
+        gain = 0
+        target = 0
+        increment = 0
+        remaining = 0
+        requested = false
     }
 
     public mutating func nextSample() -> Float {
@@ -90,9 +103,11 @@ public struct AudioLoopVoice: Sendable {
         cursor += 1
         if cursor == samples.count { cursor = 0 }
         if remaining > 0 {
-            gain += increment; remaining -= 1
+            gain += increment
+            remaining -= 1
             if remaining == 0 {
-                gain = target; increment = 0
+                gain = target
+                increment = 0
                 if target == 0 { cursor = 0 }
             }
         }

@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class RenderTimelineTests: XCTestCase {
@@ -17,7 +18,9 @@ final class RenderTimelineTests: XCTestCase {
         XCTAssertEqual(moves, 0)
         XCTAssertEqual(timeline.bufferedAcknowledgementCount, 2)
         var packets: [GameInput] = []
-        let frame = timeline.render(dt: 1 / 60, input: GameInput(forward: true), now: 1 / 60) { packets.append($0) }
+        let frame = timeline.render(dt: 1 / 60, input: GameInput(forward: true), now: 1 / 60) {
+            packets.append($0)
+        }
         XCTAssertEqual(packets.map(\.seq), [3])
         XCTAssertEqual(try XCTUnwrap(frame?.tanks.first?.x), 1)
         XCTAssertEqual(moves, 1)
@@ -34,7 +37,8 @@ final class RenderTimelineTests: XCTestCase {
         timeline.accept(snapshot(tick: 1, x: 1, ack: up.seq, ackSteps: 1), at: 0.02)
         XCTAssertEqual(moves, baselineMoves)
         let beforeRepress = moves
-        let repress = try XCTUnwrap(timeline.inputEdgePacket(GameInput(forward: true, fire: true), now: 0.021))
+        let repress = try XCTUnwrap(
+            timeline.inputEdgePacket(GameInput(forward: true, fire: true), now: 0.021))
         XCTAssertEqual(repress.seq, 4)
         XCTAssertEqual(moves, beforeRepress)
         XCTAssertEqual(timeline.bufferedAcknowledgementCount, 4)
@@ -46,7 +50,8 @@ final class RenderTimelineTests: XCTestCase {
         XCTAssertNil(timeline.inputEdgePacket(GameInput(fire: true), now: 3))
         timeline.accept(snapshot(tick: 1, hp: 0), at: 3)
         XCTAssertNil(timeline.inputEdgePacket(GameInput(fire: true), now: 3.01))
-        var observer = snapshot(tick: 2); observer.spectating = true
+        var observer = snapshot(tick: 2)
+        observer.spectating = true
         timeline.accept(observer, at: 3.02)
         XCTAssertNil(timeline.inputEdgePacket(GameInput(fire: true), now: 3.03))
         timeline.accept(snapshot(tick: 3), at: 3.04)
@@ -60,10 +65,17 @@ final class RenderTimelineTests: XCTestCase {
         }
     }
 
-    private func snapshot(tick: UInt64 = 0, generation: Int = 1, x: Double = 0,
-                          hp: Int = 1, spawn: Int = 1, ack: UInt64 = 0, ackSteps: UInt32 = 0) -> ArenaSnapshot {
-        var value = ArenaSnapshot(tick: tick, tanks: [ArenaTank(id: 1, name: "SNOW", x: x, hp: hp, ack: ack,
-                                                               ackSteps: ackSteps, spawnSerial: spawn)])
+    private func snapshot(
+        tick: UInt64 = 0, generation: Int = 1, x: Double = 0,
+        hp: Int = 1, spawn: Int = 1, ack: UInt64 = 0, ackSteps: UInt32 = 0
+    ) -> ArenaSnapshot {
+        var value = ArenaSnapshot(
+            tick: tick,
+            tanks: [
+                ArenaTank(
+                    id: 1, name: "SNOW", x: x, hp: hp, ack: ack,
+                    ackSteps: ackSteps, spawnSerial: spawn)
+            ])
         value.generation = generation
         return value
     }
@@ -72,10 +84,13 @@ final class RenderTimelineTests: XCTestCase {
         for refreshRate in [60, 90, 120] {
             let timeline = timeline()
             timeline.accept(snapshot(), at: 0)
-            var packets: [GameInput] = [], last: ArenaSnapshot?
+            var packets: [GameInput] = []
+            var last: ArenaSnapshot?
             for frame in 1...refreshRate {
-                last = timeline.render(dt: 1 / Double(refreshRate), input: GameInput(forward: true),
-                                       now: Double(frame) / Double(refreshRate)) { packets.append($0) }
+                last = timeline.render(
+                    dt: 1 / Double(refreshRate), input: GameInput(forward: true),
+                    now: Double(frame) / Double(refreshRate)
+                ) { packets.append($0) }
             }
             XCTAssertEqual(packets.count, 60, "\(refreshRate) Hz display")
             XCTAssertEqual(packets.map(\.seq), Array(1...60).map(UInt64.init))
@@ -87,10 +102,14 @@ final class RenderTimelineTests: XCTestCase {
         let timeline = timeline()
         timeline.accept(snapshot(), at: 0)
         var packets: [GameInput] = []
-        let halfway = timeline.render(dt: 1 / 120, input: GameInput(forward: true), now: 1 / 120) { packets.append($0) }
+        let halfway = timeline.render(dt: 1 / 120, input: GameInput(forward: true), now: 1 / 120) {
+            packets.append($0)
+        }
         XCTAssertEqual(try XCTUnwrap(halfway?.tanks.first?.x), 0.5, accuracy: 1e-9)
         XCTAssertTrue(packets.isEmpty)
-        let full = timeline.render(dt: 1 / 120, input: GameInput(forward: true), now: 1 / 60) { packets.append($0) }
+        let full = timeline.render(dt: 1 / 120, input: GameInput(forward: true), now: 1 / 60) {
+            packets.append($0)
+        }
         XCTAssertEqual(try XCTUnwrap(full?.tanks.first?.x), 1, accuracy: 1e-9)
         XCTAssertEqual(packets.count, 1)
     }
@@ -125,7 +144,9 @@ final class RenderTimelineTests: XCTestCase {
         // Settling must not replay the reverse controls already consumed above.
         var settled = consumed
         for frame in 1...120 {
-            settled = timeline.render(dt: 1 / 120, input: GameInput(), now: 5 / 60 + Double(frame) / 120) { _ in }
+            settled = timeline.render(dt: 1 / 120, input: GameInput(), now: 5 / 60 + Double(frame) / 120) {
+                _ in
+            }
         }
         XCTAssertEqual(try XCTUnwrap(settled?.tanks.first?.x), 4, accuracy: 0.001)
     }
@@ -150,7 +171,9 @@ final class RenderTimelineTests: XCTestCase {
         var packets: [GameInput] = []
         _ = timeline.render(dt: 2 / 60, input: GameInput(forward: true), now: 2 / 60) { packets.append($0) }
         timeline.accept(snapshot(tick: 1, generation: 2, x: 90, hp: 0), at: 3 / 60)
-        let next = timeline.render(dt: 1 / 60, input: GameInput(forward: true), now: 4 / 60) { packets.append($0) }
+        let next = timeline.render(dt: 1 / 60, input: GameInput(forward: true), now: 4 / 60) {
+            packets.append($0)
+        }
         XCTAssertEqual(next?.generation, 2)
         XCTAssertEqual(next?.tanks.first?.hp, 0)
         XCTAssertEqual(next?.tanks.first?.x, 90)
@@ -235,7 +258,8 @@ final class RenderTimelineTests: XCTestCase {
         XCTAssertEqual(timeline.render(dt: 0, input: GameInput(), now: 2 / 30) { _ in }?.bullets.first?.id, 8)
         var last: ArenaSnapshot?
         for frame in 1...24 {
-            last = timeline.render(dt: 1 / 120, input: GameInput(), now: 2 / 30 + Double(frame) / 120) { _ in }
+            last = timeline.render(dt: 1 / 120, input: GameInput(), now: 2 / 30 + Double(frame) / 120) { _ in
+            }
         }
         XCTAssertTrue(try XCTUnwrap(last).bullets.isEmpty)
     }
@@ -248,9 +272,12 @@ final class RenderTimelineTests: XCTestCase {
             fired.bullets = [ArenaBullet(id: 9, x: 100, y: 100, vx: 520, owner: 1, kind: "cannon", life: 5.3)]
             timeline.accept(fired, at: delay + 2 / 60)
             timeline.accept(snapshot(tick: 64, hp: 0), at: delay + 4 / 60)
-            var seen = false, last: ArenaSnapshot?
+            var seen = false
+            var last: ArenaSnapshot?
             for frame in 0...30 {
-                last = timeline.render(dt: 1 / 120, input: GameInput(), now: delay + 4 / 60 + Double(frame) / 120) { _ in }
+                last = timeline.render(
+                    dt: 1 / 120, input: GameInput(), now: delay + 4 / 60 + Double(frame) / 120
+                ) { _ in }
                 seen = seen || last?.bullets.contains(where: { $0.id == 9 && $0.kind == "cannon" }) == true
                 XCTAssertEqual(last?.tanks.first?.hp, 0, "Presentation never rolls back authoritative damage")
             }
@@ -263,23 +290,37 @@ final class RenderTimelineTests: XCTestCase {
         for kind in ["regular", "rapid", "scatter", "homing", "grenade", "cannon"] {
             let timeline = timeline(localID: 99)
             timeline.accept(snapshot(tick: 60), at: 0)
-            let flight = CannonFlight(id: 9, owner: 1, colorIndex: 3, startTick: 61, endTick: 61.5,
-                points: [CannonFlightPoint(x: 100, y: 100, tick: 61), CannonFlightPoint(x: 106, y: 100, tick: 61.5)], kind: kind)
+            let flight = CannonFlight(
+                id: 9, owner: 1, colorIndex: 3, startTick: 61, endTick: 61.5,
+                points: [
+                    CannonFlightPoint(x: 100, y: 100, tick: 61),
+                    CannonFlightPoint(x: 106, y: 100, tick: 61.5),
+                ], kind: kind)
             var killed = snapshot(tick: 62, hp: 0)
-            killed.effects = [ArenaEffect(id: 1, kind: kind == "grenade" ? "blast" : "impact", flight: flight)]
+            killed.effects = [
+                ArenaEffect(id: 1, kind: kind == "grenade" ? "blast" : "impact", flight: flight)
+            ]
             timeline.accept(killed, at: 1 / 30)
-            var seen = false, impact = false
+            var seen = false
+            var impact = false
             for frame in 1...30 {
-                let value = try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1 / 30 + Double(frame) / 120) { _ in })
+                let value = try XCTUnwrap(
+                    timeline.render(dt: 1 / 120, input: GameInput(), now: 1 / 30 + Double(frame) / 120) { _ in
+                    })
                 seen = seen || value.bullets.contains { $0.id == 9 }
                 impact = impact || value.effects.contains { $0.id == 1 }
                 XCTAssertEqual(value.tanks.first?.hp, 0)
                 XCTAssertTrue(value.bullets.allSatisfy { (100...106).contains($0.x) })
             }
-            XCTAssertTrue(seen, kind); XCTAssertTrue(impact, kind)
-            var reset = killed; reset.generation = 2; reset.tick = 0
+            XCTAssertTrue(seen, kind)
+            XCTAssertTrue(impact, kind)
+            var reset = killed
+            reset.generation = 2
+            reset.tick = 0
             timeline.accept(reset, at: 1)
-            XCTAssertTrue(try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1) { _ in }).bullets.isEmpty)
+            XCTAssertTrue(
+                try XCTUnwrap(timeline.render(dt: 1 / 120, input: GameInput(), now: 1) { _ in }).bullets
+                    .isEmpty)
         }
     }
 
@@ -289,18 +330,31 @@ final class RenderTimelineTests: XCTestCase {
         _ = timeline.render(dt: 1 / 30, input: GameInput(forward: true, fire: true), now: 1 / 30) { _ in }
         var won = snapshot(tick: 62, x: 43)
         won.result = ArenaResult(id: 1, name: "Winner", score: 1)
-        won.effects = [ArenaEffect(id: 1, kind: "impact", flight: CannonFlight(id: 9, owner: 1, colorIndex: 0,
-            startTick: 61, endTick: 61.5, points: [CannonFlightPoint(x: 80, y: 42, tick: 61), CannonFlightPoint(x: 86, y: 42, tick: 61.5)]))]
+        won.effects = [
+            ArenaEffect(
+                id: 1, kind: "impact",
+                flight: CannonFlight(
+                    id: 9, owner: 1, colorIndex: 0,
+                    startTick: 61, endTick: 61.5,
+                    points: [
+                        CannonFlightPoint(x: 80, y: 42, tick: 61),
+                        CannonFlightPoint(x: 86, y: 42, tick: 61.5),
+                    ]))
+        ]
         timeline.accept(won, at: 1 / 30)
-        var seen = false, last: ArenaSnapshot?
+        var seen = false
+        var last: ArenaSnapshot?
         for frame in 1...30 {
-            last = timeline.render(dt: 1 / 120, input: GameInput(forward: true, fire: true), now: 1 / 30 + Double(frame) / 120) { packet in
+            last = timeline.render(
+                dt: 1 / 120, input: GameInput(forward: true, fire: true), now: 1 / 30 + Double(frame) / 120
+            ) { packet in
                 XCTAssertFalse(packet.forward || packet.fire)
             }
             XCTAssertEqual(last?.tanks.first?.x, 43)
             seen = seen || last?.bullets.contains { $0.id == 9 } == true
         }
-        XCTAssertTrue(seen); XCTAssertTrue(try XCTUnwrap(last).bullets.isEmpty)
+        XCTAssertTrue(seen)
+        XCTAssertTrue(try XCTUnwrap(last).bullets.isEmpty)
     }
 
     func testGenerationReusingSnapshotAndProjectileIDsStartsWithFreshIndices() {
@@ -320,8 +374,11 @@ final class RenderTimelineTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("src/main.go"), encoding: .utf8)
         let regex = try NSRegularExpression(pattern: #"\bversion\s*=\s*"([^"]+)""#)
-        let match = try XCTUnwrap(regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)))
+        let match = try XCTUnwrap(
+            regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)))
         let range = try XCTUnwrap(Range(match.range(at: 1), in: source))
-        XCTAssertEqual(NetworkClient.supportedVersion, String(source[range]), "The generated native version must follow the Go server release.")
+        XCTAssertEqual(
+            NetworkClient.supportedVersion, String(source[range]),
+            "The generated native version must follow the Go server release.")
     }
 }

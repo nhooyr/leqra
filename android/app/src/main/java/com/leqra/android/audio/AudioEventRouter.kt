@@ -68,7 +68,9 @@ class AudioEventRouter {
         lastClock = now
         val requests = mutableListOf<AudioCueRequest>()
         val localTank = snapshot.tanks.firstOrNull { it.id == localID }
-        val focusTank = if (snapshot.spectating) snapshot.tanks.firstOrNull { it.id == snapshot.following } else localTank
+        val focusTank =
+            if (snapshot.spectating) snapshot.tanks.firstOrNull { it.id == snapshot.following }
+            else localTank
         val restarted = previousTick?.let { snapshot.tick < it } == true
         if (
             generation != snapshot.generation ||
@@ -124,8 +126,13 @@ class AudioEventRouter {
         }
         val effects = if (ordered) snapshot.effects else snapshot.effects.sortedBy { it.id }
         for (effect in effects) {
-            if (effect.id <= 0 || effect.id <= baselineEffectID || !seenEffectIDs.add(effect.id)) continue
-            if (seenEffectIDs.size > 512) seenEffectIDs.iterator().let { it.next(); it.remove() }
+            if (effect.id <= 0 || effect.id <= baselineEffectID || !seenEffectIDs.add(effect.id))
+                continue
+            if (seenEffectIDs.size > 512)
+                seenEffectIDs.iterator().let {
+                    it.next()
+                    it.remove()
+                }
             val own = (effect.player ?: effect.owner) == localID
             if (infinity && effect.owner != localID && !near(effect.x, effect.y, focusTank, 504.0))
                 continue
@@ -189,15 +196,22 @@ class AudioEventRouter {
             // The source clock survives packet/display jitter; stale coalesced cues stay consumed.
             if (sourceTick <= seenMachineSourceTick) return false
             seenMachineSourceTick = sourceTick
-            if (playedMachineSourceTick != Int.MIN_VALUE &&
-                (sourceTick - playedMachineSourceTick) / 60.0 + 1e-9 < interval) return false
+            if (
+                playedMachineSourceTick != Int.MIN_VALUE &&
+                    (sourceTick - playedMachineSourceTick) / 60.0 + 1e-9 < interval
+            )
+                return false
             // Permit quantized 20Hz arrivals without stacking a rapid burst on one display frame.
             if (now - lastMachineShot + 1e-9 < interval / 2) return false
             playedMachineSourceTick = sourceTick
             nextMachineShot = now + interval
         } else {
             // Legacy events retain phase while admitting at most one cue from an arrival batch.
-            if (now + early + 1e-9 < nextMachineShot || now - lastMachineShot + 1e-9 < interval - early) return false
+            if (
+                now + early + 1e-9 < nextMachineShot ||
+                    now - lastMachineShot + 1e-9 < interval - early
+            )
+                return false
             nextMachineShot = max(now, nextMachineShot) + interval
         }
         lastMachineShot = now

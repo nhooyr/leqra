@@ -35,7 +35,13 @@ class SpectatorAudioTest {
                         ),
                         ArenaEffect(id = 2, kind = "hit", owner = 7, x = 1000.0, y = 2000.0),
                         ArenaEffect(id = 3, kind = "pickup", owner = 7, x = 1000.0, y = 2000.0),
-                        ArenaEffect(id = 4, kind = "shot:cannon", owner = 9, x = 9000.0, y = 2000.0),
+                        ArenaEffect(
+                            id = 4,
+                            kind = "shot:cannon",
+                            owner = 9,
+                            x = 9000.0,
+                            y = 2000.0,
+                        ),
                     ),
             )
         val sounds = router.consume(next, -1, true, true, 1.1)
@@ -46,7 +52,7 @@ class SpectatorAudioTest {
         assertTrue(
             sounds
                 .filter { it.cue == AudioCue.REGULAR || it.cue == AudioCue.PICKUP }
-                .none { it.local }
+                .none { it.local },
         )
         assertFalse(sounds.any { it.cue == AudioCue.HOMING_WARNING || it.cue == AudioCue.CANNON })
         assertFalse(StarmanLoopState.active(next, -1, null, true))

@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import leqraCore
 
 final class RuleDefaultsTests: XCTestCase {
@@ -18,7 +19,7 @@ final class RuleDefaultsTests: XCTestCase {
         for (mode, target, seconds, format) in [
             ("elimination", 5, 75, "ffa"), ("ctf", 3, 180, "teams"),
             ("koth", 30, 180, "ffa"), ("survival", 15, 75, "teams"),
-            ("infinity", 5, 75, "ffa")
+            ("infinity", 5, 75, "ffa"),
         ] {
             let rules = RoomRules.localDefaults(mode: mode)
             XCTAssertEqual(rules.scoreTarget, target, mode)
@@ -33,15 +34,24 @@ final class RuleDefaultsTests: XCTestCase {
 
     func testFiniteModeSwitchRetainsRoomMapFormatAndArsenal() {
         var rules = RoomRules.localDefaults()
-        rules.mapSize = "ultrawide"; rules.portraitMaze = true; rules.teamMode = "teams"
-        rules.weapons = ["grenade"]; rules.pickupRate = "slow"; rules.friendlyFire = true
-        rules.scoreTarget = 12; rules.timeLimit = 240
+        rules.mapSize = "ultrawide"
+        rules.portraitMaze = true
+        rules.teamMode = "teams"
+        rules.weapons = ["grenade"]
+        rules.pickupRate = "slow"
+        rules.friendlyFire = true
+        rules.scoreTarget = 12
+        rules.timeLimit = 240
         XCTAssertEqual(rules.selectingMode("elimination"), rules)
         let hill = rules.selectingMode("koth")
-        XCTAssertEqual(hill.scoreTarget, 30); XCTAssertEqual(hill.timeLimit, 180)
-        XCTAssertEqual(hill.mapSize, "ultrawide"); XCTAssertTrue(hill.portraitMaze)
-        XCTAssertEqual(hill.teamMode, "teams"); XCTAssertEqual(hill.weapons, ["grenade"])
-        XCTAssertEqual(hill.pickupRate, "slow"); XCTAssertTrue(hill.friendlyFire)
+        XCTAssertEqual(hill.scoreTarget, 30)
+        XCTAssertEqual(hill.timeLimit, 180)
+        XCTAssertEqual(hill.mapSize, "ultrawide")
+        XCTAssertTrue(hill.portraitMaze)
+        XCTAssertEqual(hill.teamMode, "teams")
+        XCTAssertEqual(hill.weapons, ["grenade"])
+        XCTAssertEqual(hill.pickupRate, "slow")
+        XCTAssertTrue(hill.friendlyFire)
         rules.teamMode = "ffa"
         XCTAssertEqual(rules.selectingMode("ctf").teamMode, "teams")
         XCTAssertEqual(rules.selectingMode("survival").teamMode, "teams")
@@ -49,59 +59,93 @@ final class RuleDefaultsTests: XCTestCase {
 
     func testInfinitySwitchAndRememberedProfilesKeepRoomGeometry() {
         var rules = RoomRules.localDefaults()
-        rules.mapSize = "huge"; rules.portraitMaze = true; rules.teamMode = "teams"
-        rules.teamNames[0] = "FOXES"; rules.teamColors[0] = 6; rules.friendlyFire = true
-        rules.weapons = ["laser"]; rules.pickupRate = "off"
+        rules.mapSize = "huge"
+        rules.portraitMaze = true
+        rules.teamMode = "teams"
+        rules.teamNames[0] = "FOXES"
+        rules.teamColors[0] = 6
+        rules.friendlyFire = true
+        rules.weapons = ["laser"]
+        rules.pickupRate = "off"
         let endless = rules.selectingMode("infinity")
         XCTAssertTrue(endless.infinity)
-        XCTAssertEqual(endless.mapSize, "huge"); XCTAssertTrue(endless.portraitMaze)
-        XCTAssertEqual(endless.teamMode, "teams"); XCTAssertEqual(endless.teamNames[0], "FOXES")
-        XCTAssertEqual(endless.teamColors[0], 6); XCTAssertTrue(endless.friendlyFire)
+        XCTAssertEqual(endless.mapSize, "huge")
+        XCTAssertTrue(endless.portraitMaze)
+        XCTAssertEqual(endless.teamMode, "teams")
+        XCTAssertEqual(endless.teamNames[0], "FOXES")
+        XCTAssertEqual(endless.teamColors[0], 6)
+        XCTAssertTrue(endless.friendlyFire)
         XCTAssertEqual(endless.weapons.count, 10)
         XCTAssertEqual(endless.selectingMode("infinity"), endless)
         let unsavedHill = endless.selectingMode("koth")
         XCTAssertEqual(unsavedHill.teamMode, "ffa")
         XCTAssertEqual(unsavedHill.weapons.count, 10)
         var saved = RoomRules.modeDefaults("koth")
-        saved.mapSize = "standard"; saved.scoreTarget = 45; saved.teamMode = "teams"; saved.weapons = ["cannon"]
+        saved.mapSize = "standard"
+        saved.scoreTarget = 45
+        saved.teamMode = "teams"
+        saved.weapons = ["cannon"]
         let restored = endless.selectingMode("koth", remembered: saved)
-        XCTAssertFalse(restored.infinity); XCTAssertEqual(restored.mode, "koth")
-        XCTAssertEqual(restored.scoreTarget, 45); XCTAssertEqual(restored.teamMode, "teams")
+        XCTAssertFalse(restored.infinity)
+        XCTAssertEqual(restored.mode, "koth")
+        XCTAssertEqual(restored.scoreTarget, 45)
+        XCTAssertEqual(restored.teamMode, "teams")
         XCTAssertEqual(restored.weapons, ["cannon"])
-        XCTAssertEqual(restored.mapSize, "huge"); XCTAssertTrue(restored.portraitMaze)
+        XCTAssertEqual(restored.mapSize, "huge")
+        XCTAssertTrue(restored.portraitMaze)
     }
 
     func testRestoreDefaultsRetainsMapFormatAndHiddenInfinitySettings() {
         var rules = RoomRules.localDefaults(mode: "koth")
-        rules.mapSize = "giant"; rules.portraitMaze = true; rules.teamMode = "teams"
-        rules.scoreTarget = 120; rules.timeLimit = 600; rules.weapons = ["ghost"]
+        rules.mapSize = "giant"
+        rules.portraitMaze = true
+        rules.teamMode = "teams"
+        rules.scoreTarget = 120
+        rules.timeLimit = 600
+        rules.weapons = ["ghost"]
         let finite = rules.restoringModeDefaults()
-        XCTAssertEqual(finite.mapSize, "giant"); XCTAssertTrue(finite.portraitMaze)
+        XCTAssertEqual(finite.mapSize, "giant")
+        XCTAssertTrue(finite.portraitMaze)
         XCTAssertEqual(finite.teamMode, "teams")
-        XCTAssertEqual(finite.scoreTarget, 30); XCTAssertEqual(finite.timeLimit, 180)
+        XCTAssertEqual(finite.scoreTarget, 30)
+        XCTAssertEqual(finite.timeLimit, 180)
         XCTAssertEqual(finite.weapons.count, 10)
-        rules.infinity = true; rules.infinityTarget = 200; rules.infinityRandomBots = true
-        rules.infinityBotDifficulty = "godlike"; rules.infinityRandomDifficulty = true
-        rules.teamNames[0] = "FOXES"; rules.teamColors[0] = 6; rules.friendlyFire = true
+        rules.infinity = true
+        rules.infinityTarget = 200
+        rules.infinityRandomBots = true
+        rules.infinityBotDifficulty = "godlike"
+        rules.infinityRandomDifficulty = true
+        rules.teamNames[0] = "FOXES"
+        rules.teamColors[0] = 6
+        rules.friendlyFire = true
         let endless = rules.restoringModeDefaults()
-        XCTAssertTrue(endless.infinity); XCTAssertEqual(endless.mapSize, "giant")
-        XCTAssertTrue(endless.portraitMaze); XCTAssertEqual(endless.teamMode, "teams")
-        XCTAssertEqual(endless.infinityTarget, 0); XCTAssertFalse(endless.infinityRandomBots)
-        XCTAssertEqual(endless.infinityBotDifficulty, "normal"); XCTAssertFalse(endless.infinityRandomDifficulty)
-        XCTAssertEqual(endless.teamNames[0], "Team 1"); XCTAssertEqual(endless.teamColors[0], 0)
+        XCTAssertTrue(endless.infinity)
+        XCTAssertEqual(endless.mapSize, "giant")
+        XCTAssertTrue(endless.portraitMaze)
+        XCTAssertEqual(endless.teamMode, "teams")
+        XCTAssertEqual(endless.infinityTarget, 0)
+        XCTAssertFalse(endless.infinityRandomBots)
+        XCTAssertEqual(endless.infinityBotDifficulty, "normal")
+        XCTAssertFalse(endless.infinityRandomDifficulty)
+        XCTAssertEqual(endless.teamNames[0], "Team 1")
+        XCTAssertEqual(endless.teamColors[0], 0)
         XCTAssertFalse(endless.friendlyFire)
-        XCTAssertEqual(endless.scoreTarget, 120); XCTAssertEqual(endless.timeLimit, 600)
+        XCTAssertEqual(endless.scoreTarget, 120)
+        XCTAssertEqual(endless.timeLimit, 600)
         XCTAssertEqual(endless.weapons, ["ghost"])
     }
 
     func testDifficultyNamesMatchMobileRoster() {
-        XCTAssertEqual(BotDifficulty.allCases.map(\.displayName), ["Dumb", "Easy", "Medium", "Hard", "Godlike"])
+        XCTAssertEqual(
+            BotDifficulty.allCases.map(\.displayName), ["Dumb", "Easy", "Medium", "Hard", "Godlike"])
         XCTAssertEqual(BotDifficulty.allCases.map(\.rawValue), ["dumb", "easy", "normal", "hard", "godlike"])
     }
 
     func testResetRequiredTeamModesNormalizesOldFreeForAllRules() {
         for mode in ["ctf", "survival"] {
-            var rules = RoomRules(); rules.mode = mode; rules.teamMode = "ffa"
+            var rules = RoomRules()
+            rules.mode = mode
+            rules.teamMode = "ffa"
             XCTAssertEqual(rules.restoringModeDefaults().teamMode, "teams", mode)
         }
     }

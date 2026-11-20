@@ -33,7 +33,9 @@ internal class DumbBotBrain(bornAt: Double) {
     /** Pulses remain slow even with rapid fire, which normally repeats while held. */
     fun trigger(now: Double, angle: Double, allowed: Boolean): Boolean {
         if (
-            target < 0 || !allowed || now + 1e-9 < nextShot ||
+            target < 0 ||
+                !allowed ||
+                now + 1e-9 < nextShot ||
                 abs(TankMovement.angleDelta(aim, angle)) >= .36
         )
             return false

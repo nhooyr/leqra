@@ -1,15 +1,15 @@
 [
-  {"zoom":0.05,"infinity":false,"fontScale":1,"size":10},
-  {"zoom":0.5,"infinity":false,"fontScale":1,"size":10},
-  {"zoom":1,"infinity":false,"fontScale":1,"size":10},
-  {"zoom":1.2,"infinity":false,"fontScale":1,"size":12},
-  {"zoom":2,"infinity":false,"fontScale":1,"size":20},
-  {"zoom":0.05,"infinity":true,"fontScale":1,"size":10},
-  {"zoom":0.7,"infinity":true,"fontScale":1,"size":10},
-  {"zoom":1,"infinity":true,"fontScale":1,"size":11},
-  {"zoom":1.2,"infinity":true,"fontScale":1,"size":13.2},
-  {"zoom":2,"infinity":true,"fontScale":1,"size":22},
-  {"zoom":0.7,"infinity":false,"fontScale":1.5,"size":15},
-  {"zoom":1,"infinity":true,"fontScale":1.5,"size":15},
-  {"zoom":2,"infinity":true,"fontScale":1.5,"size":22}
+  { "zoom": 0.05, "infinity": false, "fontScale": 1, "size": 10 },
+  { "zoom": 0.5, "infinity": false, "fontScale": 1, "size": 10 },
+  { "zoom": 1, "infinity": false, "fontScale": 1, "size": 10 },
+  { "zoom": 1.2, "infinity": false, "fontScale": 1, "size": 12 },
+  { "zoom": 2, "infinity": false, "fontScale": 1, "size": 20 },
+  { "zoom": 0.05, "infinity": true, "fontScale": 1, "size": 10 },
+  { "zoom": 0.7, "infinity": true, "fontScale": 1, "size": 10 },
+  { "zoom": 1, "infinity": true, "fontScale": 1, "size": 11 },
+  { "zoom": 1.2, "infinity": true, "fontScale": 1, "size": 13.2 },
+  { "zoom": 2, "infinity": true, "fontScale": 1, "size": 22 },
+  { "zoom": 0.7, "infinity": false, "fontScale": 1.5, "size": 15 },
+  { "zoom": 1, "infinity": true, "fontScale": 1.5, "size": 15 },
+  { "zoom": 2, "infinity": true, "fontScale": 1.5, "size": 22 }
 ]

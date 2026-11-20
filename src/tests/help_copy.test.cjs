@@ -1,70 +1,193 @@
-'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
-const {readFileSync}=require('node:fs'),path=require('node:path');
-const {assetPath}=require('./web_assets.cjs');
-const source=readFileSync(assetPath('game.js'),'utf8'),infinite=readFileSync(assetPath('infinite.js'),'utf8'),html=readFileSync(path.join(__dirname,'../web/index.html'),'utf8');
-function declaration(name){const start=source.indexOf('function '+name+'('),end=source.indexOf('\n',start),line=source.slice(start,end);assert.ok(start>=0,name);return line.endsWith('}')?line:source.slice(start,source.indexOf('\n}',end)+2);}
-function boot(){
- const nodes=new Map(),rules={mode:'elimination',teamMode:'teams',mapSize:'compact',scoreTarget:15,pickupRate:'superfast',weapons:['laser']};
- const $=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',value:'',checked:false,parentElement:{},replaceChildren(...children){this.textContent=children.map(child=>child.textContent).join('');}});return nodes.get(id);};
- const s={$,rules,CELL:84,window:{},selection:'',currentRules:()=>rules,infinityPlayMode:()=>s.selection,isRoomEditable:()=>true,POWER_EFFECT_DURATION:10,document:{createTextNode:text=>({textContent:text}),createElement:()=>({textContent:''})}};
- vm.createContext(s);vm.runInContext(infinite.match(/^const POWER_DURATION = .*$/m)[0]+'\n'+infinite.match(/^const pickupHelp = .*$/m)[0]+'\nglobalThis.infinityPickupHelp=pickupHelp;',s);
- vm.runInContext(source.match(/^const MAZE_SIZES=.*$/m)[0],s);
- s.window.leqraInfinity={pickupHelp:s.infinityPickupHelp};for(const name of ['activeTeamCount','modeLabel','mapDimensions','powerEffectDuration','starmanDuration','pickupLifetime','pickupCap','startingPickups','pickupLimitText','pickupHelpText','updateRuleHelp'])vm.runInContext(declaration(name),s);
- return{s,$,rules};
+"use strict"
+const { extractDeclaration, extractFunction, sourceIndex } = require("./source_helpers.cjs")
+const { test } = require("node:test"),
+  assert = require("node:assert/strict"),
+  vm = require("node:vm")
+const { readFileSync } = require("node:fs"),
+  path = require("node:path")
+const { assetPath } = require("./web_assets.cjs")
+const source = readFileSync(assetPath("game.js"), "utf8"),
+  infinite = readFileSync(assetPath("infinite.js"), "utf8"),
+  html = readFileSync(path.join(__dirname, "../web/index.html"), "utf8")
+function declaration(name) {
+  return extractFunction(source, name)
+}
+function boot() {
+  const nodes = new Map(),
+    rules = {
+      mode: "elimination",
+      teamMode: "teams",
+      mapSize: "compact",
+      scoreTarget: 15,
+      pickupRate: "superfast",
+      weapons: ["laser"],
+    }
+  const $ = (id) => {
+    if (!nodes.has(id))
+      nodes.set(id, {
+        textContent: "",
+        value: "",
+        checked: false,
+        parentElement: {},
+        replaceChildren(...children) {
+          this.textContent = children.map((child) => child.textContent).join("")
+        },
+      })
+    return nodes.get(id)
+  }
+  const s = {
+    $,
+    rules,
+    CELL: 84,
+    window: {},
+    selection: "",
+    currentRules: () => rules,
+    infinityPlayMode: () => s.selection,
+    isRoomEditable: () => true,
+    POWER_EFFECT_DURATION: 10,
+    document: {
+      createTextNode: (text) => ({ textContent: text }),
+      createElement: () => ({ textContent: "" }),
+    },
+  }
+  vm.createContext(s)
+  vm.runInContext(
+    extractDeclaration(infinite, "POWER_DURATION") +
+      "\n" +
+      extractDeclaration(infinite, "pickupHelp") +
+      "\nglobalThis.infinityPickupHelp=pickupHelp;",
+    s,
+  )
+  vm.runInContext(extractDeclaration(source, "MAZE_SIZES"), s)
+  s.window.leqraInfinity = { pickupHelp: s.infinityPickupHelp }
+  for (const name of [
+    "activeTeamCount",
+    "modeLabel",
+    "mapDimensions",
+    "powerEffectDuration",
+    "starmanDuration",
+    "pickupLifetime",
+    "pickupCap",
+    "startingPickups",
+    "pickupLimitText",
+    "pickupHelpText",
+    "updateRuleHelp",
+  ])
+    vm.runInContext(declaration(name), s)
+  return { s, $, rules }
 }
 
-test('shared power cards avoid weapon-specific immunity and finite-map claims in Infinity',()=>{
- const sidebar=html.slice(html.indexOf('<aside class="sidebar"'),html.indexOf('</aside>'));
- assert.doesNotMatch(sidebar,/Grenades cannot hurt their thrower|shooter-safe|horizontal spread|perimeter range|Edge bounces/);
- assert.match(sidebar,/Cannon<span>Pierces walls\. 4× size and speed\./);assert.match(sidebar,/Homing missile<span>Guided missiles that ricochet\./);assert.match(sidebar,/Shotgun<span>Fast, ricocheting spread\./);
- const note=sidebar.match(/<p class="power-note">([^<]*)<\/p>/)[1];assert.doesNotMatch(note,/Most timed|Huge maps|within that time/);assert.match(note,/Walls stop blasts/);
- assert.match(html,/Every tank is immune to its own weapons\./);assert.match(source,/add\(generalTips,'owner-immunity','Every tank is immune to its own weapons\.'\)/);
-});
+test("shared power cards avoid weapon-specific immunity and finite-map claims in Infinity", () => {
+  const sidebar = html.slice(html.indexOf('<aside class="sidebar"'), html.indexOf("</aside>"))
+  assert.doesNotMatch(
+    sidebar,
+    /Grenades cannot hurt their thrower|shooter-safe|horizontal spread|perimeter range|Edge bounces/,
+  )
+  assert.match(sidebar, /Cannon<span>Pierces walls\. 4× size and speed\./)
+  assert.match(sidebar, /Homing missile<span>Guided missiles that ricochet\./)
+  assert.match(sidebar, /Shotgun<span>Fast, ricocheting spread\./)
+  const note = sidebar.match(/<p class="power-note">([^<]*)<\/p>/)[1]
+  assert.doesNotMatch(note, /Most timed|Huge maps|within that time/)
+  assert.match(note, /Walls stop blasts/)
+  assert.match(html, /Every tank is immune to its own weapons\./)
+  assert.notEqual(
+    sourceIndex(source, "add(generalTips,'owner-immunity','Every tank is immune to its own weapons.')"),
+    -1,
+  )
+})
 
-test('grenade guidance appears in the sidebar and Quick Tour',()=>{
- const sidebar=html.slice(html.indexOf('<aside class="sidebar"'),html.indexOf('</aside>'));
- const tour=html.match(/<dialog id="introTourDialog"[^>]*>[\s\S]*?<\/dialog>/)[0];
- const controls=source.slice(source.indexOf('<dialog class="feature-dialog" id="controlsDialog"'),source.indexOf('document.body.append(dialogs)'));
- assert.match(sidebar,/Grenade<span>[^<]*next Fire press, or after 10 seconds\. Release Fire after detonating to shoot again\./);
- assert.match(tour,/Grenade<\/strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds\./);
- assert.doesNotMatch(controls,/grenade/i);
-});
+test("grenade guidance appears in the sidebar and Quick Tour", () => {
+  const sidebar = html.slice(html.indexOf('<aside class="sidebar"'), html.indexOf("</aside>"))
+  const tour = html.match(/<dialog id="introTourDialog"[^>]*>[\s\S]*?<\/dialog>/)[0]
+  const controls = source.slice(
+    sourceIndex(source, '<dialog class="feature-dialog" id="controlsDialog"'),
+    sourceIndex(source, "document.body.append(dialogs)"),
+  )
+  assert.match(
+    sidebar,
+    /Grenade<span\s*>[^<]*next Fire press, or after 10\s+seconds\.\s+Release Fire after detonating to shoot again\./,
+  )
+  assert.match(
+    tour,
+    /Grenade<\/strong>, Homes in and explodes on tank impact, another\s+fire\s+press, or after\s+10 seconds\./,
+  )
+  assert.doesNotMatch(controls, /grenade/i)
+})
 
-test('power-up timing lives in the sidebar and Rules, not Controls',()=>{
- const controls=source.slice(source.indexOf('<dialog class="feature-dialog" id="controlsDialog"'),source.indexOf('document.body.append(dialogs)'));
- assert.doesNotMatch(controls,/MAZE POWER-UPS|controlsPickupInfo|Most last/);
- const {s,$}=boot(),fixed=s.pickupHelpText();
- assert.match(fixed,/2 starting power-ups, 5 maximum/);assert.match(fixed,/10 seconds once collected/);assert.doesNotMatch(fixed,/\bpick[ -]?ups?\b/i);
- $('rule-pickupRate').value='off';s.updateRuleHelp();assert.equal($('rule-pickup-density').textContent,'Power-ups disabled.');
- assert.match(source,/<option value="off">Off, no power-ups<\/option>/);
-});
+test("power-up timing lives in the sidebar and Rules, not Controls", () => {
+  const controls = source.slice(
+    sourceIndex(source, '<dialog class="feature-dialog" id="controlsDialog"'),
+    sourceIndex(source, "document.body.append(dialogs)"),
+  )
+  assert.doesNotMatch(controls, /MAZE POWER-UPS|controlsPickupInfo|Most last/)
+  const { s, $ } = boot(),
+    fixed = s.pickupHelpText()
+  assert.match(fixed, /2 starting power-ups, 5 maximum/)
+  assert.match(fixed, /10 seconds once collected/)
+  assert.doesNotMatch(fixed, /\bpick[ -]?ups?\b/i)
+  $("rule-pickupRate").value = "off"
+  s.updateRuleHelp()
+  assert.equal($("rule-pickup-density").textContent, "Power-ups disabled.")
+  assert.match(source, /<option value="off">Off, no power-ups<\/option>/)
+})
 
-test('sidebar and draft Rules timing match every map and Infinity ignores finite pickup settings',()=>{
- const {s,$,rules}=boot();
- for(const [mapSize,duration,star,expiry] of [['compact',10,4,30],['standard',10,4,30],['large',10,5,32],['huge',15,6,45],['giant',15,7,61],['ultrawide',15,8,90]]){
-  rules.mapSize=mapSize;
-  for(const portraitMaze of [false,true]){
-   rules.portraitMaze=portraitMaze;const help=s.pickupHelpText();
-   assert.ok(help.includes('Most last '+duration+' seconds'));assert.ok(help.includes('Starman lasts '+star+' seconds'));assert.ok(help.includes('expire after '+expiry+' seconds'));
-   $('rule-pickupRate').value='slow';s.updateRuleHelp();assert.ok($('rule-pickup-density').textContent.includes('every 7–10 seconds'));
+test("sidebar and draft Rules timing match every map and Infinity ignores finite pickup settings", () => {
+  const { s, $, rules } = boot()
+  for (const [mapSize, duration, star, expiry] of [
+    ["compact", 10, 4, 30],
+    ["standard", 10, 4, 30],
+    ["large", 10, 5, 32],
+    ["huge", 15, 6, 45],
+    ["giant", 15, 7, 61],
+    ["ultrawide", 15, 8, 90],
+  ]) {
+    rules.mapSize = mapSize
+    for (const portraitMaze of [false, true]) {
+      rules.portraitMaze = portraitMaze
+      const help = s.pickupHelpText()
+      assert.ok(help.includes("Most last " + duration + " seconds"))
+      assert.ok(help.includes("Starman lasts " + star + " seconds"))
+      assert.ok(help.includes("expire after " + expiry + " seconds"))
+      $("rule-pickupRate").value = "slow"
+      s.updateRuleHelp()
+      assert.ok($("rule-pickup-density").textContent.includes("every 7–10 seconds"))
+    }
   }
- }
- rules.weapons=[];assert.equal(s.pickupHelpText(),'Power-ups disabled.');
- s.selection='online';s.updateRuleHelp();assert.match($('rule-pickup-density').textContent,/room settings below apply when Public Infinity is off/);s.selection='';
- rules.infinity=true;rules.pickupRate='off';const help=s.pickupHelpText();
- assert.match(help,/All ten power-ups/);assert.match(help,/Most last 15 seconds/);assert.match(help,/Starman lasts 8 seconds/);assert.match(help,/expire after 30 seconds/);
- s.updateRuleHelp();assert.equal($('rule-pickup-density').textContent,help);assert.equal($('rule-pickup-density').hidden,false);assert.equal($('rule-weapon-options').hidden,true);
-});
+  rules.weapons = []
+  assert.equal(s.pickupHelpText(), "Power-ups disabled.")
+  s.selection = "online"
+  s.updateRuleHelp()
+  assert.match($("rule-pickup-density").textContent, /room settings below apply when Public Infinity is off/)
+  s.selection = ""
+  rules.infinity = true
+  rules.pickupRate = "off"
+  const help = s.pickupHelpText()
+  assert.match(help, /All ten power-ups/)
+  assert.match(help, /Most last 15 seconds/)
+  assert.match(help, /Starman lasts 8 seconds/)
+  assert.match(help, /expire after 30 seconds/)
+  s.updateRuleHelp()
+  assert.equal($("rule-pickup-density").textContent, help)
+  assert.equal($("rule-pickup-density").hidden, false)
+  assert.equal($("rule-weapon-options").hidden, true)
+})
 
-test('rules help describes two initial teams and only reachable Survival bosses from the current draft',()=>{
- const {s,$,rules}=boot();s.updateRuleHelp();assert.match($('rule-team-help').textContent,/evenly split between Team 1 and Team 2/);assert.doesNotMatch($('rule-team-help').textContent,/all four teams/);
- rules.mode='survival';
- for(const target of [3,5,10,15]){
-  $('rule-scoreTarget').value=String(target);s.updateRuleHelp();const text=$('rule-help').textContent;
-  assert.match(text,/Between waves, a two-second break leads to a new maze and a three-second countdown/);assert.doesNotMatch(text,/Each cleared wave/);
-  assert.equal(text.includes('Medium debuts'),target>=5);assert.equal(text.includes('Hard at wave 10'),target>=10);assert.equal(text.includes('Godlike at wave 15'),target>=15);
-  assert.equal(rules.scoreTarget,15,'editing explanatory copy does not apply draft rules');
- }
- assert.match(source,/\$\('rule-scoreTarget'\)\.oninput=updateRuleHelp/);
-});
+test("rules help describes two initial teams and only reachable Survival bosses from the current draft", () => {
+  const { s, $, rules } = boot()
+  s.updateRuleHelp()
+  assert.match($("rule-team-help").textContent, /evenly split between Team 1 and Team 2/)
+  assert.doesNotMatch($("rule-team-help").textContent, /all four teams/)
+  rules.mode = "survival"
+  for (const target of [3, 5, 10, 15]) {
+    $("rule-scoreTarget").value = String(target)
+    s.updateRuleHelp()
+    const text = $("rule-help").textContent
+    assert.match(text, /Between waves, a two-second break leads to a new maze and a three-second countdown/)
+    assert.doesNotMatch(text, /Each cleared wave/)
+    assert.equal(text.includes("Medium debuts"), target >= 5)
+    assert.equal(text.includes("Hard at wave 10"), target >= 10)
+    assert.equal(text.includes("Godlike at wave 15"), target >= 15)
+    assert.equal(rules.scoreTarget, 15, "editing explanatory copy does not apply draft rules")
+  }
+  assert.notEqual(sourceIndex(source, "$('rule-scoreTarget').oninput=updateRuleHelp"), -1)
+})

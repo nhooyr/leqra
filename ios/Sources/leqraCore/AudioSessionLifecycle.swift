@@ -12,10 +12,12 @@ public final class AudioSessionLifecycle {
     private var revision: UInt64 = 0
     private var transition: Task<Void, Never>?
 
-    public init(activate: @escaping @MainActor () async throws -> Void,
-                deactivate: @escaping @MainActor () async -> Void,
-                ready: @escaping @MainActor () throws -> Void,
-                failed: @escaping @MainActor () -> Void) {
+    public init(
+        activate: @escaping @MainActor () async throws -> Void,
+        deactivate: @escaping @MainActor () async -> Void,
+        ready: @escaping @MainActor () throws -> Void,
+        failed: @escaping @MainActor () -> Void
+    ) {
         self.activate = activate
         self.deactivate = deactivate
         self.ready = ready
@@ -34,7 +36,8 @@ public final class AudioSessionLifecycle {
     @discardableResult
     public func request(_ desired: Bool) -> Task<Void, Never> {
         revision &+= 1
-        let requestedRevision = revision, previous = transition
+        let requestedRevision = revision
+        let previous = transition
         let task = Task { @MainActor [self] in
             await previous?.value
             defer { if revision == requestedRevision { transition = nil } }

@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+
 @testable import leqraCore
 
 final class NetworkFailureTests: XCTestCase {
@@ -15,15 +16,17 @@ final class NetworkFailureTests: XCTestCase {
 
     @MainActor func testIncompatibleBuildStopsPublicReconnectsEvenWithTheSameRelease() async {
         let body = """
-        {"version":"\(NetworkClient.supportedVersion)","protocol":\(NetworkClient.protocolVersion + 1)}
-        """
+            {"version":"\(NetworkClient.supportedVersion)","protocol":\(NetworkClient.protocolVersion + 1)}
+            """
         let client = transport(status: 200, body: body)
         defer { client.disconnect() }
         let stopped = expectation(description: "Incompatible protocol stops discovery")
         var errors: [String] = []
         client.onEvent = { event in
             if case .error(let message) = event { errors.append(message) }
-            if case .roomEvent(.reconnecting) = event { XCTFail("An incompatible protocol cannot be retried.") }
+            if case .roomEvent(.reconnecting) = event {
+                XCTFail("An incompatible protocol cannot be retried.")
+            }
             if case .disconnected = event { stopped.fulfill() }
         }
         client.connectPublic(baseURL: URL(string: "https://discovery.test")!, name: "PILOT", colorIndex: 0)
@@ -33,8 +36,10 @@ final class NetworkFailureTests: XCTestCase {
     }
 
     @MainActor func testMalformedBuildDiscoveryStopsPublicReconnects() async {
-        for body in ["<html>Proxy error</html>", "{broken", "", "[]", String(repeating: "x", count: 8193),
-                     #"{"version":"1.0.0","protocol":true}"#, #"{"version":"1.0.0","protocol":null}"#] {
+        for body in [
+            "<html>Proxy error</html>", "{broken", "", "[]", String(repeating: "x", count: 8193),
+            #"{"version":"1.0.0","protocol":true}"#, #"{"version":"1.0.0","protocol":null}"#,
+        ] {
             let client = transport(status: 200, body: body)
             let stopped = expectation(description: "Malformed discovery stops")
             var retries = 0
@@ -42,9 +47,11 @@ final class NetworkFailureTests: XCTestCase {
                 if case .roomEvent(.reconnecting) = event { retries += 1 }
                 if case .disconnected = event { stopped.fulfill() }
             }
-            client.connectPublic(baseURL: URL(string: "https://discovery.test")!, name: "PILOT", colorIndex: 0)
+            client.connectPublic(
+                baseURL: URL(string: "https://discovery.test")!, name: "PILOT", colorIndex: 0)
             await fulfillment(of: [stopped], timeout: 2)
-            XCTAssertEqual(retries, 0, "An invalid server response cannot be repaired by automatic reconnects")
+            XCTAssertEqual(
+                retries, 0, "An invalid server response cannot be repaired by automatic reconnects")
             XCTAssertFalse(client.reconnect())
             client.disconnect()
         }
@@ -56,7 +63,9 @@ final class NetworkFailureTests: XCTestCase {
         let retry = expectation(description: "Temporary outage retries")
         client.onEvent = { event in
             if case .roomEvent(.reconnecting) = event { retry.fulfill() }
-            if case .disconnected = event { XCTFail("A temporary outage should retain the public recovery route") }
+            if case .disconnected = event {
+                XCTFail("A temporary outage should retain the public recovery route")
+            }
         }
         client.connectPublic(baseURL: URL(string: "https://discovery.test")!, name: "PILOT", colorIndex: 0)
         await fulfillment(of: [retry], timeout: 2)
@@ -64,8 +73,10 @@ final class NetworkFailureTests: XCTestCase {
 
     @MainActor func testMalformedWebSocketPayloadsUseTerminalProtocolError() {
         let client = NetworkClient()
-        for payload in ["<html>Proxy error</html>", "{broken", "[]", #"{"type":"welcome","id":"wrong"}"#,
-                        #"{"type":"state","tanks":"wrong"}"#] {
+        for payload in [
+            "<html>Proxy error</html>", "{broken", "[]", #"{"type":"welcome","id":"wrong"}"#,
+            #"{"type":"state","tanks":"wrong"}"#,
+        ] {
             XCTAssertThrowsError(try client.receive(Data(payload.utf8))) { error in
                 guard case GameNetworkError.invalidResponse = error else {
                     return XCTFail("Malformed wire data must be classified as a protocol error: \(error)")
@@ -77,14 +88,16 @@ final class NetworkFailureTests: XCTestCase {
     @MainActor func testRoomHelloChecksProtocolIndependentlyOfRelease() throws {
         let client = NetworkClient()
         let compatible = """
-        {"type":"server_hello","version":"99.0.0","protocol":\(NetworkClient.protocolVersion)}
-        """
+            {"type":"server_hello","version":"99.0.0","protocol":\(NetworkClient.protocolVersion)}
+            """
         XCTAssertNoThrow(try client.receive(Data(compatible.utf8)))
         let incompatible = """
-        {"type":"server_hello","version":"\(NetworkClient.supportedVersion)","protocol":\(NetworkClient.protocolVersion + 1)}
-        """
+            {"type":"server_hello","version":"\(NetworkClient.supportedVersion)","protocol":\(NetworkClient.protocolVersion + 1)}
+            """
         XCTAssertThrowsError(try client.receive(Data(incompatible.utf8))) { error in
-            guard case GameNetworkError.unsupportedProtocol = error else { return XCTFail("Unexpected error: \(error)") }
+            guard case GameNetworkError.unsupportedProtocol = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
         }
     }
 
@@ -93,23 +106,26 @@ final class NetworkFailureTests: XCTestCase {
         defer { client.disconnect() }
         client.connectPublic(baseURL: URL(string: "http://127.0.0.1:9")!, name: "PILOT", colorIndex: 0)
         let incompatible = """
-        {"type":"welcome","id":1,"public":true,"protocol":\(NetworkClient.protocolVersion + 1)}
-        """
+            {"type":"welcome","id":1,"public":true,"protocol":\(NetworkClient.protocolVersion + 1)}
+            """
         XCTAssertThrowsError(try client.receive(Data(incompatible.utf8))) { error in
-            guard case GameNetworkError.unsupportedProtocol = error else { return XCTFail("Unexpected error: \(error)") }
+            guard case GameNetworkError.unsupportedProtocol = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
         }
         XCTAssertFalse(client.connected)
         XCTAssertNil(client.welcome)
 
         let compatible = """
-        {"type":"welcome","id":1,"public":true,"protocol":\(NetworkClient.protocolVersion)}
-        """
+            {"type":"welcome","id":1,"public":true,"protocol":\(NetworkClient.protocolVersion)}
+            """
         try client.receive(Data(compatible.utf8))
         XCTAssertTrue(client.connected)
     }
 
     @MainActor private func transport(status: Int, body: String) -> NetworkClient {
-        BuildFailureProtocol.status = status; BuildFailureProtocol.body = Data(body.utf8)
+        BuildFailureProtocol.status = status
+        BuildFailureProtocol.body = Data(body.utf8)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [BuildFailureProtocol.self]
         return NetworkClient(session: URLSession(configuration: configuration))
@@ -122,7 +138,8 @@ private final class BuildFailureProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: "HTTP/1.1", headerFields: nil)!
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: Self.status, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Self.body)
         client?.urlProtocolDidFinishLoading(self)

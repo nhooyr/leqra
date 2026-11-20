@@ -8,34 +8,58 @@ import com.leqra.android.NativeStyle.dp
 import com.leqra.core.ArenaObjectives
 import com.leqra.core.RoomRules
 
-internal data class ObjectiveMessage(val text: String, val paintIndex: Int? = null, val urgent: Boolean = false)
+internal data class ObjectiveMessage(
+    val text: String,
+    val paintIndex: Int? = null,
+    val urgent: Boolean = false,
+)
 
-internal fun objectiveMessages(objectives: ArenaObjectives?, rules: RoomRules): List<ObjectiveMessage> =
+internal fun objectiveMessages(
+    objectives: ArenaObjectives?,
+    rules: RoomRules,
+): List<ObjectiveMessage> =
     when (objectives?.mode) {
-        "survival" -> objectives.survival?.let {
-            listOf(ObjectiveMessage("WAVE ${it.wave}"), ObjectiveMessage("${it.enemiesRemaining} ENEMIES"))
-        }.orEmpty()
-        "ctf" -> objectives.flags.take(2).map { flag ->
-            val status = when {
-                flag.home -> "FLAG HOME"
-                flag.carrier >= 0 -> "FLAG CARRIED"
-                else -> "FLAG DROPPED"
+        "survival" ->
+            objectives.survival
+                ?.let {
+                    listOf(
+                        ObjectiveMessage("WAVE ${it.wave}"),
+                        ObjectiveMessage("${it.enemiesRemaining} ENEMIES"),
+                    )
+                }
+                .orEmpty()
+        "ctf" ->
+            objectives.flags.take(2).map { flag ->
+                val status =
+                    when {
+                        flag.home -> "FLAG HOME"
+                        flag.carrier >= 0 -> "FLAG CARRIED"
+                        else -> "FLAG DROPPED"
+                    }
+                ObjectiveMessage(
+                    "TEAM ${flag.team}: $status",
+                    rules.teamColors.getOrElse(flag.team - 1) { flag.team - 1 },
+                )
             }
-            ObjectiveMessage("TEAM ${flag.team}: $status", rules.teamColors.getOrElse(flag.team - 1) { flag.team - 1 })
-        }
-        "koth" -> buildList {
-            add(ObjectiveMessage(when {
-                objectives.contested -> "HILL CONTESTED"
-                objectives.owner == 0 -> "HILL NEUTRAL"
-                else -> "HILL CONTROLLED"
-            }))
-            if (objectives.suddenDeath) add(ObjectiveMessage("SUDDEN DEATH", urgent = true))
-        }
+        "koth" ->
+            buildList {
+                add(
+                    ObjectiveMessage(
+                        when {
+                            objectives.contested -> "HILL CONTESTED"
+                            objectives.owner == 0 -> "HILL NEUTRAL"
+                            else -> "HILL CONTROLLED"
+                        },
+                    ),
+                )
+                if (objectives.suddenDeath) add(ObjectiveMessage("SUDDEN DEATH", urgent = true))
+            }
         else -> emptyList()
     }
 
 internal class NativeObjectiveView(context: Context) : LinearLayout(context) {
-    private val labels = List(2) { NativeStyle.label(context, "", 10f, NativeStyle.soft, mono = true) }
+    private val labels =
+        List(2) { NativeStyle.label(context, "", 10f, NativeStyle.soft, mono = true) }
     private var current: List<ObjectiveMessage> = emptyList()
 
     init {
@@ -46,7 +70,10 @@ internal class NativeObjectiveView(context: Context) : LinearLayout(context) {
         setBackgroundColor(NativeStyle.surface)
         labels.forEachIndexed { index, label ->
             label.gravity = if (index == 0) Gravity.START else Gravity.END
-            addView(label, LayoutParams(0, -2, 1f).apply { if (index == 0) marginEnd = context.dp(8) })
+            addView(
+                label,
+                LayoutParams(0, -2, 1f).apply { if (index == 0) marginEnd = context.dp(8) },
+            )
         }
     }
 
@@ -60,7 +87,10 @@ internal class NativeObjectiveView(context: Context) : LinearLayout(context) {
             label.visibility = if (message == null) View.GONE else View.VISIBLE
             if (message != null) {
                 label.text = message.text
-                label.setTextColor(if (message.urgent) NativeStyle.danger else message.paintIndex?.let(NativeStyle::paint) ?: NativeStyle.soft)
+                label.setTextColor(
+                    if (message.urgent) NativeStyle.danger
+                    else message.paintIndex?.let(NativeStyle::paint) ?: NativeStyle.soft,
+                )
             }
         }
     }

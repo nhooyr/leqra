@@ -10,7 +10,9 @@ class GameWireProtocolTest {
     @Test
     fun theSameEpochAllowsDifferentReleaseStrings() {
         for (release in listOf("0.0.0", "99.99.99")) {
-            GameWireProtocol.check(JSONObject().put("version", release).put("protocol", GameWireProtocol.epoch))
+            GameWireProtocol.check(
+                JSONObject().put("version", release).put("protocol", GameWireProtocol.epoch),
+            )
         }
     }
 
@@ -22,8 +24,10 @@ class GameWireProtocolTest {
 
     @Test
     fun incompatibleEpochIsTerminalDespiteMatchingRelease() {
-        val server = JSONObject().put("version", com.leqra.android.BuildConfig.VERSION_NAME)
-            .put("protocol", GameWireProtocol.epoch + 1)
+        val server =
+            JSONObject()
+                .put("version", com.leqra.android.BuildConfig.VERSION_NAME)
+                .put("protocol", GameWireProtocol.epoch + 1)
         val error = assertThrows(NetworkFailure::class.java) { GameWireProtocol.check(server) }
         assertEquals("version_mismatch", error.code)
         assertTrue(error.terminal)

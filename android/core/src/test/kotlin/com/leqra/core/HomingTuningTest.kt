@@ -8,13 +8,21 @@ class HomingTuningTest {
     private val dt = 1.0 / 60
 
     private fun arena(fixed: Boolean, boosted: Boolean = false) =
-        PracticeArena(42, "RELOAD", 0, 0, world = if (fixed) ArenaWorld(1000.0, 1000.0) else null).apply {
-            snapshot.tanks.first().apply { x = 42.0; y = 42.0; angle = 0.0; invulnerable = 0.0; spawnProtected = false }
-            PracticeArena.applyPower(snapshot.tanks.first(), "homing")
-            if (boosted) PracticeArena.applyPower(snapshot.tanks.first(), "starman")
-        }
+        PracticeArena(42, "RELOAD", 0, 0, world = if (fixed) ArenaWorld(1000.0, 1000.0) else null)
+            .apply {
+                snapshot.tanks.first().apply {
+                    x = 42.0
+                    y = 42.0
+                    angle = 0.0
+                    invulnerable = 0.0
+                    spawnProtected = false
+                }
+                PracticeArena.applyPower(snapshot.tanks.first(), "homing")
+                if (boosted) PracticeArena.applyPower(snapshot.tanks.first(), "starman")
+            }
 
-    @Test fun heldMissilesReloadInTwentyTwoTicksWithUnchangedSpeedRangeAndCharges() {
+    @Test
+    fun heldMissilesReloadInTwentyTwoTicksWithUnchangedSpeedRangeAndCharges() {
         val spec = PracticeArena.spec("homing")
         assertEquals(.36, spec.cooldown, 1e-12)
         assertEquals(235.0, spec.speed, 0.0)
@@ -40,9 +48,11 @@ class HomingTuningTest {
         }
     }
 
-    @Test fun missileReadinessFallbackMatchesTheNewReloadAndHonorsExplicitServerTiming() {
+    @Test
+    fun missileReadinessFallbackMatchesTheNewReloadAndHonorsExplicitServerTiming() {
         for (infinity in listOf(false, true)) {
-            val tank = ArenaTank(id = 1, power = "homing", powerTime = 15.0, charges = 3, cooldown = .18)
+            val tank =
+                ArenaTank(id = 1, power = "homing", powerTime = 15.0, charges = 3, cooldown = .18)
             val state = ArenaSnapshot(tanks = listOf(tank))
             val readout = PilotReadout(tank, state, infinity)
             assertEquals(.5, readout.progress, 1e-12)
@@ -52,7 +62,8 @@ class HomingTuningTest {
         }
     }
 
-    @Test fun starmanMissilesStillUseZeroReloadAndFreeCharges() {
+    @Test
+    fun starmanMissilesStillUseZeroReloadAndFreeCharges() {
         for (fixed in listOf(false, true)) {
             val arena = arena(fixed, boosted = true)
             val missiles = mutableSetOf<Int>()

@@ -1,6 +1,6 @@
+import QuartzCore
 import SpriteKit
 import UIKit
-import QuartzCore
 import leqraCore
 
 private struct ProjectileStyle: Hashable {
@@ -55,7 +55,9 @@ final class GameScene: SKScene {
             fireTrackRing.isHidden = !showsFireControl
         }
     }
-    private(set) var input = GameInput() { didSet { if oldValue.fire != input.fire { onFireChanged?(input.fire) } } }
+    private(set) var input = GameInput() {
+        didSet { if oldValue.fire != input.fire { onFireChanged?(input.fire) } }
+    }
     private var inputSources = LocalInputSources()
     private var showsTouchControls = true
     private var frozenShowcase: ShowcaseScene?
@@ -71,7 +73,8 @@ final class GameScene: SKScene {
         let notice = visible.first
         let identity = tanks.values.first { !$0.identity.isHidden }
         let bounds = notice?.calculateAccumulatedFrame() ?? .zero
-        return "noticeCount=\(visible.count),noticeFont=\(notice?.fontSize ?? 0),nameFont=\(identity?.identityFontSize ?? 0),noticeWidth=\(bounds.width),noticeHeight=\(bounds.height),viewportWidth=\(worldViewport.width)"
+        return
+            "noticeCount=\(visible.count),noticeFont=\(notice?.fontSize ?? 0),nameFont=\(identity?.identityFontSize ?? 0),noticeWidth=\(bounds.width),noticeHeight=\(bounds.height),viewportWidth=\(worldViewport.width)"
     }
     var directAimProbePoint: CGPoint? { aimTankPosition.map { CGPoint(x: $0.x, y: size.height - $0.y) } }
     var controlLabelProbe: String {
@@ -189,7 +192,10 @@ final class GameScene: SKScene {
             world.addChild(warning)
         }
         addChild(labelLayer)
-        for notice in deathNotices { notice.zPosition = 150; addChild(notice) }
+        for notice in deathNotices {
+            notice.zPosition = 150
+            addChild(notice)
+        }
         addChild(controls)
         controls.zPosition = 200
         labelLayer.zPosition = 100
@@ -252,7 +258,8 @@ final class GameScene: SKScene {
         crosshair.position = .zero
         fireButton.addChild(crosshair)
         let arguments = ProcessInfo.processInfo.arguments
-        if !(arguments.contains("--native-performance-probe") && arguments.contains("--probe-cold-resources")) {
+        if !(arguments.contains("--native-performance-probe") && arguments.contains("--probe-cold-resources"))
+        {
             prepareCombatResources()
         }
         layoutControls()
@@ -272,26 +279,35 @@ final class GameScene: SKScene {
         combatTextures.append(contentsOf: tankTextures)
         for _ in 0..<8 { tankPool.append(TankNode()) }
         for digit in 0...9 { combatTextures.append(NativeArt.badgeDigit(digit)) }
-        for kind in ["rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"] {
+        for kind in [
+            "rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman",
+        ] {
             combatTextures.append(NativeArt.badge(kind: kind))
         }
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             for color in 0..<8 {
                 for speed in kind == "rapid" ? [846.0, 1692] : [0] {
                     let style = ProjectileStyle(ArenaBullet(vx: speed, kind: kind, colorIndex: color))
-                    combatTextures.append(NativeArt.projectile(kind: kind, color: color, rapidTracerLength: style.rapidTracerLength))
+                    combatTextures.append(
+                        NativeArt.projectile(
+                            kind: kind, color: color, rapidTracerLength: style.rapidTracerLength))
                     for _ in 0..<(kind == "scatter" ? 3 : 1) {
                         recycleProjectile(ProjectileNode(style: style))
                     }
                     if kind != "rapid" { _ = trailNode(style) }
                 }
-                if kind == "rapid" { combatTextures.append(NativeArt.projectile(kind: kind, color: color, rapidTracerLength: 0)) }
+                if kind == "rapid" {
+                    combatTextures.append(
+                        NativeArt.projectile(kind: kind, color: color, rapidTracerLength: 0))
+                }
             }
         }
         combatTextures.append(NativeArt.missileFlame())
-        for held in [false, true] { for detonate in [false, true] {
-            combatTextures.append(NativeArt.fireButton(held: held, detonate: detonate))
-        } }
+        for held in [false, true] {
+            for detonate in [false, true] {
+                combatTextures.append(NativeArt.fireButton(held: held, detonate: detonate))
+            }
+        }
         for _ in 0..<32 { effectPool.append(TransientEffectNode()) }
     }
 
@@ -305,39 +321,57 @@ final class GameScene: SKScene {
         for texture in tankTextures {
             let sprite = SKSpriteNode(texture: texture)
             sprite.position = CGPoint(x: index % 8 * 48 + 24, y: -index / 8 * 48 - 24)
-            warmup.addChild(sprite); index += 1
+            warmup.addChild(sprite)
+            index += 1
         }
         // Exercise both identity fonts and the real reusable tank graph before
         // a remote pilot first enters view. Texture uploads alone miss this.
         for index in 0..<min(2, tankPool.count) {
             let node = tankPool[index]
-            node.update(ArenaTank(id: index + 1, name: "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789#-_", colorIndex: index),
-                        localSeat: index == 0 ? 1 : nil, zoom: 1, infinity: false)
+            node.update(
+                ArenaTank(
+                    id: index + 1,
+                    name: "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789#-_",
+                    colorIndex: index),
+                localSeat: index == 0 ? 1 : nil, zoom: 1, infinity: false)
             node.position = CGPoint(x: index * 200 + 100, y: 50)
             node.identity.position = CGPoint(x: index * 200 + 100, y: 80)
-            warmup.addChild(node); warmup.addChild(node.identity)
+            warmup.addChild(node)
+            warmup.addChild(node.identity)
         }
         for kind in ["", "rapid", "scatter", "homing", "grenade", "cannon"] {
             for color in 0..<8 {
                 for speed in kind == "rapid" ? [846.0, 1692] : [420] {
                     let style = ProjectileStyle(ArenaBullet(vx: speed, kind: kind, colorIndex: color))
                     guard let node = projectilePool[style]?.first else { continue }
-                    node.update(ArenaBullet(x: Double(index % 8) * 48 + 24, y: -Double(index / 8) * 48 - 24,
-                                          vx: speed, kind: kind, colorIndex: color, life: 10), time: 0)
-                    warmup.addChild(node); index += 1
+                    node.update(
+                        ArenaBullet(
+                            x: Double(index % 8) * 48 + 24, y: -Double(index / 8) * 48 - 24,
+                            vx: speed, kind: kind, colorIndex: color, life: 10), time: 0)
+                    warmup.addChild(node)
+                    index += 1
                 }
             }
         }
         for color in 0..<8 {
-            let head = SKSpriteNode(texture: NativeArt.projectile(kind: "rapid", color: color, rapidTracerLength: 0))
+            let head = SKSpriteNode(
+                texture: NativeArt.projectile(kind: "rapid", color: color, rapidTracerLength: 0))
             head.size = CGSize(width: 24, height: 24)
             head.position = CGPoint(x: Double(index % 8) * 48 + 24, y: -Double(index / 8) * 48 - 24)
-            warmup.addChild(head); index += 1
+            warmup.addChild(head)
+            index += 1
         }
-        let path = CGMutablePath(); path.move(to: CGPoint(x: 10, y: 10)); path.addLine(to: CGPoint(x: 300, y: 10))
-        let trail = SKShapeNode(path: path); trail.strokeColor = Palette.accent; trail.lineWidth = 12; trail.lineCap = .round
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 10, y: 10))
+        path.addLine(to: CGPoint(x: 300, y: 10))
+        let trail = SKShapeNode(path: path)
+        trail.strokeColor = Palette.accent
+        trail.lineWidth = 12
+        trail.lineCap = .round
         warmup.addChild(trail)
-        for (index, kind) in ["rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman"].enumerated() {
+        for (index, kind) in [
+            "rapid", "scatter", "shield", "homing", "grenade", "speed", "laser", "cannon", "ghost", "starman",
+        ].enumerated() {
             let badge = PowerBadgeNode(kind: kind)
             badge.position = CGPoint(x: index % 8 * 48 + 24, y: 280 - index / 8 * 48)
             badge.update(size: 24, zoom: 1, count: 180, remaining: 15, warning: 3)
@@ -367,9 +401,15 @@ final class GameScene: SKScene {
         if let frozenShowcase { displayShowcase(frozenShowcase) }
     }
 
-    func configureLayout(infinity: Bool, landscape: Bool, loadoutHeight: CGFloat, spectating: Bool = false, showsTouchControls: Bool = true) {
+    func configureLayout(
+        infinity: Bool, landscape: Bool, loadoutHeight: CGFloat, spectating: Bool = false,
+        showsTouchControls: Bool = true
+    ) {
         let mode: LayoutMode = infinity ? .infinity : .fixed
-        guard layoutMode != mode || self.landscape != landscape || fixedLoadoutHeight != loadoutHeight || self.spectating != spectating || self.showsTouchControls != showsTouchControls else { return }
+        guard
+            layoutMode != mode || self.landscape != landscape || fixedLoadoutHeight != loadoutHeight
+                || self.spectating != spectating || self.showsTouchControls != showsTouchControls
+        else { return }
         layoutMode = mode
         self.landscape = landscape
         fixedLoadoutHeight = loadoutHeight
@@ -389,15 +429,18 @@ final class GameScene: SKScene {
         fireButton.strokeColor = color.withAlphaComponent(0.63)
         fireReadyRing.strokeColor = color
         let path = CGMutablePath()
-        path.addArc(center: .zero, radius: 53.5, startAngle: .pi / 2,
-                    endAngle: .pi / 2 - CGFloat(fireProgress) * .pi * 2, clockwise: true)
+        path.addArc(
+            center: .zero, radius: 53.5, startAngle: .pi / 2,
+            endAngle: .pi / 2 - CGFloat(fireProgress) * .pi * 2, clockwise: true)
         fireReadyRing.path = path
         fireButton.fillTexture = NativeArt.fireButton(held: input.fire, detonate: detonate)
         fireButton.fillColor = .white
     }
 
     private var worldViewport: CGRect {
-        let reserve = layoutMode == .fixed && !landscape && !spectating && showsTouchControls ? min(max(0, size.height - 60), 119 + fixedLoadoutHeight) : 0
+        let reserve =
+            layoutMode == .fixed && !landscape && !spectating && showsTouchControls
+            ? min(max(0, size.height - 60), 119 + fixedLoadoutHeight) : 0
         return CGRect(x: 0, y: reserve, width: max(1, size.width), height: max(1, size.height - reserve))
     }
 
@@ -446,8 +489,11 @@ final class GameScene: SKScene {
 
     func resetControls() {
         onControlsReset?()
-        aimTouch = nil; stickTouch = nil; fireTouch = nil
-        inputSources.reset(); publishInput()
+        aimTouch = nil
+        stickTouch = nil
+        fireTouch = nil
+        inputSources.reset()
+        publishInput()
         stickKnob.position = stickOrigin
     }
 
@@ -460,30 +506,46 @@ final class GameScene: SKScene {
     func setKeyboardInput(_ value: GameInput) {
         guard frozenShowcase == nil else { return }
         if value.forward || value.reverse || value.left || value.right { clearDirectAim() }
-        inputSources.keyboard = value; publishInput()
+        inputSources.keyboard = value
+        publishInput()
     }
 
     func setGamepadInput(_ value: GameInput) {
         guard frozenShowcase == nil, inputSources.gamepad != value else { return }
-        if aimTouch == nil, value.forward || value.reverse || value.left || value.right || value.stickX != 0 || value.stickY != 0 {
+        if aimTouch == nil,
+            value.forward || value.reverse || value.left || value.right || value.stickX != 0
+                || value.stickY != 0
+        {
             clearDirectAim()
         }
-        inputSources.gamepad = value; publishInput()
+        inputSources.gamepad = value
+        publishInput()
     }
 
-    func setMouseFire(_ down: Bool) { guard frozenShowcase == nil else { return }; inputSources.mouseFire = down && NativeInputSettings.shared.mouseFire; publishInput() }
-    func clearMouseAim() { inputSources.mouseAim = nil; publishInput() }
+    func setMouseFire(_ down: Bool) {
+        guard frozenShowcase == nil else { return }
+        inputSources.mouseFire = down && NativeInputSettings.shared.mouseFire
+        publishInput()
+    }
+    func clearMouseAim() {
+        inputSources.mouseAim = nil
+        publishInput()
+    }
 
     /// Pointer coordinates belong to the view under the pointer. In Infinity,
     /// the second camera accepts P2's pointer; fixed rooms share one camera.
     @discardableResult func updateMouseAim(at point: CGPoint, target: GameScene) -> Bool {
         guard frozenShowcase == nil, target.frozenShowcase == nil, worldViewport.contains(point), !spectating,
-              layoutMode == .fixed || target === self else { return false }
+            layoutMode == .fixed || target === self
+        else { return false }
         let id = target === self ? currentLocalID : secondaryPilotID
         guard let id, let tank = tankScreenPositions[id] else { return false }
-        let dx = Double(point.x - tank.x), dy = Double(tank.y - point.y), distance = hypot(dx, dy)
-        if !NativeInputSettings.shared.mouseAim { target.clearMouseAim() }
-        else if distance >= 2 {
+        let dx = Double(point.x - tank.x)
+        let dy = Double(tank.y - point.y)
+        let distance = hypot(dx, dy)
+        if !NativeInputSettings.shared.mouseAim {
+            target.clearMouseAim()
+        } else if distance >= 2 {
             target.inputSources.mouseAim = BeamPoint(x: dx / distance, y: dy / distance)
             target.publishInput()
         }
@@ -511,7 +573,10 @@ final class GameScene: SKScene {
         previousTime = 0
         tanks.values.forEach { recycleTank($0) }
         for node in bullets.values { recycleProjectile(node) }
-        for trail in projectileTrails.values { trail.path = nil; trail.isHidden = true }
+        for trail in projectileTrails.values {
+            trail.path = nil
+            trail.isHidden = true
+        }
         pickups.values.forEach { $0.removeFromParent() }
         tanks.removeAll()
         bullets.removeAll()
@@ -538,16 +603,22 @@ final class GameScene: SKScene {
     func displayShowcase(_ fixture: ShowcaseScene) {
         display(snapshot: fixture.snapshot, localID: fixture.localID, maze: fixture.maze, showcase: fixture)
         if let tank = fixture.snapshot.tanks.first(where: { $0.id == fixture.localID }) {
-            let readiness = PilotReadout(tank: tank, snapshot: fixture.snapshot, infinity: true, online: false)
-            configureReadiness(label: readiness.fireLabel, progress: readiness.progress, locked: readiness.locked)
+            let readiness = PilotReadout(
+                tank: tank, snapshot: fixture.snapshot, infinity: true, online: false)
+            configureReadiness(
+                label: readiness.fireLabel, progress: readiness.progress, locked: readiness.locked)
         }
     }
 
-    func display(snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int? = nil, primaryLocalID: Int? = nil, maze: InfiniteMaze?, fixedWalls: [MazeWall] = [], showcase: ShowcaseScene? = nil) {
-        let changedScene = (frozenShowcase != nil || showcase != nil) && (
-            frozenShowcase?.seed != showcase?.seed
-            || frozenShowcase?.timeMilliseconds != showcase?.timeMilliseconds
-            || frozenShowcase?.snapshot != showcase?.snapshot)
+    func display(
+        snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int? = nil, primaryLocalID: Int? = nil,
+        maze: InfiniteMaze?, fixedWalls: [MazeWall] = [], showcase: ShowcaseScene? = nil
+    ) {
+        let changedScene =
+            (frozenShowcase != nil || showcase != nil)
+            && (frozenShowcase?.seed != showcase?.seed
+                || frozenShowcase?.timeMilliseconds != showcase?.timeMilliseconds
+                || frozenShowcase?.snapshot != showcase?.snapshot)
         if changedScene { resetWorld() }
         frozenShowcase = showcase
         if showcase != nil || changedScene { updateWorldScale() }
@@ -559,12 +630,16 @@ final class GameScene: SKScene {
         var checkpoint = started
         var metrics = RenderMetrics()
         if profiled {
-            frameProjectileCreations = 0; frameEffectCreations = 0; frameMapRebuilds = 0
-            frameMapRasterSeconds = 0; frameMapInstallSeconds = 0
+            frameProjectileCreations = 0
+            frameEffectCreations = 0
+            frameMapRebuilds = 0
+            frameMapRasterSeconds = 0
+            frameMapInstallSeconds = 0
         }
         func elapsed() -> Double {
             guard profiled else { return 0 }
-            let now = CACurrentMediaTime(), duration = now - checkpoint
+            let now = CACurrentMediaTime()
+            let duration = now - checkpoint
             checkpoint = now
             return duration
         }
@@ -600,14 +675,21 @@ final class GameScene: SKScene {
         }
         if layoutMode == .fixed, let fixed = fixedWorld {
             let reserve: CGFloat = landscape && !spectating && showsTouchControls ? 252 : 0
-            zoom = max(0.05, min((worldViewport.width - reserve - 12) / fixed.width, (worldViewport.height - 12) / fixed.height))
+            zoom = max(
+                0.05,
+                min(
+                    (worldViewport.width - reserve - 12) / fixed.width,
+                    (worldViewport.height - 12) / fixed.height))
             world.setScale(zoom)
             cameraPoint = CGPoint(x: fixed.width / 2, y: fixed.height / 2)
             hasCamera = true
         }
         let focus: ArenaTank?
-        if snapshot.spectating { focus = snapshot.tanks.first { $0.id == snapshot.following && $0.id > 0 } }
-        else { focus = snapshot.tanks.first { $0.id == localID } ?? snapshot.tanks.first }
+        if snapshot.spectating {
+            focus = snapshot.tanks.first { $0.id == snapshot.following && $0.id > 0 }
+        } else {
+            focus = snapshot.tanks.first { $0.id == localID } ?? snapshot.tanks.first
+        }
         if let focus {
             let target = CGPoint(x: focus.x, y: focus.y)
             if layoutMode == .infinity {
@@ -620,19 +702,31 @@ final class GameScene: SKScene {
                 lastLocalSpawn = focus.spawnSerial
             }
         } else if snapshot.spectating && layoutMode == .infinity && !hasCamera {
-            cameraPoint = .zero; hasCamera = true
+            cameraPoint = .zero
+            hasCamera = true
         }
-        world.position = CGPoint(x: worldViewport.midX - cameraPoint.x * zoom,
-                                 y: worldViewport.midY + cameraPoint.y * zoom)
-        aimTankPosition = focus.flatMap { $0.id == localID && $0.hp > 0 ? CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom) : nil }
-        tankScreenPositions = Dictionary(uniqueKeysWithValues: snapshot.tanks.filter { $0.hp > 0 }.map { ($0.id, CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom)) })
+        world.position = CGPoint(
+            x: worldViewport.midX - cameraPoint.x * zoom,
+            y: worldViewport.midY + cameraPoint.y * zoom)
+        aimTankPosition = focus.flatMap {
+            $0.id == localID && $0.hp > 0
+                ? CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom) : nil
+        }
+        tankScreenPositions = Dictionary(
+            uniqueKeysWithValues: snapshot.tanks.filter { $0.hp > 0 }.map {
+                ($0.id, CGPoint(x: world.position.x + $0.x * zoom, y: world.position.y - $0.y * zoom))
+            })
         renderGeometry = maze ?? fixedGeometry
         let visible = visibleWorldBounds
         updateMap(maze: maze, fixedWalls: fixedWalls, visible: visible)
         metrics.mapSeconds = elapsed()
-        synchronizeTanks(snapshot.tanks, localID: localID, secondaryLocalID: secondaryLocalID, primaryLocalID: primaryLocalID, visible: visible)
+        synchronizeTanks(
+            snapshot.tanks, localID: localID, secondaryLocalID: secondaryLocalID,
+            primaryLocalID: primaryLocalID, visible: visible)
         metrics.tankSeconds = elapsed()
-        updateGuide(tank: snapshot.tanks.first { $0.id == localID }, geometry: maze ?? fixedGeometry, snapshot: snapshot)
+        updateGuide(
+            tank: snapshot.tanks.first { $0.id == localID }, geometry: maze ?? fixedGeometry,
+            snapshot: snapshot)
         metrics.guideSeconds = elapsed()
         synchronizeObjectives(snapshot.objectives, tanks: snapshot.tanks)
         metrics.objectiveSeconds = elapsed()
@@ -658,55 +752,85 @@ final class GameScene: SKScene {
             effectOrder.removeFirst(effectOrder.count - 512)
         }
         metrics.effectSeconds = elapsed()
-        synchronizeDeathNotices(snapshot, localID: localID, secondaryLocalID: secondaryLocalID, primaryLocalID: primaryLocalID)
+        synchronizeDeathNotices(
+            snapshot, localID: localID, secondaryLocalID: secondaryLocalID, primaryLocalID: primaryLocalID)
     }
 
-    private func synchronizeDeathNotices(_ snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int?, primaryLocalID: Int?) {
-        let visible = showsTankIdentities && frozenShowcase == nil && !spectating
+    private func synchronizeDeathNotices(
+        _ snapshot: ArenaSnapshot, localID: Int, secondaryLocalID: Int?, primaryLocalID: Int?
+    ) {
+        let visible =
+            showsTankIdentities && frozenShowcase == nil && !spectating
             && (!snapshot.spectating || primaryLocalID != nil)
             && !["menu", "lobby", "waiting"].contains(snapshot.phase)
         let paired = layoutMode == .fixed && secondaryLocalID != nil && secondaryLocalID != localID
-        let fontSize = CGFloat(ArenaTypography.labelSize(zoom: Double(zoom), infinity: layoutMode == .infinity))
+        let fontSize = CGFloat(
+            ArenaTypography.labelSize(zoom: Double(zoom), infinity: layoutMode == .infinity))
         let maxWidth = min(280, worldViewport.width * (paired ? 0.42 : 0.8))
         for (index, node) in deathNotices.enumerated() {
             let id = index == 0 ? localID : paired ? secondaryLocalID : nil
             let tank = visible ? id.flatMap { id in snapshot.tanks.first { $0.id == id } } : nil
             node.update(DeathNotice(tank: tank), fontSize: fontSize, maximumWidth: maxWidth)
             let fraction: CGFloat = paired ? (index == 0 ? 0.25 : 0.75) : 0.5
-            node.position = CGPoint(x: worldViewport.minX + worldViewport.width * fraction,
-                                    y: worldViewport.minY + worldViewport.height * (layoutMode == .infinity ? 0.58 : 0.6))
+            node.position = CGPoint(
+                x: worldViewport.minX + worldViewport.width * fraction,
+                y: worldViewport.minY + worldViewport.height * (layoutMode == .infinity ? 0.58 : 0.6))
         }
     }
 
     private func updateGuide(tank: ArenaTank?, geometry: InfiniteMaze?, snapshot: ArenaSnapshot) {
         guard let tank, tank.hp > 0, let geometry,
-              layoutMode == .fixed || tank.power == "laser" else { aimingGuide.path = nil; guideKey = ""; return }
-        let key = "\(tank.x):\(tank.y):\(tank.angle):\(tank.power):\(layoutMode)" + (layoutMode == .fixed ? snapshot.tanks.map { "\($0.id):\($0.x):\($0.y):\($0.hp)" }.joined() : "")
+            layoutMode == .fixed || tank.power == "laser"
+        else {
+            aimingGuide.path = nil
+            guideKey = ""
+            return
+        }
+        let key =
+            "\(tank.x):\(tank.y):\(tank.angle):\(tank.power):\(layoutMode)"
+            + (layoutMode == .fixed
+                ? snapshot.tanks.map { "\($0.id):\($0.x):\($0.y):\($0.hp)" }.joined() : "")
         guard key != guideKey else { return }
         guideKey = key
         var points: [BeamPoint]
-        let radius = tank.power == "laser" ? 3.0 : tank.power == "cannon" ? 14 : tank.power == "grenade" ? 6 : tank.power == "homing" ? 5 : tank.power == "rapid" ? 3.5 / 3 : 3.5
+        let radius =
+            tank.power == "laser"
+            ? 3.0
+            : tank.power == "cannon"
+                ? 14
+                : tank.power == "grenade"
+                    ? 6 : tank.power == "homing" ? 5 : tank.power == "rapid" ? 3.5 / 3 : 3.5
         if tank.power == "laser" {
-            points = geometry.laserGuide(x: tank.x, y: tank.y, angle: tank.angle,
-                                        range: layoutMode == .fixed ? 4 * ((fixedWorld?.width ?? 756) + (fixedWorld?.height ?? 588)) : 36 * 84)
+            points = geometry.laserGuide(
+                x: tank.x, y: tank.y, angle: tank.angle,
+                range: layoutMode == .fixed
+                    ? 4 * ((fixedWorld?.width ?? 756) + (fixedWorld?.height ?? 588)) : 36 * 84)
         } else {
-            points = geometry.projectileGuide(x: tank.x, y: tank.y, angle: tank.angle, kind: tank.power,
-                                             range: 112, radius: radius, maxSegments: tank.power == "cannon" ? 32 : 2)
+            points = geometry.projectileGuide(
+                x: tank.x, y: tank.y, angle: tank.angle, kind: tank.power,
+                range: 112, radius: radius, maxSegments: tank.power == "cannon" ? 32 : 2)
         }
         if layoutMode == .fixed && tank.power != "cannon" && tank.power != "laser" {
             var clipped: [BeamPoint] = []
             if let first = points.first { clipped.append(first) }
             for (first, last) in zip(points, points.dropFirst()) {
-                let dx = last.x - first.x, dy = last.y - first.y, length = dx * dx + dy * dy
+                let dx = last.x - first.x
+                let dy = last.y - first.y
+                let length = dx * dx + dy * dy
                 var nearest = 1.0
                 if length > 0 {
-                    for other in snapshot.tanks where other.id != tank.id && other.hp > 0 && other.invulnerable <= 0 &&
-                        (snapshot.rules?.friendlyFire == true || tank.team == 0 || other.team != tank.team) {
-                        let px = first.x - other.x, py = first.y - other.y
-                        let dot = px * dx + py * dy, c = px * px + py * py - pow(17 + radius, 2)
+                    for other in snapshot.tanks
+                    where other.id != tank.id && other.hp > 0 && other.invulnerable <= 0
+                        && (snapshot.rules?.friendlyFire == true || tank.team == 0 || other.team != tank.team)
+                    {
+                        let px = first.x - other.x
+                        let py = first.y - other.y
+                        let dot = px * dx + py * dy
+                        let c = px * px + py * py - pow(17 + radius, 2)
                         let discriminant = dot * dot - length * c
-                        if c <= 0 { nearest = 0 }
-                        else if dot < 0 && discriminant >= 0 {
+                        if c <= 0 {
+                            nearest = 0
+                        } else if dot < 0 && discriminant >= 0 {
                             let at = (-dot - sqrt(discriminant)) / length
                             if at >= 0 && at < nearest { nearest = at }
                         }
@@ -717,19 +841,25 @@ final class GameScene: SKScene {
             }
             points = clipped
         }
-        guard let first = points.first, points.count > 1 else { aimingGuide.path = nil; return }
+        guard let first = points.first, points.count > 1 else {
+            aimingGuide.path = nil
+            return
+        }
         let path = CGMutablePath()
         path.move(to: CGPoint(x: first.x, y: -first.y))
         for point in points.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
         aimingGuide.path = path.copy(dashingWithPhase: 0, lengths: [3, 7])
-        aimingGuide.strokeColor = tank.power == "laser" && layoutMode == .infinity ? Palette.power("laser") : Palette.tank(tank.colorIndex)
+        aimingGuide.strokeColor =
+            tank.power == "laser" && layoutMode == .infinity
+            ? Palette.power("laser") : Palette.tank(tank.colorIndex)
         aimingGuide.alpha = tank.power == "laser" ? 0.48 : 0.28
     }
 
     private var visibleWorldBounds: CGRect {
-        CGRect(x: cameraPoint.x - worldViewport.width / (2 * zoom),
-               y: cameraPoint.y - worldViewport.height / (2 * zoom),
-               width: worldViewport.width / zoom, height: worldViewport.height / zoom)
+        CGRect(
+            x: cameraPoint.x - worldViewport.width / (2 * zoom),
+            y: cameraPoint.y - worldViewport.height / (2 * zoom),
+            width: worldViewport.width / zoom, height: worldViewport.height / zoom)
     }
 
     private func redrawWalls(_ items: [MazeWall], in region: CGRect) {
@@ -740,17 +870,22 @@ final class GameScene: SKScene {
     }
 
     private func updateMap(maze: InfiniteMaze?, fixedWalls: [MazeWall], visible: CGRect) {
-        if cachedRegion == nil || fixedWalls.count != fixedWallCount || layoutMode == .infinity && !cachedRegion!.contains(visible) {
+        if cachedRegion == nil || fixedWalls.count != fixedWallCount
+            || layoutMode == .infinity && !cachedRegion!.contains(visible)
+        {
             // A fresh world, rotation, or teleport needs immediate coverage.
             // Bootstrap only the visible area plus a short safety margin;
             // scrolling replacements are larger and never rasterize on main.
             cancelMapPrefetch()
-            let region = layoutMode == .fixed && fixedWorld != nil
+            let region =
+                layoutMode == .fixed && fixedWorld != nil
                 ? CGRect(x: 0, y: 0, width: fixedWorld!.width, height: fixedWorld!.height)
                 : visible.insetBy(dx: -96, dy: -96)
-            let items = maze?.walls(x0: region.minX, y0: region.minY, x1: region.maxX, y1: region.maxY) ?? fixedWalls
+            let items =
+                maze?.walls(x0: region.minX, y0: region.minY, x1: region.maxX, y1: region.maxY) ?? fixedWalls
             redrawWalls(items, in: region)
-            cachedRegion = region; fixedWallCount = fixedWalls.count
+            cachedRegion = region
+            fixedWallCount = fixedWalls.count
         }
         if let ready = preparedMap, ready.raster.request == mapRequest {
             let began = CACurrentMediaTime()
@@ -758,7 +893,8 @@ final class GameScene: SKScene {
             mapImage.size = ready.raster.region.size
             mapImage.position = CGPoint(x: ready.raster.region.midX, y: -ready.raster.region.midY)
             cachedRegion = ready.raster.region
-            preparedMap = nil; mapRasterTask = nil
+            preparedMap = nil
+            mapRasterTask = nil
             if profilesRendering { frameMapInstallSeconds += CACurrentMediaTime() - began }
         }
         if let raster = rasterizedMap, raster.request == mapRequest {
@@ -777,14 +913,16 @@ final class GameScene: SKScene {
             texture.preload { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self, self.mapRequest == request, let ready = self.preloadingMap,
-                          ready.raster.request == request else { return }
+                        ready.raster.request == request
+                    else { return }
                     self.preparedMap = ready
                     self.preloadingMap = nil
                 }
             }
         }
         guard layoutMode == .infinity, mapRasterTask == nil, let region = cachedRegion,
-              !region.insetBy(dx: 192, dy: 192).contains(visible), let maze else { return }
+            !region.insetBy(dx: 192, dy: 192).contains(visible), let maze
+        else { return }
         let next = visible.insetBy(dx: -384, dy: -384)
         let items = maze.walls(x0: next.minX, y0: next.minY, x1: next.maxX, y1: next.maxY)
         let request = mapRequest
@@ -792,7 +930,8 @@ final class GameScene: SKScene {
         let work = Task.detached(priority: .userInitiated) {
             let began = CACurrentMediaTime()
             let image = MapRasterizer.image(walls: items, region: next, fixed: false)
-            return RasterizedMap(image: image, region: next, request: request, seconds: CACurrentMediaTime() - began)
+            return RasterizedMap(
+                image: image, region: next, request: request, seconds: CACurrentMediaTime() - began)
         }
         mapRasterTask = Task { @MainActor [weak self] in
             let result = await work.value
@@ -803,11 +942,16 @@ final class GameScene: SKScene {
 
     private func cancelMapPrefetch() {
         mapRequest &+= 1
-        mapRasterTask?.cancel(); mapRasterTask = nil
-        rasterizedMap = nil; preloadingMap = nil; preparedMap = nil
+        mapRasterTask?.cancel()
+        mapRasterTask = nil
+        rasterizedMap = nil
+        preloadingMap = nil
+        preparedMap = nil
     }
 
-    private func synchronizeTanks(_ items: [ArenaTank], localID: Int, secondaryLocalID: Int?, primaryLocalID: Int?, visible: CGRect) {
+    private func synchronizeTanks(
+        _ items: [ArenaTank], localID: Int, secondaryLocalID: Int?, primaryLocalID: Int?, visible: CGRect
+    ) {
         let liveIDs = Set(items.map(\.id))
         for id in Array(tanks.keys) where !liveIDs.contains(id) {
             if let node = tanks.removeValue(forKey: id) { recycleTank(node) }
@@ -815,8 +959,9 @@ final class GameScene: SKScene {
         var labels: [ScreenLabelLayout.Label] = []
         for tank in items {
             let node: TankNode
-            if let existing = tanks[tank.id] { node = existing }
-            else {
+            if let existing = tanks[tank.id] {
+                node = existing
+            } else {
                 node = tankPool.popLast() ?? TankNode()
                 tanks[tank.id] = node
                 tankLayer.addChild(node)
@@ -826,22 +971,34 @@ final class GameScene: SKScene {
             let recoil = tank.id == localID ? localFireRecoil?(tank) ?? tank.recoil : tank.recoil
             let localSeat = tank.id == (primaryLocalID ?? localID) ? 1 : tank.id == secondaryLocalID ? 2 : nil
             let retraction = MuzzlePresentation.retraction(tank: tank, maze: renderGeometry, recoil: recoil)
-            node.update(tank, localSeat: localSeat, zoom: zoom, infinity: layoutMode == .infinity, retraction: retraction, showWreck: frozenShowcase != nil)
+            node.update(
+                tank, localSeat: localSeat, zoom: zoom, infinity: layoutMode == .infinity,
+                retraction: retraction, showWreck: frozenShowcase != nil)
             if tank.id == localID && ProcessInfo.processInfo.arguments.contains("--probe-muzzle-device") {
-                muzzleDeviceProbeValue = "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),tip=\(30-retraction),barrelHidden=\(retraction>=21 ? 1 : 0),ghost=\(tank.ghostTime),serial=\(tank.spawnSerial),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),stickX=\(stickOrigin.x),stickY=\(stickOrigin.y)"
+                muzzleDeviceProbeValue =
+                    "x=\(tank.x),y=\(tank.y),angle=\(tank.angle),tip=\(30-retraction),barrelHidden=\(retraction>=21 ? 1 : 0),ghost=\(tank.ghostTime),serial=\(tank.spawnSerial),fireX=\(fireOrigin.x),fireY=\(fireOrigin.y),stickX=\(stickOrigin.x),stickY=\(stickOrigin.y)"
             }
             if tank.id == localID, emptyFireProbe {
                 minimumProbeBarrelX = min(minimumProbeBarrelX, node.barrelOffset)
             }
-            let screen = CGPoint(x: world.position.x + CGFloat(tank.x) * zoom,
-                                 y: world.position.y - CGFloat(tank.y) * zoom)
-            node.identity.isHidden = !showsTankIdentities || (tank.hp <= 0 && frozenShowcase == nil) || !visible.contains(CGPoint(x: tank.x, y: tank.y))
+            let screen = CGPoint(
+                x: world.position.x + CGFloat(tank.x) * zoom,
+                y: world.position.y - CGFloat(tank.y) * zoom)
+            node.identity.isHidden =
+                !showsTankIdentities || (tank.hp <= 0 && frozenShowcase == nil)
+                || !visible.contains(CGPoint(x: tank.x, y: tank.y))
             let halfWidth = node.identityWidth / 2
-            node.identity.position = CGPoint(x: min(max(screen.x, halfWidth + 5), max(halfWidth + 5, size.width - halfWidth - 5)),
-                                             y: min(worldViewport.maxY - 6 - node.identityHeight, screen.y + 32 * zoom))
+            node.identity.position = CGPoint(
+                x: min(max(screen.x, halfWidth + 5), max(halfWidth + 5, size.width - halfWidth - 5)),
+                y: min(worldViewport.maxY - 6 - node.identityHeight, screen.y + 32 * zoom))
             if !node.identity.isHidden {
-                labels.append(.init(id: tank.id, frame: CGRect(x: node.identity.position.x - halfWidth,
-                    y: node.identity.position.y, width: node.identityWidth, height: node.identityHeight), local: localSeat != nil))
+                labels.append(
+                    .init(
+                        id: tank.id,
+                        frame: CGRect(
+                            x: node.identity.position.x - halfWidth,
+                            y: node.identity.position.y, width: node.identityWidth,
+                            height: node.identityHeight), local: localSeat != nil))
             }
         }
         let viewport = worldViewport.insetBy(dx: 5, dy: 6)
@@ -851,7 +1008,8 @@ final class GameScene: SKScene {
     }
 
     private func recycleTank(_ node: TankNode) {
-        node.removeFromParent(); node.identity.removeFromParent()
+        node.removeFromParent()
+        node.identity.removeFromParent()
         if tankPool.count < 32 { tankPool.append(node) }
     }
 
@@ -865,8 +1023,9 @@ final class GameScene: SKScene {
             guard padded.contains(CGPoint(x: bullet.x, y: bullet.y)) else { continue }
             let style = ProjectileStyle(bullet)
             let node: ProjectileNode
-            if let existing = bullets[bullet.id], existing.style == style { node = existing }
-            else {
+            if let existing = bullets[bullet.id], existing.style == style {
+                node = existing
+            } else {
                 if let previous = bullets.removeValue(forKey: bullet.id) { recycleProjectile(previous) }
                 if let pooled = projectilePool[style]?.popLast() {
                     pooledProjectileCount -= 1
@@ -883,17 +1042,29 @@ final class GameScene: SKScene {
             node.update(bullet, time: time, geometry: renderGeometry)
             if style.kind != "rapid" {
                 let path: CGMutablePath
-                if let existing = paths[style] { path = existing }
-                else { path = CGMutablePath(); paths[style] = path }
-                if let frozen = frozenShowcase?.projectiles.first(where: { $0.id == bullet.id }), let first = frozen.trail.first {
+                if let existing = paths[style] {
+                    path = existing
+                } else {
+                    path = CGMutablePath()
+                    paths[style] = path
+                }
+                if let frozen = frozenShowcase?.projectiles.first(where: { $0.id == bullet.id }),
+                    let first = frozen.trail.first
+                {
                     path.move(to: CGPoint(x: first.x, y: -first.y))
-                    for point in frozen.trail.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
+                    for point in frozen.trail.dropFirst() {
+                        path.addLine(to: CGPoint(x: point.x, y: -point.y))
+                    }
                     path.addLine(to: CGPoint(x: bullet.x, y: -bullet.y))
-                } else { node.appendTrail(to: path) }
+                } else {
+                    node.appendTrail(to: path)
+                }
             }
         }
         projectileRemovalIDs.removeAll(keepingCapacity: true)
-        for (id, node) in bullets where node.lastSeenFrame != projectileFrame { projectileRemovalIDs.append(id) }
+        for (id, node) in bullets where node.lastSeenFrame != projectileFrame {
+            projectileRemovalIDs.append(id)
+        }
         for id in projectileRemovalIDs {
             if let node = bullets.removeValue(forKey: id) { recycleProjectile(node) }
         }
@@ -916,8 +1087,11 @@ final class GameScene: SKScene {
         let trail = SKShapeNode()
         trail.strokeColor = Palette.tank(style.colorIndex).withAlphaComponent(alpha)
         trail.lineWidth = style.kind == "cannon" ? 12 : style.kind == "homing" ? 4 : 3
-        trail.lineCap = .round; trail.zPosition = -1; trail.isHidden = true
-        projectileTrails[style] = trail; bulletLayer.addChild(trail)
+        trail.lineCap = .round
+        trail.zPosition = -1
+        trail.isHidden = true
+        projectileTrails[style] = trail
+        bulletLayer.addChild(trail)
         return trail
     }
 
@@ -930,11 +1104,14 @@ final class GameScene: SKScene {
 
     private func synchronizePickups(_ items: [ArenaPickup], time: Double) {
         let liveIDs = Set(items.map(\.id))
-        for id in Array(pickups.keys) where !liveIDs.contains(id) { pickups.removeValue(forKey: id)?.removeFromParent() }
+        for id in Array(pickups.keys) where !liveIDs.contains(id) {
+            pickups.removeValue(forKey: id)?.removeFromParent()
+        }
         for pickup in items {
             let node: PickupNode
-            if let existing = pickups[pickup.id], existing.kind == pickup.type { node = existing }
-            else {
+            if let existing = pickups[pickup.id], existing.kind == pickup.type {
+                node = existing
+            } else {
                 pickups[pickup.id]?.removeFromParent()
                 node = PickupNode(kind: pickup.type)
                 pickups[pickup.id] = node
@@ -948,17 +1125,28 @@ final class GameScene: SKScene {
     private func updateMissileWarnings(snapshot: ArenaSnapshot, localID: Int) {
         for warning in missileWarnings.values { warning.path = nil }
         guard let tank = snapshot.tanks.first(where: { $0.id == localID }), tank.hp > 0,
-              snapshot.phase == "playing", snapshot.result == nil else { return }
+            snapshot.phase == "playing", snapshot.result == nil
+        else { return }
         var paths: [String: CGMutablePath] = [:]
-        let incoming = snapshot.bullets.filter { ($0.kind == "homing" || $0.kind == "grenade") && $0.target == localID && $0.owner != localID }
+        let incoming = snapshot.bullets.filter {
+            ($0.kind == "homing" || $0.kind == "grenade") && $0.target == localID && $0.owner != localID
+        }
         for bullet in incoming.prefix(3) {
             let path = paths[bullet.kind] ?? CGMutablePath()
             paths[bullet.kind] = path
-            let angle = atan2(bullet.y - tank.y, bullet.x - tank.x), cs = cos(angle), sn = sin(angle)
-            for (index, local) in [CGPoint(x: 41, y: -6), CGPoint(x: 35, y: 0), CGPoint(x: 41, y: 6)].enumerated() {
+            let angle = atan2(bullet.y - tank.y, bullet.x - tank.x)
+            let cs = cos(angle)
+            let sn = sin(angle)
+            for (index, local) in [CGPoint(x: 41, y: -6), CGPoint(x: 35, y: 0), CGPoint(x: 41, y: 6)]
+                .enumerated()
+            {
                 let x = tank.x + Double(local.x) * cs - Double(local.y) * sn
                 let y = tank.y + Double(local.x) * sn + Double(local.y) * cs
-                if index == 0 { path.move(to: CGPoint(x: x, y: -y)) } else { path.addLine(to: CGPoint(x: x, y: -y)) }
+                if index == 0 {
+                    path.move(to: CGPoint(x: x, y: -y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: -y))
+                }
             }
         }
         for (kind, path) in paths { missileWarnings[kind]?.path = path }
@@ -967,8 +1155,12 @@ final class GameScene: SKScene {
     private func synchronizeObjectives(_ objectives: ArenaObjectives?, tanks: [ArenaTank]) {
         var teamPaint: [Int: Int] = [:]
         for tank in tanks where tank.team > 0 { teamPaint[tank.team] = tank.colorIndex }
-        let carries = objectives?.flags.compactMap { flag in tanks.first { $0.id == flag.carrier }.map { "\($0.id):\($0.x):\($0.y)" } }.joined() ?? ""
-        guard objectives != objectiveState || teamPaint != objectivePaint || carries != objectiveCarriers else { return }
+        let carries =
+            objectives?.flags.compactMap { flag in
+                tanks.first { $0.id == flag.carrier }.map { "\($0.id):\($0.x):\($0.y)" }
+            }.joined() ?? ""
+        guard objectives != objectiveState || teamPaint != objectivePaint || carries != objectiveCarriers
+        else { return }
         objectiveState = objectives
         objectivePaint = teamPaint
         objectiveCarriers = carries
@@ -977,7 +1169,12 @@ final class GameScene: SKScene {
         func teamColor(_ team: Int) -> UIColor { Palette.tank(teamPaint[team] ?? max(0, team - 1)) }
         if objectives.mode == "koth" {
             let owner = objectives.owner
-            let ownerColor = owner > 0 ? teamColor(owner) : owner < 0 ? Palette.tank(tanks.first { $0.id == -owner - 1 }?.colorIndex ?? 0) : UIColor(hex: 0xe7eadd)
+            let ownerColor =
+                owner > 0
+                ? teamColor(owner)
+                : owner < 0
+                    ? Palette.tank(tanks.first { $0.id == -owner - 1 }?.colorIndex ?? 0)
+                    : UIColor(hex: 0xe7eadd)
             let color = objectives.contested ? Palette.tank(1) : ownerColor
             let hill = SKShapeNode(circleOfRadius: max(1, objectives.radius))
             hill.position = CGPoint(x: objectives.hillX, y: -objectives.hillY)
@@ -993,8 +1190,10 @@ final class GameScene: SKScene {
             hill.addChild(label)
             if objectives.hold > 0 {
                 let path = CGMutablePath()
-                path.addArc(center: .zero, radius: objectives.radius + 4,
-                            startAngle: .pi / 2, endAngle: .pi / 2 - 2 * .pi * min(1, objectives.hold), clockwise: true)
+                path.addArc(
+                    center: .zero, radius: objectives.radius + 4,
+                    startAngle: .pi / 2, endAngle: .pi / 2 - 2 * .pi * min(1, objectives.hold),
+                    clockwise: true)
                 let progress = SKShapeNode(path: path)
                 progress.strokeColor = color
                 progress.lineWidth = 4
@@ -1004,18 +1203,23 @@ final class GameScene: SKScene {
         for flag in objectives.flags {
             let color = teamColor(flag.team)
             let base = SKShapeNode()
-            base.path = CGPath(ellipseIn: CGRect(x: -32, y: -32, width: 64, height: 64), transform: nil).copy(dashingWithPhase: 0, lengths: [5, 4])
+            base.path = CGPath(ellipseIn: CGRect(x: -32, y: -32, width: 64, height: 64), transform: nil).copy(
+                dashingWithPhase: 0, lengths: [5, 4])
             base.position = CGPoint(x: flag.homeX, y: -flag.homeY)
             base.fillColor = color.withAlphaComponent(0.157)
             base.strokeColor = color
             base.lineWidth = 3
             objectiveLayer.addChild(base)
             let carrier = tanks.first { $0.id == flag.carrier }
-            let ax = carrier?.x ?? flag.x, ay = carrier?.y ?? flag.y
+            let ax = carrier?.x ?? flag.x
+            let ay = carrier?.y ?? flag.y
             let scale = max(1.35, 1 / zoom)
-            let width = fixedWorld?.width ?? 2000, height = fixedWorld?.height ?? 2000
+            let width = fixedWorld?.width ?? 2000
+            let height = fixedWorld?.height ?? 2000
             let x = min(max(ax, 40 * scale), max(40 * scale, width - 40 * scale))
-            let y = min(max(ay - (carrier != nil ? 44 : 12) * scale, 26 * scale), max(26 * scale, height - 36 * scale))
+            let y = min(
+                max(ay - (carrier != nil ? 44 : 12) * scale, 26 * scale), max(26 * scale, height - 36 * scale)
+            )
             let tether = CGMutablePath()
             tether.addEllipse(in: CGRect(x: ax - 24, y: -ay - 24, width: 48, height: 48))
             tether.move(to: CGPoint(x: ax, y: -ay))
@@ -1024,7 +1228,9 @@ final class GameScene: SKScene {
             line.strokeColor = color.withAlphaComponent(0.8)
             line.lineWidth = 2 / zoom
             objectiveLayer.addChild(line)
-            let marker = SKSpriteNode(texture: NativeArt.flag(team: flag.team, color: teamPaint[flag.team] ?? max(0, flag.team - 1)))
+            let marker = SKSpriteNode(
+                texture: NativeArt.flag(team: flag.team, color: teamPaint[flag.team] ?? max(0, flag.team - 1))
+            )
             marker.size = CGSize(width: 46 * scale, height: 48 * scale)
             marker.position = CGPoint(x: x, y: -y)
             objectiveLayer.addChild(marker)
@@ -1041,27 +1247,41 @@ final class GameScene: SKScene {
 
     private func showEffect(_ effect: ArenaEffect, time: Double, visible: CGRect) {
         guard !effect.kind.hasPrefix("shot"),
-              ["laser", "pickup", "shield", "hit", "blast", "impact"].contains(effect.kind) else { return }
+            ["laser", "pickup", "shield", "hit", "blast", "impact"].contains(effect.kind)
+        else { return }
         let padded = visible.insetBy(dx: -260, dy: -260)
         if effect.kind == "laser" {
             guard effect.points.count > 1 else { return }
-            var x0 = effect.points[0].x, x1 = x0, y0 = effect.points[0].y, y1 = y0
-            for point in effect.points.dropFirst() { x0 = min(x0, point.x); x1 = max(x1, point.x); y0 = min(y0, point.y); y1 = max(y1, point.y) }
+            var x0 = effect.points[0].x
+            var x1 = x0
+            var y0 = effect.points[0].y
+            var y1 = y0
+            for point in effect.points.dropFirst() {
+                x0 = min(x0, point.x)
+                x1 = max(x1, point.x)
+                y0 = min(y0, point.y)
+                y1 = max(y1, point.y)
+            }
             let bounds = CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
             guard padded.intersects(bounds.insetBy(dx: -14, dy: -14)) else { return }
-        } else if !padded.contains(CGPoint(x: effect.x, y: effect.y)) { return }
+        } else if !padded.contains(CGPoint(x: effect.x, y: effect.y)) {
+            return
+        }
         let node: TransientEffectNode
         // The browser keeps the newest 32 effects. Reusing its oldest visual
         // preserves that budget while never touching authoritative events.
-        if liveEffects.count >= 32 { node = liveEffects.removeFirst() }
-        else if let pooled = effectPool.popLast() { node = pooled }
-        else {
+        if liveEffects.count >= 32 {
+            node = liveEffects.removeFirst()
+        } else if let pooled = effectPool.popLast() {
+            node = pooled
+        } else {
             node = TransientEffectNode()
             if profilesRendering { frameEffectCreations += 1 }
         }
         let history = frozenShowcase?.effects.first { $0.id == effect.id }
-        node.configure(effect, geometry: renderGeometry, infinity: layoutMode == .infinity,
-                       time: time - (history?.ageMilliseconds ?? 0) / 1000, outline: history?.outline)
+        node.configure(
+            effect, geometry: renderGeometry, infinity: layoutMode == .infinity,
+            time: time - (history?.ageMilliseconds ?? 0) / 1000, outline: history?.outline)
         if history != nil { _ = node.animate(at: time) }
         if node.parent == nil { effectLayer.addChild(node) }
         liveEffects.append(node)
@@ -1076,7 +1296,9 @@ final class GameScene: SKScene {
             } else if stickTouch == nil && location.x < size.width / 2 && location.y < size.height * 0.75 {
                 stickTouch = touch
                 updateStick(location)
-            } else if showsFireControl && fireTouch == nil && location.x >= size.width / 2 && location.y < max(210, size.height * 0.38) {
+            } else if showsFireControl && fireTouch == nil && location.x >= size.width / 2
+                && location.y < max(210, size.height * 0.38)
+            {
                 fireTouch = touch
                 setFireSource(.touch, down: true)
                 impact.prepare()
@@ -1086,8 +1308,11 @@ final class GameScene: SKScene {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
-            if touch === aimTouch { _ = updateDirectAim(touch.location(in: self)) }
-            else if touch === stickTouch { updateStick(touch.location(in: self)) }
+            if touch === aimTouch {
+                _ = updateDirectAim(touch.location(in: self))
+            } else if touch === stickTouch {
+                updateStick(touch.location(in: self))
+            }
         }
     }
 
@@ -1102,10 +1327,16 @@ final class GameScene: SKScene {
             if touch === aimTouch { aimTouch = nil }
             if touch === stickTouch {
                 stickTouch = nil
-                if !inputSources.touch.snapAim { inputSources.touch.stickX = 0; inputSources.touch.stickY = 0 }
+                if !inputSources.touch.snapAim {
+                    inputSources.touch.stickX = 0
+                    inputSources.touch.stickY = 0
+                }
                 stickKnob.position = stickOrigin
             }
-            if touch === fireTouch { fireTouch = nil; setFireSource(.touch, down: false) }
+            if touch === fireTouch {
+                fireTouch = nil
+                setFireSource(.touch, down: false)
+            }
         }
         publishInput()
     }
@@ -1113,18 +1344,24 @@ final class GameScene: SKScene {
     func clearDirectAim() {
         aimTouch = nil
         if inputSources.touch.snapAim {
-            inputSources.touch.stickX = 0; inputSources.touch.stickY = 0
-            inputSources.touch.aimOnly = false; inputSources.touch.snapAim = false
+            inputSources.touch.stickX = 0
+            inputSources.touch.stickY = 0
+            inputSources.touch.aimOnly = false
+            inputSources.touch.snapAim = false
             publishInput()
         }
     }
 
     private func updateDirectAim(_ point: CGPoint, nearOnly: Bool = false) -> Bool {
         guard let tank = aimTankPosition, worldViewport.contains(point) else { return false }
-        let dx = Double(point.x - tank.x), dy = Double(tank.y - point.y), distance = hypot(dx, dy)
+        let dx = Double(point.x - tank.x)
+        let dy = Double(tank.y - point.y)
+        let distance = hypot(dx, dy)
         guard distance >= 2, !nearOnly || distance <= max(64, 51 * Double(zoom)) else { return false }
-        inputSources.touch.stickX = dx / distance; inputSources.touch.stickY = dy / distance
-        inputSources.touch.aimOnly = true; inputSources.touch.snapAim = true
+        inputSources.touch.stickX = dx / distance
+        inputSources.touch.stickY = dy / distance
+        inputSources.touch.aimOnly = true
+        inputSources.touch.snapAim = true
         stickKnob.position = stickOrigin
         publishInput()
         return true
@@ -1133,11 +1370,16 @@ final class GameScene: SKScene {
     private func updateStick(_ point: CGPoint) {
         aimTouch = nil
         inputSources.touch.snapAim = false
-        let dx = point.x - stickOrigin.x, dy = point.y - stickOrigin.y
-        let reach: CGFloat = 29, divisor = max(reach, hypot(dx, dy))
-        inputSources.touch.stickX = Double(dx / divisor); inputSources.touch.stickY = Double(-dy / divisor)
-        inputSources.touch.touchAim = true; inputSources.touch.aimOnly = false
-        stickKnob.position = CGPoint(x: stickOrigin.x + dx * reach / divisor, y: stickOrigin.y + dy * reach / divisor)
+        let dx = point.x - stickOrigin.x
+        let dy = point.y - stickOrigin.y
+        let reach: CGFloat = 29
+        let divisor = max(reach, hypot(dx, dy))
+        inputSources.touch.stickX = Double(dx / divisor)
+        inputSources.touch.stickY = Double(-dy / divisor)
+        inputSources.touch.touchAim = true
+        inputSources.touch.aimOnly = false
+        stickKnob.position = CGPoint(
+            x: stickOrigin.x + dx * reach / divisor, y: stickOrigin.y + dy * reach / divisor)
         publishInput()
     }
 
@@ -1209,7 +1451,10 @@ private final class TankNode: SKNode {
         let halo = CGPath(ellipseIn: CGRect(x: -23, y: -23, width: 46, height: 46), transform: nil)
         localRing.path = halo.copy(dashingWithPhase: 0, lengths: [3, 6])
         localRing.lineWidth = 1
-        ghostRing.path = CGPath(roundedRect: CGRect(x: -23, y: -21, width: 46, height: 42), cornerWidth: 9, cornerHeight: 9, transform: nil).copy(dashingWithPhase: 0, lengths: [3, 4])
+        ghostRing.path = CGPath(
+            roundedRect: CGRect(x: -23, y: -21, width: 46, height: 42), cornerWidth: 9, cornerHeight: 9,
+            transform: nil
+        ).copy(dashingWithPhase: 0, lengths: [3, 4])
         ghostRing.strokeColor = Palette.power("ghost")
         for index in 0..<5 {
             let shield = SKShapeNode(circleOfRadius: 26 + CGFloat(index) * 4)
@@ -1220,7 +1465,9 @@ private final class TankNode: SKNode {
             shieldRings.append(shield)
             let path = CGMutablePath()
             let start = -CGFloat(index) * .pi * 2 / 5
-            path.addArc(center: .zero, radius: 24, startAngle: start, endAngle: start - .pi * 2 * 0.85 / 5, clockwise: true)
+            path.addArc(
+                center: .zero, radius: 24, startAngle: start, endAngle: start - .pi * 2 * 0.85 / 5,
+                clockwise: true)
             let star = SKShapeNode(path: path)
             star.strokeColor = UIColor(hex: [0xff758f, 0xf9ed75, 0x79d878, 0x62dcff, 0xba91ff][index])
             star.lineWidth = 2.5
@@ -1249,7 +1496,10 @@ private final class TankNode: SKNode {
 
     required init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func update(_ tank: ArenaTank, localSeat: Int?, zoom: CGFloat, infinity: Bool, retraction: Double = 0, showWreck: Bool = false) {
+    func update(
+        _ tank: ArenaTank, localSeat: Int?, zoom: CGFloat, infinity: Bool, retraction: Double = 0,
+        showWreck: Bool = false
+    ) {
         let local = localSeat != nil
         isHidden = infinity && tank.hp <= 0 && !showWreck
         paint = Palette.tank(tank.colorIndex)
@@ -1259,7 +1509,8 @@ private final class TankNode: SKNode {
         let nextKey = "\(tank.colorIndex):\(phase):\(tank.hp > 0)"
         if textureKey != nextKey {
             textureKey = nextKey
-            body.texture = tank.hp > 0 ? NativeArt.hull(color: tank.colorIndex, phase: phase) : NativeArt.wreck()
+            body.texture =
+                tank.hp > 0 ? NativeArt.hull(color: tank.colorIndex, phase: phase) : NativeArt.wreck()
             barrel.texture = NativeArt.barrel(color: tank.colorIndex)
             turret.texture = NativeArt.turret(color: tank.colorIndex)
         }
@@ -1272,7 +1523,10 @@ private final class TankNode: SKNode {
         let nextProtectionRadius: CGFloat = local && tank.invulnerable > 0 ? 34 : 25
         if protectionRadius != nextProtectionRadius {
             protectionRadius = nextProtectionRadius
-            protectionRing.path = CGPath(ellipseIn: CGRect(x: -protectionRadius, y: -protectionRadius, width: protectionRadius * 2, height: protectionRadius * 2), transform: nil)
+            protectionRing.path = CGPath(
+                ellipseIn: CGRect(
+                    x: -protectionRadius, y: -protectionRadius, width: protectionRadius * 2,
+                    height: protectionRadius * 2), transform: nil)
         }
         protectionRing.strokeColor = local ? paint : UIColor(hex: 0xd8e9c5)
         protectionRing.alpha = 0.55
@@ -1311,29 +1565,56 @@ private final class TankNode: SKNode {
             warningLabel.text = warning
             warningLabel.isHidden = warning == nil
             warningLabel.position.y = nameLabel.frame.maxY + 3
-            identityWidth = max(36, min(190, max(nameLabel.frame.width, warning == nil ? 0 : warningLabel.frame.width) + 10))
+            identityWidth = max(
+                36, min(190, max(nameLabel.frame.width, warning == nil ? 0 : warningLabel.frame.width) + 10))
             identityHeight = (warning == nil ? nameLabel.frame.maxY : warningLabel.frame.maxY) + 4
-            identityBackground.path = CGPath(roundedRect: CGRect(x: -identityWidth / 2, y: 0, width: identityWidth, height: identityHeight), cornerWidth: 3, cornerHeight: 3, transform: nil)
+            identityBackground.path = CGPath(
+                roundedRect: CGRect(
+                    x: -identityWidth / 2, y: 0, width: identityWidth, height: identityHeight),
+                cornerWidth: 3, cornerHeight: 3, transform: nil)
         }
         var kinds: [String] = []
         if !tank.power.isEmpty && tank.powerTime > 0 { kinds.append(tank.power) }
         if shields > 0 { kinds.append("shield") }
         if speed > 0 { kinds.append("speed") }
-        if tank.starmanTime > 0 { kinds.append("starman") }
-        else if tank.ghostTime > 0 { kinds.append("ghost") }
+        if tank.starmanTime > 0 {
+            kinds.append("starman")
+        } else if tank.ghostTime > 0 {
+            kinds.append("ghost")
+        }
         for (kind, badge) in badges { badge.isHidden = !kinds.contains(kind) || tank.hp <= 0 }
         let scale = max(1, 0.72 / max(0.05, zoom))
-        let badgeSize = 24 * scale, inkRadius = badgeSize * 28.5 / 64
+        let badgeSize = 24 * scale
+        let inkRadius = badgeSize * 28.5 / 64
         let radius = max(30 + inkRadius + 1.5 * scale, (inkRadius * 2 + 1.5 * scale) / (2 * sin(.pi / 8)))
         for (index, kind) in kinds.prefix(4).enumerated() {
             let badge: PowerBadgeNode
-            if let existing = badges[kind] { badge = existing }
-            else { badge = PowerBadgeNode(kind: kind); badge.zPosition = 5; badges[kind] = badge; addChild(badge) }
+            if let existing = badges[kind] {
+                badge = existing
+            } else {
+                badge = PowerBadgeNode(kind: kind)
+                badge.zPosition = 5
+                badges[kind] = badge
+                addChild(badge)
+            }
             let angle = CGFloat(index) * .pi / 4
             badge.position = CGPoint(x: cos(angle) * radius, y: -sin(angle) * radius)
-            let life = kind == "shield" ? tank.shield : kind == "speed" ? tank.speedTime : kind == "ghost" ? tank.ghostTime : kind == "starman" ? tank.starmanTime : tank.powerTime + tank.starmanTime
-            let count: Int? = kind == "shield" ? shields : kind == "speed" ? speed : kind == "rapid" ? tank.machineRounds : kind == tank.power ? tank.charges : nil
-            badge.update(size: badgeSize, zoom: zoom, count: count, remaining: life, warning: kind == "starman" ? 1 : 3)
+            let life =
+                kind == "shield"
+                ? tank.shield
+                : kind == "speed"
+                    ? tank.speedTime
+                    : kind == "ghost"
+                        ? tank.ghostTime
+                        : kind == "starman" ? tank.starmanTime : tank.powerTime + tank.starmanTime
+            let count: Int? =
+                kind == "shield"
+                ? shields
+                : kind == "speed"
+                    ? speed : kind == "rapid" ? tank.machineRounds : kind == tank.power ? tank.charges : nil
+            badge.update(
+                size: badgeSize, zoom: zoom, count: count, remaining: life, warning: kind == "starman" ? 1 : 3
+            )
             badge.isHidden = tank.hp <= 0
         }
     }
@@ -1368,21 +1649,34 @@ private final class DeathNoticeNode: SKNode {
         guard let notice else { return }
         let width = max(10, maximumWidth - 24)
         guard previousNotice != notice || previousSize != fontSize || previousWidth != width else { return }
-        previousNotice = notice; previousSize = fontSize; previousWidth = width
+        previousNotice = notice
+        previousSize = fontSize
+        previousWidth = width
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         paragraph.lineBreakMode = .byCharWrapping
         paragraph.lineHeightMultiple = 1.25
-        let regular = UIFont(name: "Menlo-Regular", size: fontSize) ?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        let bold = UIFont(name: "Menlo-Bold", size: fontSize) ?? .monospacedSystemFont(ofSize: fontSize, weight: .bold)
-        let text = NSMutableAttributedString(string: notice.text, attributes: [
-            .font: regular, .foregroundColor: UIColor(hex: 0xd8e9c5), .paragraphStyle: paragraph,
-        ])
-        let nameRange = NSRange(location: ("Killed by " as NSString).length, length: (notice.killer as NSString).length)
+        let regular =
+            UIFont(name: "Menlo-Regular", size: fontSize)
+            ?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let bold =
+            UIFont(name: "Menlo-Bold", size: fontSize)
+            ?? .monospacedSystemFont(ofSize: fontSize, weight: .bold)
+        let text = NSMutableAttributedString(
+            string: notice.text,
+            attributes: [
+                .font: regular, .foregroundColor: UIColor(hex: 0xd8e9c5), .paragraphStyle: paragraph,
+            ])
+        let nameRange = NSRange(
+            location: ("Killed by " as NSString).length, length: (notice.killer as NSString).length)
         text.addAttribute(.font, value: bold, range: nameRange)
-        if let index = GamePalette.colors.firstIndex(where: { $0.caseInsensitiveCompare(notice.color) == .orderedSame }) {
+        if let index = GamePalette.colors.firstIndex(where: {
+            $0.caseInsensitiveCompare(notice.color) == .orderedSame
+        }) {
             text.addAttribute(.foregroundColor, value: Palette.tank(index), range: nameRange)
-        } else if notice.color.hasPrefix("#"), notice.color.count == 7, let rgb = UInt32(notice.color.dropFirst(), radix: 16) {
+        } else if notice.color.hasPrefix("#"), notice.color.count == 7,
+            let rgb = UInt32(notice.color.dropFirst(), radix: 16)
+        {
             text.addAttribute(.foregroundColor, value: UIColor(hex: rgb), range: nameRange)
         }
         label.preferredMaxLayoutWidth = width
@@ -1427,22 +1721,33 @@ private final class PowerBadgeNode: SKNode {
         if let count, changed {
             let text = Array(String(max(0, count)).utf8)
             while digits.count < text.count {
-                let digit = SKSpriteNode(); digit.anchorPoint = .zero; digit.zPosition = 40
-                addChild(digit); digits.append(digit)
+                let digit = SKSpriteNode()
+                digit.anchorPoint = .zero
+                digit.zPosition = 40
+                addChild(digit)
+                digits.append(digit)
             }
-            let scale = nextFontSize / 20, advance = NativeArt.badgeDigitAdvance * scale
-            let right = size / 2 - 2, bottom = -size / 2 + 1
+            let scale = nextFontSize / 20
+            let advance = NativeArt.badgeDigitAdvance * scale
+            let right = size / 2 - 2
+            let bottom = -size / 2 + 1
             for (index, digit) in digits.enumerated() {
                 digit.isHidden = index >= text.count
                 guard index < text.count else { continue }
                 digit.texture = NativeArt.badgeDigit(Int(text[index] - 48))
                 digit.size = CGSize(width: 16 * scale, height: 26 * scale)
-                digit.position = CGPoint(x: right - advance * CGFloat(text.count - index) - scale * 2, y: bottom - scale * 2)
+                digit.position = CGPoint(
+                    x: right - advance * CGFloat(text.count - index) - scale * 2, y: bottom - scale * 2)
             }
-            let width = advance * CGFloat(text.count) + 4, height = 22 * scale + 2
-            countBackground.path = CGPath(roundedRect: CGRect(x: size / 2 - width, y: -size / 2, width: width, height: height), cornerWidth: 2, cornerHeight: 2, transform: nil)
+            let width = advance * CGFloat(text.count) + 4
+            let height = 22 * scale + 2
+            countBackground.path = CGPath(
+                roundedRect: CGRect(x: size / 2 - width, y: -size / 2, width: width, height: height),
+                cornerWidth: 2, cornerHeight: 2, transform: nil)
         }
-        previousSize = size; previousFontSize = nextFontSize; previousCount = count
+        previousSize = size
+        previousFontSize = nextFontSize
+        previousCount = count
     }
 }
 
@@ -1467,13 +1772,17 @@ private final class ProjectileNode: SKNode {
 
     init(style: ProjectileStyle) {
         self.style = style
-        fullTexture = NativeArt.projectile(kind: style.kind, color: style.colorIndex, rapidTracerLength: style.rapidTracerLength)
-        headTexture = style.rapidTracerLength == 16 ? NativeArt.projectile(kind: "rapid", color: style.colorIndex, rapidTracerLength: 0) : nil
+        fullTexture = NativeArt.projectile(
+            kind: style.kind, color: style.colorIndex, rapidTracerLength: style.rapidTracerLength)
+        headTexture =
+            style.rapidTracerLength == 16
+            ? NativeArt.projectile(kind: "rapid", color: style.colorIndex, rapidTracerLength: 0) : nil
         super.init()
         addChild(glyph)
         art.texture = fullTexture
-        art.size = CGSize(width: style.kind == "cannon" || style.rapidTracerLength == 16 ? 40 : 24,
-                          height: style.kind == "cannon" ? 40 : 24)
+        art.size = CGSize(
+            width: style.kind == "cannon" || style.rapidTracerLength == 16 ? 40 : 24,
+            height: style.kind == "cannon" ? 40 : 24)
         glyph.addChild(art)
         if style.kind == "grenade" {
             fuse.strokeColor = Palette.power("grenade")
@@ -1496,7 +1805,8 @@ private final class ProjectileNode: SKNode {
         previousBounce = -1
         lastTrailTime = -.infinity
         fuseStep = -1
-        previousVX = .nan; previousVY = .nan
+        previousVX = .nan
+        previousVY = .nan
         rapidWallPoint = nil
         setRapidHeadOnly(false)
     }
@@ -1512,12 +1822,15 @@ private final class ProjectileNode: SKNode {
         position = CGPoint(x: bullet.x, y: -bullet.y)
         let directionChanged = previousVX != bullet.vx || previousVY != bullet.vy
         if directionChanged {
-            previousVX = bullet.vx; previousVY = bullet.vy
+            previousVX = bullet.vx
+            previousVY = bullet.vy
             glyph.zRotation = -atan2(bullet.vy, bullet.vx)
         }
         if style.rapidTracerLength == 16 {
             if directionChanged || previousBounce != bullet.bounces {
-                rapidWallPoint = geometry.flatMap { ProjectileAppearance.rapidTailWallPoint(bullet, maze: $0) }
+                rapidWallPoint = geometry.flatMap {
+                    ProjectileAppearance.rapidTailWallPoint(bullet, maze: $0)
+                }
             }
             previousBounce = bullet.bounces
             if let wall = rapidWallPoint {
@@ -1531,12 +1844,18 @@ private final class ProjectileNode: SKNode {
             // One angular step is less than a physical pixel at the fuse's
             // radius. Reuse static paths instead of retessellating every tick.
             let step = Int((min(1, max(0, bullet.life / 10)) * 256).rounded())
-            if step != fuseStep { fuseStep = step; fuse.path = NativeArt.grenadeFuse(step: step) }
+            if step != fuseStep {
+                fuseStep = step
+                fuse.path = NativeArt.grenadeFuse(step: step)
+            }
         } else if style.kind == "homing" {
             flame.size.width = CGFloat(9 + sin(time * 30) * 4)
         }
         if style.kind != "rapid" {
-            if bullet.bounces != previousBounce { history.removeAll(keepingCapacity: true); previousBounce = bullet.bounces }
+            if bullet.bounces != previousBounce {
+                history.removeAll(keepingCapacity: true)
+                previousBounce = bullet.bounces
+            }
             if time - lastTrailTime >= 1 / 60 - 0.000001 {
                 history.append(position)
                 if history.count > 7 { history.removeFirst(history.count - 7) }
@@ -1559,7 +1878,8 @@ private final class TransientEffectNode: SKNode {
     private let color = SKShapeNode()
     private let core = SKShapeNode()
     private let ring = SKShapeNode()
-    private static let ringPath = CGPath(ellipseIn: CGRect(x: -14, y: -14, width: 28, height: 28), transform: nil)
+    private static let ringPath = CGPath(
+        ellipseIn: CGRect(x: -14, y: -14, width: 28, height: 28), transform: nil)
     private var began = 0.0
     private var duration = 0.43
     private var laser = false
@@ -1568,7 +1888,10 @@ private final class TransientEffectNode: SKNode {
 
     override init() {
         super.init()
-        for node in [glow, color, core] { node.lineCap = .round; addChild(node) }
+        for node in [glow, color, core] {
+            node.lineCap = .round
+            addChild(node)
+        }
         core.strokeColor = UIColor(hex: 0xfff2ff)
         core.lineWidth = 2
         core.zPosition = 1
@@ -1576,7 +1899,10 @@ private final class TransientEffectNode: SKNode {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(_ effect: ArenaEffect, geometry: InfiniteMaze?, infinity: Bool, time: Double, outline: [BeamPoint]? = nil) {
+    func configure(
+        _ effect: ArenaEffect, geometry: InfiniteMaze?, infinity: Bool, time: Double,
+        outline: [BeamPoint]? = nil
+    ) {
         began = time
         laser = effect.kind == "laser"
         blast = effect.kind == "blast"
@@ -1584,35 +1910,50 @@ private final class TransientEffectNode: SKNode {
         alpha = laser ? 1 : 0.8
         setScale(1)
         position = laser ? .zero : CGPoint(x: effect.x, y: -effect.y)
-        glow.isHidden = !laser; color.isHidden = !laser || infinity
-        core.isHidden = !laser; ring.isHidden = laser
+        glow.isHidden = !laser
+        color.isHidden = !laser || infinity
+        core.isHidden = !laser
+        ring.isHidden = laser
         if laser {
             let path = CGMutablePath()
             path.move(to: CGPoint(x: effect.points[0].x, y: -effect.points[0].y))
             for point in effect.points.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
-            glow.path = path; color.path = path; core.path = path
+            glow.path = path
+            color.path = path
+            core.path = path
             glow.strokeColor = Palette.power("laser").withAlphaComponent(infinity ? 0.45 : 0.2)
             glow.lineWidth = infinity ? 7 : 14
-            color.strokeColor = Palette.power("laser"); color.lineWidth = 6
+            color.strokeColor = Palette.power("laser")
+            color.lineWidth = 6
         } else {
-            let paint = effect.kind == "hit" ? UIColor(hex: 0xf7ecbb) : Palette.power(blast ? "grenade" : effect.kind)
+            let paint =
+                effect.kind == "hit" ? UIColor(hex: 0xf7ecbb) : Palette.power(blast ? "grenade" : effect.kind)
             ring.strokeColor = paint
             ring.lineWidth = blast ? 3 : 2
             ring.fillColor = .clear
             if blast, let outline, let first = outline.first {
-                let path = CGMutablePath(); path.move(to: CGPoint(x: first.x, y: -first.y))
+                let path = CGMutablePath()
+                path.move(to: CGPoint(x: first.x, y: -first.y))
                 for point in outline.dropFirst() { path.addLine(to: CGPoint(x: point.x, y: -point.y)) }
-                path.closeSubpath(); ring.path = path
-                ring.fillColor = paint.withAlphaComponent(0.11); endScale = 1; setScale(0.65)
+                path.closeSubpath()
+                ring.path = path
+                ring.fillColor = paint.withAlphaComponent(0.11)
+                endScale = 1
+                setScale(0.65)
             } else if blast, let geometry {
                 let path = CGMutablePath()
                 for index in 0..<24 {
                     let angle = Double(index) * .pi * 2 / 24
-                    let end = geometry.projectileGuide(x: effect.x, y: effect.y, angle: angle, kind: "", range: 220, radius: 0, maxSegments: 1).last ?? BeamPoint(x: effect.x, y: effect.y)
+                    let end =
+                        geometry.projectileGuide(
+                            x: effect.x, y: effect.y, angle: angle, kind: "", range: 220, radius: 0,
+                            maxSegments: 1
+                        ).last ?? BeamPoint(x: effect.x, y: effect.y)
                     let point = CGPoint(x: end.x - effect.x, y: effect.y - end.y)
                     if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
                 }
-                path.closeSubpath(); ring.path = path
+                path.closeSubpath()
+                ring.path = path
                 ring.fillColor = paint.withAlphaComponent(0.11)
                 endScale = 1
                 setScale(0.65)
@@ -1671,16 +2012,24 @@ private enum NativeArt {
         let rapidHeadOnly = kind == "rapid" && rapidTracerLength == 0
         let width: CGFloat = kind == "cannon" || fastRapid ? 40 : 24
         let height: CGFloat = kind == "cannon" ? 40 : 24
-        return cached("projectile:\(kind):\(color)" + (fastRapid ? ":fast" : rapidHeadOnly ? ":head" : ""), size: CGSize(width: width, height: height)) { context in
+        return cached(
+            "projectile:\(kind):\(color)" + (fastRapid ? ":fast" : rapidHeadOnly ? ":head" : ""),
+            size: CGSize(width: width, height: height)
+        ) { context in
             context.translateBy(x: width / 2, y: height / 2)
             context.scaleBy(x: 1, y: -1)
             let paint = Palette.tank(color)
             context.setFillColor((kind == "grenade" ? UIColor(hex: 0x253039) : paint).cgColor)
-            let radius: CGFloat = kind == "cannon" ? 18 : kind == "grenade" ? 6 : kind == "rapid" ? 3.5 / 3 : 4.5
+            let radius: CGFloat =
+                kind == "cannon" ? 18 : kind == "grenade" ? 6 : kind == "rapid" ? 3.5 / 3 : 4.5
             if kind == "homing" {
                 context.move(to: CGPoint(x: 10, y: 0))
-                for point in [CGPoint(x: -4, y: 5), CGPoint(x: -8, y: 8), CGPoint(x: -6, y: 0), CGPoint(x: -8, y: -8), CGPoint(x: -4, y: -5)] { context.addLine(to: point) }
-                context.closePath(); context.fillPath()
+                for point in [
+                    CGPoint(x: -4, y: 5), CGPoint(x: -8, y: 8), CGPoint(x: -6, y: 0), CGPoint(x: -8, y: -8),
+                    CGPoint(x: -4, y: -5),
+                ] { context.addLine(to: point) }
+                context.closePath()
+                context.fillPath()
                 context.setFillColor(UIColor(hex: 0xfff6e5).cgColor)
                 context.fill(CGRect(x: -1, y: -1.5, width: 6, height: 3))
             } else {
@@ -1692,7 +2041,8 @@ private enum NativeArt {
                         context.fill(CGRect(x: -length, y: -3.5 / 3, width: length, height: 3.5 * 2 / 3))
                     }
                 } else if kind == "grenade" {
-                    context.setStrokeColor(paint.cgColor); context.setLineWidth(2)
+                    context.setStrokeColor(paint.cgColor)
+                    context.setLineWidth(2)
                     context.strokeEllipse(in: CGRect(x: -6, y: -6, width: 12, height: 12))
                     context.setFillColor(Palette.power("grenade").cgColor)
                     context.fillEllipse(in: CGRect(x: -2, y: 0, width: 4, height: 4))
@@ -1708,15 +2058,20 @@ private enum NativeArt {
     static func missileFlame() -> SKTexture {
         cached("missileFlame", size: CGSize(width: 13, height: 6)) { context in
             context.setFillColor(Palette.power("homing").withAlphaComponent(0.8).cgColor)
-            context.move(to: CGPoint(x: 13, y: 0)); context.addLine(to: CGPoint(x: 0, y: 3)); context.addLine(to: CGPoint(x: 13, y: 6))
-            context.closePath(); context.fillPath()
+            context.move(to: CGPoint(x: 13, y: 0))
+            context.addLine(to: CGPoint(x: 0, y: 3))
+            context.addLine(to: CGPoint(x: 13, y: 6))
+            context.closePath()
+            context.fillPath()
         }
     }
 
     static func grenadeFuse(step: Int) -> CGPath {
         if let path = fusePaths[step] { return path }
         let path = CGMutablePath()
-        path.addArc(center: .zero, radius: 10, startAngle: .pi / 2, endAngle: .pi / 2 - .pi * 2 * CGFloat(step) / 256, clockwise: true)
+        path.addArc(
+            center: .zero, radius: 10, startAngle: .pi / 2, endAngle: .pi / 2 - .pi * 2 * CGFloat(step) / 256,
+            clockwise: true)
         fusePaths[step] = path
         return path
     }
@@ -1739,16 +2094,21 @@ private enum NativeArt {
         return texture
     }
 
-    static let badgeDigitAdvance = ("0" as NSString).size(withAttributes: [.font: UIFont(name: "Menlo-Bold", size: 20) ?? UIFont.monospacedSystemFont(ofSize: 20, weight: .bold)]).width
+    static let badgeDigitAdvance = ("0" as NSString).size(withAttributes: [
+        .font: UIFont(name: "Menlo-Bold", size: 20) ?? UIFont.monospacedSystemFont(ofSize: 20, weight: .bold)
+    ]).width
 
     /// Ten immutable outlined glyphs serve every ammo/quantity change. Counts
     /// can change at 60 Hz without rasterizing a new string or growing a cache.
     static func badgeDigit(_ digit: Int) -> SKTexture {
         cached("badgeDigit:\(digit)", size: CGSize(width: 16, height: 26)) { _ in
-            (String(digit) as NSString).draw(at: CGPoint(x: 2, y: 0), withAttributes: [
-                .font: UIFont(name: "Menlo-Bold", size: 20) ?? UIFont.monospacedSystemFont(ofSize: 20, weight: .bold),
-                .foregroundColor: UIColor(hex: 0xf3f8ff), .strokeColor: UIColor.black, .strokeWidth: -7
-            ])
+            (String(digit) as NSString).draw(
+                at: CGPoint(x: 2, y: 0),
+                withAttributes: [
+                    .font: UIFont(name: "Menlo-Bold", size: 20)
+                        ?? UIFont.monospacedSystemFont(ofSize: 20, weight: .bold),
+                    .foregroundColor: UIColor(hex: 0xf3f8ff), .strokeColor: UIColor.black, .strokeWidth: -7,
+                ])
         }
     }
 
@@ -1761,9 +2121,13 @@ private enum NativeArt {
     static func hull(color: Int, phase: Int) -> SKTexture {
         cached("hull:\(color):\(phase)", size: CGSize(width: 48, height: 48)) { context in
             context.translateBy(x: 24, y: 24)
-            rounded(context, CGRect(x: -20, y: -11, width: 40, height: 31), 6, UIColor(hex: 0x02080b).withAlphaComponent(0.66))
+            rounded(
+                context, CGRect(x: -20, y: -11, width: 40, height: 31), 6,
+                UIColor(hex: 0x02080b).withAlphaComponent(0.66))
             for side in [-1, 1] {
-                rounded(context, CGRect(x: -19, y: side < 0 ? -17 : 9, width: 37, height: 9), 3, UIColor(hex: 0x0b1116))
+                rounded(
+                    context, CGRect(x: -19, y: side < 0 ? -17 : 9, width: 37, height: 9), 3,
+                    UIColor(hex: 0x0b1116))
                 context.setStrokeColor(UIColor(hex: 0x849392).withAlphaComponent(0.65).cgColor)
                 context.setLineWidth(1)
                 for index in 0..<7 {
@@ -1774,10 +2138,14 @@ private enum NativeArt {
                 context.strokePath()
             }
             rounded(context, CGRect(x: -17, y: -12, width: 34, height: 24), 5, Palette.tank(color))
-            rounded(context, CGRect(x: -15, y: -10, width: 7, height: 20), 2, UIColor.black.withAlphaComponent(0.19))
+            rounded(
+                context, CGRect(x: -15, y: -10, width: 7, height: 20), 2,
+                UIColor.black.withAlphaComponent(0.19))
             context.setStrokeColor(UIColor.white.withAlphaComponent(0.345).cgColor)
             context.setLineWidth(1)
-            context.move(to: CGPoint(x: -12, y: -10)); context.addLine(to: CGPoint(x: 12, y: -10)); context.strokePath()
+            context.move(to: CGPoint(x: -12, y: -10))
+            context.addLine(to: CGPoint(x: 12, y: -10))
+            context.strokePath()
             context.setFillColor(UIColor(hex: 0x0c1518).withAlphaComponent(0.4).cgColor)
             context.fill(CGRect(x: -12, y: -6, width: 3, height: 12))
         }
@@ -1815,8 +2183,11 @@ private enum NativeArt {
             rounded(context, CGRect(x: -18, y: -16, width: 36, height: 32), 5, UIColor(hex: 0x091116))
             context.setStrokeColor(UIColor(hex: 0x46545a).cgColor)
             context.setLineWidth(2)
-            context.move(to: CGPoint(x: -8, y: -8)); context.addLine(to: CGPoint(x: 8, y: 8))
-            context.move(to: CGPoint(x: 8, y: -8)); context.addLine(to: CGPoint(x: -8, y: 8)); context.strokePath()
+            context.move(to: CGPoint(x: -8, y: -8))
+            context.addLine(to: CGPoint(x: 8, y: 8))
+            context.move(to: CGPoint(x: 8, y: -8))
+            context.addLine(to: CGPoint(x: -8, y: 8))
+            context.strokePath()
         }
     }
 
@@ -1836,22 +2207,35 @@ private enum NativeArt {
     static func stickBase() -> SKTexture {
         cached("stick-base", size: CGSize(width: 96, height: 96)) { context in
             let center = CGPoint(x: 48, y: 48)
-            let colors = [UIColor(hex: 0x324249).cgColor, UIColor(hex: 0x232e33).cgColor, UIColor(hex: 0x192127).cgColor]
-            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 0.64, 0.65])!
-            context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: 48, options: .drawsAfterEndLocation)
+            let colors = [
+                UIColor(hex: 0x324249).cgColor, UIColor(hex: 0x232e33).cgColor,
+                UIColor(hex: 0x192127).cgColor,
+            ]
+            let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray,
+                locations: [0, 0.64, 0.65])!
+            context.drawRadialGradient(
+                gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: 48,
+                options: .drawsAfterEndLocation)
             context.setStrokeColor(UIColor(hex: 0x111a1f).cgColor)
             context.setLineWidth(8)
             context.strokeEllipse(in: CGRect(x: 4.5, y: 4.5, width: 87, height: 87))
             context.setStrokeColor(UIColor(hex: 0x324249).withAlphaComponent(0.165).cgColor)
             context.setLineWidth(1)
-            context.move(to: CGPoint(x: 12, y: 47)); context.addLine(to: CGPoint(x: 82, y: 47))
-            context.move(to: CGPoint(x: 47, y: 12)); context.addLine(to: CGPoint(x: 47, y: 82)); context.strokePath()
+            context.move(to: CGPoint(x: 12, y: 47))
+            context.addLine(to: CGPoint(x: 82, y: 47))
+            context.move(to: CGPoint(x: 47, y: 12))
+            context.addLine(to: CGPoint(x: 47, y: 82))
+            context.strokePath()
         }
     }
 
     static func stickKnob() -> SKTexture {
         cached("stick-knob", size: CGSize(width: 44, height: 44)) { context in
-            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [UIColor(hex: 0x324249).cgColor, UIColor(hex: 0x232e33).cgColor] as CFArray, locations: [0, 1])!
+            let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [UIColor(hex: 0x324249).cgColor, UIColor(hex: 0x232e33).cgColor] as CFArray,
+                locations: [0, 1])!
             context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 44, y: 44), options: [])
             context.setFillColor(UIColor(hex: 0x00c8ff).withAlphaComponent(0.082).cgColor)
             context.setStrokeColor(UIColor(hex: 0x00c8ff).withAlphaComponent(0.502).cgColor)
@@ -1869,8 +2253,12 @@ private enum NativeArt {
                 context.setFillColor(UIColor(hex: detonate ? 0x635036 : 0x087693).cgColor)
                 context.fill(CGRect(x: 0, y: 0, width: 91, height: 91))
             } else {
-                let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [first.cgColor, last.cgColor] as CFArray, locations: [0, 1])!
-                context.drawRadialGradient(gradient, startCenter: CGPoint(x: 34.6, y: 27.3), startRadius: 0, endCenter: CGPoint(x: 45.5, y: 45.5), endRadius: 52, options: .drawsAfterEndLocation)
+                let gradient = CGGradient(
+                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                    colors: [first.cgColor, last.cgColor] as CFArray, locations: [0, 1])!
+                context.drawRadialGradient(
+                    gradient, startCenter: CGPoint(x: 34.6, y: 27.3), startRadius: 0,
+                    endCenter: CGPoint(x: 45.5, y: 45.5), endRadius: 52, options: .drawsAfterEndLocation)
             }
             context.setStrokeColor(last.cgColor)
             context.setLineWidth(4)
@@ -1886,7 +2274,10 @@ private enum NativeArt {
             rounded(context, CGRect(x: -13, y: -13, width: 26, height: 26), 6, UIColor(hex: 0x152126))
             context.setStrokeColor(color.cgColor)
             context.setLineWidth(1.5)
-            context.addPath(CGPath(roundedRect: CGRect(x: -13, y: -13, width: 26, height: 26), cornerWidth: 6, cornerHeight: 6, transform: nil))
+            context.addPath(
+                CGPath(
+                    roundedRect: CGRect(x: -13, y: -13, width: 26, height: 26), cornerWidth: 6,
+                    cornerHeight: 6, transform: nil))
             context.strokePath()
             context.setShadow(offset: .zero, blur: 0, color: nil)
             drawPower(kind, context)
@@ -1896,25 +2287,40 @@ private enum NativeArt {
     static func flag(team: Int, color: Int) -> SKTexture {
         cached("flag:\(team):\(color)", size: CGSize(width: 46, height: 48)) { context in
             context.translateBy(x: 23, y: 24)
-            rounded(context, CGRect(x: -21, y: -23, width: 42, height: 43), 8, UIColor(hex: 0x101a24).withAlphaComponent(0.93))
+            rounded(
+                context, CGRect(x: -21, y: -23, width: 42, height: 43), 8,
+                UIColor(hex: 0x101a24).withAlphaComponent(0.93))
             context.setStrokeColor(Palette.tank(color).cgColor)
             context.setLineWidth(1.7)
-            context.addPath(CGPath(roundedRect: CGRect(x: -21, y: -23, width: 42, height: 43), cornerWidth: 8, cornerHeight: 8, transform: nil))
+            context.addPath(
+                CGPath(
+                    roundedRect: CGRect(x: -21, y: -23, width: 42, height: 43), cornerWidth: 8,
+                    cornerHeight: 8, transform: nil))
             context.strokePath()
             context.setLineCap(.round)
             context.setStrokeColor(UIColor(hex: 0x050b13).cgColor)
             context.setLineWidth(5)
-            context.move(to: CGPoint(x: -9, y: 13)); context.addLine(to: CGPoint(x: -9, y: -17)); context.strokePath()
+            context.move(to: CGPoint(x: -9, y: 13))
+            context.addLine(to: CGPoint(x: -9, y: -17))
+            context.strokePath()
             context.setStrokeColor(UIColor(hex: 0xfffef2).cgColor)
             context.setLineWidth(2.5)
-            context.move(to: CGPoint(x: -9, y: 13)); context.addLine(to: CGPoint(x: -9, y: -17)); context.strokePath()
+            context.move(to: CGPoint(x: -9, y: 13))
+            context.addLine(to: CGPoint(x: -9, y: -17))
+            context.strokePath()
             context.setFillColor(Palette.tank(color).cgColor)
             context.setLineWidth(1.4)
-            context.move(to: CGPoint(x: -7, y: -17)); context.addLine(to: CGPoint(x: 15, y: -13))
-            context.addLine(to: CGPoint(x: 9, y: 0)); context.addLine(to: CGPoint(x: -7, y: -3)); context.closePath()
+            context.move(to: CGPoint(x: -7, y: -17))
+            context.addLine(to: CGPoint(x: 15, y: -13))
+            context.addLine(to: CGPoint(x: 9, y: 0))
+            context.addLine(to: CGPoint(x: -7, y: -3))
+            context.closePath()
             context.drawPath(using: .fillStroke)
             let text = String(team) as NSString
-            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedSystemFont(ofSize: 10, weight: .black), .foregroundColor: UIColor(hex: 0x0d1823)]
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.monospacedSystemFont(ofSize: 10, weight: .black),
+                .foregroundColor: UIColor(hex: 0x0d1823),
+            ]
             let size = text.size(withAttributes: attributes)
             text.draw(at: CGPoint(x: 2 - size.width / 2, y: -15), withAttributes: attributes)
         }
@@ -1938,18 +2344,30 @@ private enum NativeArt {
             for index in 0..<3 {
                 let y = -6 + Double(index) * 6
                 line([CGPoint(x: -9, y: y), CGPoint(x: -3, y: y)])
-                line([CGPoint(x: 0, y: y - 1.7), CGPoint(x: 6, y: y - 1.7), CGPoint(x: 9, y: y), CGPoint(x: 6, y: y + 1.7), CGPoint(x: 0, y: y + 1.7)], close: true, fill: true)
+                line(
+                    [
+                        CGPoint(x: 0, y: y - 1.7), CGPoint(x: 6, y: y - 1.7), CGPoint(x: 9, y: y),
+                        CGPoint(x: 6, y: y + 1.7), CGPoint(x: 0, y: y + 1.7),
+                    ], close: true, fill: true)
             }
         case "scatter":
             context.setLineWidth(2.4)
-            for y in [-7.0, 0, 7] { line([CGPoint(x: -10, y: 0), CGPoint(x: -3, y: 0), CGPoint(x: 10, y: y)]) }
+            for y in [-7.0, 0, 7] {
+                line([CGPoint(x: -10, y: 0), CGPoint(x: -3, y: 0), CGPoint(x: 10, y: y)])
+            }
             context.setLineWidth(1.5)
             context.setAlpha(0.55)
             for y in [-4.0, 4] { line([CGPoint(x: -12, y: y), CGPoint(x: -7, y: y)]) }
             context.setAlpha(1)
-            for y in [-7.0, 0, 7] { context.fillEllipse(in: CGRect(x: 8.65, y: y - 1.35, width: 2.7, height: 2.7)) }
+            for y in [-7.0, 0, 7] {
+                context.fillEllipse(in: CGRect(x: 8.65, y: y - 1.35, width: 2.7, height: 2.7))
+            }
         case "homing":
-            line([CGPoint(x: 0, y: -9), CGPoint(x: 4, y: -2), CGPoint(x: 3, y: 5), CGPoint(x: 0, y: 3), CGPoint(x: -3, y: 5), CGPoint(x: -4, y: -2)], close: true)
+            line(
+                [
+                    CGPoint(x: 0, y: -9), CGPoint(x: 4, y: -2), CGPoint(x: 3, y: 5), CGPoint(x: 0, y: 3),
+                    CGPoint(x: -3, y: 5), CGPoint(x: -4, y: -2),
+                ], close: true)
             line([CGPoint(x: -3, y: 2), CGPoint(x: -7, y: 7)])
             line([CGPoint(x: 3, y: 2), CGPoint(x: 7, y: 7)])
             line([CGPoint(x: 0, y: 6), CGPoint(x: 0, y: 9)])
@@ -1958,38 +2376,58 @@ private enum NativeArt {
             context.stroke(CGRect(x: -11, y: -5, width: 6, height: 10))
             context.fill(CGRect(x: -5, y: -3, width: 3, height: 6))
             line([CGPoint(x: -8, y: -2), CGPoint(x: -8, y: 2)])
-            context.setAlpha(0.28); context.setLineWidth(5)
+            context.setAlpha(0.28)
+            context.setLineWidth(5)
             line([CGPoint(x: -1, y: 0), CGPoint(x: 11, y: 0)])
-            context.setAlpha(1); context.setLineWidth(1.8)
+            context.setAlpha(1)
+            context.setLineWidth(1.8)
             line([CGPoint(x: -1, y: 0), CGPoint(x: 11, y: 0)])
         case "grenade":
             context.strokeEllipse(in: CGRect(x: -6, y: -4, width: 12, height: 12))
             context.stroke(CGRect(x: -2, y: -7, width: 4, height: 3))
-            context.move(to: CGPoint(x: 1, y: -8)); context.addQuadCurve(to: CGPoint(x: 8, y: -5), control: CGPoint(x: 6, y: -11)); context.strokePath()
+            context.move(to: CGPoint(x: 1, y: -8))
+            context.addQuadCurve(to: CGPoint(x: 8, y: -5), control: CGPoint(x: 6, y: -11))
+            context.strokePath()
             context.fill(CGRect(x: -1, y: 0, width: 2, height: 4))
         case "ghost":
-            context.move(to: CGPoint(x: -8, y: 9)); context.addLine(to: CGPoint(x: -8, y: -2))
-            context.addCurve(to: CGPoint(x: 8, y: -2), control1: CGPoint(x: -8, y: -12), control2: CGPoint(x: 8, y: -12))
-            for point in [CGPoint(x: 8, y: 9), CGPoint(x: 4, y: 6), CGPoint(x: 0, y: 9), CGPoint(x: -4, y: 6)] { context.addLine(to: point) }
-            context.closePath(); context.strokePath()
-            for x in [-3.0, 3] { context.fillEllipse(in: CGRect(x: x - 1.2, y: -2.2, width: 2.4, height: 2.4)) }
+            context.move(to: CGPoint(x: -8, y: 9))
+            context.addLine(to: CGPoint(x: -8, y: -2))
+            context.addCurve(
+                to: CGPoint(x: 8, y: -2), control1: CGPoint(x: -8, y: -12), control2: CGPoint(x: 8, y: -12))
+            for point in [
+                CGPoint(x: 8, y: 9), CGPoint(x: 4, y: 6), CGPoint(x: 0, y: 9), CGPoint(x: -4, y: 6),
+            ] { context.addLine(to: point) }
+            context.closePath()
+            context.strokePath()
+            for x in [-3.0, 3] {
+                context.fillEllipse(in: CGRect(x: x - 1.2, y: -2.2, width: 2.4, height: 2.4))
+            }
         case "starman":
             var points: [CGPoint] = []
             for index in 0..<10 {
-                let angle = Double(index) * .pi / 5 - .pi / 2, radius = index.isMultiple(of: 2) ? 10.0 : 4.5
+                let angle = Double(index) * .pi / 5 - .pi / 2
+                let radius = index.isMultiple(of: 2) ? 10.0 : 4.5
                 points.append(CGPoint(x: cos(angle) * radius, y: sin(angle) * radius))
             }
             line(points, close: true)
         case "cannon":
             context.fillEllipse(in: CGRect(x: -1, y: -5, width: 10, height: 10))
-            for y in [-4.0, 0, 4] { line([CGPoint(x: y == 0 ? -12 : -10, y: y), CGPoint(x: y == 0 ? -4 : -5, y: y)]) }
+            for y in [-4.0, 0, 4] {
+                line([CGPoint(x: y == 0 ? -12 : -10, y: y), CGPoint(x: y == 0 ? -4 : -5, y: y)])
+            }
         case "speed":
-            for x in [-5.0, 2] { line([CGPoint(x: x - 2, y: -7), CGPoint(x: x + 4, y: 0), CGPoint(x: x - 2, y: 7)]) }
+            for x in [-5.0, 2] {
+                line([CGPoint(x: x - 2, y: -7), CGPoint(x: x + 4, y: 0), CGPoint(x: x - 2, y: 7)])
+            }
         default:
-            context.move(to: CGPoint(x: 0, y: -8)); context.addLine(to: CGPoint(x: 7, y: -5)); context.addLine(to: CGPoint(x: 6, y: 3))
+            context.move(to: CGPoint(x: 0, y: -8))
+            context.addLine(to: CGPoint(x: 7, y: -5))
+            context.addLine(to: CGPoint(x: 6, y: 3))
             context.addQuadCurve(to: CGPoint(x: 0, y: 9), control: CGPoint(x: 4, y: 7))
             context.addQuadCurve(to: CGPoint(x: -6, y: 3), control: CGPoint(x: -4, y: 7))
-            context.addLine(to: CGPoint(x: -7, y: -5)); context.closePath(); context.strokePath()
+            context.addLine(to: CGPoint(x: -7, y: -5))
+            context.closePath()
+            context.strokePath()
         }
     }
 
@@ -2013,24 +2451,32 @@ private enum MapRasterizer {
     static func image(walls: [MazeWall], region: CGRect, fixed: Bool) -> UIImage {
         let ratio: CGFloat = fixed ? min(1.5, sqrt(5_000_000 / max(1, region.width * region.height))) : 1
         let format = UIGraphicsImageRendererFormat()
-        format.scale = ratio; format.opaque = false
+        format.scale = ratio
+        format.opaque = false
         return UIGraphicsImageRenderer(size: region.size, format: format).image { result in
             let context = result.cgContext
             context.translateBy(x: -region.minX, y: -region.minY)
             context.setFillColor(UIColor(hex: 0x151f25).cgColor)
             context.fill(region)
-            let firstX = Int(floor(region.minX / 84)), lastX = Int(ceil(region.maxX / 84))
-            let firstY = Int(floor(region.minY / 84)), lastY = Int(ceil(region.maxY / 84))
+            let firstX = Int(floor(region.minX / 84))
+            let lastX = Int(ceil(region.maxX / 84))
+            let firstY = Int(floor(region.minY / 84))
+            let lastY = Int(ceil(region.maxY / 84))
             for row in firstY..<max(firstY + 1, lastY) {
                 for col in firstX..<max(firstX + 1, lastX) {
-                    let x = CGFloat(col) * 84, y = CGFloat(row) * 84
+                    let x = CGFloat(col) * 84
+                    let y = CGFloat(row) * 84
                     context.setFillColor(UIColor(hex: (col + row) % 2 == 0 ? 0x172128 : 0x182229).cgColor)
                     context.fill(CGRect(x: x + 4, y: y + 4, width: 76, height: 76))
                     context.setStrokeColor(UIColor(hex: 0xd9e6e8).withAlphaComponent(0.035).cgColor)
                     context.setLineWidth(1)
                     context.stroke(CGRect(x: x + 10, y: y + 10, width: 64, height: 64))
                     context.setFillColor(UIColor(hex: 0xa5b9b4).withAlphaComponent(0.137).cgColor)
-                    for dx in [19.0, 65] { for dy in [19.0, 65] { context.fill(CGRect(x: x + dx, y: y + dy, width: 1.5, height: 1.5)) } }
+                    for dx in [19.0, 65] {
+                        for dy in [19.0, 65] {
+                            context.fill(CGRect(x: x + dx, y: y + dy, width: 1.5, height: 1.5))
+                        }
+                    }
                     context.setFillColor(UIColor(hex: 0xc8d9cd).withAlphaComponent(0.051).cgColor)
                     context.fill(CGRect(x: x + 40, y: y + 41.5, width: 4, height: 1))
                     context.fill(CGRect(x: x + 41.5, y: y + 40, width: 1, height: 4))
@@ -2039,10 +2485,17 @@ private enum MapRasterizer {
             for wall in walls {
                 context.setFillColor(UIColor(hex: 0x080e13).cgColor)
                 context.fill(CGRect(x: wall.x + 1, y: wall.y + 4, width: wall.w, height: wall.h + 2))
-                context.addPath(CGPath(roundedRect: CGRect(x: wall.x, y: wall.y, width: wall.w, height: wall.h), cornerWidth: 2, cornerHeight: 2, transform: nil))
-                context.setFillColor(UIColor(hex: 0x35434b).cgColor); context.fillPath()
+                context.addPath(
+                    CGPath(
+                        roundedRect: CGRect(x: wall.x, y: wall.y, width: wall.w, height: wall.h),
+                        cornerWidth: 2, cornerHeight: 2, transform: nil))
+                context.setFillColor(UIColor(hex: 0x35434b).cgColor)
+                context.fillPath()
                 context.setFillColor(UIColor(hex: 0x667773).cgColor)
-                context.fill(wall.axis == "h" ? CGRect(x: wall.x + 1, y: wall.y + 0.8, width: wall.w - 2, height: 1.2) : CGRect(x: wall.x + 0.8, y: wall.y + 1, width: 1.2, height: wall.h - 2))
+                context.fill(
+                    wall.axis == "h"
+                        ? CGRect(x: wall.x + 1, y: wall.y + 0.8, width: wall.w - 2, height: 1.2)
+                        : CGRect(x: wall.x + 0.8, y: wall.y + 1, width: 1.2, height: wall.h - 2))
             }
             if fixed {
                 context.setStrokeColor(UIColor(hex: 0x00c8ff).withAlphaComponent(0.36).cgColor)
@@ -2067,10 +2520,15 @@ private enum MapRasterizer {
 private enum Palette {
     static let arena = UIColor(hex: 0x10181e)
     static let accent = UIColor(hex: 0x32c5ff)
-    static let colors: [UInt32] = [0x32c5ff, 0xff758f, 0x3ee6c5, 0xba91ff, 0xffcb66, 0xff7bd5, 0x79d878, 0x91a9ff]
+    static let colors: [UInt32] = [
+        0x32c5ff, 0xff758f, 0x3ee6c5, 0xba91ff, 0xffcb66, 0xff7bd5, 0x79d878, 0x91a9ff,
+    ]
     static let names = ["Electric blue", "Coral", "Jade", "Amethyst", "Amber", "Orchid", "Leaf", "Iris"]
     private static let paints = colors.map { UIColor(hex: $0) }
-    private static let powers: [String: UIColor] = ["rapid": 0x79d878, "scatter": 0xba91ff, "shield": 0x32c5ff, "homing": 0xff7bd5, "grenade": 0xffcb66, "speed": 0x3ee6c5, "laser": 0xe879ff, "cannon": 0xff9e66, "ghost": 0xcedaff, "starman": 0xf9ed75].mapValues { UIColor(hex: $0) }
+    private static let powers: [String: UIColor] = [
+        "rapid": 0x79d878, "scatter": 0xba91ff, "shield": 0x32c5ff, "homing": 0xff7bd5, "grenade": 0xffcb66,
+        "speed": 0x3ee6c5, "laser": 0xe879ff, "cannon": 0xff9e66, "ghost": 0xcedaff, "starman": 0xf9ed75,
+    ].mapValues { UIColor(hex: $0) }
     static func tank(_ index: Int) -> UIColor { paints[max(0, index) % paints.count] }
     static func colorName(_ index: Int) -> String { names[max(0, index) % names.count] }
     static func power(_ kind: String) -> UIColor {
@@ -2078,11 +2536,12 @@ private enum Palette {
     }
 }
 
-private extension UIColor {
-    convenience init(hex: UInt32) {
-        self.init(red: CGFloat((hex >> 16) & 255) / 255,
-                  green: CGFloat((hex >> 8) & 255) / 255,
-                  blue: CGFloat(hex & 255) / 255, alpha: 1)
+extension UIColor {
+    fileprivate convenience init(hex: UInt32) {
+        self.init(
+            red: CGFloat((hex >> 16) & 255) / 255,
+            green: CGFloat((hex >> 8) & 255) / 255,
+            blue: CGFloat(hex & 255) / 255, alpha: 1)
     }
 }
 

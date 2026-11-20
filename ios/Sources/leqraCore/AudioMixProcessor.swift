@@ -46,7 +46,8 @@ public struct AudioMixProcessor: Sendable {
         postCompressorGain = makeup * AudioSynthesis.trimGain
         rampFrames = max(1, Int((rate * AudioSynthesis.volumeRampDuration).rounded()))
         let initial = Self.unit(volume)
-        master = initial; targetMaster = initial
+        master = initial
+        targetMaster = initial
     }
 
     /// Slider gain comes after protection, so it remains linear even when many
@@ -55,7 +56,10 @@ public struct AudioMixProcessor: Sendable {
     public mutating func setVolume(_ unit: Float, immediate: Bool = false) {
         let value = Self.unit(unit)
         if immediate {
-            master = value; targetMaster = value; masterIncrement = 0; rampRemaining = 0
+            master = value
+            targetMaster = value
+            masterIncrement = 0
+            rampRemaining = 0
         } else if value != targetMaster {
             targetMaster = value
             rampRemaining = rampFrames
@@ -67,10 +71,16 @@ public struct AudioMixProcessor: Sendable {
     /// requested slider level. No allocation is needed after initialization.
     public mutating func reset() {
         for index in delay.indices { delay[index] = 0 }
-        delayIndex = 0; compressorGain = 1
-        detectorAverage = 0; desiredGain = 0; envelopeRate = 0
-        divisionRemaining = 0; greatestAttackDifference = -1
-        master = targetMaster; masterIncrement = 0; rampRemaining = 0
+        delayIndex = 0
+        compressorGain = 1
+        detectorAverage = 0
+        desiredGain = 0
+        envelopeRate = 0
+        divisionRemaining = 0
+        greatestAttackDifference = -1
+        master = targetMaster
+        masterIncrement = 0
+        rampRemaining = 0
     }
 
     public mutating func process(_ sample: Float) -> Float {
@@ -78,14 +88,20 @@ public struct AudioMixProcessor: Sendable {
         // Double arithmetic also avoids overflow when a malformed finite Float
         // reaches the bus. 1024 exceeds any sum from the bounded voice pool.
         let input = sample.isFinite ? max(-1024, min(1024, Double(sample) * AudioSynthesis.effectGain)) : 0
-        if divisionRemaining == 0 { updateEnvelope(); divisionRemaining = 32 }
+        if divisionRemaining == 0 {
+            updateEnvelope()
+            divisionRemaining = 32
+        }
         let magnitude = abs(input)
         let target = magnitude > threshold ? pow(threshold / magnitude, compressionExponent) : 1
         let detectorDB = max(2, -20 * log10(max(0.0000001, target)))
         let detectorRate = target > detectorAverage ? pow(10, detectorDB / detectorFrames / 20) - 1 : 1
         detectorAverage = min(1, detectorAverage + (target - detectorAverage) * detectorRate)
-        if envelopeRate < 1 { compressorGain += (desiredGain - compressorGain) * envelopeRate }
-        else { compressorGain = min(1, compressorGain * envelopeRate) }
+        if envelopeRate < 1 {
+            compressorGain += (desiredGain - compressorGain) * envelopeRate
+        } else {
+            compressorGain = min(1, compressorGain * envelopeRate)
+        }
         divisionRemaining -= 1
 
         let delayed = Double(delay[delayIndex])
@@ -100,7 +116,10 @@ public struct AudioMixProcessor: Sendable {
         if rampRemaining > 0 {
             master += masterIncrement
             rampRemaining -= 1
-            if rampRemaining == 0 { master = targetMaster; masterIncrement = 0 }
+            if rampRemaining == 0 {
+                master = targetMaster
+                masterIncrement = 0
+            }
         }
         return output
     }
@@ -114,13 +133,18 @@ public struct AudioMixProcessor: Sendable {
     private mutating func updateEnvelope() {
         desiredGain = asin(max(0, min(1, detectorAverage))) / (.pi / 2)
         let releasing = desiredGain > compressorGain
-        let difference = desiredGain > 0 ? 20 * log10(max(0.0000000001, compressorGain / desiredGain)) : (releasing ? -1 : 1)
+        let difference =
+            desiredGain > 0
+            ? 20 * log10(max(0.0000000001, compressorGain / desiredGain)) : (releasing ? -1 : 1)
         if releasing {
             greatestAttackDifference = -1
             let x = (max(-12, min(0, difference)) + 12) * 0.25
             // Adaptive release passes through .09, .16, .42, .98 of the
             // requested release duration as compression approaches zero.
-            let duration = 0.09 + x * (0.005988750244256685 + x * (0.050409513441085324 + x * (0.012655416910923124 + x * 0.0009463194037350395)))
+            let duration =
+                0.09 + x
+                * (0.005988750244256685 + x
+                    * (0.050409513441085324 + x * (0.012655416910923124 + x * 0.0009463194037350395)))
             envelopeRate = pow(10, 5 / max(1, duration * releaseFrames) / 20)
         } else {
             greatestAttackDifference = max(greatestAttackDifference, difference)

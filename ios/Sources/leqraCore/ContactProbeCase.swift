@@ -20,24 +20,37 @@ public struct ContactProbeCase {
         guard result == nil else { return }
         if contactEffect == nil { contactEffect = authoritative.effects.first { $0.contact != nil } }
         guard let effect = contactEffect, let contact = effect.contact,
-              let body = visible.tanks.first(where: { $0.id == contact.target && $0.spawnSerial == contact.spawnSerial }) else { return }
+            let body = visible.tanks.first(where: {
+                $0.id == contact.target && $0.spawnSerial == contact.spawnSerial
+            })
+        else { return }
         if flight == nil, contact.projectileId > 0 {
             flight = authoritative.effects.first { $0.flight?.id == contact.projectileId }?.flight
         }
         if let flight, let end = flight.points.last,
-           let bullet = visible.bullets.first(where: { $0.id == flight.id }),
-           hypot(bullet.x - end.x, bullet.y - end.y) < 1e-7, body.hp > 0,
-           hypot(bullet.x - body.x, bullet.y - body.y) <= 17 + (flight.radius ?? 0) + 1e-7 {
+            let bullet = visible.bullets.first(where: { $0.id == flight.id }),
+            hypot(bullet.x - end.x, bullet.y - end.y) < 1e-7, body.hp > 0,
+            hypot(bullet.x - body.x, bullet.y - body.y) <= 17 + (flight.radius ?? 0) + 1e-7
+        {
             endpointFrame = endpointFrame ?? frames
         }
         if contact.projectileId == 0, body.hp > 0 {
             let beam = visible.effects.contains { $0.kind == "laser" }
-            let touching = contact.kind == "starman" && visible.tanks.contains { $0.id == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 34.0000001 }
-            let cannon = contact.kind == "cannon" && (visible.bullets.contains {
-                $0.kind == "cannon" && $0.owner == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 31.0000001
-            } || visible.effects.contains {
-                $0.kind == "impact" && $0.owner == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 31.0000001
-            })
+            let touching =
+                contact.kind == "starman"
+                && visible.tanks.contains {
+                    $0.id == effect.owner && hypot($0.x - body.x, $0.y - body.y) <= 34.0000001
+                }
+            let cannon =
+                contact.kind == "cannon"
+                && (visible.bullets.contains {
+                    $0.kind == "cannon" && $0.owner == effect.owner
+                        && hypot($0.x - body.x, $0.y - body.y) <= 31.0000001
+                }
+                    || visible.effects.contains {
+                        $0.kind == "impact" && $0.owner == effect.owner
+                            && hypot($0.x - body.x, $0.y - body.y) <= 31.0000001
+                    })
             if beam || touching || cannon { endpointFrame = endpointFrame ?? frames }
         }
         if visible.effects.contains(where: { $0.id == effect.id }) || body.hp <= 0 {
@@ -55,7 +68,9 @@ public struct ContactProbeCase {
         for index in snapshot.effects.indices {
             snapshot.effects[index].id += offset
             if snapshot.effects[index].flight != nil { snapshot.effects[index].flight!.id += offset }
-            if let id = snapshot.effects[index].contact?.projectileId, id > 0 { snapshot.effects[index].contact!.projectileId += offset }
+            if let id = snapshot.effects[index].contact?.projectileId, id > 0 {
+                snapshot.effects[index].contact!.projectileId += offset
+            }
         }
         return snapshot
     }

@@ -1,328 +1,1175 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111619">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="leqra.com">
-<meta name="leqra-version" content="v5.7.6">
-<meta name="description" content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing.">
-<title>leqra.com</title>
-<meta name="color-scheme" content="dark">
-<script src="assets/v5.7.6/theme.js"></script>
-<link rel="stylesheet" href="assets/v5.7.6/theme.css">
-<link rel="stylesheet" href="assets/v5.7.6/style.css">
-<link rel="manifest" href="assets/v5.7.6/manifest.webmanifest">
-<link rel="icon" href="assets/v5.7.6/favicon-256.png" type="image/png" sizes="256x256">
-<link rel="icon" href="assets/v5.7.6/favicon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="assets/v5.7.6/apple-touch-icon.png" sizes="180x180">
-<link rel="apple-touch-icon" href="assets/v5.7.6/apple-touch-icon-512.png" sizes="512x512">
-</head>
-<body>
-<div class="app">
-<header class="header" id="gameHeader">
- <div class="brand"><div class="brand-mark" aria-hidden="true"><img src="assets/v5.7.6/favicon.svg" width="48" height="48" alt=""></div><div><div class="brand-name">leqra</div><div class="brand-sub">TANK ARENA</div></div>
-  <!-- Invertocat from https://brand.github.com/foundations/logo -->
-  <a class="icon-btn github-link" href="https://github.com/nhooyr/leqra" target="_blank" rel="noopener" aria-label="View leqra on GitHub" title="View leqra on GitHub"><svg viewBox="0 0 98 96" aria-hidden="true"><path d="M41.4395 69.3848C28.8066 67.8535 19.9062 58.7617 19.9062 46.9902C19.9062 42.2051 21.6289 37.0371 24.5 33.5918C23.2559 30.4336 23.4473 23.7344 24.8828 20.959C28.7109 20.4805 33.8789 22.4902 36.9414 25.2656C40.5781 24.1172 44.4062 23.543 49.0957 23.543C53.7852 23.543 57.6133 24.1172 61.0586 25.1699C64.0254 22.4902 69.2891 20.4805 73.1172 20.959C74.457 23.543 74.6484 30.2422 73.4043 33.4961C76.4668 37.1328 78.0937 42.0137 78.0937 46.9902C78.0937 58.7617 69.1934 67.6621 56.3691 69.2891C59.623 71.3945 61.8242 75.9883 61.8242 81.252L61.8242 91.2051C61.8242 94.0762 64.2168 95.7031 67.0879 94.5547C84.4102 87.9512 98 70.6289 98 49.1914C98 22.1074 75.9883 6.69539e-07 48.9043 4.309e-07C21.8203 1.92261e-07 -1.9479e-07 22.1074 -4.3343e-07 49.1914C-6.20631e-07 70.4375 13.4941 88.0469 31.6777 94.6504C34.2617 95.6074 36.75 93.8848 36.75 91.3008L36.75 83.6445C35.4102 84.2188 33.6875 84.6016 32.1562 84.6016C25.8398 84.6016 22.1074 81.1563 19.4277 74.7441C18.375 72.1602 17.2266 70.6289 15.0254 70.3418C13.877 70.2461 13.4941 69.7676 13.4941 69.1934C13.4941 68.0449 15.4082 67.1836 17.3223 67.1836C20.0977 67.1836 22.4902 68.9063 24.9785 72.4473C26.8926 75.2227 28.9023 76.4668 31.2949 76.4668C33.6875 76.4668 35.2187 75.6055 37.4199 73.4043C39.0469 71.7773 40.291 70.3418 41.4395 69.3848Z"/></svg><span id="headerVersion" class="github-version"></span></a>
- </div>
- <div class="header-right"><button class="room-badge" id="roomBtn" type="button" hidden title="Online room and connection status">ROOM</button>
- <button class="icon-btn" id="soundBtn" type="button" aria-label="Mute sound" title="Sound (M)" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-wave" d="M15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14"/><path class="sound-off-line" d="m16 9 5 6m0-6-5 6"/></svg></button>
- <button class="icon-btn" id="fullscreenBtn" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)"><svg viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
- <button class="icon-btn sidebar-details-toggle" id="sidebarDetailsBtn" type="button" aria-label="Open sidebar" title="Open sidebar" aria-controls="sidebarDialog" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16m3-11h.1M18 12h.1M18 15h.1"/></svg></button>
- <button class="icon-btn" id="roomControlsBtn" type="button" aria-label="Controls" title="Controls" aria-haspopup="dialog" aria-controls="controlsDialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7m3 0h8M3 12h12m3 0h3M3 19h3m3 0h12M10 2v6m5 1v6M6 16v6"/></svg></button>
- <button class="icon-btn" id="pauseBtn" type="button" hidden aria-label="Pause game" title="Pause (P/Esc)"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke-width="3"/></svg></button></div>
-</header>
-<section class="hero"><div><div class="eyebrow">QUICK ROUNDS, INFINITE ANGLES</div><h1>Every wall is a weapon.</h1></div><div class="hero-tag">BOUNCE. DODGE. OUTLAST.</div></section>
-<main class="main-grid">
- <section class="arena-shell" aria-label="Tank battle arena">
-  <div class="arena-bar infinite-statusbar infinity-preview-header" id="infinityPreviewBar" hidden>
-   <div class="arena-title"><span class="status-dot"></span><h2 id="infinityPreviewTitle">Public Infinity</h2><span class="infinite-online-count" id="infinityPreviewOnlineCount" title="Human tanks in the public arena" hidden></span></div>
-   <div class="bar-right" id="infinityPreviewRight"><div class="infinite-personal-scores" id="infinityPreviewScores"></div><button class="infinite-scoreboard-toggle" id="infinityPreviewScoreboardBtn" type="button" aria-controls="infinityPreviewScoreboard" aria-expanded="false">LEADERBOARD</button></div>
-   <details class="infinite-leaderboard infinity-preview-scoreboard" id="infinityPreviewScoreboard" hidden><summary id="infinityPreviewScoreboardTitle">LEADERBOARD</summary><ol id="infinityPreviewLeaders"></ol><p id="infinityPreviewScoreboardNote">+1 per kill, -1 per death</p></details>
-  </div>
-  <div class="arena-bar"><div class="arena-title" id="arenaStatusLabel" hidden><span class="status-dot"></span><span id="arenaStatus"></span></div><div class="mobile-scores" id="miniScores" aria-label="Scores"></div><div class="bar-right"><span class="round-chip" id="roundLabel">ROUND 01</span><span class="clock" id="clock">01:15</span></div>
-  </div>
-  <div class="arena-stage">
-  <div class="arena-wrap" id="arenaWrap">
-   <canvas id="arena" tabindex="0" aria-label="Tank maze game. Current controls are in Controls. Touch controls are below the arena.">Your browser needs HTML canvas support to play this game.</canvas>
-   <div class="toast" id="toast" role="status" hidden></div>
-   <div class="death-notices" role="status">
-    <span class="toast death-notice" id="deathNotice1" hidden></span>
-    <span class="toast death-notice" id="deathNotice2" hidden></span>
-   </div>
-   <div class="announcer" id="announcer" hidden><span class="announce-top" id="announceTop"></span><strong id="announceMain"></strong><span class="announce-sub" id="announceSub"></span></div>
-  </div>
-  <div class="underbar"><div class="local-loadouts" id="localLoadouts"><section class="pilot-loadout" id="pilotLoadout1" aria-label="Tank ammunition"><div class="loadout-identity"><span class="loadout-name" id="loadoutName1">Player 1 (P1)</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots"></div><span class="firing-budget" id="machineBudget1" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime1">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel">STANDARD</span><span class="buff-label" id="buffLabel" hidden></span></div></div></section><section class="pilot-loadout" id="pilotLoadout2" aria-label="Second tank ammunition" hidden><div class="loadout-identity"><span class="loadout-name" id="loadoutName2">CO-PILOT (P2)</span></div><div class="ammo-container"><span class="micro-label">AMMO</span><div class="ammo-readout"><div class="ammo-dots" id="ammoDots2"></div><span class="firing-budget" id="machineBudget2" role="progressbar" aria-label="Machine gun firing time remaining" aria-valuemin="0" aria-valuemax="3" aria-valuenow="3" hidden><span class="firing-budget-label">FIRE LEFT</span><strong id="machineBudgetTime2">3.0 / 3s</strong><span class="firing-budget-track" aria-hidden="true"></span></span></div><div class="loadout"><span class="weapon" id="weaponLabel2">STANDARD</span><span class="buff-label" id="buffLabel2" hidden></span></div></div></section></div><span class="bar-hint" id="barHint">Bank shots around corners.</span><span class="micro-label" id="bestInline"></span></div>
-  <div class="touch-controls" id="touchControls" aria-label="Touch controls">
-   <div class="stick-zone" id="stickZone" role="group" aria-label="Drag joystick to steer"><div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div></div>
-   <div class="fire-zone"><button class="fire-button" id="fireBtn" type="button" aria-label="Hold to fire"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="8"/><path d="M16 3v7m0 12v7M3 16h7m12 0h7"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg></button></div>
-  </div>
-   <div class="overlay" id="overlay">
-    <section class="screen-card" id="lobbyScreen" aria-label="Legacy settings" hidden>
-     <div class="intro"><div class="eyebrow">QUICK MATCH, LOCAL AND ONLINE</div><h2>ENTER<br><em>leqra.</em></h2><p>Small tanks. Tight corners. Big trouble.<br>Outlast the enemy. Rule the maze.</p></div>
-     <div class="lobby-options"><label class="field-label">CHOOSE YOUR BATTLE</label><div class="segmented" id="modeOptions" role="group" aria-label="Game mode"><button class="selected" data-mode="solo" type="button" aria-pressed="true">Solo vs. bots</button><button data-mode="duel" type="button" aria-pressed="false">2P, Local</button><button data-mode="online" type="button" aria-pressed="false">Online</button></div>
-     <label class="field-label" id="difficultyLabel">BOT DIFFICULTY</label><div class="segmented" id="difficultyOptions" role="group" aria-label="Bot difficulty"><button data-difficulty="dumb" type="button" aria-pressed="false">Dumb</button><button data-difficulty="easy" type="button" aria-pressed="false">Easy</button><button data-difficulty="normal" class="selected" type="button" aria-pressed="true">Medium</button><button data-difficulty="hard" type="button" aria-pressed="false">Hard</button><button data-difficulty="godlike" type="button" aria-pressed="false">Godlike</button></div></div>
-     <button class="primary" id="playBtn" type="button"><span>DEPLOY TANK</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
-     <div class="small-note" id="lobbyNote">FIRST TO 5, BOT SQUAD, FRESH MAZES</div>
-    </section>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#111619" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="leqra.com" />
+    <meta name="leqra-version" content="v5.7.6" />
+    <meta
+      name="description"
+      content="leqra — a mobile-friendly tank maze game with Go-powered online multiplayer. Bounce shots, dodge bots, and be the last tank standing." />
+    <title>leqra.com</title>
+    <meta name="color-scheme" content="dark" />
+    <script src="assets/v5.7.6/theme.js"></script>
+    <link rel="stylesheet" href="assets/v5.7.6/theme.css" />
+    <link rel="stylesheet" href="assets/v5.7.6/style.css" />
+    <link rel="manifest" href="assets/v5.7.6/manifest.webmanifest" />
+    <link rel="icon" href="assets/v5.7.6/favicon-256.png" type="image/png" sizes="256x256" />
+    <link rel="icon" href="assets/v5.7.6/favicon.svg" type="image/svg+xml" sizes="any" />
+    <link rel="apple-touch-icon" href="assets/v5.7.6/apple-touch-icon.png" sizes="180x180" />
+    <link rel="apple-touch-icon" href="assets/v5.7.6/apple-touch-icon-512.png" sizes="512x512" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header" id="gameHeader">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <img src="assets/v5.7.6/favicon.svg" width="48" height="48" alt="" />
+          </div>
+          <div>
+            <div class="brand-name">leqra</div>
+            <div class="brand-sub">TANK ARENA</div>
+          </div>
+          <!-- Invertocat from https://brand.github.com/foundations/logo -->
+          <a
+            class="icon-btn github-link"
+            href="https://github.com/nhooyr/leqra"
+            target="_blank"
+            rel="noopener"
+            aria-label="View leqra on GitHub"
+            title="View leqra on GitHub"
+            ><svg viewBox="0 0 98 96" aria-hidden="true">
+              <path
+                d="M41.4395 69.3848C28.8066 67.8535 19.9062 58.7617 19.9062 46.9902C19.9062 42.2051 21.6289 37.0371 24.5 33.5918C23.2559 30.4336 23.4473 23.7344 24.8828 20.959C28.7109 20.4805 33.8789 22.4902 36.9414 25.2656C40.5781 24.1172 44.4062 23.543 49.0957 23.543C53.7852 23.543 57.6133 24.1172 61.0586 25.1699C64.0254 22.4902 69.2891 20.4805 73.1172 20.959C74.457 23.543 74.6484 30.2422 73.4043 33.4961C76.4668 37.1328 78.0937 42.0137 78.0937 46.9902C78.0937 58.7617 69.1934 67.6621 56.3691 69.2891C59.623 71.3945 61.8242 75.9883 61.8242 81.252L61.8242 91.2051C61.8242 94.0762 64.2168 95.7031 67.0879 94.5547C84.4102 87.9512 98 70.6289 98 49.1914C98 22.1074 75.9883 6.69539e-07 48.9043 4.309e-07C21.8203 1.92261e-07 -1.9479e-07 22.1074 -4.3343e-07 49.1914C-6.20631e-07 70.4375 13.4941 88.0469 31.6777 94.6504C34.2617 95.6074 36.75 93.8848 36.75 91.3008L36.75 83.6445C35.4102 84.2188 33.6875 84.6016 32.1562 84.6016C25.8398 84.6016 22.1074 81.1563 19.4277 74.7441C18.375 72.1602 17.2266 70.6289 15.0254 70.3418C13.877 70.2461 13.4941 69.7676 13.4941 69.1934C13.4941 68.0449 15.4082 67.1836 17.3223 67.1836C20.0977 67.1836 22.4902 68.9063 24.9785 72.4473C26.8926 75.2227 28.9023 76.4668 31.2949 76.4668C33.6875 76.4668 35.2187 75.6055 37.4199 73.4043C39.0469 71.7773 40.291 70.3418 41.4395 69.3848Z" /></svg
+            ><span id="headerVersion" class="github-version"></span
+          ></a>
+        </div>
+        <div class="header-right">
+          <button
+            class="room-badge"
+            id="roomBtn"
+            type="button"
+            hidden
+            title="Online room and connection status">
+            ROOM
+          </button>
+          <button
+            class="icon-btn"
+            id="soundBtn"
+            type="button"
+            aria-label="Mute sound"
+            title="Sound (M)"
+            aria-pressed="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+              <path class="sound-wave" d="M15 8c2 2 2 6 0 8m3-11c4 4 4 10 0 14" />
+              <path class="sound-off-line" d="m16 9 5 6m0-6-5 6" />
+            </svg>
+          </button>
+          <button
+            class="icon-btn"
+            id="fullscreenBtn"
+            type="button"
+            aria-label="Enter fullscreen"
+            title="Fullscreen (F)">
+            <svg viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg>
+          </button>
+          <button
+            class="icon-btn sidebar-details-toggle"
+            id="sidebarDetailsBtn"
+            type="button"
+            aria-label="Open sidebar"
+            title="Open sidebar"
+            aria-controls="sidebarDialog"
+            aria-haspopup="dialog"
+            aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M15 4v16m3-11h.1M18 12h.1M18 15h.1" />
+            </svg>
+          </button>
+          <button
+            class="icon-btn"
+            id="roomControlsBtn"
+            type="button"
+            aria-label="Controls"
+            title="Controls"
+            aria-haspopup="dialog"
+            aria-controls="controlsDialog">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 5h7m3 0h8M3 12h12m3 0h3M3 19h3m3 0h12M10 2v6m5 1v6M6 16v6" />
+            </svg>
+          </button>
+          <button
+            class="icon-btn"
+            id="pauseBtn"
+            type="button"
+            hidden
+            aria-label="Pause game"
+            title="Pause (P/Esc)">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke-width="3" /></svg>
+          </button>
+        </div>
+      </header>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">QUICK ROUNDS, INFINITE ANGLES</div>
+          <h1>Every wall is a weapon.</h1>
+        </div>
+        <div class="hero-tag">BOUNCE. DODGE. OUTLAST.</div>
+      </section>
+      <main class="main-grid">
+        <section class="arena-shell" aria-label="Tank battle arena">
+          <div class="arena-bar infinite-statusbar infinity-preview-header" id="infinityPreviewBar" hidden>
+            <div class="arena-title">
+              <span class="status-dot"></span>
+              <h2 id="infinityPreviewTitle">Public Infinity</h2>
+              <span
+                class="infinite-online-count"
+                id="infinityPreviewOnlineCount"
+                title="Human tanks in the public arena"
+                hidden></span>
+            </div>
+            <div class="bar-right" id="infinityPreviewRight">
+              <div class="infinite-personal-scores" id="infinityPreviewScores"></div>
+              <button
+                class="infinite-scoreboard-toggle"
+                id="infinityPreviewScoreboardBtn"
+                type="button"
+                aria-controls="infinityPreviewScoreboard"
+                aria-expanded="false">
+                LEADERBOARD
+              </button>
+            </div>
+            <details
+              class="infinite-leaderboard infinity-preview-scoreboard"
+              id="infinityPreviewScoreboard"
+              hidden>
+              <summary id="infinityPreviewScoreboardTitle">LEADERBOARD</summary>
+              <ol id="infinityPreviewLeaders"></ol>
+              <p id="infinityPreviewScoreboardNote">+1 per kill, -1 per death</p>
+            </details>
+          </div>
+          <div class="arena-bar">
+            <div class="arena-title" id="arenaStatusLabel" hidden>
+              <span class="status-dot"></span><span id="arenaStatus"></span>
+            </div>
+            <div class="mobile-scores" id="miniScores" aria-label="Scores"></div>
+            <div class="bar-right">
+              <span class="round-chip" id="roundLabel">ROUND 01</span
+              ><span class="clock" id="clock">01:15</span>
+            </div>
+          </div>
+          <div class="arena-stage">
+            <div class="arena-wrap" id="arenaWrap">
+              <canvas
+                id="arena"
+                tabindex="0"
+                aria-label="Tank maze game. Current controls are in Controls. Touch controls are below the arena."
+                >Your browser needs HTML canvas support to play this game.</canvas
+              >
+              <div class="toast" id="toast" role="status" hidden></div>
+              <div class="death-notices" role="status">
+                <span class="toast death-notice" id="deathNotice1" hidden></span>
+                <span class="toast death-notice" id="deathNotice2" hidden></span>
+              </div>
+              <div class="announcer" id="announcer" hidden>
+                <span class="announce-top" id="announceTop"></span><strong id="announceMain"></strong
+                ><span class="announce-sub" id="announceSub"></span>
+              </div>
+            </div>
+            <div class="underbar">
+              <div class="local-loadouts" id="localLoadouts">
+                <section class="pilot-loadout" id="pilotLoadout1" aria-label="Tank ammunition">
+                  <div class="loadout-identity">
+                    <span class="loadout-name" id="loadoutName1">Player 1 (P1)</span>
+                  </div>
+                  <div class="ammo-container">
+                    <span class="micro-label">AMMO</span>
+                    <div class="ammo-readout">
+                      <div class="ammo-dots" id="ammoDots"></div>
+                      <span
+                        class="firing-budget"
+                        id="machineBudget1"
+                        role="progressbar"
+                        aria-label="Machine gun firing time remaining"
+                        aria-valuemin="0"
+                        aria-valuemax="3"
+                        aria-valuenow="3"
+                        hidden
+                        ><span class="firing-budget-label">FIRE LEFT</span
+                        ><strong id="machineBudgetTime1">3.0 / 3s</strong
+                        ><span class="firing-budget-track" aria-hidden="true"></span
+                      ></span>
+                    </div>
+                    <div class="loadout">
+                      <span class="weapon" id="weaponLabel">STANDARD</span
+                      ><span class="buff-label" id="buffLabel" hidden></span>
+                    </div>
+                  </div>
+                </section>
+                <section class="pilot-loadout" id="pilotLoadout2" aria-label="Second tank ammunition" hidden>
+                  <div class="loadout-identity">
+                    <span class="loadout-name" id="loadoutName2">CO-PILOT (P2)</span>
+                  </div>
+                  <div class="ammo-container">
+                    <span class="micro-label">AMMO</span>
+                    <div class="ammo-readout">
+                      <div class="ammo-dots" id="ammoDots2"></div>
+                      <span
+                        class="firing-budget"
+                        id="machineBudget2"
+                        role="progressbar"
+                        aria-label="Machine gun firing time remaining"
+                        aria-valuemin="0"
+                        aria-valuemax="3"
+                        aria-valuenow="3"
+                        hidden
+                        ><span class="firing-budget-label">FIRE LEFT</span
+                        ><strong id="machineBudgetTime2">3.0 / 3s</strong
+                        ><span class="firing-budget-track" aria-hidden="true"></span
+                      ></span>
+                    </div>
+                    <div class="loadout">
+                      <span class="weapon" id="weaponLabel2">STANDARD</span
+                      ><span class="buff-label" id="buffLabel2" hidden></span>
+                    </div>
+                  </div>
+                </section>
+              </div>
+              <span class="bar-hint" id="barHint">Bank shots around corners.</span
+              ><span class="micro-label" id="bestInline"></span>
+            </div>
+            <div class="touch-controls" id="touchControls" aria-label="Touch controls">
+              <div class="stick-zone" id="stickZone" role="group" aria-label="Drag joystick to steer">
+                <div class="stick-base" id="stickBase"><div class="stick-knob" id="stickKnob"></div></div>
+              </div>
+              <div class="fire-zone">
+                <button class="fire-button" id="fireBtn" type="button" aria-label="Hold to fire">
+                  <svg viewBox="0 0 32 32" aria-hidden="true">
+                    <circle cx="16" cy="16" r="8" />
+                    <path d="M16 3v7m0 12v7M3 16h7m12 0h7" />
+                    <circle cx="16" cy="16" r="2" fill="currentColor" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="overlay" id="overlay">
+              <section class="screen-card" id="lobbyScreen" aria-label="Legacy settings" hidden>
+                <div class="intro">
+                  <div class="eyebrow">QUICK MATCH, LOCAL AND ONLINE</div>
+                  <h2>ENTER<br /><em>leqra.</em></h2>
+                  <p>Small tanks. Tight corners. Big trouble.<br />Outlast the enemy. Rule the maze.</p>
+                </div>
+                <div class="lobby-options">
+                  <label class="field-label">CHOOSE YOUR BATTLE</label>
+                  <div class="segmented" id="modeOptions" role="group" aria-label="Game mode">
+                    <button class="selected" data-mode="solo" type="button" aria-pressed="true">
+                      Solo vs. bots</button
+                    ><button data-mode="duel" type="button" aria-pressed="false">2P, Local</button
+                    ><button data-mode="online" type="button" aria-pressed="false">Online</button>
+                  </div>
+                  <label class="field-label" id="difficultyLabel">BOT DIFFICULTY</label>
+                  <div class="segmented" id="difficultyOptions" role="group" aria-label="Bot difficulty">
+                    <button data-difficulty="dumb" type="button" aria-pressed="false">Dumb</button
+                    ><button data-difficulty="easy" type="button" aria-pressed="false">Easy</button
+                    ><button data-difficulty="normal" class="selected" type="button" aria-pressed="true">
+                      Medium</button
+                    ><button data-difficulty="hard" type="button" aria-pressed="false">Hard</button
+                    ><button data-difficulty="godlike" type="button" aria-pressed="false">Godlike</button>
+                  </div>
+                </div>
+                <button class="primary" id="playBtn" type="button">
+                  <span>DEPLOY TANK</span
+                  ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
+                </button>
+                <div class="small-note" id="lobbyNote">FIRST TO 5, BOT SQUAD, FRESH MAZES</div>
+              </section>
 
-    <section id="onlineScreen" hidden></section>
-    <section class="screen-card network-screen unified-room" id="roomScreen" aria-label="Game room">
-     <div class="net-intro">
-      <div class="eyebrow" id="roomEyebrow">LOCAL ROOM</div>
-      <h2 class="net-title" id="roomTitle" hidden></h2>
-      <label class="infinity-toggle" id="infinityToggleLabel" hidden>
-       <input type="checkbox" role="switch" id="infinityToggle" aria-describedby="readyHint" checked>
-       <span class="infinity-toggle-track" aria-hidden="true"></span><strong>Public Infinity</strong>
-      </label>
-      <button class="primary" id="startRoomBtn" type="button" aria-describedby="readyHint"><span>PLAY</span><span aria-hidden="true">→</span></button>
-      <button class="primary ready-button" id="readyBtn" type="button" aria-pressed="false" aria-describedby="readyHint" hidden><span>READY</span><span class="ready-mark" aria-hidden="true">✓</span></button>
-      <div class="small-note" id="readyHint">BOT SKIRMISH, START WHEN READY</div>
-      <button class="secondary share-room" id="copyInviteBtn" type="button">SHARE ROOM ONLINE ↗</button>
-      <div class="room-utility"><button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button></div>
-      <div class="room-connection-actions"><button class="room-action room-action-unshare" id="endInfinityBtn" type="button" hidden>End Infinity</button><button class="room-action room-action-unshare" id="unshareRoomBtn" type="button" hidden>Unshare room</button><button class="room-action room-action-leave" id="leaveRoomBtn" type="button" hidden>Leave room</button></div>
-      <p class="net-status" id="roomStatus" role="status">Local play is ready. Share to invite online friends.</p>
-     </div>
-     <div class="net-content">
-      <form class="callsign-editor" id="roomCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="roomCallsign">CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="roomCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="roomCallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="0">Account key</button></div><p class="callsign-status" id="roomCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="roomP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="roomP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="roomP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="roomP2CallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="1">Account key</button></div><p class="callsign-status" id="roomP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
-      <details class="room-disclosure" id="roomSettings">
-       <summary>Room settings</summary>
-       <div class="room-disclosure-content">
-        <label class="field-label" id="roomNameLabel" for="localRoomName">ROOM NAME OR CODE</label>
-        <input class="net-input" id="localRoomName" placeholder="Room name" autocomplete="off" spellcheck="false" aria-label="Room name">
-        <div class="room-code" id="roomCodeDisplay" hidden></div>
-        <form class="room-code-editor" id="roomCodeEditor" hidden><input class="net-input" id="onlineRoomCode" autocomplete="off" spellcheck="false" aria-label="Online room name or code"></form>
-        <p class="mode-help" id="publicRoomSettingsNote" hidden>Disable Public Infinity to play room modes and configure battle format, map size, rules, and presets. You can still name and share this room online.</p>
-        <div class="room-rules">FIRST TO 5 WINS, UP TO 8 TANKS<br><span>Teammates share wins. Friendly fire is off.</span></div>
-       </div>
-      </details>
-      <details class="room-disclosure" id="roomPlayers">
-       <summary>Players and bots <span id="seatCount">4 / 8</span></summary>
-       <div class="room-disclosure-content">
-        <div class="roster-tools" id="rosterTools"><button class="secondary" id="addLocalBtn" type="button">＋ ADD LOCAL P2</button><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button></div>
-        <div class="net-roster" id="roomRoster"></div>
-        <p class="local-controls-note" id="localControlsNote" hidden></p>
-       </div>
-      </details>
-     </div>
-    </section>
-    <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden><div class="online-menu-intro"><div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div><h2 class="compact-title">STAY<br><em>CONNECTED.</em></h2><p id="onlineMenuMessage">The match keeps running. Tanks remain vulnerable while this menu is open.</p><section id="hostControls" class="host-controls" aria-label="Host player controls" hidden><div class="callsign-label">HOST CONTROLS</div><div id="menuKickRoster" class="net-roster"></div></section></div><div class="online-menu-actions"><form class="callsign-editor" id="menuCallsignForm" aria-label="Change callsign"><label class="callsign-label" for="menuCallsign">CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="menuCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="menuCallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="0">Account key</button></div><p class="callsign-status" id="menuCallsignStatus" role="status" aria-live="polite" hidden></p></form><form class="callsign-editor secondary-callsign" id="menuP2CallsignForm" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="menuP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="menuP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="menuP2CallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="1">Account key</button></div><p class="callsign-status" id="menuP2CallsignStatus" role="status" aria-live="polite" hidden></p></form><button class="primary back-action" id="onlineReturnBtn" type="button"><span>BACK TO THE ARENA</span><span aria-hidden="true">←</span></button><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button><button class="secondary" id="restartWaveBtn" type="button" hidden>Restart wave</button><button class="secondary" id="returnRoomBtn" type="button">End match</button><button class="secondary" id="leaveMatchBtn" type="button" hidden>Leave match</button></div></section>
-    <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden><div class="eyebrow">TAKE A BREATHER</div><h2 class="compact-title">TAKE A<br><em>BREATHER.</em></h2><p>The battle is paused. All tanks are safe.</p><button class="primary back-action" id="resumeBtn" type="button"><span>BACK TO THE BATTLE</span><span aria-hidden="true">←</span></button><button class="secondary" id="pauseAccountBtn" type="button">Account</button><button class="secondary" id="quitBtn" type="button">Return to the room</button><p class="control-note" id="pauseInstructions"></p></section>
-    <section class="screen-card" id="matchScreen" aria-label="Match results" hidden><div class="eyebrow">MATCH COMPLETE</div><h2 class="compact-title" id="matchTitle">VICTORY.</h2><p id="matchSubtitle"></p><div id="matchResults"></div><button class="primary" id="rematchBtn" type="button"><span>RUN IT BACK</span><span aria-hidden="true">↻</span></button><button class="secondary" id="menuBtn" type="button">Change mode or difficulty</button></section>
-   </div>
-  </div>
- </section>
- <aside class="sidebar" id="gameSidebar" aria-label="Leaderboard and instructions">
-  <section class="panel fixed-maze-panel"><div class="panel-title"><span>LEADERBOARD</span><span class="target">FIRST TO 5</span></div><div class="roster" id="roster"></div></section>
-  <section class="panel"><div class="panel-title">FIELD MANUAL</div><div class="manual" id="manualContent"></div></section>
-  <section class="panel"><div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 POWER-UPS</span></div><div class="power-list">
-<div class="power-row"><div class="power-symbol" style="color:#ffad70"><canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Cannon<span>Pierces walls. 4× size and speed.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#cce4ff"><canvas data-power-icon="ghost" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Ghost<span>Through walls. Stacks with speed.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#f9ed75"><canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Starman<span>Rare. For 4–8 seconds, tanks become invincible, destroy enemies on contact, drive through walls, and fire with unlimited ammo and no cooldown.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#f57cff"><canvas data-power-icon="laser" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Laser<span>Instant ricochets. Long dotted aim.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#ff83bd"><canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Homing missile<span>Guided missiles that ricochet.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#ffc46b"><canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Grenade<span>Homes in on opponents. Detonates on tank impact, on the next Fire press, or after 10 seconds. Release Fire after detonating to shoot again.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#75f0cb"><canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Super speed<span>Stacks to 5, +65% speed each.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#d2f65a"><canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Machine gun<span>3s of firing with tiny, fast rounds.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#c5a2ff"><canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shotgun<span>Fast, ricocheting spread.</span></div></div>
-<div class="power-row"><div class="power-symbol" style="color:#73cee4"><canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas></div><div class="power-info">Shield<span>Stack up to five protective rings.</span></div></div>
-<p class="power-note">Weapons use FIRE. Machine gun allows 3 seconds of active firing. Speed activates when collected, stacks up to five times, and coexists with your weapon. Walls stop blasts.</p>
-</div></section>
-  <section class="panel log-panel"><div class="panel-title">COMBAT LOG</div><div class="log" id="combatLog"><div>Systems online. Choose a battle.</div></div></section>
- </aside>
-</main>
-<footer class="footer"><span>A LITTLE AIM. A LOT OF CHAOS. BUILT FOR QUICK ROUNDS.</span><span id="recordLabel">0 MATCH WINS ON THIS DEVICE</span></footer>
-</div>
-<dialog id="accountDialog" class="feature-dialog account-dialog" aria-labelledby="accountTitle">
- <header class="feature-header"><div><div class="eyebrow">TAKE YOUR CALLSIGN WITH YOU</div><h2 id="accountTitle">Your account.</h2></div><button type="button" class="dialog-close" data-close-dialog="accountDialog" aria-label="Close account">×</button></header>
- <div class="feature-body">
-  <p class="mode-help" id="accountSeatHelp">Each local player has a separate account key. Copy or import this player’s key without changing the other player’s account.</p><p class="mode-help">Use the same account key on web, iOS and Android to keep your callsign and Public Infinity score. Opening Public Infinity on another device transfers the existing tank to that device.</p>
-  <p class="mode-help">Each new callsign creates a new account with zero score. Previously used callsigns and their keys stay saved on this device. Enter one again or choose it below to switch back. Accounts expire after one month without signing in.</p>
-  <p class="mode-help">Keep a private backup. Reset All Settings keeps this account key. Anyone with this key can use the account. A lost key cannot be recovered automatically, and its callsign stays reserved. <a href="https://github.com/nhooyr/leqra/issues/new" target="_blank" rel="noopener noreferrer">Open a GitHub issue</a> for manual help.</p>
-  <h3>THIS DEVICE'S ACCOUNT</h3>
-  <label class="feature-label" for="accountKey">ACCOUNT KEY<input class="net-input account-key" id="accountKey" type="password" readonly autocomplete="off" spellcheck="false" autocapitalize="none"></label>
-  <button class="secondary" id="accountCopyBtn" type="button">COPY ACCOUNT KEY</button><button class="secondary" id="accountRotateBtn" type="button">RESET ACCOUNT KEY</button><button class="secondary" id="accountReleaseBtn" type="button">RELEASE CALLSIGN</button>
-  <div id="accountCurrentInfo" class="account-info"></div><p class="feature-notice account-notice" id="accountCurrentNotice" role="status" aria-live="polite"></p>
-  <hr><h3>SAVED CALLSIGNS</h3><div id="accountSavedAccounts" class="account-info"></div>
-  <hr><h3>USE AN EXISTING ACCOUNT</h3>
-  <form id="accountImportForm"><label class="feature-label" for="accountImportKey">PASTE ACCOUNT KEY<input class="net-input account-key" id="accountImportKey" type="password" maxlength="128" autocomplete="off" spellcheck="false" autocapitalize="none"></label><button class="secondary" id="accountCheckBtn" type="submit">CHECK KEY</button></form>
-  <p class="mode-help" id="accountImportHelp">Importing replaces this device's account key. Copy its current key first if you want to keep both accounts.</p>
-  <div id="accountImportReview" hidden><div id="accountImportInfo" class="account-info"></div><label class="feature-label" for="accountImportName"><span id="accountImportNameLabel">ACCOUNT CALLSIGN</span><select id="accountImportName" disabled></select></label><button class="primary" id="accountUseBtn" type="button">USE THIS ACCOUNT <span aria-hidden="true">→</span></button></div>
-  <p class="feature-notice account-notice" id="accountImportNotice" role="status" aria-live="polite"></p>
- </div>
-</dialog>
-<dialog id="joinDialog" class="join-dialog" aria-labelledby="joinTitle"><div class="eyebrow">JOIN</div><h2 id="joinTitle">Find a room.</h2><label class="field-label" for="pilotName">CALLSIGN</label><input class="net-input" id="pilotName" aria-describedby="pilotNameStatus" maxlength="32" placeholder="Player 1" autocomplete="nickname"><p class="callsign-status" id="pilotNameStatus" role="status" aria-live="polite" hidden></p><label class="field-label" for="joinCode">ROOM NAME OR CODE</label><input class="net-input" id="joinCode" placeholder="Friday tanks 💥" spellcheck="false" autocomplete="off"><div class="join-dialog-actions"><button class="primary" id="joinRoomBtn" type="button"><span>JOIN</span><span aria-hidden="true">→</span></button></div><p class="net-status" id="netStatus" role="status">Missing rooms are created with the joining pilot as host.</p><button class="secondary back-action" id="onlineBackBtn" type="button">Back to the room <span aria-hidden="true">←</span></button></dialog>
-<dialog id="kickDialog" class="kick-dialog" aria-labelledby="kickTitle" aria-describedby="kickDescription kickNotice">
- <div class="eyebrow">HOST CONTROLS</div><h2 id="kickTitle">Kick this player?</h2>
- <p id="kickDescription"></p><p id="kickNotice" class="kick-notice">This removes their tank and stops automatic reconnection. It is not a permanent ban.</p>
- <div class="kick-actions"><button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button></div>
-</dialog>
-<dialog id="sidebarDialog" class="feature-dialog sidebar-dialog" aria-labelledby="sidebarTitle">
- <header class="feature-header"><h2 id="sidebarTitle">Sidebar</h2><button class="dialog-close" id="sidebarCloseBtn" data-close-dialog="sidebarDialog" type="button" aria-label="Close sidebar" autofocus>×</button></header>
- <div class="feature-body" id="sidebarDetails"></div>
-</dialog>
-<dialog id="inviteDialog" class="feature-dialog invite-dialog" aria-labelledby="inviteTitle" aria-describedby="inviteInstructions">
- <header class="feature-header"><h2 id="inviteTitle">Share this room</h2><button class="dialog-close" data-close-dialog="inviteDialog" type="button" aria-label="Close invite">×</button></header>
- <div class="feature-body"><p id="inviteInstructions"></p><textarea class="net-input invite-fallback" id="inviteFallback" aria-label="Invite to copy" rows="4" readonly autofocus></textarea></div>
-</dialog>
-<dialog id="introTourDialog" class="feature-dialog intro-tour" aria-labelledby="introTourTitle">
- <header class="feature-header"><div><div id="introTourStep" class="eyebrow">QUICK TOUR, 1 OF 4</div><h2 id="introTourTitle" tabindex="-1" aria-describedby="introTourStep">Drive and aim</h2></div></header>
- <div class="feature-body">
-  <div id="introTourLessons" class="intro-lessons">
-  <div class="intro-control-groups" data-intro-page="0">
-   <section id="introTourTouch" aria-labelledby="introTourTouchTitle">
-    <h3 id="introTourTouchTitle">Touch</h3>
-    <dl>
-     <dt>Movement</dt><dd>Drag the left stick to drive and aim.</dd>
-     <dt>Aim</dt><dd>Touch near your tank to aim without moving.</dd>
-    </dl>
-   </section>
-   <section id="introTourKeyboard" aria-labelledby="introTourKeyboardTitle">
-    <h3 id="introTourKeyboardTitle">Keyboard</h3>
-    <dl>
-     <dt>Movement</dt><dd id="introTourMoveKeys" class="intro-movement-keys"></dd>
-    </dl>
-   </section>
-   <section id="introTourDesktop" aria-labelledby="introTourMouseTitle">
-    <h3 id="introTourMouseTitle">Mouse</h3>
-    <dl>
-     <dt>Aim</dt><dd id="introTourMouseAim"><span id="introTourMouseAimKey" class="control-keycaps"></span> Point over the maze. Press a turn key to switch back to keyboard aiming.</dd>
-    </dl>
-   </section>
-  </div>
-  <div class="intro-control-groups" data-intro-page="1" hidden>
-   <section id="introTourTouchFire" aria-labelledby="introTourTouchFireTitle">
-    <h3 id="introTourTouchFireTitle">Touch</h3>
-    <dl><dt>Fire</dt><dd>Tap or hold the Fire button.</dd></dl>
-   </section>
-   <section id="introTourKeyboardFire" aria-labelledby="introTourKeyboardFireTitle">
-    <h3 id="introTourKeyboardFireTitle">Keyboard</h3>
-    <dl><dt>Fire</dt><dd id="introTourFireKeys"></dd></dl>
-    <p class="intro-fire-tip">Hold any fire key to rapid fire.</p>
-   </section>
-   <section id="introTourMouseFireHelp" aria-labelledby="introTourMouseFireTitle">
-    <h3 id="introTourMouseFireTitle">Mouse</h3>
-    <dl>
-     <dt>Fire</dt><dd id="introTourMouseFire"><span id="introTourMouseFireKey" class="control-keycaps"></span> Left-click to fire or hold to keep firing.</dd>
-    </dl>
-   </section>
-  </div>
-  <div data-intro-page="2" hidden>
-   <p id="introTourScoreInstructions">Destroy the stationary tank to score a point.</p>
-  </div>
-  </div>
-  <div id="introTourPractice" class="intro-practice" hidden>
-   <div class="intro-practice-score-row">
-    <div id="introTourScorePanel" class="intro-practice-score infinite-score-value" role="status" hidden>score: <strong id="introTourScore">0</strong></div>
-   </div>
-   <div class="intro-practice-field">
-    <div class="intro-practice-arena">
-     <canvas id="introTourCanvas" tabindex="0" aria-label="Practice maze" aria-describedby="introTourPracticeStatus"></canvas>
+              <section id="onlineScreen" hidden></section>
+              <section class="screen-card network-screen unified-room" id="roomScreen" aria-label="Game room">
+                <div class="net-intro">
+                  <div class="eyebrow" id="roomEyebrow">LOCAL ROOM</div>
+                  <h2 class="net-title" id="roomTitle" hidden></h2>
+                  <label class="infinity-toggle" id="infinityToggleLabel" hidden>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      id="infinityToggle"
+                      aria-describedby="readyHint"
+                      checked />
+                    <span class="infinity-toggle-track" aria-hidden="true"></span
+                    ><strong>Public Infinity</strong>
+                  </label>
+                  <button class="primary" id="startRoomBtn" type="button" aria-describedby="readyHint">
+                    <span>PLAY</span><span aria-hidden="true">→</span>
+                  </button>
+                  <button
+                    class="primary ready-button"
+                    id="readyBtn"
+                    type="button"
+                    aria-pressed="false"
+                    aria-describedby="readyHint"
+                    hidden>
+                    <span>READY</span><span class="ready-mark" aria-hidden="true">✓</span>
+                  </button>
+                  <div class="small-note" id="readyHint">BOT SKIRMISH, START WHEN READY</div>
+                  <button class="secondary share-room" id="copyInviteBtn" type="button">
+                    SHARE ROOM ONLINE ↗
+                  </button>
+                  <div class="room-utility">
+                    <button class="text-button" id="joinOtherBtn" type="button">Join another room ↗</button>
+                  </div>
+                  <div class="room-connection-actions">
+                    <button class="room-action room-action-unshare" id="endInfinityBtn" type="button" hidden>
+                      End Infinity</button
+                    ><button class="room-action room-action-unshare" id="unshareRoomBtn" type="button" hidden>
+                      Unshare room</button
+                    ><button class="room-action room-action-leave" id="leaveRoomBtn" type="button" hidden>
+                      Leave room
+                    </button>
+                  </div>
+                  <p class="net-status" id="roomStatus" role="status">
+                    Local play is ready. Share to invite online friends.
+                  </p>
+                </div>
+                <div class="net-content">
+                  <form class="callsign-editor" id="roomCallsignForm" aria-label="Change callsign">
+                    <label class="callsign-label" for="roomCallsign">CALLSIGN</label>
+                    <div class="callsign-row account-key-row">
+                      <input
+                        class="net-input"
+                        id="roomCallsign"
+                        name="callsign"
+                        maxlength="32"
+                        placeholder="Player 1"
+                        autocomplete="nickname"
+                        autocapitalize="words"
+                        spellcheck="false"
+                        aria-describedby="roomCallsignStatus" /><button
+                        class="secondary callsign-account-button"
+                        type="button"
+                        data-account-seat="0">
+                        Account key
+                      </button>
+                    </div>
+                    <p
+                      class="callsign-status"
+                      id="roomCallsignStatus"
+                      role="status"
+                      aria-live="polite"
+                      hidden></p>
+                  </form>
+                  <form
+                    class="callsign-editor secondary-callsign"
+                    id="roomP2CallsignForm"
+                    data-pilot="secondary"
+                    aria-label="Change co-pilot callsign"
+                    hidden>
+                    <label class="callsign-label" for="roomP2Callsign">CO-PILOT CALLSIGN</label>
+                    <div class="callsign-row account-key-row">
+                      <input
+                        class="net-input"
+                        id="roomP2Callsign"
+                        name="callsign"
+                        maxlength="32"
+                        placeholder="CO-PILOT"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-describedby="roomP2CallsignStatus" /><button
+                        class="secondary callsign-account-button"
+                        type="button"
+                        data-account-seat="1">
+                        Account key
+                      </button>
+                    </div>
+                    <p
+                      class="callsign-status"
+                      id="roomP2CallsignStatus"
+                      role="status"
+                      aria-live="polite"
+                      hidden></p>
+                  </form>
+                  <details class="room-disclosure" id="roomSettings">
+                    <summary>Room settings</summary>
+                    <div class="room-disclosure-content">
+                      <label class="field-label" id="roomNameLabel" for="localRoomName"
+                        >ROOM NAME OR CODE</label
+                      >
+                      <input
+                        class="net-input"
+                        id="localRoomName"
+                        placeholder="Room name"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-label="Room name" />
+                      <div class="room-code" id="roomCodeDisplay" hidden></div>
+                      <form class="room-code-editor" id="roomCodeEditor" hidden>
+                        <input
+                          class="net-input"
+                          id="onlineRoomCode"
+                          autocomplete="off"
+                          spellcheck="false"
+                          aria-label="Online room name or code" />
+                      </form>
+                      <p class="mode-help" id="publicRoomSettingsNote" hidden>
+                        Disable Public Infinity to play room modes and configure battle format, map size,
+                        rules, and presets. You can still name and share this room online.
+                      </p>
+                      <div class="room-rules">
+                        FIRST TO 5 WINS, UP TO 8 TANKS<br /><span
+                          >Teammates share wins. Friendly fire is off.</span
+                        >
+                      </div>
+                    </div>
+                  </details>
+                  <details class="room-disclosure" id="roomPlayers">
+                    <summary>Players and bots <span id="seatCount">4 / 8</span></summary>
+                    <div class="room-disclosure-content">
+                      <div class="roster-tools" id="rosterTools">
+                        <button class="secondary" id="addLocalBtn" type="button">＋ ADD LOCAL P2</button
+                        ><button class="secondary" id="addBotBtn" type="button">＋ ADD BOT</button>
+                      </div>
+                      <div class="net-roster" id="roomRoster"></div>
+                      <p class="local-controls-note" id="localControlsNote" hidden></p>
+                    </div>
+                  </details>
+                </div>
+              </section>
+              <section class="screen-card" id="onlineMenuScreen" aria-label="Online match menu" hidden>
+                <div class="online-menu-intro">
+                  <div class="eyebrow" id="onlineMenuEyebrow">ONLINE MATCH</div>
+                  <h2 class="compact-title">STAY<br /><em>CONNECTED.</em></h2>
+                  <p id="onlineMenuMessage">
+                    The match keeps running. Tanks remain vulnerable while this menu is open.
+                  </p>
+                  <section id="hostControls" class="host-controls" aria-label="Host player controls" hidden>
+                    <div class="callsign-label">HOST CONTROLS</div>
+                    <div id="menuKickRoster" class="net-roster"></div>
+                  </section>
+                </div>
+                <div class="online-menu-actions">
+                  <form class="callsign-editor" id="menuCallsignForm" aria-label="Change callsign">
+                    <label class="callsign-label" for="menuCallsign">CALLSIGN</label>
+                    <div class="callsign-row account-key-row">
+                      <input
+                        class="net-input"
+                        id="menuCallsign"
+                        name="callsign"
+                        maxlength="32"
+                        placeholder="Player 1"
+                        autocomplete="nickname"
+                        autocapitalize="words"
+                        spellcheck="false"
+                        aria-describedby="menuCallsignStatus" /><button
+                        class="secondary callsign-account-button"
+                        type="button"
+                        data-account-seat="0">
+                        Account key
+                      </button>
+                    </div>
+                    <p
+                      class="callsign-status"
+                      id="menuCallsignStatus"
+                      role="status"
+                      aria-live="polite"
+                      hidden></p>
+                  </form>
+                  <form
+                    class="callsign-editor secondary-callsign"
+                    id="menuP2CallsignForm"
+                    data-pilot="secondary"
+                    aria-label="Change co-pilot callsign"
+                    hidden>
+                    <label class="callsign-label" for="menuP2Callsign">CO-PILOT CALLSIGN</label>
+                    <div class="callsign-row account-key-row">
+                      <input
+                        class="net-input"
+                        id="menuP2Callsign"
+                        name="callsign"
+                        maxlength="32"
+                        placeholder="CO-PILOT"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-describedby="menuP2CallsignStatus" /><button
+                        class="secondary callsign-account-button"
+                        type="button"
+                        data-account-seat="1">
+                        Account key
+                      </button>
+                    </div>
+                    <p
+                      class="callsign-status"
+                      id="menuP2CallsignStatus"
+                      role="status"
+                      aria-live="polite"
+                      hidden></p>
+                  </form>
+                  <button class="primary back-action" id="onlineReturnBtn" type="button">
+                    <span>BACK TO THE ARENA</span><span aria-hidden="true">←</span></button
+                  ><button class="secondary" id="copyInGameBtn" type="button">Copy invite link</button
+                  ><button class="secondary" id="restartLocalBtn" type="button" hidden>Restart match ↻</button
+                  ><button class="secondary" id="restartWaveBtn" type="button" hidden>Restart wave</button
+                  ><button class="secondary" id="returnRoomBtn" type="button">End match</button
+                  ><button class="secondary" id="leaveMatchBtn" type="button" hidden>Leave match</button>
+                </div>
+              </section>
+              <section class="screen-card" id="pauseScreen" aria-label="Game paused" hidden>
+                <div class="eyebrow">TAKE A BREATHER</div>
+                <h2 class="compact-title">TAKE A<br /><em>BREATHER.</em></h2>
+                <p>The battle is paused. All tanks are safe.</p>
+                <button class="primary back-action" id="resumeBtn" type="button">
+                  <span>BACK TO THE BATTLE</span><span aria-hidden="true">←</span></button
+                ><button class="secondary" id="pauseAccountBtn" type="button">Account</button
+                ><button class="secondary" id="quitBtn" type="button">Return to the room</button>
+                <p class="control-note" id="pauseInstructions"></p>
+              </section>
+              <section class="screen-card" id="matchScreen" aria-label="Match results" hidden>
+                <div class="eyebrow">MATCH COMPLETE</div>
+                <h2 class="compact-title" id="matchTitle">VICTORY.</h2>
+                <p id="matchSubtitle"></p>
+                <div id="matchResults"></div>
+                <button class="primary" id="rematchBtn" type="button">
+                  <span>RUN IT BACK</span><span aria-hidden="true">↻</span></button
+                ><button class="secondary" id="menuBtn" type="button">Change mode or difficulty</button>
+              </section>
+            </div>
+          </div>
+        </section>
+        <aside class="sidebar" id="gameSidebar" aria-label="Leaderboard and instructions">
+          <section class="panel fixed-maze-panel">
+            <div class="panel-title"><span>LEADERBOARD</span><span class="target">FIRST TO 5</span></div>
+            <div class="roster" id="roster"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title">FIELD MANUAL</div>
+            <div class="manual" id="manualContent"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title">GRAB AN ADVANTAGE <span class="target">10 POWER-UPS</span></div>
+            <div class="power-list">
+              <div class="power-row">
+                <div class="power-symbol" style="color: #ffad70">
+                  <canvas data-power-icon="cannon" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Cannon<span>Pierces walls. 4× size and speed.</span></div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #cce4ff">
+                  <canvas data-power-icon="ghost" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Ghost<span>Through walls. Stacks with speed.</span></div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #f9ed75">
+                  <canvas data-power-icon="starman" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">
+                  Starman<span
+                    >Rare. For 4–8 seconds, tanks become invincible, destroy enemies on contact, drive through
+                    walls, and fire with unlimited ammo and no cooldown.</span
+                  >
+                </div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #f57cff">
+                  <canvas data-power-icon="laser" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Laser<span>Instant ricochets. Long dotted aim.</span></div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #ff83bd">
+                  <canvas data-power-icon="homing" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Homing missile<span>Guided missiles that ricochet.</span></div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #ffc46b">
+                  <canvas data-power-icon="grenade" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">
+                  Grenade<span
+                    >Homes in on opponents. Detonates on tank impact, on the next Fire press, or after 10
+                    seconds. Release Fire after detonating to shoot again.</span
+                  >
+                </div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #75f0cb">
+                  <canvas data-power-icon="speed" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Super speed<span>Stacks to 5, +65% speed each.</span></div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #d2f65a">
+                  <canvas data-power-icon="rapid" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Machine gun<span>3s of firing with tiny, fast rounds.</span></div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #c5a2ff">
+                  <canvas data-power-icon="scatter" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Shotgun<span>Fast, ricocheting spread.</span></div>
+              </div>
+              <div class="power-row">
+                <div class="power-symbol" style="color: #73cee4">
+                  <canvas data-power-icon="shield" aria-hidden="true" width="26" height="26"></canvas>
+                </div>
+                <div class="power-info">Shield<span>Stack up to five protective rings.</span></div>
+              </div>
+              <p class="power-note">
+                Weapons use FIRE. Machine gun allows 3 seconds of active firing. Speed activates when
+                collected, stacks up to five times, and coexists with your weapon. Walls stop blasts.
+              </p>
+            </div>
+          </section>
+          <section class="panel log-panel">
+            <div class="panel-title">COMBAT LOG</div>
+            <div class="log" id="combatLog"><div>Systems online. Choose a battle.</div></div>
+          </section>
+        </aside>
+      </main>
+      <footer class="footer">
+        <span>A LITTLE AIM. A LOT OF CHAOS. BUILT FOR QUICK ROUNDS.</span
+        ><span id="recordLabel">0 MATCH WINS ON THIS DEVICE</span>
+      </footer>
     </div>
-    <div id="introTourTouchControls" class="intro-touch-controls" aria-label="Touch controls" hidden>
-     <div id="introTourStick" class="stick-zone" role="group" aria-label="Drag joystick to steer"><div id="introTourStickBase" class="stick-base"><div id="introTourStickKnob" class="stick-knob"></div></div></div>
-     <div class="fire-zone"><button id="introTourFireButton" class="fire-button" type="button" aria-label="Fire" hidden><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="8"/><path d="M16 3v7m0 12v7M3 16h7m12 0h7"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg></button></div>
-    </div>
-   </div>
-   <p id="introTourPracticeStatus" role="status"></p>
-  </div>
-  <div data-intro-page="3" hidden>
-   <ul>
-    <li><strong>Public Infinity</strong>, Roam an unbounded maze where tanks respawn. The Public Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play with your room roster and set whether roaming bots can spawn.</li>
-    <li><strong>Elimination</strong>, Be the last tank or team standing.</li>
-    <li><strong>Capture the Flag</strong>, Bring the enemy flag home while yours is at base.</li>
-    <li><strong>King of the Hill</strong>, Control the hill to earn points.</li>
-    <li><strong>Survival</strong>, Fight off waves of enemy tanks with your squad.</li>
-   </ul>
-   <p>To play a room match, turn off Public Infinity, choose a mode in <strong>Room settings</strong>, and press <strong>Play</strong>.</p>
-   <details id="introTourMazeTips">
-    <summary>Maze and power-ups</summary>
-    <p>Bank shots around corners and use walls for cover. Every tank is immune to its own weapons.</p>
-    <p>Drive over a glowing power-up to collect it.</p>
-    <ul>
-     <li><strong>Laser</strong>, Fires an instant ricocheting beam with a dotted aim guide.</li>
-     <li><strong>Grenade</strong>, Homes in and explodes on tank impact, another fire press, or after 10 seconds.</li>
-     <li><strong>Starman</strong>, For 4–8 seconds, tanks become invincible, drive through walls, destroy enemies on contact, and fire with unlimited ammo and no cooldown.</li>
-    </ul>
-    <p>Check the sidebar for the full list of power-ups.</p>
-   </details>
-  </div>
- </div>
- <footer class="feature-footer intro-tour-actions">
-  <button id="introTourSkip" class="secondary" type="button">Skip tour</button>
-  <button id="introTourBack" class="secondary" type="button" disabled>Back</button>
-  <button id="introTourNext" class="primary" type="button" disabled>Next</button>
- </footer>
-</dialog>
-<dialog id="infiniteArena" class="feature-dialog infinite-arena" aria-labelledby="infiniteArenaTitle" aria-describedby="infiniteControlsHint">
- <div id="infiniteHeader" class="infinite-header"></div>
- <div id="infiniteStatusbar" class="arena-bar infinite-statusbar">
-  <div class="arena-title"><span class="status-dot"></span><h2 id="infiniteArenaTitle">Infinity</h2><span id="infiniteOnlineCount" class="infinite-online-count" title="Human tanks in this arena" hidden></span></div>
-  <div class="bar-right"><div id="infiniteKills" class="infinite-personal-scores" title="+1 per kill, -1 per death."></div><button id="infiniteScoreboardBtn" class="infinite-scoreboard-toggle" type="button" aria-controls="infiniteLeaderboardPanel" aria-expanded="false">LEADERBOARD</button></div>
- </div>
- <div class="infinite-stage">
-  <div id="godlikeSpawnNotice" class="godlike-spawn-notice" role="status" aria-live="polite" hidden></div>
-  <canvas id="infiniteCanvas" tabindex="0" aria-label="Infinity tank maze">Your browser needs HTML canvas to play.</canvas>
-  <button class="secondary" id="infiniteRetry" type="button" hidden>Try again</button>
-  <div class="death-notices" role="status">
-   <span class="toast death-notice" id="infiniteDeathNotice1" hidden></span>
-   <span class="toast death-notice" id="infiniteDeathNotice2" hidden></span>
-  </div>
-  <details class="infinite-leaderboard" id="infiniteLeaderboardPanel">
-   <summary id="infiniteLeaderboardTitle">LEADERBOARD</summary>
-   <ol id="infiniteTeamScores" aria-label="Team scores" hidden></ol>
-   <ol id="infiniteLeaderboard"></ol>
-   <p>+1 per kill, -1 per death</p>
-  </details>
-  <div class="infinite-touch-controls" aria-label="Touch controls">
-   <div class="stick-zone" id="infiniteStick" role="group" aria-label="Drag to drive and aim"><div class="stick-base" id="infiniteStickBase"><div class="stick-knob" id="infiniteKnob"></div></div></div>
-   <div class="fire-zone"><button class="fire-button" id="infiniteFire" type="button" aria-label="Hold to fire"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="8"/><path d="M16 3v7m0 12v7M3 16h7m12 0h7"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg></button></div>
-  </div>
- </div>
- <footer class="infinite-underbar">
-  <div class="local-loadouts infinite-loadouts" id="infiniteLoadouts"></div>
-  <div class="infinite-readout"><p id="infiniteStatus" role="status" hidden></p><p id="infiniteControlsHint" class="bar-hint"></p></div>
- </footer>
- <dialog id="infinitePauseMenu" class="overlay infinite-pause-menu" aria-labelledby="infinitePauseTitle" aria-describedby="infinitePauseHelp">
-  <div class="infinite-pause-layout">
-  <div class="screen-card">
-   <div class="online-menu-intro">
-    <div class="eyebrow"><span class="infinite-pause-offline">TAKE A BREATHER</span><span class="infinite-pause-online">ONLINE MATCH</span></div>
-    <h2 id="infinitePauseTitle" class="compact-title"><span class="infinite-pause-offline">HOLD YOUR<br><em>FIRE.</em></span><span class="infinite-pause-online">STAY<br><em>CONNECTED.</em></span></h2>
-    <p id="infinitePauseHelp"><span class="infinite-pause-offline">The battle is paused. Tanks are safe.</span><span class="infinite-pause-online">The match keeps running. Tanks remain vulnerable. Respawning waits until the menu closes.</span></p>
-   </div>
-   <div class="online-menu-actions">
-    <form class="callsign-editor" id="infiniteCallsignForm" data-arena="infinity" aria-label="Change callsign"><label class="callsign-label" for="infiniteCallsign">CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="infiniteCallsign" name="callsign" maxlength="32" placeholder="Player 1" autocomplete="nickname" autocapitalize="words" spellcheck="false" aria-describedby="infiniteCallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="0">Account key</button></div><p class="callsign-status" id="infiniteCallsignStatus" role="status" aria-live="polite" hidden></p></form>
-    <form class="callsign-editor secondary-callsign" id="infiniteP2CallsignForm" data-arena="infinity" data-pilot="secondary" aria-label="Change co-pilot callsign" hidden><label class="callsign-label" for="infiniteP2Callsign">CO-PILOT CALLSIGN</label><div class="callsign-row account-key-row"><input class="net-input" id="infiniteP2Callsign" name="callsign" maxlength="32" placeholder="CO-PILOT" autocomplete="off" spellcheck="false" aria-describedby="infiniteP2CallsignStatus"><button class="secondary callsign-account-button" type="button" data-account-seat="1">Account key</button></div><p class="callsign-status" id="infiniteP2CallsignStatus" role="status" aria-live="polite" hidden></p></form>
-    <button class="primary back-action" id="infiniteResumeBtn" type="button" autofocus><span class="infinite-pause-offline">BACK TO THE BATTLE</span><span class="infinite-pause-online">BACK TO THE ARENA</span><span aria-hidden="true">←</span></button>
-    <button class="secondary" id="infiniteControlsBtn" type="button">Controls</button>
+    <dialog id="accountDialog" class="feature-dialog account-dialog" aria-labelledby="accountTitle">
+      <header class="feature-header">
+        <div>
+          <div class="eyebrow">TAKE YOUR CALLSIGN WITH YOU</div>
+          <h2 id="accountTitle">Your account.</h2>
+        </div>
+        <button
+          type="button"
+          class="dialog-close"
+          data-close-dialog="accountDialog"
+          aria-label="Close account">
+          ×
+        </button>
+      </header>
+      <div class="feature-body">
+        <p class="mode-help" id="accountSeatHelp">
+          Each local player has a separate account key. Copy or import this player’s key without changing the
+          other player’s account.
+        </p>
+        <p class="mode-help">
+          Use the same account key on web, iOS and Android to keep your callsign and Public Infinity score.
+          Opening Public Infinity on another device transfers the existing tank to that device.
+        </p>
+        <p class="mode-help">
+          Each new callsign creates a new account with zero score. Previously used callsigns and their keys
+          stay saved on this device. Enter one again or choose it below to switch back. Accounts expire after
+          one month without signing in.
+        </p>
+        <p class="mode-help">
+          Keep a private backup. Reset All Settings keeps this account key. Anyone with this key can use the
+          account. A lost key cannot be recovered automatically, and its callsign stays reserved.
+          <a href="https://github.com/nhooyr/leqra/issues/new" target="_blank" rel="noopener noreferrer"
+            >Open a GitHub issue</a
+          >
+          for manual help.
+        </p>
+        <h3>THIS DEVICE'S ACCOUNT</h3>
+        <label class="feature-label" for="accountKey"
+          >ACCOUNT KEY<input
+            class="net-input account-key"
+            id="accountKey"
+            type="password"
+            readonly
+            autocomplete="off"
+            spellcheck="false"
+            autocapitalize="none"
+        /></label>
+        <button class="secondary" id="accountCopyBtn" type="button">COPY ACCOUNT KEY</button
+        ><button class="secondary" id="accountRotateBtn" type="button">RESET ACCOUNT KEY</button
+        ><button class="secondary" id="accountReleaseBtn" type="button">RELEASE CALLSIGN</button>
+        <div id="accountCurrentInfo" class="account-info"></div>
+        <p
+          class="feature-notice account-notice"
+          id="accountCurrentNotice"
+          role="status"
+          aria-live="polite"></p>
+        <hr />
+        <h3>SAVED CALLSIGNS</h3>
+        <div id="accountSavedAccounts" class="account-info"></div>
+        <hr />
+        <h3>USE AN EXISTING ACCOUNT</h3>
+        <form id="accountImportForm">
+          <label class="feature-label" for="accountImportKey"
+            >PASTE ACCOUNT KEY<input
+              class="net-input account-key"
+              id="accountImportKey"
+              type="password"
+              maxlength="128"
+              autocomplete="off"
+              spellcheck="false"
+              autocapitalize="none" /></label
+          ><button class="secondary" id="accountCheckBtn" type="submit">CHECK KEY</button>
+        </form>
+        <p class="mode-help" id="accountImportHelp">
+          Importing replaces this device's account key. Copy its current key first if you want to keep both
+          accounts.
+        </p>
+        <div id="accountImportReview" hidden>
+          <div id="accountImportInfo" class="account-info"></div>
+          <label class="feature-label" for="accountImportName"
+            ><span id="accountImportNameLabel">ACCOUNT CALLSIGN</span
+            ><select id="accountImportName" disabled></select></label
+          ><button class="primary" id="accountUseBtn" type="button">
+            USE THIS ACCOUNT <span aria-hidden="true">→</span>
+          </button>
+        </div>
+        <p
+          class="feature-notice account-notice"
+          id="accountImportNotice"
+          role="status"
+          aria-live="polite"></p>
+      </div>
+    </dialog>
+    <dialog id="joinDialog" class="join-dialog" aria-labelledby="joinTitle">
+      <div class="eyebrow">JOIN</div>
+      <h2 id="joinTitle">Find a room.</h2>
+      <label class="field-label" for="pilotName">CALLSIGN</label
+      ><input
+        class="net-input"
+        id="pilotName"
+        aria-describedby="pilotNameStatus"
+        maxlength="32"
+        placeholder="Player 1"
+        autocomplete="nickname" />
+      <p class="callsign-status" id="pilotNameStatus" role="status" aria-live="polite" hidden></p>
+      <label class="field-label" for="joinCode">ROOM NAME OR CODE</label
+      ><input
+        class="net-input"
+        id="joinCode"
+        placeholder="Friday tanks 💥"
+        spellcheck="false"
+        autocomplete="off" />
+      <div class="join-dialog-actions">
+        <button class="primary" id="joinRoomBtn" type="button">
+          <span>JOIN</span><span aria-hidden="true">→</span>
+        </button>
+      </div>
+      <p class="net-status" id="netStatus" role="status">
+        Missing rooms are created with the joining pilot as host.
+      </p>
+      <button class="secondary back-action" id="onlineBackBtn" type="button">
+        Back to the room <span aria-hidden="true">←</span>
+      </button>
+    </dialog>
+    <dialog
+      id="kickDialog"
+      class="kick-dialog"
+      aria-labelledby="kickTitle"
+      aria-describedby="kickDescription kickNotice">
+      <div class="eyebrow">HOST CONTROLS</div>
+      <h2 id="kickTitle">Kick this player?</h2>
+      <p id="kickDescription"></p>
+      <p id="kickNotice" class="kick-notice">
+        This removes their tank and stops automatic reconnection. It is not a permanent ban.
+      </p>
+      <div class="kick-actions">
+        <button id="cancelKickBtn" class="secondary" type="button" autofocus>Cancel</button
+        ><button id="confirmKickBtn" class="kick-confirm" type="button">KICK PLAYER</button>
+      </div>
+    </dialog>
+    <dialog id="sidebarDialog" class="feature-dialog sidebar-dialog" aria-labelledby="sidebarTitle">
+      <header class="feature-header">
+        <h2 id="sidebarTitle">Sidebar</h2>
+        <button
+          class="dialog-close"
+          id="sidebarCloseBtn"
+          data-close-dialog="sidebarDialog"
+          type="button"
+          aria-label="Close sidebar"
+          autofocus>
+          ×
+        </button>
+      </header>
+      <div class="feature-body" id="sidebarDetails"></div>
+    </dialog>
+    <dialog
+      id="inviteDialog"
+      class="feature-dialog invite-dialog"
+      aria-labelledby="inviteTitle"
+      aria-describedby="inviteInstructions">
+      <header class="feature-header">
+        <h2 id="inviteTitle">Share this room</h2>
+        <button class="dialog-close" data-close-dialog="inviteDialog" type="button" aria-label="Close invite">
+          ×
+        </button>
+      </header>
+      <div class="feature-body">
+        <p id="inviteInstructions"></p>
+        <textarea
+          class="net-input invite-fallback"
+          id="inviteFallback"
+          aria-label="Invite to copy"
+          rows="4"
+          readonly
+          autofocus></textarea>
+      </div>
+    </dialog>
+    <dialog id="introTourDialog" class="feature-dialog intro-tour" aria-labelledby="introTourTitle">
+      <header class="feature-header">
+        <div>
+          <div id="introTourStep" class="eyebrow">QUICK TOUR, 1 OF 4</div>
+          <h2 id="introTourTitle" tabindex="-1" aria-describedby="introTourStep">Drive and aim</h2>
+        </div>
+      </header>
+      <div class="feature-body">
+        <div id="introTourLessons" class="intro-lessons">
+          <div class="intro-control-groups" data-intro-page="0">
+            <section id="introTourTouch" aria-labelledby="introTourTouchTitle">
+              <h3 id="introTourTouchTitle">Touch</h3>
+              <dl>
+                <dt>Movement</dt>
+                <dd>Drag the left stick to drive and aim.</dd>
+                <dt>Aim</dt>
+                <dd>Touch near your tank to aim without moving.</dd>
+              </dl>
+            </section>
+            <section id="introTourKeyboard" aria-labelledby="introTourKeyboardTitle">
+              <h3 id="introTourKeyboardTitle">Keyboard</h3>
+              <dl>
+                <dt>Movement</dt>
+                <dd id="introTourMoveKeys" class="intro-movement-keys"></dd>
+              </dl>
+            </section>
+            <section id="introTourDesktop" aria-labelledby="introTourMouseTitle">
+              <h3 id="introTourMouseTitle">Mouse</h3>
+              <dl>
+                <dt>Aim</dt>
+                <dd id="introTourMouseAim">
+                  <span id="introTourMouseAimKey" class="control-keycaps"></span> Point over the maze. Press a
+                  turn key to switch back to keyboard aiming.
+                </dd>
+              </dl>
+            </section>
+          </div>
+          <div class="intro-control-groups" data-intro-page="1" hidden>
+            <section id="introTourTouchFire" aria-labelledby="introTourTouchFireTitle">
+              <h3 id="introTourTouchFireTitle">Touch</h3>
+              <dl>
+                <dt>Fire</dt>
+                <dd>Tap or hold the Fire button.</dd>
+              </dl>
+            </section>
+            <section id="introTourKeyboardFire" aria-labelledby="introTourKeyboardFireTitle">
+              <h3 id="introTourKeyboardFireTitle">Keyboard</h3>
+              <dl>
+                <dt>Fire</dt>
+                <dd id="introTourFireKeys"></dd>
+              </dl>
+              <p class="intro-fire-tip">Hold any fire key to rapid fire.</p>
+            </section>
+            <section id="introTourMouseFireHelp" aria-labelledby="introTourMouseFireTitle">
+              <h3 id="introTourMouseFireTitle">Mouse</h3>
+              <dl>
+                <dt>Fire</dt>
+                <dd id="introTourMouseFire">
+                  <span id="introTourMouseFireKey" class="control-keycaps"></span> Left-click to fire or hold
+                  to keep firing.
+                </dd>
+              </dl>
+            </section>
+          </div>
+          <div data-intro-page="2" hidden>
+            <p id="introTourScoreInstructions">Destroy the stationary tank to score a point.</p>
+          </div>
+        </div>
+        <div id="introTourPractice" class="intro-practice" hidden>
+          <div class="intro-practice-score-row">
+            <div
+              id="introTourScorePanel"
+              class="intro-practice-score infinite-score-value"
+              role="status"
+              hidden>
+              score: <strong id="introTourScore">0</strong>
+            </div>
+          </div>
+          <div class="intro-practice-field">
+            <div class="intro-practice-arena">
+              <canvas
+                id="introTourCanvas"
+                tabindex="0"
+                aria-label="Practice maze"
+                aria-describedby="introTourPracticeStatus"></canvas>
+            </div>
+            <div id="introTourTouchControls" class="intro-touch-controls" aria-label="Touch controls" hidden>
+              <div id="introTourStick" class="stick-zone" role="group" aria-label="Drag joystick to steer">
+                <div id="introTourStickBase" class="stick-base">
+                  <div id="introTourStickKnob" class="stick-knob"></div>
+                </div>
+              </div>
+              <div class="fire-zone">
+                <button id="introTourFireButton" class="fire-button" type="button" aria-label="Fire" hidden>
+                  <svg viewBox="0 0 32 32" aria-hidden="true">
+                    <circle cx="16" cy="16" r="8" />
+                    <path d="M16 3v7m0 12v7M3 16h7m12 0h7" />
+                    <circle cx="16" cy="16" r="2" fill="currentColor" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p id="introTourPracticeStatus" role="status"></p>
+        </div>
+        <div data-intro-page="3" hidden>
+          <ul>
+            <li>
+              <strong>Public Infinity</strong>, Roam an unbounded maze where tanks respawn. The Public
+              Infinity switch above Play joins the public arena. Choose Infinity in Room settings to play with
+              your room roster and set whether roaming bots can spawn.
+            </li>
+            <li><strong>Elimination</strong>, Be the last tank or team standing.</li>
+            <li><strong>Capture the Flag</strong>, Bring the enemy flag home while yours is at base.</li>
+            <li><strong>King of the Hill</strong>, Control the hill to earn points.</li>
+            <li><strong>Survival</strong>, Fight off waves of enemy tanks with your squad.</li>
+          </ul>
+          <p>
+            To play a room match, turn off Public Infinity, choose a mode in <strong>Room settings</strong>,
+            and press <strong>Play</strong>.
+          </p>
+          <details id="introTourMazeTips">
+            <summary>Maze and power-ups</summary>
+            <p>Bank shots around corners and use walls for cover. Every tank is immune to its own weapons.</p>
+            <p>Drive over a glowing power-up to collect it.</p>
+            <ul>
+              <li><strong>Laser</strong>, Fires an instant ricocheting beam with a dotted aim guide.</li>
+              <li>
+                <strong>Grenade</strong>, Homes in and explodes on tank impact, another fire press, or after
+                10 seconds.
+              </li>
+              <li>
+                <strong>Starman</strong>, For 4–8 seconds, tanks become invincible, drive through walls,
+                destroy enemies on contact, and fire with unlimited ammo and no cooldown.
+              </li>
+            </ul>
+            <p>Check the sidebar for the full list of power-ups.</p>
+          </details>
+        </div>
+      </div>
+      <footer class="feature-footer intro-tour-actions">
+        <button id="introTourSkip" class="secondary" type="button">Skip tour</button>
+        <button id="introTourBack" class="secondary" type="button" disabled>Back</button>
+        <button id="introTourNext" class="primary" type="button" disabled>Next</button>
+      </footer>
+    </dialog>
+    <dialog
+      id="infiniteArena"
+      class="feature-dialog infinite-arena"
+      aria-labelledby="infiniteArenaTitle"
+      aria-describedby="infiniteControlsHint">
+      <div id="infiniteHeader" class="infinite-header"></div>
+      <div id="infiniteStatusbar" class="arena-bar infinite-statusbar">
+        <div class="arena-title">
+          <span class="status-dot"></span>
+          <h2 id="infiniteArenaTitle">Infinity</h2>
+          <span
+            id="infiniteOnlineCount"
+            class="infinite-online-count"
+            title="Human tanks in this arena"
+            hidden></span>
+        </div>
+        <div class="bar-right">
+          <div id="infiniteKills" class="infinite-personal-scores" title="+1 per kill, -1 per death."></div>
+          <button
+            id="infiniteScoreboardBtn"
+            class="infinite-scoreboard-toggle"
+            type="button"
+            aria-controls="infiniteLeaderboardPanel"
+            aria-expanded="false">
+            LEADERBOARD
+          </button>
+        </div>
+      </div>
+      <div class="infinite-stage">
+        <div
+          id="godlikeSpawnNotice"
+          class="godlike-spawn-notice"
+          role="status"
+          aria-live="polite"
+          hidden></div>
+        <canvas id="infiniteCanvas" tabindex="0" aria-label="Infinity tank maze"
+          >Your browser needs HTML canvas to play.</canvas
+        >
+        <button class="secondary" id="infiniteRetry" type="button" hidden>Try again</button>
+        <div class="death-notices" role="status">
+          <span class="toast death-notice" id="infiniteDeathNotice1" hidden></span>
+          <span class="toast death-notice" id="infiniteDeathNotice2" hidden></span>
+        </div>
+        <details class="infinite-leaderboard" id="infiniteLeaderboardPanel">
+          <summary id="infiniteLeaderboardTitle">LEADERBOARD</summary>
+          <ol id="infiniteTeamScores" aria-label="Team scores" hidden></ol>
+          <ol id="infiniteLeaderboard"></ol>
+          <p>+1 per kill, -1 per death</p>
+        </details>
+        <div class="infinite-touch-controls" aria-label="Touch controls">
+          <div class="stick-zone" id="infiniteStick" role="group" aria-label="Drag to drive and aim">
+            <div class="stick-base" id="infiniteStickBase">
+              <div class="stick-knob" id="infiniteKnob"></div>
+            </div>
+          </div>
+          <div class="fire-zone">
+            <button class="fire-button" id="infiniteFire" type="button" aria-label="Hold to fire">
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <circle cx="16" cy="16" r="8" />
+                <path d="M16 3v7m0 12v7M3 16h7m12 0h7" />
+                <circle cx="16" cy="16" r="2" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <footer class="infinite-underbar">
+        <div class="local-loadouts infinite-loadouts" id="infiniteLoadouts"></div>
+        <div class="infinite-readout">
+          <p id="infiniteStatus" role="status" hidden></p>
+          <p id="infiniteControlsHint" class="bar-hint"></p>
+        </div>
+      </footer>
+      <dialog
+        id="infinitePauseMenu"
+        class="overlay infinite-pause-menu"
+        aria-labelledby="infinitePauseTitle"
+        aria-describedby="infinitePauseHelp">
+        <div class="infinite-pause-layout">
+          <div class="screen-card">
+            <div class="online-menu-intro">
+              <div class="eyebrow">
+                <span class="infinite-pause-offline">TAKE A BREATHER</span
+                ><span class="infinite-pause-online">ONLINE MATCH</span>
+              </div>
+              <h2 id="infinitePauseTitle" class="compact-title">
+                <span class="infinite-pause-offline">HOLD YOUR<br /><em>FIRE.</em></span
+                ><span class="infinite-pause-online">STAY<br /><em>CONNECTED.</em></span>
+              </h2>
+              <p id="infinitePauseHelp">
+                <span class="infinite-pause-offline">The battle is paused. Tanks are safe.</span
+                ><span class="infinite-pause-online"
+                  >The match keeps running. Tanks remain vulnerable. Respawning waits until the menu
+                  closes.</span
+                >
+              </p>
+            </div>
+            <div class="online-menu-actions">
+              <form
+                class="callsign-editor"
+                id="infiniteCallsignForm"
+                data-arena="infinity"
+                aria-label="Change callsign">
+                <label class="callsign-label" for="infiniteCallsign">CALLSIGN</label>
+                <div class="callsign-row account-key-row">
+                  <input
+                    class="net-input"
+                    id="infiniteCallsign"
+                    name="callsign"
+                    maxlength="32"
+                    placeholder="Player 1"
+                    autocomplete="nickname"
+                    autocapitalize="words"
+                    spellcheck="false"
+                    aria-describedby="infiniteCallsignStatus" /><button
+                    class="secondary callsign-account-button"
+                    type="button"
+                    data-account-seat="0">
+                    Account key
+                  </button>
+                </div>
+                <p
+                  class="callsign-status"
+                  id="infiniteCallsignStatus"
+                  role="status"
+                  aria-live="polite"
+                  hidden></p>
+              </form>
+              <form
+                class="callsign-editor secondary-callsign"
+                id="infiniteP2CallsignForm"
+                data-arena="infinity"
+                data-pilot="secondary"
+                aria-label="Change co-pilot callsign"
+                hidden>
+                <label class="callsign-label" for="infiniteP2Callsign">CO-PILOT CALLSIGN</label>
+                <div class="callsign-row account-key-row">
+                  <input
+                    class="net-input"
+                    id="infiniteP2Callsign"
+                    name="callsign"
+                    maxlength="32"
+                    placeholder="CO-PILOT"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-describedby="infiniteP2CallsignStatus" /><button
+                    class="secondary callsign-account-button"
+                    type="button"
+                    data-account-seat="1">
+                    Account key
+                  </button>
+                </div>
+                <p
+                  class="callsign-status"
+                  id="infiniteP2CallsignStatus"
+                  role="status"
+                  aria-live="polite"
+                  hidden></p>
+              </form>
+              <button class="primary back-action" id="infiniteResumeBtn" type="button" autofocus>
+                <span class="infinite-pause-offline">BACK TO THE BATTLE</span
+                ><span class="infinite-pause-online">BACK TO THE ARENA</span><span aria-hidden="true">←</span>
+              </button>
+              <button class="secondary" id="infiniteControlsBtn" type="button">Controls</button>
 
-    <button class="secondary" id="infiniteExit" type="button">Exit Infinity</button>
-   </div>
-  </div>
-  <div id="infinitePauseSidebar" class="infinite-pause-sidebar"></div>
-  </div>
- </dialog>
- <dialog id="infiniteResult" class="feature-dialog" aria-labelledby="infiniteResultTitle">
-  <header class="feature-header"><div><div class="eyebrow">INFINITY, MATCH COMPLETE</div><h2 id="infiniteResultTitle"></h2></div></header>
-  <div class="feature-body"><p id="infiniteResultScore"></p></div>
-  <footer class="feature-footer"><button class="primary" id="infiniteResultExit" type="button" autofocus>Back to room</button></footer>
- </dialog>
-</dialog>
-<dialog id="settingsResetDialog" class="feature-dialog settings-reset-dialog" aria-labelledby="settingsResetTitle" aria-describedby="settingsResetStatus">
- <div class="feature-body"><div class="eyebrow">THIS DEVICE</div><h2 id="settingsResetTitle" tabindex="-1">Resetting settings.</h2><p id="settingsResetStatus" role="status" aria-live="polite">Clearing leqra settings and cached app files.</p></div>
- <footer class="feature-footer"><button class="secondary" id="settingsResetRetryBtn" type="button" hidden>RETRY RESET</button><button class="primary" id="settingsResetReloadBtn" type="button" disabled>RELOAD</button></footer>
-</dialog>
-<script src="assets/v5.7.6/netcode.js" defer></script>
-<script src="assets/v5.7.6/gamepads.js" defer></script>
-<script src="assets/v5.7.6/callsigns.js" defer></script>
-<script src="assets/v5.7.6/game.js" defer></script>
-<script src="assets/v5.7.6/infinite-maze.js" defer></script>
-<script src="assets/v5.7.6/infinite.js" defer></script>
-<script src="assets/v5.7.6/showcase-scene.js" defer></script>
-<script src="assets/v5.7.6/showcase.js" defer></script>
-<script src="assets/v5.7.6/pwa.js" defer></script>
-</body>
+              <button class="secondary" id="infiniteExit" type="button">Exit Infinity</button>
+            </div>
+          </div>
+          <div id="infinitePauseSidebar" class="infinite-pause-sidebar"></div>
+        </div>
+      </dialog>
+      <dialog id="infiniteResult" class="feature-dialog" aria-labelledby="infiniteResultTitle">
+        <header class="feature-header">
+          <div>
+            <div class="eyebrow">INFINITY, MATCH COMPLETE</div>
+            <h2 id="infiniteResultTitle"></h2>
+          </div>
+        </header>
+        <div class="feature-body"><p id="infiniteResultScore"></p></div>
+        <footer class="feature-footer">
+          <button class="primary" id="infiniteResultExit" type="button" autofocus>Back to room</button>
+        </footer>
+      </dialog>
+    </dialog>
+    <dialog
+      id="settingsResetDialog"
+      class="feature-dialog settings-reset-dialog"
+      aria-labelledby="settingsResetTitle"
+      aria-describedby="settingsResetStatus">
+      <div class="feature-body">
+        <div class="eyebrow">THIS DEVICE</div>
+        <h2 id="settingsResetTitle" tabindex="-1">Resetting settings.</h2>
+        <p id="settingsResetStatus" role="status" aria-live="polite">
+          Clearing leqra settings and cached app files.
+        </p>
+      </div>
+      <footer class="feature-footer">
+        <button class="secondary" id="settingsResetRetryBtn" type="button" hidden>RETRY RESET</button
+        ><button class="primary" id="settingsResetReloadBtn" type="button" disabled>RELOAD</button>
+      </footer>
+    </dialog>
+    <script src="assets/v5.7.6/netcode.js" defer></script>
+    <script src="assets/v5.7.6/gamepads.js" defer></script>
+    <script src="assets/v5.7.6/callsigns.js" defer></script>
+    <script src="assets/v5.7.6/game.js" defer></script>
+    <script src="assets/v5.7.6/infinite-maze.js" defer></script>
+    <script src="assets/v5.7.6/infinite.js" defer></script>
+    <script src="assets/v5.7.6/showcase-scene.js" defer></script>
+    <script src="assets/v5.7.6/showcase.js" defer></script>
+    <script src="assets/v5.7.6/pwa.js" defer></script>
+  </body>
 </html>

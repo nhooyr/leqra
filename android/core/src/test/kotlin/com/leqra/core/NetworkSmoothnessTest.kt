@@ -105,7 +105,7 @@ class NetworkSmoothnessTest {
                             y = 2000.0,
                             vx = 846.0,
                             life = 100.0,
-                        )
+                        ),
                     ),
             )
         }
@@ -180,7 +180,7 @@ class NetworkSmoothnessTest {
                 previousVelocity?.let { old ->
                     if (now > 3) {
                         for (seat in pilots.indices) result.local.add(
-                            abs(velocity[seat] - old[seat])
+                            abs(velocity[seat] - old[seat]),
                         )
                         result.remote.add(abs(velocity[pilots.size] - old[pilots.size]))
                         result.bullets.add(abs(velocity[pilots.size + 1] - old[pilots.size + 1]))
@@ -202,7 +202,7 @@ class NetworkSmoothnessTest {
             listOf(false, true)) {
             val result = profile(rtt, jitter, turning, paired)
             println(
-                "Android network RTT=${(rtt * 1000).toInt()} jitter=${(jitter * 1000).toInt()} turn=$turning paired=$paired local=${p95(result.local)}/${result.local.max()} remote=${p95(result.remote)} bullets=${p95(result.bullets)} stalls=${result.stalls}"
+                "Android network RTT=${(rtt * 1000).toInt()} jitter=${(jitter * 1000).toInt()} turn=$turning paired=$paired local=${p95(result.local)}/${result.local.max()} remote=${p95(result.remote)} bullets=${p95(result.bullets)} stalls=${result.stalls}",
             )
             assertEquals(0, result.stalls)
             assertTrue("Local jitter pulse at RTT=$rtt paired=$paired", p95(result.local) < 26)

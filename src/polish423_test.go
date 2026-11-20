@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -69,8 +70,8 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	sw := httptest.NewRecorder()
 	h.ServeHTTP(sw, httptest.NewRequest("GET", "/assets/v"+version+"/sw.js", nil))
-	for _, want := range []string{"leqra-app-", "v" + version, "'/ws'", "'/healthz'", "'/api/'", "caches.match('/', {cacheName: CACHE})"} {
-		if !strings.Contains(sw.Body.String(), want) {
+	for _, want := range []string{"leqra-app-", "v" + regexp.QuoteMeta(version), `["']/ws["']`, `["']/healthz["']`, `["']/api/["']`, `caches\.match\(["']/["'],\s*\{\s*cacheName:\s*CACHE\s*\}\)`} {
+		if !regexp.MustCompile(want).Match(sw.Body.Bytes()) {
 			t.Fatalf("service worker missing %q", want)
 		}
 	}

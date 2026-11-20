@@ -12,7 +12,7 @@ def check(ok,label):
  assert ok,label
  checks.append(label);print('PASS',label,flush=True)
 html=re.sub(r'<link[^>]*>','',(web/'index.html').read_text());html=re.sub(r'<script src="[^"]+" defer></script>','',html);html=html.replace('</head>','<style>'+(assets/'style.css').read_text()+'</style></head>')
-js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})();');js=js[:i]+'})(window.__location);'+js[i+5:]
+js=(assets/'game.js').read_text().replace('(() => {','((location) => {',1);i=js.rfind('})()');js=js[:i]+'})(window.__location);'+js[i+4:]
 def load(c,data=None):
  p=c.new_page();p.on('pageerror',lambda e:errors.append(str(e)));p.set_content(html)
  p.evaluate('''data=>{window.__location=new URL('http://game.test/?test=1');window.__store=data;

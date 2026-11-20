@@ -64,8 +64,10 @@ class NativeAudio(context: Context) {
     private var nextLoopStart = 0L
     internal val preparedLoop: Boolean
         get() = starmanBank != null
+
     internal val activeLoopCount: Int
         get() = mixer.activeLoops
+
     var enabled: Boolean = true
         set(value) {
             if (field == value) return
@@ -172,17 +174,25 @@ class NativeAudio(context: Context) {
     }
 
     /** No work is queued per snapshot: one cached voice tracks both local power timers. */
-    fun updateStarman(snapshot: ArenaSnapshot, localID: Int, localID2: Int?, gameplayActive: Boolean, sceneActive: Boolean = gameplayActive) {
+    fun updateStarman(
+        snapshot: ArenaSnapshot,
+        localID: Int,
+        localID2: Int?,
+        gameplayActive: Boolean,
+        sceneActive: Boolean = gameplayActive,
+    ) {
         val wasActive = this.sceneActive
         this.sceneActive = sceneActive
         if (sceneActive) {
             gameplayStop?.let(main::removeCallbacks)
             gameplayStop = null
         } else if (wasActive && running && gameplayStop == null) {
-            gameplayStop = Runnable {
-                gameplayStop = null
-                if (!this.sceneActive) pause()
-            }.also { main.postDelayed(it, 18) }
+            gameplayStop =
+                Runnable {
+                    gameplayStop = null
+                    if (!this.sceneActive) pause()
+                }
+                    .also { main.postDelayed(it, 18) }
         }
         // Start the silent hardware stream on its worker when entering a game,
         // so the first projectile does not also have to initialize AudioTrack.
@@ -194,7 +204,11 @@ class NativeAudio(context: Context) {
             sceneOutputPrepared = true
             resume()
         }
-        val wanted = enabled && volume > 0 && !released && StarmanLoopState.active(snapshot, localID, localID2, gameplayActive)
+        val wanted =
+            enabled &&
+                volume > 0 &&
+                !released &&
+                StarmanLoopState.active(snapshot, localID, localID2, gameplayActive)
         if (wanted != starmanRequested) {
             synchronized(outputGuard) {
                 starmanRequested = wanted
@@ -221,9 +235,9 @@ class NativeAudio(context: Context) {
         play(cue)
         previewStop =
             Runnable {
-                    previewStop = null
-                    pause()
-                }
+                previewStop = null
+                pause()
+            }
                 .also { main.postDelayed(it, 400) }
     }
 

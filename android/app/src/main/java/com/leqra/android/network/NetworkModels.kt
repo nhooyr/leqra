@@ -76,8 +76,7 @@ sealed interface NetworkEvent {
     data class State(val snapshot: ArenaSnapshot) : NetworkEvent
 
     /**
-     * Full protocol room, queue, identity notices and rename acknowledgements. Never log
-     * packets.
+     * Full protocol room, queue, identity notices and rename acknowledgements. Never log packets.
      */
     class Packet(val packet: JSONObject) : NetworkEvent
 

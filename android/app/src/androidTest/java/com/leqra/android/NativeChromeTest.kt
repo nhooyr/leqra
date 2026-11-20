@@ -28,8 +28,11 @@ class NativeChromeTest {
             header.display(false, 320f, false, false, roomCode = "PARITY")
             layout(header, context.dp(320), context.dp(54))
 
-            val badge = (0 until header.childCount).map(header::getChildAt).filterIsInstance<TextView>()
-                .single { it.contentDescription == "View leqra on GitHub" }
+            val badge =
+                (0 until header.childCount)
+                    .map(header::getChildAt)
+                    .filterIsInstance<TextView>()
+                    .single { it.contentDescription == "View leqra on GitHub" }
             val mark = requireNotNull(badge.compoundDrawablesRelative[0])
             assertEquals(BuildConfig.VERSION_NAME, badge.text.toString())
             assertEquals(context.dp(17), mark.intrinsicWidth)
@@ -43,16 +46,23 @@ class NativeChromeTest {
         instrumentation.runOnMainSync {
             val context = instrumentation.targetContext
             var openedSidebar = false
-            val header = NativeGameHeader(context, {}, {}, {}, openSidebar = { openedSidebar = true })
+            val header =
+                NativeGameHeader(context, {}, {}, {}, openSidebar = { openedSidebar = true })
             header.display(false, 375f, false, false, roomCode = "PARITY")
             layout(header, context.dp(375), context.dp(54))
             val views = (0 until header.childCount).map(header::getChildAt)
             val sidebar = views.single { it.contentDescription == "Open sidebar" }
             val controls = views.single { it.contentDescription == "Controls" }
-            val badge = views.filterIsInstance<TextView>().single { it.contentDescription == "View leqra on GitHub" }
+            val badge =
+                views.filterIsInstance<TextView>().single {
+                    it.contentDescription == "View leqra on GitHub"
+                }
             assertEquals(header, sidebar.parent)
             assertEquals(controls.left, sidebar.right)
-            assertTrue("Controls stays within the compact header", controls.right <= header.width - header.paddingRight)
+            assertTrue(
+                "Controls stays within the compact header",
+                controls.right <= header.width - header.paddingRight,
+            )
             assertEquals(BuildConfig.VERSION_NAME, badge.text.toString())
             assertTrue(sidebar.performClick())
             assertTrue(openedSidebar)
@@ -67,8 +77,13 @@ class NativeChromeTest {
             for (muted in listOf(false, true)) {
                 header.display(false, 390f, muted, false)
                 layout(header, context.dp(390), context.dp(54))
-                val button = (0 until header.childCount).map(header::getChildAt).filterIsInstance<ImageButton>()
-                    .single { it.contentDescription == if (muted) "Unmute sound" else "Mute sound" }
+                val button =
+                    (0 until header.childCount)
+                        .map(header::getChildAt)
+                        .filterIsInstance<ImageButton>()
+                        .single {
+                            it.contentDescription == if (muted) "Unmute sound" else "Mute sound"
+                        }
                 val glyph = RectF(button.drawable.bounds)
                 button.imageMatrix.mapRect(glyph)
                 glyph.offset(button.paddingLeft.toFloat(), button.paddingTop.toFloat())

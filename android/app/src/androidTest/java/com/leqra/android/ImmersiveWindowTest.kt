@@ -15,14 +15,15 @@ import org.junit.runner.RunWith
 class ImmersiveWindowTest {
     @Test
     fun reservesCutoutsAndSystemBarsWithoutCountingKeyboardSpaceTwice() {
-        val insets = WindowInsets.Builder()
-            .setInsets(WindowInsets.Type.displayCutout(), Insets.of(36, 12, 0, 0))
-            .setInsets(WindowInsets.Type.statusBars(), Insets.of(0, 24, 0, 0))
-            .setInsets(WindowInsets.Type.captionBar(), Insets.of(0, 42, 0, 0))
-            .setInsets(WindowInsets.Type.navigationBars(), Insets.of(0, 0, 42, 36))
-            .setInsets(WindowInsets.Type.systemGestures(), Insets.of(18, 0, 18, 28))
-            .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 300))
-            .build()
+        val insets =
+            WindowInsets.Builder()
+                .setInsets(WindowInsets.Type.displayCutout(), Insets.of(36, 12, 0, 0))
+                .setInsets(WindowInsets.Type.statusBars(), Insets.of(0, 24, 0, 0))
+                .setInsets(WindowInsets.Type.captionBar(), Insets.of(0, 42, 0, 0))
+                .setInsets(WindowInsets.Type.navigationBars(), Insets.of(0, 0, 42, 36))
+                .setInsets(WindowInsets.Type.systemGestures(), Insets.of(18, 0, 18, 28))
+                .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 300))
+                .build()
 
         val safe = insets.immersiveInsets()
         assertEquals(ImmersiveInsets(36, 42, 42, 36, 300), safe)
@@ -31,10 +32,11 @@ class ImmersiveWindowTest {
 
     @Test
     fun hiddenBarsKeepOnlyCutoutAndBottomGestureSpace() {
-        val insets = WindowInsets.Builder()
-            .setInsets(WindowInsets.Type.displayCutout(), Insets.of(0, 48, 0, 0))
-            .setInsets(WindowInsets.Type.systemGestures(), Insets.of(18, 0, 18, 24))
-            .build()
+        val insets =
+            WindowInsets.Builder()
+                .setInsets(WindowInsets.Type.displayCutout(), Insets.of(0, 48, 0, 0))
+                .setInsets(WindowInsets.Type.systemGestures(), Insets.of(18, 0, 18, 24))
+                .build()
 
         assertEquals(ImmersiveInsets(0, 48, 0, 24), insets.immersiveInsets())
     }

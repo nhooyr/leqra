@@ -82,7 +82,13 @@ class SpectatorPresentationTest {
         val timeline = OnlinePresentation(localID = -1)
         timeline.accept(view(100, 7, 100.0), 0.0)
         timeline.accept(view(102, 7, 0.0).copy(tanks = emptyList()), .033)
-        val parked = timeline.render(.01, GameInput(fire = true), .04, send = { fail("Viewer input escaped") })!!
+        val parked =
+            timeline.render(
+                .01,
+                GameInput(fire = true),
+                .04,
+                send = { fail("Viewer input escaped") },
+            )!!
         assertEquals(7, parked.following)
         assertTrue(parked.tanks.isEmpty())
         assertTrue(parked.leaderboard.any { it.id == 7 })

@@ -55,7 +55,9 @@ class NativeNetworkIntegrationTest {
         fun choose(name: String, previous: String): CheckedAccount {
             val result = LinkedBlockingQueue<Result<CheckedAccount>>()
             main { service.switchCallsign(origin, 0, name, previous, callback = result::offer) }
-            return (result.poll(10, TimeUnit.SECONDS) ?: error("Callsign switch timed out")).getOrThrow().also { created += it.key }
+            return (result.poll(10, TimeUnit.SECONDS) ?: error("Callsign switch timed out"))
+                .getOrThrow()
+                .also { created += it.key }
         }
         try {
             val first = choose(firstName, "")
@@ -91,12 +93,19 @@ class NativeNetworkIntegrationTest {
                 client = NativeNetworkClient(store, events::offer)
                 client!!.connectPublic(origin, "ReleaseP$suffix", 0, "ReleaseW$suffix", 1, true)
             }
-            val joined = (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
-            val p1 = joined.publicToken!!; val p2 = joined.localPublicToken!!
+            val joined =
+                (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
+            val p1 = joined.publicToken!!
+            val p2 = joined.localPublicToken!!
             val released = LinkedBlockingQueue<Result<Unit>>()
-            main { service = AccountService(store); service!!.release(origin, p2, released::offer) }
+            main {
+                service = AccountService(store)
+                service!!.release(origin, p2, released::offer)
+            }
             (released.poll(10, TimeUnit.SECONDS) ?: error("Release timed out")).getOrThrow()
-            val error = next(events) { it is NetworkEvent.Error && it.code == "account_key_invalid" } as NetworkEvent.Error
+            val error =
+                next(events) { it is NetworkEvent.Error && it.code == "account_key_invalid" }
+                    as NetworkEvent.Error
             assertEquals(1, error.seat)
             assertTrue(error.terminal)
             assertEquals(p1, store.selected(origin, 0)!!.key)
@@ -105,18 +114,28 @@ class NativeNetworkIntegrationTest {
             assertNull(store.activeIntent())
             val checked = LinkedBlockingQueue<Result<CheckedAccount>>()
             main { service!!.inspect(origin, p1, checked::offer) }
-            assertTrue((checked.poll(10, TimeUnit.SECONDS) ?: error("P1 check timed out")).isSuccess)
+            assertTrue(
+                (checked.poll(10, TimeUnit.SECONDS) ?: error("P1 check timed out")).isSuccess,
+            )
             main { client!!.connectPublic(origin, "ignored", 0) }
-            val rejoined = (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
+            val rejoined =
+                (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
             assertEquals(p1, rejoined.publicToken)
             assertNull(rejoined.localId)
-        } finally { main { client?.close(); service?.close() }; context.noBackupFilesDir.deleteRecursively() }
+        } finally {
+            main {
+                client?.close()
+                service?.close()
+            }
+            context.noBackupFilesDir.deleteRecursively()
+        }
     }
 
     @Test
     fun pendingPrimaryRegistrationRecoversCommittedKeysAndReplacesOnlyUnknownCandidates() {
         val origin = server()
-        for (route in listOf("public", "create", "publish")) for (registered in listOf(false,true)) {
+        for (route in listOf("public", "create", "publish")) for (registered in
+            listOf(false, true)) {
             val context = isolatedAccountContext()
             val store = EncryptedAccountStore(context)
             val candidate = store.prepareRegistration(origin, 0)
@@ -129,27 +148,55 @@ class NativeNetworkIntegrationTest {
                 if (registered) {
                     service = AccountService(store)
                     val generated = LinkedBlockingQueue<Result<List<GeneratedCallsign>>>()
-                    service.generate(origin,listOf(0),java.util.UUID.randomUUID().toString()) { generated.offer(it) }
-                    name = (generated.poll(20,TimeUnit.SECONDS) ?: throw AssertionError("Registration timed out")).getOrThrow().single().name
+                    service.generate(origin, listOf(0), java.util.UUID.randomUUID().toString()) {
+                        generated.offer(it)
+                    }
+                    name =
+                        (generated.poll(20, TimeUnit.SECONDS)
+                                ?: throw AssertionError("Registration timed out"))
+                            .getOrThrow()
+                            .single()
+                            .name
                     // Recreate the durable state after the server commits but its reply is lost.
-                    store.select(origin,0,candidate.key,registrationPending=true)
+                    store.select(origin, 0, candidate.key, registrationPending = true)
                 }
                 main {
                     client = NativeNetworkClient(store, events::offer)
                     when (route) {
                         "public" -> client!!.connectPublic(origin, name, 0)
                         "create" -> client!!.connectRoom(origin, name)
-                        "publish" -> client!!.connectPublishedRoom(origin, name, ProtocolJson.rules(com.leqra.core.RoomRules.localDefaults()),
-                            org.json.JSONArray().put(org.json.JSONObject().put("kind", "human").put("name", name)))
+                        "publish" ->
+                            client!!.connectPublishedRoom(
+                                origin,
+                                name,
+                                ProtocolJson.rules(com.leqra.core.RoomRules.localDefaults()),
+                                org.json
+                                    .JSONArray()
+                                    .put(
+                                        org.json
+                                            .JSONObject()
+                                            .put("kind", "human")
+                                            .put("name", name),
+                                    ),
+                            )
                     }
                 }
-                val welcome = (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
+                val welcome =
+                    (next(events) { it is NetworkEvent.Welcome } as NetworkEvent.Welcome).welcome
                 assertNotNull(welcome.publicToken)
-                if(registered) assertEquals(candidate.key,welcome.publicToken) else assertNotEquals(candidate.key, welcome.publicToken)
+                if (registered) assertEquals(candidate.key, welcome.publicToken)
+                else assertNotEquals(candidate.key, welcome.publicToken)
                 assertEquals(welcome.publicToken, store.selected(origin, 0)!!.key)
                 assertFalse(store.selected(origin, 0)!!.registrationPending)
-                if (!registered) assertTrue(store.pending(origin,0).any { it.key==candidate.key })
-            } finally { main { client?.disconnect(false); service?.close() }; context.noBackupFilesDir.deleteRecursively() }
+                if (!registered)
+                    assertTrue(store.pending(origin, 0).any { it.key == candidate.key })
+            } finally {
+                main {
+                    client?.disconnect(false)
+                    service?.close()
+                }
+                context.noBackupFilesDir.deleteRecursively()
+            }
         }
     }
 
@@ -182,7 +229,7 @@ class NativeNetworkIntegrationTest {
                 first!!.sendInput(GameInput(fire = true))
                 first!!.suspend()
             }
-            store.select(origin,0,welcome.publicToken!!,registrationPending=true)
+            store.select(origin, 0, welcome.publicToken!!, registrationPending = true)
             val restored = EncryptedAccountStore(context)
             assertNotNull(restored.activeIntent())
             assertEquals(welcome.localPublicToken, restored.selected(origin, 1)!!.key)

@@ -1,111 +1,229 @@
-'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),{boot}=require('./hud438-harness.cjs');
+"use strict"
+const { test } = require("node:test"),
+  assert = require("node:assert/strict"),
+  { boot } = require("./hud438-harness.cjs")
 
-test('combined HUD projectile state preserves ammo, grenade fuse and hostile lock rules',()=>{
- for(const mode of ['room','online'])for(const friendlyFire of [false,true]){
-  const s=boot({mode,projectileCount:192});s.rules.friendlyFire=friendlyFire;
-  for(const t of s.tanks)for(const power of [null,'rapid','grenade','scatter','laser']){
-   t.power=power;t.charges=2;
-   const grenades=s.ownedGrenades(t),expected={ammo:s.activeAmmo(t),grenades:grenades.length,grenadeLife:Math.max(0,...grenades.map(b=>b.life)),locked:s.missileLocks(t).length>0};
-   assert.deepEqual(s.pilotProjectileState(t,true),expected,`${mode} ${power} pilot ${t.id} friendly fire ${friendlyFire}`);
-   assert.equal(s.pilotProjectileState(t).locked,false,'loadout-only queries skip lock work');
+test("combined HUD projectile state preserves ammo, grenade fuse and hostile lock rules", () => {
+  for (const mode of ["room", "online"])
+    for (const friendlyFire of [false, true]) {
+      const s = boot({ mode, projectileCount: 192 })
+      s.rules.friendlyFire = friendlyFire
+      for (const t of s.tanks)
+        for (const power of [null, "rapid", "grenade", "scatter", "laser"]) {
+          t.power = power
+          t.charges = 2
+          const grenades = s.ownedGrenades(t),
+            expected = {
+              ammo: s.activeAmmo(t),
+              grenades: grenades.length,
+              grenadeLife: Math.max(0, ...grenades.map((b) => b.life)),
+              locked: s.missileLocks(t).length > 0,
+            }
+          assert.deepEqual(
+            s.pilotProjectileState(t, true),
+            expected,
+            `${mode} ${power} pilot ${t.id} friendly fire ${friendlyFire}`,
+          )
+          assert.equal(s.pilotProjectileState(t).locked, false, "loadout-only queries skip lock work")
+        }
+    }
+})
+
+test("local HUD follows in-place firing, deaths and grenade expiry without stale state", () => {
+  const s = boot({ projectileCount: 0 }),
+    t = s.tanks[0]
+  t.power = null
+  const a = { owner: 0, kind: "grenade", life: 4 },
+    b = { owner: 0, kind: "grenade", life: 7 },
+    missile = { owner: 1, kind: "homing", target: 0 }
+  s.bullets.push(a, b, missile)
+  const old = s.pilotProjectileState(t, true)
+  assert.deepEqual(old, { ammo: 2, grenades: 2, grenadeLife: 7, locked: true })
+  a.life = 3.2
+  b.dead = true
+  missile.dead = true
+  s.bullets.push({ owner: 0, kind: "rapid" })
+  assert.deepEqual(s.pilotProjectileState(t, true), { ammo: 2, grenades: 1, grenadeLife: 3.2, locked: false })
+  s.bullets.length = 0
+  assert.deepEqual(s.pilotProjectileState(t, true), { ammo: 0, grenades: 0, grenadeLife: 0, locked: false })
+  assert.deepEqual(
+    old,
+    { ammo: 2, grenades: 2, grenadeLife: 7, locked: true },
+    "a later scan cannot mutate a previously returned summary",
+  )
+})
+test("boosted projectiles leave ordinary HUD ammo slots free but remain eligible for detonation", () => {
+  for (const mode of ["room", "online"]) {
+    const s = boot({ mode, projectileCount: 0 }),
+      t = s.tanks[0]
+    t.power = null
+    t.cooldown = 0
+    s.bullets.push(...Array.from({ length: 6 }, () => ({ owner: 0, boosted: true })))
+    s.run()
+    assert.equal(s.activeAmmo(t), 0)
+    assert.equal(s.$("cooldownText1").textContent, "READY")
+    s.bullets.push({ owner: 0, kind: "grenade", life: 4, boosted: true })
+    assert.deepEqual(s.pilotProjectileState(t), { ammo: 0, grenades: 1, grenadeLife: 4, locked: false })
   }
- }
-});
+})
 
-test('local HUD follows in-place firing, deaths and grenade expiry without stale state',()=>{
- const s=boot({projectileCount:0}),t=s.tanks[0];t.power=null;
- const a={owner:0,kind:'grenade',life:4},b={owner:0,kind:'grenade',life:7},missile={owner:1,kind:'homing',target:0};s.bullets.push(a,b,missile);
- const old=s.pilotProjectileState(t,true);assert.deepEqual(old,{ammo:2,grenades:2,grenadeLife:7,locked:true});
- a.life=3.2;b.dead=true;missile.dead=true;s.bullets.push({owner:0,kind:'rapid'});
- assert.deepEqual(s.pilotProjectileState(t,true),{ammo:2,grenades:1,grenadeLife:3.2,locked:false});
- s.bullets.length=0;assert.deepEqual(s.pilotProjectileState(t,true),{ammo:0,grenades:0,grenadeLife:0,locked:false});
- assert.deepEqual(old,{ammo:2,grenades:2,grenadeLife:7,locked:true},'a later scan cannot mutate a previously returned summary');
-});
-test('boosted projectiles leave ordinary HUD ammo slots free but remain eligible for detonation',()=>{
- for(const mode of ['room','online']){
-  const s=boot({mode,projectileCount:0}),t=s.tanks[0];t.power=null;t.cooldown=0;
-  s.bullets.push(...Array.from({length:6},()=>({owner:0,boosted:true})));
-  s.run();
-  assert.equal(s.activeAmmo(t),0);
-  assert.equal(s.$('cooldownText1').textContent,'READY');
-  s.bullets.push({owner:0,kind:'grenade',life:4,boosted:true});
-  assert.deepEqual(s.pilotProjectileState(t),{ammo:0,grenades:1,grenadeLife:4,locked:false});
- }
-});
+test("online HUD reads each newest authoritative snapshot and excludes interpolated bullets", () => {
+  const s = boot({ mode: "online", projectileCount: 32 }),
+    a = s.tanks[0],
+    b = s.tanks[7]
+  a.power = null
+  b.power = "laser"
+  b.charges = 1
+  s.online.snapshots[0].bullets = []
+  assert.equal(s.pilotProjectileState(a, true).ammo, 0)
+  const newest = {
+    bullets: [
+      { owner: 0, kind: "grenade", life: 1.4 },
+      { owner: 1, kind: "homing", target: 7 },
+    ],
+    tankMap: new Map([
+      [0, a],
+      [7, b],
+    ]),
+    received: 1000,
+  }
+  s.online.snapshots.push(newest)
+  assert.deepEqual(s.pilotProjectileState(a, true), { ammo: 1, grenades: 1, grenadeLife: 1.4, locked: false })
+  assert.deepEqual(s.pilotProjectileState(b, true), { ammo: 2, grenades: 0, grenadeLife: 0, locked: true })
+  s.online.snapshots = [{ ...newest, bullets: [] }]
+  assert.equal(s.pilotProjectileState(a, true).grenades, 0)
+  assert.equal(s.pilotProjectileState(b, true).locked, false)
+  s.online.snapshots = []
+  assert.equal(
+    s.pilotProjectileState(a, true).ammo,
+    0,
+    "reconnect without snapshots does not use local rendered projectiles",
+  )
+})
 
-test('online HUD reads each newest authoritative snapshot and excludes interpolated bullets',()=>{
- const s=boot({mode:'online',projectileCount:32}),a=s.tanks[0],b=s.tanks[7];a.power=null;b.power='laser';b.charges=1;
- s.online.snapshots[0].bullets=[];assert.equal(s.pilotProjectileState(a,true).ammo,0);
- const newest={bullets:[{owner:0,kind:'grenade',life:1.4},{owner:1,kind:'homing',target:7}],tankMap:new Map([[0,a],[7,b]]),received:1000};
- s.online.snapshots.push(newest);
- assert.deepEqual(s.pilotProjectileState(a,true),{ammo:1,grenades:1,grenadeLife:1.4,locked:false});
- assert.deepEqual(s.pilotProjectileState(b,true),{ammo:2,grenades:0,grenadeLife:0,locked:true});
- s.online.snapshots=[{...newest,bullets:[]}];assert.equal(s.pilotProjectileState(a,true).grenades,0);assert.equal(s.pilotProjectileState(b,true).locked,false);
- s.online.snapshots=[];assert.equal(s.pilotProjectileState(a,true).ammo,0,'reconnect without snapshots does not use local rendered projectiles');
-});
+test("team changes, friendly fire and a removed missile owner immediately update lock warnings", () => {
+  const s = boot({ projectileCount: 0 }),
+    t = s.tanks[0]
+  s.bullets.push({ owner: 7, kind: "homing", target: 0 })
+  assert.equal(s.pilotProjectileState(t, true).locked, false)
+  s.rules.friendlyFire = true
+  assert.equal(s.pilotProjectileState(t, true).locked, true)
+  s.rules.friendlyFire = false
+  s.tanks[7].team = 2
+  assert.equal(s.pilotProjectileState(t, true).locked, true)
+  s.tanks.pop()
+  assert.equal(s.pilotProjectileState(t, true).locked, false, "an orphan projectile has no damage authority")
+  s.bullets[0].owner = 0
+  assert.equal(
+    s.pilotProjectileState(t, true).locked,
+    false,
+    "self-owned missiles do not warn of an enemy lock",
+  )
+})
 
-test('team changes, friendly fire and a removed missile owner immediately update lock warnings',()=>{
- const s=boot({projectileCount:0}),t=s.tanks[0];s.bullets.push({owner:7,kind:'homing',target:0});
- assert.equal(s.pilotProjectileState(t,true).locked,false);
- s.rules.friendlyFire=true;assert.equal(s.pilotProjectileState(t,true).locked,true);
- s.rules.friendlyFire=false;s.tanks[7].team=2;assert.equal(s.pilotProjectileState(t,true).locked,true);
- s.tanks.pop();assert.equal(s.pilotProjectileState(t,true).locked,false,'an orphan projectile has no damage authority');
- s.bullets[0].owner=0;assert.equal(s.pilotProjectileState(t,true).locked,false,'self-owned missiles do not warn of an enemy lock');
-});
+test("a hostile grenade lock warns the target in both simulation modes", () => {
+  for (const mode of ["room", "online"]) {
+    const s = boot({ mode, projectileCount: 0 }),
+      t = s.tanks[0]
+    s.bullets.push({ owner: 1, kind: "grenade", target: 0, life: 6 })
+    assert.deepEqual(s.pilotProjectileState(t, true), { ammo: 0, grenades: 0, grenadeLife: 0, locked: true })
+    s.run()
+    assert.equal(s.$("missileWarning1").hidden, false)
+    assert.equal(s.$("missileWarning1").textContent, "⚠ HOMING LOCK")
+  }
+})
 
-test('a hostile grenade lock warns the target in both simulation modes',()=>{
- for(const mode of ['room','online']){
-  const s=boot({mode,projectileCount:0}),t=s.tanks[0];
-  s.bullets.push({owner:1,kind:'grenade',target:0,life:6});
-  assert.deepEqual(s.pilotProjectileState(t,true),{ammo:0,grenades:0,grenadeLife:0,locked:true});
-  s.run();assert.equal(s.$('missileWarning1').hidden,false);
-  assert.equal(s.$('missileWarning1').textContent,'⚠ HOMING LOCK');
- }
-});
+test("two-pilot loadout and combat feedback retain detonation, ammo, pause and death behavior", () => {
+  for (const mode of ["room", "online"]) {
+    const s = boot({ mode, projectileCount: 0 }),
+      a = s.tanks[0],
+      b = s.tanks[7]
+    a.power = null
+    a.cooldown = 0
+    b.power = "laser"
+    b.charges = 1
+    b.cooldown = 0
+    const grenade = { owner: 0, kind: "grenade", life: 4.2 }
+    s.bullets.push(grenade, { owner: 1, kind: "homing", target: 7 })
+    s.run()
+    assert.equal(s.$("weaponLabel").textContent, "GRENADE, 4.2s")
+    assert.equal(s.$("cooldownText1").textContent, "DETONATE READY")
+    assert.equal(s.$("ammoDots2").getAttribute("aria-label"), "PILOT 7 (P2): 1 of 3 laser charges available")
+    assert.equal(s.$("missileWarning2").hidden, false)
+    grenade.life = 3.4
+    s.run()
+    assert.equal(s.$("weaponLabel").textContent, "GRENADE, 3.4s")
+    s.setPhase("paused")
+    s.run()
+    assert.equal(s.$("cooldownText1").textContent, "PAUSED")
+    assert.equal(s.$("missileWarning2").hidden, true)
+    s.setPhase("playing")
+    a.alive = false
+    s.run()
+    assert.equal(s.$("weaponLabel").textContent, "")
+    assert.equal(s.$("cooldownText1").textContent, "OUT")
+    a.alive = true
+    s.bullets.length = 0
+    s.run()
+    assert.equal(s.$("weaponLabel").textContent, "STANDARD")
+    assert.equal(s.$("cooldownText1").textContent, "READY")
+    assert.equal(s.$("missileWarning2").hidden, true)
+  }
+})
 
-test('two-pilot loadout and combat feedback retain detonation, ammo, pause and death behavior',()=>{
- for(const mode of ['room','online']){
-  const s=boot({mode,projectileCount:0}),a=s.tanks[0],b=s.tanks[7];a.power=null;a.cooldown=0;b.power='laser';b.charges=1;b.cooldown=0;
-  const grenade={owner:0,kind:'grenade',life:4.2};s.bullets.push(grenade,{owner:1,kind:'homing',target:7});s.run();
-  assert.equal(s.$('weaponLabel').textContent,'GRENADE, 4.2s');assert.equal(s.$('cooldownText1').textContent,'DETONATE READY');
-  assert.equal(s.$('ammoDots2').getAttribute('aria-label'),'PILOT 7 (P2): 1 of 3 laser charges available');assert.equal(s.$('missileWarning2').hidden,false);
-  grenade.life=3.4;s.run();assert.equal(s.$('weaponLabel').textContent,'GRENADE, 3.4s');
-  s.setPhase('paused');s.run();assert.equal(s.$('cooldownText1').textContent,'PAUSED');assert.equal(s.$('missileWarning2').hidden,true);
-  s.setPhase('playing');a.alive=false;s.run();assert.equal(s.$('weaponLabel').textContent,'');assert.equal(s.$('cooldownText1').textContent,'OUT');
-  a.alive=true;s.bullets.length=0;s.run();assert.equal(s.$('weaponLabel').textContent,'STANDARD');assert.equal(s.$('cooldownText1').textContent,'READY');assert.equal(s.$('missileWarning2').hidden,true);
- }
-});
+test("Infinity and fixed mazes share detailed cockpit readouts for both pilots", () => {
+  const s = boot({ projectileCount: 0 }),
+    a = s.tanks[0],
+    b = s.tanks[7]
+  Object.assign(a, { power: "rapid", machineRounds: 73, shield: 4, shieldCharges: 2 })
+  Object.assign(b, { power: null, cooldown: 0.4, cooldownTotal: 0.8, speedTime: 4, speedStacks: 2 })
+  s.bullets.push({ owner: 1, kind: "homing", target: 7 })
+  s.run()
+  for (const [num, t] of [
+    [1, a],
+    [2, b],
+  ])
+    s.renderInfinityLoadout(t, num, s.pilotProjectileState(t, true), false, "playing")
+  for (const [fixed, infinity] of [
+    ["weaponLabel", "infiniteWeapon"],
+    ["machineBudgetTime1", "infiniteMachineBudgetTime1"],
+    ["buffLabel", "infiniteBuffLabel"],
+    ["buffLabel2", "infiniteBuffLabel2"],
+    ["cooldownText2", "infiniteCooldownText2"],
+    ["missileWarning2", "infiniteMissileWarning2"],
+  ]) {
+    assert.equal(s.$(infinity).textContent, s.$(fixed).textContent, infinity)
+  }
+  assert.equal(s.$("infiniteCooldownFill2").style.getPropertyValue("transform"), "scaleX(0.5)")
+  assert.equal(s.$("infiniteMissileWarning2").hidden, false)
+  assert.equal(s.$("infiniteAmmoDots").hidden, true)
+  a.starmanTime = 3
+  s.renderInfinityLoadout(a, 1, s.pilotProjectileState(a), false, "playing")
+  assert.equal(s.$("infiniteWeapon").textContent, "MACHINE GUN, ∞ AMMO")
+  assert.equal(s.$("infiniteBuffLabel").textContent, "SHD×2 4s, STAR 3s")
+  assert.equal(s.$("infiniteMachineBudget1").hidden, true)
+  b.alive = false
+  b.respawnTime = 1.25
+  s.renderInfinityLoadout(b, 2, s.pilotProjectileState(b), false, "playing")
+  assert.equal(s.$("infiniteCooldownText2").textContent, "RESPAWN 1.3s")
+  s.renderInfinityLoadout(b, 2, s.pilotProjectileState(b), false, "held")
+  assert.equal(s.$("infiniteCooldownText2").textContent, "RESPAWN HELD")
+})
 
-test('Infinity and fixed mazes share detailed cockpit readouts for both pilots',()=>{
- const s=boot({projectileCount:0}),a=s.tanks[0],b=s.tanks[7];
- Object.assign(a,{power:'rapid',machineRounds:73,shield:4,shieldCharges:2});
- Object.assign(b,{power:null,cooldown:.4,cooldownTotal:.8,speedTime:4,speedStacks:2});
- s.bullets.push({owner:1,kind:'homing',target:7});
- s.run();
- for(const [num,t] of [[1,a],[2,b]])s.renderInfinityLoadout(t,num,s.pilotProjectileState(t,true),false,'playing');
- for(const [fixed,infinity] of [['weaponLabel','infiniteWeapon'],['machineBudgetTime1','infiniteMachineBudgetTime1'],['buffLabel','infiniteBuffLabel'],['buffLabel2','infiniteBuffLabel2'],['cooldownText2','infiniteCooldownText2'],['missileWarning2','infiniteMissileWarning2']]){
-  assert.equal(s.$(infinity).textContent,s.$(fixed).textContent,infinity);
- }
- assert.equal(s.$('infiniteCooldownFill2').style.getPropertyValue('transform'),'scaleX(0.5)');
- assert.equal(s.$('infiniteMissileWarning2').hidden,false);
- assert.equal(s.$('infiniteAmmoDots').hidden,true);
- a.starmanTime=3;
- s.renderInfinityLoadout(a,1,s.pilotProjectileState(a),false,'playing');
- assert.equal(s.$('infiniteWeapon').textContent,'MACHINE GUN, ∞ AMMO');
- assert.equal(s.$('infiniteBuffLabel').textContent,'SHD×2 4s, STAR 3s');
- assert.equal(s.$('infiniteMachineBudget1').hidden,true);
- b.alive=false;b.respawnTime=1.25;
- s.renderInfinityLoadout(b,2,s.pilotProjectileState(b),false,'playing');
- assert.equal(s.$('infiniteCooldownText2').textContent,'RESPAWN 1.3s');
- s.renderInfinityLoadout(b,2,s.pilotProjectileState(b),false,'held');
- assert.equal(s.$('infiniteCooldownText2').textContent,'RESPAWN HELD');
-});
-
-test('a full two-pilot HUD refresh reads each projectile only once per pilot and pass',()=>{
- for(const mode of ['room','online']){
-  const s=boot({mode,projectileCount:192});let reads=0;
-  for(let i=0;i<s.bullets.length;i++){const b=s.bullets[i];Object.defineProperty(s.bullets,i,{get(){reads++;return b;}});}
-  s.run();assert.equal(reads,192*4,'two loadout passes and two feedback passes each make one scan');
- }
-});
+test("a full two-pilot HUD refresh reads each projectile only once per pilot and pass", () => {
+  for (const mode of ["room", "online"]) {
+    const s = boot({ mode, projectileCount: 192 })
+    let reads = 0
+    for (let i = 0; i < s.bullets.length; i++) {
+      const b = s.bullets[i]
+      Object.defineProperty(s.bullets, i, {
+        get() {
+          reads++
+          return b
+        },
+      })
+    }
+    s.run()
+    assert.equal(reads, 192 * 4, "two loadout passes and two feedback passes each make one scan")
+  }
+})
