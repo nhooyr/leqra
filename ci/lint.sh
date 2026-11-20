@@ -2,9 +2,13 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+if [ "${GITHUB_ACTIONS-}" ]; then
+	brew install shfmt
+fi
+
 go vet ./...
 git ls-files --cached --others --exclude-standard -z -- '*.js' '*.cjs' | xargs -0 -n1 sh -c 'test ! -f "$1" || node --check "./$1"' sh
-git ls-files --cached --others --exclude-standard -z -- '*.sh' android/gradlew | xargs -0 -n1 sh -c 'test ! -f "$1" || sh -n "./$1"' sh
+shfmt -f=0 . | xargs -0 -n1 sh -n
 
 python3 - <<'PY'
 import ast
