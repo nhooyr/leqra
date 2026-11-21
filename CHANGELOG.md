@@ -1,5 +1,11 @@
 ## Changelog
 
+## v5.8.1 (unreleased)
+
+- Update the Android Gradle wrapper to 9.9.2.
+- Run Android CI with the checked-in wrapper, retaining caching and removing separate Gradle version setup.
+- Increase the iOS UI test timeout for arena resizing after rotation from 5 to 10 seconds.
+
 ## v5.8.0
 
 - Add GitHub Actions CI.
