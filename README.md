@@ -1,4 +1,4 @@
-# leqra ![GitHub Release](https://img.shields.io/github/v/release/nhooyr/leqra?include_prereleases&display_name=tag&color=64C864)
+# leqra [![ci](https://github.com/nhooyr/leqra/actions/workflows/ci.yml/badge.svg)](https://github.com/nhooyr/leqra/actions/workflows/ci.yml) ![GitHub Release](https://img.shields.io/github/v/release/nhooyr/leqra?include_prereleases&display_name=tag&color=64C864)
 
 [leqra.com](https://leqra.com)
 
