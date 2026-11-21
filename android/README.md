@@ -38,8 +38,9 @@ identifiers or SDK paths belong in version control.
 The package version comes from `../scripts/version.sh`, which reads the release
 version in `../src/main.go`. Android and an updated server can use different
 releases while both support the same game protocol epoch.
-The packaged version name includes the `v` prefix (for example, `v5.7.3`);
-network handshakes retain the unprefixed game version. Play Console's editable
+The packaged version name and network handshakes use the complete version,
+including its `v` prefix and any suffix (for example, `v5.8.1-dev`). The numeric
+version code uses only the major, minor, and patch numbers. Play Console's editable
 release name is separate from the bundle metadata. Set it to `v5.7.3` when
 preparing that release if the console's suggestion includes the numeric code.
 

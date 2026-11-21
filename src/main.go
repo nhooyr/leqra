@@ -28,11 +28,11 @@ import (
 )
 
 const (
-	version = "5.8.0"
+	version = "v5.8.1-dev"
 	// Advance the protocol epoch only when existing clients cannot use the wire contract.
 	protocolVersion = 1
 	maxRoomLimit    = 32768
-	assetPath       = "assets/v" + version + "/"
+	assetPath       = "assets/" + version + "/"
 	budgetCapacity  = 8192
 	budgetWindow    = time.Minute
 )
@@ -54,14 +54,14 @@ var appShellFiles = [...]string{
 
 var shellVersionMarkers = map[string]*regexp.Regexp{
 	"game.js": regexp.MustCompile(`\bconst\s+GAME_VERSION\s*=\s*["']` + regexp.QuoteMeta(version) + `["']`),
-	"pwa.js":  regexp.MustCompile(`\bconst\s+VERSION\s*=\s*["']v` + regexp.QuoteMeta(version) + `["']`),
-	"sw.js":   regexp.MustCompile(`\bconst\s+VERSION\s*=\s*["']v` + regexp.QuoteMeta(version) + `["']`),
+	"pwa.js":  regexp.MustCompile(`\bconst\s+VERSION\s*=\s*["']` + regexp.QuoteMeta(version) + `["']`),
+	"sw.js":   regexp.MustCompile(`\bconst\s+VERSION\s*=\s*["']` + regexp.QuoteMeta(version) + `["']`),
 }
 
-var shellVersionMeta = regexp.MustCompile(`<meta\s+name="leqra-version"\s+content="v` + regexp.QuoteMeta(version) + `"\s*/?>`)
+var shellVersionMeta = regexp.MustCompile(`<meta\s+name="leqra-version"\s+content="` + regexp.QuoteMeta(version) + `"\s*/?>`)
 var shellProtocolMarker = regexp.MustCompile(fmt.Sprintf(`\bconst\s+GAME_PROTOCOL\s*=\s*%d\b`, protocolVersion))
 var shellAssetReference = regexp.MustCompile(`[[:space:]](?:src|href)="(assets/[^"]+)"`)
-var workerURL = regexp.MustCompile(`^/assets/v[0-9]+\.[0-9]+\.[0-9]+/sw\.js$`)
+var workerURL = regexp.MustCompile(`^/assets/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?/sw\.js$`)
 
 func appBuildID(web fs.FS) (string, error) {
 	h := sha256.New()
@@ -79,7 +79,7 @@ func appBuildID(web fs.FS) (string, error) {
 		fmt.Fprintf(h, "%s\x00%d\x00", path, len(data))
 		_, _ = h.Write(data)
 	}
-	return fmt.Sprintf("v%s-%x", version, h.Sum(nil)[:8]), nil
+	return fmt.Sprintf("%s-%x", version, h.Sum(nil)[:8]), nil
 }
 
 func appIndex(data []byte, build string) []byte {
@@ -102,7 +102,7 @@ func checkAppAssets(web fs.FS) error {
 		return fmt.Errorf("required app shell: %w", err)
 	}
 	if !shellVersionMeta.Match(shell) {
-		return fmt.Errorf("%s must declare leqra version v%s", index, version)
+		return fmt.Errorf("%s must declare leqra version %s", index, version)
 	}
 	linked := make(map[string]bool)
 	for _, match := range shellAssetReference.FindAllSubmatch(shell, -1) {
@@ -123,7 +123,7 @@ func checkAppAssets(web fs.FS) error {
 			return fmt.Errorf("required app asset %s is empty", path)
 		}
 		if marker := shellVersionMarkers[name]; marker != nil && !marker.Match(data) {
-			return fmt.Errorf("required app asset %s does not use leqra version v%s", path, version)
+			return fmt.Errorf("required app asset %s does not use leqra version %s", path, version)
 		}
 		if name == "game.js" && !shellProtocolMarker.Match(data) {
 			return fmt.Errorf("required app asset %s does not use leqra protocol %d", path, protocolVersion)
@@ -517,7 +517,7 @@ func main() {
 	defer signal.Stop(stopped)
 	addrs, _ := net.InterfaceAddrs()
 	openURL, lanURLs := startupURLs(listener.Addr().(*net.TCPAddr), addrs, lanHostname)
-	fmt.Printf("leqra server v%s\n%s\n", version, openURL)
+	fmt.Printf("leqra server %s\n%s\n", version, openURL)
 	for _, lanURL := range lanURLs {
 		fmt.Println(lanURL)
 	}

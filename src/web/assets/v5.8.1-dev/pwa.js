@@ -1,6 +1,6 @@
 ;(() => {
   "use strict"
-  const VERSION = "v5.8.0"
+  const VERSION = "v5.8.1-dev"
   const webOrigin = ["http:", "https:"].includes(location.protocol)
   let serviceWorker = null
   try {
@@ -401,7 +401,11 @@
         if (buildController === controller) buildController = null
       }
       if (resetting) return
-      if (typeof info?.build !== "string" || !/^v\d+\.\d+\.\d+-[0-9a-f]{16}$/.test(info.build)) return
+      if (
+        typeof info?.build !== "string" ||
+        !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-[0-9a-f]{16}$/.test(info.build)
+      )
+        return
       const loadedProtocol = window.leqra?.protocol
       const breaking =
         Number.isSafeInteger(info.protocol) &&

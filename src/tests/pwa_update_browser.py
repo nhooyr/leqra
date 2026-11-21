@@ -32,16 +32,16 @@ ICON_FILES = (
 class Release:
     def __init__(self, stale_header=False, breaking=False):
         self.files = {"index.html": (WEB / "index.html").read_bytes()}
-        self.version = re.search(rb'src="assets/(v\d+\.\d+\.\d+)/game\.js"', self.files["index.html"]).group(1).decode()
+        self.version = re.search(rb'src="assets/(v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/game\.js"', self.files["index.html"]).group(1).decode()
         self.base = "assets/" + self.version + "/"
         for name in SHELL_FILES + ICON_FILES:
             self.files[self.base + name] = (WEB / self.base / name).read_bytes()
         game = self.base + "game.js"
-        protocol_marker = re.search(rb"const GAME_PROTOCOL=(\d+);", self.files[game])
+        protocol_marker = re.search(rb"const\s+GAME_PROTOCOL\s*=\s*(\d+)", self.files[game])
         self.protocol = int(protocol_marker.group(1))
         if breaking:
             self.protocol += 1
-            marker = f"const GAME_PROTOCOL={self.protocol};".encode()
+            marker = f"const GAME_PROTOCOL = {self.protocol}".encode()
             self.files[game] = self.files[game].replace(protocol_marker.group(0), marker, 1)
         if stale_header:
             self.files[self.base + "style.css"] += b"\n#gameHeader{transform:translateY(-20px)!important}\n"
@@ -77,12 +77,12 @@ class Fixture:
                 headers = {"X-Leqra-Build": release.build}
                 if path == "/api/build":
                     body = json.dumps({
-                        "version": release.version[1:],
+                        "version": release.version,
                         "build": release.build,
                         "protocol": release.protocol,
                     }).encode()
                     mime, cache = "application/json", "no-store"
-                elif path == "/sw.js" or re.fullmatch(r"/assets/v\d+\.\d+\.\d+/sw\.js", path):
+                elif path == "/sw.js" or re.fullmatch(r"/assets/v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/sw\.js", path):
                     body, mime, cache = release.worker, "text/javascript", "no-store"
                     headers["Service-Worker-Allowed"] = "/"
                 elif path in ("/", "/index.html"):
@@ -169,7 +169,7 @@ def setup_state(page):
 
 def check_coherence(page, release):
     assert page.locator('meta[name="leqra-build"]').get_attribute("content") == release.build
-    assert page.evaluate("leqra.version") == release.version[1:]
+    assert page.evaluate("leqra.version") == release.version
     assert page.evaluate("leqra.protocol") == release.protocol
     assert page.evaluate("getComputedStyle(document.getElementById('gameHeader')).transform") == "none"
     refs = page.locator('[src^="assets/"], [href^="assets/"]').evaluate_all("nodes => nodes.map(node => node.getAttribute('src') || node.getAttribute('href'))")

@@ -881,7 +881,7 @@ def check_shared_header(browser, url, errors):
             assert fixed == infinite, (fixed, infinite)
             assert not infinite["overflow"] and infinite["header"]["right"] <= width + 1, infinite
             version = page.evaluate("leqra.version")
-            expect(page.locator("#gameHeader .github-link #headerVersion")).to_have_text("v" + version)
+            expect(page.locator("#gameHeader .github-link #headerVersion")).to_have_text(version)
             expect(page.locator("#gameHeader .github-link")).to_have_attribute("href", "https://github.com/nhooyr/leqra")
             expect(page.locator("#gameHeader")).to_have_count(1)
             expect(page.locator("#pauseBtn")).to_be_visible()

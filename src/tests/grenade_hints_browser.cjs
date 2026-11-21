@@ -35,7 +35,7 @@ const server = http.createServer((req, res) => {
       } catch {}
       let v =
         pathname === "/api/build"
-          ? { version: assetVersion.slice(1), build: "fixture" }
+          ? { version: assetVersion, build: "fixture" }
           : pathname === "/api/infinity"
             ? { players: 0, tankCount: 0, capacity: 32, leaders: [] }
             : pathname === "/api/callsigns/generate"

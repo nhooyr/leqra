@@ -49,7 +49,7 @@ def main():
         parser.error("Inkscape is required to render the vector artwork.")
 
     version = re.search(r'\bversion\s*=\s*"([^"]+)"', (root / "src/main.go").read_text()).group(1)
-    assets = root / "src/web/assets" / ("v" + version)
+    assets = root / "src/web/assets" / version
     source = assets / "favicon.svg"
     svg = ET.fromstring(source.read_text())
     output = (args.output_dir or assets).resolve()

@@ -28,7 +28,7 @@ class ScriptPathTests(unittest.TestCase):
         self.caller = self.parent / "unrelated working directory"
         self.caller.mkdir()
         (self.project / "src").mkdir()
-        (self.project / "src/main.go").write_text('const (\n version = "1.2.3"\n)\n')
+        (self.project / "src/main.go").write_text('const (\n version = "v1.2.3-dev"\n)\n')
         for path in (ROOT / "scripts").iterdir():
             if path.is_file():
                 shutil.copy2(path, self.scripts / path.name)
@@ -105,7 +105,7 @@ class ScriptPathTests(unittest.TestCase):
                 result = subprocess.run([command], cwd=self.caller, env=env,
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, "1.2.3\n")
+                self.assertEqual(result.stdout, "v1.2.3-dev\n")
                 self.assertEqual(result.stderr, "")
 
 

@@ -12,11 +12,13 @@ val releaseVersion =
         .get()
         .trim()
 
-require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+").matches(releaseVersion)) {
-    "Invalid scripts/version.sh version"
-}
-
-val parts = releaseVersion.split('.').map(String::toInt)
+val versionMatch =
+    requireNotNull(
+        Regex("v([0-9]+)\\.([0-9]+)\\.([0-9]+)(?:-[0-9A-Za-z.-]+)?").matchEntire(releaseVersion),
+    ) {
+        "Invalid scripts/version.sh version"
+    }
+val parts = versionMatch.groupValues.drop(1).map(String::toInt)
 
 require(parts[1] < 100 && parts[2] < 10000)
 
@@ -73,7 +75,7 @@ android {
         applicationId = "com.leqra"
         minSdk = 26
         targetSdk = 36
-        versionName = "v$releaseVersion"
+        versionName = releaseVersion
         versionCode = parts[0] * 1000000 + parts[1] * 10000 + parts[2]
         buildConfigField("String", "GAME_VERSION", "\"$releaseVersion\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

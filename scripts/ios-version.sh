@@ -3,7 +3,7 @@ set -eu
 
 script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 version=$("$script_dir/version.sh")
-if ! awk -v version="$version" 'BEGIN { exit version !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ }'; then
+if ! awk -v version="$version" 'BEGIN { exit version !~ /^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/ }'; then
 	echo "Invalid iOS release version from scripts/version.sh: $version" >&2
 	exit 1
 fi
@@ -27,7 +27,9 @@ enum GeneratedVersion {
 	output=$3
 	mkdir -p "$(dirname "$output")"
 	cp "$template" "$output"
-	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$output"
+	release=${version#v}
+	release=${release%%-*}
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $release" "$output"
 	;;
 *)
 	echo "Usage: $0 --swift OUTPUT | --plist TEMPLATE OUTPUT" >&2

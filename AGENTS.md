@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 - `src/`: Go server, authoritative simulation, WebSocket transport, rooms, matchmaking, and adjacent `*_test.go` files; one `leqra` module using `package main`.
-- `src/web/`: `index.html` and the versioned browser assets under `assets/v<version>/`. `src/tests/` contains JavaScript tests and optional browser/protocol harnesses.
+- `src/web/`: `index.html` and the versioned browser assets under `assets/<version>/`, where the version includes its `v` prefix and any suffix. `src/tests/` contains JavaScript tests and optional browser/protocol harnesses.
 - `tests/`: mocked deployment tests. `scripts/`: optional asset-generation utilities. `deploy/`: deployment script, service, and environment settings. `docs/`: player guides, protocol, and release notes.
 
 ## Build, Test, and Development Commands

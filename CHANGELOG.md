@@ -2,6 +2,7 @@
 
 ## v5.8.1 (Unreleased)
 
+- Use complete versions such as `v5.8.1-dev` across server, web, and native clients, with suffix-aware asset generation and numeric native package fields.
 - Update the Android Gradle wrapper to 9.9.2.
 - Run Android CI with the checked-in wrapper, retaining caching and removing separate Gradle version setup.
 - Increase the iOS UI test timeout for arena resizing after rotation from 5 to 10 seconds.

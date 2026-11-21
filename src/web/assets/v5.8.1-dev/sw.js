@@ -1,5 +1,5 @@
 "use strict"
-const VERSION = "v5.8.0"
+const VERSION = "v5.8.1-dev"
 const BUILD = self.LEQRA_BUILD || VERSION
 const CACHE = "leqra-app-" + BUILD
 let resetting = false
@@ -186,7 +186,7 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate" && (url.pathname === "/" || url.pathname === "/index.html")) {
     response = appNavigation(request)
   } else {
-    const asset = url.pathname.match(/^\/assets\/(v\d+\.\d+\.\d+)\/([^/]+)$/)
+    const asset = url.pathname.match(/^\/assets\/(v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\/([^/]+)$/)
     if (!asset || !SHELL.includes(BASE + asset[2])) return
     const requested = url.searchParams.get("build")
     const cacheBuild =

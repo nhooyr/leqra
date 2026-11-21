@@ -24,8 +24,8 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	body := index.Body.String()
 	for _, want := range []string{
-		`assets/v` + version + `/game.js`, `assets/v` + version + `/theme.js`, `assets/v` + version + `/manifest.webmanifest`,
-		`assets/v` + version + `/pwa.js`, `apple-mobile-web-app-capable`, `apple-touch-icon`,
+		`assets/` + version + `/game.js`, `assets/` + version + `/theme.js`, `assets/` + version + `/manifest.webmanifest`,
+		`assets/` + version + `/pwa.js`, `apple-mobile-web-app-capable`, `apple-touch-icon`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q", want)
@@ -36,7 +36,7 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 	}
 	for _, name := range []string{"game.js", "theme.js", "style.css", "manifest.webmanifest", "sw.js", "icon-192.png", "icon-512.png"} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("GET", "/assets/v"+version+"/"+name, nil))
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/assets/"+version+"/"+name, nil))
 		if w.Code != 200 {
 			t.Fatalf("%s: %d", name, w.Code)
 		}
@@ -52,7 +52,7 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 		}
 	}
 	manifest := httptest.NewRecorder()
-	h.ServeHTTP(manifest, httptest.NewRequest("GET", "/assets/v"+version+"/manifest.webmanifest", nil))
+	h.ServeHTTP(manifest, httptest.NewRequest("GET", "/assets/"+version+"/manifest.webmanifest", nil))
 	var appManifest struct {
 		ID       string `json:"id"`
 		StartURL string `json:"start_url"`
@@ -69,8 +69,8 @@ func Test423VersionedPWAAssetsAndCaching(t *testing.T) {
 		t.Fatalf("PWA manifest contract: %#v", appManifest)
 	}
 	sw := httptest.NewRecorder()
-	h.ServeHTTP(sw, httptest.NewRequest("GET", "/assets/v"+version+"/sw.js", nil))
-	for _, want := range []string{"leqra-app-", "v" + regexp.QuoteMeta(version), `["']/ws["']`, `["']/healthz["']`, `["']/api/["']`, `caches\.match\(["']/["'],\s*\{\s*cacheName:\s*CACHE\s*\}\)`} {
+	h.ServeHTTP(sw, httptest.NewRequest("GET", "/assets/"+version+"/sw.js", nil))
+	for _, want := range []string{"leqra-app-", regexp.QuoteMeta(version), `["']/ws["']`, `["']/healthz["']`, `["']/api/["']`, `caches\.match\(["']/["'],\s*\{\s*cacheName:\s*CACHE\s*\}\)`} {
 		if !regexp.MustCompile(want).Match(sw.Body.Bytes()) {
 			t.Fatalf("service worker missing %q", want)
 		}

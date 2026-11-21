@@ -28,8 +28,8 @@ class IconGeneratorTests(unittest.TestCase):
         shutil.copy2(ROOT / "scripts/render-icons.py", scripts)
         self.script = scripts / "render-icons.py"
         (self.root / "src").mkdir()
-        (self.root / "src/main.go").write_text('const version = "1.2.3"\n')
-        self.assets = self.root / "src/web/assets/v1.2.3"
+        (self.root / "src/main.go").write_text('const version = "v1.2.3-dev"\n')
+        self.assets = self.root / "src/web/assets/v1.2.3-dev"
         self.assets.mkdir(parents=True)
         (self.assets / "favicon.svg").write_text(SOURCE)
         self.ios = self.root / "ios/leqra/Assets.xcassets/AppIcon.appiconset/AppIcon.png"

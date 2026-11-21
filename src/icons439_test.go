@@ -94,7 +94,7 @@ func TestCheckAppIconsRejectsInvalidExports(t *testing.T) {
 	if err := checkAppIcons(embeddedWeb); err != nil {
 		t.Fatalf("checkAppIcons rejected the embedded icons: %v", err)
 	}
-	dir := "web/assets/v" + version + "/"
+	dir := "web/assets/" + version + "/"
 	web := fstest.MapFS{}
 	for _, name := range append(appIconPNGs[:], "favicon.svg") {
 		data, err := embeddedWeb.ReadFile(dir + name)
@@ -147,19 +147,19 @@ func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
 	for _, compact := range []bool{true, false} {
 		t.Run(fmt.Sprintf("formatting compact=%t", compact), func(t *testing.T) {
 			files := maps.Clone(web)
-			meta := fmt.Sprintf(`<meta name="leqra-version" content="v%s">`, version)
+			meta := fmt.Sprintf(`<meta name="leqra-version" content="%s">`, version)
 			if !compact {
-				meta = fmt.Sprintf("<meta\n name=\"leqra-version\"\n content=\"v%s\" />", version)
+				meta = fmt.Sprintf("<meta\n name=\"leqra-version\"\n content=\"%s\" />", version)
 			}
 			files[index] = &fstest.MapFile{Data: shellVersionMeta.ReplaceAll(web[index].Data, []byte(meta))}
 			for name, marker := range shellVersionMarkers {
-				key, value := "VERSION", "v"+version
+				key := "VERSION"
 				if name == "game.js" {
-					key, value = "GAME_VERSION", version
+					key = "GAME_VERSION"
 				}
-				declaration := fmt.Sprintf("const %s='%s';", key, value)
+				declaration := fmt.Sprintf("const %s='%s';", key, version)
 				if !compact {
-					declaration = fmt.Sprintf("const %s = \"%s\"", key, value)
+					declaration = fmt.Sprintf("const %s = \"%s\"", key, version)
 				}
 				path := dir + name
 				files[path] = &fstest.MapFile{Data: marker.ReplaceAll(web[path].Data, []byte(declaration))}
@@ -217,7 +217,7 @@ func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct{ name, before, after, want string }{
-		{"stale shell", `content="v` + version + `"`, `content="v0.0.0"`, "must declare leqra version"},
+		{"stale shell", `content="` + version + `"`, `content="v0.0.0"`, "must declare leqra version"},
 		{"stale script", assetPath + "game.js", "assets/v0.0.0/game.js", "references unavailable asset"},
 		{"unlinked script", `src="` + assetPath + `game.js"`, "", "is missing asset reference"},
 	} {
@@ -233,7 +233,7 @@ func TestCheckAppAssetsRequiresACompleteMatchingShell(t *testing.T) {
 
 func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 	h := newApp(4, nil).handler()
-	prefix := "/assets/v" + version + "/"
+	prefix := "/assets/" + version + "/"
 	get := func(t *testing.T, name string) *httptest.ResponseRecorder {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -329,7 +329,7 @@ func Test439IconExportsRoutesAndOfflineCache(t *testing.T) {
 	h.ServeHTTP(index, httptest.NewRequest("GET", "/", nil))
 	markup := strings.ReplaceAll(index.Body.String(), "?build="+index.Header().Get("X-Leqra-Build"), "")
 	markup = strings.Join(strings.Fields(markup), " ")
-	brand := `<div class="brand-mark" aria-hidden="true">\s*<img src="assets/v` + regexp.QuoteMeta(version) + `/favicon.svg" width="48" height="48" alt=""\s*/?>\s*</div>`
+	brand := `<div class="brand-mark" aria-hidden="true">\s*<img src="assets/` + regexp.QuoteMeta(version) + `/favicon.svg" width="48" height="48" alt=""\s*/?>\s*</div>`
 	if !regexp.MustCompile(brand).MatchString(markup) {
 		t.Fatal("header must use the shared app icon rather than a separate tank drawing")
 	}

@@ -233,6 +233,26 @@ test("versioned assets never use a same-URL response from another cache", async 
   }
 })
 
+test("release suffixes and build hashes select the matching asset cache", async () => {
+  for (const version of ["v99.1.0", "v99.1.0-dev", "v99.1.0-rc.2"]) {
+    for (const build of [version, version + "-1111111111111111"]) {
+      const pathname = "/assets/" + version + "/game.js"
+      const h = boot({
+        match: async (request, options) => {
+          assert.equal(request, pathname)
+          assert.equal(options.cacheName, "leqra-app-" + build)
+          return new Response("matching release asset")
+        },
+      })
+      const event = h.dispatch(pathname + "?build=" + build, "same-origin")
+      assert.ok(event.response, "versioned assets must be handled by the worker")
+      assert.equal(await (await event.response).text(), "matching release asset")
+      await Promise.all(event.waits)
+      assert.equal(h.calls.fetch, 0)
+    }
+  }
+})
+
 test("a failed asset cache lookup still serves a healthy network response", async () => {
   const h = boot({
     match: async () => {
@@ -413,7 +433,10 @@ test("online app navigation returns fresh HTML without replacing the installed f
 
 function releaseHarness(formatted = false) {
   const current = assetVersion,
-    next = current.replace(/\d+$/, (patch) => String(Number(patch) + 1)),
+    next = current.replace(
+      /^(v\d+\.\d+\.)(\d+)(?:-.*)?$/,
+      (_, prefix, patch) => prefix + (Number(patch) + 1),
+    ),
     storage = new Map()
   const currentBuild = current + "-1111111111111111",
     nextBuild = current + "-2222222222222222",

@@ -320,7 +320,7 @@ func TestHTTPAndUpgradeValidation(t *testing.T) {
 	for _, tt := range []struct {
 		path   string
 		status int
-	}{{"/", 200}, {"/api/config", 200}, {"/healthz", 200}, {"/assets/v" + version + "/game.js", 200}, {"/game.js", 404}, {"/go.mod", 404}, {"/ws", 400}} {
+	}{{"/", 200}, {"/api/config", 200}, {"/healthz", 200}, {"/assets/" + version + "/game.js", 200}, {"/game.js", 404}, {"/go.mod", 404}, {"/ws", 400}} {
 		r := httptest.NewRequest("GET", "http://game.test"+tt.path, nil)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)

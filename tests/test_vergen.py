@@ -23,7 +23,7 @@ class VersionGenerationTests(unittest.TestCase):
         self.caller = Path(self.temporary.name) / "another directory"
         self.caller.mkdir()
         files = {
-            "src/main.go": 'const (\n version = "1.2.4"\n protocolVersion = 7\n)\n',
+            "src/main.go": 'const (\n version = "v1.2.4"\n protocolVersion = 7\n)\n',
             "src/web/index.html": '<meta name="leqra-version" content="v1.2.3">\n'
                                   '<script src="assets/v1.2.3/game.js"></script>\n'
                                   '<link href="assets/v1.2.3/style.css">\n',
@@ -74,18 +74,45 @@ class VersionGenerationTests(unittest.TestCase):
         self.assertEqual((destination / "icon.png").read_bytes(), self.icon)
         self.assertEqual((destination / "game.js").stat().st_mode & 0o777, 0o640)
         self.assertEqual((destination / "game.js").read_text(),
-                         "const GAME_VERSION='1.2.4';\nconst GAME_PROTOCOL=7;\n")
+                         "const GAME_VERSION='v1.2.4';\nconst GAME_PROTOCOL=7;\n")
         for name, data in untouched.items():
             self.assertEqual((self.root / name).read_bytes(), data)
         self.assertNotIn("1.2.3", (self.root / "src/web/index.html").read_text())
         protocol = (self.root / "docs/PROTOCOL.md").read_text()
         self.assertTrue(protocol.startswith("# leqra v1.2.4 — current game protocol (protocol 7)\n"))
         for packet_type in ("server_hello", "client_hello", "join"):
-            self.assertIn(f'"type":"{packet_type}","version":"1.2.4","protocol":7', protocol)
+            self.assertIn(f'"type":"{packet_type}","version":"v1.2.4","protocol":7', protocol)
         self.assertIn("Release v1.2.3 introduced this behavior.", protocol)
         self.assertTrue(protocol.endswith(HISTORICAL_PROTOCOL))
         for name in ("polish49_test.go", "polish410_test.go"):
-            self.assertIn('version != "1.2.4"', (self.root / "src" / name).read_text())
+            self.assertIn('version != "v1.2.4"', (self.root / "src" / name).read_text())
+
+    def test_suffix_changes_and_final_release_keep_every_marker_in_sync(self):
+        main = self.root / "src/main.go"
+        previous = "v1.2.3"
+        for version in ("v1.2.4-dev", "v1.2.4-rc.2", "v1.2.4"):
+            with self.subTest(version=version):
+                main.write_text(f'const (\n version = "{version}"\n protocolVersion = 7\n)\n')
+                result = self.run_script()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"Generated leqra {version}.", result.stdout)
+                assets = self.root / "src/web/assets" / version
+                self.assertFalse((assets.parent / previous).exists())
+                self.assertEqual((assets / "icon.png").read_bytes(), self.icon)
+                for name, marker in (("game.js", "GAME_VERSION"), ("pwa.js", "VERSION"), ("sw.js", "VERSION")):
+                    self.assertRegex((assets / name).read_text(), marker + r"\s*=\s*['\"]" + version.replace(".", r"\.") + r"['\"]")
+                index = (self.root / "src/web/index.html").read_text()
+                self.assertIn(f'content="{version}"', index)
+                self.assertIn(f'assets/{version}/game.js', index)
+                protocol = (self.root / "docs/PROTOCOL.md").read_text()
+                self.assertTrue(protocol.startswith(f"# leqra {version} — current game protocol"))
+                for packet_type in ("server_hello", "client_hello", "join"):
+                    self.assertIn(f'"type":"{packet_type}","version":"{version}","protocol":7', protocol)
+                self.assertTrue(protocol.endswith(HISTORICAL_PROTOCOL))
+                before = {str(path): path.stat().st_mtime_ns for path in self.root.rglob("*")}
+                self.assertEqual(self.run_script().returncode, 0)
+                self.assertEqual(before, {str(path): path.stat().st_mtime_ns for path in self.root.rglob("*")})
+                previous = version
 
     def test_repeating_sync_does_not_rewrite_files(self):
         self.assertEqual(self.run_script().returncode, 0)
@@ -106,7 +133,7 @@ class VersionGenerationTests(unittest.TestCase):
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
         assets = self.root / "src/web/assets/v1.2.4"
-        self.assertEqual((assets / "game.js").read_text(), '  const GAME_VERSION = "1.2.4"\n')
+        self.assertEqual((assets / "game.js").read_text(), '  const GAME_VERSION = "v1.2.4"\n')
         self.assertEqual((assets / "pwa.js").read_text(), '  const VERSION = "v1.2.4"\n')
         self.assertEqual((assets / "sw.js").read_text(), '  const VERSION = "v1.2.4"\n')
         self.assertIn('content="v1.2.4" />', index.read_text())
@@ -142,12 +169,14 @@ class VersionGenerationTests(unittest.TestCase):
 
     def test_invalid_version_fails_without_changes(self):
         main = self.root / "src/main.go"
-        main.write_text('const version = "../../outside"\n')
-        before = self.snapshot()
-        result = self.run_script()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("numeric X.Y.Z", result.stderr)
-        self.assertEqual(self.snapshot(), before)
+        for version in ("../../outside", "1.2.4", "v1.2", "v1.2.4-", "v1.2.4-dev/other"):
+            with self.subTest(version=version):
+                main.write_text(f'const (\n version = "{version}"\n)\n')
+                before = self.snapshot()
+                result = self.run_script()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("vX.Y.Z", result.stderr)
+                self.assertEqual(self.snapshot(), before)
 
     def test_rerun_finishes_an_already_moved_directory(self):
         (self.root / "src/web/assets/v1.2.3").rename(self.root / "src/web/assets/v1.2.4")

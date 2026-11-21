@@ -8,7 +8,7 @@ import (
 
 func Test45DarkAppearanceAssetsAreServedSameOrigin(t *testing.T) {
 	app := newApp(4, nil)
-	for _, path := range []string{"/assets/v" + version + "/theme.js", "/assets/v" + version + "/theme.css"} {
+	for _, path := range []string{"/assets/" + version + "/theme.js", "/assets/" + version + "/theme.css"} {
 		w := httptest.NewRecorder()
 		app.handler().ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if w.Code != 200 || w.Body.Len() < 100 {
@@ -27,7 +27,7 @@ func Test45LightThemeAndSystemThemeCodeRemoved(t *testing.T) {
 	if !strings.Contains(html, `content="dark"`) {
 		t.Fatal("document does not declare dark-only color scheme")
 	}
-	for _, path := range []string{"/assets/v" + version + "/theme.js", "/assets/v" + version + "/theme.css", "/assets/v" + version + "/game.js"} {
+	for _, path := range []string{"/assets/" + version + "/theme.js", "/assets/" + version + "/theme.css", "/assets/" + version + "/game.js"} {
 		w := httptest.NewRecorder()
 		app.handler().ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		body := strings.ToLower(w.Body.String())
@@ -43,7 +43,7 @@ func Test45ThemeBootstrapPrecedesStyles(t *testing.T) {
 	w := httptest.NewRecorder()
 	app.handler().ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 	html := w.Body.String()
-	boot := strings.Index(html, `<script src="assets/v`+version+`/theme.js?build=`)
+	boot := strings.Index(html, `<script src="assets/`+version+`/theme.js?build=`)
 	css := strings.Index(html, `rel="stylesheet"`)
 	if boot < 0 || css < 0 || boot > css {
 		t.Fatal("dark palette must initialize before styles")

@@ -143,7 +143,7 @@ function boot({
       return {
         ok: state.responseOK,
         json: async () => ({
-          version: assetVersion.slice(1),
+          version: assetVersion,
           build: state.latestBuild,
           protocol: state.serverProtocol,
         }),
@@ -313,7 +313,12 @@ test("retained pages reload for a breaking protocol only after its worker activa
 })
 
 test("compatible builds update the worker without reloading the open game", async () => {
-  for (const latestBuild of [buildB, "v99.1.0-2222222222222222"]) {
+  for (const latestBuild of [
+    buildB,
+    "v99.1.0-2222222222222222",
+    "v99.1.0-dev-2222222222222222",
+    "v99.1.0-rc.2-2222222222222222",
+  ]) {
     for (const supported of [true, false]) {
       const h = boot({ supported })
       await h.load()

@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "5.8.0"
+  const GAME_VERSION = "v5.8.1-dev"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,
@@ -18565,9 +18565,9 @@
   function initPresentation() {
     const sidebar = $("gameSidebar")
     sidebarHome = sidebar.parentElement
-    $("headerVersion").textContent = "v" + GAME_VERSION
+    $("headerVersion").textContent = GAME_VERSION
     const sourceLink = document.querySelector(".github-link")
-    sourceLink.setAttribute("aria-label", "View leqra v" + GAME_VERSION + " source on GitHub")
+    sourceLink.setAttribute("aria-label", "View leqra " + GAME_VERSION + " source on GitHub")
     for (const element of sidebar.querySelectorAll(".power-info span,.power-note"))
       sidebarPowerText.set(element, element.textContent)
     const button = document.createElement("button")
@@ -19178,7 +19178,7 @@
       )
     $("resetAllSettingsBtn").insertAdjacentHTML(
       "beforebegin",
-      '<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every second. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra v' +
+      '<hr><h3>PERFORMANCE</h3><label class="check-label"><input id="showFPS" type="checkbox"> FPS and ping time</label><label class="check-label"><input id="performanceMode" type="checkbox"> Performance graphics (lower pixel density, reduced glow)</label><p class="mode-help">FPS measures browser rendering. Ping measures the round-trip time to the game server, from the start menu through online play. It refreshes every second. Graphics quality never changes tank speed, physics, hitboxes, or game rules.</p><hr><p class="mode-help game-version">leqra ' +
         GAME_VERSION +
         "</p>",
     )

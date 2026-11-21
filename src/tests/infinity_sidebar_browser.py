@@ -17,7 +17,7 @@ def check_sidebar(browser, url, mobile, source_css):
     ) as context:
         if source_css:
             index = Path(__file__).resolve().parents[1] / "web" / "index.html"
-            asset = re.search(r'href="(assets/v[\d.]+/style.css)"', index.read_text())[1]
+            asset = re.search(r'href="(assets/v[^/"]+/style.css)"', index.read_text())[1]
             context.route("**/style.css*", lambda route: route.fulfill(
                 path=str(index.parent / asset), content_type="text/css"
             ))

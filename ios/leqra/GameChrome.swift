@@ -74,7 +74,7 @@ struct GameHeader: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 4) {
                 GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
-                Text("v" + NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize()
+                Text(NetworkClient.supportedVersion).font(WebStyle.mono()).fixedSize()
             }
             GitHubMark().fill(WebStyle.text).frame(width: 17, height: 17)
         }.foregroundStyle(WebStyle.muted).padding(.horizontal, 5).frame(minHeight: 32)

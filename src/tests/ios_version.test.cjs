@@ -29,7 +29,7 @@ function fixture(t) {
       path.join(root, "src/main.go"),
       'package main\n\nconst (\n\tversion = "' + version + '"\n)\n',
     )
-  setVersion("4.49.38")
+  setVersion("v4.49.38")
   const run = (...args) =>
     spawnSync("/bin/sh", [path.join(root, "scripts/ios-version.sh"), ...args], {
       cwd: root,
@@ -47,7 +47,7 @@ test("iOS Swift version follows Go release changes and unchanged generation pres
     output = f.output("GeneratedVersion.swift")
   f.generate("--swift", output)
   assert.match(readFileSync(output, "utf8"), /enum\s+GeneratedVersion\b/)
-  assert.match(readFileSync(output, "utf8"), /static\s+let\s+value\s*=\s*"4\.49\.38"/)
+  assert.match(readFileSync(output, "utf8"), /static\s+let\s+value\s*=\s*"v4\.49\.38"/)
   const original = readFileSync(output, "utf8"),
     oldDate = new Date("2001-01-01T00:00:00Z")
   utimesSync(output, oldDate, oldDate)
@@ -59,9 +59,9 @@ test("iOS Swift version follows Go release changes and unchanged generation pres
     unchangedTime,
     "identical output must not trigger a Swift rebuild",
   )
-  f.setVersion("4.50.1")
+  f.setVersion("v4.50.1-dev")
   f.generate("--swift", output)
-  assert.match(readFileSync(output, "utf8"), /static\s+let\s+value\s*=\s*"4\.50\.1"/)
+  assert.match(readFileSync(output, "utf8"), /static\s+let\s+value\s*=\s*"v4\.50\.1-dev"/)
   assert.notEqual(readFileSync(output, "utf8"), original)
   assert.notEqual(statSync(output, { bigint: true }).mtimeNs, unchangedTime)
 })
@@ -69,9 +69,9 @@ test("iOS Swift version follows Go release changes and unchanged generation pres
 test("iOS generation uses scripts/version.sh as the version reader", (t) => {
   const f = fixture(t),
     output = f.output("GeneratedVersion.swift")
-  writeFileSync(path.join(f.root, "scripts/version.sh"), "#!/bin/sh\nprintf '%s\\n' '7.8.9'\n")
+  writeFileSync(path.join(f.root, "scripts/version.sh"), "#!/bin/sh\nprintf '%s\\n' 'v7.8.9-rc.2'\n")
   f.generate("--swift", output)
-  assert.match(readFileSync(output, "utf8"), /static\s+let\s+value\s*=\s*"7\.8\.9"/)
+  assert.match(readFileSync(output, "utf8"), /static\s+let\s+value\s*=\s*"v7\.8\.9-rc\.2"/)
 })
 
 test("iOS generation rejects malformed release versions before modifying output", (t) => {
@@ -79,7 +79,17 @@ test("iOS generation rejects malformed release versions before modifying output"
     output = f.output("GeneratedVersion.swift")
   f.generate("--swift", output)
   const original = readFileSync(output, "utf8")
-  for (const version of ["", "4", "4.49", "4.49.38.1", "v4.49.38", "4.49.beta", "4..38"]) {
+  for (const version of [
+    "",
+    "v4",
+    "v4.49",
+    "v4.49.38.1",
+    "4.49.38",
+    "v4.49.beta",
+    "v4..38",
+    "v4.49.38-",
+    "v4.49.38-dev/other",
+  ]) {
     f.setVersion(version)
     const result = f.run("--swift", output)
     assert.notEqual(result.status, 0, "invalid release accepted: " + JSON.stringify(version))
@@ -115,10 +125,12 @@ test(
     assert.equal(value("CFBundleName"), "$(PRODUCT_NAME)")
     assert.equal(value("CFBundleIdentifier"), "$(PRODUCT_BUNDLE_IDENTIFIER)")
     assert.equal(readFileSync(template, "utf8"), original, "source template must stay untouched")
-    f.setVersion("4.50.1")
-    f.generate("--plist", template, output)
-    assert.equal(value("CFBundleShortVersionString"), "4.50.1")
-    assert.equal(value("CFBundleVersion"), "$(CURRENT_PROJECT_VERSION)")
-    assert.equal(value("CFBundleIdentifier"), "$(PRODUCT_BUNDLE_IDENTIFIER)")
+    for (const version of ["v4.50.1-dev", "v4.50.1-rc.2", "v4.50.1"]) {
+      f.setVersion(version)
+      f.generate("--plist", template, output)
+      assert.equal(value("CFBundleShortVersionString"), "4.50.1")
+      assert.equal(value("CFBundleVersion"), "$(CURRENT_PROJECT_VERSION)")
+      assert.equal(value("CFBundleIdentifier"), "$(PRODUCT_BUNDLE_IDENTIFIER)")
+    }
   },
 )

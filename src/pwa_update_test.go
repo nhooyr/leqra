@@ -14,7 +14,7 @@ import (
 func TestPWAWorkerUpdatesAtStableAndLegacyURLs(t *testing.T) {
 	h := newApp(4, nil).handler()
 	var first string
-	for _, path := range []string{"/sw.js", "/assets/v1.0.0/sw.js", "/assets/v" + version + "/sw.js"} {
+	for _, path := range []string{"/sw.js", "/assets/v1.0.0/sw.js", "/assets/v1.2.3-rc.1/sw.js", "/assets/" + version + "/sw.js"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("Service-Worker-Allowed") != "/" {
@@ -29,7 +29,7 @@ func TestPWAWorkerUpdatesAtStableAndLegacyURLs(t *testing.T) {
 			t.Fatal("legacy worker URL did not receive the current worker")
 		}
 	}
-	for _, path := range []string{"/assets/v1.0/sw.js", "/assets/private/sw.js", "/assets/v1.0.0/game.js"} {
+	for _, path := range []string{"/assets/v1.0/sw.js", "/assets/v1.0.0-/sw.js", "/assets/private/sw.js", "/assets/v1.0.0/game.js"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if w.Code != 404 {
@@ -49,7 +49,7 @@ func TestPWAShellAndMetadataPinEveryAssetToOneBuild(t *testing.T) {
 	if err := json.Unmarshal(metadata.Body.Bytes(), &info); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.Code != 200 || metadata.Header().Get("Cache-Control") != "no-store" || info.Version != version || info.Protocol != protocolVersion || !strings.HasPrefix(info.Build, "v"+version+"-") {
+	if metadata.Code != 200 || metadata.Header().Get("Cache-Control") != "no-store" || info.Version != version || info.Protocol != protocolVersion || !strings.HasPrefix(info.Build, version+"-") {
 		t.Fatalf("invalid build metadata: %s", metadata.Body.String())
 	}
 	index := httptest.NewRecorder()

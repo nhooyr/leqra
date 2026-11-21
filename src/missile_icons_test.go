@@ -240,7 +240,7 @@ func TestLegendUsesSharedCanvasIconForEveryPower(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	js, err := os.ReadFile("web/assets/v" + version + "/game.js")
+	js, err := os.ReadFile("web/assets/" + version + "/game.js")
 	if err != nil {
 		t.Fatal(err)
 	}
