@@ -111,11 +111,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - run: ./ci/gradle-version.sh
-        id: gradle-version
       - uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: ${{ steps.gradle-version.outputs.version }}
           cache-provider: basic
           add-job-summary: never
       - uses: android-actions/setup-android@v4

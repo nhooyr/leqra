@@ -9,7 +9,7 @@ The application ID is `com.leqra`.
 1. Install Android Studio, including Android SDK Platform 36 and Build Tools 36.
 2. Open this `android` directory as the Android Studio project. Let Gradle sync.
    Use Android Studio's bundled JDK for Gradle (Settings → Build, Execution,
-   Deployment → Build Tools → Gradle). The Gradle 9.9.1 wrapper supports JDK
+   Deployment → Build Tools → Gradle). The Gradle 9.9.2 wrapper supports JDK
    17–27; OpenJDK 27 works too. The compiler toolchain is separately pinned to
    JDK 17, which Gradle downloads automatically if it is not already installed.
 3. Select the `app` run configuration and an emulator or connected Android phone,
@@ -43,7 +43,7 @@ network handshakes retain the unprefixed game version. Play Console's editable
 release name is separate from the bundle metadata. Set it to `v5.7.3` when
 preparing that release if the console's suggestion includes the numeric code.
 
-The build uses Gradle 9.9.1 and Android Gradle Plugin 9.5.1. The app uses the
+The build uses Gradle 9.9.2 and Android Gradle Plugin 9.5.1. The app uses the
 Android plugin's built-in Kotlin support; the shared JVM core uses Kotlin 2.4.21.
 
 ## Signed Play Store builds

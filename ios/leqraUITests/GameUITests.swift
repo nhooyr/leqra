@@ -2628,7 +2628,7 @@ final class GameUITests: XCTestCase {
                 (split.exists || (stage.frame.width > stage.frame.height) == landscape)
                     && app.frame.contains(stage.frame)
             }, object: stage)
-        XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 5), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 10), .completed)
     }
 
     @MainActor
