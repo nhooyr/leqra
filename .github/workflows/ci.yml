@@ -46,6 +46,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          lfs: true
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -60,6 +62,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          lfs: true
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -71,6 +75,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          lfs: true
       - run: ./ci/ios-cache-key.sh
         id: ios-cache
       - uses: actions/cache@v6
@@ -99,6 +105,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          lfs: true
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
