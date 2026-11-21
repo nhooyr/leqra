@@ -1,6 +1,6 @@
 ## Changelog
 
-## v5.8.1 (unreleased)
+## v5.8.1 (Unreleased)
 
 - Update the Android Gradle wrapper to 9.9.2.
 - Run Android CI with the checked-in wrapper, retaining caching and removing separate Gradle version setup.
