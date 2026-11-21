@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-# The wrapper JAR is not tracked; install its declared Gradle release.
+# Keep CI's installed Gradle aligned with the Android wrapper.
 version=$(sed -nE 's@^distributionUrl=.*gradle-(.+)-(bin|all)\.zip$@\1@p' android/gradle/wrapper/gradle-wrapper.properties)
 test -n "$version"
 if [ "${GITHUB_OUTPUT-}" ]; then

@@ -20,7 +20,7 @@
       "This browser cannot create a 2D canvas. Please open the game in another browser."
     return
   }
-  const GAME_VERSION = "5.7.6"
+  const GAME_VERSION = "5.8.0"
   const GAME_PROTOCOL = 1
   const TAU = Math.PI * 2,
     CELL = 84,

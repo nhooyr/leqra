@@ -1,10 +1,17 @@
-# v4.45.1 — deployment, offline cache, and idle snapshot fixes
+## Changelog
+
+## v5.8.0
+
+- Add GitHub Actions CI.
+- Fix mobile dropdown double focus bug.
+
+## v4.45.1 — deployment, offline cache, and idle snapshot fixes
 
 - Make deployment rebuild before contacting the host, preserve local artifacts, repair required directories, reload systemd, and consolidate remote setup/service operations.
 - Keep successful navigation and asset responses usable when Cache Storage is slow or unavailable, and keep asynchronous cache writes alive correctly.
 - Skip state serialization for rooms without live sockets while preserving full map delivery after player and spectator reconnects.
 
-# v4.45.0 — appended roster rows and automatic session recovery
+## v4.45.0 — appended roster rows and automatic session recovery
 
 - Match Leave room to the outlined neon-red REMOVE/KICK color.
 - Order roster displays and exports by stable member identity, so reused combat seats cannot put new tanks above existing players.
@@ -12,7 +19,7 @@
 - Restore automatic reconnect for recognized saved sessions, preserving the server’s callsign and role; fresh visitors still confirm JOIN.
 - Require explicit JOIN after a saved membership expires or the host kicks the player; rejected recovery never silently creates a new seat.
 
-# v4.44.0 — outlined neon actions and confirmed invite joining
+## v4.44.0 — outlined neon actions and confirmed invite joining
 
 - Restore outlined Unshare room and Leave room buttons while retaining neon purple and pink.
 - Use neon-red outlines for roster/host/spectator REMOVE/KICK actions and the kick confirmation action.
@@ -20,7 +27,7 @@
 - Invite links wait at the callsign/join menu, including recent sessions; confirmed resumes apply the chosen callsign.
 - Update built-in server startup hints for the `src/` layout.
 
-# v4.43.0 — stable maze space, neon lobby actions and organized source tree
+## v4.43.0 — stable maze space, neon lobby actions and organized source tree
 
 - Preserve maze space across spectator/P2 changes, roster side counts and keyboard-only visual-viewport changes.
 - Use neon green PLAY, purple Unshare room and pink Leave room; show the header Spectators button only online.
@@ -29,20 +36,20 @@
 - Group code, tests, deployment files, scripts and guides into folders; build with `go build -o bin/leqra ./src`.
 - Current verification and screenshot limitations: [v4.43.0 notes](docs/releases/TEST-NOTES-v4.43.0.md).
 
-# v4.23.2 — mobile compact default and expanded fire keys
+## v4.23.2 — mobile compact default and expanded fire keys
 
 - Fresh mobile local rooms now default to the Compact 7×7 maze; an explicitly saved maze-size preference is preserved.
 - Single-player controls add C and Enter as additional fire/detonate keys, alongside Q and Space.
 - With local Player 2 active, C is an additional Player 1 fire key and Enter is an additional Player 2 fire key.
 - Control summaries/help text now show the supplemental fire keys.
 
-# v4.23.1 — UI state cleanup and stronger shutdown warning
+## v4.23.1 — UI state cleanup and stronger shutdown warning
 
 - Keep **Leave match** strictly online-only across online → local transitions.
 - Present server shutdown as a prominent modal warning after safely returning Home.
 - Style normal **PLAY AGAIN** with the same neon green as matchmaking **REMATCH**.
 
-# v4.23.0 — PWA, versioned assets, graceful shutdown, and online UX fixes
+## v4.23.0 — PWA, versioned assets, graceful shutdown, and online UX fixes
 
 - Make leqra an installable PWA with a manifest, Apple/Android icons and a versioned service worker that precaches the local app shell while keeping WebSocket/API endpoints network-only.
 - Serve `index.html` as a revalidated shell and every other browser asset under `/assets/v4.23.0/` with immutable caching; legacy root asset URLs are no longer served.
@@ -55,7 +62,7 @@
 - Keep gameplay input active while chat is visible whenever focus is outside the chat panel; focused chat still captures typing and suppresses arena controls.
 - Fix explicit `/index.html` redirect behavior for PWA shell caching and trim the embedded production filesystem so duplicate root developer web assets are not compiled into the server.
 
-# v4.22.0 — Safari audio reliability, integrated match chat, Ghost fixes, and room UX
+## v4.22.0 — Safari audio reliability, integrated match chat, Ghost fixes, and room UX
 
 - Fix Safari native fallback playback being blocked by leqra's own CSP by allowing `media-src 'self' blob:`; strengthen trusted-gesture Web Audio/native Audio activation and make successful Safari priming idempotent.
 - Restore the desktop Safari recommendation for Chrome or Firefox while leaving iPhone/iPad without the desktop notice.
@@ -67,7 +74,7 @@
 - Increase custom dropdown-chevron right spacing in Rules/Presets and Controls.
 - Remove obsolete callsign-save CSS and avoid a temporary map allocation when deduplicating Unshare notifications.
 
-# v4.21.0 — Safari audio, volume controls, and reliable chat routing
+## v4.21.0 — Safari audio, volume controls, and reliable chat routing
 
 - Fixed Safari/WebKit audio startup by queuing tones until asynchronous `AudioContext.resume()` actually reaches the running state and retrying unlock from genuine user gestures.
 - Added a persistent 0–100 Controls-menu volume slider. 50% preserves the old output level/default and values near center snap to 50%; the existing mute control remains independent.
@@ -77,7 +84,7 @@
 - Deduplicated room/enemy chat by WebSocket so local P1/P2 sharing one connection receive one message, and filtered party history using the same authoritative scope on reconnect.
 - Minimized-chat notification tones now use the same Safari-safe volume/master-audio path.
 
-# v4.20.0 — opponent chat, room renaming, results polish, and bug fixes
+## v4.20.0 — opponent chat, room renaming, results polish, and bug fixes
 
 - Put queued **REMATCH** to the right of **BACK TO ROOM** while retaining its neon-green matchmaking treatment.
 - Give losing local players a red **DEFEAT** heading and defeat icon below it instead of the victory star.
@@ -90,7 +97,7 @@
 - Batch chat-history DOM rendering, avoid an extra lobby rerender after authoritative code updates, and deduplicate opponent-chat sockets without allocating a per-message map.
 - Remove duplicate stale WebSocket and sudden-death branches found during the audit.
 
-# v4.19.0 — Safari smoothness, mobile stability, and renderer cleanup
+## v4.19.0 — Safari smoothness, mobile stability, and renderer cleanup
 
 - Add a WebKit/iOS-specific rendering path with adaptive Canvas DPR/pixel budgets and smaller static maze-cache budgets, while leaving Chromium quality budgets unchanged.
 - Remove compositor-heavy backdrop blur and dynamic projectile/pickup Canvas shadows on WebKit; reduce WebKit-only particle count, remote projectile trail length, and legend backing resolution.
@@ -102,7 +109,7 @@
 - Defer explosion-noise buffer generation until the first explosion instead of doing it on the first audio-enabling gesture.
 - Add Safari desktop/iPhone portrait/iPhone landscape/iPadOS identity regressions plus the retained full multiplayer/gameplay regression matrix.
 
-# v4.18.0 — matchmaking results and layout polish
+## v4.18.0 — matchmaking results and layout polish
 
 - Remove the legacy **BACK TO MY PARTY** action from online in-match menus.
 - Double ground pickup lifetime scaling to `floor(maximum pickups × 8/3)`: Giant 61s, Ultra Wide 90s.
@@ -114,7 +121,7 @@
 - Keep eliminated local P1/P2 status at **TANK DOWN**; only actual spectator roles are labeled Spectating.
 - Add unanimous server-authoritative rematch voting and regression coverage for party reservations, layout, browser guidance, results copy, and tank-down semantics.
 
-# v4.17.0 — bug fixes and hot-path optimization
+## v4.17.0 — bug fixes and hot-path optimization
 
 - Fix Pickup Rate **Off** still waking the spawn scheduler/RNG even though no pickup could spawn; the scheduler now sleeps indefinitely until a new round/rule set.
 - Make authoritative wall/projectile/movement ray queries value-based in simulation hot paths and reuse A* / projectile-threat scratch buffers for bots.
@@ -123,14 +130,14 @@
 - Reuse local-browser bot pathfinding scratch, KOTH/sudden-death side scans, online ownership/trail sets, and direct shot-preview pruning to reduce GC pressure.
 - Add randomized wire-parity, disabled-pickup scheduler, deterministic bot-route, all-map/all-mode browser stress, race-detector, and benchmark regression coverage.
 
-# v4.16.0 — lowercase leqra rebrand
+## v4.16.0 — lowercase leqra rebrand
 
 - Renamed the product and visible branding to lowercase **leqra**.
 - Renamed the canonical browser API, storage namespace, Go module, binary/Docker examples, server banner, and test environment prefix.
 - Added migration from the previous browser-storage namespace so saved player settings survive the rename.
 - Kept v4.15 gameplay behavior unchanged.
 
-# v4.15.0 — stable lobby maze, Ultra Wide, and per-pilot status feedback
+## v4.15.0 — stable lobby maze, Ultra Wide, and per-pilot status feedback
 
 - Move start controls and pickup explanations into each local pilot's fixed-height ammo/status block; fix online local-P2 pickup feedback.
 - Preserve the lobby maze across roster/team/responsive edits; regenerate the preview when Map Size changes.
@@ -140,21 +147,21 @@
 - Stop focus loss from pausing local games while still clearing held input.
 - Reduce maze-generation temporary allocations and bound the cached maze-canvas pixel budget.
 
-# v4.13.0 — compact desktop shell
+## v4.13.0 — compact desktop shell
 
 - Normal desktop now uses the same compact app/header geometry as fullscreen.
 - The hero banner, footer and desktop status slogan no longer reserve space during normal gameplay.
 - Normal desktop uses the full viewport width/height shell, so entering fullscreen causes far less maze resizing and shifting.
 - Touch/mobile layout is unchanged.
 
-# v4.12.0 — cleaner underbar, Giant FFA preset, larger power badges
+## v4.12.0 — cleaner underbar, Giant FFA preset, larger power badges
 
 - Removed under-arena fire-key badges and the boot-time duplicate score placeholder.
 - Removed the local in-game "Return to room to share online" action.
 - Changed the 8-tank FFA preset to Giant 16×14.
 - Doubled remote/bot active power-up badge size while retaining cached rendering.
 
-# v4.11.0 — cleaner HUD, FFA presets and active power badges
+## v4.11.0 — cleaner HUD, FFA presets and active power badges
 
 - Simplified the Shotgun pickup icon to a readable three-way spread.
 - Fixed Q / SPACE clipping and removed the offline FIRST TO 5 underbar label.
@@ -163,7 +170,7 @@
 - Added cached active-power badges to local bots and remote online tanks.
 - Reused badge scratch state to avoid a new per-tank/per-frame allocation.
 
-# v4.10.0 — unified 10-second powers and grenade-ownership avoidance
+## v4.10.0 — unified 10-second powers and grenade-ownership avoidance
 
 - Keep the Ghost in-wall warning text without blanking the colored cooldown/ammo bar.
 - Standardize every timed power-up effect to 10 seconds.
@@ -173,14 +180,14 @@
 - Stop rendering extrapolated online pickups once their authoritative lifetime has expired.
 - Remove avoidable grenade-AI allocations and a redundant risk-branch.
 
-# v4.9.0 — grenade-aware bots and quarter-range Machine gun
+## v4.9.0 — grenade-aware bots and quarter-range Machine gun
 
 - Predict nearby grenade-body motion and steer/brake around impact contact without treating the full blast radius as forbidden; apply this basic avoidance to all bot difficulties and friendly grenades.
 - Reduce Machine gun travel to one quarter of the maze perimeter, with matching bot/client prediction; reduce the per-tank active cap to 96 and compact eight-tank decode bound to 768 records.
 - Show `leqra v4.9.0` in the Controls menu.
 - Change the Field Manual wording to “Use Controls menu to change keys.”
 
-# v4.6.0 — long-range Machine gun, Q controls, quick replay, and doubled grenades
+## v4.6.0 — long-range Machine gun, Q controls, quick replay, and doubled grenades
 
 - Give Machine gun rounds a total half-perimeter path budget (`width + height`),
   including the hidden muzzle section and all ricochets; make them permanently
@@ -196,7 +203,7 @@
   gun rounds; clean stale/unused rapid trail state. Preallocate snapshot slices and
   use constant-time compact-round color encoding; reduce grenade outline raycasts.
 
-# v4.5.0 — dark-only teams, self-owned FFA paint, and stacked speed
+## v4.5.0 — dark-only teams, self-owned FFA paint, and stacked speed
 
 - Remove the light theme, Auto/Light/Dark preference state, media/storage listeners,
   and light-only palette branches. Dark mode keeps the neon-blue primary accent.
@@ -211,7 +218,7 @@
 - Reduce hot-path allocations by reusing hull data directly, scanning bot targets without
   filter/sort arrays, caching boosted bot tuning, and dropping unused team-room paint data.
 
-# v4.4.0 — shield stacks, Machine gun, Shotgun, and theme-aware host palettes
+## v4.4.0 — shield stacks, Machine gun, Shotgun, and theme-aware host palettes
 
 - Stack shields to five charges with one ring per charge, shared refreshed ten-second
   timer, charge-aware damage/expiry/reset/snapshots, and 3× enabled-pool spawn weight.
@@ -229,7 +236,7 @@
 - Add shield, weapon, wire, palette, permission, and browser regressions; keep
   historical reports version-labelled. No universal FPS or capacity claim.
 
-# v4.3.0 — neon themes and automatic appearance
+## v4.3.0 — neon themes and automatic appearance
 
 - Replace the dark interface's lime accent with neon green (#39FF14).
 - Add a complete light interface and Canvas palette with neon purple (#A100FF),
@@ -243,7 +250,7 @@
 - Add unit, responsive browser and same-origin embedded-asset regressions; retain
   the existing online firing/cooldown regression. No physics or netcode rebalance.
 
-# v4.2.0 — online combat presentation and cooldown stability
+## v4.2.0 — online combat presentation and cooldown stability
 
 - Remove competing FIRE/BOOM/countdown writers; freeze completed-round HUD states.
 - Add bounded local shot/sound/recoil previews, correlated by server volley/life
@@ -258,7 +265,7 @@
 - Add baseline bug reproductions, unit/real-socket firing tests, and four viewport
   layouts; preserve historical failed runs rather than retroactively passing them.
 
-# v4.1.0 — Ghost and boundary-ricocheting Cannon
+## v4.1.0 — Ghost and boundary-ricocheting Cannon
 
 - Cannon diameter and speed are 4× normal (28 / 1128 world units); internal
   walls are pierced and the outer rim reflects, including corners and muzzle hits.
@@ -268,7 +275,7 @@
 - New generated Go/JavaScript movement-parity fixtures and local/live UI tests.
 - Test notes retain the synthetic-jitter benchmark failures; no speedup claim.
 
-# v4.0.0 — solo and party matchmaking
+## v4.0.0 — solo and party matchmaking
 
 - Add six human-only queues: Elimination 1v1/2v2/3v3, CTF/Hill 3v3 and eight-way FFA.
 - Choose progressively larger fixed maps, with Giant 16×14 for FFA.
@@ -281,7 +288,7 @@
   disconnect cleanup, forfeit resolution and bounded queue/return metadata.
 - Leave game physics and core network-smoothing modules unchanged.
 
-# v3.9.0 — Cannon
+## v3.9.0 — Cannon
 
 - Add a three-shot, ten-second Cannon weapon: 3× normal radius/diameter, 3×
   speed, wall-piercing flight and 0.85s cooldown. No wall destruction or splash.
@@ -290,7 +297,7 @@
   icons, host weapon selection, presets and two-player HUDs.
 - Retain v3.8 map supply and Scope; no movement-smoothing-core changes.
 
-# v3.8.0 — giant maze, area-based supplies and Scope
+## v3.8.0 — giant maze, area-based supplies and Scope
 
 - Add Giant 16×14; retain the Large 12×10 default.
 - Scale pickup caps by round(area / 9.8): 5, 7, 12, 17, 23.
@@ -302,7 +309,7 @@
 - Server owns Scope acquisition/expiry. Preserve current movement prediction.
 - Preserve old saved map/weapon selections; update fresh defaults and built-in presets.
 
-# v3.7.2 — warning sound and Super fast pickup defaults
+## v3.7.2 — warning sound and Super fast pickup defaults
 
 - Missile-lock warning sound defaults on; explicit saved opt-outs and global mute still work.
 - Add host-selectable Super fast (1–2s) as the default for new local/shared rooms
@@ -313,13 +320,11 @@
 - Remove unused pre-rules pickup-timing constants to avoid stale duplicate defaults.
 - No changes to weapons, scoring, post-match statistics, flag drawing or netcode.
 
-# v3.7.1 — CTF flag captions
+## v3.7.1 — CTF flag captions
 
 - Removed captions and their backing strips beneath home, dropped and carried flags.
 - Removed base captions; kept base rings, numbered pennants and the objective HUD.
 - No changes to simulation, networking, match statistics or other gameplay.
-
-# Changelog
 
 ## 3.7.0 — post-match statistics
 
@@ -384,7 +389,7 @@
 
 ---
 
-# v3.1.0 — impact and local-player clarity
+## v3.1.0 — impact and local-player clarity
 
 
 ## v3.2.0
@@ -415,8 +420,6 @@
 - Homing turn rate 4.8 rad/s, 10-cell wider seeker, 0.06s lost-lock and 0.04s bounce
   delays. Missile speed and half-perimeter path budget are unchanged.
 - Shared legend icon rendering, bouncing laser, room features and netcode retained.
-
-# Changelog
 
 ## 3.0.0 — Unified rooms, local co-op, bots and teams
 
@@ -546,8 +549,6 @@
 - Preserve solo squad AI, local duel, rooms, mobile input, and reconnection.
 - Add 8 Go tests (including 4 movement-parity subtests), 16 JavaScript tests,
   and an ordered-delay browser benchmark with a test-only straight-line arena.
-
-# Changelog
 
 ## 2.8.0
 
