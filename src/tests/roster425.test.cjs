@@ -20,6 +20,8 @@ class Element {
     this.children = []
     this.parentElement = null
     this.className = ""
+    this.dataset = {}
+    this.events = {}
     this.textContent = ""
     this.value = ""
     this.insertions = 0
@@ -46,14 +48,23 @@ class Element {
       this.parentElement = null
     }
   }
+  addEventListener(type, handler) {
+    this.events[type] = handler
+  }
+  matches(selector) {
+    const data = /^\[data-([\w-]+)\]$/.exec(selector)
+    return data
+      ? data[1].replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()) in this.dataset
+      : selector[0] === "."
+        ? this.className.split(" ").includes(selector.slice(1))
+        : this.tagName === selector.toUpperCase()
+  }
+  closest(selector) {
+    return this.matches(selector) ? this : this.parentElement?.closest(selector)
+  }
   querySelector(selector) {
     for (const child of this.children) {
-      if (
-        selector[0] === "."
-          ? child.className.split(" ").includes(selector.slice(1))
-          : child.tagName === selector.toUpperCase()
-      )
-        return child
+      if (child.matches(selector)) return child
       const nested = child.querySelector(selector)
       if (nested) return nested
     }
@@ -219,6 +230,50 @@ test("editing a tank rebuilds only that tank row and preserves the other control
     assert.equal(original[2].parentElement, null)
   }
 })
+
+for (const [input, pointerType, keyboard, restore] of [
+  ["touch", "touch", false, false],
+  ["pen", "pen", false, false],
+  ["mouse", "mouse", false, true],
+  ["keyboard after touch", "touch", true, true],
+])
+  test(`roster select edits preserve ${input} focus behavior`, () => {
+    for (const [data, selector, change] of [
+      ["botDifficulty", "[data-bot-difficulty]", { difficulty: "hard" }],
+      ["team", "[data-team]", { team: 4 }],
+      ["tankColor", "[data-tank-color]", { colorIndex: 2 }],
+    ]) {
+      const b = boot(),
+        makeRow = b.s.makeRoomPlayerRow,
+        focused = []
+      b.s.makeRoomPlayerRow = (...args) => {
+        const row = makeRow(...args),
+          select = new Element("select")
+        select.dataset[data] = args[0].id
+        select.focus = () => {
+          focused.push(select)
+          b.s.document.activeElement = select
+        }
+        row.append(select)
+        return row
+      }
+      b.render()
+      const original = seatRows(b.container)[2].querySelector(selector)
+      b.s.document.activeElement = original
+      b.container.events.pointerdown?.({ pointerType })
+      if (keyboard) b.container.events.keydown?.({ key: "ArrowDown" })
+      b.render(snapshot(b.room))
+      assert.equal(focused.length, 0, "unchanged controls must not be focused again")
+
+      const changed = snapshot(b.room)
+      Object.assign(changed.players[2], change)
+      b.render(changed)
+      const replacement = seatRows(b.container).at(-1).querySelector(selector)
+      assert.notEqual(replacement, original)
+      assert.equal(focused.length, restore ? 1 : 0, selector)
+      if (restore) assert.equal(focused[0], replacement)
+    }
+  })
 
 test("a removed or reused seat cannot inherit the previous member row or draft", () => {
   const b = boot()

@@ -7118,8 +7118,15 @@
   function renderRoomPlayerRows(container, players, r, moderationOnly = false, showOpenSeats = false) {
     let cache = roomRosterCache.get(container)
     if (!cache) {
-      cache = { rows: new Map(), free: null }
+      cache = { rows: new Map(), free: null, restoreFocus: true }
       roomRosterCache.set(container, cache)
+      // Refocusing a replaced select after touch can reopen its native picker.
+      container.addEventListener("pointerdown", (event) => {
+        cache.restoreFocus = event.pointerType === "mouse"
+      })
+      container.addEventListener("keydown", () => {
+        cache.restoreFocus = true
+      })
     }
     const rules = r.rules || currentRules(),
       context = JSON.stringify([
@@ -7144,7 +7151,7 @@
       focusSelector = ["[data-team]", "[data-bot-difficulty]", "[data-tank-color]"].find((selector) =>
         active?.matches(selector),
       )
-    const focusedRow = focusSelector ? active.closest(".seat-row") : null
+    const focusedRow = cache.restoreFocus && focusSelector ? active.closest(".seat-row") : null
     let controlToFocus = null
     const next = new Map(),
       nodes = []
