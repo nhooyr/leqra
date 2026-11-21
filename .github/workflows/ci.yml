@@ -117,6 +117,7 @@ jobs:
         with:
           gradle-version: ${{ steps.gradle-version.outputs.version }}
           cache-provider: basic
+          add-job-summary: never
       - uses: android-actions/setup-android@v4
       - uses: actions/cache@v6
         with:

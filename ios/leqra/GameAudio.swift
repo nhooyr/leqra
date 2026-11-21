@@ -258,24 +258,18 @@ final class GameAudio {
     }
 
     private static func activateAudioSession() async throws {
-        // Configure mixing before graph creation, including on muted-first launches.
-        try await sessionWork { try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default) }
-        if #available(iOS 27.0, *) {
-            guard try await AVAudioSession.sharedInstance().activate() else {
-                throw NSError(domain: "leqra.AudioSession", code: 1)
-            }
-        } else {
-            try await sessionWork { try AVAudioSession.sharedInstance().setActive(true) }
+        // Keep session changes off the main actor using APIs supported by older SDKs.
+        try await sessionWork {
+            let session = AVAudioSession.sharedInstance()
+            // Configure mixing before graph creation, including on muted-first launches.
+            try session.setCategory(.ambient, mode: .default)
+            try session.setActive(true)
         }
     }
 
     private static func deactivateAudioSession() async {
-        if #available(iOS 27.0, *) {
-            _ = try? await AVAudioSession.sharedInstance().deactivate(options: .notifyOthersOnDeactivation)
-        } else {
-            try? await sessionWork {
-                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            }
+        try? await sessionWork {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 
